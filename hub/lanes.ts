@@ -353,7 +353,9 @@ export function compactLane(name: string): Compaction {
 	return requestCompact(lane.ctx, portOf(lane));
 }
 
-// Returns the lanes that were resumed because the gateway stopped while they worked.
+// Brings back every lane that was alive when the gateway stopped: working ones resume their turn, idle ones (waiting on
+// the owner) are respawned idle so they keep answering in their channel. Lanes already stopped stay stopped.
+// Returns the lanes that were resumed mid-work.
 export function restoreLanes(): string[] {
 	const resumed: string[] = [];
 	if (!existsSync(paths.lanes)) return resumed;
@@ -367,10 +369,14 @@ export function restoreLanes(): string[] {
 			lane.lastText = readFileSync(pendingFile(lane), "utf8");
 			report(lane, lane.lastText);
 		}
-		const wasRunning = rec.status === "working" || rec.status === "starting" || rec.status === "rate-limited";
-		if (wasRunning && rec.sessionFile && existsSync(rec.sessionFile)) {
-			resumeLane(lane, "[dotz gateway] The gateway restarted while you were working. Continue the work you were doing; if an owner message was cut off mid-turn, handle it too.");
+		const session = Boolean(rec.sessionFile && existsSync(rec.sessionFile));
+		if (session && (rec.status === "working" || rec.status === "starting" || rec.status === "rate-limited")) {
+			resumeLane(lane, "[dotz gateway] The gateway restarted while you were working, which also stopped any task workers you had running. Check what they finished (patches, files, commits), relaunch the rest, and continue; if an owner message was cut off mid-turn, handle it too.");
 			resumed.push(name);
+		} else if (session && rec.status === "idle") {
+			spawn(lane, true);
+			setStatus(lane, "idle");
+			log(`lane ${name} respawned idle ${rec.sessionFile}`);
 		} else if (rec.status !== "exited") setStatus(lane, "exited");
 	}
 	return resumed;
