@@ -94,7 +94,7 @@ export function emitFrameActivity(source: string, f: Frame): void {
 
 // Subagents (task-tool workers) of each omp process, from the frames sent after `set_subagent_subscription` at level
 // "progress". Kept as one current list per source (finished ones for 10 min) and streamed whole on every change.
-export type Subagent = { id: string; agent?: string; description?: string; status: "running" | "done" | "failed" | "aborted"; tool?: string; intent?: string; updated_at: number };
+export type Subagent = { id: string; agent?: string; description?: string; status: "running" | "done" | "failed" | "aborted"; tool?: string; intent?: string; started_at: number; updated_at: number };
 const subagents = new Map<string, Map<string, Subagent>>();
 // Transcript file of each subagent (`<source>\n<id>` -> path); server-side only, never sent to the UI.
 const transcripts = new Map<string, string>();
@@ -118,6 +118,7 @@ function trackSubagent(source: string, p: Record<string, any>): void {
 		status,
 		tool: progress.currentTool ?? prev?.tool,
 		intent: progress.lastIntent ? scrub(String(progress.lastIntent)).slice(0, 120) : prev?.intent,
+		started_at: prev?.started_at ?? Date.now(),
 		updated_at: Date.now(),
 	});
 	for (const [key, s] of list) {
