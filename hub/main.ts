@@ -167,8 +167,9 @@ setAlertHandler(alert);
 
 function rateLimitNotice(target: string, replyTo?: string): void {
 	if (orch.status !== "rate-limited") return;
-	const at = new Date(orch.rateLimitedUntil).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-	void out(target, `지금 사용량 한도로 멈춰 있어요. ${at}쯤 이어서 처리할게요.`, replyTo, { source: "gateway" }).catch(() => undefined);
+	const until = new Date(orch.rateLimitedUntil);
+	const at = Number.isNaN(until.getTime()) ? "한도가 풀리면" : `${until.toLocaleString("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })}쯤`;
+	void out(target, `지금 사용량 한도로 멈춰 있어요. ${at} 이어서 처리할게요.`, replyTo, { source: "gateway" }).catch(() => undefined);
 }
 
 // Slash/bang commands (/model, /restart, ...) are answered by the gateway itself, never by the orchestrator.

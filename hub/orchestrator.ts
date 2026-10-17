@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { emitFrameActivity, statusActivity } from "./activity.ts";
 import { cfg, DATA_DIR, IDENTITY_FILE, log, NAME, now, OMP, orchestratorModel, paths, selectorOf } from "./config.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, requestCompact } from "./context.ts";
+import { rateLimitDelay } from "./providers.ts";
 import { setupsSummary } from "./workchannels.ts";
 
 const STATE = join(DATA_DIR, "orchestrator.json");
@@ -141,7 +142,7 @@ async function readFrames(p: Subprocess<"pipe", "pipe", "pipe">): Promise<void> 
 				if (t && (f.message.stopReason === "stop" || f.message.stopReason === "length")) onAnswer(t);
 				noteMessageUsage(orch.ctx, f.message);
 				const err = String(f.message.errorMessage ?? "");
-				if (f.message.stopReason === "error" && /429|rate_limit|usage limit/i.test(err)) scheduleResume(err);
+				if (f.message.stopReason === "error" && /429|rate_limit|usage limit/i.test(err)) void scheduleResume(err);
 			} else if (f.type === "response" && f.command === "get_state" && f.data?.sessionFile) {
 				orch.sessionFile = f.data.sessionFile;
 				save({ sessionFile: orch.sessionFile, model: currentModel });
@@ -171,15 +172,23 @@ function armWatchdog(): void {
 }
 
 // While paused by a rate limit (5h or a spent week), prompts are held instead of each starting a turn that fails at once;
-// at retry-after they all go in, oldest first, after the resume note. A retry that hits the limit again re-arms quietly.
+// right after the spent window resets (from the provider's usage report; retry-after otherwise) they all go in, oldest
+// first, after the resume note. A retry that hits the limit again re-arms quietly.
 let resumeTimer: Timer | undefined;
+let pausing = false;
 let pauseAlerted = false;
-function scheduleResume(err: string): void {
-	if (resumeTimer) return;
-	const retry = Math.min(Number(err.match(/retry-after-ms:\s*(\d+)/)?.[1] ?? 10 * 60_000), 6 * 3600_000) + 60_000;
+async function scheduleResume(err: string): Promise<void> {
+	if (resumeTimer || pausing) return;
+	pausing = true;
 	orch.status = "rate-limited";
-	orch.rateLimitedUntil = new Date(Date.now() + retry).toISOString();
-	if (!pauseAlerted) onAlert(`${NAME}: 사용량 한도(429)로 멈춤. ${new Date(Date.now() + retry).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}쯤부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리합니다.`);
+	orch.rateLimitedUntil = "";
+	const { ms: retry, reset } = await rateLimitDelay(err, currentModel);
+	pausing = false;
+	if (orch.status !== "rate-limited") return;
+	const until = new Date(Date.now() + retry);
+	orch.rateLimitedUntil = until.toISOString();
+	const at = until.toLocaleString("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+	if (!pauseAlerted) onAlert(`${NAME}: 사용량 한도(429)로 멈춤. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리합니다.`);
 	pauseAlerted = true;
 	resumeTimer = setTimeout(() => {
 		resumeTimer = undefined;

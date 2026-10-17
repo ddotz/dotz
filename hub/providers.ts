@@ -338,3 +338,23 @@ export async function quota() {
 	const reports = await usageReports();
 	return { fetched_at: Date.now(), ...buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)) };
 }
+
+// How long a 429 pause lasts. The provider's usage report names the window that ran out and when it resets, so the
+// pause ends right after that reset (a spent week waits for the week, not a blind 6h retry). Without a spent window in
+// the report, the error's retry-after is used, else 10 minutes. One minute of margin so the first retry lands after it.
+const RESUME_MARGIN_MS = 60_000;
+const RESUME_MAX_MS = 8 * 24 * 3600_000;
+export function resumeDelay(err: string, limits: QuotaLimit[], at: number): { ms: number; reset: boolean } {
+	const resets = limits
+		.filter(l => (l.remaining !== null && l.remaining <= 0) || (l.used !== null && l.limit !== null && l.used >= l.limit) || /exhaust|exceed|blocked/i.test(l.status))
+		.flatMap(l => (l.resets_at !== null && l.resets_at > at ? [l.resets_at] : []));
+	const hint = Number(err.match(/retry-after-ms:\s*(\d+)/)?.[1] ?? Number.NaN);
+	const base = resets.length ? Math.max(...resets) - at : Number.isFinite(hint) ? hint : 10 * 60_000;
+	return { ms: Math.min(base, RESUME_MAX_MS) + RESUME_MARGIN_MS, reset: resets.length > 0 };
+}
+export async function rateLimitDelay(err: string, model: string): Promise<{ ms: number; reset: boolean }> {
+	const provider = model.split("/")[0];
+	invalidate();
+	const limits = buildQuota(await usageReports().catch(() => []), []).providers.find(p => p.provider === provider)?.limits ?? [];
+	return resumeDelay(err, limits, Date.now());
+}

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { emitFrameActivity, statusActivity } from "./activity.ts";
 import { cfg, IDENTITY_FILE, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, workerModel } from "./config.ts";
 import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, requestCompact } from "./context.ts";
+import { rateLimitDelay } from "./providers.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 const PROGRESS_EVERY_MS = Number(process.env.DOTZ_PROGRESS_MS ?? 15 * 60_000);
@@ -28,6 +29,7 @@ export type Lane = Record_ & {
 	revive?: boolean;
 	workingSince?: number;
 	pauseReported?: boolean;
+	pausing?: boolean;
 	progressAt?: number;
 	progressText?: string;
 };
@@ -125,12 +127,15 @@ function withHeld(lane: Lane, text: string): string {
 	return `${text}\n\n${lane.held.length} owner message(s) arrived while you were paused; handle each, oldest first:\n\n${lane.held.join("\n\n---\n\n")}`;
 }
 
-function pauseForRateLimit(lane: Lane, err: string): void {
-	if (lane.resumeTimer) return;
-	const wait = Math.min(Number(err.match(/retry-after-ms:\s*(\d+)/)?.[1] ?? 10 * 60_000), 6 * 3600_000) + 60_000;
+async function pauseForRateLimit(lane: Lane, err: string): Promise<void> {
+	if (lane.resumeTimer || lane.pausing) return;
+	lane.pausing = true;
 	setStatus(lane, "rate-limited");
-	const at = new Date(Date.now() + wait).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-	if (!lane.pauseReported) report(lane, `사용량 한도에 걸려서 멈췄어요. ${at}쯤부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`);
+	const { ms: wait, reset } = await rateLimitDelay(err, lane.model);
+	lane.pausing = false;
+	if (lane.status !== "rate-limited") return;
+	const at = new Date(Date.now() + wait).toLocaleString("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+	if (!lane.pauseReported) report(lane, `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`);
 	lane.pauseReported = true;
 	lane.resumeTimer = setTimeout(() => {
 		lane.resumeTimer = undefined;
@@ -168,7 +173,7 @@ async function readFrames(lane: Lane, proc: Subprocess<"pipe", "pipe", "pipe">):
 				const text = textOf(f.message);
 				const err = String(f.message.errorMessage ?? "");
 				if (text) lane.lastText = text;
-				else if (f.message.stopReason === "error" && RATE_RE.test(err)) pauseForRateLimit(lane, err);
+				else if (f.message.stopReason === "error" && RATE_RE.test(err)) void pauseForRateLimit(lane, err);
 				else if (f.message.stopReason === "error") {
 					lane.lastText = `[lane error] ${(err || "model request failed").slice(0, 300)}`;
 					scheduleReport(lane);
