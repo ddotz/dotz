@@ -33,6 +33,8 @@
   --accent: #5b5bd6;
   --ok: #18884f; --warn: #b25e00; --err: #d92d20;
   --scrim: rgb(0 0 0 / .4);
+  /* terminal panel: dark in both themes */
+  --tb: #101012; --tf: #e6e6ea; --td: #8d8d96; --tl2: #2b2b30; --tok: #4ade80; --terr: #ff7b7b; --tac: #a9a9ff;
   --font: Inter, Geist, system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
   --mono: ui-monospace, "SF Mono", "Geist Mono", SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -240,34 +242,124 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .snack.bad { background: var(--err); color: #fff; }
 @media (max-width: 639px) { .snack { bottom: calc(68px + env(safe-area-inset-bottom)); } }
 
-/* chat */
-.timeline { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 12px; padding: 0 0 16px; }
-.msg { align-self: flex-start; max-width: min(100%, 680px); min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow-wrap: anywhere; }
-.msg.me { align-self: flex-end; background: var(--layer); border-color: transparent; }
-.msg.cmd { background: var(--layer); border-color: transparent; }
-.mmeta { margin-bottom: 2px; font-size: 11px; line-height: 16px; color: var(--fg-3); }
-.msg pre, .box pre { margin: 6px 0 0; padding: 8px 12px; border-radius: 6px; background: var(--layer); color: var(--fg); font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
-.msg.cmd pre { background: transparent; padding: 0; margin: 0; }
-.msg pre:first-of-type { margin-top: 0; }
-.msg pre.err, .box pre.err { color: var(--err); }
+/* target header: one switcher + 대화/터미널 toggle, shared by both views */
+.thead { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 12px; }
+.tsw { flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.tsw::-webkit-scrollbar { display: none; }
+.tchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; max-width: 220px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; }
+.tchip:hover { background: var(--hover); color: var(--fg); }
+.tchip.on { background: var(--active); border-color: var(--line-2); color: var(--fg); }
+.tchip.fold { border-style: dashed; color: var(--fg-3); }
+.tchip .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb { flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 10.5px/16px var(--font); text-align: center; }
+.sb { flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
+.tdrop { display: none; flex: 1 1 120px; width: auto; min-width: 0; }
+.vseg { flex: none; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--layer); }
+.vseg button { position: relative; height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.vseg button:hover { color: var(--fg); }
+.vseg button.on { background: var(--card); color: var(--fg); box-shadow: 0 0 0 1px var(--line-2); }
+.vseg .ud { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+@media (pointer: coarse) { .vseg button { height: 34px; } .tchip { height: 36px; } }
+@media (max-width: 639px) { .tsw { display: none; } .tdrop { display: flex; } .thead { flex-wrap: wrap; } }
+
+/* chat: a reading column. Owner messages are small bubbles, answers are plain text, the work in between folds into one line */
+.chatbox { position: relative; flex: 1; min-height: 0; }
+.timeline { height: 100%; overflow-y: auto; overflow-x: hidden; }
+.tl-in { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 720px; min-width: 0; margin: 0 auto; padding: 8px 0 24px; }
+.mt { font-size: 11px; line-height: 16px; color: var(--fg-3); }
+.um { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 85%; min-width: 0; }
+.ub { padding: 8px 14px; border-radius: 18px 18px 4px 18px; background: var(--layer); font-size: 14px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bm { min-width: 0; overflow-wrap: anywhere; }
+.bm .mt { margin-bottom: 4px; }
+.bm .md { font-size: 15px; line-height: 26px; }
+.bm .md p { margin: 0 0 12px; } .bm .md p:last-child { margin-bottom: 0; }
+.bm .md ul, .bm .md ol { margin: 0 0 12px; }
+.bm pre, .box pre, .cmdbox pre { margin: 8px 0 12px; padding: 10px 14px; border-radius: 8px; background: var(--layer); color: var(--fg); font-size: 12.5px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; }
+.box pre { margin: 6px 0 0; padding: 8px 12px; border-radius: 6px; font-size: 12px; line-height: 18px; max-height: 300px; }
+.box pre.err, .cmdbox.err pre { color: var(--err); }
+.cmdbox { min-width: 0; }
+.cmdbox pre { margin: 0 0 4px; font-family: var(--mono); }
+.pn { display: flex; gap: 8px; min-width: 0; color: var(--fg-3); font-size: 12.5px; line-height: 20px; cursor: pointer; }
+.pn .pt { min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pn.open .pt { display: block; }
+.pn .mt { flex: none; }
+.sn { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 8px 12px; border-radius: 8px; background: var(--layer); font-size: 13px; line-height: 20px; }
+.sn .st { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .md p { margin: 0 0 6px; } .md p:last-child { margin-bottom: 0; }
 .md ul, .md ol { margin: 0 0 6px; padding-left: 20px; }
 .md code { padding: 1px 4px; border-radius: 4px; background: var(--layer); font-size: .92em; }
 .md pre code { padding: 0; background: none; }
-.composer { flex: none; padding: 0 0 max(16px, env(safe-area-inset-bottom)); }
-.composer .bar2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+details.work > summary { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; min-height: 24px; margin-left: -4px; padding: 0 6px 0 4px; border-radius: 6px; color: var(--fg-3); font-size: 12.5px; line-height: 20px; cursor: pointer; list-style: none; }
+details.work > summary:hover { background: var(--hover); color: var(--fg-2); }
+details.work > summary::-webkit-details-marker { display: none; }
+details.work > summary::before { content: ""; flex: none; width: 5px; height: 5px; border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(-45deg); transition: transform .15s; }
+details.work[open] > summary::before { transform: rotate(45deg); }
+details.work.bad > summary { color: var(--err); }
+.wdot { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+details.work.live .wdot { display: block; }
+.wsum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wbody { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin: 8px 0 0 5px; padding-left: 12px; border-left: 2px solid var(--line); }
+.composer { flex: none; width: 100%; max-width: 720px; margin: 0 auto; padding: 0 0 max(16px, env(safe-area-inset-bottom)); }
+.composer.tmode { max-width: none; }
+.working { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-bottom: 8px; color: var(--fg-3); font-size: 12.5px; line-height: 20px; }
+#working-tx { min-width: 0; overflow-wrap: anywhere; }
+.working .btn { flex: none; height: 24px; padding: 0 8px; font-size: 12px; }
 .hintrow { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-bottom: 8px; }
 .hintrow::-webkit-scrollbar { display: none; }
 .hintchip { flex: none; height: 24px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--card); color: var(--fg-2); font: 500 12px/20px var(--mono); }
 .hintchip:hover { background: var(--hover); color: var(--fg); }
-.sendrow { display: flex; align-items: flex-end; gap: 8px; padding: 6px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--card); }
+.sendrow { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 16px; border: 1px solid var(--line-2); border-radius: 22px; background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .04); }
 .sendrow:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-.sendrow textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; padding: 4px 6px; font-size: 13px; line-height: 20px; max-height: 140px; }
+.sendrow textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; padding: 4px 0; font-size: 14px; line-height: 22px; max-height: 140px; }
+.sendrow textarea::placeholder { color: var(--fg-3); }
+.prompt { display: none; }
 @media (pointer: coarse) { .sendrow textarea { font-size: 16px; line-height: 24px; } }
+.composer.tmode .sendrow { padding: 6px 6px 6px 12px; border-radius: 10px; background: var(--tb); border-color: var(--tl2); color: var(--tf); font-family: var(--mono); }
+.composer.tmode .prompt { display: block; flex: none; padding: 4px 0; color: var(--tac); font: 600 12.5px/20px var(--mono); }
+.composer.tmode textarea { font: 12.5px/20px var(--mono); }
+.composer.tmode textarea::placeholder { color: var(--td); }
+.composer.tmode .ib.pri { background: var(--tf); color: var(--tb); }
+.composer.tmode .working { font-family: var(--mono); }
+@media (pointer: coarse) { .composer.tmode textarea { font-size: 16px; line-height: 24px; } }
 
-/* activity */
-.actbox { position: relative; flex: 1; min-height: 0; margin-bottom: max(16px, env(safe-area-inset-bottom)); }
-.actlist { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+/* terminal: the same data as a terminal session */
+.termbox { position: relative; flex: 1; min-height: 0; margin-bottom: 12px; }
+.term { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 12px 14px; border: 1px solid var(--tl2); border-radius: 10px; background: var(--tb); color: var(--tf); font: 12.5px/20px var(--mono); scrollbar-color: var(--tl2) transparent; }
+.term .md p { margin: 0 0 8px; } .term .md p:last-child { margin: 0; }
+.term .md code { background: rgb(255 255 255 / .09); }
+.term .md pre { margin: 6px 0; padding: 8px 10px; border-radius: 6px; background: rgb(255 255 255 / .06); color: var(--tf); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
+.term .a-div, .term .tdv { color: var(--td); }
+.tg { flex: none; width: 14px; color: var(--td); text-align: center; }
+.tu, .th, .tt, .tk, .tr, .te { display: flex; gap: 8px; min-width: 0; }
+.tu { margin: 14px -8px 6px; padding: 4px 8px; border-radius: 4px; background: rgb(255 255 255 / .07); }
+.tu .tg { color: var(--tac); }
+.tu .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tl { margin: 6px 0; border-radius: 4px; cursor: pointer; }
+.tl:focus-visible, .tk:focus-visible { outline-offset: 3px; }
+.tl.ok > .th > .tg { color: var(--tok); }
+.tl.bad > .th > .tg { color: var(--terr); }
+.th b { flex: none; font-weight: 600; }
+.th .ti { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--td); }
+.tl.open .th .ti { white-space: normal; overflow-wrap: anywhere; }
+.tr { margin-left: 22px; color: var(--td); }
+.tr .rt { min-width: 0; flex: 1; }
+.tr .ln { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr .more { opacity: .7; }
+.tl.bad > .tr { color: var(--terr); }
+.full { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; font: inherit; }
+.targs { margin: 4px 0 0 22px; padding: 6px 8px; border-radius: 6px; background: rgb(255 255 255 / .06); color: var(--td); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font: inherit; }
+.tl:not(.open) .full, .tl:not(.open) .targs { display: none; }
+.tl.open .short { display: none; }
+.tt { margin: 10px 0; }
+.tt .md { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tk { margin: 4px 0; color: var(--td); font-style: italic; cursor: pointer; }
+.tk .tkt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk .tkf { display: none; min-width: 0; flex: 1; }
+.tk.open .tkt { display: none; } .tk.open .tkf { display: block; }
+.tdv { margin: 12px 0; font-size: 11.5px; line-height: 16px; text-align: center; overflow-wrap: anywhere; }
+.te { margin: 6px 0; color: var(--terr); overflow-wrap: anywhere; }
+.tc { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--td); font: inherit; }
+.tc.err { color: var(--terr); }
 .jump { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); }
 .a-div { margin: 8px 4px; font-size: 11px; line-height: 16px; color: var(--fg-3); text-align: center; overflow-wrap: anywhere; }
 .a-text { padding: 6px 8px; overflow-wrap: anywhere; }
@@ -292,12 +384,29 @@ details.box .cl.err { color: var(--err); }
 details.think > summary .tname { font-family: var(--font); color: var(--fg-2); }
 details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12px; }
 .subline { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); font-size: 12px; line-height: 16px; cursor: pointer; }
-.subs { flex: none; display: flex; flex-direction: column; margin-bottom: 12px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
-.subrow { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; font-size: 13px; line-height: 20px; border-radius: 6px; }
+.subs { flex: none; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
+.subsum { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 10px; border: 0; background: transparent; color: var(--fg-2); font-size: 12.5px; line-height: 20px; text-align: left; }
+.subsum:hover { background: var(--hover); color: var(--fg); }
+.subsum .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subsum .chev { width: 14px; height: 14px; color: var(--fg-3); transition: transform .15s; }
+.subsum[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.sublist { max-height: 196px; overflow-y: auto; padding: 4px; border-top: 1px solid var(--line); }
+.subrow { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; font-size: 13px; line-height: 20px; text-align: left; }
 .subrow:hover { background: var(--hover); }
 .subrow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.subrow.off { opacity: .55; }
+.subrow .chev { width: 14px; height: 14px; color: var(--fg-3); }
+.subrow.off .nm { color: var(--fg-2); }
 .subrow b { font-weight: 500; }
+.sheet { position: fixed; z-index: 900; top: 0; right: 0; bottom: 0; display: flex; flex-direction: column; width: min(480px, 100vw); border-left: 1px solid var(--line-2); background: var(--bg); box-shadow: -8px 0 24px rgb(0 0 0 / .12); }
+.sh-head { flex: none; display: flex; align-items: center; gap: 8px; height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 8px 0 16px; border-bottom: 1px solid var(--line); }
+.sh-t { flex: 1; min-width: 0; }
+.sh-name { font: 600 13px/20px var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-t .sup { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 16px; }
+.sh-body:not(.term) > * + * { margin-top: 4px; }
+.sh-body.term { height: auto; padding: 12px 14px; border: 0; border-radius: 0; }
+@media (max-width: 639px) { .sheet { width: 100vw; border-left: 0; } .sh-body { padding: 12px; } }
+.tl-in > .a-div { margin: 0; }
 </style>
 </head>
 <body>
@@ -319,21 +428,27 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
     <div class="views" id="views">
       <section class="view" id="v-home" hidden><div class="grid" id="home"></div></section>
       <section class="view fill" id="v-chat" hidden>
-        <div class="timeline" id="timeline"></div>
-        <div class="composer">
-          <div class="bar2" id="target-bar" hidden></div>
+        <div class="thead" data-mode="chat"></div>
+        <div class="subs" hidden></div>
+        <div class="chatbox">
+          <div class="timeline" id="timeline"><div class="tl-in" id="tl"></div></div>
+          <button class="btn tonal jump" id="chat-jump" type="button" hidden>맨 아래로</button>
+        </div>
+        <div class="composer" id="composer">
+          <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-int" hidden>중단하고 보내기</button><button class="btn text" type="button" id="working-stop">중단</button></div>
           <div class="hintrow" id="hints" hidden></div>
           <form class="sendrow" id="send">
+            <span class="prompt" aria-hidden="true">&gt;</span>
             <textarea id="text" rows="1" autocomplete="off" placeholder="메시지 또는 /명령" aria-label="메시지"></textarea>
             <button class="ib pri" type="submit" aria-label="보내기" id="send-btn"></button>
           </form>
         </div>
       </section>
       <section class="view fill" id="v-activity" hidden>
-        <div class="chips" id="act-src"></div>
-        <div class="subs" id="subs" hidden></div>
-        <div class="actbox">
-          <div class="actlist" id="act-list"></div>
+        <div class="thead" data-mode="term"></div>
+        <div class="subs" hidden></div>
+        <div class="termbox">
+          <div class="term" id="term"></div>
           <button class="btn tonal jump" id="act-jump" type="button" hidden>맨 아래로</button>
         </div>
       </section>
@@ -346,6 +461,14 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
     </div>
   </div>
 </div>
+<aside class="sheet" id="sheet" role="dialog" aria-label="서브에이전트" hidden>
+  <div class="sh-head">
+    <div class="sh-t"><div class="sh-name" id="sh-name"></div><div class="sup" id="sh-sub"></div></div>
+    <span class="tag" id="sh-tag"></span>
+    <button class="ib" id="sh-close" type="button" aria-label="닫기"></button>
+  </div>
+  <div class="sh-body" id="sh-body"></div>
+</aside>
 <script>
 "use strict";
 const $ = (s, r = document) => r.querySelector(s);
@@ -391,6 +514,7 @@ const ICONS = {
   down: "M12 5v14M5 12l7 7 7-7",
   search: "M11 4a7 7 0 1 0 0 14a7 7 0 0 0 0-14zM20 20l-4-4",
   discord: "M5 7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-3l-3 3v-3H8a3 3 0 0 1-3-3zM9.5 11h.01M14.5 11h.01",
+  close: "M6 6l12 12M18 6L6 18",
 };
 const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", lanes: "lanes", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context" };
 const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
@@ -505,7 +629,9 @@ function showMenu(anchor, items, { value, onPick }) {
     const on = it.value === value;
     const b = el("button", { type: "button", role: "option", class: `mi${on ? " sel-on" : ""}`, "aria-selected": on ? "true" : "false", tabindex: "-1", onclick: () => { closeMenu(); onPick(it.value); } },
       on ? icon("check", "ck") : el("span", { class: "ck" }),
-      el("span", { class: "ml" }, it.label, it.sub ? el("small", { text: it.sub }) : null));
+      it.tone != null ? el("span", { class: `dot ${it.tone}` }) : null,
+      el("span", { class: "ml" }, it.label, it.sub ? el("small", { text: it.sub }) : null),
+      it.badge ? el("span", { class: "nb", text: String(it.badge) }) : null);
     b._label = String(it.label).toLowerCase();
     opts.push(b); node.append(b);
   }
@@ -573,7 +699,7 @@ const views = ["home", "chat", "activity", "lanes", "settings", "models", "provi
 const titles = { home: "홈", chat: "채팅", activity: "활동", lanes: "레인", settings: "설정", models: "모델", providers: "공급자", usage: "사용량", context: "컨텍스트" };
 const laneAlive = l => l.status !== "exited";
 const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/exit|dead|error|fail|stop/.test(s || "") ? "err" : "");
-const statusKo = s => ({ working: "작업 중", idle: "대기", "rate-limited": "한도 제한", exited: "종료됨" })[s] || s || "알 수 없음";
+const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 제한", exited: "종료됨" })[s] || s || "알 수 없음";
 const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
@@ -667,12 +793,21 @@ $("#pal").onclick = openPalette;
 document.addEventListener("keydown", ev => { if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === "k") { ev.preventDefault(); openPalette(); } });
 
 
-function go(name) {
+function parseHash() {
+  const h = location.hash.slice(1), i = h.indexOf("/");
+  let t = i < 0 ? "" : h.slice(i + 1);
+  try { t = decodeURIComponent(t); } catch {}
+  return { view: i < 0 ? h : h.slice(0, i), t };
+}
+function go(name, tgt) {
   closeMenu(false);
   if (!views.includes(name)) name = "home";
+  if (tgt && tgt !== target && validTarget(tgt)) setTarget(tgt);
   if (name !== current) prevView = current;
   current = name;
-  if (location.hash !== `#${name}`) history.replaceState(null, "", `#${name}`);
+  const tv = name === "chat" || name === "activity";
+  const hash = tv ? `${name}/${target}` : name;
+  if (location.hash !== `#${hash}`) history.replaceState(null, "", `#${hash}`);
   for (const v of views) $(`#v-${v}`).hidden = v !== name;
   const back = backTarget();
   document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === (back || name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
@@ -680,9 +815,9 @@ function go(name) {
   $("#appbar").classList.toggle("back", !!back);
   $("#title").textContent = name === "home" ? botName : titles[name];
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
+  if (!tv) closeSheet();
+  if (tv) enterTarget();
   if (name === "home") { renderHome(); loadHomeData(); }
-  if (name === "chat") scrollChat(true);
-  if (name === "activity") openActivity();
   if (name === "lanes") { laneSig = ""; renderLanes(); }
   if (name === "settings") { renderSettings(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
@@ -690,7 +825,7 @@ function go(name) {
   if (name === "usage") loadQuota();
   if (name === "context") loadContext();
 }
-window.addEventListener("hashchange", () => go(location.hash.slice(1)));
+window.addEventListener("hashchange", () => { const h = parseHash(); go(h.view, h.t); });
 
 /* ---------- shared bits ---------- */
 const limitFrac = l => l.limit ? Math.max(0, Math.min(1, l.remaining != null ? l.remaining / l.limit : 1 - (l.used || 0) / l.limit)) : null;
@@ -716,13 +851,16 @@ const runningSubs = src => (SUBS[src] || []).filter(s => s.status === "running")
 function setSubs(source, items) {
   if (!source) return;
   SUBS[source] = Array.isArray(items) ? items : [];
-  if (current === "home") renderHome();
-  if (current === "activity" && source === actSource) renderSubs();
+  subsChanged(source);
 }
 async function loadSubs() {
   try { const r = await api("/api/subagents"); SUBS = (r && r.sources) || {}; } catch { return; }
+  subsChanged();
+}
+function subsChanged(source) {
   if (current === "home") renderHome();
-  if (current === "activity") renderSubs();
+  renderSubs(); renderBars(); renderWorking();
+  if (SUBD && (!source || SUBD.source === source)) renderSheet();
 }
 function subLine(src) {
   const n = runningSubs(src).length;
@@ -735,16 +873,95 @@ function laneSubLine() {
   const n = srcs.reduce((a, k) => a + runningSubs(k).length, 0);
   return el("div", { class: "subline", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSource(srcs[0]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSource(srcs[0]); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
 }
-function openSource(src) { actSource = src; $("#act-src").dataset.sig = ""; go("activity"); }
+function openSource(src) { setTarget(targetOfSource(src)); go("activity"); }
+function openTarget(t, view) { setTarget(t); go(view); }
+// The subagents of the selected target: one summary line, a list on demand, a detail sheet per subagent.
+let subsOpen = false;
+// Running ones only, in spawn order (oldest first, the newest added at the bottom); rows never reorder on progress.
 function renderSubs() {
-  const box = $("#subs");
-  const list = [...(SUBS[actSource] || [])].sort((a, b) => (a.status === "running" ? 0 : 1) - (b.status === "running" ? 0 : 1) || (b.updated_at || 0) - (a.updated_at || 0));
-  box.hidden = !list.length;
-  clear(box).append(...list.slice(0, 6).map(s => el("div", { class: `subrow${s.status === "running" ? "" : " off"}` },
-    el("span", { class: "nm" }, el("b", { text: s.description || s.agent || "서브에이전트" }), s.status === "running" && (s.intent || s.tool) ? el("span", { class: "muted", text: ` · ${firstLine(s.intent || s.tool)}` }) : null),
-    el("span", { class: `tag ${subTone(s.status)}`, text: subKo[s.status] || s.status }))));
-  if (list.length > 6) box.append(el("div", { class: "more", style: "margin:4px 8px", text: `외 ${list.length - 6}개` }));
+  const src = sourceOf(target);
+  const list = runningSubs(src).sort((a, b) => (a.started_at || 0) - (b.started_at || 0) || String(a.id).localeCompare(String(b.id)));
+  const run = list.length;
+  const sig = JSON.stringify([src, subsOpen, list.map(s => [s.id, s.status, s.description, s.intent, s.tool])]);
+  for (const box of document.querySelectorAll(".subs")) {
+    box.hidden = !list.length;
+    if (box.dataset.sig === sig) continue;
+    box.dataset.sig = sig;
+    clear(box);
+    if (!list.length) continue;
+    box.append(el("button", { class: "subsum", type: "button", "aria-expanded": subsOpen ? "true" : "false", onclick: () => { subsOpen = !subsOpen; renderSubs(); } },
+      el("span", { class: `dot ${run ? "pri" : ""}` }),
+      el("span", { class: "nm", text: `서브에이전트 ${run}개 진행 중` }),
+      icon("drop", "chev")));
+    if (subsOpen) {
+      const sl = el("div", { class: "sublist" }, ...list.map(s => el("button", { class: "subrow", type: "button", onclick: () => openSub(src, s.id) },
+        el("span", { class: "dot pri" }),
+        el("span", { class: "nm" }, el("b", { text: s.description || s.agent || "서브에이전트" }), s.intent || s.tool ? el("span", { class: "muted", text: ` · ${firstLine(s.intent || s.tool)}` }) : null),
+        icon("chev", "chev"))));
+      box.append(sl);
+      requestAnimationFrame(() => { sl.scrollTop = sl.scrollHeight; });
+    }
+  }
 }
+let SUBD = null;
+const sheet = $("#sheet"), shBody = $("#sh-body");
+function openSub(source, id) {
+  if (SUBD) clearTimeout(SUBD.timer);
+  SUBD = { source, id, data: null, err: "", timer: 0, opener: document.activeElement };
+  shBody.dataset.init = "";
+  sheet.hidden = false;
+  renderSheet();
+  $("#sh-close").focus();
+  loadSub();
+}
+function closeSheet() {
+  if (!SUBD) return;
+  clearTimeout(SUBD.timer);
+  const o = SUBD.opener;
+  SUBD = null; sheet.hidden = true; clear(shBody);
+  if (o && o.isConnected && o.focus) o.focus();
+}
+const subNow = d => (SUBS[d.source] || []).find(s => s.id === d.id) || {};
+async function loadSub() {
+  const d = SUBD;
+  if (!d) return;
+  try { d.data = await api(`/api/subagents/${enc(d.id)}?source=${enc(d.source)}`); d.err = ""; }
+  catch (e) { d.err = e.message || "error"; }
+  if (SUBD !== d) return;
+  renderSheet();
+  const st = (d.data && d.data.status) || subNow(d).status;
+  clearTimeout(d.timer);
+  if (st === "running") d.timer = setTimeout(loadSub, 3000);
+}
+function renderSheet() {
+  const d = SUBD;
+  if (!d) return;
+  const l = subNow(d), data = d.data || {};
+  const st = data.status || l.status || "";
+  $("#sh-name").textContent = data.description || l.description || data.agent || l.agent || "서브에이전트";
+  $("#sh-sub").textContent = `${targetName(targetOfSource(d.source))} · 서브에이전트`;
+  const tag = $("#sh-tag");
+  tag.hidden = !st; tag.className = `tag ${subTone(st)}`; tag.textContent = subKo[st] || st;
+  const m = modeOf(), items = data.items || [];
+  const stick = !shBody.dataset.init || shBody.scrollTop + shBody.clientHeight >= shBody.scrollHeight - 40;
+  const top = shBody.scrollTop;
+  const opened = new Set();
+  [...shBody.children].forEach((c, i) => { if (c.open || c.classList.contains("open")) opened.add(i); });
+  shBody.className = `sh-body${m === "term" ? " term" : ""}`;
+  clear(shBody);
+  if (!d.data && !d.err) shBody.append(el("div", { class: "a-div", text: "불러오는 중…" }));
+  else if (!items.length) shBody.append(el("div", { class: d.err ? "a-error" : "a-div", text: d.err ? "기록을 불러오지 못했어요" : "기록 없음" }));
+  else {
+    const ctx = { calls: new Map() };
+    for (const a of items) { const n = m === "term" ? termNode(a, ctx) : actNode(a, ctx); if (n) shBody.append(n); }
+    [...shBody.children].forEach((c, i) => { if (!opened.has(i)) return; if (c.tagName === "DETAILS") c.open = true; else { c.classList.add("open"); c.setAttribute("aria-expanded", "true"); } });
+  }
+  shBody.scrollTop = stick ? shBody.scrollHeight : top;
+  shBody.dataset.init = "1";
+}
+$("#sh-close").append(icon("close"));
+$("#sh-close").onclick = closeSheet;
+document.addEventListener("keydown", ev => { if (ev.key === "Escape" && SUBD && !openMenu && !document.querySelector("dialog[open]")) closeSheet(); });
 
 /* ---------- home: every status at a glance, each card navigates ---------- */
 let HQ = null, homeTimer;
@@ -826,26 +1043,290 @@ const abortOrch = btn => busy(btn, async () => {
   refreshState();
 });
 
-/* ---------- chat ---------- */
-const timeline = $("#timeline");
-let chatStick = true, chatTarget = "";
-timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; });
+/* ---------- target: the one selection shared by 대화 (chat) and 터미널 (terminal) ---------- */
+const MAIN = "main", TARGET_KEY = "dotz-target";
+const isLaneT = t => t.startsWith("lane:");
+const laneOf = t => t.slice(5);
+const validTarget = t => t === MAIN || (isLaneT(t) && t.length > 5);
+const sourceOf = t => t === MAIN ? "orchestrator" : t;
+const targetOfSource = s => s === "orchestrator" ? MAIN : s;
+const targetName = t => t === MAIN ? botName : laneOf(t);
+const modeOf = () => current === "activity" ? "term" : "chat";
+let target = MAIN;
+try { const v = localStorage.getItem(TARGET_KEY); if (v && validTarget(v)) target = v; } catch {}
+function targetInfo(t) {
+  if (t === MAIN) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
+  const l = S && S.lanes.find(x => x.name === laneOf(t));
+  return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable } : { status: "", alive: true, known: false };
+}
+const isWorking = t => { const i = targetInfo(t); return i.alive && (i.status === "working" || i.status === "starting"); };
+
+// Per-target data, shared by both views: conversation events (msgs) and what the agent did (acts).
+const TS = {};
+const ts = t => TS[t] || (TS[t] = { msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", loading: null, ahist: false });
+const byTs = (a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0;
+const msgKey = e => `${e.ts}|${e.kind}|${e.lane ?? ""}|${String(e.text ?? "").slice(0, 60)}`;
+const actKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
+const OWNER = new Set(["message", "lane_message", "_cmd"]);
+const ownerish = e => OWNER.has(e.kind) || e.kind === "_cmdout";
+const ownerAct = e => ({ type: e.kind === "_cmdout" ? "cmdout" : "owner", ts: e.ts, text: e.text, is_error: e.is_error });
+// Same rule as the hub's eventTarget (hub/events.ts): which conversation an event belongs to.
+function eventTarget(e) {
+  if (e.kind === "activity" || e.kind === "subagents") return null;
+  let lane = typeof e.lane === "string" ? e.lane : "";
+  if (!lane) for (const v of [e.source, e.target, e.channel]) if (typeof v === "string" && v.startsWith("lane:")) { lane = v.slice(5); break; }
+  return lane ? `lane:${lane}` : MAIN;
+}
+
+/* ---------- conversation view (대화) ---------- */
+const timeline = $("#timeline"), tl = $("#tl"), term = $("#term");
+let chatStick = true, termStick = true;
+timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; });
+term.addEventListener("scroll", () => { termStick = term.scrollTop + term.clientHeight >= term.scrollHeight - 40; $("#act-jump").hidden = termStick; });
+$("#chat-jump").prepend(icon("down")); $("#act-jump").prepend(icon("down"));
+$("#chat-jump").onclick = () => scrollChat(true);
+$("#act-jump").onclick = () => scrollTerm(true);
 function scrollChat(force) {
-  if (force || chatStick) requestAnimationFrame(() => { timeline.scrollTop = timeline.scrollHeight; chatStick = true; });
+  if (force || chatStick) requestAnimationFrame(() => { timeline.scrollTop = timeline.scrollHeight; chatStick = true; $("#chat-jump").hidden = true; });
 }
-function chatBubble({ mine, meta, text, cmd, error }) {
-  const body = cmd ? el("pre", { text }) : mine ? el("div", { class: "md", style: "white-space:pre-wrap", text }) : mdNode(text);
-  const n = el("div", { class: `msg${mine ? " me" : ""}${cmd ? " cmd" : ""}` }, el("div", { class: "mmeta", text: meta }), body);
-  if (error) n.querySelector("pre, .md").classList.add("err");
-  timeline.append(n);
-  while (timeline.children.length > 400) timeline.firstChild.remove();
-  scrollChat();
+function scrollTerm(force) {
+  if (force || termStick) requestAnimationFrame(() => { term.scrollTop = term.scrollHeight; termStick = true; $("#act-jump").hidden = true; });
 }
-function addChat(e) {
-  if (e.kind === "activity") return;
-  const mine = e.kind === "message" || e.kind === "lane_message";
-  const who = e.kind === "lane_report" ? e.lane : e.kind === "lane_message" ? `→ ${e.lane}` : e.kind === "out" ? botName : e.kind === "message" ? (e.author ?? "나") : e.kind === "schedule" ? "예약" : e.kind === "watch" ? "감시" : "";
-  chatBubble({ mine, meta: [kstStamp(e.ts), who].filter(Boolean).join(" · "), text: String(e.text ?? "") });
+const kstHM = t => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleTimeString("ko-KR", { ...KST, hour: "numeric", minute: "2-digit" }); };
+const kstDay = t => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleDateString("ko-KR", { ...KST, year: "numeric", month: "numeric", day: "numeric" }); };
+const dayLabel = t => kstDay(t) === kstDay(Date.now()) ? "오늘" : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric", weekday: "short" });
+function fmtDur(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}초`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return s % 60 ? `${m}분 ${s % 60}초` : `${m}분`;
+  return m % 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${Math.floor(m / 60)}시간`;
+}
+let CS = { day: "", group: null, empty: null };
+function resetChat() { clear(tl); CS = { day: "", group: null, empty: null }; }
+function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
+const SYS_LABEL = { schedule: "예약", watch: "감시", mail: "메일" };
+function msgNode(e) {
+  const text = String(e.text ?? ""), hm = kstHM(e.ts);
+  switch (e.kind) {
+    case "message": case "lane_message": case "_cmd": {
+      const via = e.kind === "_cmd" ? "명령" : e.source === "discord" ? "Discord" : e.source === "terminal" ? "터미널" : "";
+      return el("div", { class: "um" }, el("div", { class: "ub", text }), el("div", { class: "mt", text: [hm, via].filter(Boolean).join(" · ") }));
+    }
+    case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, el("pre", { text }), el("div", { class: "mt", text: hm }));
+    case "lane_start": return el("div", { class: "a-div", text: `레인 시작 · ${hm}` });
+    case "schedule": case "watch": case "mail":
+      return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL[e.kind] }), el("div", { class: "st" }, mdNode(text), el("div", { class: "mt", text: hm })));
+    default: {
+      if (e.kind === "out" && typeof e.source === "string" && e.source.startsWith("lane:")) {
+        const n = el("div", { class: "pn", tabindex: "0", role: "button" }, el("span", { class: "mt", text: hm }), el("span", { class: "pt", text: text.replace(/^진행 중:\s*/, "") }));
+        n.onclick = () => { if (!getSelection().toString()) n.classList.toggle("open"); };
+        return n;
+      }
+      const name = e.kind === "lane_report" ? String(e.lane ?? "") : e.target === "alert" ? "알림" : botName;
+      return el("div", { class: "bm" }, el("div", { class: "mt", text: [name, hm].filter(Boolean).join(" · ") }), mdNode(text));
+    }
+  }
+}
+const WORK = new Set(["tool_call", "tool_result", "thinking", "text", "error"]);
+function newGroup(a) {
+  const wsum = el("span", { class: "wsum" }), body = el("div", { class: "wbody" });
+  const node = el("details", { class: "work" }, el("summary", {}, el("span", { class: "wdot" }), wsum), body);
+  const g = { node, body, ctx: { calls: new Map() }, tools: 0, think: 0, errs: 0, t0: Date.parse(a.ts), t1: Date.parse(a.ts), live: false };
+  g.update = () => {
+    const parts = [g.tools ? `도구 ${g.tools}개 사용` : g.think ? "생각" : "작업 내역"];
+    if (g.live) parts.unshift("작업 중");
+    if (g.t1 - g.t0 >= 1000) parts.push(fmtDur(g.t1 - g.t0));
+    if (g.errs) parts.push(`오류 ${g.errs}`);
+    wsum.textContent = parts.join(" · ");
+    node.classList.toggle("bad", g.errs > 0);
+  };
+  g.add = a => {
+    const n = actNode(a, g.ctx);
+    if (n) g.body.append(n);
+    if (a.type === "tool_call") g.tools++;
+    else if (a.type === "thinking") g.think++;
+    if (a.type === "error" || (a.type === "tool_result" && a.is_error)) g.errs++;
+    const t = Date.parse(a.ts);
+    if (t > g.t1) g.t1 = t;
+    g.update();
+  };
+  return g;
+}
+// entry: {m: conversation event} or {a: activity item}. Work between messages folds into one collapsed group.
+function chatPush(en, bulk) {
+  if (CS.empty) { CS.empty.remove(); CS.empty = null; }
+  if (en.m) {
+    dayDiv(en.m.ts);
+    if (CS.group) { CS.group.live = false; CS.group.node.classList.remove("live"); CS.group.update(); }
+    CS.group = null;
+    const n = msgNode(en.m);
+    if (n) tl.append(n);
+  } else {
+    if (!WORK.has(en.a.type)) return;
+    if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
+    CS.group.add(en.a);
+  }
+  while (tl.children.length > 500) tl.firstChild.remove();
+  markLive();
+  if (!bulk) scrollChat();
+}
+function markLive() {
+  const g = CS.group;
+  if (!g) return;
+  const live = isWorking(target) && tl.lastElementChild === g.node;
+  if (g.live !== live) { g.live = live; g.node.classList.toggle("live", live); g.update(); }
+}
+
+/* ---------- terminal view (터미널): the same data as a session transcript ---------- */
+let termCtx = { calls: new Map() }, termEmpty = null;
+function resetTerm() { clear(term); termCtx = { calls: new Map() }; termEmpty = null; }
+function toggleOpen(n) {
+  if (getSelection().toString()) return;
+  n.classList.toggle("open");
+  n.setAttribute("aria-expanded", n.classList.contains("open") ? "true" : "false");
+}
+function clickable(n) {
+  n.tabIndex = 0; n.setAttribute("role", "button"); n.setAttribute("aria-expanded", "false");
+  n.onclick = () => toggleOpen(n);
+  n.onkeydown = ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === n) { ev.preventDefault(); toggleOpen(n); } };
+  return n;
+}
+const capName = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : "tool";
+function termTool(a, name, label) {
+  const rt = el("div", { class: "rt" }, el("span", { text: "실행 중…" }));
+  const node = clickable(el("div", { class: "tl", title: kstTime(a.ts) },
+    el("div", { class: "th" }, el("span", { class: "tg", text: "⏺" }), el("b", { text: capName(name) }), label ? el("span", { class: "ti", text: `(${label})` }) : null),
+    a.args ? el("pre", { class: "targs" }, el("code", { text: a.args })) : null,
+    el("div", { class: "tr" }, el("span", { class: "tg", text: "⎿" }), rt)));
+  return { node, rt };
+}
+function fillTermResult(rec, a) {
+  const text = String(a.text ?? "").replace(/\s+$/, ""), lines = text ? text.split("\n") : [];
+  const short = el("div", { class: "short" },
+    ...(lines.length ? lines.slice(0, 3).map(l => el("div", { class: "ln", text: l || "\u00a0" })) : [el("div", { class: "ln", text: "(출력 없음)" })]),
+    lines.length > 3 ? el("div", { class: "ln more", text: `… +${lines.length - 3}줄 (펼치기)` }) : null);
+  clear(rec.rt).append(short, el("pre", { class: "full", text: text || "(출력 없음)" }));
+  rec.node.classList.add(a.is_error ? "bad" : "ok");
+}
+function termNode(a, ctx) {
+  const time = kstTime(a.ts);
+  switch (a.type) {
+    case "owner": return el("div", { class: "tu", title: time }, el("span", { class: "tg", text: ">" }), el("span", { class: "tx", text: String(a.text ?? "") }));
+    case "cmdout": return el("pre", { class: `tc${a.is_error ? " err" : ""}`, text: String(a.text ?? "") });
+    case "turn_start": return el("div", { class: "tdv", text: `시작 · ${time}` });
+    case "turn_end": return el("div", { class: "tdv", text: `완료 · ${time}` });
+    case "status": return el("div", { class: "tdv", text: `${oneLine(a.text ?? "")} · ${time}` });
+    case "text": return el("div", { class: "tt", title: time }, el("span", { class: "tg", text: "⏺" }), mdNode(a.text));
+    case "thinking": return clickable(el("div", { class: "tk", title: time }, el("span", { class: "tg", text: "✻" }), el("span", { class: "tkt", text: `생각… ${oneLine(a.text ?? "").slice(0, 100)}` }), el("div", { class: "tkf" }, mdNode(a.text))));
+    case "error": return el("div", { class: "te", title: time }, el("span", { class: "tg", text: "✗" }), el("span", { text: String(a.text ?? "") }));
+    case "tool_call": {
+      const rec = termTool(a, a.tool, toolLabel(a));
+      if (a.call_id) ctx.calls.set(a.call_id, rec);
+      return rec.node;
+    }
+    case "tool_result": {
+      const rec = a.call_id && ctx.calls.get(a.call_id);
+      if (rec) { fillTermResult(rec, a); return null; }
+      const alone = termTool({ ...a, args: "" }, a.tool || "result", "");
+      fillTermResult(alone, a);
+      return alone.node;
+    }
+    default: return a.text ? el("div", { class: "tdv", text: oneLine(a.text) }) : null;
+  }
+}
+function termPush(a, bulk) {
+  if (termEmpty) { termEmpty.remove(); termEmpty = null; }
+  const n = termNode(a, termCtx);
+  if (n) term.append(n);
+  while (term.children.length > 600) term.firstChild.remove();
+  if (!bulk) scrollTerm();
+}
+
+/* ---------- data: load history, take live events ---------- */
+function ingestMsg(e) {
+  const t = eventTarget(e);
+  if (!t) return;
+  const s = ts(t), k = msgKey(e);
+  if (s.mk.has(k)) return;
+  s.mk.add(k); s.msgs.push(e);
+  if (s.msgs.length > 400) s.mk.delete(msgKey(s.msgs.shift()));
+  if (!ownerish(e) && !(t === target && current === "chat")) { s.unread++; renderBars(); }
+  if (t === target && s.hLoaded) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }
+}
+function ingestAct(a) {
+  const t = targetOfSource(a.source);
+  const s = ts(t), k = actKey(a);
+  if (s.ak.has(k)) return;
+  s.ak.add(k); s.acts.push(a);
+  if (s.acts.length > 600) s.ak.delete(actKey(s.acts.shift()));
+  if (t === target && s.aLoaded) { chatPush({ a }); termPush(a); }
+}
+async function loadTarget(t) {
+  const s = ts(t);
+  if (s.loading) return s.loading;
+  s.loading = (async () => {
+    await Promise.all([
+      api(`/api/history?target=${enc(t)}&limit=150`).then(r => { for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); s.herr = false; }, () => { s.herr = true; }),
+      api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k)) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
+    ]);
+    s.hLoaded = s.aLoaded = true;
+  })().finally(() => { s.loading = null; });
+  await s.loading;
+  if (t === target) renderAll();
+}
+function renderAll() {
+  const s = ts(target);
+  resetChat(); resetTerm();
+  if (!(s.hLoaded && s.aLoaded)) {
+    CS.empty = tl.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
+    termEmpty = term.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
+    return;
+  }
+  const A = s.acts, M = s.msgs, first = A.length ? A[0].ts : null;
+  if (s.ahist && A.length) { tl.append(el("div", { class: "a-div", text: "지난 기록" })); term.append(el("div", { class: "tdv", text: "지난 기록" })); }
+  let i = 0, j = 0;
+  while (i < A.length || j < M.length) {
+    if (j < M.length && (i >= A.length || M[j].ts <= A[i].ts)) {
+      const m = M[j++];
+      chatPush({ m }, true);
+      if (ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
+    } else { const a = A[i++]; chatPush({ a }, true); termPush(a, true); }
+  }
+  if (!tl.children.length) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));
+  if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동 없음" }));
+  scrollChat(true); scrollTerm(true);
+  markLive();
+}
+function onActivity(a) {
+  if (a.source === "orchestrator" || a.type === "turn_start" || a.type === "turn_end" || a.type === "status") scheduleState();
+  ingestAct(a);
+}
+
+/* ---------- switching the target ---------- */
+function saveDraft() { ts(target).draft = ta.value; }
+function setTarget(t) {
+  if (!validTarget(t) || t === target) return;
+  saveDraft();
+  closeSheet();
+  target = t;
+  try { localStorage.setItem(TARGET_KEY, t); } catch {}
+  if (current === "chat" || current === "activity") history.replaceState(null, "", `#${current}/${t}`);
+  const s = ts(t);
+  if (current === "chat") s.unread = 0;
+  ta.value = s.draft; autosize(); updateHints();
+  updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
+  renderAll();
+  if (!(s.hLoaded && s.aLoaded)) loadTarget(t);
+}
+function enterTarget() {
+  $(current === "activity" ? "#v-activity" : "#v-chat").append($("#composer"));
+  if (current === "chat") ts(target).unread = 0;
+  updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
+  if (current === "chat") scrollChat(true); else scrollTerm(true);
+  if (SUBD) renderSheet();
+  autosize();
+  if (!matchMedia("(pointer: coarse)").matches && !document.querySelector("dialog[open]")) ta.focus({ preventScroll: true });
 }
 const COMMANDS = [["/help", ""], ["/status", ""], ["/context", ""], ["/compact", ""], ["/lanes", ""], ["/model", ""], ["/effort", ""], ["/restart", ""], ["/stop", ""], ["/resume", ""], ["/abort", ""], ["/providers", ""], ["/quota", ""]];
 let hintList = COMMANDS, helpLoaded = false;
@@ -874,40 +1355,107 @@ function updateHints() {
 const ta = $("#text");
 function autosize() { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`; }
 ta.addEventListener("input", () => { autosize(); if (ta.value.startsWith("/")) loadHelp(); updateHints(); });
+// While the target works: Enter steers into the running turn, ⌥/Alt+Enter stops it and sends, Esc stops it.
 ta.addEventListener("keydown", ev => {
+  if (ev.key === "Escape" && isWorking(target) && !document.querySelector("dialog[open]") && !openMenu) { ev.preventDefault(); stopTarget(); return; }
   if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing || ev.keyCode === 229) return;
   if (matchMedia("(pointer: coarse)").matches) return;
   ev.preventDefault();
-  sendChat();
+  sendChat(ev.altKey ? "interrupt" : undefined);
 });
 $("#send").onsubmit = ev => { ev.preventDefault(); sendChat(); };
-async function sendChat() {
+$("#working-stop").onclick = () => stopTarget();
+$("#working-int").onclick = () => sendChat("interrupt");
+ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
+async function stopTarget() {
+  try {
+    await api(isLaneT(target) ? `/api/lanes/${enc(laneOf(target))}/abort` : "/api/orchestrator/abort", "POST", {});
+    toast("작업을 중단했어요");
+    scheduleState();
+  } catch (e) { toast(e.message, true); }
+}
+async function sendChat(how) {
   const text = ta.value.trim();
-  if (!text) return;
-  const lane = chatTarget;
-  ta.value = ""; autosize(); updateHints();
+  if (!text || ta.disabled) return;
+  const t = target, lane = isLaneT(t) ? laneOf(t) : "";
+  const mk = (kind, extra) => ({ ts: new Date().toISOString(), kind, source: "local", ...(lane ? { lane } : {}), ...extra });
+  ta.value = ""; ts(t).draft = ""; autosize(); updateHints(); renderWorking();
+  chatStick = true; termStick = true;
   if (text.startsWith("/")) {
-    chatBubble({ mine: true, meta: `${kstStamp(Date.now())} · 명령`, text });
+    ingestMsg(mk("_cmd", { text }));
     try {
       const r = await api("/api/command", "POST", { text });
-      chatBubble({ cmd: true, meta: kstStamp(Date.now()), text: String(r.output ?? "") });
+      ingestMsg(mk("_cmdout", { text: String(r.output ?? "") || "✓" }));
       if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
-    } catch (e) { chatBubble({ cmd: true, error: true, meta: kstStamp(Date.now()), text: e.message }); }
+    } catch (e) { ingestMsg(mk("_cmdout", { text: e.message, is_error: true })); }
     return;
   }
-  try { await api("/api/message", "POST", lane ? { text, lane } : { text }); }
+  const mode = how || (isWorking(t) ? "steer" : undefined);
+  try { await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(mode ? { mode } : {}) }); scrollChat(true); scrollTerm(true); if (mode) toast(mode === "steer" ? "작업 중에 끼워 넣었어요" : "중단하고 보냈어요"); }
   catch (e) { toast(e.message, true); ta.value = text; autosize(); }
 }
-function renderTarget() {
-  const bar = $("#target-bar");
-  const alive = (S ? S.lanes : []).filter(laneAlive);
-  if (!alive.some(l => l.name === chatTarget)) chatTarget = "";
-  bar.hidden = !alive.length;
-  if (!alive.length) { clear(bar); return; }
-  if (openMenu && bar.contains(openMenu.anchor)) return;
-  const b = el("button", { type: "button", class: "chip", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": "받는 곳" }, el("span", { class: "tx", text: `받는 곳 · ${chatTarget || botName}` }), icon("drop"));
-  b.onclick = () => showMenu(b, [{ value: "", label: botName }, ...alive.map(l => ({ value: l.name, label: l.name }))], { value: chatTarget, onPick: v => { chatTarget = v; renderTarget(); } });
-  clear(bar).append(b);
+// The composer follows the selected target and the view mode.
+function updateComposerMeta() {
+  const info = targetInfo(target), isTerm = modeOf() === "term";
+  const gone = isLaneT(target) && info.known && !info.alive;
+  const off = gone && !info.resumable;
+  ta.disabled = off; $("#send-btn").disabled = off;
+  ta.placeholder = off ? "종료된 레인이에요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기 · ⌥Enter 중단하고 보내기 · Esc 중단" : isTerm ? "메시지 또는 /명령" : `${targetName(target)}에게 메시지 · /명령`;
+  $("#composer").classList.toggle("tmode", isTerm);
+}
+function renderWorking() {
+  const info = targetInfo(target), box = $("#working");
+  const st = info.alive ? info.status : "";
+  const on = st === "working" || st === "starting" || st === "rate-limited";
+  box.hidden = !on;
+  if (on) {
+    const n = runningSubs(sourceOf(target)).length;
+    $(".dot", box).className = `dot ${st === "rate-limited" ? "warn" : "pri"}`;
+    $("#working-tx").textContent = `${targetName(target)} · ${st === "rate-limited" ? "한도 제한, 잠시 쉬는 중" : "작업 중"}${n ? ` · 서브에이전트 ${n}개` : ""}`;
+    $("#working-stop").hidden = st === "rate-limited";
+    $("#working-int").hidden = st === "rate-limited" || !ta.value.trim();
+  }
+  markLive();
+}
+
+/* ---------- target switcher + 대화/터미널 toggle (rendered into the header of both views) ---------- */
+let showDead = false;
+function renderBars() {
+  const lanes = S ? S.lanes : [];
+  const alive = [MAIN, ...lanes.filter(laneAlive).map(l => `lane:${l.name}`)], dead = lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`);
+  if (isLaneT(target) && !alive.includes(target) && !dead.includes(target)) alive.push(target);
+  const view = t => {
+    const i = targetInfo(t);
+    return { t, name: targetName(t), tone: i.alive ? statusTone(i.status) : "", status: i.alive ? statusKo(i.status) : "종료됨", unread: ts(t).unread, subs: runningSubs(sourceOf(t)).length };
+  };
+  const A = alive.map(view), D = dead.map(view);
+  const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
+  const sig = JSON.stringify([A, D, cur, others, showDead, target]);
+  const chip = v => el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "aria-pressed": v.t === target ? "true" : "false", title: v.status, onclick: () => setTarget(v.t) },
+    el("span", { class: `dot ${v.tone}` }), el("span", { class: "tx", text: v.name }),
+    v.subs ? el("span", { class: "sb", title: "서브에이전트", text: `서브 ${v.subs}` }) : null,
+    v.unread ? el("span", { class: "nb", text: v.unread > 99 ? "99+" : String(v.unread) }) : null);
+  for (const bar of document.querySelectorAll(".thead")) {
+    const mode = bar.dataset.mode, msig = `${sig}|${mode}`;
+    if (bar.dataset.sig === msig || (openMenu && bar.contains(openMenu.anchor))) continue;
+    bar.dataset.sig = msig;
+    const shown = showDead ? D : D.filter(v => v.t === target);
+    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, ...A.map(chip), ...shown.map(chip),
+      D.length ? el("button", { class: "tchip fold", type: "button", "aria-expanded": showDead ? "true" : "false", onclick: () => { showDead = !showDead; renderBars(); } }, el("span", { class: "tx", text: showDead ? "종료 접기" : `종료 ${D.length}` })) : null);
+    const drop = el("button", { type: "button", class: "sel tdrop", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `대화 대상: ${cur.name}` },
+      el("span", { class: `dot ${cur.tone}` }), el("span", { class: "val", text: cur.name }),
+      cur.subs ? el("span", { class: "sb", text: `서브 ${cur.subs}` }) : null,
+      others ? el("span", { class: "nb", title: "다른 대상의 새 메시지", text: others > 99 ? "99+" : String(others) }) : null,
+      icon("drop"));
+    drop.onclick = () => showMenu(drop, [
+      ...A.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.subs ? `${v.status} · 서브 ${v.subs}` : v.status, badge: v.unread || "" })),
+      ...(D.length ? [{ header: "종료됨" }, ...D.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" }))] : [])], { value: target, onPick: setTarget });
+    const ud = mode === "term" && ts(target).unread > 0;
+    const seg = el("div", { class: "vseg", role: "group", "aria-label": "보기 방식" },
+      el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", onclick: () => go("chat") }, "대화", ud ? el("i", { class: "ud", title: "새 메시지" }) : null),
+      el("button", { type: "button", class: mode === "term" ? "on" : "", "aria-pressed": mode === "term" ? "true" : "false", onclick: () => go("activity") }, "터미널"));
+    clear(bar).append(sw, drop, seg);
+  }
 }
 
 /* ---------- state refresh ---------- */
@@ -916,8 +1464,9 @@ async function refreshState() {
   try {
     S = await api("/api/state?limit=0");
     setConn(true);
-    if (S.name && S.name !== botName) { botName = S.name; setBrand(); if (current === "home") $("#title").textContent = botName; }
-    renderSideStatus(); renderTarget(); renderActSources();
+    if (S.name && S.name !== botName) { botName = S.name; setBrand(); if (current === "home") $("#title").textContent = botName; if (ts(target).hLoaded) renderAll(); }
+    if (isLaneT(target) && !S.lanes.some(l => `lane:${l.name}` === target)) setTarget(MAIN);
+    renderSideStatus(); renderBars(); renderWorking(); updateComposerMeta();
     if (current === "lanes") renderLanes();
     if (current === "home") renderHome();
     if (current === "settings") renderSettings();
@@ -926,29 +1475,6 @@ async function refreshState() {
 }
 let stateTimer;
 const scheduleState = () => { clearTimeout(stateTimer); stateTimer = setTimeout(refreshState, 800); };
-
-/* ---------- activity ---------- */
-let actSource = "orchestrator";
-let actItems = [];
-let actSeen = new Set();
-let actLoading = false, actQueue = [];
-let actStick = true;
-let actCtx = { calls: new Map() };
-const actList = $("#act-list");
-const actKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
-$("#act-jump").prepend(icon("down"));
-actList.addEventListener("scroll", () => { actStick = actList.scrollTop + actList.clientHeight >= actList.scrollHeight - 40; $("#act-jump").hidden = actStick; });
-$("#act-jump").onclick = () => { actStick = true; actList.scrollTop = actList.scrollHeight; $("#act-jump").hidden = true; };
-function renderActSources() {
-  const box = $("#act-src");
-  const lanes = S ? S.lanes : [];
-  const srcs = [["orchestrator", botName], ...lanes.map(l => [`lane:${l.name}`, l.name])];
-  if (!srcs.some(s => s[0] === actSource)) srcs.push([actSource, actSource.replace(/^lane:/, "")]);
-  const sig = JSON.stringify([srcs, actSource]);
-  if (box.dataset.sig === sig) return;
-  box.dataset.sig = sig;
-  clear(box).append(...srcs.map(([id, label]) => el("button", { class: `chip${id === actSource ? " on" : ""}`, type: "button", "aria-pressed": id === actSource, onclick: () => { actSource = id; renderActSources(); openActivity(); } }, el("span", { class: "tx", text: label }))));
-}
 // Collapsed tool row label: the intent the model gave (`i`), else the first line of the command/path. Code stays in the body.
 function toolLabel(a) {
   if (a.intent) return firstLine(a.intent);
@@ -1009,46 +1535,7 @@ function actNode(a, ctx) {
     default: return a.text ? el("div", { class: "a-div", text: oneLine(a.text) }) : null;
   }
 }
-function appendAct(a) {
-  const n = actNode(a, actCtx);
-  if (n) actList.append(n);
-  while (actList.children.length > 500) actList.firstChild.remove();
-  if (actStick) actList.scrollTop = actList.scrollHeight;
-}
-async function openActivity() {
-  renderActSources(); renderSubs();
-  const src = actSource;
-  actLoading = true; actQueue = [];
-  clear(actList).append(el("div", { class: "a-div", text: "불러오는 중…" }));
-  let items = [];
-  try {
-    const r = await api(`/api/activity?source=${enc(src)}&limit=300`);
-    items = r.items || [];
-  } catch (e) {
-    if (src === actSource) clear(actList).append(el("div", { class: "a-error", text: "활동을 불러오지 못했어요" }));
-    actLoading = false;
-    return;
-  }
-  if (src !== actSource) return;
-  actItems = []; actSeen = new Set(); actCtx = { calls: new Map() };
-  clear(actList);
-  actStick = true;
-  for (const a of items) { actSeen.add(actKey(a)); actItems.push(a); appendAct(a); }
-  for (const a of actQueue) if (!actSeen.has(actKey(a))) { actSeen.add(actKey(a)); actItems.push(a); appendAct(a); }
-  actQueue = []; actLoading = false;
-  if (!actList.children.length) actList.append(el("div", { class: "a-div", text: "활동 없음" }));
-  actList.scrollTop = actList.scrollHeight;
-}
-function onActivity(a) {
-  if (a.source === "orchestrator" || a.type === "turn_start" || a.type === "turn_end" || a.type === "status") scheduleState();
-  if (a.source !== actSource) return;
-  if (actLoading) { actQueue.push(a); return; }
-  const k = actKey(a);
-  if (actSeen.has(k)) return;
-  actSeen.add(k); actItems.push(a);
-  if (actItems.length === 1 && current === "activity") clear(actList);
-  appendAct(a);
-}
+
 
 /* ---------- lanes ---------- */
 const laneDraft = {};
@@ -1083,7 +1570,9 @@ function renderLanes() {
       act("중단", "text", async () => { await post("abort"); toast("작업을 중단했어요"); }),
       act("종료", "danger", async () => { if (!await ask(`${l.name} 종료`, "이 레인을 종료할까요?", "종료", true)) return; await api(`/api/lanes/${enc(l.name)}`, "DELETE"); toast("종료했어요"); }));
     else btns.append(act("재개", "tonal", async () => { await post("resume", inp.value.trim() ? { text: inp.value.trim() } : {}); inp.value = ""; laneDraft[l.name] = ""; toast("재개했어요"); }));
-    btns.append(el("button", { class: "btn text", type: "button", onclick: () => { actSource = `lane:${l.name}`; $("#act-src").dataset.sig = ""; go("activity"); } }, "활동"));
+    btns.append(
+      el("button", { class: "btn text", type: "button", onclick: () => openTarget(`lane:${l.name}`, "chat") }, "대화"),
+      el("button", { class: "btn text", type: "button", onclick: () => openTarget(`lane:${l.name}`, "activity") }, "터미널"));
     const model = (m && m.model) || l.model;
     list.append(el("div", { class: "card" },
       el("div", { class: "heads" }, el("span", { class: `dot ${statusTone(l.status)}` }), el("span", { class: "t", text: l.name }), el("span", { class: "sp" }), el("span", { class: `tag ${statusTone(l.status)}`, text: statusKo(l.status) })),
@@ -1393,28 +1882,27 @@ function renderSettings() {
 
 /* ---------- boot ---------- */
 (async () => {
-  go(location.hash.slice(1) || "home");
-  try {
-    const s = await api("/api/state?limit=150");
-    botName = s.name || botName;
-    setBrand();
-    s.events.forEach(addChat);
-    scrollChat(true);
-  } catch (e) { setConn(false); }
+  const h = parseHash();
+  go(h.view || "home", h.t);
   await refreshState();
+  loadTarget(target);
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs();
   let opened = false;
   const es = new EventSource("/api/events");
-  es.onopen = () => { setConn(true); if (opened) { refreshState(); if (current === "activity") openActivity(); } opened = true; };
+  es.onopen = () => {
+    setConn(true);
+    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; renderAll(); loadTarget(target); loadSubs(); }
+    opened = true;
+  };
   es.onerror = () => setConn(false);
   es.onmessage = m => {
     let e;
     try { e = JSON.parse(m.data); } catch { return; }
     if (e.kind === "activity") onActivity(e);
     else if (e.kind === "subagents") setSubs(e.source, e.items);
-    else { addChat(e); scheduleState(); }
+    else { ingestMsg(e); scheduleState(); }
   };
   setInterval(refreshState, 15000);
   setInterval(() => loadModels(true), 60000);

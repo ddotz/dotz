@@ -6,7 +6,7 @@ import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT } from "./co
 import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
-import { activityItems, emit, recentEvents, sseResponse } from "./events.ts";
+import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { abortLane, approvesBudget, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator } from "./orchestrator.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
@@ -338,6 +338,12 @@ const server = Bun.serve({
 		if (url.pathname === "/api/state")
 			return json({ name: NAME, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)) });
 		if (url.pathname === "/api/events") return sseResponse();
+		if (req.method === "GET" && url.pathname === "/api/history") {
+			const target = url.searchParams.get("target") ?? "main";
+			if (target !== "main" && !target.startsWith("lane:")) return json({ error: "target must be main or lane:<name>" }, 400);
+			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
+			return json({ target, events: historyEvents(target, limit) });
+		}
 		if (req.method === "POST" && url.pathname === "/api/attach") {
 			const b = await body(req);
 			if (b.detach) terminals.delete(String(b.session));
@@ -348,21 +354,36 @@ const server = Bun.serve({
 			const b = await body(req);
 			if (!b.text) return json({ error: "text required" }, 400);
 			const login = req.headers.get("tailscale-user-login") ?? "local";
+			// mode: "queue" (default: main waits for its current turn, a working lane is steered), "steer" (into the running
+			// turn now), "interrupt" (abort the running turn, then send as a new prompt).
+			const mode = b.mode === "steer" || b.mode === "interrupt" ? b.mode : "queue";
 			if (b.lane) {
-				emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: login, lane: b.lane, text: b.text });
+				const name = String(b.lane);
+				emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: login, lane: name, text: b.text, ...(mode === "queue" ? {} : { mode }) });
 				try {
-					if (approvesBudget(String(b.lane), String(b.text ?? ""))) sendToLane(String(b.lane), "/budget-ok");
-					sendToLane(String(b.lane), `[owner via web] ${b.text}`);
+					if (approvesBudget(name, String(b.text ?? ""))) sendToLane(name, "/budget-ok");
+					if (mode === "interrupt" && lanes.get(name)?.status === "working") {
+						abortLane(name);
+						// Let the aborted turn end first, or the message would be steered into it.
+						for (let i = 0; i < 50 && lanes.get(name)?.status === "working"; i++) await Bun.sleep(200);
+					}
+					sendToLane(name, `[owner via web] ${b.text}`);
 				} catch (error) {
 					return json({ error: (error as Error).message }, 409);
 				}
 				return json({ ok: true });
 			}
 			const channel = b.channel === "terminal" ? "terminal" : "web";
-			const event = { ts: now(), kind: "message", source: channel, channel, author: login, text: String(b.text) };
+			const event = { ts: now(), kind: "message", source: channel, channel, author: login, text: String(b.text), ...(mode === "queue" ? {} : { mode }) };
 			emit("inbox", event);
 			if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(channel, event.text);
-			else intake(event, channel);
+			else if (mode === "steer" && orch.status === "working") {
+				steerOrchestrator(inboxText(event));
+				expectReply(channel);
+			} else {
+				if (mode === "interrupt" && orch.status === "working") abortOrchestrator();
+				intake(event, channel);
+			}
 			return json({ ok: true });
 		}
 		if (req.method === "POST" && url.pathname === "/api/send") {
@@ -587,6 +608,7 @@ if (restarted) {
 	const picked = [replayed ? `답 못 한 메시지 ${replayed}개 다시 처리 중` : "", resumedLanes.length ? `이어서 하는 레인: ${resumedLanes.join(", ")}` : ""].filter(Boolean);
 	void out(discord.status.enabled ? "chat" : "web", `게이트웨이 재시작했어요 (${at} KST).${picked.length ? `\n- ${picked.join("\n- ")}` : " 끊긴 작업은 없어요."}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
 }
+startLaneHygiene();
 startSchedules(s => {
 	const channel = discord.status.enabled ? "chat" : "web";
 	const event = { ts: now(), kind: "schedule", source: "schedule", channel, id: s.id, every: s.every_minutes, text: s.text };

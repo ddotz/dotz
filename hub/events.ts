@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { paths } from "./config.ts";
 
 export type HubEvent = { ts: string; kind: string; source: string; text: string; [key: string]: unknown };
@@ -66,6 +66,46 @@ export function activityItems(source: string, limit = ACTIVITY_MAX): Activity[] 
 
 export function recentEvents(limit = 150): HubEvent[] {
 	return recent.slice(-limit);
+}
+
+// Which conversation an event belongs to: "main" (owner <-> the assistant) or "lane:<name>". The web app mirrors this rule
+// for live events, so keep the two in step.
+export function eventTarget(e: HubEvent): string | undefined {
+	if (e.kind === "activity" || e.kind === "subagents") return undefined;
+	const lane = typeof e.lane === "string" ? e.lane : [e.source, e.target, e.channel].find(v => typeof v === "string" && v.startsWith("lane:"))?.slice(5);
+	return lane ? `lane:${lane}` : "main";
+}
+
+// Last HISTORY_TAIL bytes of a jsonl file, parsed; a cut first line is dropped.
+const HISTORY_TAIL = 4 * 1024 * 1024;
+function tailEvents(file: string): HubEvent[] {
+	if (!existsSync(file)) return [];
+	const size = statSync(file).size;
+	const start = Math.max(0, size - HISTORY_TAIL);
+	const buf = Buffer.alloc(size - start);
+	const fd = openSync(file, "r");
+	try {
+		readSync(fd, buf, 0, buf.length, start);
+	} finally {
+		closeSync(fd);
+	}
+	const lines = buf.toString("utf8").split("\n");
+	if (start > 0) lines.shift();
+	const out: HubEvent[] = [];
+	for (const line of lines) {
+		try {
+			out.push(JSON.parse(line));
+		} catch {
+			continue;
+		}
+	}
+	return out;
+}
+
+export function historyEvents(target: string, limit: number): HubEvent[] {
+	const all = [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)].filter(e => typeof e.ts === "string" && eventTarget(e) === target);
+	all.sort((a, b) => a.ts.localeCompare(b.ts));
+	return all.slice(-limit);
 }
 
 export function sseResponse(): Response {
