@@ -203,8 +203,8 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
     Nothing mid-lane, no decisions requested there.
   - alert: failures that need the owner outside any lane (gateway, logins, system). A lane's failure goes to its lane
     channel.
-- Never silent: every owner message gets an answer in the channel that asked, including ones queued while you work
-  (answered in order, each to its own channel). Work that takes more than a minute starts with one note in the asking
+- Never silent: every owner message gets an answer in the channel that asked. A message that arrives mid-turn is
+  steered into that turn: answer it right then with dotz_send to its channel and carry on. Work that takes more than a minute starts with one note in the asking
   channel (what you started, when you will be back). While it runs, update that one message in place at milestones and
   about every 15 minutes if the owner is waiting on it; background or overnight work reports at milestones only. Lane
   progress every 15 minutes is posted by the gateway, not you. Otherwise stay quiet: no FYIs, no polling, no periodic
