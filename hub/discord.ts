@@ -306,11 +306,34 @@ let lastSeen: string = existsSync(SEEN_FILE) ? String(JSON.parse(readFileSync(SE
 const handled = new Set<string>();
 const snowflakeMs = (id: string) => Number((BigInt(id) >> 22n) + 1420070400000n);
 
+// Edits of recent owner messages: the text of each delivered owner message is kept by id so MESSAGE_UPDATE can be delivered
+// as a correction carrying the old text (as 오모냥 does). An edit is delivered once per distinct content.
+const EDIT_WINDOW_MS = 15 * 60_000;
+const recentTexts = new Map<string, string>();
+const remember = (id: string, text: string) => {
+	recentTexts.delete(id);
+	recentTexts.set(id, text);
+	if (recentTexts.size > 500) recentTexts.delete(recentTexts.keys().next().value!);
+};
+
+// Returns the text to deliver for a MESSAGE_UPDATE, or undefined when it is not a fresh owner edit (embed unfurl, same text, too old).
+export function editedText(m: { id: string; content?: unknown; edited_timestamp?: unknown; author?: { id?: unknown; bot?: boolean } }, now = Date.now()): string | undefined {
+	if (m.author?.bot || String(m.author?.id) !== OWNER || !m.edited_timestamp || typeof m.content !== "string") return undefined;
+	if (now - snowflakeMs(m.id) > EDIT_WINDOW_MS) return undefined;
+	const previous = recentTexts.get(m.id);
+	if (previous === m.content) return undefined;
+	remember(m.id, m.content);
+	return `[edited message: the owner changed an earlier message, treat this as a correction, do not answer the original again; previous text: ${JSON.stringify(previous ?? "(unknown)")}]\n${m.content}`;
+}
+
 export function connect(onMessage: (m: Incoming) => void): void {
 	if (!status.enabled) return;
-	const deliverIncoming = (m: any, channel: Incoming["channel"]) => {
-		if (handled.has(m.id)) return;
-		handled.add(m.id);
+	const deliverIncoming = (m: any, channel: Incoming["channel"], edited?: string) => {
+		if (edited === undefined) {
+			if (handled.has(m.id)) return;
+			handled.add(m.id);
+			remember(m.id, String(m.content ?? ""));
+		}
 		if (handled.size > 500) handled.delete(handled.values().next().value!);
 		if (!lastSeen || BigInt(m.id) > BigInt(lastSeen)) {
 			lastSeen = m.id;
@@ -322,7 +345,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 			channelId: m.channel_id,
 			channel,
 			author: m.author.global_name ?? m.author.username,
-			content: String(m.content ?? ""),
+			content: edited ?? String(m.content ?? ""),
 			attachments: (m.attachments ?? []).map((a: any) => ({ name: a.filename, url: a.url, type: a.content_type })),
 			...(ref ? { replyTo: { author: ref.author?.bot ? NAME : (ref.author?.global_name ?? ref.author?.username ?? "?"), content: String(ref.content ?? "").slice(0, 300) } } : {}),
 		});
@@ -363,7 +386,10 @@ export function connect(onMessage: (m: Incoming) => void): void {
 				void catchUp().catch(e => log(`discord catch-up failed: ${e}`));
 			} else if (p.op === 0 && p.t === "RESUMED") status.connected = true;
 			else if (p.op === 0 && p.t === "MESSAGE_CREATE") handle(p.d);
-			else if (p.op === 0 && p.t === "THREAD_DELETE" && channels.threads[p.d.id]) {
+			else if (p.op === 0 && p.t === "MESSAGE_UPDATE") {
+				const edited = editedText(p.d);
+				if (edited !== undefined) handle(p.d, edited);
+			} else if (p.op === 0 && p.t === "THREAD_DELETE" && channels.threads[p.d.id]) {
 				delete channels.threads[p.d.id];
 				save();
 			} else if (p.op === 0 && p.t === "CHANNEL_DELETE" && channels.work[p.d.id]) {
@@ -403,16 +429,16 @@ export function connect(onMessage: (m: Incoming) => void): void {
 		if (missed.length) log(`discord: catching up ${missed.length} owner message(s) sent while offline`);
 		for (const m of missed) handle({ ...m, guild_id: m.guild_id ?? (m.channel_id === channels.dm ? undefined : GUILD) });
 	};
-	const handle = (m: any) => {
+	const handle = (m: any, edited?: string) => {
 		if (m.author?.bot || String(m.author?.id) !== OWNER) return;
 		const lane = Object.entries(channels.lanes).find(([, id]) => id === m.channel_id)?.[0];
 		// chat, worklog and alert are the orchestrator level: owner messages there reach the orchestrator, which routes them.
 		const fixed = lane ? { lane } : m.channel_id === channels.chat ? "chat" : m.channel_id === channels.worklog ? "worklog" : m.channel_id === channels.alert ? "alert" : !m.guild_id ? "dm" : undefined;
 		if (!fixed && m.guild_id === GUILD) {
-			const first = !channels.work[m.channel_id] && !channels.threads[m.channel_id];
+			const first = edited === undefined && !channels.work[m.channel_id] && !channels.threads[m.channel_id];
 			void classify(m.channel_id).then(c => {
-				if (c && "work" in c) deliverIncoming(m, { work: m.channel_id, name: c.work, first });
-				else if (c) deliverIncoming(m, { thread: m.channel_id, name: c.thread });
+				if (c && "work" in c) deliverIncoming(m, { work: m.channel_id, name: c.work, first }, edited);
+				else if (c) deliverIncoming(m, { thread: m.channel_id, name: c.thread }, edited);
 			});
 			return;
 		}
@@ -422,7 +448,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 			channels.dm = m.channel_id;
 			save();
 		}
-		deliverIncoming(m, channel);
+		deliverIncoming(m, channel, edited);
 	};
 	open();
 }
