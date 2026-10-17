@@ -1,5 +1,6 @@
 import type { Subprocess } from "bun";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { availableParallelism, totalmem } from "node:os";
 import { join } from "node:path";
 import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
 import { cfg, IDENTITY_FILE, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, workerModel } from "./config.ts";
@@ -253,10 +254,13 @@ function resumeLane(lane: Lane, text: string): void {
 }
 
 const activeCount = () => [...lanes.values()].filter(l => l.status === "working" || l.status === "starting").length;
+// Concurrent task workers a lane may run, from this machine's cores and memory (an omp worker is a process of a few
+// hundred MB, mostly waiting on the model), capped by omp's task.maxConcurrency default of 8.
+const WORKER_SLOTS = Math.max(2, Math.min(8, Math.floor(availableParallelism() / 2), Math.floor(totalmem() / 2 ** 32)));
 
 function footer(lane: Lane): string {
 	const mode = join(import.meta.dir, "..", "MODE.md");
-	return `\n\n---\n[dotz lane ${lane.name}] You are a lane of ${NAME}: a full omp orchestrator for this folder with one goal. The final message of each turn is your report: ${NAME} relays it and the owner reads it in the lane channel. Keep it to ~800 characters: outcome, changed paths, verification against the Done-when line (run the check yourself), blockers or questions for the owner. The owner may write to you directly. Do not message Discord or other people yourself, and never put secrets in a report. Before you start, read and follow ${mode} (sections Lanes and workers, Reporting, Browser and testing), ${IDENTITY_FILE} (voice) and the owner's standing rules in ${paths.rules} (they override your defaults). Plan and review yourself; run implementation and grind work as task workers (worker model ${laneWorkerModel(lane)} via modelRoles.task), and review a worker's diff yourself before applying or merging it.`;
+	return `\n\n---\n[dotz lane ${lane.name}] You are a lane of ${NAME}: a full omp orchestrator for this folder with one goal. The final message of each turn is your report: ${NAME} relays it and the owner reads it in the lane channel. Keep it to ~800 characters: outcome, changed paths, verification against the Done-when line (run the check yourself), blockers or questions for the owner. The owner may write to you directly. Do not message Discord or other people yourself, and never put secrets in a report. Before you start, read and follow ${mode} (sections Lanes and workers, Reporting, Browser and testing), ${IDENTITY_FILE} (voice) and the owner's standing rules in ${paths.rules} (they override your defaults). Plan and review yourself; run implementation and grind work as task workers (worker model ${laneWorkerModel(lane)} via modelRoles.task), and review a worker's diff yourself before applying or merging it. Do not queue independent slices behind one worker: this machine runs up to ${WORKER_SLOTS} task workers at once, so fan independent slices (different files, or separable sections merged one by one) out in one batch; keep one worker only for work that must be sequential.`;
 }
 
 export function checkBrief(brief: string): string | undefined {
