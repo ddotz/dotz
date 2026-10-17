@@ -35,8 +35,8 @@ too. `bun setup.ts permissions` runs the same step any time and is safe to rerun
 gateway after `launchctl kickstart -k gui/$(id -u)/dev.dotz.gateway`.
 
 Discord: create a dedicated bot in the Developer Portal, enable the MESSAGE CONTENT intent, give its token to setup,
-and invite it with the printed link. The gateway creates two categories: "땃쥐" (대화, 알림) and "땃쥐 작업" (작업로그,
-plus one channel per project, topic or lane, named plainly with no emoji). Every text channel in these two categories
+and invite it with the printed link. The gateway creates two categories: "땃쥐" (the main channels 대화, 알림, 작업로그)
+and "땃쥐 작업" (one channel per project, topic or lane, named plainly with no emoji). Every text channel in these two categories
 is a work channel; threads in them are sub-items. It listens to nothing else, and only the configured owner id can
 command it.
 

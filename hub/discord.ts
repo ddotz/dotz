@@ -28,9 +28,9 @@ export const status = { enabled: Boolean(TOKEN && GUILD && OWNER), connected: fa
 
 // Discord lowercases text channel names and turns spaces into dashes; compare in that form.
 const textName = (s: string) => s.toLowerCase().replace(/\s+/g, "-");
-// Layout follows 오모냥 without emoji: category "<name>" holds 대화 and 알림; category "<name> 작업" holds 작업로그 and one
-// channel per project or topic, named by the project (repo name) or a short Korean noun, with no bot-name prefix.
-const fixed = { chat: { name: "대화", work: false }, alert: { name: "알림", work: false }, worklog: { name: "작업로그", work: true } } as const;
+// Layout follows 오모냥 without emoji: category "<name>" holds the three main channels 대화, 알림 and 작업로그; category
+// "<name> 작업" holds one channel per project, topic or lane, named plainly, with no bot-name prefix.
+const fixed = { chat: "대화", alert: "알림", worklog: "작업로그" } as const;
 const workCategoryName = () => `${NAME} 작업`;
 export const noEmoji = (s: string) => s.replace(/ ?[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]+/gu, "");
 const cleanName = (s: string) => noEmoji(s).replace(/[┃|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 90) || "작업";
@@ -68,10 +68,9 @@ export async function ensureChannels(): Promise<void> {
 	else await place(channels.category, NAME, undefined, false);
 	if (!channels.workCategory || !existing.has(channels.workCategory)) channels.workCategory = (await rest("POST", `/guilds/${GUILD}/channels`, { name: workCategoryName(), type: 4 })).id;
 	else await place(channels.workCategory, workCategoryName(), undefined, false);
-	for (const [key, f] of Object.entries(fixed) as [keyof typeof fixed, (typeof fixed)[keyof typeof fixed]][]) {
-		const parent = f.work ? channels.workCategory : channels.category;
-		if (!channels[key] || !existing.has(channels[key]!)) channels[key] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: f.name, type: 0, parent_id: parent })).id;
-		else await place(channels[key]!, f.name, parent);
+	for (const [key, name] of Object.entries(fixed) as [keyof typeof fixed, string][]) {
+		if (!channels[key] || !existing.has(channels[key]!)) channels[key] = (await rest("POST", `/guilds/${GUILD}/channels`, { name, type: 0, parent_id: channels.category })).id;
+		else await place(channels[key]!, name, channels.category);
 	}
 	// Lane channels keep the owner-facing name they were created or renamed with; only their category is fixed here.
 	for (const [lane, id] of Object.entries(channels.lanes)) {

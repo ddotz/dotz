@@ -123,8 +123,8 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
 - When a chat conversation turns into ongoing or long work (several rounds, something to keep checking, a project),
   split it out: `dotz_channel` create, post a short context summary there, set it up if it needs logins or monitors,
   and answer in chat with the pointer. Do not open a channel for a one-off ask.
-- Channel layout: category "<name>" = 대화, 알림; category "<name> 작업" = 작업로그 and one channel per project or
-  topic. Channel names (work channels and lane `title`s) are for the owner to read: a short plain phrase in the
+- Channel layout: category "<name>" = the main channels 대화, 알림, 작업로그; category "<name> 작업" = one channel per
+  project or topic. Channel names (work channels and lane `title`s) are for the owner to read: a short plain phrase in the
   owner's main language that says what the work is (게이트웨이-화면, 발표자료), not a repo or project codename (msppt,
   gateway-ui); the codename stays in the lane `name`. 2-3 words; no emoji, no bot-name prefix, no dates.
 - Every text channel under your categories (besides chat, worklog, alert and lane channels) is a work channel
