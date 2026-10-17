@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
-import { cfg, IDENTITY_FILE, lanesCompactAt, lanesKeepRecent, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, workerModel } from "./config.ts";
+import { cfg, IDENTITY_FILE, lanesCompactAt, lanesKeepRecent, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, splitThinking, workerModel } from "./config.ts";
 import { abandonCompact, type CompactPort, type Compaction, compactionError, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 
@@ -24,7 +24,7 @@ const DONE_RE = /(done[- ]?when|done\s*=|acceptance|완료\s*조건)/i;
 export type LaneStatus = "starting" | "working" | "idle" | "rate-limited" | "exited";
 // A lane in a git repo works in its own worktree (repo = the owner's checkout, base = the branch it lands on).
 type Worktree = { path: string; repo: string; branch: string; base: string };
-type Record_ = { name: string; cwd: string; model: string; workerModel?: string; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; held?: string[]; worktree?: Worktree };
+type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; held?: string[]; worktree?: Worktree };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	lastText: string;
@@ -64,9 +64,9 @@ export function setProgressHandler(fn: ReportFn): void {
 
 const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
-	const { name, cwd, model, workerModel, status, startedAt, sessionFile, reports, held, worktree } = lane;
+	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, reports, held, worktree } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeFileSync(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}) }, null, 2)}\n`);
+	writeFileSync(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}) }, null, 2)}\n`);
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -283,7 +283,8 @@ function spawn(lane: Lane, resume: boolean): void {
 		stdin: "pipe",
 		stdout: "pipe",
 		stderr: "pipe",
-		env: { ...process.env, DOTZ_LANE: lane.name },
+		// The omp-side orchestrator-guard blocks Fable / max-effort worker spawns unless the owner asked for them.
+		env: { ...process.env, DOTZ_LANE: lane.name, ...(lane.fableOk ? { DOTZ_OWNER_ASKED_FABLE: "1" } : {}) },
 	});
 	lane.proc = proc;
 	lane.quiet = false;
@@ -412,7 +413,23 @@ export function checkBrief(brief: string): string | undefined {
 	return undefined;
 }
 
-export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string): Lane {
+// Fable, or any model at xhigh/max effort, is spent only when the owner asked for it.
+export const isExpensive = (selector: string) => /fable/i.test(selector) || /^(max|xhigh)$/i.test(splitThinking(selector).thinking ?? "");
+
+// Budget gate, same rule as 오모냥: a job is assumed to use `est` % of the 5h window (default 15) and 10% must stay; the week blocks only when nearly gone.
+const DEFAULT_EST = 15;
+// `est` (launch arg) wins over an "Estimate: N%" line in the brief; absent or invalid -> DEFAULT_EST.
+export function estimateOf(est: unknown, brief = ""): number {
+	const n = Number(est ?? /^\s*Estimate:\s*(\d+(?:\.\d+)?)\s*%?/im.exec(brief)?.[1]);
+	return Number.isFinite(n) && n >= 0 && n <= 100 ? n : DEFAULT_EST;
+}
+export function budgetVerdict(five: number | undefined, week: number | undefined, est: number): string | undefined {
+	if (typeof five === "number" && five - est < 10) return `5h window ${five}% left; this job is assumed to use ~${est}%, leaving under 10%`;
+	if (typeof week === "number" && week < 3) return `7d window ${week}% left`;
+	return undefined;
+}
+
+export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string, fableOk?: boolean): Lane {
 	if (!NAME_RE.test(name)) throw new Error("lane name must match [a-z0-9][a-z0-9-]{0,31}");
 	if (!cwd.startsWith("/") || !existsSync(cwd)) throw new Error(`cwd must be an existing absolute path: ${cwd}`);
 	const prior = lanes.get(name);
@@ -423,7 +440,7 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	const selector = model ?? selectorOf(lanesModel());
 	mkdirSync(dir(name), { recursive: true });
 	const place = laneWorktree(name, cwd);
-	const lane: Lane = { name, cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, seq: 0, ctx: newCtx() };
+	const lane: Lane = { name, cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, seq: 0, ctx: newCtx() };
 	lanes.set(name, lane);
 	persist(lane);
 	writeFileSync(join(dir(name), "brief.md"), `${brief}\n`);

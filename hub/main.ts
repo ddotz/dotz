@@ -8,7 +8,7 @@ import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
 import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
-import { abortLane, approvesBudget, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
+import { abortLane, approvesBudget, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator } from "./orchestrator.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { startReflection } from "./reflect.ts";
@@ -242,16 +242,15 @@ const body = async (req: Request) => {
 };
 
 // Lanes are the expensive work, and the omp budget gate only sees task-tool workers, so lane launches check the quota here.
-async function budgetProblem(): Promise<string | undefined> {
+async function budgetProblem(est: number): Promise<string | undefined> {
 	const r = await Bun.$`${OMP} usage --json -p anthropic`.nothrow().quiet().catch(() => undefined);
 	if (!r || r.exitCode !== 0) return undefined;
 	try {
 		const limits: { id: string; amount?: { remaining?: number } }[] = JSON.parse(r.stdout.toString()).reports?.find((x: any) => x.provider === "anthropic")?.limits ?? [];
 		const five = limits.find(l => l.id === "anthropic:5h")?.amount?.remaining;
 		const week = limits.find(l => l.id === "anthropic:7d")?.amount?.remaining;
-		// Same rule as 오모냥: the 5h window gates (15% assumed use, 10% kept); the week blocks only when nearly gone.
-		if (typeof five === "number" && five < 25) return `5h window ${five}% left`;
-		if (typeof week === "number" && week < 3) return `7d window ${week}% left`;
+		// Same rule as 오모냥: the 5h window gates (est % assumed use, default 15, and 10% kept); the week blocks only when nearly gone.
+		return budgetVerdict(five, week, est);
 	} catch {
 		return undefined;
 	}
@@ -582,10 +581,13 @@ const server = Bun.serve({
 				if (req.method === "GET" && parts.length === 2) return json(laneSummary());
 				if (req.method === "POST" && parts.length === 2) {
 					const b = await body(req);
-					if (/fable/i.test(String(b.model ?? "")) && !b.owner_asked_for_fable) return json({ error: "Fable lanes run only when the owner explicitly asks for Fable. Use the default model, or relaunch with owner_asked_for_fable=true after they ask." }, 409);
-					const tight = b.force ? undefined : await budgetProblem();
-					if (tight) return json({ error: `budget gate: ${tight}. Ask the owner (now / after reset / smaller); relaunch with force=true only after they say now.` }, 409);
-					const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined);
+					const asked = Boolean(b.owner_asked_for_fable);
+					const dear = [b.model, b.worker_model].filter(m => m && isExpensive(String(m)));
+					if (dear.length && !asked) return json({ error: `Fable and max/xhigh-effort models (${dear.join(", ")}) run only when the owner explicitly asks for them. Use the defaults, or relaunch with owner_asked_for_fable=true after they ask.` }, 409);
+					const est = estimateOf(b.est, String(b.brief ?? ""));
+					const tight = b.force ? undefined : await budgetProblem(est);
+					if (tight) return json({ error: `budget gate: ${tight}. Ask the owner (now / after reset / smaller); relaunch with force=true only after they say now, or with a smaller est.` }, 409);
+					const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked);
 					const channel = await discord.laneChannel(lane.name, b.title ? String(b.title) : undefined).catch(e => {
 						log(`lane channel failed: ${e}`);
 						return undefined;

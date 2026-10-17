@@ -51,6 +51,10 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
   8000 characters. One task per lane or worker, sized to ~250K context; final answer at most ~800 characters; a
   follow-up is a new worker (`task_send` only for short steering); one blocking wait, never polling. The gateway
   appends the lane contract below.
+- Budget estimate: a brief may carry `Estimate: N%` (the job's expected share of the 5h window; a lane launch also takes
+  `est`). The budget gate (lane launch and worker spawns) assumes 15% without it and keeps 10% free; give small jobs a
+  small estimate instead of asking the owner. Fable or max/xhigh effort (lane, lane worker, task worker) only when the
+  owner asked for it.
 - Parallel workers: independent slices (different files, or separable sections merged one by one) run as parallel
   workers in one batch, up to the machine's slot count the gateway states in the lane contract; never queue them
   behind one worker. One worker only for work that must be sequential.
