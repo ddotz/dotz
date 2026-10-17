@@ -1,0 +1,1308 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FEF7FF">
+<title>dotz</title>
+<script>
+// Theme is applied before first paint: explicit choice (light/dark) or the system setting.
+(() => {
+  const mq = matchMedia("(prefers-color-scheme: dark)");
+  const get = () => { const v = localStorage.getItem("dotz-theme"); return v === "light" || v === "dark" ? v : "system"; };
+  const apply = () => {
+    const p = get(), dark = p === "dark" || (p === "system" && mq.matches);
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.content = dark ? "#141218" : "#FEF7FF";
+  };
+  mq.addEventListener("change", apply);
+  window.dotzTheme = { get, set: v => { if (v === "system") localStorage.removeItem("dotz-theme"); else localStorage.setItem("dotz-theme", v); apply(); } };
+  apply();
+})();
+</script>
+<style>
+/* Material 3 baseline tonal palette, light + dark color roles */
+:root {
+  color-scheme: light;
+  --primary: #6750A4; --on-primary: #FFFFFF; --primary-container: #EADDFF; --on-primary-container: #21005D;
+  --secondary: #625B71; --secondary-container: #E8DEF8; --on-secondary-container: #1D192B;
+  --error: #B3261E; --on-error: #FFFFFF; --error-container: #F9DEDC; --on-error-container: #410E0B;
+  --ok: #1B6D2F; --ok-container: #CBEFCE; --on-ok-container: #002108;
+  --warn: #8A5100; --warn-container: #FFDCBD; --on-warn-container: #2C1600;
+  --surface: #FEF7FF; --on-surface: #1D1B20; --on-surface-variant: #49454F;
+  --surface-container-lowest: #FFFFFF; --surface-container-low: #F7F2FA; --surface-container: #F3EDF7;
+  --surface-container-high: #ECE6F0; --surface-container-highest: #E6E0E9;
+  --outline: #79747E; --outline-variant: #CAC4D0;
+  --inverse-surface: #322F35; --inverse-on-surface: #F5EFF7;
+  --scrim: rgb(0 0 0 / .32);
+  --font: "Roboto Flex", "Roboto", system-ui, -apple-system, "Noto Sans KR", "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --primary: #D0BCFF; --on-primary: #381E72; --primary-container: #4F378B; --on-primary-container: #EADDFF;
+  --secondary: #CCC2DC; --secondary-container: #4A4458; --on-secondary-container: #E8DEF8;
+  --error: #F2B8B5; --on-error: #601410; --error-container: #8C1D18; --on-error-container: #F9DEDC;
+  --ok: #8DD79A; --ok-container: #00531F; --on-ok-container: #CBEFCE;
+  --warn: #FFB86C; --warn-container: #693C00; --on-warn-container: #FFDCBD;
+  --surface: #141218; --on-surface: #E6E0E9; --on-surface-variant: #CAC4D0;
+  --surface-container-lowest: #0F0D13; --surface-container-low: #1D1B20; --surface-container: #211F26;
+  --surface-container-high: #2B2930; --surface-container-highest: #36343B;
+  --outline: #938F99; --outline-variant: #49454F;
+  --inverse-surface: #E6E0E9; --inverse-on-surface: #322F35;
+  --scrim: rgb(0 0 0 / .5);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { font: 400 14px/20px var(--font); letter-spacing: .015em; background: var(--surface); color: var(--on-surface); overflow: hidden; -webkit-text-size-adjust: 100%; }
+button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+button { cursor: pointer; }
+code, pre { font-family: var(--mono); }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+svg.ic { width: 24px; height: 24px; fill: currentColor; flex: none; }
+.sm svg.ic, svg.ic.sm { width: 18px; height: 18px; }
+
+/* state layer: hover / focus / press on every interactive surface */
+.btn, .ib, .chip, .tap, .mi, .seg button, .ni .ind, .sel, .hintchip { position: relative; overflow: hidden; }
+.btn::before, .ib::before, .chip::before, .tap::before, .mi::before, .seg button::before, .ni .ind::before, .sel::before, .hintchip::before { content: ""; position: absolute; inset: 0; background: currentColor; opacity: 0; transition: opacity .15s; pointer-events: none; border-radius: inherit; }
+.btn:hover::before, .ib:hover::before, .chip:hover::before, .tap:hover::before, .mi:hover::before, .seg button:hover::before, .ni:hover .ind::before, .sel:hover::before, .hintchip:hover::before { opacity: .08; }
+.btn:focus-visible::before, .ib:focus-visible::before, .chip:focus-visible::before, .tap:focus-visible::before, .mi:focus-visible::before, .seg button:focus-visible::before, .ni:focus-visible .ind::before, .sel:focus-visible::before, .hintchip:focus-visible::before,
+.btn:active::before, .ib:active::before, .chip:active::before, .tap:active::before, .mi:active::before, .seg button:active::before, .ni:active .ind::before, .sel:active::before, .hintchip:active::before { opacity: .12; }
+button:disabled { opacity: .38; cursor: default; pointer-events: none; }
+
+/* layout: navigation bar (phone) / rail (wide) */
+.app { display: grid; grid-template-columns: 80px minmax(0, 1fr); height: 100vh; height: 100dvh; }
+.rail { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 44px 0 12px; background: var(--surface); }
+.ni { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 80px; border: 0; background: transparent; padding: 0; color: var(--on-surface-variant); font-size: 12px; line-height: 16px; font-weight: 500; }
+.ni .ind { display: grid; place-items: center; width: 56px; height: 32px; border-radius: 16px; transition: background .2s; }
+.ni.on { color: var(--on-surface); }
+.ni.on .ind { background: var(--secondary-container); color: var(--on-secondary-container); }
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.appbar { flex: none; display: flex; align-items: center; gap: 4px; min-height: 64px; padding: max(8px, env(safe-area-inset-top)) 8px 8px 16px; background: var(--surface); transition: background .2s; }
+.appbar.back { padding-left: 4px; }
+.appbar.scrolled { background: var(--surface-container); }
+.appbar h1 { flex: 1; min-width: 0; margin: 0; font: 400 22px/28px var(--font); letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conn { flex: none; height: 24px; padding: 0 8px; border-radius: 8px; background: var(--error-container); color: var(--on-error-container); font-size: 12px; line-height: 24px; font-weight: 500; }
+.views { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.view { max-width: 960px; margin: 0 auto; padding: 8px 16px 32px; }
+.view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
+@media (min-width: 600px) { .view { padding: 8px 24px 32px; } .appbar { padding-left: 24px; } .appbar.back { padding-left: 12px; } }
+@media (max-width: 599px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .main { order: 1; }
+  .rail { order: 2; flex-direction: row; justify-content: space-around; align-items: flex-start; gap: 0; padding: 12px 0 max(16px, env(safe-area-inset-bottom)); background: var(--surface-container); }
+  .ni { flex: 1 1 0; min-width: 0; width: auto; }
+  .ni span.nl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 340px) { .ni .ind { width: 48px; } .ni { font-size: 11px; } }
+
+/* icon button, buttons */
+.ib { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: var(--on-surface-variant); padding: 0; }
+.ib.pri { background: var(--primary); color: var(--on-primary); }
+.ib.tonal { background: var(--secondary-container); color: var(--on-secondary-container); }
+.ib.err { color: var(--error); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 24px; border: 0; border-radius: 20px; background: var(--primary); color: var(--on-primary); font-weight: 500; font-size: 14px; line-height: 20px; letter-spacing: .1px; text-decoration: none; white-space: nowrap; max-width: 100%; }
+.btn svg.ic { width: 18px; height: 18px; margin-left: -8px; }
+.btn.tonal { background: var(--secondary-container); color: var(--on-secondary-container); }
+.btn.text { background: transparent; color: var(--primary); padding: 0 12px; }
+.btn.text svg.ic { margin-left: 0; }
+.btn.outlined { background: transparent; color: var(--primary); box-shadow: inset 0 0 0 1px var(--outline); }
+.btn.danger { background: transparent; color: var(--error); padding: 0 12px; }
+.btn.danger.fill { background: var(--error); color: var(--on-error); padding: 0 24px; }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* cards, lists, tags, progress */
+.col { display: flex; flex-direction: column; gap: 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.card { position: relative; min-width: 0; border-radius: 12px; background: var(--surface-container); padding: 16px; overflow: hidden; }
+.card.tap { cursor: pointer; }
+.card.tap:focus-visible { outline-offset: -2px; }
+.ch { display: flex; align-items: center; gap: 8px; min-height: 32px; margin-bottom: 8px; }
+.ch h3 { flex: 1; min-width: 0; margin: 0; font: 500 16px/24px var(--font); letter-spacing: .15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch .chev { color: var(--on-surface-variant); }
+.big { font: 400 22px/28px var(--font); letter-spacing: 0; overflow-wrap: anywhere; }
+.sup { color: var(--on-surface-variant); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.err-t { color: var(--error); }
+.muted { color: var(--on-surface-variant); }
+.empty { padding: 24px 16px; text-align: center; color: var(--on-surface-variant); }
+.dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--outline); }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--error); }
+.dot.pri { background: var(--primary); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .dot.pri { animation: none; } * { transition: none !important; } }
+.tag { display: inline-flex; align-items: center; flex: none; height: 24px; padding: 0 8px; border-radius: 8px; background: var(--surface-container-highest); color: var(--on-surface-variant); font-size: 12px; line-height: 16px; font-weight: 500; white-space: nowrap; max-width: 100%; }
+.tag.ok { background: var(--ok-container); color: var(--on-ok-container); }
+.tag.warn { background: var(--warn-container); color: var(--on-warn-container); }
+.tag.err { background: var(--error-container); color: var(--on-error-container); }
+.tag.pri { background: var(--primary-container); color: var(--on-primary-container); }
+.row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.row + .row { margin-top: 12px; }
+.row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 14px; }
+.kv .k { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv .v { flex: none; color: var(--on-surface-variant); font-size: 12px; }
+.bar { height: 4px; border-radius: 2px; background: var(--surface-container-highest); overflow: hidden; margin-top: 6px; }
+.bar i { display: block; height: 100%; border-radius: 2px; background: var(--bar, var(--primary)); transition: width .3s; }
+.bar.warn { --bar: var(--warn); } .bar.err { --bar: var(--error); }
+.lim + .lim { margin-top: 14px; }
+.sec { margin: 20px 0 8px 4px; color: var(--on-surface-variant); font: 500 14px/20px var(--font); letter-spacing: .1px; }
+.sec:first-child { margin-top: 4px; }
+.li { display: flex; align-items: center; gap: 16px; min-width: 0; padding: 12px 16px; border-radius: 12px; background: var(--surface-container); color: inherit; text-align: left; width: 100%; border: 0; }
+.li + .li { margin-top: 8px; }
+.li .lead { flex: none; color: var(--on-surface-variant); }
+.li .tx { flex: 1; min-width: 0; }
+.li .hd { font: 400 16px/24px var(--font); letter-spacing: .5px; overflow-wrap: anywhere; }
+.avatar { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--primary-container); color: var(--on-primary-container); font: 500 16px/24px var(--font); text-transform: uppercase; }
+.heads { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.heads .t { font: 500 16px/24px var(--font); letter-spacing: .15px; overflow-wrap: anywhere; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tools-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+
+/* chips */
+.chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 4px 0 12px; min-width: 0; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { display: inline-flex; align-items: center; gap: 8px; flex: none; height: 32px; padding: 0 16px; border: 0; border-radius: 8px; background: transparent; box-shadow: inset 0 0 0 1px var(--outline-variant); color: var(--on-surface-variant); font-weight: 500; font-size: 14px; max-width: 100%; }
+.chip.on { background: var(--secondary-container); color: var(--on-secondary-container); box-shadow: none; padding-left: 8px; }
+.chip svg.ic { width: 18px; height: 18px; }
+.chip .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* filled text field + select field */
+.tf { position: relative; display: block; min-width: 0; background: var(--surface-container-highest); border-radius: 4px 4px 0 0; box-shadow: inset 0 -1px 0 var(--on-surface-variant); transition: box-shadow .15s; }
+.tf:focus-within { box-shadow: inset 0 -2px 0 var(--primary); }
+.tf input { display: block; width: 100%; height: 56px; padding: 24px 16px 8px; border: 0; outline: 0; background: transparent; border-radius: inherit; font-size: 16px; line-height: 24px; letter-spacing: .5px; }
+.tf label, .tf .lb { position: absolute; left: 16px; top: 18px; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--on-surface-variant); font-size: 16px; line-height: 24px; pointer-events: none; transition: top .15s, font-size .15s, line-height .15s; }
+.tf input:focus + label, .tf input:not(:placeholder-shown) + label, .tf .lb { top: 8px; font-size: 12px; line-height: 16px; }
+.tf:focus-within label { color: var(--primary); }
+.sel { display: flex; align-items: flex-end; gap: 8px; width: 100%; height: 56px; padding: 0 12px 8px 16px; border: 0; background: transparent; text-align: left; border-radius: inherit; }
+.sel .val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 24px; letter-spacing: .5px; }
+.sel svg.ic { color: var(--on-surface-variant); margin-bottom: 0; }
+.sel[aria-expanded="true"] { box-shadow: none; }
+.tf:has(.sel[aria-expanded="true"]) { box-shadow: inset 0 -2px 0 var(--primary); }
+.tf:has(.sel[aria-expanded="true"]) .lb { color: var(--primary); }
+.lbl { margin: 16px 0 8px; font: 500 12px/16px var(--font); letter-spacing: .5px; color: var(--on-surface-variant); }
+.lbl:first-child { margin-top: 0; }
+
+/* custom menu (one component for every dropdown) */
+.menu { position: fixed; z-index: 1000; display: flex; flex-direction: column; padding: 8px 0; overflow-y: auto; border-radius: 4px; background: var(--surface-container); box-shadow: 0 2px 6px 2px rgb(0 0 0 / .15), 0 1px 2px rgb(0 0 0 / .3); outline: 0; }
+:root[data-theme="dark"] .menu { background: var(--surface-container-high); }
+.menu .mh { z-index: 2; padding: 12px 16px 4px; color: var(--on-surface-variant); font: 500 12px/16px var(--font); letter-spacing: .5px; position: sticky; top: -8px; background: inherit; }
+.mi { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 8px 16px; border: 0; background: transparent; text-align: left; font-size: 16px; line-height: 24px; letter-spacing: .5px; }
+.mi .ck { flex: none; width: 24px; height: 24px; color: var(--on-surface-variant); }
+.mi .ml { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mi .ml small { display: block; color: var(--on-surface-variant); font-size: 12px; line-height: 16px; }
+.mi.sel-on { background: var(--secondary-container); color: var(--on-secondary-container); }
+.mi.sel-on .ck { color: var(--on-secondary-container); }
+
+/* segmented buttons */
+.seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); border-radius: 12px; overflow: hidden; }
+.seg button { display: flex; align-items: center; justify-content: center; gap: 6px; height: 40px; border: 0; background: transparent; box-shadow: 0 0 0 .5px var(--outline); color: var(--on-surface); font-weight: 500; font-size: 14px; padding: 0 8px; min-width: 0; }
+.seg button.on { background: var(--secondary-container); color: var(--on-secondary-container); }
+.seg button svg.ic { width: 18px; height: 18px; }
+
+/* dialog + snackbar */
+dialog.dlg { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 24px; border: 0; border-radius: 28px; background: var(--surface-container-high); color: var(--on-surface); box-shadow: 0 6px 10px 4px rgb(0 0 0 / .15), 0 2px 3px rgb(0 0 0 / .3); overflow: auto; }
+dialog.dlg::backdrop { background: var(--scrim); }
+.dtitle { margin: 0 0 16px; font: 400 24px/32px var(--font); letter-spacing: 0; overflow-wrap: anywhere; }
+.dbody { display: flex; flex-direction: column; gap: 16px; font-size: 14px; line-height: 20px; color: var(--on-surface-variant); }
+.dbody p { margin: 0; overflow-wrap: anywhere; }
+.dact { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.dact:empty { display: none; }
+.snack { position: fixed; z-index: 2000; left: 50%; bottom: 24px; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px); padding: 14px 16px; border-radius: 4px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; line-height: 20px; box-shadow: 0 3px 5px rgb(0 0 0 / .2); overflow-wrap: anywhere; }
+.snack.bad { background: var(--error-container); color: var(--on-error-container); }
+@media (max-width: 599px) { .snack { bottom: 104px; } }
+
+/* chat */
+.timeline { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
+.msg { align-self: flex-start; max-width: min(100%, 640px); padding: 10px 16px; border-radius: 16px 16px 16px 4px; background: var(--surface-container-high); overflow-wrap: anywhere; min-width: 0; }
+.msg.me { align-self: flex-end; border-radius: 16px 16px 4px 16px; background: var(--primary-container); color: var(--on-primary-container); }
+.msg.cmd { background: var(--surface-container); }
+.mmeta { margin-bottom: 2px; font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
+.msg.me .mmeta { color: inherit; opacity: .7; }
+.msg pre, .box pre { margin: 6px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-container-highest); color: var(--on-surface); font-size: 12.5px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
+.msg pre:first-of-type { margin-top: 0; }
+.msg pre.err, .box pre.err { color: var(--error); }
+.md p { margin: 0 0 6px; } .md p:last-child { margin-bottom: 0; }
+.md ul, .md ol { margin: 0 0 6px; padding-left: 22px; }
+.md code { padding: 1px 5px; border-radius: 4px; background: var(--surface-container-highest); font-size: .92em; }
+.md pre code { padding: 0; background: none; }
+.composer { flex: none; padding: 4px 0 max(12px, env(safe-area-inset-bottom)); }
+.composer .bar2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.hintrow { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-bottom: 8px; }
+.hintrow::-webkit-scrollbar { display: none; }
+.hintchip { flex: none; height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--secondary-container); color: var(--on-secondary-container); font: 500 13px/20px var(--mono); }
+.sendrow { display: flex; align-items: flex-end; gap: 4px; padding: 4px 4px 4px 20px; border-radius: 28px; background: var(--surface-container-high); }
+.sendrow textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; padding: 12px 0; font-size: 16px; line-height: 24px; max-height: 140px; }
+.sendrow .ib { width: 48px; height: 48px; }
+
+/* activity */
+.actbox { position: relative; flex: 1; min-height: 0; margin-bottom: max(12px, env(safe-area-inset-bottom)); }
+.actlist { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 8px; border-radius: 12px; background: var(--surface-container-low); }
+.jump { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); box-shadow: 0 2px 6px rgb(0 0 0 / .25); }
+.a-div { margin: 8px 4px; font-size: 12px; line-height: 16px; color: var(--on-surface-variant); text-align: center; overflow-wrap: anywhere; }
+.a-text { padding: 8px 12px; overflow-wrap: anywhere; }
+.a-time { font-size: 11px; color: var(--on-surface-variant); margin-right: 8px; }
+.a-error { margin: 4px; padding: 8px 12px; border-radius: 8px; background: var(--error-container); color: var(--on-error-container); overflow-wrap: anywhere; }
+details.box { margin: 4px 0; border-radius: 8px; background: var(--surface-container); }
+details.box > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 12px; cursor: pointer; list-style: none; border-radius: 8px; font-size: 13px; line-height: 18px; }
+details.box > summary::-webkit-details-marker { display: none; }
+details.box > summary::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 2px solid var(--on-surface-variant); border-bottom: 2px solid var(--on-surface-variant); transform: rotate(-45deg); transition: transform .15s; }
+details.box[open] > summary::before { transform: rotate(45deg); }
+.tname { flex: none; font-weight: 500; color: var(--primary); }
+.tsum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--on-surface-variant); }
+.tsum:empty { display: none; }
+.sp { flex: 1; }
+.ttime { flex: none; font-size: 11px; color: var(--on-surface-variant); }
+.tstate { flex: none; font-weight: 700; }
+.tstate.ok { color: var(--ok); } .tstate.bad { color: var(--error); }
+details.box .body { padding: 0 12px 10px; }
+details.box .cl { margin: 8px 0 0; font: 500 11px/16px var(--font); letter-spacing: .5px; color: var(--on-surface-variant); }
+details.box .cl.err { color: var(--error); }
+details.think > summary .tname { color: var(--on-surface-variant); }
+details.think .md { padding: 0 12px 10px; color: var(--on-surface-variant); font-size: 13px; }
+.view-note { margin: 12px 0 0; }
+.subline { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 12px; border-radius: 8px; background: var(--primary-container); color: var(--on-primary-container); font-size: 13px; line-height: 18px; cursor: pointer; }
+.subs { flex: none; display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; padding: 6px 8px; border-radius: 12px; background: var(--surface-container); }
+.subrow { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 13px; line-height: 18px; }
+.subrow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subrow.off { opacity: .55; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <nav class="rail" id="nav" aria-label="메뉴"></nav>
+  <div class="main">
+    <header class="appbar" id="appbar">
+      <button class="ib" id="back" type="button" aria-label="뒤로" hidden></button>
+      <h1 id="title">dotz</h1>
+      <span class="conn" id="conn" hidden>연결 끊김</span>
+      <button class="ib" id="theme" type="button" aria-label="화면 모드" aria-haspopup="listbox" aria-expanded="false"></button>
+    </header>
+    <div class="views" id="views">
+      <section class="view" id="v-home" hidden><div class="grid" id="home"></div></section>
+      <section class="view fill" id="v-chat" hidden>
+        <div class="timeline" id="timeline"></div>
+        <div class="composer">
+          <div class="bar2" id="target-bar" hidden></div>
+          <div class="hintrow" id="hints" hidden></div>
+          <form class="sendrow" id="send">
+            <textarea id="text" rows="1" autocomplete="off" placeholder="메시지 또는 /명령" aria-label="메시지"></textarea>
+            <button class="ib pri" type="submit" aria-label="보내기" id="send-btn"></button>
+          </form>
+        </div>
+      </section>
+      <section class="view fill" id="v-activity" hidden>
+        <div class="chips" id="act-src"></div>
+        <div class="subs" id="subs" hidden></div>
+        <div class="actbox">
+          <div class="actlist" id="act-list"></div>
+          <button class="btn tonal jump" id="act-jump" type="button" hidden>맨 아래로</button>
+        </div>
+      </section>
+      <section class="view" id="v-lanes" hidden><div id="lanes"></div></section>
+      <section class="view" id="v-settings" hidden><div id="settings"></div></section>
+      <section class="view" id="v-models" hidden><div id="models"></div></section>
+      <section class="view" id="v-providers" hidden><div id="providers"></div></section>
+      <section class="view" id="v-usage" hidden><div id="usage"></div></section>
+      <section class="view" id="v-context" hidden><div id="context"></div></section>
+    </div>
+  </div>
+</div>
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+// DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
+function el(tag, props, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k === "safeHtml") n.innerHTML = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) n.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return n;
+}
+const clear = n => { while (n.firstChild) n.removeChild(n.firstChild); return n; };
+const enc = encodeURIComponent;
+
+/* ---------- icons (Material Symbols paths) ---------- */
+const ICONS = {
+  home: "M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z",
+  chat: "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z",
+  activity: "M7 2v11h3v9l7-12h-4l4-8z",
+  lanes: "M20 13H3c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h17c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zm0-10H3c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h17c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1z",
+  settings: "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.488.488 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z",
+  back: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
+  send: "M2.01 21L23 12 2.01 3 2 10l15 2-15 2z",
+  refresh: "M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
+  stop: "M6 6h12v12H6z",
+  check: "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+  drop: "M7 10l5 5 5-5z",
+  chev: "M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z",
+  add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
+  theme: "M20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm0-10v8c2.21 0 4-1.79 4-4s-1.79-4-4-4z",
+  usage: "M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z",
+  context: "M15 9H9v6h6V9zm-2 4h-2v-2h2v2zm8-2V9h-2V7c0-1.1-.9-2-2-2h-2V3h-2v2h-2V3H9v2H7c-1.1 0-2 .9-2 2v2H3v2h2v2H3v2h2v2c0 1.1.9 2 2 2h2v2h2v-2h2v2h2v-2h2c1.1 0 2-.9 2-2v-2h2v-2h-2v-2h2zm-4 6H7V7h10v10z",
+  model: "M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z",
+  key: "M12.65 10A5.99 5.99 0 007 6c-3.31 0-6 2.69-6 6s2.69 6 6 6a5.99 5.99 0 005.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z",
+  open: "M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z",
+  down: "M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z",
+  discord: "M20.3 4.4A17 17 0 0016 3l-.2.4a15 15 0 013.6 1.8 13 13 0 00-14.8 0A15 15 0 018.2 3.4L8 3a17 17 0 00-4.3 1.4C1 8.5.3 12.4.6 16.2A17 17 0 005.7 19l1.1-1.8a11 11 0 01-1.7-.8l.4-.3a12 12 0 0011 0l.4.3c-.5.3-1.1.6-1.7.8l1.1 1.8a17 17 0 005.1-2.8c.4-4.400-.6-8.200-3.100-11.800zM8.700 14c-1 0-1.800-.9-1.800-2s.8-2 1.800-2 1.800.9 1.800 2-.8 2-1.800 2zm6.600 0c-1 0-1.800-.9-1.800-2s.8-2 1.800-2 1.800.9 1.800 2-.8 2-1.800 2z",
+};
+const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
+
+/* ---------- formatting ---------- */
+const KST = { timeZone: "Asia/Seoul" };
+const kstTime = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleTimeString("ko-KR", KST); };
+const kstStamp = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleString("ko-KR", { ...KST, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }); };
+function rel(ms) {
+  const d = ms - Date.now(), m = Math.round(Math.abs(d) / 60000);
+  if (d < 0 && m >= 1) return "초기화됨";
+  if (m < 1) return "곧 초기화";
+  const s = m < 60 ? `${m}분` : m < 48 * 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${Math.round(m / 1440)}일`;
+  return `${s} 후 초기화`;
+}
+const oneLine = s => String(s).replace(/\s+/g, " ").trim().slice(0, 160);
+const num = n => Number(n || 0).toLocaleString("ko-KR");
+
+/* ---------- basic markdown (input is escaped before any markup is produced) ---------- */
+function inline(s) {
+  return String(s).split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code>${esc(p.slice(1, -1))}</code>` : esc(p).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>")).join("");
+}
+function blocks(text) {
+  const html = [];
+  let list = null, para = [];
+  const flushP = () => { if (para.length) html.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; };
+  const flushL = () => { if (list) html.push(`<${list.t}>${list.items.map(i => `<li>${inline(i)}</li>`).join("")}</${list.t}>`); list = null; };
+  for (const line of text.split("\n")) {
+    let m;
+    if ((m = line.match(/^\s*[-*•]\s+(.*)/))) { flushP(); if (!list || list.t !== "ul") { flushL(); list = { t: "ul", items: [] }; } list.items.push(m[1]); }
+    else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) { flushP(); if (!list || list.t !== "ol") { flushL(); list = { t: "ol", items: [] }; } list.items.push(m[1]); }
+    else if ((m = line.match(/^#{1,6}\s+(.*)/))) { flushP(); flushL(); html.push(`<p><b>${inline(m[1])}</b></p>`); }
+    else if (!line.trim()) { flushP(); flushL(); }
+    else { flushL(); para.push(line); }
+  }
+  flushP(); flushL();
+  return html.join("");
+}
+function mdHtml(src) {
+  const parts = String(src ?? "").split(/```[^\n`]*\n?([\s\S]*?)(?:```|$)/);
+  return parts.map((p, i) => i % 2 ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : blocks(p)).join("");
+}
+const mdNode = (src, cls = "md") => el("div", { class: cls, safeHtml: mdHtml(src) });
+
+/* ---------- api ---------- */
+async function api(path, method = "GET", body) {
+  const r = await fetch(path, { method, headers: body !== undefined ? { "Content-Type": "application/json" } : undefined, body: body !== undefined ? JSON.stringify(body) : undefined });
+  let data = null;
+  try { data = await r.json(); } catch {}
+  if (!r.ok) throw Object.assign(new Error((data && data.error) || `HTTP ${r.status}`), { data });
+  return data;
+}
+async function busy(btn, fn) {
+  if (btn) btn.disabled = true;
+  try { return await fn(); } catch (e) { toast(e.message, true); } finally { if (btn) btn.disabled = false; }
+}
+
+/* ---------- snackbar ---------- */
+let toastTimer;
+function toast(msg, bad) {
+  document.querySelectorAll(".snack").forEach(n => n.remove());
+  const n = el("div", { class: `snack${bad ? " bad" : ""}`, role: "status", text: msg });
+  (document.querySelector("dialog[open]") || document.body).append(n);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => n.remove(), bad ? 6000 : 3500);
+}
+
+/* ---------- dialog ---------- */
+function dialog({ title, body, actions = [], onclose }) {
+  const d = el("dialog", { class: "dlg" });
+  const bodyBox = el("div", { class: "dbody" }, body);
+  const actBox = el("div", { class: "dact" });
+  d.append(el("h2", { class: "dtitle", text: title }), bodyBox, actBox);
+  const h = { node: d, body: bodyBox, close: () => d.close(), setActions };
+  function setActions(list) {
+    clear(actBox).append(...list.map(a => el("button", { type: "button", class: `btn ${a.kind || "text"}`, onclick: ev => a.onclick && a.onclick(h.close, ev.currentTarget) }, a.label)));
+  }
+  setActions(actions);
+  d.addEventListener("close", () => { closeMenu(false); d.remove(); if (onclose) onclose(); });
+  d.addEventListener("cancel", ev => { if (openMenu) ev.preventDefault(); });
+  document.body.append(d);
+  d.showModal();
+  return h;
+}
+function ask(title, text, ok = "확인", danger = false) {
+  return new Promise(res => {
+    let v = false;
+    dialog({ title, body: text ? el("p", { text }) : null, onclose: () => res(v), actions: [
+      { label: "취소", onclick: c => c() },
+      { label: ok, kind: danger ? "danger" : "text", onclick: c => { v = true; c(); } }] });
+  });
+}
+
+/* ---------- menu: the single dropdown component ---------- */
+let openMenu = null;
+function closeMenu(restore = true) {
+  if (!openMenu) return;
+  const m = openMenu; openMenu = null;
+  m.node.remove();
+  for (const [t, f, o] of m.listeners) t.removeEventListener(f.type, f.fn, o);
+  m.anchor.setAttribute("aria-expanded", "false");
+  if (restore && m.anchor.isConnected) m.anchor.focus();
+}
+// items: [{value, label, sub?}] or [{header}]. onPick(value) runs after the menu closes.
+function showMenu(anchor, items, { value, onPick }) {
+  if (openMenu && openMenu.anchor === anchor) { closeMenu(); return; }
+  closeMenu(false);
+  const node = el("div", { class: "menu", role: "listbox", tabindex: "-1" });
+  const opts = [];
+  for (const it of items) {
+    if (it.header != null) { node.append(el("div", { class: "mh", role: "presentation", text: it.header })); continue; }
+    const on = it.value === value;
+    const b = el("button", { type: "button", role: "option", class: `mi${on ? " sel-on" : ""}`, "aria-selected": on ? "true" : "false", tabindex: "-1", onclick: () => { closeMenu(); onPick(it.value); } },
+      on ? icon("check", "ck") : el("span", { class: "ck" }),
+      el("span", { class: "ml" }, it.label, it.sub ? el("small", { text: it.sub }) : null));
+    b._label = String(it.label).toLowerCase();
+    opts.push(b); node.append(b);
+  }
+  const host = anchor.closest("dialog") || document.body;
+  host.append(node);
+  const r = anchor.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
+  node.style.minWidth = `${Math.max(112, r.width)}px`;
+  node.style.maxWidth = `${vw - 16}px`;
+  const below = vh - r.bottom - 12, above = r.top - 12;
+  const up = below < 220 && above > below;
+  node.style.maxHeight = `${Math.min(400, up ? above : below)}px`;
+  const w = node.offsetWidth, h = node.offsetHeight;
+  let left = r.left;
+  if (left + w > vw - 8) left = Math.max(8, r.right - w);
+  node.style.left = `${left}px`;
+  node.style.top = `${Math.max(8, up ? r.top - h - 4 : r.bottom + 4)}px`;
+  anchor.setAttribute("aria-expanded", "true");
+  const focusAt = i => { const o = opts[Math.max(0, Math.min(opts.length - 1, i))]; if (o) { o.focus(); o.scrollIntoView({ block: "nearest" }); } };
+  const start = opts.findIndex(o => o.getAttribute("aria-selected") === "true");
+  focusAt(start < 0 ? 0 : start);
+  const sel = opts[start]; if (sel) node.scrollTop = Math.max(0, sel.offsetTop - node.clientHeight / 2);
+  let typed = "", typedTimer;
+  const keydown = ev => {
+    const cur = opts.indexOf(document.activeElement);
+    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); closeMenu(); }
+    else if (ev.key === "ArrowDown") { ev.preventDefault(); focusAt(cur + 1); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); focusAt(cur < 0 ? 0 : cur - 1); }
+    else if (ev.key === "Home") { ev.preventDefault(); focusAt(0); }
+    else if (ev.key === "End") { ev.preventDefault(); focusAt(opts.length - 1); }
+    else if (ev.key === "Tab") closeMenu(false);
+    else if (ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+      clearTimeout(typedTimer); typed += ev.key.toLowerCase(); typedTimer = setTimeout(() => { typed = ""; }, 700);
+      const i = opts.findIndex(o => o._label.startsWith(typed));
+      if (i >= 0) focusAt(i);
+    }
+  };
+  const outside = ev => { if (!node.contains(ev.target) && !anchor.contains(ev.target)) closeMenu(false); };
+  const onScroll = ev => { if (!node.contains(ev.target)) closeMenu(false); };
+  const onResize = () => closeMenu(false);
+  const L = [[document, { type: "keydown", fn: keydown }, true], [document, { type: "pointerdown", fn: outside }, true], [window, { type: "scroll", fn: onScroll }, true], [window, { type: "resize", fn: onResize }, false]];
+  for (const [t, f, o] of L) t.addEventListener(f.type, f.fn, o);
+  openMenu = { node, anchor, listeners: L };
+}
+function selectField(label, text, items, value, onPick) {
+  const b = el("button", { type: "button", class: "sel", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `${label}: ${text}` },
+    el("span", { class: "lb", text: label }), el("span", { class: "val", text }), icon("drop"));
+  b.addEventListener("click", () => showMenu(b, typeof items === "function" ? items() : items, { value, onPick }));
+  return el("div", { class: "tf" }, b);
+}
+function textField(label, input) {
+  return el("div", { class: "tf" }, input, el("label", { text: label, for: input.id }));
+}
+let fieldSeq = 0;
+const input = (opts = {}) => el("input", { id: `f${++fieldSeq}`, placeholder: " ", autocomplete: "off", autocapitalize: "off", spellcheck: "false", ...opts });
+
+/* ---------- state ---------- */
+let S = null;          // /api/state (no events)
+let M = null;          // /api/models
+let P = null;          // /api/providers
+let botName = "dotz";
+let current = "home", prevView = null;
+const NAV = [["home", "홈"], ["chat", "채팅"], ["activity", "활동"], ["lanes", "레인"], ["settings", "설정"]];
+const SUB = new Set(["models", "providers", "usage", "context"]);
+const views = ["home", "chat", "activity", "lanes", "settings", "models", "providers", "usage", "context"];
+const titles = { home: "홈", chat: "채팅", activity: "활동", lanes: "레인", settings: "설정", models: "모델", providers: "공급자", usage: "사용량", context: "컨텍스트" };
+const laneAlive = l => l.status !== "exited";
+const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/exit|dead|error|fail|stop/.test(s || "") ? "err" : "");
+const statusKo = s => ({ working: "작업 중", idle: "대기", "rate-limited": "한도 제한", exited: "종료됨" })[s] || s || "알 수 없음";
+const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
+const modelName = sel => { if (!sel) return "–"; const a = ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
+
+/* ---------- chrome: nav, theme, back ---------- */
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id) }, el("span", { class: "ind" }, icon(id)), el("span", { class: "nl", text: label })));
+$("#theme").append(icon("theme"));
+$("#send-btn").append(icon("send"));
+$("#back").append(icon("back"));
+const THEME_ITEMS = [{ value: "system", label: "시스템" }, { value: "light", label: "라이트" }, { value: "dark", label: "다크" }];
+const themeLabel = () => THEME_ITEMS.find(t => t.value === dotzTheme.get()).label;
+const themeMenu = anchor => showMenu(anchor, THEME_ITEMS, { value: dotzTheme.get(), onPick: v => { dotzTheme.set(v); if (current === "settings") renderSettings(); } });
+$("#theme").onclick = ev => themeMenu(ev.currentTarget);
+const backTarget = () => SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : null;
+$("#back").onclick = () => go(backTarget() || "home");
+$("#views").addEventListener("scroll", ev => $("#appbar").classList.toggle("scrolled", ev.currentTarget.scrollTop > 2), { passive: true });
+
+function go(name) {
+  closeMenu(false);
+  if (!views.includes(name)) name = "home";
+  if (name !== current) prevView = current;
+  current = name;
+  if (location.hash !== `#${name}`) history.replaceState(null, "", `#${name}`);
+  for (const v of views) $(`#v-${v}`).hidden = v !== name;
+  const back = backTarget();
+  document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === (back || name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
+  $("#back").hidden = !back;
+  $("#appbar").classList.toggle("back", !!back);
+  $("#title").textContent = name === "home" ? botName : titles[name];
+  $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
+  if (name === "home") { renderHome(); loadHomeData(); }
+  if (name === "chat") scrollChat(true);
+  if (name === "activity") openActivity();
+  if (name === "lanes") { laneSig = ""; renderLanes(); }
+  if (name === "settings") { renderSettings(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); }
+  if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
+  if (name === "providers") loadProviders();
+  if (name === "usage") loadQuota();
+  if (name === "context") loadContext();
+}
+window.addEventListener("hashchange", () => go(location.hash.slice(1)));
+
+/* ---------- shared bits ---------- */
+const limitFrac = l => l.limit ? Math.max(0, Math.min(1, l.remaining != null ? l.remaining / l.limit : 1 - (l.used || 0) / l.limit)) : null;
+function limitTone(l) {
+  const st = String(l.status || "").toLowerCase(), f = limitFrac(l);
+  if (/exhaust|reach|over|critical|block|deni|limit_hit|full/.test(st) || (f != null && f <= .1)) return "err";
+  if (/warn|low|near|high/.test(st) || (f != null && f <= .3)) return "warn";
+  return "";
+}
+const bar = l => { const f = limitFrac(l); return f == null ? null : el("div", { class: `bar ${limitTone(l)}`, role: "progressbar", "aria-valuenow": Math.round(f * 100), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${(f * 100).toFixed(1)}%` })); };
+const pctText = l => { const f = limitFrac(l); return f == null ? "–" : `${Math.round(f * 100)}% 남음`; };
+const limitLabel = (p, l, multi) => `${multi ? `${providerName(p.provider)} · ` : ""}${l.label || l.id}`;
+const isConnected = p => p.auth && p.auth !== "none";
+const needsAttention = p => p.in_use && !isConnected(p);
+const emptyNode = t => el("div", { class: "card empty", text: t });
+
+
+/* ---------- subagents: live progress per source ---------- */
+let SUBS = {};
+const subKo = { running: "진행 중", done: "완료", failed: "실패", aborted: "중단됨" };
+const subTone = s => ({ running: "pri", done: "ok", failed: "err", aborted: "warn" })[s] || "";
+const runningSubs = src => (SUBS[src] || []).filter(s => s.status === "running");
+function setSubs(source, items) {
+  if (!source) return;
+  SUBS[source] = Array.isArray(items) ? items : [];
+  if (current === "home") renderHome();
+  if (current === "activity" && source === actSource) renderSubs();
+}
+async function loadSubs() {
+  try { const r = await api("/api/subagents"); SUBS = (r && r.sources) || {}; } catch { return; }
+  if (current === "home") renderHome();
+  if (current === "activity") renderSubs();
+}
+function subLine(src) {
+  const n = runningSubs(src).length;
+  if (!n) return null;
+  return el("div", { class: "subline", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSource(src); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSource(src); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
+}
+function laneSubLine() {
+  const srcs = Object.keys(SUBS).filter(k => k.startsWith("lane:") && runningSubs(k).length);
+  if (!srcs.length) return null;
+  const n = srcs.reduce((a, k) => a + runningSubs(k).length, 0);
+  return el("div", { class: "subline", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSource(srcs[0]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSource(srcs[0]); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
+}
+function openSource(src) { actSource = src; $("#act-src").dataset.sig = ""; go("activity"); }
+function renderSubs() {
+  const box = $("#subs");
+  const list = [...(SUBS[actSource] || [])].sort((a, b) => (a.status === "running" ? 0 : 1) - (b.status === "running" ? 0 : 1) || (b.updated_at || 0) - (a.updated_at || 0));
+  box.hidden = !list.length;
+  clear(box).append(...list.slice(0, 6).map(s => el("div", { class: `subrow${s.status === "running" ? "" : " off"}` },
+    el("span", { class: "nm" }, el("b", { text: s.description || s.agent || "서브에이전트" }), s.status === "running" && (s.intent || s.tool) ? el("span", { class: "muted", text: ` · ${firstLine(s.intent || s.tool)}` }) : null),
+    el("span", { class: `tag ${subTone(s.status)}`, text: subKo[s.status] || s.status }))));
+  if (list.length > 6) box.append(el("div", { class: "sup", style: "padding:4px 8px", text: `외 ${list.length - 6}개` }));
+}
+
+/* ---------- home: every status at a glance, each card navigates ---------- */
+let HQ = null, homeTimer;
+async function loadHomeData() {
+  clearTimeout(homeTimer);
+  await Promise.all([
+    api("/api/quota").then(q => { HQ = q; }, () => { HQ = { error: true }; }),
+    loadProviderData().catch(() => {}),
+  ]);
+  if (current === "home") { renderHome(); homeTimer = setTimeout(loadHomeData, 60000); }
+}
+function tapCard(to, ...kids) {
+  const c = el("div", { class: "card tap", role: "link", tabindex: "0", onclick: () => go(to), onkeydown: ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === c) { ev.preventDefault(); go(to); } } }, ...kids);
+  return c;
+}
+const cardHead = (title, ...extra) => el("div", { class: "ch" }, el("h3", { text: title }), ...extra, icon("chev", "chev"));
+function renderHome() {
+  const box = $("#home");
+  if (!box || current !== "home") return;
+  $("#title").textContent = botName;
+  const o = (S && S.orchestrator) || {};
+  const lanes = S ? S.lanes : [];
+
+  // assistant
+  const om = M && M.orchestrator;
+  const stText = o.status === "rate-limited" && o.rateLimitedUntil ? `${statusKo(o.status)} · ${kstTime(o.rateLimitedUntil)}까지` : statusKo(o.status);
+  const stop = o.status === "working" ? el("button", { class: "ib err", type: "button", "aria-label": "중단", title: "중단", onclick: ev => { ev.stopPropagation(); abortOrch(ev.currentTarget); } }, icon("stop")) : null;
+  const assistant = tapCard("models",
+    el("div", { class: "ch" }, el("span", { class: `dot ${statusTone(o.status)}` }), el("h3", { text: botName }), el("span", { class: `tag ${statusTone(o.status) === "pri" ? "pri" : statusTone(o.status)}`, text: S ? stText : "연결 중" }), icon("chev", "chev")),
+    el("div", { class: "big", text: om ? modelName(om.model) : "…" }),
+    el("div", { class: "sup", text: om && om.thinking ? `thinking ${om.thinking}` : "\u00a0" }),
+    subLine("orchestrator"),
+    el("div", { class: "btns", style: "justify-content:flex-end;margin-top:4px" }, stop,
+      el("button", { class: "ib", type: "button", "aria-label": "재시작", title: "재시작", onclick: ev => { ev.stopPropagation(); restartOrch(ev.currentTarget); } }, icon("refresh"))));
+
+  // usage
+  const usage = tapCard("usage", cardHead("사용량"));
+  if (!HQ) usage.append(el("div", { class: "sup", text: "불러오는 중…" }));
+  else if (HQ.error) usage.append(el("div", { class: "sup err-t", text: "사용량을 불러오지 못했어요" }));
+  else {
+    const provs = (HQ.providers || []).filter(p => (p.limits || []).length), multi = provs.length > 1;
+    const all = provs.flatMap(p => p.limits.map(l => [p, l]));
+    for (const [p, l] of all.slice(0, 5)) usage.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: limitLabel(p, l, multi) }), el("span", { class: "v", text: pctText(l) })), bar(l)));
+    if (all.length > 5) usage.append(el("div", { class: "sup", style: "margin-top:12px", text: `외 ${all.length - 5}개` }));
+    if (!all.length) usage.append(el("div", { class: "sup", text: "표시할 사용량이 없어요" }));
+  }
+
+  // lanes
+  const alive = lanes.filter(laneAlive);
+  const lanesCard = tapCard("lanes", cardHead("레인", el("span", { class: "tag", text: `${alive.length}/${lanes.length}` })));
+  if (!lanes.length) lanesCard.append(el("div", { class: "sup", text: "레인 없음" }));
+  for (const l of lanes.slice(0, 3)) lanesCard.append(el("div", { class: "row" }, el("span", { class: `dot ${statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), el("span", { class: "sup", text: statusKo(l.status) })));
+  if (lanes.length > 3) lanesCard.append(el("div", { class: "sup", style: "margin-top:12px", text: `외 ${lanes.length - 3}개` }));
+  const lsl = laneSubLine();
+  if (lsl) lanesCard.append(lsl);
+
+  // providers
+  const plist = (P && P.providers) || [];
+  const issues = plist.filter(needsAttention), ok = plist.filter(isConnected);
+  const provCard = tapCard("providers", cardHead("공급자", issues.length ? el("span", { class: "tag err", text: `확인 필요 ${issues.length}` }) : null, P ? el("span", { class: "tag", text: `${ok.length}개 연결` }) : null));
+  if (!P) provCard.append(el("div", { class: "sup", text: "불러오는 중…" }));
+  else if (!plist.length) provCard.append(el("div", { class: "sup", text: "연결된 공급자 없음" }));
+  const shown = [...issues, ...ok.filter(p => !issues.includes(p))].slice(0, 3);
+  for (const p of shown) provCard.append(el("div", { class: "row" }, el("span", { class: `dot ${needsAttention(p) ? "err" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: needsAttention(p) ? "로그인 필요" : p.account || (p.auth === "api_key" ? "API 키" : "로그인됨") })));
+  if (plist.length > 3 && shown.length === 3) provCard.append(el("div", { class: "sup", style: "margin-top:12px", text: `외 ${Math.max(0, plist.length - 3)}개` }));
+
+  clear(box).append(assistant, ctxHomeCard(), usage, lanesCard, provCard);
+}
+
+/* ---------- assistant actions ---------- */
+const restartOrch = btn => busy(btn, async () => {
+  if (!await ask("어시스턴트 재시작", "작업 중인 내용이 있으면 멈춰요.", "재시작")) return;
+  await api("/api/orchestrator/restart", "POST", {});
+  toast("재시작을 요청했어요");
+  refreshState();
+});
+const abortOrch = btn => busy(btn, async () => {
+  await api("/api/orchestrator/abort", "POST", {});
+  toast("작업을 중단했어요");
+  refreshState();
+});
+
+/* ---------- chat ---------- */
+const timeline = $("#timeline");
+let chatStick = true, chatTarget = "";
+timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; });
+function scrollChat(force) {
+  if (force || chatStick) requestAnimationFrame(() => { timeline.scrollTop = timeline.scrollHeight; chatStick = true; });
+}
+function chatBubble({ mine, meta, text, cmd, error }) {
+  const body = cmd ? el("pre", { text }) : mine ? el("div", { class: "md", style: "white-space:pre-wrap", text }) : mdNode(text);
+  const n = el("div", { class: `msg${mine ? " me" : ""}${cmd ? " cmd" : ""}` }, el("div", { class: "mmeta", text: meta }), body);
+  if (error) n.querySelector("pre, .md").classList.add("err");
+  timeline.append(n);
+  while (timeline.children.length > 400) timeline.firstChild.remove();
+  scrollChat();
+}
+function addChat(e) {
+  if (e.kind === "activity") return;
+  const mine = e.kind === "message" || e.kind === "lane_message";
+  const who = e.kind === "lane_report" ? e.lane : e.kind === "lane_message" ? `→ ${e.lane}` : e.kind === "out" ? botName : e.kind === "message" ? (e.author ?? "나") : e.kind === "schedule" ? "예약" : e.kind === "watch" ? "감시" : "";
+  chatBubble({ mine, meta: [kstStamp(e.ts), who].filter(Boolean).join(" · "), text: String(e.text ?? "") });
+}
+const COMMANDS = [["/help", ""], ["/status", ""], ["/context", ""], ["/compact", ""], ["/lanes", ""], ["/model", ""], ["/effort", ""], ["/restart", ""], ["/stop", ""], ["/resume", ""], ["/abort", ""], ["/providers", ""], ["/quota", ""]];
+let hintList = COMMANDS, helpLoaded = false;
+async function loadHelp() {
+  if (helpLoaded) return;
+  helpLoaded = true;
+  try {
+    const r = await api("/api/command", "POST", { text: "/help" });
+    const seen = new Set(), found = [];
+    for (const line of String(r.output || "").split("\n")) {
+      const m = line.match(/^\s*[-*•]?\s*`?(\/[a-z][\w-]*)`?\s*(.*)$/i);
+      if (m && !seen.has(m[1])) { seen.add(m[1]); found.push([m[1], m[2].replace(/^[-–—:]\s*/, "").replace(/`/g, "")]); }
+    }
+    if (found.length >= 3) hintList = found;
+  } catch { helpLoaded = false; }
+  updateHints();
+}
+function updateHints() {
+  const v = $("#text").value, box = $("#hints");
+  if (!v.startsWith("/") || /\s/.test(v)) { box.hidden = true; return; }
+  const list = hintList.filter(([c]) => c.startsWith(v.toLowerCase()));
+  if (!list.length) { box.hidden = true; return; }
+  clear(box).append(...list.map(([c, d]) => el("button", { class: "hintchip", type: "button", title: d || null, onclick: () => { const t = $("#text"); t.value = `${c} `; t.focus(); updateHints(); autosize(); } }, c)));
+  box.hidden = false;
+}
+const ta = $("#text");
+function autosize() { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`; }
+ta.addEventListener("input", () => { autosize(); if (ta.value.startsWith("/")) loadHelp(); updateHints(); });
+ta.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing || ev.keyCode === 229) return;
+  if (matchMedia("(pointer: coarse)").matches) return;
+  ev.preventDefault();
+  sendChat();
+});
+$("#send").onsubmit = ev => { ev.preventDefault(); sendChat(); };
+async function sendChat() {
+  const text = ta.value.trim();
+  if (!text) return;
+  const lane = chatTarget;
+  ta.value = ""; autosize(); updateHints();
+  if (text.startsWith("/")) {
+    chatBubble({ mine: true, meta: `${kstStamp(Date.now())} · 명령`, text });
+    try {
+      const r = await api("/api/command", "POST", { text });
+      chatBubble({ cmd: true, meta: kstStamp(Date.now()), text: String(r.output ?? "") });
+      if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
+    } catch (e) { chatBubble({ cmd: true, error: true, meta: kstStamp(Date.now()), text: e.message }); }
+    return;
+  }
+  try { await api("/api/message", "POST", lane ? { text, lane } : { text }); }
+  catch (e) { toast(e.message, true); ta.value = text; autosize(); }
+}
+function renderTarget() {
+  const bar = $("#target-bar");
+  const alive = (S ? S.lanes : []).filter(laneAlive);
+  if (!alive.some(l => l.name === chatTarget)) chatTarget = "";
+  bar.hidden = !alive.length;
+  if (!alive.length) { clear(bar); return; }
+  if (openMenu && bar.contains(openMenu.anchor)) return;
+  const b = el("button", { type: "button", class: "chip", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": "받는 곳" }, el("span", { class: "tx", text: `받는 곳 · ${chatTarget || botName}` }), icon("drop"));
+  b.onclick = () => showMenu(b, [{ value: "", label: botName }, ...alive.map(l => ({ value: l.name, label: l.name }))], { value: chatTarget, onPick: v => { chatTarget = v; renderTarget(); } });
+  clear(bar).append(b);
+}
+
+/* ---------- state refresh ---------- */
+function setConn(ok) { $("#conn").hidden = ok; }
+async function refreshState() {
+  try {
+    S = await api("/api/state?limit=0");
+    setConn(true);
+    if (S.name && S.name !== botName) { botName = S.name; document.title = botName; if (current === "home") $("#title").textContent = botName; }
+    renderTarget(); renderActSources();
+    if (current === "lanes") renderLanes();
+    if (current === "home") renderHome();
+    if (current === "settings") renderSettings();
+    loadContext(true);
+  } catch { setConn(false); }
+}
+let stateTimer;
+const scheduleState = () => { clearTimeout(stateTimer); stateTimer = setTimeout(refreshState, 800); };
+
+/* ---------- activity ---------- */
+let actSource = "orchestrator";
+let actItems = [];
+let actSeen = new Set();
+let actLoading = false, actQueue = [];
+let actStick = true;
+let actCtx = { calls: new Map() };
+const actList = $("#act-list");
+const actKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
+$("#act-jump").prepend(icon("down"));
+actList.addEventListener("scroll", () => { actStick = actList.scrollTop + actList.clientHeight >= actList.scrollHeight - 40; $("#act-jump").hidden = actStick; });
+$("#act-jump").onclick = () => { actStick = true; actList.scrollTop = actList.scrollHeight; $("#act-jump").hidden = true; };
+function renderActSources() {
+  const box = $("#act-src");
+  const lanes = S ? S.lanes : [];
+  const srcs = [["orchestrator", botName], ...lanes.map(l => [`lane:${l.name}`, l.name])];
+  if (!srcs.some(s => s[0] === actSource)) srcs.push([actSource, actSource.replace(/^lane:/, "")]);
+  const sig = JSON.stringify([srcs, actSource]);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  clear(box).append(...srcs.map(([id, label]) => el("button", { class: `chip${id === actSource ? " on" : ""}`, type: "button", "aria-pressed": id === actSource, onclick: () => { actSource = id; renderActSources(); openActivity(); } }, id === actSource ? icon("check") : null, el("span", { class: "tx", text: label }))));
+}
+// Collapsed tool row label: the intent the model gave (`i`), else the first line of the command/path. Code stays in the body.
+function toolLabel(a) {
+  if (a.intent) return firstLine(a.intent);
+  // The server's text is "<tool>: <label>", built from the full (untruncated) args, so it still has the intent when args were cut.
+  const pre = `${a.tool}: `;
+  if (a.tool && typeof a.text === "string" && a.text.startsWith(pre)) return firstLine(a.text.slice(pre.length));
+  const args = a.args;
+  if (!args) return "";
+  const keys = ["i", "intent", "command", "cmd", "path", "file_path", "pattern", "query", "url"];
+  let o;
+  try { o = JSON.parse(args); } catch {
+    for (const k of keys) {
+      const m = String(args).match(new RegExp(`"${k}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`));
+      if (m) return firstLine(m[1].replace(/\\n/g, "\n").replace(/\\"/g, '"'));
+    }
+    return "";
+  }
+  if (o && typeof o === "object") for (const k of keys) if (typeof o[k] === "string" && o[k]) return firstLine(o[k]);
+  return "";
+}
+const firstLine = s => { const l = String(s).trim().split("\n")[0].trim(); return l.length > 90 ? `${l.slice(0, 89)}…` : l; };
+function fillResult(rec, a) {
+  rec.state.textContent = a.is_error ? "✗" : "✓";
+  rec.state.className = `tstate ${a.is_error ? "bad" : "ok"}`;
+  rec.body.append(el("div", { class: `cl${a.is_error ? " err" : ""}`, text: a.is_error ? "결과 (오류)" : "결과" }), el("pre", { class: a.is_error ? "err" : "" }, el("code", { text: String(a.text ?? "") })));
+}
+function toolBox(a, tool, withState) {
+  const state = el("span", { class: "tstate", text: withState ? "…" : "" });
+  const body = el("div", { class: "body" });
+  const label = toolLabel(a);
+  // collapsed row reads "tool · intent"; code and results live only in the expansion
+  const node = el("details", { class: "box" },
+    el("summary", {}, el("span", { class: "tname", text: tool || "tool" }), label ? el("span", { class: "tsum", text: `· ${label}` }) : null, el("span", { class: "sp" }), el("span", { class: "ttime", text: kstTime(a.ts) }), state), body);
+  return { node, body, state };
+}
+function actNode(a, ctx) {
+  const time = kstTime(a.ts);
+  switch (a.type) {
+    case "turn_start": return el("div", { class: "a-div", text: `시작 · ${time}` });
+    case "turn_end": return el("div", { class: "a-div", text: `완료 · ${time}` });
+    case "status": return el("div", { class: "a-div", text: `${oneLine(a.text ?? "")} · ${time}` });
+    case "text": return el("div", { class: "a-text" }, el("span", { class: "a-time", text: time }), mdNode(a.text));
+    case "thinking": return el("details", { class: "box think" }, el("summary", {}, el("span", { class: "tname", text: "생각" }), el("span", { class: "tsum", text: `· ${oneLine(a.text ?? "").slice(0, 80)}` }), el("span", { class: "sp" }), el("span", { class: "ttime", text: time })), mdNode(a.text));
+    case "error": return el("div", { class: "a-error" }, el("span", { class: "a-time", text: time }), String(a.text ?? ""));
+    case "tool_call": {
+      const rec = toolBox(a, a.tool, true);
+      if (a.args) rec.body.append(el("div", { class: "cl", text: "인자" }), el("pre", {}, el("code", { text: a.args })));
+      if (a.call_id) ctx.calls.set(a.call_id, rec);
+      return rec.node;
+    }
+    case "tool_result": {
+      const rec = a.call_id && ctx.calls.get(a.call_id);
+      if (rec) { fillResult(rec, a); return null; }
+      const alone = toolBox({ ...a, args: "" }, a.tool || "result", false);
+      fillResult(alone, a);
+      return alone.node;
+    }
+    default: return a.text ? el("div", { class: "a-div", text: oneLine(a.text) }) : null;
+  }
+}
+function appendAct(a) {
+  const n = actNode(a, actCtx);
+  if (n) actList.append(n);
+  while (actList.children.length > 500) actList.firstChild.remove();
+  if (actStick) actList.scrollTop = actList.scrollHeight;
+}
+async function openActivity() {
+  renderActSources(); renderSubs();
+  const src = actSource;
+  actLoading = true; actQueue = [];
+  clear(actList).append(el("div", { class: "a-div", text: "불러오는 중…" }));
+  let items = [];
+  try {
+    const r = await api(`/api/activity?source=${enc(src)}&limit=300`);
+    items = r.items || [];
+  } catch (e) {
+    if (src === actSource) clear(actList).append(el("div", { class: "a-error", text: "활동을 불러오지 못했어요" }));
+    actLoading = false;
+    return;
+  }
+  if (src !== actSource) return;
+  actItems = []; actSeen = new Set(); actCtx = { calls: new Map() };
+  clear(actList);
+  actStick = true;
+  for (const a of items) { actSeen.add(actKey(a)); actItems.push(a); appendAct(a); }
+  for (const a of actQueue) if (!actSeen.has(actKey(a))) { actSeen.add(actKey(a)); actItems.push(a); appendAct(a); }
+  actQueue = []; actLoading = false;
+  if (!actList.children.length) actList.append(el("div", { class: "a-div", text: "활동 없음" }));
+  actList.scrollTop = actList.scrollHeight;
+}
+function onActivity(a) {
+  if (a.source === "orchestrator" || a.type === "turn_start" || a.type === "turn_end" || a.type === "status") scheduleState();
+  if (a.source !== actSource) return;
+  if (actLoading) { actQueue.push(a); return; }
+  const k = actKey(a);
+  if (actSeen.has(k)) return;
+  actSeen.add(k); actItems.push(a);
+  if (actItems.length === 1 && current === "activity") clear(actList);
+  appendAct(a);
+}
+
+/* ---------- lanes ---------- */
+const laneDraft = {};
+let laneSig = "";
+function renderLanes() {
+  const box = $("#lanes");
+  if (!S) return;
+  const lanes = S.lanes;
+  const modelOf = n => (M && M.lanes || []).find(l => l.name === n);
+  const sig = JSON.stringify([lanes.map(l => [l.name, l.status, l.model, l.lastText, l.resumable]), M && M.lanes, M && M.available && M.available.length]);
+  if (sig === laneSig && box.children.length) return;
+  if (box.contains(document.activeElement) && box.children.length) return;
+  laneSig = sig;
+  clear(box);
+  if (!lanes.length) { box.append(emptyNode("레인 없음")); return; }
+  const list = el("div", { class: "col" });
+  for (const l of lanes) {
+    const alive = laneAlive(l), m = modelOf(l.name);
+    const inp = input({ type: "text", enterkeyhint: "send", value: laneDraft[l.name] || "", oninput: ev => { laneDraft[l.name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); sendBtn.click(); } } });
+    const sendBtn = el("button", { class: "ib pri", type: "button", "aria-label": alive ? "전송" : "재개", style: "width:48px;height:48px", onclick: ev => busy(ev.currentTarget, async () => {
+      const text = inp.value.trim();
+      if (!text && alive) return;
+      if (alive) { await api("/api/message", "POST", { text, lane: l.name }); toast("전달했어요"); }
+      else { await api(`/api/lanes/${enc(l.name)}/resume`, "POST", text ? { text } : {}); toast("재개했어요"); }
+      inp.value = ""; laneDraft[l.name] = ""; refreshState();
+    }) }, icon("send"));
+    const act = (label, kind, fn) => el("button", { class: `btn ${kind}`, type: "button", onclick: ev => busy(ev.currentTarget, async () => { await fn(); refreshState(); }) }, label);
+    const post = (p, body) => api(`/api/lanes/${enc(l.name)}/${p}`, "POST", body ?? {});
+    const btns = el("div", { class: "btns", style: "margin-top:12px" });
+    if (alive) btns.append(
+      act("재시작", "text", async () => { await post("restart"); toast("재시작했어요"); }),
+      act("중단", "text", async () => { await post("abort"); toast("작업을 중단했어요"); }),
+      act("종료", "danger", async () => { if (!await ask(`${l.name} 종료`, "이 레인을 종료할까요?", "종료", true)) return; await api(`/api/lanes/${enc(l.name)}`, "DELETE"); toast("종료했어요"); }));
+    else btns.append(act("재개", "tonal", async () => { await post("resume", inp.value.trim() ? { text: inp.value.trim() } : {}); inp.value = ""; laneDraft[l.name] = ""; toast("재개했어요"); }));
+    btns.append(el("button", { class: "btn text", type: "button", onclick: () => { actSource = `lane:${l.name}`; $("#act-src").dataset.sig = ""; go("activity"); } }, "활동"));
+    const model = (m && m.model) || l.model;
+    list.append(el("div", { class: "card" },
+      el("div", { class: "heads" }, el("span", { class: `dot ${statusTone(l.status)}` }), el("span", { class: "t", text: l.name }), el("span", { class: "sp" }), el("span", { class: `tag ${statusTone(l.status) === "pri" ? "pri" : statusTone(l.status)}`, text: statusKo(l.status) })),
+      model ? el("div", { class: "sup", style: "margin-top:4px", text: `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` }) : null,
+      l.lastText ? el("div", { class: "sup clamp", style: "margin-top:8px", text: l.lastText }) : null,
+      el("div", { class: "row", style: "margin-top:12px" }, el("div", { style: "flex:1;min-width:0" }, textField(alive ? "메시지" : "재개 메시지 (선택)", inp)), sendBtn),
+      btns));
+  }
+  box.append(list);
+}
+
+/* ---------- context ---------- */
+let C = null, ctxTimer;
+const ctxTokens = name => ((C && C.processes) || []).find(p => p.name === name)?.tokens ?? 0;
+const ctxTone = pct => pct == null ? "" : pct >= 80 ? "err" : pct >= 60 ? "warn" : "";
+function compactState(c) {
+  if (!c || !c.state) return null;
+  const t = c.at ? kstTime(c.at) : "";
+  if (c.state === "queued") return { tone: "warn", text: "압축 대기 · 현재 턴이 끝나면 시작" };
+  if (c.state === "compacting") return { tone: "pri", text: `압축 중 · ${t}부터` };
+  if (c.state === "done") return { tone: "ok", text: `압축 완료 ${t}${c.tokensBefore ? ` · 압축 전 ${num(c.tokensBefore)} 토큰` : ""}` };
+  return { tone: "err", text: `압축 실패 ${t}${c.error ? ` · ${c.error}` : ""}` };
+}
+function ctxBar(p) {
+  const pct = p.percent;
+  return el("div", {},
+    el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-label": `${p.name} 컨텍스트`, "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` })),
+    el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: p.window ? `${num(p.tokens)} / ${num(p.window)} 토큰` : `${num(p.tokens)} 토큰` }), el("span", { class: "v", text: pct != null ? `${pct}%` : "–" })));
+}
+async function loadContext(quiet) {
+  clearTimeout(ctxTimer);
+  try { C = await api("/api/context"); }
+  catch (e) { if (!quiet && current === "context") clear($("#context")).append(emptyNode("컨텍스트를 불러오지 못했어요")); return; }
+  if (current === "context") { renderContext(); ctxTimer = setTimeout(() => loadContext(true), 4000); }
+  if (current === "home") renderHome();
+}
+// "<model>:<thinking>" selector -> readable "model · thinking".
+function selLabel(sel) {
+  const i = sel.lastIndexOf(":"), level = sel.slice(i + 1);
+  return i > 0 && ((M && M.thinking_levels) || []).includes(level) ? `${modelName(sel.slice(0, i))} · ${level}` : modelName(sel);
+}
+function renderContext() {
+  const box = $("#context");
+  if (!C) { clear(box).append(emptyNode("불러오는 중…")); return; }
+  const list = el("div", { class: "col" });
+  for (const p of C.processes) {
+    const cs = compactState(p.compaction);
+    const inFlight = p.compaction && (p.compaction.state === "queued" || p.compaction.state === "compacting");
+    const btn = el("button", { class: "btn tonal", type: "button", disabled: !p.running || inFlight, onclick: ev => busy(ev.currentTarget, async () => {
+      const r = await api("/api/compact", "POST", { target: p.name });
+      toast(r.state === "queued" ? `${p.name}: 작업 중이라 턴이 끝나면 압축해요` : `${p.name}: 압축을 시작했어요`);
+      loadContext(true);
+    }) }, "압축");
+    list.append(el("div", { class: "card" },
+      el("div", { class: "heads" }, el("span", { class: `dot ${statusTone(p.status)}` }), el("span", { class: "t", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "sp" }), el("span", { class: `tag ${statusTone(p.status) === "pri" ? "pri" : statusTone(p.status)}`, text: statusKo(p.status) })),
+      p.model ? el("div", { class: "sup", style: "margin-top:4px", text: selLabel(p.model) }) : null,
+      p.running ? el("div", { style: "margin-top:12px" }, ctxBar(p)) : el("div", { class: "sup", style: "margin-top:8px", text: "실행 중이 아니에요. 재개하면 다시 측정해요." }),
+      cs ? el("div", { style: "margin-top:12px" }, el("span", { class: `tag ${cs.tone}`, text: cs.text })) : null,
+      el("div", { class: "btns", style: "margin-top:12px;justify-content:flex-end" }, btn)));
+  }
+  clear(box).append(list, el("div", { class: "sup view-note", text: "압축은 대화를 요약으로 바꿔요. 그래서 다음 턴에 프롬프트 캐시가 한 번 다시 쓰여요 (새로 짧아진 앞부분을 입력 비용 약 2배로 기록). 작업 중인 프로세스는 현재 턴이 끝난 뒤에 압축해요." }));
+}
+function ctxHomeCard() {
+  const c = tapCard("context", cardHead("컨텍스트"));
+  const list = ((C && C.processes) || []).filter(p => p.running);
+  if (!list.length) c.append(el("div", { class: "sup", text: C ? "실행 중인 프로세스 없음" : "불러오는 중…" }));
+  for (const p of list.slice(0, 4)) c.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "v", text: p.percent != null ? `${p.percent}%` : `${num(p.tokens)} 토큰` })), el("div", { class: `bar ${ctxTone(p.percent)}` }, el("i", { style: `width:${Math.min(100, p.percent || 0).toFixed(1)}%` }))));
+  if (list.length > 4) c.append(el("div", { class: "sup", style: "margin-top:12px", text: `외 ${list.length - 4}개` }));
+  return c;
+}
+
+/* ---------- models ---------- */
+const pending = {};
+let providerFilter = "";
+const applyKo = { live: "적용했어요", restarted: "적용했어요 · 재시작됨", "next-start": "다음 시작부터 적용돼요" };
+async function loadModels(quiet) {
+  try { M = await api("/api/models"); }
+  catch (e) { if (!quiet && current === "models") clear($("#models")).append(emptyNode("모델 정보를 불러오지 못했어요")); return; }
+  if (current === "models") renderModels();
+  if (current === "home") renderHome();
+  if (current === "settings") renderSettings();
+  if (current === "context") renderContext();
+  if (current === "lanes") { laneSig = ""; renderLanes(); }
+}
+function modelItems(key, curModel) {
+  const val = (pending[key] || {}).model ?? curModel;
+  const avail = M.available || [];
+  const shown = avail.filter(a => !providerFilter || a.provider === providerFilter);
+  const items = [];
+  if (val && !shown.some(a => a.selector === val)) items.push({ header: "현재" }, { value: val, label: modelName(val) });
+  const byProv = new Map();
+  for (const a of shown) { if (!byProv.has(a.provider)) byProv.set(a.provider, []); byProv.get(a.provider).push(a); }
+  for (const [p, list] of byProv) items.push({ header: providerName(p) }, ...list.map(a => ({ value: a.selector, label: a.name || a.selector })));
+  return items;
+}
+function targetCard(key, title, status, cur, confirmText, note) {
+  const p = pending[key] || {};
+  const model = p.model ?? cur.model, thinking = p.thinking ?? cur.thinking;
+  const dirty = (p.model != null && p.model !== cur.model) || (p.thinking != null && p.thinking !== cur.thinking);
+  const levels = M.thinking_levels || [];
+  const modelField = selectField("모델", modelName(model), () => modelItems(key, cur.model), model, v => { (pending[key] ||= {}).model = v; renderModels(); });
+  const seg = el("div", { class: "seg", role: "radiogroup", "aria-label": "thinking" }, ...levels.map(lv => el("button", { type: "button", role: "radio", "aria-checked": lv === thinking, class: lv === thinking ? "on" : "", onclick: () => { (pending[key] ||= {}).thinking = lv; renderModels(); } }, lv === thinking ? icon("check") : null, lv)));
+  const info = (M.available || []).find(a => a.selector === model);
+  const apply = el("button", { class: "btn", type: "button", disabled: !dirty, onclick: ev => busy(ev.currentTarget, async () => {
+    const body = { target: key };
+    if (p.model != null && p.model !== cur.model) body.model = p.model;
+    if (p.thinking != null && p.thinking !== cur.thinking) body.thinking = p.thinking;
+    if (confirmText && !await ask(title, `${confirmText}\n${modelName(model)} · ${thinking}`, "적용")) return;
+    let r;
+    try { r = await api("/api/models", "PUT", body); }
+    catch (e) {
+      if (!(e.data && e.data.requires_force)) throw e;
+      if (!await ask(title, `실행 중인 레인의 모델 또는 effort를 바꾸면 Anthropic이 메시지 캐시를 무효화해요. 다음 턴에 현재 컨텍스트 ${num(e.data.context_tokens)} 토큰 전체가 캐시에 다시 쓰여요 (입력 비용 약 2배).\n${modelName(model)} · ${thinking}`, "적용")) return;
+      r = await api("/api/models", "PUT", { ...body, force: true });
+    }
+    delete pending[key];
+    toast(applyKo[r.applied] || "적용했어요");
+    await loadModels(true); refreshState();
+  }) }, "적용");
+  return el("div", { class: "card" },
+    el("div", { class: "heads", style: "margin-bottom:12px" }, status ? el("span", { class: `dot ${statusTone(status)}` }) : null, el("span", { class: "t", text: title })),
+    modelField,
+    el("div", { class: "lbl" }, "thinking"), seg,
+    info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup", style: "margin-top:8px", text: "이 모델은 thinking을 지원하지 않아요" }) : null,
+    note ? el("div", { class: "sup", style: "margin-top:12px", text: note }) : null,
+    el("div", { class: "btns", style: "margin-top:16px;justify-content:flex-end" },
+      dirty ? el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기") : null, apply));
+}
+function renderModels() {
+  const box = $("#models");
+  closeMenu(false);
+  if (!M) { clear(box).append(emptyNode("불러오는 중…")); return; }
+  const provs = [...new Set((M.available || []).map(a => a.provider))].sort((a, b) => providerName(a).localeCompare(providerName(b)));
+  const filter = selectField("공급자", providerFilter ? providerName(providerFilter) : "전체", [{ value: "", label: "전체" }, ...provs.map(p => ({ value: p, label: providerName(p) }))], providerFilter, v => { providerFilter = v; renderModels(); });
+  const lanes = M.lanes || [];
+  clear(box).append(
+    el("div", { class: "col" },
+      filter,
+      targetCard("orchestrator", botName, "", M.orchestrator, "어시스턴트가 다시 시작돼요."),
+      targetCard("lanes", "새 레인 기본값", "", M.lanes_default),
+      targetCard("workers", "작업자(워커) 모델", "", M.workers, undefined, "레인이 구현·테스트·렌더·반복 작업을 맡기는 워커의 모델이에요 (lanes.worker_model). 레인이 시작되거나 재개될 때부터 적용돼요."),
+      ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l, undefined, l.running ? `실행 중이에요. 모델이나 effort를 바꾸면 현재 컨텍스트 ${num(ctxTokens(l.name))} 토큰 전체가 캐시에 다시 쓰여요. 적용할 때 한 번 더 확인해요.` : undefined))));
+}
+
+/* ---------- providers ---------- */
+async function loadProviderData() {
+  const r = await api("/api/providers");
+  P = { providers: r.providers || [], addable: Array.isArray(r.addable) ? r.addable : null };
+  return P;
+}
+async function loadProviders() {
+  const box = $("#providers");
+  if (!P) clear(box).append(emptyNode("불러오는 중…"));
+  try { await loadProviderData(); }
+  catch (e) { clear(box).append(emptyNode("공급자를 불러오지 못했어요")); return; }
+  if (current === "providers") renderProviders();
+}
+function renderProviders() {
+  const box = $("#providers");
+  const list = P.providers;
+  const wrap = el("div", {});
+  wrap.append(el("div", { class: "tools-bar" }, el("span", { class: "sec", style: "margin:0", text: `${list.filter(isConnected).length}개 연결` }),
+    el("button", { class: "btn tonal", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
+  if (!list.length) wrap.append(emptyNode("공급자 없음"));
+  for (const p of list) {
+    const name = p.name || p.id;
+    const canLogout = p.can_logout ?? p.removable;
+    const sub = p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨");
+    const btns = el("div", { class: "btns", style: "margin-top:8px;justify-content:flex-end" });
+    if (p.can_login) btns.append(el("button", { class: `btn ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인"));
+    if (canLogout) btns.append(el("button", { class: "btn danger", type: "button", onclick: ev => busy(ev.currentTarget, async () => {
+      const key = p.auth === "api_key";
+      if (!await ask(key ? `${name} 키 삭제` : `${name} 로그아웃`, key ? "저장된 API 키를 삭제할까요?" : "저장된 로그인 정보가 삭제돼요.", key ? "삭제" : "로그아웃", true)) return;
+      await api(`/api/providers/${enc(p.id)}/logout`, "POST", {});
+      toast(key ? "키를 삭제했어요" : "로그아웃했어요");
+      await loadProviders(); loadModels(true);
+    }) }, p.auth === "api_key" ? "키 삭제" : "로그아웃"));
+    wrap.append(el("div", { class: "card", style: "margin-bottom:8px" },
+      el("div", { class: "row" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
+        el("div", { style: "flex:1;min-width:0" }, el("div", { class: "heads" }, el("span", { class: "t", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
+          sub ? el("div", { class: "sup", text: sub }) : null),
+        el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "err" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })),
+      btns.children.length ? btns : null));
+  }
+  clear(box).append(wrap);
+}
+function addProviderDialog() {
+  const addable = P && P.addable;
+  let pick = null, keyIn = null, free = null;
+  const body = el("div", { class: "col", style: "gap:16px" });
+  let dlg;
+  const kindKo = k => k === "oauth" ? "로그인" : "API 키";
+  function paint() {
+    clear(body); keyIn = null; free = null;
+    if (addable) {
+      if (!addable.length) { body.append(el("p", { text: "추가할 공급자가 없어요" })); dlg && dlg.setActions([{ label: "닫기", onclick: c => c() }]); return; }
+      body.append(selectField("공급자", pick ? pick.name : "선택", addable.map(a => ({ value: a.id, label: a.name || a.id, sub: kindKo(a.kind) })), pick && pick.id, v => { pick = addable.find(a => a.id === v); paint(); }));
+    } else { free = input({ type: "text" }); body.append(textField("공급자", free)); pick = { kind: "api_key" }; }
+    if (pick && pick.kind === "api_key") { keyIn = input({ type: "password", autocomplete: "new-password" }); body.append(textField("API 키", keyIn)); }
+    const actions = [{ label: "취소", onclick: c => c() }];
+    if (pick && pick.kind === "oauth") actions.push({ label: "로그인", kind: "tonal", onclick: c => { c(); startLogin(pick); } });
+    else if (pick) actions.push({ label: "저장", kind: "tonal", onclick: (c, btn) => busy(btn, async () => {
+      const provider = free ? free.value.trim() : pick.id, key = keyIn.value;
+      if (!provider || !key.trim()) { toast("공급자와 API 키를 입력하세요", true); return; }
+      try { await api("/api/providers", "POST", { provider, key }); } finally { keyIn.value = ""; }
+      c(); toast("저장했어요"); loadProviders(); loadModels(true);
+    }) });
+    dlg && dlg.setActions(actions);
+  }
+  dlg = dialog({ title: "공급자 추가", body });
+  paint();
+}
+async function startLogin(p) {
+  let r;
+  try { r = await api(`/api/providers/${enc(p.id)}/login`, "POST", {}); }
+  catch (e) { toast(e.message, true); return; }
+  const name = p.name || p.id;
+  let finished = false, timer, dlg;
+  const code = input({ type: "text" });
+  const msg = el("p", { class: "err-t", hidden: true });
+  const open = el("a", { class: "btn tonal", href: /^https?:\/\//.test(r.url || "") ? r.url : null, target: "_blank", rel: "noopener noreferrer" }, icon("open"), "로그인 페이지 열기");
+  const stop = () => { clearTimeout(timer); };
+  const success = async () => {
+    finished = true; stop(); dlg.close();
+    toast(`${name} 로그인했어요`);
+    try { await loadProviderData(); } catch {}
+    if (current === "providers") renderProviders();
+    if (current === "home") renderHome();
+    loadModels(true);
+  };
+  const fail = text => { msg.textContent = text; msg.hidden = false; };
+  const poll = async () => {
+    try {
+      const s = await api(`/api/providers/${enc(p.id)}/login?login_id=${enc(r.login_id)}`);
+      if (finished) return;
+      if (s.status === "done") { success(); return; }
+      if (s.status === "failed") { stop(); fail(s.error || "로그인에 실패했어요"); return; }
+    } catch {}
+    if (!finished) timer = setTimeout(poll, 2000);
+  };
+  const submit = btn => busy(btn, async () => {
+    const v = code.value.trim();
+    if (!v) { fail("코드나 주소를 붙여넣으세요"); return; }
+    msg.hidden = true;
+    stop();
+    try { await api(`/api/providers/${enc(p.id)}/login/complete`, "POST", { login_id: r.login_id, code: v }); await success(); }
+    catch (e) { fail(e.message); if (!finished) timer = setTimeout(poll, 2000); }
+  });
+  dlg = dialog({
+    title: `${name} 로그인`,
+    body: [el("div", {}, open), el("p", { text: "로그인 후 이동이 안 되면 주소창의 주소나 코드를 붙여넣으세요." }), textField("코드 또는 주소", code), msg],
+    onclose: () => { stop(); if (!finished) api(`/api/providers/${enc(p.id)}/login`, "DELETE").catch(() => {}); },
+    actions: [{ label: "취소", onclick: c => c() }, { label: "완료", kind: "tonal", onclick: (c, btn) => submit(btn) }],
+  });
+  code.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); const b = dlg.node.querySelector(".dact .btn:last-child"); if (b) b.click(); } });
+  timer = setTimeout(poll, 2000);
+}
+
+/* ---------- usage ---------- */
+let quotaTimer;
+async function loadQuota() {
+  clearTimeout(quotaTimer);
+  const box = $("#usage");
+  let q;
+  try { q = await api("/api/quota"); }
+  catch (e) { clear(box).append(emptyNode("사용량을 불러오지 못했어요")); return; }
+  if (current === "usage") quotaTimer = setTimeout(loadQuota, 60000);
+  clear(box);
+  box.append(el("div", { class: "tools-bar" }, el("span", { class: "sup", text: q.fetched_at ? kstStamp(q.fetched_at) : "" }),
+    el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, loadQuota) }, icon("refresh"), "새로고침")));
+  for (const p of q.providers || []) {
+    const card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: providerName(p.provider) })));
+    for (const l of p.limits || []) {
+      card.append(el("div", { class: "lim" },
+        el("div", { class: "kv" }, el("span", { class: "k", text: l.label || l.id }), el("span", { style: "font-weight:500", text: pctText(l) })),
+        bar(l),
+        l.resets_at || l.window ? el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: l.window || "" }), el("span", { class: "v", text: l.resets_at ? rel(l.resets_at) : "" })) : null));
+    }
+    if (!(p.limits || []).length) card.append(el("div", { class: "sup", text: "표시할 한도 없음" }));
+    box.append(el("div", { style: "margin-bottom:12px" }, card));
+  }
+  if ((q.unavailable || []).length) {
+    box.append(el("div", { class: "sec", text: "정보 없음" }));
+    for (const u of q.unavailable) box.append(el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: providerName(u.provider) }), el("div", { class: "sup", text: u.reason })));
+  }
+  if (!(q.providers || []).length && !(q.unavailable || []).length) box.append(emptyNode("사용량 정보 없음"));
+}
+
+/* ---------- settings ---------- */
+function renderSettings() {
+  const box = $("#settings");
+  if (box.contains(document.activeElement) && openMenu) return;
+  const om = M && M.orchestrator;
+  const connected = P ? P.providers.filter(isConnected).length : null;
+  const row = (ic, title, sub, onclick, trail) => { const b = el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), trail === undefined ? icon("chev", "lead") : trail); return b; };
+  const d = S && S.discord;
+  clear(box).append(
+    row("model", "모델", om ? modelName(om.model) : "", () => go("models")),
+    row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
+    row("usage", "사용량", "", () => go("usage")),
+    row("context", "컨텍스트", "", () => go("context")),
+    row("theme", "화면 모드", themeLabel(), b => themeMenu(b), icon("drop", "lead")),
+    d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null);
+}
+
+/* ---------- boot ---------- */
+(async () => {
+  go(location.hash.slice(1) || "home");
+  try {
+    const s = await api("/api/state?limit=150");
+    botName = s.name || botName;
+    document.title = botName;
+    s.events.forEach(addChat);
+    scrollChat(true);
+  } catch (e) { setConn(false); }
+  await refreshState();
+  loadModels(true);
+  loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
+  loadSubs();
+  let opened = false;
+  const es = new EventSource("/api/events");
+  es.onopen = () => { setConn(true); if (opened) { refreshState(); if (current === "activity") openActivity(); } opened = true; };
+  es.onerror = () => setConn(false);
+  es.onmessage = m => {
+    let e;
+    try { e = JSON.parse(m.data); } catch { return; }
+    if (e.kind === "activity") onActivity(e);
+    else if (e.kind === "subagents") setSubs(e.source, e.items);
+    else { addChat(e); scheduleState(); }
+  };
+  setInterval(refreshState, 15000);
+  setInterval(() => loadModels(true), 60000);
+})();
+</script>
+</body>
+</html>
