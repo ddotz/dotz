@@ -4,11 +4,12 @@
 // Working, rate-limited and stopped lanes are left alone.
 import { existsSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, sep } from "node:path";
+import { basename, join, sep } from "node:path";
 import { statusActivity } from "./activity.ts";
 import { lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OMP, paths } from "./config.ts";
 import { describeCtx } from "./context.ts";
 import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
+import { orchestratorPid } from "./orchestrator.ts";
 
 const STATS_WAIT_MS = 3000;
 // A run missed while the gateway was down is made up this long after the start, once restored lanes know their numbers.
@@ -151,4 +152,83 @@ export function startWorktreeCleanup(): void {
 		run();
 		setInterval(run, WORKTREE_EVERY_MS);
 	}, WORKTREE_FIRST_MS);
+}
+
+// An omp rpc host whose gateway died (or that a crash detached) keeps running with nobody reading its stdout, holding a
+// session and memory. Every ORPHAN_EVERY_MS the process table is searched for `omp ... --mode rpc` processes of this user
+// that were reparented to launchd/init (ppid 1), have run at least ORPHAN_MIN_AGE_MIN minutes, and are neither a pid the
+// gateway tracks nor in its own process tree; those are killed together with their children. A host with a live parent (a lane, the orchestrator, or an omp the owner runs in a terminal) is never touched.
+const ORPHAN_EVERY_MS = 10 * 60_000;
+const ORPHAN_FIRST_MS = 90_000;
+const ORPHAN_KILL_GRACE_MS = 5000;
+const ORPHAN_MIN_AGE_MIN = 10;
+
+type PsRow = { pid: number; ppid: number; minutes: number; command: string };
+
+// ps etime is [[dd-]hh:]mm:ss.
+function etimeMinutes(etime: string): number {
+	const [days, clock] = etime.includes("-") ? etime.split("-") : ["0", etime];
+	const p = clock!.split(":").map(Number);
+	while (p.length < 3) p.unshift(0);
+	return Number(days) * 1440 + p[0]! * 60 + p[1]!;
+}
+
+function psRows(): PsRow[] {
+	const r = Bun.spawnSync(["ps", "-U", String(process.getuid?.() ?? ""), "-o", "pid=,ppid=,etime=,command="], { stdout: "pipe", stderr: "ignore" });
+	if (r.exitCode !== 0) throw new Error(`ps exited ${r.exitCode}`);
+	const rows: PsRow[] = [];
+	for (const line of r.stdout.toString().split("\n")) {
+		const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
+		if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), minutes: etimeMinutes(m[3]!), command: m[4]! });
+	}
+	return rows;
+}
+
+const isOmpRpcHost = (command: string): boolean =>
+	/(^|\s)--mode[ =]rpc(\s|$)/.test(command) && command.split(/\s+/).slice(0, 3).some(t => t === OMP || basename(t) === basename(OMP));
+
+const alive = (pid: number): boolean => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (e) {
+		return (e as NodeJS.ErrnoException).code === "EPERM";
+	}
+};
+
+// Kills provable orphaned omp rpc hosts; `only` narrows the candidates to command lines it matches and `minAgeMin` is the
+// least age, both for smoke tests.
+export async function reapOrphanHosts(only?: RegExp, minAgeMin = ORPHAN_MIN_AGE_MIN): Promise<number[]> {
+	const rows = psRows();
+	const parentOf = new Map(rows.map(r => [r.pid, r.ppid]));
+	const tracked = new Set<number>([process.pid, orchestratorPid() ?? 0, ...[...lanes.values()].map(l => l.proc?.pid ?? 0)]);
+	const inOwnTree = (pid: number): boolean => {
+		for (let p: number | undefined = pid, n = 0; p && p > 1 && n < 64; p = parentOf.get(p), n++) if (p === process.pid) return true;
+		return false;
+	};
+	const orphans = rows.filter(r => r.ppid === 1 && r.minutes >= minAgeMin && isOmpRpcHost(r.command) && (!only || only.test(r.command)) && !tracked.has(r.pid) && !inOwnTree(r.pid));
+	const victims = orphans.flatMap(o => [o.pid, ...rows.filter(r => r.ppid === o.pid).map(r => r.pid)]);
+	for (const pid of victims) {
+		try {
+			process.kill(pid, "SIGTERM");
+		} catch {}
+	}
+	if (orphans.length) {
+		await Bun.sleep(ORPHAN_KILL_GRACE_MS);
+		for (const pid of victims)
+			if (alive(pid))
+				try {
+					process.kill(pid, "SIGKILL");
+				} catch {}
+		log(`orphan reaper: killed ${orphans.length} orphaned omp rpc host(s): ${orphans.map(o => o.pid).join(", ")}`);
+	}
+	return orphans.map(o => o.pid);
+}
+
+export function startOrphanReaper(): void {
+	const run = () => void reapOrphanHosts().catch(e => log(`orphan reaper failed: ${e}`));
+	setTimeout(() => {
+		run();
+		setInterval(run, ORPHAN_EVERY_MS);
+	}, ORPHAN_FIRST_MS);
 }

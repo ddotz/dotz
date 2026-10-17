@@ -7,7 +7,7 @@ import { compactTarget, ControlError, contextView, ForceRequired, looksLikeComma
 import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
 import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
-import { startLaneHygiene, startWorktreeCleanup } from "./hygiene.ts";
+import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { abortLane, approvesBudget, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator } from "./orchestrator.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
@@ -636,6 +636,7 @@ if (restarted) {
 }
 startLaneHygiene();
 startWorktreeCleanup();
+startOrphanReaper();
 startSchedules(s => {
 	const channel = discord.status.enabled ? "chat" : "web";
 	const event = { ts: now(), kind: "schedule", source: "schedule", channel, id: s.id, every: s.every_minutes, text: s.text };
