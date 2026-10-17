@@ -128,6 +128,16 @@ function trackSubagent(source: string, p: Record<string, any>): void {
 	broadcast({ kind: "subagents", source, items: [...list.values()] });
 }
 
+// Task workers still running under one omp process (a lane's turn can end while its background workers keep going).
+export const runningSubagents = (source: string): number => [...(subagents.get(source)?.values() ?? [])].filter(s => s.status === "running").length;
+// The process is gone, so are its workers; their entries would otherwise stay "running" forever.
+export function endSubagents(source: string): void {
+	const list = subagents.get(source);
+	if (!list) return;
+	for (const s of list.values()) if (s.status === "running") s.status = "aborted";
+	broadcast({ kind: "subagents", source, items: [...list.values()] });
+}
+
 export function subagentLists(): Record<string, Subagent[]> {
 	return Object.fromEntries([...subagents].map(([source, list]) => [source, [...list.values()]]));
 }

@@ -7,7 +7,7 @@ import { compactTarget, ControlError, contextView, ForceRequired, looksLikeComma
 import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
 import { activityItems, emit, recentEvents, sseResponse } from "./events.ts";
-import { abortLane, approvesBudget, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
+import { abortLane, approvesBudget, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator } from "./orchestrator.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { startReflection } from "./reflect.ts";
@@ -630,15 +630,15 @@ function replayPending(): number {
 	return fresh.length;
 }
 
-// Restart the gateway the way 오모냥's herdr-restart does: wait until the orchestrator and every lane are idle (at most
-// 20 min), then exit; launchd (KeepAlive) starts the new code. Called during an orchestrator turn, it waits for that
-// turn to end, so the answer goes out first.
+// Restart the gateway the way 오모냥's herdr-restart does: wait until the orchestrator and every lane are idle, task
+// workers included (at most 20 min), then exit; launchd (KeepAlive) starts the new code. Called during an orchestrator
+// turn, it waits for that turn to end, so the answer goes out first.
 let draining = false;
 function restartGateway(): string {
 	if (draining) return "gateway restart is already waiting for idle";
 	draining = true;
 	const until = Date.now() + 20 * 60_000;
-	const busy = () => [orch.status === "working" || orch.status === "starting" ? "orchestrator" : "", ...[...lanes.values()].filter(l => l.status === "working" || l.status === "starting").map(l => `lane ${l.name}`)].filter(Boolean);
+	const busy = () => [orch.status === "working" || orch.status === "starting" ? "orchestrator" : "", ...[...lanes.values()].filter(laneBusy).map(l => `lane ${l.name}`)].filter(Boolean);
 	const tick = () => {
 		const b = busy();
 		if ((b.length || bursts.size) && Date.now() < until) return void setTimeout(tick, 2000);
