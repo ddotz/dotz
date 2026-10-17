@@ -54,6 +54,10 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
 - Parallel workers: independent slices (different files, or separable sections merged one by one) run as parallel
   workers in one batch, up to the machine's slot count the gateway states in the lane contract; never queue them
   behind one worker. One worker only for work that must be sequential.
+- Worktrees: a lane launched inside a git repo works in its own worktree on branch `lane/<name>` (the gateway makes
+  it), so lanes on the same repo never edit each other's files. It commits there and lands the work on the base branch
+  (PR or rebase + fast-forward merge) when the Done-when passes; `stop` then removes the worktree and branch if they
+  are merged and clean. Workers inside a lane keep omp's task isolation.
 - Lane contract:
   - The final message of each turn is the report, relayed to the lane channel: outcome, changed paths, verification
     against the Done-when line (run the check yourself), blockers or questions for the owner. Write it in the identity's

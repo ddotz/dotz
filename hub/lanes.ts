@@ -1,7 +1,7 @@
 import type { Subprocess } from "bun";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, totalmem } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
 import { cfg, IDENTITY_FILE, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, workerModel } from "./config.ts";
 import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, requestCompact } from "./context.ts";
@@ -17,7 +17,9 @@ const DONE_RE = /(done[- ]?when|done\s*=|acceptance|완료\s*조건)/i;
 const RATE_RE = /429|rate_limit|usage limit/i;
 
 export type LaneStatus = "starting" | "working" | "idle" | "rate-limited" | "exited";
-type Record_ = { name: string; cwd: string; model: string; workerModel?: string; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; held?: string[] };
+// A lane in a git repo works in its own worktree (repo = the owner's checkout, base = the branch it lands on).
+type Worktree = { path: string; repo: string; branch: string; base: string };
+type Record_ = { name: string; cwd: string; model: string; workerModel?: string; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; held?: string[]; worktree?: Worktree };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	lastText: string;
@@ -48,9 +50,9 @@ export function setProgressHandler(fn: ReportFn): void {
 
 const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
-	const { name, cwd, model, workerModel, status, startedAt, sessionFile, reports, held } = lane;
+	const { name, cwd, model, workerModel, status, startedAt, sessionFile, reports, held, worktree } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeFileSync(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}) }, null, 2)}\n`);
+	writeFileSync(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}) }, null, 2)}\n`);
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -260,7 +262,48 @@ const WORKER_SLOTS = Math.max(2, Math.min(8, Math.floor(availableParallelism() /
 
 function footer(lane: Lane): string {
 	const mode = join(import.meta.dir, "..", "MODE.md");
-	return `\n\n---\n[dotz lane ${lane.name}] You are a lane of ${NAME}: a full omp orchestrator for this folder with one goal. The final message of each turn is your report: ${NAME} relays it and the owner reads it in the lane channel. Keep it to ~800 characters: outcome, changed paths, verification against the Done-when line (run the check yourself), blockers or questions for the owner. The owner may write to you directly. Do not message Discord or other people yourself, and never put secrets in a report. Before you start, read and follow ${mode} (sections Lanes and workers, Reporting, Browser and testing), ${IDENTITY_FILE} (voice) and the owner's standing rules in ${paths.rules} (they override your defaults). Plan and review yourself; run implementation and grind work as task workers (worker model ${laneWorkerModel(lane)} via modelRoles.task), and review a worker's diff yourself before applying or merging it. Do not queue independent slices behind one worker: this machine runs up to ${WORKER_SLOTS} task workers at once, so fan independent slices (different files, or separable sections merged one by one) out in one batch; keep one worker only for work that must be sequential.`;
+	return `\n\n---\n[dotz lane ${lane.name}] You are a lane of ${NAME}: a full omp orchestrator for this folder with one goal. The final message of each turn is your report: ${NAME} relays it and the owner reads it in the lane channel. Keep it to ~800 characters: outcome, changed paths, verification against the Done-when line (run the check yourself), blockers or questions for the owner. The owner may write to you directly. Do not message Discord or other people yourself, and never put secrets in a report. Before you start, read and follow ${mode} (sections Lanes and workers, Reporting, Browser and testing), ${IDENTITY_FILE} (voice) and the owner's standing rules in ${paths.rules} (they override your defaults). Plan and review yourself; run implementation and grind work as task workers (worker model ${laneWorkerModel(lane)} via modelRoles.task), and review a worker's diff yourself before applying or merging it. Do not queue independent slices behind one worker: this machine runs up to ${WORKER_SLOTS} task workers at once, so fan independent slices (different files, or separable sections merged one by one) out in one batch; keep one worker only for work that must be sequential.${worktreeNote(lane.worktree)}`;
+}
+
+function worktreeNote(w: Worktree | undefined): string {
+	if (!w) return "";
+	return `\n\nYou work in your own git worktree ${w.path} on branch ${w.branch}, split from ${w.repo} (${w.base}); paths under ${w.repo} in your brief mean the same files under ${w.path}. Other lanes and the owner work in ${w.repo}: never edit files there. Commit your work on ${w.branch} as you go. Untracked setup (node_modules, .env, build output) is not in the worktree: install or link what you need. When the Done-when check passes, land it the way this project lands work (a PR if it uses them); otherwise rebase onto ${w.base} (\`git rebase ${w.base}\`), then \`git -C ${w.repo} merge --ff-only ${w.branch}\`. On a conflict, resolve it in your worktree and retry; never force, never reset ${w.repo}. Report the merged commit. The gateway removes your worktree when the lane is closed after the merge.`;
+}
+
+const git = (cwd: string, ...args: string[]) => {
+	const r = Bun.spawnSync(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "pipe" });
+	return { ok: r.exitCode === 0, out: r.stdout.toString().trim(), err: r.stderr.toString().trim() };
+};
+
+// For a cwd inside a git repo with commits: the lane's worktree (created, or reused when the lane is relaunched) on
+// branch lane/<name> from the current HEAD, and the matching cwd inside it. Anything else runs in place.
+function laneWorktree(name: string, cwd: string): { cwd: string; worktree?: Worktree } {
+	const repo = git(cwd, "rev-parse", "--show-toplevel");
+	const base = git(cwd, "symbolic-ref", "--short", "HEAD");
+	if (!repo.ok || !base.ok || !git(cwd, "rev-parse", "--verify", "--quiet", "HEAD").ok) return { cwd };
+	const w: Worktree = { path: join(dir(name), "worktree"), repo: repo.out, branch: `lane/${name}`, base: base.out };
+	if (!existsSync(w.path)) {
+		const exists = git(w.repo, "rev-parse", "--verify", "--quiet", `refs/heads/${w.branch}`).ok;
+		const add = git(w.repo, "worktree", "add", ...(exists ? [w.path, w.branch] : ["-b", w.branch, w.path, "HEAD"]));
+		if (!add.ok) throw new Error(`could not create the lane worktree: ${add.err}`);
+	}
+	return { cwd: join(w.path, relative(w.repo, realpathSync(cwd))), worktree: w };
+}
+
+// Removes a closed lane's worktree and branch once its work is in the base branch and nothing is left uncommitted;
+// otherwise keeps both and says why.
+function dropWorktree(lane: Lane): string {
+	const w = lane.worktree;
+	if (!w || !existsSync(w.path)) return "";
+	if (git(w.path, "status", "--porcelain").out) return `worktree kept: uncommitted changes in ${w.path}`;
+	if (!git(w.repo, "merge-base", "--is-ancestor", w.branch, w.base).ok) return `worktree kept: ${w.branch} is not merged into ${w.base}`;
+	const rm = git(w.repo, "worktree", "remove", w.path);
+	if (!rm.ok) return `worktree kept: ${rm.err}`;
+	git(w.repo, "branch", "-d", w.branch);
+	lane.cwd = join(w.repo, relative(w.path, lane.cwd));
+	lane.worktree = undefined;
+	persist(lane);
+	return `worktree removed (${w.branch} merged into ${w.base})`;
 }
 
 export function checkBrief(brief: string): string | undefined {
@@ -279,13 +322,15 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	if (problem) throw new Error(problem);
 	if (activeCount() >= MAX_ACTIVE) throw new Error(`${activeCount()} lanes are already working (max ${MAX_ACTIVE}); queue this one or send it to an idle lane`);
 	const selector = model ?? selectorOf(lanesModel());
-	const lane: Lane = { name, cwd, model: selector, workerModel: worker || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, seq: 0, ctx: newCtx() };
-	lanes.set(name, lane);
 	mkdirSync(dir(name), { recursive: true });
+	const place = laneWorktree(name, cwd);
+	const lane: Lane = { name, cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, seq: 0, ctx: newCtx() };
+	lanes.set(name, lane);
+	persist(lane);
 	writeFileSync(join(dir(name), "brief.md"), `${brief}\n`);
 	spawn(lane, false);
 	prompt(lane, brief + footer(lane));
-	log(`lane ${name} launched in ${cwd} (${selector}, workers ${laneWorkerModel(lane)})`);
+	log(`lane ${name} launched in ${lane.cwd} (${selector}, workers ${laneWorkerModel(lane)})`);
 	return lane;
 }
 
@@ -303,8 +348,15 @@ function known(name: string): Lane {
 	return lane;
 }
 
+// Stops the lane's process; a closed lane whose branch is merged and clean also loses its worktree and branch.
 export function stopLane(name: string): void {
-	known(name).proc?.kill();
+	const lane = known(name);
+	const proc = lane.proc;
+	proc?.kill();
+	void (proc?.exited ?? Promise.resolve()).then(() => {
+		const note = dropWorktree(lane);
+		if (note) log(`lane ${name}: ${note}`);
+	});
 }
 
 export function abortLane(name: string): void {
