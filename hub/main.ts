@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT } from "./config.ts";
 import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setGatewayRestart, setModel } from "./control.ts";
-import { subagentDetail, subagentLists } from "./activity.ts";
+import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
 import { activityItems, emit, recentEvents, sseResponse } from "./events.ts";
 import { abortLane, approvesBudget, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
@@ -418,7 +418,13 @@ const server = Bun.serve({
 		if (req.method === "GET" && url.pathname === "/api/activity") {
 			const source = url.searchParams.get("source") ?? "orchestrator";
 			if (source !== "orchestrator" && !source.startsWith("lane:")) return json({ error: "source must be orchestrator or lane:<name>" }, 400);
-			return json({ source, items: activityItems(source, Number(url.searchParams.get("limit") ?? 300) || 300) });
+			const limit = Number(url.searchParams.get("limit") ?? 300) || 300;
+			const live = activityItems(source, limit);
+			// After a gateway restart or for a lane that has exited, the live buffer is empty: show the lane's saved
+			// transcript instead, so the owner can see where it stopped before resuming it.
+			const lane = source.startsWith("lane:") ? lanes.get(source.slice(5)) : undefined;
+			if (!live.length && lane?.sessionFile) return json({ source, history: true, items: await transcriptItems(lane.sessionFile, limit) });
+			return json({ source, items: live });
 		}
 		if (req.method === "GET" && url.pathname === "/api/quota") return json(await quota());
 		if (req.method === "POST" && url.pathname === "/api/command") {
