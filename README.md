@@ -96,14 +96,14 @@ every lane start or resume the gateway writes `~/.dotz/lanes/<name>/omp-overlay.
 The lane brief contract tells the lane to review a worker's diff itself before applying it. A running lane keeps its
 process's overlay until it restarts.
 
-**Lane context management.** Four `lanes.*` keys in `config.json` (all optional): `compact_at` (default `400000`
+**Lane context management.** Five `lanes.*` keys in `config.json` (all optional): `compact_at` (default `400000`
 tokens) and `keep_recent` (default `40000`) go into each lane's `omp-overlay.yml` as `compaction.modelThresholds`
 (`f<compact_at>` for the lane model and its worker model) and `compaction.keepRecentTokens`, so omp compacts a lane
-itself at 400K and keeps the last 40K; `nightly_at` (default `"04:30"`, gateway-local time, `"off"` disables) and
-`rotate_mb` (default `50`) drive the nightly hygiene. Once a day at `nightly_at` every idle lane is checked: a session
-file over `rotate_mb` MB starts a fresh session with a handover (recent exchanges plus a note to re-read its brief and
-last report; same model, folder and goal; the reload turn posts no report), otherwise a context at 60% of `compact_at`
-or more (240K at the default; 60% of a 1M window would never be reached) is compacted. Working, rate-limited and stopped
+itself at 400K and keeps the last 40K; `nightly_at` (default `"04:30"`, gateway-local time, `"off"` disables),
+`nightly_compact_at` (default `300000` tokens) and `rotate_mb` (default `50`) drive the nightly hygiene. Once a day at
+`nightly_at` every idle lane is checked: a session file over `rotate_mb` MB starts a fresh session with a handover
+(recent exchanges plus a note to re-read its brief and last report; same model, folder and goal; the reload turn posts
+no report), otherwise a context of `nightly_compact_at` tokens or more is compacted. Working, rate-limited and stopped
 lanes are skipped. Each action goes to the hub log and the activity feed, nothing to Discord. The last run date is kept
 in `~/.dotz/lane-hygiene.json`; a run missed while the gateway was down is made up a minute after the next start.
 Settings apply when a lane starts or resumes.

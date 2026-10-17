@@ -13,7 +13,7 @@ export type Config = {
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string };
 	web: { port: number; tailscale_https_port: number; allow_logins: string[] };
 	orchestrator?: { model: string; thinking: string; rotate_tokens?: number };
-	lanes: { model: string; thinking: string; max_active?: number; worker_model?: string; compact_at?: number; keep_recent?: number; nightly_at?: string; rotate_mb?: number };
+	lanes: { model: string; thinking: string; max_active?: number; worker_model?: string; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number };
 };
 
 export const CONFIG_FILE = join(DATA_DIR, "config.json");
@@ -29,9 +29,10 @@ export const DEFAULT_WORKER_MODEL = "anthropic/claude-sonnet-5-5:high";
 export const workerModel = () => cfg.lanes?.worker_model ?? DEFAULT_WORKER_MODEL;
 // Lane context management: omp compacts a lane's session at `compact_at` tokens keeping the last `keep_recent`; each night
 // at `nightly_at` (local time, "off" disables) idle lanes past `rotate_mb` of session file start a fresh session with a
-// handover and idle lanes past 60% of their window are compacted.
+// handover and idle lanes at `nightly_compact_at` tokens or more are compacted.
 const positive = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback);
 export const lanesCompactAt = () => positive(cfg.lanes?.compact_at, 400_000);
+export const lanesNightlyCompactAt = () => positive(cfg.lanes?.nightly_compact_at, 300_000);
 export const lanesKeepRecent = () => positive(cfg.lanes?.keep_recent, 40_000);
 export const lanesRotateMb = () => positive(cfg.lanes?.rotate_mb, 50);
 export const lanesNightlyAt = () => String(cfg.lanes?.nightly_at ?? "04:30");
