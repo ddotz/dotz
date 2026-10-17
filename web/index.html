@@ -7,18 +7,20 @@
 <meta name="theme-color" content="#ffffff">
 <title>dotz</title>
 <script>
-// Theme is applied before first paint: explicit choice (light/dark) or the system setting.
+// Theme is applied before first paint: the saved light/dark choice, else the system setting (read only until the first toggle).
 (() => {
   const mq = matchMedia("(prefers-color-scheme: dark)");
-  const get = () => { const v = localStorage.getItem("dotz-theme"); return v === "light" || v === "dark" ? v : "system"; };
+  const saved = () => { const v = localStorage.getItem("dotz-theme"); return v === "light" || v === "dark" ? v : null; };
+  const get = () => saved() || (mq.matches ? "dark" : "light");
   const apply = () => {
-    const p = get(), dark = p === "dark" || (p === "system" && mq.matches);
+    const dark = get() === "dark";
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     const m = document.querySelector('meta[name="theme-color"]');
     if (m) m.content = dark ? "#0a0a0a" : "#ffffff";
+    window.dispatchEvent(new Event("dotz-theme"));
   };
   mq.addEventListener("change", apply);
-  window.dotzTheme = { get, set: v => { if (v === "system") localStorage.removeItem("dotz-theme"); else localStorage.setItem("dotz-theme", v); apply(); } };
+  window.dotzTheme = { get, toggle: () => { localStorage.setItem("dotz-theme", get() === "dark" ? "light" : "dark"); apply(); return get(); } };
   apply();
 })();
 </script>
@@ -171,6 +173,9 @@ button.li:hover, .li.tap:hover { background: var(--hover); }
 .heads .t { min-width: 0; font: 600 13px/20px var(--font); overflow-wrap: anywhere; }
 .sp { flex: 1; }
 .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pickbox { display: flex; flex-direction: column; gap: 16px; max-height: min(46dvh, 340px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+.kb:empty { display: none; }
+.li.on { background: var(--active); }
 .tools-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .tools-bar .sec { margin: 0; }
 .sub { margin-top: 4px; }
@@ -423,7 +428,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
       <h1 id="title">dotz</h1>
       <span class="conn" id="conn" hidden>연결 끊김</span>
       <button class="ib only-phone" id="pal" type="button" aria-label="명령"></button>
-      <button class="ib" id="theme" type="button" aria-label="화면 모드" aria-haspopup="listbox" aria-expanded="false"></button>
+      <button class="ib" id="theme" type="button"></button>
     </header>
     <div class="views" id="views">
       <section class="view" id="v-home" hidden><div class="grid" id="home"></div></section>
@@ -505,7 +510,8 @@ const ICONS = {
   drop: "M6 9l6 6 6-6",
   chev: "M9 6l6 6-6 6",
   add: "M12 5v14M5 12h14",
-  theme: "M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18zM12 3v18M12 7h4M12 12h6M12 17h4",
+  sun: "M12 8a4 4 0 1 0 0 8a4 4 0 0 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
+  moon: "M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z",
   usage: "M5 20v-9M12 20V4M19 20v-6",
   context: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6",
   model: "M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4",
@@ -705,7 +711,18 @@ const modelName = sel => { if (!sel) return "–"; const a = ((M && M.available)
 
 /* ---------- chrome: nav, theme, back ---------- */
 for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id) }, icon(id), el("span", { class: "nl", text: label })));
-$("#theme").append(icon("theme"));
+// Light<->dark toggle: the icon shows the mode a click switches to.
+const themeIs = () => dotzTheme.get();
+const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
+const themeNext = () => themeIs() === "dark" ? "라이트" : "다크";
+function paintTheme() {
+  const b = $("#theme");
+  clear(b).append(icon(themeIc()));
+  b.title = b.ariaLabel = `${themeNext()} 모드로 전환`;
+}
+function toggleTheme() { dotzTheme.toggle(); paintTheme(); if (current === "settings") renderSettings(); }
+window.addEventListener("dotz-theme", () => { paintTheme(); if (current === "settings") renderSettings(); });
+paintTheme();
 $("#pal").append(icon("search"));
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
@@ -717,10 +734,7 @@ function renderSideStatus() {
 }
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
-const THEME_ITEMS = [{ value: "system", label: "시스템" }, { value: "light", label: "라이트" }, { value: "dark", label: "다크" }];
-const themeLabel = () => THEME_ITEMS.find(t => t.value === dotzTheme.get()).label;
-const themeMenu = anchor => showMenu(anchor, THEME_ITEMS, { value: dotzTheme.get(), onPick: v => { dotzTheme.set(v); if (current === "settings") renderSettings(); } });
-$("#theme").onclick = ev => themeMenu(ev.currentTarget);
+$("#theme").onclick = toggleTheme;
 const backTarget = () => SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : null;
 $("#back").onclick = () => go(backTarget() || "home");
 
@@ -745,7 +759,7 @@ function openPalette() {
       if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
     } catch (e) { out.className = "pal-out err"; out.textContent = e.message; }
   };
-  const exec = it => { if (it.kind === "nav") { d.close(); go(it.go); } else runCmd(it.run); };
+  const exec = it => { if (it.kind === "nav") { d.close(); go(it.go); } else if (it.kind === "act") { d.close(); it.act(); } else runCmd(it.run); };
   const build = () => {
     const raw = inp.value.trim(), v = raw.toLowerCase();
     items = [];
@@ -755,12 +769,13 @@ function openPalette() {
     } else {
       for (const [c, desc] of hintList) if (!v || c.includes(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
       for (const id of views) if (!v || titles[id].toLowerCase().includes(v) || id.includes(v)) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], go: id });
+      if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
     }
     idx = 0;
     clear(list);
     let last = "";
     items.forEach((it, i) => {
-      const g = it.kind === "nav" ? "이동" : "명령";
+      const g = it.kind === "nav" ? "이동" : it.kind === "act" ? "화면" : "명령";
       if (g !== last) { list.append(el("div", { class: "ph", role: "presentation", text: g })); last = g; }
       list.append(el("button", { type: "button", role: "option", tabindex: "-1", class: `pal-i${it.kind === "cmd" ? " cmd" : ""}`, onmouseenter: () => { idx = i; mark(); }, onclick: () => exec(it) },
         icon(it.ic), el("span", { class: "nm", text: it.label }), it.desc ? el("span", { class: "pd", text: it.desc }) : null));
@@ -1736,8 +1751,7 @@ function renderProviders() {
   wrap.append(el("div", { class: "tools-bar" }, el("span", { class: "sec", text: `${list.filter(isConnected).length}개 연결` }),
     el("button", { class: "btn tonal", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
   if (!list.length) wrap.append(emptyNode("공급자 없음"));
-  const rows = el("div", { class: "list" });
-  for (const p of list) {
+  const row = p => {
     const name = p.name || p.id;
     const canLogout = p.can_logout ?? p.removable;
     const sub = p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨");
@@ -1750,31 +1764,33 @@ function renderProviders() {
       toast(key ? "키를 삭제했어요" : "로그아웃했어요");
       await loadProviders(); loadModels(true);
     }) }, p.auth === "api_key" ? "키 삭제" : "로그아웃"));
-    rows.append(el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
+    return el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
       el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
         sub ? el("div", { class: "sup", text: sub }) : null),
       el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "err" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }),
-      btns.children.length ? btns : null));
+      btns.children.length ? btns : null);
+  };
+  // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
+  const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
+  for (const [title, items] of [["로그인", list.filter(isLogin)], ["API 키", list.filter(p => !isLogin(p))]]) {
+    if (!items.length) continue;
+    wrap.append(el("div", { class: "sec", text: title }), el("div", { class: "list" }, ...items.map(row)));
   }
-  if (list.length) wrap.append(rows);
   clear(box).append(wrap);
 }
 function addProviderDialog() {
   const addable = P && P.addable;
   let pick = null, keyIn = null, free = null;
   const body = el("div", { class: "col", style: "gap:16px" });
+  const keyBox = el("div", { class: "col kb" });
+  const rowsByKey = new Map();
   let dlg;
-  const kindKo = k => k === "oauth" ? "로그인" : "API 키";
-  function paint() {
-    clear(body); keyIn = null; free = null;
-    if (addable) {
-      if (!addable.length) { body.append(el("p", { text: "추가할 공급자가 없어요" })); dlg && dlg.setActions([{ label: "닫기", onclick: c => c() }]); return; }
-      body.append(selectField("공급자", pick ? pick.name : "선택", addable.map(a => ({ value: a.id, label: a.name || a.id, sub: kindKo(a.kind) })), pick && pick.id, v => { pick = addable.find(a => a.id === v); paint(); }));
-    } else { free = input({ type: "text" }); body.append(textField("공급자", free)); pick = { kind: "api_key" }; }
-    if (pick && pick.kind === "api_key") { keyIn = input({ type: "password", autocomplete: "new-password" }); body.append(textField("API 키", keyIn)); }
+  function paintKey() {
+    clear(keyBox); keyIn = null;
+    for (const [id, n] of rowsByKey) { n.classList.toggle("on", !!pick && pick.id === id); n.setAttribute("aria-pressed", pick && pick.id === id ? "true" : "false"); }
+    if (pick && pick.kind === "api_key") { keyIn = input({ type: "password", autocomplete: "new-password" }); keyBox.append(textField(free ? "API 키" : `${pick.name || pick.id} API 키`, keyIn)); if (!free) keyIn.focus(); }
     const actions = [{ label: "취소", onclick: c => c() }];
-    if (pick && pick.kind === "oauth") actions.push({ label: "로그인", kind: "pri", onclick: c => { c(); startLogin(pick); } });
-    else if (pick) actions.push({ label: "저장", kind: "pri", onclick: (c, btn) => busy(btn, async () => {
+    if (pick && pick.kind === "api_key") actions.push({ label: "저장", kind: "pri", onclick: (c, btn) => busy(btn, async () => {
       const provider = free ? free.value.trim() : pick.id, key = keyIn.value;
       if (!provider || !key.trim()) { toast("공급자와 API 키를 입력하세요", true); return; }
       try { await api("/api/providers", "POST", { provider, key }); } finally { keyIn.value = ""; }
@@ -1782,8 +1798,31 @@ function addProviderDialog() {
     }) });
     dlg && dlg.setActions(actions);
   }
+  const group = (title, hint, items) => {
+    const box = el("div", {}, el("div", { class: "sec", text: title }), el("div", { class: "list" }));
+    for (const a of items) {
+      const n = el("button", { type: "button", class: "li tap", "aria-pressed": "false", onclick: () => {
+        if (a.kind === "oauth") { dlg.close(); startLogin(a); return; }
+        pick = a; paintKey();
+      } }, el("span", { class: "avatar", text: [...(a.name || a.id)][0] || "?" }), el("span", { class: "tx" }, el("div", { class: "hd", text: a.name || a.id })),
+        el("span", { class: "sup", text: hint }), icon(a.kind === "oauth" ? "chev" : "key", "lead"));
+      rowsByKey.set(a.id, n); box.lastChild.append(n);
+    }
+    return box;
+  };
+  if (addable) {
+    const login = addable.filter(a => a.kind === "oauth"), keys = addable.filter(a => a.kind !== "oauth");
+    if (!addable.length) body.append(el("p", { text: "추가할 공급자가 없어요" }));
+    else {
+      const pk = el("div", { class: "pickbox" });
+      if (login.length) pk.append(group("로그인", "계정으로 로그인", login));
+      if (keys.length) pk.append(group("API 키", "키 입력", keys));
+      body.append(pk, keyBox);
+    }
+  } else { free = input({ type: "text" }); pick = { kind: "api_key" }; body.append(textField("공급자", free), keyBox); }
   dlg = dialog({ title: "공급자 추가", body });
-  paint();
+  if (addable && !addable.length) dlg.setActions([{ label: "닫기", onclick: c => c() }]);
+  else paintKey();
 }
 async function startLogin(p) {
   let r;
@@ -1876,7 +1915,7 @@ function renderSettings() {
     row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
     row("usage", "사용량", "", () => go("usage")),
     row("context", "컨텍스트", "", () => go("context")),
-    row("theme", "화면 모드", themeLabel(), b => themeMenu(b), icon("drop", "lead")),
+    row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null));
 }
 
