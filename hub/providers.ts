@@ -1,0 +1,340 @@
+// Model providers as the gateway sees them, all kept in the runtime's own credential store: OAuth logins (`omp login`,
+// started and finished through the gateway), API keys (`omp auth import`), sign-out (`omp auth-broker logout`), plus
+// the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
+import { OMP } from "./config.ts";
+
+// omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
+export const PROVIDER_ENV: Record<string, string> = {
+	anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", google: "GEMINI_API_KEY", "google-vertex": "GOOGLE_CLOUD_API_KEY",
+	groq: "GROQ_API_KEY", openrouter: "OPENROUTER_API_KEY", mistral: "MISTRAL_API_KEY", xai: "XAI_API_KEY", azure: "AZURE_OPENAI_API_KEY",
+	abliteration: "ABLITERATION_API_KEY", aiand: "AIAND_API_KEY", cerebras: "CEREBRAS_API_KEY", "alibaba-token-plan": "ALIBABA_TOKEN_PLAN_API_KEY",
+	baseten: "BASETEN_API_KEY", commandcode: "COMMAND_CODE_API_KEY", coralbricks: "CORAL_API_KEY", deepinfra: "DEEPINFRA_API_KEY",
+	deepseek: "DEEPSEEK_API_KEY", siliconflow: "SILICONFLOW_API_KEY", "siliconflow-cn": "SILICONFLOW_CN_API_KEY", fireworks: "FIREWORKS_API_KEY",
+	together: "TOGETHER_API_KEY", typesafe: "TYPESAFE_API_KEY", coreweave: "COREWEAVE_API_KEY", nvidia: "NVIDIA_API_KEY", devin: "DEVIN_API_KEY",
+	"gmi-cloud": "GMI_API_KEY", huggingface: "HUGGINGFACE_HUB_TOKEN", moonshot: "MOONSHOT_API_KEY", stepfun: "STEPFUN_API_KEY",
+	helmcode: "HELMCODE_API_KEY", meta: "MODEL_API_KEY", nanogpt: "NANO_GPT_API_KEY", novita: "NOVITA_API_KEY", venice: "VENICE_API_KEY",
+	"vercel-ai-gateway": "AI_GATEWAY_API_KEY", litellm: "LITELLM_API_KEY", kilo: "KILO_API_KEY", zai: "ZAI_API_KEY", zenmux: "ZENMUX_API_KEY",
+	"zhipu-coding-plan": "ZHIPU_API_KEY", umans: "UMANS_AI_CODING_PLAN_API_KEY", qianfan: "QIANFAN_API_KEY", synthetic: "SYNTHETIC_API_KEY",
+	"minimax-code": "MINIMAX_CODE_API_KEY", "minimax-code-cn": "MINIMAX_CODE_CN_API_KEY", minimax: "MINIMAX_API_KEY",
+	"alibaba-coding-plan": "ALIBABA_CODING_PLAN_API_KEY", sakana: "SAKANA_API_KEY", sambanova: "SAMBANOVA_API_KEY", aimlapi: "AIMLAPI_API_KEY",
+	"opencode-zen": "OPENCODE_API_KEY", "opencode-go": "OPENCODE_API_KEY", "cline-pass": "CLINE_API_KEY", firepass: "FIREPASS_API_KEY",
+	"wafer-serverless": "WAFER_SERVERLESS_API_KEY", xiaomi: "XIAOMI_API_KEY", "xiaomi-token-plan-ams": "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
+	"xiaomi-token-plan-cn": "XIAOMI_TOKEN_PLAN_CN_API_KEY", "xiaomi-token-plan-sgp": "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+	"ollama-cloud": "OLLAMA_CLOUD_API_KEY", ollama: "OLLAMA_API_KEY", "lm-studio": "LM_STUDIO_API_KEY", "llama.cpp": "LLAMA_CPP_API_KEY",
+	vllm: "VLLM_API_KEY", "yolo-auto": "YOLO_AUTO_API_KEY", "charm-hyper": "CHARM_HYPER_API_KEY", "singularityapi-dev": "SINGULARITYAPI_DEV_API_KEY",
+	"singularityapi-tech": "SINGULARITYAPI_TECH_API_KEY",
+};
+
+export class ControlError extends Error {
+	constructor(message: string, readonly status = 400) {
+		super(message);
+	}
+}
+
+export const mask = (key: string): string => (key.length < 12 ? `…${key.slice(-2)}` : `${key.startsWith("sk-") ? "sk-" : key.slice(0, 2)}…${key.slice(-4)}`);
+
+export async function saveProviderKey(provider: string, rawKey: string): Promise<string> {
+	const key = rawKey.trim();
+	if (!PROVIDER_ENV[provider]) throw new ControlError(`"${provider}"은(는) API 키로 추가할 수 없는 공급자예요`);
+	if (key.length < 8 || key.length > 512 || /\s/.test(key)) throw new ControlError("키 형식이 올바르지 않아요 (공백 없이 8~512자)");
+	const proc = Bun.spawn([OMP, "auth", "import", "-"], { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
+	proc.stdin.write(JSON.stringify({ version: 1, credentials: [{ provider, credential: { type: "api_key", key } }] }));
+	await proc.stdin.end();
+	if ((await proc.exited) !== 0) throw new ControlError("키를 저장하지 못했어요", 500);
+	invalidate();
+	return mask(key);
+}
+
+// Provider keys set in the gateway's own environment, redacted from anything shown to the owner.
+export function secretValues(): string[] {
+	return Object.values(PROVIDER_ENV)
+		.map(v => process.env[v] ?? "")
+		.filter(v => v.length >= 8);
+}
+
+type OmpModel = { kind?: string; selector: string; id?: string; name?: string; provider: string; reasoning?: boolean };
+type OmpCredential = { provider: string; credential?: Record<string, unknown> };
+type OmpLimit = { id: string; label?: string; window?: { id?: string; label?: string; resetsAt?: number }; amount?: { used?: number; limit?: number; remaining?: number; unit?: string }; status?: string };
+export type OmpUsageReport = { provider: string; limits?: OmpLimit[] };
+
+async function ompJson<T>(args: string[], timeoutMs = 30_000): Promise<T | undefined> {
+	try {
+		const proc = Bun.spawn([OMP, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+		const timer = setTimeout(() => proc.kill(), timeoutMs);
+		const text = await new Response(proc.stdout).text();
+		clearTimeout(timer);
+		return (await proc.exited) === 0 ? (JSON.parse(text) as T) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+type Cached<T> = { at: number; value: T };
+const TTL_MS = 20_000;
+let cache: { models?: Cached<ModelInfo[]>; auth?: Cached<AuthInfo[]>; usage?: Cached<OmpUsageReport[]> } = {};
+export function invalidate(): void {
+	cache = {};
+}
+async function cached<K extends keyof typeof cache>(key: K, load: () => Promise<NonNullable<(typeof cache)[K]>["value"] | undefined>): Promise<NonNullable<(typeof cache)[K]>["value"] | undefined> {
+	const hit = cache[key];
+	if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
+	const value = await load();
+	if (value !== undefined) cache = { ...cache, [key]: { at: Date.now(), value } };
+	return value;
+}
+
+export type ModelInfo = { selector: string; name: string; provider: string; reasoning: boolean };
+export const availableModels = async (): Promise<ModelInfo[]> =>
+	(await cached("models", async () => {
+		const j = await ompJson<{ models?: OmpModel[] }>(["models", "--json"]);
+		return Array.isArray(j?.models) ? j.models.filter(m => m.kind === "chat").map(m => ({ selector: m.selector, name: m.name ?? m.id ?? m.selector, provider: m.provider, reasoning: Boolean(m.reasoning) })) : undefined;
+	})) ?? [];
+
+// What omp itself has stored (`omp auth export`): only provider ids, credential types and masked key tails are kept.
+export type AuthInfo = { provider: string; type: string; label?: string; masked?: string };
+const authInfos = async (): Promise<AuthInfo[]> =>
+	(await cached("auth", async () => {
+		const j = await ompJson<{ credentials?: OmpCredential[] }>(["auth", "export"]);
+		if (!Array.isArray(j?.credentials)) return undefined;
+		return j.credentials.map((c): AuthInfo => {
+			const cred = c.credential ?? {};
+			const key = ["key", "apiKey", "api_key", "token"].map(k => cred[k]).find((v): v is string => typeof v === "string" && v.length > 0);
+			return { provider: c.provider, type: String(cred.type), label: typeof cred.email === "string" ? cred.email : undefined, masked: key ? mask(key) : undefined };
+		});
+	})) ?? [];
+
+export const usageReports = async (): Promise<OmpUsageReport[]> =>
+	(await cached("usage", async () => (await ompJson<{ reports?: OmpUsageReport[] }>(["usage", "--json"], 45_000))?.reports)) ?? [];
+
+// Every provider the runtime can log into (`auth-broker list`) with its human label; fixed for the runtime's lifetime.
+export type LoginProvider = { id: string; name: string };
+let loginCatalog: LoginProvider[] | undefined;
+export async function loginProviders(): Promise<LoginProvider[]> {
+	if (loginCatalog) return loginCatalog;
+	const j = await ompJson<LoginProvider[]>(["auth-broker", "list", "--json"]);
+	if (!Array.isArray(j)) return [];
+	loginCatalog = j.filter(p => typeof p?.id === "string").map(p => ({ id: p.id, name: String(p.name ?? p.id) }));
+	return loginCatalog;
+}
+
+export type ProviderRow = { id: string; name: string; auth: "oauth" | "api_key" | "none"; account?: string; masked?: string; models: number; in_use: boolean; can_login: boolean; can_logout: boolean };
+export type AddableProvider = { id: string; name: string; kind: "oauth" | "api_key" };
+
+// Providers that have an API-key env var but whose primary sign-in is the subscription (OAuth) login.
+const OAUTH_FIRST = new Set(["anthropic"]);
+
+// Pure: merges the runtime's stored credentials, env vars, the login catalog and the model catalog into the configured
+// rows and the not-yet-configured (addable) providers.
+export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string> }): { providers: ProviderRow[]; addable: AddableProvider[] } {
+	const names = new Map(input.catalog.map(p => [p.id, p.name]));
+	const nameOf = (id: string) => names.get(id) ?? id;
+	const ids = new Set<string>([...input.auth.map(a => a.provider), ...input.models.map(m => m.provider)]);
+	for (const [id, v] of Object.entries(PROVIDER_ENV)) if (input.env[v]) ids.add(id);
+	const providers = [...ids].sort().map((id): ProviderRow => {
+		const base = { id, name: nameOf(id), models: input.models.filter(m => m.provider === id).length, in_use: input.inUse.has(id), can_login: names.has(id) };
+		const oauth = input.auth.find(a => a.provider === id && a.type === "oauth");
+		if (oauth) return { ...base, auth: "oauth", account: oauth.label, can_logout: true };
+		const key = input.auth.find(a => a.provider === id);
+		if (key) return { ...base, auth: "api_key", masked: key.masked, can_logout: true };
+		const v = PROVIDER_ENV[id];
+		if (v && input.env[v]) return { ...base, auth: "api_key", can_logout: false };
+		return { ...base, auth: "none", can_logout: false };
+	});
+	const addable: AddableProvider[] = [];
+	for (const p of input.catalog) if (!ids.has(p.id)) addable.push({ id: p.id, name: p.name, kind: PROVIDER_ENV[p.id] && !OAUTH_FIRST.has(p.id) ? "api_key" : "oauth" });
+	for (const id of Object.keys(PROVIDER_ENV)) if (!ids.has(id) && !names.has(id)) addable.push({ id, name: id, kind: "api_key" });
+	return { providers, addable: addable.sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
+export async function listProviders(inUse: Set<string>): Promise<{ providers: ProviderRow[]; addable: AddableProvider[] }> {
+	return buildProviders({ auth: await authInfos(), env: process.env, models: await availableModels(), catalog: await loginProviders(), inUse });
+}
+
+// ---- Sign-in (OAuth and subscription logins) ------------------------------------------------------------------------
+// The runtime's login command prints an authorize URL, listens on a localhost callback and, in parallel, reads the
+// authorization code (or the whole redirect URL) from stdin, so it can be finished from a browser on another device.
+// One login runs at a time; it is cancelled after LOGIN_TTL_MS. Output is parsed in memory only, never logged.
+const LOGIN_TTL_MS = 10 * 60_000;
+const LOGIN_START_MS = 20_000;
+const LOGIN_COMPLETE_MS = 60_000;
+const LOGIN_QUIET_MS = 400;
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
+const PROVIDER_ID = /^[a-z0-9][a-z0-9._-]*$/;
+
+type Login = {
+	id: string;
+	provider: string;
+	proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+	out: string;
+	lastOutAt: number;
+	exited: boolean;
+	status: "waiting" | "done" | "failed";
+	error?: string;
+	cancelled: boolean;
+	timer: ReturnType<typeof setTimeout>;
+};
+let login: Login | undefined;
+
+export type LoginView = { url: string; needs_code: boolean; prompt?: string; instructions?: string };
+
+// Pure: what the owner has to do next, read off the login process output (an unterminated last line is a pending prompt).
+export function parseLoginOutput(out: string): LoginView {
+	const lines = out.replace(/\r/g, "").split("\n");
+	const prompt = out.length > 0 && !out.endsWith("\n") ? lines[lines.length - 1].trim() || undefined : undefined;
+	const finished = prompt === undefined ? lines : lines.slice(0, -1);
+	const at = finished.map(l => l.trim()).findLastIndex(l => /^https?:\/\/\S+$/.test(l));
+	const url = at >= 0 ? finished[at].trim() : "";
+	const instructions = at < 0 ? [] : finished.slice(at + 1).map(l => l.trim()).reduce<{ lines: string[]; open: boolean }>((acc, l) => {
+		if (!l) acc.open = false;
+		else if (acc.open && !/^(Local shortcut|Waiting for)/.test(l) && !/omp/i.test(l)) acc.lines.push(l);
+		return acc;
+	}, { lines: [], open: true }).lines;
+	return { url, needs_code: prompt !== undefined, ...(prompt ? { prompt } : {}), ...(instructions.length ? { instructions: instructions.join("\n") } : {}) };
+}
+
+function finishLogin(l: Login, code: number): void {
+	clearTimeout(l.timer);
+	l.exited = true;
+	if (code === 0 && !l.cancelled) l.status = "done";
+	else {
+		l.status = "failed";
+		l.error = l.cancelled ? "로그인이 취소됐어요" : "로그인에 실패했어요. 코드를 확인하고 다시 시도해 주세요";
+	}
+	if (l.status === "done") invalidate();
+}
+
+async function pump(l: Login, stream: ReadableStream<Uint8Array>): Promise<void> {
+	const dec = new TextDecoder();
+	for await (const chunk of stream) {
+		if (l.out.length < 262_144) l.out += dec.decode(chunk, { stream: true }).replace(ANSI, "");
+		l.lastOutAt = Date.now();
+	}
+}
+
+function killLogin(l: Login, reason: string): void {
+	if (l.exited) return;
+	l.cancelled = true;
+	if (reason) l.error = reason;
+	l.proc.kill();
+	setTimeout(() => !l.exited && l.proc.kill(9), 2000).unref();
+}
+
+// Resolves when the process exited, when it asks for input (or shows its URL) after at least `after` characters of
+// output and then falls quiet, or at the deadline.
+function settle(l: Login, after: number, maxMs: number, needUrl: boolean): Promise<void> {
+	const { promise, resolve } = Promise.withResolvers<void>();
+	const started = Date.now();
+	const tick = () => {
+		if (l.exited || Date.now() - started > maxMs) return resolve();
+		if (l.out.length > after && Date.now() - l.lastOutAt >= LOGIN_QUIET_MS) {
+			const v = parseLoginOutput(l.out);
+			if (v.prompt || (needUrl && v.url)) return resolve();
+		}
+		setTimeout(tick, 100);
+	};
+	tick();
+	return promise;
+}
+
+function loginOf(provider: string, loginId: string): Login {
+	if (!login || login.provider !== provider || login.id !== loginId) throw new ControlError("진행 중인 로그인이 없어요", 404);
+	return login;
+}
+
+export async function startLogin(provider: string): Promise<{ login_id: string } & LoginView> {
+	if (!PROVIDER_ID.test(provider) || !(await loginProviders()).some(p => p.id === provider)) throw new ControlError(`"${provider}"은(는) 로그인할 수 없는 공급자예요`, 404);
+	if (login && !login.exited) throw new ControlError(`이미 진행 중인 로그인이 있어요 (${login.provider}). 먼저 취소해 주세요`, 409);
+	const proc = Bun.spawn([OMP, "login", provider], { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, BROWSER: "true" } });
+	const l: Login = { id: crypto.randomUUID(), provider, proc, out: "", lastOutAt: Date.now(), exited: false, status: "waiting", cancelled: false, timer: setTimeout(() => killLogin(l, "시간이 지나 로그인이 취소됐어요"), LOGIN_TTL_MS) };
+	l.timer.unref();
+	login = l;
+	void pump(l, proc.stdout);
+	void pump(l, proc.stderr);
+	void proc.exited.then(code => finishLogin(l, code));
+	await settle(l, 0, LOGIN_START_MS, true);
+	const view = parseLoginOutput(l.out);
+	if (l.exited || (!view.url && !view.prompt)) {
+		killLogin(l, "");
+		throw new ControlError("로그인을 시작하지 못했어요. 잠시 후 다시 시도해 주세요", 502);
+	}
+	return { login_id: l.id, ...view };
+}
+
+export function loginStatus(provider: string, loginId: string): { status: Login["status"]; error?: string } {
+	const l = loginOf(provider, loginId);
+	return { status: l.status, ...(l.error ? { error: l.error } : {}) };
+}
+
+// Hands the pasted authorization code (or the full redirect URL, or whatever the sign-in asks for) to the login process
+// and waits for it to finish. A multi-step sign-in answers with status "waiting" and the next prompt instead.
+export async function completeLogin(provider: string, loginId: string, rawCode: string): Promise<{ provider: string; status: "done" | "waiting" } & Partial<LoginView>> {
+	const l = loginOf(provider, loginId);
+	if (l.status === "done") return { provider, status: "done" };
+	if (l.exited) throw new ControlError(l.error ?? "로그인에 실패했어요", 400);
+	const code = rawCode.trim();
+	const wantsCode = parseLoginOutput(l.out).needs_code;
+	if (wantsCode) {
+		if (!code || code.length > 4096 || /[\r\n\0]/.test(code)) throw new ControlError("코드 형식이 올바르지 않아요", 400);
+		l.out += "\n";
+		const mark = l.out.length;
+		l.lastOutAt = Date.now();
+		l.proc.stdin.write(`${code}\n`);
+		await l.proc.stdin.flush();
+		await settle(l, mark, LOGIN_COMPLETE_MS, false);
+	} else {
+		await settle(l, Number.MAX_SAFE_INTEGER, LOGIN_COMPLETE_MS, false);
+	}
+	if (l.status === "done") return { provider, status: "done" };
+	if (l.exited) throw new ControlError(l.error ?? "로그인에 실패했어요", 400);
+	const view = parseLoginOutput(l.out);
+	if (view.needs_code && wantsCode) return { provider, status: "waiting", ...view };
+	throw new ControlError("아직 로그인이 끝나지 않았어요. 잠시 후 다시 확인해 주세요", 408);
+}
+
+export async function cancelLogin(provider: string): Promise<void> {
+	if (!login || login.provider !== provider || login.exited) return;
+	const l = login;
+	killLogin(l, "");
+	for (let i = 0; i < 40 && !l.exited; i++) await Bun.sleep(100);
+}
+
+export const pendingLogin = (): { provider: string; id: string } | undefined => (login && !login.exited ? { provider: login.provider, id: login.id } : undefined);
+
+// Signs the provider out: removes every credential (login or API key) the runtime stored for it.
+export async function logoutProvider(provider: string): Promise<void> {
+	if (!PROVIDER_ID.test(provider)) throw new ControlError("알 수 없는 공급자예요", 404);
+	invalidate();
+	if (!(await authInfos()).some(a => a.provider === provider)) {
+		const env = PROVIDER_ENV[provider];
+		throw new ControlError(env && process.env[env] ? "환경 설정으로 지정된 키라서 여기서 지울 수 없어요" : "로그인된 계정이 없어요", 404);
+	}
+	const proc = Bun.spawn([OMP, "auth-broker", "logout", provider], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+	if ((await proc.exited) !== 0) throw new ControlError("로그아웃하지 못했어요", 500);
+	invalidate();
+}
+
+export type QuotaLimit = { id: string; label: string; window: string; used: number | null; limit: number | null; remaining: number | null; unit: string; resets_at: number | null; status: string };
+// Pure: maps the usage reports to the API shape; providers holding credentials but absent from the reports
+// (or reporting no limits) are listed as unavailable with a plain reason.
+export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): { providers: { provider: string; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {
+	const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+	const providers = reports
+		.filter((r): r is OmpUsageReport & { limits: OmpLimit[] } => Array.isArray(r.limits) && r.limits.length > 0)
+		.map(r => ({
+			provider: r.provider,
+			limits: r.limits.map((l): QuotaLimit => ({
+				id: String(l.id), label: String(l.label ?? l.id), window: String(l.window?.id ?? l.window?.label ?? ""),
+				used: num(l.amount?.used), limit: num(l.amount?.limit), remaining: num(l.amount?.remaining), unit: String(l.amount?.unit ?? ""),
+				resets_at: num(l.window?.resetsAt), status: String(l.status ?? "unknown"),
+			})),
+		}));
+	const reported = new Set(providers.map(p => p.provider));
+	const unavailable = credentialed.filter(p => !reported.has(p)).map(provider => ({ provider, reason: "사용량 정보를 제공하지 않아요" }));
+	return { providers, unavailable };
+}
+
+export async function quota() {
+	const rows = (await listProviders(new Set())).providers;
+	const reports = await usageReports();
+	return { fetched_at: Date.now(), ...buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)) };
+}
