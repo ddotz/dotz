@@ -15,7 +15,7 @@ const DONE_RE = /(done[- ]?when|done\s*=|acceptance|완료\s*조건)/i;
 const RATE_RE = /429|rate_limit|usage limit/i;
 
 export type LaneStatus = "starting" | "working" | "idle" | "rate-limited" | "exited";
-type Record_ = { name: string; cwd: string; model: string; workerModel?: string; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number };
+type Record_ = { name: string; cwd: string; model: string; workerModel?: string; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; held?: string[] };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	lastText: string;
@@ -27,6 +27,7 @@ export type Lane = Record_ & {
 	quiet?: boolean;
 	revive?: boolean;
 	workingSince?: number;
+	pauseReported?: boolean;
 	progressAt?: number;
 	progressText?: string;
 };
@@ -44,9 +45,9 @@ export function setProgressHandler(fn: ReportFn): void {
 
 const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
-	const { name, cwd, model, workerModel, status, startedAt, sessionFile, reports } = lane;
+	const { name, cwd, model, workerModel, status, startedAt, sessionFile, reports, held } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeFileSync(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, status, startedAt, sessionFile, reports }, null, 2)}\n`);
+	writeFileSync(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}) }, null, 2)}\n`);
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -64,7 +65,14 @@ function write(lane: Lane, frame: Record<string, unknown>): void {
 // Compaction needs an idle process: omp aborts a running turn to compact, so a busy lane queues it until agent_end.
 const portOf = (lane: Lane): CompactPort => ({ idle: () => lane.status === "idle", send: frame => write(lane, frame) });
 
+// A paused lane (rate limit) keeps owner messages on disk instead of starting turns that fail at once; they go in with
+// the resume note.
 function prompt(lane: Lane, text: string): void {
+	if (lane.status === "rate-limited") {
+		(lane.held ??= []).push(text);
+		persist(lane);
+		return;
+	}
 	write(lane, { type: lane.status === "working" ? "steer" : "prompt", message: text });
 	if (lane.status === "working") return;
 	clearTimeout(lane.watchdog);
@@ -111,16 +119,23 @@ function scheduleReport(lane: Lane): void {
 	}, REPORT_DEBOUNCE_MS);
 }
 
+// The owner messages held during the pause ride along with the resume note and stay on disk until a turn succeeds.
+function withHeld(lane: Lane, text: string): string {
+	if (!lane.held?.length) return text;
+	return `${text}\n\n${lane.held.length} owner message(s) arrived while you were paused; handle each, oldest first:\n\n${lane.held.join("\n\n---\n\n")}`;
+}
+
 function pauseForRateLimit(lane: Lane, err: string): void {
 	if (lane.resumeTimer) return;
 	const wait = Math.min(Number(err.match(/retry-after-ms:\s*(\d+)/)?.[1] ?? 10 * 60_000), 6 * 3600_000) + 60_000;
 	setStatus(lane, "rate-limited");
 	const at = new Date(Date.now() + wait).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
-	report(lane, `[lane paused] 사용량 한도(429). ${at}쯤 자동으로 이어갑니다.`);
+	if (!lane.pauseReported) report(lane, `사용량 한도에 걸려서 멈췄어요. ${at}쯤부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`);
+	lane.pauseReported = true;
 	lane.resumeTimer = setTimeout(() => {
 		lane.resumeTimer = undefined;
 		setStatus(lane, "idle");
-		prompt(lane, "[dotz gateway] The rate limit has passed. Continue the work you were doing when it stopped.");
+		prompt(lane, withHeld(lane, "[dotz gateway] The rate limit has passed. Continue the work you were doing when it stopped."));
 	}, wait);
 }
 
@@ -160,6 +175,11 @@ async function readFrames(lane: Lane, proc: Subprocess<"pipe", "pipe", "pipe">):
 				}
 			} else if (f.type === "agent_end") {
 				scheduleReport(lane);
+				if (lane.status === "idle" && (lane.pauseReported || lane.held?.length)) {
+					lane.pauseReported = false;
+					lane.held = undefined;
+					persist(lane);
+				}
 				if (lane.status === "idle") {
 					write(lane, { type: "get_session_stats" });
 					flushCompact(lane.ctx, portOf(lane));
@@ -219,8 +239,10 @@ function spawn(lane: Lane, resume: boolean): void {
 }
 
 function resumeLane(lane: Lane, text: string): void {
+	clearTimeout(lane.resumeTimer);
+	lane.resumeTimer = undefined;
 	spawn(lane, true);
-	prompt(lane, text);
+	prompt(lane, withHeld(lane, text));
 	log(`lane ${lane.name} resumed ${lane.sessionFile}`);
 }
 

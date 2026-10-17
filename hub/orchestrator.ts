@@ -117,7 +117,10 @@ async function readFrames(p: Subprocess<"pipe", "pipe", "pipe">): Promise<void> 
 				lastTurnEnd = Date.now();
 				if (inKeepalive) inKeepalive = false;
 				else if (orch.status === "idle") keepalives = 0;
-				if (orch.status === "idle") {
+				if (orch.status === "idle" && pauseAlerted) {
+					pauseAlerted = false;
+					for (const text of held.splice(0)) write({ type: "prompt", message: text, streamingBehavior: "followUp" });
+				} else if (orch.status === "idle") {
 					if (++turnsSinceStart > 1 && orch.ctx.tokens > ROTATE_TOKENS) rotate();
 					else if (pendingRestart) {
 						pendingRestart = false;
@@ -167,17 +170,23 @@ function armWatchdog(): void {
 	}, WATCHDOG_MS);
 }
 
-let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+// While paused by a rate limit (5h or a spent week), prompts are held instead of each starting a turn that fails at once;
+// at retry-after they all go in, oldest first, after the resume note. A retry that hits the limit again re-arms quietly.
+let resumeTimer: Timer | undefined;
+let pauseAlerted = false;
 function scheduleResume(err: string): void {
 	if (resumeTimer) return;
 	const retry = Math.min(Number(err.match(/retry-after-ms:\s*(\d+)/)?.[1] ?? 10 * 60_000), 6 * 3600_000) + 60_000;
 	orch.status = "rate-limited";
 	orch.rateLimitedUntil = new Date(Date.now() + retry).toISOString();
-	onAlert(`${NAME}: 사용량 한도(429)로 멈춤. ${new Date(Date.now() + retry).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}쯤 자동으로 이어갑니다.`);
+	if (!pauseAlerted) onAlert(`${NAME}: 사용량 한도(429)로 멈춤. ${new Date(Date.now() + retry).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}쯤부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리합니다.`);
+	pauseAlerted = true;
 	resumeTimer = setTimeout(() => {
 		resumeTimer = undefined;
 		orch.status = "idle";
-		write({ type: "prompt", message: "[dotz gateway] The rate limit has passed. Continue the request you were handling when it stopped.", streamingBehavior: "followUp" });
+		// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
+		// retry that hits the limit again loses nothing.
+		write({ type: "prompt", message: `[dotz gateway] The rate limit has passed. Continue the request you were handling when it stopped.${held.length ? ` ${held.length} message(s) that arrived while you were paused come next, oldest first.` : ""}`, streamingBehavior: "followUp" });
 		armWatchdog();
 	}, retry);
 }
@@ -254,7 +263,7 @@ setInterval(() => {
 }, Math.min(60_000, Math.max(5_000, (KEEPALIVE_TO_MS - KEEPALIVE_FROM_MS) / 2)));
 
 export function deliver(text: string): void {
-	if (rotating || restarting) {
+	if (rotating || restarting || orch.status === "rate-limited") {
 		held.push(text);
 		return;
 	}
