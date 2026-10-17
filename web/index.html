@@ -742,10 +742,14 @@ let M = null;          // /api/models
 let P = null;          // /api/providers
 let botName = "dotz";
 let current = "home", prevView = null;
-const NAV = [["home", "홈"], ["chat", "채팅"], ["activity", "활동"], ["lanes", "레인"], ["settings", "설정"]];
+// 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
+const NAV = [["home", "홈"], ["chat", "채팅"], ["lanes", "레인"], ["settings", "설정"]];
+const CHAT_MODE_KEY = "dotz-chat-mode";
+const navView = v => v === "activity" ? "chat" : v;
+const lastChatView = () => { try { return localStorage.getItem(CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const SUB = new Set(["models", "providers", "usage", "context"]);
 const views = ["home", "chat", "activity", "lanes", "settings", "models", "providers", "usage", "context"];
-const titles = { home: "홈", chat: "채팅", activity: "활동", lanes: "레인", settings: "설정", models: "모델", providers: "공급자", usage: "사용량", context: "컨텍스트" };
+const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인", settings: "설정", models: "모델", providers: "공급자", usage: "사용량", context: "컨텍스트" };
 const laneAlive = l => l.status !== "exited";
 const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/exit|dead|error|fail|stop/.test(s || "") ? "err" : "");
 const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 제한", exited: "종료됨" })[s] || s || "알 수 없음";
@@ -753,7 +757,7 @@ const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
 /* ---------- chrome: nav, theme, back ---------- */
-for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id) }, icon(id), el("span", { class: "nl", text: label })));
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id === "chat" ? lastChatView() : id) }, icon(id), el("span", { class: "nl", text: label })));
 // Light<->dark toggle: the icon shows the mode a click switches to.
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
@@ -811,7 +815,7 @@ function openPalette() {
       else for (const [c, desc] of hintList) if (c.startsWith(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
     } else {
       for (const [c, desc] of hintList) if (!v || c.includes(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
-      for (const id of views) if (!v || titles[id].toLowerCase().includes(v) || id.includes(v)) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], go: id });
+      for (const id of views) if (id !== "activity" && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], go: id === "chat" ? lastChatView() : id });
       if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
     }
     idx = 0;
@@ -868,7 +872,8 @@ function go(name, tgt) {
   if (location.hash !== `#${hash}`) history.replaceState(null, "", `#${hash}`);
   for (const v of views) $(`#v-${v}`).hidden = v !== name;
   const back = backTarget();
-  document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === (back || name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
+  if (name === "chat" || name === "activity") try { localStorage.setItem(CHAT_MODE_KEY, name); } catch {}
+  document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(back || name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#back").hidden = !back;
   $("#appbar").classList.toggle("back", !!back);
   $("#title").textContent = name === "home" ? botName : titles[name];
@@ -1498,9 +1503,10 @@ function renderBars() {
     const mode = bar.dataset.mode, msig = `${sig}|${mode}`;
     if (bar.dataset.sig === msig || (openMenu && bar.contains(openMenu.anchor))) continue;
     bar.dataset.sig = msig;
-    const shown = showDead ? D : D.filter(v => v.t === target);
-    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, ...A.map(chip), ...shown.map(chip),
-      D.length ? el("button", { class: "tchip fold", type: "button", "aria-expanded": showDead ? "true" : "false", onclick: () => { showDead = !showDead; renderBars(); } }, el("span", { class: "tx", text: showDead ? "종료 접기" : `종료 ${D.length}` })) : null);
+    // Folded means no exited chips at all; when the selected target is an exited lane, the fold chip shows it as selected.
+    const curDead = D.some(v => v.t === target);
+    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, ...A.map(chip), ...(showDead ? D : []).map(chip),
+      D.length ? el("button", { class: `tchip fold${!showDead && curDead ? " on" : ""}`, type: "button", "aria-expanded": showDead ? "true" : "false", title: !showDead && curDead ? cur.name : "", onclick: () => { showDead = !showDead; renderBars(); } }, el("span", { class: "tx", text: showDead ? "종료 접기" : curDead ? `종료 ${D.length} · ${cur.name}` : `종료 ${D.length}` })) : null);
     const drop = el("button", { type: "button", class: "sel tdrop", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `대화 대상: ${cur.name}` },
       el("span", { class: `dot ${cur.tone}` }), el("span", { class: "val", text: cur.name }),
       cur.subs ? el("span", { class: "sb", text: `서브 ${cur.subs}` }) : null,
