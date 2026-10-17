@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#FEF7FF">
+<meta name="theme-color" content="#ffffff">
 <title>dotz</title>
 <script>
 // Theme is applied before first paint: explicit choice (light/dark) or the system setting.
@@ -15,7 +15,7 @@
     const p = get(), dark = p === "dark" || (p === "system" && mq.matches);
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     const m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.content = dark ? "#141218" : "#FEF7FF";
+    if (m) m.content = dark ? "#0a0a0a" : "#ffffff";
   };
   mq.addEventListener("change", apply);
   window.dotzTheme = { get, set: v => { if (v === "system") localStorage.removeItem("dotz-theme"); else localStorage.setItem("dotz-theme", v); apply(); } };
@@ -23,261 +23,297 @@
 })();
 </script>
 <style>
-/* Material 3 baseline tonal palette, light + dark color roles */
+/* neutral monochrome tokens: 1 canvas + 1 raised layer, hairline borders, one accent */
 :root {
   color-scheme: light;
-  --primary: #6750A4; --on-primary: #FFFFFF; --primary-container: #EADDFF; --on-primary-container: #21005D;
-  --secondary: #625B71; --secondary-container: #E8DEF8; --on-secondary-container: #1D192B;
-  --error: #B3261E; --on-error: #FFFFFF; --error-container: #F9DEDC; --on-error-container: #410E0B;
-  --ok: #1B6D2F; --ok-container: #CBEFCE; --on-ok-container: #002108;
-  --warn: #8A5100; --warn-container: #FFDCBD; --on-warn-container: #2C1600;
-  --surface: #FEF7FF; --on-surface: #1D1B20; --on-surface-variant: #49454F;
-  --surface-container-lowest: #FFFFFF; --surface-container-low: #F7F2FA; --surface-container: #F3EDF7;
-  --surface-container-high: #ECE6F0; --surface-container-highest: #E6E0E9;
-  --outline: #79747E; --outline-variant: #CAC4D0;
-  --inverse-surface: #322F35; --inverse-on-surface: #F5EFF7;
-  --scrim: rgb(0 0 0 / .32);
-  --font: "Roboto Flex", "Roboto", system-ui, -apple-system, "Noto Sans KR", "Apple SD Gothic Neo", "Segoe UI", sans-serif;
-  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --bg: #ffffff; --side: #fafafa; --card: #ffffff; --pop: #ffffff;
+  --layer: #f5f5f5; --hover: #f2f2f2; --active: #ebebeb; --track: #ebebeb;
+  --line: #ebebeb; --line-2: #dedede;
+  --fg: #171717; --fg-2: #666666; --fg-3: #8a8a8a;
+  --accent: #5b5bd6;
+  --ok: #18884f; --warn: #b25e00; --err: #d92d20;
+  --scrim: rgb(0 0 0 / .4);
+  --font: Inter, Geist, system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Geist Mono", SFMono-Regular, Menlo, Consolas, monospace;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --primary: #D0BCFF; --on-primary: #381E72; --primary-container: #4F378B; --on-primary-container: #EADDFF;
-  --secondary: #CCC2DC; --secondary-container: #4A4458; --on-secondary-container: #E8DEF8;
-  --error: #F2B8B5; --on-error: #601410; --error-container: #8C1D18; --on-error-container: #F9DEDC;
-  --ok: #8DD79A; --ok-container: #00531F; --on-ok-container: #CBEFCE;
-  --warn: #FFB86C; --warn-container: #693C00; --on-warn-container: #FFDCBD;
-  --surface: #141218; --on-surface: #E6E0E9; --on-surface-variant: #CAC4D0;
-  --surface-container-lowest: #0F0D13; --surface-container-low: #1D1B20; --surface-container: #211F26;
-  --surface-container-high: #2B2930; --surface-container-highest: #36343B;
-  --outline: #938F99; --outline-variant: #49454F;
-  --inverse-surface: #E6E0E9; --inverse-on-surface: #322F35;
-  --scrim: rgb(0 0 0 / .5);
+  --bg: #0a0a0a; --side: #0e0e0e; --card: #111111; --pop: #161616;
+  --layer: #181818; --hover: #1a1a1a; --active: #222222; --track: #262626;
+  --line: #222222; --line-2: #313131;
+  --fg: #ededed; --fg-2: #a1a1a1; --fg-3: #858585;
+  --accent: #8e8ef0;
+  --ok: #3ecf8e; --warn: #f5a524; --err: #ff6369;
+  --scrim: rgb(0 0 0 / .6);
 }
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 [hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
-body { font: 400 14px/20px var(--font); letter-spacing: .015em; background: var(--surface); color: var(--on-surface); overflow: hidden; -webkit-text-size-adjust: 100%; }
+body { font: 400 13px/20px var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; }
 button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
 button { cursor: pointer; }
 code, pre { font-family: var(--mono); }
-:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-svg.ic { width: 24px; height: 24px; fill: currentColor; flex: none; }
-.sm svg.ic, svg.ic.sm { width: 18px; height: 18px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+button:disabled { opacity: .4; cursor: default; pointer-events: none; }
+kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--layer); color: var(--fg-3); font: 500 11px/16px var(--font); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-/* state layer: hover / focus / press on every interactive surface */
-.btn, .ib, .chip, .tap, .mi, .seg button, .ni .ind, .sel, .hintchip { position: relative; overflow: hidden; }
-.btn::before, .ib::before, .chip::before, .tap::before, .mi::before, .seg button::before, .ni .ind::before, .sel::before, .hintchip::before { content: ""; position: absolute; inset: 0; background: currentColor; opacity: 0; transition: opacity .15s; pointer-events: none; border-radius: inherit; }
-.btn:hover::before, .ib:hover::before, .chip:hover::before, .tap:hover::before, .mi:hover::before, .seg button:hover::before, .ni:hover .ind::before, .sel:hover::before, .hintchip:hover::before { opacity: .08; }
-.btn:focus-visible::before, .ib:focus-visible::before, .chip:focus-visible::before, .tap:focus-visible::before, .mi:focus-visible::before, .seg button:focus-visible::before, .ni:focus-visible .ind::before, .sel:focus-visible::before, .hintchip:focus-visible::before,
-.btn:active::before, .ib:active::before, .chip:active::before, .tap:active::before, .mi:active::before, .seg button:active::before, .ni:active .ind::before, .sel:active::before, .hintchip:active::before { opacity: .12; }
-button:disabled { opacity: .38; cursor: default; pointer-events: none; }
-
-/* layout: navigation bar (phone) / rail (wide) */
-.app { display: grid; grid-template-columns: 80px minmax(0, 1fr); height: 100vh; height: 100dvh; }
-.rail { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 44px 0 12px; background: var(--surface); }
-.ni { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 80px; border: 0; background: transparent; padding: 0; color: var(--on-surface-variant); font-size: 12px; line-height: 16px; font-weight: 500; }
-.ni .ind { display: grid; place-items: center; width: 56px; height: 32px; border-radius: 16px; transition: background .2s; }
-.ni.on { color: var(--on-surface); }
-.ni.on .ind { background: var(--secondary-container); color: var(--on-secondary-container); }
+/* layout: sidebar (wide) / bottom bar (phone) */
+.app { display: grid; grid-template-columns: 216px minmax(0, 1fr); height: 100vh; height: 100dvh; }
+.side { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px 8px; background: var(--side); border-right: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; font-size: 13px; font-weight: 600; letter-spacing: -.01em; }
+.brand span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logo { position: relative; flex: none; width: 16px; height: 16px; border-radius: 5px; background: var(--fg); }
+.logo::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--bg); }
+.cmdk { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; margin: 8px 0 12px; padding: 0 6px 0 8px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--card); color: var(--fg-3); text-align: left; }
+.cmdk:hover { border-color: var(--fg-3); }
+.cmdk .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail { display: flex; flex-direction: column; gap: 2px; }
+.ni { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; text-align: left; }
+.ni:hover { background: var(--hover); color: var(--fg); }
+.ni.on { background: var(--active); color: var(--fg); }
+.ni .nl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sfoot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 8px; color: var(--fg-2); font-size: 12px; }
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.appbar { flex: none; display: flex; align-items: center; gap: 4px; min-height: 64px; padding: max(8px, env(safe-area-inset-top)) 8px 8px 16px; background: var(--surface); transition: background .2s; }
-.appbar.back { padding-left: 4px; }
-.appbar.scrolled { background: var(--surface-container); }
-.appbar h1 { flex: 1; min-width: 0; margin: 0; font: 400 22px/28px var(--font); letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conn { flex: none; height: 24px; padding: 0 8px; border-radius: 8px; background: var(--error-container); color: var(--on-error-container); font-size: 12px; line-height: 24px; font-weight: 500; }
+.appbar { flex: none; display: flex; align-items: center; gap: 4px; height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0 20px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.appbar.back { padding-left: 12px; }
+.appbar h1 { flex: 1; min-width: 0; margin: 0; font: 600 13px/20px var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conn { flex: none; height: 20px; padding: 0 8px; border-radius: 10px; background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); font-size: 12px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 .views { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
-.view { max-width: 960px; margin: 0 auto; padding: 8px 16px 32px; }
+.view { max-width: 920px; margin: 0 auto; padding: 24px; }
 .view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
-@media (min-width: 600px) { .view { padding: 8px 24px 32px; } .appbar { padding-left: 24px; } .appbar.back { padding-left: 12px; } }
-@media (max-width: 599px) {
+.only-phone { display: none !important; }
+@media (max-width: 639px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .main { order: 1; }
-  .rail { order: 2; flex-direction: row; justify-content: space-around; align-items: flex-start; gap: 0; padding: 12px 0 max(16px, env(safe-area-inset-bottom)); background: var(--surface-container); }
-  .ni { flex: 1 1 0; min-width: 0; width: auto; }
-  .ni span.nl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side { order: 2; flex-direction: row; padding: 0 0 env(safe-area-inset-bottom); border-right: 0; border-top: 1px solid var(--line); }
+  .brand, .cmdk, .sfoot { display: none; }
+  .rail { flex: 1; min-width: 0; flex-direction: row; gap: 0; }
+  .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 2px; height: 52px; padding: 0 2px; border-radius: 0; background: transparent !important; font-size: 10.5px; line-height: 14px; text-align: center; }
+  .ni .ic { width: 18px; height: 18px; }
+  .ni.on::before { content: ""; position: absolute; top: -1px; left: 25%; right: 25%; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent); }
+  .appbar { padding-left: 16px; }
+  .only-phone { display: inline-grid !important; }
+  .view { padding: 16px 12px 24px; }
+  .view.fill { padding-bottom: 0; }
 }
-@media (max-width: 340px) { .ni .ind { width: 48px; } .ni { font-size: 11px; } }
 
-/* icon button, buttons */
-.ib { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: var(--on-surface-variant); padding: 0; }
-.ib.pri { background: var(--primary); color: var(--on-primary); }
-.ib.tonal { background: var(--secondary-container); color: var(--on-secondary-container); }
-.ib.err { color: var(--error); }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 24px; border: 0; border-radius: 20px; background: var(--primary); color: var(--on-primary); font-weight: 500; font-size: 14px; line-height: 20px; letter-spacing: .1px; text-decoration: none; white-space: nowrap; max-width: 100%; }
-.btn svg.ic { width: 18px; height: 18px; margin-left: -8px; }
-.btn.tonal { background: var(--secondary-container); color: var(--on-secondary-container); }
-.btn.text { background: transparent; color: var(--primary); padding: 0 12px; }
-.btn.text svg.ic { margin-left: 0; }
-.btn.outlined { background: transparent; color: var(--primary); box-shadow: inset 0 0 0 1px var(--outline); }
-.btn.danger { background: transparent; color: var(--error); padding: 0 12px; }
-.btn.danger.fill { background: var(--error); color: var(--on-error); padding: 0 24px; }
+/* buttons */
+.ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); padding: 0; }
+.ib:hover { background: var(--hover); color: var(--fg); }
+.ib.pri { background: var(--fg); color: var(--bg); }
+.ib.pri:hover { background: var(--fg); opacity: .85; }
+.ib.err { color: var(--err); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 12px; border: 1px solid var(--fg); border-radius: 6px; background: var(--fg); color: var(--bg); font-size: 13px; line-height: 20px; font-weight: 500; text-decoration: none; white-space: nowrap; max-width: 100%; }
+.btn:hover { opacity: .85; }
+.btn.tonal, .btn.outlined { background: var(--card); color: var(--fg); border-color: var(--line-2); }
+.btn.tonal:hover, .btn.outlined:hover { background: var(--hover); opacity: 1; }
+.btn.text { background: transparent; border-color: transparent; color: var(--fg-2); padding: 0 8px; }
+.btn.text:hover { background: var(--hover); color: var(--fg); opacity: 1; }
+.btn.danger { background: transparent; border-color: transparent; color: var(--err); padding: 0 8px; }
+.btn.danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); opacity: 1; }
+.btn.danger.fill { background: var(--err); border-color: var(--err); color: #fff; padding: 0 12px; }
 .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (pointer: coarse) { .ib { width: 36px; height: 36px; } .btn { height: 36px; } .ni { min-height: 44px; } }
 
-/* cards, lists, tags, progress */
+/* cards, lists, tags, bars */
 .col { display: flex; flex-direction: column; gap: 12px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; }
-.card { position: relative; min-width: 0; border-radius: 12px; background: var(--surface-container); padding: 16px; overflow: hidden; }
-.card.tap { cursor: pointer; }
-.card.tap:focus-visible { outline-offset: -2px; }
-.ch { display: flex; align-items: center; gap: 8px; min-height: 32px; margin-bottom: 8px; }
-.ch h3 { flex: 1; min-width: 0; margin: 0; font: 500 16px/24px var(--font); letter-spacing: .15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ch .chev { color: var(--on-surface-variant); }
-.big { font: 400 22px/28px var(--font); letter-spacing: 0; overflow-wrap: anywhere; }
-.sup { color: var(--on-surface-variant); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
-.err-t { color: var(--error); }
-.muted { color: var(--on-surface-variant); }
-.empty { padding: 24px 16px; text-align: center; color: var(--on-surface-variant); }
-.dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--outline); }
-.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--error); }
-.dot.pri { background: var(--primary); animation: pulse 1.4s ease-in-out infinite; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; }
+.card { position: relative; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 16px; }
+.card.tap { cursor: pointer; transition: border-color .15s, background .15s; }
+.card.tap:hover { border-color: var(--line-2); background: var(--hover); }
+.card.tap:focus-visible { outline-offset: 0; }
+.ch { display: flex; align-items: center; gap: 8px; min-height: 20px; margin-bottom: 12px; }
+.ch h3 { flex: 1; min-width: 0; margin: 0; font: 500 13px/20px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch .chev { width: 14px; height: 14px; color: var(--fg-3); }
+.card.tap:hover .chev { color: var(--fg); }
+.big { font: 600 15px/22px var(--font); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.sup { color: var(--fg-2); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
+.err-t { color: var(--err); }
+.muted { color: var(--fg-2); }
+.empty { padding: 32px 16px; text-align: center; color: var(--fg-3); font-size: 12px; }
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+.dot.pri { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .dot.pri { animation: none; } * { transition: none !important; } }
-.tag { display: inline-flex; align-items: center; flex: none; height: 24px; padding: 0 8px; border-radius: 8px; background: var(--surface-container-highest); color: var(--on-surface-variant); font-size: 12px; line-height: 16px; font-weight: 500; white-space: nowrap; max-width: 100%; }
-.tag.ok { background: var(--ok-container); color: var(--on-ok-container); }
-.tag.warn { background: var(--warn-container); color: var(--on-warn-container); }
-.tag.err { background: var(--error-container); color: var(--on-error-container); }
-.tag.pri { background: var(--primary-container); color: var(--on-primary-container); }
-.row { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.row + .row { margin-top: 12px; }
+.tag { display: inline-flex; align-items: center; flex: none; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--layer); color: var(--fg-2); font-size: 11px; line-height: 16px; font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.tag.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.tag.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.tag.err { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); }
+.tag.pri { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.row + .row { margin-top: 8px; }
 .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kv { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 14px; }
+.kv { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .kv .k { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kv .v { flex: none; color: var(--on-surface-variant); font-size: 12px; }
-.bar { height: 4px; border-radius: 2px; background: var(--surface-container-highest); overflow: hidden; margin-top: 6px; }
-.bar i { display: block; height: 100%; border-radius: 2px; background: var(--bar, var(--primary)); transition: width .3s; }
-.bar.warn { --bar: var(--warn); } .bar.err { --bar: var(--error); }
-.lim + .lim { margin-top: 14px; }
-.sec { margin: 20px 0 8px 4px; color: var(--on-surface-variant); font: 500 14px/20px var(--font); letter-spacing: .1px; }
-.sec:first-child { margin-top: 4px; }
-.li { display: flex; align-items: center; gap: 16px; min-width: 0; padding: 12px 16px; border-radius: 12px; background: var(--surface-container); color: inherit; text-align: left; width: 100%; border: 0; }
-.li + .li { margin-top: 8px; }
-.li .lead { flex: none; color: var(--on-surface-variant); }
+.kv .v { flex: none; color: var(--fg-2); font-size: 12px; }
+.bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; margin-top: 8px; }
+.bar i { display: block; height: 100%; border-radius: 2px; background: var(--bar, var(--fg)); transition: width .3s; }
+.bar.warn { --bar: var(--warn); } .bar.err { --bar: var(--err); }
+.lim + .lim { margin-top: 12px; }
+.more { margin-top: 12px; color: var(--fg-3); font-size: 12px; }
+.sec { margin: 24px 0 8px; color: var(--fg-3); font: 500 12px/16px var(--font); }
+.sec:first-child { margin-top: 0; }
+.list { border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
+.list > * + * { border-top: 1px solid var(--line); }
+.li { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 44px; padding: 8px 12px; color: inherit; text-align: left; width: 100%; border: 0; background: transparent; }
+button.li:hover, .li.tap:hover { background: var(--hover); }
+.li .lead { flex: none; display: inline-flex; color: var(--fg-3); }
 .li .tx { flex: 1; min-width: 0; }
-.li .hd { font: 400 16px/24px var(--font); letter-spacing: .5px; overflow-wrap: anywhere; }
-.avatar { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--primary-container); color: var(--on-primary-container); font: 500 16px/24px var(--font); text-transform: uppercase; }
-.heads { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.heads .t { font: 500 16px/24px var(--font); letter-spacing: .15px; overflow-wrap: anywhere; }
+.li .hd { font-size: 13px; line-height: 20px; font-weight: 500; overflow-wrap: anywhere; }
+.li.prow { flex-wrap: wrap; }
+.li.prow .tx { flex: 1 1 140px; }
+.avatar { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--layer); border: 1px solid var(--line); color: var(--fg-2); font: 600 11px/16px var(--font); text-transform: uppercase; }
+.heads { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.heads .t { min-width: 0; font: 600 13px/20px var(--font); overflow-wrap: anywhere; }
+.sp { flex: 1; }
 .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tools-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.tools-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.tools-bar .sec { margin: 0; }
+.sub { margin-top: 4px; }
+.mt8 { margin-top: 8px; } .mt12 { margin-top: 12px; }
 
-/* chips */
-.chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 4px 0 12px; min-width: 0; }
+/* tabs */
+.chips { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding: 0 0 12px; min-width: 0; flex: none; }
 .chips::-webkit-scrollbar { display: none; }
-.chip { display: inline-flex; align-items: center; gap: 8px; flex: none; height: 32px; padding: 0 16px; border: 0; border-radius: 8px; background: transparent; box-shadow: inset 0 0 0 1px var(--outline-variant); color: var(--on-surface-variant); font-weight: 500; font-size: 14px; max-width: 100%; }
-.chip.on { background: var(--secondary-container); color: var(--on-secondary-container); box-shadow: none; padding-left: 8px; }
-.chip svg.ic { width: 18px; height: 18px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; max-width: 100%; }
+.chip:hover { background: var(--hover); color: var(--fg); }
+.chip.on { background: var(--active); border-color: var(--line-2); color: var(--fg); }
 .chip .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* filled text field + select field */
-.tf { position: relative; display: block; min-width: 0; background: var(--surface-container-highest); border-radius: 4px 4px 0 0; box-shadow: inset 0 -1px 0 var(--on-surface-variant); transition: box-shadow .15s; }
-.tf:focus-within { box-shadow: inset 0 -2px 0 var(--primary); }
-.tf input { display: block; width: 100%; height: 56px; padding: 24px 16px 8px; border: 0; outline: 0; background: transparent; border-radius: inherit; font-size: 16px; line-height: 24px; letter-spacing: .5px; }
-.tf label, .tf .lb { position: absolute; left: 16px; top: 18px; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--on-surface-variant); font-size: 16px; line-height: 24px; pointer-events: none; transition: top .15s, font-size .15s, line-height .15s; }
-.tf input:focus + label, .tf input:not(:placeholder-shown) + label, .tf .lb { top: 8px; font-size: 12px; line-height: 16px; }
-.tf:focus-within label { color: var(--primary); }
-.sel { display: flex; align-items: flex-end; gap: 8px; width: 100%; height: 56px; padding: 0 12px 8px 16px; border: 0; background: transparent; text-align: left; border-radius: inherit; }
-.sel .val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; line-height: 24px; letter-spacing: .5px; }
-.sel svg.ic { color: var(--on-surface-variant); margin-bottom: 0; }
-.sel[aria-expanded="true"] { box-shadow: none; }
-.tf:has(.sel[aria-expanded="true"]) { box-shadow: inset 0 -2px 0 var(--primary); }
-.tf:has(.sel[aria-expanded="true"]) .lb { color: var(--primary); }
-.lbl { margin: 16px 0 8px; font: 500 12px/16px var(--font); letter-spacing: .5px; color: var(--on-surface-variant); }
-.lbl:first-child { margin-top: 0; }
+/* fields */
+.tf { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tf > label, .tf > .lb { font: 500 12px/16px var(--font); color: var(--fg-2); }
+.fi, .sel { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--card); outline: 0; font-size: 13px; text-align: left; }
+.fi { min-width: 0; }
+.fi::placeholder { color: var(--fg-3); }
+.fi:focus, .sel[aria-expanded="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.sel:hover { border-color: var(--fg-3); }
+.sel .val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel svg.ic { color: var(--fg-3); width: 14px; height: 14px; }
+@media (pointer: coarse) { .fi, .sel { height: 40px; font-size: 16px; } }
+.lbl { margin: 16px 0 6px; font: 500 12px/16px var(--font); color: var(--fg-2); }
 
-/* custom menu (one component for every dropdown) */
-.menu { position: fixed; z-index: 1000; display: flex; flex-direction: column; padding: 8px 0; overflow-y: auto; border-radius: 4px; background: var(--surface-container); box-shadow: 0 2px 6px 2px rgb(0 0 0 / .15), 0 1px 2px rgb(0 0 0 / .3); outline: 0; }
-:root[data-theme="dark"] .menu { background: var(--surface-container-high); }
-.menu .mh { z-index: 2; padding: 12px 16px 4px; color: var(--on-surface-variant); font: 500 12px/16px var(--font); letter-spacing: .5px; position: sticky; top: -8px; background: inherit; }
-.mi { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 8px 16px; border: 0; background: transparent; text-align: left; font-size: 16px; line-height: 24px; letter-spacing: .5px; }
-.mi .ck { flex: none; width: 24px; height: 24px; color: var(--on-surface-variant); }
-.mi .ml { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.mi .ml small { display: block; color: var(--on-surface-variant); font-size: 12px; line-height: 16px; }
-.mi.sel-on { background: var(--secondary-container); color: var(--on-secondary-container); }
-.mi.sel-on .ck { color: var(--on-secondary-container); }
+/* menu: the single dropdown component */
+.menu { position: fixed; z-index: 1000; display: flex; flex-direction: column; padding: 4px; overflow-y: auto; border: 1px solid var(--line-2); border-radius: 8px; background: var(--pop); box-shadow: 0 8px 24px rgb(0 0 0 / .14); outline: 0; }
+.menu .mh, .ph { z-index: 2; padding: 8px 8px 4px; color: var(--fg-3); font: 500 11px/16px var(--font); }
+.menu .mh { position: sticky; top: -4px; background: var(--pop); }
+.mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 5px; background: transparent; text-align: left; font-size: 13px; line-height: 20px; }
+.mi:hover, .mi:focus-visible { background: var(--hover); outline: 0; }
+.mi .ck { flex: none; width: 14px; height: 14px; color: var(--accent); }
+.mi .ml { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow-wrap: anywhere; }
+.mi .ml small { flex: none; margin-left: auto; color: var(--fg-3); font-size: 11px; line-height: 16px; }
+.mi.sel-on { font-weight: 500; }
+@media (pointer: coarse) { .mi { min-height: 40px; font-size: 14px; } }
 
-/* segmented buttons */
-.seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); border-radius: 12px; overflow: hidden; }
-.seg button { display: flex; align-items: center; justify-content: center; gap: 6px; height: 40px; border: 0; background: transparent; box-shadow: 0 0 0 .5px var(--outline); color: var(--on-surface); font-weight: 500; font-size: 14px; padding: 0 8px; min-width: 0; }
-.seg button.on { background: var(--secondary-container); color: var(--on-secondary-container); }
-.seg button svg.ic { width: 18px; height: 18px; }
+/* segmented control */
+.seg { display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 8px; background: var(--layer); }
+.seg button { flex: 1 1 52px; min-width: 0; height: 26px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg button:hover { color: var(--fg); }
+.seg button.on { background: var(--card); color: var(--fg); box-shadow: 0 0 0 1px var(--line-2); }
+@media (pointer: coarse) { .seg button { height: 34px; } }
 
-/* dialog + snackbar */
-dialog.dlg { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 24px; border: 0; border-radius: 28px; background: var(--surface-container-high); color: var(--on-surface); box-shadow: 0 6px 10px 4px rgb(0 0 0 / .15), 0 2px 3px rgb(0 0 0 / .3); overflow: auto; }
-dialog.dlg::backdrop { background: var(--scrim); }
-.dtitle { margin: 0 0 16px; font: 400 24px/32px var(--font); letter-spacing: 0; overflow-wrap: anywhere; }
-.dbody { display: flex; flex-direction: column; gap: 16px; font-size: 14px; line-height: 20px; color: var(--on-surface-variant); }
-.dbody p { margin: 0; overflow-wrap: anywhere; }
-.dact { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+/* dialog, palette, toast */
+dialog.dlg, dialog.pal { margin: auto; border: 1px solid var(--line-2); border-radius: 12px; background: var(--pop); color: var(--fg); box-shadow: 0 16px 48px rgb(0 0 0 / .22); overflow: auto; }
+dialog.dlg { width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 20px; }
+dialog.dlg::backdrop, dialog.pal::backdrop { background: var(--scrim); }
+.dtitle { margin: 0 0 16px; font: 600 14px/20px var(--font); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.dbody { display: flex; flex-direction: column; gap: 12px; color: var(--fg-2); }
+.dbody p { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
+.dact { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .dact:empty { display: none; }
-.snack { position: fixed; z-index: 2000; left: 50%; bottom: 24px; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px); padding: 14px 16px; border-radius: 4px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; line-height: 20px; box-shadow: 0 3px 5px rgb(0 0 0 / .2); overflow-wrap: anywhere; }
-.snack.bad { background: var(--error-container); color: var(--on-error-container); }
-@media (max-width: 599px) { .snack { bottom: 104px; } }
+dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padding: 0; max-height: min(480px, calc(100dvh - 24px)); }
+.pal-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--fg-3); }
+.pal-in { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--fg); font-size: 14px; }
+@media (pointer: coarse) { .pal-in { font-size: 16px; } }
+.pal-list { padding: 4px; overflow-y: auto; max-height: 360px; }
+.pal-i { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg); text-align: left; }
+.pal-i.on { background: var(--hover); }
+.pal-i .ic { color: var(--fg-3); }
+.pal-i .nm { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-i .pd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: 12px; }
+.pal-i.cmd .nm { font-family: var(--mono); font-size: 12px; }
+.pal-out { margin: 0; padding: 12px; max-height: 360px; overflow: auto; font: 12px/18px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pal-out.err { color: var(--err); }
+.snack { position: fixed; z-index: 2000; left: 50%; bottom: 16px; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 24px); padding: 8px 12px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.snack.bad { background: var(--err); color: #fff; }
+@media (max-width: 639px) { .snack { bottom: calc(68px + env(safe-area-inset-bottom)); } }
 
 /* chat */
-.timeline { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
-.msg { align-self: flex-start; max-width: min(100%, 640px); padding: 10px 16px; border-radius: 16px 16px 16px 4px; background: var(--surface-container-high); overflow-wrap: anywhere; min-width: 0; }
-.msg.me { align-self: flex-end; border-radius: 16px 16px 4px 16px; background: var(--primary-container); color: var(--on-primary-container); }
-.msg.cmd { background: var(--surface-container); }
-.mmeta { margin-bottom: 2px; font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
-.msg.me .mmeta { color: inherit; opacity: .7; }
-.msg pre, .box pre { margin: 6px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-container-highest); color: var(--on-surface); font-size: 12.5px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
+.timeline { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 12px; padding: 0 0 16px; }
+.msg { align-self: flex-start; max-width: min(100%, 680px); min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow-wrap: anywhere; }
+.msg.me { align-self: flex-end; background: var(--layer); border-color: transparent; }
+.msg.cmd { background: var(--layer); border-color: transparent; }
+.mmeta { margin-bottom: 2px; font-size: 11px; line-height: 16px; color: var(--fg-3); }
+.msg pre, .box pre { margin: 6px 0 0; padding: 8px 12px; border-radius: 6px; background: var(--layer); color: var(--fg); font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
+.msg.cmd pre { background: transparent; padding: 0; margin: 0; }
 .msg pre:first-of-type { margin-top: 0; }
-.msg pre.err, .box pre.err { color: var(--error); }
+.msg pre.err, .box pre.err { color: var(--err); }
 .md p { margin: 0 0 6px; } .md p:last-child { margin-bottom: 0; }
-.md ul, .md ol { margin: 0 0 6px; padding-left: 22px; }
-.md code { padding: 1px 5px; border-radius: 4px; background: var(--surface-container-highest); font-size: .92em; }
+.md ul, .md ol { margin: 0 0 6px; padding-left: 20px; }
+.md code { padding: 1px 4px; border-radius: 4px; background: var(--layer); font-size: .92em; }
 .md pre code { padding: 0; background: none; }
-.composer { flex: none; padding: 4px 0 max(12px, env(safe-area-inset-bottom)); }
+.composer { flex: none; padding: 0 0 max(16px, env(safe-area-inset-bottom)); }
 .composer .bar2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.hintrow { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-bottom: 8px; }
+.hintrow { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-bottom: 8px; }
 .hintrow::-webkit-scrollbar { display: none; }
-.hintchip { flex: none; height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--secondary-container); color: var(--on-secondary-container); font: 500 13px/20px var(--mono); }
-.sendrow { display: flex; align-items: flex-end; gap: 4px; padding: 4px 4px 4px 20px; border-radius: 28px; background: var(--surface-container-high); }
-.sendrow textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; padding: 12px 0; font-size: 16px; line-height: 24px; max-height: 140px; }
-.sendrow .ib { width: 48px; height: 48px; }
+.hintchip { flex: none; height: 24px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--card); color: var(--fg-2); font: 500 12px/20px var(--mono); }
+.hintchip:hover { background: var(--hover); color: var(--fg); }
+.sendrow { display: flex; align-items: flex-end; gap: 8px; padding: 6px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--card); }
+.sendrow:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.sendrow textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; padding: 4px 6px; font-size: 13px; line-height: 20px; max-height: 140px; }
+@media (pointer: coarse) { .sendrow textarea { font-size: 16px; line-height: 24px; } }
 
 /* activity */
-.actbox { position: relative; flex: 1; min-height: 0; margin-bottom: max(12px, env(safe-area-inset-bottom)); }
-.actlist { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 8px; border-radius: 12px; background: var(--surface-container-low); }
-.jump { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); box-shadow: 0 2px 6px rgb(0 0 0 / .25); }
-.a-div { margin: 8px 4px; font-size: 12px; line-height: 16px; color: var(--on-surface-variant); text-align: center; overflow-wrap: anywhere; }
-.a-text { padding: 8px 12px; overflow-wrap: anywhere; }
-.a-time { font-size: 11px; color: var(--on-surface-variant); margin-right: 8px; }
-.a-error { margin: 4px; padding: 8px 12px; border-radius: 8px; background: var(--error-container); color: var(--on-error-container); overflow-wrap: anywhere; }
-details.box { margin: 4px 0; border-radius: 8px; background: var(--surface-container); }
-details.box > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 12px; cursor: pointer; list-style: none; border-radius: 8px; font-size: 13px; line-height: 18px; }
+.actbox { position: relative; flex: 1; min-height: 0; margin-bottom: max(16px, env(safe-area-inset-bottom)); }
+.actlist { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.jump { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); }
+.a-div { margin: 8px 4px; font-size: 11px; line-height: 16px; color: var(--fg-3); text-align: center; overflow-wrap: anywhere; }
+.a-text { padding: 6px 8px; overflow-wrap: anywhere; }
+.a-time { margin-right: 8px; font-size: 11px; color: var(--fg-3); }
+.a-error { margin: 4px; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); overflow-wrap: anywhere; }
+details.box { border-radius: 6px; }
+details.box > summary { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 4px 8px; cursor: pointer; list-style: none; border-radius: 6px; font-size: 13px; line-height: 20px; }
+details.box > summary:hover, details.box[open] > summary { background: var(--hover); }
 details.box > summary::-webkit-details-marker { display: none; }
-details.box > summary::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 2px solid var(--on-surface-variant); border-bottom: 2px solid var(--on-surface-variant); transform: rotate(-45deg); transition: transform .15s; }
+details.box > summary::before { content: ""; flex: none; width: 5px; height: 5px; border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(-45deg); transition: transform .15s; }
 details.box[open] > summary::before { transform: rotate(45deg); }
-.tname { flex: none; font-weight: 500; color: var(--primary); }
-.tsum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--on-surface-variant); }
+.tname { flex: none; font: 500 12px/20px var(--mono); color: var(--fg); }
+.tsum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
 .tsum:empty { display: none; }
-.sp { flex: 1; }
-.ttime { flex: none; font-size: 11px; color: var(--on-surface-variant); }
-.tstate { flex: none; font-weight: 700; }
-.tstate.ok { color: var(--ok); } .tstate.bad { color: var(--error); }
-details.box .body { padding: 0 12px 10px; }
-details.box .cl { margin: 8px 0 0; font: 500 11px/16px var(--font); letter-spacing: .5px; color: var(--on-surface-variant); }
-details.box .cl.err { color: var(--error); }
-details.think > summary .tname { color: var(--on-surface-variant); }
-details.think .md { padding: 0 12px 10px; color: var(--on-surface-variant); font-size: 13px; }
-.view-note { margin: 12px 0 0; }
-.subline { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 12px; border-radius: 8px; background: var(--primary-container); color: var(--on-primary-container); font-size: 13px; line-height: 18px; cursor: pointer; }
-.subs { flex: none; display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; padding: 6px 8px; border-radius: 12px; background: var(--surface-container); }
-.subrow { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 13px; line-height: 18px; }
+.ttime { flex: none; font-size: 11px; color: var(--fg-3); }
+.tstate { flex: none; min-width: 10px; font-weight: 600; font-size: 12px; }
+.tstate.ok { color: var(--ok); } .tstate.bad { color: var(--err); }
+details.box .body { padding: 4px 8px 8px 21px; }
+details.box .cl { margin: 8px 0 0; font: 500 11px/16px var(--font); color: var(--fg-3); }
+details.box .cl:first-child { margin-top: 0; }
+details.box .cl.err { color: var(--err); }
+details.think > summary .tname { font-family: var(--font); color: var(--fg-2); }
+details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12px; }
+.subline { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); font-size: 12px; line-height: 16px; cursor: pointer; }
+.subs { flex: none; display: flex; flex-direction: column; margin-bottom: 12px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.subrow { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; font-size: 13px; line-height: 20px; border-radius: 6px; }
+.subrow:hover { background: var(--hover); }
 .subrow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .subrow.off { opacity: .55; }
+.subrow b { font-weight: 500; }
 </style>
 </head>
 <body>
 <div class="app" id="app">
-  <nav class="rail" id="nav" aria-label="메뉴"></nav>
+  <aside class="side">
+    <div class="brand"><span class="logo"></span><span id="brand-name">dotz</span></div>
+    <button class="cmdk" id="cmdk" type="button" aria-label="명령"></button>
+    <nav class="rail" id="nav" aria-label="메뉴"></nav>
+    <div class="sfoot"><span class="dot" id="side-dot"></span><span id="side-st"></span></div>
+  </aside>
   <div class="main">
     <header class="appbar" id="appbar">
       <button class="ib" id="back" type="button" aria-label="뒤로" hidden></button>
       <h1 id="title">dotz</h1>
       <span class="conn" id="conn" hidden>연결 끊김</span>
+      <button class="ib only-phone" id="pal" type="button" aria-label="명령"></button>
       <button class="ib" id="theme" type="button" aria-label="화면 모드" aria-haspopup="listbox" aria-expanded="false"></button>
     </header>
     <div class="views" id="views">
@@ -331,30 +367,32 @@ function el(tag, props, ...kids) {
 const clear = n => { while (n.firstChild) n.removeChild(n.firstChild); return n; };
 const enc = encodeURIComponent;
 
-/* ---------- icons (Material Symbols paths) ---------- */
+/* ---------- icons (24px stroke set) ---------- */
 const ICONS = {
-  home: "M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z",
-  chat: "M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z",
-  activity: "M7 2v11h3v9l7-12h-4l4-8z",
-  lanes: "M20 13H3c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h17c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zm0-10H3c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h17c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1z",
-  settings: "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.488.488 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z",
-  back: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
-  send: "M2.01 21L23 12 2.01 3 2 10l15 2-15 2z",
-  refresh: "M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
-  stop: "M6 6h12v12H6z",
-  check: "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
-  drop: "M7 10l5 5 5-5z",
-  chev: "M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z",
-  add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
-  theme: "M20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm0-10v8c2.21 0 4-1.79 4-4s-1.79-4-4-4z",
-  usage: "M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z",
-  context: "M15 9H9v6h6V9zm-2 4h-2v-2h2v2zm8-2V9h-2V7c0-1.1-.9-2-2-2h-2V3h-2v2h-2V3H9v2H7c-1.1 0-2 .9-2 2v2H3v2h2v2H3v2h2v2c0 1.1.9 2 2 2h2v2h2v-2h2v2h2v-2h2c1.1 0 2-.9 2-2v-2h2v-2h-2v-2h2zm-4 6H7V7h10v10z",
-  model: "M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z",
-  key: "M12.65 10A5.99 5.99 0 007 6c-3.31 0-6 2.69-6 6s2.69 6 6 6a5.99 5.99 0 005.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z",
-  open: "M19 19H5V5h7V3H5a2 2 0 00-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z",
-  down: "M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z",
-  discord: "M20.3 4.4A17 17 0 0016 3l-.2.4a15 15 0 013.6 1.8 13 13 0 00-14.8 0A15 15 0 018.2 3.4L8 3a17 17 0 00-4.3 1.4C1 8.5.3 12.4.6 16.2A17 17 0 005.7 19l1.1-1.8a11 11 0 01-1.7-.8l.4-.3a12 12 0 0011 0l.4.3c-.5.3-1.1.6-1.7.8l1.1 1.8a17 17 0 005.1-2.8c.4-4.400-.6-8.200-3.100-11.800zM8.700 14c-1 0-1.800-.9-1.800-2s.8-2 1.800-2 1.800.9 1.800 2-.8 2-1.800 2zm6.600 0c-1 0-1.800-.9-1.800-2s.8-2 1.800-2 1.800.9 1.800 2-.8 2-1.800 2z",
+  home: "M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
+  chat: "M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-5.4A8 8 0 1 1 21 12z",
+  activity: "M3 12h4l3-8 4 16 3-8h4",
+  lanes: "M5 4h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM5 14h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z",
+  settings: "M4 7h9M17 7h3M4 17h3M11 17h9M13 7a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7 17a2 2 0 1 0 4 0a2 2 0 1 0-4 0",
+  back: "M15 5l-7 7 7 7",
+  send: "M12 19V5M5 12l7-7 7 7",
+  refresh: "M20 11a8 8 0 1 0-2.3 6.3M20 4v7h-7",
+  stop: "M7 7h10v10H7z",
+  check: "M5 12.5l4.5 4.5L19 7",
+  drop: "M6 9l6 6 6-6",
+  chev: "M9 6l6 6-6 6",
+  add: "M12 5v14M5 12h14",
+  theme: "M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18zM12 3v18M12 7h4M12 12h6M12 17h4",
+  usage: "M5 20v-9M12 20V4M19 20v-6",
+  context: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6",
+  model: "M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4",
+  key: "M4.5 15a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0M10.5 12.5L20 3M16 7l3 3M13.5 9.5l2 2",
+  open: "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
+  down: "M12 5v14M5 12l7 7 7-7",
+  search: "M11 4a7 7 0 1 0 0 14a7 7 0 0 0 0-14zM20 20l-4-4",
+  discord: "M5 7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-3l-3 3v-3H8a3 3 0 0 1-3-3zM9.5 11h.01M14.5 11h.01",
 };
+const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", lanes: "lanes", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context" };
 const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
 
 /* ---------- formatting ---------- */
@@ -442,7 +480,7 @@ function ask(title, text, ok = "확인", danger = false) {
     let v = false;
     dialog({ title, body: text ? el("p", { text }) : null, onclose: () => res(v), actions: [
       { label: "취소", onclick: c => c() },
-      { label: ok, kind: danger ? "danger" : "text", onclick: c => { v = true; c(); } }] });
+      { label: ok, kind: danger ? "danger fill" : "pri", onclick: c => { v = true; c(); } }] });
   });
 }
 
@@ -513,15 +551,15 @@ function showMenu(anchor, items, { value, onPick }) {
 }
 function selectField(label, text, items, value, onPick) {
   const b = el("button", { type: "button", class: "sel", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `${label}: ${text}` },
-    el("span", { class: "lb", text: label }), el("span", { class: "val", text }), icon("drop"));
+    el("span", { class: "val", text }), icon("drop"));
   b.addEventListener("click", () => showMenu(b, typeof items === "function" ? items() : items, { value, onPick }));
-  return el("div", { class: "tf" }, b);
+  return el("div", { class: "tf" }, el("span", { class: "lb", text: label }), b);
 }
 function textField(label, input) {
-  return el("div", { class: "tf" }, input, el("label", { text: label, for: input.id }));
+  return el("div", { class: "tf" }, el("label", { text: label, for: input.id }), input);
 }
 let fieldSeq = 0;
-const input = (opts = {}) => el("input", { id: `f${++fieldSeq}`, placeholder: " ", autocomplete: "off", autocapitalize: "off", spellcheck: "false", ...opts });
+const input = (opts = {}) => el("input", { id: `f${++fieldSeq}`, class: "fi", autocomplete: "off", autocapitalize: "off", spellcheck: "false", ...opts });
 
 /* ---------- state ---------- */
 let S = null;          // /api/state (no events)
@@ -540,8 +578,17 @@ const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
 /* ---------- chrome: nav, theme, back ---------- */
-for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id) }, el("span", { class: "ind" }, icon(id)), el("span", { class: "nl", text: label })));
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id) }, icon(id), el("span", { class: "nl", text: label })));
 $("#theme").append(icon("theme"));
+$("#pal").append(icon("search"));
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+$("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
+const setBrand = () => { $("#brand-name").textContent = botName; document.title = botName; };
+function renderSideStatus() {
+  const o = (S && S.orchestrator) || {};
+  $("#side-dot").className = `dot ${S ? statusTone(o.status) : ""}`;
+  $("#side-st").textContent = S ? statusKo(o.status) : "연결 중";
+}
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
 const THEME_ITEMS = [{ value: "system", label: "시스템" }, { value: "light", label: "라이트" }, { value: "dark", label: "다크" }];
@@ -550,7 +597,75 @@ const themeMenu = anchor => showMenu(anchor, THEME_ITEMS, { value: dotzTheme.get
 $("#theme").onclick = ev => themeMenu(ev.currentTarget);
 const backTarget = () => SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : null;
 $("#back").onclick = () => go(backTarget() || "home");
-$("#views").addEventListener("scroll", ev => $("#appbar").classList.toggle("scrolled", ev.currentTarget.scrollTop > 2), { passive: true });
+
+/* ---------- command palette: jump to a view or run a /command ---------- */
+function openPalette() {
+  if (document.querySelector("dialog.pal")) return;
+  closeMenu(false);
+  loadHelp();
+  const inp = el("input", { class: "pal-in", type: "text", placeholder: "명령 또는 이동", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "명령" });
+  const list = el("div", { class: "pal-list", role: "listbox" });
+  const out = el("pre", { class: "pal-out", hidden: true });
+  const d = el("dialog", { class: "pal", "aria-label": "명령" }, el("div", { class: "pal-head" }, icon("search"), inp, el("kbd", { text: "esc" })), list, out);
+  let items = [], idx = 0;
+  const mark = () => {
+    [...list.querySelectorAll(".pal-i")].forEach((n, i) => { n.classList.toggle("on", i === idx); n.setAttribute("aria-selected", i === idx ? "true" : "false"); if (i === idx) n.scrollIntoView({ block: "nearest" }); });
+  };
+  const runCmd = async text => {
+    list.hidden = true; out.hidden = false; out.className = "pal-out"; out.textContent = "…";
+    try {
+      const r = await api("/api/command", "POST", { text });
+      out.textContent = String(r.output ?? "") || "✓";
+      if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
+    } catch (e) { out.className = "pal-out err"; out.textContent = e.message; }
+  };
+  const exec = it => { if (it.kind === "nav") { d.close(); go(it.go); } else runCmd(it.run); };
+  const build = () => {
+    const raw = inp.value.trim(), v = raw.toLowerCase();
+    items = [];
+    if (v.startsWith("/")) {
+      if (/\s/.test(v)) items.push({ kind: "cmd", ic: "send", label: raw, run: raw });
+      else for (const [c, desc] of hintList) if (c.startsWith(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
+    } else {
+      for (const [c, desc] of hintList) if (!v || c.includes(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
+      for (const id of views) if (!v || titles[id].toLowerCase().includes(v) || id.includes(v)) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], go: id });
+    }
+    idx = 0;
+    clear(list);
+    let last = "";
+    items.forEach((it, i) => {
+      const g = it.kind === "nav" ? "이동" : "명령";
+      if (g !== last) { list.append(el("div", { class: "ph", role: "presentation", text: g })); last = g; }
+      list.append(el("button", { type: "button", role: "option", tabindex: "-1", class: `pal-i${it.kind === "cmd" ? " cmd" : ""}`, onmouseenter: () => { idx = i; mark(); }, onclick: () => exec(it) },
+        icon(it.ic), el("span", { class: "nm", text: it.label }), it.desc ? el("span", { class: "pd", text: it.desc }) : null));
+    });
+    if (!items.length) list.append(el("div", { class: "a-div", text: "결과 없음" }));
+    mark();
+  };
+  inp.addEventListener("input", () => { out.hidden = true; list.hidden = false; build(); });
+  inp.addEventListener("keydown", ev => {
+    if (ev.isComposing || ev.keyCode === 229) return;
+    if (ev.key === "ArrowDown") { ev.preventDefault(); if (items.length) { idx = (idx + 1) % items.length; mark(); } }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); if (items.length) { idx = (idx - 1 + items.length) % items.length; mark(); } }
+    else if (ev.key === "Tab") { const it = items[idx]; if (it && it.kind === "cmd") { ev.preventDefault(); inp.value = `${it.run} `; build(); } }
+    else if (ev.key === "Enter") {
+      ev.preventDefault();
+      const raw = inp.value.trim();
+      if (raw.startsWith("/") && /\s/.test(raw)) runCmd(raw);
+      else if (items[idx]) exec(items[idx]);
+    }
+  });
+  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
+  d.addEventListener("close", () => d.remove());
+  document.body.append(d);
+  d.showModal();
+  build();
+  inp.focus();
+}
+$("#cmdk").onclick = openPalette;
+$("#pal").onclick = openPalette;
+document.addEventListener("keydown", ev => { if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === "k") { ev.preventDefault(); openPalette(); } });
+
 
 function go(name) {
   closeMenu(false);
@@ -628,7 +743,7 @@ function renderSubs() {
   clear(box).append(...list.slice(0, 6).map(s => el("div", { class: `subrow${s.status === "running" ? "" : " off"}` },
     el("span", { class: "nm" }, el("b", { text: s.description || s.agent || "서브에이전트" }), s.status === "running" && (s.intent || s.tool) ? el("span", { class: "muted", text: ` · ${firstLine(s.intent || s.tool)}` }) : null),
     el("span", { class: `tag ${subTone(s.status)}`, text: subKo[s.status] || s.status }))));
-  if (list.length > 6) box.append(el("div", { class: "sup", style: "padding:4px 8px", text: `외 ${list.length - 6}개` }));
+  if (list.length > 6) box.append(el("div", { class: "more", style: "margin:4px 8px", text: `외 ${list.length - 6}개` }));
 }
 
 /* ---------- home: every status at a glance, each card navigates ---------- */
@@ -658,12 +773,11 @@ function renderHome() {
   const stText = o.status === "rate-limited" && o.rateLimitedUntil ? `${statusKo(o.status)} · ${kstTime(o.rateLimitedUntil)}까지` : statusKo(o.status);
   const stop = o.status === "working" ? el("button", { class: "ib err", type: "button", "aria-label": "중단", title: "중단", onclick: ev => { ev.stopPropagation(); abortOrch(ev.currentTarget); } }, icon("stop")) : null;
   const assistant = tapCard("models",
-    el("div", { class: "ch" }, el("span", { class: `dot ${statusTone(o.status)}` }), el("h3", { text: botName }), el("span", { class: `tag ${statusTone(o.status) === "pri" ? "pri" : statusTone(o.status)}`, text: S ? stText : "연결 중" }), icon("chev", "chev")),
+    el("div", { class: "ch" }, el("span", { class: `dot ${statusTone(o.status)}` }), el("h3", { text: botName }), el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), stop,
+      el("button", { class: "ib", type: "button", "aria-label": "재시작", title: "재시작", onclick: ev => { ev.stopPropagation(); restartOrch(ev.currentTarget); } }, icon("refresh")), icon("chev", "chev")),
     el("div", { class: "big", text: om ? modelName(om.model) : "…" }),
-    el("div", { class: "sup", text: om && om.thinking ? `thinking ${om.thinking}` : "\u00a0" }),
-    subLine("orchestrator"),
-    el("div", { class: "btns", style: "justify-content:flex-end;margin-top:4px" }, stop,
-      el("button", { class: "ib", type: "button", "aria-label": "재시작", title: "재시작", onclick: ev => { ev.stopPropagation(); restartOrch(ev.currentTarget); } }, icon("refresh"))));
+    el("div", { class: "sup sub", text: om && om.thinking ? `thinking ${om.thinking}` : "\u00a0" }),
+    subLine("orchestrator"));
 
   // usage
   const usage = tapCard("usage", cardHead("사용량"));
@@ -673,8 +787,8 @@ function renderHome() {
     const provs = (HQ.providers || []).filter(p => (p.limits || []).length), multi = provs.length > 1;
     const all = provs.flatMap(p => p.limits.map(l => [p, l]));
     for (const [p, l] of all.slice(0, 5)) usage.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: limitLabel(p, l, multi) }), el("span", { class: "v", text: pctText(l) })), bar(l)));
-    if (all.length > 5) usage.append(el("div", { class: "sup", style: "margin-top:12px", text: `외 ${all.length - 5}개` }));
-    if (!all.length) usage.append(el("div", { class: "sup", text: "표시할 사용량이 없어요" }));
+    if (all.length > 5) usage.append(el("div", { class: "more", text: `외 ${all.length - 5}개` }));
+    if (!all.length) usage.append(el("div", { class: "sup", text: "없음" }));
   }
 
   // lanes
@@ -682,7 +796,7 @@ function renderHome() {
   const lanesCard = tapCard("lanes", cardHead("레인", el("span", { class: "tag", text: `${alive.length}/${lanes.length}` })));
   if (!lanes.length) lanesCard.append(el("div", { class: "sup", text: "레인 없음" }));
   for (const l of lanes.slice(0, 3)) lanesCard.append(el("div", { class: "row" }, el("span", { class: `dot ${statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), el("span", { class: "sup", text: statusKo(l.status) })));
-  if (lanes.length > 3) lanesCard.append(el("div", { class: "sup", style: "margin-top:12px", text: `외 ${lanes.length - 3}개` }));
+  if (lanes.length > 3) lanesCard.append(el("div", { class: "more", text: `외 ${lanes.length - 3}개` }));
   const lsl = laneSubLine();
   if (lsl) lanesCard.append(lsl);
 
@@ -694,7 +808,7 @@ function renderHome() {
   else if (!plist.length) provCard.append(el("div", { class: "sup", text: "연결된 공급자 없음" }));
   const shown = [...issues, ...ok.filter(p => !issues.includes(p))].slice(0, 3);
   for (const p of shown) provCard.append(el("div", { class: "row" }, el("span", { class: `dot ${needsAttention(p) ? "err" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: needsAttention(p) ? "로그인 필요" : p.account || (p.auth === "api_key" ? "API 키" : "로그인됨") })));
-  if (plist.length > 3 && shown.length === 3) provCard.append(el("div", { class: "sup", style: "margin-top:12px", text: `외 ${Math.max(0, plist.length - 3)}개` }));
+  if (plist.length > 3 && shown.length === 3) provCard.append(el("div", { class: "more", text: `외 ${Math.max(0, plist.length - 3)}개` }));
 
   clear(box).append(assistant, ctxHomeCard(), usage, lanesCard, provCard);
 }
@@ -802,8 +916,8 @@ async function refreshState() {
   try {
     S = await api("/api/state?limit=0");
     setConn(true);
-    if (S.name && S.name !== botName) { botName = S.name; document.title = botName; if (current === "home") $("#title").textContent = botName; }
-    renderTarget(); renderActSources();
+    if (S.name && S.name !== botName) { botName = S.name; setBrand(); if (current === "home") $("#title").textContent = botName; }
+    renderSideStatus(); renderTarget(); renderActSources();
     if (current === "lanes") renderLanes();
     if (current === "home") renderHome();
     if (current === "settings") renderSettings();
@@ -833,7 +947,7 @@ function renderActSources() {
   const sig = JSON.stringify([srcs, actSource]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
-  clear(box).append(...srcs.map(([id, label]) => el("button", { class: `chip${id === actSource ? " on" : ""}`, type: "button", "aria-pressed": id === actSource, onclick: () => { actSource = id; renderActSources(); openActivity(); } }, id === actSource ? icon("check") : null, el("span", { class: "tx", text: label }))));
+  clear(box).append(...srcs.map(([id, label]) => el("button", { class: `chip${id === actSource ? " on" : ""}`, type: "button", "aria-pressed": id === actSource, onclick: () => { actSource = id; renderActSources(); openActivity(); } }, el("span", { class: "tx", text: label }))));
 }
 // Collapsed tool row label: the intent the model gave (`i`), else the first line of the command/path. Code stays in the body.
 function toolLabel(a) {
@@ -953,8 +1067,8 @@ function renderLanes() {
   const list = el("div", { class: "col" });
   for (const l of lanes) {
     const alive = laneAlive(l), m = modelOf(l.name);
-    const inp = input({ type: "text", enterkeyhint: "send", value: laneDraft[l.name] || "", oninput: ev => { laneDraft[l.name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); sendBtn.click(); } } });
-    const sendBtn = el("button", { class: "ib pri", type: "button", "aria-label": alive ? "전송" : "재개", style: "width:48px;height:48px", onclick: ev => busy(ev.currentTarget, async () => {
+    const inp = input({ type: "text", enterkeyhint: "send", placeholder: alive ? "메시지" : "재개 메시지", "aria-label": alive ? "메시지" : "재개 메시지", value: laneDraft[l.name] || "", oninput: ev => { laneDraft[l.name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); sendBtn.click(); } } });
+    const sendBtn = el("button", { class: "ib pri", type: "button", "aria-label": alive ? "전송" : "재개", onclick: ev => busy(ev.currentTarget, async () => {
       const text = inp.value.trim();
       if (!text && alive) return;
       if (alive) { await api("/api/message", "POST", { text, lane: l.name }); toast("전달했어요"); }
@@ -972,10 +1086,10 @@ function renderLanes() {
     btns.append(el("button", { class: "btn text", type: "button", onclick: () => { actSource = `lane:${l.name}`; $("#act-src").dataset.sig = ""; go("activity"); } }, "활동"));
     const model = (m && m.model) || l.model;
     list.append(el("div", { class: "card" },
-      el("div", { class: "heads" }, el("span", { class: `dot ${statusTone(l.status)}` }), el("span", { class: "t", text: l.name }), el("span", { class: "sp" }), el("span", { class: `tag ${statusTone(l.status) === "pri" ? "pri" : statusTone(l.status)}`, text: statusKo(l.status) })),
-      model ? el("div", { class: "sup", style: "margin-top:4px", text: `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` }) : null,
-      l.lastText ? el("div", { class: "sup clamp", style: "margin-top:8px", text: l.lastText }) : null,
-      el("div", { class: "row", style: "margin-top:12px" }, el("div", { style: "flex:1;min-width:0" }, textField(alive ? "메시지" : "재개 메시지 (선택)", inp)), sendBtn),
+      el("div", { class: "heads" }, el("span", { class: `dot ${statusTone(l.status)}` }), el("span", { class: "t", text: l.name }), el("span", { class: "sp" }), el("span", { class: `tag ${statusTone(l.status)}`, text: statusKo(l.status) })),
+      model ? el("div", { class: "sup sub", text: `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` }) : null,
+      l.lastText ? el("div", { class: "sup clamp mt8", text: l.lastText }) : null,
+      el("div", { class: "row mt12" }, inp, sendBtn),
       btns));
   }
   box.append(list);
@@ -988,9 +1102,9 @@ const ctxTone = pct => pct == null ? "" : pct >= 80 ? "err" : pct >= 60 ? "warn"
 function compactState(c) {
   if (!c || !c.state) return null;
   const t = c.at ? kstTime(c.at) : "";
-  if (c.state === "queued") return { tone: "warn", text: "압축 대기 · 현재 턴이 끝나면 시작" };
-  if (c.state === "compacting") return { tone: "pri", text: `압축 중 · ${t}부터` };
-  if (c.state === "done") return { tone: "ok", text: `압축 완료 ${t}${c.tokensBefore ? ` · 압축 전 ${num(c.tokensBefore)} 토큰` : ""}` };
+  if (c.state === "queued") return { tone: "warn", text: "압축 대기" };
+  if (c.state === "compacting") return { tone: "pri", text: `압축 중 · ${t}` };
+  if (c.state === "done") return { tone: "ok", text: `압축 완료 ${t}${c.tokensBefore ? ` · ${num(c.tokensBefore)} 토큰 전` : ""}` };
   return { tone: "err", text: `압축 실패 ${t}${c.error ? ` · ${c.error}` : ""}` };
 }
 function ctxBar(p) {
@@ -1024,20 +1138,19 @@ function renderContext() {
       loadContext(true);
     }) }, "압축");
     list.append(el("div", { class: "card" },
-      el("div", { class: "heads" }, el("span", { class: `dot ${statusTone(p.status)}` }), el("span", { class: "t", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "sp" }), el("span", { class: `tag ${statusTone(p.status) === "pri" ? "pri" : statusTone(p.status)}`, text: statusKo(p.status) })),
-      p.model ? el("div", { class: "sup", style: "margin-top:4px", text: selLabel(p.model) }) : null,
-      p.running ? el("div", { style: "margin-top:12px" }, ctxBar(p)) : el("div", { class: "sup", style: "margin-top:8px", text: "실행 중이 아니에요. 재개하면 다시 측정해요." }),
-      cs ? el("div", { style: "margin-top:12px" }, el("span", { class: `tag ${cs.tone}`, text: cs.text })) : null,
-      el("div", { class: "btns", style: "margin-top:12px;justify-content:flex-end" }, btn)));
+      el("div", { class: "heads" }, el("span", { class: `dot ${statusTone(p.status)}` }), el("span", { class: "t", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "sp" }), el("span", { class: `tag ${statusTone(p.status)}`, text: statusKo(p.status) })),
+      p.model ? el("div", { class: "sup sub", text: selLabel(p.model) }) : null,
+      p.running ? el("div", { class: "mt8" }, ctxBar(p)) : el("div", { class: "sup mt8", text: "실행 안 함" }),
+      el("div", { class: "row mt12", style: "justify-content:space-between" }, cs ? el("span", { class: `tag ${cs.tone}`, text: cs.text }) : el("span"), btn)));
   }
-  clear(box).append(list, el("div", { class: "sup view-note", text: "압축은 대화를 요약으로 바꿔요. 그래서 다음 턴에 프롬프트 캐시가 한 번 다시 쓰여요 (새로 짧아진 앞부분을 입력 비용 약 2배로 기록). 작업 중인 프로세스는 현재 턴이 끝난 뒤에 압축해요." }));
+  clear(box).append(list);
 }
 function ctxHomeCard() {
   const c = tapCard("context", cardHead("컨텍스트"));
   const list = ((C && C.processes) || []).filter(p => p.running);
-  if (!list.length) c.append(el("div", { class: "sup", text: C ? "실행 중인 프로세스 없음" : "불러오는 중…" }));
+  if (!list.length) c.append(el("div", { class: "sup", text: C ? "없음" : "불러오는 중…" }));
   for (const p of list.slice(0, 4)) c.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "v", text: p.percent != null ? `${p.percent}%` : `${num(p.tokens)} 토큰` })), el("div", { class: `bar ${ctxTone(p.percent)}` }, el("i", { style: `width:${Math.min(100, p.percent || 0).toFixed(1)}%` }))));
-  if (list.length > 4) c.append(el("div", { class: "sup", style: "margin-top:12px", text: `외 ${list.length - 4}개` }));
+  if (list.length > 4) c.append(el("div", { class: "more", text: `외 ${list.length - 4}개` }));
   return c;
 }
 
@@ -1065,13 +1178,13 @@ function modelItems(key, curModel) {
   for (const [p, list] of byProv) items.push({ header: providerName(p) }, ...list.map(a => ({ value: a.selector, label: a.name || a.selector })));
   return items;
 }
-function targetCard(key, title, status, cur, confirmText, note) {
+function targetCard(key, title, status, cur, confirmText) {
   const p = pending[key] || {};
   const model = p.model ?? cur.model, thinking = p.thinking ?? cur.thinking;
   const dirty = (p.model != null && p.model !== cur.model) || (p.thinking != null && p.thinking !== cur.thinking);
   const levels = M.thinking_levels || [];
   const modelField = selectField("모델", modelName(model), () => modelItems(key, cur.model), model, v => { (pending[key] ||= {}).model = v; renderModels(); });
-  const seg = el("div", { class: "seg", role: "radiogroup", "aria-label": "thinking" }, ...levels.map(lv => el("button", { type: "button", role: "radio", "aria-checked": lv === thinking, class: lv === thinking ? "on" : "", onclick: () => { (pending[key] ||= {}).thinking = lv; renderModels(); } }, lv === thinking ? icon("check") : null, lv)));
+  const seg = el("div", { class: "seg", role: "radiogroup", "aria-label": "thinking" }, ...levels.map(lv => el("button", { type: "button", role: "radio", "aria-checked": lv === thinking, class: lv === thinking ? "on" : "", onclick: () => { (pending[key] ||= {}).thinking = lv; renderModels(); } }, lv)));
   const info = (M.available || []).find(a => a.selector === model);
   const apply = el("button", { class: "btn", type: "button", disabled: !dirty, onclick: ev => busy(ev.currentTarget, async () => {
     const body = { target: key };
@@ -1082,7 +1195,7 @@ function targetCard(key, title, status, cur, confirmText, note) {
     try { r = await api("/api/models", "PUT", body); }
     catch (e) {
       if (!(e.data && e.data.requires_force)) throw e;
-      if (!await ask(title, `실행 중인 레인의 모델 또는 effort를 바꾸면 Anthropic이 메시지 캐시를 무효화해요. 다음 턴에 현재 컨텍스트 ${num(e.data.context_tokens)} 토큰 전체가 캐시에 다시 쓰여요 (입력 비용 약 2배).\n${modelName(model)} · ${thinking}`, "적용")) return;
+      if (!await ask(title, `캐시가 다시 쓰여요 · 컨텍스트 ${num(e.data.context_tokens)} 토큰\n${modelName(model)} · ${thinking}`, "적용")) return;
       r = await api("/api/models", "PUT", { ...body, force: true });
     }
     delete pending[key];
@@ -1093,8 +1206,7 @@ function targetCard(key, title, status, cur, confirmText, note) {
     el("div", { class: "heads", style: "margin-bottom:12px" }, status ? el("span", { class: `dot ${statusTone(status)}` }) : null, el("span", { class: "t", text: title })),
     modelField,
     el("div", { class: "lbl" }, "thinking"), seg,
-    info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup", style: "margin-top:8px", text: "이 모델은 thinking을 지원하지 않아요" }) : null,
-    note ? el("div", { class: "sup", style: "margin-top:12px", text: note }) : null,
+    info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup mt8", text: "thinking 미지원" }) : null,
     el("div", { class: "btns", style: "margin-top:16px;justify-content:flex-end" },
       dirty ? el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기") : null, apply));
 }
@@ -1107,11 +1219,12 @@ function renderModels() {
   const lanes = M.lanes || [];
   clear(box).append(
     el("div", { class: "col" },
-      filter,
-      targetCard("orchestrator", botName, "", M.orchestrator, "어시스턴트가 다시 시작돼요."),
-      targetCard("lanes", "새 레인 기본값", "", M.lanes_default),
-      targetCard("workers", "작업자(워커) 모델", "", M.workers, undefined, "레인이 구현·테스트·렌더·반복 작업을 맡기는 워커의 모델이에요 (lanes.worker_model). 레인이 시작되거나 재개될 때부터 적용돼요."),
-      ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l, undefined, l.running ? `실행 중이에요. 모델이나 effort를 바꾸면 현재 컨텍스트 ${num(ctxTokens(l.name))} 토큰 전체가 캐시에 다시 쓰여요. 적용할 때 한 번 더 확인해요.` : undefined))));
+      el("div", { style: "max-width:280px" }, filter),
+      el("div", { class: "grid" },
+        targetCard("orchestrator", botName, "", M.orchestrator, "어시스턴트가 다시 시작돼요."),
+        targetCard("lanes", "새 레인 기본값", "", M.lanes_default),
+        targetCard("workers", "워커", "", M.workers),
+        ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l)))));
 }
 
 /* ---------- providers ---------- */
@@ -1131,14 +1244,15 @@ function renderProviders() {
   const box = $("#providers");
   const list = P.providers;
   const wrap = el("div", {});
-  wrap.append(el("div", { class: "tools-bar" }, el("span", { class: "sec", style: "margin:0", text: `${list.filter(isConnected).length}개 연결` }),
+  wrap.append(el("div", { class: "tools-bar" }, el("span", { class: "sec", text: `${list.filter(isConnected).length}개 연결` }),
     el("button", { class: "btn tonal", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
   if (!list.length) wrap.append(emptyNode("공급자 없음"));
+  const rows = el("div", { class: "list" });
   for (const p of list) {
     const name = p.name || p.id;
     const canLogout = p.can_logout ?? p.removable;
     const sub = p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨");
-    const btns = el("div", { class: "btns", style: "margin-top:8px;justify-content:flex-end" });
+    const btns = el("div", { class: "btns" });
     if (p.can_login) btns.append(el("button", { class: `btn ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인"));
     if (canLogout) btns.append(el("button", { class: "btn danger", type: "button", onclick: ev => busy(ev.currentTarget, async () => {
       const key = p.auth === "api_key";
@@ -1147,13 +1261,13 @@ function renderProviders() {
       toast(key ? "키를 삭제했어요" : "로그아웃했어요");
       await loadProviders(); loadModels(true);
     }) }, p.auth === "api_key" ? "키 삭제" : "로그아웃"));
-    wrap.append(el("div", { class: "card", style: "margin-bottom:8px" },
-      el("div", { class: "row" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
-        el("div", { style: "flex:1;min-width:0" }, el("div", { class: "heads" }, el("span", { class: "t", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
-          sub ? el("div", { class: "sup", text: sub }) : null),
-        el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "err" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })),
+    rows.append(el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
+      el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
+        sub ? el("div", { class: "sup", text: sub }) : null),
+      el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "err" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }),
       btns.children.length ? btns : null));
   }
+  if (list.length) wrap.append(rows);
   clear(box).append(wrap);
 }
 function addProviderDialog() {
@@ -1170,8 +1284,8 @@ function addProviderDialog() {
     } else { free = input({ type: "text" }); body.append(textField("공급자", free)); pick = { kind: "api_key" }; }
     if (pick && pick.kind === "api_key") { keyIn = input({ type: "password", autocomplete: "new-password" }); body.append(textField("API 키", keyIn)); }
     const actions = [{ label: "취소", onclick: c => c() }];
-    if (pick && pick.kind === "oauth") actions.push({ label: "로그인", kind: "tonal", onclick: c => { c(); startLogin(pick); } });
-    else if (pick) actions.push({ label: "저장", kind: "tonal", onclick: (c, btn) => busy(btn, async () => {
+    if (pick && pick.kind === "oauth") actions.push({ label: "로그인", kind: "pri", onclick: c => { c(); startLogin(pick); } });
+    else if (pick) actions.push({ label: "저장", kind: "pri", onclick: (c, btn) => busy(btn, async () => {
       const provider = free ? free.value.trim() : pick.id, key = keyIn.value;
       if (!provider || !key.trim()) { toast("공급자와 API 키를 입력하세요", true); return; }
       try { await api("/api/providers", "POST", { provider, key }); } finally { keyIn.value = ""; }
@@ -1220,9 +1334,9 @@ async function startLogin(p) {
   });
   dlg = dialog({
     title: `${name} 로그인`,
-    body: [el("div", {}, open), el("p", { text: "로그인 후 이동이 안 되면 주소창의 주소나 코드를 붙여넣으세요." }), textField("코드 또는 주소", code), msg],
+    body: [el("div", {}, open), textField("코드 또는 주소", code), msg],
     onclose: () => { stop(); if (!finished) api(`/api/providers/${enc(p.id)}/login`, "DELETE").catch(() => {}); },
-    actions: [{ label: "취소", onclick: c => c() }, { label: "완료", kind: "tonal", onclick: (c, btn) => submit(btn) }],
+    actions: [{ label: "취소", onclick: c => c() }, { label: "완료", kind: "pri", onclick: (c, btn) => submit(btn) }],
   });
   code.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); const b = dlg.node.querySelector(".dact .btn:last-child"); if (b) b.click(); } });
   timer = setTimeout(poll, 2000);
@@ -1240,6 +1354,7 @@ async function loadQuota() {
   clear(box);
   box.append(el("div", { class: "tools-bar" }, el("span", { class: "sup", text: q.fetched_at ? kstStamp(q.fetched_at) : "" }),
     el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, loadQuota) }, icon("refresh"), "새로고침")));
+  const grid = el("div", { class: "grid" });
   for (const p of q.providers || []) {
     const card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: providerName(p.provider) })));
     for (const l of p.limits || []) {
@@ -1248,12 +1363,13 @@ async function loadQuota() {
         bar(l),
         l.resets_at || l.window ? el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: l.window || "" }), el("span", { class: "v", text: l.resets_at ? rel(l.resets_at) : "" })) : null));
     }
-    if (!(p.limits || []).length) card.append(el("div", { class: "sup", text: "표시할 한도 없음" }));
-    box.append(el("div", { style: "margin-bottom:12px" }, card));
+    if (!(p.limits || []).length) card.append(el("div", { class: "sup", text: "없음" }));
+    grid.append(card);
   }
+  if (grid.children.length) box.append(grid);
   if ((q.unavailable || []).length) {
     box.append(el("div", { class: "sec", text: "정보 없음" }));
-    for (const u of q.unavailable) box.append(el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: providerName(u.provider) }), el("div", { class: "sup", text: u.reason })));
+    box.append(el("div", { class: "list" }, ...q.unavailable.map(u => el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: providerName(u.provider) }), el("div", { class: "sup", text: u.reason })))));
   }
   if (!(q.providers || []).length && !(q.unavailable || []).length) box.append(emptyNode("사용량 정보 없음"));
 }
@@ -1264,15 +1380,15 @@ function renderSettings() {
   if (box.contains(document.activeElement) && openMenu) return;
   const om = M && M.orchestrator;
   const connected = P ? P.providers.filter(isConnected).length : null;
-  const row = (ic, title, sub, onclick, trail) => { const b = el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), trail === undefined ? icon("chev", "lead") : trail); return b; };
+  const row = (ic, title, sub, onclick, trail) => el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), sub ? el("span", { class: "sup", text: sub }) : null, trail === undefined ? icon("chev", "lead") : trail);
   const d = S && S.discord;
-  clear(box).append(
+  clear(box).append(el("div", { class: "list" },
     row("model", "모델", om ? modelName(om.model) : "", () => go("models")),
     row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
     row("usage", "사용량", "", () => go("usage")),
     row("context", "컨텍스트", "", () => go("context")),
     row("theme", "화면 모드", themeLabel(), b => themeMenu(b), icon("drop", "lead")),
-    d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null);
+    d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null));
 }
 
 /* ---------- boot ---------- */
@@ -1281,7 +1397,7 @@ function renderSettings() {
   try {
     const s = await api("/api/state?limit=150");
     botName = s.name || botName;
-    document.title = botName;
+    setBrand();
     s.events.forEach(addChat);
     scrollChat(true);
   } catch (e) { setConn(false); }
