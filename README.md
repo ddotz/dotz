@@ -24,6 +24,16 @@ Setup writes `~/.dotz/config.json` (no secrets), keeps the bot token in `~/.dotz
 the plugin into omp (`~/.omp/agent/extensions/dotz`), generates and (with `--load`) starts the launchd gateway,
 and (with `--tailscale`) serves the web app on the tailnet only. It prints the bot invite link.
 
+Onboarding also asks for the macOS permissions (`onboard/permissions.ts`). The gateway is a launchd job whose program is `bun`, so
+macOS attributes every protected access by the gateway and everything it spawns (omp, osascript, aside, git) to `bun`:
+the prompts and the Settings entries are for the bun binary, not your terminal. Setup asks for them once, up front:
+Full Disk Access (no prompt, you switch it on in Settings; it also covers Desktop/Documents/Downloads and removable and
+network volumes), Files and Folders for Desktop, Documents and Downloads (prompts), Automation for System Events (prompt),
+and Accessibility (Settings). The probes run as a short launchd job (`dev.dotz.permprobe`) so the answers are for bun
+too. `bun setup.ts permissions` runs the same step any time and is safe to rerun (granted items are skipped);
+`bun setup.ts permissions --check` only prints the state and never raises a dialog. New grants apply to the running
+gateway after `launchctl kickstart -k gui/$(id -u)/dev.dotz.gateway`.
+
 Discord: create a dedicated bot in the Developer Portal, enable the MESSAGE CONTENT intent, give its token to setup,
 and invite it with the printed link. The gateway creates two categories: "땃쥐" (대화, 알림) and "땃쥐 작업" (작업로그,
 plus one channel per project, topic or lane, named plainly with no emoji). Every text channel in these two categories

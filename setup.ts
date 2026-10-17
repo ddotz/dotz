@@ -7,11 +7,15 @@
 // Writes ~/.dotz/config.json (no secrets), secrets/ (0600), links the plugin into omp, writes the launchd plist; runs
 // launchctl only with --load and tailscale serve only with --tailscale. Re-running keeps every answer as the default.
 //   bun setup.ts [--answers answers.json] [--load] [--tailscale] [--no-discord-auto] [--dir ~/.dotz]
+// Onboarding ends with the macOS permissions step (onboard/permissions.ts): bun is what launchd runs, so the prompts and
+// the Settings entries are for bun. Interactive runs ask for them; --answers runs only print their state. Standalone, safe to rerun:
+//   bun setup.ts permissions [--check]     (--check only prints the state, never raises a dialog)
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { asideState, installApp, installCli, loginCli, openApp } from "./onboard/aside.ts";
 import { AsideRepl, createApp, ensureBrowser, invite, isAdmin, PERMISSIONS, resetToken } from "./onboard/discord.ts";
+import { checkPermissions, printPermissions, requestPermissions } from "./onboard/permissions.ts";
 
 const HOME = homedir();
 const PKG = import.meta.dir;
@@ -291,6 +295,13 @@ ${id.avatar ? `- Avatar: ${id.avatar}\n` : ""}
 `;
 }
 
+if (args[0] === "permissions") {
+	const probeBun = process.execPath;
+	if (flag("--check")) printPermissions(probeBun, await checkPermissions(probeBun));
+	else await requestPermissions(probeBun, q => ask(q, "", false));
+	process.exit(0);
+}
+
 const answersFile = opt("--answers");
 const a = validate(answersFile ? JSON.parse(readFileSync(answersFile, "utf8")) : await interactive());
 if (answersFile) {
@@ -369,6 +380,15 @@ if (flag("--load")) {
 if (flag("--tailscale")) {
 	const r = await Bun.$`tailscale serve --bg --https=${a.tailscale_https_port} http://127.0.0.1:${a.web_port}`.nothrow().quiet();
 	console.log(r.exitCode === 0 ? `tailscale: web app on port ${a.tailscale_https_port} (tailnet only)` : `tailscale serve failed: ${r.stderr.toString().trim()}`);
+}
+
+if (answersFile) {
+	console.log("macOS 권한 상태 (bun 이 launchd 로 도는 프로그램이라 bun 앞으로 묻고 허용돼요):");
+	printPermissions(bun, await checkPermissions(bun));
+	console.log("권한을 허용하려면 터미널에서 bun setup.ts permissions 를 실행하세요.");
+} else {
+	console.log("\nmacOS 권한. 게이트웨이가 쓰는 권한을 지금 한 번에 허용해요 (나중에 bun setup.ts permissions 로 다시 할 수 있어요).");
+	await requestPermissions(bun, q => ask(q, "", false));
 }
 
 let provisioned = false;
