@@ -23,7 +23,7 @@ const terminals = new Map<string, { cwd?: string; at: string }>();
 // Every delivered prompt remembers where its answer goes; prompts are matched back by their text as omp starts them
 // (FIFO, so identical texts still pair in order). Unanswered prompts are kept on disk (오모냥's `last_handled`: a
 // message counts as handled when it is answered, not when it arrives), so a restart mid-turn replays them on boot.
-type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean };
+type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean };
 const prompts: Prompt[] = [];
 let current: Prompt | undefined;
 const PENDING = join(DATA_DIR, "pending.json");
@@ -38,12 +38,33 @@ function savePending(): void {
 	writeFileSync(PENDING, `${JSON.stringify(open, null, 2)}\n`);
 }
 
+// An owner message that arrives while the orchestrator is mid-turn is steered into that turn instead of waiting
+// behind it (owner 2026-10-17: "순차적으로 처리하던데 ... 바로 답변이 안오는데"): the orchestrator answers it with dotz_send
+// and carries on. If the turn ends before it was answered, it is delivered again as a normal prompt.
 function deliver(text: string, reply?: { target: string; replyTo?: string }): void {
 	if (reply) discord.typing(reply.target);
-	prompts.push({ key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [] });
+	const steered = Boolean(reply) && orch.status === "working";
+	prompts.push({ key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered });
 	if (prompts.length > 200) prompts.splice(0, prompts.length - 200);
 	savePending();
-	deliverToOrchestrator(text);
+	if (!steered) return deliverToOrchestrator(text);
+	steerOrchestrator(`[dotz gateway] A new message arrived while you are working; it gets no turn of its own. Answer it now with dotz_send target "${reply!.target}"${reply!.replyTo ? ` reply_to "${reply!.replyTo}"` : ""} (the full answer if it is quick, else a short note on when), then continue the current work. Your final answer still goes to the request you started with.\n\n${text}`);
+}
+
+// Steered prompts are answered by the first plain dotz_send to their channel; the ones still open when a turn ends go
+// in again as normal prompts.
+function settleSteered(target: string): void {
+	const i = prompts.findIndex(p => p.steered && p.target === target);
+	if (i < 0) return;
+	prompts.splice(i, 1);
+	savePending();
+}
+function redeliverSteered(): void {
+	const open = prompts.filter(p => p.steered);
+	for (const p of open) {
+		p.steered = false;
+		deliverToOrchestrator(p.text);
+	}
 }
 
 const isLocal = (target: string) => target === "web" || target === "terminal";
@@ -72,7 +93,9 @@ function expectReply(target: string): void {
 // The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
 setAnswerHandlers(
 	text => {
-		const i = prompts.findIndex(p => text.includes(p.key));
+		// Notes steered into a running turn are not new requests: the turn keeps answering the prompt it started with.
+		if (text.startsWith("[dotz gateway] A new message arrived") || text.startsWith("[dotz gateway] The owner has waited")) return;
+		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
 		current = i >= 0 ? prompts.splice(i, 1)[0] : undefined;
 		savePending();
 	},
@@ -83,6 +106,7 @@ setAnswerHandlers(
 			savePending();
 		}
 		const t = text.trim();
+		redeliverSteered();
 		// Parts sent early with dotz_send do not replace the answer; skip it only when it repeats something already sent.
 		if (!p?.target || t === "-" || p.sent.some(s => s.target === p.target && s.text.includes(t))) return;
 		p.sent.push({ target: p.target, text: t });
@@ -399,6 +423,7 @@ const server = Bun.serve({
 				}
 			}
 			current?.sent.push({ target, text: String(b.text ?? "").trim() });
+			settleSteered(target);
 			try {
 				return json(await out(target, String(b.text ?? ""), b.reply_to));
 			} catch (error) {
