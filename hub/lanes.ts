@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
-import { cfg, IDENTITY_FILE, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, workerModel } from "./config.ts";
-import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, requestCompact } from "./context.ts";
+import { cfg, IDENTITY_FILE, lanesCompactAt, lanesKeepRecent, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, workerModel } from "./config.ts";
+import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { rateLimitDelay } from "./providers.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
@@ -35,6 +35,8 @@ export type Lane = Record_ & {
 	pausing?: boolean;
 	progressAt?: number;
 	progressText?: string;
+	// Set while the handover turn of a rotated session runs: that turn only reloads context, so its reply is not a report.
+	silent?: { lastText: string };
 };
 
 export const lanes = new Map<string, Lane>();
@@ -73,6 +75,7 @@ const portOf = (lane: Lane): CompactPort => ({ idle: () => lane.status === "idle
 // A paused lane (rate limit) keeps owner messages on disk instead of starting turns that fail at once; they go in with
 // the resume note.
 function prompt(lane: Lane, text: string): void {
+	lane.silent = undefined;
 	if (lane.status === "rate-limited") {
 		(lane.held ??= []).push(text);
 		persist(lane);
@@ -116,6 +119,13 @@ export function approvesBudget(name: string, text: string): boolean {
 
 function scheduleReport(lane: Lane): void {
 	if (lane.status !== "rate-limited") setStatus(lane, "idle");
+	if (lane.silent && !lane.lastText.startsWith("[lane error]")) {
+		lane.lastText = lane.silent.lastText;
+		lane.silent = undefined;
+		rmSync(pendingFile(lane), { force: true });
+		return;
+	}
+	lane.silent = undefined;
 	if (lane.lastText) writeFileSync(pendingFile(lane), lane.lastText);
 	clearTimeout(lane.timer);
 	lane.timer = setTimeout(() => {
@@ -200,14 +210,16 @@ async function readFrames(lane: Lane, proc: Subprocess<"pipe", "pipe", "pipe">):
 	}
 }
 
-// Per-run omp config overlay (--config) that points the `task` role at the lane's worker model, so the lane plans and
-// reviews on its own model while task workers (implementation, tests, renders, grind) run on the cheaper one. Written at
-// every spawn so a changed lanes.worker_model applies the next time the lane starts or resumes.
+// Per-run omp config overlay (--config): points the `task` role at the lane's worker model, so the lane plans and
+// reviews on its own model while task workers (implementation, tests, renders, grind) run on the cheaper one, and
+// sets omp's auto-compaction for both models to lanes.compact_at tokens (keeping the last lanes.keep_recent). Written at
+// every spawn so changed lanes.* settings apply the next time the lane starts or resumes.
 export const laneWorkerModel = (lane: Pick<Lane, "workerModel">) => lane.workerModel ?? workerModel();
 function writeOverlay(lane: Lane): string {
 	const file = join(dir(lane.name), "omp-overlay.yml");
 	mkdirSync(dir(lane.name), { recursive: true });
-	writeFileSync(file, `# Written by the dotz gateway each time lane ${lane.name} starts; passed to omp as --config.\nmodelRoles:\n  task: ${JSON.stringify(laneWorkerModel(lane))}\ntask:\n  agentModelOverrides:\n    task: "@task"\n    scout: "@task"\n`);
+	const thresholds = [...new Set([parseSelector(lane.model).model, parseSelector(laneWorkerModel(lane)).model])].map(m => `    ${JSON.stringify(m)}: ${JSON.stringify(`f${lanesCompactAt()}`)}\n`).join("");
+	writeFileSync(file, `# Written by the dotz gateway each time lane ${lane.name} starts; passed to omp as --config.\nmodelRoles:\n  task: ${JSON.stringify(laneWorkerModel(lane))}\ntask:\n  agentModelOverrides:\n    task: "@task"\n    scout: "@task"\ncompaction:\n  modelThresholds:\n${thresholds}  keepRecentTokens: ${lanesKeepRecent()}\n`);
 	return file;
 }
 
@@ -408,6 +420,32 @@ export function compactLane(name: string): Compaction {
 	const lane = known(name);
 	if (!lane.proc) throw new Error(`lane ${name} is not running (resume it first)`);
 	return requestCompact(lane.ctx, portOf(lane));
+}
+
+// Asks a running lane's omp for its current context numbers (answered by a get_session_stats response).
+export function refreshLaneStats(name: string): void {
+	const lane = known(name);
+	if (lane.proc) write(lane, { type: "get_session_stats" });
+}
+
+// Moves an idle lane to a fresh session with a handover (the same pattern as the orchestrator's rotation): the lane
+// keeps its model, folder, brief and goal, and reads its brief and last report to continue. The reload turn is silent
+// (no report); an owner message that arrives meanwhile makes the next turn a normal one.
+export async function rotateLane(name: string, why: string): Promise<void> {
+	const lane = known(name);
+	if (!lane.proc || lane.status !== "idle") throw new Error(`lane ${name} is not idle`);
+	const previous = lane.sessionFile;
+	const old = lane.proc;
+	lane.quiet = true;
+	old.kill();
+	await old.exited;
+	lane.ctx = newCtx();
+	spawn(lane, false);
+	const tail = previous && existsSync(previous) ? recentExchanges(previous) : undefined;
+	const brief = join(dir(name), "brief.md");
+	const lastReport = join(dir(name), "report.md");
+	prompt(lane, `[dotz gateway] Your session was rotated to a fresh one (${why}) to keep the context small. You keep your folder (${lane.cwd}), model and goal. Read your brief (${brief}) and your last report (${lastReport}), check the current state of the work (git status, the files the brief names), and continue from there. Do not start new work and do not report: if nothing is open, reply with the single word "ready".${previous ? `\n\n[handover] The previous session (${previous}) was rotated.${tail ? ` Its most recent exchanges, oldest first:\n${tail}` : ""}` : ""}`);
+	lane.silent = { lastText: lane.lastText };
 }
 
 // Brings back every lane that was alive when the gateway stopped: working ones resume their turn, idle ones (waiting on

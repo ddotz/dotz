@@ -6,7 +6,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { emitFrameActivity, statusActivity } from "./activity.ts";
 import { cfg, DATA_DIR, IDENTITY_FILE, log, NAME, now, OMP, orchestratorModel, paths, selectorOf } from "./config.ts";
-import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, requestCompact } from "./context.ts";
+import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { rateLimitDelay } from "./providers.ts";
 import { setupsSummary } from "./workchannels.ts";
 
@@ -74,21 +74,9 @@ function recall(): string {
 }
 
 function handover(previous: string): string {
-	const turns: string[] = [];
-	try {
-		for (const line of readFileSync(previous, "utf8").split("\n")) {
-			if (!line.includes('"role":"user"') && !line.includes('"role":"assistant"')) continue;
-			const m = JSON.parse(line).message;
-			const t = textOf(m) || (typeof m?.content === "string" ? m.content.trim() : "");
-			if (!t || t.startsWith("[keepalive]") || t === "ok" || t.startsWith("[dotz gateway] You are")) continue;
-			turns.push(`${m.role === "user" ? "IN" : "YOU"}: ${t.length > 700 ? `${t.slice(0, 700)}...` : t}`);
-		}
-	} catch {
-		return "";
-	}
-	const tail: string[] = [];
-	for (let i = turns.length - 1, size = 0; i >= 0 && size + turns[i].length < 9000; size += turns[i].length, i--) tail.unshift(turns[i]);
-	return `\n\n[handover] The previous session (${previous}) was rotated to keep the context small. Its most recent exchanges, oldest first; continue any open thread from here:\n${tail.join("\n\n")}`;
+	const tail = recentExchanges(previous);
+	if (tail === undefined) return "";
+	return `\n\n[handover] The previous session (${previous}) was rotated to keep the context small. Its most recent exchanges, oldest first; continue any open thread from here:\n${tail}`;
 }
 
 async function readFrames(p: Subprocess<"pipe", "pipe", "pipe">): Promise<void> {
