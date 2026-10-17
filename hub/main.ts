@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT } from "./config.ts";
 import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setGatewayRestart, setModel } from "./control.ts";
-import { subagentLists } from "./activity.ts";
+import { subagentDetail, subagentLists } from "./activity.ts";
 import * as discord from "./discord.ts";
 import { activityItems, emit, recentEvents, sseResponse } from "./events.ts";
 import { abortLane, approvesBudget, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
@@ -411,6 +411,10 @@ const server = Bun.serve({
 			}
 		}
 		if (req.method === "GET" && url.pathname === "/api/subagents") return json({ sources: subagentLists() });
+		if (req.method === "GET" && parts[0] === "api" && parts[1] === "subagents" && parts.length === 3) {
+			const detail = await subagentDetail(url.searchParams.get("source") ?? "orchestrator", decodeURIComponent(parts[2]));
+			return detail ? json(detail) : json({ error: "no such subagent (finished ones are kept 10 minutes)" }, 404);
+		}
 		if (req.method === "GET" && url.pathname === "/api/activity") {
 			const source = url.searchParams.get("source") ?? "orchestrator";
 			if (source !== "orchestrator" && !source.startsWith("lane:")) return json({ error: "source must be orchestrator or lane:<name>" }, 400);
