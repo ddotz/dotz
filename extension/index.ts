@@ -34,12 +34,23 @@ export function blockedBy(command: string, rulesText: string): string | undefine
 	return undefined;
 }
 
+// Always refused, whatever RULES.md says: pattern kills reach the live gateway (a test hub shares its command line),
+// and kickstarting it cuts the orchestrator and every lane mid-turn. Test hubs are stopped by their own PID;
+// gateway restarts go through /api/gateway/restart, which waits for idle.
+const SYSTEM_DENY: [RegExp, string][] = [
+	[/\b(pkill|killall)\b[^;&|\n]*(hub\/main|dotz)/i, "a pattern kill also hits the live dotz gateway; stop a test hub by the PID you started"],
+	[/\blaunchctl\s+(kickstart|stop|kill|bootout|unload|remove)\b[^;&|\n]*dev\.dotz\.gateway/i, "restarting the gateway cuts every session short; use /restart gateway (POST /api/gateway/restart)"],
+];
+
 function enforceRules(pi: any): void {
 	pi.on("tool_call", (event: any) => {
 		if (String(event?.toolName ?? "") !== "bash") return;
+		const command = String(event?.input?.command ?? "");
+		const system = SYSTEM_DENY.find(([re]) => re.test(command));
+		if (system) return { block: true, reason: `Blocked by dotz: ${system[1]}.` };
 		const file = join(DATA, "RULES.md");
 		if (!existsSync(file)) return;
-		const reason = blockedBy(String(event?.input?.command ?? ""), readFileSync(file, "utf8"));
+		const reason = blockedBy(command, readFileSync(file, "utf8"));
 		if (reason) return { block: true, reason: `Blocked by the owner's rule (${file}): ${reason}. Do not work around it; report it if the task needs it.` };
 	});
 }
