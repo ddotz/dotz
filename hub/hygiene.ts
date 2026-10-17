@@ -1,17 +1,15 @@
 // Nightly lane hygiene (what 오모냥's session doctor did for its tabs): once a day at lanes.nightly_at (gateway-local time)
 // every idle lane is looked at. A session file past lanes.rotate_mb starts a fresh session with a handover; otherwise a
-// context at 60% of lanes.compact_at or more is compacted. The bar is the auto-compaction point, not the model window:
-// with a 1M window and auto-compaction at 400K, 60% of the window would never be reached. Working, rate-limited and
-// stopped lanes are left alone.
+// context of lanes.nightly_compact_at tokens or more (default 300K, below the 400K daytime auto-compaction) is compacted.
+// Working, rate-limited and stopped lanes are left alone.
 import { existsSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, sep } from "node:path";
 import { statusActivity } from "./activity.ts";
-import { lanesCompactAt, lanesNightlyAt, lanesRotateMb, log, OMP, paths } from "./config.ts";
+import { lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OMP, paths } from "./config.ts";
 import { describeCtx } from "./context.ts";
 import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
 
-const COMPACT_AT_PERCENT = 60;
 const STATS_WAIT_MS = 3000;
 // A run missed while the gateway was down is made up this long after the start, once restored lanes know their numbers.
 const CATCHUP_DELAY_MS = 60_000;
@@ -49,9 +47,9 @@ export async function runLaneHygiene(): Promise<string[]> {
 				const why = `session file ${+(bytes / 1e6).toFixed(2)} MB > ${lanesRotateMb()} MB`;
 				await rotateLane(lane.name, why);
 				action = `rotated to a fresh session with a handover (${why})`;
-			} else if (lane.ctx.tokens >= (lanesCompactAt() * COMPACT_AT_PERCENT) / 100) {
+			} else if (lane.ctx.tokens >= lanesNightlyCompactAt()) {
 				compactLane(lane.name);
-				action = `compacting its context (${describeCtx(lane.ctx)}, at least ${COMPACT_AT_PERCENT}% of the ${lanesCompactAt().toLocaleString("en-US")}-token auto-compaction point)`;
+				action = `compacting its context (${describeCtx(lane.ctx)}, at least ${lanesNightlyCompactAt().toLocaleString("en-US")} tokens)`;
 			}
 		} catch (e) {
 			action = `hygiene failed: ${e instanceof Error ? e.message : e}`;
