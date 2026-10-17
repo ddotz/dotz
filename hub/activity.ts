@@ -132,17 +132,16 @@ export function subagentLists(): Record<string, Subagent[]> {
 	return Object.fromEntries([...subagents].map(([source, list]) => [source, [...list.values()]]));
 }
 
-type DetailItem = { ts: string; type: "status" | "thinking" | "text" | "tool_call" | "tool_result"; text: string; tool?: string; intent?: string; args?: string; is_error?: boolean };
-// One subagent with its own transcript (oldest first, last DETAIL_MAX items) mapped to activity-shaped items.
-const DETAIL_MAX = 200;
+export type TranscriptItem = { ts: string; type: "status" | "thinking" | "text" | "tool_call" | "tool_result"; text: string; tool?: string; intent?: string; args?: string; is_error?: boolean };
+const TRANSCRIPT_MAX = 200;
 // The fields read from an omp session transcript line; every field is optional and checked before use.
 type TranscriptBlock = Block & { name?: string; arguments?: unknown; intent?: string };
 type TranscriptEntry = { type?: string; timestamp?: string; message?: { role?: string; content?: TranscriptBlock[] | string; toolName?: string; isError?: boolean } };
-export async function subagentDetail(source: string, id: string): Promise<(Subagent & { items: DetailItem[] }) | undefined> {
-	const sub = subagents.get(source)?.get(id);
-	if (!sub) return undefined;
-	const file = transcripts.get(`${source}\n${id}`);
-	const items: DetailItem[] = [];
+
+// An omp session transcript (a subagent's, or a lane's after its live activity is gone) mapped to activity-shaped
+// items, oldest first, the last `max` of them.
+export async function transcriptItems(file: string | undefined, max = TRANSCRIPT_MAX): Promise<TranscriptItem[]> {
+	const items: TranscriptItem[] = [];
 	const lines = file && (await Bun.file(file).exists()) ? (await Bun.file(file).text()).split("\n") : [];
 	for (const line of lines) {
 		let e: TranscriptEntry;
@@ -168,7 +167,13 @@ export async function subagentDetail(source: string, id: string): Promise<(Subag
 			}
 		} else if (m.role === "toolResult") items.push({ ts, type: "tool_result", tool: m.toolName, text: scrub(joined(m.content)), is_error: Boolean(m.isError) });
 	}
-	return { ...sub, items: items.slice(-DETAIL_MAX) };
+	return items.slice(-max);
+}
+
+// One subagent with its own transcript.
+export async function subagentDetail(source: string, id: string): Promise<(Subagent & { items: TranscriptItem[] }) | undefined> {
+	const sub = subagents.get(source)?.get(id);
+	return sub && { ...sub, items: await transcriptItems(transcripts.get(`${source}\n${id}`)) };
 }
 
 export function statusActivity(source: string, text: string): void {
