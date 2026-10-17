@@ -2,6 +2,7 @@
 // Numbers come from the assistant usage of each message_end and from omp's own accounting: the `get_state` and
 // `get_session_stats` responses carry `contextUsage` {tokens, contextWindow, percent}. Compaction is the RPC
 // `{type:"compact"}`; omp aborts a running turn to compact, so a busy process is queued and compacted after agent_end.
+import { readFileSync } from "node:fs";
 import { now } from "./config.ts";
 
 export type CompactState = "queued" | "compacting" | "done" | "error";
@@ -92,3 +93,26 @@ export function abandonCompact(c: Ctx, reason: string): void {
 }
 
 export const ctxView = (c: Ctx) => ({ tokens: c.tokens, window: c.window, percent: percentOf(c), compaction: c.compaction });
+
+// The most recent user/assistant exchanges of a saved omp session (oldest first, ~9000 chars), the body of a handover
+// into a fresh session. undefined when the session file cannot be read.
+type SessionMessage = { role?: string; content?: string | Array<{ type?: string; text?: string }> };
+export function recentExchanges(sessionFile: string): string | undefined {
+	const turns: string[] = [];
+	try {
+		for (const line of readFileSync(sessionFile, "utf8").split("\n")) {
+			if (!line.includes('"role":"user"') && !line.includes('"role":"assistant"')) continue;
+			const parsed: { message?: SessionMessage } = JSON.parse(line);
+			const m = parsed.message;
+			if (!m) continue;
+			const t = (Array.isArray(m.content) ? m.content.filter(b => b?.type === "text").map(b => b.text).join("") : (m.content ?? "")).trim();
+			if (!t || t.startsWith("[keepalive]") || t === "ok" || t.startsWith("[dotz gateway] You are") || t.includes("\n[dotz lane ")) continue;
+			turns.push(`${m.role === "user" ? "IN" : "YOU"}: ${t.length > 700 ? `${t.slice(0, 700)}...` : t}`);
+		}
+	} catch {
+		return undefined;
+	}
+	const tail: string[] = [];
+	for (let i = turns.length - 1, size = 0; i >= 0 && size + turns[i].length < 9000; size += turns[i].length, i--) tail.unshift(turns[i]);
+	return tail.join("\n\n");
+}

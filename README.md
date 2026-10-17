@@ -96,6 +96,23 @@ every lane start or resume the gateway writes `~/.dotz/lanes/<name>/omp-overlay.
 The lane brief contract tells the lane to review a worker's diff itself before applying it. A running lane keeps its
 process's overlay until it restarts.
 
+**Lane context management.** Four `lanes.*` keys in `config.json` (all optional): `compact_at` (default `400000`
+tokens) and `keep_recent` (default `40000`) go into each lane's `omp-overlay.yml` as `compaction.modelThresholds`
+(`f<compact_at>` for the lane model and its worker model) and `compaction.keepRecentTokens`, so omp compacts a lane
+itself at 400K and keeps the last 40K; `nightly_at` (default `"04:30"`, gateway-local time, `"off"` disables) and
+`rotate_mb` (default `50`) drive the nightly hygiene. Once a day at `nightly_at` every idle lane is checked: a session
+file over `rotate_mb` MB starts a fresh session with a handover (recent exchanges plus a note to re-read its brief and
+last report; same model, folder and goal; the reload turn posts no report), otherwise a context at 60% of `compact_at`
+or more (240K at the default; 60% of a 1M window would never be reached) is compacted. Working, rate-limited and stopped
+lanes are skipped. Each action goes to the hub log and the activity feed, nothing to Discord. The last run date is kept
+in `~/.dotz/lane-hygiene.json`; a run missed while the gateway was down is made up a minute after the next start.
+Settings apply when a lane starts or resumes.
+
+**Worktree cleanup.** Two minutes after the start and then hourly, the gateway deletes task-worker isolation worktrees
+that `omp worktree list --json` marks with an `orphanReason` (no live job) and that were not modified for an hour. Only
+paths under `~/.omp/wt/` are touched; they are made writable first (retained worktrees hold read-only files that make
+`omp worktree clear` fail). The count and freed space go to the hub log.
+
 ## API additions
 
 All behind the same auth as the rest of `/api`.
@@ -155,7 +172,8 @@ short "received, answering when the current step ends" notice from the gateway.
 - `hub/` gateway: `main.ts` (API, auth, routing, auto-reply, budget gate on lane launch), `orchestrator.ts` (headless
   session; 429 resume, crash restart, rotation past 50MB or 150K context), `lanes.ts` (brief contract, worker-model
   overlay, persistence and resume across restarts, exit/429 handling, 15-minute progress posts), `context.ts`
-  (context usage and compaction state shared by orchestrator and lanes), `schedule.ts` (reminders), `discord.ts`
+  (context usage and compaction state shared by orchestrator and lanes), `hygiene.ts` (nightly lane compaction and
+  rotation, orphaned worktree cleanup), `schedule.ts` (reminders), `discord.ts`
   (eyes receipt, typing, 429 retry, heartbeat check, identity sync), `control.ts` (model/effort switching, context and
   compaction, slash commands), `providers.ts` (keys, login/logout, model catalog, quota), `activity.ts` (omp frames to the terminal-view feed),
   `events.ts`, `config.ts`.
