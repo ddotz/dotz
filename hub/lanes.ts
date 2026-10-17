@@ -4,12 +4,18 @@ import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
 import { cfg, IDENTITY_FILE, lanesCompactAt, lanesKeepRecent, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, workerModel } from "./config.ts";
-import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
+import { abandonCompact, type CompactPort, type Compaction, compactionError, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 const PROGRESS_EVERY_MS = Number(process.env.DOTZ_PROGRESS_MS ?? 15 * 60_000);
 const WATCHDOG_MS = 120_000;
+// A turn in flight with no rpc frame for this long (a hung omp or provider call) is aborted and resumed; a lane
+// recovers at most RECOVERY_MAX times per RECOVERY_WINDOW_MS, then it is left alone and the owner told once.
+const STALL_MS = Number(process.env.DOTZ_STALL_MS ?? 20 * 60_000);
+const RECOVERY_MAX = 3;
+const RECOVERY_WINDOW_MS = 60 * 60_000;
+const STOPPED_NOTE = "[dotz gateway] Your process was restarted after it stopped responding. Continue the last request.";
 const MAX_ACTIVE = cfg.lanes?.max_active ?? 4;
 const BRIEF_MAX = 8000;
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -28,7 +34,11 @@ export type Lane = Record_ & {
 	watchdog?: ReturnType<typeof setTimeout>;
 	resumeTimer?: ReturnType<typeof setTimeout>;
 	quiet?: boolean;
-	revive?: boolean;
+	// Set to restart the process on the same session once it exits: text is the resume prompt (none = back to idle).
+	revive?: { text?: string };
+	lastFrameAt?: number;
+	recoveries?: number[];
+	recoveryCapped?: boolean;
 	workingSince?: number;
 	pauseReported?: boolean;
 	pausing?: boolean;
@@ -88,7 +98,7 @@ function prompt(lane: Lane, text: string): void {
 	clearTimeout(lane.watchdog);
 	lane.watchdog = setTimeout(() => {
 		log(`lane ${lane.name} did not start a turn after a prompt; restarting it`);
-		lane.revive = true;
+		lane.revive = { text: STOPPED_NOTE };
 		lane.proc?.kill(9);
 	}, WATCHDOG_MS);
 }
@@ -205,9 +215,11 @@ async function readFrames(lane: Lane, proc: Subprocess<"pipe", "pipe", "pipe">):
 			} catch {
 				continue;
 			}
+			lane.lastFrameAt = Date.now();
 			emitFrameActivity(`lane:${lane.name}`, f);
 			noteResponse(lane.ctx, f);
 			noteCompactResponse(lane.ctx, f, portOf(lane));
+			const wasWorking = lane.status === "working";
 			if (f.type === "agent_start") {
 				clearTimeout(lane.watchdog);
 				clearTimeout(lane.timer);
@@ -222,7 +234,8 @@ async function readFrames(lane: Lane, proc: Subprocess<"pipe", "pipe", "pipe">):
 				const err = String(f.message.errorMessage ?? "");
 				if (f.message.stopReason !== "error") lane.transientTries = 0;
 				if (text) lane.lastText = text;
-				else if (f.message.stopReason === "error") {
+				// A compaction error is recovered by recover() below (restart on the same session), not retried here.
+				else if (f.message.stopReason === "error" && !/compaction/i.test(err)) {
 					const kind = classifyProviderError(err);
 					if (kind === "rate" || kind === "owner") void pauseForRateLimit(lane, err, kind);
 					else if (kind !== "transient" || !retryTransient(lane, err)) {
@@ -245,6 +258,8 @@ async function readFrames(lane: Lane, proc: Subprocess<"pipe", "pipe", "pipe">):
 				lane.sessionFile = f.data.sessionFile;
 				persist(lane);
 			}
+			const failure = compactionError(f);
+			if (failure) recover(lane, `컨텍스트 압축이 실패했어요 (${failure.slice(0, 120)})`, wasWorking);
 		}
 	}
 }
@@ -272,7 +287,8 @@ function spawn(lane: Lane, resume: boolean): void {
 	});
 	lane.proc = proc;
 	lane.quiet = false;
-	lane.revive = false;
+	lane.revive = undefined;
+	lane.lastFrameAt = Date.now();
 	setStatus(lane, "starting");
 	statusActivity(`lane:${lane.name}`, `lane process ${resume ? "resumed" : "started"} (${lane.model})`);
 	void readFrames(lane, proc);
@@ -291,7 +307,12 @@ function spawn(lane: Lane, resume: boolean): void {
 		setStatus(lane, "exited");
 		log(`lane ${lane.name} exited (${code})`);
 		if (lane.revive && lane.sessionFile) {
-			resumeLane(lane, "[dotz gateway] Your process was restarted after it stopped responding. Continue the last request.");
+			const { text } = lane.revive;
+			if (text) resumeLane(lane, text);
+			else {
+				spawn(lane, true);
+				setStatus(lane, "idle");
+			}
 			return;
 		}
 		if (code !== 0 && code !== 143) report(lane, `[lane exited] 프로세스가 종료됐습니다 (code ${code}). 마지막 상태: ${lane.lastText.slice(0, 300) || "없음"}`);
@@ -306,6 +327,31 @@ function resumeLane(lane: Lane, text: string): void {
 	spawn(lane, true);
 	prompt(lane, withHeld(lane, text));
 	log(`lane ${lane.name} resumed ${lane.sessionFile}`);
+}
+
+// Aborts a lane that cannot go on (a turn with no frames for STALL_MS, or a failed compaction) by killing its process,
+// then resumes the same session: a turn that was running is told to continue, an idle lane just comes back idle.
+function recover(lane: Lane, why: string, wasWorking: boolean): void {
+	if (!lane.proc || !lane.sessionFile || lane.revive) return;
+	const t = Date.now();
+	lane.recoveries = (lane.recoveries ?? []).filter(at => t - at < RECOVERY_WINDOW_MS);
+	if (lane.recoveries.length >= RECOVERY_MAX) {
+		lane.lastFrameAt = t;
+		if (lane.recoveryCapped) return;
+		lane.recoveryCapped = true;
+		log(`lane ${lane.name} needs recovery (${why}) but already recovered ${RECOVERY_MAX} times in the last hour`);
+		onReport(lane, `[lane stuck] ${why}. 한 시간 안에 ${RECOVERY_MAX}번 자동 복구했는데 또 멈춰서 더는 건드리지 않아요. 직접 확인해 주세요.`);
+		return;
+	}
+	lane.recoveryCapped = false;
+	lane.recoveries.push(t);
+	clearTimeout(lane.timer);
+	rmSync(pendingFile(lane), { force: true });
+	if (lane.lastText.startsWith("[lane error]")) lane.lastText = "";
+	log(`lane ${lane.name} recovering: ${why}`);
+	onReport(lane, `[lane recovery] ${why}. 진행 중이던 요청을 중단하고 같은 세션으로 다시 이어서 시작해요 (${lane.recoveries.length}/${RECOVERY_MAX}).`);
+	lane.revive = { text: wasWorking ? STOPPED_NOTE : undefined };
+	lane.proc.kill(9);
 }
 
 const activeCount = () => [...lanes.values()].filter(l => l.status === "working" || l.status === "starting").length;
@@ -544,6 +590,13 @@ setInterval(() => {
 		onProgress(lane, lane.lastText);
 	}
 }, 60_000);
+
+setInterval(() => {
+	for (const lane of lanes.values()) {
+		// Running task workers emit their own progress frames, but a long silent worker step is not a hung lane: skip those.
+		if (lane.status === "working" && lane.proc && !runningSubagents(`lane:${lane.name}`) && Date.now() - (lane.lastFrameAt ?? Date.now()) >= STALL_MS) recover(lane, `${Math.round(STALL_MS / 60_000)}분 넘게 아무 응답이 없어요`, true);
+	}
+}, Math.min(60_000, Math.max(250, STALL_MS / 2)));
 
 export const laneModels = () => [...lanes.values()].map(l => ({ name: l.name, ...parseSelector(l.model), status: l.status, running: Boolean(l.proc), worker_model: laneWorkerModel(l), worker_model_override: l.workerModel }));
 
