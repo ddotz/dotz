@@ -4,6 +4,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { blockedBy } from "../extension/index.ts";
+import { replInTab } from "./aside-window.ts";
 import { log, now, paths } from "./config.ts";
 
 export type Watch = {
@@ -39,8 +40,10 @@ async function exec(argv: string[], cwd?: string): Promise<{ code: number; outpu
 
 // Login keeping in the owner's Aside browser, no model calls. A REPL fetch sends the stored cookies (enough to check
 // the login and to extend server-side sliding sessions) but does not store Set-Cookie (measured 2026-10-16), so every
-// refresh_hours a real tab load renews rotating cookies, only while Aside is not the front app (the owner is not
-// looking at it); the tab is closed again and focus stays where it was (measured).
+// refresh_hours a real tab load renews rotating cookies. On this machine's default profile that load runs in the
+// gateway's dedicated minimized Aside window (aside-window.ts): never focused, the owner's windows are untouched, so it
+// needs no waiting. A remote host or another profile cannot be reached that way and still loads the tab through the
+// REPL only while Aside is not the front app (the owner is not looking at it).
 async function sessionRun(w: Watch): Promise<{ code: number; output: string }> {
 	const s = w.session!;
 	const check = `const dz = await fetch(${JSON.stringify(s.url)}, { redirect: 'manual' }); const dzBody = dz.status === 200 ? await dz.text() : ''; const dzOk = dz.status === 200 && ${s.expect ? `new RegExp(${JSON.stringify(s.expect)}, 'i').test(dzBody)` : "true"}; console.log(dzOk ? 'DOTZ_SESSION_OK' : 'DOTZ_SESSION_LOST', dz.status, dz.headers.get('location') ?? '');`;
@@ -49,14 +52,25 @@ async function sessionRun(w: Watch): Promise<{ code: number; output: string }> {
 	if (!r.output.includes("DOTZ_SESSION_OK")) return { code: 1, output: r.output.includes("DOTZ_SESSION_LOST") ? `logged out: ${r.output.match(/DOTZ_SESSION_LOST.*/)?.[0]}` : `check could not run (is Aside running?): ${r.output.slice(-400)}` };
 	const due = !w.state.refreshedAt || Date.now() - w.state.refreshedAt > s.refresh_hours * 3600_000;
 	if (due) {
-		const front = s.host && s.host !== "local" ? { code: 0, output: "remote host" } : await exec(["osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true']);
-		if (front.code === 0 && front.output !== "Aside") {
-			const t = await exec(["aside", "repl", ...where, `const dzTab = await openTab(${JSON.stringify(s.url)}); await closeTab(dzTab); console.log('DOTZ_REFRESHED');`]);
-			if (t.output.includes("DOTZ_REFRESHED")) {
+		const dedicated = !s.profile && (!s.host || s.host === "local");
+		if (dedicated) {
+			try {
+				await replInTab(s.url, "return 'DOTZ_REFRESHED';");
 				w.state.refreshedAt = Date.now();
-				log(`watch ${w.name} refreshed cookies with a tab load`);
-			} else log(`watch ${w.name} tab refresh failed: ${t.output.slice(-300)}`);
-		} else log(`watch ${w.name} tab refresh postponed (front app: ${front.code === 0 ? front.output : `unknown, ${front.output.slice(-200)}`})`);
+				log(`watch ${w.name} refreshed cookies with a tab load in the automation window`);
+			} catch (error) {
+				log(`watch ${w.name} tab refresh failed: ${String(error).slice(-300)}`);
+			}
+		} else {
+			const front = s.host && s.host !== "local" ? { code: 0, output: "remote host" } : await exec(["osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true']);
+			if (front.code === 0 && front.output !== "Aside") {
+				const t = await exec(["aside", "repl", ...where, `const dzTab = await openTab(${JSON.stringify(s.url)}); await closeTab(dzTab); console.log('DOTZ_REFRESHED');`]);
+				if (t.output.includes("DOTZ_REFRESHED")) {
+					w.state.refreshedAt = Date.now();
+					log(`watch ${w.name} refreshed cookies with a tab load`);
+				} else log(`watch ${w.name} tab refresh failed: ${t.output.slice(-300)}`);
+			} else log(`watch ${w.name} tab refresh postponed (front app: ${front.code === 0 ? front.output : `unknown, ${front.output.slice(-200)}`})`);
+		}
 	}
 	return { code: 0, output: "logged in" };
 }
