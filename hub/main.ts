@@ -54,21 +54,17 @@ function out(target: string, text: string, replyTo?: string, extra: Record<strin
 }
 
 // No owner message goes unanswered for long (owner 2026-10-17: "대답 누락하면 안되는데"). If nothing was posted to the
-// asking channel REPLY_WAIT_MS after a message, a working orchestrator is steered to post a progress note there now; a
-// lane cannot post before its turn ends, so the gateway tells the owner the lane has the message.
+// asking channel REPLY_WAIT_MS after a message, a working orchestrator is steered to post a progress note there now.
+// A lane message gets no gateway notice (owner 2026-10-17: no canned "받았어요 ... 끝나는 대로" replies): the eyes
+// reaction is the receipt and the lane answers it in its turn's report.
 const REPLY_WAIT_MS = 60_000;
 const lastPost = new Map<string, number>();
-function expectReply(target: string, lane?: string): void {
+function expectReply(target: string): void {
 	if (isLocal(target)) return;
 	const since = Date.now();
 	setTimeout(() => {
 		if ((lastPost.get(target) ?? 0) >= since) return;
-		if (lane) {
-			const status = lanes.get(lane)?.status;
-			if (status !== "working" && status !== "starting") return;
-			lastPost.set(target, Date.now());
-			void discord.send(target, "받았어요. 하던 작업이 아직 끝나지 않아서, 끝나는 대로 이 메시지까지 반영해서 답할게요.").catch(e => log(`lane wait notice failed: ${e}`));
-		} else steerOrchestrator(`[dotz gateway] The owner has waited ${REPLY_WAIT_MS / 1000}s in ${target} with nothing posted there. Post a short progress note in ${target} now (dotz_send update_key "progress": what you are doing, when the answer comes), then carry on.`);
+		steerOrchestrator(`[dotz gateway] The owner has waited ${REPLY_WAIT_MS / 1000}s in ${target} with nothing posted there. Post a short progress note in ${target} now (dotz_send update_key "progress": what you are doing, when the answer comes), then carry on.`);
 	}, REPLY_WAIT_MS);
 }
 
@@ -283,7 +279,6 @@ discord.connect(m => {
 		try {
 			if (approvesBudget(lane, m.content)) sendToLane(lane, "/budget-ok");
 			sendToLane(lane, [`[owner via Discord] ${m.content}`, extra].filter(Boolean).join("\n"));
-			expectReply(target, lane);
 		} catch (error) {
 			void discord.send(target, `레인 ${lane}을(를) 이어갈 수 없어요 (${(error as Error).message}). 대화 채널에서 다시 맡겨 주세요.`, m.id);
 		}
