@@ -27,6 +27,7 @@ export const orch = {
 	ctx: newCtx(),
 };
 let proc: Subprocess<"pipe", "pipe", "pipe"> | undefined;
+export const orchestratorPid = (): number | undefined => proc?.pid;
 let seq = 0;
 let stopping = false;
 let rotating = false;
