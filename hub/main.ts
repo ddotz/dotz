@@ -226,8 +226,9 @@ async function budgetProblem(): Promise<string | undefined> {
 		const limits: { id: string; amount?: { remaining?: number } }[] = JSON.parse(r.stdout.toString()).reports?.find((x: any) => x.provider === "anthropic")?.limits ?? [];
 		const five = limits.find(l => l.id === "anthropic:5h")?.amount?.remaining;
 		const week = limits.find(l => l.id === "anthropic:7d")?.amount?.remaining;
+		// Same rule as 오모냥: the 5h window gates (15% assumed use, 10% kept); the week blocks only when nearly gone.
 		if (typeof five === "number" && five < 25) return `5h window ${five}% left`;
-		if (typeof week === "number" && week < 10) return `7d window ${week}% left`;
+		if (typeof week === "number" && week < 3) return `7d window ${week}% left`;
 	} catch {
 		return undefined;
 	}
