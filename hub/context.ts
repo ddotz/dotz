@@ -3,7 +3,7 @@
 // `get_session_stats` responses carry `contextUsage` {tokens, contextWindow, percent}. Compaction is the RPC
 // `{type:"compact"}`; omp aborts a running turn to compact, so a busy process is queued and compacted after agent_end.
 import { readFileSync } from "node:fs";
-import { now } from "./config.ts";
+import { log, now } from "./config.ts";
 
 export type CompactState = "queued" | "compacting" | "done" | "error";
 export type Compaction = { state?: CompactState; at?: string; tokensBefore?: number; error?: string };
@@ -15,6 +15,8 @@ export type Frame = {
 	command?: string;
 	success?: boolean;
 	error?: string;
+	errorMessage?: string;
+	message?: { role?: string; stopReason?: string; errorMessage?: string };
 	data?: { contextUsage?: { tokens?: number; contextWindow?: number }; model?: { contextWindow?: number }; tokensBefore?: number };
 };
 type Usage = { input?: number; cacheRead?: number; cacheWrite?: number; output?: number };
@@ -83,7 +85,18 @@ export function noteCompactResponse(c: Ctx, f: Frame, port: CompactPort): void {
 	if (f.success) {
 		c.compaction = { state: "done", at: now(), tokensBefore: typeof f.data?.tokensBefore === "number" ? f.data.tokensBefore : undefined };
 		port.send({ type: "get_session_stats" });
-	} else c.compaction = { state: "error", at: now(), error: String(f.error ?? "compaction failed").slice(0, 300) };
+	} else {
+		c.compaction = { state: "error", at: now(), error: String(f.error ?? "compaction failed").slice(0, 300) };
+		log(`compaction failed: ${c.compaction.error}`);
+	}
+}
+
+// A compaction that failed, from any of the three places omp reports it: the `compact` response, the end of an
+// automatic compaction, or an assistant message that ended in a compaction error (how a turn dies mid-compaction).
+export function compactionError(f: Frame): string | undefined {
+	if (f.type === "response" && f.command === "compact" && !f.success) return String(f.error ?? "compaction failed").slice(0, 300);
+	if (f.type === "auto_compaction_end" && f.errorMessage) return String(f.errorMessage).slice(0, 300);
+	if (f.type === "message_end" && f.message?.role === "assistant" && f.message.stopReason === "error" && /compaction/i.test(f.message.errorMessage ?? "")) return String(f.message.errorMessage).slice(0, 300);
 }
 
 // The process went away before a queued or running compaction finished.
