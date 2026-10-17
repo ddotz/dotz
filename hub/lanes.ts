@@ -1,7 +1,7 @@
 import type { Subprocess } from "bun";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { emitFrameActivity, statusActivity } from "./activity.ts";
+import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
 import { cfg, IDENTITY_FILE, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, workerModel } from "./config.ts";
 import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, requestCompact } from "./context.ts";
 import { rateLimitDelay } from "./providers.ts";
@@ -229,6 +229,7 @@ function spawn(lane: Lane, resume: boolean): void {
 		clearTimeout(lane.watchdog);
 		clearTimeout(lane.resumeTimer);
 		lane.resumeTimer = undefined;
+		endSubagents(`lane:${lane.name}`);
 		statusActivity(`lane:${lane.name}`, `lane process exited (code ${code})`);
 		if (lane.quiet) return log(`lane ${lane.name} stopped for a gateway restart`);
 		setStatus(lane, "exited");
@@ -382,9 +383,18 @@ export function restoreLanes(): string[] {
 	return resumed;
 }
 
+// A lane is busy while its turn runs or any of its task workers still runs (a turn often ends while workers go on).
+export const laneBusy = (lane: Lane): boolean => lane.status === "working" || lane.status === "starting" || runningSubagents(`lane:${lane.name}`) > 0;
+
 export function shutdownLanes(): void {
 	for (const lane of lanes.values()) {
 		if (!lane.proc) continue;
+		// An idle lane whose workers are cut off here is saved as working, so restoreLanes resumes it with the note that
+		// its workers stopped instead of respawning it idle.
+		if (lane.status === "idle" && laneBusy(lane)) {
+			lane.status = "working";
+			persist(lane);
+		}
 		lane.quiet = true;
 		lane.proc.kill();
 	}
