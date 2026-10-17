@@ -43,6 +43,9 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
 ## Lanes and workers
 - Launch: `dotz_lane` launch {name, title, cwd absolute, brief}. One goal per lane. The lane is a full omp orchestrator
   in that folder (workers, isolation, review-before-apply and guard rules apply there).
+- Tool-call intents (the short `i` argument of every tool call) are shown to the owner in the web activity view: write
+  them in the owner's language (the identity's language; Korean unless it says otherwise), 2-6 words ("재시작 상태
+  확인"). Every brief you write says the same for its workers.
 - Brief (lane or worker; the gateway enforces the shape): goal, exact paths, known evidence, a `Done when:` line with a
   check that can fail (a command, a file, a URL, a merged PR), what not to touch. Paths, not pasted contents; at most
   8000 characters. One task per lane or worker, sized to ~250K context; final answer at most ~800 characters; a
