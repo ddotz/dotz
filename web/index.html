@@ -412,6 +412,49 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .sh-body.term { height: auto; padding: 12px 14px; border: 0; border-radius: 0; }
 @media (max-width: 639px) { .sheet { width: 100vw; border-left: 0; } .sh-body { padding: 12px; } }
 .tl-in > .a-div { margin: 0; }
+
+/* lanes board */
+#v-lanes { max-width: none; }
+.lboard { display: flex; flex-direction: column; gap: 12px; }
+.lgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; align-items: start; }
+.lpane { display: flex; flex-direction: column; min-width: 0; height: 360px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
+.lpane.off .lname { color: var(--fg-2); }
+.lhead { flex: none; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 6px; border-bottom: 1px solid var(--line); }
+.ltop { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lname { flex: 0 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; font: 600 13px/20px var(--font); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lname:hover { text-decoration: underline; text-underline-offset: 3px; }
+.lmodel { padding-left: 16px; color: var(--fg-3); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lacts { display: flex; flex-wrap: wrap; gap: 2px; margin: 2px -6px 0; }
+.lacts .btn { height: 24px; padding: 0 6px; font-size: 12px; }
+.lacts .btn.tonal { padding: 0 10px; margin-left: 6px; }
+.ltail { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0; background: var(--layer); font: 12px/20px var(--mono); cursor: pointer; overscroll-behavior: contain; }
+.lr { display: flex; gap: 8px; min-width: 0; padding: 0 12px; }
+.lr:hover { background: var(--hover); }
+.lr .lt { flex: none; color: var(--fg-3); font-size: 11px; }
+.lr .lb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lr .tn { font-weight: 600; }
+.lr .ts { color: var(--fg-2); }
+.lr .st { flex: none; color: var(--fg-3); }
+.lr .st.ok { color: var(--ok); } .lr .st.bad { color: var(--err); }
+.lr.tx .lb { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; font-family: var(--font); font-size: 12.5px; }
+.lr.dv, .lr.th { color: var(--fg-3); }
+.lr.er .lb { color: var(--err); }
+.lcomp { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
+@media (pointer: fine) { .lcomp .fi { height: 28px; } }
+.lnone { padding: 4px 0; }
+.lex { display: flex; flex-direction: column; gap: 12px; }
+.lx { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); text-align: left; font-size: 13px; font-weight: 500; }
+.lx:hover { background: var(--hover); }
+.lx .lxc { color: var(--fg-3); transition: transform .15s; }
+.lx[aria-expanded="true"] .lxc { transform: rotate(90deg); }
+.lx .lxn { flex: none; }
+.lx .lxs { flex: 1; min-width: 0; color: var(--fg-3); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 599px) {
+  .lgrid { grid-template-columns: minmax(0, 1fr); }
+  .lpane { height: auto; }
+  .ltail { flex: none; height: 112px; }
+  .lr.tx .lb { -webkit-line-clamp: 1; }
+}
 </style>
 </head>
 <body>
@@ -875,6 +918,7 @@ async function loadSubs() {
 function subsChanged(source) {
   if (current === "home") renderHome();
   renderSubs(); renderBars(); renderWorking();
+  if (current === "lanes") renderLanes();
   if (SUBD && (!source || SUBD.source === source)) renderSheet();
 }
 function subLine(src) {
@@ -1552,51 +1596,210 @@ function actNode(a, ctx) {
 }
 
 
-/* ---------- lanes ---------- */
+/* ---------- lanes: multi-pane board ---------- */
 const laneDraft = {};
 let laneSig = "";
+let laneExitedOpen = false;
+const LANE_TAIL = 100;          // rows kept per pane
+const LP = {};                  // lane name -> persistent pane (DOM, scroll and tail state survive re-renders)
+let laneBoard = null;
+const laneClock = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleTimeString("ko-KR", { ...KST, hour: "2-digit", minute: "2-digit", hour12: false }); };
+const laneKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
+function laneToolLabel(a) {
+  const pre = `${a.tool}: `;
+  const fromText = a.tool && typeof a.text === "string" && a.text.startsWith(pre) ? a.text.slice(pre.length) : "";
+  const s = a.intent || fromText;
+  if (s) return oneLine(s);
+  try {
+    const o = JSON.parse(a.args);
+    if (o && typeof o === "object") for (const k of ["i", "intent", "command", "cmd", "path", "pattern", "query", "url"]) if (typeof o[k] === "string" && o[k]) return oneLine(o[k]);
+  } catch { /* args may be cut off */ }
+  return "";
+}
+function laneMark(st, a) { st.textContent = a.is_error ? "✗" : "✓"; st.className = `st ${a.is_error ? "bad" : "ok"}`; }
+// One compact terminal-style row; tool results fold into their call's row as a ✓/✗ mark.
+function laneRow(p, a) {
+  const row = (cls, body, st) => el("div", { class: `lr ${cls}` }, el("span", { class: "lt", text: laneClock(a.ts) }), el("span", { class: "lb" }, ...body), st || null);
+  switch (a.type) {
+    case "turn_start": return row("dv", ["시작"]);
+    case "turn_end": return row("dv", ["완료"]);
+    case "status": return row("dv", [oneLine(a.text ?? "")]);
+    case "text": return row("tx", [String(a.text ?? "").trim().slice(0, 600)]);
+    case "thinking": return row("th", [`생각 · ${oneLine(a.text ?? "").slice(0, 100)}`]);
+    case "error": return row("er", [String(a.text ?? "").trim().slice(0, 300)]);
+    case "tool_call": {
+      const label = laneToolLabel(a), st = el("span", { class: "st", text: "…" });
+      if (a.call_id) p.calls.set(a.call_id, st);
+      return row("tl", [el("span", { class: "tn", text: a.tool || "tool" }), label ? el("span", { class: "ts", text: ` · ${label}` }) : null], st);
+    }
+    case "tool_result": {
+      const st = a.call_id && p.calls.get(a.call_id);
+      if (st) { laneMark(st, a); return null; }
+      const mark = el("span", { class: "st" });
+      laneMark(mark, a);
+      return row("tl", [el("span", { class: "tn", text: a.tool || "결과" })], mark);
+    }
+    default: return a.text ? row("dv", [oneLine(a.text)]) : null;
+  }
+}
+function laneStick(p) { if (p.tail.clientHeight) p.tail.scrollTop = p.stick ? p.tail.scrollHeight : p.scroll; }
+function laneNote(p, text) { clear(p.tail).append(el("div", { class: "lr dv" }, el("span", { class: "lb", text }))); p.noted = true; }
+function laneAppend(p, a) {
+  if (p.noted) { clear(p.tail); p.noted = false; }
+  const n = laneRow(p, a);
+  if (n) p.tail.append(n);
+  while (p.tail.children.length > LANE_TAIL) p.tail.firstChild.remove();
+  if (p.stick && p.tail.clientHeight) p.tail.scrollTop = p.tail.scrollHeight;
+}
+function laneIngest(p, a) {
+  const k = laneKey(a);
+  if (p.seen.has(k)) return;
+  p.seen.add(k);
+  laneAppend(p, a);
+}
+async function laneLoad(p) {
+  p.loading = true; p.queue = [];
+  if (!p.tail.children.length) laneNote(p, "불러오는 중…");
+  let r;
+  try { r = await api(`/api/activity?source=${enc(`lane:${p.name}`)}&limit=${LANE_TAIL}`); }
+  catch { p.loading = false; p.failedAt = Date.now(); if (p.noted) laneNote(p, "활동을 불러오지 못했어요"); return; }
+  p.seen = new Set(); p.calls = new Map(); p.stick = true; p.noted = false;
+  clear(p.tail);
+  const items = r.items || [];
+  if (r.history && items.length) p.tail.append(el("div", { class: "lr dv" }, el("span", { class: "lb", text: "저장된 기록" })));
+  for (const a of items) { p.seen.add(laneKey(a)); laneAppend(p, a); }
+  for (const a of p.queue) laneIngest(p, a);
+  p.queue = []; p.loading = false; p.loaded = true;
+  if (!p.tail.children.length) laneNote(p, "활동 없음");
+  laneStick(p);
+}
+// SSE "activity": keep every loaded pane live, even while another view is open.
+function laneActivity(a) {
+  const name = typeof a.source === "string" && a.source.startsWith("lane:") ? a.source.slice(5) : null;
+  const p = name && LP[name];
+  if (!p) return;
+  if (p.loading) p.queue.push(a);
+  else if (p.loaded) laneIngest(p, a);
+}
+function laneTailsStale() {
+  for (const p of Object.values(LP)) p.loaded = false;
+  if (current === "lanes") { laneSig = ""; renderLanes(); }
+}
+
+function laneSend(p, l) {
+  const text = p.input.value.trim();
+  const alive = laneAlive(l);
+  if (!text && alive) return Promise.resolve();
+  return busy(p.send, async () => {
+    if (alive) await api("/api/message", "POST", { text, lane: p.name });
+    else await api(`/api/lanes/${enc(p.name)}/resume`, "POST", text ? { text } : {});
+    p.input.value = ""; laneDraft[p.name] = "";
+    toast(alive ? "전달했어요" : "재개했어요");
+    refreshState();
+  });
+}
+function laneActions(p, l) {
+  const alive = laneAlive(l);
+  const act = (label, kind, fn) => el("button", { class: `btn ${kind}`, type: "button", onclick: ev => busy(ev.currentTarget, async () => { await fn(); refreshState(); }) }, label);
+  const post = (path, body) => api(`/api/lanes/${enc(p.name)}/${path}`, "POST", body ?? {});
+  if (!alive) return [act("재개", "tonal", async () => { const t = p.input.value.trim(); await post("resume", t ? { text: t } : {}); p.input.value = ""; laneDraft[p.name] = ""; toast("재개했어요"); })];
+  return [
+    el("button", { class: "btn text", type: "button", onclick: () => p.input.focus() }, "메시지"),
+    act("중단", "text", async () => { await post("abort"); toast("작업을 중단했어요"); }),
+    act("재시작", "text", async () => { if (!await ask(`${p.name} 재시작`, "이 레인을 다시 시작할까요?", "재시작", true)) return; await post("restart"); toast("재시작했어요"); }),
+    act("종료", "danger", async () => { if (!await ask(`${p.name} 종료`, "이 레인을 종료할까요?", "종료", true)) return; await api(`/api/lanes/${enc(p.name)}`, "DELETE"); toast("종료했어요"); }),
+  ];
+}
+function lanePane(name) {
+  const p = { name, seen: new Set(), calls: new Map(), queue: [], stick: true, scroll: 0, loaded: false, loading: false, failedAt: 0, noted: false, alive: null };
+  p.dot = el("span", { class: "dot" });
+  p.nameBtn = el("button", { class: "lname", type: "button", title: "크게 보기", onclick: () => openSource(`lane:${name}`) });
+  p.tag = el("span", { class: "tag" });
+  p.subs = el("span", { class: "tag pri", hidden: true });
+  p.model = el("div", { class: "lmodel" });
+  p.acts = el("div", { class: "lacts" });
+  p.tail = el("div", { class: "ltail", tabindex: "0", role: "log", "aria-label": `${name} 활동`, onclick: () => { if (!String(getSelection() || "")) openSource(`lane:${name}`); } });
+  p.tail.addEventListener("scroll", () => {
+    if (!p.tail.clientHeight) return;   // hidden panes report 0
+    p.scroll = p.tail.scrollTop;
+    p.stick = p.tail.scrollTop + p.tail.clientHeight >= p.tail.scrollHeight - 24;
+  });
+  p.input = input({ type: "text", enterkeyhint: "send", value: laneDraft[name] || "", oninput: ev => { laneDraft[name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); p.send.click(); } } });
+  p.send = el("button", { class: "ib pri", type: "button" }, icon("send"));
+  p.node = el("section", { class: "lpane", "aria-label": name },
+    el("div", { class: "lhead" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.tag, p.subs), p.model, p.acts),
+    p.tail,
+    el("div", { class: "lcomp" }, p.input, p.send));
+  return p;
+}
+function laneUpdate(p, l, m) {
+  const alive = laneAlive(l), tone = statusTone(l.status);
+  p.lane = l;
+  p.send.onclick = () => laneSend(p, l);
+  p.dot.className = `dot ${tone}`;
+  p.nameBtn.textContent = l.name;
+  p.tag.className = `tag ${tone}`; p.tag.textContent = statusKo(l.status);
+  const subs = runningSubs(`lane:${l.name}`).length;
+  p.subs.hidden = !subs; p.subs.textContent = `서브 ${subs}`; p.subs.title = `서브에이전트 ${subs}개 진행 중`;
+  const model = (m && m.model) || l.model;
+  p.model.textContent = model ? `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` : "";
+  p.model.hidden = !model;
+  if (p.alive !== alive) {
+    p.alive = alive;
+    const ph = alive ? "메시지" : "재개 메시지";
+    p.input.placeholder = ph; p.input.setAttribute("aria-label", ph);
+    p.send.setAttribute("aria-label", alive ? "전송" : "재개");
+    p.node.classList.toggle("off", !alive);
+  }
+  clear(p.acts).append(...laneActions(p, l));
+}
+// Put exactly `nodes` in `parent`; untouched when already in order (re-attaching would reset scroll positions).
+function laneFill(parent, nodes) {
+  const same = parent.children.length === nodes.length && nodes.every((n, i) => parent.children[i] === n);
+  if (!same) parent.replaceChildren(...nodes);
+}
+function laneBoardInit() {
+  const grid = el("div", { class: "lgrid" });
+  const exGrid = el("div", { class: "lgrid" });
+  const exBtn = el("button", { class: "lx", type: "button", "aria-expanded": "false", onclick: () => { laneExitedOpen = !laneExitedOpen; laneSig = ""; renderLanes(); } },
+    icon("chev", "lxc"), el("span", { class: "lxn" }), el("span", { class: "lxs" }));
+  laneBoard = {
+    grid, exGrid, exBtn,
+    none: el("div", { class: "sup lnone", text: "작동 중인 레인 없음" }),
+    ex: el("div", { class: "lex" }, exBtn, exGrid),
+    empty: emptyNode("레인 없음"),
+  };
+  laneBoard.node = el("div", { class: "lboard" }, laneBoard.empty, laneBoard.none, grid, laneBoard.ex);
+  $("#lanes").append(laneBoard.node);
+}
 function renderLanes() {
-  const box = $("#lanes");
   if (!S) return;
+  if (!laneBoard) laneBoardInit();
   const lanes = S.lanes;
   const modelOf = n => (M && M.lanes || []).find(l => l.name === n);
-  const sig = JSON.stringify([lanes.map(l => [l.name, l.status, l.model, l.lastText, l.resumable]), M && M.lanes, M && M.available && M.available.length]);
-  if (sig === laneSig && box.children.length) return;
-  if (box.contains(document.activeElement) && box.children.length) return;
+  const sig = JSON.stringify([lanes.map(l => [l.name, l.status, l.model, l.resumable, runningSubs(`lane:${l.name}`).length]), M && M.lanes, M && M.available && M.available.length, laneExitedOpen]);
+  if (sig === laneSig) return;
   laneSig = sig;
-  clear(box);
-  if (!lanes.length) { box.append(emptyNode("레인 없음")); return; }
-  const list = el("div", { class: "col" });
-  for (const l of lanes) {
-    const alive = laneAlive(l), m = modelOf(l.name);
-    const inp = input({ type: "text", enterkeyhint: "send", placeholder: alive ? "메시지" : "재개 메시지", "aria-label": alive ? "메시지" : "재개 메시지", value: laneDraft[l.name] || "", oninput: ev => { laneDraft[l.name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); sendBtn.click(); } } });
-    const sendBtn = el("button", { class: "ib pri", type: "button", "aria-label": alive ? "전송" : "재개", onclick: ev => busy(ev.currentTarget, async () => {
-      const text = inp.value.trim();
-      if (!text && alive) return;
-      if (alive) { await api("/api/message", "POST", { text, lane: l.name }); toast("전달했어요"); }
-      else { await api(`/api/lanes/${enc(l.name)}/resume`, "POST", text ? { text } : {}); toast("재개했어요"); }
-      inp.value = ""; laneDraft[l.name] = ""; refreshState();
-    }) }, icon("send"));
-    const act = (label, kind, fn) => el("button", { class: `btn ${kind}`, type: "button", onclick: ev => busy(ev.currentTarget, async () => { await fn(); refreshState(); }) }, label);
-    const post = (p, body) => api(`/api/lanes/${enc(l.name)}/${p}`, "POST", body ?? {});
-    const btns = el("div", { class: "btns", style: "margin-top:12px" });
-    if (alive) btns.append(
-      act("재시작", "text", async () => { await post("restart"); toast("재시작했어요"); }),
-      act("중단", "text", async () => { await post("abort"); toast("작업을 중단했어요"); }),
-      act("종료", "danger", async () => { if (!await ask(`${l.name} 종료`, "이 레인을 종료할까요?", "종료", true)) return; await api(`/api/lanes/${enc(l.name)}`, "DELETE"); toast("종료했어요"); }));
-    else btns.append(act("재개", "tonal", async () => { await post("resume", inp.value.trim() ? { text: inp.value.trim() } : {}); inp.value = ""; laneDraft[l.name] = ""; toast("재개했어요"); }));
-    btns.append(
-      el("button", { class: "btn text", type: "button", onclick: () => openTarget(`lane:${l.name}`, "chat") }, "대화"),
-      el("button", { class: "btn text", type: "button", onclick: () => openTarget(`lane:${l.name}`, "activity") }, "터미널"));
-    const model = (m && m.model) || l.model;
-    list.append(el("div", { class: "card" },
-      el("div", { class: "heads" }, el("span", { class: `dot ${statusTone(l.status)}` }), el("span", { class: "t", text: l.name }), el("span", { class: "sp" }), el("span", { class: `tag ${statusTone(l.status)}`, text: statusKo(l.status) })),
-      model ? el("div", { class: "sup sub", text: `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` }) : null,
-      l.lastText ? el("div", { class: "sup clamp mt8", text: l.lastText }) : null,
-      el("div", { class: "row mt12" }, inp, sendBtn),
-      btns));
+  const B = laneBoard;
+  for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) { LP[n].node.remove(); delete LP[n]; delete laneDraft[n]; }
+  for (const l of lanes) laneUpdate(LP[l.name] || (LP[l.name] = lanePane(l.name)), l, modelOf(l.name));
+  const alive = lanes.filter(laneAlive), dead = lanes.filter(l => !laneAlive(l));
+  B.empty.hidden = lanes.length > 0;
+  B.none.hidden = !lanes.length || alive.length > 0;
+  B.grid.hidden = !alive.length;
+  B.ex.hidden = !dead.length;
+  B.exBtn.setAttribute("aria-expanded", String(laneExitedOpen));
+  B.exBtn.querySelector(".lxn").textContent = `종료된 레인 ${dead.length}개`;
+  B.exBtn.querySelector(".lxs").textContent = laneExitedOpen ? "" : dead.map(l => l.name).join(", ");
+  B.exGrid.hidden = !laneExitedOpen;
+  const shown = [...alive, ...(laneExitedOpen ? dead : [])];
+  laneFill(B.grid, alive.map(l => LP[l.name].node));
+  laneFill(B.exGrid, laneExitedOpen ? dead.map(l => LP[l.name].node) : []);
+  for (const l of shown) {
+    const p = LP[l.name];
+    if (!p.loaded && !p.loading && Date.now() - p.failedAt > 15000) laneLoad(p);
+    laneStick(p);
   }
-  box.append(list);
 }
 
 /* ---------- context ---------- */
@@ -1932,14 +2135,14 @@ function renderSettings() {
   const es = new EventSource("/api/events");
   es.onopen = () => {
     setConn(true);
-    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; renderAll(); loadTarget(target); loadSubs(); }
+    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; renderAll(); loadTarget(target); loadSubs(); laneTailsStale(); }
     opened = true;
   };
   es.onerror = () => setConn(false);
   es.onmessage = m => {
     let e;
     try { e = JSON.parse(m.data); } catch { return; }
-    if (e.kind === "activity") onActivity(e);
+    if (e.kind === "activity") { onActivity(e); laneActivity(e); }
     else if (e.kind === "subagents") setSubs(e.source, e.items);
     else { ingestMsg(e); scheduleState(); }
   };
