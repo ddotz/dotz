@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { emitFrameActivity, statusActivity } from "./activity.ts";
 import { cfg, DATA_DIR, IDENTITY_FILE, log, NAME, now, OMP, orchestratorModel, paths, selectorOf } from "./config.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
-import { rateLimitDelay } from "./providers.ts";
+import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { setupsSummary } from "./workchannels.ts";
 
 const STATE = join(DATA_DIR, "orchestrator.json");
@@ -19,6 +19,8 @@ type Saved = { sessionFile?: string; model?: string };
 
 export const orch = {
 	status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
+	// Why a "rate-limited" pause is on: a usage limit, or a billing/auth problem only the owner can fix.
+	pauseKind: "rate" as "rate" | "owner",
 	sessionFile: "",
 	startedAt: "",
 	lastText: "",
@@ -101,6 +103,8 @@ async function readFrames(p: Subprocess<"pipe", "pipe", "pipe">): Promise<void> 
 			if (f.type === "agent_start") {
 				orch.status = "working";
 				clearTimeout(watchdog);
+				clearTimeout(transientTimer);
+				transientTimer = undefined;
 			}
 			else if (f.type === "agent_end") {
 				orch.status = orch.status === "rate-limited" ? "rate-limited" : "idle";
@@ -123,7 +127,7 @@ async function readFrames(p: Subprocess<"pipe", "pipe", "pipe">): Promise<void> 
 			}
 			else if (f.type === "message_end" && f.message?.role === "user") {
 				const t = textOf(f.message) || (typeof f.message.content === "string" ? f.message.content.trim() : "");
-				if (!t.startsWith("[dotz gateway] The rate limit has passed")) onPrompt(t);
+				if (!RESUME_NOTES.some(n => t.startsWith(n))) onPrompt(t);
 			}
 			else if (f.type === "message_end" && f.message?.role === "assistant") {
 				const t = textOf(f.message);
@@ -131,7 +135,12 @@ async function readFrames(p: Subprocess<"pipe", "pipe", "pipe">): Promise<void> 
 				if (t && (f.message.stopReason === "stop" || f.message.stopReason === "length")) onAnswer(t);
 				noteMessageUsage(orch.ctx, f.message);
 				const err = String(f.message.errorMessage ?? "");
-				if (f.message.stopReason === "error" && /429|rate_limit|usage limit/i.test(err)) void scheduleResume(err);
+				if (f.message.stopReason !== "error") transientTries = 0;
+				else {
+					const kind = classifyProviderError(err);
+					if (kind === "rate" || kind === "owner") void scheduleResume(err, kind);
+					else if (kind === "transient") retryTransient(err);
+				}
 			} else if (f.type === "response" && f.command === "get_state" && f.data?.sessionFile) {
 				orch.sessionFile = f.data.sessionFile;
 				save({ sessionFile: orch.sessionFile, model: currentModel });
@@ -162,31 +171,61 @@ function armWatchdog(): void {
 
 // While paused by a rate limit (5h or a spent week), prompts are held instead of each starting a turn that fails at once;
 // right after the spent window resets (from the provider's usage report; retry-after otherwise) they all go in, oldest
-// first, after the resume note. A retry that hits the limit again re-arms quietly.
+// first, after the resume note. A retry that hits the limit again re-arms quietly. A billing/auth error ("owner") pauses
+// the same way, but nothing says when the owner fixes it, so it is probed every OWNER_RETRY_MS; the owner is told once.
+const RESUME_NOTES = ["[dotz gateway] The rate limit has passed", "[dotz gateway] The provider problem", "[dotz gateway] The provider had a temporary error"];
 let resumeTimer: Timer | undefined;
 let pausing = false;
 let pauseAlerted = false;
-async function scheduleResume(err: string): Promise<void> {
+async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<void> {
 	if (resumeTimer || pausing) return;
 	pausing = true;
 	orch.status = "rate-limited";
 	orch.rateLimitedUntil = "";
-	const { ms: retry, reset } = await rateLimitDelay(err, currentModel);
+	const owner = kind === "owner";
+	const { ms: retry, reset } = owner ? { ms: OWNER_RETRY_MS, reset: false } : await rateLimitDelay(err, currentModel);
 	pausing = false;
 	if (orch.status !== "rate-limited") return;
 	const until = new Date(Date.now() + retry);
 	orch.rateLimitedUntil = until.toISOString();
 	const at = until.toLocaleString("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
-	if (!pauseAlerted) onAlert(`${NAME}: 사용량 한도(429)로 멈춤. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리합니다.`);
+	const changed = orch.pauseKind !== (owner ? "owner" : "rate");
+	orch.pauseKind = owner ? "owner" : "rate";
+	if (!pauseAlerted || changed) {
+		if (owner) onAlert(`${NAME}: 모델 제공자 결제/인증 문제로 멈춤 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요합니다. 그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리하고, ${Math.round(retry / 60_000)}분마다 다시 시도합니다.`);
+		else onAlert(`${NAME}: 사용량 한도(429)로 멈춤. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리합니다.`);
+	}
 	pauseAlerted = true;
 	resumeTimer = setTimeout(() => {
 		resumeTimer = undefined;
 		orch.status = "idle";
 		// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
 		// retry that hits the limit again loses nothing.
-		write({ type: "prompt", message: `[dotz gateway] The rate limit has passed. Continue the request you were handling when it stopped.${held.length ? ` ${held.length} message(s) that arrived while you were paused come next, oldest first.` : ""}`, streamingBehavior: "followUp" });
+		const why = owner ? "The provider problem (billing/auth) may have been fixed." : "The rate limit has passed.";
+		write({ type: "prompt", message: `[dotz gateway] ${why} Continue the request you were handling when it stopped.${held.length ? ` ${held.length} message(s) that arrived while you were paused come next, oldest first.` : ""}`, streamingBehavior: "followUp" });
 		armWatchdog();
 	}, retry);
+}
+
+// Overloaded/5xx/network errors: after a failed turn, retry with backoff (bounded). Messages arriving meanwhile are not
+// held: a new turn cancels the pending retry and itself serves as the retry. Past the limit the owner is told once.
+let transientTries = 0;
+let transientTimer: Timer | undefined;
+function retryTransient(err: string): void {
+	if (transientTimer) return;
+	if (transientTries >= TRANSIENT_RETRIES) {
+		transientTries = 0;
+		onAlert(`${NAME}: 모델 제공자 오류(${err.replace(/\s+/g, " ").slice(0, 160)})가 ${TRANSIENT_RETRIES}번 재시도해도 계속돼서 멈췄습니다. 다음 메시지부터 다시 시도합니다.`);
+		return;
+	}
+	const wait = transientBackoff(transientTries++);
+	log(`orchestrator provider error (${err.slice(0, 120)}); retry ${transientTries}/${TRANSIENT_RETRIES} in ${Math.round(wait / 1000)}s`);
+	transientTimer = setTimeout(() => {
+		transientTimer = undefined;
+		if (orch.status !== "idle") return;
+		write({ type: "prompt", message: "[dotz gateway] The provider had a temporary error (overloaded or network) and your last turn failed. Continue the request you were handling when it stopped.", streamingBehavior: "followUp" });
+		armWatchdog();
+	}, wait);
 }
 
 // Past ROTATE_TOKENS of context the orchestrator moves to a fresh session with a handover at an idle point, so each
