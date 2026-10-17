@@ -51,6 +51,9 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
   8000 characters. One task per lane or worker, sized to ~250K context; final answer at most ~800 characters; a
   follow-up is a new worker (`task_send` only for short steering); one blocking wait, never polling. The gateway
   appends the lane contract below.
+- Parallel workers: independent slices (different files, or separable sections merged one by one) run as parallel
+  workers in one batch, up to the machine's slot count the gateway states in the lane contract; never queue them
+  behind one worker. One worker only for work that must be sequential.
 - Lane contract:
   - The final message of each turn is the report, relayed to the lane channel: outcome, changed paths, verification
     against the Done-when line (run the check yourself), blockers or questions for the owner. Write it in the identity's
