@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
 import { cfg, IDENTITY_FILE, lanesCompactAt, lanesKeepRecent, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, workerModel } from "./config.ts";
 import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
-import { rateLimitDelay } from "./providers.ts";
+import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 const PROGRESS_EVERY_MS = Number(process.env.DOTZ_PROGRESS_MS ?? 15 * 60_000);
@@ -14,7 +14,6 @@ const MAX_ACTIVE = cfg.lanes?.max_active ?? 4;
 const BRIEF_MAX = 8000;
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const DONE_RE = /(done[- ]?when|done\s*=|acceptance|완료\s*조건)/i;
-const RATE_RE = /429|rate_limit|usage limit/i;
 
 export type LaneStatus = "starting" | "working" | "idle" | "rate-limited" | "exited";
 // A lane in a git repo works in its own worktree (repo = the owner's checkout, base = the branch it lands on).
@@ -33,6 +32,9 @@ export type Lane = Record_ & {
 	workingSince?: number;
 	pauseReported?: boolean;
 	pausing?: boolean;
+	pauseKind?: ProviderErrorKind;
+	transientTries?: number;
+	transientTimer?: Timer;
 	progressAt?: number;
 	progressText?: string;
 	// Set while the handover turn of a rotated session runs: that turn only reloads context, so its reply is not a report.
@@ -119,6 +121,8 @@ export function approvesBudget(name: string, text: string): boolean {
 
 function scheduleReport(lane: Lane): void {
 	if (lane.status !== "rate-limited") setStatus(lane, "idle");
+	// A transient provider error is being retried: the failed turn is not a report.
+	if (lane.transientTimer) return;
 	if (lane.silent && !lane.lastText.startsWith("[lane error]")) {
 		lane.lastText = lane.silent.lastText;
 		lane.silent = undefined;
@@ -140,21 +144,50 @@ function withHeld(lane: Lane, text: string): string {
 	return `${text}\n\n${lane.held.length} owner message(s) arrived while you were paused; handle each, oldest first:\n\n${lane.held.join("\n\n---\n\n")}`;
 }
 
-async function pauseForRateLimit(lane: Lane, err: string): Promise<void> {
+// A usage limit ("rate") waits for the window reset. A billing/auth error ("owner") waits for the owner to fix it, which
+// nothing signals, so it is probed every OWNER_RETRY_MS; either way the owner gets one report and messages are held.
+async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKind): Promise<void> {
 	if (lane.resumeTimer || lane.pausing) return;
 	lane.pausing = true;
 	setStatus(lane, "rate-limited");
-	const { ms: wait, reset } = await rateLimitDelay(err, lane.model);
+	const owner = kind === "owner";
+	const { ms: wait, reset } = owner ? { ms: OWNER_RETRY_MS, reset: false } : await rateLimitDelay(err, lane.model);
 	lane.pausing = false;
 	if (lane.status !== "rate-limited") return;
 	const at = new Date(Date.now() + wait).toLocaleString("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
-	if (!lane.pauseReported) report(lane, `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`);
+	if (!lane.pauseReported || lane.pauseKind !== kind) {
+		report(lane, owner
+			? `모델 제공자 결제/인증 문제로 멈췄어요 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요해요. 그동안 온 메시지는 모아뒀다가 해결되면 이어서 처리하고, ${Math.round(wait / 60_000)}분마다 다시 시도해요.`
+			: `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`);
+	}
 	lane.pauseReported = true;
+	lane.pauseKind = kind;
 	lane.resumeTimer = setTimeout(() => {
 		lane.resumeTimer = undefined;
 		setStatus(lane, "idle");
-		prompt(lane, withHeld(lane, "[dotz gateway] The rate limit has passed. Continue the work you were doing when it stopped."));
+		prompt(lane, withHeld(lane, owner ? "[dotz gateway] The provider problem (billing/auth) may have been fixed. Continue the work you were doing when it stopped." : "[dotz gateway] The rate limit has passed. Continue the work you were doing when it stopped."));
 	}, wait);
+}
+
+// Overloaded/5xx/network errors: retry the failed turn with backoff, bounded. Returns false once the retries are spent,
+// so the caller reports the error to the owner as a lane error. Owner messages are not held; a new turn cancels the
+// pending retry and serves as the retry itself.
+function retryTransient(lane: Lane, err: string): boolean {
+	if (lane.transientTimer) return true;
+	const tries = lane.transientTries ?? 0;
+	if (tries >= TRANSIENT_RETRIES) {
+		lane.transientTries = 0;
+		return false;
+	}
+	lane.transientTries = tries + 1;
+	const wait = transientBackoff(tries);
+	log(`lane ${lane.name} provider error (${err.slice(0, 120)}); retry ${tries + 1}/${TRANSIENT_RETRIES} in ${Math.round(wait / 1000)}s`);
+	lane.transientTimer = setTimeout(() => {
+		lane.transientTimer = undefined;
+		if (lane.status !== "idle") return;
+		prompt(lane, "[dotz gateway] The provider had a temporary error (overloaded or network) and your last turn failed. Continue the work you were doing when it stopped.");
+	}, wait);
+	return true;
 }
 
 async function readFrames(lane: Lane, proc: Subprocess<"pipe", "pipe", "pipe">): Promise<void> {
@@ -178,6 +211,8 @@ async function readFrames(lane: Lane, proc: Subprocess<"pipe", "pipe", "pipe">):
 			if (f.type === "agent_start") {
 				clearTimeout(lane.watchdog);
 				clearTimeout(lane.timer);
+				clearTimeout(lane.transientTimer);
+				lane.transientTimer = undefined;
 				rmSync(pendingFile(lane), { force: true });
 				setStatus(lane, "working");
 				lane.progressAt = Date.now();
@@ -185,11 +220,15 @@ async function readFrames(lane: Lane, proc: Subprocess<"pipe", "pipe", "pipe">):
 				noteMessageUsage(lane.ctx, f.message);
 				const text = textOf(f.message);
 				const err = String(f.message.errorMessage ?? "");
+				if (f.message.stopReason !== "error") lane.transientTries = 0;
 				if (text) lane.lastText = text;
-				else if (f.message.stopReason === "error" && RATE_RE.test(err)) void pauseForRateLimit(lane, err);
 				else if (f.message.stopReason === "error") {
-					lane.lastText = `[lane error] ${(err || "model request failed").slice(0, 300)}`;
-					scheduleReport(lane);
+					const kind = classifyProviderError(err);
+					if (kind === "rate" || kind === "owner") void pauseForRateLimit(lane, err, kind);
+					else if (kind !== "transient" || !retryTransient(lane, err)) {
+						lane.lastText = `[lane error] ${(err || "model request failed").slice(0, 300)}`;
+						scheduleReport(lane);
+					}
 				}
 			} else if (f.type === "agent_end") {
 				scheduleReport(lane);
@@ -244,6 +283,8 @@ function spawn(lane: Lane, resume: boolean): void {
 		clearTimeout(lane.watchdog);
 		clearTimeout(lane.resumeTimer);
 		lane.resumeTimer = undefined;
+		clearTimeout(lane.transientTimer);
+		lane.transientTimer = undefined;
 		endSubagents(`lane:${lane.name}`);
 		statusActivity(`lane:${lane.name}`, `lane process exited (code ${code})`);
 		if (lane.quiet) return log(`lane ${lane.name} stopped for a gateway restart`);

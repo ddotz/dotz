@@ -358,3 +358,24 @@ export async function rateLimitDelay(err: string, model: string): Promise<{ ms: 
 	const limits = buildQuota(await usageReports().catch(() => []), []).providers.find(p => p.provider === provider)?.limits ?? [];
 	return resumeDelay(err, limits, Date.now());
 }
+
+// What a failed model turn means: "rate" = a usage limit (pause until the
+// window resets, rateLimitDelay); "owner" = credit/billing exhausted or auth rejected (only the owner can fix it, so the
+// pause is a slow probe and the owner is told once); "transient" = overloaded/5xx/network (retry with backoff). Owner is
+// checked first because some billing errors arrive as a 429 (insufficient_quota).
+export type ProviderErrorKind = "rate" | "owner" | "transient";
+const OWNER_ERR_RE = /credit balance|provider is not configured|insufficient[_ ]?(?:quota|funds|credits?)|out of credits|billing|payment required|\b402\b|exceeded your current quota|\b401\b|\b403\b|unauthorized|forbidden|authentication[_ ]error|invalid[_ ]?api[_ ]?key|invalid x-api-key|no api key|oauth token|token (?:has )?(?:expired|been revoked)|\/login/i;
+const RATE_ERR_RE = /429|rate_limit|usage limit/i;
+const TRANSIENT_ERR_RE = /overloaded|\b5(?:00|02|03|04|29)\b|server error|internal error|bad gateway|service unavailable|gateway time-?out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|network|socket hang up|other side closed|connection (?:error|reset|closed|lost)|timed? ?out|terminated/i;
+export function classifyProviderError(err: string): ProviderErrorKind | undefined {
+	if (OWNER_ERR_RE.test(err)) return "owner";
+	if (RATE_ERR_RE.test(err)) return "rate";
+	if (TRANSIENT_ERR_RE.test(err)) return "transient";
+	return undefined;
+}
+
+// Transient errors are retried TRANSIENT_RETRIES times at 5s, 15s, 45s, 135s (DOTZ_RETRY_BASE_MS scales it); an owner
+// problem is probed every 30 minutes (DOTZ_OWNER_RETRY_MS) until a turn succeeds.
+export const TRANSIENT_RETRIES = 4;
+export const transientBackoff = (attempt: number): number => Number(process.env.DOTZ_RETRY_BASE_MS ?? 5000) * 3 ** attempt;
+export const OWNER_RETRY_MS = Number(process.env.DOTZ_OWNER_RETRY_MS ?? 30 * 60_000);
