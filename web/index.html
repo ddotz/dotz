@@ -254,7 +254,10 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .tchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; max-width: 220px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; }
 .tchip:hover { background: var(--hover); color: var(--fg); }
 .tchip.on { background: var(--active); border-color: var(--line-2); color: var(--fg); }
-.tchip.fold { border-style: dashed; color: var(--fg-3); }
+/* exited-lane fold: same chevron + "종료된 레인 N개" as the 레인 board's row */
+.tchip.fold .fc { width: 14px; height: 14px; color: var(--fg-3); transition: transform .15s; }
+.tchip.fold[aria-expanded="true"] .fc { transform: rotate(90deg); }
+.tchip.fold .fs { color: var(--fg-3); font-weight: 400; }
 .tchip .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb { flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 10.5px/16px var(--font); text-align: center; }
 .sb { flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
@@ -1506,7 +1509,8 @@ function renderBars() {
     // Folded means no exited chips at all; when the selected target is an exited lane, the fold chip shows it as selected.
     const curDead = D.some(v => v.t === target);
     const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, ...A.map(chip), ...(showDead ? D : []).map(chip),
-      D.length ? el("button", { class: `tchip fold${!showDead && curDead ? " on" : ""}`, type: "button", "aria-expanded": showDead ? "true" : "false", title: !showDead && curDead ? cur.name : "", onclick: () => { showDead = !showDead; renderBars(); } }, el("span", { class: "tx", text: showDead ? "종료 접기" : curDead ? `종료 ${D.length} · ${cur.name}` : `종료 ${D.length}` })) : null);
+      D.length ? el("button", { class: `tchip fold${!showDead && curDead ? " on" : ""}`, type: "button", "aria-expanded": showDead ? "true" : "false", onclick: () => { showDead = !showDead; renderBars(); } },
+        icon("chev", "fc"), el("span", { class: "tx", text: `종료된 레인 ${D.length}개` }), !showDead && curDead ? el("span", { class: "tx fs", text: cur.name }) : null) : null);
     const drop = el("button", { type: "button", class: "sel tdrop", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `대화 대상: ${cur.name}` },
       el("span", { class: `dot ${cur.tone}` }), el("span", { class: "val", text: cur.name }),
       cur.subs ? el("span", { class: "sb", text: `서브 ${cur.subs}` }) : null,
@@ -1713,7 +1717,8 @@ function laneActions(p, l) {
     el("button", { class: "btn text", type: "button", onclick: () => p.input.focus() }, "메시지"),
     act("중단", "text", async () => { await post("abort"); toast("작업을 중단했어요"); }),
     act("재시작", "text", async () => { if (!await ask(`${p.name} 재시작`, "이 레인을 다시 시작할까요?", "재시작", true)) return; await post("restart"); toast("재시작했어요"); }),
-    act("종료", "danger", async () => { if (!await ask(`${p.name} 종료`, "이 레인을 종료할까요?", "종료", true)) return; await api(`/api/lanes/${enc(p.name)}`, "DELETE"); toast("종료했어요"); }),
+    // Same look as its siblings; the confirm dialog carries the danger styling.
+    act("종료", "text", async () => { if (!await ask(`${p.name} 종료`, "이 레인을 종료할까요?", "종료", true)) return; await api(`/api/lanes/${enc(p.name)}`, "DELETE"); toast("종료했어요"); }),
   ];
 }
 function lanePane(name) {
