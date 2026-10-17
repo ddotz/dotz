@@ -96,6 +96,8 @@ export function emitFrameActivity(source: string, f: Frame): void {
 // "progress". Kept as one current list per source (finished ones for 10 min) and streamed whole on every change.
 export type Subagent = { id: string; agent?: string; description?: string; status: "running" | "done" | "failed" | "aborted"; tool?: string; intent?: string; updated_at: number };
 const subagents = new Map<string, Map<string, Subagent>>();
+// Transcript file of each subagent (`<source>\n<id>` -> path); server-side only, never sent to the UI.
+const transcripts = new Map<string, string>();
 const FINISHED_KEEP_MS = 10 * 60_000;
 
 function trackSubagent(source: string, p: Record<string, any>): void {
@@ -105,6 +107,7 @@ function trackSubagent(source: string, p: Record<string, any>): void {
 	let list = subagents.get(source);
 	if (!list) subagents.set(source, (list = new Map()));
 	const prev = list.get(id);
+	if (typeof p.sessionFile === "string") transcripts.set(`${source}\n${id}`, p.sessionFile);
 	const raw = String(progress.status ?? p.status ?? "").toLowerCase();
 	const status = /fail|error/.test(raw) ? "failed" : /abort|cancel/.test(raw) ? "aborted" : /done|complete|finish|success|end/.test(raw) ? "done" : "running";
 	const description = progress.description ?? p.description;
@@ -117,12 +120,55 @@ function trackSubagent(source: string, p: Record<string, any>): void {
 		intent: progress.lastIntent ? scrub(String(progress.lastIntent)).slice(0, 120) : prev?.intent,
 		updated_at: Date.now(),
 	});
-	for (const [key, s] of list) if (s.status !== "running" && Date.now() - s.updated_at > FINISHED_KEEP_MS) list.delete(key);
+	for (const [key, s] of list) {
+		if (s.status === "running" || Date.now() - s.updated_at <= FINISHED_KEEP_MS) continue;
+		list.delete(key);
+		transcripts.delete(`${source}\n${key}`);
+	}
 	broadcast({ kind: "subagents", source, items: [...list.values()] });
 }
 
 export function subagentLists(): Record<string, Subagent[]> {
 	return Object.fromEntries([...subagents].map(([source, list]) => [source, [...list.values()]]));
+}
+
+type DetailItem = { ts: string; type: "status" | "thinking" | "text" | "tool_call" | "tool_result"; text: string; tool?: string; intent?: string; args?: string; is_error?: boolean };
+// One subagent with its own transcript (oldest first, last DETAIL_MAX items) mapped to activity-shaped items.
+const DETAIL_MAX = 200;
+// The fields read from an omp session transcript line; every field is optional and checked before use.
+type TranscriptBlock = Block & { name?: string; arguments?: unknown; intent?: string };
+type TranscriptEntry = { type?: string; timestamp?: string; message?: { role?: string; content?: TranscriptBlock[] | string; toolName?: string; isError?: boolean } };
+export async function subagentDetail(source: string, id: string): Promise<(Subagent & { items: DetailItem[] }) | undefined> {
+	const sub = subagents.get(source)?.get(id);
+	if (!sub) return undefined;
+	const file = transcripts.get(`${source}\n${id}`);
+	const items: DetailItem[] = [];
+	const lines = file && (await Bun.file(file).exists()) ? (await Bun.file(file).text()).split("\n") : [];
+	for (const line of lines) {
+		let e: TranscriptEntry;
+		try {
+			e = JSON.parse(line) as TranscriptEntry;
+		} catch {
+			continue;
+		}
+		const m = e?.type === "message" ? e.message : undefined;
+		if (!m) continue;
+		const ts = String(e.timestamp ?? "");
+		if (m.role === "user") {
+			const text = joined(m.content);
+			if (text) items.push({ ts, type: "status", text: `> ${scrub(text).slice(0, 2000)}` });
+		} else if (m.role === "assistant") {
+			for (const b of Array.isArray(m.content) ? m.content : []) {
+				if (b.type === "thinking" && b.thinking?.trim()) items.push({ ts, type: "thinking", text: scrub(b.thinking.trim()) });
+				else if (b.type === "text" && b.text?.trim()) items.push({ ts, type: "text", text: scrub(b.text.trim()) });
+				else if (b.type === "toolCall") {
+					const label = summary(b.arguments, b.intent);
+					items.push({ ts, type: "tool_call", tool: b.name, intent: scrub(label), text: label ? `${b.name}: ${scrub(label)}` : String(b.name ?? ""), args: scrub(JSON.stringify(b.arguments ?? {}, null, 2)) });
+				}
+			}
+		} else if (m.role === "toolResult") items.push({ ts, type: "tool_result", tool: m.toolName, text: scrub(joined(m.content)), is_error: Boolean(m.isError) });
+	}
+	return { ...sub, items: items.slice(-DETAIL_MAX) };
 }
 
 export function statusActivity(source: string, text: string): void {
