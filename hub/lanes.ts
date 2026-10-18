@@ -416,7 +416,8 @@ export function checkBrief(brief: string): string | undefined {
 // Fable, or any model at xhigh/max effort, is spent only when the owner asked for it.
 export const isExpensive = (selector: string) => /fable/i.test(selector) || /^(max|xhigh)$/i.test(splitThinking(selector).thinking ?? "");
 
-// Budget gate, same rule as 오모냥: a job is assumed to use `est` % of the 5h window (default 15) and 10% must stay; the week blocks only when nearly gone.
+// Budget gate (owner rule 2026-10-18): a job is assumed to use `est` % of the 5h window (default 15) and 10% must stay.
+// The 7d window never gates; its remaining % is only shown in the message.
 const DEFAULT_EST = 15;
 // `est` (launch arg) wins over an "Estimate: N%" line in the brief; absent or invalid -> DEFAULT_EST.
 export function estimateOf(est: unknown, brief = ""): number {
@@ -424,9 +425,8 @@ export function estimateOf(est: unknown, brief = ""): number {
 	return Number.isFinite(n) && n >= 0 && n <= 100 ? n : DEFAULT_EST;
 }
 export function budgetVerdict(five: number | undefined, week: number | undefined, est: number): string | undefined {
-	if (typeof five === "number" && five - est < 10) return `5h window ${five}% left; this job is assumed to use ~${est}%, leaving under 10%`;
-	if (typeof week === "number" && week < 3) return `7d window ${week}% left`;
-	return undefined;
+	if (typeof five !== "number" || five - est >= 10) return undefined;
+	return `5h window ${five}% left; this job is assumed to use ~${est}%, leaving under 10%${typeof week === "number" ? `; 7d window ${week}% left (info only)` : ""}`;
 }
 
 export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string, fableOk?: boolean): Lane {

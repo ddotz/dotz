@@ -131,7 +131,7 @@ All behind the same auth as the rest of `/api`.
   `DELETE /api/providers/<id>/login` cancels; `POST /api/providers/<id>/logout` -> `{ok}`.
 - `GET /api/quota`: usage per provider and window (per-model windows such as the Fable one included);
   providers with credentials but no usage report are listed under `unavailable` with a plain reason.
-- `POST /api/command {text}`, `POST /api/gateway/restart`, `POST /api/orchestrator/restart|abort`, `POST /api/lanes/<name>/restart|resume|abort`; `POST /api/lanes {..., worker_model?, est?}` launches a lane. `est` is the job's expected use of the 5h window in percent (default 15; also read from an `Estimate: N%` line in the brief): the launch is refused when less than 10% would remain, or when the week is under 3%. Fable and max/xhigh-effort models (`model`, `worker_model`) need `owner_asked_for_fable: true`.
+- `POST /api/command {text}`, `POST /api/gateway/restart`, `POST /api/orchestrator/restart|abort`, `POST /api/lanes/<name>/restart|resume|abort`; `POST /api/lanes {..., worker_model?, est?}` launches a lane. `est` is the job's expected use of the 5h window in percent (default 15; also read from an `Estimate: N%` line in the brief): the launch is refused when less than 10% of the 5h window would remain; the 7d window is shown in the message but never refuses. Fable and max/xhigh-effort models (`model`, `worker_model`) need `owner_asked_for_fable: true`.
 
 The gateway keeps no credentials of its own: API keys added through it go into omp's credential store
 (`omp auth import`), sign-out removes the login or key there (`omp auth-broker logout <provider>`), and keys are shown
