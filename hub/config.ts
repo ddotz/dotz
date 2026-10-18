@@ -7,7 +7,8 @@ export const HOME = homedir();
 export const DATA_DIR = process.env.DOTZ_DIR ?? join(HOME, ".dotz");
 export const expand = (p: string) => p.replace(/^~(?=\/|$)/, HOME);
 
-export type Identity = { name: string; character?: string; tone?: string; avatar?: string };
+// `language`: BCP-47-ish code of the identity's main language ("ko", "en", "ja", ...); setup writes it. See hub/i18n.ts.
+export type Identity = { name: string; character?: string; tone?: string; avatar?: string; language?: string };
 export type Config = {
 	identity?: Identity;
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string };

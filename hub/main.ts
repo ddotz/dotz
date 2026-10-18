@@ -6,6 +6,7 @@ import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT } from "./co
 import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
+import { isNote, msg } from "./i18n.ts";
 import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { abortLane, approvesBudget, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
@@ -27,7 +28,6 @@ type Prompt = { key: string; text: string; at: number; target?: string; replyTo?
 const prompts: Prompt[] = [];
 let current: Prompt | undefined;
 const PENDING = join(DATA_DIR, "pending.json");
-const REPLAY = "[dotz gateway] The gateway restarted before you answered this. Handle it now; it may be partly done already, so check before repeating an action.";
 // Read before anything in this process delivers (and rewrites the file); replayed once the orchestrator starts.
 let unanswered: { text: string; at?: number; target?: string; replyTo?: string }[] = [];
 try {
@@ -48,7 +48,7 @@ function deliver(text: string, reply?: { target: string; replyTo?: string }): vo
 	if (prompts.length > 200) prompts.splice(0, prompts.length - 200);
 	savePending();
 	if (!steered) return deliverToOrchestrator(text);
-	steerOrchestrator(`[dotz gateway] A new message arrived while you are working; it gets no turn of its own. Answer it now with dotz_send target "${reply!.target}"${reply!.replyTo ? ` reply_to "${reply!.replyTo}"` : ""} (the full answer if it is quick, else a short note on when), then continue the current work. Your final answer still goes to the request you started with.\n\n${text}`);
+	steerOrchestrator(msg().newMessage(reply!.target, reply!.replyTo, text));
 }
 
 // Steered prompts are answered by the first plain dotz_send to their channel; the ones still open when a turn ends go
@@ -86,7 +86,7 @@ function expectReply(target: string): void {
 	const since = Date.now();
 	setTimeout(() => {
 		if ((lastPost.get(target) ?? 0) >= since) return;
-		steerOrchestrator(`[dotz gateway] The owner has waited ${REPLY_WAIT_MS / 1000}s in ${target} with nothing posted there. Post a short progress note in ${target} now (dotz_send update_key "progress": what you are doing, when the answer comes), then carry on.`);
+		steerOrchestrator(msg().waited(REPLY_WAIT_MS / 1000, target));
 	}, REPLY_WAIT_MS);
 }
 
@@ -94,7 +94,7 @@ function expectReply(target: string): void {
 setAnswerHandlers(
 	text => {
 		// Notes steered into a running turn are not new requests: the turn keeps answering the prompt it started with.
-		if (text.startsWith("[dotz gateway] A new message arrived") || text.startsWith("[dotz gateway] The owner has waited")) return;
+		if (isNote(text, "newMessageLead") || isNote(text, "waitedLead")) return;
 		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
 		current = i >= 0 ? prompts.splice(i, 1)[0] : undefined;
 		savePending();
@@ -119,25 +119,26 @@ setAnswerHandlers(
 function workDirectory(): string {
 	const setups = new Map(listSetups().map(s => [s.channel, s.purpose]));
 	const list = Object.entries(discord.channels.work).slice(0, 20).map(([id, name]) => `#${name} ch:${id}${setups.has(id) ? ` (${setups.get(id)!.slice(0, 60)})` : ""}`);
-	return `(work channels: ${list.length ? list.join("; ") : "none yet"})`;
+	return msg().workChannels(list);
 }
 
 function inboxText(e: Record<string, any>): string {
-	if (e.kind === "lane_report") return `[dotz inbox] lane report from ${e.lane}:\n${e.text}`;
+	const m = msg();
+	if (e.kind === "lane_report") return `${m.inboxLaneReport(e.lane)}\n${e.text}`;
 	if (e.kind === "watch") {
 		const ch = e.channels?.[0];
-		if (!ch) return `[dotz inbox] watch ${e.watch} ${e.reason} (no one is waiting for this turn; tell the owner with dotz_send only if it matters):\n${e.text}`;
-		return `[dotz inbox] watch ${e.watch} ${e.reason} for work channel ch:${ch} (your final answer goes there; reply "-" alone to post nothing):\n${e.text}\n${channelContext(ch)}`;
+		if (!ch) return `${m.inboxWatchNoChannel(e.watch, e.reason)}\n${e.text}`;
+		return `${m.inboxWatch(e.watch, e.reason, ch)}\n${e.text}\n${channelContext(ch)}`;
 	}
-	if (e.kind === "mail") return `[dotz inbox] new mail for work channel ch:${e.channel_id} (your final answer goes there; open one thread per mail titled "<sender> - <subject>" with dotz_channel thread and put the summary there; if a person wants something from the owner, brief them with a suggested reply; read or act with zele, sending only after the owner's OK; reply "-" alone to post nothing):\n${e.text}\n${channelContext(e.channel_id)}`;
-	if (e.kind === "schedule") return `[dotz inbox] scheduled (${e.id}${e.every ? `, every ${e.every} min` : ""}) - do it now; your final answer goes to ${e.channel}:\n${e.text}`;
-	const where = e.thread_name ? ` (thread "${e.thread_name}" in #${e.parent_name}; your answer goes into the thread)` : e.channel_name ? ` #${e.channel_name}` : "";
+	if (e.kind === "mail") return `${m.inboxMail(e.channel_id)}\n${e.text}\n${channelContext(e.channel_id)}`;
+	if (e.kind === "schedule") return `${m.inboxSchedule(e.id, e.every, e.channel)}\n${e.text}`;
+	const where = e.thread_name ? m.inboxThread(e.thread_name, e.parent_name) : e.channel_name ? ` #${e.channel_name}` : "";
 	const lines = [`[dotz inbox] ${e.channel}${where}${e.message_id ? ` msg=${e.message_id}` : ""} from ${e.author ?? "owner"}`];
-	if (e.first) lines.push(`(new work channel #${e.channel_name}: the owner hands out work by channel. Keep this channel's work and reports here. If its work needs a login kept alive or something checked over time, set that up for this channel with dotz_channel setup yourself.)`);
+	if (e.first) lines.push(m.inboxFirst(e.channel_name));
 	const parts: Record<string, any>[] = e.parts ?? [e];
-	if (parts.length > 1) lines.push(`(sent as ${parts.length} messages in a row; read them together as one request)`);
+	if (parts.length > 1) lines.push(m.inboxBurst(parts.length));
 	for (const p of parts) {
-		if (p.reply) lines.push(`(replying to ${p.reply.author}: "${p.reply.content}")`);
+		if (p.reply) lines.push(m.replyingTo(p.reply.author, p.reply.content));
 		for (const a of p.attachments ?? []) lines.push(`[attachment] ${a.name}${a.type ? ` (${a.type})` : ""} ${a.url}`);
 		lines.push(p.text);
 	}
@@ -300,7 +301,7 @@ discord.connect(m => {
 	if (typeof m.channel === "object") {
 		const lane = m.channel.lane;
 		emit("inbox", { ...event, kind: "lane_message", lane });
-		const extra = [m.replyTo ? `(replying to ${m.replyTo.author}: "${m.replyTo.content}")` : "", ...m.attachments.map(a => `[attachment] ${a.name} ${a.url}`)].filter(Boolean).join("\n");
+		const extra = [m.replyTo ? msg().replyingTo(m.replyTo.author, m.replyTo.content) : "", ...m.attachments.map(a => `[attachment] ${a.name} ${a.url}`)].filter(Boolean).join("\n");
 		try {
 			if (approvesBudget(lane, m.content)) sendToLane(lane, "/budget-ok");
 			sendToLane(lane, [`[owner via Discord] ${m.content}`, extra].filter(Boolean).join("\n"));
@@ -346,7 +347,7 @@ const restarted = existsSync(GREETED);
 if (!restarted) {
 	writeFileSync(GREETED, `${now()}\n`);
 	const target = discord.status.enabled ? "chat" : "web";
-	deliver(`[dotz gateway] First start of this install. Speak first in ${target}: greet the owner in a few short messages as ${NAME} (who you are, what you can do: channels per project, monitoring, lanes, schedules). Then ask once whether you may learn their setup, read-only: Aside's memory of them (aside memory list / search: who they are, people, projects, sites) and the sites they are signed in to, coding agent sessions and their projects, tools and CLIs in use, logs and schedules on this machine. On yes, do it with read-only workers, keep one progress message updated in place (dotz_send update_key "onboarding"), record what you learn in memory as you go, and end with a short summary of what you learned and what is still missing. On no, just say how to start.`, { target });
+	deliver(msg().firstStart(target), { target });
 }
 
 const server = Bun.serve({
@@ -679,7 +680,7 @@ function replayPending(): number {
 	const fresh = unanswered.filter(p => p.text && Date.now() - (p.at ?? 0) < 12 * 3600_000);
 	unanswered = [];
 	if (fresh.length) log(`replaying ${fresh.length} unanswered prompt(s) from before the restart`);
-	for (const p of fresh) deliver(p.text.startsWith(REPLAY) ? p.text : `${REPLAY}\n${p.text}`, p.target ? { target: p.target, replyTo: p.replyTo } : undefined);
+	for (const p of fresh) deliver(isNote(p.text, "replayLead") ? p.text : `${msg().replay}\n${p.text}`, p.target ? { target: p.target, replyTo: p.replyTo } : undefined);
 	return fresh.length;
 }
 

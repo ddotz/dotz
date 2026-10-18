@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 const PKG = join(import.meta.dir, "..");
@@ -100,10 +101,29 @@ async function ensureGateway(): Promise<void> {
 	throw new Error("gateway did not start (see ~/.dotz/hub.log)");
 }
 
+// Same language and MODE file chain as hub/i18n.ts (that module has gateway side effects, so only the pure helpers are shared).
+function language(): string {
+	try {
+		const id = JSON.parse(readFileSync(join(DATA, "config.json"), "utf8")).identity ?? {};
+		if (typeof id.language === "string" && id.language.trim()) return id.language.trim();
+		const text = [id.character, id.tone, id.notices, id.address].filter(s => typeof s === "string").join("\n");
+		const identityFile = join(DATA, "identity", "IDENTITY.md");
+		return detectLanguage(text.trim() || !existsSync(identityFile) ? text : readFileSync(identityFile, "utf8"));
+	} catch {
+		return "en";
+	}
+}
+
 function recall(): string {
 	const file = (p: string, max: number) => (existsSync(p) ? readFileSync(p, "utf8").slice(0, max) : "");
-	const mode = file(existsSync(join(DATA, "MODE.md")) ? join(DATA, "MODE.md") : join(PKG, "MODE.md"), 20000);
-	return `[dotz] Contract re-read after compaction:\n\nIdentity:\n${file(join(DATA, "identity", "IDENTITY.md"), 3000)}\n\n${mode}\n\nOwner rules:\n${file(join(DATA, "RULES.md"), 6000)}\n\nLessons:\n${file(join(DATA, "LESSONS.md"), 3000)}\n\nWork channel setups (dotz_channel list for details):\n${file(join(DATA, "channel-setups.json"), 3000) || "(none)"}\n\nCurrent state.json:\n${file(join(DATA, "state.json"), 4000) || "{}"}`;
+	const code = language();
+	const base = baseLanguage(code);
+	const chain = [...(base === "en" ? [] : [join(DATA, `MODE.${base}.md`), join(PKG, `MODE.${base}.md`)]), join(DATA, "MODE.md"), join(PKG, "MODE.md")];
+	const mode = file(chain.find(existsSync) ?? join(PKG, "MODE.md"), 20000);
+	const parts = { identity: file(join(DATA, "identity", "IDENTITY.md"), 3000), rules: file(join(DATA, "RULES.md"), 6000), lessons: file(join(DATA, "LESSONS.md"), 3000), setups: file(join(DATA, "channel-setups.json"), 3000), state: file(join(DATA, "state.json"), 4000) || "{}" };
+	if (base === "ko") return `[dotz] 컨텍스트 압축 뒤 계약을 다시 읽어요:\n\n정체성:\n${parts.identity}\n\n${mode}\n\n오너 규칙:\n${parts.rules}\n\n교훈:\n${parts.lessons}\n\n작업 채널 설정 (자세한 건 dotz_channel list):\n${parts.setups || "(없음)"}\n\n현재 state.json:\n${parts.state}`;
+	const reply = base === "en" ? "" : `\n\nReply to the owner in ${languageName(code)} (${code}).`;
+	return `[dotz] Contract re-read after compaction:\n\nIdentity:\n${parts.identity}\n\n${mode}\n\nOwner rules:\n${parts.rules}\n\nLessons:\n${parts.lessons}\n\nWork channel setups (dotz_channel list for details):\n${parts.setups || "(none)"}\n\nCurrent state.json:\n${parts.state}${reply}`;
 }
 
 function orchestratorTools(pi: any): void {

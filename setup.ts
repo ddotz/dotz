@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { asideState, installApp, installCli, loginCli, openApp } from "./onboard/aside.ts";
 import { AsideRepl, createApp, ensureBrowser, invite, isAdmin, PERMISSIONS, resetToken } from "./onboard/discord.ts";
 import { checkPermissions, printPermissions, requestPermissions } from "./onboard/permissions.ts";
+import { detectLanguage, languageName } from "./hub/language.ts";
 
 const HOME = homedir();
 const PKG = import.meta.dir;
@@ -30,7 +31,7 @@ const TOKEN_FILE = join(DIR, "secrets", "discord-bot-token");
 const IDENTITY_FILE = join(DIR, "identity", "IDENTITY.md");
 const SNOWFLAKE = /^\d{17,20}$/;
 
-type Identity = { name: string; character: string; tone: string; notices?: string; address?: string; avatar?: string };
+type Identity = { name: string; character: string; tone: string; notices?: string; address?: string; avatar?: string; language?: string };
 type Answers = {
 	identity: Identity;
 	owner_id: string;
@@ -250,6 +251,8 @@ function validate(a: Partial<Answers>): Answers {
 	identity.character ||= CHARACTERS[0];
 	identity.tone ||= TONES[0].replace(/\s*\(예:.*\)$/, "");
 	identity.notices ||= NOTICES[0].replace(/\s*\(예:.*\)$/, "");
+	// The gateway instructs its agents in this language (hub/i18n.ts); detected from the answers' script, else the system locale.
+	identity.language ||= detectLanguage([identity.character, identity.tone, identity.notices, identity.address].filter(Boolean).join("\n"));
 	if (!identity.name || identity.name.length < 2 || identity.name.length > 32) errors.push("identity.name: 2~32자");
 	if (!identity.character) errors.push("identity.character: 성격 한 줄");
 	if (!identity.tone) errors.push("identity.tone: 말투 한 줄");
@@ -277,16 +280,18 @@ function validate(a: Partial<Answers>): Answers {
 }
 
 function identityDoc(id: Identity): string {
+	const code = id.language || "en";
 	return `# Bot identity (written by dotz setup.ts; edit freely, re-running setup keeps this file unless the answers change)
 
 - Name: **${id.name}**. Mode phrases: "${id.name}모드 켜" / "${id.name}모드 꺼" (also /dotz on|off).
 - Character: ${id.character}
 - Tone: ${id.tone}
 - Notices (worklog, alert): ${id.notices}
+- Language: ${code}
 - Owner address: ${id.address ? `call the owner "${id.address}"; no other title` : "no title; never call the owner 사장님, 주인님 or any honorific, just talk to them"}
 ${id.avatar ? `- Avatar: ${id.avatar}\n` : ""}
 ## Voice rules
-- Speak as ${id.name}, in the character and tone above, in the owner's language (Korean unless they switch).
+- Speak as ${id.name}, in the character and tone above, in the owner's language: ${languageName(code)} (${code}), unless they switch.
 - Before writing, picture what the owner wants, the state they are in and what would actually help.
 - Match the owner's length and register; short chat messages, not reports. Status is plain: what happened, the evidence,
   what the owner must decide.
