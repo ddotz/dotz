@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
-import { cfg, IDENTITY_FILE, lanesCompactAt, lanesKeepRecent, lanesModel, log, NAME, now, OMP, parseSelector, paths, selectorOf, splitThinking, workerModel } from "./config.ts";
+import { cfg, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, OMP, parseSelector, paths, selectorOf, splitThinking, workerModel } from "./config.ts";
+import { modeFile, msg, withReplyLine } from "./i18n.ts";
 import { abandonCompact, type CompactPort, type Compaction, compactionError, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 
@@ -15,7 +16,6 @@ const WATCHDOG_MS = 120_000;
 const STALL_MS = Number(process.env.DOTZ_STALL_MS ?? 20 * 60_000);
 const RECOVERY_MAX = 3;
 const RECOVERY_WINDOW_MS = 60 * 60_000;
-const STOPPED_NOTE = "[dotz gateway] Your process was restarted after it stopped responding. Continue the last request.";
 const MAX_ACTIVE = cfg.lanes?.max_active ?? 4;
 const BRIEF_MAX = 8000;
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -98,7 +98,7 @@ function prompt(lane: Lane, text: string): void {
 	clearTimeout(lane.watchdog);
 	lane.watchdog = setTimeout(() => {
 		log(`lane ${lane.name} did not start a turn after a prompt; restarting it`);
-		lane.revive = { text: STOPPED_NOTE };
+		lane.revive = { text: msg().laneStopped };
 		lane.proc?.kill(9);
 	}, WATCHDOG_MS);
 }
@@ -151,7 +151,7 @@ function scheduleReport(lane: Lane): void {
 // The owner messages held during the pause ride along with the resume note and stay on disk until a turn succeeds.
 function withHeld(lane: Lane, text: string): string {
 	if (!lane.held?.length) return text;
-	return `${text}\n\n${lane.held.length} owner message(s) arrived while you were paused; handle each, oldest first:\n\n${lane.held.join("\n\n---\n\n")}`;
+	return msg().heldMessages(text, lane.held);
 }
 
 // A usage limit ("rate") waits for the window reset. A billing/auth error ("owner") waits for the owner to fix it, which
@@ -175,7 +175,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	lane.resumeTimer = setTimeout(() => {
 		lane.resumeTimer = undefined;
 		setStatus(lane, "idle");
-		prompt(lane, withHeld(lane, owner ? "[dotz gateway] The provider problem (billing/auth) may have been fixed. Continue the work you were doing when it stopped." : "[dotz gateway] The rate limit has passed. Continue the work you were doing when it stopped."));
+		prompt(lane, withHeld(lane, owner ? msg().laneProvider : msg().laneRate));
 	}, wait);
 }
 
@@ -195,7 +195,7 @@ function retryTransient(lane: Lane, err: string): boolean {
 	lane.transientTimer = setTimeout(() => {
 		lane.transientTimer = undefined;
 		if (lane.status !== "idle") return;
-		prompt(lane, "[dotz gateway] The provider had a temporary error (overloaded or network) and your last turn failed. Continue the work you were doing when it stopped.");
+		prompt(lane, msg().laneTransient);
 	}, wait);
 	return true;
 }
@@ -351,7 +351,7 @@ function recover(lane: Lane, why: string, wasWorking: boolean): void {
 	if (lane.lastText.startsWith("[lane error]")) lane.lastText = "";
 	log(`lane ${lane.name} recovering: ${why}`);
 	onReport(lane, `[lane recovery] ${why}. 진행 중이던 요청을 중단하고 같은 세션으로 다시 이어서 시작해요 (${lane.recoveries.length}/${RECOVERY_MAX}).`);
-	lane.revive = { text: wasWorking ? STOPPED_NOTE : undefined };
+	lane.revive = { text: wasWorking ? msg().laneStopped : undefined };
 	lane.proc.kill(9);
 }
 
@@ -361,13 +361,11 @@ const activeCount = () => [...lanes.values()].filter(l => l.status === "working"
 const WORKER_SLOTS = Math.max(2, Math.min(8, Math.floor(availableParallelism() / 2), Math.floor(totalmem() / 2 ** 32)));
 
 function footer(lane: Lane): string {
-	const mode = join(import.meta.dir, "..", "MODE.md");
-	return `\n\n---\n[dotz lane ${lane.name}] You are a lane of ${NAME}: a full omp orchestrator for this folder with one goal. The final message of each turn is your report: ${NAME} relays it and the owner reads it in the lane channel. Keep it to ~800 characters: outcome, changed paths, verification against the Done-when line (run the check yourself), blockers or questions for the owner. The owner may write to you directly. Do not message Discord or other people yourself, and never put secrets in a report. Before you start, read and follow ${mode} (sections Lanes and workers, Reporting, Browser and testing), ${IDENTITY_FILE} (voice) and the owner's standing rules in ${paths.rules} (they override your defaults). Plan and review yourself; run implementation and grind work as task workers (worker model ${laneWorkerModel(lane)} via modelRoles.task), and review a worker's diff yourself before applying or merging it. Do not queue independent slices behind one worker: this machine runs up to ${WORKER_SLOTS} task workers at once, so fan independent slices (different files, or separable sections merged one by one) out in one batch; keep one worker only for work that must be sequential.${worktreeNote(lane.worktree)}`;
+	return withReplyLine(msg().footer({ lane: lane.name, mode: modeFile(), workerModel: laneWorkerModel(lane), slots: WORKER_SLOTS, worktree: worktreeNote(lane.worktree) }));
 }
 
 function worktreeNote(w: Worktree | undefined): string {
-	if (!w) return "";
-	return `\n\nYou work in your own git worktree ${w.path} on branch ${w.branch}, split from ${w.repo} (${w.base}); paths under ${w.repo} in your brief mean the same files under ${w.path}. Other lanes and the owner work in ${w.repo}: never edit files there. Commit your work on ${w.branch} as you go. Untracked setup (node_modules, .env, build output) is not in the worktree: install or link what you need. When the Done-when check passes, land it the way this project lands work (a PR if it uses them); otherwise rebase onto ${w.base} (\`git rebase ${w.base}\`), then \`git -C ${w.repo} merge --ff-only ${w.branch}\`. On a conflict, resolve it in your worktree and retry; never force, never reset ${w.repo}. Report the merged commit. The gateway removes your worktree when the lane is closed after the merge.`;
+	return w ? msg().worktree(w) : "";
 }
 
 const git = (cwd: string, ...args: string[]) => {
@@ -489,7 +487,7 @@ export function resumeByName(name: string, text?: string): void {
 		return prompt(lane, text);
 	}
 	if (!lane.sessionFile || !existsSync(lane.sessionFile)) throw new Error(`lane ${name} has no session to resume`);
-	resumeLane(lane, text || "[dotz gateway] The owner resumed you. Continue the work you were doing.");
+	resumeLane(lane, text || msg().laneOwnerResumed);
 }
 
 // Restarts the omp process of a lane, resuming its session (a turn that was running is cut off, so it is told to continue).
@@ -502,7 +500,7 @@ export async function restartLane(name: string): Promise<void> {
 	lane.quiet = true;
 	old.kill();
 	await old.exited;
-	if (wasWorking) resumeLane(lane, "[dotz gateway] Your process was restarted by the owner (settings changed). Continue the work you were doing.");
+	if (wasWorking) resumeLane(lane, msg().laneOwnerRestarted);
 	else {
 		spawn(lane, true);
 		setStatus(lane, "idle");
@@ -548,7 +546,7 @@ export async function rotateLane(name: string, why: string): Promise<void> {
 	const tail = previous && existsSync(previous) ? recentExchanges(previous) : undefined;
 	const brief = join(dir(name), "brief.md");
 	const lastReport = join(dir(name), "report.md");
-	prompt(lane, `[dotz gateway] Your session was rotated to a fresh one (${why}) to keep the context small. You keep your folder (${lane.cwd}), model and goal. Read your brief (${brief}) and your last report (${lastReport}), check the current state of the work (git status, the files the brief names), and continue from there. Do not start new work and do not report: if nothing is open, reply with the single word "ready".${previous ? `\n\n[handover] The previous session (${previous}) was rotated.${tail ? ` Its most recent exchanges, oldest first:\n${tail}` : ""}` : ""}`);
+	prompt(lane, withReplyLine(`${msg().laneRotated(why, lane.cwd, brief, lastReport)}${previous ? `\n\n${msg().laneHandover(previous, tail)}` : ""}`));
 	lane.silent = { lastText: lane.lastText };
 }
 
@@ -570,7 +568,7 @@ export function restoreLanes(): string[] {
 		}
 		const session = Boolean(rec.sessionFile && existsSync(rec.sessionFile));
 		if (session && (rec.status === "working" || rec.status === "starting" || rec.status === "rate-limited")) {
-			resumeLane(lane, "[dotz gateway] The gateway restarted while you were working, which also stopped any task workers you had running. Check what they finished (patches, files, commits), relaunch the rest, and continue; if an owner message was cut off mid-turn, handle it too.");
+			resumeLane(lane, msg().laneGatewayRestarted);
 			resumed.push(name);
 		} else if (session && rec.status === "idle") {
 			spawn(lane, true);

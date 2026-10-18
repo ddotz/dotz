@@ -24,6 +24,20 @@ Setup writes `~/.dotz/config.json` (no secrets), keeps the bot token in `~/.dotz
 the plugin into omp (`~/.omp/agent/extensions/dotz`), generates and (with `--load`) starts the launchd gateway,
 and (with `--tailscale`) serves the web app on the tailnet only. It prints the bot invite link.
 
+**Language.** `identity.language` in `config.json` (a code such as `ko`, `en`, `ja`) is the identity's main language.
+Setup writes it automatically, detected from the script of the identity answers (Hangul `ko`, kana `ja`, Han only `zh`),
+else from the system locale, else `en`, and puts a `- Language:` line in `IDENTITY.md`; a re-run keeps an existing
+value, and you can edit it by hand (restart the gateway to apply). When the key is missing (older installs) the
+gateway detects the language the same way from `identity.character` and `identity.tone` while it runs. Everything the
+gateway tells its agents follows it, so replies stay in that language: the contract, the lane footer, the
+`[dotz gateway]` notes, the `[handover]` memo, inbox hints and the nightly review prompt. Korean and English have
+originals. Any other language gets the English text plus one line, `Reply to the owner in <language> (<code>).`, at the
+end of each prompt that carries instructions (the orchestrator's first prompt, the lane footer, the lane rotation note,
+the nightly review). The bracket tags (`[dotz gateway]`, `[handover]`, `[dotz lane <name>]`, `[dotz inbox]`) stay
+literal in every language. The contract file for a language other than English is looked up as
+`~/.dotz/MODE.<lang>.md`, then `MODE.<lang>.md` in the repo, then the English `~/.dotz/MODE.md` and the repo's
+`MODE.md`, so a translation for another language is a drop-in file.
+
 Onboarding also asks for the macOS permissions (`onboard/permissions.ts`). The gateway is a launchd job whose program is `bun`, so
 macOS attributes every protected access by the gateway and everything it spawns (omp, osascript, aside, git) to `bun`:
 the prompts and the Settings entries are for the bun binary, not your terminal. Setup asks for them once, up front:
@@ -176,8 +190,8 @@ short "received, answering when the current step ends" notice from the gateway.
   rotation, orphaned worktree cleanup), `schedule.ts` (reminders), `discord.ts`
   (eyes receipt, typing, 429 retry, heartbeat check, identity sync), `control.ts` (model/effort switching, context and
   compaction, slash commands), `providers.ts` (keys, login/logout, model catalog, quota), `activity.ts` (omp frames to the terminal-view feed),
-  `events.ts`, `config.ts`.
+  `events.ts`, `config.ts`, `i18n.ts` (message catalog and language selection), `language.ts` (language detection).
 - Audit against Dori / dori-kit / 오모냥: `docs/audit-2026-10-16.md`.
 - `extension/index.ts` omp extension: orchestrator tools, terminal thin client, nothing in lanes.
-- `web/index.html` web app. `MODE.md` the 땃쥐 contract. `setup.ts` onboarding.
+- `web/index.html` web app. `MODE.md` the 땃쥐 contract (`MODE.ko.md` its Korean original). `setup.ts` onboarding.
 - Runtime data: `~/.dotz` (config, secrets, state, inbox/outbox, lanes, logs).

@@ -3,6 +3,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, log, paths } from "./config.ts";
+import { msg, withReplyLine } from "./i18n.ts";
 
 const CORRECTION = /(아니|말고|하지\s*마|하지마|왜\s|다시|틀렸|잘못|그게 아니|no,|don't|stop)/i;
 const DAY = 24 * 3600_000;
@@ -91,15 +92,7 @@ export async function snapshot(): Promise<void> {
 	log(`snapshot: ${r.exitCode === 0 ? "committed" : "no changes"}`);
 }
 
-export function reflectPrompt(d: string): string {
-	return `[dotz reflect] Nightly self-review of the last 24h. Data from the gateway:\n${d}\n
-Do this, briefly:
-1. Find what went wrong or cost too much: owner corrections or repeated asks, failed or stuck lanes, alerts, cache rewrites.
-2. For each real lesson add or update one dated line in ${paths.lessons} (keep it under ~30 lines; delete lessons that no longer apply or that a rule already covers). Retain durable facts about the owner with your memory tool.
-3. If something recurred although RULES.md or LESSONS.md already covers it, more text will not help: send the owner (dotz_send alert) a concrete fix for the carrier (which file, hook, brief footer or check to change).
-4. Never edit RULES.md here; propose rule changes to the owner in alert and wait for their answer.
-5. Finish with one dotz_send worklog post in Korean, in the identity's Notices style: a first line "야간 정리", then "- " bullets in plain words for what you did (e.g. "- 배운 점 1개 LESSONS.md에 정리했어요", "- 고칠 거 제안 1건은 알림에 올렸어요"), at most 4 bullets, no counts in English. Nothing else is sent.`;
-}
+export const reflectPrompt = (d: string): string => withReplyLine(msg().reflect(d, paths.lessons));
 
 export function startReflection(deliver: (text: string) => void, sessionFile: () => string): void {
 	const at = String((cfg as { reflect_at?: string }).reflect_at ?? "04:40");

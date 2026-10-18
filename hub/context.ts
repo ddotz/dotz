@@ -4,6 +4,7 @@
 // `{type:"compact"}`; omp aborts a running turn to compact, so a busy process is queued and compacted after agent_end.
 import { readFileSync } from "node:fs";
 import { log, now } from "./config.ts";
+import { isNote } from "./i18n.ts";
 
 export type CompactState = "queued" | "compacting" | "done" | "error";
 export type Compaction = { state?: CompactState; at?: string; tokensBefore?: number; error?: string };
@@ -107,9 +108,10 @@ export function abandonCompact(c: Ctx, reason: string): void {
 
 export const ctxView = (c: Ctx) => ({ tokens: c.tokens, window: c.window, percent: percentOf(c), compaction: c.compaction });
 
-// The most recent user/assistant exchanges of a saved omp session (oldest first, ~9000 chars), the body of a handover
-// into a fresh session. undefined when the session file cannot be read.
-type SessionMessage = { role?: string; content?: string | Array<{ type?: string; text?: string }> };
+// The most recent user messages and assistant final answers of a saved omp session (oldest first, ~9000 chars), the
+// body of a handover into a fresh session. Assistant text from a tool-use step is mid-turn monologue, not an answer, so
+// only `stop`/`length` assistant messages count. undefined when the session file cannot be read.
+type SessionMessage = { role?: string; stopReason?: string; content?: string | Array<{ type?: string; text?: string }> };
 export function recentExchanges(sessionFile: string): string | undefined {
 	const turns: string[] = [];
 	try {
@@ -118,8 +120,9 @@ export function recentExchanges(sessionFile: string): string | undefined {
 			const parsed: { message?: SessionMessage } = JSON.parse(line);
 			const m = parsed.message;
 			if (!m) continue;
+			if (m.role === "assistant" && m.stopReason !== "stop" && m.stopReason !== "length") continue;
 			const t = (Array.isArray(m.content) ? m.content.filter(b => b?.type === "text").map(b => b.text).join("") : (m.content ?? "")).trim();
-			if (!t || t.startsWith("[keepalive]") || t === "ok" || t.startsWith("[dotz gateway] You are") || t.includes("\n[dotz lane ")) continue;
+			if (!t || t.startsWith("[keepalive]") || t === "ok" || isNote(t, "youAre") || t.includes("\n[dotz lane ")) continue;
 			turns.push(`${m.role === "user" ? "IN" : "YOU"}: ${t.length > 700 ? `${t.slice(0, 700)}...` : t}`);
 		}
 	} catch {

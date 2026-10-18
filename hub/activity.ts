@@ -2,6 +2,7 @@
 import { type Activity, broadcast, emitActivity } from "./events.ts";
 import { mask, secretValues } from "./providers.ts";
 import { now } from "./config.ts";
+import { isNote } from "./i18n.ts";
 
 type Block = { type?: string; text?: string; thinking?: string };
 export type Frame = {
@@ -53,7 +54,7 @@ export function activityFromFrame(f: Frame): Omit<Activity, "ts" | "kind" | "sou
 			const m = f.message;
 			if (m?.role === "user") {
 				const text = joined(m.content);
-				return text && !text.startsWith("[dotz gateway] You are") ? [{ type: "status", text: `> ${text.slice(0, 400)}` }] : [];
+				return text && !isNote(text, "youAre") ? [{ type: "status", text: `> ${text.slice(0, 400)}` }] : [];
 			}
 			if (m?.role !== "assistant") return [];
 			const out: Omit<Activity, "ts" | "kind" | "source">[] = [];

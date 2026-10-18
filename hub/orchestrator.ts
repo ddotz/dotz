@@ -6,6 +6,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { emitFrameActivity, statusActivity } from "./activity.ts";
 import { cfg, DATA_DIR, IDENTITY_FILE, log, NAME, now, OMP, orchestratorModel, paths, selectorOf } from "./config.ts";
+import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { setupsSummary } from "./workchannels.ts";
@@ -68,18 +69,18 @@ const textOf = (m: any) => (Array.isArray(m?.content) ? m.content : []).filter((
 const port: CompactPort = { idle: () => orch.status === "idle", send: write };
 
 function recall(): string {
-	const mode = readFileSync(existsSync(join(DATA_DIR, "MODE.md")) ? join(DATA_DIR, "MODE.md") : join(import.meta.dir, "..", "MODE.md"), "utf8");
+	const mode = readFileSync(modeFile(), "utf8");
 	const state = existsSync(join(DATA_DIR, "state.json")) ? readFileSync(join(DATA_DIR, "state.json"), "utf8").slice(0, 4000) : "{}";
 	const id = cfg.identity;
-	const identity = existsSync(IDENTITY_FILE) ? readFileSync(IDENTITY_FILE, "utf8").slice(0, 3000) : `Name: ${NAME}\nCharacter: ${id?.character ?? ""}\nTone: ${id?.tone ?? ""}\nSpeak in this character and tone in every reply.`;
+	const identity = existsSync(IDENTITY_FILE) ? readFileSync(IDENTITY_FILE, "utf8").slice(0, 3000) : msg().identityFallback(id?.character ?? "", id?.tone ?? "");
 	const file = (p: string, max: number) => (existsSync(p) ? readFileSync(p, "utf8").slice(0, max) : "");
-	return `[dotz gateway] You are ${NAME}, the dotz orchestrator hosted headless by the gateway.\n\nIdentity (who you are and how you talk):\n${identity}\n\nContract:\n\n${mode}\n\nOwner rules (${paths.rules}; they override the contract):\n${file(paths.rules, 6000)}\n\nLessons (${paths.lessons}):\n${file(paths.lessons, 3000)}\n\nWork channel setups (dotz_channel list for login health):\n${setupsSummary()}\n\nCurrent state.json:\n${state}`;
+	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 6000), lessons: file(paths.lessons, 3000), setups: setupsSummary(), state }));
 }
 
 function handover(previous: string): string {
 	const tail = recentExchanges(previous);
 	if (tail === undefined) return "";
-	return `\n\n[handover] The previous session (${previous}) was rotated to keep the context small. Its most recent exchanges, oldest first; continue any open thread from here:\n${tail}`;
+	return msg().handover(previous, tail);
 }
 
 async function readFrames(p: Subprocess<"pipe", "pipe", "pipe">): Promise<void> {
@@ -127,7 +128,7 @@ async function readFrames(p: Subprocess<"pipe", "pipe", "pipe">): Promise<void> 
 			}
 			else if (f.type === "message_end" && f.message?.role === "user") {
 				const t = textOf(f.message) || (typeof f.message.content === "string" ? f.message.content.trim() : "");
-				if (!RESUME_NOTES.some(n => t.startsWith(n))) onPrompt(t);
+				if (!isResumeNote(t)) onPrompt(t);
 			}
 			else if (f.type === "message_end" && f.message?.role === "assistant") {
 				const t = textOf(f.message);
@@ -173,7 +174,7 @@ function armWatchdog(): void {
 // right after the spent window resets (from the provider's usage report; retry-after otherwise) they all go in, oldest
 // first, after the resume note. A retry that hits the limit again re-arms quietly. A billing/auth error ("owner") pauses
 // the same way, but nothing says when the owner fixes it, so it is probed every OWNER_RETRY_MS; the owner is told once.
-const RESUME_NOTES = ["[dotz gateway] The rate limit has passed", "[dotz gateway] The provider problem", "[dotz gateway] The provider had a temporary error"];
+const isResumeNote = (t: string) => isNote(t, "rateLead") || isNote(t, "providerLead") || isNote(t, "transientLead");
 let resumeTimer: Timer | undefined;
 let pausing = false;
 let pauseAlerted = false;
@@ -201,8 +202,8 @@ async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<voi
 		orch.status = "idle";
 		// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
 		// retry that hits the limit again loses nothing.
-		const why = owner ? "The provider problem (billing/auth) may have been fixed." : "The rate limit has passed.";
-		write({ type: "prompt", message: `[dotz gateway] ${why} Continue the request you were handling when it stopped.${held.length ? ` ${held.length} message(s) that arrived while you were paused come next, oldest first.` : ""}`, streamingBehavior: "followUp" });
+		const m = msg();
+		write({ type: "prompt", message: owner ? m.orchProvider(held.length) : m.orchRate(held.length), streamingBehavior: "followUp" });
 		armWatchdog();
 	}, retry);
 }
@@ -223,7 +224,7 @@ function retryTransient(err: string): void {
 	transientTimer = setTimeout(() => {
 		transientTimer = undefined;
 		if (orch.status !== "idle") return;
-		write({ type: "prompt", message: "[dotz gateway] The provider had a temporary error (overloaded or network) and your last turn failed. Continue the request you were handling when it stopped.", streamingBehavior: "followUp" });
+		write({ type: "prompt", message: msg().orchTransient, streamingBehavior: "followUp" });
 		armWatchdog();
 	}, wait);
 }
@@ -295,7 +296,7 @@ setInterval(() => {
 	keepalives++;
 	inKeepalive = true;
 	log(`keepalive ${keepalives}/${KEEPALIVE_MAX} after ${Math.round(idle / 60_000)} min idle`);
-	write({ type: "prompt", message: "[keepalive] Cache keepalive from the gateway. Reply only: ok. No tools, no sends, no state edits." });
+	write({ type: "prompt", message: msg().keepalive });
 	armWatchdog();
 }, Math.min(60_000, Math.max(5_000, (KEEPALIVE_TO_MS - KEEPALIVE_FROM_MS) / 2)));
 
