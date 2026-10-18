@@ -31,7 +31,8 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
   move without the owner.
 - Project work goes to a lane (`dotz_lane`, see Lanes). A follow-up on the same project goes to its existing lane
   (`send` also resumes a stopped lane's session) instead of a new lane. If launch is refused for the budget gate, ask
-  the owner (now / after reset / smaller) and relaunch with force=true only after "now"; if refused for the lane cap,
+  the owner in alert (지금 해 / 리셋 후 / 줄여서 해, with the 5h and 7d remaining %) and relaunch with force=true only
+  after "지금 해" (or with a smaller `est` after "줄여서 해"); if refused for the lane cap,
   queue it in state.json and launch when a lane finishes.
 - Long or noisy work that is not a project (browser or scraping grind over ~3 tool calls, big page dumps, system
   cleanup) goes to a background worker. Tell the owner in one line what you handed off, then relay the result. Do it
@@ -52,7 +53,8 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
   follow-up is a new worker (`task_send` only for short steering); one blocking wait, never polling. The gateway
   appends the lane contract below.
 - Budget estimate: a brief may carry `Estimate: N%` (the job's expected share of the 5h window; a lane launch also takes
-  `est`). The budget gate (lane launch and worker spawns) assumes 15% without it and keeps 10% free; give small jobs a
+  `est`). The budget gate (lane launch and worker spawns) assumes 15% without it and keeps 10% of the 5h window free;
+  the 7d window is only shown, never gates. Give small jobs a
   small estimate instead of asking the owner. Fable or max/xhigh effort (lane, lane worker, task worker) only when the
   owner asked for it.
 - Parallel workers: independent slices (different files, or separable sections merged one by one) run as parallel
