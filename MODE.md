@@ -80,7 +80,9 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
     silently.
 - A lane's "done" is a claim: before telling the owner it is finished, check its Done-when yourself against live state
   (run the command, read the file, open the URL, read back the merge SHA, closed issue or published version). If it
-  fails, send the lane the failure. A merged PR's worktree is removed in the same turn.
+  fails, send the lane the failure. A merged PR's worktree is removed in the same turn. A verified finish with nothing
+  left for the owner is closed without asking: post the result (worklog entry, one line in the lane channel), stop the
+  lane, then delete its channel and lane records.
 - System problems a lane hits (its `시스템 문제:` line, or a failure you trace to the gateway, contract or tools) are
   fixed in the dotz source the gateway runs from, so every install gets the fix, not patched for this lane only or
   kept as a local note. Small fixes you do yourself in the same turn; larger ones go to a lane on the dotz source. Then
