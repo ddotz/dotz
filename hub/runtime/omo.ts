@@ -28,7 +28,7 @@ export function omoSelector(selector: string): string {
 // starts with OMO_PROFILE naming the profile. A profile applies only where OMO_PROFILE names it, so the owner's own OmO
 // sessions keep their categories. Without it a lane's `quick` worker ran on OmO's default (Haiku, seen 2026-10-20).
 export const WORKER_CATEGORIES = ["quick", "unspecified-low", "unspecified-high", "deep-low", "deep-high", "ultrabrain", "artistry", "writing", "visual-engineering", "architect"];
-export const omoConfigFile = () => process.env.DOTZ_OMO_CONFIG ?? join(process.env.HOME ?? homedir(), ".omo", "omo.json");
+export const omoConfigFile = () => process.env.OMO_USER_CONFIG ?? join(process.env.HOME ?? homedir(), ".omo", "omo.json");
 export const workerProfileName = (workerModel: string) => `dotz-workers-${workerModel.replace(/[^A-Za-z0-9.-]+/g, "-")}`;
 const categoryModel = (selector: string) => {
 	const { model, thinking } = parseSelector(omoSelector(selector));
