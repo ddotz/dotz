@@ -3,8 +3,10 @@
 // (`- deny: <regex> | <reason>`) and the deny lists of the feature folders, the same matching the omp extension does
 // (extension/index.ts `blockedBy`, featuredirs.ts), on the command text. Blocking = exit code 2 with the reason on
 // stderr, which Claude Code hands back to the model as the tool result. The process runs with
-// --permission-mode bypassPermissions, so this hook is the only guard: input it cannot read blocks the call (fail
-// closed); a single bad regex in RULES.md is skipped like the omp extension skips it.
+// --permission-mode bypassPermissions, so this hook is the only guard and fails closed: input it cannot read, an error,
+// or no answer within HOOK_DEADLINE_MS (below the hook timeout Claude Code is given, after which it would let the call
+// through) blocks the call; a crash that exits with another code is turned into a block by the hook command in
+// claude.ts. A single bad regex in RULES.md is skipped like the omp extension skips it.
 // Pure fs + featuredirs.ts, so each Bash call starts a light bun process.
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -13,6 +15,8 @@ import { blockedByFeatures } from "../featuredirs.ts";
 import { systemDeny } from "../systemdeny.ts";
 
 export const BLOCK_EXIT_CODE = 2;
+// Claude Code is told to wait 10 s (claude.ts writeSettings); the hook gives up and blocks before that.
+export const HOOK_DEADLINE_MS = 8000;
 
 export function denyReason(command: string, dataDir: string): string | undefined {
 	const system = systemDeny(command);
@@ -34,6 +38,10 @@ export function denyReason(command: string, dataDir: string): string | undefined
 }
 
 if (import.meta.main) {
+	const deadline = setTimeout(() => {
+		process.stderr.write("dotz could not check this command in time, so it is blocked. Report it if the task needs it.\n");
+		process.exit(BLOCK_EXIT_CODE);
+	}, Number(process.env.DOTZ_HOOK_DEADLINE_MS ?? HOOK_DEADLINE_MS));
 	let reason: string | undefined;
 	try {
 		const input = JSON.parse(await Bun.stdin.text()) as { tool_name?: string; tool_input?: { command?: unknown } };
@@ -42,6 +50,7 @@ if (import.meta.main) {
 	} catch (e) {
 		reason = `dotz could not check this command (${e instanceof Error ? e.message : e}), so it is blocked. Report it if the task needs it.`;
 	}
+	clearTimeout(deadline);
 	if (reason) {
 		process.stderr.write(`${reason}\n`);
 		process.exit(BLOCK_EXIT_CODE);

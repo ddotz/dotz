@@ -13,6 +13,8 @@ export type Config = {
 	identity?: Identity;
 	// Agent runtime of the orchestrator and the lanes unless their own section names one; see hub/runtime/index.ts.
 	runtime?: string;
+	// Extra hosts an API-key fallback entry's base_url may point at (https only); the providers' own API hosts are always allowed.
+	key_hosts?: string[];
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string };
 	web: { port: number; tailscale_https_port: number; allow_logins: string[] };
 	orchestrator?: { model: string; thinking: string; rotate_tokens?: number; runtime?: string; fallback?: Array<string | FallbackEntry> };

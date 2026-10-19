@@ -73,7 +73,9 @@ const log = (line: string) => {
 
 const patchable = Bun as unknown as { spawn: unknown };
 const realSpawn = Bun.spawn;
-const savedCfg = { orchestrator: cfg.orchestrator, lanes: cfg.lanes };
+const savedCfg = { orchestrator: cfg.orchestrator, lanes: cfg.lanes, key_hosts: cfg.key_hosts };
+// The key entries point at a host the test allows; nothing is sent, the runtime is fake.
+cfg.key_hosts = ["keys.test.invalid"];
 const notices: string[] = [];
 const alerts: string[] = [];
 
@@ -105,7 +107,7 @@ test("quota -> API-key entry -> reset returns to the subscription -> monthly cap
 		model: "anthropic/test-orch",
 		thinking: "low",
 		runtime: "fake",
-		fallback: [{ model: "anthropic/test-orch", key_file: "test-api-key", when: "quota", cap: { period: "month", usd: 50 }, revert: true, base_url: "http://127.0.0.1:1/v1", api: "openai-completions" }, "openai/test-third"],
+		fallback: [{ model: "anthropic/test-orch", key_file: "test-api-key", when: "quota", cap: { period: "month", usd: 50 }, revert: true, base_url: "https://keys.test.invalid/v1", api: "openai-completions" }, "openai/test-third"],
 	};
 
 	// Step 0: the subscription model runs; the hub drives the chain itself, so omp is told not to walk one.
@@ -126,7 +128,7 @@ test("quota -> API-key entry -> reset returns to the subscription -> monthly cap
 	expect(current().opts.model).toBe("anthropic-apikey/test-orch:low");
 	expect(current().opts.env.DOTZ_KEY_VALUE).toBe(KEY);
 	const spec = JSON.parse(current().opts.env.DOTZ_KEY_PROVIDER);
-	expect(spec).toMatchObject({ id: "anthropic-apikey", baseUrl: "http://127.0.0.1:1/v1", api: "openai-completions" });
+	expect(spec).toMatchObject({ id: "anthropic-apikey", baseUrl: "https://keys.test.invalid/v1", api: "openai-completions" });
 	expect(JSON.stringify(spec)).not.toContain(KEY);
 	expect(current().opts.resume).toBe(join(DATA, "fake-session.jsonl"));
 	expect(current().agent.calls.some(c => c.startsWith("send:followUp:[dotz gateway]"))).toBe(true);
@@ -170,7 +172,7 @@ test("quota -> API-key entry -> reset returns to the subscription -> monthly cap
 	o.stop();
 	await advance(300);
 	resetFallbackState();
-	cfg.orchestrator = { ...cfg.orchestrator!, fallback: [{ model: "anthropic/test-orch", key_file: "test-api-key", when: "quota", cap: { period: "day", usd: 5 }, base_url: "http://127.0.0.1:1/v1", api: "openai-completions" }] };
+	cfg.orchestrator = { ...cfg.orchestrator!, fallback: [{ model: "anthropic/test-orch", key_file: "test-api-key", when: "quota", cap: { period: "day", usd: 5 }, base_url: "https://keys.test.invalid/v1", api: "openai-completions" }] };
 	o.start();
 	await advance(4000);
 	await current().agent.push({ type: "session", ref: join(DATA, "fake-session.jsonl") });
@@ -207,7 +209,7 @@ const l: typeof Lanes = await import("../lanes.ts?fallback-chain");
 
 test("lane: a usage limit moves it to its API-key entry on the same session", async () => {
 	resetFallbackState();
-	cfg.lanes = { ...savedCfg.lanes!, runtime: "fake", fallback: [{ model: "anthropic/test-lane", key_file: "test-api-key", when: "quota", base_url: "http://127.0.0.1:1/v1", api: "openai-completions" }] };
+	cfg.lanes = { ...savedCfg.lanes!, runtime: "fake", fallback: [{ model: "anthropic/test-lane", key_file: "test-api-key", when: "quota", base_url: "https://keys.test.invalid/v1", api: "openai-completions" }] };
 	const cwd = join(DATA, "chain-work");
 	mkdirSync(cwd, { recursive: true });
 	rmSync(join(DATA, "lanes", "ck"), { recursive: true, force: true });

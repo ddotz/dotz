@@ -5,7 +5,7 @@
 // models stays with omp (hub/runtime/omp.ts). Usage and limit state persists in <data dir>/fallback-usage.json.
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { DATA_DIR, entryId, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, entryId, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
 
 // A chain the hub switches itself: any entry omp cannot walk.
 export const hubOwned = (entries: FallbackEntry[]) => entries.some(e => !isPlain(e));
@@ -74,7 +74,20 @@ export const KEY_APIS: Record<string, { api: string; baseUrl: string }> = {
 	openai: { api: "openai-responses", baseUrl: "https://api.openai.com/v1" },
 	openrouter: { api: "openai-completions", baseUrl: "https://openrouter.ai/api/v1" },
 };
-export const keyProviderOk = (e: FallbackEntry) => Boolean(e.key_file) && Boolean((e.base_url && e.api) || KEY_APIS[e.model.split("/")[0]]);
+// Where an API key may be sent: https only, to a provider's official API host or a host the owner listed in config.json
+// `key_hosts`. Checked when a chain is saved and again before a process gets the key.
+export const keyBaseUrl = (e: FallbackEntry) => e.base_url ?? KEY_APIS[e.model.split("/")[0]]?.baseUrl;
+export function keyHostOk(url: string | undefined): boolean {
+	let u: URL;
+	try {
+		u = new URL(url ?? "");
+	} catch {
+		return false;
+	}
+	const allowed = new Set([...Object.values(KEY_APIS).map(a => new URL(a.baseUrl).hostname), ...(cfg.key_hosts ?? []).map(h => String(h).toLowerCase())]);
+	return u.protocol === "https:" && !u.username && !u.password && allowed.has(u.hostname.toLowerCase());
+}
+export const keyProviderOk = (e: FallbackEntry) => Boolean(e.key_file) && Boolean((e.base_url && e.api) || KEY_APIS[e.model.split("/")[0]]) && keyHostOk(keyBaseUrl(e));
 
 type ModelDef = { id?: string; name?: string; provider?: string; reasoning?: boolean; input?: string[]; contextWindow?: number; maxTokens?: number; cost?: Record<string, number> };
 let defs: Map<string, ModelDef> | undefined;
@@ -99,6 +112,7 @@ const keyedModel = (e: FallbackEntry) => {
 	return `${provider}-apikey/${rest.join("/")}`;
 };
 function keyEnv(e: FallbackEntry): Record<string, string> {
+	if (!keyHostOk(keyBaseUrl(e))) throw new Error(`API-key entry ${e.model}: base URL host is not allowed`);
 	const base = parseSelector(e.model).model;
 	const def = modelDef(base);
 	const [provider, ...rest] = base.split("/");
@@ -133,7 +147,7 @@ export class Chain {
 		const b = load().blocked[poolOf(e)];
 		if (b && b.until > at) return b;
 		if (capReached(e, at)) return { why: "cap", until: periodEnd(e.cap!.period, at) };
-		if (e.key_file && !readKey(e.key_file)) return { why: "error", until: at + KEY_BLOCK_MS };
+		if (e.key_file && (!readKey(e.key_file) || !keyHostOk(keyBaseUrl(e)))) return { why: "error", until: at + KEY_BLOCK_MS };
 		return undefined;
 	}
 	// A fallback entry takes over after `reason` only when its condition allows it (a cap counts as a quota).
