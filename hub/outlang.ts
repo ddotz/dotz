@@ -35,6 +35,9 @@ const SCRIPTS: Record<string, RegExp> = {
 };
 
 const MIN_LATIN_WORDS = 8;
+// A short line with no native letter at all is caught from this many words ("Now a throwaway smoke script against a
+// temp DOTZ_DIR." slipped through as a lane progress note with 6 words).
+const MIN_LATIN_WORDS_PURE = 3;
 const MAX_NATIVE_SHARE = 0.1;
 
 // What is not prose: code blocks, inline code, URLs, paths, mentions and channel tags, emoji shortcodes.
@@ -56,8 +59,10 @@ export function languageMismatch(text: string, language: string): boolean {
 	const script = SCRIPTS[baseLanguage(language)];
 	if (!script) return false;
 	const body = prose(text);
-	if (latinWords(body) < MIN_LATIN_WORDS) return false;
+	const words = latinWords(body);
 	const native = (body.match(script) ?? []).length;
+	if (native === 0) return words >= MIN_LATIN_WORDS_PURE;
+	if (words < MIN_LATIN_WORDS) return false;
 	const latin = (body.match(/[A-Za-z]/g) ?? []).length;
 	return native / (native + latin) < MAX_NATIVE_SHARE;
 }
