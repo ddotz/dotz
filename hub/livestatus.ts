@@ -1,10 +1,11 @@
-// Live progress reports: while an owner message from Discord is still unanswered after FIRST_AFTER_MS, the gateway posts a
-// short report in that channel (how long it has run, the tool-call intents since the last report, the current one, running
-// lanes and task workers), then a new one every EVERY_MS (owner 2026-10-19: "5분은 괜찮아. 그 이후에 5분 단위로 새로
-// 메시지 보내서 보고해"). As in Dori's freshness sweep, a report that would say nothing new since the last one is skipped.
-// It costs no model tokens: the text is built from activity rows the gateway already has and is never localized or
-// rewritten. The reports stay in the channel; they stop at the turn's end, at the answer (clearProgress hook, or any other
-// message sent there) and after MAX_MS.
+// Live progress while an owner message from Discord is unanswered. Typing shows from the start and is renewed every
+// TYPING_MS (Discord drops it after ~10 s). From FIRST_AFTER_MS on the gateway keeps ONE progress message in that channel,
+// edited in place (the same "progress" slot the orchestrator's own update_key note uses): how long it has run, the
+// tool-call intents since the last edit, the current one, running lanes and task workers. It is edited at each milestone
+// (a lane or task worker started or finished) and otherwise at most every EVERY_MS, and only when it would say something
+// new (owner 2026-10-20: "답변은 준비되고 해야해. 먼저하면 안됨": while working, only 👀, typing and one edited progress
+// message; it replaces the 2026-10-19 "every 5 minutes a new message"). It costs no model tokens and is never localized.
+// The answer deletes it (clearProgress hook); it also stops at the turn's end and after MAX_MS.
 import { subagentLists } from "./activity.ts";
 import { log } from "./config.ts";
 import * as discord from "./discord.ts";
@@ -20,11 +21,12 @@ const CHECK_MS = 30_000;
 // A turn that never reports its end (the process died) must not keep reporting forever.
 const MAX_MS = 6 * 3600_000;
 const TEXT_MAX = 400;
+const TYPING_MS = 8000;
 
 // One reporter per target. While it is the entry of `active` it owns the target; a tick checks that before and after
 // every await, so a reporter that was stopped (the entry is gone or replaced) cannot post. `turnFrom` moves when another
 // owner message joins: the end of the turn that was running before it is not the end of the wait.
-type Live = { source: string; since: number; turnFrom: number; timer?: Timer; lastAt: number; lastState?: string; lastRunning?: string; postedAt?: number; inflight: Promise<void> };
+type Live = { source: string; since: number; turnFrom: number; timer?: Timer; typing?: Timer; lastAt: number; lastState?: string; lastRunning?: string; posted?: boolean; inflight: Promise<void> };
 const active = new Map<string, Live>();
 
 const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -66,28 +68,39 @@ export function liveReport(live: { source: string; since: number; lastAt: number
 	return { state: parts.slice(1).join("\n"), running: parts.slice(2).join("\n"), moved: between.length > 0, text: short(msg().liveStatus(minutes, ...parts), TEXT_MAX) };
 }
 
+// The wait is over: the turn ended, a real message (not the progress edit) reached the channel, or MAX_MS passed.
+function over(target: string, live: Live): boolean {
+	const ended = activityItems(live.source).some(r => r.type === "turn_end" && Date.parse(r.ts) >= live.turnFrom);
+	return ended || discord.lastSendAt(target) >= live.since || Date.now() - live.since >= MAX_MS;
+}
+
+function end(target: string, live: Live): void {
+	if (active.get(target) === live) active.delete(target);
+	clearTimeout(live.timer);
+	clearInterval(live.typing);
+}
+
 async function tick(target: string, live: Live): Promise<void> {
 	if (active.get(target) !== live) return;
-	const ended = activityItems(live.source).some(r => r.type === "turn_end" && Date.parse(r.ts) >= live.turnFrom);
-	// Anything else sent to the channel after the turn began (or after our last report) is the answer, or part of it.
-	const answered = discord.lastSendAt(target) > (live.postedAt ?? live.since - 1);
-	if (ended || answered || Date.now() - live.since >= MAX_MS) {
-		active.delete(target);
+	if (over(target, live)) {
+		end(target, live);
+		// A turn that ended with no answer here ("-", or its answer went elsewhere) leaves no stale progress message behind.
+		if (live.posted) void discord.clearProgress(target).catch(e => log(`progress clear in ${target} failed: ${e}`));
 		return;
 	}
 	const { state, running, moved, text } = liveReport(live);
-	const first = live.postedAt === undefined;
+	const first = !live.posted;
 	const milestone = !first && running !== live.lastRunning;
 	const due = Date.now() - live.lastAt >= EVERY_MS - 1000 || first;
 	if (milestone || (due && (moved || state !== live.lastState))) {
 		live.inflight = discord
-			.send(target, text)
+			.progress(target, "progress", text)
 			.then(r => {
 				if (!r.delivered) return;
 				live.lastState = state;
 				live.lastRunning = running;
 				live.lastAt = Date.now();
-				live.postedAt = discord.lastSendAt(target);
+				live.posted = true;
 			})
 			.catch(e => log(`live report in ${target} failed: ${e}`));
 		await live.inflight;
@@ -106,6 +119,7 @@ export function begin(target: string, source: string): void {
 	}
 	const live: Live = { source, since, turnFrom: since, lastAt: since, inflight: Promise.resolve() };
 	live.timer = setTimeout(() => void tick(target, live), FIRST_AFTER_MS);
+	live.typing = setInterval(() => (active.get(target) !== live || over(target, live) ? end(target, live) : discord.typing(target)), TYPING_MS);
 	active.set(target, live);
 }
 
@@ -113,8 +127,7 @@ export function begin(target: string, source: string): void {
 export function stop(target: string): Promise<void> {
 	const live = active.get(target);
 	if (!live) return Promise.resolve();
-	active.delete(target);
-	clearTimeout(live.timer);
+	end(target, live);
 	return live.inflight;
 }
 

@@ -7,7 +7,7 @@
 // them, so a language change mid-session (or a pending.json written under another language) still matches.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, IDENTITY_FILE, NAME, paths } from "./config.ts";
+import { ADDRESS, cfg, DATA_DIR, IDENTITY_FILE, NAME, paths, tzLabel } from "./config.ts";
 import { baseLanguage, detectLanguage, languageName } from "./language.ts";
 
 export type LaneFooterArgs = { lane: string; mode: string; workerModel: string; slots: number; worktree: string };
@@ -82,8 +82,7 @@ const en = {
 	noGit: `\n\nThis folder is not a git repository, so isolated task workers cannot start here: run workers without isolation (read-only work needs none), and if a worker must edit files, keep its slice to files no other worker touches.`,
 
 	replay: `${enLeads.replayLead}. Handle it now; it may be partly done already, so check before repeating an action.`,
-	newMessage: (target: string, replyTo: string | undefined, text: string) => `${enLeads.newMessageLead}; it gets no turn of its own. Answer it now with dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""} (the full answer if it is quick, else a short note on when), then continue the current work. Your final answer still goes to the request you started with.\n\n${text}`,
-	waited: (seconds: number, target: string) => `${enLeads.waitedLead} ${seconds}s in ${target} with nothing posted there. Post a short progress note in ${target} now (dotz_send update_key "progress": what you are doing, when the answer comes), then carry on.`,
+	newMessage: (target: string, replyTo: string | undefined, text: string) => `${enLeads.newMessageLead}. If its full answer is ready now (a quick question), send it with dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}; otherwise send nothing: it comes back as its own turn when you are idle. Then continue the current work; your final answer still goes to the request you started with.\n\n${text}`,
 	// The one leading line of an owner prompt that says what runs now (workers named by the hub from its own state; no model call).
 	nowRunning: "[running now]",
 	nowLanes: (n: number, body: string) => `lanes ${n}(${body})`,
@@ -106,6 +105,9 @@ const en = {
 	inboxBurst: (n: number) => `(sent as ${n} messages in a row; read them together as one request)`,
 	replyingTo: (author: string, content: string) => `(replying to ${author}: "${content}")`,
 	workChannels: (list: string[]) => `(work channels: ${list.length ? list.join("; ") : "none yet"})`,
+	// Discord channel names the gateway creates, and the done marker of a lane thread.
+	channelNames: { chat: "chat", alert: "alerts", worklog: "worklog", mail: "mail", workCategory: (name: string) => `${name} work` },
+	threadDone: "Done. This thread is archived in an hour.",
 	replyIn: (language: string, drifted: boolean) => drifted ? `(Your last text for the owner was not in ${language}. Write everything for the owner in ${language} only.)` : `(Answer the owner in ${language}.)`,
 
 	reflect: (digest: string, lessons: string) => `[dotz reflect] Nightly self-review of the last 24h. Data from the gateway:\n${digest}\n
@@ -125,7 +127,7 @@ Do this, briefly:
 	auth: {
 		titles: { secret: "Login details needed", otp: "Verification code needed", approve: "Login approval needed" },
 		site: "Site",
-		expires: (time: string) => `Until ${time} KST`,
+		expires: (time: string) => `Until ${time} ${tzLabel()}`,
 		input: "Enter",
 		approve: "I approved",
 		cancel: "Cancel",
@@ -220,7 +222,7 @@ Do this, briefly:
 			},
 			gateway: {
 				label: "Gateway", summary: "Merge messages · handle commands · deliver replies",
-				desc: "The door every input goes through. Consecutive messages in the same channel are merged into one; commands like /model and /restart and the \"limits\" question are answered directly without waking the orchestrator. Replies go back to the channel that asked, and if no reply goes out within 60 seconds, a progress report is requested. Messages left unanswered at a restart are handled again.",
+				desc: "The door every input goes through. Consecutive messages in the same channel are merged into one; commands like /model and /restart and the \"limits\" question are answered directly without waking the orchestrator. Replies go back to the channel that asked; while the work runs the owner sees 👀, typing and, after 5 minutes, one progress message edited in place, and the answer goes out only when it is complete. Messages left unanswered at a restart are handled again.",
 				merge: "Merge window", mergeValue: (ms: number) => `${ms}ms (up to 20 s)`, direct: "Answered directly", directValue: `/commands, "limits"`,
 				route: "Reply route", routeValue: "The channel the question came from (Discord, web, terminal)", restart: "Restart", restartValue: "After all work is done (up to 20 min), restarts with the new code",
 			},
@@ -362,7 +364,7 @@ const ko: Catalog = {
 	identityFallback: (character, tone) => `이름: ${NAME}\n성격: ${character}\n말투: ${tone}\n모든 답을 이 성격과 말투로 하세요.`,
 	handover: (previous, tail) => `\n\n[handover] 이전 세션(${previous})은 컨텍스트를 작게 유지하려고 교체했어요. 가장 최근 대화를 오래된 순으로 붙여요. 열려 있는 일이 있으면 여기서 이어가세요:\n${tail}\n\n${koRetainNudge}`,
 	laneHandover: (previous, tail) => `[handover] 이전 세션(${previous})을 교체했어요.${tail ? ` 가장 최근 대화를 오래된 순으로 붙여요:\n${tail}\n\n${koRetainNudge}` : ""}`,
-	pendingAsksHead: "형 답을 기다리는 레인 질문",
+	pendingAsksHead: `${ADDRESS || "오너"} 답을 기다리는 레인 질문`,
 	pendingAskEntry: (lane, at, text, cutFile) => `- 레인 ${lane} (${at}에 물음):\n${text}${cutFile ? `\n... (잘림; 질문 전문은 ${cutFile})` : ""}`,
 	retainNudge: koRetainNudge,
 	keepalive: "[keepalive] 게이트웨이의 캐시 유지 신호예요. ok 한 단어로만 답하세요. 도구, 전송, 상태 수정은 하지 마세요.",
@@ -392,8 +394,7 @@ const ko: Catalog = {
 	noGit: `\n\n이 폴더는 git 저장소가 아니라서 격리(isolated) 워커가 뜨지 않아요. 워커는 격리 없이 띄우세요(읽기만 하는 일은 격리가 필요 없어요). 파일을 고치는 워커라면 다른 워커와 겹치지 않는 파일만 맡기세요.`,
 
 	replay: `${koLeads.replayLead}. 지금 처리하세요. 이미 일부는 끝났을 수 있으니 같은 동작을 반복하기 전에 확인하세요.`,
-	newMessage: (target, replyTo, text) => `${koLeads.newMessageLead}. 이 메시지에는 별도 턴이 없어요. 지금 dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}로 답하세요(금방 끝나면 전체 답을, 아니면 언제쯤 답할지 짧게). 그다음 하던 일을 이어가세요. 최종 답은 처음 시작한 요청으로 가요.\n\n${text}`,
-	waited: (seconds, target) => `${koLeads.waitedLead}: ${target}에 ${seconds}초째 아무것도 올라오지 않았어요. 지금 ${target}에 짧은 진행 메모를 올리고(dotz_send update_key "progress": 하는 일, 답이 나올 시점) 하던 일을 이어가세요.`,
+	newMessage: (target, replyTo, text) => `${koLeads.newMessageLead}. 지금 바로 완성된 답을 줄 수 있으면(간단한 질문) dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}로 보내고, 아니면 아무것도 보내지 마세요. 지금 턴이 끝나면 이 메시지가 따로 턴으로 와요. 그다음 하던 일을 이어가세요. 최종 답은 처음 시작한 요청으로 가요.\n\n${text}`,
 	nowRunning: "[지금 도는 것]",
 	nowLanes: (n, body) => `레인 ${n}(${body})`,
 	nowLaneBusy: "작업 중",
@@ -414,6 +415,8 @@ const ko: Catalog = {
 	inboxBurst: n => `(sent as ${n} messages in a row; 하나의 요청으로 함께 읽으세요)`,
 	replyingTo: (author, content) => `(${author}의 메시지에 대한 답장: "${content}")`,
 	workChannels: list => `(작업 채널: ${list.length ? list.join("; ") : "아직 없음"})`,
+	channelNames: { chat: "대화", alert: "알림", worklog: "작업로그", mail: "메일", workCategory: name => `${name} 작업` },
+	threadDone: "작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.",
 	replyIn: (_language, drifted) => (drifted ? "(직전에 오너에게 보낸 글이 한국어가 아니었어요. 오너에게 가는 글은 한국어로만 쓰세요.)" : "(오너에게는 한국어로 답하세요.)"),
 
 	reflect: (digest, lessons) => `[dotz reflect] 지난 24시간의 야간 자기 점검이에요. 게이트웨이가 모은 데이터:\n${digest}\n
@@ -430,7 +433,7 @@ const ko: Catalog = {
 	auth: {
 		titles: { secret: "로그인 정보가 필요해요", otp: "인증 코드가 필요해요", approve: "로그인 승인이 필요해요" },
 		site: "사이트",
-		expires: time => `${time} KST까지`,
+		expires: time => `${time} ${tzLabel()}까지`,
 		input: "입력하기",
 		approve: "승인했어요",
 		cancel: "취소",
@@ -524,7 +527,7 @@ const ko: Catalog = {
 			},
 			gateway: {
 				label: "게이트웨이", summary: "메시지 묶기 · 명령 처리 · 답장 전달",
-				desc: "모든 입력이 지나가는 문이에요. 같은 채널에서 연달아 온 글은 한 번에 묶어서 넘기고, /model·/restart 같은 명령과 \"한도\" 질문은 오케스트레이터를 깨우지 않고 직접 답해요. 답장은 질문한 채널로 돌려보내고, 60초 안에 답이 안 나가면 중간 보고를 요청해요. 재시작해도 답 못 한 메시지는 다시 처리해요.",
+				desc: "모든 입력이 지나가는 문이에요. 같은 채널에서 연달아 온 글은 한 번에 묶어서 넘기고, /model·/restart 같은 명령과 \"한도\" 질문은 오케스트레이터를 깨우지 않고 직접 답해요. 답장은 질문한 채널로 돌려보내요. 작업하는 동안에는 👀, 입력 중 표시, 5분 뒤부터 제자리에서 고치는 진행 메시지 하나만 보이고, 답은 다 됐을 때 한 번에 나가요. 재시작해도 답 못 한 메시지는 다시 처리해요.",
 				merge: "묶는 시간", mergeValue: ms => `${ms}ms (최대 20초까지)`, direct: "직접 답하는 것", directValue: "/명령, \"한도\"",
 				route: "답장 길", routeValue: "질문이 온 채널(Discord·웹·터미널)로", restart: "재시작", restartValue: "작업이 모두 끝난 뒤(최대 20분) 새 코드로 다시 시작",
 			},

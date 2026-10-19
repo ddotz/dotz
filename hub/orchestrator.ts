@@ -7,7 +7,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
-import { cfg, chainAfter, DATA_DIR, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, DATA_DIR, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
@@ -199,7 +199,7 @@ function pauseExhausted(c: Chain, until: number): void {
 	orch.status = "rate-limited";
 	orch.pauseKind = "rate";
 	orch.rateLimitedUntil = new Date(until).toISOString();
-	const at = new Date(until).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+	const at = new Date(until).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
 	const line = msg().fallbackExhausted(c.label(c.active), at);
 	log(`orchestrator ${line}`);
 	onNotice(line);
@@ -348,7 +348,7 @@ async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<voi
 	if (orch.status !== "rate-limited") return;
 	const until = new Date(Date.now() + retry);
 	orch.rateLimitedUntil = until.toISOString();
-	const at = until.toLocaleString("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+	const at = until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
 	const changed = orch.pauseKind !== (owner ? "owner" : "rate");
 	orch.pauseKind = owner ? "owner" : "rate";
 	if (!pauseAlerted || changed) {

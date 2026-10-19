@@ -25,7 +25,7 @@ mkdirSync(process.env.OMO_CODING_AGENT_DIR, { recursive: true });
 writeFileSync(
 	join(data, "config.json"),
 	JSON.stringify({
-		identity: { name: "tester", language: "en" },
+		identity: { name: "tester", language: "en", timezone: "Asia/Seoul" },
 		discord: { token_file: join(dir, "missing-token"), owner_id: "1", guild: "1" },
 		web: { port: 47999, tailscale_https_port: 0, allow_logins: [] },
 		orchestrator: { model: "anthropic/test-orch", thinking: "low" },
