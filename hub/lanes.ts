@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { emitEventActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
+import { pendingAskFile } from "./asks.ts";
 import { cfg, chainAfter, DATA_DIR, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, workerModel, writeAtomic } from "./config.ts";
 import { lang, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
@@ -33,7 +34,10 @@ export type LaneStatus = "starting" | "working" | "idle" | "rate-limited" | "exi
 // A lane in a git repo works in its own worktree (repo = the owner's checkout, base = the branch it lands on).
 type Worktree = { path: string; repo: string; branch: string; base: string };
 type Claim = { state: "reported" | "verified"; at: string; evidence?: string };
-type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; held?: string[]; worktree?: Worktree; claim?: Claim };
+// A lane's own [ask] report stays a question for the owner until the owner answers (sendToLane) or the lane reports again.
+// The full text also sits in pending-ask.md (dir(name)) while pending, because report.md is overwritten by gateway notices.
+type Ask = { text: string; at: string };
+type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	lastText: string;
@@ -96,9 +100,9 @@ export function setIdleHandler(fn: (name: string) => void): void {
 
 const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
-	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, reports, held, worktree, claim } = lane;
+	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, reports, held, worktree, claim, pendingAsk } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}) }, null, 2)}\n`);
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -137,13 +141,26 @@ function prompt(lane: Lane, text: string): void {
 // can add a wait). It is kept on disk until sent, so a gateway restart in between sends it on the next start.
 const pendingFile = (lane: Lane) => join(dir(lane.name), "pending-report.md");
 
-function report(lane: Lane, text: string): void {
+// `notice` marks a gateway-written text ([lane error], [lane exited], pause/rate-limit): it is not the lane speaking, so it
+// leaves a pending ask alone.
+function report(lane: Lane, text: string, notice = false): void {
 	rmSync(pendingFile(lane), { force: true });
 	lane.reports++;
-	lane.claim = parseTone(text).tone === "done" ? { state: "reported", at: now() } : undefined;
+	const tone = parseTone(text).tone;
+	lane.claim = tone === "done" ? { state: "reported", at: now() } : undefined;
+	if (tone === "ask" && !notice) {
+		lane.pendingAsk = { text, at: now() };
+		writeAtomic(pendingAskFile(lane.name), `${text}\n`);
+	} else if (!notice) clearAsk(lane);
 	persist(lane);
 	writeFileSync(join(dir(lane.name), "report.md"), `${text}\n`);
 	onReport(lane, text);
+}
+// Drops the pending ask; the caller persists.
+function clearAsk(lane: Lane): void {
+	if (!lane.pendingAsk) return;
+	lane.pendingAsk = undefined;
+	rmSync(pendingAskFile(lane.name), { force: true });
 }
 
 // The omp budget gate opens only for a /budget-ok typed into the lane session, but the owner approves in Discord.
@@ -172,7 +189,7 @@ function scheduleReport(lane: Lane): void {
 	clearTimeout(lane.timer);
 	lane.timer = setTimeout(() => {
 		if (lane.status !== "idle" || !lane.lastText) return;
-		report(lane, lane.lastText);
+		report(lane, lane.lastText, lane.lastText.startsWith("[lane error]"));
 	}, REPORT_DEBOUNCE_MS);
 }
 
@@ -196,7 +213,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	if (!lane.pauseReported || lane.pauseKind !== kind) {
 		report(lane, owner
 			? `모델 제공자 결제/인증 문제로 멈췄어요 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요해요. 그동안 온 메시지는 모아뒀다가 해결되면 이어서 처리하고, ${Math.round(wait / 60_000)}분마다 다시 시도해요.`
-			: `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`);
+			: `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`, true);
 	}
 	lane.pauseReported = true;
 	lane.pauseKind = kind;
@@ -291,7 +308,7 @@ function pauseExhausted(lane: Lane, c: Chain, until: number): void {
 	const line = msg().fallbackExhausted(c.label(c.active), at);
 	log(`lane ${lane.name} ${line}`);
 	onNotice(lane, line);
-	report(lane, line);
+	report(lane, line, true);
 	lane.pauseReported = true;
 	clearTimeout(lane.resumeTimer);
 	atTime(until, t => (lane.resumeTimer = t), () => {
@@ -444,7 +461,7 @@ function spawn(lane: Lane, resume: boolean): void {
 			}
 			return;
 		}
-		if (code !== 0 && code !== 143) report(lane, `[lane exited] 프로세스가 종료됐습니다 (code ${code}). 마지막 상태: ${lane.lastText.slice(0, 300) || "없음"}`);
+		if (code !== 0 && code !== 143) report(lane, `[lane exited] 프로세스가 종료됐습니다 (code ${code}). 마지막 상태: ${lane.lastText.slice(0, 300) || "없음"}`, true);
 	});
 	proc.watchSubagents();
 	setTimeout(() => lane.proc?.refreshSession(), 3000);
@@ -600,8 +617,10 @@ export function sendToLane(name: string, text: string): void {
 	if (!lane) throw new Error(`lane ${name} does not exist`);
 	if (!lane.proc && (!lane.sessionFile || !existsSync(lane.sessionFile))) throw new Error(`lane ${name} is not running and has no session to resume`);
 	// New work makes an unchecked [done] claim stale; a verified one stays until the lane's next report replaces it.
-	if (lane.claim?.state === "reported") {
-		lane.claim = undefined;
+	// Any message to the lane is the owner's answer to a pending [ask].
+	if (lane.claim?.state === "reported" || lane.pendingAsk) {
+		if (lane.claim?.state === "reported") lane.claim = undefined;
+		clearAsk(lane);
 		persist(lane);
 	}
 	if (lane.proc) return prompt(lane, text);
@@ -655,6 +674,10 @@ export function resumeByName(name: string, text?: string): void {
 	const lane = known(name);
 	if (lane.proc) {
 		if (!text) throw new Error(`lane ${name} is already running`);
+		if (lane.pendingAsk) {
+			clearAsk(lane);
+			persist(lane);
+		}
 		return prompt(lane, text);
 	}
 	if (!lane.sessionFile || !existsSync(lane.sessionFile)) throw new Error(`lane ${name} has no session to resume`);
@@ -737,7 +760,7 @@ export function restoreLanes(): string[] {
 		lanes.set(name, lane);
 		if (existsSync(pendingFile(lane))) {
 			lane.lastText = readFileSync(pendingFile(lane), "utf8");
-			report(lane, lane.lastText);
+			report(lane, lane.lastText, lane.lastText.startsWith("[lane error]"));
 		}
 		const session = Boolean(rec.sessionFile && existsSync(rec.sessionFile));
 		if (session && (rec.status === "working" || rec.status === "starting" || rec.status === "rate-limited")) {
@@ -799,6 +822,7 @@ export function laneSummary(): Array<Record<string, unknown>> {
 		startedAt: l.startedAt,
 		reports: l.reports,
 		claim: l.claim,
+		pendingAsk: l.pendingAsk,
 		sessionFile: l.sessionFile,
 		resumable: !l.proc && Boolean(l.sessionFile),
 		lastText: l.lastText.slice(0, 600),

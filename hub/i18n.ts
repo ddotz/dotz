@@ -50,6 +50,8 @@ const en = {
 	handover: (previous: string, tail: string) => `\n\n[handover] The previous session (${previous}) was rotated to keep the context small. Its most recent exchanges, oldest first; continue any open thread from here:\n${tail}\n\n${enRetainNudge}`,
 	laneHandover: (previous: string, tail: string | undefined) => `[handover] The previous session (${previous}) was rotated.${tail ? ` Its most recent exchanges, oldest first:\n${tail}\n\n${enRetainNudge}` : ""}`,
 	retainNudge: enRetainNudge,
+	pendingAsksHead: "Lane questions waiting for the owner's answer",
+	pendingAskEntry: (lane: string, at: string, text: string, cutFile?: string) => `- lane ${lane} (asked ${at}):\n${text}${cutFile ? `\n... (cut; the full question is in ${cutFile})` : ""}`,
 	keepalive: "[keepalive] Cache keepalive from the gateway. Reply only: ok. No tools, no sends, no state edits.",
 
 	orchRate: (held: number) => `${enLeads.rateLead}. Continue the request you were handling when it stopped.${held ? ` ${held} message(s) that arrived while you were paused come next, oldest first.` : ""}`,
@@ -345,6 +347,8 @@ const ko: Catalog = {
 	identityFallback: (character, tone) => `이름: ${NAME}\n성격: ${character}\n말투: ${tone}\n모든 답을 이 성격과 말투로 하세요.`,
 	handover: (previous, tail) => `\n\n[handover] 이전 세션(${previous})은 컨텍스트를 작게 유지하려고 교체했어요. 가장 최근 대화를 오래된 순으로 붙여요. 열려 있는 일이 있으면 여기서 이어가세요:\n${tail}\n\n${koRetainNudge}`,
 	laneHandover: (previous, tail) => `[handover] 이전 세션(${previous})을 교체했어요.${tail ? ` 가장 최근 대화를 오래된 순으로 붙여요:\n${tail}\n\n${koRetainNudge}` : ""}`,
+	pendingAsksHead: "형 답을 기다리는 레인 질문",
+	pendingAskEntry: (lane, at, text, cutFile) => `- 레인 ${lane} (${at}에 물음):\n${text}${cutFile ? `\n... (잘림; 질문 전문은 ${cutFile})` : ""}`,
 	retainNudge: koRetainNudge,
 	keepalive: "[keepalive] 게이트웨이의 캐시 유지 신호예요. ok 한 단어로만 답하세요. 도구, 전송, 상태 수정은 하지 마세요.",
 

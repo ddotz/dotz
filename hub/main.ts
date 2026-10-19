@@ -303,7 +303,8 @@ async function budgetProblem(name: string, est: number, force: boolean): Promise
 }
 
 setReportHandler((lane, text) => {
-	const event = { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text: text.slice(0, 1500) };
+	// An [ask] is a question for the owner: it goes to the orchestrator whole (the other reports are cut).
+	const event = { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text: parseTone(text).tone === "ask" ? text : text.slice(0, 1500) };
 	emit("inbox", event);
 	deliver(inboxText(event));
 	lastPost.set(`lane:${lane.name}`, Date.now());
