@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { pushBackup, unstageSecrets } from "./backup.ts";
 import { cfg, DATA_DIR, log, paths } from "./config.ts";
 import { msg, withReplyLine } from "./i18n.ts";
+import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { trackTimer } from "./shutdown.ts";
 import { auditSummaryLine } from "./token-audit.ts";
 
