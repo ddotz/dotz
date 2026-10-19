@@ -15,9 +15,9 @@ export type Config = {
 	runtime?: string;
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string };
 	web: { port: number; tailscale_https_port: number; allow_logins: string[] };
-	orchestrator?: { model: string; thinking: string; rotate_tokens?: number; runtime?: string };
+	orchestrator?: { model: string; thinking: string; rotate_tokens?: number; runtime?: string; fallback?: Array<string | FallbackEntry> };
 	ui?: { origin_view?: boolean };
-	lanes: { model: string; thinking: string; runtime?: string; max_active?: number; worker_model?: string; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number };
+	lanes: { model: string; thinking: string; runtime?: string; max_active?: number; worker_model?: string; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; fallback?: Array<string | FallbackEntry>; worker_fallback?: Array<string | FallbackEntry> };
 };
 
 export const CONFIG_FILE = join(DATA_DIR, "config.json");
@@ -31,6 +31,63 @@ export const selectorOf = (m: { model: string; thinking: string }) => `${m.model
 // Model the lanes' task workers (implementation, tests, renders, grind) run on: a "<model>:<thinking>" selector, set per run through an omp overlay.
 export const DEFAULT_WORKER_MODEL = "anthropic/claude-sonnet-5-5:high";
 export const workerModel = () => cfg.lanes?.worker_model ?? DEFAULT_WORKER_MODEL;
+// Model fallback chains: entries tried in order after the primary fails at request time. One chain per layer: the
+// orchestrator, the lanes (every lane's own model) and the lanes' task workers. They apply the next time a process starts.
+// An entry is a model selector ("<provider>/<id>[:<thinking>]") or an object with conditions (hub/fallback.ts owns them):
+//   when     "any" (default) | "quota" (the previous entry hit a usage limit) | "error" (a provider error)
+//   cap      stop using the entry once it spent that much in the period (KST month/day); usd and/or tokens
+//   revert   go back to an earlier entry when its limit resets
+//   key_file name of a file under <data dir>/secrets/ with an API key: the same model billed through that key
+//   base_url / api  override of the key provider's endpoint (default: the provider's own API)
+export type FallbackEntry = { model: string; when?: "quota" | "error"; cap?: { period: "month" | "day"; usd?: number; tokens?: number }; revert?: boolean; key_file?: string; base_url?: string; api?: string };
+export type FallbackTarget = "orchestrator" | "lanes" | "workers";
+export const FALLBACK_MAX = 6;
+const positiveNumber = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined);
+export function entryOf(x: unknown): FallbackEntry | undefined {
+	const o = typeof x === "string" ? { model: x } : x && typeof x === "object" ? (x as Record<string, unknown>) : undefined;
+	const model = typeof o?.model === "string" ? o.model.trim() : "";
+	if (!o || !model) return undefined;
+	const cap = o.cap && typeof o.cap === "object" ? (o.cap as Record<string, unknown>) : undefined;
+	const usd = positiveNumber(cap?.usd);
+	const tokens = positiveNumber(cap?.tokens);
+	const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+	return {
+		model,
+		...(o.when === "quota" || o.when === "error" ? { when: o.when } : {}),
+		...(cap && (usd || tokens) ? { cap: { period: cap.period === "day" ? ("day" as const) : ("month" as const), ...(usd ? { usd } : {}), ...(tokens ? { tokens } : {}) } } : {}),
+		...(o.revert === true ? { revert: true } : {}),
+		...(str(o.key_file) ? { key_file: str(o.key_file) } : {}),
+		...(str(o.base_url) ? { base_url: str(o.base_url) } : {}),
+		...(str(o.api) ? { api: str(o.api) } : {}),
+	};
+}
+// Same model through the same key counts once.
+export const entryId = (e: FallbackEntry) => `${e.model}|${e.key_file ?? ""}`;
+export function chainOf(v: unknown): FallbackEntry[] {
+	const seen = new Set<string>();
+	const out: FallbackEntry[] = [];
+	for (const x of Array.isArray(v) ? v : []) {
+		const e = entryOf(x);
+		if (e && !seen.has(entryId(e))) {
+			seen.add(entryId(e));
+			out.push(e);
+		}
+	}
+	return out.slice(0, FALLBACK_MAX);
+}
+export const fallbackChain = (target: FallbackTarget): FallbackEntry[] => chainOf(target === "orchestrator" ? cfg.orchestrator?.fallback : target === "lanes" ? cfg.lanes?.fallback : cfg.lanes?.worker_fallback);
+// An entry omp can walk by itself: a bare model, no condition, cap, key or revert.
+export const isPlain = (e: FallbackEntry) => !e.when && !e.cap && !e.revert && !e.key_file;
+// The entries a process starts with: the stored ones without the primary itself (an entry equal to the primary model would
+// only retry the model that just failed, unless it is that model through its own key).
+export const chainAfter = (primary: string, chain: FallbackEntry[]): FallbackEntry[] => chain.filter(e => e.key_file || (e.model !== primary && parseSelector(e.model).model !== parseSelector(primary).model));
+// Stored form: bare selector strings for plain entries, objects for the rest.
+const storedOf = (e: FallbackEntry): string | FallbackEntry => (isPlain(e) && !e.base_url && !e.api ? e.model : e);
+export function setFallbackChain(target: FallbackTarget, chain: FallbackEntry[]): void {
+	const clean = chainOf(chain).map(storedOf);
+	if (target === "orchestrator") updateConfig("orchestrator", { fallback: clean });
+	else updateConfig("lanes", target === "lanes" ? { fallback: clean } : { worker_fallback: clean });
+}
 // Lane context management: omp compacts a lane's session at `compact_at` tokens keeping the last `keep_recent`; each night
 // at `nightly_at` (local time, "off" disables) idle lanes past `rotate_mb` of session file start a fresh session with a
 // handover and idle lanes at `nightly_compact_at` tokens or more are compacted.
@@ -64,7 +121,7 @@ export function writeAtomic(file: string, text: string, mode?: number): void {
 	renameSync(tmp, file);
 }
 // Edits config.json (re-read from disk so keys this process never parsed survive) and mirrors the change into `cfg`.
-export function updateConfig(section: "orchestrator" | "lanes", values: Record<string, string>): void {
+export function updateConfig(section: "orchestrator" | "lanes", values: Record<string, unknown>): void {
 	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
 	disk[section] = { ...disk[section], ...values };
 	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);

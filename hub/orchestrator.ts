@@ -5,14 +5,15 @@
 // an AgentProcess and its events.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { emitEventActivity, statusActivity } from "./activity.ts";
-import { cfg, DATA_DIR, IDENTITY_FILE, log, NAME, now, orchestratorModel, paths, selectorOf, writeAtomic } from "./config.ts";
+import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
+import { cfg, chainAfter, DATA_DIR, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, paths, selectorOf, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import type { AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
+import { Chain, failureReason, hubOwned, type Move } from "./fallback.ts";
+import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 
 const STATE = join(DATA_DIR, "orchestrator.json");
@@ -27,6 +28,8 @@ export const orch = {
 	// Why a "rate-limited" pause is on: a usage limit, or a billing/auth problem only the owner can fix.
 	pauseKind: "rate" as "rate" | "owner",
 	sessionFile: "",
+	// The model the running process answers on now: the configured one, or the fallback it switched to (reset at every start).
+	activeModel: "",
 	startedAt: "",
 	lastText: "",
 	rateLimitedUntil: "",
@@ -46,12 +49,26 @@ let lastTurnEnd = Date.now();
 let keepalives = 0;
 let inKeepalive = false;
 const held: string[] = [];
+// A process started with a fallback chain: after a failed request the runtime may move to the next model by itself and
+// redo the turn, so the failure is acted on (pause, retry, alert) only when no such switch follows within a short grace.
+const FALLBACK_GRACE_MS = 3000;
+let chained = false;
+let errorHold: Timer | undefined;
+// The chain the hub drives itself (conditional entries, spend caps; hub/fallback.ts), with what is waiting for an idle moment.
+let chain: Chain | undefined;
+let capped: { move?: Move } | undefined;
+let continueAfterSwitch = false;
 // Set when a compaction finished: the next owner message sent to the process carries the retain nudge once (no extra turn).
 let retainNext = false;
 function sendOwner(text: string): void {
 	const nudge = retainNext ? `\n\n${msg().retainNudge}` : "";
 	retainNext = false;
 	proc?.send(text + nudge, "followUp");
+}
+// One line for the worklog when the runtime moves the orchestrator (or one of its task workers) to the next model of a fallback chain.
+let onNotice: (text: string) => void = () => {};
+export function setNoticeHandler(fn: (text: string) => void): void {
+	onNotice = fn;
 }
 let onAlert: (text: string) => void = () => {};
 export function setAlertHandler(fn: (text: string) => void): void {
@@ -100,12 +117,79 @@ function handover(runtime: RuntimeAdapter, previous: string): string {
 	return msg().handover(previous, tail);
 }
 
+// A failed request: a usage limit or a billing/auth problem pauses the orchestrator, a temporary provider error is retried with backoff.
+// With a hub-driven chain the next entry takes over first (a temporary error is retried a few times before that).
+function handleError(e: AgentError): void {
+	if (chain && !(e.kind === "transient" && transientTries < TRANSIENT_RETRIES)) void failOver(e).then(moved => !moved && legacyError(e));
+	else legacyError(e);
+}
+function legacyError(e: AgentError): void {
+	if (e.kind === "rate" || e.kind === "owner") void scheduleResume(e.text, e.kind);
+	else if (e.kind === "transient") retryTransient(e.text);
+}
+async function failOver(e: AgentError): Promise<boolean> {
+	const active = chain;
+	if (!active) return false;
+	const reason = failureReason({ kind: e.kind, text: e.text });
+	const until = reason === "quota" ? Date.now() + (await rateLimitDelay(e.text, active.selector(active.active))).ms : undefined;
+	if (chain !== active) return false;
+	const move = active.fail(reason, until);
+	if (!move) return false;
+	switchTo(move, true);
+	return true;
+}
+// Restarts on the same session with another entry of the chain (start() picks it from the persisted limit and spend state);
+// `again` tells the session to redo the request that just failed.
+function switchTo(move: Move, again: boolean): void {
+	if (!chain) return;
+	const line = msg().fallbackMove(chain.label(move.from), chain.label(move.to), move.why);
+	log(`orchestrator ${line}`);
+	onNotice(line);
+	continueAfterSwitch = again;
+	restart();
+}
+// At an idle moment: act on a spend cap reached during the turn, or go back to an earlier entry whose limit has reset.
+function settleChain(): boolean {
+	if (!chain || orch.status !== "idle" || runningSubagents("orchestrator") > 0) return false;
+	if (capped) {
+		const reached = capped;
+		capped = undefined;
+		if (reached.move) switchTo(reached.move, false);
+		else pauseExhausted(chain, chain.down(chain.active)?.until ?? Date.now() + 3_600_000);
+		return true;
+	}
+	const back = chain.revertTarget();
+	if (!back) return false;
+	switchTo(back, false);
+	return true;
+}
+// Every entry is spent: hold messages until the earliest cap period ends, then start again.
+function pauseExhausted(c: Chain, until: number): void {
+	orch.status = "rate-limited";
+	orch.pauseKind = "rate";
+	orch.rateLimitedUntil = new Date(until).toISOString();
+	const at = new Date(until).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+	const line = msg().fallbackExhausted(c.label(c.active), at);
+	log(`orchestrator ${line}`);
+	onNotice(line);
+	onAlert(`${NAME}: ${line}`);
+	pauseAlerted = true;
+	clearTimeout(resumeTimer);
+	resumeTimer = setTimeout(() => {
+		resumeTimer = undefined;
+		pauseAlerted = false;
+		orch.status = "idle";
+		restart();
+	}, Math.max(1000, until - Date.now()));
+}
+
 async function readEvents(p: AgentProcess): Promise<void> {
 	for await (const ev of p.events) {
 		emitEventActivity("orchestrator", ev);
 		noteEvent(orch.ctx, ev, port);
 		switch (ev.type) {
 			case "turn_start":
+				clearTimeout(errorHold);
 				orch.status = "working";
 				clearTimeout(watchdog);
 				clearTimeout(transientTimer);
@@ -113,6 +197,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				break;
 			case "turn_end":
 				orch.status = orch.status === "rate-limited" ? "rate-limited" : "idle";
+				if (orch.status === "idle" && settleChain()) break;
 				lastTurnEnd = Date.now();
 				if (inKeepalive) inKeepalive = false;
 				else if (orch.status === "idle") keepalives = 0;
@@ -138,8 +223,11 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				if (ev.text) orch.lastText = ev.text;
 				if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);
 				if (ev.stop !== "error") transientTries = 0;
-				else if (ev.error.kind === "rate" || ev.error.kind === "owner") void scheduleResume(ev.error.text, ev.error.kind);
-				else if (ev.error.kind === "transient") retryTransient(ev.error.text);
+				else if (chained) {
+					const failed = ev.error;
+					clearTimeout(errorHold);
+					errorHold = setTimeout(() => handleError(failed), FALLBACK_GRACE_MS);
+				} else handleError(ev.error);
 				break;
 			case "session":
 				orch.sessionFile = ev.ref;
@@ -149,8 +237,21 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					flushCompact(orch.ctx, port);
 				}
 				break;
+			case "spend": {
+				const reached = chain?.spend(ev.tokens, ev.usd);
+				if (reached?.capped) capped = reached;
+				break;
+			}
 			case "compaction":
 				if (ev.state === "done") retainNext = true;
+				break;
+			case "fallback":
+				log(`orchestrator model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
+				if (!ev.worker) {
+					clearTimeout(errorHold);
+					orch.activeModel = ev.to;
+				}
+				onNotice(msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker));
 				break;
 		}
 	}
@@ -253,9 +354,24 @@ export function start(): void {
 	turnsSinceStart = 0;
 	const resume = prior && existsSync(prior) && !rotate;
 	currentModel = model;
+	clearTimeout(errorHold);
 	const runtime = runtimeFor("orchestrator");
 	adapter = runtime;
-	proc = runtime.start({ role: "orchestrator", cwd: DATA_DIR, model, resume: resume ? prior : undefined, env: { DOTZ_ORCHESTRATOR: "1" } });
+	const entries = chainAfter(model, fallbackChain("orchestrator"));
+	chain = hubOwned(entries) ? new Chain(model, entries, orchestratorModel().thinking) : undefined;
+	capped = undefined;
+	let spawnModel = model;
+	const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1" };
+	if (chain) {
+		const until = chain.exhaustedUntil();
+		if (until !== undefined) return pauseExhausted(chain, until);
+		chain.active = chain.initial();
+		spawnModel = chain.selector(chain.active);
+		Object.assign(env, chain.env(chain.active));
+	}
+	orch.activeModel = spawnModel;
+	chained = !chain && entries.length > 0;
+	proc = runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, fallback: chain ? [] : entries.map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env });
 	orch.status = "starting";
 	orch.startedAt = now();
 	void readEvents(proc);
@@ -264,6 +380,7 @@ export function start(): void {
 		if (proc !== self) return;
 		proc = undefined;
 		orch.status = "stopped";
+		clearTimeout(errorHold);
 		abandonCompact(orch.ctx, "the orchestrator process exited");
 		log(`orchestrator exited (${code})`);
 		statusActivity("orchestrator", `orchestrator exited (code ${code})`);
@@ -283,6 +400,11 @@ export function start(): void {
 		proc.send(recall() + (rotate ? handover(runtime, prior!) : ""), "prompt");
 	}
 	proc.watchSubagents();
+	if (continueAfterSwitch && resume) {
+		proc.send(msg().orchTransient, "followUp");
+		armWatchdog();
+	}
+	continueAfterSwitch = false;
 	for (const text of held.splice(0)) sendOwner(text);
 	setTimeout(() => proc?.refreshSession(), 4000);
 	log(`orchestrator ${resume ? `resumed ${prior}` : rotate ? "rotated to a fresh session" : "started"} (${model})`);
@@ -362,3 +484,6 @@ export function compact(): Compaction {
 	if (!proc) throw new Error("the orchestrator is not running");
 	return requestCompact(orch.ctx, port);
 }
+
+// A hub-driven chain may owe a return to an earlier entry (its limit reset) or a spend-cap decision; checked once a minute while idle.
+setInterval(() => void settleChain(), 60_000);

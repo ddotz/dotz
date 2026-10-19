@@ -370,7 +370,21 @@ function terminalClient(pi: any): void {
 	});
 }
 
+// A fallback entry that bills through its own API key runs as a provider of its own (hub/fallback.ts keyEnv): the gateway
+// describes it in DOTZ_KEY_PROVIDER (no secret) and hands the key over in DOTZ_KEY_VALUE. The key is registered as a literal
+// and both variables leave the environment at once, so no tool command or task worker this process starts can read it.
+function keyProvider(pi: any): void {
+	const raw = process.env.DOTZ_KEY_PROVIDER;
+	const key = process.env.DOTZ_KEY_VALUE;
+	delete process.env.DOTZ_KEY_PROVIDER;
+	delete process.env.DOTZ_KEY_VALUE;
+	if (!raw || !key) return;
+	const { id, baseUrl, api, models } = JSON.parse(raw);
+	pi.registerProvider(id, { baseUrl, api, apiKey: key, models });
+}
+
 export default function dotz(pi: any) {
+	keyProvider(pi);
 	if (process.env.DOTZ_LANE) {
 		enforceRules(pi);
 		return laneSession(pi);

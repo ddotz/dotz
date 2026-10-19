@@ -60,6 +60,11 @@ const en = {
 	laneRate: `${enLeads.rateLead}. Continue the work you were doing when it stopped.`,
 	laneProvider: `${enLeads.providerLead}. Continue the work you were doing when it stopped.`,
 	laneTransient: `${enLeads.transientLead}. Continue the work you were doing when it stopped.`,
+	// The one worklog / lane line when a fallback chain moves a process (or one of its task workers) to its next model.
+	modelFallback: (from: string, to: string, reason?: string, worker?: boolean) => `${worker ? "Task worker model fallback" : "Model fallback"}: ${from} → ${to}${reason ? ` (${reason.replace(/\s+/g, " ").trim().slice(0, 120)})` : ""}`,
+	// Hub-driven chain (conditional entries): a switch, a return to an earlier entry, and every entry spent.
+	fallbackMove: (from: string, to: string, why: "quota" | "error" | "cap" | "revert") => `${why === "revert" ? "Model back" : "Model fallback"}: ${from} → ${to} (${{ quota: "usage limit reached", error: "provider error", cap: "spend cap reached", revert: "limit reset" }[why]})`,
+	fallbackExhausted: (model: string, until: string) => `Model fallback: ${model} reached its spend cap and no fallback model is left. Paused until ${until}.`,
 	laneOwnerResumed: "[dotz gateway] The owner resumed you. Continue the work you were doing.",
 	laneOwnerRestarted: "[dotz gateway] Your process was restarted by the owner (settings changed). Continue the work you were doing.",
 	laneMemory: (used: string, limit: string) => `[dotz gateway] Your process used ${used} GB of memory (limit ${limit} GB), so the gateway restarted it on the same session; any task workers you had running stopped too. omp's grep, cat and find run inside your own process: do not point them at huge trees (~, ~/Library, /) or multi-GB files, and quote paths with spaces. Check what your workers finished, relaunch the rest, and continue the work you were doing.`,
@@ -351,6 +356,9 @@ const ko: Catalog = {
 	laneRate: `${koLeads.rateLead}. 멈췄을 때 하던 작업을 이어서 하세요.`,
 	laneProvider: `${koLeads.providerLead}. 멈췄을 때 하던 작업을 이어서 하세요.`,
 	laneTransient: `${koLeads.transientLead}. 멈췄을 때 하던 작업을 이어서 하세요.`,
+	modelFallback: (from: string, to: string, reason?: string, worker?: boolean) => `${worker ? "작업자 모델 폴백" : "모델 폴백"}: ${from} → ${to}${reason ? ` (${reason.replace(/\s+/g, " ").trim().slice(0, 120)})` : ""}`,
+	fallbackMove: (from: string, to: string, why: "quota" | "error" | "cap" | "revert") => `${why === "revert" ? "모델 복귀" : "모델 폴백"}: ${from} → ${to} (${{ quota: "사용 한도 도달", error: "제공자 오류", cap: "사용 상한 도달", revert: "한도가 풀렸어요" }[why]})`,
+	fallbackExhausted: (model: string, until: string) => `모델 폴백: ${model}이(가) 사용 상한에 도달했고 넘어갈 모델이 더는 없어요. ${until}까지 멈춰요.`,
 	laneOwnerResumed: "[dotz gateway] 오너가 당신을 다시 시작시켰어요. 하던 작업을 이어서 하세요.",
 	laneOwnerRestarted: "[dotz gateway] 오너가 설정을 바꿔서 프로세스를 다시 시작했어요. 하던 작업을 이어서 하세요.",
 	laneMemory: (used, limit) => `[dotz gateway] 프로세스가 메모리를 ${used}GB 써서(한도 ${limit}GB) 게이트웨이가 같은 세션으로 다시 시작했어요. 실행 중이던 task 워커도 모두 멈췄어요. omp의 grep, cat, find는 당신 프로세스 안에서 돌아요. 아주 큰 폴더(~, ~/Library, /)나 수 GB짜리 파일에 쓰지 말고, 공백이 있는 경로는 따옴표로 감싸세요. 워커가 끝낸 것을 확인하고 나머지는 다시 띄운 뒤 하던 작업을 이어가세요.`,

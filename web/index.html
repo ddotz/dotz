@@ -217,6 +217,42 @@ button.li:hover, .li.tap:hover { background: var(--hover); }
 .chip:hover { background: var(--hover); color: var(--fg); }
 .chip.on { background: var(--active); border-color: var(--line-2); color: var(--fg); }
 .chip .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* settings: model fallback chains. One color token per layer (orchestrator / lanes / task workers); the model in use is filled. */
+:root { --fb-orch: #4f5bd5; --fb-lane: #0f8a73; --fb-work: #b4417a; }
+:root[data-theme="dark"] { --fb-orch: #98a3ff; --fb-lane: #46d3b3; --fb-work: #f28fc0; }
+.fb { margin-top: 24px; }
+.fb-note { margin: 4px 0 12px; color: var(--fb-fg, var(--fg-3)); font-size: 12px; line-height: 18px; }
+.fb-card { border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.fb-row { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.fb-row + .fb-row { border-top: 1px solid var(--line); }
+.fb-head { display: flex; align-items: center; gap: 8px; color: var(--fb); font-weight: 600; }
+.fb-head .sup { color: var(--fg-3); font-weight: 400; }
+.fb-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; }
+.fb-arrow { align-self: center; color: var(--fg-3); }
+.fb-item { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 132px; max-width: 280px; padding: 6px 8px 6px 10px; border: 1px solid color-mix(in srgb, var(--fb) 34%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--fb) 9%, var(--card)); color: var(--fb); touch-action: none; user-select: none; }
+.fb-item[data-i] { cursor: grab; }
+.fb-item.in-use { background: var(--fb); border-color: var(--fb); color: var(--bg); }
+.fb-item.drag { z-index: 5; cursor: grabbing; box-shadow: var(--float); opacity: .92; }
+.fb-item.over { outline: 2px dashed var(--fb); outline-offset: 2px; }
+.fb-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.fb-top .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.fb-use { flex: none; height: 16px; padding: 0 5px; border-radius: 8px; background: color-mix(in srgb, var(--bg) 24%, transparent); font-size: 10px; line-height: 16px; font-weight: 600; }
+.fb-base { flex: none; height: 16px; padding: 0 5px; border-radius: 8px; background: color-mix(in srgb, var(--fb) 14%, transparent); font-size: 10px; line-height: 16px; font-weight: 600; }
+.fb-item.in-use .fb-base { background: color-mix(in srgb, var(--bg) 24%, transparent); }
+.fb-tags { display: flex; flex-wrap: wrap; gap: 3px; }
+.fb-tags .tag { height: 18px; line-height: 14px; font-size: 10.5px; background: color-mix(in srgb, var(--fb) 14%, transparent); color: inherit; }
+.fb-item.in-use .fb-tags .tag { background: color-mix(in srgb, var(--bg) 22%, transparent); }
+.fb-tags .tag.warn { background: color-mix(in srgb, var(--warn) 18%, var(--card)); color: var(--warn); }
+.fb-bar { height: 4px; border-radius: 2px; background: color-mix(in srgb, currentColor 18%, transparent); overflow: hidden; }
+.fb-bar i { display: block; height: 100%; border-radius: 2px; background: currentColor; }
+.fb-bar-l { font-size: 10.5px; line-height: 14px; opacity: .85; }
+.fb-acts { display: flex; align-items: center; gap: 0; margin-left: auto; flex: none; }
+.fb-acts button { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: inherit; opacity: .75; }
+.fb-acts button:hover, .fb-acts button:focus-visible { opacity: 1; background: color-mix(in srgb, currentColor 16%, transparent); }
+.fb-acts button:disabled { opacity: .25; }
+.fb-acts .ic { width: 13px; height: 13px; }
+.fb-add { align-self: center; display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 12px 0 8px; border: 1px dashed color-mix(in srgb, var(--fb) 55%, transparent); border-radius: 16px; background: transparent; color: var(--fb); font-size: 12px; font-weight: 500; }
+.fb-add:hover { background: color-mix(in srgb, var(--fb) 10%, transparent); }
 
 /* fields */
 .tf { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -3006,9 +3042,156 @@ async function loadQuota() {
   if (!(q.providers || []).length && !(q.unavailable || []).length) box.append(emptyNode("사용량 정보 없음"));
 }
 
+/* ---------- settings: model fallback chains (orchestrator / lanes / task workers) ---------- */
+const FB_LAYERS = [
+  { id: "orchestrator", label: "오케스트레이터", ic: "harness", color: "--fb-orch", cur: () => M.orchestrator },
+  { id: "lanes", label: "레인", ic: "lanes", color: "--fb-lane", cur: () => M.lanes_default },
+  { id: "workers", label: "레인 작업자", ic: "model", color: "--fb-work", cur: () => M.workers },
+];
+const FB_KEYS = ["model", "when", "cap", "revert", "key_file", "base_url", "api"];
+const FB_WHEN = { quota: "구독 소진 시", error: "오류 시" };
+const fbStored = e => { const o = {}; for (const k of FB_KEYS) if (e[k] != null) o[k] = e[k]; return Object.keys(o).length === 1 ? o.model : o; };
+const fbBase = s => String(s || "").replace(/:(off|minimal|low|medium|high|xhigh|max|auto)$/, "");
+// The id a running process reports for an entry: an API-key entry runs as its own "<provider>-apikey" provider.
+const fbRunId = e => { const m = fbBase(e.model); if (!e.key_file) return m; const i = m.indexOf("/"); return `${m.slice(0, i)}-apikey${m.slice(i)}`; };
+const fbMoney = n => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
+const fbCapText = c => `${c.period === "day" ? "일" : "월"} ${c.usd ? fbMoney(c.usd) : `${num(c.tokens)} 토큰`}까지`;
+let fbDragging = false;
+function fbTags(e) {
+  const t = [];
+  if (e.key_file) t.push(el("span", { class: "tag", text: "API 키" }));
+  if (e.when) t.push(el("span", { class: "tag", text: FB_WHEN[e.when] }));
+  if (e.cap) t.push(el("span", { class: "tag", text: fbCapText(e.cap) }));
+  if (e.revert) t.push(el("span", { class: "tag", text: "리셋되면 복귀" }));
+  if (e.down) t.push(el("span", { class: "tag warn", title: e.until ? `풀리는 때: ${new Date(e.until).toLocaleString("ko-KR")}` : "", text: e.down === "cap" ? "상한 도달" : e.down === "quota" ? "한도 소진" : "쓸 수 없음" }));
+  return t.length ? el("div", { class: "fb-tags" }, ...t) : null;
+}
+function fbBar(e) {
+  if (!e.cap || !e.used) return null;
+  const byUsd = e.cap.usd && (e.used.usd > 0 || !e.used.tokens);
+  const used = byUsd ? e.used.usd : e.used.tokens, cap = byUsd ? e.cap.usd : (e.cap.tokens || e.cap.usd);
+  const pct = Math.max(0, Math.min(100, cap ? (used / cap) * 100 : 0));
+  const when = e.cap.period === "day" ? "오늘" : "이번 달";
+  const label = byUsd ? `${when} ${fbMoney(e.used.usd)} / ${fbMoney(e.cap.usd)}` : `${when} ${num(e.used.tokens)} / ${num(e.cap.tokens || 0)} 토큰`;
+  return el("div", { class: "fb-usage" }, el("div", { class: "fb-bar", role: "progressbar", "aria-valuenow": String(Math.round(pct)), "aria-valuemin": "0", "aria-valuemax": "100", "aria-label": label }, el("i", { style: `width:${pct}%` })), el("div", { class: "fb-bar-l", text: label }));
+}
+async function fbSave(layer, list) {
+  try {
+    await api("/api/fallbacks", "PUT", { target: layer, chain: list.map(fbStored) });
+    toast("다음에 시작될 때부터 적용돼요");
+    await loadModels(true);
+  } catch (e) { toast(e.message || "저장하지 못했어요", true); await loadModels(true); }
+}
+function fbEditMenu(layer, list, i, anchor) {
+  const e = list[i];
+  const set = patch => { const next = list.map((x, j) => (j === i ? { ...x, ...patch } : x)); fbSave(layer, next); };
+  const items = [
+    { value: "when", label: "사용 조건", sub: e.when ? FB_WHEN[e.when] : "항상 (앞 모델이 안 될 때)" },
+    { value: "cap", label: "사용 상한", sub: e.cap ? fbCapText(e.cap) : "없음" },
+    { value: "revert", label: e.revert ? "복귀 끄기" : "리셋되면 복귀 켜기" },
+    { value: "key", label: "API 키 파일", sub: e.key_file || "없음 (로그인 사용)" },
+    { value: "clear", label: "조건 모두 지우기" },
+  ];
+  showMenu(anchor, items, { value: null, onPick: v => {
+    if (v === "revert") set({ revert: e.revert ? undefined : true });
+    else if (v === "clear") set({ when: undefined, cap: undefined, revert: undefined, key_file: undefined, base_url: undefined, api: undefined });
+    else if (v === "when") setTimeout(() => showMenu(anchor, [{ value: "", label: "항상" }, { value: "quota", label: FB_WHEN.quota, sub: "앞 모델이 사용 한도에 걸렸을 때만" }, { value: "error", label: FB_WHEN.error, sub: "앞 모델이 제공자 오류를 낼 때만" }], { value: e.when || "", onPick: w => set({ when: w || undefined }) }), 0);
+    else if (v === "cap") fbCapDialog(e, cap => set({ cap }));
+    else if (v === "key") fbKeyDialog(e, key => set({ key_file: key || undefined }));
+  } });
+}
+function fbCapDialog(e, done) {
+  let period = e.cap ? e.cap.period : "month";
+  const usd = input({ type: "number", min: "0", step: "any", inputmode: "decimal", value: e.cap && e.cap.usd ? String(e.cap.usd) : "", placeholder: "예: 50" });
+  const tokens = input({ type: "number", min: "0", step: "1", inputmode: "numeric", value: e.cap && e.cap.tokens ? String(e.cap.tokens) : "", placeholder: "예: 5000000" });
+  const seg = el("div", { class: "seg", role: "radiogroup", "aria-label": "기간" });
+  const draw = () => clear(seg).append(...[["month", "월 (KST)"], ["day", "일 (KST)"]].map(([v, t]) => el("button", { type: "button", role: "radio", "aria-checked": v === period, class: v === period ? "on" : "", onclick: () => { period = v; draw(); } }, t)));
+  draw();
+  dialog({ title: "사용 상한", body: el("div", { class: "col" }, el("p", { class: "sup", text: "이 항목을 쓰는 동안 쌓인 사용량이 상한에 닿으면 다음 항목으로 넘어가요. 한국 시간 기준으로 기간이 바뀌면 0부터 다시 세요. 비우면 상한이 없어요." }), seg, textField("금액 (USD)", usd), textField("토큰", tokens)), actions: [
+    { label: "취소", onclick: c => c() },
+    { label: "저장", kind: "pri", onclick: c => { const u = Number(usd.value), t = Number(tokens.value); done(u > 0 || t > 0 ? { period, ...(u > 0 ? { usd: u } : {}), ...(t > 0 ? { tokens: t } : {}) } : undefined); c(); } }] });
+}
+function fbKeyDialog(e, done) {
+  const f = input({ value: e.key_file || "", placeholder: "예: anthropic-api-key" });
+  dialog({ title: "API 키 파일", body: el("div", { class: "col" }, el("p", { class: "sup", text: "같은 모델을 API 키로 쓰고 싶을 때, 키가 든 파일의 이름을 적어요. 파일은 데이터 폴더의 secrets 안에 있어야 하고, 키 값은 설정이나 기록에 남지 않아요. 비우면 로그인을 써요." }), textField("파일 이름", f)), actions: [
+    { label: "취소", onclick: c => c() },
+    { label: "저장", kind: "pri", onclick: c => { done(f.value.trim()); c(); } }] });
+}
+// Drag a fallback item to another place in its chain (pointer events); the arrow buttons do the same from the keyboard.
+function fbDrag(item, layer, list, i) {
+  item.addEventListener("pointerdown", ev => {
+    if (ev.button !== 0 || ev.target.closest("button")) return;
+    const chips = [...item.parentNode.querySelectorAll(".fb-item[data-i]")];
+    const rects = chips.map(c => c.getBoundingClientRect());
+    const x0 = ev.clientX, y0 = ev.clientY;
+    let moving = false, to = i;
+    const move = m => {
+      const dx = m.clientX - x0, dy = m.clientY - y0;
+      if (!moving) {
+        if (Math.hypot(dx, dy) < 6) return;
+        moving = true; fbDragging = true; item.classList.add("drag");
+        try { item.setPointerCapture(ev.pointerId); } catch {}
+      }
+      item.style.transform = `translate(${dx}px,${dy}px)`;
+      let best = i, bd = Infinity;
+      rects.forEach((r, k) => { const d = Math.hypot(m.clientX - (r.left + r.width / 2), m.clientY - (r.top + r.height / 2)); if (d < bd) { bd = d; best = k; } });
+      to = best;
+      chips.forEach((c, k) => c.classList.toggle("over", k === to && to !== i));
+    };
+    const end = () => {
+      item.removeEventListener("pointermove", move); item.removeEventListener("pointerup", end); item.removeEventListener("pointercancel", end);
+      if (!moving) return;
+      item.classList.remove("drag"); item.style.transform = ""; chips.forEach(c => c.classList.remove("over"));
+      setTimeout(() => { fbDragging = false; }, 0);
+      if (to !== i) { const next = list.slice(); next.splice(to, 0, next.splice(i, 1)[0]); fbSave(layer, next); }
+    };
+    item.addEventListener("pointermove", move); item.addEventListener("pointerup", end); item.addEventListener("pointercancel", end);
+  });
+}
+function fbRow(L) {
+  const F = (M.fallbacks || {})[L.id] || { chain: [], active: [] };
+  const list = F.chain;
+  const cur = L.cur();
+  const row = el("div", { class: "fb-row", style: `--fb: var(${L.color})`, "data-layer": L.id });
+  const used = new Set(F.active || []);
+  const prim = fbBase(cur && cur.model);
+  const chain = el("div", { class: "fb-chain" });
+  const itemFor = (e, i) => {
+    const base = i < 0;
+    const model = base ? prim : e.model;
+    const inUse = base ? used.has(prim) : used.has(fbRunId(e));
+    const acts = base ? null : el("div", { class: "fb-acts" },
+      el("button", { type: "button", title: "앞으로", "aria-label": `${modelName(fbBase(e.model))} 앞으로 옮기기`, disabled: i === 0, onclick: () => { const n = list.slice(); n.splice(i - 1, 0, n.splice(i, 1)[0]); fbSave(L.id, n); } }, icon("back")),
+      el("button", { type: "button", title: "뒤로", "aria-label": `${modelName(fbBase(e.model))} 뒤로 옮기기`, disabled: i === list.length - 1, onclick: () => { const n = list.slice(); n.splice(i + 1, 0, n.splice(i, 1)[0]); fbSave(L.id, n); } }, icon("chev")),
+      L.id === "workers" ? null : el("button", { type: "button", title: "조건 편집", "aria-label": `${modelName(fbBase(e.model))} 조건 편집`, "aria-haspopup": "listbox", onclick: ev => fbEditMenu(L.id, list, i, ev.currentTarget) }, icon("more")),
+      el("button", { type: "button", title: "빼기", "aria-label": `${modelName(fbBase(e.model))} 빼기`, onclick: () => fbSave(L.id, list.filter((_, j) => j !== i)) }, icon("close")));
+    const node = el("div", { class: `fb-item${inUse ? " in-use" : ""}`, ...(base ? {} : { "data-i": String(i) }), title: fbBase(model) },
+      el("div", { class: "fb-top" }, el("span", { class: "nm", text: modelName(fbBase(model)) }), base ? el("span", { class: "fb-base", text: "기본" }) : null, inUse ? el("span", { class: "fb-use", text: "사용 중" }) : null, acts),
+      base ? null : fbTags(e), base ? null : fbBar(e));
+    if (!base) fbDrag(node, L.id, list, i);
+    return node;
+  };
+  chain.append(itemFor(null, -1));
+  list.forEach((e, i) => chain.append(icon("chev", "fb-arrow"), itemFor(e, i)));
+  const add = el("button", { type: "button", class: "fb-add", "aria-haspopup": "listbox", disabled: list.length >= ((M.fallbacks || {}).max || 6), onclick: ev => {
+    const key = `fb:${L.id}`;
+    showMenu(ev.currentTarget, modelItems(key, "", ""), { value: "", onPick: v => { if (list.some(x => x.model === v && !x.key_file) || fbBase(v) === prim) toast("이미 있는 모델이에요", true); else fbSave(L.id, [...list, { model: v }]); } });
+  } }, icon("add"), "모델 추가");
+  chain.append(add);
+  row.append(el("div", { class: "fb-head" }, icon(L.ic), el("span", { text: L.label }), el("span", { class: "sup", text: list.length ? `${list.length}개 대기` : "폴백 없음" })), chain);
+  return row;
+}
+function fbBlock() {
+  if (!M || !M.fallbacks) return null;
+  return el("div", { class: "fb" },
+    el("div", { class: "sec", text: "모델 폴백" }),
+    el("div", { class: "fb-note", text: `${M.notes && M.notes.fallback ? M.notes.fallback : "폴백 순서는 다음에 시작될 때부터 적용돼요."} 항목을 끌어서 순서를 바꾸고, 화살표 버튼으로도 옮길 수 있어요.` }),
+    el("div", { class: "fb-card" }, ...FB_LAYERS.map(fbRow)));
+}
 /* ---------- settings ---------- */
 function renderSettings() {
   const box = $("#settings");
+  if (fbDragging) return;
   if (box.contains(document.activeElement) && openMenu) return;
   const om = M && M.orchestrator;
   const connected = P ? P.providers.filter(isConnected).length : null;
@@ -3021,7 +3204,7 @@ function renderSettings() {
     row("context", "컨텍스트", "", () => go("context")),
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null),
-    ...rtSection());
+    fbBlock(), ...rtSection());
 }
 
 /* ---------- settings: 실행 하네스 (runtime menu + compatibility check; data from /api/runtimes) ---------- */

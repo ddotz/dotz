@@ -1,6 +1,7 @@
 // Owner controls shared by the web API, the web chat box and Discord: model/effort switching, provider and quota
 // views, and the slash/bang command parser that drives them.
-import { DEFAULT_WORKER_MODEL, lanesModel, log, orchestratorModel, parseSelector, selectorOf, splitThinking, THINKING_LEVELS, updateConfig, workerModel } from "./config.ts";
+import { DEFAULT_WORKER_MODEL, entryId, entryOf, FALLBACK_MAX, type FallbackEntry, type FallbackTarget, fallbackChain, isPlain, lanesModel, log, orchestratorModel, parseSelector, selectorOf, setFallbackChain, splitThinking, THINKING_LEVELS, updateConfig, workerModel } from "./config.ts";
+import { entryView, hubOwned, keyFileOk, keyProviderOk } from "./fallback.ts";
 import { type Compaction, ctxView, describeCompaction, describeCtx } from "./context.ts";
 import * as discord from "./discord.ts";
 import { abortLane, compactLane, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
@@ -16,7 +17,22 @@ const COMPACT_NOTE = "Compaction rewrites the conversation into a summary, so th
 
 const providerOf = (model: string) => model.split("/")[0];
 function providersInUse(): Set<string> {
-	return new Set([orchestratorModel().model, lanesModel().model, parseSelector(workerModel()).model, ...laneModels().map(l => l.model)].map(providerOf));
+	return new Set([orchestratorModel().model, lanesModel().model, parseSelector(workerModel()).model, ...laneModels().map(l => l.model), ...(["orchestrator", "lanes", "workers"] as const).flatMap(t => fallbackChain(t).map(e => parseSelector(e.model).model))].map(providerOf));
+}
+
+const FALLBACK_NOTE = "폴백 순서는 프로세스가 다음에 시작될 때부터 적용돼요. 이미 실행 중인 오케스트레이터나 레인은 그대로 가요. 첫 번째 모델이 요청 단계에서 실패하면(사용량 한도, 장애) 순서대로 다음 모델로 넘어가요.";
+
+// Each layer's fallback chain and the models its running processes answer on right now (model ids, thinking stripped),
+// so the settings tab can highlight the one in use.
+function fallbacksView() {
+	const running = laneModels().filter(l => l.running);
+	const ids = (list: Array<string | undefined>) => [...new Set(list.filter((s): s is string => Boolean(s)).map(s => parseSelector(s).model))];
+	return {
+		max: FALLBACK_MAX,
+		orchestrator: { chain: fallbackChain("orchestrator").map(entryView), hub_driven: hubOwned(fallbackChain("orchestrator")), active: orch.status === "stopped" ? [] : ids([orch.activeModel]) },
+		lanes: { chain: fallbackChain("lanes").map(entryView), hub_driven: hubOwned(fallbackChain("lanes")), active: ids(running.map(l => l.active_model)) },
+		workers: { chain: fallbackChain("workers").map(entryView), hub_driven: false, active: ids(running.map(l => l.active_worker_model)) },
+	};
 }
 
 export async function modelsView() {
@@ -27,7 +43,8 @@ export async function modelsView() {
 		lanes: laneModels(),
 		thinking_levels: [...THINKING_LEVELS],
 		available: await availableModels(),
-		notes: { orchestrator: ORCHESTRATOR_NOTE, workers: WORKERS_NOTE },
+		notes: { orchestrator: ORCHESTRATOR_NOTE, workers: WORKERS_NOTE, fallback: FALLBACK_NOTE },
+		fallbacks: fallbacksView(),
 	};
 }
 
@@ -111,6 +128,35 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	if (lanes.get(name)!.proc && !force) throw laneCacheWarning(name);
 	const applied = await setLaneModel(name, selectorOf(next));
 	return done(applied, applied === "restarted" ? `Lane ${name} restarted on ${selectorOf(next)}, resuming its session.` : `Saved. Lane ${name} uses it when it is next resumed.`);
+}
+
+// Replaces one layer's fallback chain (applies the next time a process of that layer starts). Entries are checked against
+// the model catalog like a model switch is; an entry may carry a thinking suffix, otherwise it inherits the failing turn's.
+// Conditions, caps, revert and API keys are the hub's own switching (orchestrator and lanes); the task workers' chain is omp's, bare models only.
+export async function setFallback(target: string, chain: unknown[]) {
+	if (target !== "orchestrator" && target !== "lanes" && target !== "workers") throw new ControlError(`target must be "orchestrator", "lanes" or "workers" (got "${target}")`);
+	if (chain.length > FALLBACK_MAX) throw new ControlError(`at most ${FALLBACK_MAX} fallback models per chain (got ${chain.length})`);
+	const available = await availableModels();
+	const primary = target === "orchestrator" ? orchestratorModel().model : target === "lanes" ? lanesModel().model : parseSelector(workerModel()).model;
+	const seen = new Set<string>();
+	const clean: FallbackEntry[] = [];
+	for (const input of chain) {
+		const entry = entryOf(input);
+		if (!entry) throw new ControlError("each fallback entry needs a model");
+		const split = splitThinking(entry.model);
+		if (split.thinking && !(THINKING_LEVELS as readonly string[]).includes(split.thinking)) throw new ControlError(`thinking must be one of ${THINKING_LEVELS.join(", ")}`);
+		const model = resolveModel(split.model, available);
+		const next: FallbackEntry = { ...entry, model: split.thinking ? `${model}:${split.thinking}` : model };
+		if (target === "workers" && !isPlain(next)) throw new ControlError("the task workers' chain takes bare models only (conditions, caps, revert and API keys apply to the orchestrator and the lanes)");
+		if (next.key_file && !keyFileOk(next.key_file)) throw new ControlError(`key_file "${next.key_file}" must be a file name in <data dir>/secrets/ that exists`);
+		if (next.key_file && !keyProviderOk(next)) throw new ControlError("API-key entries support anthropic, openai and openrouter models (set base_url and api on the entry for another provider)");
+		if (!next.key_file && next.model === primary) continue;
+		if (seen.has(entryId(next))) continue;
+		seen.add(entryId(next));
+		clean.push(next);
+	}
+	setFallbackChain(target as FallbackTarget, clean);
+	return { ok: true, target, chain: clean.map(entryView), applied: "next-start" as const, note: FALLBACK_NOTE };
 }
 
 const COMMANDS = ["help", "status", "context", "compact", "lanes", "model", "effort", "restart", "stop", "resume", "abort", "providers", "login", "logout", "quota"];
