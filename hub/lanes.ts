@@ -464,6 +464,11 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 export function sendToLane(name: string, text: string): void {
 	const lane = lanes.get(name);
 	if (!lane) throw new Error(`lane ${name} does not exist`);
+	// New work makes an unchecked [done] claim stale; a verified one stays until the lane's next report replaces it.
+	if (lane.claim?.state === "reported") {
+		lane.claim = undefined;
+		persist(lane);
+	}
 	if (lane.proc) return prompt(lane, text);
 	if (!lane.sessionFile || !existsSync(lane.sessionFile)) throw new Error(`lane ${name} is not running and has no session to resume`);
 	resumeLane(lane, text);

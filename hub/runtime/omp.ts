@@ -138,6 +138,8 @@ function eventsFromFrame(f: Frame): AgentEvent[] {
 		}
 		case "auto_compaction_end":
 			if (f.errorMessage) out.push({ type: "compaction", state: "error", error: String(f.errorMessage).slice(0, 300), requested: false });
+			// omp's own threshold compaction: the retain nudge (lanes.ts, orchestrator.ts) must follow it like a requested one.
+			else out.push({ type: "compaction", state: "done" });
 			break;
 		case "response":
 			// get_state / get_session_stats: contextUsage {tokens, contextWindow, percent}, and the model window.

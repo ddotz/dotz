@@ -105,6 +105,11 @@ test("claim: [done] reports, verify only from reported, any other report clears 
 
 	await turn(agent, "[done] one more change");
 	expect(lane.claim?.state).toBe("reported");
+	// New work sent to the lane withdraws an unchecked claim.
+	l.sendToLane("cl", "also fix the README");
+	expect(lane.claim).toBeUndefined();
+	await turn(agent, "[done] README fixed");
+	expect(lane.claim?.state).toBe("reported");
 	await turn(agent, "[ask] which branch?");
 	expect(lane.claim).toBeUndefined();
 	expect(saved()).toBeUndefined();

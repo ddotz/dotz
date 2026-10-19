@@ -1728,11 +1728,13 @@
   "ctx": [
    10,
    0,
-   null,
+   "done",
    null,
    null
   ],
-  "sends": [],
+  "sends": [
+   "get_session_stats"
+  ],
   "compactionError": null,
   "derived": {}
  },
@@ -1783,7 +1785,7 @@
   "ctx": [
    10,
    0,
-   null,
+   "done",
    null,
    null
   ],
@@ -1839,7 +1841,7 @@
   "ctx": [
    10,
    0,
-   null,
+   "done",
    null,
    null
   ],
@@ -1895,7 +1897,7 @@
   "ctx": [
    10,
    0,
-   null,
+   "done",
    null,
    null
   ],
@@ -1950,7 +1952,7 @@
   "ctx": [
    10,
    0,
-   null,
+   "done",
    null,
    null
   ],
@@ -2000,7 +2002,7 @@
   "ctx": [
    1234,
    200000,
-   null,
+   "done",
    null,
    null
   ],
@@ -2050,7 +2052,7 @@
   "ctx": [
    4321,
    200000,
-   null,
+   "done",
    null,
    null
   ],
@@ -2098,7 +2100,7 @@
   "ctx": [
    4321,
    500000,
-   null,
+   "done",
    null,
    null
   ],
@@ -2146,7 +2148,7 @@
   "ctx": [
    4321,
    500000,
-   null,
+   "done",
    null,
    null
   ],
@@ -2196,7 +2198,7 @@
   "ctx": [
    4321,
    500000,
-   null,
+   "done",
    null,
    null
   ],

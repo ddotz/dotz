@@ -191,7 +191,7 @@ function verifyTool(pi: any): void {
 	pi.registerTool({
 		name: "dotz_verify",
 		label: "Dotz verify",
-		description: "Run a verification command with a receipt. Use it when re-running a lane's Done-when command (or any check you would repeat): if the same command already passed on exactly this checkout (same HEAD, same uncommitted changes, same env), the stored result is returned with reused instead of running again; any commit or edit, or a previous failure, runs it for real. {command (run with bash -lc), cwd (the lane's worktree or project folder), env? (names of env vars whose values affect the result)}. Returns `receipt <key> reused|ran exit=N head=<sha7>` and the output tail.",
+		description: "Run a verification command with a receipt. Use it when re-running a lane's Done-when command (or any check you would repeat): if the same command passed on exactly this git checkout (same HEAD, same uncommitted changes, same env) within the last 6 hours, the stored result is returned with reused instead of running again; any commit or edit, a previous failure, or a folder outside git runs it for real. Only for checks whose result depends on the checkout (tests, build, lint); never for live external state (curl, gh pr view, a service's status), which a receipt cannot see change. {command (run with bash -lc, killed after 15 min), cwd (the lane's worktree or project folder), env? (names of env vars whose values affect the result)}. Returns `receipt <key> reused|ran exit=N head=<sha7>` and the output tail.",
 		parameters: z.object({ command: z.string(), cwd: z.string(), env: z.array(z.string()).optional() }),
 		async execute(_id: string, p: { command: string; cwd: string; env?: string[] }) {
 			const r = await runWithReceipt(p);

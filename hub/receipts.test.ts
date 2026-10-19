@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runWithReceipt } from "./receipts.ts";
+import { clock } from "./runtime/test-clock.ts";
 
 let root = "";
 let repo = "";
@@ -29,6 +30,24 @@ test("same key is reused without running the command again", async () => {
 	expect(second.key).toBe(first.key);
 	expect(second.stdout).toBe("out\n");
 	expect(runs()).toBe(1);
+});
+
+test("a pass is reused for 6 hours, then run again", async () => {
+	await go(counted());
+	clock.now += 6 * 3600_000 - 1;
+	expect((await go(counted())).reused).toBe(true);
+	clock.now += 1;
+	expect((await go(counted())).reused).toBe(false);
+	expect(runs()).toBe(2);
+});
+
+test("outside git nothing is reused (the content is unknown)", async () => {
+	const plain = join(root, "plain");
+	mkdirSync(plain);
+	const first = await runWithReceipt({ command: counted(), cwd: plain, dir });
+	const second = await runWithReceipt({ command: counted(), cwd: plain, dir });
+	expect([first.head, first.reused, second.reused]).toEqual(["no-git", false, false]);
+	expect(runs()).toBe(2);
 });
 
 test("a new commit is a new key", async () => {
