@@ -12,7 +12,7 @@ import { isNote, msg } from "./i18n.ts";
 import { activityItems, answeredIds, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
-import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, verifyLane } from "./lanes.ts";
+import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, laneJustification, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, verifyLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { createPrompts } from "./prompts.ts";
@@ -733,6 +733,11 @@ const server = Bun.serve({
 					const asked = Boolean(b.owner_asked_for_fable);
 					const dear = [b.model, b.worker_model].filter(m => m && isExpensive(String(m)));
 					if (dear.length && !asked) return json({ error: `Fable and max/xhigh-effort models (${dear.join(", ")}) run only when the owner explicitly asks for them. Use the defaults, or relaunch with owner_asked_for_fable=true after they ask.` }, 409);
+					const unjustified = laneJustification(b.why, b.hours, Boolean(b.owner_asked_for_lane));
+					if (unjustified) {
+						log(`lane ${String(b.name)} refused: ${unjustified}`);
+						return json({ error: unjustified }, 409);
+					}
 					const est = estimateOf(b.est, String(b.brief ?? ""));
 					const tight = await budgetProblem(String(b.name), est, Boolean(b.force));
 					if (tight) return json({ error: `budget gate: ${tight}. Ask the owner (now / after reset / smaller); relaunch with force=true only after they say now, or with a smaller est.` }, 409);
@@ -746,6 +751,7 @@ const server = Bun.serve({
 						log(`lane channel failed: ${e}`);
 						return undefined;
 					});
+					log(`lane ${lane.name} why (${b.owner_asked_for_lane ? "owner asked" : `${Number(b.hours)}h`}): ${String(b.why).trim().slice(0, 300)}`);
 					emit("outbox", { ts: now(), kind: "lane_start", source: "hub", lane: lane.name, text: `lane ${lane.name} started in ${lane.cwd}` });
 					return json({ ok: true, lane: lane.name, channel });
 				}
