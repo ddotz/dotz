@@ -12,7 +12,7 @@ import { baseLanguage, detectLanguage, languageName } from "./language.ts";
 
 export type LaneFooterArgs = { lane: string; mode: string; workerModel: string; slots: number; worktree: string };
 export type WorktreeArgs = { path: string; repo: string; branch: string; base: string };
-export type RecallArgs = { mode: string; identity: string; rules: string; lessons: string; setups: string; state: string };
+export type RecallArgs = { mode: string; identity: string; rules: string; lessons: string; memory: string; setups: string; state: string };
 export type SettingText = { label: string; hint?: string; unit?: string; options?: Record<string, string> };
 export type FileText = { label: string; note: string };
 
@@ -39,13 +39,13 @@ const koLeads: Leads = {
 
 // One sentence reused by every handover and, once after a compaction, by the next prompt: a fresh or compacted session
 // loses what the old context held, so facts worth keeping are saved to memory before the work goes on.
-const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not in memory yet with the memory tool if this runtime has one (omp: `retain`), else in RULES.md / LESSONS.md / state.json in the dotz data directory; skip this if there is none.";
-const koRetainNudge = "이어가기 전에, 지금까지의 대화에서 나온 오너·프로젝트·선호 중 오래 남길 사실이 아직 메모리에 없으면 메모리 도구가 있으면 그것으로(omp: `retain`), 없으면(OmO) dotz 데이터 폴더의 RULES.md / LESSONS.md / state.json에 저장하세요. 없으면 건너뛰세요.";
+const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not in memory yet with the memory tool if this runtime has one (omp: `retain`), else in the dotz data directory (owner facts in memory/owner.md, the owner's verbatim don'ts in memory/boundaries.md, rules in RULES.md, lessons in LESSONS.md, open work in state.json); skip this if there is none.";
+const koRetainNudge = "이어가기 전에, 지금까지의 대화에서 나온 오너·프로젝트·선호 중 오래 남길 사실이 아직 메모리에 없으면 메모리 도구가 있으면 그것으로(omp: `retain`), 없으면(OmO) dotz 데이터 폴더에 저장하세요(오너 사실은 memory/owner.md, 오너가 한 '하지 마' 원문은 memory/boundaries.md, 규칙은 RULES.md, 교훈은 LESSONS.md, 진행 중인 일은 state.json). 없으면 건너뛰세요.";
 
 const en = {
 	...enLeads,
 
-	recall: (a: RecallArgs) => `[dotz gateway] You are ${NAME}, the dotz orchestrator hosted headless by the gateway.\n\nIdentity (who you are and how you talk):\n${a.identity}\n\nContract:\n\n${a.mode}\n\nOwner rules (${paths.rules}; they override the contract):\n${a.rules}\n\nLessons (${paths.lessons}):\n${a.lessons}\n\nWork channel setups (dotz_channel list for login health):\n${a.setups}\n\nCurrent state.json:\n${a.state}`,
+	recall: (a: RecallArgs) => `[dotz gateway] You are ${NAME}, the dotz orchestrator hosted headless by the gateway.\n\nIdentity (who you are and how you talk):\n${a.identity}\n\nContract:\n\n${a.mode}\n\nOwner rules (${paths.rules}; they override the contract):\n${a.rules}\n\nLessons (${paths.lessons}):\n${a.lessons}\n\nOwner memory (${paths.memory}; before asking the owner anything, check here and grep ${paths.observations}):\n${a.memory}\n\nWork channel setups (dotz_channel list for login health):\n${a.setups}\n\nCurrent state.json:\n${a.state}`,
 	identityFallback: (character: string, tone: string) => `Name: ${NAME}\nCharacter: ${character}\nTone: ${tone}\nSpeak in this character and tone in every reply.`,
 	handover: (previous: string, tail: string) => `\n\n[handover] The previous session (${previous}) was rotated to keep the context small. Its most recent exchanges, oldest first; continue any open thread from here:\n${tail}\n\n${enRetainNudge}`,
 	laneHandover: (previous: string, tail: string | undefined) => `[handover] The previous session (${previous}) was rotated.${tail ? ` Its most recent exchanges, oldest first:\n${tail}\n\n${enRetainNudge}` : ""}`,
@@ -111,12 +111,14 @@ const en = {
 	reflect: (digest: string, lessons: string) => `[dotz reflect] Nightly self-review of the last 24h. Data from the gateway:\n${digest}\n
 Do this, briefly:
 1. Find what went wrong or cost too much: owner corrections or repeated asks, failed or stuck lanes, alerts, cache rewrites.
-2. For each real lesson add or update one dated line in ${lessons} (keep it under ~30 lines; delete lessons that no longer apply or that a rule already covers). Retain durable facts about the owner with your memory tool.
+2. For each real lesson add or update one dated line in ${lessons} (keep it under ~30 lines; delete lessons that no longer apply or that a rule already covers). For each owner correction or reaction above, add one sourced line to ${paths.observations}; move a durable owner preference or context (stated plainly, or seen twice there) to ${paths.owner}, and a "don't" in the owner's own words to ${paths.boundaries}, verbatim with its source. Only what the owner said or did; never write about other people there.
 3. If something recurred although RULES.md or LESSONS.md already covers it, more text will not help: send the owner (dotz_send alert) a concrete fix for the carrier (which file, hook, brief footer or check to change).
 4. Never edit RULES.md here; propose rule changes to the owner in alert and wait for their answer.
 5. Finish with one dotz_send worklog post in the identity's language and Notices style: a first line "Nightly review", then "- " bullets in plain words for what you did (e.g. "- 1 lesson noted in LESSONS.md", "- 1 proposed fix posted to alert"), at most 4 bullets. Nothing else is sent.`,
 
 	// Appended to `reflect` only when LESSONS.md has stale or near-duplicate lines or is over its byte cap (hub/reflect.ts lessonCandidates).
+	// Appended to `reflect` when observations.md has lines older than 90 days (hub/reflect.ts).
+	staleObservations: (stale: string[]) => `\n\nObservations older than 90 days in ${paths.observations}: delete them (move a pattern that still holds to owner.md or LESSONS.md first):\n${stale.join("\n")}`,
 	lessonCandidates: (stale: string[], duplicates: string[], over: string) => `\n\nLESSONS.md cleanup candidates picked by code; you decide which to delete or merge (keep the newer or more specific wording):${over ? `\n- ${over}` : ""}${stale.length ? `\n- Older than 90 days:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- Near-duplicates (token overlap >= 0.6):\n${duplicates.join("\n")}` : ""}`,
 
 	// Owner-facing strings of the Discord login-auth prompts (hub/auth.ts).
@@ -356,7 +358,7 @@ type Catalog = typeof en;
 const ko: Catalog = {
 	...koLeads,
 
-	recall: a => `[dotz gateway] 당신은 게이트웨이가 헤드리스로 띄운 dotz 오케스트레이터(${NAME})예요.\n\n정체성 (당신이 누구이고 어떻게 말하는지):\n${a.identity}\n\n계약:\n\n${a.mode}\n\n오너 규칙 (${paths.rules}; 계약보다 우선해요):\n${a.rules}\n\n교훈 (${paths.lessons}):\n${a.lessons}\n\n작업 채널 설정 (로그인 상태는 dotz_channel list):\n${a.setups}\n\n현재 state.json:\n${a.state}`,
+	recall: a => `[dotz gateway] 당신은 게이트웨이가 헤드리스로 띄운 dotz 오케스트레이터(${NAME})예요.\n\n정체성 (당신이 누구이고 어떻게 말하는지):\n${a.identity}\n\n계약:\n\n${a.mode}\n\n오너 규칙 (${paths.rules}; 계약보다 우선해요):\n${a.rules}\n\n교훈 (${paths.lessons}):\n${a.lessons}\n\n오너 메모리 (${paths.memory}; 오너에게 묻기 전에 여기를 보고 ${paths.observations}도 grep하세요):\n${a.memory}\n\n작업 채널 설정 (로그인 상태는 dotz_channel list):\n${a.setups}\n\n현재 state.json:\n${a.state}`,
 	identityFallback: (character, tone) => `이름: ${NAME}\n성격: ${character}\n말투: ${tone}\n모든 답을 이 성격과 말투로 하세요.`,
 	handover: (previous, tail) => `\n\n[handover] 이전 세션(${previous})은 컨텍스트를 작게 유지하려고 교체했어요. 가장 최근 대화를 오래된 순으로 붙여요. 열려 있는 일이 있으면 여기서 이어가세요:\n${tail}\n\n${koRetainNudge}`,
 	laneHandover: (previous, tail) => `[handover] 이전 세션(${previous})을 교체했어요.${tail ? ` 가장 최근 대화를 오래된 순으로 붙여요:\n${tail}\n\n${koRetainNudge}` : ""}`,
@@ -417,11 +419,12 @@ const ko: Catalog = {
 	reflect: (digest, lessons) => `[dotz reflect] 지난 24시간의 야간 자기 점검이에요. 게이트웨이가 모은 데이터:\n${digest}\n
 짧게 이렇게 하세요:
 1. 잘못됐거나 비용이 너무 든 것을 찾으세요: 오너의 정정이나 반복된 요청, 실패했거나 멈춘 레인, 알림, 캐시 재작성.
-2. 진짜 교훈마다 ${lessons}에 날짜가 붙은 줄을 하나 추가하거나 고치세요(30줄 안팎으로 유지하고, 더 이상 맞지 않거나 규칙이 이미 다루는 교훈은 지우세요). 오너에 대한 오래 갈 사실은 메모리 도구로 남기세요.
+2. 진짜 교훈마다 ${lessons}에 날짜가 붙은 줄을 하나 추가하거나 고치세요(30줄 안팎으로 유지하고, 더 이상 맞지 않거나 규칙이 이미 다루는 교훈은 지우세요). 위 오너의 정정이나 반응마다 ${paths.observations}에 출처가 붙은 줄을 하나 남기세요. 오래 갈 오너의 선호나 맥락(분명히 말했거나 거기서 두 번 보인 것)은 ${paths.owner}로, 오너가 직접 한 '하지 마'는 원문 그대로 출처와 함께 ${paths.boundaries}로 옮기세요. 오너가 말하거나 한 것만 적고, 다른 사람에 대해서는 여기에 쓰지 마세요.
 3. RULES.md나 LESSONS.md가 이미 다루는데도 되풀이된 일은 글을 더 쓴다고 나아지지 않아요. 오너에게 (dotz_send alert로) 전달 경로를 고치는 구체적인 방법(어느 파일, 훅, 브리프 footer, 확인을 바꿀지)을 보내세요.
 4. 여기서 RULES.md는 절대 수정하지 마세요. 규칙 변경은 alert로 오너에게 제안하고 답을 기다리세요.
 5. 마지막으로 dotz_send worklog 글 하나를 한국어로, identity의 Notices 문체로 올리세요: 첫 줄은 "야간 정리", 이어서 한 일을 쉬운 말로 "- " 글머리 항목으로(예: "- 배운 점 1개 LESSONS.md에 정리했어요", "- 고칠 거 제안 1건은 알림에 올렸어요"), 최대 4개, 영어로 된 개수 표기는 쓰지 마세요. 그 밖에는 아무것도 보내지 않아요.`,
 
+	staleObservations: stale => `\n\n${paths.observations}에 90일 넘은 줄이 있어요. 지우세요(아직 맞는 패턴은 먼저 owner.md나 LESSONS.md로 옮기기):\n${stale.join("\n")}`,
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,
 
 	auth: {

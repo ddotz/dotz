@@ -137,7 +137,7 @@ function recall(): string {
 		return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
 	};
 	const features = featurePrompt(DATA_DIR, "orchestrator", log);
-	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, 3000), setups: setupsSummary(), state }));
+	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, 3000), memory: `${file(paths.owner, 3000)}\n${file(paths.boundaries, 2000)}`, setups: setupsSummary(), state }));
 }
 
 function handover(runtime: RuntimeAdapter, previous: string): string {

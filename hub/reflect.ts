@@ -62,7 +62,8 @@ export function digest(sessionFile: string, now = Date.now()): string | undefine
 	return [
 		`owner messages: ${owner.length} (${[...new Set(owner.map(e => e.channel ?? e.source))].join(", ")})`,
 		`possible corrections or repeats (${corrections.length}):`,
-		...corrections.slice(-10).map(e => `- ${short(e.text)}`),
+		// The message id is the source the reflection cites in memory/observations.md.
+		...corrections.slice(-10).map(e => `- ${short(e.text)}${e.message_id ? ` (src: discord ${e.message_id})` : ` (src: ${e.channel ?? e.source} ${String(e.ts).slice(0, 16)})`}`),
 		`lane trouble (${laneTrouble.length}):`,
 		...laneTrouble.slice(-8).map(e => `- ${e.lane}: ${short(e.text)}`),
 		`alerts sent (${outbox.filter(e => e.target === "alert").length}):`,
@@ -85,7 +86,7 @@ function laneUsage(since: number): string[] {
 }
 
 // Local history of the files the bot edits itself (rules, lessons, identity, schedules), so a bad edit can be undone.
-const SNAPSHOT = ["RULES.md", "LESSONS.md", "identity", "features", "schedules.json", "watches.json", "channel-setups.json", "config.json", "channels.json"];
+const SNAPSHOT = ["RULES.md", "LESSONS.md", "memory", "identity", "features", "schedules.json", "watches.json", "channel-setups.json", "config.json", "channels.json"];
 export async function snapshot(): Promise<string | undefined> {
 	const git = (...a: string[]) => Bun.$`git -C ${DATA_DIR} ${a}`.nothrow().quiet();
 	if (!existsSync(join(DATA_DIR, ".git"))) {
@@ -137,6 +138,11 @@ export function lessonCandidates(text: string, now: number): { stale: string[]; 
 }
 
 function candidateBlock(now: number): string {
+	const stale = existsSync(paths.observations) ? lessonCandidates(readFileSync(paths.observations, "utf8"), now).stale : [];
+	return lessonBlock(now) + (stale.length ? msg().staleObservations(stale) : "");
+}
+
+function lessonBlock(now: number): string {
 	if (!existsSync(paths.lessons)) return "";
 	const text = readFileSync(paths.lessons, "utf8");
 	const { stale, duplicates } = lessonCandidates(text, now);
