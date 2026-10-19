@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
+import { pendingAsksBlock } from "./asks.ts";
 import { cfg, chainAfter, DATA_DIR, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, paths, selectorOf, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
@@ -60,10 +61,15 @@ let capped: { move?: Move } | undefined;
 let continueAfterSwitch = false;
 // Set when a compaction finished: the next owner message sent to the process carries the retain nudge once (no extra turn).
 let retainNext = false;
+// Set when a session was resumed (gateway or crash restart): the next owner message carries the lane questions still
+// waiting for the owner's answer once, as the session may not have heard them in full.
+let asksNext = false;
 function sendOwner(text: string): void {
 	const nudge = retainNext ? `\n\n${msg().retainNudge}` : "";
+	const asks = asksNext ? pendingAsksBlock() : "";
 	retainNext = false;
-	proc?.send(text + nudge, "followUp");
+	asksNext = false;
+	proc?.send(text + nudge + (asks ? `\n\n${asks}` : ""), "followUp");
 }
 // One line for the worklog when the runtime moves the orchestrator (or one of its task workers) to the next model of a fallback chain.
 let onNotice: (text: string) => void = () => {};
@@ -398,8 +404,10 @@ export function start(): void {
 	});
 	if (!resume) {
 		retainNext = false; // a fresh session's start prompt (and handover) already carries it
-		proc.send(recall() + (rotate ? handover(runtime, prior!) : ""), "prompt");
-	}
+		asksNext = false;
+		const asks = pendingAsksBlock();
+		proc.send(recall() + (rotate ? handover(runtime, prior!) : "") + (asks ? `\n\n${asks}` : ""), "prompt");
+	} else asksNext = true;
 	proc.watchSubagents();
 	if (continueAfterSwitch && resume) {
 		proc.send(msg().orchTransient, "followUp");

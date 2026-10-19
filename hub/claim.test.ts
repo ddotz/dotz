@@ -115,6 +115,7 @@ test("claim: [done] reports, verify only from reported, any other report clears 
 	expect(saved()).toBeUndefined();
 	expect(() => l.verifyLane("nope", "x")).toThrow("no lane nope");
 
+	l.sendToLane("cl", "main, please"); // answers the pending [ask], so it does not leak into other tests' pending-ask blocks
 	l.stopLane("cl");
 	await advance(300);
 });
