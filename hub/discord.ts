@@ -503,6 +503,28 @@ const SEEN_FILE = join(DATA_DIR, "discord-seen.json");
 const CATCHUP_MS = 12 * 3600_000;
 let lastSeen: string = existsSync(SEEN_FILE) ? String(JSON.parse(readFileSync(SEEN_FILE, "utf8")).last ?? "") : "";
 const handled = new Set<string>();
+// Shutdown: intake closes first (incoming messages are dropped, lastSeen stays put so the next start's catch-up replays
+// them), the socket closes later; `closing` stops the reconnect loop.
+let intakeOpen = true;
+let closing = false;
+let socket: WebSocket | undefined;
+export function stopIntake(): void {
+	intakeOpen = false;
+}
+// Closes the gateway socket and resolves once it is closed (at most 3 s); no reconnect afterwards.
+export function disconnect(): Promise<void> {
+	closing = true;
+	const ws = socket;
+	if (!ws || ws.readyState === WebSocket.CLOSED) return Promise.resolve();
+	return new Promise(resolve => {
+		const timer = setTimeout(resolve, 3000);
+		ws.addEventListener("close", () => {
+			clearTimeout(timer);
+			resolve();
+		});
+		ws.close(1000, "shutdown");
+	});
+}
 const snowflakeMs = (id: string) => Number((BigInt(id) >> 22n) + 1420070400000n);
 
 // Edits of recent owner messages: the text of each delivered owner message is kept by id so MESSAGE_UPDATE can be delivered
@@ -528,6 +550,7 @@ export function editedText(m: { id: string; content?: unknown; edited_timestamp?
 export function connect(onMessage: (m: Incoming) => void): void {
 	if (!status.enabled) return;
 	const deliverIncoming = (m: any, channel: Incoming["channel"], edited?: string) => {
+		if (!intakeOpen) return;
 		if (edited === undefined) {
 			if (handled.has(m.id)) return;
 			handled.add(m.id);
@@ -554,7 +577,9 @@ export function connect(onMessage: (m: Incoming) => void): void {
 	let resumeUrl = "";
 	let heartbeat: ReturnType<typeof setInterval> | undefined;
 	const open = () => {
+		if (closing) return;
 		const ws = new WebSocket(resumeUrl || "wss://gateway.discord.gg/?v=10&encoding=json");
+		socket = ws;
 		let acked = true;
 		ws.onmessage = ev => {
 			const p = JSON.parse(String(ev.data));
@@ -617,7 +642,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 				log(`discord fatal close ${ev.code}; not reconnecting`);
 				return;
 			}
-			setTimeout(open, 5000);
+			if (!closing) setTimeout(open, 5000);
 		};
 	};
 	const catchUp = async () => {
@@ -634,6 +659,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 		for (const m of missed) handle({ ...m, guild_id: m.guild_id ?? (m.channel_id === channels.dm ? undefined : GUILD) });
 	};
 	const handle = (m: any, edited?: string) => {
+		if (!intakeOpen) return;
 		if (m.author?.bot || String(m.author?.id) !== OWNER) return;
 		const lane = Object.entries(channels.lanes).find(([, id]) => id === m.channel_id)?.[0];
 		// chat, worklog and alert are the orchestrator level: owner messages there reach the orchestrator, which routes them.

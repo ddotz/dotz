@@ -9,6 +9,7 @@ import type { Dirent } from "node:fs";
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { cfg, DATA_DIR, HOME, log, writeAtomic } from "./config.ts";
+import { trackTimer } from "./shutdown.ts";
 
 const SESSIONS = join(HOME, ".omp", "agent", "sessions");
 const LOG_DIR = join(DATA_DIR, "logs");
@@ -489,9 +490,9 @@ export function startTokenAudit(alert: (text: string) => void): void {
 		} catch (error) {
 			log(`token audit failed: ${error}`);
 		}
-		setTimeout(run, next());
+		trackTimer("token audit", setTimeout(run, next()));
 	};
-	setTimeout(run, next());
+	trackTimer("token audit", setTimeout(run, next()));
 }
 
 if (import.meta.main) {

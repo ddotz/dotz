@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
+import { trackTimer } from "./shutdown.ts";
 
 export type Mode = "check" | "install" | "off";
 export type Check =
@@ -103,9 +104,9 @@ export function startOmpUpdate(post: (text: string) => void, restart: () => stri
 	};
 	const run = async () => {
 		await runOmpUpdate({ mode, post, restart }).catch(e => log(`omp update failed: ${e}`));
-		setTimeout(run, next());
+		trackTimer("omp update", setTimeout(run, next()));
 	};
-	setTimeout(run, next());
+	trackTimer("omp update", setTimeout(run, next()));
 }
 
 if (import.meta.main) {

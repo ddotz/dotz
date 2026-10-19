@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { pushBackup, unstageSecrets } from "./backup.ts";
 import { cfg, DATA_DIR, log, paths } from "./config.ts";
 import { msg, withReplyLine } from "./i18n.ts";
+import { trackTimer } from "./shutdown.ts";
 import { auditSummaryLine } from "./token-audit.ts";
 
 const CORRECTION = /(아니|말고|하지\s*마|하지마|왜\s|다시|틀렸|잘못|그게 아니|no,|don't|stop)/i;
@@ -119,7 +120,7 @@ export function startReflection(deliver: (text: string) => void, sessionFile: ()
 			log("reflection: delivering nightly self-review");
 			deliver(reflectPrompt(d));
 		} else log("reflection: quiet day, skipped");
-		setTimeout(run, next());
+		trackTimer("reflection", setTimeout(run, next()));
 	};
-	setTimeout(run, next());
+	trackTimer("reflection", setTimeout(run, next()));
 }
