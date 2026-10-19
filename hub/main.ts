@@ -17,6 +17,7 @@ import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, esti
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { createPrompts } from "./prompts.ts";
+import { createLaneRelay } from "./lanerelay.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { parseTone } from "./tone.ts";
@@ -259,11 +260,12 @@ async function budgetProblem(name: string, est: number, force: boolean): Promise
 	return verdict;
 }
 
+const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n) });
 setReportHandler((lane, text) => {
-	// An [ask] is a question for the owner: it goes to the orchestrator whole (the other reports are cut).
-	const event = { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text: parseTone(text).tone === "ask" ? text : text.slice(0, 1500) };
+	const event = { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text };
 	emit("inbox", event);
-	deliver(inboxText(event));
+	const how = laneRelay.report(lane.name, text, join(paths.lanes, lane.name, "report.md"));
+	if (how !== "relayed") log(`lane ${lane.name} report ${how === "disk" ? "kept on disk (routine progress)" : how === "held" ? "held for the orchestrator's next idle point" : "dropped (same as the last one)"}`);
 	lastPost.set(`lane:${lane.name}`, Date.now());
 	const channel = `lane:${lane.name}`;
 	void inOrder(channel, () => localize(text.slice(0, 1800), channel, "lane"))
@@ -441,6 +443,7 @@ function flushQueue(target: string): void {
 }
 setOrchIdleHandler(() => {
 	queue.redeliverSteered();
+	laneRelay.flush();
 	flushQueue("main");
 });
 setLaneIdleHandler(name => flushQueue(`lane:${name}`));

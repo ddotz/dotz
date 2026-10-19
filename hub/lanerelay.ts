@@ -1,0 +1,50 @@
+// What of a lane's reports reaches the orchestrator, and how (owner 2026-10-19: complete where it matters, but token-lean).
+// Every report still goes to the lane's channel and to report.md; for the orchestrator:
+// - a question, a failure, a result or an untagged report goes in whole (never cut), with its status and where the
+//   evidence is on disk;
+// - a routine [run] progress report is not a turn: it stays on disk and in the what-runs-now line of the next prompt;
+// - a report repeating the lane's last relayed one is dropped;
+// - reports arriving while the orchestrator is in a turn are batched into one prompt for its next idle point.
+import { parseTone, type Tone } from "./tone.ts";
+
+export type Relay = { lane: string; tone?: Tone; text: string; file: string };
+
+export function relayItem(r: Relay): string {
+	return `- lane ${r.lane} status=${r.tone ?? "report"} (full: ${r.file})\n${r.text.trim()}`;
+}
+
+export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: string) => void; lead: (n: number) => string }) {
+	const last = new Map<string, string>();
+	const held: Relay[] = [];
+	const norm = (t: string) => t.replace(/\s+/g, " ").trim();
+	const send = (items: Relay[]) => deps.deliver(`${deps.lead(items.length)}\n${items.map(relayItem).join("\n\n")}`);
+
+	/** A lane's report: "relayed" (now), "held" (batched for idle), "disk" (routine, not a turn) or "duplicate". */
+	function report(lane: string, text: string, file: string): "relayed" | "held" | "disk" | "duplicate" {
+		const { tone } = parseTone(text);
+		if (tone === "run") return "disk";
+		const key = norm(text);
+		if (last.get(lane) === key) return "duplicate";
+		last.set(lane, key);
+		const item = { lane, tone, text, file };
+		if (deps.busy()) {
+			// A newer report of the same lane replaces the held one: only its latest state matters.
+			const i = held.findIndex(h => h.lane === lane && h.tone !== "ask");
+			if (i >= 0 && tone !== "ask") held.splice(i, 1, item);
+			else held.push(item);
+			return "held";
+		}
+		send([item]);
+		return "relayed";
+	}
+
+	/** The orchestrator went idle: everything held goes in as one prompt. */
+	function flush(): number {
+		if (!held.length || deps.busy()) return 0;
+		const items = held.splice(0);
+		send(items);
+		return items.length;
+	}
+
+	return { report, flush, held: () => held.slice() };
+}
