@@ -12,7 +12,7 @@
 //   bun setup.ts permissions [--check]     (--check only prints the state, never raises a dialog)
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { asideState, installApp, installCli, loginCli, openApp } from "./onboard/aside.ts";
 import { AsideRepl, createApp, ensureBrowser, invite, isAdmin, PERMISSIONS, resetToken } from "./onboard/discord.ts";
 import { checkPermissions, printPermissions, requestPermissions } from "./onboard/permissions.ts";
@@ -367,9 +367,12 @@ const plist = `<?xml version="1.0" encoding="UTF-8"?>
   <key>StandardErrorPath</key><string>${join(DIR, "gateway.err.log")}</string>
 </dict></plist>
 `;
-mkdirSync(join(HOME, "Library", "LaunchAgents"), { recursive: true });
-writeFileSync(PLIST, plist);
-console.log(`launchd: ${PLIST}${flag("--load") ? "" : " (not loaded; re-run with --load)"}`);
+// Without --load an existing launch agent is left alone (a test run with --dir once pointed the live gateway's plist
+// at /tmp); the new plist goes into the data dir instead.
+const plistOut = !flag("--load") && existsSync(PLIST) ? join(DIR, `${LABEL}.plist`) : PLIST;
+mkdirSync(dirname(plistOut), { recursive: true });
+writeFileSync(plistOut, plist);
+console.log(`launchd: ${plistOut}${flag("--load") ? "" : plistOut === PLIST ? " (not loaded; re-run with --load)" : " (existing launch agent kept; re-run with --load to install this one)"}`);
 if (flag("--load")) {
 	const uid = process.getuid?.() ?? 501;
 	await Bun.$`launchctl bootout gui/${uid}/${LABEL}`.nothrow().quiet();

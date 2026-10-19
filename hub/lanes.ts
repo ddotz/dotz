@@ -365,7 +365,7 @@ function footer(lane: Lane): string {
 }
 
 function worktreeNote(w: Worktree | undefined): string {
-	return w ? msg().worktree(w) : "";
+	return w ? msg().worktree(w) : msg().noGit;
 }
 
 const git = (cwd: string, ...args: string[]) => {
