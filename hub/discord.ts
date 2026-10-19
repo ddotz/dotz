@@ -248,10 +248,12 @@ function split(text: string): string[] {
 	return out.filter(s => s.trim());
 }
 
-// Replies read like a person chatting (Dori writing rules): one message per paragraph, a fenced code block stays whole,
-// a line ending in ":" stays with the list after it, and a long tail is folded into the last message.
-const MAX_CHUNKS = 6;
+// One answer is one message. Text within LIMIT goes out whole; longer text is cut only at paragraph boundaries (a blank
+// line outside a ``` fence) into the fewest messages, paragraphs packed greedily and joined by a blank line. A line ending
+// in ":" stays with the paragraph after it, and a single paragraph over LIMIT falls back to the line-based split().
 export function chunks(text: string): string[] {
+	if (!text.trim()) return [];
+	if (text.length <= LIMIT) return [text];
 	const blocks: string[] = [];
 	let cur: string[] = [];
 	let fence = false;
@@ -263,13 +265,27 @@ export function chunks(text: string): string[] {
 		} else cur.push(line);
 	}
 	if (cur.length) blocks.push(cur.join("\n"));
-	const merged: string[] = [];
+	const paragraphs: string[] = [];
 	for (const b of blocks) {
-		if (merged.length && /:\s*$/.test(merged.at(-1)!)) merged[merged.length - 1] += `\n${b}`;
-		else merged.push(b);
+		if (paragraphs.length && /:\s*$/.test(paragraphs.at(-1)!)) paragraphs[paragraphs.length - 1] += `\n\n${b}`;
+		else paragraphs.push(b);
 	}
-	while (merged.length > MAX_CHUNKS) merged.splice(MAX_CHUNKS - 1, 2, `${merged[MAX_CHUNKS - 1]}\n\n${merged[MAX_CHUNKS]}`);
-	return merged.flatMap(split);
+	const out: string[] = [];
+	let acc = "";
+	for (const p of paragraphs) {
+		if (acc && acc.length + 2 + p.length <= LIMIT) acc += `\n\n${p}`;
+		else if (p.length > LIMIT) {
+			if (acc) out.push(acc);
+			const parts = split(p);
+			acc = parts.pop() ?? "";
+			out.push(...parts);
+		} else {
+			if (acc) out.push(acc);
+			acc = p;
+		}
+	}
+	if (acc) out.push(acc);
+	return out;
 }
 
 // `reopen` allows unarchiving a thread that Discord auto-archived (50083); lane threads and sub-topic threads qualify.
@@ -285,12 +301,12 @@ async function post(id: string, content: string, replyTo?: string, reopen = fals
 	}
 }
 
-export async function send(target: string, text: string, replyTo?: string, opts: { single?: boolean } = {}): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+export async function send(target: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
 	const id = resolve(target);
 	if (!id) return { delivered: false, reason: `unknown target ${target}` };
 	const ids: string[] = [];
-	for (const [i, part] of (opts.single ? split(text) : chunks(text)).entries()) ids.push(await post(id, part, i === 0 ? replyTo : undefined));
+	for (const [i, part] of chunks(text).entries()) ids.push(await post(id, part, i === 0 ? replyTo : undefined));
 	return { delivered: true, ids };
 }
 
@@ -299,6 +315,37 @@ export async function edit(target: string, messageId: string, text: string): Pro
 	if (!status.enabled || !id) return { delivered: false, reason: `unknown target ${target}` };
 	await rest("PATCH", `/channels/${id}/messages/${messageId}`, { content: noEmoji(text).slice(0, LIMIT) });
 	return { delivered: true, ids: [messageId] };
+}
+
+// A message that is already gone (404 / Unknown Message) is the state the caller wanted.
+export async function deleteMessage(target: string, messageId: string): Promise<void> {
+	const id = resolve(target);
+	if (!status.enabled || !id) return;
+	await rest("DELETE", `/channels/${id}/messages/${messageId}`).catch(e => {
+		if (!/ 404 |10008/.test(String(e))) throw e;
+	});
+}
+
+// One evolving status per (target, key) is a single message edited in place (Dori: grow one message only when it is one
+// evolving answer). A progress note is not the answer: clearProgress removes it once the turn's answer is posted.
+const progressIds = new Map<string, Map<string, string>>();
+export async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
+	const prev = progressIds.get(target)?.get(key);
+	if (prev) return { ...(await edit(target, prev, text)), edited: true };
+	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
+	const id = resolve(target);
+	if (!id) return { delivered: false, reason: `unknown target ${target}` };
+	const mid = await post(id, text.slice(0, LIMIT), replyTo);
+	if (!progressIds.has(target)) progressIds.set(target, new Map());
+	progressIds.get(target)!.set(key, mid);
+	return { delivered: true, ids: [mid] };
+}
+
+export async function clearProgress(target: string): Promise<void> {
+	const tracked = progressIds.get(target);
+	if (!tracked) return;
+	progressIds.delete(target);
+	for (const mid of tracked.values()) await deleteMessage(target, mid).catch(e => log(`progress message ${mid} in ${target} not deleted: ${e}`));
 }
 
 // Thread status as in Dori: a [working]/[waiting]/[done] prefix on the name; done archives it, other states reopen it.
