@@ -9,12 +9,13 @@ import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
 import { authRoute } from "./auth.ts";
 import { isNote, msg } from "./i18n.ts";
-import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
+import { activityItems, answeredIds, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, verifyLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
+import { createPrompts } from "./prompts.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { parseTone } from "./tone.ts";
@@ -33,55 +34,35 @@ import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRunt
 const WEB = join(import.meta.dir, "..", "web", "index.html");
 const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
 const terminals = new Map<string, { cwd?: string; at: string }>();
-// Every delivered prompt remembers where its answer goes; prompts are matched back by their text as omp starts them
-// (FIFO, so identical texts still pair in order). Unanswered prompts are kept on disk (오모냥's `last_handled`: a
-// message counts as handled when it is answered, not when it arrives), so a restart mid-turn replays them on boot.
-type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean };
-const prompts: Prompt[] = [];
-let current: Prompt | undefined;
+// Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
 const PENDING = join(DATA_DIR, "pending.json");
 // Read before anything in this process delivers (and rewrites the file); replayed once the orchestrator starts.
 let unanswered: { text: string; at?: number; target?: string; replyTo?: string }[] = [];
 try {
 	if (existsSync(PENDING)) unanswered = JSON.parse(readFileSync(PENDING, "utf8"));
 } catch {}
-function savePending(): void {
-	const open = [...(current && !current.done ? [current] : []), ...prompts].map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
-	writeAtomic(PENDING, `${JSON.stringify(open, null, 2)}\n`);
-}
-
-// An owner message that arrives while the orchestrator is mid-turn is steered into that turn instead of waiting
-// behind it (owner 2026-10-17: "순차적으로 처리하던데 ... 바로 답변이 안오는데"): the orchestrator answers it with dotz_send
-// and carries on. If the turn ends before it was answered, it is delivered again as a normal prompt.
+const queue = createPrompts({
+	deliver: deliverToOrchestrator,
+	steer: steerOrchestrator,
+	working: () => orch.status === "working",
+	note: (target, replyTo, text) => msg().newMessage(target, replyTo, text),
+	isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead"),
+	post: (target, text, replyTo) => out(target, text, replyTo, { auto: true }),
+	clearProgress: target => void discord.clearProgress(target),
+	persist: open => writeAtomic(PENDING, `${JSON.stringify(open, null, 2)}\n`),
+	log,
+	answered: answeredIds(),
+});
 function deliver(text: string, reply?: { target: string; replyTo?: string }): void {
 	if (reply) discord.typing(reply.target);
-	const steered = Boolean(reply) && orch.status === "working";
-	prompts.push({ key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered });
-	if (prompts.length > 200) prompts.splice(0, prompts.length - 200);
-	savePending();
-	if (!steered) return deliverToOrchestrator(text);
-	steerOrchestrator(msg().newMessage(reply!.target, reply!.replyTo, text));
-}
-
-// Steered prompts are answered by the first plain dotz_send to their channel; the ones still open when a turn ends go
-// in again as normal prompts.
-function settleSteered(target: string): void {
-	const i = prompts.findIndex(p => p.steered && p.target === target);
-	if (i < 0) return;
-	prompts.splice(i, 1);
-	savePending();
-}
-function redeliverSteered(): void {
-	const open = prompts.filter(p => p.steered);
-	for (const p of open) {
-		p.steered = false;
-		deliverToOrchestrator(p.text);
-	}
+	queue.deliver(text, reply);
 }
 
 const isLocal = (target: string) => target === "web" || target === "terminal";
 async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	lastPost.set(target, Date.now());
+	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
+	if (extra.source === undefined || extra.source === "orchestrator") queue.markAnswered(replyTo);
 	const sent = await inOrder(target, async () => {
 		const t = await localize(text, target, typeof extra.source === "string" ? extra.source : "orchestrator");
 		emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text: t, reply_to: replyTo ?? null, ...extra });
@@ -107,36 +88,7 @@ function expectReply(target: string): void {
 }
 
 // The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
-setAnswerHandlers(
-	text => {
-		// Notes steered into a running turn are not new requests: the turn keeps answering the prompt it started with.
-		if (isNote(text, "newMessageLead") || isNote(text, "waitedLead")) return;
-		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
-		current = i >= 0 ? prompts.splice(i, 1)[0] : undefined;
-		savePending();
-	},
-	text => {
-		const p = current;
-		if (p && !p.done) {
-			p.done = true;
-			savePending();
-		}
-		const t = text.trim();
-		redeliverSteered();
-		// Parts sent early with dotz_send do not replace the answer; skip it only when it repeats something already sent.
-		if (!p?.target) return;
-		const target = p.target;
-		const sentHere = p.sent.some(s => s.target === target);
-		if (t === "-" || p.sent.some(s => s.target === target && s.text.includes(t))) {
-			if (sentHere) void discord.clearProgress(target);
-			return;
-		}
-		p.sent.push({ target, text: t });
-		void out(target, text, p.replyTo, { auto: true })
-			.then(r => (r.delivered ? discord.clearProgress(target) : undefined))
-			.catch(e => log(`reply to ${target} failed: ${e}`));
-	},
-);
+setAnswerHandlers(queue.onPrompt, queue.onAnswer);
 
 // Chat is the hub over every work channel: each chat turn carries a short directory so the orchestrator can route the
 // work into the channel it belongs to (or split a growing thread of work into a new one).
@@ -481,7 +433,10 @@ function flushQueue(target: string): void {
 		restore(items);
 	}
 }
-setOrchIdleHandler(() => flushQueue("main"));
+setOrchIdleHandler(() => {
+	queue.redeliverSteered();
+	flushQueue("main");
+});
 setLaneIdleHandler(name => flushQueue(`lane:${name}`));
 // Safety net for what the idle hooks miss: items kept over a gateway restart, a lane that went idle without a turn end.
 setInterval(() => queuedTargets().forEach(flushQueue), QUEUE_SWEEP_MS);
@@ -566,8 +521,7 @@ const server = Bun.serve({
 					return json({ delivered: false, reason: (error as Error).message }, 502);
 				}
 			}
-			current?.sent.push({ target, text: String(b.text ?? "").trim() });
-			settleSteered(target);
+			queue.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
 			try {
 				return json(await out(target, String(b.text ?? ""), b.reply_to));
 			} catch (error) {
@@ -901,11 +855,9 @@ function shutdown(): Promise<never> {
 // Prompts that were delivered but never answered (the gateway stopped mid-turn) are delivered again on start.
 // Returns how many prompts were replayed.
 function replayPending(): number {
-	const fresh = unanswered.filter(p => p.text && Date.now() - (p.at ?? 0) < 12 * 3600_000);
+	const open = unanswered;
 	unanswered = [];
-	if (fresh.length) log(`replaying ${fresh.length} unanswered prompt(s) from before the restart`);
-	for (const p of fresh) deliver(isNote(p.text, "replayLead") ? p.text : `${msg().replay}\n${p.text}`, p.target ? { target: p.target, replyTo: p.replyTo } : undefined);
-	return fresh.length;
+	return queue.replay(open, text => (isNote(text, "replayLead") ? text : `${msg().replay}\n${text}`));
 }
 
 // Restart the gateway the way 오모냥's herdr-restart does: wait until the orchestrator and every lane are idle, task

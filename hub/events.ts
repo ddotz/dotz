@@ -102,6 +102,12 @@ function tailEvents(file: string): HubEvent[] {
 	return out;
 }
 
+// Ids of the owner messages the outbox log shows as answered (reply_to of the orchestrator's `out` events; a gateway
+// notice replying to a message did not answer it), from its tail.
+export function answeredIds(): string[] {
+	return tailEvents(paths.outbox).flatMap(e => (e.kind === "out" && e.source === "orchestrator" && typeof e.reply_to === "string" && e.reply_to ? [e.reply_to] : []));
+}
+
 export function historyEvents(target: string, limit: number): HubEvent[] {
 	const all = [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)].filter(e => typeof e.ts === "string" && eventTarget(e) === target);
 	all.sort((a, b) => a.ts.localeCompare(b.ts));
