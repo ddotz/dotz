@@ -49,7 +49,7 @@ let turnsSinceStart = 0;
 let lastTurnEnd = Date.now();
 let keepalives = 0;
 let inKeepalive = false;
-const held: string[] = [];
+const held: { text: string; header: boolean }[] = [];
 // A process started with a fallback chain: after a failed request the runtime may move to the next model by itself and
 // redo the turn, so the failure is acted on (pause, retry, alert) only when no such switch follows within a short grace.
 const FALLBACK_GRACE_MS = 3000;
@@ -64,12 +64,19 @@ let retainNext = false;
 // Set when a session was resumed (gateway or crash restart): the next owner message carries the lane questions still
 // waiting for the owner's answer once, as the session may not have heard them in full.
 let asksNext = false;
-function sendOwner(text: string): void {
+// An owner prompt leads with one line of what runs now (lanes, workers), so the orchestrator need not poll for it; the
+// provider is registered by main.ts (lanes.ts would be an import cycle) and the line is empty when nothing runs.
+let turnHeader: () => string = () => "";
+export function setTurnHeader(fn: () => string): void {
+	turnHeader = fn;
+}
+function sendOwner(text: string, header = false): void {
 	const nudge = retainNext ? `\n\n${msg().retainNudge}` : "";
 	const asks = asksNext ? pendingAsksBlock() : "";
 	retainNext = false;
 	asksNext = false;
-	proc?.send(text + nudge + (asks ? `\n\n${asks}` : ""), "followUp");
+	const line = header ? turnHeader() : "";
+	proc?.send((line ? `${line}\n` : "") + text + nudge + (asks ? `\n\n${asks}` : ""), "followUp");
 }
 // One line for the worklog when the runtime moves the orchestrator (or one of its task workers) to the next model of a fallback chain.
 let onNotice: (text: string) => void = () => {};
@@ -209,7 +216,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				else if (orch.status === "idle") keepalives = 0;
 				if (orch.status === "idle" && pauseAlerted) {
 					pauseAlerted = false;
-					for (const text of held.splice(0)) sendOwner(text);
+					for (const h of held.splice(0)) sendOwner(h.text, h.header);
 				} else if (orch.status === "idle") {
 					if (rotateWhenIdle || (++turnsSinceStart > 1 && orch.ctx.tokens > ROTATE_TOKENS && !compacting())) limitContext();
 					else if (pendingRestart) {
@@ -446,7 +453,7 @@ export function start(): void {
 		armWatchdog();
 	}
 	continueAfterSwitch = false;
-	for (const text of held.splice(0)) sendOwner(text);
+	for (const h of held.splice(0)) sendOwner(h.text, h.header);
 	setTimeout(() => proc?.refreshSession(), 4000);
 	log(`orchestrator ${resume ? `resumed ${prior}` : rotate ? "rotated to a fresh session" : "started"} (${model})`);
 	statusActivity("orchestrator", `orchestrator ${resume ? "resumed its session" : rotate ? "started a fresh session with a handover" : "started"} (${model})`);
@@ -469,13 +476,14 @@ setInterval(() => {
 	armWatchdog();
 }, Math.min(60_000, Math.max(5_000, (KEEPALIVE_TO_MS - KEEPALIVE_FROM_MS) / 2)));
 
-export function deliver(text: string): void {
+// `owner` marks a prompt that carries an owner message (it gets the what-runs-now line); lane reports and gateway notes do not.
+export function deliver(text: string, owner = false): void {
 	if (rotating || restarting || orch.status === "rate-limited") {
-		held.push(text);
+		held.push({ text, header: owner });
 		return;
 	}
 	if (!proc) start();
-	sendOwner(text);
+	sendOwner(text, owner);
 	armWatchdog();
 }
 
