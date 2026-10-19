@@ -1,6 +1,7 @@
 // Tool parameter schemas for hosts without `pi.zod`. omp hands extensions a zod instance; OmO (senpi) has none and takes
 // plain JSON Schema (it validates non-TypeBox schemas as JSON Schema). This is the small zod-shaped subset the dotz tools
-// use (object, string, number with min/max, boolean, enum, array, optional) building JSON Schema directly.
+// use (object, string, number with min/max, boolean, enum, array, record, optional) building JSON Schema directly. A
+// builder missing here throws while the extension loads, and OmO then drops every dotz tool of that session.
 type Json = Record<string, unknown>;
 export type Schema = { json: Json; isOptional: boolean; optional(): Schema; min(n: number): Schema; max(n: number): Schema };
 
@@ -20,6 +21,7 @@ export const jsonZod = {
 	boolean: () => make({ type: "boolean" }),
 	enum: (values: readonly string[]) => make({ type: "string", enum: [...values] }),
 	array: (item: Schema) => make({ type: "array", items: toJson(item) }),
+	record: (_key: Schema, value: Schema) => make({ type: "object", additionalProperties: toJson(value) }),
 	object: (shape: Record<string, Schema>) => {
 		const properties = Object.fromEntries(Object.entries(shape).map(([k, v]) => [k, toJson(v)]));
 		const required = Object.entries(shape).filter(([, v]) => !v.isOptional).map(([k]) => k);
