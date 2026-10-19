@@ -65,8 +65,9 @@ export function listHosts(root = join(agentDir(), "rpc-host-daemon")): Host[] {
 // (a pid reused later by some other process does not match).
 export const hostsOf = (rec: Started, hosts: Host[]) => hosts.filter(h => h.ownerPid === rec.pid && (!h.ownerStart || Math.abs(h.ownerStart - rec.at) < 60_000));
 
+// --force: the owner has exited, so the worker sessions a plain stop refuses on ("sessions_live") are its leftovers.
 async function stopHost(socket: string): Promise<boolean> {
-	const p = Bun.spawn([OMO, "host", "stop", "--socket", socket], { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 20_000, killSignal: "SIGKILL" });
+	const p = Bun.spawn([OMO, "host", "stop", "--force", "--socket", socket], { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 20_000, killSignal: "SIGKILL" });
 	const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
 	if (code !== 0) log(`omo host stop ${socket} failed (${code}): ${(err || out).trim().slice(0, 200)}`);
 	return code === 0;
@@ -78,8 +79,13 @@ export async function closeHostsOf(pid: number | undefined): Promise<number> {
 	const rec = records().find(r => r.pid === pid);
 	if (!rec) return 0;
 	let stopped = 0;
-	for (const h of hostsOf(rec, listHosts())) if (await stopHost(h.socket)) stopped++;
-	save(records().filter(r => r.pid !== pid));
+	let failed = 0;
+	for (const h of hostsOf(rec, listHosts())) {
+		if (await stopHost(h.socket)) stopped++;
+		else failed++;
+	}
+	// A host that would not stop keeps the record, so the next sweep tries again.
+	if (!failed) save(records().filter(r => r.pid !== pid));
 	if (stopped) log(`omo: stopped ${stopped} rpc host(s) left by pid ${pid}`);
 	return stopped;
 }
@@ -88,6 +94,8 @@ export async function closeHostsOf(pid: number | undefined): Promise<number> {
 export async function sweepHosts(): Promise<number> {
 	let stopped = 0;
 	for (const rec of records()) if (!alive(rec.pid)) stopped += await closeHostsOf(rec.pid);
+	// OmO's own cleanup of endpoint records whose host is provably dead (as 오모냥's session doctor does).
+	if (stopped) await Bun.spawn([OMO, "host", "gc", "--json"], { stdin: "ignore", stdout: "ignore", stderr: "ignore", timeout: 20_000 }).exited;
 	return stopped;
 }
 
