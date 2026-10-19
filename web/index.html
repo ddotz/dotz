@@ -314,6 +314,7 @@ details.work.live .wdot { display: block; }
 .working { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-bottom: 8px; color: var(--fg-3); font-size: 12.5px; line-height: 20px; }
 #working-tx { min-width: 0; overflow-wrap: anywhere; }
 .working .btn { flex: none; height: 24px; padding: 0 8px; font-size: 12px; }
+@media (pointer: coarse) { .working .btn { height: 36px; padding: 0 10px; } }
 .hintrow { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-bottom: 8px; }
 .hintrow::-webkit-scrollbar { display: none; }
 .hintchip { flex: none; height: 24px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--card); color: var(--fg-2); font: 500 12px/20px var(--mono); }
@@ -432,8 +433,9 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .lacts { display: flex; flex-wrap: wrap; gap: 2px; margin: 2px -6px 0; }
 .lacts .btn { height: 24px; padding: 0 6px; font-size: 12px; }
 .lacts .btn.tonal { padding: 0 10px; margin-left: 6px; }
+@media (pointer: coarse) { .lacts .btn { height: 36px; padding: 0 10px; } .lname { min-height: 36px; } }
 .ltail { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0; background: var(--layer); font: 12px/20px var(--mono); cursor: pointer; overscroll-behavior: contain; }
-.lr { display: flex; gap: 8px; min-width: 0; padding: 0 12px; }
+.lr { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; padding: 0 12px; }
 .lr:hover { background: var(--hover); }
 .lr .lt { flex: none; color: var(--fg-3); font-size: 11px; }
 .lr .lb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -781,7 +783,8 @@ const SUB = new Set(["models", "providers", "usage", "context"]);
 const views = ["home", "chat", "activity", "lanes", "settings", "models", "providers", "usage", "context"];
 const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인", settings: "설정", models: "모델", providers: "공급자", usage: "사용량", context: "컨텍스트" };
 const laneAlive = l => l.status !== "exited";
-const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/exit|dead|error|fail|stop/.test(s || "") ? "err" : "");
+// An exited or stopped lane is a normal end, so it gets the neutral dot; red is kept for real failures.
+const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
 const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 제한", exited: "종료됨" })[s] || s || "알 수 없음";
 const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
@@ -903,7 +906,7 @@ function go(name, tgt) {
   for (const v of views) $(`#v-${v}`).hidden = v !== name;
   const back = backTarget();
   if (name === "chat" || name === "activity") try { localStorage.setItem(CHAT_MODE_KEY, name); } catch {}
-  document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(back || name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
+  document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#back").hidden = !back;
   $("#appbar").classList.toggle("back", !!back);
   $("#title").textContent = name === "home" ? botName : titles[name];
@@ -1106,7 +1109,8 @@ function renderHome() {
   const alive = lanes.filter(laneAlive);
   const lanesCard = tapCard("lanes", cardHead("레인", el("span", { class: "tag", text: `${alive.length}/${lanes.length}` })));
   if (!lanes.length) lanesCard.append(el("div", { class: "sup", text: "레인 없음" }));
-  for (const l of lanes.slice(0, 3)) lanesCard.append(el("div", { class: "row" }, el("span", { class: `dot ${statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), el("span", { class: "sup", text: statusKo(l.status) })));
+  const ordered = [...lanes.filter(laneAlive), ...lanes.filter(l => !laneAlive(l))];
+  for (const l of ordered.slice(0, 3)) lanesCard.append(el("div", { class: "row" }, el("span", { class: `dot ${statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), el("span", { class: "sup", text: statusKo(l.status) })));
   if (lanes.length > 3) lanesCard.append(el("div", { class: "more", text: `외 ${lanes.length - 3}개` }));
   const lsl = laneSubLine();
   if (lsl) lanesCard.append(lsl);
@@ -1614,7 +1618,7 @@ function toolBox(a, tool, withState) {
   const label = toolLabel(a);
   // collapsed row reads "tool · intent"; code and results live only in the expansion
   const node = el("details", { class: "box" },
-    el("summary", {}, el("span", { class: "tname", text: tool || "tool" }), label ? el("span", { class: "tsum", text: `· ${label}` }) : null, el("span", { class: "sp" }), el("span", { class: "ttime", text: kstTime(a.ts) }), state), body);
+    el("summary", {}, el("span", { class: "tname", text: capName(tool) }), label ? el("span", { class: "tsum", text: `· ${label}` }) : null, el("span", { class: "sp" }), el("span", { class: "ttime", text: kstTime(a.ts) }), state), body);
   return { node, body, state };
 }
 function actNode(a, ctx) {
@@ -1678,14 +1682,14 @@ function laneRow(p, a) {
     case "tool_call": {
       const label = laneToolLabel(a), st = el("span", { class: "st", text: "…" });
       if (a.call_id) p.calls.set(a.call_id, st);
-      return row("tl", [el("span", { class: "tn", text: a.tool || "tool" }), label ? el("span", { class: "ts", text: ` · ${label}` }) : null], st);
+      return row("tl", [el("span", { class: "tn", text: capName(a.tool) }), label ? el("span", { class: "ts", text: ` · ${label}` }) : null], st);
     }
     case "tool_result": {
       const st = a.call_id && p.calls.get(a.call_id);
       if (st) { laneMark(st, a); return null; }
       const mark = el("span", { class: "st" });
       laneMark(mark, a);
-      return row("tl", [el("span", { class: "tn", text: a.tool || "결과" })], mark);
+      return row("tl", [el("span", { class: "tn", text: a.tool ? capName(a.tool) : "결과" })], mark);
     }
     default: return a.text ? row("dv", [oneLine(a.text)]) : null;
   }
