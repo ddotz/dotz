@@ -18,6 +18,10 @@ mkdirSync(data, { recursive: true });
 process.env.DOTZ_DIR = data;
 process.env.DOTZ_OMP = join(dir, "no-such-omp");
 process.env.DOTZ_OMO = join(dir, "no-such-omo");
+// OmO's agent dir (auth.json pin, rpc hosts) is a throwaway one too, so the machine's real login state cannot change a test.
+process.env.OMO_CODING_AGENT_DIR = join(dir, "omo-agent");
+delete process.env.PI_AGENT_DIR;
+mkdirSync(process.env.OMO_CODING_AGENT_DIR, { recursive: true });
 writeFileSync(
 	join(data, "config.json"),
 	JSON.stringify({
