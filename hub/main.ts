@@ -200,7 +200,7 @@ function flush(target: string): void {
 
 function alert(text: string): void {
 	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text });
-	void discord.send("alert", text, undefined, "fail").catch(e => log(`alert send failed: ${e}`));
+	void discord.send("alert", text).catch(e => log(`alert send failed: ${e}`));
 }
 setAlertHandler(alert);
 
