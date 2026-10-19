@@ -38,7 +38,7 @@ const KEEP_MS = 30 * 60_000;
 const OTP_MS = 5 * 60_000;
 const MAX_WAIT_S = 55;
 const OWNER = String(cfg.discord?.owner_id ?? "");
-const RESERVED = new Set(["hub-token", "discord-bot-token", basename(String(cfg.discord?.token_file ?? ""))].filter(Boolean));
+const RESERVED = new Set(["hub-token", "discord-bot-token", basename(String(cfg.discord?.token_file ?? "")).toLowerCase()].filter(Boolean));
 const SECRETS_DIR = join(DATA_DIR, "secrets");
 const reqs = new Map<string, AuthRequest>();
 
