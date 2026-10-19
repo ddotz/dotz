@@ -2,10 +2,11 @@
 // adapter answers to is logged once and falls back to omp, so a typo in config.json never leaves the gateway without an agent.
 import { cfg, log } from "../config.ts";
 import { claude } from "./claude.ts";
+import { omo } from "./omo.ts";
 import { omp } from "./omp.ts";
 import type { Role, RuntimeAdapter } from "./types.ts";
 
-export const adapters: Record<string, RuntimeAdapter> = { omp, claude };
+export const adapters: Record<string, RuntimeAdapter> = { omp, claude, omo };
 const warned = new Set<string>();
 
 export function runtimeFor(role: Role): RuntimeAdapter {

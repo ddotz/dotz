@@ -30,6 +30,7 @@ import { addWatch, allWatches, listWatches, removeWatch, startWatches, stopWatch
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
+import { startHostSweep } from "./runtime/omo-hosts.ts";
 
 const WEB = join(import.meta.dir, "..", "web", "index.html");
 const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
@@ -804,6 +805,7 @@ startMemoryGuard((key, text) => {
 	void discord.send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 });
 startOrphanReaper();
+startHostSweep();
 startSchedules(s => {
 	const channel = discord.status.enabled ? "chat" : "web";
 	const event = { ts: now(), kind: "schedule", source: "schedule", channel, id: s.id, every: s.every_minutes, text: s.text };
