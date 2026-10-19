@@ -169,6 +169,46 @@ workers and Fable or max/xhigh use. A class flagged on consecutive days is marke
 only when something is flagged, and the reflection digest cites the result. Nothing is changed automatically. 14 days of
 totals stay in `~/.dotz/token-audit.json`. Try it with `bun hub/token-audit.ts --dry [--hours N]`.
 
+**Worker guard and harness commands** (`extension/guard.ts`, `extension/harness-tools.ts`, `extension/token-audit.ts`) load with
+the dotz omp extension into every session it is in: terminals, the orchestrator and lanes. `guard.enabled: false` turns the guard off.
+- *Briefs* (`task` calls of the main agent): blocked without a done-condition line (`Acceptance:`, `Done when:`, ...), over
+  `max_brief_chars` (8000) characters, or with a fenced code block over `max_fence_lines` (40) lines; every brief gets a
+  budget line (answer length, context budget); writing workers are forced `isolated` in a git repo and checkout paths in the
+  brief become cwd-relative. Worker output over `max_output_chars` (2000) is trimmed in the orchestrator's context
+  (`history://<id>` keeps the full text).
+- *Review before apply*: `git apply <x>.patch` is blocked until the patch was read in the session. A message to a finished
+  worker is blocked (spawn a new one).
+- *Workers*: external-impact commands (`git push`, `gh` writes, publish, deploy, `ssh`/`scp`/`rsync`, outbound HTTP writes,
+  plus your `external_commands`) are blocked and handed back; the first compaction steers a worker to wrap up and the second
+  disables its tools; the 1h cache TTL is dropped (5-minute cache).
+- *Loops*: the same tool call (or a 2-4 call cycle) repeated with unchanging results is blocked; after more ignored blocks a
+  human is asked, a headless session is told to stop. `repeat_block_threshold` (8) sets how many calls it takes.
+- *Searches*: recursive grep/find/rg/du/ls -R of `/`, `~`, `~/Library` or with an unquoted shell expansion is blocked.
+- *Budget gate*: a `task` call is blocked when the Anthropic 5h window would drop under `budget_margin_percent` (10) after the
+  job's estimate (`budget_default_estimate_percent` 15, or an `Estimate: N%` line in the brief) until `/budget-ok`
+  (`override_minutes`, 30). The 7d window is only shown. No Anthropic usage data from omp: no gate. `budget_gate: false` turns it off.
+- *State*: spawned workers, results and unapplied patches are kept per project (and lane) under
+  `~/.omp/agent/orchestrator-state` (`ORCH_GUARD_STATE_DIR`) and re-injected after a compaction or a new session.
+- `/compact-switch provider/model[:thinking]` compacts on the current model (cache still warm, only above
+  `switch_compact_min_tokens`, 50000) before switching. `/doctor [fix]` (and the `harness_doctor` tool) checks context,
+  session file size, model vs default role, last rate limit, quota, open workers/patches, guard health and orphaned omp RPC
+  processes; `/handover [note]` starts a fresh session with recent reports, git status and open workers;
+  `/token-audit [hours]` (and `harness_token_audit`) is the on-demand form of the nightly audit and writes
+  `~/.dotz/logs/token-audit-session-YYYYMMDD.md`. `guard.harness_tools: false` leaves these out.
+- *Owner rule, off by default*: `ask_before_expensive: true` with `expensive_models: ["fable", ":max", ":xhigh"]` (substring
+  of a model selector; `:level` for a thinking level) blocks `task` workers on those models and flags a main session on one
+  until `/fable-ok` or `DOTZ_OWNER_ASKED_FABLE=1` (set by the gateway for `owner_asked_for_fable` lanes); `/doctor` and the
+  audit report them too.
+- Config: the `guard` object in `config.json`, every key optional (`enabled`, `max_brief_chars`, `max_fence_lines`,
+  `max_output_chars`, `worker_answer_chars` 800, `worker_context_tokens` 400000, `budget_gate`, `budget_margin_percent`,
+  `budget_default_estimate_percent`, `override_minutes`, `repeat_block_threshold`, `switch_compact_min_tokens`,
+  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `defer_to_installed`, `harness_tools`).
+- *Already installed copies*: omp lists no loaded extensions to an extension, so the guard looks for
+  `<agent dir>/extensions/orchestrator-guard.ts` (and `harness-tools.ts` for the commands), unless omp runs with
+  `--no-extensions` or `disabledExtensions` names it. When it exists, this copy leaves those hooks to it (the same hooks
+  twice would double every block, steer and state write) and logs one warning per process; `/doctor` reports which copy
+  is in effect. `guard.defer_to_installed: false` runs this copy anyway.
+
 **Off-machine backup.** The nightly snapshot (a local git repo of `~/.dotz` rules, lessons, identity and settings) is
 pushed to `backup.remote` when that key is set (off by default). Files that look like secrets are kept out of the commit,
 and a push with secret-like content in its history is refused. A remote URL with embedded credentials is refused too.
@@ -348,6 +388,6 @@ short "received, answering when the current step ends" notice from the gateway.
   see events. `verify.ts` detects the installed harnesses and runs the compatibility check before a switch (see API additions). `bun test` replays recorded omp frames and two state-machine scenarios against goldens captured before the
   adapter existed (`hub/runtime/fixtures`).
 - Audit against Dori / dori-kit / 오모냥: `docs/audit-2026-10-16.md`.
-- `extension/index.ts` omp extension: orchestrator tools, terminal thin client, nothing in lanes.
+- `extension/index.ts` omp extension: orchestrator tools, terminal thin client, the worker guard and harness commands (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `token-audit.ts`).
 - `web/index.html` web app. `MODE.md` the 땃쥐 contract (`MODE.ko.md` its Korean original). `setup.ts` onboarding.
 - Runtime data: `~/.dotz` (config, secrets, state, inbox/outbox, lanes, logs).

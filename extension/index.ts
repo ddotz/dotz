@@ -4,6 +4,8 @@
 // - any other session: "<name>모드 켜" (dotz_mode tool, /dotz on) makes this terminal a thin client of the
 //   gateway: typed input is forwarded to the gateway orchestrator instead of the local model, replies addressed to
 //   the terminal are shown here. "<name>모드 꺼" or /dotz off stops forwarding. No terminal needs to stay open.
+// - every session above also gets the worker guard (guard.ts) and the /doctor, /handover, /token-audit commands (harness-tools.ts);
+//   config key `guard`, see README. Each skips itself when the owner's original ~/.omp extension of that name is installed.
 
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -13,6 +15,8 @@ import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { systemDeny } from "../hub/systemdeny.ts";
+import { dropLongTtl, installGuard } from "./guard.ts";
+import { installHarnessTools } from "./harness-tools.ts";
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 const PKG = join(import.meta.dir, "..");
@@ -50,18 +54,6 @@ function enforceRules(pi: any): void {
 		const feature = blockedByFeatures(DATA, command);
 		if (feature) return { block: true, reason: `Blocked by the owner's feature (${join(DATA, "features", feature.id, "feature.md")}): ${feature.reason}. Do not work around it; report it if the task needs it.` };
 	});
-}
-
-function dropLongTtl(value: any): number {
-	if (Array.isArray(value)) return value.reduce((n, item) => n + dropLongTtl(item), 0);
-	if (!value || typeof value !== "object") return 0;
-	let dropped = 0;
-	if (value.cache_control?.ttl === "1h") {
-		delete value.cache_control.ttl;
-		dropped++;
-	}
-	for (const key of Object.keys(value)) if (key !== "cache_control") dropped += dropLongTtl(value[key]);
-	return dropped;
 }
 
 function hub(): { url: string; token: string } | undefined {
@@ -378,6 +370,10 @@ function keyProvider(pi: any): void {
 
 export default function dotz(pi: any) {
 	keyProvider(pi);
+	// Worker guard and harness commands run in every session (interactive, orchestrator, lane), each skipping itself when the
+	// owner's original ~/.omp extension of the same name is installed (guard-config.ts installedOriginal).
+	installGuard(pi);
+	installHarnessTools(pi);
 	if (process.env.DOTZ_LANE) {
 		enforceRules(pi);
 		return laneSession(pi);
