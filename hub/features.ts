@@ -40,12 +40,22 @@ export type Feature = {
 	origin?: "shipped" | "personal"; // shipped: comes with dotz for every user; personal: this owner's own files and settings
 };
 // Owner files (RULES/LESSONS/identity, RULES deny lines, schedules, watches, channel setups) and anything under the home
-// directory (skills, omp extensions) are personal; dotz's own code, built-in denies and repo files ship with dotz.
+// directory (skills, omp extensions) are personal, unless it is dotz's own checkout (its extension is linked from there);
+// dotz's own code, built-in denies and repo files ship with dotz.
 const originOf = (f: Feature): "shipped" | "personal" =>
-	f.form === "글 지시" || f.form === "예약" || f.form === "감시" || f.form === "작업 채널 설정" || f.id.startsWith("deny-") || f.source.label.startsWith("~") ? "personal" : "shipped";
+	f.form === "글 지시" || f.form === "예약" || f.form === "감시" || f.form === "작업 채널 설정" || f.id.startsWith("deny-") || (f.source.label.startsWith("~") && !inRepo(f.source.label)) ? "personal" : "shipped";
 
 const REPO = join(import.meta.dir, "..");
 const short = (p: string) => (p.startsWith(`${HOME}/`) ? `~${p.slice(HOME.length)}` : p.startsWith(`${REPO}/`) ? p.slice(REPO.length + 1) : p);
+// A "~/..." source label that points into a dotz checkout (the omp extension link resolves to <checkout>/extension/).
+function inRepo(label: string): boolean {
+	try {
+		const real = realpathSync(`${HOME}${label.replace(/:\d+$/, "").slice(1)}`);
+		return existsSync(join(dirname(real), "..", "hub", "features.ts"));
+	} catch {
+		return false;
+	}
+}
 const read = (p: string): string | undefined => {
 	try {
 		return readFileSync(p, "utf8");

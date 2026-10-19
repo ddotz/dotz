@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
-import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setGatewayRestart, setModel } from "./control.ts";
+import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
 import { authRoute } from "./auth.ts";
@@ -12,8 +12,8 @@ import { isNote, msg } from "./i18n.ts";
 import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
-import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, verifyLane } from "./lanes.ts";
-import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
+import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, verifyLane } from "./lanes.ts";
+import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
@@ -328,6 +328,20 @@ setProgressHandler((lane, text) => {
 		.catch(e => log(`lane progress send failed: ${e}`));
 });
 
+// A model fallback is one plain line: the orchestrator's (and its workers') in worklog, a lane's (and its workers') in the lane's channel. Neither wakes the orchestrator.
+setOrchNoticeHandler(text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`model fallback notice failed: ${e}`)));
+setLaneNoticeHandler((lane, text) => {
+	const channel = `lane:${lane.name}`;
+	lastPost.set(channel, Date.now());
+	void inOrder(channel, async () => {
+		const shown = await localize(text, channel, "lane");
+		emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown });
+		return shown;
+	})
+		.then(shown => discord.send(channel, shown))
+		.catch(e => log(`lane model fallback notice failed: ${e}`));
+});
+
 discord.setChannelGoneHandler(id => {
 	if (clearChannel(id)) log(`work channel ${id} is gone; its logins and monitors were released`);
 });
@@ -583,6 +597,14 @@ const server = Bun.serve({
 			const b = await body(req);
 			try {
 				return json(await setModel(String(b.target ?? ""), b.model ? String(b.model) : undefined, b.thinking ? String(b.thinking) : undefined, b.force === true));
+			} catch (error) {
+				return fail(error);
+			}
+		}
+		if (req.method === "PUT" && url.pathname === "/api/fallbacks") {
+			const b = await body(req);
+			try {
+				return json(await setFallback(String(b.target ?? ""), Array.isArray(b.chain) ? b.chain : []));
 			} catch (error) {
 				return fail(error);
 			}

@@ -2,17 +2,21 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { emitEventActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
-import { cfg, DATA_DIR, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, workerModel, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, DATA_DIR, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, workerModel, writeAtomic } from "./config.ts";
 import { lang, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { languageName, baseLanguage } from "./language.ts";
 import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import type { AgentProcess } from "./runtime/types.ts";
+import type { AgentError, AgentProcess } from "./runtime/types.ts";
+import { Chain, failureReason, hubOwned, type Move } from "./fallback.ts";
 import { parseTone } from "./tone.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
+// A lane started with a fallback chain: after a failed request the runtime may move to the next model by itself and redo
+// the turn, so the failure is acted on (pause, retry, error report) only when no such switch follows within a short grace.
+const FALLBACK_GRACE_MS = 3000;
 const PROGRESS_EVERY_MS = Number(process.env.DOTZ_PROGRESS_MS ?? 15 * 60_000);
 const WATCHDOG_MS = 120_000;
 // A turn in flight with no rpc frame for this long (a hung omp or provider call) is aborted and resumed; a lane
@@ -55,6 +59,14 @@ export type Lane = Record_ & {
 	silent?: { lastText: string };
 	// Set when a compaction finished: the next prompt sent to the process carries the retain nudge once (no extra turn).
 	retainNext?: boolean;
+	// The models the running process answers on now (its own, and its task workers'): the configured ones, or the fallbacks omp moved to. Reset at every spawn.
+	activeModel?: string;
+	activeWorkerModel?: string;
+	chained?: boolean;
+	errorHold?: Timer;
+	// The chain the hub drives itself (conditional entries, spend caps; hub/fallback.ts) and a spend-cap decision waiting for an idle moment.
+	chain?: Chain;
+	capped?: { move?: Move };
 };
 
 export const lanes = new Map<string, Lane>();
@@ -66,6 +78,12 @@ export function setReportHandler(fn: ReportFn): void {
 }
 export function setProgressHandler(fn: ReportFn): void {
 	onProgress = fn;
+}
+// One line for the lane's channel when the runtime moves it, or one of its task workers, to the next model of a fallback
+// chain. Not a report: it does not wake the orchestrator.
+let onNotice: ReportFn = () => {};
+export function setNoticeHandler(fn: ReportFn): void {
+	onNotice = fn;
 }
 // Called when a lane's turn has ended and it is idle again (after its report had its chance to go out); main.ts sends
 // the web messages queued for that lane.
@@ -207,6 +225,80 @@ function retryTransient(lane: Lane, err: string): boolean {
 	return true;
 }
 
+// A failed request: a usage limit or a billing/auth problem pauses the lane, a temporary provider error is retried with backoff, anything else is reported as a lane error.
+function handleError(lane: Lane, e: AgentError): void {
+	if (lane.chain && !(e.kind === "transient" && (lane.transientTries ?? 0) < TRANSIENT_RETRIES)) void failOver(lane, e).then(moved => !moved && legacyError(lane, e));
+	else legacyError(lane, e);
+}
+function legacyError(lane: Lane, e: AgentError): void {
+	if (e.kind === "rate" || e.kind === "owner") void pauseForRateLimit(lane, e.text, e.kind);
+	else if (e.kind !== "transient" || !retryTransient(lane, e.text)) {
+		lane.lastText = `[lane error] ${(e.text || "model request failed").slice(0, 300)}`;
+		scheduleReport(lane);
+	}
+}
+// The next entry of a hub-driven chain takes over when the active one fails (a temporary error is retried a few times first).
+async function failOver(lane: Lane, e: AgentError): Promise<boolean> {
+	const active = lane.chain;
+	if (!active) return false;
+	const reason = failureReason({ kind: e.kind, text: e.text });
+	const until = reason === "quota" ? Date.now() + (await rateLimitDelay(e.text, active.selector(active.active))).ms : undefined;
+	// The restart resumes the session, so it must be known; a first request that failed at once may not have reported it yet.
+	for (let i = 0; i < 20 && !lane.sessionFile && lane.proc; i++) {
+		if (i === 0) lane.proc.refreshSession();
+		await Bun.sleep(100);
+	}
+	if (lane.chain !== active || !lane.proc || !lane.sessionFile) return false;
+	const move = active.fail(reason, until);
+	if (!move) return false;
+	switchTo(lane, move, true);
+	return true;
+}
+// Restarts the lane on the same session with another entry of its chain (spawn() picks it from the persisted limit and spend
+// state); `again` tells it to redo the request that just failed.
+function switchTo(lane: Lane, move: Move, again: boolean): void {
+	if (!lane.chain || !lane.proc || lane.revive) return;
+	const line = msg().fallbackMove(lane.chain.label(move.from), lane.chain.label(move.to), move.why);
+	log(`lane ${lane.name} ${line}`);
+	onNotice(lane, line);
+	clearTimeout(lane.timer);
+	rmSync(pendingFile(lane), { force: true });
+	lane.revive = { text: again ? msg().laneTransient : undefined };
+	lane.proc.kill(true);
+}
+// At an idle moment: act on a spend cap reached during the turn, or go back to an earlier entry whose limit has reset.
+function settleChain(lane: Lane): void {
+	if (!lane.chain || !lane.proc || lane.status !== "idle" || lane.revive || runningSubagents(`lane:${lane.name}`) > 0) return;
+	if (lane.capped) {
+		const reached = lane.capped;
+		lane.capped = undefined;
+		if (reached.move) switchTo(lane, reached.move, false);
+		else pauseExhausted(lane, lane.chain, lane.chain.down(lane.chain.active)?.until ?? Date.now() + 3_600_000);
+		return;
+	}
+	const back = lane.chain.revertTarget();
+	if (back) switchTo(lane, back, false);
+}
+// Every entry is spent: the lane holds its messages until the earliest cap period ends, then starts again.
+function pauseExhausted(lane: Lane, c: Chain, until: number): void {
+	setStatus(lane, "rate-limited");
+	const at = new Date(until).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+	const line = msg().fallbackExhausted(c.label(c.active), at);
+	log(`lane ${lane.name} ${line}`);
+	onNotice(lane, line);
+	report(lane, line);
+	lane.pauseReported = true;
+	clearTimeout(lane.resumeTimer);
+	lane.resumeTimer = setTimeout(() => {
+		lane.resumeTimer = undefined;
+		setStatus(lane, "idle");
+		if (lane.proc) {
+			lane.revive = { text: msg().laneRate };
+			lane.proc.kill(true);
+		} else resumeLane(lane, msg().laneRate);
+	}, Math.max(1000, until - Date.now()));
+}
+
 async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 	const source = `lane:${lane.name}`;
 	// Whether the turn was running when the current frame's first event arrived (before any of its events took effect).
@@ -223,6 +315,7 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				clearTimeout(lane.watchdog);
 				clearTimeout(lane.timer);
 				clearTimeout(lane.transientTimer);
+				clearTimeout(lane.errorHold);
 				lane.transientTimer = undefined;
 				rmSync(pendingFile(lane), { force: true });
 				setStatus(lane, "working");
@@ -233,17 +326,16 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				if (ev.text) lane.lastText = ev.text;
 				// A compaction error is recovered by recover() below (restart on the same session), not retried here.
 				else if (ev.stop === "error" && !ev.error.compaction) {
-					const err = ev.error.text;
-					const kind = ev.error.kind;
-					if (kind === "rate" || kind === "owner") void pauseForRateLimit(lane, err, kind);
-					else if (kind !== "transient" || !retryTransient(lane, err)) {
-						lane.lastText = `[lane error] ${(err || "model request failed").slice(0, 300)}`;
-						scheduleReport(lane);
-					}
+					const failed = ev.error;
+					if (lane.chained) {
+						clearTimeout(lane.errorHold);
+						lane.errorHold = setTimeout(() => handleError(lane, failed), FALLBACK_GRACE_MS);
+					} else handleError(lane, failed);
 				}
 				break;
 			case "turn_end":
 				scheduleReport(lane);
+				setTimeout(() => settleChain(lane), REPORT_DEBOUNCE_MS + 150);
 				if (lane.status === "idle" && (lane.pauseReported || lane.held?.length)) {
 					lane.pauseReported = false;
 					lane.held = undefined;
@@ -259,9 +351,23 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				lane.sessionFile = ev.ref;
 				persist(lane);
 				break;
+			case "spend": {
+				const reached = lane.chain?.spend(ev.tokens, ev.usd);
+				if (reached?.capped) lane.capped = reached;
+				break;
+			}
 			case "compaction":
 				if (ev.state === "error") recover(lane, `컨텍스트 압축이 실패했어요 (${ev.error.slice(0, 120)})`, wasWorking);
 				else lane.retainNext = true;
+				break;
+			case "fallback":
+				log(`lane ${lane.name} model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
+				if (ev.worker) lane.activeWorkerModel = ev.to;
+				else {
+					clearTimeout(lane.errorHold);
+					lane.activeModel = ev.to;
+				}
+				onNotice(lane, msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker));
 				break;
 		}
 	}
@@ -270,16 +376,33 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 export const laneWorkerModel = (lane: Pick<Lane, "workerModel">) => lane.workerModel ?? workerModel();
 
 function spawn(lane: Lane, resume: boolean): void {
+	const entries = chainAfter(lane.model, fallbackChain("lanes"));
+	lane.chain = hubOwned(entries) ? new Chain(lane.model, entries, parseSelector(lane.model).thinking) : undefined;
+	lane.capped = undefined;
+	let spawnModel = lane.model;
+	const env: Record<string, string> = { DOTZ_LANE: lane.name, ...(lane.fableOk ? { DOTZ_OWNER_ASKED_FABLE: "1" } : {}) };
+	if (lane.chain) {
+		const until = lane.chain.exhaustedUntil();
+		if (until !== undefined) return pauseExhausted(lane, lane.chain, until);
+		lane.chain.active = lane.chain.initial();
+		spawnModel = lane.chain.selector(lane.chain.active);
+		Object.assign(env, lane.chain.env(lane.chain.active));
+	}
 	const proc = runtimeFor("lane").start({
 		role: "lane",
 		cwd: lane.cwd,
-		model: lane.model,
+		model: spawnModel,
+		fallback: lane.chain ? [] : entries.map(e => e.model),
+		hubSwitches: Boolean(lane.chain),
 		resume: resume ? lane.sessionFile : undefined,
 		// The omp-side orchestrator-guard blocks Fable / max-effort worker spawns unless the owner asked for them.
-		env: { DOTZ_LANE: lane.name, ...(lane.fableOk ? { DOTZ_OWNER_ASKED_FABLE: "1" } : {}) },
+		env,
 		// Rewritten at every spawn so changed lanes.* settings apply the next time the lane starts or resumes.
-		lane: { name: lane.name, dir: dir(lane.name), workerModel: laneWorkerModel(lane), compactAt: lanesCompactAt(), keepRecent: lanesKeepRecent() },
+		lane: { name: lane.name, dir: dir(lane.name), workerModel: laneWorkerModel(lane), workerFallback: chainAfter(laneWorkerModel(lane), fallbackChain("workers")).map(e => e.model), compactAt: lanesCompactAt(), keepRecent: lanesKeepRecent() },
 	});
+	lane.activeModel = spawnModel;
+	lane.chained = !lane.chain && entries.length > 0;
+	lane.activeWorkerModel = laneWorkerModel(lane);
 	lane.proc = proc;
 	lane.quiet = false;
 	lane.revive = undefined;
@@ -295,6 +418,7 @@ function spawn(lane: Lane, resume: boolean): void {
 		clearTimeout(lane.resumeTimer);
 		lane.resumeTimer = undefined;
 		clearTimeout(lane.transientTimer);
+		clearTimeout(lane.errorHold);
 		lane.transientTimer = undefined;
 		endSubagents(`lane:${lane.name}`);
 		statusActivity(`lane:${lane.name}`, `lane process exited (code ${code})`);
@@ -637,6 +761,7 @@ export function shutdownLanes(): void {
 
 setInterval(() => {
 	for (const lane of lanes.values()) {
+		settleChain(lane);
 		if (lane.status !== "working" || !lane.lastText || lane.lastText === lane.progressText) continue;
 		if (Date.now() - (lane.progressAt ?? Date.now()) < PROGRESS_EVERY_MS) continue;
 		lane.progressAt = Date.now();
@@ -652,7 +777,7 @@ setInterval(() => {
 	}
 }, Math.min(60_000, Math.max(250, STALL_MS / 2)));
 
-export const laneModels = () => [...lanes.values()].map(l => ({ name: l.name, ...parseSelector(l.model), status: l.status, running: Boolean(l.proc), worker_model: laneWorkerModel(l), worker_model_override: l.workerModel }));
+export const laneModels = () => [...lanes.values()].map(l => ({ name: l.name, ...parseSelector(l.model), status: l.status, running: Boolean(l.proc), worker_model: laneWorkerModel(l), worker_model_override: l.workerModel, ...(l.proc ? { active_model: l.activeModel, active_worker_model: l.activeWorkerModel } : {}) }));
 
 export function laneSummary(): Array<Record<string, unknown>> {
 	return [...lanes.values()].map(l => ({

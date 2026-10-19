@@ -5,7 +5,7 @@ import type { Subprocess } from "bun";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Block, blocks, joined, summary } from "../activity.ts";
-import { OMP, parseSelector } from "../config.ts";
+import { DATA_DIR, OMP, parseSelector } from "../config.ts";
 import { isNote } from "../i18n.ts";
 import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
@@ -27,10 +27,15 @@ type Frame = {
 	attempt?: number;
 	maxAttempts?: number;
 	error?: string;
+	// retry_fallback_applied
+	from?: string;
+	to?: string;
+	role?: string;
+	reason?: string;
 	payload?: Record<string, any>;
 	data?: { sessionFile?: string; contextUsage?: { tokens?: number; contextWindow?: number }; model?: { contextWindow?: number }; tokensBefore?: number };
 };
-type Usage = { input?: number; cacheRead?: number; cacheWrite?: number; output?: number };
+type Usage = { input?: number; cacheRead?: number; cacheWrite?: number; output?: number; cost?: { total?: number } };
 
 const EXTENSION = join(import.meta.dir, "..", "..", "extension", "index.ts");
 
@@ -71,6 +76,8 @@ function activityFromFrame(f: Frame): ActivityRow[] {
 			return [{ type: "status", text: "compacting context" }];
 		case "auto_compaction_end":
 			return [{ type: "status", text: "context compacted" }];
+		case "retry_fallback_applied":
+			return f.from && f.to ? [{ type: "status", text: `model fallback: ${f.from} → ${f.to}${f.reason ? ` (${f.reason.replace(/\s+/g, " ").slice(0, 160)})` : ""}` }] : [];
 		case "extension_error":
 			return [{ type: "error", text: String(f.error ?? "extension error"), is_error: true }];
 		default:
@@ -105,12 +112,21 @@ function subagentUpdate(p: Record<string, any>): SubagentUpdate | undefined {
 	};
 }
 
-// Everything one omp frame means to the hub, in the order the hub must apply it.
-function eventsFromFrame(f: Frame): AgentEvent[] {
+// Everything one omp frame means to the hub, in the order the hub must apply it. A task worker that moved to a fallback
+// model has no frame of its own: its progress reports the model it resolved to (`resolvedModel`, flagged
+// `resolvedModelIsFallback`), so a change of that field is the worker's fallback. `workers` remembers it per worker id.
+function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEvent[] {
 	const out: AgentEvent[] = [{ type: "alive" }];
 	if (f.type === "subagent_lifecycle" || f.type === "subagent_progress") {
 		const update = subagentUpdate(f.payload ?? {});
 		if (update) out.push({ type: "subagent", update });
+		const progress = f.payload?.progress ?? {};
+		const resolved = typeof progress.resolvedModel === "string" ? progress.resolvedModel : undefined;
+		if (update && resolved) {
+			const before = workers.get(update.id);
+			workers.set(update.id, resolved);
+			if (before && before !== resolved && progress.resolvedModelIsFallback === true) out.push({ type: "fallback", from: before, to: resolved, worker: true });
+		}
 		return out;
 	}
 	for (const row of activityFromFrame(f)) out.push({ type: "activity", row });
@@ -126,7 +142,12 @@ function eventsFromFrame(f: Frame): AgentEvent[] {
 			if (m?.role === "user") out.push({ type: "user", text: textOf(m) || (typeof m.content === "string" ? m.content.trim() : "") });
 			else if (m?.role === "assistant") {
 				const u = m.usage;
-				if (u) out.push({ type: "usage", tokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) + (u.output ?? 0) });
+				if (u) {
+					const tokens = (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) + (u.output ?? 0);
+					out.push({ type: "usage", tokens });
+					// What this request cost (omp prices it from the model catalog; 0 = unpriced), for the hub's per-entry spend caps.
+					out.push({ type: "spend", tokens, ...(u.cost?.total ? { usd: u.cost.total } : {}) });
+				}
 				const text = textOf(m);
 				const err = String(m.errorMessage ?? "");
 				if (m.stopReason === "error") {
@@ -141,6 +162,9 @@ function eventsFromFrame(f: Frame): AgentEvent[] {
 			if (f.errorMessage) out.push({ type: "compaction", state: "error", error: String(f.errorMessage).slice(0, 300), requested: false });
 			// omp's own threshold compaction: the retain nudge (lanes.ts, orchestrator.ts) must follow it like a requested one.
 			else if (!f.aborted && !f.skipped) out.push({ type: "compaction", state: "done" });
+			break;
+		case "retry_fallback_applied":
+			if (f.from && f.to) out.push({ type: "fallback", from: f.from, to: f.to, ...(f.reason ? { reason: f.reason } : {}), ...(f.role === "task" ? { worker: true } : {}) });
 			break;
 		case "response":
 			// get_state / get_session_stats: contextUsage {tokens, contextWindow, percent}, and the model window.
@@ -163,6 +187,7 @@ function eventsFromFrame(f: Frame): AgentEvent[] {
 
 class OmpProcess implements AgentProcess {
 	private seq = 0;
+	private readonly workerModels = new Map<string, string>();
 	readonly events: AsyncIterable<AgentEvent> = this.read();
 	readonly exited: Promise<number>;
 	constructor(
@@ -190,7 +215,7 @@ class OmpProcess implements AgentProcess {
 				} catch {
 					continue;
 				}
-				if (f && typeof f === "object") yield* eventsFromFrame(f as Frame);
+				if (f && typeof f === "object") yield* eventsFromFrame(f as Frame, this.workerModels);
 			}
 		}
 	}
@@ -215,6 +240,10 @@ class OmpProcess implements AgentProcess {
 	refreshSession(): void {
 		this.write({ type: "get_state" });
 	}
+	// The model is chosen after the process is up (a provider the dotz extension registers is unknown to `--model`).
+	setModel(provider: string, modelId: string): void {
+		this.write({ type: "set_model", provider, modelId });
+	}
 	watchSubagents(): void {
 		this.write({ type: "set_subagent_subscription", level: "progress" });
 	}
@@ -224,15 +253,41 @@ class OmpProcess implements AgentProcess {
 	}
 }
 
+// `retry.fallbackChains` for a per-run overlay: omp walks the chain of the exact `provider/id` that failed (an exact key
+// beats a role), and a task worker's chain by role `task` (the overlay points that role at the worker model). Empty
+// chains write nothing, so a process without fallbacks sees the same settings as before.
+function retryYaml(chains: Array<[key: string, models: string[] | undefined]>): string {
+	const used = chains.filter((c): c is [string, string[]] => c[1] !== undefined && (c[1].length > 0 || c[0] !== "task"));
+	if (!used.length) return "";
+	return `retry:\n  modelFallback: true\n  fallbackChains:\n${used.map(([key, models]) => (models.length ? `    ${JSON.stringify(key)}:\n${models.map(m => `      - ${JSON.stringify(m)}\n`).join("")}` : `    ${JSON.stringify(key)}: []\n`)).join("")}`;
+}
+
+// The chain omp walks for the process's own model: the given bare models, or an explicit empty chain when the hub does the
+// switching itself (so no chain of the owner's own omp settings moves it behind the hub's back); undefined = leave omp's settings alone.
+const nativeChain = (o: Pick<SpawnOpts, "fallback" | "hubSwitches">): string[] | undefined => (o.fallback?.length ? o.fallback : o.hubSwitches ? [] : undefined);
+
+// Per-run omp config overlay of the orchestrator (--config): its model's fallback chain, written at every start so a
+// changed chain applies the next time the process starts. No chain, no overlay: the orchestrator then starts with the
+// arguments it always had.
+function orchestratorOverlay(o: SpawnOpts): string[] {
+	const yaml = retryYaml([[parseSelector(o.model).model, nativeChain(o)]]);
+	if (!yaml) return [];
+	const file = join(DATA_DIR, "omp-orchestrator-overlay.yml");
+	writeFileSync(file, `# Written by the dotz gateway each time the orchestrator starts; passed to omp as --config.\n${yaml}`);
+	return [`--config=${file}`];
+}
+
 // Per-run omp config overlay (--config): points the `task` role at the lane's worker model, so the lane plans and
 // reviews on its own model while task workers (implementation, tests, renders, grind) run on the cheaper one, and
-// sets omp's auto-compaction for both models to `compactAt` tokens (keeping the last `keepRecent`). Written at
-// every spawn so changed lanes.* settings apply the next time the lane starts or resumes.
-function writeOverlay(model: string, lane: NonNullable<SpawnOpts["lane"]>): string {
+// sets omp's auto-compaction for both models to `compactAt` tokens (keeping the last `keepRecent`); the fallback
+// chains of the lane's model and of its workers go in too. Written at every spawn so changed lanes.* settings apply
+// the next time the lane starts or resumes.
+function writeOverlay(o: SpawnOpts, lane: NonNullable<SpawnOpts["lane"]>): string {
+	const model = o.model;
 	const file = join(lane.dir, "omp-overlay.yml");
 	mkdirSync(lane.dir, { recursive: true });
 	const thresholds = [...new Set([parseSelector(model).model, parseSelector(lane.workerModel).model])].map(m => `    ${JSON.stringify(m)}: ${JSON.stringify(`f${lane.compactAt}`)}\n`).join("");
-	writeFileSync(file, `# Written by the dotz gateway each time lane ${lane.name} starts; passed to omp as --config.\nmodelRoles:\n  task: ${JSON.stringify(lane.workerModel)}\ntask:\n  agentModelOverrides:\n    task: "@task"\n    scout: "@task"\ncompaction:\n  modelThresholds:\n${thresholds}  keepRecentTokens: ${lane.keepRecent}\n`);
+	writeFileSync(file, `# Written by the dotz gateway each time lane ${lane.name} starts; passed to omp as --config.\nmodelRoles:\n  task: ${JSON.stringify(lane.workerModel)}\ntask:\n  agentModelOverrides:\n    task: "@task"\n    scout: "@task"\ncompaction:\n  modelThresholds:\n${thresholds}  keepRecentTokens: ${lane.keepRecent}\n${retryYaml([[parseSelector(model).model, nativeChain(o)], ["task", lane.workerFallback]])}`);
 	return file;
 }
 
@@ -266,15 +321,21 @@ export const omp: RuntimeAdapter = {
 	caps: { steer: "native", subagents: "live", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true },
 	start(o) {
 		if (o.role === "lane" && !o.lane) throw new Error("a lane needs its lane options");
-		const mode = o.role === "orchestrator" ? ["--extension", EXTENSION] : [`--config=${writeOverlay(o.model, o.lane!)}`];
-		const proc = Bun.spawn([OMP, "--mode", "rpc", "--model", o.model, ...mode, ...(o.resume ? ["--resume", o.resume] : [])], {
+		const mode = o.role === "orchestrator" ? ["--extension", EXTENSION, ...orchestratorOverlay(o)] : [`--config=${writeOverlay(o, o.lane!)}`];
+		// An API-key entry's provider only exists once the dotz extension has registered it (hub/fallback.ts keyEnv): the process
+		// starts on the entry's own model and is switched to the key provider's copy before the first prompt (RPC commands run in order).
+		const key = o.env.DOTZ_KEY_PROVIDER ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined;
+		const startModel = key ? `${key.baseModel}:${parseSelector(o.model).thinking}` : o.model;
+		const proc = Bun.spawn([OMP, "--mode", "rpc", "--model", startModel, ...mode, ...(o.resume ? ["--resume", o.resume] : [])], {
 			cwd: o.cwd,
 			stdin: "pipe",
 			stdout: "pipe",
 			stderr: "pipe",
 			env: { ...process.env, ...o.env },
 		});
-		return new OmpProcess(proc, o.role === "orchestrator" ? "o" : "h");
+		const agent = new OmpProcess(proc, o.role === "orchestrator" ? "o" : "h");
+		if (key) agent.setModel(key.id, key.models[0].id);
+		return agent;
 	},
 	classifyError: classifyProviderError,
 	recentExchanges,

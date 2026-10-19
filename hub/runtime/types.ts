@@ -42,6 +42,10 @@ export type AgentEvent =
 	| { type: "assistant"; text: string; stop: "error"; error: AgentError }
 	| { type: "activity"; row: ActivityRow }
 	| { type: "subagent"; update: SubagentUpdate }
+	// The runtime switched to the next model of a fallback chain after a request failed; `worker` when it was a task worker's model.
+	| { type: "fallback"; from: string; to: string; reason?: string; worker?: boolean }
+	// What one finished model request consumed (`usd` only when the runtime could price it); the hub counts it against per-entry spend caps.
+	| { type: "spend"; tokens: number; usd?: number }
 	// New context numbers; either field may be missing.
 	| { type: "usage"; tokens?: number; window?: number }
 	// `done`/`error` with requested=true answer a compact(); an error with requested=false is a compaction the runtime ran by itself.
@@ -81,8 +85,12 @@ export interface SpawnOpts {
 	resume?: string;
 	// Added to the hub's own environment (role markers read by the dotz extension).
 	env: Record<string, string>;
+	// Model selectors tried in order after `model` fails at request time; empty/absent = no fallback.
+	fallback?: string[];
+	// The hub switches models itself (conditional entries, spend caps): the runtime must not walk a fallback chain of its own for this process.
+	hubSwitches?: boolean;
 	// Lane-only: where the runtime may keep per-run files, and the lane's worker/compaction settings.
-	lane?: { name: string; dir: string; workerModel: string; compactAt: number; keepRecent: number };
+	lane?: { name: string; dir: string; workerModel: string; workerFallback?: string[]; compactAt: number; keepRecent: number };
 }
 
 // What a runtime's `detect()` finds on this machine; `reason` says why it is not installed. `plugins` lists add-ons the

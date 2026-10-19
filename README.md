@@ -110,6 +110,32 @@ every lane start or resume the gateway writes `~/.dotz/lanes/<name>/omp-overlay.
 The lane brief contract tells the lane to review a worker's diff itself before applying it. A running lane keeps its
 process's overlay until it restarts.
 
+**Model fallback chains.** When a model fails at request time (usage limit, outage), the next model of a chain takes
+over. Three chains, each a list in `config.json`: `orchestrator.fallback`, `lanes.fallback` (every lane's own model)
+and `lanes.worker_fallback` (the lanes' task workers); an entry is a model selector (`provider/id[:thinking]`, the
+thinking level of the failing turn when omitted). They apply the next time a process starts and are edited on the web
+UI's settings tab ("모델 폴백": drag an item or use its arrow buttons to reorder, "모델 추가" picks from the model
+catalog, the model answering now is filled and marked "사용 중") or with `PUT /api/fallbacks {target, chain}`. A chain of
+bare models is walked by omp itself: the gateway writes `retry.fallbackChains` into the orchestrator's
+`omp-orchestrator-overlay.yml` / each lane's `omp-overlay.yml` (keyed by the exact primary model, and by role `task`
+for the workers; omp uses the exact key before a role, so a lane whose own model equals its worker model gets one chain
+for both). An empty chain writes nothing. Every switch writes one line (`모델 폴백: A → B (사유)`) to worklog for the
+orchestrator and its workers, to the lane's channel for a lane and its workers; none of them wakes the orchestrator, and
+while a fallback may follow, a failed request is not acted on for 3 seconds (so a usage limit that omp falls back from
+does not pause the process or send a lane-error report).
+
+An entry of the orchestrator or lane chain can be an object with conditions, which the gateway switches itself (restart on
+the same session, as a model switch does; the task workers' chain stays bare models): `when` (`"quota"` = only after the
+previous entry hit a usage limit, `"error"` = after a provider error, default any), `cap` (`{period: "month"|"day",
+usd?, tokens?}`: stop using the entry once the spend it caused in the KST month/day reaches it, then the next entry; none
+left: the process pauses with an alert until the period ends), `revert` (go back to an earlier entry when its limit
+resets, at the next idle moment) and `key_file` (the same model billed through an API key stored in the file
+`<data dir>/secrets/<key_file>`; the key reaches the process only through its environment, never a config, log, event
+or report). Spend (tokens, USD from the model catalog's prices) is counted per key/model in `<data dir>/fallback-usage.json`.
+An API-key entry runs as its own provider `<provider>-apikey`, registered inside the process by the dotz extension
+(omp prefers a stored login over an API key for the provider's own id); `anthropic`, `openai` and `openrouter` are
+built in, other providers need `base_url` and `api` on the entry.
+
 **Lane context management.** Five `lanes.*` keys in `config.json` (all optional): `compact_at` (default `400000`
 tokens) and `keep_recent` (default `40000`) go into each lane's `omp-overlay.yml` as `compaction.modelThresholds`
 (`f<compact_at>` for the lane model and its worker model) and `compaction.keepRecentTokens`, so omp compacts a lane
@@ -200,7 +226,7 @@ brief footer, one `### <name>` heading per feature, cut at 12,000 characters lik
 
 All behind the same auth as the rest of `/api`.
 
-- `GET /api/models`, `PUT /api/models {target: "orchestrator"|"lanes"|"workers"|"lane:<name>", model?, thinking?, force?}`
+- `GET /api/models`, `PUT /api/models {target: "orchestrator"|"lanes"|"workers"|"lane:<name>", model?, thinking?, force?}`; `GET /api/models` also carries `fallbacks: {max, orchestrator|lanes|workers: {chain: [entry + used?/down?], hub_driven, active: [model ids answering now]}}`; `PUT /api/fallbacks {target: "orchestrator"|"lanes"|"workers", chain: [model | {model, when?, cap?, revert?, key_file?}]}` replaces one chain (validated against the model catalog; applies at the next process start)
 - Agent runtime selection (설정 > 실행 하네스): `GET /api/runtimes` -> `{current: {orchestrator, lanes}, checklist, runtimes: [{id, label, installed, version?, path?, hasAdapter, usable, reason?, roles, report: {at, version, verdict, counts}|null, state, switchable, refusal}]}`
   for `omp`, `claude`, `codex`, `opencode` (`?refresh=1` re-detects); `GET /api/runtimes/<id>` -> `{report, state}` (full last report
   and the running check's progress); `POST /api/runtimes/<id>/verify` starts the compatibility check in the background (202, poll the
