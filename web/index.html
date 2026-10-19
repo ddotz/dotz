@@ -263,6 +263,8 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .pal-out.err { color: var(--err); }
 .snack { position: fixed; z-index: 2000; left: 50%; bottom: 16px; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 24px); padding: 8px 12px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
 .snack.bad { background: var(--err); color: #fff; }
+.snack.act { display: flex; align-items: center; gap: 12px; }
+.snack .sa { flex: none; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; }
 @media (max-width: 639px) { .snack { bottom: calc(68px + env(safe-area-inset-bottom)); } }
 
 /* target header: one switcher + 대화/터미널 toggle, shared by both views */
@@ -532,10 +534,8 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 }
 /* 구성: harness map */
 #v-harness { max-width: none; }
-.hm-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.hm-bar .sup { flex: 1; min-width: 0; }
-.hm-note { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--warn) 8%, transparent); color: var(--fg); font-size: 12.5px; line-height: 18px; }
-.hm-note .tx { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hm-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+.hm-bar .sup { flex: 1 1 260px; min-width: 0; }
 .hm-scroll { overflow-x: auto; padding: 0 0 8px; }
 .hm-canvas { position: relative; margin: 0 auto; }
 .hm-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
@@ -563,6 +563,47 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hm-stack { display: flex; flex-direction: column; gap: 8px; }
 .hm-down { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 12px 0 0; color: var(--fg-3); font-size: 11.5px; line-height: 16px; }
 .hm-down .ic { width: 14px; height: 14px; }
+/* 구성: simple map = the main line, one big card per stage; support systems and prompt files ride on their stage's card as chips */
+.hm-simple { position: relative; display: flex; align-items: stretch; justify-content: center; }
+.hm-st { position: relative; display: flex; flex-direction: column; gap: 12px; flex: 1 1 0; min-width: 156px; max-width: 280px; padding: 14px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--card); transition: border-color .15s, box-shadow .15s, background .15s; }
+.hm-st.one { cursor: pointer; }
+.hm-st.one:hover { background: var(--hover); }
+.hm-st.on { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.hm-st.rel, .hm-row.rel, .hm-chip.rel { border-color: var(--accent); }
+.hm-sh { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+button.hm-sh { cursor: pointer; }
+.hm-sh .t { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; min-width: 0; font: 600 15px/22px var(--font); letter-spacing: -.01em; }
+.hm-sh .l { min-width: 0; overflow-wrap: anywhere; }
+.hm-sh .s { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--fg-2); font-size: 12.5px; line-height: 18px; overflow-wrap: anywhere; }
+.hm-rows { display: flex; flex-direction: column; gap: 2px; margin: -2px -6px 0; }
+.hm-row { display: flex; align-items: center; gap: 8px; min-width: 0; height: 28px; padding: 0 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--fg); font: 500 12.5px/18px var(--font); text-align: left; }
+.hm-row:hover { background: var(--hover); }
+.hm-row.on { border-color: var(--accent); }
+.hm-row .l { flex: none; }
+.hm-row .s { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-weight: 400; font-size: 11.5px; }
+.hm-with { display: flex; flex-direction: column; gap: 6px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); }
+.hm-with .wl { color: var(--fg-3); font: 500 11px/16px var(--font); }
+.hm-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.hm-chip { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; min-height: 24px; padding: 2px 8px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--bg); color: var(--fg-2); font: 500 11.5px/16px var(--font); }
+.hm-chip:hover { background: var(--hover); border-color: var(--fg-3); color: var(--fg); }
+.hm-chip.on { border-color: var(--accent); color: var(--fg); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+.hm-chip.warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line-2)); background: color-mix(in srgb, var(--warn) 9%, var(--bg)); color: var(--warn); }
+.hm-chip.err { border-color: color-mix(in srgb, var(--err) 55%, var(--line-2)); background: color-mix(in srgb, var(--err) 9%, var(--bg)); color: var(--err); }
+.hm-chip.off { opacity: .65; }
+.hm-chip .l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hm-chip .hm-bd { margin: 0; gap: 3px; flex-wrap: nowrap; }
+.hm-chip .bd { height: 14px; padding: 0 4px; font-size: 10px; line-height: 12px; }
+.hm-ar { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 68px; padding: 0 4px; color: var(--fg-3); font: 500 11px/14px var(--font); text-align: center; overflow-wrap: anywhere; }
+.hm-ar .ln { position: relative; align-self: stretch; height: 0; border-top: 1.5px solid var(--fg-3); }
+.hm-ar .ln::after { content: ""; position: absolute; right: -1px; top: -5.5px; border: solid transparent; border-width: 4.5px 0 4.5px 7px; border-left-color: var(--fg-3); }
+.hm-ov { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 2; }
+@media (max-width: 639px) {
+  .hm-simple { flex-direction: column; align-items: stretch; }
+  .hm-st { max-width: none; min-width: 0; }
+  .hm-ar { flex-direction: row; justify-content: flex-start; width: auto; padding: 4px 0 4px 24px; gap: 10px; text-align: left; }
+  .hm-ar .ln { align-self: auto; width: 0; height: 24px; border-top: 0; border-left: 1.5px solid var(--fg-3); }
+  .hm-ar .ln::after { right: auto; left: -5.5px; top: auto; bottom: -1px; border-width: 7px 4.5px 0 4.5px; border-color: var(--fg-3) transparent transparent transparent; }
+}
 .hs-desc { margin: 0; color: var(--fg-2); font-size: 12.5px; line-height: 20px; overflow-wrap: anywhere; }
 .sh-body .sec { margin: 20px 0 8px; }
 .hs-facts { border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
@@ -637,6 +678,8 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .hs-ft.go { cursor: pointer; }
 .hs-ft.go:hover { background: var(--hover); }
 .hs-ft.on { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.hs-fw > .fi { margin-top: 8px; }
+.fc-sw { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 </style>
 </head>
 <body>
@@ -846,12 +889,12 @@ async function busy(btn, fn) {
 
 /* ---------- snackbar ---------- */
 let toastTimer;
-function toast(msg, bad) {
+function toast(msg, bad, action) {
   document.querySelectorAll(".snack").forEach(n => n.remove());
-  const n = el("div", { class: `snack${bad ? " bad" : ""}`, role: "status", text: msg });
+  const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: msg }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { n.remove(); action.onclick(); } }) : null);
   (document.querySelector("dialog[open]") || document.body).append(n);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => n.remove(), bad ? 6000 : 3500);
+  toastTimer = setTimeout(() => n.remove(), bad || action ? 6000 : 3500);
 }
 
 /* ---------- dialog ---------- */
@@ -2864,6 +2907,8 @@ function renderSettings() {
 let HG = null, hSel = "", hLoading = false, hDirty = null, hEdgeRefs = [], hNodeEls = new Map(), hTimer = 0;
 let FC = null, hGoto = null, hMapBox = null, hFcBox = null, fcSig = "", fcList = null, fcCount = null;
 let hFeat = (() => { try { return localStorage.getItem("dotz-hfeat") === "1"; } catch { return false; } })();
+let hDetail = (() => { try { return localStorage.getItem("dotz-hdetail") === "1"; } catch { return false; } })();
+let hOv = null, hGeo = new Map();
 const fcFilter = { q: "", form: "", trigger: "", strength: "", origin: "" }, fcCollapsed = new Set(["스킬"]);
 const FC_ORIGIN = { shipped: "배포용", personal: "개인용" };
 const H_MQ = matchMedia("(max-width: 639px)");
@@ -2884,15 +2929,21 @@ async function loadHarness(quiet) {
 }
 
 // Layered layout: flow nodes sit in the column of their longest path from an input; file and support nodes join the
-// column of the node they attach to (above and below it); one flow node per column is centered on the middle line.
-function hLayout(avail) {
-  const nodes = HG.nodes, byId = new Map(nodes.map(n => [n.id, n]));
-  const flow = nodes.filter(n => n.group === "flow");
+// column of the node they attach to. Shared by the simple map (one stage per column) and the full graph.
+function hColumns() {
+  const byId = new Map(HG.nodes.map(n => [n.id, n]));
+  const flow = HG.nodes.filter(n => n.group === "flow");
   const col = new Map(flow.map(n => [n.id, 0]));
   for (let i = 0; i < flow.length; i++) for (const e of HG.edges) if (col.has(e.from) && col.has(e.to)) col.set(e.to, Math.max(col.get(e.to), col.get(e.from) + 1));
   const colOf = n => { let x = n; for (let i = 0; i < 6 && x.group !== "flow"; i++) x = byId.get(x.anchor) || x; return col.get(x.id) || 0; };
   const key = n => { const a = byId.get(n.anchor); return a && a.group !== "flow" ? key(a) + 0.5 : n.order || 0; };
-  const ncol = Math.max(...flow.map(n => col.get(n.id))) + 1;
+  return { flow, col, colOf, key, ncol: Math.max(...flow.map(n => col.get(n.id))) + 1 };
+}
+
+// Full graph: one flow node per column is centered on the middle line, files and support nodes above and below it.
+function hLayout(avail) {
+  const nodes = HG.nodes;
+  const { flow, col, colOf, key, ncol } = hColumns();
   const cols = Array.from({ length: ncol }, () => ({ flow: [], att: [] }));
   for (const n of flow) cols[col.get(n.id)].flow.push(n);
   for (const n of nodes) if (n.group !== "flow") cols[colOf(n)].att.push(n);
@@ -2968,6 +3019,7 @@ function hCard(n, mobile) {
 }
 
 function hHot(id) {
+  if (hOv) { hOverlay(id); return; }
   for (const r of hEdgeRefs) {
     const on = !!id && (r.e.from === id || r.e.to === id);
     r.path.classList.toggle("hot", on); r.label.classList.toggle("hot", on);
@@ -2977,23 +3029,18 @@ function hHot(id) {
 
 function renderHarness() {
   const box = $("#harness");
-  hNodeEls = new Map(); hEdgeRefs = [];
+  hNodeEls = new Map(); hEdgeRefs = []; hGeo = new Map(); hOv = null;
   if (!HG) { clear(box).append(emptyNode("불러오는 중…")); return; }
   const mobile = H_MQ.matches;
   const bar = el("div", { class: "hm-bar" },
-    el("div", { class: "sup", text: "카드를 누르면 설명과 설정이 열려요. 점선 카드는 곁에서 돕는 시스템이에요." }),
-    !mobile && FC ? el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
+    el("div", { class: "sup", text: hDetail ? "카드를 누르면 설명과 설정이 열려요. 점선 카드는 곁에서 돕는 시스템이에요." : `큰 카드가 메시지가 흐르는 길이에요. 카드 안의 작은 칩은 함께 도는 시스템·파일이고, ${mobile ? "눌러서" : "칩에 마우스를 올리거나 눌러서"} 이어진 곳과 설정을 봐요. 고칠 때는 ${botName}에게 요청이 가요.` }),
+    FC ? el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
+    el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hDetail), title: "모든 시스템과 연결선을 한 화면에 그려요", onclick: () => { hDetail = !hDetail; try { localStorage.setItem("dotz-hdetail", hDetail ? "1" : "0"); } catch {} renderHarness(); } }, "자세히"),
     el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); toast("새로 불러왔어요"); }) }, icon("refresh"), "새로고침"));
   const parts = [bar];
-  const pend = HG.restart_pending || [];
-  if (pend.length) parts.push(el("div", { class: "hm-note" }, el("span", { class: "tx", text: `재시작하면 적용되는 변경 ${pend.length}개: ${pend.slice(0, 3).join(", ")}${pend.length > 3 ? " …" : ""}` }),
-    el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => {
-      if (!await ask("게이트웨이 재시작", "오케스트레이터와 레인의 작업이 모두 끝나면(최대 20분) 새 설정으로 다시 시작해요. 그동안 새 메시지는 계속 받아요.", "재시작")) return;
-      await api("/api/gateway/restart", "POST", {}); toast("작업이 끝나면 재시작해요");
-    }) }, "재시작")));
   const keep = box.querySelector(".hm-scroll");
   const left = keep ? keep.scrollLeft : 0;
-  if (mobile) parts.push(hFlowList()); else parts.push(hCanvas($("#views").clientWidth - 48));
+  parts.push(!hDetail ? hSimple() : mobile ? hFlowList() : hCanvas($("#views").clientWidth - 48));
   if (!hMapBox || hMapBox.parentNode !== box) { clear(box); hMapBox = el("div"); hFcBox = el("div", { class: "fc" }); box.append(hMapBox, hFcBox); fcSig = ""; }
   clear(hMapBox).append(...parts);
   const sc = box.querySelector(".hm-scroll");
@@ -3050,14 +3097,125 @@ function hFlowList() {
   return wrap;
 }
 
+// Simple map: the main line only. One card per stage (the inputs share one card of rows); the prompt files and support
+// systems of a stage are chips on its card. A support node's edges are not drawn until a chip or card is hovered/focused.
+const H_MANY = "들어온 글";
+const hShort = n => n.label.replace(/\s*\(.*\)$/, "");
+const hSick = n => n.status === "warn" || n.status === "err";
+
+function hStages() {
+  const { flow, col, colOf, key, ncol } = hColumns();
+  const st = Array.from({ length: ncol }, (_, i) => ({ label: H_COLS[i] || "", main: [], chips: [] }));
+  for (const n of flow) st[col.get(n.id)].main.push(n);
+  for (const n of HG.nodes) if (n.group !== "flow") st[colOf(n)].chips.push(n);
+  for (const s of st) s.chips.sort((a, b) => key(a) - key(b));
+  return st;
+}
+
+function hStageLabel(a, b) {
+  const from = new Set(a.main.map(n => n.id)), to = new Set(b.main.map(n => n.id));
+  const labels = [...new Set(HG.edges.filter(e => from.has(e.from) && to.has(e.to)).map(e => e.label))];
+  return labels.length > 1 ? H_MANY : labels[0] || "";
+}
+
+function hChip(n) {
+  const b = el("button", { type: "button", class: `hm-chip${hSick(n) ? ` ${n.status}` : n.status === "off" ? " off" : ""}`, "data-id": n.id, title: `${n.label}: ${n.summary}`, "aria-label": `${n.label}: ${n.summary}` },
+    el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "l", text: hShort(n) }), fcBadges(n.id, true));
+  hNodeEls.set(n.id, b); hGeo.set(n.id, b);
+  return b;
+}
+
+function hStageCard(s) {
+  const one = s.main.length === 1 ? s.main[0] : null;
+  const bad = (one ? s.chips : s.main).filter(hSick);
+  const ids = [...s.main, ...s.chips].map(n => n.id);
+  const kids = [
+    el("span", { class: "t" },
+      one ? el("span", { class: `dot ${H_TONE[one.status] || ""}` }) : null,
+      el("span", { class: "l", text: one ? one.label : s.label }),
+      one && one.status !== "ok" ? el("span", { class: `tag ${H_TONE[one.status] || ""}`, text: H_STATE[one.status] || "" }) : null,
+      bad.length ? el("span", { class: `tag ${bad.some(n => n.status === "err") ? "err" : "warn"}`, title: bad.map(n => n.label).join(", "), text: `주의 ${bad.length}` }) : null),
+    one ? el("span", { class: "s", text: one.summary }) : null,
+    fcBadges(ids)];
+  const head = one ? el("button", { type: "button", class: "hm-sh", "aria-label": `${one.label}: ${one.summary}` }, ...kids) : el("div", { class: "hm-sh" }, ...kids);
+  const card = el("div", { class: `hm-st${one ? " one" : ""}`, "data-id": one ? one.id : null }, head);
+  if (one) { hNodeEls.set(one.id, card); hGeo.set(one.id, head); }
+  else card.append(el("div", { class: "hm-rows" }, ...s.main.map(n => {
+    const r = el("button", { type: "button", class: "hm-row", "data-id": n.id, title: `${n.label}: ${n.summary}`, "aria-label": `${n.label}: ${n.summary}` },
+      el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "l", text: n.label }), el("span", { class: "s", text: n.summary }));
+    hNodeEls.set(n.id, r); hGeo.set(n.id, r);
+    return r;
+  })));
+  if (s.chips.length) card.append(el("div", { class: "hm-with" }, el("div", { class: "wl", text: `함께 도는 것 · ${s.chips.length}` }), el("div", { class: "hm-chips" }, ...s.chips.map(hChip))));
+  return card;
+}
+
+function hSimple() {
+  const stages = hStages(), wrap = el("div", { class: "hm-simple" });
+  stages.forEach((s, i) => {
+    if (i) wrap.append(el("div", { class: "hm-ar" }, el("span", { class: "lb", text: hStageLabel(stages[i - 1], s) }), el("span", { class: "ln" })));
+    wrap.append(hStageCard(s));
+  });
+  const svg = hSvg("svg", { class: "hm-ov", "aria-hidden": "true" });
+  const m = hSvg("marker", { id: "hm-ov-ah", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "7", markerHeight: "7", orient: "auto" });
+  m.append(hSvg("path", { d: "M0 0L8 4L0 8z", class: "hm-ah hot" }));
+  svg.append(hSvg("defs")); svg.firstChild.append(m);
+  hOv = svg; wrap.append(svg);
+  const idOf = ev => { const t = ev.target.closest("[data-id]"); return t ? t.dataset.id : ""; };
+  wrap.addEventListener("click", ev => { const id = idOf(ev); if (id) openHSheet(id); });
+  wrap.addEventListener("mouseover", ev => hHot(idOf(ev) || hSel));
+  wrap.addEventListener("mouseleave", () => hHot(hSel));
+  wrap.addEventListener("focusin", ev => { const id = idOf(ev); if (id) hHot(id); });
+  wrap.addEventListener("focusout", () => hHot(hSel));
+  return el("div", { class: "hm-scroll" }, wrap);
+}
+
+// Lights up what a node connects to: the other ends get an outline, and (pointer devices) its edges are drawn over the
+// cards with their labels. Called with the hovered/focused node, or the selected one when nothing is hovered.
+function hOverlay(id) {
+  const svg = hOv;
+  if ((svg.dataset.hot || "") === (id || "")) return;
+  svg.dataset.hot = id || "";
+  for (const c of [...svg.querySelectorAll("path.hm-edge, text")]) c.remove();
+  for (const b of hNodeEls.values()) b.classList.remove("rel");
+  if (!id) return;
+  const box = svg.parentNode.getBoundingClientRect();
+  const at = e => { const r = e.getBoundingClientRect(); return { l: r.left - box.left, t: r.top - box.top, r: r.right - box.left, b: r.bottom - box.top }; };
+  for (const e of HG.edges) {
+    if (e.from !== id && e.to !== id) continue;
+    const other = hNodeEls.get(e.from === id ? e.to : e.from);
+    if (other) other.classList.add("rel");
+    const ea = hGeo.get(e.from), eb = hGeo.get(e.to);
+    if (H_MQ.matches || !ea || !eb) continue;
+    const a = at(ea), b = at(eb);
+    let x1, y1, x2, y2, d;
+    if (a.r < b.l - 6 || b.r < a.l - 6) {
+      const fwd = a.r < b.l - 6;
+      x1 = fwd ? a.r : a.l; x2 = fwd ? b.l : b.r; y1 = (a.t + a.b) / 2; y2 = (b.t + b.b) / 2;
+      const dx = Math.max(24, Math.abs(x2 - x1) / 2) * (x2 > x1 ? 1 : -1);
+      d = `M${x1} ${y1}C${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}`;
+    } else {
+      const down = a.t < b.t;
+      x1 = (a.l + a.r) / 2; x2 = (b.l + b.r) / 2; y1 = down ? a.b : a.t; y2 = down ? b.t : b.b;
+      const dy = Math.max(16, Math.abs(y2 - y1) / 2) * (down ? 1 : -1);
+      d = `M${x1} ${y1}C${x1} ${y1 + dy} ${x2} ${y2 - dy} ${x2} ${y2}`;
+    }
+    svg.append(hSvg("path", { d, class: "hm-edge hot", "marker-end": "url(#hm-ov-ah)" }));
+    if (a.r >= b.l - 6 && b.r >= a.l - 6) continue;   // inside one card: the line speaks for itself (the sheet's 이어진 곳 has the label)
+    const t = hSvg("text", { x: (x1 + x2) / 2, y: (y1 + y2) / 2 + 3.5, class: "hm-lb hot", "text-anchor": "middle" });
+    t.textContent = e.label;
+    svg.append(t);
+  }
+}
+
 function paintHSel() { for (const [id, b] of hNodeEls) b.classList.toggle("on", id === hSel); hHot(hSel); }
 // The side sheet covers the right part of the map; keep the picked card scrolled into the visible left part.
 function hReveal(id) {
   const sc = $(".hm-scroll"), b = hNodeEls.get(id);
   if (!sc || !b) return;
-  const l = b.offsetLeft - 16, r = b.offsetLeft + b.offsetWidth + 16;
-  if (l < sc.scrollLeft) sc.scrollLeft = l;
-  else if (r > sc.scrollLeft + sc.clientWidth) sc.scrollLeft = r - sc.clientWidth;
+  const s = sc.getBoundingClientRect(), r = b.getBoundingClientRect();
+  if (r.left - 16 < s.left) sc.scrollLeft -= s.left - (r.left - 16);
+  else if (r.right + 16 > s.right) sc.scrollLeft += r.right + 16 - s.right;
 }
 
 function closeHSheet() {
@@ -3090,6 +3248,7 @@ async function openHSheet(id, focus = {}) {
   body.append(el("p", { class: "hs-desc", text: n.desc }));
   if (n.facts.length) body.append(el("div", { class: "sec", text: "지금 상태" }), el("div", { class: "hs-facts" }, ...n.facts.map(f => el("div", { class: "hs-fact" }, el("span", { class: "k", text: f.label }), el("span", { class: "v", text: f.value })))));
   body.append(...fcSheetSection(n, focus.feature));
+  if (n.settings.some(s => s.editable) || n.fileEditable) body.append(el("div", { class: "note", text: `이 화면에서는 직접 고치지 않아요. 수정 요청을 보내면 ${botName} 쪽에서 적용해요.` }));
   if (n.settings.length) body.append(el("div", { class: "sec", text: "설정" }), ...n.settings.map(s => hSetting(s, drafts)));
   if (n.file) body.append(el("div", { class: "sec", text: `파일 · ${n.file.split("/").pop()}` }), hFileEditor(n, drafts, focus.line));
   const near = [...HG.edges.filter(e => e.to === id).map(e => ({ id: e.from, t: `← ${hNode(e.from).label}`, l: e.label })), ...HG.edges.filter(e => e.from === id).map(e => ({ id: e.to, t: `${hNode(e.to).label} →`, l: e.label }))];
@@ -3107,7 +3266,17 @@ function hModelItems(cur) {
   return items;
 }
 
-// One setting: an editor matching its type, an apply-timing tag and its own 저장 button.
+// The 구성 tab writes nothing itself: every change is a message to the main orchestrator (the same POST the chat composer
+// sends to MAIN, default mode), which applies it.
+const hNow = () => new Date().toLocaleTimeString("ko-KR", { ...KST, hour: "2-digit", minute: "2-digit" });
+async function hRequest(text) {
+  await api("/api/message", "POST", { text: `[구성 탭 수정 요청] ${text}` });
+  toast(`${botName}에게 요청했어요`, false, { label: "채팅 열기", onclick: () => openTarget(MAIN, lastChatView()) });
+  return hNow();
+}
+const hVal = v => (typeof v === "string" ? JSON.stringify(v) : String(v));
+
+// One setting: an editor matching its type, an apply-timing tag and a request button (nothing is written here).
 function hSetting(s, drafts) {
   const box = el("div", { class: "hs-set", title: s.source });
   const [applyText, applyTone] = H_APPLY[s.applies] || ["", ""];
@@ -3117,14 +3286,17 @@ function hSetting(s, drafts) {
     box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), el("span", { class: "tag", text: "읽기 전용" })), el("div", { class: "hs-ro", text: String(s.value) }), s.hint ? note : el("div", { class: "note", text: "보안·연결 정보라 화면에서 바꿀 수 없어요." }));
     return box;
   }
-  let cur = s.value, draft = s.value;
+  const cur = s.value;
+  let draft = s.value, sent;
   const ctl = el("div", { class: "ctl" });
-  const save = el("button", { class: "btn", type: "button", disabled: true }, "저장");
+  const send = el("button", { class: "btn", type: "button", disabled: true }, `${botName}에게 수정 요청`);
   const reset = el("button", { class: "btn text", type: "button", hidden: true }, "기본값");
   const dirty = () => draft !== cur && !(typeof draft === "number" && Number.isNaN(draft));
+  const asked = () => sent !== undefined && Object.is(sent, draft);
   const mark = () => {
-    save.disabled = !dirty();
+    send.disabled = !dirty() || asked();
     reset.hidden = s.default === undefined || s.type === "model" || s.type === "effort" || draft === s.default;
+    if (!asked() && note.classList.contains("ok")) { note.className = "note"; note.textContent = s.hint || ""; }
   };
   const paint = () => {
     clear(ctl);
@@ -3154,48 +3326,116 @@ function hSetting(s, drafts) {
     mark();
   };
   reset.onclick = () => { draft = s.default; paint(); };
-  save.onclick = () => {
-    note.className = "note";
-    return busy(save, async () => {
-      try {
-        const r = await api("/api/harness/config", "PATCH", { path: s.key, value: draft });
-        cur = draft = r.value === undefined ? draft : r.value;
-        const [t, tone] = H_APPLY[r.applies] || ["", ""];
-        tag.className = `tag ${tone}`; tag.textContent = t;
-        note.className = "note ok"; note.textContent = r.note;
-        toast(`${s.label}: ${r.note}`);
-        paint(); loadHarness(true);
-      } catch (e) { note.className = "note err"; note.textContent = e.message; throw e; }
-    });
+  send.onclick = async () => {
+    send.disabled = true;
+    try {
+      const at = await hRequest(`${s.label} (${s.source}): ${hVal(cur)} -> ${hVal(draft)}. 적용 시점: ${applyText}.${s.hint ? ` ${s.hint}` : ""}`);
+      sent = draft; note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`;
+    } catch (e) { note.className = "note err"; note.textContent = e.message; toast(e.message, true); }
+    finally { mark(); }
   };
-  drafts.push(dirty);
-  box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), tag), ctl, el("div", { class: "btns hs-act" }, reset, save), note);
+  drafts.push(() => dirty() && !asked());
+  box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), tag), ctl, el("div", { class: "btns hs-act" }, reset, send), note);
   paint();
   return box;
 }
 
-// Prompt-file editor: loads the file, saves atomically (the server keeps the previous text as <name>.bak).
+// Compact line diff (LCS on the lines between the common head and tail) as unified-diff hunks with `ctx` lines of context,
+// plus the changed spans in old-file line numbers for the oversize summary.
+function lineDiff(oldText, newText, ctx = 3) {
+  const a = oldText.replace(/\r\n/g, "\n").split("\n"), b = newText.replace(/\r\n/g, "\n").split("\n");
+  let p = 0;
+  while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  let q = 0;
+  while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+  const am = a.slice(p, a.length - q), bm = b.slice(p, b.length - q), n = am.length, m = bm.length, mid = [];
+  if (n * m <= 2_000_000) {
+    const w = m + 1, L = new Uint32Array((n + 1) * w);
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i * w + j] = am[i] === bm[j] ? L[(i + 1) * w + j + 1] + 1 : Math.max(L[(i + 1) * w + j], L[i * w + j + 1]);
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (am[i] === bm[j]) { mid.push([" ", am[i]]); i++; j++; }
+      else if (L[(i + 1) * w + j] >= L[i * w + j + 1]) mid.push(["-", am[i++]]);
+      else mid.push(["+", bm[j++]]);
+    }
+    while (i < n) mid.push(["-", am[i++]]);
+    while (j < m) mid.push(["+", bm[j++]]);
+  } else {
+    for (const s of am) mid.push(["-", s]);
+    for (const s of bm) mid.push(["+", s]);
+  }
+  const ops = [...a.slice(0, p).map(s => [" ", s]), ...mid, ...a.slice(a.length - q).map(s => [" ", s])];
+  const ob = [], nb = [], ch = [];
+  let o = 0, w2 = 0, add = 0, del = 0;
+  ops.forEach(([t], i) => { ob.push(o); nb.push(w2); if (t !== "+") o++; if (t !== "-") w2++; if (t !== " ") ch.push(i); if (t === "+") add++; if (t === "-") del++; });
+  const groups = [];
+  for (const i of ch) {
+    const lo = Math.max(0, i - ctx), hi = Math.min(ops.length - 1, i + ctx), g = groups[groups.length - 1];
+    if (g && lo <= g[1] + 1) g[1] = Math.max(g[1], hi); else groups.push([lo, hi]);
+  }
+  const text = groups.map(([lo, hi]) => {
+    const seg = ops.slice(lo, hi + 1), oc = seg.filter(x => x[0] !== "+").length, nc = seg.filter(x => x[0] !== "-").length;
+    return [`@@ -${oc ? ob[lo] + 1 : ob[lo]},${oc} +${nc ? nb[lo] + 1 : nb[lo]},${nc} @@`, ...seg.map(([t, s]) => t + s)].join("\n");
+  }).join("\n");
+  const spans = [];
+  for (let k = 0; k < ch.length;) {
+    let e = k;
+    while (e + 1 < ch.length && ch[e + 1] === ch[e] + 1) e++;
+    const seg = ops.slice(ch[k], ch[e] + 1), d = seg.filter(x => x[0] === "-").length, ad = seg.length - d, s0 = ob[ch[k]];
+    spans.push(d ? `${d === 1 ? `${s0 + 1}줄` : `${s0 + 1}-${s0 + d}줄`}${ad ? ` (${ad}줄로 교체)` : " 삭제"}` : `${s0}줄 뒤에 ${ad}줄 추가`);
+    k = e + 1;
+  }
+  return { add, del, text, spans };
+}
+
+// The message for a prompt-file edit: a compact diff (or, past H_DIFF_CAP characters, only the changed line ranges),
+// the optional note, and a note-only form when the draft is unchanged.
+const H_DIFF_CAP = 6000;
+function hFileRequest(r, orig, draft, note) {
+  const head = `${r.label} (${r.path || r.name}) 수정${note ? `\n메모: ${note}` : ""}`;
+  if (orig.replace(/\r\n/g, "\n") === draft.replace(/\r\n/g, "\n")) return `${head}\n파일 내용은 바꾸지 않았어요. 메모대로 파일을 직접 고쳐 주세요. 적용 시점: ${r.note}`;
+  const d = lineDiff(orig, draft);
+  const body = d.text.length <= H_DIFF_CAP
+    ? `아래 diff 대로 파일을 고쳐 주세요 (줄 단위, 앞뒤 3줄 맥락 포함).\n\`\`\`diff\n--- ${r.name}\n+++ ${r.name} (수정안)\n${d.text}\n\`\`\``
+    : `변경이 커서 diff 는 생략했어요 (+${d.add}줄 -${d.del}줄). 바뀐 곳(원본 줄 기준): ${d.spans.slice(0, 20).join(", ")}${d.spans.length > 20 ? ` 외 ${d.spans.length - 20}곳` : ""}. 파일을 직접 열어 확인하고 메모대로 고쳐 주세요.`;
+  return `${head}\n${body}\n적용 시점: ${r.note}`;
+}
+
+// Prompt-file editor: the owner edits a draft and asks the orchestrator to apply it (diff + optional note), or sends only
+// a note. The file itself is never written from here.
 function hFileEditor(n, drafts, line) {
   const ta = el("textarea", { class: "fi hs-ta hs-mono", rows: 18, spellcheck: "false", "aria-label": n.file });
   ta.readOnly = !n.fileEditable;
-  const info = el("div", { class: "note" }), warn = el("div", { class: "note err", style: "white-space:pre-line" });
-  const save = el("button", { class: "btn", type: "button", disabled: true }, "저장");
+  const note = n.fileEditable ? el("input", { class: "fi", type: "text", autocomplete: "off", maxlength: 500, placeholder: "무엇을 왜 바꾸는지 (선택) · 글은 두고 메모만 보내도 돼요", "aria-label": "수정 요청 메모" }) : null;
+  const info = el("div", { class: "note" }), stat = el("div", { class: "note" });
+  const send = el("button", { class: "btn", type: "button", disabled: true }, `${botName}에게 수정 요청`);
   const undo = el("button", { class: "btn text", type: "button", disabled: true }, "되돌리기");
-  let orig = "";
+  let file = null, orig = "", sentKey = "", dt = 0;
+  const key = () => `${ta.value}\u0000${note ? note.value.trim() : ""}`;
   const dirty = () => ta.value !== orig;
-  const mark = () => { save.disabled = !n.fileEditable || !dirty(); undo.disabled = !dirty(); };
+  const unsent = () => (dirty() || (!!note && note.value.trim() !== "")) && key() !== sentKey;
+  const mark = () => { send.disabled = !file || !n.fileEditable || !unsent(); undo.disabled = !dirty(); };
+  const paintStat = () => {
+    if (sentKey && key() === sentKey) return;
+    stat.className = "note";
+    if (!dirty()) { stat.textContent = ""; return; }
+    const d = lineDiff(orig, ta.value);
+    stat.textContent = `변경 +${d.add}줄 -${d.del}줄${d.text.length > H_DIFF_CAP ? " · 많이 바뀌어서 diff 대신 바뀐 줄 범위만 보내요. 메모에 무엇을 바꾸는지 적어 주세요" : ""}`;
+  };
+  const edited = () => { mark(); clearTimeout(dt); dt = setTimeout(paintStat, 250); };
   const url = `/api/harness/file/${n.file.split("/").map(enc).join("/")}`;
-  ta.addEventListener("input", mark);
-  ta.addEventListener("keydown", ev => { if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (!save.disabled) save.click(); } });
-  undo.onclick = () => { ta.value = orig; mark(); };
-  save.onclick = () => busy(save, async () => {
-    const r = await api(url, "PUT", { text: ta.value });
-    orig = ta.value; warn.textContent = (r.warnings || []).join("\n");
-    info.className = "note ok";
-    info.textContent = r.unchanged ? r.note : `저장했어요${r.backup ? ` · 이전 내용은 ${r.backup} 로 보관` : ""} · ${r.note}`;
-    mark(); loadHarness(true);
-  });
-  drafts.push(dirty);
+  ta.addEventListener("input", edited);
+  if (note) note.addEventListener("input", edited);
+  undo.onclick = () => { ta.value = orig; edited(); };
+  send.onclick = async () => {
+    send.disabled = true;
+    try {
+      const at = await hRequest(hFileRequest(file, orig, ta.value, note.value.trim()));
+      sentKey = key(); stat.className = "note ok"; stat.textContent = `요청 보냄 · ${at}`;
+    } catch (e) { stat.className = "note err"; stat.textContent = e.message; toast(e.message, true); }
+    finally { mark(); }
+  };
+  drafts.push(unsent);
   // Puts the caret on a 1-based line and scrolls the editor there (a hidden copy of the text measures wrapped lines).
   const gotoLine = ln => {
     const lines = ta.value.split("\n"), start = lines.slice(0, ln - 1).reduce((s, l) => s + l.length + 1, 0), end = start + (lines[ln - 1] || "").length;
@@ -3210,12 +3450,12 @@ function hFileEditor(n, drafts, line) {
   };
   hGoto = gotoLine;
   api(url).then(r => {
-    orig = r.text; ta.value = r.text;
-    info.textContent = `${num(r.text.length)}자${r.cap ? ` (시작 프롬프트에는 앞 ${num(r.cap)}자까지)` : ""} · ${r.modified ? `${kstStamp(r.modified)} 수정` : "아직 없는 파일 (저장하면 만들어져요)"} · ${r.note}`;
+    file = r; orig = r.text; ta.value = r.text;
+    info.textContent = `${num(r.text.length)}자${r.cap ? ` (시작 프롬프트에는 앞 ${num(r.cap)}자까지)` : ""} · ${r.modified ? `${kstStamp(r.modified)} 수정` : "아직 없는 파일"} · ${r.note}`;
     mark();
     if (line) gotoLine(line);
   }, e => { info.className = "note err"; info.textContent = e.message; });
-  return el("div", { class: "hs-fw" }, ta, el("div", { class: "btns hs-act" }, n.fileEditable ? undo : null, n.fileEditable ? save : null), info, warn);
+  return el("div", { class: "hs-fw" }, ta, note, el("div", { class: "btns hs-act" }, n.fileEditable ? undo : null, n.fileEditable ? send : null), info, stat);
 }
 
 /* ---------- 구성: 기능 보기 (what the owner added, by implementation form; data from /api/features) ---------- */
@@ -3236,20 +3476,31 @@ const FC_FILE_NODE = { "RULES.md": "rules", "LESSONS.md": "lessons", "identity/I
 const fcOf = id => (FC ? FC.features.filter(f => f.stage === id) : []);
 const fcDupText = f => (f.dup && f.dup.length ? `같은 일을 ${f.strength === "advisory" ? "코드(강제)" : "글(권고)"}로도 적어 뒀어요: ${f.dup.map(d => d.name).join(", ")}` : "");
 
-function fcBadges(id) {
-  if (!hFeat || !FC || H_MQ.matches) return null;
-  const list = fcOf(id), e = list.filter(f => f.strength === "enforced").length, a = list.length - e;
+function fcBadges(ids, compact) {
+  if (!hFeat || !FC) return null;
+  const set = new Set([].concat(ids)), list = FC.features.filter(f => set.has(f.stage)), e = list.filter(f => f.strength === "enforced").length, a = list.length - e;
   if (!list.length) return null;
-  return el("span", { class: "hm-bd", title: `여기서 작동하는 기능: 강제 ${e}개 · 권고 ${a}개` }, e ? el("span", { class: "bd f", text: `강제 ${e}` }) : null, a ? el("span", { class: "bd a", text: `권고 ${a}` }) : null);
+  return el("span", { class: "hm-bd", title: `여기서 작동하는 기능: 강제 ${e}개 · 권고 ${a}개` }, e ? el("span", { class: "bd f", text: compact ? String(e) : `강제 ${e}` }) : null, a ? el("span", { class: "bd a", text: compact ? String(a) : `권고 ${a}` }) : null);
 }
 
+// A switch only asks: it sends "<name> 끄기/켜기 (<source>)" to the orchestrator and keeps showing the real state until
+// the catalog reports the change (the "요청 보냄" tag marks the pending request).
+const fcAsked = new Map();
 function fcSwitch(f) {
-  const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(f.enabled), "aria-label": `${f.name} ${f.enabled ? "끄기" : "켜기"}`, title: f.enabled ? "끄기" : "켜기" });
+  const ask = fcAsked.get(f.id);
+  if (ask && ask.to === f.enabled) fcAsked.delete(f.id);
+  const pend = fcAsked.get(f.id), word = f.enabled ? "끄기" : "켜기";
+  const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(f.enabled), "aria-label": `${f.name} ${word} 요청`, title: `${botName}에게 ${word} 요청` });
+  const sent = el("span", { class: "tag pri", text: pend ? `요청 보냄 · ${pend.at}` : "", hidden: !pend });
   sw.addEventListener("click", ev => {
     ev.stopPropagation();
-    busy(sw, async () => { const r = await api(`/api/features/${enc(f.id)}/toggle`, "POST", { enabled: !f.enabled }); toast(`${f.name}: ${r.note}`); await loadHarness(true); });
+    busy(sw, async () => {
+      const at = await hRequest(`${f.name} ${word} (${f.source.label})`);
+      fcAsked.set(f.id, { to: !f.enabled, at });
+      sent.textContent = `요청 보냄 · ${at}`; sent.hidden = false;
+    });
   });
-  return sw;
+  return el("span", { class: "fc-sw" }, sent, sw);
 }
 
 // A card opens the harness node it works in; text rules open their file editor at the line.
@@ -3361,7 +3612,7 @@ $("#hs-close").onclick = closeHSheet;
 document.addEventListener("keydown", ev => { if (ev.key === "Escape" && !$("#hsheet").hidden && !openMenu && !document.querySelector("dialog[open]")) closeHSheet(); });
 H_MQ.addEventListener("change", () => { if (current === "harness") renderHarness(); });
 let hW = 0;
-window.addEventListener("resize", () => { if (current !== "harness" || H_MQ.matches) return; clearTimeout(hTimer); hTimer = setTimeout(() => { const w = $("#harness").clientWidth; if (Math.abs(w - hW) > 40) { hW = w; renderHarness(); } }, 150); });
+window.addEventListener("resize", () => { if (current !== "harness" || H_MQ.matches || !hDetail) return; clearTimeout(hTimer); hTimer = setTimeout(() => { const w = $("#harness").clientWidth; if (Math.abs(w - hW) > 40) { hW = w; renderHarness(); } }, 150); });
 setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) loadHarness(true); }, 15000);
 
 /* ---------- boot ---------- */

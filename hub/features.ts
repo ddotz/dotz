@@ -1,15 +1,14 @@
-// "기능 목록" backend: everything the owner added to the harness, inventoried at runtime by how it is implemented, and
-// placed on the harness map (hub/harness.ts node ids). Read-only except toggleFeature(), which flips only switches that
-// already exist in config.json (through patchConfig). No model calls; every source is a file or in-memory table this
+// "기능 목록" backend (read-only): everything the owner added to the harness, inventoried at runtime by how it is implemented,
+// and placed on the harness map (hub/harness.ts node ids). Switches are changed by the main orchestrator on the owner's
+// request, never here. No model calls; every source is a file or in-memory table this
 // process already has, and a missing source is skipped.
 //   strength "enforced": code, a hook or a deny line stops/does it whether the model agrees or not
 //   strength "advisory": text the model is asked to follow (RULES, LESSONS, identity, skills)
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cfg, DATA_DIR, HOME, IDENTITY_FILE, log, paths } from "./config.ts";
-import { loadFeatureDirs, setFeatureEnabled, TRIGGERS } from "./featuredirs.ts";
-import { harnessGraph, patchConfig, type HarnessNode } from "./harness.ts";
-import { ControlError } from "./providers.ts";
+import { loadFeatureDirs, TRIGGERS } from "./featuredirs.ts";
+import { harnessGraph, type HarnessNode } from "./harness.ts";
 import { listSchedules } from "./schedule.ts";
 import { addWatch, allWatches, removeWatch } from "./watch.ts";
 import { listSetups } from "./workchannels.ts";
@@ -319,19 +318,19 @@ function setupFeatures(): Feature[] {
 }
 
 // ---- 게이트웨이 기능 · 외부 연동: the harness nodes themselves (no second copy of their text) ----------------------
-type NodeSpec = { form: Form; trigger: Trigger; file: string; toggle?: { path: string; off: unknown } };
+type NodeSpec = { form: Form; trigger: Trigger; file: string; toggle?: { path: string } };
 const NODE_SPECS: Record<string, NodeSpec> = {
 	gateway: { form: "게이트웨이 기능", trigger: "메시지 도착", file: "hub/main.ts" },
-	outlang: { form: "게이트웨이 기능", trigger: "답장 전송 전", file: "hub/outlang.ts", toggle: { path: "output_language.mode", off: "off" } },
-	update: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/update.ts", toggle: { path: "omp_update.mode", off: "off" } },
-	audit: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/token-audit.ts", toggle: { path: "token_audit_at", off: "off" } },
-	reflect: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/reflect.ts", toggle: { path: "reflect_at", off: "off" } },
+	outlang: { form: "게이트웨이 기능", trigger: "답장 전송 전", file: "hub/outlang.ts", toggle: { path: "output_language.mode" } },
+	update: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/update.ts", toggle: { path: "omp_update.mode" } },
+	audit: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/token-audit.ts", toggle: { path: "token_audit_at" } },
+	reflect: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/reflect.ts", toggle: { path: "reflect_at" } },
 	backup: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/backup.ts" },
 	providers: { form: "게이트웨이 기능", trigger: "워커 생성 시", file: "hub/providers.ts" },
-	hygiene: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/hygiene.ts", toggle: { path: "lanes.nightly_at", off: "off" } },
+	hygiene: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/hygiene.ts", toggle: { path: "lanes.nightly_at" } },
 	memguard: { form: "게이트웨이 기능", trigger: "변화 감지", file: "hub/memguard.ts" },
 	discord: { form: "외부 연동", trigger: "메시지 도착", file: "hub/discord.ts" },
-	mail: { form: "외부 연동", trigger: "변화 감지", file: "hub/zele.ts", toggle: { path: "zele.enabled", off: false } },
+	mail: { form: "외부 연동", trigger: "변화 감지", file: "hub/zele.ts", toggle: { path: "zele.enabled" } },
 };
 
 const featureIdOf = (nodeId: string) => `${NODE_SPECS[nodeId].form === "외부 연동" ? "int" : "gw"}-${nodeId}`;
@@ -423,7 +422,7 @@ function dirFeatures(nodeIds: Set<string>): Feature[] {
 }
 
 // A feature folder's watch.json goes through addWatch (the same path as POST /api/watches): added when enabled and not yet
-// there (by name), removed when the folder is disabled. Runs at gateway start and after a toggle.
+// there (by name), removed when the folder is disabled. Runs at gateway start (a folder the orchestrator flips later takes effect here at the next start).
 export function syncFeatureWatches(): void {
 	const rules = existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "";
 	for (const f of loadFeatureDirs(DATA_DIR, log).features) {
@@ -439,7 +438,7 @@ export function syncFeatureWatches(): void {
 	}
 }
 
-// ---- catalog + toggle ----------------------------------------------------------------------------------------------
+// ---- catalog -------------------------------------------------------------------------------------------------------
 export async function featureCatalog() {
 	const graph = await harnessGraph({ light: true });
 	const nodeIds = new Set(graph.nodes.map(n => n.id));
@@ -459,22 +458,4 @@ export async function featureCatalog() {
 	markDuplicates(features);
 	for (const f of features) f.origin ??= originOf(f);
 	return { generated: new Date().toISOString(), forms: FORMS, triggers: TRIGGERS, features, stages: graph.nodes.map(n => n.id), data_dir: short(DATA_DIR), skipped_dirs: loadFeatureDirs(DATA_DIR, log).skipped };
-}
-
-// Feature folders flip `enabled` in their own feature.md; the other switches already exist in config.json (a node's own
-// on/off key, "on" resets the key to its default).
-export async function toggleFeature(id: string, enabled: unknown) {
-	if (typeof enabled !== "boolean") throw new ControlError("enabled(true/false) required");
-	if (id.startsWith("dir-")) {
-		const folder = id.slice(4);
-		if (!loadFeatureDirs(DATA_DIR, log).features.some(f => f.id === folder)) throw new ControlError(`"${id}" 은(는) 기능 폴더가 아니에요`, 404);
-		setFeatureEnabled(DATA_DIR, folder, enabled);
-		syncFeatureWatches();
-		return { ok: true, id, enabled, note: `features/${folder}/feature.md 의 enabled 를 ${enabled} 로 바꿨어요 (원래 내용은 feature.md.bak). 차단은 바로, 글 지시는 다음 세션·압축 뒤부터 반영돼요.` };
-	}
-	const nodeId = Object.keys(NODE_SPECS).find(k => featureIdOf(k) === id);
-	const toggle = nodeId ? NODE_SPECS[nodeId].toggle : undefined;
-	if (!nodeId || !toggle) throw new ControlError(`"${id}" 은(는) 여기서 켜고 끌 수 있는 기능이 아니에요`, 404);
-	const r = await patchConfig(toggle.path, enabled ? null : toggle.off);
-	return { ...r, id, enabled };
 }

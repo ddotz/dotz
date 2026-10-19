@@ -1,14 +1,14 @@
-// "구성" view backend: the harness as a graph (inbound channels -> gateway -> orchestrator -> lanes -> workers, plus the
-// support systems), built at runtime from the live process state and ~/.dotz, and the owner-editable parts of it:
-// a whitelist of config.json keys and three prompt files. Secrets, Discord ids, ports and the allowed-login list are shown
-// as "설정됨"/counts only and are never writable from here.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+// "구성" view backend (read-only): the harness as a graph (inbound channels -> gateway -> orchestrator -> lanes -> workers,
+// plus the support systems), built at runtime from the live process state and ~/.dotz, with the whitelist of config.json
+// keys and the prompt files the owner can ask the orchestrator to change. This module writes nothing: edits are requests
+// the web UI sends to the main orchestrator. Secrets, Discord ids, ports and the allowed-login list are shown as
+// "설정됨"/counts only.
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { homedir } from "node:os";
 import { runningSubagents } from "./activity.ts";
-import { cfg, CONFIG_FILE, DATA_DIR, IDENTITY_FILE, NAME, orchestratorModel, lanesModel, parseSelector, paths, selectorOf, THINKING_LEVELS, workerModel, writeAtomic } from "./config.ts";
+import { cfg, CONFIG_FILE, DATA_DIR, IDENTITY_FILE, NAME, orchestratorModel, lanesModel, parseSelector, paths, THINKING_LEVELS, workerModel } from "./config.ts";
 import { kTokens, percentOf } from "./context.ts";
-import { setModel } from "./control.ts";
 import * as discord from "./discord.ts";
 import { modeFile, lang } from "./i18n.ts";
 import { lanes, WORKER_SLOTS } from "./lanes.ts";
@@ -66,66 +66,55 @@ type Def = {
 	hint?: string;
 	min?: number;
 	max?: number;
-	int?: boolean;
-	maxLen?: number;
 	multiline?: boolean;
-	mirror?: boolean; // also update the in-memory cfg (the owner module reads cfg per use); false = read once at start
-	check?: (v: string) => string | undefined;
-	note?: string; // overrides the generic "applies" sentence
+	mirror?: boolean; // the owner module reads cfg per use (a changed value needs no restart); false = read once at start
 	source?: string;
 };
 
-const HHMM = (v: string) => (v === "off" || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? undefined : '"04:30" 같은 시각이나 "off" 로 적어 주세요');
 const EFFORT_OPTIONS = THINKING_LEVELS.map(v => ({ value: v, label: v }));
 
 const DEFS = new Map<string, Def>([
-	["orchestrator.model", { label: "모델", type: "model", applies: "live", mirror: true, note: "오케스트레이터가 새 세션으로 다시 시작해요 (최근 대화는 이어받고, 다음 응답은 비용이 더 들 수 있어요)." }],
-	["orchestrator.thinking", { label: "추론 강도", type: "effort", applies: "live", mirror: true, note: "오케스트레이터가 새 세션으로 다시 시작해요 (최근 대화는 이어받고, 다음 응답은 비용이 더 들 수 있어요)." }],
+	["orchestrator.model", { label: "모델", type: "model", applies: "live", mirror: true }],
+	["orchestrator.thinking", { label: "추론 강도", type: "effort", applies: "live", mirror: true }],
 	// orchestrator.ts ROTATE_TOKENS
-	["orchestrator.rotate_tokens", { label: "새 세션으로 넘어가는 기준", type: "number", applies: "restart", default: 150_000, unit: "토큰", min: 20_000, max: 1_000_000, int: true, hint: "대화가 이만큼 길어지면 한가한 때 핸드오버와 함께 새 세션으로 넘어가요" }],
+	["orchestrator.rotate_tokens", { label: "새 세션으로 넘어가는 기준", type: "number", applies: "restart", default: 150_000, unit: "토큰", min: 20_000, max: 1_000_000, hint: "대화가 이만큼 길어지면 한가한 때 핸드오버와 함께 새 세션으로 넘어가요" }],
 	["lanes.model", { label: "새 레인 기본 모델", type: "model", applies: "next-turn", mirror: true }],
 	["lanes.thinking", { label: "새 레인 추론 강도", type: "effort", applies: "next-turn", mirror: true }],
 	// lanes.ts MAX_ACTIVE
-	["lanes.max_active", { label: "동시에 일하는 레인 수", type: "number", applies: "restart", default: 4, unit: "개", min: 1, max: 16, int: true }],
+	["lanes.max_active", { label: "동시에 일하는 레인 수", type: "number", applies: "restart", default: 4, unit: "개", min: 1, max: 16 }],
 	// config.ts lanesCompactAt / lanesKeepRecent (read when a lane process starts)
-	["lanes.compact_at", { label: "자동 압축 시작", type: "number", applies: "next-turn", mirror: true, default: 400_000, unit: "토큰", min: 50_000, max: 2_000_000, int: true, hint: "레인 컨텍스트가 이만큼 차면 요약해서 줄여요" }],
-	["lanes.keep_recent", { label: "압축해도 남기는 최근 대화", type: "number", applies: "next-turn", mirror: true, default: 40_000, unit: "토큰", min: 5_000, max: 400_000, int: true }],
+	["lanes.compact_at", { label: "자동 압축 시작", type: "number", applies: "next-turn", mirror: true, default: 400_000, unit: "토큰", min: 50_000, max: 2_000_000, hint: "레인 컨텍스트가 이만큼 차면 요약해서 줄여요" }],
+	["lanes.keep_recent", { label: "압축해도 남기는 최근 대화", type: "number", applies: "next-turn", mirror: true, default: 40_000, unit: "토큰", min: 5_000, max: 400_000 }],
 	["lanes.worker_model", { label: "작업자 모델", type: "model", applies: "next-turn", mirror: true }],
 	["lanes.worker_effort", { label: "작업자 추론 강도", type: "effort", applies: "next-turn", mirror: true, source: "config.json:lanes.worker_model" }],
 	// config.ts lanesNightlyAt (hygiene.ts arms its timer at start)
-	["lanes.nightly_at", { label: "야간 정리 시각", type: "text", applies: "restart", default: "04:30", hint: "HH:MM 또는 off", maxLen: 5, check: HHMM }],
-	["lanes.nightly_compact_at", { label: "야간 압축 기준", type: "number", applies: "live", mirror: true, default: 300_000, unit: "토큰", min: 50_000, max: 2_000_000, int: true }],
-	["lanes.rotate_mb", { label: "세션 파일 교체 크기", type: "number", applies: "live", mirror: true, default: 50, unit: "MB", min: 5, max: 1000, int: true }],
+	["lanes.nightly_at", { label: "야간 정리 시각", type: "text", applies: "restart", default: "04:30", hint: "HH:MM 또는 off" }],
+	["lanes.nightly_compact_at", { label: "야간 압축 기준", type: "number", applies: "live", mirror: true, default: 300_000, unit: "토큰", min: 50_000, max: 2_000_000 }],
+	["lanes.rotate_mb", { label: "세션 파일 교체 크기", type: "number", applies: "live", mirror: true, default: 50, unit: "MB", min: 5, max: 1000 }],
 	// memguard.ts reads the limit on every check, but only starts its timer when it is above 0 at start
-	["lanes.max_rss_gb", { label: "프로세스 메모리 한도", type: "number", applies: "restart", default: 8, unit: "GB", min: 1, max: 128, int: true, hint: "넘으면 같은 세션으로 다시 시작해요. 끄려면 config.json 에서 0 으로" }],
+	["lanes.max_rss_gb", { label: "프로세스 메모리 한도", type: "number", applies: "restart", default: 8, unit: "GB", min: 1, max: 128, hint: "넘으면 같은 세션으로 다시 시작해요. 끄려면 config.json 에서 0 으로" }],
 	// main.ts COALESCE_MS
-	["gateway.coalesce_ms", { label: "연달아 온 메시지 묶는 시간", type: "number", applies: "restart", default: 4000, unit: "ms", min: 0, max: 20_000, int: true, hint: "같은 채널에서 이 시간 안에 온 메시지는 한 번에 처리해요" }],
+	["gateway.coalesce_ms", { label: "연달아 온 메시지 묶는 시간", type: "number", applies: "restart", default: 4000, unit: "ms", min: 0, max: 20_000, hint: "같은 채널에서 이 시간 안에 온 메시지는 한 번에 처리해요" }],
 	// reflect.ts / token-audit.ts / update.ts
-	["reflect_at", { label: "야간 회고 시각", type: "text", applies: "restart", default: "04:40", hint: "HH:MM 또는 off", maxLen: 5, check: HHMM }],
-	["token_audit_at", { label: "토큰 감사 시각", type: "text", applies: "restart", default: "04:30", hint: "HH:MM 또는 off", maxLen: 5, check: HHMM }],
+	["reflect_at", { label: "야간 회고 시각", type: "text", applies: "restart", default: "04:40", hint: "HH:MM 또는 off" }],
+	["token_audit_at", { label: "토큰 감사 시각", type: "text", applies: "restart", default: "04:30", hint: "HH:MM 또는 off" }],
 	["omp_update.mode", { label: "업데이트 방식", type: "select", applies: "restart", default: "check", options: [{ value: "check", label: "새 버전만 알림" }, { value: "install", label: "자동 설치 후 재시작" }, { value: "off", label: "끄기" }] }],
-	["omp_update.at", { label: "업데이트 확인 시각", type: "text", applies: "restart", default: "04:20", hint: "HH:MM 또는 off", maxLen: 5, check: HHMM }],
+	["omp_update.at", { label: "업데이트 확인 시각", type: "text", applies: "restart", default: "04:20", hint: "HH:MM 또는 off" }],
 	// reflect.ts reads backup.remote on every snapshot
-	["backup.remote", { label: "백업 저장소 주소", type: "text", applies: "live", mirror: true, default: "", maxLen: 300, hint: "비우면 이 컴퓨터에만 스냅샷을 남겨요. 비밀이 든 파일은 올리지 않아요", check: v => (/\s/.test(v) ? "공백이 들어갈 수 없어요" : undefined) }],
+	["backup.remote", { label: "백업 저장소 주소", type: "text", applies: "live", mirror: true, default: "", hint: "비우면 이 컴퓨터에만 스냅샷을 남겨요. 비밀이 든 파일은 올리지 않아요" }],
 	// outlang.ts
 	["output_language.mode", { label: "출력 언어 점검", type: "select", applies: "live", mirror: true, default: "rewrite", options: [{ value: "rewrite", label: "다른 언어면 다시 쓰기" }, { value: "off", label: "끄기" }] }],
-	["output_language.model", { label: "다시 쓰기에 쓸 모델", type: "text", applies: "live", mirror: true, default: "", maxLen: 120, hint: "비우면 omp 의 기본 작은 모델" }],
-	["output_language.timeout_s", { label: "다시 쓰기 제한 시간", type: "number", applies: "live", mirror: true, default: 30, unit: "초", min: 5, max: 300, int: true }],
+	["output_language.model", { label: "다시 쓰기에 쓸 모델", type: "text", applies: "live", mirror: true, default: "", hint: "비우면 omp 의 기본 작은 모델" }],
+	["output_language.timeout_s", { label: "다시 쓰기 제한 시간", type: "number", applies: "live", mirror: true, default: 30, unit: "초", min: 5, max: 300 }],
 	// zele.ts
 	["zele.enabled", { label: "메일·캘린더 확인", type: "bool", applies: "restart", default: true }],
-	["zele.poll_sec", { label: "확인 간격", type: "number", applies: "restart", default: 120, unit: "초", min: 60, max: 3600, int: true }],
-	["zele.brief_hour", { label: "아침 브리핑 시각", type: "number", applies: "restart", default: 8, unit: "시", min: 0, max: 23, int: true }],
-	["identity.name", { label: "이름", type: "text", applies: "restart", maxLen: 40, check: v => (v ? undefined : "이름을 비울 수 없어요") }],
-	["identity.language", { label: "응답 언어", type: "text", applies: "live", mirror: true, default: "", maxLen: 12, hint: "ko, en, ja … 비우면 정체성 글에서 자동 감지", check: v => (!v || /^[a-z]{2,3}(-[A-Za-z0-9]+)*$/.test(v) ? undefined : "ko, en 같은 언어 코드로 적어 주세요") }],
-	["identity.character", { label: "성격", type: "text", applies: "next-turn", mirror: true, maxLen: 1000, multiline: true, hint: "정체성 파일(IDENTITY.md)이 있으면 그쪽이 우선이에요" }],
-	["identity.tone", { label: "말투", type: "text", applies: "next-turn", mirror: true, maxLen: 1500, multiline: true, hint: "출력 언어 다시 쓰기의 말투 기준이기도 해요" }],
+	["zele.poll_sec", { label: "확인 간격", type: "number", applies: "restart", default: 120, unit: "초", min: 60, max: 3600 }],
+	["zele.brief_hour", { label: "아침 브리핑 시각", type: "number", applies: "restart", default: 8, unit: "시", min: 0, max: 23 }],
+	["identity.name", { label: "이름", type: "text", applies: "restart" }],
+	["identity.language", { label: "응답 언어", type: "text", applies: "live", mirror: true, default: "", hint: "ko, en, ja … 비우면 정체성 글에서 자동 감지" }],
+	["identity.character", { label: "성격", type: "text", applies: "next-turn", mirror: true, multiline: true, hint: "정체성 파일(IDENTITY.md)이 있으면 그쪽이 우선이에요" }],
+	["identity.tone", { label: "말투", type: "text", applies: "next-turn", mirror: true, multiline: true, hint: "출력 언어 다시 쓰기의 말투 기준이기도 해요" }],
 ]);
-
-const WHEN: Record<Applies, string> = {
-	live: "바로 적용됐어요.",
-	"next-turn": "다음 턴(레인은 다음 시작/이어하기)부터 적용돼요.",
-	restart: "저장했어요. 게이트웨이를 재시작하면 적용돼요.",
-};
 
 // ---- config.json access ------------------------------------------------------------------------------------------
 // The keys this view reads from disk; everything else in config.json passes through untouched.
@@ -146,18 +135,8 @@ type Tree = Record<string, unknown>;
 const readDisk = (): Disk => JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as Disk;
 const STARTED: Tree = JSON.parse(JSON.stringify(cfg)) as Tree; // what this process was started with
 const getPath = (o: unknown, p: string): unknown => p.split(".").reduce<unknown>((a, k) => (a && typeof a === "object" ? (a as Tree)[k] : undefined), o);
-function setPath(o: Tree, p: string, v: unknown): void {
-	const ks = p.split(".");
-	let cur = o;
-	for (const k of ks.slice(0, -1)) {
-		if (typeof cur[k] !== "object" || cur[k] === null) cur[k] = {};
-		cur = cur[k] as Tree;
-	}
-	if (v === undefined) delete cur[ks.at(-1)!];
-	else cur[ks.at(-1)!] = v;
-}
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-// output_language may be a bare string ("off"); address it as { mode } for reading and writing.
+// output_language may be a bare string ("off"); address it as { mode } for reading.
 const outLang = (o: Tree): Tree => (typeof o.output_language === "string" ? { ...o, output_language: { mode: o.output_language } } : o);
 const modeOf = (d: Disk) => (typeof d.output_language === "string" ? d.output_language : d.output_language?.mode);
 
@@ -199,79 +178,6 @@ function settingOf(path: string, disk: Disk, over: Partial<Setting> = {}): Setti
 	};
 }
 
-export type PatchResult = { ok: true; path: string; value: unknown; applies: Applies; note: string };
-
-function validate(path: string, d: Def, raw: unknown): unknown {
-	const bad = (m: string): never => {
-		throw new ControlError(`${d.label}: ${m}`);
-	};
-	switch (d.type) {
-		case "number": {
-			const n = typeof raw === "string" && raw.trim() !== "" ? Number(raw) : raw;
-			if (typeof n !== "number" || !Number.isFinite(n)) return bad("숫자여야 해요");
-			if (d.int && !Number.isInteger(n)) return bad("정수여야 해요");
-			if (d.min !== undefined && n < d.min) return bad(`${d.min.toLocaleString("ko-KR")} 이상이어야 해요`);
-			if (d.max !== undefined && n > d.max) return bad(`${d.max.toLocaleString("ko-KR")} 이하여야 해요`);
-			return n;
-		}
-		case "bool":
-			return typeof raw === "boolean" ? raw : bad("켜기/끄기 값이어야 해요");
-		case "select":
-		case "effort": {
-			const opts = d.type === "effort" ? THINKING_LEVELS.map(String) : (d.options ?? []).map(o => o.value);
-			return typeof raw === "string" && opts.includes(raw) ? raw : bad(`${opts.join(", ")} 중 하나여야 해요`);
-		}
-		default: {
-			if (typeof raw !== "string") return bad("글자여야 해요");
-			const v = raw.trim();
-			if (d.maxLen && v.length > d.maxLen) return bad(`${d.maxLen}자 이하여야 해요`);
-			if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v)) return bad("제어 문자는 넣을 수 없어요");
-			const problem = d.check?.(v);
-			if (problem) return bad(problem);
-			return v;
-		}
-	}
-}
-
-// Rejected on purpose: connection ids, tokens, secrets, the allowed-login list and ports are never edited from the web.
-const SENSITIVE = /^(discord|web)(\.|$)|token|secret|passw|credential|api_?key|allow_logins|owner_id|port$/i;
-
-export async function patchConfig(path: string, value: unknown): Promise<PatchResult> {
-	if (typeof path !== "string" || !path) throw new ControlError("path required");
-	const d = DEFS.get(path);
-	if (!d) {
-		if (SENSITIVE.test(path)) throw new ControlError("보안·연결 설정(Discord, 토큰, 포트, 허용 로그인)은 화면에서 바꿀 수 없어요. config.json 을 직접 고쳐 주세요.");
-		throw new ControlError(`"${path}" 은(는) 화면에서 바꿀 수 있는 설정이 아니에요`);
-	}
-	const reset = value === null;
-	if (reset && d.default === undefined && !["identity.character", "identity.tone"].includes(path)) throw new ControlError(`${d.label}: 기본값이 없어서 되돌릴 수 없어요`);
-	if (d.type === "model" || (d.type === "effort" && !reset)) {
-		if (reset || typeof value !== "string" || !value.trim()) throw new ControlError(`${d.label}: 값이 필요해요`);
-		const [section, key] = path.split(".");
-		const target = section === "orchestrator" ? "orchestrator" : key.startsWith("worker") ? "workers" : "lanes";
-		const r = d.type === "model" ? await setModel(target, value.trim()) : await setModel(target, undefined, validate(path, d, value) as string);
-		const now = (await effectiveAfter(path)) as string;
-		if (r.note === "unchanged") return { ok: true, path, value: now, applies: "live", note: "이미 같은 값이에요." };
-		const live = target === "orchestrator" && r.applied === "restarted";
-		const applies: Applies = live ? "live" : "next-turn";
-		const note = target === "orchestrator" ? (live ? `${d.note}` : "저장했어요. 지금 턴이 끝나거나 다음에 시작할 때 오케스트레이터가 새 세션으로 바뀌어요.") : target === "workers" ? "저장했어요. 지금부터 새로 시작·이어하는 레인의 작업자에게 적용돼요 (돌고 있는 레인은 그대로예요)." : "저장했어요. 지금부터 새로 만드는 레인에 적용돼요 (돌고 있는 레인은 그대로예요).";
-		return { ok: true, path, value: now, applies, note };
-	}
-	const next = reset ? undefined : validate(path, d, value);
-	const disk = readDisk() as Tree;
-	if (path.startsWith("output_language.") && typeof disk.output_language === "string") disk.output_language = { mode: disk.output_language };
-	setPath(disk, path, next);
-	copyFileSync(CONFIG_FILE, `${CONFIG_FILE}.bak`);
-	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
-	if (d.mirror) {
-		const live = cfg as unknown as Tree; // the owner modules read this object per use
-		if (path.startsWith("output_language.") && typeof live.output_language === "string") live.output_language = { mode: live.output_language };
-		setPath(live, path, next);
-	}
-	return { ok: true, path, value: next ?? d.default ?? "", applies: d.applies, note: d.note ?? WHEN[d.applies] };
-}
-const effectiveAfter = async (path: string) => effective(path, readDisk());
-
 // ---- prompt files ------------------------------------------------------------------------------------------------
 type FileDef = { path: () => string; editable: boolean; label: string; cap?: number; applies: Applies; note: string };
 const FILES: Record<string, FileDef> = {
@@ -280,7 +186,6 @@ const FILES: Record<string, FileDef> = {
 	"LESSONS.md": { path: () => paths.lessons, editable: true, label: "교훈", cap: 3_000, applies: "next-turn", note: "다음 세션·압축 뒤 다시 읽을 때 반영돼요." },
 	"identity/IDENTITY.md": { path: () => IDENTITY_FILE, editable: true, label: "정체성", cap: 3_000, applies: "next-turn", note: "다음 세션·압축 뒤 다시 읽을 때 반영돼요." },
 };
-const MAX_FILE_CHARS = 200_000;
 
 function fileDef(name: string): FileDef {
 	const d = FILES[name === "IDENTITY.md" ? "identity/IDENTITY.md" : name];
@@ -294,36 +199,7 @@ export function readHarnessFile(name: string) {
 	const file = d.path();
 	const exists = existsSync(file);
 	const st = exists ? statSync(file) : undefined;
-	return { name, label: d.label, text: exists ? readFileSync(file, "utf8") : "", exists, editable: d.editable, bytes: st?.size ?? 0, modified: st?.mtime.toISOString(), applies: d.applies, note: d.note, cap: d.cap };
-}
-
-export function writeHarnessFile(name: string, text: unknown) {
-	const d = fileDef(name);
-	if (!d.editable) throw new ControlError(`${d.label}: 이 파일은 여기서 고칠 수 없어요`, 403);
-	if (typeof text !== "string") throw new ControlError("text required");
-	if (text.length > MAX_FILE_CHARS) throw new ControlError(`파일이 너무 커요 (${MAX_FILE_CHARS.toLocaleString("ko-KR")}자 이하)`);
-	const file = d.path();
-	const before = existsSync(file) ? readFileSync(file, "utf8") : undefined;
-	const body = text.endsWith("\n") || !text ? text : `${text}\n`;
-	const warnings: string[] = [];
-	if (d.cap && body.length > d.cap) warnings.push(`${d.cap.toLocaleString("ko-KR")}자가 넘는 뒷부분은 오케스트레이터 시작 프롬프트에서 잘려요 (지금 ${body.length.toLocaleString("ko-KR")}자).`);
-	if (name === "RULES.md") {
-		const lines = (body.split(/^## Blocked commands\s*$/m)[1]?.split(/^## /m)[0] ?? "").split("\n").filter(l => l.startsWith("- deny:"));
-		const ok = denyLines(body).length;
-		if (lines.length > ok) warnings.push(`차단 명령 ${lines.length - ok}줄이 "- deny: <정규식> | <이유>" 형식이 아니라 무시돼요.`);
-		for (const m of denyLines(body)) {
-			try {
-				new RegExp(m[1], "i");
-			} catch {
-				warnings.push(`차단 명령 정규식이 잘못돼서 무시돼요: ${m[1].slice(0, 60)}`);
-			}
-		}
-	}
-	if (before === body) return { ok: true, name, unchanged: true, bytes: Buffer.byteLength(body), applies: d.applies, note: "바뀐 내용이 없어요.", warnings, backup: undefined as string | undefined };
-	mkdirSync(dirname(file), { recursive: true });
-	if (before !== undefined) writeAtomic(`${file}.bak`, before);
-	writeAtomic(file, body);
-	return { ok: true, name, unchanged: false, bytes: Buffer.byteLength(body), applies: d.applies, note: d.note, warnings, backup: before !== undefined ? `${name}.bak` : undefined };
+	return { name, label: d.label, path: file, text: exists ? readFileSync(file, "utf8") : "", exists, editable: d.editable, bytes: st?.size ?? 0, modified: st?.mtime.toISOString(), applies: d.applies, note: d.note, cap: d.cap };
 }
 
 // ---- the graph ---------------------------------------------------------------------------------------------------
@@ -335,7 +211,7 @@ function ago(ms: number): string {
 }
 const fileFact = (name: string): { label: string; value: string }[] => {
 	const f = fileDef(name).path();
-	if (!existsSync(f)) return [{ label: "파일", value: "아직 없어요 (저장하면 만들어져요)" }];
+	if (!existsSync(f)) return [{ label: "파일", value: "아직 없어요" }];
 	const st = statSync(f);
 	return [{ label: "크기", value: `${readFileSync(f, "utf8").length.toLocaleString("ko-KR")}자` }, { label: "마지막 수정", value: `${ago(Date.now() - st.mtimeMs)} 전` }];
 };
@@ -505,6 +381,5 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{ from: "memguard", to: "orchestrator", label: "메모리 감시" },
 		{ from: "guard", to: "workers", label: "규칙 강제" },
 	];
-	const pending = nodes.flatMap(n => n.settings.filter(s => s.pending).map(s => `${n.label} · ${s.label}`));
-	return { generated: new Date().toISOString(), name: NAME, nodes, edges, restart_pending: pending };
+	return { generated: new Date().toISOString(), name: NAME, nodes, edges };
 }
