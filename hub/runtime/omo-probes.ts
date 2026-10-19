@@ -14,6 +14,10 @@ const answerOf = (events: AgentEvent[]): string => [...events].reverse().find(e 
 const toolCalls = (events: AgentEvent[]) => events.flatMap(e => (e.type === "activity" && e.row.type === "tool_call" ? [e.row] : []));
 const toolResults = (events: AgentEvent[]) => events.flatMap(e => (e.type === "activity" && e.row.type === "tool_result" ? [e.row] : []));
 const PONG = "Reply with exactly the single word PONG and nothing else.";
+// OmO has no bash tool: shell commands run in `eval` cells.
+const isShell = (tool?: string) => tool === "bash" || tool === "eval";
+// OmO refuses to compact a tiny session; two turns over a filler text make one big enough.
+const FILLER = Array.from({ length: 1500 }, (_, i) => `Line ${i}: the quick brown fox jumps over the lazy dog near the riverbank.`).join("\n");
 
 // A data dir of its own with one deny line, so a probe never reads or writes the owner's ~/.dotz.
 function probeData(cwd: string): string {
@@ -88,8 +92,8 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 
 		compaction_events: probe(async (_ctx, start, ms) => {
 			const run = start();
-			await run.turn("Reply with exactly the single word hi.", ms);
-			await run.turn("Reply with exactly the single word again.", ms);
+			await run.turn(`Read this text, then reply with exactly the single word hi.\n\n${FILLER}`, ms);
+			await run.turn(`Read this text too, then reply with exactly the single word again.\n\n${FILLER}`, ms);
 			const from = run.events.length;
 			run.proc.compact();
 			const done = await run.waitFor(e => e.type === "compaction", ms, from);
@@ -139,18 +143,18 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 
 		tool_intent: probe(async (_ctx, start, ms) => {
 			const events = await start().turn("Run exactly this bash command and tell me its output: echo intent-probe", ms);
-			const call = toolCalls(events).find(c => c.tool === "bash");
-			if (!call) return fail("no bash tool_call row");
+			const call = toolCalls(events).find(c => isShell(c.tool));
+			if (!call) return fail("no shell (bash/eval) tool_call row");
 			const result = toolResults(events).find(r => r.call_id === call.call_id);
 			if (!result || !/intent-probe/.test(result.text)) return fail("no tool_result row paired with the call");
-			return call.intent ? ok(`tool_call bash intent "${call.intent}", tool_result paired by id`) : { result: "adapted", note: "tool_call/tool_result rows paired by id; the row shows the command when the call carries no intent" };
+			return call.intent ? ok(`tool_call ${call.tool} intent "${call.intent}", tool_result paired by id`) : { result: "adapted", note: "tool_call/tool_result rows paired by id; the row shows the command when the call carries no intent" };
 		}),
 
 		steer_abort: probe(async (_ctx, start, ms) => {
 			const run = start();
 			const from = run.events.length;
 			run.proc.send("Run this bash command: sleep 8; echo slept. Then reply with the single word done.", "prompt");
-			if (!(await run.waitFor(e => e.type === "activity" && e.row.type === "tool_call" && e.row.tool === "bash", 60_000, from))) return fail("the model never started the command");
+			if (!(await run.waitFor(e => e.type === "activity" && e.row.type === "tool_call" && isShell(e.row.tool), 60_000, from))) return fail("the model never started the command");
 			run.proc.send("Also: end your final answer with the word STEERED.", "steer");
 			if (!(await run.waitFor(e => e.type === "assistant" && e.stop === "stop" && /STEERED/i.test(e.text), ms, from))) return fail("a message sent mid-turn was not honored");
 			await Bun.sleep(1500);

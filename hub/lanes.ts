@@ -561,6 +561,21 @@ function dropWorktree(lane: Lane): string {
 	return `worktree removed (${w.branch} merged into ${w.base})`;
 }
 
+// A lane is for multi-hour, multi-step project work (the 오모냥 rule): anything shorter the orchestrator does itself or
+// with task subagents, whose results come back into its own session, so no channel, worktree or report relay is spent on
+// it. The launch must say why a lane is needed and how long the work is expected to take; under LANE_MIN_HOURS it is
+// refused unless the owner asked for a lane.
+export const LANE_MIN_HOURS = 1;
+export function laneJustification(why: unknown, hours: unknown, ownerAsked: boolean): string | undefined {
+	const reason = typeof why === "string" ? why.trim() : "";
+	if (reason.length < 15) return "say why this needs a lane (why): a lane is only for multi-hour, multi-step project work; do shorter work yourself or with task subagents, whose results come back into your session";
+	if (ownerAsked) return undefined;
+	const h = Number(hours);
+	if (!Number.isFinite(h) || h <= 0) return "give the expected duration in hours (hours)";
+	if (h < LANE_MIN_HOURS) return `a ${h}h job does not get a lane (lanes start at ${LANE_MIN_HOURS}h): do it yourself or with task subagents, whose results come back into your session`;
+	return undefined;
+}
+
 export function checkBrief(brief: string): string | undefined {
 	if (!brief.trim()) return "brief is empty";
 	if (brief.length > BRIEF_MAX) return `brief is ${brief.length} chars (max ${BRIEF_MAX}): pass paths, not pasted contents`;

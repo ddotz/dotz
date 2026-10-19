@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { shellText } from "../../extension/index.ts";
 import { jsonZod, params } from "../../extension/schema.ts";
 import { eventsFromFrame } from "./omp.ts";
 import { hostsOf, listHosts } from "./omo-hosts.ts";
@@ -16,6 +17,7 @@ test("spawn arguments: rpc mode, mapped model, dotz extension, no OmO fallback c
 	const args = omoArgs({ role: "orchestrator", cwd: "/tmp", model: "anthropic/claude-opus-5-5:medium", env: {}, resume: "/s/a.jsonl" });
 	expect(args.slice(1, 5)).toEqual(["--mode", "rpc", "--model", "anthropic-subscription/claude-opus-5-5:medium"]);
 	expect(args).toContain("--no-model-fallback");
+	expect(args).toContain("--omo-senpi-memory-disabled");
 	expect(args[args.indexOf("--extension") + 1]).toEndWith("extension/index.ts");
 	expect(args.slice(-2)).toEqual(["--session", "/s/a.jsonl"]);
 });
@@ -40,6 +42,13 @@ test("rpc hosts are matched to the dotz-started omo process by pid and start tim
 	host("b", 4242, "Mon Oct 19 18:00:00 2026 UTC");
 	host("c", 777, "Mon Oct 19 14:00:39 2026 UTC");
 	expect(hostsOf({ pid: 4242, at }, listHosts(root)).map(h => h.socket)).toEqual(["/s/a.sock"]);
+});
+
+test("deny lines see OmO's eval cells as shell text, and an eval's summary becomes the call's intent", () => {
+	expect(shellText({ toolName: "eval", input: { code: "await Bun.$`agent-discord send x`" } })).toContain("agent-discord");
+	expect(shellText({ toolName: "bash", input: { command: "ls" } })).toBe("ls");
+	expect(shellText({ toolName: "read", input: { path: "x" } })).toBeUndefined();
+	expect(translateFrame({ type: "tool_execution_start", toolName: "eval", toolCallId: "t", args: { summary: "run tests" } } as never).intent).toBe("run tests");
 });
 
 test("tool parameters without zod are plain JSON Schema with required keys", () => {
