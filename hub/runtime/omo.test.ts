@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { shellText } from "../../extension/index.ts";
+import dotz, { shellText } from "../../extension/index.ts";
 import { jsonZod, params } from "../../extension/schema.ts";
 import { eventsFromFrame } from "./omp.ts";
 import { hostsOf, listHosts } from "./omo-hosts.ts";
@@ -78,4 +78,23 @@ test("tool parameters without zod are plain JSON Schema with required keys", () 
 		required: ["action"],
 		additionalProperties: false,
 	});
+});
+
+test("on a host without zod (OmO) every orchestrator and lane tool registers: a missing schema builder drops them all", async () => {
+	const load = async (role: "DOTZ_ORCHESTRATOR" | "DOTZ_LANE") => {
+		const names: string[] = [];
+		const host = new Proxy({ registerTool: (t: { name: string; parameters: unknown }) => names.push(t.name) } as Record<string, unknown>, {
+			get: (o, k) => (k in o ? o[k as string] : k === "then" || k === "zod" ? undefined : () => undefined),
+		});
+		const saved = { ...process.env };
+		process.env[role] = role === "DOTZ_LANE" ? "probe" : "1";
+		try {
+			await dotz(host);
+		} finally {
+			process.env = saved;
+		}
+		return names;
+	};
+	expect(await load("DOTZ_ORCHESTRATOR")).toEqual(expect.arrayContaining(["dotz_send", "dotz_lane", "dotz_schedule", "dotz_watch", "dotz_verify"]));
+	expect(await load("DOTZ_LANE")).toContain("dotz_verify");
 });
