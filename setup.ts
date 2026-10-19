@@ -330,8 +330,8 @@ const config = {
 	identity: a.identity,
 	discord: { token_file: TOKEN_FILE.replace(HOME, "~"), owner_id: a.owner_id, guild: a.guild, ...(prior.discord?.app_id ? { app_id: prior.discord.app_id } : {}) },
 	web: { port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins },
-	orchestrator: { ...split(a.orchestrator_model), ...(prior.orchestrator?.rotate_tokens ? { rotate_tokens: prior.orchestrator.rotate_tokens } : {}) },
-	lanes: { ...split(a.lane_model), ...(prior.lanes?.max_active ? { max_active: prior.lanes.max_active } : {}) },
+	orchestrator: { runtime: prior.orchestrator?.runtime ?? "omo", ...split(a.orchestrator_model), ...(prior.orchestrator?.rotate_tokens ? { rotate_tokens: prior.orchestrator.rotate_tokens } : {}) },
+	lanes: { runtime: prior.lanes?.runtime ?? "omo", ...split(a.lane_model), ...(prior.lanes?.max_active ? { max_active: prior.lanes.max_active } : {}) },
 };
 writeFileSync(join(DIR, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 if (!existsSync(join(DIR, "state.json"))) writeFileSync(join(DIR, "state.json"), `${JSON.stringify({ open_tasks: [] }, null, 2)}\n`);
@@ -343,14 +343,20 @@ if (identityChanged || !existsSync(IDENTITY_FILE)) {
 }
 console.log(`config: ${join(DIR, "config.json")}`);
 
-const link = join(HOME, ".omp", "agent", "extensions", "dotz");
-mkdirSync(join(HOME, ".omp", "agent", "extensions"), { recursive: true });
-if (existsSync(link) || (() => { try { return lstatSync(link).isSymbolicLink(); } catch { return false; } })()) rmSync(link, { force: true, recursive: false });
-symlinkSync(PKG, link);
-console.log(`omp plugin linked: ${link} -> ${PKG}`);
+// The hub loads the dotz extension into its own OmO processes (--extension); nothing is installed into OmO's agent
+// directory. omp is an opt-in runtime: its terminals get the plugin only when omp is installed here.
+const ompInstalled = (await Bun.$`command -v omp`.nothrow().quiet()).exitCode === 0;
+if (ompInstalled) {
+	const link = join(HOME, ".omp", "agent", "extensions", "dotz");
+	mkdirSync(join(HOME, ".omp", "agent", "extensions"), { recursive: true });
+	if (existsSync(link) || (() => { try { return lstatSync(link).isSymbolicLink(); } catch { return false; } })()) rmSync(link, { force: true, recursive: false });
+	symlinkSync(PKG, link);
+	console.log(`omp plugin linked: ${link} -> ${PKG}`);
+}
 
 const bun = (await Bun.$`which bun`.nothrow().quiet()).stdout.toString().trim() || join(HOME, ".bun", "bin", "bun");
-const ompDir = (await Bun.$`dirname "$(command -v omp)"`.nothrow().quiet()).stdout.toString().trim();
+const binDir = async (bin: string) => ((await Bun.$`command -v ${bin}`.nothrow().quiet()).exitCode === 0 ? (await Bun.$`dirname "$(command -v ${bin})"`.nothrow().quiet()).stdout.toString().trim() : "");
+const omoDir = await binDir("omo"), ompDir = await binDir("omp");
 const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -358,7 +364,7 @@ const plist = `<?xml version="1.0" encoding="UTF-8"?>
   <key>ProgramArguments</key><array><string>${bun}</string><string>${join(PKG, "hub", "main.ts")}</string></array>
   <key>EnvironmentVariables</key><dict>
     <key>HOME</key><string>${HOME}</string>
-    <key>PATH</key><string>${[ompDir, join(HOME, ".bun", "bin"), join(HOME, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].filter(Boolean).join(":")}</string>
+    <key>PATH</key><string>${[omoDir, ompDir, join(HOME, ".bun", "bin"), join(HOME, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].filter(Boolean).join(":")}</string>
     <key>DOTZ_DIR</key><string>${DIR}</string>
   </dict>
   <key>RunAtLoad</key><true/>
@@ -450,4 +456,4 @@ if (token) {
 	} else console.log(`discord: 토큰이 거절됐어요 (${me.status}). secrets/discord-bot-token 을 지우고 setup 을 다시 실행하세요.`);
 } else if (a.guild) console.log("discord: 아직 봇 토큰이 없어요. 웹 앱과 터미널로는 지금도 쓸 수 있어요.");
 if (flag("--load") && provisioned) await Bun.$`launchctl kickstart -k gui/${process.getuid?.() ?? 501}/${LABEL}`.nothrow().quiet();
-console.log(`\n끝! 아무 omp 터미널에서 "${a.identity.name}모드 켜"라고 하면 그 터미널이 ${a.identity.name}와(과) 연결돼요.${a.guild ? ` 디스코드에서는 ${a.identity.name} 카테고리의 대화 채널에 말을 걸면 돼요.` : ""}`);
+console.log(`\n끝! ${a.identity.name}는 OmO로 돌아가요.${a.guild ? ` 디스코드에서는 ${a.identity.name} 카테고리의 대화 채널에 말을 걸면 돼요.` : ""}${ompInstalled ? ` omp 터미널에서도 "${a.identity.name}모드 켜"라고 하면 그 터미널이 ${a.identity.name}와(과) 연결돼요.` : ""}`);

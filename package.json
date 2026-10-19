@@ -2,7 +2,7 @@
   "name": "dotz",
   "version": "0.1.0",
   "private": true,
-  "description": "땃쥐모드: Dori-style always-on global orchestrator for omp, with Discord, project lanes and a tailnet-only web app",
+  "description": "땃쥐모드: Dori-style always-on global orchestrator on OmO (omp opt-in), with Discord, project lanes and a tailnet-only web app",
   "type": "module",
   "omp": {
     "extensions": ["./extension/index.ts"]

@@ -1,6 +1,6 @@
 // macOS permissions the gateway needs, asked once during onboarding (`bun setup.ts permissions`, `--check`).
 // The gateway is a launchd agent whose program is bun, so for launchd bun is the TCC "responsible process": every protected
-// access by the gateway or anything it spawns (omp lanes, orchestrator, osascript, aside, git) prompts as "bun". A check run
+// access by the gateway or anything it spawns (OmO/omp lanes, orchestrator, osascript, aside, git) prompts as "bun". A check run
 // from a terminal would be attributed to the terminal app instead, so both probes run as a short launchd job whose program
 // is the same bun binary (this file with --probe). Check mode never raises a dialog (TCCAccessPreflight, AE with ask=false);
 // request mode reads the not-yet-asked folders and asks for Automation, which raises the real prompts attributed to bun.
@@ -41,7 +41,7 @@ export type Permission = {
 export const PERMISSIONS: Permission[] = [
 	{
 		key: "fda", label: "전체 디스크 접근", service: "kTCCServiceSystemPolicyAllFiles", how: "pane", pane: `${PANE}Privacy_AllFiles`,
-		evidence: "레인과 오케스트레이터는 임의 폴더에서 omp 를 띄워 파일을 읽어요 (hub/lanes.ts spawn, hub/orchestrator.ts). 데스크탑·문서·다운로드·iCloud·외장·네트워크 볼륨을 한 번에 해결해요. 팝업이 없어서 설정 창에서 켜요.",
+		evidence: "레인과 오케스트레이터는 임의 폴더에서 OmO(또는 omp)를 띄워 파일을 읽어요 (hub/lanes.ts spawn, hub/orchestrator.ts). 데스크탑·문서·다운로드·iCloud·외장·네트워크 볼륨을 한 번에 해결해요. 팝업이 없어서 설정 창에서 켜요.",
 	},
 	{
 		key: "desktop", label: "파일 및 폴더: 데스크탑", service: "kTCCServiceSystemPolicyDesktopFolder", folder: "Desktop", how: "prompt", pane: `${PANE}Privacy_FilesAndFolders`, viaFda: true,

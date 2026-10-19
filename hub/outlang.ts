@@ -7,6 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, IDENTITY_FILE, log, OMP } from "./config.ts";
+import { OMO } from "./runtime/omo-hosts.ts";
 import { lang, msg } from "./i18n.ts";
 import { baseLanguage, languageName } from "./language.ts";
 
@@ -96,13 +97,24 @@ function systemPrompt(language: string): string {
 
 export type Rewrite = { text: string; inputTokens: number; outputTokens: number; ms: number };
 
-// One minimal omp call (the tiny model role, no tools/skills/extensions/rules/memory) with `system` as the system prompt
-// and `text` as the only message; throws on any failure. Shared by the translation below and hub/summaries.ts.
+// The small model of an OmO call: OmO has no model roles, and its `anthropic` provider bills the API key while dotz's
+// `anthropic` selectors mean the subscription (as in hub/runtime/omo.ts omoSelector). Never Haiku (owner rule).
+const OMO_SMALL = "anthropic-subscription/claude-sonnet-5-5";
+const omoModel = (m: string | undefined) => (!m || m.startsWith("@") ? OMO_SMALL : m.replace(/^anthropic\//, "anthropic-subscription/"));
+// One minimal call on the orchestrator's runtime (OmO by default; omp when config.json names it) with no tools, skills,
+// extensions, rules or memory, `system` as the system prompt and `text` as the only message; throws on any failure.
+// Shared by the translation below and hub/summaries.ts. Both print the same json event stream (message_end).
+function modelArgv(system: string, text: string, model: string | undefined): string[] {
+	if ((cfg.orchestrator?.runtime ?? cfg.runtime ?? "omo") === "omp") {
+		prepareOverlay();
+		return [OMP, "-p", "--mode", "json", `--config=${OVERLAY}`, "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-rules", "--no-lsp", "--no-title", "--thinking", "off", "--model", model ?? "@tiny", "--system-prompt", system, text];
+	}
+	return [OMO, "-p", "--mode", "json", "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-context-files", "--no-prompt-templates", "--omo-senpi-memory-disabled", "--no-model-fallback", "--thinking", "off", "--model", omoModel(model), "--system-prompt", system, text];
+}
 export async function callModel(system: string, text: string, opts: { model?: string; timeoutMs?: number } = {}): Promise<Rewrite> {
-	prepareOverlay();
 	const started = Date.now();
 	const proc = Bun.spawn(
-		[OMP, "-p", "--mode", "json", `--config=${OVERLAY}`, "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-rules", "--no-lsp", "--no-title", "--thinking", "off", "--model", opts.model ?? setting().model ?? "@tiny", "--system-prompt", system, text],
+		modelArgv(system, text, opts.model ?? setting().model),
 		{ cwd: DATA_DIR, stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: opts.timeoutMs ?? (setting().timeout_s ?? 30) * 1000 },
 	);
 	const raw = await new Response(proc.stdout).text();
@@ -115,7 +127,7 @@ export async function callModel(system: string, text: string, opts: { model?: st
 		} catch {}
 	}
 	const out = (reply?.content ?? []).filter(c => c.type === "text").map(c => c.text ?? "").join("").trim();
-	if (!out || reply?.stopReason === "error") throw new Error(code === 0 ? "empty reply" : `omp exited ${code}`);
+	if (!out || reply?.stopReason === "error") throw new Error(code === 0 ? "empty reply" : `model call exited ${code}`);
 	const u = reply?.usage ?? {};
 	return { text: out, inputTokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), outputTokens: u.output ?? 0, ms: Date.now() - started };
 }

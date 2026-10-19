@@ -1,9 +1,16 @@
 # dotz (땃쥐모드)
 
-An always-on, Dori-style global orchestrator for omp. A gateway process (launchd `dev.dotz.gateway`) hosts the
-땃쥐 orchestrator as a headless omp session, so no terminal has to stay open. You talk to it from Discord, from a
-tailnet-only web app, or from any omp terminal after saying "땃쥐모드 켜". Project work runs in lanes: one headless omp
-orchestrator per project folder, each with its own Discord channel.
+An always-on, Dori-style global orchestrator. A gateway process (launchd `dev.dotz.gateway`) hosts the 땃쥐
+orchestrator as a headless agent session, so no terminal has to stay open. You talk to it from Discord, from a
+tailnet-only web app, or (with omp installed) from any omp terminal after saying "땃쥐모드 켜". Project work runs in
+lanes: one headless orchestrator per project folder, each with its own Discord channel.
+
+**Runtime: OmO by default.** Every role (orchestrator, lanes and their task workers) runs on OmO (`omo`, oh-my-openagent)
+unless `config.json` names another runtime (`runtime`, `orchestrator.runtime`, `lanes.runtime`); setup writes `"omo"`
+for both roles, an unknown name falls back to OmO, and the gateway's small model calls (translation, card summaries) use
+OmO as well. omp stays supported as an explicit opt-in. Much of the text below was written on omp: where it names omp
+mechanisms (overlays, `retry.fallbackChains`, `omp worktree`, omp memory, the omp terminal plugin) those apply only when
+omp is selected; the OmO equivalents are in "Runtime differences on OmO" further down.
 
 ## Install and onboard
 
@@ -20,8 +27,9 @@ lands in `~/.dotz/identity/IDENTITY.md` and drives everything: how the bot talks
 category names (`<name>`, `<name> 작업`), and the terminal phrase
 "<name>모드 켜". Re-run setup any time to change it; existing answers are the defaults.
 
-Setup writes `~/.dotz/config.json` (no secrets), keeps the bot token in `~/.dotz/secrets/` (0600), links
-the plugin into omp (`~/.omp/agent/extensions/dotz`), generates and (with `--load`) starts the launchd gateway,
+Setup writes `~/.dotz/config.json` (no secrets, `runtime: "omo"` for the orchestrator and lanes), keeps the bot token in
+`~/.dotz/secrets/` (0600), links the plugin into omp (`~/.omp/agent/extensions/dotz`) only when omp is installed (OmO
+processes get the extension from the gateway with `--extension`; nothing is installed into OmO's own agent directory), generates and (with `--load`) starts the launchd gateway,
 and (with `--tailscale`) serves the web app on the tailnet only. It prints the bot invite link.
 
 **Language.** `identity.language` in `config.json` (a code such as `ko`, `en`, `ja`) is the identity's main language.
@@ -276,18 +284,37 @@ All behind the same auth as the rest of `/api`.
 
 - `GET /api/models`, `PUT /api/models {target: "orchestrator"|"lanes"|"workers"|"lane:<name>", model?, thinking?, force?}`; `GET /api/models` also carries `fallbacks: {max, orchestrator|lanes|workers: {chain: [entry + used?/down?], hub_driven, active: [model ids answering now]}}`; `PUT /api/fallbacks {target: "orchestrator"|"lanes"|"workers", chain: [model | {model, when?, cap?, revert?, key_file?}]}` replaces one chain (validated against the model catalog; applies at the next process start)
 - Agent runtime selection (설정 > 실행 하네스): `GET /api/runtimes` -> `{current: {orchestrator, lanes}, checklist, runtimes: [{id, label, installed, version?, path?, hasAdapter, usable, reason?, roles, report: {at, version, verdict, counts}|null, state, switchable, refusal}]}`
-  for `omp`, `claude`, `codex`, `omo` (`?refresh=1` re-detects); `GET /api/runtimes/<id>` -> `{report, state}` (full last report
+  for `omo`, `omp`, `claude`, `codex` (`?refresh=1` re-detects); `GET /api/runtimes/<id>` -> `{report, state}` (full last report
   and the running check's progress); `POST /api/runtimes/<id>/verify` starts the compatibility check in the background (202, poll the
   GET; progress also streams as `{kind: "runtime_check"}` on `/api/events`); `POST /api/runtimes/<id>/use {roles?: ["orchestrator","lanes"]}`
   writes `orchestrator.runtime` / `lanes.runtime` to `config.json` and answers 409 with `{error}` when the runtime is not installed or has no
-  dotz adapter, has no report, its verdict is `blocked`, or the report was made for another version. `omp` is the reference runtime and
-  needs no report. Nothing is restarted: the change applies when the orchestrator / lane process next starts.
+  dotz adapter, has no report, its verdict is `blocked`, or the report was made for another version. `omo` (the default) is
+  never refused while it is installed, and `omp` (the original baseline, opt-in) needs no report. Nothing is restarted: the change applies when the orchestrator / lane process next starts.
   The check (`hub/runtime/verify.ts`) runs the adapter's probes for 14 items (core: `turn`, `model_effort`, `resume`, `usage_report`,
   `deny_lines`); a failing core item blocks the switch, a failing non-core item is `adapted` (the hub substitutes, e.g. handover from the
   saved session, own compaction timing, hub-side deny re-check, own model fallback) or `disabled` (dotz tools, worker spawn, isolated
   patches, tool intent are turned off for that runtime). The last report per runtime is `<data>/runtime-checks/<id>.json`, the probe
-  log `<id>.log`. On a runtime other than omp the fallback chain's conditions, caps and API-key entries are not driven by the hub;
-  its models go to the runtime as a plain fallback list (Claude Code: `--fallback-model`).
+  log `<id>.log`. The hub drives every fallback chain on OmO (see below); on omp it drives a chain with conditions, caps, revert or
+  API-key entries and leaves a chain of bare models to omp; on Claude Code the models go as a plain `--fallback-model` list.
+
+**Runtime differences on OmO.**
+- *Fallback chain*: OmO runs with `--no-model-fallback` (its own chain would follow the owner's global OmO settings, and the
+  per-process RPC override is refused on a resumed session). The hub drives every OmO chain itself: on a usage limit or
+  provider error it restarts the process on the same session with the next entry (bare entries go back to the primary once
+  it is usable again), logs `모델 폴백: … → …` and, for the orchestrator, alerts the owner. API-key entries start on the entry's
+  base model and switch to the key provider the dotz extension registers (`pi.registerProvider`; not yet
+  exercised live on OmO). Probe: `fallback_chain`.
+- *Worker patch review*: the guard runs on OmO task calls (`prompt` / `tasks[].prompt`): the brief rules apply, a writing worker
+  in a git repo is made `isolated: true, apply: false, merge: "patch"` (read-only agents such as explore/librarian run in
+  place), the completion's `isolation: retained via … -> <root.patch>` line is kept as `<id>.patch`, and `git apply` of a patch
+  (in an OmO `eval` cell or bash) is refused until the patch was read. A repo OmO reports `isolation_unavailable` for (e.g. over
+  its snapshot budget) gets in-place workers. Probe: `workers_isolated_patch`.
+- *Lane worker model*: OmO task workers take their model from OmO's categories (`omo.json`), so `lanes.worker_model` and
+  `lanes.worker_fallback` do not apply on OmO.
+- *Memory*: no omp memory; durable facts go to RULES.md / LESSONS.md / state.json (MODE.md).
+- *Still omp-only*: the budget gate on spawns and the Anthropic quota numbers (`omp usage`), provider login (`omp auth`), the
+  nightly `omp worktree` cleanup and the omp update check. They call the `omp` binary, so they need omp installed and
+  see only omp's own state (the budget gate has no usage data without it and does not gate).
 - `GET /api/context`: `{note, processes: [{name, kind, status, running, model, tokens, window, percent, compaction: {state, at, tokensBefore, error}}]}`
   for the orchestrator and every lane; `POST /api/compact {target: "orchestrator"|"<lane>"}` compacts (or queues) one.
 - `GET /api/activity?source=orchestrator|lane:<name>&limit=N`: in-memory ring (300) of what an omp process did; the
@@ -390,7 +417,7 @@ short "received, answering when the current step ends" notice from the gateway.
 - `hub/runtime/` agent runtimes: `types.ts` (the adapter interface: `AgentProcess`, `AgentEvent`, `SpawnOpts`),
   `omp.ts` (the omp adapter: spawn arguments, lane config overlay, RPC frames to events, handover text from a saved
   session), `index.ts` (registry; `orchestrator.runtime` / `lanes.runtime` / `runtime` in `config.json` pick one,
-  default `omp`, an unknown name is logged and falls back to omp). The orchestrator and lanes hold the policy and only
+  default `omo`, an unknown name is logged and falls back to OmO; `omo.ts` is the OmO adapter on top of the omp one). The orchestrator and lanes hold the policy and only
   see events. `verify.ts` detects the installed harnesses and runs the compatibility check before a switch (see API additions). `bun test` replays recorded omp frames and two state-machine scenarios against goldens captured before the
   adapter existed (`hub/runtime/fixtures`).
 - Audit against Dori / dori-kit / 오모냥: `docs/audit-2026-10-16.md`.

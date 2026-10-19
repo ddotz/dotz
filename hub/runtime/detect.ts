@@ -1,6 +1,6 @@
 // Is a runtime's CLI installed on this machine? One short `<bin> --version` run per runtime, shared by the adapters
-// (omp, claude) and by the detect-only entries for runtimes dotz has no adapter for yet (codex, omo), so the
-// runtime menu can list them as "installed, not supported yet". Nothing here ever throws.
+// (omo, omp, claude) and by the detect-only entry for the runtime dotz has no adapter for yet (codex), so the
+// runtime menu can list it as "installed, not supported yet". Nothing here ever throws.
 import { existsSync } from "node:fs";
 import type { DetectResult } from "./types.ts";
 
@@ -22,18 +22,11 @@ export async function detectBinary(bin: string, args: string[] = ["--version"]):
 }
 
 export interface DetectOnly {
-	id: "codex" | "omo";
+	id: "codex";
 	detect(): Promise<DetectResult>;
 }
 
 export const codex: DetectOnly = {
 	id: "codex",
 	detect: () => detectBinary(process.env.DOTZ_CODEX ?? "codex"),
-};
-
-// OmO (github.com/code-yeongyu/oh-my-openagent, formerly oh-my-opencode): since 5.0 a standalone `omo` CLI on senpi, a pi
-// fork, installed by its own script or as the npm package `omo-ai`.
-export const omo: DetectOnly = {
-	id: "omo",
-	detect: () => detectBinary(process.env.DOTZ_OMO ?? "omo"),
 };
