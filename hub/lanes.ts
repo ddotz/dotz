@@ -427,6 +427,13 @@ export function budgetVerdict(five: number | undefined, week: number | undefined
 	return `5h window ${five}% left; this job is assumed to use ~${est}%, leaving under 10%${typeof week === "number" ? `; 7d window ${week}% left (info only)` : ""}`;
 }
 
+export type BudgetOutcome = "go" | "blocked" | "forced" | "unknown";
+// One audit line per lane-launch gate decision; unfetched windows print as "?".
+export function budgetLine(name: string, est: number, five: number | undefined, week: number | undefined, outcome: BudgetOutcome): string {
+	const left = (v: number | undefined) => (typeof v === "number" ? `${v}% left` : "? left");
+	return `budget gate: lane ${name} est ${est}% 5h ${left(five)} 7d ${left(week)} -> ${outcome}`;
+}
+
 export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string, fableOk?: boolean): Lane {
 	if (!NAME_RE.test(name)) throw new Error("lane name must match [a-z0-9][a-z0-9-]{0,31}");
 	if (!cwd.startsWith("/") || !existsSync(cwd)) throw new Error(`cwd must be an existing absolute path: ${cwd}`);
