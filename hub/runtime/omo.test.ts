@@ -1,0 +1,54 @@
+import { expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { jsonZod, params } from "../../extension/schema.ts";
+import { eventsFromFrame } from "./omp.ts";
+import { hostsOf, listHosts } from "./omo-hosts.ts";
+import { omoArgs, omoSelector, translateFrame } from "./omo.ts";
+
+test("omp's anthropic provider maps to OmO's subscription provider; others and the thinking level pass through", () => {
+	expect(omoSelector("anthropic/claude-opus-5-5:medium")).toBe("anthropic-subscription/claude-opus-5-5:medium");
+	expect(omoSelector("openai-codex/gpt-5.5:high")).toBe("openai-codex/gpt-5.5:high");
+});
+
+test("spawn arguments: rpc mode, mapped model, dotz extension, no OmO fallback chain, --session to resume", () => {
+	const args = omoArgs({ role: "orchestrator", cwd: "/tmp", model: "anthropic/claude-opus-5-5:medium", env: {}, resume: "/s/a.jsonl" });
+	expect(args.slice(1, 5)).toEqual(["--mode", "rpc", "--model", "anthropic-subscription/claude-opus-5-5:medium"]);
+	expect(args).toContain("--no-model-fallback");
+	expect(args[args.indexOf("--extension") + 1]).toEndWith("extension/index.ts");
+	expect(args.slice(-2)).toEqual(["--session", "/s/a.jsonl"]);
+});
+
+test("OmO compaction frames become the hub's compaction events; a requested one is reported once (by the compact response)", () => {
+	const kinds = (f: Parameters<typeof translateFrame>[0]) => eventsFromFrame(translateFrame(f), new Map()).filter(e => e.type === "compaction");
+	expect(kinds({ type: "compaction_end", reason: "threshold", result: {} } as never)).toEqual([{ type: "compaction", state: "done" }]);
+	expect(kinds({ type: "compaction_end", reason: "threshold", errorMessage: "Compaction failed: x" } as never)).toEqual([{ type: "compaction", state: "error", error: "Compaction failed: x", requested: false }]);
+	expect(kinds({ type: "compaction_end", reason: "manual", result: {} } as never)).toEqual([]);
+	expect(kinds({ type: "response", command: "compact", success: true, data: {} })).toEqual([{ type: "compaction", state: "done", tokensBefore: undefined }]);
+});
+
+test("rpc hosts are matched to the dotz-started omo process by pid and start time, never a reused pid", () => {
+	const root = mkdtempSync(join(tmpdir(), "omo-hosts-"));
+	const host = (shard: string, pid: number, start: string) => {
+		mkdirSync(join(root, shard, "generations", "g"), { recursive: true });
+		writeFileSync(join(root, shard, "endpoint.json"), JSON.stringify({ socket: `/s/${shard}.sock` }));
+		writeFileSync(join(root, shard, "generations", "g", "owner.json"), JSON.stringify({ owner: { pid, startTime: start } }));
+	};
+	const at = Date.parse("2026-10-19T14:00:39Z");
+	host("a", 4242, "Mon Oct 19 14:00:39 2026 UTC");
+	host("b", 4242, "Mon Oct 19 18:00:00 2026 UTC");
+	host("c", 777, "Mon Oct 19 14:00:39 2026 UTC");
+	expect(hostsOf({ pid: 4242, at }, listHosts(root)).map(h => h.socket)).toEqual(["/s/a.sock"]);
+});
+
+test("tool parameters without zod are plain JSON Schema with required keys", () => {
+	const z = jsonZod;
+	const schema = params(z.object({ action: z.enum(["add", "list"]), est: z.number().min(0).max(100).optional(), tags: z.array(z.string()).optional() }));
+	expect(schema).toEqual({
+		type: "object",
+		properties: { action: { type: "string", enum: ["add", "list"] }, est: { type: "number", minimum: 0, maximum: 100 }, tags: { type: "array", items: { type: "string" } } },
+		required: ["action"],
+		additionalProperties: false,
+	});
+});

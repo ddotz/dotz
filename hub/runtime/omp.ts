@@ -11,8 +11,8 @@ import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
 
-// The slice of an omp RPC frame this adapter reads.
-type Frame = {
+// The slice of an omp RPC frame this adapter reads (OmO speaks the same pi RPC protocol; omo.ts reuses this reader).
+export type Frame = {
 	type?: string;
 	command?: string;
 	success?: boolean;
@@ -34,10 +34,12 @@ type Frame = {
 	reason?: string;
 	payload?: Record<string, any>;
 	data?: { sessionFile?: string; contextUsage?: { tokens?: number; contextWindow?: number }; model?: { contextWindow?: number }; tokensBefore?: number };
+	aborted?: boolean;
+	skipped?: boolean;
 };
 type Usage = { input?: number; cacheRead?: number; cacheWrite?: number; output?: number; cost?: { total?: number } };
 
-const EXTENSION = join(import.meta.dir, "..", "..", "extension", "index.ts");
+export const EXTENSION = join(import.meta.dir, "..", "..", "extension", "index.ts");
 
 function activityFromFrame(f: Frame): ActivityRow[] {
 	switch (f.type) {
@@ -115,7 +117,7 @@ function subagentUpdate(p: Record<string, any>): SubagentUpdate | undefined {
 // Everything one omp frame means to the hub, in the order the hub must apply it. A task worker that moved to a fallback
 // model has no frame of its own: its progress reports the model it resolved to (`resolvedModel`, flagged
 // `resolvedModelIsFallback`), so a change of that field is the worker's fallback. `workers` remembers it per worker id.
-function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEvent[] {
+export function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEvent[] {
 	const out: AgentEvent[] = [{ type: "alive" }];
 	if (f.type === "subagent_lifecycle" || f.type === "subagent_progress") {
 		const update = subagentUpdate(f.payload ?? {});
@@ -185,7 +187,7 @@ function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEvent[] {
 	return out;
 }
 
-class OmpProcess implements AgentProcess {
+export class OmpProcess implements AgentProcess {
 	private seq = 0;
 	private readonly workerModels = new Map<string, string>();
 	readonly events: AsyncIterable<AgentEvent> = this.read();
@@ -194,6 +196,8 @@ class OmpProcess implements AgentProcess {
 		private readonly proc: Subprocess<"pipe", "pipe", "pipe">,
 		// Request ids only tell the hub's two kinds of process apart in a wire log: `o` orchestrator, `h` lane.
 		private readonly idPrefix: string,
+		// Rewrites a frame of another pi-family runtime into the omp shape before it is read (omo.ts).
+		private readonly translate: (f: Frame) => Frame = f => f,
 	) {
 		this.exited = proc.exited;
 	}
@@ -215,11 +219,11 @@ class OmpProcess implements AgentProcess {
 				} catch {
 					continue;
 				}
-				if (f && typeof f === "object") yield* eventsFromFrame(f as Frame, this.workerModels);
+				if (f && typeof f === "object") yield* eventsFromFrame(this.translate(f as Frame), this.workerModels);
 			}
 		}
 	}
-	private write(frame: Record<string, unknown>): void {
+	protected write(frame: Record<string, unknown>): void {
 		this.proc.stdin.write(`${JSON.stringify({ id: `${this.idPrefix}${++this.seq}`, ...frame })}\n`);
 		this.proc.stdin.flush();
 	}
@@ -295,7 +299,7 @@ function writeOverlay(o: SpawnOpts, lane: NonNullable<SpawnOpts["lane"]>): strin
 // body of a handover into a fresh session. Assistant text from a tool-use step is mid-turn monologue, not an answer, so
 // only `stop`/`length` assistant messages count. undefined when the session file cannot be read.
 type SessionMessage = { role?: string; stopReason?: string; content?: string | Array<{ type?: string; text?: string }> };
-function recentExchanges(sessionFile: string): string | undefined {
+export function recentExchanges(sessionFile: string): string | undefined {
 	const turns: string[] = [];
 	try {
 		for (const line of readFileSync(sessionFile, "utf8").split("\n")) {

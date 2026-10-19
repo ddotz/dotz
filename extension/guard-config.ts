@@ -109,6 +109,8 @@ export function agentDir(pi: any): string {
 		const dir = pi?.pi?.getAgentDir?.();
 		if (typeof dir === "string" && dir) return dir;
 	} catch {}
+	// Under OmO the omp directory holds originals OmO never loads, so they must not switch dotz's copies off.
+	if (process.env.DOTZ_RUNTIME === "omo") return process.env.OMO_CODING_AGENT_DIR || join(homedir(), ".omo", "agent");
 	return process.env.PI_CODING_AGENT_DIR || join(homedir(), ".omp", "agent");
 }
 

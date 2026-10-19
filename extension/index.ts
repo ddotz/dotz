@@ -17,6 +17,7 @@ import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { systemDeny } from "../hub/systemdeny.ts";
 import { dropLongTtl, installGuard } from "./guard.ts";
 import { installHarnessTools } from "./harness-tools.ts";
+import { jsonZod, params } from "./schema.ts";
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 const PKG = join(import.meta.dir, "..");
@@ -190,7 +191,7 @@ function orchestratorTools(pi: any): void {
 	verifyTool(pi);
 	authTool(pi);
 	pi.on("session_compact", (_e: any, ctx: any) => {
-		if (ctx?.agent?.kind === "main") pi.sendMessage({ customType: "dotz-mode", content: recall(), display: false }, { deliverAs: "nextTurn" });
+		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall(), display: false }, { deliverAs: "nextTurn" });
 	});
 	pi.registerTool({
 		name: "dotz_send",
@@ -368,7 +369,20 @@ function keyProvider(pi: any): void {
 	pi.registerProvider(id, { baseUrl, api, apiKey: key, models });
 }
 
-export default function dotz(pi: any) {
+// omp marks the session's own agent in ctx.agent (main / sub). OmO has no ctx.agent and runs task workers in its rpc host,
+// which does not load this extension, so there every session that loads it is the main one.
+export const isMain = (ctx: any) => (ctx?.agent ? ctx.agent.kind === "main" : process.env.DOTZ_RUNTIME === "omo");
+
+// OmO (senpi) gives extensions no zod and takes plain JSON Schema tool parameters: the same tool definitions are built
+// with the JSON Schema builder there (schema.ts).
+function compatHost(pi: any): any {
+	if (pi.zod) return pi;
+	const register = pi.registerTool.bind(pi);
+	return Object.assign(Object.create(pi), { zod: jsonZod, registerTool: (tool: any) => register({ ...tool, parameters: params(tool.parameters) }) });
+}
+
+export default function dotz(host: any) {
+	const pi = compatHost(host);
 	keyProvider(pi);
 	// Worker guard and harness commands run in every session (interactive, orchestrator, lane), each skipping itself when the
 	// owner's original ~/.omp extension of the same name is installed (guard-config.ts installedOriginal).
@@ -378,7 +392,8 @@ export default function dotz(pi: any) {
 		enforceRules(pi);
 		return laneSession(pi);
 	}
-	pi.setLabel?.("Dotz mode");
+	// Action methods such as setLabel only work once the session is bound (OmO throws during extension loading).
+	pi.on("session_start", () => pi.setLabel?.("Dotz mode"));
 	if (process.env.DOTZ_ORCHESTRATOR === "1") {
 		enforceRules(pi);
 		orchestratorTools(pi);
