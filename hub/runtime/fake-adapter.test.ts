@@ -157,7 +157,8 @@ test("orchestrator: idle -> working -> final -> idle, then a rate limit pauses a
 	await agent.push(...turn(limit));
 	expect(o.orch.status).toBe("rate-limited");
 	o.deliver("held one");
-	expect(agent.calls).toEqual(["send:followUp:before limit"]);
+	// The compaction above makes this first message carry the retain nudge after the text (retain-nudge.test.ts).
+	expect(agent.calls).toEqual([expect.stringMatching(/^send:followUp:before limit\n/)]);
 	await advance(11 * 60_000 + 1000);
 	expect(o.orch.status).toBe("idle");
 	expect(agent.calls).toHaveLength(2);
