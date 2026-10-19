@@ -5,7 +5,7 @@
 // 구성 map already draws. Nothing here writes. Logins are shown by name only.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { parseSelector, splitThinking, THINKING_LEVELS, lanesModel, workerModel } from "./config.ts";
+import { chainOf, type FallbackEntry, parseSelector, splitThinking, THINKING_LEVELS, lanesModel, workerModel } from "./config.ts";
 import * as discord from "./discord.ts";
 import type { HarnessEdge, HarnessNode, Setting } from "./harness.ts";
 import { msg } from "./i18n.ts";
@@ -14,7 +14,7 @@ import { allWatches } from "./watch.ts";
 import { listSetups, type Setup } from "./workchannels.ts";
 
 export type Field<T> = { value: T; source: "global" | "project"; global?: T };
-export type Fallback = { model: string; when?: string; cap?: string | number; revert?: string | boolean };
+export type Fallback = FallbackEntry;
 type Chan = { id: string; name: string; kind: "work" | "home" | "thread" };
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -24,21 +24,10 @@ const field = <T,>(own: T | undefined, global: T): Field<T> => (own === undefine
 // "- deny: <regex> | <reason>" lines under "## Blocked commands" (the RULES.md format, also used in a project's instruction files).
 export const denyLines = (text: string) => [...((text.split(/^## Blocked commands\s*$/m)[1]?.split(/^## /m)[0] ?? "").matchAll(/^- deny:\s*(.+)\s+\|\s+(.+?)\s*$/gm))];
 
-// config.json fallback entries: "<selector>" or { model, when?, cap?, revert? }.
-const scalar = (x: unknown): x is string | number | boolean => ["string", "number", "boolean"].includes(typeof x);
-export function fallbackChain(v: unknown): Fallback[] {
-	if (!Array.isArray(v)) return [];
-	return v.flatMap((e: unknown): Fallback[] => {
-		if (typeof e === "string") return e.trim() ? [{ model: e.trim() }] : [];
-		if (!e || typeof e !== "object" || !("model" in e) || typeof e.model !== "string") return [];
-		const step: Fallback = { model: e.model };
-		if ("when" in e && scalar(e.when)) step.when = String(e.when);
-		if ("cap" in e && (typeof e.cap === "string" || typeof e.cap === "number")) step.cap = e.cap;
-		if ("revert" in e && (typeof e.revert === "string" || typeof e.revert === "boolean")) step.revert = e.revert;
-		return [step];
-	});
-}
-const chainText = (c: Fallback[]) => (c.length ? c.map(e => msg().harness.project.fallbackStep(e.model, e.when, e.cap === undefined ? undefined : String(e.cap), e.revert === undefined ? undefined : String(e.revert))).join(" → ") : msg().harness.project.lane.none);
+// config.json fallback entries, read with the same parser the processes use (hub/config.ts chainOf).
+export const fallbackChain = (v: unknown): Fallback[] => chainOf(v);
+const capText = (c: NonNullable<Fallback["cap"]>) => `${c.period} ${[c.usd ? `$${c.usd}` : "", c.tokens ? `${c.tokens} tokens` : ""].filter(Boolean).join(" / ")}`;
+const chainText = (c: Fallback[]) => (c.length ? c.map(e => msg().harness.project.fallbackStep(`${e.model}${e.key_file ? " (API key)" : ""}`, e.when, e.cap ? capText(e.cap) : undefined, e.revert ? "on" : undefined)).join(" → ") : msg().harness.project.lane.none);
 
 function channelsOf(lane: Lane): Chan[] {
 	const ch = discord.channels, thread = ch.lanes[lane.name], parent = ch.homes[lane.name];

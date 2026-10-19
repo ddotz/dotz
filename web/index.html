@@ -3483,7 +3483,7 @@ function renderHarness() {
 const hPj = () => (HGB && hProjId && (HGB.projects || []).find(p => p.id === hProjId)) || null;
 const hProjWhere = p => `${(p.channels[0] || {}).name || p.name} · ${p.cwd}`;
 const pjSize = b => (b < 1024 ? `${b}B` : `${(b / 1024).toFixed(1)}KB`);
-const pjChain = c => (c.length ? c.map(e => `${modelName(e.model)}${e.when ? ` · 조건 ${e.when}` : ""}${e.cap !== undefined ? ` · 상한 ${e.cap}` : ""}${e.revert !== undefined ? ` · 복귀 ${e.revert}` : ""}`).join(" → ") : "없음");
+const pjChain = c => (c.length ? c.map(e => [modelName(fbBase(e.model)) + (e.key_file ? " (API 키)" : ""), e.when ? FB_WHEN[e.when] : "", e.cap ? fbCapText(e.cap) : "", e.revert ? "리셋되면 복귀" : ""].filter(Boolean).join(" · ")).join(" → ") : "없음");
 const PJ_ROWS = [["모델", "model", modelName], ["강도", "effort", v => v], ["작업자 모델", "worker_model", modelName], ["작업자 강도", "worker_effort", v => v], ["런타임", "runtime", v => v || "–"], ["폴백", "fallback", pjChain], ["작업자 폴백", "worker_fallback", pjChain]];
 
 // One field: the project's value against the global one. A differing value is emphasised like the 내 설정 marker (바뀜 badge,
