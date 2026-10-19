@@ -62,7 +62,10 @@ export function omoArgs(o: SpawnOpts): string[] {
 export const omo: RuntimeAdapter = {
 	id: "omo",
 	// No live worker frames; every fallback chain is switched by the hub (fallback.ts hubChain), OmO's own chain is off (--no-model-fallback).
-	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact" },
+	// No idle keepalive: OmO's usage shows only 5-minute cache writes (no cacheWrite1h in any OmO session record, checked
+	// 2026-10-20), so a ping inside a 1h TTL would rewrite the whole context into a 5-minute cache each time. Turn it back on
+	// once a 1h cache write is seen on OmO.
+	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: false, contextLimit: "compact" },
 	start(o) {
 		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...o.env, DOTZ_RUNTIME: "omo" } });
 		recordStarted(proc.pid);
