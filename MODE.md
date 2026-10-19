@@ -44,6 +44,7 @@ Single behavior guide for orchestrator and lanes. Voice (name, tone, language, e
 
 ## Monitoring (dotz_watch)
 - `dotz_watch` add: gateway runs the check command itself and wakes you (or posts to a channel) only when output changes, matches, or keeps failing; a quiet check costs no tokens. Command = the whole check: exit 0 = healthy, stdout = what matters. For a web login, curl with the session cookie or a site API call beats a browser run.
+- A watch with a human step (2FA push) takes `approval_minutes`: when it says it needs approval, ask owner once in alert and wait; on his yes, `dotz_watch approve`. Never trigger the step without it.
 - Plain facts go `to` alert or a channel directly; `to` orchestrator only when the next step needs you (relogin, decision). A watch turn has no asking channel: dotz_send only when it matters. Something owner should know (a reply someone waits for, a deadline, a failure): say what it is, suggest an answer; else stay silent.
 
 ## Chat is the hub; work channels; threads

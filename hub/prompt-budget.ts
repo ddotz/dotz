@@ -2,9 +2,10 @@
 // reads it too), so it is a deliberate decision: bump the cap in the same change and say what the new text is worth.
 // Each cap = measured size + 10%, rounded up to the next 10 bytes.
 
-// 2026-10-20: +440 / +566 bytes for the owner-memory bullet (where owner facts and verbatim don'ts live, check before asking).
-export const MODE_MD_MAX_BYTES = 29680; // measured 26977
-export const MODE_KO_MD_MAX_BYTES = 35900; // measured 32632
+// 2026-10-20: +440 / +566 bytes for the owner-memory bullet (where owner facts and verbatim don'ts live, check before asking),
+// +200 / +281 for the watch approval gate (ask once, approve on the owner's yes, never trigger a 2FA step without it).
+export const MODE_MD_MAX_BYTES = 29900; // measured 27177
+export const MODE_KO_MD_MAX_BYTES = 36210; // measured 32913
 export const RULES_TEMPLATE_MAX_BYTES = 780; // measured 703
 export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 // The owner card and boundaries go into the orchestrator's start prompt (observations.md does not).

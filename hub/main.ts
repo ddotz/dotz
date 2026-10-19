@@ -28,7 +28,7 @@ import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedul
 import { startOmpUpdate } from "./update.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
-import { addWatch, allWatches, listWatches, removeWatch, startWatches, stopWatches } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, listWatches, removeWatch, startWatches, stopWatches } from "./watch.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
@@ -716,6 +716,7 @@ const server = Bun.serve({
 		if (parts[0] === "api" && parts[1] === "watches") {
 			try {
 				if (req.method === "GET") return json(listWatches());
+				if (req.method === "POST" && parts[2] && parts[3] === "approve") return json({ ok: true, watch: approveWatch(parts[2]) });
 				if (req.method === "POST") return json({ ok: true, watch: addWatch(await body(req), existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "") });
 				if (req.method === "DELETE" && parts[2]) {
 					const owned = allWatches().find(w => (w.id === parts[2] || w.name === parts[2]) && w.channels?.length);

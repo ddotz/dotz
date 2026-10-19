@@ -1,8 +1,15 @@
 // Monitoring without waking the model (as 오모냥's watchers and session-keeper): the gateway runs a check command on an
 // interval and only reports when something happened. Failure policy from session-keeper: 2 consecutive failures -> one
 // alert per watch per 12h, and one recovery note when it passes again.
+// From 오모냥's launchd watchers (the KDB login watcher): every check runs in its own process group under a hard SIGKILL
+// deadline; a failing check may name its kind on a line `DOTZ_FAIL <kind>` and `retry` gives each kind its own wait in
+// minutes (one per consecutive failure, the last repeats; an empty list stops the watch until the owner approves); and a
+// watch with `approval_minutes` gates its human step (a 2FA push) on an owner-approval file that expires after that time:
+// the check gets DOTZ_APPROVED=1 while it is valid, prints `DOTZ_APPROVAL_USED` once the step went out (the file is
+// consumed), and `DOTZ_FAIL approval` asks the owner once until they approve (dotz_watch approve).
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { blockedBy } from "../extension/index.ts";
 import { ensureAside, replInTab } from "./aside.ts";
 import { DATA_DIR, log, now, paths, writeAtomic } from "./config.ts";
@@ -20,23 +27,65 @@ export type Watch = {
 	channels?: string[];
 	to: string;
 	created: string;
-	state: { hash?: string; fails: number; failAlertAt?: number; lastRun?: string; lastOk?: string; refreshedAt?: number };
+	timeout_seconds?: number;
+	retry?: Record<string, number[]>;
+	approval_minutes?: number;
+	state: {
+		hash?: string; fails: number; failAlertAt?: number; lastRun?: string; lastOk?: string; refreshedAt?: number;
+		kind?: string; kindFails?: number; nextAt?: number; paused?: string; approvalAskedAt?: number;
+	};
 };
 
 const RUN_TIMEOUT_MS = 120_000;
+const READ_GRACE_MS = 2_000;
 const FAIL_ALERT_EVERY_MS = 12 * 3600_000;
 const items: Watch[] = existsSync(paths.watches) ? JSON.parse(readFileSync(paths.watches, "utf8")) : [];
-const timers = new Map<string, ReturnType<typeof setInterval>>();
-const running = new Set<string>();
+const timers = new Map<string, ReturnType<typeof setTimeout>>();
+const running = new Map<string, Promise<void>>();
+let stopped = false;
 const save = () => writeAtomic(paths.watches, `${JSON.stringify(items, null, 2)}\n`);
 let notify: (w: Watch, reason: string, output: string) => void = () => {};
 
-async function exec(argv: string[], cwd?: string): Promise<{ code: number; output: string }> {
-	const proc = Bun.spawn(argv, { cwd, stdout: "pipe", stderr: "pipe" });
-	const kill = setTimeout(() => proc.kill("SIGKILL"), RUN_TIMEOUT_MS);
-	const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+// The check gets its own process group and the deadline SIGKILLs the whole group: killing only the shell left a
+// grandchild holding the output pipe, so the read waited for it (measured: `sleep 3 &` held a 0.5 s kill for 3 s).
+// What the check leaves running after it exits is killed too, and the read gets a short grace after the exit.
+export async function exec(argv: string[], cwd?: string, timeoutMs = RUN_TIMEOUT_MS, env?: Record<string, string>): Promise<{ code: number; output: string; timedOut: boolean }> {
+	const proc = Bun.spawn(argv, { cwd, stdout: "pipe", stderr: "pipe", detached: true, ...(env ? { env: { ...process.env, ...env } } : {}) });
+	const killGroup = () => {
+		try {
+			process.kill(-proc.pid, "SIGKILL");
+		} catch {}
+	};
+	let timedOut = false;
+	const kill = setTimeout(() => {
+		timedOut = true;
+		killGroup();
+	}, timeoutMs);
+	let stdout = "";
+	let stderr = "";
+	const reading = Promise.all([new Response(proc.stdout).text().then(t => (stdout = t)), new Response(proc.stderr).text().then(t => (stderr = t))]);
+	const code = await proc.exited;
 	clearTimeout(kill);
-	return { code, output: `${stdout}${stderr ? `\n${stderr}` : ""}`.replace(/\x1b\[[0-9;]*m/g, "").trim().slice(-1500) };
+	killGroup();
+	await Promise.race([reading, new Promise(r => setTimeout(r, READ_GRACE_MS))]);
+	const output = `${stdout}${stderr ? `\n${stderr}` : ""}${timedOut ? `\n(killed after ${Math.round(timeoutMs / 1000)} s)` : ""}`;
+	return { code, timedOut, output: output.replace(/\x1b\[[0-9;]*m/g, "").trim().slice(-1500) };
+}
+
+const KIND = /^DOTZ_FAIL[ =:]([a-z0-9-]{1,20})\b/m;
+const failKind = (output: string) => KIND.exec(output)?.[1] ?? "fail";
+const approvalFile = (w: Watch) => join(DATA_DIR, "approvals", w.name);
+
+// Valid while younger than approval_minutes. The file holds the approval time (ms), so a hand-made `touch` counts by mtime.
+function approved(w: Watch): boolean {
+	if (!w.approval_minutes) return false;
+	const file = approvalFile(w);
+	if (!existsSync(file)) return false;
+	const at = Number(readFileSync(file, "utf8").trim()) || statSync(file).mtimeMs;
+	if (Date.now() - at <= w.approval_minutes * 60_000) return true;
+	rmSync(file, { force: true });
+	log(`watch ${w.name}: owner approval expired`);
+	return false;
 }
 
 // Login keeping in the owner's Aside browser, no model calls. A REPL fetch sends the stored cookies (enough to check
@@ -90,15 +139,49 @@ function serialSessionRun(w: Watch): Promise<{ code: number; output: string }> {
 	return next;
 }
 
-async function run(w: Watch): Promise<void> {
-	if (running.has(w.id)) return;
-	running.add(w.id);
+// One run at a time per watch; a caller asking while one is in flight gets that run. Every run arms the next one.
+function run(w: Watch): Promise<void> {
+	const busy = running.get(w.id);
+	if (busy) return busy;
+	const p = runOnce(w).finally(() => {
+		running.delete(w.id);
+		save();
+		if (!stopped && items.includes(w)) arm(w);
+	});
+	running.set(w.id, p);
+	return p;
+}
+
+async function runOnce(w: Watch): Promise<void> {
 	try {
-		const { code, output } = w.session ? await serialSessionRun(w) : await exec(["/bin/zsh", "-lc", w.command], w.cwd);
+		const ok = approved(w);
+		if (w.state.paused && !ok) return;
+		if (w.state.paused) w.state.paused = undefined;
+		const env = w.approval_minutes ? { DOTZ_APPROVED: ok ? "1" : "0", DOTZ_APPROVAL_FILE: approvalFile(w) } : undefined;
+		const { code, output } = w.session ? await serialSessionRun(w) : await exec(["/bin/zsh", "-lc", w.command], w.cwd, (w.timeout_seconds ?? RUN_TIMEOUT_MS / 1000) * 1000, env);
 		w.state.lastRun = now();
+		w.state.nextAt = undefined;
+		if (/^DOTZ_APPROVAL_USED\b/m.test(output)) rmSync(approvalFile(w), { force: true });
 		if (code !== 0) {
+			const kind = failKind(output);
+			w.state.kindFails = w.state.kind === kind ? (w.state.kindFails ?? 0) + 1 : 1;
+			w.state.kind = kind;
 			w.state.fails++;
-			log(`watch ${w.name} failed (${code}, ${w.state.fails} in a row)`);
+			log(`watch ${w.name} failed (${code}, ${kind}, ${w.state.fails} in a row)`);
+			if (kind === "approval" && w.approval_minutes) {
+				if (!w.state.approvalAskedAt) {
+					w.state.approvalAskedAt = Date.now();
+					notify(w, `needs the owner's approval first (dotz_watch approve ${w.name}, valid ${w.approval_minutes} min)`, output);
+				}
+				return;
+			}
+			const wait = w.retry?.[kind];
+			if (wait && !wait.length) {
+				w.state.paused = kind;
+				notify(w, `stopped after a ${kind} failure; it runs again once the owner approves (dotz_watch approve ${w.name}) or the watch is added again`, output);
+				return;
+			}
+			if (wait) w.state.nextAt = Date.now() + wait[Math.min(wait.length, w.state.kindFails) - 1] * 60_000;
 			const due = !w.state.failAlertAt || Date.now() - w.state.failAlertAt > FAIL_ALERT_EVERY_MS;
 			if (w.state.fails >= 2 && due) {
 				w.state.failAlertAt = Date.now();
@@ -109,6 +192,7 @@ async function run(w: Watch): Promise<void> {
 		if (w.state.failAlertAt) notify(w, "recovered", output);
 		w.state.fails = 0;
 		w.state.failAlertAt = undefined;
+		w.state.kind = w.state.kindFails = w.state.approvalAskedAt = undefined;
 		w.state.lastOk = now();
 		const hash = createHash("sha256").update(output).digest("hex").slice(0, 16);
 		const changed = w.state.hash !== undefined && hash !== w.state.hash;
@@ -117,21 +201,40 @@ async function run(w: Watch): Promise<void> {
 		if (w.on === "match" && changed && new RegExp(w.pattern!, "i").test(output)) notify(w, `matched /${w.pattern}/`, output);
 	} catch (error) {
 		log(`watch ${w.name} could not run: ${error}`);
-	} finally {
-		running.delete(w.id);
-		save();
 	}
 }
 
+// The next run: at the retry time a failure kind set, else every_minutes after this one.
 function arm(w: Watch): void {
-	clearInterval(timers.get(w.id));
-	timers.set(w.id, setInterval(() => void run(w), w.every_minutes * 60_000));
+	clearTimeout(timers.get(w.id));
+	const wait = w.state.nextAt ? Math.max(0, w.state.nextAt - Date.now()) : w.every_minutes * 60_000;
+	timers.set(w.id, setTimeout(() => void run(w), wait));
 }
 
 // Shutdown: no watch runs again.
 export function stopWatches(): void {
-	for (const t of timers.values()) clearInterval(t);
+	stopped = true;
+	for (const t of timers.values()) clearTimeout(t);
 	timers.clear();
+}
+
+export function runWatch(idOrName: string): Promise<void> {
+	const w = items.find(x => x.id === idOrName || x.name === idOrName);
+	return w ? run(w) : Promise.resolve();
+}
+
+// The owner said yes: write the approval file (valid for approval_minutes), start a fresh round of retries, run now.
+export function approveWatch(idOrName: string): Watch {
+	const w = items.find(x => x.id === idOrName || x.name === idOrName);
+	if (!w) throw new Error(`no watch ${idOrName}`);
+	if (!w.approval_minutes) throw new Error(`watch ${w.name} has no approval gate (add it with approval_minutes)`);
+	mkdirSync(join(DATA_DIR, "approvals"), { recursive: true });
+	writeFileSync(approvalFile(w), String(Date.now()));
+	w.state.paused = w.state.approvalAskedAt = w.state.nextAt = undefined;
+	w.state.kindFails = 0;
+	save();
+	void run(w);
+	return w;
 }
 
 export function startWatches(handler: typeof notify): void {
@@ -159,12 +262,20 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	const on = input.on === "match" || input.on === "fail" ? input.on : "change";
 	if (on === "match") new RegExp(String(input.pattern ?? ""));
 	if (on === "match" && !input.pattern) throw new Error("on=match needs pattern");
+	const timeout = input.timeout_seconds === undefined ? undefined : Number(input.timeout_seconds);
+	if (timeout !== undefined && !(timeout >= 1 && timeout <= 3600)) throw new Error("timeout_seconds must be 1-3600");
+	const approval = input.approval_minutes === undefined ? undefined : Number(input.approval_minutes);
+	if (approval !== undefined && !(approval >= 1 && approval <= 1440)) throw new Error("approval_minutes must be 1-1440");
+	const retry = input.retry === undefined ? undefined : (input.retry as Record<string, unknown>);
+	for (const [kind, wait] of Object.entries(retry ?? {})) {
+		if (!/^[a-z0-9-]{1,20}$/.test(kind)) throw new Error(`retry kind ${kind} must be [a-z0-9-], up to 20 chars`);
+		if (!Array.isArray(wait) || !wait.every(m => typeof m === "number" && m >= 1)) throw new Error(`retry.${kind} must be a list of minutes (>= 1 each; [] stops the watch until the owner approves)`);
+	}
 	const old = items.findIndex(w => w.name === name);
 	if (old >= 0) removeWatch(items[old].id);
-	const w: Watch = { id: randomBytes(3).toString("hex"), name, command, ...(input.cwd ? { cwd: String(input.cwd) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), state: { fails: 0 } };
+	const w: Watch = { id: randomBytes(3).toString("hex"), name, command, ...(input.cwd ? { cwd: String(input.cwd) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), state: { fails: 0 } };
 	items.push(w);
 	save();
-	arm(w);
 	void run(w);
 	return w;
 }
@@ -172,7 +283,7 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 export function removeWatch(idOrName: string): boolean {
 	const i = items.findIndex(w => w.id === idOrName || w.name === idOrName);
 	if (i < 0) return false;
-	clearInterval(timers.get(items[i].id));
+	clearTimeout(timers.get(items[i].id));
 	timers.delete(items[i].id);
 	items.splice(i, 1);
 	save();
@@ -188,4 +299,4 @@ export function setWatchChannels(id: string, channels: string[]): void {
 	save();
 }
 
-export const listWatches = () => items.map(({ state, ...w }) => ({ ...w, fails: state.fails, lastRun: state.lastRun, lastOk: state.lastOk }));
+export const listWatches = () => items.map(({ state, ...w }) => ({ ...w, fails: state.fails, lastRun: state.lastRun, lastOk: state.lastOk, ...(state.kind ? { kind: state.kind } : {}), ...(state.nextAt ? { nextAt: new Date(state.nextAt).toISOString() } : {}), ...(state.paused ? { paused: state.paused } : {}), ...(state.approvalAskedAt ? { awaitingApproval: true } : {}) }));
