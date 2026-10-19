@@ -8,7 +8,8 @@ export const DATA_DIR = process.env.DOTZ_DIR ?? join(HOME, ".dotz");
 export const expand = (p: string) => p.replace(/^~(?=\/|$)/, HOME);
 
 // `language`: BCP-47-ish code of the identity's main language ("ko", "en", "ja", ...); setup writes it. See hub/i18n.ts.
-export type Identity = { name: string; character?: string; tone?: string; avatar?: string; language?: string };
+// `address` (what the bot calls the owner) and `timezone` (IANA name for every time shown to the owner) are per install too.
+export type Identity = { name: string; character?: string; tone?: string; avatar?: string; language?: string; address?: string; notices?: string; timezone?: string };
 export type Config = {
 	identity?: Identity;
 	// Agent runtime of the orchestrator and the lanes unless their own section names one; see hub/runtime/index.ts.
@@ -141,6 +142,11 @@ export function setRuntime(roles: ("orchestrator" | "lanes")[], runtime: string)
 // The bot's name (onboarding asks for it); every user-facing string and Discord name derives from it.
 export const NAME = cfg.identity?.name?.trim() || "dotz";
 export const IDENTITY_FILE = join(DATA_DIR, "identity", "IDENTITY.md");
+// The owner's clock: identity.timezone, else this machine's zone. Times shown to the owner use it; tzLabel() is its short name.
+export const TZ = cfg.identity?.timezone?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+export const tzLabel = () => (TZ === "Asia/Seoul" ? "KST" : TZ);
+// What the bot calls the owner (identity.address); empty = no title.
+export const ADDRESS = cfg.identity?.address?.trim() ?? "";
 export const PORT = Number(process.env.DOTZ_PORT ?? cfg.web?.port ?? 7420);
 export const OMP = process.env.DOTZ_OMP ?? "omp";
 export const paths = {

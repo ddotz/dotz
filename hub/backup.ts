@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { log, writeAtomic } from "./config.ts";
+import { log, TZ, writeAtomic } from "./config.ts";
 
 const SECRET = new RegExp(
 	[
@@ -73,10 +73,10 @@ export async function unstageSecrets(dir: string): Promise<string[]> {
 	return bad;
 }
 
-// One alert per KST day, whatever the cause; the log line is written every time.
+// One alert per day on the owner's clock, whatever the cause; the log line is written every time.
 function alertOnce(dir: string, text: string): string | undefined {
 	const file = join(dir, "backup-state.json");
-	const day = new Date().toLocaleDateString("sv", { timeZone: "Asia/Seoul" });
+	const day = new Date().toLocaleDateString("sv", { timeZone: TZ });
 	let last = "";
 	try {
 		last = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).alertDay : "";

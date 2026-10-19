@@ -3,7 +3,7 @@
 // works before the lanes are restored and cannot form an import cycle with the orchestrator.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { paths } from "./config.ts";
+import { paths, TZ, tzLabel } from "./config.ts";
 import { msg } from "./i18n.ts";
 
 const ASK_MAX = 1500;
@@ -33,9 +33,9 @@ export function pendingAsksBlock(): string {
 	const asks = pendingAsks();
 	if (!asks.length) return "";
 	const entries = asks.map(a => {
-		const at = a.at ? new Date(a.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "?";
+		const at = a.at ? new Date(a.at).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "?";
 		const cut = a.text.length > ASK_MAX;
-		return msg().pendingAskEntry(a.lane, `${at} KST`, cut ? a.text.slice(0, ASK_MAX) : a.text, cut ? pendingAskFile(a.lane) : undefined);
+		return msg().pendingAskEntry(a.lane, `${at} ${tzLabel()}`, cut ? a.text.slice(0, ASK_MAX) : a.text, cut ? pendingAskFile(a.lane) : undefined);
 	});
 	return `[${msg().pendingAsksHead}]\n${entries.join("\n\n")}`;
 }
