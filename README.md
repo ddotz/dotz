@@ -165,6 +165,8 @@ The gateway and the omp extension read both roots at runtime (cached by file mti
 the reason is written to `hub.log` (and returned as `skipped_dirs` by `GET /api/features`). `GET /api/features` marks
 every feature, folder or not, as `origin: "shipped" | "personal"`, and the 기능 목록 filters by it (출처).
 
+Each feature also carries a `summary`: its text as two short lines in the identity's main language (the cards show it, with the original in the tooltip). Summaries are cached in `<DATA_DIR>/cache/card-summaries.json` (keyed by language and text, entries no longer used are dropped on rewrite) and filled in the background by `hub/summaries.ts`, one small tiny-model call per batch of ~40 new or changed texts; texts already short and in the language cost no call, and on a failed call the original is shown and the fill retries with backoff.
+
 `feature.md` starts with a frontmatter block, then the body:
 
 ```
@@ -257,7 +259,7 @@ short "received, answering when the current step ends" notice from the gateway.
   rotation, orphaned worktree cleanup), `schedule.ts` (reminders), `discord.ts`
   (eyes receipt, typing, 429 retry, heartbeat check, identity sync), `control.ts` (model/effort switching, context and
   compaction, slash commands), `providers.ts` (keys, login/logout, model catalog, quota), `activity.ts` (omp frames to the terminal-view feed),
-  `events.ts`, `config.ts`, `i18n.ts` (message catalog and language selection), `language.ts` (language detection).
+  `events.ts`, `config.ts`, `i18n.ts` (message catalog and language selection), `language.ts` (language detection), `summaries.ts` (cached two-line card summaries).
 - Audit against Dori / dori-kit / 오모냥: `docs/audit-2026-10-16.md`.
 - `extension/index.ts` omp extension: orchestrator tools, terminal thin client, nothing in lanes.
 - `web/index.html` web app. `MODE.md` the 땃쥐 contract (`MODE.ko.md` its Korean original). `setup.ts` onboarding.
