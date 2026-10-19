@@ -63,17 +63,11 @@ export type ThreadState = "working" | "waiting" | "done";
 const LIGHT: Record<ThreadState, string> = { working: "🟡", waiting: "🔴", done: "🟢" };
 const withState = (state: ThreadState, base: string) =>
 	`${LIGHT[state]} ${base.replace(/^(?:[🟡🔴🟢]\s*|\[(?:working|waiting|done)\]\s*)+/u, "")}`.slice(0, 100);
-// Renames a thread and deletes the "changed the channel name" system message Discord posts in it (owner 2026-10-19:
-// "채널 이름 변경 메시지는 안보이게해"). Type 4 = CHANNEL_NAME_CHANGE, looked for among the last few messages.
-async function rename(id: string, name: string): Promise<string> {
-	const r = await rest("PATCH", `/channels/${id}`, { name });
-	const recent: { id: string; type: number }[] = await rest("GET", `/channels/${id}/messages?limit=5`).catch(() => []);
-	for (const m of recent) if (m.type === 4) await rest("DELETE", `/channels/${id}/messages/${m.id}`).catch(e => log(`rename notice delete failed in ${id}: ${e}`));
-	return String(r.name);
-}
+// Every rename makes Discord post a "changed the channel name" system message that cannot be deleted (50021), and a
+// channel allows 2 renames per 10 minutes.
 // Marks a thread done now and archives it an hour later (kept across restarts in channels.archiveAt).
 async function markDone(id: string, base: string): Promise<string> {
-	const name = await rename(id, withState("done", base));
+	const name = String((await rest("PATCH", `/channels/${id}`, { name: withState("done", base) })).name);
 	channels.archiveAt[id] = Date.now() + ARCHIVE_DELAY_MS;
 	save();
 	return name;
@@ -486,7 +480,7 @@ export async function threadStatus(target: string, state: ThreadState): Promise<
 	else {
 		delete channels.archiveAt[id];
 		await rest("PATCH", `/channels/${id}`, { archived: false });
-		t.name = await rename(id, withState(state, base));
+		t.name = String((await rest("PATCH", `/channels/${id}`, { name: withState(state, base) })).name);
 	}
 	save();
 	return t.name;
