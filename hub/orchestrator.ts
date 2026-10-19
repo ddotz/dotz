@@ -211,7 +211,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					pauseAlerted = false;
 					for (const text of held.splice(0)) sendOwner(text);
 				} else if (orch.status === "idle") {
-					if (++turnsSinceStart > 1 && orch.ctx.tokens > ROTATE_TOKENS) rotate();
+					if (rotateWhenIdle || (++turnsSinceStart > 1 && orch.ctx.tokens > ROTATE_TOKENS && !compacting())) limitContext();
 					else if (pendingRestart) {
 						pendingRestart = false;
 						restart();
@@ -249,7 +249,17 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				break;
 			}
 			case "compaction":
-				if (ev.state === "done") retainNext = true;
+				if (ev.state === "done") {
+					// The compacted session keeps going: the next owner message reminds it to retain, and carries the lane
+					// questions still waiting for the owner (the summary may have cut them); the dotz extension re-reads the
+					// contract and state.json (open_tasks) into it.
+					retainNext = true;
+					asksNext = true;
+				} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > ROTATE_TOKENS) {
+					log(`orchestrator compaction failed (${ev.error.slice(0, 160)}); moving to a fresh session with a handover`);
+					if (orch.status === "idle") rotate();
+					else rotateWhenIdle = true;
+				}
 				break;
 			case "fallback":
 				log(`orchestrator model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
@@ -338,11 +348,33 @@ function retryTransient(err: string): void {
 	}, wait);
 }
 
-// Past ROTATE_TOKENS of context the orchestrator moves to a fresh session with a handover at an idle point, so each
-// message does not re-read a huge prefix (the global compaction threshold is sized for coding sessions, not a secretary).
+// Past ROTATE_TOKENS of context, at an idle point, the context is made small so each message does not re-read a huge
+// prefix (the runtime's own threshold is sized for coding sessions, not a secretary). A runtime that compacts in place
+// (OmO) keeps its session and with it what it was doing; a fresh session with a handover of recent exchanges forgot the
+// progress, so that is only the fallback when compaction fails (and the omp/Claude Code behaviour).
+let rotateWhenIdle = false;
+const compacting = () => orch.ctx.compaction.state === "queued" || orch.ctx.compaction.state === "compacting";
+function limitContext(): void {
+	if (!rotateWhenIdle && adapter?.caps.contextLimit === "compact") {
+		log(`orchestrator context ${orch.ctx.tokens} tokens > ${ROTATE_TOKENS}; compacting in place`);
+		requestCompact(orch.ctx, port);
+	} else rotate();
+}
+
+// The nightly handover (hygiene.ts): an idle orchestrator whose session file grew past `limitBytes` starts a fresh
+// session with a handover. Returns what it did, or undefined when nothing was needed.
+export function nightlyHandover(limitBytes: number): string | undefined {
+	if (!proc || orch.status !== "idle" || !orch.sessionFile || !existsSync(orch.sessionFile)) return undefined;
+	const bytes = statSync(orch.sessionFile).size;
+	if (bytes <= limitBytes) return undefined;
+	rotate();
+	return `orchestrator session file ${+(bytes / 1e6).toFixed(2)} MB > ${+(limitBytes / 1e6).toFixed(0)} MB: rotated to a fresh session with a handover`;
+}
+
 function rotate(): void {
 	if (!proc || rotating) return;
-	log(`orchestrator context ${orch.ctx.tokens} tokens > ${ROTATE_TOKENS}; rotating to a fresh session`);
+	log(`orchestrator context ${orch.ctx.tokens} tokens; rotating to a fresh session`);
+	rotateWhenIdle = false;
 	rotating = true;
 	proc.kill();
 }

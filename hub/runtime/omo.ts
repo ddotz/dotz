@@ -24,6 +24,9 @@ export function omoSelector(selector: string): string {
 export function translateFrame(f: Frame & { reason?: string }): Frame {
 	if (f.type === "compaction_start") return { type: "auto_compaction_start" };
 	if (f.type === "compaction_end") return f.reason === "manual" ? { type: "compaction_end_requested" } : { type: "auto_compaction_end", errorMessage: f.errorMessage, aborted: f.aborted };
+	// OmO runs shell work in `eval` cells, whose one-line `summary` is the call's intent.
+	const said = (f.args as { summary?: unknown } | undefined)?.summary;
+	if (f.type === "tool_execution_start" && !f.intent && typeof said === "string") return { ...f, intent: said };
 	return f;
 }
 
@@ -32,14 +35,18 @@ class OmoProcess extends OmpProcess {
 	watchSubagents(): void {}
 }
 
+// OmO's own memory plugin would create a memory agent per cwd and run reflection turns on every dotz process; dotz
+// keeps its own memory (state.json, the owner's files), so it is off.
+const MEMORY_OFF = "--omo-senpi-memory-disabled";
+
 export function omoArgs(o: SpawnOpts): string[] {
-	return [OMO, "--mode", "rpc", "--model", omoSelector(o.model), "--extension", EXTENSION, "--no-model-fallback", ...(o.resume ? ["--session", o.resume] : [])];
+	return [OMO, "--mode", "rpc", "--model", omoSelector(o.model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, ...(o.resume ? ["--session", o.resume] : [])];
 }
 
 export const omo: RuntimeAdapter = {
 	id: "omo",
 	// No live worker frames; the hub's own chain switching is omp-only (fallback.ts hubDrivable), and OmO's own chain is off (--no-model-fallback).
-	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true },
+	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact" },
 	start(o) {
 		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...o.env, DOTZ_RUNTIME: "omo" } });
 		recordStarted(proc.pid);
