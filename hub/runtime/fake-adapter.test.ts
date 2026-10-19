@@ -172,6 +172,33 @@ test("orchestrator: idle -> working -> final -> idle, then a rate limit pauses a
 	await advance(300);
 });
 
+test("orchestrator on a compacting runtime: a long context is compacted in place; a failed compaction rotates", async () => {
+	rmSync(join(DATA, "orchestrator.json"), { force: true });
+	fake.caps = { ...fake.caps, contextLimit: "compact" };
+	try {
+		o.start();
+		const { agent } = started.at(-1)!;
+		await advance(4000);
+		await agent.push({ type: "session", ref: join(DATA, "fake-compact-session.jsonl") });
+		for (const text of ["one", "two"]) {
+			o.deliver(text);
+			await agent.push(...turn({ type: "usage", tokens: 5_000_000 }, answer("ok")));
+		}
+		expect(agent.calls).toContain("compact");
+		expect(agent.calls).not.toContain("kill");
+		const before = started.length;
+		await agent.push({ type: "compaction", state: "error", error: "Compaction failed: boom", requested: true });
+		expect(agent.calls).toContain("kill");
+		await advance(300);
+		expect(started.length).toBe(before + 1);
+		expect(started.at(-1)!.opts.resume).toBeUndefined();
+		o.stop();
+		await advance(300);
+	} finally {
+		fake.caps = { ...fake.caps, contextLimit: undefined };
+	}
+});
+
 test("lane: launch -> working -> report -> idle, then a rate limit holds owner messages", async () => {
 	const cwd = join(DATA, "fake-work");
 	mkdirSync(cwd, { recursive: true });

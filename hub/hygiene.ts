@@ -9,7 +9,7 @@ import { statusActivity } from "./activity.ts";
 import { lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OMP, paths, writeAtomic } from "./config.ts";
 import { describeCtx } from "./context.ts";
 import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
-import { orchestratorPid } from "./orchestrator.ts";
+import { nightlyHandover, orchestratorPid } from "./orchestrator.ts";
 import { trackTimer } from "./shutdown.ts";
 
 const STATS_WAIT_MS = 3000;
@@ -60,6 +60,11 @@ export async function runLaneHygiene(): Promise<string[]> {
 		log(`lane hygiene: ${lane.name} ${action}`);
 		statusActivity(`lane:${lane.name}`, `nightly hygiene: ${action}`);
 		actions.push(`${lane.name}: ${action}`);
+	}
+	const handover = nightlyHandover(limitBytes);
+	if (handover) {
+		log(`nightly hygiene: ${handover}`);
+		actions.push(handover);
 	}
 	log(`lane hygiene: ${idle.length} idle lane(s) checked, ${actions.length} action(s)${skipped.length ? `, skipped ${skipped.join(", ")}` : ""}`);
 	return actions;
