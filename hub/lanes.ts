@@ -12,7 +12,7 @@ import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, f
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import type { AgentError, AgentProcess } from "./runtime/types.ts";
-import { atTime, Chain, failsOver, failureReason, hubDrivable, hubOwned, type Move, Reverter, revertWhy } from "./fallback.ts";
+import { atTime, Chain, failsOver, failureReason, hubChain, type Move, Reverter, revertWhy } from "./fallback.ts";
 import { parseTone } from "./tone.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
@@ -431,8 +431,10 @@ export const laneWorkerModel = (lane: Pick<Lane, "workerModel">) => lane.workerM
 
 function spawn(lane: Lane, resume: boolean): void {
 	const entries = chainAfter(lane.model, fallbackChain("lanes"));
-	// Conditional entries are switched by the hub on omp only; another runtime gets the models as its own plain fallback list.
-	lane.chain = hubOwned(entries) && hubDrivable(runtimeFor("lane").id) ? new Chain(lane.model, entries, parseSelector(lane.model).thinking) : undefined;
+	// The hub switches the chain itself on OmO, and on omp when an entry is conditional (fallback.ts hubChain); otherwise the
+	// runtime gets the models as its own plain fallback list.
+	const driven = hubChain(runtimeFor("lane").id, entries);
+	lane.chain = driven ? new Chain(lane.model, driven, parseSelector(lane.model).thinking) : undefined;
 	lane.capped = undefined;
 	let spawnModel = lane.model;
 	const env: Record<string, string> = { DOTZ_LANE: lane.name, ...(lane.fableOk ? { DOTZ_OWNER_ASKED_FABLE: "1" } : {}) };

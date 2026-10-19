@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { cfg, DATA_DIR } from "./config.ts";
-import { atTime, Chain, failsOver, failureReason, keyHostOk, keyProviderOk, resetFallbackState } from "./fallback.ts";
+import { atTime, Chain, failsOver, failureReason, hubChain, keyHostOk, keyProviderOk, resetFallbackState } from "./fallback.ts";
 import { classifyProviderError } from "./providers.ts";
 
 mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
@@ -100,4 +100,12 @@ test("atTime re-arms past setTimeout's 24.8-day limit instead of firing at once"
 	}
 	expect(armed).toEqual([2 ** 31 - 1]);
 	expect(fired).toBe(false);
+});
+
+test("hubChain: OmO gets every chain driven by the hub (bare entries revert), omp only conditional ones, others none", () => {
+	expect(hubChain("omo", [])).toBeUndefined();
+	expect(hubChain("omo", [{ model: "openai/x" }, { model: "openai/y", when: "quota" }])).toEqual([{ model: "openai/x", revert: true }, { model: "openai/y", when: "quota" }]);
+	expect(hubChain("omp", [{ model: "openai/x" }])).toBeUndefined();
+	expect(hubChain("omp", [{ model: "openai/x", when: "quota" }])).toEqual([{ model: "openai/x", when: "quota" }]);
+	expect(hubChain("claude", [{ model: "openai/x", when: "quota" }])).toBeUndefined();
 });

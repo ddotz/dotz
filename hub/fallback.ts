@@ -245,9 +245,17 @@ export function entryView(e: FallbackEntry) {
 export const failsOver = (kind?: string) => kind === "rate" || kind === "owner" || kind === "transient";
 // A failed turn is a quota problem when the provider says so (usage limit, spent credit or balance), else a plain error.
 export const failureReason = (e: { kind?: string; text: string }): "quota" | "error" => (e.kind === "rate" || /quota|credit|balance|billing|insufficient|usage limit|spend limit/i.test(e.text) ? "quota" : "error");
-// The hub drives a chain only on omp: other runtimes cannot load an API-key provider, report no spend and keep the key in
-// their environment; there the entries go to the runtime as a plain fallback list.
-export const hubDrivable = (runtimeId: string) => runtimeId === "omp";
+// The entries the hub switches itself for a process of `runtimeId`, or undefined when the runtime gets them as its own list.
+// omp walks a chain of bare models natively (retry.fallbackChains in its per-run overlay), so the hub takes an omp chain only
+// when an entry needs a condition, cap, revert or key. OmO runs with --no-model-fallback: its own chain would follow the
+// owner's global settings, and its per-process override (RPC set_retry_fallback) is refused once a session has turn
+// history, i.e. on every resume. So the hub drives every OmO chain (restart on the same session with the next entry; OmO's
+// usage frames give the spend and the dotz extension registers key providers there too), and a bare entry goes back to the
+// primary once that is usable again, as omp's cooldown-expiry revert does. Claude Code gets a plain --fallback-model list.
+export function hubChain(runtimeId: string, entries: FallbackEntry[]): FallbackEntry[] | undefined {
+	if (runtimeId === "omo") return entries.length ? entries.map(e => (isPlain(e) ? { ...e, revert: true } : e)) : undefined;
+	return runtimeId === "omp" && hubOwned(entries) ? entries : undefined;
+}
 
 // Runs `fn` at `until` (at least 1 s from now). setTimeout cannot wait longer than 2^31-1 ms (~24.8 days; a monthly cap
 // period is longer), so a longer wait re-arms itself; `keep` receives each timer so the caller can still clear it.

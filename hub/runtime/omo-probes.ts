@@ -1,7 +1,7 @@
 // Compatibility probes of the OmO runtime (verify.ts runs them from the runtime menu): each starts a real `omo --mode rpc`
 // through the adapter in a temp cwd on a cheap model (Sonnet at low effort; Haiku is never used) and checks one thing the
 // hub relies on. Every process a probe starts is stopped afterwards, and with it the rpc host OmO started for it.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type ProbeOutcome, type Probes, type ProbeStart, Run } from "./claude-probes.ts";
 import type { AgentEvent, RuntimeAdapter } from "./types.ts";
@@ -138,7 +138,7 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 			if (!call) return fail("harness_doctor is not registered (the dotz extension's guard/harness part did not load)");
 			const result = toolResults(events).find(r => r.call_id === call.call_id);
 			if (!result || result.is_error) return fail(`harness_doctor failed: ${result?.text.slice(0, 120) ?? "no result"}`);
-			return { result: "adapted", note: `dotz guard + harness tools load (harness_doctor: "${result.text.split("\n")[0].slice(0, 60)}"); the RULES.md deny lines and the repeat guard run; omp-only parts (worker brief/patch tracking, budget gate on task spawns) stay off because OmO has no ctx.agent or before_subagent_spawn` };
+			return { result: "adapted", note: `dotz guard + harness tools load (harness_doctor: "${result.text.split("\n")[0].slice(0, 60)}"); the RULES.md deny lines and the repeat guard run; the worker brief rules and isolated-worker patch review run on OmO task calls (workers_isolated_patch); the budget gate on spawns stays omp-only (OmO has no before_subagent_spawn)` };
 		}),
 
 		dotz_tools: probe(async (ctx, start, ms) => {
@@ -190,7 +190,43 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 			return { result: "adapted", note: "OmO task tool: the worker runs in OmO's rpc host; its result comes back into the session, in the same turn or by waking it for a new one whose answer goes to the same channel (no live worker frames; the rpc host is stopped when the process exits)" };
 		}),
 
-		workers_isolated_patch: async () => ({ result: "unsupported", note: "omp task isolation + orchestrator-guard patch review has no OmO equivalent wired into dotz; OmO children merge their own changes" }),
-		fallback_chain: async () => ({ result: "unsupported", note: "started with --no-model-fallback: dotz's hub-driven chain is omp-only and OmO's own chain is off, so a failed model is retried/paused by the hub, never switched silently" }),
+		// The guard makes a writing worker isolated with apply:false: its change must come back as a patch, the checkout
+		// stays untouched, and `git apply` of that patch is refused until the patch has been read.
+		workers_isolated_patch: probe(async (ctx, start, ms) => {
+			writeFileSync(join(ctx.cwd, "probe.txt"), "before\n");
+			const git = await Bun.$`git init -q && git add probe.txt && git -c user.name=probe -c user.email=probe@invalid commit -qm init`.cwd(ctx.cwd).nothrow().quiet();
+			if (git.exitCode !== 0) return fail(`could not make a probe repo: ${git.stderr.toString().slice(0, 120)}`);
+			const run = start();
+			const wait = Math.max(ms, 300_000);
+			const events = await run.turn('Use the task tool to spawn ONE subagent (category "quick") with this brief: "Replace the contents of probe.txt in the current directory with the single line after. Acceptance: probe.txt contains exactly after." Do not edit any file yourself. When its completion is back, reply with the full path of the .patch file it reports, and nothing else.', wait);
+			const call = toolCalls(events).find(c => c.tool === "task");
+			if (!call) return fail("the task tool was not used");
+			const said = (await run.waitFor(e => e.type === "assistant" && e.stop === "stop" && /\.patch\b/.test(e.text), wait, 0)) as Extract<AgentEvent, { type: "assistant" }> | undefined;
+			const patch = said?.text.match(/(\/\S+\.patch)\b/)?.[1];
+			if (!patch || !existsSync(patch)) return fail(`no retained patch came back: "${answerOf(run.events).slice(0, 120)}"`);
+			if (readFileSync(join(ctx.cwd, "probe.txt"), "utf8") !== "before\n") return fail("the worker's change was merged into the checkout (not isolated with apply:false)");
+			if (!/after/.test(readFileSync(patch, "utf8"))) return fail(`the patch does not hold the change: ${patch}`);
+			const at = run.events.length;
+			await run.turn(`Without reading it first, apply it now: run the shell command \`git apply ${patch}\` in ${ctx.cwd}, then reply with done.`, ms);
+			const blocked = toolResults(run.events.slice(at)).find(r => r.is_error && /review before apply/.test(r.text));
+			if (!blocked) return fail("git apply of an unread patch was not blocked");
+			return ok(`writing worker isolated (apply:false): checkout untouched, change kept as ${patch.split("/").slice(-2).join("/")}; unread git apply refused ("review before apply")`);
+		}),
+		// The hub drives every OmO chain (fallback.ts hubChain): a switch is a restart on the same session with the next
+		// entry's model. This checks that restart: a session started on one model resumes on another and answers there.
+		fallback_chain: probe(async (_ctx, start, ms) => {
+			const first = start();
+			if (!/PONG/i.test(answerOf(await first.turn(PONG, ms)))) return fail("first turn did not answer");
+			const ref = await first.session(5000);
+			if (!ref) return fail("no session ref after the first turn");
+			await first.close();
+			const next = "anthropic/claude-opus-5-5:low";
+			const again = start({ resume: ref, model: next });
+			if (!/PONG/i.test(answerOf(await again.turn(PONG, ms)))) return fail("the resumed session did not answer on the next model");
+			await again.close();
+			const models = existsSync(ref) ? [...readFileSync(ref, "utf8").matchAll(/"role":"assistant".*?"model":"([^"]+)"/g)].map(m => m[1]) : [];
+			if (models.at(-1) !== "claude-opus-5-5") return fail(`the resumed turn ran on ${models.at(-1) ?? "an unknown model"}, not ${next}`);
+			return { result: "adapted", note: `OmO's own chain is off (--no-model-fallback); the hub switches the chain by restarting on the same session (here ${models[0]} -> ${models.at(-1)}), alerts the owner on each failover and goes back to the primary when it is usable again` };
+		}),
 	};
 }
