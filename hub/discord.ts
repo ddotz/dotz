@@ -2,13 +2,9 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
-import { embedChoice, extractMeta, metaToSubtext, parseTone, TONE_COLORS, type Tone } from "./tone.ts";
+import { metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
 const LIMIT = 1900;
-// Embed description cap, and the chunk size used when a toned message is longer (headroom for title and footer).
-const EMBED_MAX = 4096;
-const EMBED_CHUNK = 4000;
-const EMBED_TOTAL = 6000;
 const INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
 const tokenPath = expand(String(cfg.discord?.token_file ?? ""));
 const TOKEN = tokenPath && existsSync(tokenPath) ? readFileSync(tokenPath, "utf8").trim() : "";
@@ -312,46 +308,34 @@ export function chunks(text: string, limit = LIMIT): string[] {
 	return out;
 }
 
-type Embed = { color: number; title?: string; description?: string; footer?: { text: string } };
-type Body = { content: string; embeds?: Embed[]; allowed_mentions?: { parse: never[] }; message_reference?: { message_id: string; fail_if_not_exists: boolean } };
+// `embeds: []` appears only on PATCH (see edit()), so it is optional.
+type Body = { content: string; embeds?: never[]; allowed_mentions?: { parse: never[] }; message_reference?: { message_id: string; fail_if_not_exists: boolean } };
 const mentionsOff = { parse: [] as never[] };
 const reference = (replyTo?: string) => (replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {});
 
-// Title, description and footer of a toned message: meta lines go to the footer, the first line (markdown stripped) to
-// the title when it fits, choice blocks lose their quote prefixes and get the recommended badge.
-function embedParts(text: string): { title?: string; description: string; footer?: string } {
-	const { body, footer } = extractMeta(noEmoji(text));
-	const lines = embedChoice(body).trimStart().split("\n");
-	// A first line that opens a ``` fence stays in the description, or the fence would lose its opener.
-	const title = /^\s*```/.test(lines[0]!) ? "" : lines[0]!.replace(/\*\*|`/g, "").trim();
-	const fits = title.length > 0 && title.length <= 256;
-	return { ...(fits ? { title } : {}), description: (fits ? lines.slice(1).join("\n") : lines.join("\n")).trim(), ...(footer ? { footer: noEmoji(footer) } : {}) };
+// Plain message text: the explicit marker becomes the one status emoji, the model's own emoji are stripped (before the
+// status emoji is added), choice blocks lose their quote prefixes and meta lines become subtext.
+function plainParts(text: string): { emoji: string; body: string } {
+	const { tone, text: bare } = parseTone(text);
+	return { emoji: tone ? TONE_EMOJI[tone] : "", body: noEmoji(metaToSubtext(plainChoice(tone ? bare.trimStart() : bare))) };
 }
 
-// What goes on the wire for one send: untoned text is plain content (meta lines as subtext, packed as before); toned text
-// is one embed per message, split by chunks() only when the description would not fit. Pure, so it is testable offline.
-export function buildPayloads(text: string, fallback?: Tone, replyTo?: string): Body[] {
-	const { tone, text: bare } = parseTone(text, fallback);
-	const first = (i: number) => (i === 0 ? reference(replyTo) : {});
-	if (!tone) return chunks(metaToSubtext(bare)).map((content, i) => ({ content: noEmoji(content), allowed_mentions: mentionsOff, ...first(i) }));
-	const p = embedParts(bare);
-	const fits = p.description.length <= EMBED_MAX && (p.title?.length ?? 0) + p.description.length + (p.footer?.length ?? 0) <= EMBED_TOTAL;
-	const pieces = fits ? [p.description] : chunks(p.description, EMBED_CHUNK);
-	return pieces.flatMap((description, i) => {
-		const embed: Embed = { color: TONE_COLORS[tone], ...(i === 0 && p.title ? { title: p.title } : {}), ...(description ? { description } : {}), ...(i === pieces.length - 1 && p.footer ? { footer: { text: p.footer } } : {}) };
-		return embed.title || embed.description || embed.footer ? [{ content: "", embeds: [embed], allowed_mentions: mentionsOff, ...first(i) }] : [];
-	});
+// What goes on the wire for one send: plain content only, split by chunks(); the status emoji leads the first message.
+// Pure, so it is testable offline.
+export function buildPayloads(text: string, replyTo?: string): Body[] {
+	const { emoji, body } = plainParts(text);
+	const pieces = body.trim() ? chunks(body) : emoji ? [""] : [];
+	return pieces.map((piece, i) => ({
+		content: i === 0 && emoji ? (piece ? `${emoji} ${piece}` : emoji) : piece,
+		allowed_mentions: mentionsOff,
+		...(i === 0 ? reference(replyTo) : {}),
+	}));
 }
 
-// One message that is edited in place or posted as a progress note: never split, too long text is cut to fit. The other
-// form is cleared (`embeds: []` / `content: ""`) so a note can switch between plain and embed.
-export function buildSingle(text: string, fallback?: Tone): Body {
-	const { tone, text: bare } = parseTone(text, fallback);
-	if (!tone) return { content: noEmoji(metaToSubtext(bare)).slice(0, LIMIT), embeds: [] };
-	const p = embedParts(bare);
-	const description = p.description.slice(0, Math.min(EMBED_MAX, EMBED_TOTAL - (p.title?.length ?? 0) - (p.footer?.length ?? 0)));
-	// An embed with no title, description or footer is rejected by Discord (50006): a bare-marker note gets a blank description.
-	return { content: "", embeds: [{ color: TONE_COLORS[tone], ...(p.title ? { title: p.title } : {}), description: description || "\u200b", ...(p.footer ? { footer: { text: p.footer } } : {}) }] };
+// One message that is edited in place or posted as a progress note: never split, too long text is cut to fit.
+export function buildSingle(text: string): Body {
+	const { emoji, body } = plainParts(text);
+	return { content: (emoji && body ? `${emoji} ${body}` : emoji || body).slice(0, LIMIT) };
 }
 
 // `reopen` allows unarchiving a thread that Discord auto-archived (50083); lane threads and sub-topic threads qualify.
@@ -366,20 +350,20 @@ async function post(id: string, body: Body, reopen = false): Promise<string> {
 	}
 }
 
-// `fallback` is the tone for text without a marker (alert: fail); an explicit marker in the text always wins.
-export async function send(target: string, text: string, replyTo?: string, fallback?: Tone): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+export async function send(target: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
 	const id = resolve(target);
 	if (!id) return { delivered: false, reason: `unknown target ${target}` };
 	const ids: string[] = [];
-	for (const body of buildPayloads(text, fallback, replyTo)) ids.push(await post(id, body));
+	for (const body of buildPayloads(text, replyTo)) ids.push(await post(id, body));
 	return { delivered: true, ids };
 }
 
-export async function edit(target: string, messageId: string, text: string, fallback?: Tone): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+export async function edit(target: string, messageId: string, text: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	const id = resolve(target);
 	if (!status.enabled || !id) return { delivered: false, reason: `unknown target ${target}` };
-	await rest("PATCH", `/channels/${id}/messages/${messageId}`, buildSingle(text, fallback));
+	// `embeds: []` clears the embed of a legacy message (sent before messages became plain text) when it is edited in place.
+	await rest("PATCH", `/channels/${id}/messages/${messageId}`, { ...buildSingle(text), embeds: [] });
 	return { delivered: true, ids: [messageId] };
 }
 
@@ -397,11 +381,11 @@ export async function deleteMessage(target: string, messageId: string): Promise<
 const progressIds = new Map<string, Map<string, string>>();
 export async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
 	const prev = progressIds.get(target)?.get(key);
-	if (prev) return { ...(await edit(target, prev, text, "run")), edited: true };
+	if (prev) return { ...(await edit(target, prev, text)), edited: true };
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
 	const id = resolve(target);
 	if (!id) return { delivered: false, reason: `unknown target ${target}` };
-	const mid = await post(id, { ...buildSingle(text, "run"), allowed_mentions: mentionsOff, ...reference(replyTo) });
+	const mid = await post(id, { ...buildSingle(text), allowed_mentions: mentionsOff, ...reference(replyTo) });
 	if (!progressIds.has(target)) progressIds.set(target, new Map());
 	progressIds.get(target)!.set(key, mid);
 	return { delivered: true, ids: [mid] };

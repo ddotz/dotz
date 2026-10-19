@@ -297,14 +297,8 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .md ul, .md ol { margin: 0 0 6px; padding-left: 20px; }
 .md code { padding: 1px 4px; border-radius: 4px; background: var(--layer); font-size: .92em; }
 .md pre code { padding: 0; background: none; }
-/* message tone: 4px bar + faint tint, colors shared with the Discord embeds (spec) */
-.tn { --tone: transparent; border-left: 4px solid var(--tone); border-radius: 2px 8px 8px 2px; background: color-mix(in srgb, var(--tone) 8%, transparent); padding: 8px 12px; }
-.tn.t-done { --tone: #57F287; } .tn.t-run { --tone: #3B82F6; } .tn.t-ask { --tone: #F0A020; } .tn.t-fail { --tone: #ED4245; }
-:root[data-theme="dark"] .tn { background: color-mix(in srgb, var(--tone) 11%, transparent); }
-.pn.tn { padding: 4px 10px; }
-.bm.tn .md p.meta { margin: 2px 0 0; font-size: 12px; line-height: 18px; color: var(--fg-3); }
-.bm.tn .md p.meta + p:not(.meta) { margin-top: 12px; }
-.md .rec { display: inline-block; padding: 0 6px; border-radius: 999px; background: var(--tone, var(--accent)); color: #171717; font-size: 11px; font-weight: 600; line-height: 18px; vertical-align: 1px; }
+.bm .md p.meta { margin: 2px 0 0; font-size: 12px; line-height: 18px; color: var(--fg-3); }
+.bm .md p.meta + p:not(.meta) { margin-top: 12px; }
 details.work > summary { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; min-height: 24px; margin-left: -4px; padding: 0 6px 0 4px; border-radius: 6px; color: var(--fg-3); font-size: 12.5px; line-height: 20px; cursor: pointer; list-style: none; }
 details.work > summary:hover { background: var(--hover); color: var(--fg-2); }
 details.work > summary::-webkit-details-marker { display: none; }
@@ -594,47 +588,54 @@ const oneLine = s => String(s).replace(/\s+/g, " ").trim().slice(0, 160);
 const num = n => Number(n || 0).toLocaleString("ko-KR");
 
 /* ---------- basic markdown (input is escaped before any markup is produced) ---------- */
-function inline(s, rich) {
-  // rich (toned messages only): the recommended choice becomes a badge.
-  const rec = h => rich ? h.replace(/\s*←\s*추천/, ' <span class="rec">추천</span>') : h;
-  return String(s).split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code>${esc(p.slice(1, -1))}</code>` : rec(esc(p).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>"))).join("");
+function inline(s) {
+  return String(s).split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code>${esc(p.slice(1, -1))}</code>` : esc(p).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>")).join("");
 }
-// Meta lines (spec): evidence/source/"for NAME" lines render small and muted in toned messages.
+// Meta lines: evidence/source/"for NAME" lines render small and muted.
 const escRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const metaRe = () => new RegExp(`^\\s*(?:-\\s+)?(?:근거:|출처:|Evidence:|Source:|For ${escRe(botName)}:|${escRe(botName)} 몫:)`, "i");
-function blocks(text, rich) {
-  const html = [], meta = rich ? metaRe() : null;
+// A run of "> " lines that contains an option line ("**1) ...") is a choice block: its quote prefixes are dropped. Other quotes stay.
+function unquoteChoices(lines) {
+  const out = [];
+  for (let i = 0; i < lines.length;) {
+    if (!/^\s*>/.test(lines[i])) { out.push(lines[i++]); continue; }
+    let j = i;
+    while (j < lines.length && /^\s*>/.test(lines[j])) j++;
+    const run = lines.slice(i, j), choice = run.some(l => /^\s*>?\s*\*\*\d+\)/.test(l));
+    out.push(...(choice ? run.map(l => l.replace(/^\s*>\s?/, "")) : run));
+    i = j;
+  }
+  return out;
+}
+function blocks(text) {
+  const html = [], meta = metaRe();
   let list = null, para = [];
-  const flushP = () => { if (para.length) html.push(`<p>${para.map(l => inline(l, rich)).join("<br>")}</p>`); para = []; };
-  const flushL = () => { if (list) html.push(`<${list.t}>${list.items.map(i => `<li>${inline(i, rich)}</li>`).join("")}</${list.t}>`); list = null; };
-  for (let line of text.split("\n")) {
+  const flushP = () => { if (para.length) html.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; };
+  const flushL = () => { if (list) html.push(`<${list.t}>${list.items.map(i => `<li>${inline(i)}</li>`).join("")}</${list.t}>`); list = null; };
+  for (const line of unquoteChoices(text.split("\n"))) {
     let m;
-    // The colored bar already groups a quoted choice block, so its "> " prefixes are dropped.
-    if (rich) line = line.replace(/^>\s?/, "");
-    if (meta && meta.test(line)) { flushP(); flushL(); html.push(`<p class="meta">${inline(line.replace(/^\s*-\s+/, ""))}</p>`); continue; }
+    if (meta.test(line)) { flushP(); flushL(); html.push(`<p class="meta">${inline(line.replace(/^\s*-\s+/, ""))}</p>`); continue; }
     if ((m = line.match(/^\s*[-*•]\s+(.*)/))) { flushP(); if (!list || list.t !== "ul") { flushL(); list = { t: "ul", items: [] }; } list.items.push(m[1]); }
     else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) { flushP(); if (!list || list.t !== "ol") { flushL(); list = { t: "ol", items: [] }; } list.items.push(m[1]); }
-    else if ((m = line.match(/^#{1,6}\s+(.*)/))) { flushP(); flushL(); html.push(`<p><b>${inline(m[1], rich)}</b></p>`); }
+    else if ((m = line.match(/^#{1,6}\s+(.*)/))) { flushP(); flushL(); html.push(`<p><b>${inline(m[1])}</b></p>`); }
     else if (!line.trim()) { flushP(); flushL(); }
     else { flushL(); para.push(line); }
   }
   flushP(); flushL();
   return html.join("");
 }
-function mdHtml(src, rich) {
+function mdHtml(src) {
   const parts = String(src ?? "").split(/```[^\n`]*\n?([\s\S]*?)(?:```|$)/);
-  return parts.map((p, i) => i % 2 ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : blocks(p, rich)).join("");
+  return parts.map((p, i) => i % 2 ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : blocks(p)).join("");
 }
-const mdNode = (src, cls = "md", rich) => el("div", { class: cls, safeHtml: mdHtml(src, rich) });
+const mdNode = (src, cls = "md") => el("div", { class: cls, safeHtml: mdHtml(src) });
 
-/* ---------- message tone (spec: line-1 marker or choice block → colored left bar) ---------- */
+/* ---------- message status (only an explicit line-1 marker sets it; it becomes one leading emoji) ---------- */
 const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
-function parseTone(text, dflt) {
+const TONE_EMOJI = { done: "✅", run: "⏳", ask: "❓", fail: "❌" };
+function parseTone(text) {
   const m = text.match(/^\[([^\]\n]+)\][ \t]*/), tag = m && TONE_TAGS.get(m[1].toLowerCase());
-  if (tag) return { tone: tag, text: text.slice(m[0].length) };
-  // Without a marker, a choice block (or a recommended option) makes it an ask; an unknown "[x]" stays plain text.
-  if (/^(?:결정|Decision):/m.test(text) || (/^>?\s*\*\*\d+\)/m.test(text) && text.includes("← 추천"))) return { tone: "ask", text };
-  return { tone: dflt || "", text };
+  return tag ? { tone: tag, text: text.slice(m[0].length) } : { tone: "", text };
 }
 
 /* ---------- api ---------- */
@@ -1211,17 +1212,16 @@ function msgNode(e) {
     case "schedule": case "watch": case "mail":
       return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL[e.kind] }), el("div", { class: "st" }, mdNode(text), el("div", { class: "mt", text: hm })));
     default: {
-      // Defaults as on Discord: progress notes (update_key) run, gateway alerts fail; an explicit marker wins.
       const isNote = e.kind === "out" && ((typeof e.source === "string" && e.source.startsWith("lane:")) || (e.update_key && typeof e.target === "string" && e.target.startsWith("lane:")));
-      const dflt = e.update_key ? "run" : e.source === "gateway" && e.target === "alert" ? "fail" : "";
-      const { tone, text: body } = e.kind === "out" || e.kind === "lane_report" ? parseTone(text, dflt) : { tone: "", text };
+      const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(text) : { tone: "", text };
+      const body = (tone ? `${TONE_EMOJI[tone]} ` : "") + parsed;
       if (isNote) {
-        const n = el("div", { class: `pn${tone ? ` tn t-${tone}` : ""}`, tabindex: "0", role: "button" }, el("span", { class: "mt", text: hm }), el("span", { class: "pt", text: body.replace(/^진행 중:\s*/, "") }));
+        const n = el("div", { class: "pn", tabindex: "0", role: "button" }, el("span", { class: "mt", text: hm }), el("span", { class: "pt", text: body.replace(/^((?:✅|⏳|❓|❌) )?진행 중:\s*/, "$1") }));
         n.onclick = () => { if (!getSelection().toString()) n.classList.toggle("open"); };
         return n;
       }
       const name = e.kind === "lane_report" ? String(e.lane ?? "") : e.target === "alert" ? "알림" : botName;
-      return el("div", { class: `bm${tone ? ` tn t-${tone}` : ""}` }, el("div", { class: "mt", text: [name, hm].filter(Boolean).join(" · ") }), mdNode(body, "md", !!tone));
+      return el("div", { class: "bm" }, el("div", { class: "mt", text: [name, hm].filter(Boolean).join(" · ") }), mdNode(body));
     }
   }
 }
