@@ -91,7 +91,7 @@ export const paths = {
 	laneHygiene: join(DATA_DIR, "lane-hygiene.json"),
 };
 
-const TEMPLATES: Record<string, string> = {
+export const TEMPLATES: Record<string, string> = {
 	[paths.rules]: `# Owner rules
 
 Standing rules and prohibitions from the owner, one short line each (this file is read every session). The bot adds one
