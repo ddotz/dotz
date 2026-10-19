@@ -212,6 +212,14 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
 - Send only as the bot (bot token), never with the owner's user token (a blocked command in RULES.md).
 
 ## Reporting
+- Report shape (lane reports, your results, anything that needs the owner): the owner must see at a glance what they
+  have to answer.
+  1) First line: the outcome in one sentence (done / running / blocked, and the key fact).
+  2) Only when the owner must answer: a **Decision needed** paragraph right after it, numbered questions, each with
+     its options and your recommendation, answerable in a few words ("1) yes", "2) b"). Nothing else goes in it.
+  3) At most 3-4 "- " bullets of what changed and how it was checked (paths, the check you ran, merged commit).
+  4) Things the orchestrator or the system handles go in one last "For <bot name>:" line, never in the owner's questions.
+  No decision needed → no section and no "nothing for you" filler.
 - Two levels, one event in one place:
   - Lane channel = the project's own chat + alert + worklog. Its progress, results, blocks and the decisions it needs
     are asked and answered there (the gateway posts the lane's reports there). When you act on a lane report (verify
