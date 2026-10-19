@@ -1076,6 +1076,7 @@ function notify(e) {
   const key = `${e.ts}|${e.kind}|${e.target || e.lane || ""}|${text.slice(0, 80)}`;
   if (!text || ntfSeen.has(key)) return;
   ntfSeen.add(key);
+  if (ntfSeen.size > 300) ntfSeen.delete(ntfSeen.values().next().value);
   const alertish = e.kind === "out" && e.target === "alert";
   const box = document.querySelector(".ntf-box") || document.body.appendChild(el("div", { class: "ntf-box", "aria-live": "polite" }));
   const lane = e.kind === "lane_report" ? String(e.lane || "") : "";
@@ -4296,9 +4297,11 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
     else {
       ingestMsg(e); scheduleState();
-      // Live notices only (not the replay after a reconnect): alert / worklog posts and lane reports float in the corner.
+      // Live notices only (not the replay after a reconnect): alert / worklog posts, the gateway's own notes (sent to the web
+      // when Discord is off) and lane reports float in the corner.
       const fresh = !e.ts || Date.now() - Date.parse(e.ts) < 60_000;
-      if (fresh && ((e.kind === "out" && (e.target === "alert" || e.target === "worklog")) || e.kind === "lane_report")) notify(e);
+      const notice = e.kind === "out" && (e.target === "alert" || e.target === "worklog" || (e.target === "web" && e.source === "gateway"));
+      if (fresh && (notice || e.kind === "lane_report")) notify(e);
     }
   };
   setInterval(refreshState, 15000);

@@ -47,7 +47,7 @@ export const CHECKLIST: { id: string; label: string; core: boolean }[] = [
 ];
 
 // What the hub does when a non-core item is not provided: `adapted` = a hub-side substitute keeps the feature,
-// `disabled` = the feature is off for this runtime (recorded in the report; the hub reads it with disabledFeatures()).
+// `disabled` = the feature is off for this runtime (recorded in the report and shown on the settings screen).
 const ADJUST: Record<string, { result: "adapted" | "disabled"; note: string }> = {
 	handover: { result: "adapted", note: "허브가 저장된 세션에서 최근 대화를 읽어 새 세션 첫 프롬프트로 넘겨요" },
 	compaction_events: { result: "adapted", note: "허브가 토큰 수치로 직접 컴팩션 시점을 정해요" },
@@ -85,10 +85,6 @@ export function lastReport(id: string): VerifyReport | undefined {
 		return undefined;
 	}
 }
-// Feature ids the last report turned off or substituted for this runtime (the hub reads this to skip a disabled feature).
-export const disabledFeatures = (id: string): string[] => (lastReport(id)?.items ?? []).filter(i => i.result === "disabled").map(i => i.id);
-export const adaptedFeatures = (id: string): string[] => (lastReport(id)?.items ?? []).filter(i => i.result === "adapted").map(i => i.id);
-
 // ---- detection ----
 
 let detectCache: { at: number; list: Detected[] } | undefined;
@@ -122,18 +118,19 @@ export type VerifyOpts = { adapter?: Probing; probes?: Record<string, Probe>; mo
 
 // Runs every checklist item, never throws. Without an adapter every item fails; without a probe it is unsupported.
 export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<VerifyReport> {
-	const adapter = o.adapter ?? ((Object.hasOwn(adapters, id) ? adapters[id] : undefined) as Probing | undefined);
-	const version = o.version ?? (await detectAll()).find(d => d.id === id)?.version;
+	// The state is registered before the first await, so startVerify() hands out this same object.
 	const state: VerifyState = { runtime: id, running: true, startedAt: now(), done: 0, total: CHECKLIST.length };
 	states.set(id, state);
 	const announce = (text: string) => broadcast({ ts: now(), kind: "runtime_check", source: "hub", text, runtime: id, running: state.running, done: state.done, total: state.total, current: state.current });
-	announce("check started");
-	mkdirSync(dir(), { recursive: true });
+	const adapter = o.adapter ?? ((Object.hasOwn(adapters, id) ? adapters[id] : undefined) as Probing | undefined);
 	const logFile = join(dir(), `${id}.log`);
 	const note = (s: string) => appendFileSync(logFile, `${now()} ${s}\n`);
 	const raw: CheckItem[] = [];
 	let cwd: string | undefined;
 	try {
+		announce("check started");
+		mkdirSync(dir(), { recursive: true });
+		const version = o.version ?? (await detectAll()).find(d => d.id === id)?.version;
 		if (!adapter) {
 			for (const c of CHECKLIST) raw.push({ ...c, result: "fail", note: "dotz 어댑터 없음" });
 		} else {
@@ -180,8 +177,6 @@ export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<
 export function startVerify(id: RuntimeId, o: VerifyOpts = {}): VerifyState {
 	const running = states.get(id);
 	if (running?.running) return running;
-	const state: VerifyState = { runtime: id, running: true, startedAt: now(), done: 0, total: CHECKLIST.length };
-	states.set(id, state);
 	void verifyRuntime(id, o).catch(e => log(`runtime check ${id} failed: ${String(e)}`));
 	return states.get(id)!;
 }
@@ -196,8 +191,11 @@ export function refusalFor(id: string, detected: Detected | undefined, report: V
 	if (id === "omp") return undefined;
 	if (!detected?.installed) return "설치되어 있지 않아요";
 	if (!detected.hasAdapter) return "dotz 어댑터가 없어요";
+	if (states.get(id)?.running) return "호환성 검사가 아직 끝나지 않았어요";
 	if (!report) return "호환성 검사를 먼저 해야 해요";
-	if (report.verdict === "blocked") return "호환성 검사에서 막혔어요. 핵심 항목이 통과해야 해요";
+	// The stored verdict is not trusted: it is recomputed, and a report missing a core item counts as blocked.
+	const missingCore = CHECKLIST.some(c => c.core && !report.items.some(i => i.id === c.id));
+	if (missingCore || verdictOf(report.items) === "blocked") return "호환성 검사에서 막혔어요. 핵심 항목이 통과해야 해요";
 	if (detected.version && report.version !== detected.version) return `검사한 뒤 버전이 바뀌었어요 (${report.version ?? "알 수 없음"} → ${detected.version}). 다시 검사해 주세요`;
 	return undefined;
 }

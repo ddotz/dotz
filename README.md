@@ -237,8 +237,9 @@ All behind the same auth as the rest of `/api`.
   The check (`hub/runtime/verify.ts`) runs the adapter's probes for 14 items (core: `turn`, `model_effort`, `resume`, `usage_report`,
   `deny_lines`); a failing core item blocks the switch, a failing non-core item is `adapted` (the hub substitutes, e.g. handover from the
   saved session, own compaction timing, hub-side deny re-check, own model fallback) or `disabled` (dotz tools, worker spawn, isolated
-  patches, tool intent are turned off for that runtime). The last report per runtime is `<data>/runtime-checks/<id>.json`
-  (`disabledFeatures(id)` / `adaptedFeatures(id)` read it), the probe log `<id>.log`.
+  patches, tool intent are turned off for that runtime). The last report per runtime is `<data>/runtime-checks/<id>.json`, the probe
+  log `<id>.log`. On a runtime other than omp the fallback chain's conditions, caps and API-key entries are not driven by the hub;
+  its models go to the runtime as a plain fallback list (Claude Code: `--fallback-model`).
 - `GET /api/context`: `{note, processes: [{name, kind, status, running, model, tokens, window, percent, compaction: {state, at, tokensBefore, error}}]}`
   for the orchestrator and every lane; `POST /api/compact {target: "orchestrator"|"<lane>"}` compacts (or queues) one.
 - `GET /api/activity?source=orchestrator|lane:<name>&limit=N`: in-memory ring (300) of what an omp process did; the

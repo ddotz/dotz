@@ -10,7 +10,7 @@ import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, f
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import type { AgentError, AgentProcess } from "./runtime/types.ts";
-import { Chain, failureReason, hubOwned, type Move } from "./fallback.ts";
+import { atTime, Chain, failsOver, failureReason, hubDrivable, hubOwned, type Move } from "./fallback.ts";
 import { parseTone } from "./tone.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
@@ -64,6 +64,8 @@ export type Lane = Record_ & {
 	activeWorkerModel?: string;
 	chained?: boolean;
 	errorHold?: Timer;
+	// A request failed and is still being resolved (grace for the runtime's own fallback, or the hub's failover): no report yet.
+	failing?: boolean;
 	// The chain the hub drives itself (conditional entries, spend caps; hub/fallback.ts) and a spend-cap decision waiting for an idle moment.
 	chain?: Chain;
 	capped?: { move?: Move };
@@ -156,8 +158,9 @@ export function approvesBudget(name: string, text: string): boolean {
 
 function scheduleReport(lane: Lane): void {
 	if (lane.status !== "rate-limited") setStatus(lane, "idle");
-	// A transient provider error is being retried: the failed turn is not a report.
-	if (lane.transientTimer) return;
+	// A transient provider error is being retried, or a failed request is still being resolved (a fallback may redo it):
+	// the failed turn is not a report.
+	if (lane.transientTimer || lane.failing) return;
 	if (lane.silent && !lane.lastText.startsWith("[lane error]")) {
 		lane.lastText = lane.silent.lastText;
 		lane.silent = undefined;
@@ -227,10 +230,11 @@ function retryTransient(lane: Lane, err: string): boolean {
 
 // A failed request: a usage limit or a billing/auth problem pauses the lane, a temporary provider error is retried with backoff, anything else is reported as a lane error.
 function handleError(lane: Lane, e: AgentError): void {
-	if (lane.chain && !(e.kind === "transient" && (lane.transientTries ?? 0) < TRANSIENT_RETRIES)) void failOver(lane, e).then(moved => !moved && legacyError(lane, e));
+	if (lane.chain && failsOver(e.kind) && !(e.kind === "transient" && (lane.transientTries ?? 0) < TRANSIENT_RETRIES)) void failOver(lane, e).then(moved => !moved && legacyError(lane, e));
 	else legacyError(lane, e);
 }
 function legacyError(lane: Lane, e: AgentError): void {
+	lane.failing = false;
 	if (e.kind === "rate" || e.kind === "owner") void pauseForRateLimit(lane, e.text, e.kind);
 	else if (e.kind !== "transient" || !retryTransient(lane, e.text)) {
 		lane.lastText = `[lane error] ${(e.text || "model request failed").slice(0, 300)}`;
@@ -251,13 +255,13 @@ async function failOver(lane: Lane, e: AgentError): Promise<boolean> {
 	if (lane.chain !== active || !lane.proc || !lane.sessionFile) return false;
 	const move = active.fail(reason, until);
 	if (!move) return false;
-	switchTo(lane, move, true);
-	return true;
+	return switchTo(lane, move, true);
 }
 // Restarts the lane on the same session with another entry of its chain (spawn() picks it from the persisted limit and spend
 // state); `again` tells it to redo the request that just failed.
-function switchTo(lane: Lane, move: Move, again: boolean): void {
-	if (!lane.chain || !lane.proc || lane.revive) return;
+function switchTo(lane: Lane, move: Move, again: boolean): boolean {
+	if (!lane.chain || !lane.proc || lane.revive) return false;
+	lane.failing = false;
 	const line = msg().fallbackMove(lane.chain.label(move.from), lane.chain.label(move.to), move.why);
 	log(`lane ${lane.name} ${line}`);
 	onNotice(lane, line);
@@ -265,6 +269,7 @@ function switchTo(lane: Lane, move: Move, again: boolean): void {
 	rmSync(pendingFile(lane), { force: true });
 	lane.revive = { text: again ? msg().laneTransient : undefined };
 	lane.proc.kill(true);
+	return true;
 }
 // At an idle moment: act on a spend cap reached during the turn, or go back to an earlier entry whose limit has reset.
 function settleChain(lane: Lane): void {
@@ -273,7 +278,7 @@ function settleChain(lane: Lane): void {
 		const reached = lane.capped;
 		lane.capped = undefined;
 		if (reached.move) switchTo(lane, reached.move, false);
-		else pauseExhausted(lane, lane.chain, lane.chain.down(lane.chain.active)?.until ?? Date.now() + 3_600_000);
+		else pauseExhausted(lane, lane.chain, lane.chain.exhaustedUntil() ?? lane.chain.down(lane.chain.active)?.until ?? Date.now() + 3_600_000);
 		return;
 	}
 	const back = lane.chain.revertTarget();
@@ -289,14 +294,14 @@ function pauseExhausted(lane: Lane, c: Chain, until: number): void {
 	report(lane, line);
 	lane.pauseReported = true;
 	clearTimeout(lane.resumeTimer);
-	lane.resumeTimer = setTimeout(() => {
+	atTime(until, t => (lane.resumeTimer = t), () => {
 		lane.resumeTimer = undefined;
 		setStatus(lane, "idle");
 		if (lane.proc) {
 			lane.revive = { text: msg().laneRate };
 			lane.proc.kill(true);
 		} else resumeLane(lane, msg().laneRate);
-	}, Math.max(1000, until - Date.now()));
+	});
 }
 
 async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
@@ -316,6 +321,7 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				clearTimeout(lane.timer);
 				clearTimeout(lane.transientTimer);
 				clearTimeout(lane.errorHold);
+				lane.failing = false;
 				lane.transientTimer = undefined;
 				rmSync(pendingFile(lane), { force: true });
 				setStatus(lane, "working");
@@ -327,6 +333,7 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				// A compaction error is recovered by recover() below (restart on the same session), not retried here.
 				else if (ev.stop === "error" && !ev.error.compaction) {
 					const failed = ev.error;
+					lane.failing = true;
 					if (lane.chained) {
 						clearTimeout(lane.errorHold);
 						lane.errorHold = setTimeout(() => handleError(lane, failed), FALLBACK_GRACE_MS);
@@ -365,6 +372,7 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				if (ev.worker) lane.activeWorkerModel = ev.to;
 				else {
 					clearTimeout(lane.errorHold);
+					lane.failing = false;
 					lane.activeModel = ev.to;
 				}
 				onNotice(lane, msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker));
@@ -377,7 +385,8 @@ export const laneWorkerModel = (lane: Pick<Lane, "workerModel">) => lane.workerM
 
 function spawn(lane: Lane, resume: boolean): void {
 	const entries = chainAfter(lane.model, fallbackChain("lanes"));
-	lane.chain = hubOwned(entries) ? new Chain(lane.model, entries, parseSelector(lane.model).thinking) : undefined;
+	// Conditional entries are switched by the hub on omp only; another runtime gets the models as its own plain fallback list.
+	lane.chain = hubOwned(entries) && hubDrivable(runtimeFor("lane").id) ? new Chain(lane.model, entries, parseSelector(lane.model).thinking) : undefined;
 	lane.capped = undefined;
 	let spawnModel = lane.model;
 	const env: Record<string, string> = { DOTZ_LANE: lane.name, ...(lane.fableOk ? { DOTZ_OWNER_ASKED_FABLE: "1" } : {}) };

@@ -45,8 +45,9 @@ export function resetFallbackState(): void {
 	save();
 }
 
-// What an entry spends from: its API key when it has one (every entry using that key shares it), else its model.
-const poolOf = (e: FallbackEntry) => (e.key_file ? `key:${e.key_file}` : e.model);
+// What an entry spends from: its API key when it has one (every entry using that key shares it), else its model (a thinking
+// suffix does not make another pool).
+const poolOf = (e: FallbackEntry) => (e.key_file ? `key:${e.key_file}` : parseSelector(e.model).model);
 export function usageOf(e: FallbackEntry, period: Period, at = clock.now()): { key: string; tokens: number; usd: number } {
 	const c = load().pools[poolOf(e)]?.[period];
 	const key = periodKey(period, at);
@@ -78,23 +79,21 @@ export const keyProviderOk = (e: FallbackEntry) => Boolean(e.key_file) && Boolea
 type ModelDef = { id?: string; name?: string; provider?: string; reasoning?: boolean; input?: string[]; contextWindow?: number; maxTokens?: number; cost?: Record<string, number> };
 let defs: Map<string, ModelDef> | undefined;
 // The catalog row of a model (omp lists it with its prices), read once with a blocking call: spawning a process is synchronous.
+// Bounded to 15 s; a failed read is remembered (the entry then runs with default limits) so it is not retried at every spawn.
 function modelDef(selector: string): ModelDef | undefined {
 	if (!defs) {
+		defs = new Map();
 		try {
-			const found = new Map<string, ModelDef>();
-			const r = Bun.spawnSync([OMP, "models", "--json"], { stdout: "pipe", stderr: "ignore" });
-			for (const m of (JSON.parse(r.stdout.toString()).models ?? []) as Array<ModelDef & { selector: string }>) found.set(m.selector, m);
-			defs = found;
-		} catch {
-			return undefined;
-		}
+			const r = Bun.spawnSync([OMP, "models", "--json"], { stdout: "pipe", stderr: "ignore", timeout: 15_000 });
+			for (const m of (JSON.parse(r.stdout.toString()).models ?? []) as Array<ModelDef & { selector: string }>) defs.set(m.selector, m);
+		} catch {}
 	}
 	return defs.get(selector);
 }
 
 // An entry with a key runs as its own provider ("<provider>-apikey"), because omp prefers a stored login over an API key for
-// the provider's own id. The provider is registered inside the process by the dotz extension from DOTZ_KEY_PROVIDER, and
-// takes the key from the environment variable DOTZ_KEY_VALUE.
+// the provider's own id. The provider is registered inside the process by the dotz extension from DOTZ_KEY_PROVIDER (no
+// secret); the key travels in DOTZ_KEY_VALUE, which the extension removes from the environment once it has registered it.
 const keyedModel = (e: FallbackEntry) => {
 	const [provider, ...rest] = e.model.split("/");
 	return `${provider}-apikey/${rest.join("/")}`;
@@ -109,7 +108,6 @@ function keyEnv(e: FallbackEntry): Record<string, string> {
 		baseModel: base,
 		baseUrl: e.base_url ?? api?.baseUrl,
 		api: e.api ?? api?.api,
-		apiKey: "DOTZ_KEY_VALUE",
 		models: [{ id: rest.join("/"), name: `${def?.name ?? rest.join("/")} (API key)`, reasoning: Boolean(def?.reasoning), input: def?.input ?? ["text"], contextWindow: def?.contextWindow ?? 200_000, maxTokens: def?.maxTokens ?? 32_000, ...(def?.cost ? { cost: def.cost } : {}) }],
 	};
 	return { DOTZ_KEY_PROVIDER: JSON.stringify(spec), DOTZ_KEY_VALUE: readKey(e.key_file!) };
@@ -158,11 +156,12 @@ export class Chain {
 			i = n;
 		}
 	}
-	// Set when every entry is out for a spend cap: nothing may run until the earliest of the caps resets.
+	// Set when no entry can run and at least one is out for its spend cap: nothing may start until the earliest block ends
+	// (a cap period, or the usage limit of an entry before it).
 	exhaustedUntil(at = clock.now()): number | undefined {
-		const i = this.initial(at);
-		const d = this.down(i, at);
-		return d?.why === "cap" ? d.until : undefined;
+		const downs = this.list.map((_, i) => this.down(i, at));
+		if (downs.some(d => !d) || !downs.some(d => d?.why === "cap")) return undefined;
+		return Math.min(...downs.map(d => d!.until));
 	}
 	// The active entry failed (`quota`: usage limit until `until`; `error`: provider error): the entry to switch to, if any.
 	fail(reason: "quota" | "error", until?: number, at = clock.now()): Move | undefined {
@@ -184,7 +183,9 @@ export class Chain {
 		}
 		save();
 		if (!capReached(e, at)) return undefined;
-		const to = this.next(this.active, "quota", at);
+		// The next entry that takes over after a quota, else an earlier one that is usable again.
+		let to = this.next(this.active, "quota", at);
+		for (let j = 0; to === undefined && j < this.active; j++) if (!this.down(j, at)) to = j;
 		return { capped: true, ...(to === undefined ? {} : { move: { from: this.active, to, why: "cap" as const } }) };
 	}
 	// An earlier entry is usable again and the active one is marked `revert`: where to go back to.
@@ -224,5 +225,19 @@ export function entryView(e: FallbackEntry) {
 	return { ...e, ...(used ? { used: { period: e.cap!.period, tokens: used.tokens, usd: used.usd } } : {}), ...(d ? { down: d.why, until: new Date(d.until).toISOString() } : {}), id: entryId(e) };
 }
 
+// Failures the chain moves on from: a usage limit, a billing/auth problem only the owner can fix, a provider error. Anything
+// else (a bad request, context too long, a tool or schema error) is the turn's own problem and stays with the process.
+export const failsOver = (kind?: string) => kind === "rate" || kind === "owner" || kind === "transient";
 // A failed turn is a quota problem when the provider says so (usage limit, spent credit or balance), else a plain error.
-export const failureReason = (e: { kind?: string; text: string }): "quota" | "error" => (e.kind === "rate" || /quota|credit|balance|billing|insufficient|usage limit|spend limit|exceeded/i.test(e.text) ? "quota" : "error");
+export const failureReason = (e: { kind?: string; text: string }): "quota" | "error" => (e.kind === "rate" || /quota|credit|balance|billing|insufficient|usage limit|spend limit/i.test(e.text) ? "quota" : "error");
+// The hub drives a chain only on omp: other runtimes cannot load an API-key provider, report no spend and keep the key in
+// their environment; there the entries go to the runtime as a plain fallback list.
+export const hubDrivable = (runtimeId: string) => runtimeId === "omp";
+
+// Runs `fn` at `until` (at least 1 s from now). setTimeout cannot wait longer than 2^31-1 ms (~24.8 days; a monthly cap
+// period is longer), so a longer wait re-arms itself; `keep` receives each timer so the caller can still clear it.
+const MAX_TIMER_MS = 2 ** 31 - 1;
+export function atTime(until: number, keep: (t: Timer) => void, fn: () => void): void {
+	const left = until - Date.now();
+	keep(left > MAX_TIMER_MS ? setTimeout(() => atTime(until, keep, fn), MAX_TIMER_MS) : setTimeout(fn, Math.max(1000, left)));
+}

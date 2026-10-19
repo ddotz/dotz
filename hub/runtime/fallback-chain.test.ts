@@ -125,7 +125,9 @@ test("quota -> API-key entry -> reset returns to the subscription -> monthly cap
 	expect(started).toHaveLength(2);
 	expect(current().opts.model).toBe("anthropic-apikey/test-orch:low");
 	expect(current().opts.env.DOTZ_KEY_VALUE).toBe(KEY);
-	expect(JSON.parse(current().opts.env.DOTZ_KEY_PROVIDER)).toMatchObject({ id: "anthropic-apikey", apiKey: "DOTZ_KEY_VALUE", baseUrl: "http://127.0.0.1:1/v1", api: "openai-completions" });
+	const spec = JSON.parse(current().opts.env.DOTZ_KEY_PROVIDER);
+	expect(spec).toMatchObject({ id: "anthropic-apikey", baseUrl: "http://127.0.0.1:1/v1", api: "openai-completions" });
+	expect(JSON.stringify(spec)).not.toContain(KEY);
 	expect(current().opts.resume).toBe(join(DATA, "fake-session.jsonl"));
 	expect(current().agent.calls.some(c => c.startsWith("send:followUp:[dotz gateway]"))).toBe(true);
 	expect(notices.at(-1)).toBe("Model fallback: anthropic/test-orch → anthropic/test-orch (API key) (usage limit reached)");
