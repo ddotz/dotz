@@ -163,7 +163,8 @@ One feature = one folder `<id>/` (`<id>` is `[a-z0-9-]`, up to 40 chars) in one 
 
 The gateway and the omp extension read both roots at runtime (cached by file mtime). A malformed folder is skipped and
 the reason is written to `hub.log` (and returned as `skipped_dirs` by `GET /api/features`). `GET /api/features` marks
-every feature, folder or not, as `origin: "shipped" | "personal"`, and the 기능 목록 filters by it (출처).
+every feature, folder or not, as `origin: "shipped" | "personal"`. The web UI shows that distinction (배포용/개인용 tags,
+the 출처 filter in the 기능 목록) only with `ui.origin_view` (see below).
 
 Each feature also carries a `summary`: its text as two short lines in the identity's main language (the cards show it, with the original in the tooltip). Summaries are cached in `<DATA_DIR>/cache/card-summaries.json` (keyed by language and text, entries no longer used are dropped on rewrite) and filled in the background by `hub/summaries.ts`, one small tiny-model call per batch of ~40 new or changed texts; texts already short and in the language cost no call, and on a failed call the original is shown and the fill retries with backoff.
 
@@ -215,6 +216,23 @@ All behind the same auth as the rest of `/api`.
   providers with credentials but no usage report are listed under `unavailable` with a plain reason.
 - `POST /api/command {text}`, `POST /api/gateway/restart`, `POST /api/orchestrator/restart|abort`, `POST /api/lanes/<name>/restart|resume|abort`; `POST /api/lanes {..., worker_model?, est?}` launches a lane. `est` is the job's expected use of the 5h window in percent (default 15; also read from an `Estimate: N%` line in the brief): the launch is refused when less than 10% of the 5h window would remain; the 7d window is shown in the message but never refuses. Fable and max/xhigh-effort models (`model`, `worker_model`) need `owner_asked_for_fable: true`.
 - **구성 view** (`#harness`, nav item after 레인): the harness as a map of the main line (inputs -> gateway -> orchestrator -> lanes -> workers): one big card per stage with one short label on each arrow, the inputs listed as rows on one card, and the support systems and prompt files of a stage as small status chips on its card ("함께 도는 것"; warn/err chips are tinted and counted on the card). Hovering or focusing a chip or card lights up and draws its connections; a click opens its description, live facts and editors. "자세히" (remembered in `localStorage`) switches to the full graph with every node and edge; on a phone the same stages are a vertical list. Built live from the running process and `~/.dotz`. The view writes nothing: every change (a setting, a RULES/LESSONS/IDENTITY edit, a 기능 목록 switch) is sent to the main orchestrator through `POST /api/message` as a "[구성 탭 수정 요청]" text (a setting: label, config path, current -> new, when it applies; a file: path, a compact line diff of the draft or only the changed line ranges when it is over 6000 characters, plus an optional note; a switch: `<name> 끄기/켜기 (<source>)`), and the orchestrator applies it. `GET /api/harness` -> `{nodes: [{id, kind, group, label, summary, desc, status?, facts, settings: [{key, label, value, type: "text"|"number"|"bool"|"select"|"model"|"effort", options?, editable, applies: "live"|"restart"|"next-turn", source, default?, pending?}], file?}], edges: [{from, to, label}]}` (`pending`: the stored value differs from what this process started with, so it applies after a gateway restart). `GET /api/harness/file/<name>` reads `RULES.md`, `LESSONS.md`, `identity/IDENTITY.md` and `MODE.md` (`{name, label, path, text, exists, editable, bytes, modified, applies, note, cap}`). Discord ids, tokens, ports and `web.allow_logins` are shown as "설정됨"/counts and are never editable from the tab. The map only reads the omp-side `orchestrator-guard` extension's presence; it does not edit it.
+
+**`ui.origin_view`** (`config.json`, default `false`, read at start): a developer-facing switch for the 구성 view. Off,
+the view and its requests are exactly as described above and the shipped product shows no shipped/personal distinction.
+On, `GET /api/harness` adds `origin_view: true`, `data_dir`, and per node `origin: "shipped" | "personal"` (RULES,
+LESSONS, IDENTITY and the omp worker-guard extension are personal; MODE and the gateway's own systems are shipped),
+`custom: [{key, label, value, default, unit?}]` (editable settings whose value differs from their default; only settings
+that have a default) and, for a personal prompt file, `fileMeta: {bytes, modified}`. The web UI then marks every card,
+chip and row that holds something of this user's with a small "내 설정" badge (stage cards add counts such as "바꾼 값 2 ·
+내 기능 1"; personal features per stage come from `GET /api/features` `stage` + `origin`), shows a one-line legend in the
+bar, adds a segmented 전체 | 커스텀만 (remembered in `localStorage`) next to 기능 보기 / 자세히 (커스텀만 lists, per stage, the
+personal files and extensions, the changed settings as "label: value (기본 default)" and the personal features; on a phone
+it is a list), shows the node's side and the default beside changed values in the sheet, shows the 배포용/개인용 tags and
+출처 filter in the 기능 목록, and gives shipped feature folders a switch. Every request then carries a scope line right
+after "[구성 탭 수정 요청]": `범위: 개인 (<~/.dotz path or config.json:key>)` or `범위: 배포 (<repo path>)`, and the same
+tag sits next to each request button. config.json settings and RULES/LESSONS/IDENTITY are 개인; turning a shipped
+feature folder off or on defaults to a personal override (`~/.dotz/features/<id>/` with the same id) and offers
+"배포 파일 변경 요청" (`features/<id>/feature.md` in the repo, `범위: 배포`) as an explicit second choice.
 
 The gateway keeps no credentials of its own: API keys added through it go into omp's credential store
 (`omp auth import`), sign-out removes the login or key there (`omp auth-broker logout <provider>`), and keys are shown

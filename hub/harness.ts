@@ -7,7 +7,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { runningSubagents } from "./activity.ts";
-import { cfg, CONFIG_FILE, DATA_DIR, IDENTITY_FILE, NAME, orchestratorModel, lanesModel, parseSelector, paths, THINKING_LEVELS, workerModel } from "./config.ts";
+import { cfg, CONFIG_FILE, DATA_DIR, IDENTITY_FILE, NAME, orchestratorModel, lanesModel, parseSelector, paths, THINKING_LEVELS, uiOriginView, workerModel } from "./config.ts";
 import { kTokens, percentOf } from "./context.ts";
 import * as discord from "./discord.ts";
 import { modeFile, lang } from "./i18n.ts";
@@ -51,6 +51,10 @@ export type HarnessNode = {
 	settings: Setting[];
 	file?: string;
 	fileEditable?: boolean;
+	// only with `ui.origin_view`: which side the node belongs to, the settings whose value differs from their default, and a personal file's size/mtime
+	origin?: "shipped" | "personal";
+	custom?: { key: string; label: string; value: string | number | boolean; default: string | number | boolean; unit?: string }[];
+	fileMeta?: { bytes: number; modified?: string };
 };
 export type HarnessEdge = { from: string; to: string; label: string };
 
@@ -217,6 +221,22 @@ const fileFact = (name: string): { label: string; value: string }[] => {
 };
 const timeOr = (v: unknown, dflt: string) => (String(v ?? dflt) === "off" ? "꺼짐" : `매일 ${v ?? dflt}`);
 
+// `ui.origin_view`: prompt files the owner wrote and the omp extension installed under ~/.omp are personal; MODE and the gateway's own systems ship with dotz.
+const PERSONAL_NODES: Record<string, true> = { rules: true, lessons: true, identity: true, guard: true };
+function markOrigin(nodes: HarnessNode[]): void {
+	for (const n of nodes) {
+		n.origin = PERSONAL_NODES[n.id] ? "personal" : "shipped";
+		n.custom = n.settings.filter(s => s.editable && s.default !== undefined && !same(s.value, s.default)).map(s => ({ key: s.key, label: s.label, value: s.value, default: s.default!, ...(s.unit ? { unit: s.unit } : {}) }));
+		if (n.origin === "personal" && n.file) {
+			const f = fileDef(n.file).path();
+			if (existsSync(f)) {
+				const st = statSync(f);
+				n.fileMeta = { bytes: readFileSync(f, "utf8").length, modified: st.mtime.toISOString() };
+			}
+		}
+	}
+}
+
 export async function harnessGraph(opts: { terminals?: number; light?: boolean } = {}) {
 	const disk = readDisk();
 	const models = opts.light ? ([] as ModelInfo[]) : await Promise.race([availableModels().catch((): ModelInfo[] => []), sleep(2500, [] as ModelInfo[])]);
@@ -381,5 +401,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{ from: "memguard", to: "orchestrator", label: "메모리 감시" },
 		{ from: "guard", to: "workers", label: "규칙 강제" },
 	];
-	return { generated: new Date().toISOString(), name: NAME, nodes, edges };
+	const originView = uiOriginView();
+	if (originView) markOrigin(nodes);
+	return { generated: new Date().toISOString(), name: NAME, nodes, edges, ...(originView ? { origin_view: true, data_dir: DATA_DIR.startsWith(`${homedir()}/`) ? `~${DATA_DIR.slice(homedir().length)}` : DATA_DIR } : {}) };
 }
