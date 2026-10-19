@@ -1,6 +1,8 @@
 // dotz_watch robustness from 오모냥's launchd watchers: process-group SIGKILL deadline, per-kind retry, owner-approval gate.
 import { afterEach, beforeAll, expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
@@ -15,13 +17,23 @@ afterEach(() => {
 const state = (name: string) => allWatches().find(w => w.name === name)!.state;
 const approval = (name: string) => join(DATA_DIR, "approvals", name);
 
+// No wall-clock waits: the shell reports the grandchild's pid through a FIFO once it runs, and only then is the deadline
+// reached. The read can only finish once every holder of the output pipe is gone (the read grace is a fake-clock timer
+// nobody advances), so the run settling proves the grandchild exited; ps then sees that pid gone or a zombie, never
+// running. A name match (pgrep) also saw unreaped zombies and other runs' sleeps.
 test("the deadline SIGKILLs the whole process group, so a background grandchild cannot hold the read", async () => {
-	const run = exec(["/bin/zsh", "-c", "sleep 47 & sleep 47"], undefined, 1000);
+	const fifo = join(mkdtempSync(join(tmpdir(), "dotz-pgkill-")), "pid");
+	expect((await Bun.spawn(["mkfifo", fifo]).exited)).toBe(0);
+	const run = exec(["/bin/zsh", "-c", `sleep 600 & echo $! > ${fifo}; wait`], undefined, 1000);
+	const pid = Number((await readFile(fifo, "utf8")).trim());
+	expect(pid).toBeGreaterThan(0);
 	await advance(1000);
 	const r = await run;
 	expect(r.timedOut).toBe(true);
 	expect(r.output).toContain("killed after 1 s");
-	expect((await Bun.spawn(["pgrep", "-f", "sleep 47"]).exited)).toBe(1);
+	const ps = Bun.spawn(["ps", "-o", "stat=", "-p", String(pid)], { stdout: "pipe" });
+	const stat = (await new Response(ps.stdout).text()).trim();
+	expect(stat === "" || stat.startsWith("Z")).toBe(true);
 });
 
 test("each failure kind waits its own retry minutes, the last one repeats, and an empty list stops the watch", async () => {
