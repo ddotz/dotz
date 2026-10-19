@@ -15,6 +15,7 @@ import { lanes, WORKER_SLOTS } from "./lanes.ts";
 import { orch } from "./orchestrator.ts";
 import { availableModels, ControlError, type ModelInfo, quota } from "./providers.ts";
 import { listSchedules } from "./schedule.ts";
+import { harnessProjects, denyLines } from "./harnessprojects.ts";
 import { listSetups } from "./workchannels.ts";
 import { allWatches } from "./watch.ts";
 
@@ -194,7 +195,6 @@ function fileDef(name: string): FileDef {
 	if (!d) throw new ControlError(msg().harness.notOpenable(name), 404);
 	return d;
 }
-const denyLines = (text: string) => [...((text.split(/^## Blocked commands\s*$/m)[1]?.split(/^## /m)[0] ?? "").matchAll(/^- deny:\s*(.+)\s+\|\s+(.+?)\s*$/gm))];
 
 export function readHarnessFile(name: string) {
 	const d = fileDef(name);
@@ -406,5 +406,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 	];
 	const originView = uiOriginView();
 	if (originView) markOrigin(nodes);
-	return { generated: new Date().toISOString(), name: NAME, nodes, edges, ...(originView ? { origin_view: true, data_dir: DATA_DIR.startsWith(`${homedir()}/`) ? `~${DATA_DIR.slice(homedir().length)}` : DATA_DIR } : {}) };
+	const gateway = nodes.find(n => n.id === "gateway")!, orchestrator = nodes.find(n => n.id === "orchestrator")!;
+	const projects = harnessProjects({ disk, mName, gateway, orchestrator });
+	return { generated: new Date().toISOString(), name: NAME, nodes, edges, projects, ...(originView ? { origin_view: true, data_dir: DATA_DIR.startsWith(`${homedir()}/`) ? `~${DATA_DIR.slice(homedir().length)}` : DATA_DIR } : {}) };
 }

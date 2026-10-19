@@ -246,6 +246,27 @@ tag sits next to each request button. config.json settings and RULES/LESSONS/IDE
 feature folder off or on defaults to a personal override (`~/.dotz/features/<id>/` with the same id) and offers
 "배포 파일 변경 요청" (`features/<id>/feature.md` in the repo, `범위: 배포`) as an explicit second choice.
 
+**프로젝트 band** (always on, not behind `ui.origin_view`): below the main map the 구성 view lists every lane that is tied to a
+work channel or a home channel as one card per project, side by side (a horizontal scroll row; on a phone the cards stack
+vertically). `GET /api/harness` carries them as `projects: [...]`, one per such lane (`channels.json` `lanes`/`homes`; a lane
+with neither is not a project). Each entry has `id` (the lane name), `name`, `status`, `channels: [{id, name, kind:
+work|home|thread}]`, `cwd` (+ `repo`/`branch` for a worktree lane), `fields` = `{model, effort, worker_model, worker_effort,
+runtime, fallback, worker_fallback}` where every field is `{value, source: "global"|"project", global?}` (`global` only
+when the project differs; fallback values are `[{model, when?, cap?, revert?}]` read from `lanes.fallback` /
+`lanes.worker_fallback`; `runtime` is the global `lanes.runtime`/`runtime`/omp unless the lane state carries `runtime`),
+`overrides` (how many fields differ), `files` (instruction files found in the lane folder: `AGENTS.md`, `CLAUDE.md`,
+`GEMINI.md`, `.cursorrules`, `CONVENTIONS.md`, `.github/copilot-instructions.md` and the entries of `.omp/`: name, size,
+mtime, first heading only, never content), `setup` (the channel's purpose, login names and health, monitors, standing
+behaviour; no `basis`, no secrets), `features` (skills under the folder's `.omp/skills`, `.claude/skills`,
+`.agents/skills` and watches tied to the project's channels or folder), `deny` (the `- deny:` lines of the instruction
+files' `## Blocked commands` section) and `map` (the project's own nodes and edges). A differing value is drawn like the 내 설정
+marker (`--mine` badge "바뀜", global value struck through, → project value); an equal one is muted with "전역 기본".
+Clicking a card opens the project's own map (its channels -> gateway -> orchestrator -> that lane -> its workers, the
+instruction files and project-only features as chips on the lane card), with a back button; the URL hash
+`#harness/project/<id>` restores it on reload. Lane model, effort, worker model/effort and runtime are editable through
+requests as on the main map. In the project view every request carries `범위: 프로젝트 (<channel name> · <cwd>)` and the
+tag sits next to each request button, whether or not `ui.origin_view` is on.
+
 The gateway keeps no credentials of its own: API keys added through it go into omp's credential store
 (`omp auth import`), sign-out removes the login or key there (`omp auth-broker logout <provider>`), and keys are shown
 only masked (`sk-…a1b2`), never written to `config.json`, events or logs. Every orchestrator and lane process reads

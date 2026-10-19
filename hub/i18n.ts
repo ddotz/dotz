@@ -293,6 +293,42 @@ Do this, briefly:
 			lessons: "Lessons", lessonsWrite: "Write lessons", snapshot: "Snapshot", review: "Review request", outlang: "Reply language check", update: "New version notice", audit: "Waste alert",
 			providers: "Model and limits", budget: "Budget gate", hygiene: "Nightly cleanup", memguard: "Memory watch", guard: "Enforce rules",
 		},
+		// The per-project maps (hub/harnessprojects.ts): one lane tied to a work or home channel.
+		project: {
+			channelKind: { work: "Work channel", home: "Home channel", thread: "Lane thread" } as Record<string, string>,
+			edgeIn: "Message", edgeFiles: "Read as instructions", edgeFeatures: "Applies here",
+			globalNote: "This is a global setting. Change it on the main map; it is not set per project.",
+			fallbackStep: (model: string, when?: string, cap?: string, revert?: string) => `${model}${when ? ` when ${when}` : ""}${cap ? ` · cap ${cap}` : ""}${revert ? ` · revert ${revert}` : ""}`,
+			channel: {
+				summary: (kind: string, purpose: string) => (purpose ? `${kind} · ${purpose}` : kind),
+				desc: "A channel this project's lane answers in. Messages written here reach the lane's project with this channel's context.",
+				kind: "Kind", purpose: "Purpose", logins: "Kept logins", monitors: "Monitors", standing: "Standing behaviour", updated: "Setup updated", noSetup: "No setup for this channel yet",
+			},
+			lane: {
+				label: (name: string) => `Lane ${name}`,
+				desc: "The lane that works on this project. Its model, effort and runtime can differ from the global lane defaults; the settings below show which ones do.",
+				state: "State", cwd: "Folder", repo: "Repository", thread: "Thread", runtime: "Runtime", fallback: "Fallback chain", none: "None",
+			},
+			workers: {
+				label: (name: string) => `Workers (${name})`,
+				desc: "The task workers this lane starts. Their model and effort can differ from the global worker defaults.",
+				fallback: "Fallback chain", model: "Model", effort: "Effort",
+			},
+			files: { desc: "A project instruction file found in the lane's folder. Only its name, size, modified time and first heading are shown.", size: "Size", modified: "Last modified", heading: "First heading", bytes: (n: string) => `${n} bytes`, folder: "Folder" },
+			features: {
+				label: "Project features", summary: (n: number) => `${n} item${n === 1 ? "" : "s"}`, none: "Nothing project-only found",
+				desc: "Skills kept in the project folder and watches tied to this project's channels. They apply only here.",
+				skill: "Skill", watch: "Watch", watchValue: (every: number, on: string) => `every ${every} min · on ${on}`,
+			},
+			deny: { label: "Project blocked commands", summary: (n: number) => `${n} line${n === 1 ? "" : "s"}`, desc: "'- deny:' lines under '## Blocked commands' in the project's instruction files. They are written for this project only." },
+			settings: {
+				model: { label: "Lane model", hint: "Applies at once; a running lane restarts on the new model" },
+				effort: { label: "Lane effort" },
+				workerModel: { label: "Worker model", hint: "Applies to workers this lane starts next" },
+				workerEffort: { label: "Worker effort" },
+				runtime: { label: "Runtime", hint: "Applies the next time the lane starts" },
+			},
+		},
 	},
 };
 type Catalog = typeof en;
@@ -544,6 +580,42 @@ const ko: Catalog = {
 			batch: "묶어서 전달", delegate: "작업 위임", parallel: "병렬 실행", mode: "행동 규칙", identity: "이름·말투", rules: "내 규칙", rulesLanes: "레인도 읽음",
 			lessons: "교훈", lessonsWrite: "교훈 기록", snapshot: "스냅샷", review: "회고 요청", outlang: "답장 언어 점검", update: "새 버전 알림", audit: "낭비 알림",
 			providers: "모델·한도", budget: "예산 게이트", hygiene: "야간 정리", memguard: "메모리 감시", guard: "규칙 강제",
+		},
+		// 프로젝트별 지도 (hub/harnessprojects.ts): 작업 채널이나 홈 채널에 묶인 레인 하나예요.
+		project: {
+			channelKind: { work: "작업 채널", home: "홈 채널", thread: "레인 스레드" },
+			edgeIn: "메시지", edgeFiles: "지침으로 읽음", edgeFeatures: "여기서만 적용",
+			globalNote: "전역 설정이에요. 프로젝트마다 따로 두지 않으니 메인 지도에서 바꿔요.",
+			fallbackStep: (model, when, cap, revert) => `${model}${when ? ` · 조건 ${when}` : ""}${cap ? ` · 상한 ${cap}` : ""}${revert ? ` · 복귀 ${revert}` : ""}`,
+			channel: {
+				summary: (kind, purpose) => (purpose ? `${kind} · ${purpose}` : kind),
+				desc: "이 프로젝트의 레인이 답하는 채널이에요. 여기에 쓴 글은 이 채널의 맥락과 함께 레인의 프로젝트로 가요.",
+				kind: "종류", purpose: "목적", logins: "유지 중인 로그인", monitors: "감시", standing: "상시 처리", updated: "설정 갱신", noSetup: "이 채널에는 아직 설정이 없어요",
+			},
+			lane: {
+				label: name => `레인 ${name}`,
+				desc: "이 프로젝트를 맡은 레인이에요. 모델·강도·런타임이 전역 레인 기본과 다를 수 있고, 아래 설정에서 어느 것이 다른지 보여요.",
+				state: "상태", cwd: "폴더", repo: "저장소", thread: "스레드", runtime: "런타임", fallback: "폴백 체인", none: "없음",
+			},
+			workers: {
+				label: name => `작업자 (${name})`,
+				desc: "이 레인이 띄우는 작업자예요. 모델·강도가 전역 작업자 기본과 다를 수 있어요.",
+				fallback: "폴백 체인", model: "모델", effort: "강도",
+			},
+			files: { desc: "레인 폴더에서 찾은 프로젝트 지침 파일이에요. 이름·크기·수정 시각·첫 제목만 보여줘요.", size: "크기", modified: "마지막 수정", heading: "첫 제목", bytes: n => `${n}바이트`, folder: "폴더" },
+			features: {
+				label: "프로젝트 기능", summary: n => `${n}개`, none: "이 프로젝트에만 있는 건 아직 없어요",
+				desc: "프로젝트 폴더에 둔 스킬과 이 프로젝트 채널에 묶인 감시예요. 여기서만 적용돼요.",
+				skill: "스킬", watch: "감시", watchValue: (every, on) => `${every}분마다 · ${on} 때`,
+			},
+			deny: { label: "프로젝트 차단 명령", summary: n => `${n}줄`, desc: "프로젝트 지침 파일의 '## Blocked commands' 아래 '- deny:' 줄이에요. 이 프로젝트에만 적힌 규칙이에요." },
+			settings: {
+				model: { label: "레인 모델", hint: "바로 적용돼요. 돌고 있는 레인은 새 모델로 다시 시작해요" },
+				effort: { label: "레인 강도" },
+				workerModel: { label: "작업자 모델", hint: "이 레인이 다음에 띄우는 작업자부터 적용돼요" },
+				workerEffort: { label: "작업자 강도" },
+				runtime: { label: "런타임", hint: "레인을 다시 시작할 때 적용돼요" },
+			},
 		},
 	},
 };
