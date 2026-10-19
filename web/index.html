@@ -3256,7 +3256,7 @@ function renderSettings() {
 
 /* ---------- settings: 실행 하네스 (runtime menu + compatibility check; data from /api/runtimes) ---------- */
 let RT = null, rtLive = null;
-const RT_ICON = { omp: "term", claude: "spark", codex: "code", opencode: "braces" };
+const RT_ICON = { omp: "term", claude: "spark", codex: "code", omo: "braces" };
 const RT_ROLE = { orchestrator: "오케스트레이터", lanes: "레인" };
 const RT_RESULT = { ok: ["통과", "ok"], adapted: ["대체", "pri"], disabled: ["끔", ""], unsupported: ["미지원", "warn"], fail: ["실패", "err"] };
 async function loadRuntimes(refresh) {
