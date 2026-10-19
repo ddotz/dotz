@@ -23,8 +23,8 @@ afterEach(() => {
 	for (const k of ["lanes", "homes", "work", "threads"] as const) discord.channels[k] = {};
 });
 
-test("fallbackChain takes selector strings and condition objects and drops junk", () => {
-	expect(fallbackChain(["a/b", { model: "c/d", when: "rate-limit", cap: "20%", revert: true }, { nope: 1 }, 5, ""])).toEqual([{ model: "a/b" }, { model: "c/d", when: "rate-limit", cap: "20%", revert: true }]);
+test("fallbackChain reads the config schema: selector strings and condition objects, junk and bad conditions dropped", () => {
+	expect(fallbackChain(["a/b", { model: "c/d", when: "quota", cap: { period: "month", usd: 50 }, revert: true }, { model: "e/f", when: "rate-limit", cap: "20%" }, { nope: 1 }, 5, ""])).toEqual([{ model: "a/b" }, { model: "c/d", when: "quota", cap: { period: "month", usd: 50 }, revert: true }, { model: "e/f" }]);
 	expect(fallbackChain(undefined)).toEqual([]);
 });
 
