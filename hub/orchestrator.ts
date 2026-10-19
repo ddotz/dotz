@@ -12,7 +12,7 @@ import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { Chain, failureReason, hubOwned, type Move } from "./fallback.ts";
+import { atTime, Chain, failsOver, failureReason, hubDrivable, hubOwned, type Move } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 
@@ -120,7 +120,7 @@ function handover(runtime: RuntimeAdapter, previous: string): string {
 // A failed request: a usage limit or a billing/auth problem pauses the orchestrator, a temporary provider error is retried with backoff.
 // With a hub-driven chain the next entry takes over first (a temporary error is retried a few times before that).
 function handleError(e: AgentError): void {
-	if (chain && !(e.kind === "transient" && transientTries < TRANSIENT_RETRIES)) void failOver(e).then(moved => !moved && legacyError(e));
+	if (chain && failsOver(e.kind) && !(e.kind === "transient" && transientTries < TRANSIENT_RETRIES)) void failOver(e).then(moved => !moved && legacyError(e));
 	else legacyError(e);
 }
 function legacyError(e: AgentError): void {
@@ -135,18 +135,18 @@ async function failOver(e: AgentError): Promise<boolean> {
 	if (chain !== active) return false;
 	const move = active.fail(reason, until);
 	if (!move) return false;
-	switchTo(move, true);
-	return true;
+	return switchTo(move, true);
 }
 // Restarts on the same session with another entry of the chain (start() picks it from the persisted limit and spend state);
-// `again` tells the session to redo the request that just failed.
-function switchTo(move: Move, again: boolean): void {
-	if (!chain) return;
+// `again` tells the session to redo the request that just failed. One switch at a time: a revert racing a failover is dropped.
+function switchTo(move: Move, again: boolean): boolean {
+	if (!chain || restarting) return false;
 	const line = msg().fallbackMove(chain.label(move.from), chain.label(move.to), move.why);
 	log(`orchestrator ${line}`);
 	onNotice(line);
 	continueAfterSwitch = again;
 	restart();
+	return true;
 }
 // At an idle moment: act on a spend cap reached during the turn, or go back to an earlier entry whose limit has reset.
 function settleChain(): boolean {
@@ -155,7 +155,7 @@ function settleChain(): boolean {
 		const reached = capped;
 		capped = undefined;
 		if (reached.move) switchTo(reached.move, false);
-		else pauseExhausted(chain, chain.down(chain.active)?.until ?? Date.now() + 3_600_000);
+		else pauseExhausted(chain, chain.exhaustedUntil() ?? chain.down(chain.active)?.until ?? Date.now() + 3_600_000);
 		return true;
 	}
 	const back = chain.revertTarget();
@@ -175,12 +175,12 @@ function pauseExhausted(c: Chain, until: number): void {
 	onAlert(`${NAME}: ${line}`);
 	pauseAlerted = true;
 	clearTimeout(resumeTimer);
-	resumeTimer = setTimeout(() => {
+	atTime(until, t => (resumeTimer = t), () => {
 		resumeTimer = undefined;
 		pauseAlerted = false;
 		orch.status = "idle";
 		restart();
-	}, Math.max(1000, until - Date.now()));
+	});
 }
 
 async function readEvents(p: AgentProcess): Promise<void> {
@@ -358,7 +358,8 @@ export function start(): void {
 	const runtime = runtimeFor("orchestrator");
 	adapter = runtime;
 	const entries = chainAfter(model, fallbackChain("orchestrator"));
-	chain = hubOwned(entries) ? new Chain(model, entries, orchestratorModel().thinking) : undefined;
+	// Conditional entries are switched by the hub on omp only; another runtime gets the models as its own plain fallback list.
+	chain = hubOwned(entries) && hubDrivable(runtime.id) ? new Chain(model, entries, orchestratorModel().thinking) : undefined;
 	capped = undefined;
 	let spawnModel = model;
 	const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1" };
@@ -445,6 +446,9 @@ export function steer(text: string): void {
 
 export function stop(): void {
 	stopping = true;
+	// A pause timer (usage limit, spent chain) must not start a stopped orchestrator again.
+	clearTimeout(resumeTimer);
+	resumeTimer = undefined;
 	proc?.kill();
 }
 
