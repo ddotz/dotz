@@ -348,7 +348,9 @@ export function resumeDelay(err: string, limits: QuotaLimit[], at: number): { ms
 	const resets = limits
 		.filter(l => (l.remaining !== null && l.remaining <= 0) || (l.used !== null && l.limit !== null && l.used >= l.limit) || /exhaust|exceed|blocked/i.test(l.status))
 		.flatMap(l => (l.resets_at !== null && l.resets_at > at ? [l.resets_at] : []));
-	const hint = Number(err.match(/retry-after-ms:\s*(\d+)/)?.[1] ?? Number.NaN);
+	// OmO's account pool names the time instead: "Soonest automatic retry: 2026-10-19T16:40:00.000Z."
+	const soonest = Date.parse(err.match(/automatic retry:\s*(\d{4}-\d\d-\d\dT[\d:.]+Z)/i)?.[1] ?? "");
+	const hint = Number.isFinite(soonest) ? Math.max(0, soonest - at) : Number(err.match(/retry-after-ms:\s*(\d+)/)?.[1] ?? Number.NaN);
 	const base = resets.length ? Math.max(...resets) - at : Number.isFinite(hint) ? hint : 10 * 60_000;
 	return { ms: Math.min(base, RESUME_MAX_MS) + RESUME_MARGIN_MS, reset: resets.length > 0 };
 }
@@ -368,8 +370,12 @@ export async function rateLimitDelay(err: string, model: string): Promise<{ ms: 
 export type ProviderErrorKind = "rate" | "owner" | "transient";
 const OWNER_ERR_RE = /credit balance|provider is (?:not configured|disabled)|insufficient[_ ]?(?:quota|funds|credits?)|out of credits|requires more credits|billing|payment required|\b402\b|exceeded your current quota|\b401\b|\b403\b|unauthorized|forbidden|authentication[_ ]error|invalid[_ ]?api[_ ]?key|invalid x-api-key|no api key|oauth token|oauth refresh failed|token (?:has )?(?:expired|been revoked)|not logged in|\/login|not a valid model id|model is not supported when using/i;
 const RATE_ERR_RE = /429|rate_limit|usage limit|session limit/i;
+// OmO's account pool when every subscription account is out (the 5h/weekly limit as OmO reports it). Checked before the
+// owner patterns: the message also names "/login" as a way to add another account.
+const POOL_BLOCKED_RE = /accounts? for [\w-]+ (?:are|is) currently blocked \(rate limit|no credential slots available/i;
 const TRANSIENT_ERR_RE = /overloaded|\b5(?:00|02|03|04|29)\b|server error|internal error|bad gateway|service unavailable|gateway time-?out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|network|socket hang up|other side closed|connection (?:error|reset|closed|lost|ended)|websocket (?:error|closed)|error injected into sse stream|timed? ?out|terminated/i;
 export function classifyProviderError(err: string): ProviderErrorKind | undefined {
+	if (POOL_BLOCKED_RE.test(err)) return "rate";
 	if (OWNER_ERR_RE.test(err)) return "owner";
 	if (RATE_ERR_RE.test(err)) return "rate";
 	if (TRANSIENT_ERR_RE.test(err)) return "transient";
