@@ -2,9 +2,13 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
+import { msg } from "./i18n.ts";
+import { threadForReply, threadTitle } from "./threads.ts";
 import { metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
 const LIMIT = 1900;
+// An answer longer than this goes out as a few messages cut at paragraph breaks: a wall of text reads badly on a phone.
+export const SOFT_LIMIT = 1200;
 const INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
 const tokenPath = expand(String(cfg.discord?.token_file ?? ""));
 const TOKEN = tokenPath && existsSync(tokenPath) ? readFileSync(tokenPath, "utf8").trim() : "";
@@ -34,22 +38,20 @@ export const status = { enabled: Boolean(TOKEN && GUILD && OWNER), connected: fa
 
 // Discord lowercases text channel names and turns spaces into dashes; compare in that form.
 const textName = (s: string) => s.toLowerCase().replace(/\s+/g, "-");
-// Layout follows 오모냥 without emoji: category "<name>" holds the three main channels 대화, 알림 and 작업로그; category
-// "<name> 작업" holds one channel per project, topic or lane, named plainly, with no bot-name prefix.
-const fixed = { chat: "대화", alert: "알림", worklog: "작업로그" } as const;
-const workCategoryName = () => `${NAME} 작업`;
+// Layout without emoji: category "<name>" holds the three main channels (chat, alerts, worklog in the identity's language);
+// the work category holds one channel per project, topic or lane, named plainly, with no bot-name prefix.
+const fixedNames = () => { const n = msg().channelNames; return { chat: n.chat, alert: n.alert, worklog: n.worklog } as const; };
+const workCategoryName = () => msg().channelNames.workCategory(NAME);
 export const noEmoji = (s: string) => s.replace(/ ?[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]+/gu, "");
 const scrub = (s: string) => noEmoji(s).replace(/[┃|]/g, " ").replace(/\s+/g, " ").trim();
-const cleanName = (s: string) => scrub(s).slice(0, 90) || "작업";
-// Thread names read "[분류] 짧은 제목": kind is the short category, both parts emoji- and pipe-cleaned, 100 chars at most.
-export const threadName = (title: string, kind?: string): string => {
-	const k = scrub(kind ?? "").replace(/[\[\]]/g, "").trim().slice(0, 30);
-	return k ? `[${k}] ${scrub(title) || "작업"}`.slice(0, 100) : cleanName(title);
-};
+const cleanName = (s: string) => scrub(s).slice(0, 90) || "work";
+// Thread names are plain words of what the work is (threads.ts threadTitle); the old "[kind]" prefix is gone.
+export const threadName = (title: string, fallback?: string): string => threadTitle(title, fallback);
 // A thread starts from a real message in its parent channel (as 오모냥 does), so it shows under that message with its
 // content instead of appearing empty with a "you were added" notice. Falls back to a bare thread if the post fails.
-async function threadFromMessage(parentId: string, starter: string, name: string): Promise<{ id: string; name: string }> {
-	const mid = await post(parentId, buildPayloads(starter)[0]!).catch(e => {
+// With `fromMessage` (the owner's own message in that channel) the thread hangs from it and nothing new is posted.
+async function threadFromMessage(parentId: string, starter: string, name: string, fromMessage?: string): Promise<{ id: string; name: string }> {
+	const mid = fromMessage ?? await post(parentId, buildPayloads(starter)[0]!).catch(e => {
 		log(`discord: thread starter post failed in ${parentId}: ${e}`);
 		return undefined;
 	});
@@ -121,6 +123,7 @@ export async function ensureChannels(): Promise<void> {
 	else await place(channels.category, NAME, undefined, false);
 	if (!channels.workCategory || !existing.has(channels.workCategory)) channels.workCategory = (await rest("POST", `/guilds/${GUILD}/channels`, { name: workCategoryName(), type: 4 })).id;
 	else await place(channels.workCategory, workCategoryName(), undefined, false);
+	const fixed = fixedNames();
 	for (const [key, name] of Object.entries(fixed) as [keyof typeof fixed, string][]) {
 		if (!channels[key] || !existing.has(channels[key]!)) channels[key] = (await rest("POST", `/guilds/${GUILD}/channels`, { name, type: 0, parent_id: channels.category })).id;
 		else await place(channels[key]!, name, channels.category);
@@ -170,19 +173,22 @@ async function keepPrivate(all: any[]): Promise<void> {
 const threadParent = (parentId: string) => (parentId === channels.chat ? "chat" : channels.work[parentId] ? `ch:${parentId}` : undefined);
 
 // `starter` is the message posted in the parent channel that the thread hangs from (defaults to the thread name).
-export async function createThread(parent: string, name: string, kind?: string, starter?: string): Promise<{ id: string; name: string }> {
+export async function createThread(parent: string, name: string, starter?: string): Promise<{ id: string; name: string }> {
 	const parentId = resolve(parent);
 	if (!status.enabled || !parentId || !threadParent(parentId)) throw new Error(`threads can be made in chat or a work channel (ch:<id>), not ${parent}`);
-	const full = threadName(name, kind);
+	const full = threadName(name, starter);
 	const t = await threadFromMessage(parentId, starter?.trim() || full, full);
 	channels.threads[t.id] = { parent: parentId, name: t.name };
 	save();
 	return t;
 }
 
+// Thread id -> parent channel id, for sub-topic threads and lane threads (a thread made from a message has its id).
+const starterThreads = (): Record<string, string> => ({ ...Object.fromEntries(Object.entries(channels.threads).map(([id, x]) => [id, x.parent])), ...Object.fromEntries(Object.entries(channels.homes).map(([lane, parent]) => [channels.lanes[lane], parent])) });
+
 export const threadInfo = (id: string) => {
 	const t = channels.threads[id];
-	return t ? { ...t, parentTarget: threadParent(t.parent) ?? "chat", parentName: t.parent === channels.chat ? "대화" : (channels.work[t.parent] ?? "?") } : undefined;
+	return t ? { ...t, parentTarget: threadParent(t.parent) ?? "chat", parentName: t.parent === channels.chat ? msg().channelNames.chat : (channels.work[t.parent] ?? "?") } : undefined;
 };
 
 // Work channels: the owner hands out work by channel, so any other text channel under this bot's categories is a work
@@ -242,19 +248,26 @@ export async function syncProfile(): Promise<void> {
 	log(`discord avatar set from ${avatar}`);
 }
 
-// `title` is the owner-facing channel name (their language, plain words); the lane name stays the internal key.
-// With `home` (ch:<id> of an existing work channel) no channel is made: the lane gets a thread in that channel instead.
-export async function laneChannel(lane: string, title?: string, home?: string, kind?: string, starter?: string): Promise<string | undefined> {
+// `title` is the owner-facing channel name (their language, plain words); the lane name stays the internal key. `place`
+// (threads.ts lanePlace) says where it works: a new channel, a thread in a work channel (hanging from the owner's own
+// message when it came from there), or an existing sub-topic thread the lane takes over.
+export type LaneSpot = { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
+export async function laneChannel(lane: string, title: string | undefined, place: LaneSpot, starter?: string, goal?: string): Promise<string | undefined> {
 	if (!status.enabled || !channels.category) return undefined;
 	if (!channels.lanes[lane]) {
-		if (home) {
-			const parentId = homeChannel(home);
-			const full = threadName(title?.trim() || lane, kind);
-			const t = await threadFromMessage(parentId, starter?.trim() || `[run] ${full} 작업을 시작했어요.`, full);
+		if (place.kind === "adopt") {
+			channels.lanes[lane] = place.thread;
+			channels.homes[lane] = place.parent;
+			delete channels.threads[place.thread];
+			delete channels.archiveAt[place.thread];
+			await setLight(place.thread, place.parent, "working");
+		} else if (place.kind === "thread") {
+			const full = threadName(title?.trim() || lane, goal);
+			const t = await threadFromMessage(place.parent, starter?.trim() || `[run] ${full}`, full, place.fromMessage);
 			channels.lanes[lane] = t.id;
-			channels.homes[lane] = parentId;
-			await setLight(t.id, parentId, "working");
-		} else channels.lanes[lane] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: title?.trim() || lane, type: 0, parent_id: channels.workCategory ?? channels.category })).id;
+			channels.homes[lane] = place.parent;
+			await setLight(t.id, place.parent, "working");
+		} else channels.lanes[lane] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: cleanName(title?.trim() || lane), type: 0, parent_id: channels.workCategory ?? channels.category })).id;
 		save();
 	}
 	return channels.lanes[lane];
@@ -278,7 +291,7 @@ export async function releaseLane(lane: string): Promise<void> {
 	delete channels.homes[lane];
 	save();
 	if (!status.enabled) return;
-	await post(id, buildPayloads(`레인 ${lane} 작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.`)[0]!, true).catch(e => log(`lane ${lane} done marker failed: ${e}`));
+	await post(id, buildPayloads(msg().threadDone)[0]!, true).catch(e => log(`lane ${lane} done marker failed: ${e}`));
 	await markDone(id, parentId).catch(e => log(`lane ${lane} thread done failed: ${e}`));
 }
 
@@ -352,14 +365,44 @@ const reference = (replyTo?: string) => (replyTo ? { message_reference: { messag
 // status emoji is added), choice blocks lose their quote prefixes and meta lines become subtext.
 function plainParts(text: string): { emoji: string; body: string } {
 	const { tone, text: bare } = parseTone(text);
-	return { emoji: tone ? TONE_EMOJI[tone] : "", body: noEmoji(metaToSubtext(plainChoice(tone ? bare.trimStart() : bare))) };
+	return { emoji: tone ? TONE_EMOJI[tone] : "", body: noEmoji(metaToSubtext(plainChoice(readable(tone ? bare.trimStart() : bare)))) };
+}
+
+// Discord-mobile layout the model cannot break, outside ``` fences: a "# heading" becomes a bold line, a "| table |"
+// becomes "a · b" lines (separator rows dropped), and raw ch:<id> / th:<id> targets become channel links.
+export function readable(text: string): string {
+	let fence = false;
+	const out: string[] = [];
+	for (const line of text.split("\n")) {
+		if (/^\s*```/.test(line)) {
+			fence = !fence;
+			out.push(line);
+			continue;
+		}
+		if (fence) {
+			out.push(line);
+			continue;
+		}
+		const h = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
+		if (h && !line.startsWith("-# ")) {
+			out.push(`**${h[1]!.replace(/\*\*/g, "")}**`);
+			continue;
+		}
+		if (/^\s*\|.*\|\s*$/.test(line)) {
+			if (/^\s*\|[\s:|-]+\|\s*$/.test(line)) continue;
+			out.push(line.trim().replace(/^\|\s*|\s*\|$/g, "").split(/\s*\|\s*/).filter(Boolean).join(" · "));
+			continue;
+		}
+		out.push(line.replace(/(?<![\w<#])(?:ch|th):(\d{17,20})\b/g, "<#$1>"));
+	}
+	return out.join("\n");
 }
 
 // What goes on the wire for one send: plain content only, split by chunks(); the status emoji leads the first message.
 // Pure, so it is testable offline.
-export function buildPayloads(text: string, replyTo?: string): Body[] {
+export function buildPayloads(text: string, replyTo?: string, limit = LIMIT): Body[] {
 	const { emoji, body } = plainParts(text);
-	const pieces = body.trim() ? chunks(body) : emoji ? [""] : [];
+	const pieces = body.trim() ? chunks(body, limit) : emoji ? [""] : [];
 	return pieces.map((piece, i) => ({
 		content: i === 0 && emoji ? (piece ? `${emoji} ${piece}` : emoji) : piece,
 		allowed_mentions: mentionsOff,
@@ -434,7 +477,7 @@ export async function send(target: string, text: string, replyTo?: string): Prom
 	if (!id) return { delivered: false, reason: `unknown target ${target}` };
 	const ids: string[] = [];
 	sentAt.set(target, Date.now());
-	for (const body of buildPayloads(text, replyTo)) ids.push(await post(id, body));
+	for (const body of buildPayloads(text, replyTo, SOFT_LIMIT)) ids.push(await post(id, body));
 	return { delivered: true, ids };
 }
 
@@ -512,6 +555,8 @@ export function typing(target: string): void {
 export type Incoming = {
 	id: string;
 	channelId: string;
+	// Where the owner wrote it (the 👀 goes there); differs from channelId when a reply to a thread's starter is routed into the thread.
+	ackChannelId: string;
 	channel: "chat" | "dm" | "worklog" | "alert" | { lane: string } | { work: string; name: string; first: boolean } | { thread: string; name: string };
 	author: string;
 	content: string;
@@ -588,6 +633,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 		onMessage({
 			id: m.id,
 			channelId: m.channel_id,
+			ackChannelId: m.ack_channel_id ?? m.channel_id,
 			channel,
 			author: m.author.global_name ?? m.author.username,
 			content: edited ?? String(m.content ?? ""),
@@ -684,6 +730,8 @@ export function connect(onMessage: (m: Incoming) => void): void {
 	const handle = (m: any, edited?: string) => {
 		if (!intakeOpen) return;
 		if (m.author?.bot || String(m.author?.id) !== OWNER) return;
+		const into = threadForReply(m.message_reference?.message_id, m.channel_id, starterThreads());
+		if (into) m = { ...m, channel_id: into, ack_channel_id: m.channel_id };
 		const lane = Object.entries(channels.lanes).find(([, id]) => id === m.channel_id)?.[0];
 		// chat, worklog and alert are the orchestrator level: owner messages there reach the orchestrator, which routes them.
 		const fixed = lane ? { lane } : m.channel_id === channels.chat ? "chat" : m.channel_id === channels.worklog ? "worklog" : m.channel_id === channels.alert ? "alert" : !m.guild_id ? "dm" : undefined;

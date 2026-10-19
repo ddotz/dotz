@@ -5,7 +5,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
-import { cfg, DATA_DIR, HUB_TOKEN, log, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, HUB_TOKEN, log, TZ, writeAtomic } from "./config.ts";
 import * as discord from "./discord.ts";
 import { msg } from "./i18n.ts";
 
@@ -44,7 +44,7 @@ const reqs = new Map<string, AuthRequest>();
 
 // Plain text like every gateway message (MODE "Message layout"): one leading status emoji, no embed.
 const MARKS: Record<Status, string> = { pending: "❓", entered: "✅", approved: "✅", cancelled: "❌", timeout: "❌" };
-const clock = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false });
+const clock = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
 
 function contentOf(r: AuthRequest): string {
 	const m = msg().auth;

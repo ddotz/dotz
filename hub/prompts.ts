@@ -8,8 +8,13 @@
 // and carries on. If the turn ends before it was answered, it is delivered again as a normal prompt. A message that
 // was answered with a reply_to (dotz_send or the turn's auto answer) is never delivered again, not at turn end and not
 // by the restart replay.
+//
+// The answer goes out only when it is ready (owner 2026-10-20: "답변은 준비되고 해야해. 먼저하면 안됨"): a dotz_send to the
+// channel the running turn answers, sent before that turn's final answer, is held (holdEarly) and posted together with
+// the final answer, ahead of it. Only a full answer to a message steered in mid-turn goes out at once; progress is the one
+// edited progress message (update_key), never a new text.
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[] };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string };
 export type Reply = { target: string; replyTo?: string; owner?: boolean };
 
@@ -85,6 +90,25 @@ export function createPrompts(deps: PromptDeps) {
 		settleSteered(target, replyTo);
 	}
 
+	/**
+	 * A dotz_send without update_key to the channel the current turn answers: true when it is held for the final answer.
+	 * A reply to a message steered into this turn (by reply_to, or the channel's steered message when none is named) is
+	 * that message's own answer and is not held.
+	 */
+	function holdEarly(target: string, text: string, replyTo?: string): boolean {
+		const p = current;
+		if (!p || p.done || p.target !== target || !text.trim()) return false;
+		if (prompts.some(q => q.steered && q.target === target && (replyTo ? q.replyTo === replyTo : true))) return false;
+		(p.held ??= []).push(text.trim());
+		deps.log(`held an early send to ${target} until the turn's answer (${text.trim().length} chars)`);
+		return true;
+	}
+
+	/** The current turn's answer goes to `to` instead of `from` (work that moved into a lane's thread is answered there). */
+	function retarget(from: string, to: string): void {
+		if (current && !current.done && current.target === from) current.target = to;
+	}
+
 	/** The orchestrator is idle: steered prompts nobody answered go in again as normal prompts. */
 	function redeliverSteered(): void {
 		const open = prompts.filter(p => p.steered);
@@ -122,13 +146,16 @@ export function createPrompts(deps: PromptDeps) {
 		const target = p.target;
 		// Parts sent early with dotz_send do not replace the answer; skip it only when it repeats something already sent.
 		const sentHere = p.sent.some(s => s.target === target);
-		if (t === "-" || p.sent.some(s => s.target === target && s.text.includes(t))) {
+		const held = p.held ?? [];
+		const repeat = t === "-" || p.sent.some(s => s.target === target && s.text.includes(t)) || held.some(h => h.includes(t));
+		if (repeat && !held.length) {
 			if (sentHere) deps.clearProgress(target);
 			return;
 		}
-		p.sent.push({ target, text: t });
+		const body = [...held, ...(repeat ? [] : [t])].join("\n\n");
+		p.sent.push({ target, text: body });
 		void deps
-			.post(target, text, p.replyTo)
+			.post(target, body, p.replyTo)
 			.then(r => (r.delivered ? deps.clearProgress(target) : undefined))
 			.catch(e => deps.log(`reply to ${target} failed: ${e}`));
 	}
@@ -141,5 +168,5 @@ export function createPrompts(deps: PromptDeps) {
 		return fresh.length;
 	}
 
-	return { deliver, settleSteered, sent, markAnswered, isAnswered, redeliverSteered, onPrompt, onAnswer, replay, queued: () => prompts.slice(), current: () => current };
+	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onAnswer, replay, queued: () => prompts.slice(), current: () => current };
 }

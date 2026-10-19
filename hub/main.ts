@@ -2,7 +2,7 @@
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
@@ -21,6 +21,7 @@ import { createLaneRelay } from "./lanerelay.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { parseTone } from "./tone.ts";
+import { lanePlace, replyRef } from "./threads.ts";
 import { startReflection } from "./reflect.ts";
 import { featureCatalog, syncFeatureWatches } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
@@ -63,8 +64,9 @@ function deliver(text: string, reply?: { target: string; replyTo?: string; owner
 }
 
 const isLocal = (target: string) => target === "web" || target === "terminal";
+// The newest owner message per target (threads.ts replyRef: a thread answer carries a reply reference only when it is not to that one).
+const lastOwner = new Map<string, string>();
 async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
-	lastPost.set(target, Date.now());
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	if (extra.source === undefined || extra.source === "orchestrator") queue.markAnswered(replyTo);
 	const sent = await inOrder(target, async () => {
@@ -73,23 +75,15 @@ async function out(target: string, text: string, replyTo?: string, extra: Record
 		return t;
 	});
 	if (isLocal(target)) return { delivered: true };
-	return discord.send(target, sent, replyTo);
+	return discord.send(target, sent, replyRef(target, replyTo, lastOwner.get(target)));
 }
 
-// No owner message goes unanswered for long (owner 2026-10-17: "대답 누락하면 안되는데"). If nothing was posted to the
-// asking channel REPLY_WAIT_MS after a message, a working orchestrator is steered to post a progress note there now.
-// A lane message gets no gateway notice (owner 2026-10-17: no canned "받았어요 ... 끝나는 대로" replies): the eyes
-// reaction is the receipt and the lane answers it in its turn's report.
-const REPLY_WAIT_MS = 60_000;
-const lastPost = new Map<string, number>();
+// While an owner message waits for its answer the owner sees 👀, typing and, for long work, one progress message edited in
+// place (livestatus.ts). Nothing is sent before the answer is ready (owner 2026-10-20: "답변은 준비되고 해야해. 먼저하면
+// 안됨"), so the gateway no longer steers the orchestrator into posting a note after 60 s.
 function expectReply(target: string): void {
 	if (isLocal(target)) return;
 	livestatus.begin(target, "orchestrator");
-	const since = Date.now();
-	setTimeout(() => {
-		if ((lastPost.get(target) ?? 0) >= since) return;
-		steerOrchestrator(msg().waited(REPLY_WAIT_MS / 1000, target));
-	}, REPLY_WAIT_MS);
 }
 
 // The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
@@ -176,7 +170,7 @@ setAlertHandler(alert);
 function rateLimitNotice(target: string, replyTo?: string): void {
 	if (orch.status !== "rate-limited") return;
 	const until = new Date(orch.rateLimitedUntil);
-	const at = Number.isNaN(until.getTime()) ? "한도가 풀리면" : `${until.toLocaleString("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })}쯤`;
+	const at = Number.isNaN(until.getTime()) ? "한도가 풀리면" : `${until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })}쯤`;
 	const text = orch.pauseKind === "owner" ? "지금 모델 제공자 결제/인증 문제로 멈춰 있어요. 해결되면 받은 메시지부터 이어서 처리할게요." : `지금 사용량 한도로 멈춰 있어요. ${at} 이어서 처리할게요.`;
 	void out(target, text, replyTo, { source: "gateway" }).catch(() => undefined);
 }
@@ -209,7 +203,9 @@ async function progress(target: string, key: string, text: string, replyTo?: str
 		return t;
 	});
 	if (isLocal(target)) return { delivered: true };
-	return discord.progress(target, key, sent, replyTo);
+	// One evolving status per asking channel: every progress key there edits the same message the gateway's live report
+	// uses (worklog and alert keep their per-key entries, e.g. one per lane).
+	return discord.progress(target, target === "worklog" || target === "alert" ? key : "progress", sent, replyTo);
 }
 
 function authorized(req: Request): boolean {
@@ -268,25 +264,31 @@ setReportHandler((lane, text) => {
 	if (how === "relayed" || how === "held") lane.orchAsked = false;
 	else log(`lane ${lane.name} report ${how === "disk" ? "kept on disk (routine progress)" : how === "owner" ? "kept on disk (answer to the owner in the lane channel)" : "dropped (same as the last one)"}`);
 	if (how === "held") log(`lane ${lane.name} report held for the orchestrator's next idle point`);
-	lastPost.set(`lane:${lane.name}`, Date.now());
 	const channel = `lane:${lane.name}`;
+	// A [run] report is progress: it edits the lane's one progress message. Results, questions and failures are real messages.
+	const running = parseTone(text).tone === "run";
 	void inOrder(channel, () => localize(text.slice(0, 1800), channel, "lane"))
 		.then(async shown => {
+			if (running) return void (await discord.progress(channel, "progress", shown));
 			await discord.send(channel, shown);
 			await discord.clearProgress(channel);
 		})
 		.catch(e => log(`lane report send failed: ${e}`));
 });
 
+// Mid-turn lane text: an [ask], [fail] or [done] line is something the owner must see and keep, so it is a real message;
+// anything else edits the lane channel's one progress message.
 setProgressHandler((lane, text) => {
 	const channel = `lane:${lane.name}`;
-	lastPost.set(channel, Date.now());
+	const tone = parseTone(text).tone;
+	const real = tone === "ask" || tone === "fail" || tone === "done";
 	void inOrder(channel, async () => {
-		const shown = `진행 중: ${await localize(text.slice(0, 900), channel, "lane")}`;
-		emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, update_key: "lane-progress" });
+		const local = await localize(text.slice(0, real ? 1800 : 900), channel, "lane");
+		const shown = real || tone === "run" ? local : `[run] ${local}`;
+		emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, ...(real ? {} : { update_key: "progress" }) });
 		return shown;
 	})
-		.then(shown => discord.progress(channel, "lane-progress", shown))
+		.then(shown => (real ? discord.send(channel, shown) : discord.progress(channel, "progress", shown)))
 		.catch(e => log(`lane progress send failed: ${e}`));
 });
 
@@ -294,7 +296,6 @@ setProgressHandler((lane, text) => {
 setOrchNoticeHandler(text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`model fallback notice failed: ${e}`)));
 setLaneNoticeHandler((lane, text) => {
 	const channel = `lane:${lane.name}`;
-	lastPost.set(channel, Date.now());
 	void inOrder(channel, async () => {
 		const shown = await localize(text, channel, "lane");
 		emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown });
@@ -309,8 +310,9 @@ discord.setChannelGoneHandler(id => {
 });
 
 discord.connect(m => {
-	discord.ack(m.channelId, m.id);
+	discord.ack(m.ackChannelId, m.id);
 	const target = typeof m.channel === "string" ? m.channel : "lane" in m.channel ? `lane:${m.channel.lane}` : "work" in m.channel ? `ch:${m.channel.work}` : `th:${m.channel.thread}`;
+	lastOwner.set(target, m.id);
 	const event = { ts: now(), source: "discord", channel: target, message_id: m.id, author: m.author, text: m.content, attachments: m.attachments, reply: m.replyTo };
 	if (parseCommand(m.content)) {
 		emit("inbox", { ...event, kind: "message" });
@@ -367,9 +369,10 @@ void startZele({
 	},
 	mailChannel: async () => {
 		if (!discord.status.enabled) return undefined;
-		const found = Object.entries(discord.channels.work).find(([, n]) => n === "메일")?.[0];
-		const id = found ?? (await discord.createWorkChannel("메일")).id;
-		if (!found) setupChannel({ channel: id, purpose: "메일 수신함 (zele): 새 메일은 메일마다 스레드로 요약, 답장은 주인 OK 후" }, "메일", "");
+		const mailName = msg().channelNames.mail;
+		const found = Object.entries(discord.channels.work).find(([, n]) => n === mailName)?.[0];
+		const id = found ?? (await discord.createWorkChannel(mailName)).id;
+		if (!found) setupChannel({ channel: id, purpose: "메일 수신함 (zele): 새 메일은 메일마다 스레드로 요약, 답장은 주인 OK 후" }, mailName, "");
 		return id;
 	},
 });
@@ -525,13 +528,15 @@ const server = Bun.serve({
 			const b = await body(req);
 			const target = String(b.target ?? "chat");
 			if (b.update_key) {
-				lastPost.set(target, Date.now());
 				try {
 					return json(await progress(target, String(b.update_key), String(b.text ?? ""), b.reply_to));
 				} catch (error) {
 					return json({ delivered: false, reason: (error as Error).message }, 502);
 				}
 			}
+			// Answer only when it is ready: an early text to the asking channel waits for the turn's final answer.
+			if (queue.holdEarly(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined))
+				return json({ delivered: true, held: true, note: "held: it goes out together with your final answer for this request; do not send it again" });
 			queue.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
 			try {
 				return json(await out(target, String(b.text ?? ""), b.reply_to));
@@ -694,7 +699,7 @@ const server = Bun.serve({
 					const cut = text.indexOf("\n\n");
 					const starter = cut < 0 ? text : text.slice(0, cut);
 					const rest = cut < 0 ? "" : text.slice(cut + 2).trim();
-					const t = await discord.createThread(String(b.channel ?? "chat"), String(b.name ?? "").trim() || "thread", b.kind ? String(b.kind) : undefined, starter || undefined);
+					const t = await discord.createThread(String(b.channel ?? "chat"), String(b.name ?? "").trim(), starter || undefined);
 					if (rest) await out(`th:${t.id}`, rest, undefined, { source: "orchestrator" });
 					return json({ ok: true, thread: `th:${t.id}`, name: t.name });
 				}
@@ -754,14 +759,18 @@ const server = Bun.serve({
 					if (tight) return json({ error: `budget gate: ${tight}. Ask the owner (now / after reset / smaller); relaunch with force=true only after they say now, or with a smaller est.` }, 409);
 					const home = b.home ? String(b.home) : undefined;
 					if (home && discord.status.enabled) discord.homeChannel(home);
+					const asking = queue.current();
+					const place = lanePlace({ home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: id => Boolean(discord.channels.work[id]), threadParent: id => discord.channels.threads[id]?.parent });
 					const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked);
 					// The goal line of the brief ("목표...: ...") is the thread's starter message in the home channel.
-					const goal = /^목표[^:：]*[:：]\s*(.+)$/m.exec(String(b.brief ?? ""))?.[1]?.slice(0, 300);
+					const goal = /^(?:목표|Goal)[^:：]*[:：]\s*(.+)$/im.exec(String(b.brief ?? ""))?.[1]?.slice(0, 300);
 					const starter = goal ? `[run] ${b.title ? String(b.title) : lane.name}: ${goal}` : undefined;
-					const channel = await discord.laneChannel(lane.name, b.title ? String(b.title) : undefined, home, b.kind ? String(b.kind) : undefined, starter).catch(e => {
+					const channel = await discord.laneChannel(lane.name, b.title ? String(b.title) : undefined, place, starter, goal).catch(e => {
 						log(`lane channel failed: ${e}`);
 						return undefined;
 					});
+					// Work started from a work channel or a thread is answered in the lane's thread, where its reports will come.
+					if (channel && place.kind !== "channel" && asking?.target) queue.retarget(asking.target, `lane:${lane.name}`);
 					log(`lane ${lane.name} why (${b.owner_asked_for_lane ? "owner asked" : `${Number(b.hours)}h`}): ${String(b.why).trim().slice(0, 300)}`);
 					emit("outbox", { ts: now(), kind: "lane_start", source: "hub", lane: lane.name, text: `lane ${lane.name} started in ${lane.cwd}` });
 					return json({ ok: true, lane: lane.name, channel });
@@ -810,15 +819,14 @@ for (const name of resumedLanes) void discord.send(`lane:${name}`, "게이트웨
 // Every start after the first one says so in worklog (a self-run system event, not a chat answer), with what it picked
 // back up, so a restart is never silent; failures to start go to alert elsewhere.
 if (restarted) {
-	const at = new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
+	const at = new Date().toLocaleTimeString("ko-KR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
 	const picked = [replayed ? `답 못 한 메시지 ${replayed}개 다시 처리 중` : "", resumedLanes.length ? `이어서 하는 레인: ${resumedLanes.join(", ")}` : ""].filter(Boolean);
-	void out(discord.status.enabled ? "worklog" : "web", `게이트웨이 재시작했어요 (${at} KST).${picked.length ? `\n- ${picked.join("\n- ")}` : " 끊긴 작업은 없어요."}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
+	void out(discord.status.enabled ? "worklog" : "web", `게이트웨이 재시작했어요 (${at} ${tzLabel()}).${picked.length ? `\n- ${picked.join("\n- ")}` : " 끊긴 작업은 없어요."}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
 }
 startLaneHygiene();
 startWorktreeCleanup();
 startMemoryGuard((key, text) => {
 	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
-	lastPost.set(key, Date.now());
 	void discord.send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 });
 startOrphanReaper();

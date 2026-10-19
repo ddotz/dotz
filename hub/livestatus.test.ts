@@ -1,6 +1,5 @@
-// The live status line against a fake Discord REST server (DOTZ_DISCORD_API) and the fake clock: 15 s turn with three
-// tool calls and a running task worker -> one POST after 10 s, edits that carry the intents, one DELETE after the answer
-// and no request after it.
+// The live progress message against a fake Discord REST server (DOTZ_DISCORD_API) and the fake clock: typing while the
+// answer is pending, ONE progress message from 5 min on, edited in place when there is news, deleted by the answer.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { emitEventActivity } from "./activity.ts";
 import * as discord from "./discord.ts";
@@ -58,9 +57,11 @@ async function run(minutes: number, each?: (m: number) => void): Promise<void> {
 	}
 }
 const toolCall = (intent: string) => emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "lane:live-test", type: "tool_call", text: `bash: ${intent}`, intent });
-const reports = () => requests.filter(r => r.method === "POST" && r.body!.content.startsWith("⏳"));
+const typing = (r: Req) => r.path.endsWith("/typing");
+const reports = () => requests.filter(r => (r.method === "POST" || r.method === "PATCH") && !typing(r) && r.body?.content.startsWith("⏳"));
+const visible = () => requests.filter(r => !typing(r));
 
-test("progress reports: first at 5 min, a new message every 5 min, skipped when nothing moved, none after the answer", async () => {
+test("progress: typing throughout, one message at 5 min edited when something moved, deleted by the answer", async () => {
 	requests.length = 0;
 	const t0 = Date.now();
 	livestatus.begin("ch:111", "lane:live-test");
@@ -86,8 +87,10 @@ test("progress reports: first at 5 min, a new message every 5 min, skipped when 
 	expect(posted[0]!.body!.content).toContain("w1: LiveStatusLine 구현");
 	expect(posted[1]!.body!.content).toContain("커밋 정리하는 중");
 	expect(posted[1]!.body!.content).not.toContain("설정 파일");
-	// Reports are new messages that stay: no edit, no delete.
-	expect(requests.filter(r => r.method !== "POST")).toEqual([]);
+	// One message: posted once, then edited; the answer deletes it; nothing (not even typing) after the answer.
+	expect(posted.map(p => p.method)).toEqual(["POST", "PATCH", "PATCH"]);
+	expect(requests.filter(typing).length).toBeGreaterThan(100);
+	expect(requests.slice(0, answeredAt).filter(r => r.method === "DELETE")).toHaveLength(1);
 	expect(requests).toHaveLength(answeredAt);
 });
 
@@ -112,7 +115,7 @@ test("an answer within 5 min means no report at all", async () => {
 	await run(4);
 	await discord.send("ch:111", "quick answer");
 	await run(12);
-	expect(requests.map(r => r.body?.content)).toEqual(["quick answer"]);
+	expect(visible().map(r => r.body?.content)).toEqual(["quick answer"]);
 });
 
 test("the turn's end stops the reports even when no answer reached the channel", async () => {
@@ -120,6 +123,8 @@ test("the turn's end stops the reports even when no answer reached the channel",
 	livestatus.begin("ch:111", "lane:live-test");
 	await run(2);
 	emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "lane:live-test", type: "turn_end", text: "" });
+	const ended = requests.length;
 	await run(12);
-	expect(requests).toEqual([]);
+	expect(visible()).toEqual([]);
+	expect(requests.length - ended).toBeLessThanOrEqual(1); // at most the typing tick already due
 });

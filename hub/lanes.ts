@@ -3,7 +3,7 @@ import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { emitEventActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAskFile } from "./asks.ts";
-import { cfg, chainAfter, DATA_DIR, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, workerModel, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, DATA_DIR, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, TZ, workerModel, writeAtomic } from "./config.ts";
 import { formatHeader, kstClock, workersOf } from "./lanevis.ts";
 import { lang, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
@@ -218,7 +218,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	const { ms: wait, reset } = owner ? { ms: OWNER_RETRY_MS, reset: false } : await rateLimitDelay(err, lane.model);
 	lane.pausing = false;
 	if (lane.status !== "rate-limited") return;
-	const at = new Date(Date.now() + wait).toLocaleString("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+	const at = new Date(Date.now() + wait).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
 	if (!lane.pauseReported || lane.pauseKind !== kind) {
 		report(lane, owner
 			? `모델 제공자 결제/인증 문제로 멈췄어요 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요해요. 그동안 온 메시지는 모아뒀다가 해결되면 이어서 처리하고, ${Math.round(wait / 60_000)}분마다 다시 시도해요.`
@@ -325,7 +325,7 @@ function settleChain(lane: Lane): void {
 // Every entry is spent: the lane holds its messages until the earliest cap period ends, then starts again.
 function pauseExhausted(lane: Lane, c: Chain, until: number): void {
 	setStatus(lane, "rate-limited");
-	const at = new Date(until).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+	const at = new Date(until).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
 	const line = msg().fallbackExhausted(c.label(c.active), at);
 	log(`lane ${lane.name} ${line}`);
 	onNotice(lane, line);

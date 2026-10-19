@@ -114,3 +114,29 @@ test("a prompt whose final answer was posted gets no further auto posts from lat
 	expect(state.posts).toEqual([{ target: "chat", text: "final", replyTo: "m1" }]);
 	expect(open()).toEqual([]);
 });
+
+test("answer only when ready: an early send to the asking channel is held and goes out ahead of the final answer", () => {
+	const { q, state, startTurn } = setup();
+	startTurn("fix the build", chat("m1"));
+	expect(q.holdEarly("chat", "몇 분 안에 끝내고 알려 드릴게요")).toBe(true);
+	expect(q.holdEarly("ch:9", "elsewhere")).toBe(false); // another channel is not this turn's answer
+	expect(state.posts).toEqual([]);
+	q.onAnswer("고쳤어요. 테스트 통과.");
+	expect(state.posts).toEqual([{ target: "chat", text: "몇 분 안에 끝내고 알려 드릴게요\n\n고쳤어요. 테스트 통과.", replyTo: "m1" }]);
+});
+
+test("a full answer to a message steered in mid-turn is not held", () => {
+	const { q, startTurn } = setup();
+	startTurn("long work", chat("m1"));
+	q.deliver("quick question", chat("m2"));
+	expect(q.holdEarly("chat", "answer to the quick one", "m2")).toBe(false);
+	expect(q.holdEarly("chat", "answer without reply_to")).toBe(false);
+});
+
+test("a held text repeated as the final answer is posted once", () => {
+	const { q, state, startTurn } = setup();
+	startTurn("q", chat("m1"));
+	q.holdEarly("chat", "the answer");
+	q.onAnswer("the answer");
+	expect(state.posts.map(p => p.text)).toEqual(["the answer"]);
+});
