@@ -12,8 +12,9 @@ import { isNote, msg } from "./i18n.ts";
 import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
-import { abortLane, approvesBudget, budgetLine, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
-import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
+import { abortLane, approvesBudget, budgetLine, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
+import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
+import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { startReflection } from "./reflect.ts";
@@ -395,6 +396,71 @@ if (!restarted) {
 	deliver(msg().firstStart(target), { target });
 }
 
+// Sends one web message the way the composer's modes mean it. "default" (no mode): the main assistant takes it as the next
+// message, a working lane gets it steered in; "steer": into the running turn now; "interrupt": abort, then new prompt.
+type WebSend = { lane?: string; channel: "web" | "terminal"; text: string; mode: "default" | "steer" | "interrupt"; login: string };
+async function sendWeb(s: WebSend): Promise<void> {
+	const extra = s.mode === "default" ? {} : { mode: s.mode };
+	if (s.lane) {
+		const name = s.lane;
+		emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: s.login, lane: name, text: s.text, ...extra });
+		if (approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
+		if (s.mode === "interrupt" && lanes.get(name)?.status === "working") {
+			abortLane(name);
+			// Let the aborted turn end first, or the message would be steered into it.
+			for (let i = 0; i < 50 && lanes.get(name)?.status === "working"; i++) await Bun.sleep(200);
+		}
+		sendToLane(name, `[owner via web] ${s.text}`);
+		return;
+	}
+	const event = { ts: now(), kind: "message", source: s.channel, channel: s.channel, author: s.login, text: s.text, ...extra };
+	emit("inbox", event);
+	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(s.channel, event.text);
+	else if (s.mode === "steer" && orch.status === "working") {
+		steerOrchestrator(inboxText(event));
+		expectReply(s.channel);
+	} else {
+		if (s.mode === "interrupt" && orch.status === "working") abortOrchestrator();
+		intake(event, s.channel);
+	}
+}
+
+// Web messages queued while their target works (see queue.ts) go out when that target is idle again: oldest first, as
+// one message through the normal path (main: intake, which merges messages of one burst into one turn; lane: one prompt).
+const QUEUE_SWEEP_MS = 5000;
+function flushQueue(target: string): void {
+	const lane = target.startsWith("lane:") ? target.slice(5) : undefined;
+	const status = lane ? lanes.get(lane)?.status : orch.status;
+	if (lane && !lanes.has(lane)) {
+		const gone = drain(target);
+		void out("web", `레인 ${lane}이(가) 없어서 대기 중이던 메시지 ${gone.length}개를 전달하지 못했어요:\n${gone.map(i => i.text).join("\n---\n")}`, undefined, { source: "gateway" }).catch(() => undefined);
+		return;
+	}
+	if (status !== "idle") return;
+	const items = drain(target);
+	if (!items.length) return;
+	try {
+		if (lane) {
+			for (const i of items) emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: i.author ?? "local", lane, text: i.text });
+			for (const i of items) if (approvesBudget(lane, i.text)) sendToLane(lane, "/budget-ok");
+			sendToLane(lane, `[owner via web] ${items.map(i => i.text).join("\n\n")}`);
+		} else {
+			for (const i of items) {
+				const event = { ts: now(), kind: "message", source: "web", channel: "web", author: i.author ?? "local", text: i.text };
+				emit("inbox", event);
+				intake(event, "web");
+			}
+		}
+	} catch (error) {
+		log(`queued web messages for ${target} not sent: ${(error as Error).message}`);
+		restore(items);
+	}
+}
+setOrchIdleHandler(() => flushQueue("main"));
+setLaneIdleHandler(name => flushQueue(`lane:${name}`));
+// Safety net for what the idle hooks miss: items kept over a gateway restart, a lane that went idle without a turn end.
+setInterval(() => queuedTargets().forEach(flushQueue), QUEUE_SWEEP_MS);
+
 const server = Bun.serve({
 	hostname: "127.0.0.1",
 	port: PORT,
@@ -426,38 +492,43 @@ const server = Bun.serve({
 		if (req.method === "POST" && url.pathname === "/api/message") {
 			const b = await body(req);
 			if (!b.text) return json({ error: "text required" }, 400);
+			const text = String(b.text);
 			const login = req.headers.get("tailscale-user-login") ?? "local";
-			// mode: "queue" (default: main waits for its current turn, a working lane is steered), "steer" (into the running
-			// turn now), "interrupt" (abort the running turn, then send as a new prompt).
-			const mode = b.mode === "steer" || b.mode === "interrupt" ? b.mode : "queue";
-			if (b.lane) {
-				const name = String(b.lane);
-				emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: login, lane: name, text: b.text, ...(mode === "queue" ? {} : { mode }) });
+			// mode: none (main takes it as the next message, a working lane is steered), "steer" (into the running turn
+			// now), "interrupt" (abort the running turn, then send as a new prompt), "queue" (a working target gets it
+			// when its turn ends, see queue.ts; an idle target gets it now).
+			const mode = b.mode === "steer" || b.mode === "interrupt" || b.mode === "queue" ? b.mode : "default";
+			const lane = b.lane ? String(b.lane) : undefined;
+			const channel = b.channel === "terminal" ? "terminal" : "web";
+			if (mode === "queue" && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
+				const item = enqueue(lane ? `lane:${lane}` : "main", text, login);
+				return json({ ok: true, queued: item });
+			}
+			try {
+				await sendWeb({ lane, channel, text, mode: mode === "queue" ? "default" : mode, login });
+			} catch (error) {
+				return json({ error: (error as Error).message }, 409);
+			}
+			return json({ ok: true });
+		}
+		if (url.pathname === "/api/queue" && req.method === "GET") return json({ items: queueItems() });
+		if (parts[0] === "api" && parts[1] === "queue" && parts.length >= 3) {
+			const id = decodeURIComponent(parts[2]);
+			if (req.method === "DELETE" && parts.length === 3) {
+				const item = take(id);
+				return item ? json({ text: item.text }) : json({ error: "not queued (already sent)" }, 404);
+			}
+			if (req.method === "POST" && parts[3] === "send" && parts.length === 4) {
+				const item = take(id);
+				if (!item) return json({ error: "not queued (already sent)" }, 404);
 				try {
-					if (approvesBudget(name, String(b.text ?? ""))) sendToLane(name, "/budget-ok");
-					if (mode === "interrupt" && lanes.get(name)?.status === "working") {
-						abortLane(name);
-						// Let the aborted turn end first, or the message would be steered into it.
-						for (let i = 0; i < 50 && lanes.get(name)?.status === "working"; i++) await Bun.sleep(200);
-					}
-					sendToLane(name, `[owner via web] ${b.text}`);
+					await sendWeb({ lane: item.target.startsWith("lane:") ? item.target.slice(5) : undefined, channel: "web", text: item.text, mode: "steer", login: item.author ?? "local" });
 				} catch (error) {
+					restore([item]);
 					return json({ error: (error as Error).message }, 409);
 				}
 				return json({ ok: true });
 			}
-			const channel = b.channel === "terminal" ? "terminal" : "web";
-			const event = { ts: now(), kind: "message", source: channel, channel, author: login, text: String(b.text), ...(mode === "queue" ? {} : { mode }) };
-			emit("inbox", event);
-			if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(channel, event.text);
-			else if (mode === "steer" && orch.status === "working") {
-				steerOrchestrator(inboxText(event));
-				expectReply(channel);
-			} else {
-				if (mode === "interrupt" && orch.status === "working") abortOrchestrator();
-				intake(event, channel);
-			}
-			return json({ ok: true });
 		}
 		if (req.method === "POST" && url.pathname === "/api/send") {
 			const b = await body(req);
