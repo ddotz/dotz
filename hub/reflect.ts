@@ -2,6 +2,7 @@
 // model reviews a few hundred tokens of facts instead of reading logs, and skips the turn entirely on a quiet day.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pushBackup, unstageSecrets } from "./backup.ts";
 import { cfg, DATA_DIR, log, paths } from "./config.ts";
 import { msg, withReplyLine } from "./i18n.ts";
 
@@ -81,15 +82,19 @@ function laneUsage(since: number): string[] {
 
 // Local history of the files the bot edits itself (rules, lessons, identity, schedules), so a bad edit can be undone.
 const SNAPSHOT = ["RULES.md", "LESSONS.md", "identity", "schedules.json", "watches.json", "channel-setups.json", "config.json", "channels.json"];
-export async function snapshot(): Promise<void> {
+export async function snapshot(): Promise<string | undefined> {
 	const git = (...a: string[]) => Bun.$`git -C ${DATA_DIR} ${a}`.nothrow().quiet();
 	if (!existsSync(join(DATA_DIR, ".git"))) {
 		writeFileSync(join(DATA_DIR, ".gitignore"), ["*", ...SNAPSHOT.flatMap(f => [`!${f}`, `!${f}/**`]), "!.gitignore", ""].join("\n"));
 		await git("init", "-q");
 	}
 	await git("add", "-A");
+	// Off-machine copy is opt-in (`backup.remote` in config.json). Files that look like secrets stay out of the commit then.
+	const remote = String((cfg as { backup?: { remote?: string } }).backup?.remote ?? "").trim();
+	const flagged = remote ? await unstageSecrets(DATA_DIR) : [];
 	const r = await git("-c", "user.name=dotz", "-c", "user.email=dotz@localhost", "commit", "-q", "-m", `snapshot ${new Date().toISOString().slice(0, 10)}`);
 	log(`snapshot: ${r.exitCode === 0 ? "committed" : "no changes"}`);
+	return remote ? pushBackup(DATA_DIR, remote, flagged) : undefined;
 }
 
 export const reflectPrompt = (d: string): string => withReplyLine(msg().reflect(d, paths.lessons));
@@ -105,7 +110,8 @@ export function startReflection(deliver: (text: string) => void, sessionFile: ()
 		return d.getTime() - Date.now();
 	};
 	const run = async () => {
-		await snapshot().catch(e => log(`snapshot failed: ${e}`));
+		const alert = await snapshot().catch(e => (log(`snapshot failed: ${e}`), undefined));
+		if (alert) deliver(`${alert}\n(위 내용을 오너에게 짧게 알려줘.)`);
 		const d = digest(sessionFile());
 		if (d) {
 			log("reflection: delivering nightly self-review");
