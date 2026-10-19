@@ -145,3 +145,7 @@ export function logOnce(pi: any, key: string, message: string): void {
 		(pi?.logger?.warn ?? pi?.logger?.info)?.call(pi.logger, message);
 	} catch {}
 }
+
+// omp marks the session's own agent in ctx.agent (main / sub). OmO has no ctx.agent and runs task workers in its rpc host,
+// which does not load this extension, so there every session that loads it is the main one.
+export const isMain = (ctx: any) => (ctx?.agent ? ctx.agent.kind === "main" : process.env.DOTZ_RUNTIME === "omo");
