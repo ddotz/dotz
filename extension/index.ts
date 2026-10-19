@@ -378,9 +378,9 @@ function keyProvider(pi: any): void {
 	pi.registerProvider(id, { baseUrl, api, apiKey: key, models });
 }
 
-// omp marks the session's own agent in ctx.agent (main / sub). OmO has no ctx.agent and runs task workers in its rpc host,
-// which does not load this extension, so there every session that loads it is the main one.
-export const isMain = (ctx: any) => (ctx?.agent ? ctx.agent.kind === "main" : process.env.DOTZ_RUNTIME === "omo");
+import { isMain } from "./guard-config.ts";
+
+export { isMain };
 
 // OmO (senpi) gives extensions no zod and takes plain JSON Schema tool parameters: the same tool definitions are built
 // with the JSON Schema builder there (schema.ts).

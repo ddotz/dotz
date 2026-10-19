@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
-import { budgetLine, budgetProblem, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, trimWaitOutput } from "./guard.ts";
+import { budgetLine, budgetProblem, checkOmoTaskInput, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, settleFromText, shellText, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
 beforeAll(() => {
@@ -229,4 +229,31 @@ test("install detection: file in the agent dir, not --no-extensions, not disable
 	} finally {
 		process.argv = argv;
 	}
+});
+
+test("OmO task input: brief rules, writers isolated with apply:false in place, read-only agents untouched", () => {
+	expect("reason" in checkOmoTaskInput({ category: "quick", prompt: "do the thing" })).toBe(true);
+	const one = { category: "quick", prompt: "do the thing\nAcceptance: tests pass" };
+	const r = checkOmoTaskInput(one);
+	expect("input" in r && r.input).toBe(one);
+	expect(one).toMatchObject({ isolated: true, apply: false, merge: "patch" });
+	expect(one.prompt).toEndWith(budgetLine());
+	const batch = { tasks: [{ subagent_type: "explore", prompt: "find x\nDone when: listed" }, { category: "deep-low", prompt: "fix y\nAcceptance: green" }] };
+	checkOmoTaskInput(batch);
+	expect(batch.tasks[0]).not.toHaveProperty("isolated");
+	expect(batch.tasks[1]).toMatchObject({ isolated: true, apply: false });
+	const inPlace = { category: "quick", prompt: "x\nAcceptance: y" };
+	checkOmoTaskInput(inPlace, false);
+	expect(inPlace).not.toHaveProperty("isolated");
+});
+
+test("OmO task completion settles the worker and keeps its retained patch; eval code counts as shell text", () => {
+	const captured = join(dir, "root.patch");
+	writeFileSync(captured, "diff --git a/f b/f\n");
+	const state = { cwd: dir, workers: { st_01aa: { brief: "b", spawnedAt: 0, status: "running" } } } as any;
+	const text = `task completion name:st_01aa id:st_01aa category:quick(anthropic-subscription/claude-sonnet-5-5:low) status:completed duration:9s\nresult:"done"\nisolation: retained via git-worktree -> ${captured}`;
+	expect(settleFromText(state, text)).toBe(true);
+	expect(state.workers.st_01aa.status).toBe("completed");
+	expect(state.workers.st_01aa.patch).toEndWith("st_01aa.patch");
+	expect(shellText({ code: "await tool.bash({ command: 'git apply x.patch' })" })).toContain("git apply x.patch");
 });

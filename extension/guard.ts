@@ -6,8 +6,9 @@
 // re-read within 5 minutes). Context blow-up: the first worker compaction steers it to wrap up; the second blocks every
 // further tool call so it must hand back partial findings. External-impact commands (push, PR, publish, deploy, ssh,
 // outbound writes) are blocked in workers and handed back: the orchestrator judges and runs them.
-// Review before apply: writing workers are forced isolated (task.isolation.apply=false keeps their <id>.patch), and the
-// orchestrator's `git apply <patch>` is blocked until that patch file has been read in this session.
+// Review before apply: writing workers are forced isolated (task.isolation.apply=false keeps their <id>.patch; on OmO each
+// task call gets isolated + apply:false + merge:"patch", which keeps root.patch), and the orchestrator's `git apply <patch>`
+// (in bash, or in an OmO eval cell) is blocked until that patch file has been read in this session.
 // Budget gate: a task call is blocked when the Anthropic 5h quota is too low for the requested workers (the job is assumed
 // to use `budget_default_estimate_percent` of the 5h window, or the "Estimate: N%" line of the brief), until the user runs
 // /budget-ok. Silent when omp has no Anthropic usage data.
@@ -27,7 +28,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { type GuardConfig, GUARD_DEFAULTS, installedOriginal, loadGuardConfig, logOnce, stateDir, statePath as stateFile } from "./guard-config.ts";
+import { type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, loadGuardConfig, logOnce, stateDir, statePath as stateFile } from "./guard-config.ts";
 
 // Active configuration: the defaults until installGuard() loads <DOTZ_DIR>/config.json. The exported checks take their
 // limits as a parameter that defaults to it, so tests pass their own.
@@ -144,6 +145,35 @@ export function checkTaskInput(input: any, isolate = true, roots: string[] = [],
 		return next;
 	});
 	return { input: { ...input, ...(anyIsolated && context ? { context: relativizeRoots(context, roots) } : {}), tasks } };
+}
+
+// OmO's task tool (omo-task) takes one worker as `{prompt, category | subagent_type, ...}` or several as `{tasks: [{prompt, ...}]}`,
+// with isolation per call or item: `isolated`, `apply` (false = keep the change as a patch and merge nothing) and `merge`
+// ("patch"). The same brief rules apply; writing workers are isolated with apply:false, so their change comes back as
+// `isolation: retained via <backend> -> <dir>/root.patch` in the task completion. Read-only agents run in place.
+const OMO_READ_ONLY = /^(explore|librarian|oracle|plan-|.*review|.*qa-)/;
+export const isOmoTaskInput = (input: any) => typeof input?.prompt === "string" || (Array.isArray(input?.tasks) && input.tasks.some((t: any) => typeof t?.prompt === "string"));
+// senpi applies a tool_call handler's changes only when `event.input` is mutated in place, so the items are edited where they are.
+export function checkOmoTaskInput(input: any, isolate = true, roots: string[] = [], g: GuardConfig = G): { reason: string } | { input: any } {
+	const items: any[] = Array.isArray(input?.tasks) ? input.tasks : [input];
+	const problems: string[] = [];
+	items.forEach((item, i) => {
+		const brief = typeof item?.prompt === "string" ? item.prompt : "";
+		const label = Array.isArray(input?.tasks) ? `tasks[${i}]` : "the task";
+		if (!DONE_MARKER.test(brief)) problems.push(`${label} has no observable done-condition (add an "Acceptance:" or "Done when:" line)`);
+		if (brief.length > g.max_brief_chars) problems.push(`${label} brief is ${brief.length} chars; pass paths instead of pasted contents (limit ${g.max_brief_chars})`);
+		if (longestFence(brief) > g.max_fence_lines) problems.push(`${label} pastes a code block over ${g.max_fence_lines} lines; pass the path and line range instead`);
+	});
+	if (problems.length) return { reason: `Worker brief rejected by the guard (worker-brief rules):\n- ${problems.join("\n- ")}\nRewrite the task call and retry.` };
+	for (const item of items) {
+		if (typeof item?.prompt === "string" && !item.prompt.includes(BUDGET_MARKER)) item.prompt = `${item.prompt}\n\n${budgetLine(g)}`;
+		if (!isolate || OMO_READ_ONLY.test(String(item?.subagent_type ?? ""))) continue;
+		item.isolated = true;
+		item.apply = false;
+		item.merge = "patch";
+		if (roots.length && typeof item.prompt === "string") item.prompt = relativizeRoots(item.prompt, roots);
+	}
+	return { input };
 }
 
 type TaskInput = { context?: unknown; model?: unknown; tasks?: { task?: unknown; model?: unknown }[] };
@@ -293,6 +323,9 @@ export function stateSummary(state: ProjectState, previousSession: boolean): str
 	});
 	return lines.length ? `[orchestrator-guard] Open worker state for this project (${state.cwd}):\n${lines.join("\n")}` : undefined;
 }
+
+// The shell text of a call: a bash command, or the code of an OmO `eval` cell (which runs shell through tool.bash / Bun.$).
+export const shellText = (input: any): string => String(input?.command ?? input?.code ?? "");
 
 export function expandShellVars(command: string): string {
 	const vars = new Map<string, string>();
@@ -629,6 +662,20 @@ export function settleFromText(state: ProjectState, text: string): boolean {
 			changed = true;
 		}
 	}
+	// OmO: "task completion name:<n> id:<st_…> … status:<s> …", then result lines and, for an isolated worker,
+	// "isolation: <kind> via <backend> -> <root.patch>" (kind "retained" = apply:false, nothing merged).
+	for (const match of text.matchAll(/^task completion(?: \([^)]*\))? .*?\bid:(st_\w+)\b.*?\bstatus:(\w+)[^\n]*((?:\n(?!task completion)[^\n]*)*)/gm)) {
+		const [, id, status, rest] = match;
+		const worker = state.workers[id] ?? (state.settled?.[id] ? undefined : (state.workers[id] = { brief: "(spawned before tracking)", spawnedAt: Date.now(), status: "running" }));
+		if (!worker) continue;
+		const isolation = /^isolation: ([\w-]+) via \S+ -> (\S+\.patch)\s*$/m.exec(rest);
+		const patch = isolation && isolation[1] === "retained" ? keepPatch(state.cwd, id, isolation[2]) : undefined;
+		if (worker.status !== status || (patch && worker.patch !== patch)) {
+			worker.status = status;
+			if (patch) worker.patch = patch;
+			changed = true;
+		}
+	}
 	for (const [, id, status] of text.matchAll(/^###\s+(\S+)\s+\[[^\]]+\]\s+[—-]\s+(cancelled|completed|failed|aborted)\b/gm)) {
 		const worker = state.workers[id];
 		if (worker?.status === "running") {
@@ -766,12 +813,13 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 	};
 
 	pi.on("session_start", (_event: any, ctx: any) => {
-		if (ctx?.agent?.kind !== "main") return;
+		if (!isMain(ctx)) return;
 		state = undefined;
 		injectState(ctx, true);
 	});
 
 	const repeatRows = new Map<string, RepeatRow>();
+	const isolationUnavailable = new Set<string>();
 	const repeatKey = (ctx: any) => String(ctx?.sessionManager?.getSessionId?.() ?? ctx?.agent?.id ?? "");
 
 	pi.on("tool_result", (event: any, ctx: any) => {
@@ -783,14 +831,15 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		} catch (error) {
 			debug({ phase: "repeat-result-error", message: String(error) });
 		}
-		if (ctx?.agent?.kind !== "main") return;
+		if (!isMain(ctx)) return;
 		const current = projectState(ctx);
 		const text = (event.content ?? []).map((b: { text?: string }) => b?.text ?? "").join("\n");
 		// A `git apply` that went in (or a --3way apply whose conflicts are then resolved by hand) settles the patches it
 		// names at once; the reverse check below cannot recognise a patch that was edited while it was merged. Variables
 		// (`P=x.patch; git apply $P`) are expanded first, and `git -C <dir> apply` counts like plain `git apply`.
-		const command = expandShellVars(String(event.input?.command ?? ""));
-		if (event.toolName === "bash" && GIT_APPLY_RE.test(command) && (!event.isError || /--3way/.test(command) && /with conflicts/i.test(text))) {
+		const command = expandShellVars(shellText(event.input));
+		const shell = event.toolName === "bash" || event.toolName === "eval";
+		if (shell && GIT_APPLY_RE.test(command) && (!event.isError || /--3way/.test(command) && /with conflicts/i.test(text))) {
 			const named = [...command.matchAll(GIT_APPLY_NAMED)].map(m => basename(m[1].replace(/^['"]|['"]$/g, "")));
 			let marked = false;
 			for (const worker of Object.values(current.workers)) {
@@ -798,21 +847,26 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			}
 			if (marked) saveState(current);
 		}
+		if (event.toolName === "task" && /isolation_unavailable/.test(text)) isolationUnavailable.add(current.cwd);
 		if (event?.isError) return;
 		if (event.toolName === "task") {
 			const fromDetails = (event.details?.progress ?? []).map((p: { id?: string; agentId?: string }) => p?.id ?? p?.agentId).filter(Boolean);
+			// OmO: details.task_id (one worker) or task_id fields of a batch's details; "Started task … (st_…, running)" in the text.
+			const omo = [...new Set([...JSON.stringify(event.details ?? {}).matchAll(/"task_id":"(st_\w+)"/g), ...text.matchAll(/\((st_\w+), running\)/g)].map(m => m[1]))];
 			const ids: string[] = fromDetails.length
 				? fromDetails
-				: [...new Set([...text.matchAll(/Spawned agent `([^`]+)`/g), ...text.matchAll(/^\s*- `([^`]+)` \(job `[^`]+`\)/gm)].map(m => m[1]))];
-			const items: { task?: string }[] = event.input?.tasks ?? [];
+				: omo.length
+					? omo
+					: [...new Set([...text.matchAll(/Spawned agent `([^`]+)`/g), ...text.matchAll(/^\s*- `([^`]+)` \(job `[^`]+`\)/gm)].map(m => m[1]))];
+			const items: { task?: string; prompt?: string }[] = Array.isArray(event.input?.tasks) ? event.input.tasks : [event.input ?? {}];
 			ids.forEach((id, i) => {
 				if (current.settled) delete current.settled[id];
-				current.workers[id] ??= { brief: briefLabel(items[i]?.task), spawnedAt: Date.now(), status: "running" };
+				current.workers[id] ??= { brief: briefLabel(items[i]?.task ?? items[i]?.prompt), spawnedAt: Date.now(), status: "running" };
 			});
 			debug({ phase: "state-spawn", ids });
 		}
 		if (settleFromText(current, text) || event.toolName === "task") saveState(current);
-		if (event.toolName === "bash" && GIT_APPLY_RE.test(command) && refreshApplied(current, applyDirsOf(command, resolve(current.cwd, String(event.input?.cwd ?? ""))))) {
+		if (shell && GIT_APPLY_RE.test(command) && refreshApplied(current, applyDirsOf(command, resolve(current.cwd, String(event.input?.cwd ?? ""))))) {
 			debug({ phase: "state-applied" });
 			saveState(current);
 		}
@@ -878,7 +932,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 	let compactions = 0;
 
 	pi.on("session_compact", (_event: any, ctx: any) => {
-		if (ctx?.agent?.kind === "main") return injectState(ctx, false);
+		if (isMain(ctx)) return injectState(ctx, false);
 		if (ctx?.agent?.kind !== "sub") return;
 		compactions++;
 		debug({ phase: "sub-compact", agent: ctx.agent.id, compactions });
@@ -887,7 +941,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 	});
 
 	pi.on("before_provider_request", (event: any, ctx: any) => {
-		if (ctx?.agent?.kind === "main" && !sessionFlagged && !fableOk()) {
+		if (isMain(ctx) && !sessionFlagged && !fableOk()) {
 			const effort = String(pi.getThinkingLevel?.() ?? "");
 			const found = expensiveModel([event?.payload?.model, /^(max|xhigh)$/i.test(effort) ? `:${effort}` : undefined]);
 			if (found) {
@@ -973,7 +1027,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 				return { block: true, reason: `orchestrator-guard: workers do not run external-impact commands (${kind}). Finish the rest of the task, and list the exact command under "External actions needed" in your final answer; the orchestrator decides whether to run it.` };
 			}
 		}
-		if (ctx?.agent?.kind !== "main") return;
+		if (!isMain(ctx)) return;
 		// A message to a finished worker revives it with its whole history, and it tends to redo its earlier steps.
 		const target = /^agent:\/\/([^/?#]+)/.exec(String(event?.input?.path ?? ""))?.[1];
 		if (tool === "write" && target && target !== "all") {
@@ -985,8 +1039,10 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		}
 		if (tool === "task") {
 			const taskCwd = String(ctx?.cwd ?? process.cwd());
-			const isolate = inGitRepo(taskCwd);
-			const verdict = checkTaskInput(event.input, isolate, isolate ? checkoutRoots(taskCwd) : []);
+			// A repo OmO cannot snapshot for isolation (isolation_unavailable, e.g. over its size budget) gets in-place workers.
+			const isolate = inGitRepo(taskCwd) && !isolationUnavailable.has(taskCwd);
+			const roots = isolate ? checkoutRoots(taskCwd) : [];
+			const verdict = isOmoTaskInput(event.input) ? checkOmoTaskInput(event.input, isolate, roots) : checkTaskInput(event.input, isolate, roots);
 			debug({ phase: "task", verdict });
 			if ("reason" in verdict) return { block: true, reason: verdict.reason };
 			const dear = fableOk() ? undefined : expensiveTaskModel(event.input);
@@ -1009,8 +1065,10 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		};
 		const path = String(event?.input?.path ?? "");
 		if (tool === "read" && /\.patch(:|$)/.test(path)) reviewedPatches.add(patchKey(path));
-		if (tool === "bash") {
-			const command = expandShellVars(String(event?.input?.command ?? ""));
+		// OmO has no bash tool: shell commands run inside `eval` cells (tool.bash, Bun.$, subprocess), and read() reads a file.
+		if (tool === "bash" || tool === "eval") {
+			const command = expandShellVars(shellText(event?.input));
+			if (tool === "eval") for (const shown of command.matchAll(/\bread\(\s*[`'"]([^`'"]+\.patch)/g)) reviewedPatches.add(patchKey(shown[1]));
 			const base = String(event?.input?.cwd ?? ".");
 			for (const shown of command.matchAll(/\b(?:cat|bat|less|head|diff)\b[^|;&]*?(\S+\.patch)/g)) reviewedPatches.add(patchKey(shown[1], base));
 			const unreviewed = [...command.matchAll(new RegExp(`${GIT_APPLY}(?![^|;&]*--(?:stat|check))[^|;&]*?(\\S+\\.patch)`, "g"))]
@@ -1030,12 +1088,12 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 	});
 
 	pi.on("context", (event: any, ctx: any) => {
-		if (ctx?.agent?.kind !== "main" || !Array.isArray(event?.messages)) return;
+		if (!isMain(ctx) || !Array.isArray(event?.messages)) return;
 		const current = projectState(ctx);
 		let settled = false;
 		for (const m of event.messages) {
 			const text = typeof m?.content === "string" ? m.content : Array.isArray(m?.content) ? m.content.map((b: any) => b?.text ?? "").join("\n") : "";
-			if (text.includes("<task-result") && settleFromText(current, text)) settled = true;
+			if ((text.includes("<task-result") || text.includes("task completion")) && settleFromText(current, text)) settled = true;
 		}
 		if (settled) saveState(current);
 		let trimmed = 0;
