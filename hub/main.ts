@@ -653,11 +653,12 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 }
 const resumedLanes = restoreLanes();
 for (const name of resumedLanes) void discord.send(`lane:${name}`, "게이트웨이가 재시작돼서 멈췄던 작업을 이어서 하고 있어요.").catch(e => log(`lane resume notice failed: ${e}`));
-// Every start after the first one says so in chat, with what it picked back up, so a restart is never silent.
+// Every start after the first one says so in worklog (a self-run system event, not a chat answer), with what it picked
+// back up, so a restart is never silent; failures to start go to alert elsewhere.
 if (restarted) {
 	const at = new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" });
 	const picked = [replayed ? `답 못 한 메시지 ${replayed}개 다시 처리 중` : "", resumedLanes.length ? `이어서 하는 레인: ${resumedLanes.join(", ")}` : ""].filter(Boolean);
-	void out(discord.status.enabled ? "chat" : "web", `게이트웨이 재시작했어요 (${at} KST).${picked.length ? `\n- ${picked.join("\n- ")}` : " 끊긴 작업은 없어요."}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
+	void out(discord.status.enabled ? "worklog" : "web", `게이트웨이 재시작했어요 (${at} KST).${picked.length ? `\n- ${picked.join("\n- ")}` : " 끊긴 작업은 없어요."}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
 }
 startLaneHygiene();
 startWorktreeCleanup();
