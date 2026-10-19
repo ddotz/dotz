@@ -81,6 +81,12 @@ const en = {
 	replay: `${enLeads.replayLead}. Handle it now; it may be partly done already, so check before repeating an action.`,
 	newMessage: (target: string, replyTo: string | undefined, text: string) => `${enLeads.newMessageLead}; it gets no turn of its own. Answer it now with dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""} (the full answer if it is quick, else a short note on when), then continue the current work. Your final answer still goes to the request you started with.\n\n${text}`,
 	waited: (seconds: number, target: string) => `${enLeads.waitedLead} ${seconds}s in ${target} with nothing posted there. Post a short progress note in ${target} now (dotz_send update_key "progress": what you are doing, when the answer comes), then carry on.`,
+	// The one leading line of an owner prompt that says what runs now (workers named by the hub from its own state; no model call).
+	nowRunning: "[running now]",
+	nowLanes: (n: number, body: string) => `lanes ${n}(${body})`,
+	nowLaneBusy: "working",
+	nowWorkers: (n: number, names: string) => `workers ${n}${names ? ` ${names}` : ""}`,
+	nowOrchestrator: (n: number, names: string) => `orchestrator workers ${n}${names ? `(${names})` : ""}`,
 	firstStart: (target: string) => `[dotz gateway] First start of this install. Speak first in ${target}: greet the owner in a few short messages as ${NAME} (who you are, what you can do: channels per project, monitoring, lanes, schedules). Then ask once whether you may learn their setup, read-only: Aside's memory of them (aside memory list / search: who they are, people, projects, sites) and the sites they are signed in to, coding agent sessions and their projects, tools and CLIs in use, logs and schedules on this machine. On yes, do it with read-only workers, keep one progress message updated in place (dotz_send update_key "onboarding"), record what you learn in memory as you go, and end with a short summary of what you learned and what is still missing. On no, just say how to start.`,
 
 	inboxLaneReport: (lane: string) => `[dotz inbox] lane report from ${lane}:`,
@@ -377,6 +383,11 @@ const ko: Catalog = {
 	replay: `${koLeads.replayLead}. 지금 처리하세요. 이미 일부는 끝났을 수 있으니 같은 동작을 반복하기 전에 확인하세요.`,
 	newMessage: (target, replyTo, text) => `${koLeads.newMessageLead}. 이 메시지에는 별도 턴이 없어요. 지금 dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}로 답하세요(금방 끝나면 전체 답을, 아니면 언제쯤 답할지 짧게). 그다음 하던 일을 이어가세요. 최종 답은 처음 시작한 요청으로 가요.\n\n${text}`,
 	waited: (seconds, target) => `${koLeads.waitedLead}: ${target}에 ${seconds}초째 아무것도 올라오지 않았어요. 지금 ${target}에 짧은 진행 메모를 올리고(dotz_send update_key "progress": 하는 일, 답이 나올 시점) 하던 일을 이어가세요.`,
+	nowRunning: "[지금 도는 것]",
+	nowLanes: (n, body) => `레인 ${n}(${body})`,
+	nowLaneBusy: "작업 중",
+	nowWorkers: (n, names) => `워커 ${n}${names ? ` ${names}` : ""}`,
+	nowOrchestrator: (n, names) => `오케스트레이터 워커 ${n}${names ? `(${names})` : ""}`,
 	firstStart: target => `[dotz gateway] 이 설치의 첫 시작이에요. ${target}에서 먼저 말을 거세요: 짧은 메시지 몇 개로 오너에게 인사하세요(이름은 ${NAME}; 당신이 누구인지, 할 수 있는 일: 프로젝트별 채널, 모니터링, 레인, 스케줄). 그다음 오너의 환경을 읽기 전용으로 파악해도 되는지 한 번만 물어보세요: Aside에 있는 오너에 대한 메모리(aside memory list / search: 누구인지, 사람들, 프로젝트, 사이트), 로그인해 둔 사이트, 코딩 에이전트 세션과 프로젝트, 쓰는 도구와 CLI, 이 머신의 로그와 스케줄. 승낙하면 읽기 전용 워커로 진행하고, 진행 메시지 하나를 제자리에서 갱신하고(dotz_send update_key "onboarding"), 알게 된 것은 그때그때 메모리에 기록하고, 알아낸 것과 아직 모르는 것을 짧게 요약하며 끝내세요. 거절하면 시작하는 방법만 알려 주세요.`,
 
 	inboxLaneReport: lane => `[dotz inbox] 레인 ${lane}의 보고:`,

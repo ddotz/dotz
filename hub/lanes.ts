@@ -4,6 +4,7 @@ import { join, relative } from "node:path";
 import { emitEventActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAskFile } from "./asks.ts";
 import { cfg, chainAfter, DATA_DIR, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, workerModel, writeAtomic } from "./config.ts";
+import { formatHeader, kstClock, workersOf } from "./lanevis.ts";
 import { lang, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { languageName, baseLanguage } from "./language.ts";
@@ -37,7 +38,7 @@ type Claim = { state: "reported" | "verified"; at: string; evidence?: string };
 // A lane's own [ask] report stays a question for the owner until the owner answers (sendToLane) or the lane reports again.
 // The full text also sits in pending-ask.md (dir(name)) while pending, because report.md is overwritten by gateway notices.
 type Ask = { text: string; at: string };
-type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask };
+type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; lastReportAt?: string; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	lastText: string;
@@ -100,9 +101,9 @@ export function setIdleHandler(fn: (name: string) => void): void {
 
 const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
-	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, reports, held, worktree, claim, pendingAsk } = lane;
+	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, reports, lastReportAt, held, worktree, claim, pendingAsk } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, reports, ...(lastReportAt ? { lastReportAt } : {}), ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}) }, null, 2)}\n`);
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -146,6 +147,7 @@ const pendingFile = (lane: Lane) => join(dir(lane.name), "pending-report.md");
 function report(lane: Lane, text: string, notice = false): void {
 	rmSync(pendingFile(lane), { force: true });
 	lane.reports++;
+	lane.lastReportAt = now();
 	const tone = parseTone(text).tone;
 	lane.claim = tone === "done" ? { state: "reported", at: now() } : undefined;
 	if (tone === "ask" && !notice) {
@@ -844,3 +846,16 @@ export function laneSummary(): Array<Record<string, unknown>> {
 		context: ctxView(l.ctx),
 	}));
 }
+
+// The `dotz_lane list` view: the lane summary plus what each lane is doing right now (running task workers with their last
+// tool intent, from the hub's own state) and when its last report went out. The new keys come first because the tool
+// output is cut at a fixed length, and a long lastText must not push the workers out of it.
+export function laneList(): Array<Record<string, unknown>> {
+	return laneSummary().map(s => {
+		const lane = lanes.get(String(s.name))!;
+		return { name: s.name, status: s.status, workers: workersOf(`lane:${lane.name}`), last_report_at: lane.lastReportAt ?? null, last_report_kst: lane.lastReportAt ? kstClock(lane.lastReportAt) : null, ...s };
+	});
+}
+
+// The leading line of an owner prompt (see formatHeader); empty when nothing runs.
+export const turnHeader = (): string => formatHeader([...lanes.values()].map(l => ({ name: l.name, status: l.status, workers: workersOf(`lane:${l.name}`).map(w => w.name) })), workersOf("orchestrator").map(w => w.name));

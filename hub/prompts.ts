@@ -15,7 +15,7 @@ export type Reply = { target: string; replyTo?: string };
 
 export type PromptDeps = {
 	/** Starts a normal orchestrator turn with this prompt. */
-	deliver: (text: string) => void;
+	deliver: (text: string, owner?: boolean) => void;
 	/** Steers a note into the running turn. */
 	steer: (text: string) => void;
 	/** Is the orchestrator mid-turn (so a new message is steered)? */
@@ -63,7 +63,7 @@ export function createPrompts(deps: PromptDeps) {
 		prompts.push({ key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered });
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
 		save();
-		if (!steered) return deps.deliver(text);
+		if (!steered) return deps.deliver(text, Boolean(reply));
 		deps.steer(deps.note(reply!.target, reply!.replyTo, text));
 	}
 
@@ -96,7 +96,7 @@ export function createPrompts(deps: PromptDeps) {
 				continue;
 			}
 			p.steered = false;
-			deps.deliver(p.text);
+			deps.deliver(p.text, true);
 		}
 		if (dropped) save();
 	}
