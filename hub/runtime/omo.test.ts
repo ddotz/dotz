@@ -1,12 +1,29 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { shellText } from "../../extension/index.ts";
 import { jsonZod, params } from "../../extension/schema.ts";
 import { eventsFromFrame } from "./omp.ts";
 import { hostsOf, listHosts } from "./omo-hosts.ts";
-import { omoArgs, omoSelector, translateFrame } from "./omo.ts";
+import { omoArgs, omoSelector, translateFrame, WORKER_CATEGORIES, writeWorkerProfile } from "./omo.ts";
+
+test("a lane's worker model becomes a dotz profile of omo.json: every category on it, then its fallbacks; other keys stay", () => {
+	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
+	writeFileSync(file, JSON.stringify({ categories: { quick: { model: "x/y" } }, profiles: { mine: { categories: {} } } }));
+	const name = writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high", workerFallback: ["anthropic/claude-opus-5-5:medium"] }, file);
+	expect(name).toBe("dotz-workers-anthropic-claude-sonnet-5-5-high");
+	const doc = JSON.parse(readFileSync(file, "utf8"));
+	expect(doc.categories).toEqual({ quick: { model: "x/y" } });
+	expect(doc.profiles.mine).toEqual({ categories: {} });
+	expect(Object.keys(doc.profiles[name!].categories)).toEqual(WORKER_CATEGORIES);
+	expect(doc.profiles[name!].categories.quick.models).toEqual([
+		{ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "high" },
+		{ model: "anthropic-subscription/claude-opus-5-5", reasoning: "medium" },
+	]);
+	writeFileSync(`${file}c`, "// commented\n{}");
+	expect(writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high" }, file)).toBeUndefined();
+});
 
 test("omp's anthropic provider maps to OmO's subscription provider; others and the thinking level pass through", () => {
 	expect(omoSelector("anthropic/claude-opus-5-5:medium")).toBe("anthropic-subscription/claude-opus-5-5:medium");
