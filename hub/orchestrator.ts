@@ -274,11 +274,18 @@ async function readEvents(p: AgentProcess): Promise<void> {
 			}
 			case "compaction":
 				if (ev.state === "done") {
+					compactRetried = false;
 					// The compacted session keeps going: the next owner message reminds it to retain, and carries the lane
 					// questions still waiting for the owner (the summary may have cut them); the dotz extension re-reads the
 					// contract and state.json (open_tasks) into it.
 					retainNext = true;
 					asksNext = true;
+				} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > ROTATE_TOKENS && /retry compaction/i.test(ev.error) && !compactRetried) {
+					// OmO refuses a summary when the session changed while it was made; the next idle point tries once more.
+					compactRetried = true;
+					log(`orchestrator compaction raced a session write (${ev.error.slice(0, 120)}); retrying at the next idle point`);
+					orch.ctx.compaction = { state: "queued", at: now() };
+					if (orch.status === "idle") flushCompact(orch.ctx, port);
 				} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > ROTATE_TOKENS) {
 					log(`orchestrator compaction failed (${ev.error.slice(0, 160)}); moving to a fresh session with a handover`);
 					if (orch.status === "idle") rotate();
@@ -386,6 +393,7 @@ function retryTransient(err: string): void {
 // (OmO) keeps its session and with it what it was doing; a fresh session with a handover of recent exchanges forgot the
 // progress, so that is only the fallback when compaction fails (and the omp/Claude Code behaviour).
 let rotateWhenIdle = false;
+let compactRetried = false;
 const compacting = () => orch.ctx.compaction.state === "queued" || orch.ctx.compaction.state === "compacting";
 function limitContext(): void {
 	if (!rotateWhenIdle && adapter?.caps.contextLimit === "compact") {
@@ -408,6 +416,7 @@ function rotate(): void {
 	if (!proc || rotating) return;
 	log(`orchestrator context ${orch.ctx.tokens} tokens; rotating to a fresh session`);
 	rotateWhenIdle = false;
+	compactRetried = false;
 	rotating = true;
 	proc.kill();
 }

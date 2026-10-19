@@ -96,7 +96,14 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 			await run.turn(`Read this text too, then reply with exactly the single word again.\n\n${FILLER}`, ms);
 			const from = run.events.length;
 			run.proc.compact();
-			const done = await run.waitFor(e => e.type === "compaction", ms, from);
+			let done = await run.waitFor(e => e.type === "compaction", ms, from);
+			// OmO rejects a compaction when the session changed while the summary was made (a post-turn hook wrote to it); once more.
+			if (done?.type === "compaction" && done.state === "error" && /retry compaction/i.test(done.error ?? "")) {
+				const again = run.events.length;
+				await Bun.sleep(3000);
+				run.proc.compact();
+				done = await run.waitFor(e => e.type === "compaction", ms, again);
+			}
 			if (!done || done.type !== "compaction") return fail("no compaction event after compact()");
 			if (done.state !== "done") return fail(`compaction failed: ${done.error}`);
 			const after = await run.turn(PONG, ms);
@@ -163,9 +170,12 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 			if (!(await run.waitFor(e => e.type === "activity" && e.row.type === "tool_call", 60_000, at))) return fail("the model never started the long command");
 			await Bun.sleep(2000);
 			run.proc.abort();
-			if (!(await run.waitFor(e => e.type === "assistant" && e.stop === "aborted", 20_000, at))) return fail("abort() did not end the turn as aborted");
+			// OmO ends an aborted turn with the tool result "Tool execution aborted" and a plain turn_end (no aborted message).
+			if (!(await run.waitFor(e => (e.type === "assistant" && e.stop === "aborted") || e.type === "turn_end", 20_000, at))) return fail("abort() did not end the turn");
 			await Bun.sleep(1500);
-			return /PONG/i.test(answerOf(await run.turn(PONG, ms))) ? ok("steer injected mid-turn; abort -> assistant(aborted), session usable afterwards") : fail("the session did not answer after abort()");
+			// OmO may add a continuation turn for open todo items after the answer, so any PONG answer counts.
+			const after = await run.turn(PONG, ms);
+			return after.some(e => e.type === "assistant" && e.stop === "stop" && /PONG/i.test(e.text)) ? ok("steer injected mid-turn; abort ends the turn (tool result aborted, turn_end), session usable afterwards") : fail("the session did not answer after abort()");
 		}),
 
 		workers_spawn: probe(async (_ctx, start, ms) => {
