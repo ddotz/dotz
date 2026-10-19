@@ -341,9 +341,9 @@ const fileFact = (name: string): { label: string; value: string }[] => {
 };
 const timeOr = (v: unknown, dflt: string) => (String(v ?? dflt) === "off" ? "꺼짐" : `매일 ${v ?? dflt}`);
 
-export async function harnessGraph(opts: { terminals?: number } = {}) {
+export async function harnessGraph(opts: { terminals?: number; light?: boolean } = {}) {
 	const disk = readDisk();
-	const models = await Promise.race([availableModels().catch((): ModelInfo[] => []), sleep(2500, [] as ModelInfo[])]);
+	const models = opts.light ? ([] as ModelInfo[]) : await Promise.race([availableModels().catch((): ModelInfo[] => []), sleep(2500, [] as ModelInfo[])]);
 	const mName = (sel: string) => models.find(m => m.selector === sel)?.name ?? (sel.split("/").pop() ?? sel);
 	const om = orchestratorModel(), lm = lanesModel(), wm = parseSelector(workerModel());
 	const S = (p: string, over: Partial<Setting> = {}) => settingOf(p, disk, over);
@@ -368,7 +368,7 @@ export async function harnessGraph(opts: { terminals?: number } = {}) {
 	const orchTone: HarnessNode["status"] = ({ idle: "ok", working: "busy", starting: "busy", "rate-limited": "warn", stopped: "err" } as const)[orch.status];
 
 	// -- provider quota (one 2.5 s try; the usage call finishes in the background and the next refresh has it)
-	const q = await Promise.race([quota().catch(() => undefined), sleep(2500, undefined)]);
+	const q = opts.light ? undefined : await Promise.race([quota().catch(() => undefined), sleep(2500, undefined)]);
 	const used = [...new Set([om.model, lm.model, wm.model].map(m => m.split("/")[0]))];
 	const limits = (q?.providers ?? []).filter(p => used.includes(p.provider)).flatMap(p => p.limits.filter(l => l.limit && l.remaining != null).map(l => ({ p: p.provider, label: l.label, pct: Math.round((l.remaining! / l.limit!) * 100) })));
 	const low = limits.length ? Math.min(...limits.map(l => l.pct)) : undefined;

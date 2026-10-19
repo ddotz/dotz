@@ -598,6 +598,45 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .board.narrow .ltail { flex: none; height: 112px; }
 .board.narrow .bi > .lpane .lcomp { padding: 8px; }
 .lpane.att .lhead { border-bottom-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+/* 구성: 기능 보기 (badges on the map, 기능 목록 panel, 상세의 "여기서 작동하는 기능") */
+.btn.tonal[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.hm-bd { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.bd { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 4px; font: 500 10.5px/14px var(--font); white-space: nowrap; }
+.bd.f { border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.bd.a { border: 1px dashed var(--fg-3); color: var(--fg-2); }
+.tag.st.enforced { background: var(--accent); color: var(--bg); }
+.tag.st.advisory { box-sizing: border-box; border: 1px dashed var(--fg-3); background: transparent; color: var(--fg-2); }
+.fc { margin-top: 28px; }
+.fc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 4px; }
+.fc-bar .fi { flex: 1 1 200px; width: auto; }
+.fc-bar .sel { width: auto; min-width: 150px; }
+.fc-bar .seg { flex: none; flex-wrap: nowrap; }
+.fc-bar .seg button { flex: none; padding: 0 12px; }
+.fc-count { margin: 4px 0 12px; }
+.fc-gh { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; width: 100%; padding: 8px 2px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--fg); text-align: left; font: 600 13px/20px var(--font); }
+.fc-gh .ic { width: 14px; height: 14px; color: var(--fg-3); transition: transform .15s; }
+.fc-gh[aria-expanded="false"] .ic { transform: rotate(-90deg); }
+.fc-gh .sup { font-weight: 400; }
+.fc-gh .note { flex-basis: 100%; margin: 0 0 0 24px; }
+.fc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; margin: 10px 0 20px; }
+.fc-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--card); cursor: pointer; transition: border-color .15s, background .15s; }
+.fc-card:hover { background: var(--hover); border-color: var(--fg-3); }
+.fc-card.enforced { border-left: 3px solid var(--accent); }
+.fc-card.advisory { border-style: dashed; }
+.fc-card.off { opacity: .6; }
+.fc-card .top, .hs-ft .top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fc-card .nm, .hs-ft .nm { flex: 1; min-width: 0; font: 600 13px/20px var(--font); overflow-wrap: anywhere; }
+.fc-card .wh, .hs-ft .wh { color: var(--fg-2); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.fc-card .fc-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.fc-card .src, .hs-ft .src { color: var(--fg-3); font: 11px/16px var(--mono); overflow-wrap: anywhere; }
+.fc-card .dup, .hs-ft .dup { color: var(--warn); font-size: 11.5px; line-height: 16px; overflow-wrap: anywhere; }
+.hs-fts { display: flex; flex-direction: column; gap: 8px; }
+.hs-ft { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--card); }
+.hs-ft.enforced { border-left: 3px solid var(--accent); }
+.hs-ft.advisory { border-style: dashed; }
+.hs-ft.go { cursor: pointer; }
+.hs-ft.go:hover { background: var(--hover); }
+.hs-ft.on { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 </style>
 </head>
 <body>
@@ -2807,6 +2846,9 @@ function renderSettings() {
 
 /* ---------- 구성: harness map (graph + detail sheet; data from /api/harness) ---------- */
 let HG = null, hSel = "", hLoading = false, hDirty = null, hEdgeRefs = [], hNodeEls = new Map(), hTimer = 0;
+let FC = null, hGoto = null, hMapBox = null, hFcBox = null, fcSig = "", fcList = null, fcCount = null;
+let hFeat = (() => { try { return localStorage.getItem("dotz-hfeat") === "1"; } catch { return false; } })();
+const fcFilter = { q: "", form: "", trigger: "", strength: "" }, fcCollapsed = new Set(["스킬"]);
 const H_MQ = matchMedia("(max-width: 639px)");
 const H_COLS = ["들어오는 곳", "게이트웨이", "오케스트레이터", "레인", "작업자"];
 const H_TONE = { ok: "ok", busy: "pri", warn: "warn", err: "err", off: "" };
@@ -2818,7 +2860,7 @@ const hSvg = (tag, attrs) => { const n = document.createElementNS("http://www.w3
 async function loadHarness(quiet) {
   if (hLoading) return;
   hLoading = true;
-  try { if (!M) await loadModels(true); HG = await api("/api/harness"); }
+  try { if (!M) await loadModels(true); [HG, FC] = await Promise.all([api("/api/harness"), api("/api/features").catch(() => FC)]); }
   catch (e) { hLoading = false; if (!quiet && current === "harness") clear($("#harness")).append(emptyNode("구성을 불러오지 못했어요")); return; }
   hLoading = false;
   if (current === "harness") { renderHarness(); hHead(); }
@@ -2837,7 +2879,7 @@ function hLayout(avail) {
   const cols = Array.from({ length: ncol }, () => ({ flow: [], att: [] }));
   for (const n of flow) cols[col.get(n.id)].flow.push(n);
   for (const n of nodes) if (n.group !== "flow") cols[colOf(n)].att.push(n);
-  const GX = 56, HF = 72, HA = 60, VG = 10, HEAD = 26;
+  const GX = 56, HF = hFeat && !H_MQ.matches && FC ? 90 : 72, HA = hFeat && !H_MQ.matches && FC ? 78 : 60, VG = 10, HEAD = 26;
   const CW = Math.max(150, Math.min(200, Math.floor((avail - GX * (ncol - 1)) / ncol)));
   for (const c of cols) {
     c.att.sort((a, b) => key(a) - key(b));
@@ -2897,6 +2939,7 @@ function hCard(n, mobile) {
   const b = el("button", { type: "button", class: `hm-n${sup ? " sup" : ""}${n.group === "files" ? " fl" : ""}${mobile ? " m" : ""}${hSel === n.id ? " on" : ""}`, "data-id": n.id, "aria-label": `${n.label}: ${n.summary}` },
     el("span", { class: "t" }, el("span", { class: `dot ${H_TONE[n.status] || ""}` }), n.group === "files" ? icon("file") : null, el("span", { class: "l", text: n.label })),
     el("span", { class: "s", text: n.summary }),
+    fcBadges(n.id),
     links.length ? el("span", { class: "lk", text: `→ ${links.join(" · ")}` }) : null);
   b.addEventListener("click", () => openHSheet(n.id));
   b.addEventListener("mouseenter", () => hHot(n.id));
@@ -2922,6 +2965,7 @@ function renderHarness() {
   const mobile = H_MQ.matches;
   const bar = el("div", { class: "hm-bar" },
     el("div", { class: "sup", text: "카드를 누르면 설명과 설정이 열려요. 점선 카드는 곁에서 돕는 시스템이에요." }),
+    !mobile && FC ? el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
     el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); toast("새로 불러왔어요"); }) }, icon("refresh"), "새로고침"));
   const parts = [bar];
   const pend = HG.restart_pending || [];
@@ -2933,10 +2977,12 @@ function renderHarness() {
   const keep = box.querySelector(".hm-scroll");
   const left = keep ? keep.scrollLeft : 0;
   if (mobile) parts.push(hFlowList()); else parts.push(hCanvas($("#views").clientWidth - 48));
-  clear(box).append(...parts);
+  if (!hMapBox || hMapBox.parentNode !== box) { clear(box); hMapBox = el("div"); hFcBox = el("div", { class: "fc" }); box.append(hMapBox, hFcBox); fcSig = ""; }
+  clear(hMapBox).append(...parts);
   const sc = box.querySelector(".hm-scroll");
   if (sc) sc.scrollLeft = left;
   hHot(hSel);
+  renderFeatures();
 }
 
 function hCanvas(avail) {
@@ -3000,7 +3046,7 @@ function hReveal(id) {
 function closeHSheet() {
   const s = $("#hsheet");
   if (!s || s.hidden) return;
-  s.hidden = true; hSel = ""; hDirty = null; $("#harness").classList.remove("hs-open"); paintHSel();
+  s.hidden = true; hSel = ""; hDirty = null; hGoto = null; $("#harness").classList.remove("hs-open"); paintHSel();
 }
 
 function hHead() {
@@ -3010,11 +3056,12 @@ function hHead() {
   const t = $("#hs-tag"); t.className = `tag ${H_TONE[n.status] || ""}`; t.textContent = H_STATE[n.status] || "";
 }
 
-async function openHSheet(id) {
+async function openHSheet(id, focus = {}) {
+  if (id === hSel && focus.line && hGoto) { hGoto(focus.line); return; }
   if (id !== hSel && hDirty && hDirty() && !await ask("저장하지 않은 변경", "열려 있는 항목에 저장하지 않은 변경이 있어요. 버리고 넘어갈까요?", "버리기", true)) return;
   const n = hNode(id);
   if (!n) return;
-  hSel = id; paintHSel();
+  hSel = id; hGoto = null; paintHSel();
   const drafts = [];
   hDirty = () => drafts.some(f => f());
   $("#hsheet").hidden = false;
@@ -3025,10 +3072,12 @@ async function openHSheet(id) {
   body.scrollTop = 0;
   body.append(el("p", { class: "hs-desc", text: n.desc }));
   if (n.facts.length) body.append(el("div", { class: "sec", text: "지금 상태" }), el("div", { class: "hs-facts" }, ...n.facts.map(f => el("div", { class: "hs-fact" }, el("span", { class: "k", text: f.label }), el("span", { class: "v", text: f.value })))));
+  body.append(...fcSheetSection(n, focus.feature));
   if (n.settings.length) body.append(el("div", { class: "sec", text: "설정" }), ...n.settings.map(s => hSetting(s, drafts)));
-  if (n.file) body.append(el("div", { class: "sec", text: `파일 · ${n.file.split("/").pop()}` }), hFileEditor(n, drafts));
+  if (n.file) body.append(el("div", { class: "sec", text: `파일 · ${n.file.split("/").pop()}` }), hFileEditor(n, drafts, focus.line));
   const near = [...HG.edges.filter(e => e.to === id).map(e => ({ id: e.from, t: `← ${hNode(e.from).label}`, l: e.label })), ...HG.edges.filter(e => e.from === id).map(e => ({ id: e.to, t: `${hNode(e.to).label} →`, l: e.label }))];
   if (near.length) body.append(el("div", { class: "sec", text: "이어진 곳" }), el("div", { class: "hs-chips" }, ...near.map(x => el("button", { class: "chip", type: "button", title: x.l, onclick: () => openHSheet(x.id) }, el("span", { class: "tx", text: `${x.t} · ${x.l}` })))));
+  if (focus.feature && !focus.line) { const row = body.querySelector(`[data-fid="${CSS.escape(focus.feature)}"]`); if (row) row.scrollIntoView({ block: "center" }); }
 }
 
 function hModelItems(cur) {
@@ -3109,7 +3158,7 @@ function hSetting(s, drafts) {
 }
 
 // Prompt-file editor: loads the file, saves atomically (the server keeps the previous text as <name>.bak).
-function hFileEditor(n, drafts) {
+function hFileEditor(n, drafts, line) {
   const ta = el("textarea", { class: "fi hs-ta hs-mono", rows: 18, spellcheck: "false", "aria-label": n.file });
   ta.readOnly = !n.fileEditable;
   const info = el("div", { class: "note" }), warn = el("div", { class: "note err", style: "white-space:pre-line" });
@@ -3130,12 +3179,162 @@ function hFileEditor(n, drafts) {
     mark(); loadHarness(true);
   });
   drafts.push(dirty);
+  // Puts the caret on a 1-based line and scrolls the editor there (a hidden copy of the text measures wrapped lines).
+  const gotoLine = ln => {
+    const lines = ta.value.split("\n"), start = lines.slice(0, ln - 1).reduce((s, l) => s + l.length + 1, 0), end = start + (lines[ln - 1] || "").length;
+    const cs = getComputedStyle(ta);
+    const mir = el("div", { style: `position:absolute;visibility:hidden;left:-9999px;top:0;box-sizing:border-box;width:${ta.clientWidth}px;padding:${cs.padding};font-family:${cs.fontFamily};font-size:${cs.fontSize};line-height:${cs.lineHeight};white-space:pre-wrap;overflow-wrap:break-word` });
+    const at = el("span", { text: "\u200b" });
+    mir.append(ta.value.slice(0, start), at); document.body.append(mir);
+    const top = at.offsetTop; mir.remove();
+    ta.closest(".hs-fw").scrollIntoView({ block: "start" });
+    ta.focus({ preventScroll: true }); ta.setSelectionRange(start, end);
+    ta.scrollTop = Math.max(0, top - 60);
+  };
+  hGoto = gotoLine;
   api(url).then(r => {
     orig = r.text; ta.value = r.text;
     info.textContent = `${num(r.text.length)}자${r.cap ? ` (시작 프롬프트에는 앞 ${num(r.cap)}자까지)` : ""} · ${r.modified ? `${kstStamp(r.modified)} 수정` : "아직 없는 파일 (저장하면 만들어져요)"} · ${r.note}`;
     mark();
+    if (line) gotoLine(line);
   }, e => { info.className = "note err"; info.textContent = e.message; });
   return el("div", { class: "hs-fw" }, ta, el("div", { class: "btns hs-act" }, n.fileEditable ? undo : null, n.fileEditable ? save : null), info, warn);
+}
+
+/* ---------- 구성: 기능 보기 (what the owner added, by implementation form; data from /api/features) ---------- */
+const FC_NOTE = {
+  "글 지시": "프롬프트에 들어가는 글이에요. 모델이 따르도록 부탁하는 것이라 어길 수도 있어요 (권고).",
+  "차단 명령": "RULES 의 deny 줄이에요. 실행 직전에 코드가 막아요 (강제).",
+  "스킬": "SKILL.md 절차서예요. 모델이 필요할 때 읽고 따라요 (권고).",
+  "omp 확장": "omp 에 설치된 코드예요. 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).",
+  "예약": "정해진 시각에 문장을 오케스트레이터에게 보내는 타이머예요.",
+  "감시": "모델을 깨우지 않고 주기적으로 명령을 돌려 변화만 알리는 점검이에요.",
+  "작업 채널 설정": "작업 채널마다 묶어 둔 로그인 유지와 감시예요.",
+  "게이트웨이 기능": "게이트웨이 코드에 들어 있는 기능이에요.",
+  "외부 연동": "Discord·메일(zele)·브라우저(Aside) 같은 바깥 서비스와의 연결이에요.",
+};
+const FC_STR = { enforced: "강제", advisory: "권고" };
+const FC_FILE_NODE = { "RULES.md": "rules", "LESSONS.md": "lessons", "identity/IDENTITY.md": "identity" };
+const fcOf = id => (FC ? FC.features.filter(f => f.stage === id) : []);
+const fcDupText = f => (f.dup && f.dup.length ? `같은 일을 ${f.strength === "advisory" ? "코드(강제)" : "글(권고)"}로도 적어 뒀어요: ${f.dup.map(d => d.name).join(", ")}` : "");
+
+function fcBadges(id) {
+  if (!hFeat || !FC || H_MQ.matches) return null;
+  const list = fcOf(id), e = list.filter(f => f.strength === "enforced").length, a = list.length - e;
+  if (!list.length) return null;
+  return el("span", { class: "hm-bd", title: `여기서 작동하는 기능: 강제 ${e}개 · 권고 ${a}개` }, e ? el("span", { class: "bd f", text: `강제 ${e}` }) : null, a ? el("span", { class: "bd a", text: `권고 ${a}` }) : null);
+}
+
+function fcSwitch(f) {
+  const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(f.enabled), "aria-label": `${f.name} ${f.enabled ? "끄기" : "켜기"}`, title: f.enabled ? "끄기" : "켜기" });
+  sw.addEventListener("click", ev => {
+    ev.stopPropagation();
+    busy(sw, async () => { const r = await api(`/api/features/${enc(f.id)}/toggle`, "POST", { enabled: !f.enabled }); toast(`${f.name}: ${r.note}`); await loadHarness(true); });
+  });
+  return sw;
+}
+
+// A card opens the harness node it works in; text rules open their file editor at the line.
+function fcOpenFeature(f) {
+  const node = FC_FILE_NODE[f.source.file];
+  if (node && f.source.line) openHSheet(node, { line: f.source.line, feature: f.id });
+  else openHSheet(f.stage, { feature: f.id });
+}
+
+function fcCard(f) {
+  const node = hNode(f.stage), dup = fcDupText(f);
+  const c = el("div", { class: `fc-card ${f.strength}${f.enabled ? "" : " off"}`, tabindex: "0", role: "button", "aria-label": `${f.name}: ${f.what}` },
+    el("div", { class: "top" }, el("span", { class: "nm", text: f.name }), f.toggleable ? fcSwitch(f) : null),
+    f.what ? el("div", { class: "wh", text: f.what }) : null,
+    el("div", { class: "fc-tags" },
+      el("span", { class: `tag st ${f.strength}`, title: f.strength === "enforced" ? "코드·훅·차단 줄이 막거나 실행해요" : "모델에게 따르라고 부탁한 글이에요", text: FC_STR[f.strength] }),
+      el("span", { class: "tag", text: f.trigger }),
+      node ? el("span", { class: "tag", text: node.label.replace(/\s*\(.*\)$/, "") }) : null,
+      !f.enabled ? el("span", { class: "tag", text: "꺼짐" }) : null,
+      dup ? el("span", { class: "tag warn", title: dup, text: "중복" }) : null),
+    dup ? el("div", { class: "dup", text: dup }) : null,
+    el("div", { class: "src", text: [f.source.label, f.added ? `${f.added} 추가` : "", f.lastRun ? `마지막 ${kstStamp(f.lastRun)}` : ""].filter(Boolean).join(" · ") }));
+  c.addEventListener("click", () => fcOpenFeature(f));
+  c.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === c) { ev.preventDefault(); fcOpenFeature(f); } });
+  return c;
+}
+
+const fcMatch = f => {
+  const q = fcFilter.q.trim().toLowerCase();
+  return (!fcFilter.form || f.form === fcFilter.form) && (!fcFilter.strength || f.strength === fcFilter.strength) && (!fcFilter.trigger || f.trigger === fcFilter.trigger)
+    && (!q || `${f.name} ${f.what} ${f.source.label} ${f.trigger} ${f.form} ${f.extra || ""}`.toLowerCase().includes(q));
+};
+
+function fcPaintList() {
+  const all = FC.features, hit = all.filter(fcMatch), filtering = !!(fcFilter.q.trim() || fcFilter.form || fcFilter.strength || fcFilter.trigger);
+  const e = hit.filter(f => f.strength === "enforced").length;
+  fcCount.textContent = `${filtering ? `${hit.length} / ${all.length}개` : `${all.length}개`} · 강제 ${e} · 권고 ${hit.length - e}`;
+  clear(fcList);
+  if (!hit.length) { fcList.append(emptyNode("조건에 맞는 기능이 없어요")); return; }
+  for (const form of FC.forms) {
+    const items = hit.filter(f => f.form === form);
+    if (!items.length) continue;
+    const fe = items.filter(f => f.strength === "enforced").length, shut = !filtering && fcCollapsed.has(form);
+    const head = el("button", { type: "button", class: "fc-gh", "aria-expanded": String(!shut) }, icon("drop"), el("span", { text: form }), el("span", { class: "tag", text: `${items.length}개` }),
+      el("span", { class: "sup", text: `강제 ${fe} · 권고 ${items.length - fe}` }), el("div", { class: "note", text: FC_NOTE[form] || "" }));
+    head.addEventListener("click", () => { if (filtering) return; if (fcCollapsed.has(form)) fcCollapsed.delete(form); else fcCollapsed.add(form); fcPaintList(); });
+    fcList.append(head);
+    if (!shut) fcList.append(el("div", { class: "fc-grid" }, ...items.map(fcCard)));
+  }
+}
+
+// The 기능 목록 shell (search + filters) is built once so typing is not interrupted by the 15 s refresh; only the list repaints.
+function fcBuild(box) {
+  const q = el("input", { class: "fi", type: "text", autocomplete: "off", spellcheck: "false", placeholder: "기능 검색 (이름·내용·파일)", "aria-label": "기능 검색", value: fcFilter.q });
+  q.addEventListener("input", () => { fcFilter.q = q.value; fcPaintList(); });
+  const pick = (key, label, options) => {
+    const val = el("span", { class: "val" });
+    const b = el("button", { type: "button", class: "sel", "aria-haspopup": "listbox", "aria-expanded": "false" }, val, icon("drop"));
+    const paint = () => { val.textContent = `${label}: ${fcFilter[key] || "전체"}`; b.setAttribute("aria-label", val.textContent); };
+    b.addEventListener("click", () => showMenu(b, [{ value: "", label: "전체" }, ...options().map(v => ({ value: v, label: v }))], { value: fcFilter[key], onPick: v => { fcFilter[key] = v; paint(); fcPaintList(); } }));
+    paint();
+    return b;
+  };
+  const seg = el("div", { class: "seg", role: "group", "aria-label": "강제/권고" });
+  for (const [v, t] of [["", "전체"], ["enforced", "강제"], ["advisory", "권고"]]) {
+    const b = el("button", { type: "button", class: fcFilter.strength === v ? "on" : "", text: t });
+    b.addEventListener("click", () => { fcFilter.strength = v; for (const x of seg.children) x.classList.toggle("on", x === b); fcPaintList(); });
+    seg.append(b);
+  }
+  fcCount = el("div", { class: "sup fc-count" });
+  fcList = el("div");
+  box.append(el("div", { class: "sec", text: "기능 목록" }),
+    el("div", { class: "sup", text: "내가 더한 기능을 구현 형식별로 모았어요. 실선·강제는 코드가 막거나 실행하는 것, 점선·권고는 모델에게 따르라고 부탁한 글이에요. 카드를 누르면 작동하는 자리와 파일이 열려요." }),
+    el("div", { class: "fc-bar" }, q, pick("form", "형식", () => FC.forms), pick("trigger", "트리거", () => FC.triggers), seg), fcCount, fcList);
+}
+
+function renderFeatures() {
+  const box = hFcBox;
+  if (!box) return;
+  if (!FC) { clear(box); fcSig = ""; return; }
+  const sig = JSON.stringify(FC.features) + (HG ? HG.nodes.map(n => n.label).join("") : "");
+  if (sig === fcSig && box.firstChild) return;
+  fcSig = sig;
+  if (!box.firstChild) fcBuild(box);
+  fcPaintList();
+}
+
+// 상세 시트: the features that work at this node, enforced first.
+function fcSheetSection(n, focusId) {
+  const list = fcOf(n.id).sort((a, b) => (a.strength === b.strength ? 0 : a.strength === "enforced" ? -1 : 1));
+  if (!list.length) return [];
+  const e = list.filter(f => f.strength === "enforced").length;
+  const rows = list.map(f => {
+    const dup = fcDupText(f), jump = !!(n.file && f.source.file && f.source.line);
+    const r = el("div", { class: `hs-ft ${f.strength}${jump ? " go" : ""}${f.id === focusId ? " on" : ""}`, "data-fid": f.id },
+      el("div", { class: "top" }, el("span", { class: `tag st ${f.strength}`, text: FC_STR[f.strength] }), el("span", { class: "nm", text: f.name }), f.toggleable ? fcSwitch(f) : null),
+      f.what ? el("div", { class: "wh", text: f.what }) : null,
+      el("div", { class: "src", text: `${f.trigger} · ${f.source.label}` }),
+      dup ? el("div", { class: "dup", text: dup }) : null);
+    if (jump) r.addEventListener("click", () => hGoto && hGoto(f.source.line));
+    return r;
+  });
+  return [el("div", { class: "sec", text: `여기서 작동하는 기능 · 강제 ${e} · 권고 ${list.length - e}` }), el("div", { class: "hs-fts" }, ...rows)];
 }
 
 $("#hs-close").append(icon("close"));

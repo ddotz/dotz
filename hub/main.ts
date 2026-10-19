@@ -18,6 +18,7 @@ import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queu
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { startReflection } from "./reflect.ts";
+import { featureCatalog, toggleFeature } from "./features.ts";
 import { harnessGraph, patchConfig, readHarnessFile, writeHarnessFile } from "./harness.ts";
 import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
 import { startOmpUpdate } from "./update.ts";
@@ -566,6 +567,14 @@ const server = Bun.serve({
 					if (req.method === "GET") return json(readHarnessFile(name));
 					if (req.method === "PUT") return json(writeHarnessFile(name, (await body(req)).text));
 				}
+			} catch (error) {
+				return fail(error);
+			}
+		}
+		if (parts[0] === "api" && parts[1] === "features") {
+			try {
+				if (req.method === "GET" && parts.length === 2) return json(await featureCatalog());
+				if (req.method === "POST" && parts[3] === "toggle" && parts.length === 4) return json(await toggleFeature(decodeURIComponent(parts[2]), (await body(req)).enabled));
 			} catch (error) {
 				return fail(error);
 			}
