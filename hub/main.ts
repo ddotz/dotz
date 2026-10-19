@@ -14,6 +14,7 @@ import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, res
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { startReflection } from "./reflect.ts";
 import { addSchedule, listSchedules, removeSchedule, startSchedules } from "./schedule.ts";
+import { startOmpUpdate } from "./update.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { addWatch, allWatches, listWatches, removeWatch, startWatches } from "./watch.ts";
 import { startZele } from "./zele.ts";
@@ -648,6 +649,7 @@ startSchedules(s => {
 	deliver(inboxText(event), { target: channel });
 });
 startReflection(text => deliver(text), () => orch.sessionFile);
+startOmpUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`omp update post failed: ${e}`)), restartGateway);
 startWatches((w, reason, output) => {
 	if (w.to === "orchestrator") {
 		const event = { ts: now(), kind: "watch", source: `watch:${w.name}`, watch: w.name, channels: w.channels, reason, text: output };
