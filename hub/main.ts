@@ -9,6 +9,7 @@ import * as discord from "./discord.ts";
 import { isNote, msg } from "./i18n.ts";
 import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
+import { startMemoryGuard } from "./memguard.ts";
 import { abortLane, approvesBudget, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator } from "./orchestrator.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
@@ -660,6 +661,11 @@ if (restarted) {
 }
 startLaneHygiene();
 startWorktreeCleanup();
+startMemoryGuard((key, text) => {
+	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
+	lastPost.set(key, Date.now());
+	void discord.send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
+});
 startOrphanReaper();
 startSchedules(s => {
 	const channel = discord.status.enabled ? "chat" : "web";

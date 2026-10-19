@@ -14,7 +14,7 @@ export type Config = {
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string };
 	web: { port: number; tailscale_https_port: number; allow_logins: string[] };
 	orchestrator?: { model: string; thinking: string; rotate_tokens?: number };
-	lanes: { model: string; thinking: string; max_active?: number; worker_model?: string; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number };
+	lanes: { model: string; thinking: string; max_active?: number; worker_model?: string; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number };
 };
 
 export const CONFIG_FILE = join(DATA_DIR, "config.json");
@@ -37,6 +37,8 @@ export const lanesNightlyCompactAt = () => positive(cfg.lanes?.nightly_compact_a
 export const lanesKeepRecent = () => positive(cfg.lanes?.keep_recent, 40_000);
 export const lanesRotateMb = () => positive(cfg.lanes?.rotate_mb, 50);
 export const lanesNightlyAt = () => String(cfg.lanes?.nightly_at ?? "04:30");
+// RSS limit of one agent process (orchestrator or lane, task workers included) before the memory guard restarts it; 0 turns the guard off.
+export const lanesMaxRssGb = () => (typeof cfg.lanes?.max_rss_gb === "number" && cfg.lanes.max_rss_gb >= 0 ? cfg.lanes.max_rss_gb : 8);
 // Splits "<model>:<thinking>" at the last colon when the suffix is a thinking level (model ids may contain colons).
 export function parseSelector(selector: string): { model: string; thinking: string } {
 	const i = selector.lastIndexOf(":");

@@ -185,12 +185,24 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
 - This overrides the global "terminal shows raw text, no bold" rule for Discord and web targets. Only the terminal
   target stays plain text.
 - Line 1 is the conclusion or answer on its own. Anything with 3 or more items is laid out, one item per line:
-  - "- " bullets (Discord draws them as a list); "1)" for options or ranked choices; sub-points indented two spaces.
+  - "- " bullets (Discord draws them as a list); "1)" for a ranked list; sub-points indented two spaces. Options the
+    owner must pick from always use the choice block below, never "1)" lines inside prose.
   - Labeled lines for roles, each on its own line: "추천:", "주의:", "원인:", "남은 것:", "근거:", "다음:".
   - **bold** only for the 1-3 words that matter most (a state, the cause, the decision needed), at most 3 per message,
     never a whole sentence.
   - "→" for a flow or consequence, "›" for menu paths (설정 › 계정). Links on their own line; commands, paths and
     ids in `code`; multi-line output in a ``` block.
+- Choice block (every decision the owner makes, on Discord and web): one paragraph (= one Discord message) per decision,
+  your pick first and marked "← 추천", 2-4 options, each option two lines: a bold name of a few words, then one short
+  line of what happens. The option names may be bold beyond the 3-per-message limit. Several decisions = several
+  blocks, each numbered from 1, then one closing line saying how to answer ("번호로 답해 주세요", e.g. "1, 2").
+  ```
+  결정: 게이트웨이 시작 설정
+  > **1) 지금 고치기** ← 추천
+  > 재부팅해도 dotz가 그대로 떠요
+  > **2) 그냥 두기**
+  > 재부팅 전까지는 문제없어요
+  ```
 - No # headings and no | tables (Discord does not draw tables). The gateway splits your final answer into one Discord
   message per paragraph (a blank line), so a laid-out answer is one block with no blank lines inside, and short
   separate things (result, evidence, question) are separate short paragraphs. A short reply stays one or two plain lines.

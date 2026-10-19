@@ -65,7 +65,7 @@ export function digest(sessionFile: string, now = Date.now()): string | undefine
 		...laneTrouble.slice(-8).map(e => `- ${e.lane}: ${short(e.text)}`),
 		`alerts sent (${outbox.filter(e => e.target === "alert").length}):`,
 		...outbox.filter(e => e.target === "alert").slice(-6).map(e => `- ${short(e.text)}`),
-		`gateway: watchdog restarts ${count(/did not start a turn/)}, orchestrator exits ${count(/orchestrator exited/)}, rotations ${count(/rotating to a fresh/)}, keepalives ${count(/keepalive \d/)}, send failures ${count(/send failed/)}, watch failures ${count(/^\S+ watch \S+ failed/)}`,
+		`gateway: watchdog restarts ${count(/did not start a turn/)}, memory restarts ${count(/memory guard: .*restarting it/)}, orchestrator exits ${count(/orchestrator exited/)}, rotations ${count(/rotating to a fresh/)}, keepalives ${count(/keepalive \d/)}, send failures ${count(/send failed/)}, watch failures ${count(/^\S+ watch \S+ failed/)}`,
 		// With the nightly token audit on, one summary line replaces the raw usage counters so each fact is counted once.
 		...(audit ? [audit] : [`orchestrator tokens: ${usage(sessionFile, since)}`, ...laneUsage(since)]),
 	].join("\n");
