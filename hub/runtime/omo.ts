@@ -3,8 +3,11 @@
 // tool frames; the same session-file entries), so omp.ts's reader is reused and this file holds only what differs:
 // spawn arguments, provider names, compaction frame names, task workers that report back into the session instead of a
 // live subscription, and closing the rpc host OmO starts for task workers (omo-hosts.ts).
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { apiKeyBan, withoutApiKeys } from "../apikey-policy.ts";
-import { parseSelector } from "../config.ts";
+import { log, parseSelector, writeAtomic } from "../config.ts";
 import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
 import { closeHostsOf, OMO, recordStarted } from "./omo-hosts.ts";
@@ -18,6 +21,40 @@ export function omoSelector(selector: string): string {
 	const { model, thinking } = parseSelector(selector);
 	const mapped = model.startsWith("anthropic/") ? `anthropic-subscription/${model.slice("anthropic/".length)}` : model;
 	return thinking ? `${mapped}:${thinking}` : mapped;
+}
+
+// OmO task workers take their model from OmO's categories (the user omo.json), never from the spawn, so a lane's worker
+// model goes into a dotz-owned profile there: every category on that model, then its fallbacks, and the lane process
+// starts with OMO_PROFILE naming the profile. A profile applies only where OMO_PROFILE names it, so the owner's own OmO
+// sessions keep their categories. Without it a lane's `quick` worker ran on OmO's default (Haiku, seen 2026-10-20).
+export const WORKER_CATEGORIES = ["quick", "unspecified-low", "unspecified-high", "deep-low", "deep-high", "ultrabrain", "artistry", "writing", "visual-engineering", "architect"];
+export const omoConfigFile = () => process.env.DOTZ_OMO_CONFIG ?? join(process.env.HOME ?? homedir(), ".omo", "omo.json");
+export const workerProfileName = (workerModel: string) => `dotz-workers-${workerModel.replace(/[^A-Za-z0-9.-]+/g, "-")}`;
+const categoryModel = (selector: string) => {
+	const { model, thinking } = parseSelector(omoSelector(selector));
+	return { model, reasoning: thinking };
+};
+
+// Returns the profile name, or undefined when the file cannot be written (OmO reads omo.jsonc first, and dotz does not
+// rewrite a commented file; an unreadable omo.json is left alone): the lane then runs its workers on OmO's categories.
+export function writeWorkerProfile(lane: { workerModel: string; workerFallback?: string[] }, file = omoConfigFile()): string | undefined {
+	const name = workerProfileName(lane.workerModel);
+	if (existsSync(file.replace(/\.json$/, ".jsonc"))) {
+		log(`omo: ${file}c exists; lane workers keep OmO's own category models`);
+		return undefined;
+	}
+	let doc: Record<string, unknown> = {};
+	try {
+		if (existsSync(file)) doc = JSON.parse(readFileSync(file, "utf8"));
+	} catch (e) {
+		log(`omo: ${file} is not readable JSON (${(e as Error).message}); lane workers keep OmO's own category models`);
+		return undefined;
+	}
+	const models = [lane.workerModel, ...(lane.workerFallback ?? [])].map(categoryModel);
+	const profiles = { ...(doc.profiles as Record<string, unknown> | undefined), [name]: { categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models }])) } };
+	mkdirSync(dirname(file), { recursive: true });
+	writeAtomic(file, `${JSON.stringify({ ...doc, profiles }, null, 2)}\n`);
+	return name;
 }
 
 // OmO names its compaction frames compaction_start/compaction_end (omp: auto_compaction_*). A requested compaction is
@@ -68,7 +105,8 @@ export const omo: RuntimeAdapter = {
 	// claude-sdk-oauth stream drops the cacheWrite1h field, so nothing here reads that field.
 	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact" },
 	start(o) {
-		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...process.env, ...o.env, DOTZ_RUNTIME: "omo" }) });
+		const profile = o.lane ? writeWorkerProfile(o.lane) : undefined;
+		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...process.env, ...o.env, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
 		const agent = new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);

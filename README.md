@@ -309,8 +309,10 @@ All behind the same auth as the rest of `/api`.
   place), the completion's `isolation: retained via … -> <root.patch>` line is kept as `<id>.patch`, and `git apply` of a patch
   (in an OmO `eval` cell or bash) is refused until the patch was read. A repo OmO reports `isolation_unavailable` for (e.g. over
   its snapshot budget) gets in-place workers. Probe: `workers_isolated_patch`.
-- *Lane worker model*: OmO task workers take their model from OmO's categories (`omo.json`), so `lanes.worker_model` and
-  `lanes.worker_fallback` do not apply on OmO.
+- *Lane worker model*: OmO task workers take their model from OmO's categories (`omo.json`), so each lane spawn writes
+  `profiles.dotz-workers-<model>` into `~/.omo/omo.json` (every category on the lane's worker model, then
+  `lanes.worker_fallback`) and starts the lane with `OMO_PROFILE` naming it; the owner's own OmO sessions, which set no
+  profile, keep their categories. With an `omo.jsonc` dotz writes nothing and the workers keep OmO's categories.
 - *Memory*: no omp memory; durable facts go to RULES.md / LESSONS.md / state.json (MODE.md).
 - *Still omp-only*: the budget gate on spawns and the Anthropic quota numbers (`omp usage`), provider login (`omp auth`), the
   nightly `omp worktree` cleanup and the omp update check. They call the `omp` binary, so they need omp installed and
