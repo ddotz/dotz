@@ -7,6 +7,7 @@ import "./lock.ts"; // must stay right after config.ts: takes the single-instanc
 import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
+import { authRoute } from "./auth.ts";
 import { isNote, msg } from "./i18n.ts";
 import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
@@ -397,6 +398,8 @@ const server = Bun.serve({
 		const url = new URL(req.url);
 		if (!authorized(req)) return new Response("forbidden", { status: 403 });
 		const parts = url.pathname.split("/").filter(Boolean);
+		const authResponse = authRoute(req, url);
+		if (authResponse) return authResponse;
 		if (req.method === "GET" && url.pathname === "/") return new Response(Bun.file(WEB), { headers: { "Content-Type": "text/html; charset=utf-8" } });
 		if (url.pathname === "/api/health") return json({ ok: true });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });

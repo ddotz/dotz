@@ -350,6 +350,44 @@ async function post(id: string, body: Body, reopen = false): Promise<string> {
 	}
 }
 
+// ---- Interactive messages (hub/auth.ts): content + components, edits, interaction callbacks ----
+
+export type RichBody = { content: string; components: unknown[] };
+/** The part of an INTERACTION_CREATE payload the hub reads. Its values are never logged. */
+export type Interaction = {
+	id: string;
+	token: string;
+	type: number;
+	member?: { user?: { id?: string } };
+	user?: { id?: string };
+	data?: { custom_id?: string; components?: { components?: { custom_id?: string; value?: string }[] }[] };
+};
+let onInteraction: (d: Interaction) => void = () => {};
+export function setInteractionHandler(fn: (d: Interaction) => void): void {
+	onInteraction = fn;
+}
+
+export async function postRich(target: string, body: RichBody): Promise<{ channelId: string; messageId: string }> {
+	const channelId = resolve(target);
+	if (!channelId) throw new Error(`no discord channel for ${target}`);
+	// Body has no `components`; the payload is sent as-is.
+	const payload = { allowed_mentions: mentionsOff, ...body } as unknown as Body;
+	return { channelId, messageId: await post(channelId, payload) };
+}
+
+export async function editRich(channelId: string, messageId: string, body: RichBody): Promise<void> {
+	await rest("PATCH", `/channels/${channelId}/messages/${messageId}`, { ...body, allowed_mentions: mentionsOff });
+}
+
+// The interaction token is part of the URL; it is stripped from any error text so it cannot reach a log.
+export async function interactionCallback(d: Interaction, type: number, data?: unknown): Promise<void> {
+	try {
+		await rest("POST", `/interactions/${d.id}/${d.token}/callback`, data === undefined ? { type } : { type, data });
+	} catch (error) {
+		throw new Error(String(error).split(d.token).join("<token>"));
+	}
+}
+
 export async function send(target: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
 	const id = resolve(target);
@@ -518,6 +556,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 				void catchUp().catch(e => log(`discord catch-up failed: ${e}`));
 			} else if (p.op === 0 && p.t === "RESUMED") status.connected = true;
 			else if (p.op === 0 && p.t === "MESSAGE_CREATE") handle(p.d);
+			else if (p.op === 0 && p.t === "INTERACTION_CREATE") onInteraction(p.d);
 			else if (p.op === 0 && p.t === "MESSAGE_UPDATE") {
 				const edited = editedText(p.d);
 				if (edited !== undefined) handle(p.d, edited);
