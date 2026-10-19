@@ -5,11 +5,12 @@ import { emitEventActivity, endSubagents, runningSubagents, statusActivity } fro
 import { cfg, DATA_DIR, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, workerModel, writeAtomic } from "./config.ts";
 import { lang, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
-import { languageName } from "./language.ts";
+import { languageName, baseLanguage } from "./language.ts";
 import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import type { AgentProcess } from "./runtime/types.ts";
+import { parseTone } from "./tone.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 const PROGRESS_EVERY_MS = Number(process.env.DOTZ_PROGRESS_MS ?? 15 * 60_000);
@@ -27,7 +28,8 @@ const DONE_RE = /(done[- ]?when|done\s*=|acceptance|완료\s*조건)/i;
 export type LaneStatus = "starting" | "working" | "idle" | "rate-limited" | "exited";
 // A lane in a git repo works in its own worktree (repo = the owner's checkout, base = the branch it lands on).
 type Worktree = { path: string; repo: string; branch: string; base: string };
-type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; held?: string[]; worktree?: Worktree };
+type Claim = { state: "reported" | "verified"; at: string; evidence?: string };
+type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; held?: string[]; worktree?: Worktree; claim?: Claim };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	lastText: string;
@@ -74,9 +76,9 @@ export function setIdleHandler(fn: (name: string) => void): void {
 
 const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
-	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, reports, held, worktree } = lane;
+	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, reports, held, worktree, claim } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}) }, null, 2)}\n`);
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -118,6 +120,7 @@ const pendingFile = (lane: Lane) => join(dir(lane.name), "pending-report.md");
 function report(lane: Lane, text: string): void {
 	rmSync(pendingFile(lane), { force: true });
 	lane.reports++;
+	lane.claim = parseTone(text).tone === "done" ? { state: "reported", at: now() } : undefined;
 	persist(lane);
 	writeFileSync(join(dir(lane.name), "report.md"), `${text}\n`);
 	onReport(lane, text);
@@ -472,6 +475,25 @@ function known(name: string): Lane {
 	return lane;
 }
 
+// A lane's "done" report is only its own claim (OMH evidence labels: reported vs verified); "verified" is set here, by the
+// orchestrator, after it checked the Done-when itself, and any later report that is not [done] withdraws the claim.
+export function verifyLane(name: string, evidence: string): void {
+	const lane = known(name);
+	if (lane.claim?.state !== "reported") throw new Error(`lane ${name} has no reported-done claim to verify${lane.claim ? " (already verified)" : ""}`);
+	const text = evidence.trim();
+	if (!text) throw new Error("verify needs evidence: what was run and its result");
+	lane.claim = { state: "verified", at: now(), evidence: text.slice(0, 1000) };
+	persist(lane);
+}
+
+// "보고됨 · " / "확인됨 · " for a lane's worklog entry; empty while the lane has no claim.
+export function claimPrefix(name: string): string {
+	const state = lanes.get(name)?.claim?.state;
+	if (!state) return "";
+	const ko = baseLanguage(lang()) === "ko";
+	return `${state === "verified" ? (ko ? "확인됨" : "verified") : ko ? "보고됨" : "reported"} · `;
+}
+
 // Stops the lane's process; a closed lane whose branch is merged and clean also loses its worktree and branch.
 export function stopLane(name: string): void {
 	const lane = known(name);
@@ -636,6 +658,7 @@ export function laneSummary(): Array<Record<string, unknown>> {
 		status: l.status,
 		startedAt: l.startedAt,
 		reports: l.reports,
+		claim: l.claim,
 		sessionFile: l.sessionFile,
 		resumable: !l.proc && Boolean(l.sessionFile),
 		lastText: l.lastText.slice(0, 600),
