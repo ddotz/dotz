@@ -1169,8 +1169,8 @@ function fmtDur(ms) {
   if (m < 60) return s % 60 ? `${m}분 ${s % 60}초` : `${m}분`;
   return m % 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${Math.floor(m / 60)}시간`;
 }
-let CS = { day: "", group: null, empty: null };
-function resetChat() { clear(tl); CS = { day: "", group: null, empty: null }; }
+let CS = { day: "", group: null, empty: null, prog: new Map() };
+function resetChat() { clear(tl); CS = { day: "", group: null, empty: null, prog: new Map() }; }
 function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
 const SYS_LABEL = { schedule: "예약", watch: "감시", mail: "메일" };
 function msgNode(e) {
@@ -1185,7 +1185,7 @@ function msgNode(e) {
     case "schedule": case "watch": case "mail":
       return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL[e.kind] }), el("div", { class: "st" }, mdNode(text), el("div", { class: "mt", text: hm })));
     default: {
-      if (e.kind === "out" && typeof e.source === "string" && e.source.startsWith("lane:")) {
+      if (e.kind === "out" && ((typeof e.source === "string" && e.source.startsWith("lane:")) || (e.update_key && typeof e.target === "string" && e.target.startsWith("lane:")))) {
         const n = el("div", { class: "pn", tabindex: "0", role: "button" }, el("span", { class: "mt", text: hm }), el("span", { class: "pt", text: text.replace(/^진행 중:\s*/, "") }));
         n.onclick = () => { if (!getSelection().toString()) n.classList.toggle("open"); };
         return n;
@@ -1220,6 +1220,7 @@ function newGroup(a) {
   };
   return g;
 }
+function dropProgress(key) { const p = CS.prog.get(key); if (p) { p.node.remove(); CS.prog.delete(key); } }
 // entry: {m: conversation event} or {a: activity item}. Work between messages folds into one collapsed group.
 function chatPush(en, bulk) {
   if (CS.empty) { CS.empty.remove(); CS.empty = null; }
@@ -1227,8 +1228,15 @@ function chatPush(en, bulk) {
     dayDiv(en.m.ts);
     if (CS.group) { CS.group.live = false; CS.group.node.classList.remove("live"); CS.group.update(); }
     CS.group = null;
-    const n = msgNode(en.m);
-    if (n) tl.append(n);
+    const e = en.m, pkey = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
+    // One progress note per target+key (newest text at the newest position); the answer to that target (or its lane report) drops them.
+    if (pkey) dropProgress(pkey);
+    else if (e.kind === "lane_report" || (e.kind === "out" && !(typeof e.source === "string" && e.source.startsWith("lane:")))) {
+      const t = e.kind === "lane_report" ? `lane:${e.lane ?? ""}` : String(e.target ?? "");
+      for (const [k, v] of CS.prog) if (v.target === t) dropProgress(k);
+    }
+    const n = msgNode(e);
+    if (n) { tl.append(n); if (pkey) CS.prog.set(pkey, { node: n, target: String(e.target ?? "") }); }
   } else {
     if (!WORK.has(en.a.type)) return;
     if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }

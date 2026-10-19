@@ -117,9 +117,17 @@ setAnswerHandlers(
 		const t = text.trim();
 		redeliverSteered();
 		// Parts sent early with dotz_send do not replace the answer; skip it only when it repeats something already sent.
-		if (!p?.target || t === "-" || p.sent.some(s => s.target === p.target && s.text.includes(t))) return;
-		p.sent.push({ target: p.target, text: t });
-		void out(p.target, text, p.replyTo, { auto: true }).catch(e => log(`reply to ${p.target} failed: ${e}`));
+		if (!p?.target) return;
+		const target = p.target;
+		const sentHere = p.sent.some(s => s.target === target);
+		if (t === "-" || p.sent.some(s => s.target === target && s.text.includes(t))) {
+			if (sentHere) void discord.clearProgress(target);
+			return;
+		}
+		p.sent.push({ target, text: t });
+		void out(target, text, p.replyTo, { auto: true })
+			.then(r => (r.delivered ? discord.clearProgress(target) : undefined))
+			.catch(e => log(`reply to ${target} failed: ${e}`));
 	},
 );
 
@@ -219,22 +227,14 @@ async function limitsAnswer(target: string, replyTo?: string): Promise<void> {
 	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`limits reply failed: ${e}`));
 }
 
-// One evolving status per (channel, key) is a single message edited in place (Dori: grow one message only when it is one
-// evolving answer). A progress note is not the answer, so the final reply to that channel still goes out.
-const progressIds = new Map<string, string>();
 async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
-	const k = `${target}|${key}`;
 	const sent = await inOrder(target, async () => {
 		const t = await localize(text, target, "orchestrator");
 		emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key });
 		return t;
 	});
 	if (isLocal(target)) return { delivered: true };
-	const prev = progressIds.get(k);
-	if (prev) return { ...(await discord.edit(target, prev, sent)), edited: true };
-	const r = await discord.send(target, sent, replyTo, { single: true });
-	if (r.ids?.[0]) progressIds.set(k, r.ids[0]);
-	return r;
+	return discord.progress(target, key, sent, replyTo);
 }
 
 function authorized(req: Request): boolean {
@@ -278,7 +278,10 @@ setReportHandler((lane, text) => {
 	lastPost.set(`lane:${lane.name}`, Date.now());
 	const channel = `lane:${lane.name}`;
 	void inOrder(channel, () => localize(text.slice(0, 1800), channel, "lane"))
-		.then(shown => discord.send(channel, shown))
+		.then(async shown => {
+			await discord.send(channel, shown);
+			await discord.clearProgress(channel);
+		})
 		.catch(e => log(`lane report send failed: ${e}`));
 });
 
@@ -287,10 +290,10 @@ setProgressHandler((lane, text) => {
 	lastPost.set(channel, Date.now());
 	void inOrder(channel, async () => {
 		const shown = `진행 중: ${await localize(text.slice(0, 900), channel, "lane")}`;
-		emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown });
+		emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, update_key: "lane-progress" });
 		return shown;
 	})
-		.then(shown => discord.send(channel, shown))
+		.then(shown => discord.progress(channel, "lane-progress", shown))
 		.catch(e => log(`lane progress send failed: ${e}`));
 });
 
