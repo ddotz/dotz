@@ -322,9 +322,20 @@ function spawn(lane: Lane, resume: boolean): void {
 	setTimeout(() => write(lane, { type: "get_state" }), 3000);
 }
 
+// A lane stopped after its merge lost its worktree (dropWorktree moved cwd back to the owner's checkout); resuming it
+// would edit that checkout directly, so it gets a fresh worktree from the current HEAD and is told the new path.
 function resumeLane(lane: Lane, text: string): void {
 	clearTimeout(lane.resumeTimer);
 	lane.resumeTimer = undefined;
+	if (!lane.worktree) {
+		const place = laneWorktree(lane.name, lane.cwd);
+		if (place.worktree) {
+			lane.cwd = place.cwd;
+			lane.worktree = place.worktree;
+			persist(lane);
+			text = `${worktreeNote(place.worktree)}\n\n${text}`;
+		}
+	}
 	spawn(lane, true);
 	prompt(lane, withHeld(lane, text));
 	log(`lane ${lane.name} resumed ${lane.sessionFile}`);
