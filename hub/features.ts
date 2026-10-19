@@ -11,7 +11,7 @@ import { loadFeatureDirs, TRIGGERS } from "./featuredirs.ts";
 import { harnessGraph, type HarnessNode } from "./harness.ts";
 import { lang } from "./i18n.ts";
 import { listSchedules } from "./schedule.ts";
-import { inLanguage, summarize } from "./summaries.ts";
+import { summarize } from "./summaries.ts";
 import { addWatch, allWatches, removeWatch } from "./watch.ts";
 import { listSetups } from "./workchannels.ts";
 
@@ -442,12 +442,12 @@ export function syncFeatureWatches(): void {
 	}
 }
 
-// A card whose name is not in the user's language is summarized together with it ("name\nwhat"), and the summary's first line
-// then serves as the name. Summaries come from the cache; missing ones are filled in the background and show on the next refresh.
+// Every card is rewritten in the user's language and the main agent's voice. A card with a name is sent with it
+// ("name\nwhat"), and the summary's first line then serves as the name. Summaries come from the cache; missing ones are
+// filled in the background and show on the next refresh.
 function attachSummaries(features: Feature[]): void {
-	const language = lang();
-	const titled = new Set(features.filter(f => !inLanguage(f.name, language, true)).map(f => f.id));
-	const known = summarize(features.map(f => ({ key: f.id, text: titled.has(f.id) ? `${f.name}\n${f.what}`.trim() : f.what, foreign: titled.has(f.id) })), language);
+	const titled = new Set(features.filter(f => f.name.trim() && f.name.trim() !== f.what.trim()).map(f => f.id));
+	const known = summarize(features.map(f => ({ key: f.id, text: titled.has(f.id) ? `${f.name}\n${f.what}`.trim() : f.what || f.name })), lang());
 	for (const f of features) {
 		if (!known[f.id]) continue;
 		f.summary = known[f.id];
