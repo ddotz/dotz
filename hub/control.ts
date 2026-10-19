@@ -148,7 +148,7 @@ export async function setFallback(target: string, chain: unknown[]) {
 		const model = resolveModel(split.model, available);
 		const next: FallbackEntry = { ...entry, model: split.thinking ? `${model}:${split.thinking}` : model };
 		if (target === "workers" && !isPlain(next)) throw new ControlError("the task workers' chain takes bare models only (conditions, caps, revert and API keys apply to the orchestrator and the lanes)");
-		if (next.key_file && !keyFileOk(next.key_file)) throw new ControlError(`key_file "${next.key_file}" must be a file name in <data dir>/secrets/ that exists`);
+		if (next.key_file && !keyFileOk(next.key_file)) throw new ControlError(`key_file "${next.key_file}" must name an existing file in <data dir>/secrets/ whose name contains "api-key" or "api_key" (for example anthropic-api-key)`);
 		if (next.key_file && !keyProviderOk(next)) throw new ControlError("API-key entries support anthropic, openai and openrouter models (set base_url and api on the entry for another provider)");
 		if (!next.key_file && next.model === primary) continue;
 		if (seen.has(entryId(next))) continue;

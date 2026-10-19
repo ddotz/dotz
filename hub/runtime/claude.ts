@@ -393,12 +393,13 @@ class ClaudeProcess implements AgentProcess {
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 // Per-run settings for --settings (merged over the user's own, which stay untouched): a PreToolUse hook on Bash that
-// applies the RULES.md deny lines. Written at every spawn so the hook path and data dir follow the run.
+// applies the dotz/RULES.md deny lines, and `disableAllHooks: false` so a project's .claude/settings cannot switch that
+// hook off. Written at every spawn so the hook path and data dir follow the run.
 function writeSettings(dir: string, name: string, dataDir: string): string {
 	mkdirSync(dir, { recursive: true });
 	const file = join(dir, name);
 	const command = `DOTZ_DIR=${shq(dataDir)} ${shq(process.execPath)} ${shq(DENY_HOOK)}`;
-	writeFileSync(file, `${JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command, timeout: 10 }] }] } }, null, 2)}\n`);
+	writeFileSync(file, `${JSON.stringify({ disableAllHooks: false, hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command, timeout: 10 }] }] } }, null, 2)}\n`);
 	return file;
 }
 
