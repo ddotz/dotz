@@ -10,6 +10,7 @@ import { lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OMP, paths, 
 import { describeCtx } from "./context.ts";
 import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
 import { orchestratorPid } from "./orchestrator.ts";
+import { trackTimer } from "./shutdown.ts";
 
 const STATS_WAIT_MS = 3000;
 // A run missed while the gateway was down is made up this long after the start, once restored lanes know their numbers.
@@ -80,12 +81,12 @@ export function startLaneHygiene(): void {
 		return d.getTime() - Date.now();
 	};
 	const arm = (delay: number) =>
-		setTimeout(async () => {
+		trackTimer("lane hygiene", setTimeout(async () => {
 			// The date is recorded before the run, so a crash in the middle never repeats it on the next start.
 			writeAtomic(paths.laneHygiene, `${JSON.stringify({ date: localDate(new Date()) })}\n`);
 			await runLaneHygiene().catch(e => log(`lane hygiene failed: ${e}`));
 			arm(untilNext());
-		}, delay);
+		}, delay));
 	const last = lastRunDate();
 	const missed = last !== undefined && last !== localDate(new Date()) && Date.now() >= todayAt().getTime();
 	if (missed) log(`lane hygiene: last run ${last}, making up the missed ${at} run in ${CATCHUP_DELAY_MS / 1000}s`);
@@ -148,10 +149,10 @@ export async function cleanWorktrees(entries?: WorktreeEntry[], root = WORKTREE_
 
 export function startWorktreeCleanup(): void {
 	const run = () => void cleanWorktrees().catch(e => log(`worktree cleanup failed: ${e}`));
-	setTimeout(() => {
+	trackTimer("worktree cleanup", setTimeout(() => {
 		run();
-		setInterval(run, WORKTREE_EVERY_MS);
-	}, WORKTREE_FIRST_MS);
+		trackTimer("worktree cleanup", setInterval(run, WORKTREE_EVERY_MS));
+	}, WORKTREE_FIRST_MS));
 }
 
 // An omp rpc host whose gateway died (or that a crash detached) keeps running with nobody reading its stdout, holding a
@@ -227,8 +228,8 @@ export async function reapOrphanHosts(only?: RegExp, minAgeMin = ORPHAN_MIN_AGE_
 
 export function startOrphanReaper(): void {
 	const run = () => void reapOrphanHosts().catch(e => log(`orphan reaper failed: ${e}`));
-	setTimeout(() => {
+	trackTimer("orphan reaper", setTimeout(() => {
 		run();
-		setInterval(run, ORPHAN_EVERY_MS);
-	}, ORPHAN_FIRST_MS);
+		trackTimer("orphan reaper", setInterval(run, ORPHAN_EVERY_MS));
+	}, ORPHAN_FIRST_MS));
 }

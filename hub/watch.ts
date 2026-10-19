@@ -127,6 +127,12 @@ function arm(w: Watch): void {
 	timers.set(w.id, setInterval(() => void run(w), w.every_minutes * 60_000));
 }
 
+// Shutdown: no watch runs again.
+export function stopWatches(): void {
+	for (const t of timers.values()) clearInterval(t);
+	timers.clear();
+}
+
 export function startWatches(handler: typeof notify): void {
 	notify = handler;
 	for (const w of items) arm(w);

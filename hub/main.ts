@@ -13,14 +13,15 @@ import { activityItems, emit, historyEvents, recentEvents, sseResponse } from ".
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { abortLane, approvesBudget, budgetLine, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
-import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator } from "./orchestrator.ts";
+import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { startReflection } from "./reflect.ts";
-import { addSchedule, listSchedules, removeSchedule, startSchedules } from "./schedule.ts";
+import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
 import { startOmpUpdate } from "./update.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
-import { addWatch, allWatches, listWatches, removeWatch, startWatches } from "./watch.ts";
+import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
+import { addWatch, allWatches, listWatches, removeWatch, startWatches, stopWatches } from "./watch.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 
@@ -725,14 +726,26 @@ log(`hub listening on 127.0.0.1:${server.port} as ${NAME} (discord ${discord.sta
 for (const sig of ["SIGTERM", "SIGINT"] as const)
 	process.on(sig, () => {
 		log(`hub ${sig}`);
-		shutdown();
+		void shutdown();
 	});
 
-// Messages still coalescing go into the ledger before exit, so the next start replays them.
-function shutdown(): never {
-	for (const target of [...bursts.keys()]) flush(target);
-	shutdownLanes();
-	process.exit(0);
+// Fixed order, one overall 10 s deadline (see shutdown.ts). Messages still coalescing go into the ledger before exit, so
+// the next start replays them; the orchestrator's session file is saved as it runs, stop() only keeps it from respawning.
+function shutdown(): Promise<never> {
+	return runShutdown([
+		{ name: "block new input", run: () => (server.stop(), discord.stopIntake()) },
+		{
+			name: "save state",
+			run: () => {
+				for (const target of [...bursts.keys()]) flush(target);
+				shutdownLanes();
+				stopOrchestrator();
+			},
+		},
+		{ name: "discord connection", run: () => discord.disconnect() },
+		{ name: "watch and schedule timers", run: () => (stopWatches(), stopSchedules(), clearTrackedTimers()) },
+		{ name: "others", run: () => void 0 },
+	]);
 }
 
 // Prompts that were delivered but never answered (the gateway stopped mid-turn) are delivered again on start.
@@ -758,7 +771,7 @@ function restartGateway(): string {
 		const b = busy();
 		if ((b.length || bursts.size) && Date.now() < until) return void setTimeout(tick, 2000);
 		log(`gateway restart${b.length ? ` (still busy after 20 min: ${b.join(", ")})` : ""}`);
-		shutdown();
+		void shutdown();
 	};
 	setTimeout(tick, 2000);
 	const waiting = busy();

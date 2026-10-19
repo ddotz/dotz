@@ -9,6 +9,7 @@ import { lanesMaxRssGb, log } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { lanes, restartLane } from "./lanes.ts";
 import { orch, orchestratorPid, restart as restartOrchestrator } from "./orchestrator.ts";
+import { trackTimer } from "./shutdown.ts";
 
 const CHECK_MS = 30_000;
 const WINDOW_MS = 60 * 60_000;
@@ -97,5 +98,7 @@ async function check(notify: (key: string, text: string) => void): Promise<void>
 
 export function startMemoryGuard(notify: (key: string, text: string) => void): void {
 	if (lanesMaxRssGb() <= 0) return;
-	setInterval(() => void check(notify), CHECK_MS).unref();
+	const timer = setInterval(() => void check(notify), CHECK_MS);
+	timer.unref();
+	trackTimer("memory guard", timer);
 }

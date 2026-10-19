@@ -34,6 +34,12 @@ export function startSchedules(handler: (s: Schedule) => void): void {
 	for (const s of items) arm(s);
 }
 
+// Shutdown: nothing fires again (the items stay saved in schedules.json).
+export function stopSchedules(): void {
+	for (const t of timers.values()) clearTimeout(t);
+	timers.clear();
+}
+
 export function addSchedule(input: { text?: string; at?: string; in_minutes?: number; every_minutes?: number }): Schedule {
 	const text = String(input.text ?? "").trim();
 	if (!text) throw new Error("text required");
