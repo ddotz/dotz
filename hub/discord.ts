@@ -2,8 +2,13 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
+import { embedChoice, extractMeta, metaToSubtext, parseTone, TONE_COLORS, type Tone } from "./tone.ts";
 
 const LIMIT = 1900;
+// Embed description cap, and the chunk size used when a toned message is longer (headroom for title and footer).
+const EMBED_MAX = 4096;
+const EMBED_CHUNK = 4000;
+const EMBED_TOTAL = 6000;
 const INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
 const tokenPath = expand(String(cfg.discord?.token_file ?? ""));
 const TOKEN = tokenPath && existsSync(tokenPath) ? readFileSync(tokenPath, "utf8").trim() : "";
@@ -221,7 +226,7 @@ export async function releaseLane(lane: string): Promise<void> {
 	delete channels.homes[lane];
 	save();
 	if (!status.enabled) return;
-	await post(id, `레인 ${lane} 작업을 마쳤어요. 이 스레드는 보관할게요.`, undefined, true).catch(e => log(`lane ${lane} done marker failed: ${e}`));
+	await post(id, buildPayloads(`레인 ${lane} 작업을 마쳤어요. 이 스레드는 보관할게요.`)[0]!, true).catch(e => log(`lane ${lane} done marker failed: ${e}`));
 	const t = await rest("GET", `/channels/${id}`).catch(() => undefined);
 	const base = String(t?.name ?? lane).replace(/^\[(working|waiting|done)\]\s*/, "");
 	await rest("PATCH", `/channels/${id}`, { name: `[done] ${base}`.slice(0, 100), archived: true }).catch(e => log(`lane ${lane} thread archive failed: ${e}`));
@@ -235,12 +240,12 @@ function resolve(target: string): string | undefined {
 	return undefined;
 }
 
-function split(text: string): string[] {
+function split(text: string, limit = LIMIT): string[] {
 	const out: string[] = [];
 	let rest_ = text;
-	while (rest_.length > LIMIT) {
-		const nl = rest_.lastIndexOf("\n", LIMIT);
-		const cut = nl > 200 ? nl : LIMIT;
+	while (rest_.length > limit) {
+		const nl = rest_.lastIndexOf("\n", limit);
+		const cut = nl > 200 ? nl : limit;
 		out.push(rest_.slice(0, cut));
 		rest_ = rest_.slice(cut);
 	}
@@ -251,9 +256,9 @@ function split(text: string): string[] {
 // One answer is one message. Text within LIMIT goes out whole; longer text is cut only at paragraph boundaries (a blank
 // line outside a ``` fence) into the fewest messages, paragraphs packed greedily and joined by a blank line. A line ending
 // in ":" stays with the paragraph after it, and a single paragraph over LIMIT falls back to the line-based split().
-export function chunks(text: string): string[] {
+export function chunks(text: string, limit = LIMIT): string[] {
 	if (!text.trim()) return [];
-	if (text.length <= LIMIT) return [text];
+	if (text.length <= limit) return [text];
 	const blocks: string[] = [];
 	let cur: string[] = [];
 	let fence = false;
@@ -273,10 +278,10 @@ export function chunks(text: string): string[] {
 	const out: string[] = [];
 	let acc = "";
 	for (const p of paragraphs) {
-		if (acc && acc.length + 2 + p.length <= LIMIT) acc += `\n\n${p}`;
-		else if (p.length > LIMIT) {
+		if (acc && acc.length + 2 + p.length <= limit) acc += `\n\n${p}`;
+		else if (p.length > limit) {
 			if (acc) out.push(acc);
-			const parts = split(p);
+			const parts = split(p, limit);
 			acc = parts.pop() ?? "";
 			out.push(...parts);
 		} else {
@@ -288,9 +293,48 @@ export function chunks(text: string): string[] {
 	return out;
 }
 
+type Embed = { color: number; title?: string; description?: string; footer?: { text: string } };
+type Body = { content: string; embeds?: Embed[]; allowed_mentions?: { parse: never[] }; message_reference?: { message_id: string; fail_if_not_exists: boolean } };
+const mentionsOff = { parse: [] as never[] };
+const reference = (replyTo?: string) => (replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {});
+
+// Title, description and footer of a toned message: meta lines go to the footer, the first line (markdown stripped) to
+// the title when it fits, choice blocks lose their quote prefixes and get the recommended badge.
+function embedParts(text: string): { title?: string; description: string; footer?: string } {
+	const { body, footer } = extractMeta(noEmoji(text));
+	const lines = embedChoice(body).trimStart().split("\n");
+	const title = lines[0]!.replace(/\*\*|`/g, "").trim();
+	const fits = title.length > 0 && title.length <= 256;
+	return { ...(fits ? { title } : {}), description: (fits ? lines.slice(1).join("\n") : lines.join("\n")).trim(), ...(footer ? { footer: noEmoji(footer) } : {}) };
+}
+
+// What goes on the wire for one send: untoned text is plain content (meta lines as subtext, packed as before); toned text
+// is one embed per message, split by chunks() only when the description would not fit. Pure, so it is testable offline.
+export function buildPayloads(text: string, fallback?: Tone, replyTo?: string): Body[] {
+	const { tone, text: bare } = parseTone(text, fallback);
+	const first = (i: number) => (i === 0 ? reference(replyTo) : {});
+	if (!tone) return chunks(metaToSubtext(bare)).map((content, i) => ({ content: noEmoji(content), allowed_mentions: mentionsOff, ...first(i) }));
+	const p = embedParts(bare);
+	const fits = p.description.length <= EMBED_MAX && (p.title?.length ?? 0) + p.description.length + (p.footer?.length ?? 0) <= EMBED_TOTAL;
+	const pieces = fits ? [p.description] : chunks(p.description, EMBED_CHUNK);
+	return pieces.flatMap((description, i) => {
+		const embed: Embed = { color: TONE_COLORS[tone], ...(i === 0 && p.title ? { title: p.title } : {}), ...(description ? { description } : {}), ...(i === pieces.length - 1 && p.footer ? { footer: { text: p.footer } } : {}) };
+		return embed.title || embed.description || embed.footer ? [{ content: "", embeds: [embed], allowed_mentions: mentionsOff, ...first(i) }] : [];
+	});
+}
+
+// One message that is edited in place or posted as a progress note: never split, too long text is cut to fit. The other
+// form is cleared (`embeds: []` / `content: ""`) so a note can switch between plain and embed.
+export function buildSingle(text: string, fallback?: Tone): Body {
+	const { tone, text: bare } = parseTone(text, fallback);
+	if (!tone) return { content: noEmoji(metaToSubtext(bare)).slice(0, LIMIT), embeds: [] };
+	const p = embedParts(bare);
+	const description = p.description.slice(0, Math.min(EMBED_MAX, EMBED_TOTAL - (p.title?.length ?? 0) - (p.footer?.length ?? 0)));
+	return { content: "", embeds: [{ color: TONE_COLORS[tone], ...(p.title ? { title: p.title } : {}), ...(description ? { description } : {}), ...(p.footer ? { footer: { text: p.footer } } : {}) }] };
+}
+
 // `reopen` allows unarchiving a thread that Discord auto-archived (50083); lane threads and sub-topic threads qualify.
-async function post(id: string, content: string, replyTo?: string, reopen = false): Promise<string> {
-	const body = { content: noEmoji(content), allowed_mentions: { parse: [] }, ...(replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {}) };
+async function post(id: string, body: Body, reopen = false): Promise<string> {
 	try {
 		return (await rest("POST", `/channels/${id}/messages`, body)).id;
 	} catch (error) {
@@ -301,19 +345,20 @@ async function post(id: string, content: string, replyTo?: string, reopen = fals
 	}
 }
 
-export async function send(target: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+// `fallback` is the tone for text without a marker (alert: fail); an explicit marker in the text always wins.
+export async function send(target: string, text: string, replyTo?: string, fallback?: Tone): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
 	const id = resolve(target);
 	if (!id) return { delivered: false, reason: `unknown target ${target}` };
 	const ids: string[] = [];
-	for (const [i, part] of chunks(text).entries()) ids.push(await post(id, part, i === 0 ? replyTo : undefined));
+	for (const body of buildPayloads(text, fallback, replyTo)) ids.push(await post(id, body));
 	return { delivered: true, ids };
 }
 
-export async function edit(target: string, messageId: string, text: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+export async function edit(target: string, messageId: string, text: string, fallback?: Tone): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	const id = resolve(target);
 	if (!status.enabled || !id) return { delivered: false, reason: `unknown target ${target}` };
-	await rest("PATCH", `/channels/${id}/messages/${messageId}`, { content: noEmoji(text).slice(0, LIMIT) });
+	await rest("PATCH", `/channels/${id}/messages/${messageId}`, buildSingle(text, fallback));
 	return { delivered: true, ids: [messageId] };
 }
 
@@ -331,11 +376,11 @@ export async function deleteMessage(target: string, messageId: string): Promise<
 const progressIds = new Map<string, Map<string, string>>();
 export async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
 	const prev = progressIds.get(target)?.get(key);
-	if (prev) return { ...(await edit(target, prev, text)), edited: true };
+	if (prev) return { ...(await edit(target, prev, text, "run")), edited: true };
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
 	const id = resolve(target);
 	if (!id) return { delivered: false, reason: `unknown target ${target}` };
-	const mid = await post(id, text.slice(0, LIMIT), replyTo);
+	const mid = await post(id, { ...buildSingle(text, "run"), allowed_mentions: mentionsOff, ...reference(replyTo) });
 	if (!progressIds.has(target)) progressIds.set(target, new Map());
 	progressIds.get(target)!.set(key, mid);
 	return { delivered: true, ids: [mid] };
