@@ -3,6 +3,8 @@
 // - a question, a failure, a result or an untagged report goes in whole (never cut), with its status and where the
 //   evidence is on disk;
 // - a routine [run] progress report is not a turn: it stays on disk and in the what-runs-now line of the next prompt;
+// - an untagged reply in an exchange between the owner and the lane alone (the orchestrator sent nothing since its last
+//   relayed report) is not a turn either: the owner read it in the lane channel;
 // - a report repeating the lane's last relayed one is dropped;
 // - reports arriving while the orchestrator is in a turn are batched into one prompt for its next idle point.
 import { parseTone, type Tone } from "./tone.ts";
@@ -19,10 +21,11 @@ export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: str
 	const norm = (t: string) => t.replace(/\s+/g, " ").trim();
 	const send = (items: Relay[]) => deps.deliver(`${deps.lead(items.length)}\n${items.map(relayItem).join("\n\n")}`);
 
-	/** A lane's report: "relayed" (now), "held" (batched for idle), "disk" (routine, not a turn) or "duplicate". */
-	function report(lane: string, text: string, file: string): "relayed" | "held" | "disk" | "duplicate" {
+	/** A lane's report: "relayed" (now), "held" (batched for idle), "disk" (routine), "owner" (owner-only exchange) or "duplicate". */
+	function report(lane: string, text: string, file: string, ownerOnly = false): "relayed" | "held" | "disk" | "owner" | "duplicate" {
 		const { tone } = parseTone(text);
 		if (tone === "run") return "disk";
+		if (!tone && ownerOnly && !/^\[lane [a-z]+\]/.test(text)) return "owner";
 		const key = norm(text);
 		if (last.get(lane) === key) return "duplicate";
 		last.set(lane, key);

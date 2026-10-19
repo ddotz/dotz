@@ -18,6 +18,10 @@ test("results, questions and failures go in whole with status and the report fil
 	expect(r.report("web", "[done] merged abc123", "/f")).toBe("relayed");
 	expect(r.report("web", "[done]  merged   abc123", "/f")).toBe("duplicate");
 	expect(sent).toHaveLength(2);
+	expect(r.report("web", "ㅇㅋ, 그 버튼은 뺐어요.", "/f", true)).toBe("owner");
+	expect(r.report("web", "[done] removed the button (d00d)", "/f", true)).toBe("relayed");
+	expect(r.report("web", "[lane error] socket closed", "/f", true)).toBe("relayed");
+	expect(sent).toHaveLength(4);
 });
 
 test("reports while the orchestrator is busy become one prompt at idle; a lane's newer report replaces its older one, asks stay", () => {
