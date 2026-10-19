@@ -15,7 +15,7 @@ import { startMemoryGuard } from "./memguard.ts";
 import { abortLane, approvesBudget, budgetLine, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
-import { inOrder, localize } from "./outlang.ts";
+import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { startReflection } from "./reflect.ts";
 import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
 import { startOmpUpdate } from "./update.ts";
@@ -142,6 +142,10 @@ function workDirectory(): string {
 }
 
 function inboxText(e: Record<string, any>): string {
+	return withTurnLanguage(inboxBody(e));
+}
+
+function inboxBody(e: Record<string, any>): string {
 	const m = msg();
 	if (e.kind === "lane_report") return `${m.inboxLaneReport(e.lane)}\n${e.text}`;
 	if (e.kind === "watch") {

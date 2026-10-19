@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, IDENTITY_FILE, log, OMP } from "./config.ts";
-import { lang } from "./i18n.ts";
+import { lang, msg } from "./i18n.ts";
 import { baseLanguage, languageName } from "./language.ts";
 
 type Setting = { mode?: string; model?: string; timeout_s?: number };
@@ -134,9 +134,23 @@ export function inOrder<T>(target: string, run: () => Promise<T>): Promise<T> {
 	return next;
 }
 
+// Set when an orchestrator text came out in the wrong language; the next inbox turn says so.
+let drifted = false;
+
+// An inbox turn as the orchestrator gets it, with a language line last: the contract states the language only at the
+// start of a long session, and an answer that drifted keeps priming the next ones (the session holds the original, not
+// the translation), so the line carries a drift note once after a mismatch. It ends the newest message, so the cached
+// prefix stays the same.
+export function withTurnLanguage(body: string): string {
+	const line = msg().replyIn(languageName(lang()), drifted);
+	drifted = false;
+	return `${body}\n${line}`;
+}
+
 // The text to send: the original unless it is not in the owner's language and the rewrite succeeded.
 export async function localize(text: string, target: string, source?: string): Promise<string> {
 	if (!needsRewrite(text, source)) return text;
+	if (source === "orchestrator") drifted = true;
 	try {
 		const r = await translate(text, lang());
 		const bad = sane(text, r.text);

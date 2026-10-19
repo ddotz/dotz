@@ -78,6 +78,7 @@ const en = {
 	inboxBurst: (n: number) => `(sent as ${n} messages in a row; read them together as one request)`,
 	replyingTo: (author: string, content: string) => `(replying to ${author}: "${content}")`,
 	workChannels: (list: string[]) => `(work channels: ${list.length ? list.join("; ") : "none yet"})`,
+	replyIn: (language: string, drifted: boolean) => drifted ? `(Your last text for the owner was not in ${language}. Write everything for the owner in ${language} only.)` : `(Answer the owner in ${language}.)`,
 
 	reflect: (digest: string, lessons: string) => `[dotz reflect] Nightly self-review of the last 24h. Data from the gateway:\n${digest}\n
 Do this, briefly:
@@ -150,6 +151,7 @@ const ko: Catalog = {
 	inboxBurst: n => `(sent as ${n} messages in a row; 하나의 요청으로 함께 읽으세요)`,
 	replyingTo: (author, content) => `(${author}의 메시지에 대한 답장: "${content}")`,
 	workChannels: list => `(작업 채널: ${list.length ? list.join("; ") : "아직 없음"})`,
+	replyIn: (_language, drifted) => (drifted ? "(직전에 오너에게 보낸 글이 한국어가 아니었어요. 오너에게 가는 글은 한국어로만 쓰세요.)" : "(오너에게는 한국어로 답하세요.)"),
 
 	reflect: (digest, lessons) => `[dotz reflect] 지난 24시간의 야간 자기 점검이에요. 게이트웨이가 모은 데이터:\n${digest}\n
 짧게 이렇게 하세요:
