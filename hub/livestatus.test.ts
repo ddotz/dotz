@@ -77,8 +77,9 @@ test("progress reports: first at 5 min, a new message every 5 min, skipped when 
 	await run(12);
 
 	const posted = reports();
-	// 15 and 20 min said nothing new (same current intent, lanes, workers; no tool call since): skipped as in Dori's sweep.
-	expect(posted.map(p => (p.at - t0) / 60_000)).toEqual([5, 10]);
+	// 15 and 20 min said nothing new (same current intent, lanes, workers; no tool call since): skipped as in Dori's sweep;
+	// the tool call at 21 min is news more than 5 min after the last report, so it goes out at the next check.
+	expect(posted.map(p => Math.round((p.at - t0) / 60_000))).toEqual([5, 10, 22]);
 	expect(posted[0]!.body!.content).toMatch(/\b5\b/);
 	expect(posted[0]!.body!.content).toMatch(/: 설정 파일 읽는 중\n[^\n]*: 테스트 실행하는 중\n/);
 	expect(posted[0]!.body!.content).toContain("테스트 실행하는 중");
@@ -88,6 +89,21 @@ test("progress reports: first at 5 min, a new message every 5 min, skipped when 
 	// Reports are new messages that stay: no edit, no delete.
 	expect(requests.filter(r => r.method !== "POST")).toEqual([]);
 	expect(requests).toHaveLength(answeredAt);
+});
+
+test("after the first report a worker finishing is reported within a minute, not at the next 5-min mark", async () => {
+	requests.length = 0;
+	const t0 = Date.now();
+	livestatus.begin("ch:111", "lane:live-test");
+	emitEventActivity("lane:live-test", { type: "subagent", update: { id: "w2", agent: "task", description: "빌드", status: "running" } });
+	await run(7, m => {
+		if (m === 0) toolCall("빌드 돌리는 중");
+		if (m === 6) emitEventActivity("lane:live-test", { type: "subagent", update: { id: "w2", agent: "task", description: "빌드", status: "done" } });
+	});
+	await discord.send("ch:111", "answer");
+	await discord.clearProgress("ch:111");
+	expect(reports().map(p => Math.round((p.at - t0) / 60_000))).toEqual([5, 7]);
+	expect(reports()[1]!.body!.content).not.toContain("w2: 빌드");
 });
 
 test("an answer within 5 min means no report at all", async () => {

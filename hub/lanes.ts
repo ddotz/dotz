@@ -19,7 +19,7 @@ const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 // A lane started with a fallback chain: after a failed request the runtime may move to the next model by itself and redo
 // the turn, so the failure is acted on (pause, retry, error report) only when no such switch follows within a short grace.
 const FALLBACK_GRACE_MS = 3000;
-const PROGRESS_EVERY_MS = Number(process.env.DOTZ_PROGRESS_MS ?? 15 * 60_000);
+const PROGRESS_EVERY_MS = Number(process.env.DOTZ_PROGRESS_MS ?? 5 * 60_000);
 const WATCHDOG_MS = 120_000;
 // A turn in flight with no rpc frame for this long (a hung omp or provider call) is aborted and resumed; a lane
 // recovers at most RECOVERY_MAX times per RECOVERY_WINDOW_MS, then it is left alone and the owner told once.
