@@ -11,7 +11,7 @@ import { isNote, msg } from "./i18n.ts";
 import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
-import { abortLane, approvesBudget, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
+import { abortLane, approvesBudget, budgetLine, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator } from "./orchestrator.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize } from "./outlang.ts";
@@ -256,19 +256,33 @@ const body = async (req: Request) => {
 };
 
 // Lanes are the expensive work, and the omp budget gate only sees task-tool workers, so lane launches check the quota here.
-async function budgetProblem(est: number): Promise<string | undefined> {
-	const r = await Bun.$`${OMP} usage --json -p anthropic`.nothrow().quiet().catch(() => undefined);
-	if (!r || r.exitCode !== 0) return undefined;
-	try {
-		const limits: { id: string; amount?: { remaining?: number } }[] = JSON.parse(r.stdout.toString()).reports?.find((x: any) => x.provider === "anthropic")?.limits ?? [];
-		const five = limits.find(l => l.id === "anthropic:5h")?.amount?.remaining;
-		const week = limits.find(l => l.id === "anthropic:7d")?.amount?.remaining;
-		// The 5h window gates (est % assumed use, default 15, and 10% kept); the week is shown, never gates.
-		return budgetVerdict(five, week, est);
-	} catch {
+// Every decision (go / blocked / forced / unknown) leaves exactly one hub.log line.
+async function budgetProblem(name: string, est: number, force: boolean): Promise<string | undefined> {
+	if (force) {
+		log(budgetLine(name, est, undefined, undefined, "forced"));
 		return undefined;
 	}
-	return undefined;
+	const r = await Bun.$`${OMP} usage --json -p anthropic`.nothrow().quiet().catch(() => undefined);
+	if (!r || r.exitCode !== 0) {
+		log(budgetLine(name, est, undefined, undefined, "unknown"));
+		return undefined;
+	}
+	let five: number | undefined;
+	let week: number | undefined;
+	try {
+		type Limit = { id: string; amount?: { remaining?: number } };
+		const parsed = JSON.parse(r.stdout.toString()) as { reports?: { provider?: string; limits?: Limit[] }[] };
+		const limits = parsed.reports?.find(x => x.provider === "anthropic")?.limits ?? [];
+		five = limits.find(l => l.id === "anthropic:5h")?.amount?.remaining;
+		week = limits.find(l => l.id === "anthropic:7d")?.amount?.remaining;
+	} catch {
+		log(budgetLine(name, est, undefined, undefined, "unknown"));
+		return undefined;
+	}
+	// The 5h window gates (est % assumed use, default 15, and 10% kept); the week is shown, never gates.
+	const verdict = budgetVerdict(five, week, est);
+	log(budgetLine(name, est, five, week, verdict ? "blocked" : typeof five === "number" ? "go" : "unknown"));
+	return verdict;
 }
 
 setReportHandler((lane, text) => {
@@ -611,7 +625,7 @@ const server = Bun.serve({
 					const dear = [b.model, b.worker_model].filter(m => m && isExpensive(String(m)));
 					if (dear.length && !asked) return json({ error: `Fable and max/xhigh-effort models (${dear.join(", ")}) run only when the owner explicitly asks for them. Use the defaults, or relaunch with owner_asked_for_fable=true after they ask.` }, 409);
 					const est = estimateOf(b.est, String(b.brief ?? ""));
-					const tight = b.force ? undefined : await budgetProblem(est);
+					const tight = await budgetProblem(String(b.name), est, Boolean(b.force));
 					if (tight) return json({ error: `budget gate: ${tight}. Ask the owner (now / after reset / smaller); relaunch with force=true only after they say now, or with a smaller est.` }, 409);
 					const home = b.home ? String(b.home) : undefined;
 					if (home && discord.status.enabled) discord.homeChannel(home);
