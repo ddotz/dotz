@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { pushBackup, unstageSecrets } from "./backup.ts";
 import { cfg, DATA_DIR, log, paths } from "./config.ts";
 import { msg, withReplyLine } from "./i18n.ts";
+import { auditSummaryLine } from "./token-audit.ts";
 
 const CORRECTION = /(아니|말고|하지\s*마|하지마|왜\s|다시|틀렸|잘못|그게 아니|no,|don't|stop)/i;
 const DAY = 24 * 3600_000;
@@ -55,6 +56,7 @@ export function digest(sessionFile: string, now = Date.now()): string | undefine
 	const count = (re: RegExp) => logLines.filter(l => re.test(l)).length;
 	const short = (t: unknown, n = 160) => String(t ?? "").replace(/\s+/g, " ").slice(0, n);
 	const corrections = owner.filter(e => CORRECTION.test(String(e.text)));
+	const audit = auditSummaryLine(now);
 	return [
 		`owner messages: ${owner.length} (${[...new Set(owner.map(e => e.channel ?? e.source))].join(", ")})`,
 		`possible corrections or repeats (${corrections.length}):`,
@@ -64,8 +66,8 @@ export function digest(sessionFile: string, now = Date.now()): string | undefine
 		`alerts sent (${outbox.filter(e => e.target === "alert").length}):`,
 		...outbox.filter(e => e.target === "alert").slice(-6).map(e => `- ${short(e.text)}`),
 		`gateway: watchdog restarts ${count(/did not start a turn/)}, orchestrator exits ${count(/orchestrator exited/)}, rotations ${count(/rotating to a fresh/)}, keepalives ${count(/keepalive \d/)}, send failures ${count(/send failed/)}, watch failures ${count(/^\S+ watch \S+ failed/)}`,
-		`orchestrator tokens: ${usage(sessionFile, since)}`,
-		...laneUsage(since),
+		// With the nightly token audit on, one summary line replaces the raw usage counters so each fact is counted once.
+		...(audit ? [audit] : [`orchestrator tokens: ${usage(sessionFile, since)}`, ...laneUsage(since)]),
 	].join("\n");
 }
 
