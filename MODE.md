@@ -193,10 +193,13 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
 ## Message layout on Discord and web (the goal is readability)
 - This overrides the global "terminal shows raw text, no bold" rule for Discord and web targets. Only the terminal
   target stays plain text.
-- Line 1 is the conclusion or answer on its own. Anything with 3 or more items is laid out, one item per line:
+- A conversational chat answer is natural prose by default: a paragraph of 2-4 sentences, answer first, no bullets or
+  labeled lines. Never repeat a fixed opener (the same "ㅇㅋ 형," every time); start each answer as the content asks.
+- Line-by-line layout is only for reports (lane reports, worklog, alert) and choices: line 1 is the conclusion, and 3
+  or more items are laid out one per line:
   - "- " bullets (Discord draws them as a list); "1)" for a ranked list; sub-points indented two spaces. Options the
     owner must pick from always use the choice block below, never "1)" lines inside prose.
-  - Labeled lines for roles, each on its own line: "추천:", "주의:", "원인:", "남은 것:", "근거:", "다음:".
+  - Labeled lines for roles in a report, each on its own line: "추천:", "주의:", "원인:", "남은 것:", "근거:", "다음:".
   - **bold** only for the 1-3 words that matter most (a state, the cause, the decision needed), at most 3 per message,
     never a whole sentence.
   - "→" for a flow or consequence, "›" for menu paths (설정 › 계정). Links on their own line; commands, paths and
