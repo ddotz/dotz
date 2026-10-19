@@ -13,13 +13,16 @@ const OWNER = String(cfg.discord?.owner_id ?? "");
 const AVATAR_MARK = join(DATA_DIR, "identity", ".avatar-applied");
 
 export type Thread = { parent: string; name: string };
-export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; threads: Record<string, Thread> };
+export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; threads: Record<string, Thread>; archiveAt: Record<string, number> };
 export const channels: Channels = existsSync(paths.channels) ? JSON.parse(readFileSync(paths.channels, "utf8")) : { lanes: {} };
 channels.lanes ??= {};
 // A home lane lives in a thread of an existing work channel: lanes[name] is the thread id, homes[name] the parent channel id.
 channels.homes ??= {};
 channels.work ??= {};
 channels.threads ??= {};
+// Done threads stay open (and visible in the sidebar) for ARCHIVE_DELAY_MS so the owner can still track them, then archive.
+channels.archiveAt ??= {};
+const ARCHIVE_DELAY_MS = 3600_000;
 delete (channels as any).rails;
 delete (channels as any).railCategory;
 let onGone: (id: string) => void = () => {};
@@ -43,11 +46,36 @@ export const threadName = (title: string, kind?: string): string => {
 	const k = scrub(kind ?? "").replace(/[\[\]]/g, "").trim().slice(0, 30);
 	return k ? `[${k}] ${scrub(title) || "작업"}`.slice(0, 100) : cleanName(title);
 };
-// Puts the owner into a thread so it appears under its parent channel in the sidebar. PUT is idempotent; failures are only logged.
-async function addOwner(threadId: string): Promise<void> {
-	if (!OWNER) return;
-	// An archived thread refuses members (50083); expected for done threads, so it stays out of the log.
-	await rest("PUT", `/channels/${threadId}/thread-members/${OWNER}`).catch(e => /50083/.test(String(e)) || log(`discord: could not add owner to thread ${threadId}: ${e}`));
+// A thread starts from a real message in its parent channel (as 오모냥 does), so it shows under that message with its
+// content instead of appearing empty with a "you were added" notice. Falls back to a bare thread if the post fails.
+async function threadFromMessage(parentId: string, starter: string, name: string): Promise<{ id: string; name: string }> {
+	const mid = await post(parentId, buildPayloads(starter)[0]!).catch(e => {
+		log(`discord: thread starter post failed in ${parentId}: ${e}`);
+		return undefined;
+	});
+	const body = { name, auto_archive_duration: 10080 };
+	const t = mid ? await rest("POST", `/channels/${parentId}/messages/${mid}/threads`, body) : await rest("POST", `/channels/${parentId}/threads`, { ...body, type: 11 });
+	return { id: String(t.id), name: String(t.name) };
+}
+// Marks a thread [done] now and archives it an hour later (kept across restarts in channels.archiveAt).
+async function markDone(id: string, base: string): Promise<string> {
+	const r = await rest("PATCH", `/channels/${id}`, { name: `[done] ${base}`.slice(0, 100) });
+	channels.archiveAt[id] = Date.now() + ARCHIVE_DELAY_MS;
+	save();
+	return String(r.name);
+}
+let archiveTimer: Timer | undefined;
+function startArchiveTimer(): void {
+	if (archiveTimer) return;
+	archiveTimer = setInterval(() => {
+		const now = Date.now();
+		for (const [id, at] of Object.entries(channels.archiveAt)) {
+			if (at > now) continue;
+			delete channels.archiveAt[id];
+			save();
+			void rest("PATCH", `/channels/${id}`, { archived: true }).catch(e => log(`discord: thread ${id} archive failed: ${e}`));
+		}
+	}, 60_000);
 }
 const isWorkParent = (parent?: string) => !!parent && (parent === channels.category || parent === channels.workCategory);
 
@@ -102,11 +130,7 @@ export async function ensureChannels(): Promise<void> {
 	}
 	for (const [id, t] of Object.entries(channels.threads)) if (!existing.has(t.parent)) delete channels.threads[id];
 	save();
-	// One pass per gateway start: owner joins every known thread (archived ones just log an error).
-	void (async () => {
-		const ids = [...Object.entries(channels.lanes).filter(([lane]) => channels.homes[lane]).map(([, id]) => id), ...Object.keys(channels.threads)];
-		for (const id of new Set(ids)) await addOwner(id);
-	})();
+	startArchiveTimer();
 	await keepPrivate(all).catch(e => log(`discord: could not hide channels from other bots (needs administrator): ${e}`));
 }
 
@@ -135,14 +159,15 @@ async function keepPrivate(all: any[]): Promise<void> {
 // messages there arrive with the parent's context and the answer goes back into the thread.
 const threadParent = (parentId: string) => (parentId === channels.chat ? "chat" : channels.work[parentId] ? `ch:${parentId}` : undefined);
 
-export async function createThread(parent: string, name: string, kind?: string): Promise<{ id: string; name: string }> {
+// `starter` is the message posted in the parent channel that the thread hangs from (defaults to the thread name).
+export async function createThread(parent: string, name: string, kind?: string, starter?: string): Promise<{ id: string; name: string }> {
 	const parentId = resolve(parent);
 	if (!status.enabled || !parentId || !threadParent(parentId)) throw new Error(`threads can be made in chat or a work channel (ch:<id>), not ${parent}`);
-	const t = await rest("POST", `/channels/${parentId}/threads`, { name: threadName(name, kind), type: 11, auto_archive_duration: 10080 });
-	await addOwner(t.id);
-	channels.threads[t.id] = { parent: parentId, name: String(t.name) };
+	const full = threadName(name, kind);
+	const t = await threadFromMessage(parentId, starter?.trim() || full, full);
+	channels.threads[t.id] = { parent: parentId, name: t.name };
 	save();
-	return { id: t.id, name: t.name };
+	return t;
 }
 
 export const threadInfo = (id: string) => {
@@ -209,13 +234,13 @@ export async function syncProfile(): Promise<void> {
 
 // `title` is the owner-facing channel name (their language, plain words); the lane name stays the internal key.
 // With `home` (ch:<id> of an existing work channel) no channel is made: the lane gets a thread in that channel instead.
-export async function laneChannel(lane: string, title?: string, home?: string, kind?: string): Promise<string | undefined> {
+export async function laneChannel(lane: string, title?: string, home?: string, kind?: string, starter?: string): Promise<string | undefined> {
 	if (!status.enabled || !channels.category) return undefined;
 	if (!channels.lanes[lane]) {
 		if (home) {
 			const parentId = homeChannel(home);
-			const t = await rest("POST", `/channels/${parentId}/threads`, { name: threadName(title?.trim() || lane, kind), type: 11, auto_archive_duration: 10080 });
-			await addOwner(t.id);
+			const full = threadName(title?.trim() || lane, kind);
+			const t = await threadFromMessage(parentId, starter?.trim() || `[run] ${full} 작업을 시작했어요.`, full);
 			channels.lanes[lane] = t.id;
 			channels.homes[lane] = parentId;
 		} else channels.lanes[lane] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: title?.trim() || lane, type: 0, parent_id: channels.workCategory ?? channels.category })).id;
@@ -241,10 +266,10 @@ export async function releaseLane(lane: string): Promise<void> {
 	delete channels.homes[lane];
 	save();
 	if (!status.enabled) return;
-	await post(id, buildPayloads(`레인 ${lane} 작업을 마쳤어요. 이 스레드는 보관할게요.`)[0]!, true).catch(e => log(`lane ${lane} done marker failed: ${e}`));
+	await post(id, buildPayloads(`레인 ${lane} 작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.`)[0]!, true).catch(e => log(`lane ${lane} done marker failed: ${e}`));
 	const t = await rest("GET", `/channels/${id}`).catch(() => undefined);
 	const base = String(t?.name ?? lane).replace(/^\[(working|waiting|done)\]\s*/, "");
-	await rest("PATCH", `/channels/${id}`, { name: `[done] ${base}`.slice(0, 100), archived: true }).catch(e => log(`lane ${lane} thread archive failed: ${e}`));
+	await markDone(id, base).catch(e => log(`lane ${lane} thread done failed: ${e}`));
 }
 
 function resolve(target: string): string | undefined {
@@ -436,15 +461,19 @@ export async function clearProgress(target: string): Promise<void> {
 	for (const mid of tracked.values()) await deleteMessage(target, mid).catch(e => log(`progress message ${mid} in ${target} not deleted: ${e}`));
 }
 
-// Thread status as in Dori: a [working]/[waiting]/[done] prefix on the name; done archives it, other states reopen it.
+// Thread status as in Dori: a [working]/[waiting]/[done] prefix on the name; done archives it an hour later, other states
+// reopen it and cancel a pending archive.
 export async function threadStatus(target: string, state: "working" | "waiting" | "done"): Promise<string> {
 	const id = resolve(target);
 	const t = id && channels.threads[id];
 	if (!status.enabled || !t) throw new Error(`${target} is not a known thread (th:<id>)`);
-	const name = `[${state}] ${t.name.replace(/^\[(working|waiting|done)\]\s*/, "")}`.slice(0, 100);
-	if (state !== "done") await rest("PATCH", `/channels/${id}`, { archived: false });
-	const r = await rest("PATCH", `/channels/${id}`, { name, ...(state === "done" ? { archived: true } : {}) });
-	t.name = String(r.name);
+	const base = t.name.replace(/^\[(working|waiting|done)\]\s*/, "");
+	if (state === "done") t.name = await markDone(id, base);
+	else {
+		delete channels.archiveAt[id];
+		await rest("PATCH", `/channels/${id}`, { archived: false });
+		t.name = String((await rest("PATCH", `/channels/${id}`, { name: `[${state}] ${base}`.slice(0, 100) })).name);
+	}
 	save();
 	return t.name;
 }
