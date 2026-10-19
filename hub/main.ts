@@ -18,8 +18,8 @@ import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queu
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { startReflection } from "./reflect.ts";
-import { featureCatalog, syncFeatureWatches, toggleFeature } from "./features.ts";
-import { harnessGraph, patchConfig, readHarnessFile, writeHarnessFile } from "./harness.ts";
+import { featureCatalog, syncFeatureWatches } from "./features.ts";
+import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
 import { startOmpUpdate } from "./update.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
@@ -555,26 +555,17 @@ const server = Bun.serve({
 			error instanceof ForceRequired
 				? json({ error: error.message, requires_force: true, context_tokens: error.contextTokens }, error.status)
 				: json({ error: (error as Error).message }, error instanceof ControlError ? error.status : 400);
-		if (parts[0] === "api" && parts[1] === "harness") {
+		if (req.method === "GET" && parts[0] === "api" && parts[1] === "harness") {
 			try {
-				if (req.method === "GET" && parts.length === 2) return json(await harnessGraph({ terminals: terminals.size }));
-				if (req.method === "PATCH" && parts[2] === "config" && parts.length === 3) {
-					const b = await body(req);
-					return json(await patchConfig(String(b.path ?? ""), b.value));
-				}
-				if (parts[2] === "file" && parts.length > 3) {
-					const name = decodeURIComponent(parts.slice(3).join("/"));
-					if (req.method === "GET") return json(readHarnessFile(name));
-					if (req.method === "PUT") return json(writeHarnessFile(name, (await body(req)).text));
-				}
+				if (parts.length === 2) return json(await harnessGraph({ terminals: terminals.size }));
+				if (parts[2] === "file" && parts.length > 3) return json(readHarnessFile(decodeURIComponent(parts.slice(3).join("/"))));
 			} catch (error) {
 				return fail(error);
 			}
 		}
-		if (parts[0] === "api" && parts[1] === "features") {
+		if (req.method === "GET" && parts[0] === "api" && parts[1] === "features" && parts.length === 2) {
 			try {
-				if (req.method === "GET" && parts.length === 2) return json(await featureCatalog());
-				if (req.method === "POST" && parts[3] === "toggle" && parts.length === 4) return json(await toggleFeature(decodeURIComponent(parts[2]), (await body(req)).enabled));
+				return json(await featureCatalog());
 			} catch (error) {
 				return fail(error);
 			}

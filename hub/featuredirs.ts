@@ -5,7 +5,7 @@
 //               The body is advisory text that goes into the prompt after RULES.md.
 //   watch.json / schedule.json  same shape as one watch / one schedule the gateway already accepts.
 // Pure fs + data (no gateway config import) so the omp extension can load it too. Cached per folder by file mtimes.
-import { copyFileSync, existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 export const TRIGGERS = ["메시지 도착", "정해진 시각", "변화 감지", "도구 실행 직전", "워커 생성 시", "턴 끝", "답장 전송 전", "항상(프롬프트)"] as const;
@@ -172,20 +172,3 @@ export function blockedByFeatures(dataDir: string, command: string, warn?: (msg:
 	return undefined;
 }
 
-// Flip `enabled` in one feature.md frontmatter, nothing else. Atomic write, previous text kept as feature.md.bak.
-export function setFeatureEnabled(dataDir: string, id: string, enabled: boolean): void {
-	if (!ID.test(id)) throw new Error(`"${id}" 은(는) 기능 폴더 이름이 아니에요`);
-	const file = join(featuresRoot(dataDir), id, "feature.md");
-	if (!existsSync(file)) throw new Error(`개인 기능 폴더 features/${id}/feature.md 가 없어요 (배포용 기능은 같은 id 로 개인 폴더에 복사해서 바꿔요)`);
-	const before = readFileSync(file, "utf8");
-	const m = /^(---\r?\n)([\s\S]*?)(\r?\n---)/.exec(before);
-	if (!m) throw new Error("frontmatter 가 없어서 바꿀 수 없어요");
-	const eol = m[1].slice(3);
-	const head = /^enabled:.*$/m.test(m[2]) ? m[2].replace(/^enabled:.*$/m, `enabled: ${enabled}`) : `${m[2]}${eol}enabled: ${enabled}`;
-	const after = `${m[1]}${head}${m[3]}${before.slice(m[0].length)}`;
-	if (after === before) return;
-	copyFileSync(file, `${file}.bak`);
-	const tmp = `${file}.${process.pid}.tmp`;
-	writeFileSync(tmp, after);
-	renameSync(tmp, file);
-}
