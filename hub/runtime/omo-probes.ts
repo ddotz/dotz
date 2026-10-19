@@ -208,6 +208,9 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 			if (!patch || !existsSync(patch)) return fail(`no retained patch came back: "${answerOf(run.events).slice(0, 120)}"`);
 			if (readFileSync(join(ctx.cwd, "probe.txt"), "utf8") !== "before\n") return fail("the worker's change was merged into the checkout (not isolated with apply:false)");
 			if (!/after/.test(readFileSync(patch, "utf8"))) return fail(`the patch does not hold the change: ${patch}`);
+			// The answer may come in the turn the completion woke; a prompt sent before that turn ends is not taken.
+			await run.waitFor(e => e.type === "turn_end", 60_000, run.events.indexOf(said!));
+			await Bun.sleep(1500);
 			const at = run.events.length;
 			await run.turn(`Without reading it first, apply it now: run the shell command \`git apply ${patch}\` in ${ctx.cwd}, then reply with done.`, ms);
 			const blocked = toolResults(run.events.slice(at)).find(r => r.is_error && /review before apply/.test(r.text));
