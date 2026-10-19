@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { cfg, DATA_DIR } from "./config.ts";
 import { atTime, Chain, failsOver, failureReason, keyHostOk, keyProviderOk, resetFallbackState } from "./fallback.ts";
+import { classifyProviderError } from "./providers.ts";
 
 mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
 
@@ -39,6 +40,26 @@ test("only provider-side failures move the chain; a too-long context is not a qu
 	expect(failsOver(undefined)).toBe(false);
 	expect(failureReason({ text: "prompt is too long: context length exceeded" })).toBe("error");
 	expect(failureReason({ text: "credit balance is too low" })).toBe("quota");
+});
+
+// Error texts as they appear in real OmO session records (~/.omo/agent/sessions); before this list several fell through
+// to "no kind", so the chain never moved on from them.
+test("real provider errors get the kind that decides failover", () => {
+	const cases: [string, string | undefined][] = [
+		["WebSocket error", "transient"],
+		["WebSocket closed 1006 Connection ended", "transient"],
+		["JSON error injected into SSE stream", "transient"],
+		["Provider stream start timed out after 90000ms", "transient"],
+		["OAuth refresh failed for anthropic: Anthropic token refresh request failed.", "owner"],
+		['400: {"message":"Provider is disabled: openrouter","type":"invalid_request_error"}', "owner"],
+		['402: {"message":"Provider error 402: This request requires more credits, or fewer max_tokens."}', "owner"],
+		["Codex error: The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account.", "owner"],
+		['401: {"message":"Not logged in to anthropic. Run: ocx login anthropic","type":"authentication_error"}', "owner"],
+		["Codex error: The usage limit has been reached", "rate"],
+		["You've hit your session limit · resets 12:30am (Asia/Seoul)", "rate"],
+		["The provider rejected this turn because its input exceeds the provider size or context limit.", undefined],
+	];
+	for (const [text, kind] of cases) expect([text, classifyProviderError(text)]).toEqual([text, kind]);
 });
 
 test("an API key goes only over https to a provider's own host or a configured one; another base_url is refused", () => {
