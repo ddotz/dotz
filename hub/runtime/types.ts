@@ -74,6 +74,9 @@ export interface AgentProcess {
 	// Ask for fresh context numbers / the session reference; answered by a usage / session event.
 	refreshUsage(): void;
 	refreshSession(): void;
+	// Switch the running process to another model (`provider/id[:thinking]`) without restarting it; absent = the runtime cannot,
+	// and the hub then leaves a fallback in place until the process restarts.
+	setModel?(selector: string): void;
 	// Start receiving task-worker updates (subagent events).
 	watchSubagents(): void;
 	// `force` is the unignorable kill; the hub decides when to escalate.

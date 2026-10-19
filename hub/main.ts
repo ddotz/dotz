@@ -283,7 +283,7 @@ setProgressHandler((lane, text) => {
 		.catch(e => log(`lane progress send failed: ${e}`));
 });
 
-// A model fallback is one plain line: the orchestrator's (and its workers') in worklog, a lane's (and its workers') in the lane's channel. Neither wakes the orchestrator.
+// A model fallback of a lane (and its task workers) is one plain line in the lane's channel, the orchestrator's task workers' one in worklog (the orchestrator's own goes to the alert channel). None wakes the orchestrator.
 setOrchNoticeHandler(text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`model fallback notice failed: ${e}`)));
 setLaneNoticeHandler((lane, text) => {
 	const channel = `lane:${lane.name}`;
