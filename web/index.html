@@ -487,6 +487,69 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
   .ltail { flex: none; height: 112px; }
   .lr.tx .lb { -webkit-line-clamp: 1; }
 }
+/* 구성: harness map */
+#v-harness { max-width: none; }
+.hm-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.hm-bar .sup { flex: 1; min-width: 0; }
+.hm-note { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--warn) 8%, transparent); color: var(--fg); font-size: 12.5px; line-height: 18px; }
+.hm-note .tx { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hm-scroll { overflow-x: auto; padding: 0 0 8px; }
+.hm-canvas { position: relative; margin: 0 auto; }
+.hm-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.hm-edge { fill: none; stroke: color-mix(in srgb, var(--fg-3) 55%, transparent); stroke-width: 1.4; transition: stroke .15s; }
+.hm-edge.sup { stroke-dasharray: 4 3; }
+.hm-edge.hot { stroke: var(--accent); stroke-width: 1.8; }
+.hm-ah { fill: color-mix(in srgb, var(--fg-3) 70%, transparent); }
+.hm-ah.hot { fill: var(--accent); }
+.hm-lb { fill: var(--accent); font: 500 10.5px var(--font); stroke: var(--bg); stroke-width: 4px; paint-order: stroke; opacity: 0; transition: opacity .15s; }
+.hm-lb.hot { opacity: 1; }
+.hm-ch { position: absolute; top: 0; height: 18px; color: var(--fg-3); font: 500 11px/18px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hm-n { position: absolute; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; padding: 6px 10px 6px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--card); text-align: left; transition: border-color .15s, background .15s; }
+.hm-n:hover { background: var(--hover); border-color: var(--fg-3); }
+.hm-n.on { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.hm-n.sup { border-style: dashed; background: var(--bg); }
+.hm-n.sup:hover { background: var(--hover); }
+.hm-n .t { display: flex; align-items: center; gap: 6px; min-width: 0; font: 600 12.5px/18px var(--font); letter-spacing: -.01em; }
+.hm-n .t .ic { width: 13px; height: 13px; color: var(--fg-3); }
+.hm-n .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hm-n .s, .hm-n .lk { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--fg-2); font-size: 11.5px; line-height: 15px; overflow-wrap: anywhere; }
+.hm-n .lk { color: var(--fg-3); font-size: 11px; }
+.hm-n.m { position: static; width: 100%; height: auto; min-height: 52px; padding: 8px 12px; }
+.hm-flow .sec { margin: 16px 0 8px; }
+.hm-flow .sec:first-child { margin-top: 0; }
+.hm-stack { display: flex; flex-direction: column; gap: 8px; }
+.hm-down { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 12px 0 0; color: var(--fg-3); font-size: 11.5px; line-height: 16px; }
+.hm-down .ic { width: 14px; height: 14px; }
+.hs-desc { margin: 0; color: var(--fg-2); font-size: 12.5px; line-height: 20px; overflow-wrap: anywhere; }
+.sh-body .sec { margin: 20px 0 8px; }
+.hs-facts { border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.hs-fact { display: flex; gap: 12px; padding: 6px 12px; font-size: 12.5px; line-height: 19px; }
+.hs-fact + .hs-fact { border-top: 1px solid var(--line); }
+.hs-fact .k { flex: none; width: 92px; color: var(--fg-2); overflow-wrap: anywhere; }
+.hs-fact .v { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hs-set { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.hs-set + .hs-set { margin-top: 8px; }
+.hs-set .top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.hs-set .lb { flex: 1; min-width: 0; font: 500 13px/20px var(--font); overflow-wrap: anywhere; }
+.hs-set .ctl { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.hs-set .ctl .fi, .hs-set .ctl .sel { flex: 1; min-width: 0; }
+.hs-set .unit { flex: none; color: var(--fg-3); font-size: 12px; }
+.hs-act { justify-content: flex-end; margin-top: 8px; }
+.hs-ro { font-size: 13px; color: var(--fg-2); }
+.note { margin-top: 6px; color: var(--fg-3); font-size: 11.5px; line-height: 16px; overflow-wrap: anywhere; }
+.note:empty { display: none; }
+.note.ok { color: var(--ok); }
+.note.err { color: var(--err); }
+textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px; resize: vertical; }
+.hs-mono { font: 12px/18px var(--mono); min-height: 280px; }
+.hs-sw { position: relative; flex: none; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: var(--track); transition: background .15s; }
+.hs-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: transform .15s; }
+.hs-sw[aria-checked="true"] { background: var(--accent); }
+.hs-sw[aria-checked="true"]::after { transform: translateX(16px); }
+.hs-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.hs-chips .chip { height: auto; min-height: 28px; padding: 3px 10px; text-align: left; }
+.hs-chips .chip .tx { white-space: normal; overflow-wrap: anywhere; }
+@media (min-width: 640px) { #harness.hs-open { padding-right: 480px; } }
 </style>
 </head>
 <body>
@@ -536,6 +599,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
         </div>
       </section>
       <section class="view" id="v-lanes" hidden><div id="lanes"></div></section>
+      <section class="view" id="v-harness" hidden><div id="harness"></div></section>
       <section class="view" id="v-settings" hidden><div id="settings"></div></section>
       <section class="view" id="v-models" hidden><div id="models"></div></section>
       <section class="view" id="v-providers" hidden><div id="providers"></div></section>
@@ -552,6 +616,14 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
     <button class="ib" id="sh-close" type="button" aria-label="닫기"></button>
   </div>
   <div class="sh-body" id="sh-body"></div>
+</aside>
+<aside class="sheet" id="hsheet" role="dialog" aria-label="구성 상세" hidden>
+  <div class="sh-head">
+    <div class="sh-t"><div class="sh-name" id="hs-name"></div><div class="sup" id="hs-sub"></div></div>
+    <span class="tag" id="hs-tag"></span>
+    <button class="ib" id="hs-close" type="button" aria-label="닫기"></button>
+  </div>
+  <div class="sh-body" id="hs-body"></div>
 </aside>
 <script>
 "use strict";
@@ -600,8 +672,10 @@ const ICONS = {
   search: "M11 4a7 7 0 1 0 0 14a7 7 0 0 0 0-14zM20 20l-4-4",
   discord: "M5 7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-3l-3 3v-3H8a3 3 0 0 1-3-3zM9.5 11h.01M14.5 11h.01",
   close: "M6 6l12 12M18 6L6 18",
+  harness: "M4 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 5a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 19a2 2 0 1 0 4 0a2 2 0 1 0-4 0M8 11l8-5M8 13l8 5",
+  file: "M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v5h5",
 };
-const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", lanes: "lanes", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context" };
+const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", lanes: "lanes", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context" };
 const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
 
 /* ---------- formatting ---------- */
@@ -804,13 +878,13 @@ let P = null;          // /api/providers
 let botName = "dotz";
 let current = "home", prevView = null;
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
-const NAV = [["home", "홈"], ["chat", "채팅"], ["lanes", "레인"], ["settings", "설정"]];
+const NAV = [["home", "홈"], ["chat", "채팅"], ["lanes", "레인"], ["harness", "구성"], ["settings", "설정"]];
 const CHAT_MODE_KEY = "dotz-chat-mode";
 const navView = v => v === "activity" ? "chat" : v;
 const lastChatView = () => { try { return localStorage.getItem(CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const SUB = new Set(["models", "providers", "usage", "context"]);
-const views = ["home", "chat", "activity", "lanes", "settings", "models", "providers", "usage", "context"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인", settings: "설정", models: "모델", providers: "공급자", usage: "사용량", context: "컨텍스트" };
+const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context"];
+const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인", harness: "구성", settings: "설정", models: "모델", providers: "공급자", usage: "사용량", context: "컨텍스트" };
 const laneAlive = l => l.status !== "exited";
 // An exited or stopped lane is a normal end, so it gets the neutral dot; red is kept for real failures.
 const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
@@ -942,6 +1016,7 @@ function go(name, tgt) {
   $("#appbar").classList.toggle("back", !!back);
   $("#title").textContent = name === "home" ? botName : titles[name];
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
+  if (name === "harness") loadHarness(); else closeHSheet();
   if (tv) enterTarget();
   if (name === "home") { renderHome(); loadHomeData(); }
   if (name === "lanes") { laneSig = ""; renderLanes(); }
@@ -2381,6 +2456,347 @@ function renderSettings() {
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null));
 }
+
+/* ---------- 구성: harness map (graph + detail sheet; data from /api/harness) ---------- */
+let HG = null, hSel = "", hLoading = false, hDirty = null, hEdgeRefs = [], hNodeEls = new Map(), hTimer = 0;
+const H_MQ = matchMedia("(max-width: 639px)");
+const H_COLS = ["들어오는 곳", "게이트웨이", "오케스트레이터", "레인", "작업자"];
+const H_TONE = { ok: "ok", busy: "pri", warn: "warn", err: "err", off: "" };
+const H_STATE = { ok: "정상", busy: "작업 중", warn: "주의", err: "멈춤", off: "꺼짐" };
+const H_APPLY = { live: ["바로 적용", ""], "next-turn": ["다음 턴부터", ""], restart: ["재시작 후 적용", "warn"] };
+const hNode = id => HG && HG.nodes.find(n => n.id === id);
+const hSvg = (tag, attrs) => { const n = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v); return n; };
+
+async function loadHarness(quiet) {
+  if (hLoading) return;
+  hLoading = true;
+  try { if (!M) await loadModels(true); HG = await api("/api/harness"); }
+  catch (e) { hLoading = false; if (!quiet && current === "harness") clear($("#harness")).append(emptyNode("구성을 불러오지 못했어요")); return; }
+  hLoading = false;
+  if (current === "harness") { renderHarness(); hHead(); }
+}
+
+// Layered layout: flow nodes sit in the column of their longest path from an input; file and support nodes join the
+// column of the node they attach to (above and below it); one flow node per column is centered on the middle line.
+function hLayout(avail) {
+  const nodes = HG.nodes, byId = new Map(nodes.map(n => [n.id, n]));
+  const flow = nodes.filter(n => n.group === "flow");
+  const col = new Map(flow.map(n => [n.id, 0]));
+  for (let i = 0; i < flow.length; i++) for (const e of HG.edges) if (col.has(e.from) && col.has(e.to)) col.set(e.to, Math.max(col.get(e.to), col.get(e.from) + 1));
+  const colOf = n => { let x = n; for (let i = 0; i < 6 && x.group !== "flow"; i++) x = byId.get(x.anchor) || x; return col.get(x.id) || 0; };
+  const key = n => { const a = byId.get(n.anchor); return a && a.group !== "flow" ? key(a) + 0.5 : n.order || 0; };
+  const ncol = Math.max(...flow.map(n => col.get(n.id))) + 1;
+  const cols = Array.from({ length: ncol }, () => ({ flow: [], att: [] }));
+  for (const n of flow) cols[col.get(n.id)].flow.push(n);
+  for (const n of nodes) if (n.group !== "flow") cols[colOf(n)].att.push(n);
+  const GX = 56, HF = 72, HA = 60, VG = 10, HEAD = 26;
+  const CW = Math.max(150, Math.min(200, Math.floor((avail - GX * (ncol - 1)) / ncol)));
+  for (const c of cols) {
+    c.att.sort((a, b) => key(a) - key(b));
+    const up = c.flow.length === 1 ? Math.ceil(c.att.length / 2) : 0;
+    c.above = c.att.slice(0, up); c.below = c.att.slice(up);
+    c.aboveH = c.above.length * (HA + VG);
+    c.blockH = c.flow.length * HF + (c.flow.length - 1) * VG;
+  }
+  const mid = Math.max(...cols.map(c => c.aboveH + c.blockH / 2));
+  const rects = {};
+  let bottom = 0;
+  cols.forEach((c, i) => {
+    let y = HEAD + mid - c.blockH / 2 - c.aboveH;
+    const x = i * (CW + GX);
+    for (const [list, h] of [[c.above, HA], [c.flow, HF], [c.below, HA]]) for (const n of list) { rects[n.id] = { x, y, w: CW, h, col: i }; y += h + VG; }
+    bottom = Math.max(bottom, y - VG);
+  });
+  return { rects, cols, width: ncol * CW + (ncol - 1) * GX, height: bottom + 8, CW, GX };
+}
+
+// Edge paths: curves between columns (right side -> left side). Inside one column the helpers feed their flow node over
+// a shared bus in the gutter (one line, one arrowhead); two stacked helpers are joined by a short straight arrow.
+// Several curves on one side of a card are spread a few px apart so their arrowheads stay readable.
+function hRoutes(L) {
+  const rows = HG.edges.filter(e => L.rects[e.from] && L.rects[e.to]).map(e => {
+    const a = L.rects[e.from], b = L.rects[e.to], same = a.col === b.col;
+    return { e, a, b, same, sa: same || a.col < b.col ? "r" : "l", sb: same ? "r" : a.col < b.col ? "l" : "r" };
+  });
+  const ports = new Map();
+  const add = (id, side, r, other, k) => { const key = id + side; if (!ports.has(key)) ports.set(key, []); ports.get(key).push({ r, k, y: other.y + other.h / 2 }); };
+  for (const r of rows) if (!r.same) { add(r.e.from, r.sa, r, r.b, "oa"); add(r.e.to, r.sb, r, r.a, "ob"); }
+  for (const list of ports.values()) { list.sort((p, q) => p.y - q.y); list.forEach((p, i) => { p.r[p.k] = Math.max(-26, Math.min(26, (i - (list.length - 1) / 2) * 8)); }); }
+  for (const r of rows) {
+    const y1 = r.a.y + r.a.h / 2 + (r.oa || 0), y2 = r.b.y + r.b.h / 2 + (r.ob || 0);
+    if (r.same) {
+      const gap = r.b.y > r.a.y ? r.b.y - (r.a.y + r.a.h) : r.a.y - (r.b.y + r.b.h);
+      const cx = r.a.x + r.a.w / 2;
+      if (hNode(r.e.to).group !== "flow" && gap <= 14) {
+        const down = r.b.y > r.a.y;
+        r.d = `M${cx} ${down ? r.a.y + r.a.h : r.a.y}V${down ? r.b.y : r.b.y + r.b.h}`; r.lx = cx; r.ly = (r.a.y + r.b.y + r.b.h) / 2;
+      } else {
+        const x1 = r.a.x + r.a.w, gx = x1 + 10;
+        r.d = `M${x1} ${y1}H${gx}V${y2}H${x1}`; r.lx = gx; r.ly = (y1 + y2) / 2;
+      }
+    } else {
+      const x1 = r.sa === "r" ? r.a.x + r.a.w : r.a.x, x2 = r.sb === "l" ? r.b.x : r.b.x + r.b.w;
+      const dx = Math.max(24, Math.abs(x2 - x1) * 0.5) * (x2 > x1 ? 1 : -1);
+      r.d = `M${x1} ${y1}C${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}`; r.lx = (x1 + x2) / 2; r.ly = (y1 + y2) / 2;
+    }
+  }
+  return rows;
+}
+
+function hCard(n, mobile) {
+  const sup = n.group === "support";
+  const links = mobile && n.group !== "flow" ? HG.edges.filter(e => e.from === n.id).map(e => `${hNode(e.to).label}: ${e.label}`) : [];
+  const b = el("button", { type: "button", class: `hm-n${sup ? " sup" : ""}${n.group === "files" ? " fl" : ""}${mobile ? " m" : ""}${hSel === n.id ? " on" : ""}`, "data-id": n.id, "aria-label": `${n.label}: ${n.summary}` },
+    el("span", { class: "t" }, el("span", { class: `dot ${H_TONE[n.status] || ""}` }), n.group === "files" ? icon("file") : null, el("span", { class: "l", text: n.label })),
+    el("span", { class: "s", text: n.summary }),
+    links.length ? el("span", { class: "lk", text: `→ ${links.join(" · ")}` }) : null);
+  b.addEventListener("click", () => openHSheet(n.id));
+  b.addEventListener("mouseenter", () => hHot(n.id));
+  b.addEventListener("mouseleave", () => hHot(hSel));
+  b.addEventListener("focus", () => hHot(n.id));
+  b.addEventListener("blur", () => hHot(hSel));
+  hNodeEls.set(n.id, b);
+  return b;
+}
+
+function hHot(id) {
+  for (const r of hEdgeRefs) {
+    const on = !!id && (r.e.from === id || r.e.to === id);
+    r.path.classList.toggle("hot", on); r.label.classList.toggle("hot", on);
+    r.path.setAttribute("marker-end", on ? "url(#hm-ah-hot)" : "url(#hm-ah)");
+  }
+}
+
+function renderHarness() {
+  const box = $("#harness");
+  hNodeEls = new Map(); hEdgeRefs = [];
+  if (!HG) { clear(box).append(emptyNode("불러오는 중…")); return; }
+  const mobile = H_MQ.matches;
+  const bar = el("div", { class: "hm-bar" },
+    el("div", { class: "sup", text: "카드를 누르면 설명과 설정이 열려요. 점선 카드는 곁에서 돕는 시스템이에요." }),
+    el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); toast("새로 불러왔어요"); }) }, icon("refresh"), "새로고침"));
+  const parts = [bar];
+  const pend = HG.restart_pending || [];
+  if (pend.length) parts.push(el("div", { class: "hm-note" }, el("span", { class: "tx", text: `재시작하면 적용되는 변경 ${pend.length}개: ${pend.slice(0, 3).join(", ")}${pend.length > 3 ? " …" : ""}` }),
+    el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => {
+      if (!await ask("게이트웨이 재시작", "오케스트레이터와 레인의 작업이 모두 끝나면(최대 20분) 새 설정으로 다시 시작해요. 그동안 새 메시지는 계속 받아요.", "재시작")) return;
+      await api("/api/gateway/restart", "POST", {}); toast("작업이 끝나면 재시작해요");
+    }) }, "재시작")));
+  const keep = box.querySelector(".hm-scroll");
+  const left = keep ? keep.scrollLeft : 0;
+  if (mobile) parts.push(hFlowList()); else parts.push(hCanvas($("#views").clientWidth - 48));
+  clear(box).append(...parts);
+  const sc = box.querySelector(".hm-scroll");
+  if (sc) sc.scrollLeft = left;
+  hHot(hSel);
+}
+
+function hCanvas(avail) {
+  const L = hLayout(avail || 1000);
+  const canvas = el("div", { class: "hm-canvas", style: `width:${L.width}px;height:${L.height}px` });
+  const svg = hSvg("svg", { class: "hm-svg", width: L.width, height: L.height, viewBox: `0 0 ${L.width} ${L.height}` });
+  const defs = hSvg("defs");
+  for (const [id, cls] of [["hm-ah", "hm-ah"], ["hm-ah-hot", "hm-ah hot"]]) {
+    const m = hSvg("marker", { id, viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "7", markerHeight: "7", orient: "auto" });
+    m.append(hSvg("path", { d: "M0 0L8 4L0 8z", class: cls })); defs.append(m);
+  }
+  svg.append(defs);
+  const labels = hSvg("g");
+  for (const r of hRoutes(L)) {
+    const sup = hNode(r.e.from).group !== "flow" || hNode(r.e.to).group !== "flow";
+    const path = hSvg("path", { d: r.d, class: `hm-edge${sup ? " sup" : ""}`, "marker-end": "url(#hm-ah)" });
+    const tip = hSvg("title");
+    tip.textContent = `${hNode(r.e.from).label} → ${hNode(r.e.to).label}: ${r.e.label}`;
+    path.append(tip);
+    const label = hSvg("text", { x: r.lx, y: r.ly + 3.5, class: "hm-lb", "text-anchor": "middle" });
+    label.textContent = r.e.label;
+    svg.append(path); labels.append(label);
+    hEdgeRefs.push({ e: r.e, path, label });
+  }
+  svg.append(labels);
+  canvas.append(svg);
+  L.cols.forEach((c, i) => canvas.append(el("div", { class: "hm-ch", style: `left:${i * (L.CW + L.GX)}px;width:${L.CW}px`, text: H_COLS[i] || "" })));
+  for (const n of HG.nodes) { const r = L.rects[n.id]; const b = hCard(n, false); b.style.cssText = `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px`; canvas.append(b); }
+  return el("div", { class: "hm-scroll" }, canvas);
+}
+
+// Phone: the same nodes as a vertical flow, one step per column, with the edge labels as the arrows between steps.
+function hFlowList() {
+  const L = hLayout(1000);
+  const wrap = el("div", { class: "hm-flow" });
+  L.cols.forEach((c, i) => {
+    wrap.append(el("div", { class: "sec", text: H_COLS[i] || "" }));
+    const stack = el("div", { class: "hm-stack" });
+    for (const n of [...c.flow, ...c.att]) stack.append(hCard(n, true));
+    wrap.append(stack);
+    const next = L.cols[i + 1];
+    if (next) {
+      const from = new Set(c.flow.map(n => n.id)), to = new Set(next.flow.map(n => n.id));
+      const labels = [...new Set(HG.edges.filter(e => from.has(e.from) && to.has(e.to)).map(e => e.label))];
+      wrap.append(el("div", { class: "hm-down" }, icon("down"), el("span", { text: labels.slice(0, 3).join(" · ") })));
+    }
+  });
+  return wrap;
+}
+
+function paintHSel() { for (const [id, b] of hNodeEls) b.classList.toggle("on", id === hSel); hHot(hSel); }
+// The side sheet covers the right part of the map; keep the picked card scrolled into the visible left part.
+function hReveal(id) {
+  const sc = $(".hm-scroll"), b = hNodeEls.get(id);
+  if (!sc || !b) return;
+  const l = b.offsetLeft - 16, r = b.offsetLeft + b.offsetWidth + 16;
+  if (l < sc.scrollLeft) sc.scrollLeft = l;
+  else if (r > sc.scrollLeft + sc.clientWidth) sc.scrollLeft = r - sc.clientWidth;
+}
+
+function closeHSheet() {
+  const s = $("#hsheet");
+  if (!s || s.hidden) return;
+  s.hidden = true; hSel = ""; hDirty = null; $("#harness").classList.remove("hs-open"); paintHSel();
+}
+
+function hHead() {
+  const n = hNode(hSel);
+  if (!n || $("#hsheet").hidden) return;
+  $("#hs-name").textContent = n.label; $("#hs-sub").textContent = n.summary;
+  const t = $("#hs-tag"); t.className = `tag ${H_TONE[n.status] || ""}`; t.textContent = H_STATE[n.status] || "";
+}
+
+async function openHSheet(id) {
+  if (id !== hSel && hDirty && hDirty() && !await ask("저장하지 않은 변경", "열려 있는 항목에 저장하지 않은 변경이 있어요. 버리고 넘어갈까요?", "버리기", true)) return;
+  const n = hNode(id);
+  if (!n) return;
+  hSel = id; paintHSel();
+  const drafts = [];
+  hDirty = () => drafts.some(f => f());
+  $("#hsheet").hidden = false;
+  $("#harness").classList.add("hs-open");
+  hReveal(id);
+  hHead();
+  const body = clear($("#hs-body"));
+  body.scrollTop = 0;
+  body.append(el("p", { class: "hs-desc", text: n.desc }));
+  if (n.facts.length) body.append(el("div", { class: "sec", text: "지금 상태" }), el("div", { class: "hs-facts" }, ...n.facts.map(f => el("div", { class: "hs-fact" }, el("span", { class: "k", text: f.label }), el("span", { class: "v", text: f.value })))));
+  if (n.settings.length) body.append(el("div", { class: "sec", text: "설정" }), ...n.settings.map(s => hSetting(s, drafts)));
+  if (n.file) body.append(el("div", { class: "sec", text: `파일 · ${n.file.split("/").pop()}` }), hFileEditor(n, drafts));
+  const near = [...HG.edges.filter(e => e.to === id).map(e => ({ id: e.from, t: `← ${hNode(e.from).label}`, l: e.label })), ...HG.edges.filter(e => e.from === id).map(e => ({ id: e.to, t: `${hNode(e.to).label} →`, l: e.label }))];
+  if (near.length) body.append(el("div", { class: "sec", text: "이어진 곳" }), el("div", { class: "hs-chips" }, ...near.map(x => el("button", { class: "chip", type: "button", title: x.l, onclick: () => openHSheet(x.id) }, el("span", { class: "tx", text: `${x.t} · ${x.l}` })))));
+}
+
+function hModelItems(cur) {
+  const avail = (M && M.available) || [];
+  const items = [];
+  if (cur && !avail.some(a => a.selector === cur)) items.push({ header: "현재" }, { value: cur, label: modelName(cur) });
+  const byProv = new Map();
+  for (const a of avail) { if (!byProv.has(a.provider)) byProv.set(a.provider, []); byProv.get(a.provider).push(a); }
+  for (const [p, list] of byProv) items.push({ header: providerName(p) }, ...list.map(a => ({ value: a.selector, label: a.name || a.selector })));
+  return items;
+}
+
+// One setting: an editor matching its type, an apply-timing tag and its own 저장 button.
+function hSetting(s, drafts) {
+  const box = el("div", { class: "hs-set", title: s.source });
+  const [applyText, applyTone] = H_APPLY[s.applies] || ["", ""];
+  const tag = el("span", { class: `tag ${s.pending ? "warn" : applyTone}`, text: s.pending ? "재시작 대기 중" : applyText });
+  const note = el("div", { class: "note", text: s.hint || "" });
+  if (!s.editable) {
+    box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), el("span", { class: "tag", text: "읽기 전용" })), el("div", { class: "hs-ro", text: String(s.value) }), s.hint ? note : el("div", { class: "note", text: "보안·연결 정보라 화면에서 바꿀 수 없어요." }));
+    return box;
+  }
+  let cur = s.value, draft = s.value;
+  const ctl = el("div", { class: "ctl" });
+  const save = el("button", { class: "btn", type: "button", disabled: true }, "저장");
+  const reset = el("button", { class: "btn text", type: "button", hidden: true }, "기본값");
+  const dirty = () => draft !== cur && !(typeof draft === "number" && Number.isNaN(draft));
+  const mark = () => {
+    save.disabled = !dirty();
+    reset.hidden = s.default === undefined || s.type === "model" || s.type === "effort" || draft === s.default;
+  };
+  const paint = () => {
+    clear(ctl);
+    if (s.type === "bool") {
+      const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!draft), "aria-label": s.label });
+      sw.onclick = () => { draft = !draft; paint(); };
+      ctl.append(sw, el("span", { class: "sup", text: draft ? "켜짐" : "꺼짐" }));
+    } else if (s.type === "select" || s.type === "effort" || s.type === "model") {
+      const opts = s.type === "model" ? null : s.options || [];
+      const text = s.type === "model" ? modelName(draft) : ((opts.find(o => o.value === draft) || {}).label ?? String(draft));
+      const b = el("button", { type: "button", class: "sel", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `${s.label}: ${text}` }, el("span", { class: "val", text }), icon("drop"));
+      b.addEventListener("click", () => showMenu(b, opts || hModelItems(draft), { value: draft, onPick: v => { draft = v; paint(); } }));
+      ctl.append(b);
+    } else if (s.type === "number") {
+      const inp = el("input", { class: "fi", type: "number", inputmode: "numeric", min: s.min, max: s.max, value: Number.isNaN(draft) ? "" : String(draft), "aria-label": s.label });
+      inp.addEventListener("input", () => { draft = inp.value.trim() === "" ? NaN : Number(inp.value); mark(); });
+      ctl.append(inp, s.unit ? el("span", { class: "unit", text: s.unit }) : null);
+    } else if (s.multiline) {
+      const ta = el("textarea", { class: "fi hs-ta", rows: 4, spellcheck: "false", "aria-label": s.label }); ta.value = String(draft);
+      ta.addEventListener("input", () => { draft = ta.value; mark(); });
+      ctl.append(ta);
+    } else {
+      const inp = el("input", { class: "fi", type: "text", autocomplete: "off", autocapitalize: "off", spellcheck: "false", value: String(draft), "aria-label": s.label });
+      inp.addEventListener("input", () => { draft = inp.value; mark(); });
+      ctl.append(inp);
+    }
+    mark();
+  };
+  reset.onclick = () => { draft = s.default; paint(); };
+  save.onclick = () => {
+    note.className = "note";
+    return busy(save, async () => {
+      try {
+        const r = await api("/api/harness/config", "PATCH", { path: s.key, value: draft });
+        cur = draft = r.value === undefined ? draft : r.value;
+        const [t, tone] = H_APPLY[r.applies] || ["", ""];
+        tag.className = `tag ${tone}`; tag.textContent = t;
+        note.className = "note ok"; note.textContent = r.note;
+        toast(`${s.label}: ${r.note}`);
+        paint(); loadHarness(true);
+      } catch (e) { note.className = "note err"; note.textContent = e.message; throw e; }
+    });
+  };
+  drafts.push(dirty);
+  box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), tag), ctl, el("div", { class: "btns hs-act" }, reset, save), note);
+  paint();
+  return box;
+}
+
+// Prompt-file editor: loads the file, saves atomically (the server keeps the previous text as <name>.bak).
+function hFileEditor(n, drafts) {
+  const ta = el("textarea", { class: "fi hs-ta hs-mono", rows: 18, spellcheck: "false", "aria-label": n.file });
+  ta.readOnly = !n.fileEditable;
+  const info = el("div", { class: "note" }), warn = el("div", { class: "note err", style: "white-space:pre-line" });
+  const save = el("button", { class: "btn", type: "button", disabled: true }, "저장");
+  const undo = el("button", { class: "btn text", type: "button", disabled: true }, "되돌리기");
+  let orig = "";
+  const dirty = () => ta.value !== orig;
+  const mark = () => { save.disabled = !n.fileEditable || !dirty(); undo.disabled = !dirty(); };
+  const url = `/api/harness/file/${n.file.split("/").map(enc).join("/")}`;
+  ta.addEventListener("input", mark);
+  ta.addEventListener("keydown", ev => { if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (!save.disabled) save.click(); } });
+  undo.onclick = () => { ta.value = orig; mark(); };
+  save.onclick = () => busy(save, async () => {
+    const r = await api(url, "PUT", { text: ta.value });
+    orig = ta.value; warn.textContent = (r.warnings || []).join("\n");
+    info.className = "note ok";
+    info.textContent = r.unchanged ? r.note : `저장했어요${r.backup ? ` · 이전 내용은 ${r.backup} 로 보관` : ""} · ${r.note}`;
+    mark(); loadHarness(true);
+  });
+  drafts.push(dirty);
+  api(url).then(r => {
+    orig = r.text; ta.value = r.text;
+    info.textContent = `${num(r.text.length)}자${r.cap ? ` (시작 프롬프트에는 앞 ${num(r.cap)}자까지)` : ""} · ${r.modified ? `${kstStamp(r.modified)} 수정` : "아직 없는 파일 (저장하면 만들어져요)"} · ${r.note}`;
+    mark();
+  }, e => { info.className = "note err"; info.textContent = e.message; });
+  return el("div", { class: "hs-fw" }, ta, el("div", { class: "btns hs-act" }, n.fileEditable ? undo : null, n.fileEditable ? save : null), info, warn);
+}
+
+$("#hs-close").append(icon("close"));
+$("#hs-close").onclick = closeHSheet;
+document.addEventListener("keydown", ev => { if (ev.key === "Escape" && !$("#hsheet").hidden && !openMenu && !document.querySelector("dialog[open]")) closeHSheet(); });
+H_MQ.addEventListener("change", () => { if (current === "harness") renderHarness(); });
+let hW = 0;
+window.addEventListener("resize", () => { if (current !== "harness" || H_MQ.matches) return; clearTimeout(hTimer); hTimer = setTimeout(() => { const w = $("#harness").clientWidth; if (Math.abs(w - hW) > 40) { hW = w; renderHarness(); } }, 150); });
+setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) loadHarness(true); }, 15000);
 
 /* ---------- boot ---------- */
 (async () => {

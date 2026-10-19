@@ -18,6 +18,7 @@ import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queu
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { startReflection } from "./reflect.ts";
+import { harnessGraph, patchConfig, readHarnessFile, writeHarnessFile } from "./harness.ts";
 import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
 import { startOmpUpdate } from "./update.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
@@ -553,6 +554,22 @@ const server = Bun.serve({
 			error instanceof ForceRequired
 				? json({ error: error.message, requires_force: true, context_tokens: error.contextTokens }, error.status)
 				: json({ error: (error as Error).message }, error instanceof ControlError ? error.status : 400);
+		if (parts[0] === "api" && parts[1] === "harness") {
+			try {
+				if (req.method === "GET" && parts.length === 2) return json(await harnessGraph({ terminals: terminals.size }));
+				if (req.method === "PATCH" && parts[2] === "config" && parts.length === 3) {
+					const b = await body(req);
+					return json(await patchConfig(String(b.path ?? ""), b.value));
+				}
+				if (parts[2] === "file" && parts.length > 3) {
+					const name = decodeURIComponent(parts.slice(3).join("/"));
+					if (req.method === "GET") return json(readHarnessFile(name));
+					if (req.method === "PUT") return json(writeHarnessFile(name, (await body(req)).text));
+				}
+			} catch (error) {
+				return fail(error);
+			}
+		}
 		if (req.method === "GET" && url.pathname === "/api/models") return json(await modelsView());
 		if (req.method === "PUT" && url.pathname === "/api/models") {
 			const b = await body(req);
