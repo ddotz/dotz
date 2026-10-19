@@ -18,6 +18,7 @@ test("spawn arguments: rpc mode, mapped model, dotz extension, no OmO fallback c
 	expect(args.slice(1, 5)).toEqual(["--mode", "rpc", "--model", "anthropic-subscription/claude-opus-5-5:medium"]);
 	expect(args).toContain("--no-model-fallback");
 	expect(args).toContain("--omo-senpi-memory-disabled");
+	expect(args).toContain("--no-ask-user");
 	expect(args[args.indexOf("--extension") + 1]).toEndWith("extension/index.ts");
 	expect(args.slice(-2)).toEqual(["--session", "/s/a.jsonl"]);
 });

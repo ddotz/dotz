@@ -38,9 +38,12 @@ class OmoProcess extends OmpProcess {
 // OmO's own memory plugin would create a memory agent per cwd and run reflection turns on every dotz process; dotz
 // keeps its own memory (state.json, the owner's files), so it is off.
 const MEMORY_OFF = "--omo-senpi-memory-disabled";
+// The question tool waits for an interactive UI answer that no dotz process gives (it would hang the turn); dotz asks the
+// owner in its channels instead.
+const NO_ASK = "--no-ask-user";
 
 export function omoArgs(o: SpawnOpts): string[] {
-	return [OMO, "--mode", "rpc", "--model", omoSelector(o.model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, ...(o.resume ? ["--session", o.resume] : [])];
+	return [OMO, "--mode", "rpc", "--model", omoSelector(o.model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, NO_ASK, ...(o.resume ? ["--session", o.resume] : [])];
 }
 
 export const omo: RuntimeAdapter = {
