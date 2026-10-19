@@ -490,6 +490,17 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .card.tap .lstat { color: var(--fg-2); }
 .card .subline { margin-top: 6px; }
 .card .clamp { margin-top: 6px; }
+/* bundle card: one row per item, each row opens the item and has its own ⋯ */
+.glist { display: flex; flex-direction: column; gap: 2px; }
+.grow { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0 -6px; padding: 4px 4px 4px 6px; border-radius: 6px; cursor: pointer; }
+.grow:hover { background: var(--hover); }
+.grow .gm { flex: 1; min-width: 0; }
+.grow .gm .bar { margin-top: 6px; }
+.grow > .ib { flex: none; width: 24px; height: 24px; opacity: 0; }
+.grow:hover > .ib, .grow:focus-within > .ib, .grow > .ib[aria-expanded="true"] { opacity: 1; }
+@media (hover: none) { .grow > .ib { opacity: 1; } }
+.grow.att { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.grow.att.err { background: color-mix(in srgb, var(--err) 12%, transparent); }
 @media (pointer: coarse) { .brz.e, .brz.s { display: none; } .brz.se { width: 24px; height: 24px; } .brz.se::after { right: 6px; bottom: 6px; } .board:not(.narrow) .bi > .lpane .lcomp { padding: 8px 24px 24px 8px; } }
 .lpane { display: flex; flex-direction: column; min-width: 0; height: 360px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
 .lpane.off .lname { color: var(--fg-2); }
@@ -1433,6 +1444,12 @@ const menuBtn = id => el("button", { class: "ib", type: "button", "aria-label": 
 function homeMenu(anchor, id) {
   const acts = [];
   const add = (label, run) => acts.push({ value: acts.length, label, run });
+  if (id.startsWith("group:")) {
+    const kind = id.slice(6);
+    add("카드로 나누기", () => setHomeGroup(kind, false));
+    add(`${HOME_KINDS[kind][0]} 열기`, () => go(HOME_KINDS[kind][1]));
+    return showMenu(anchor, acts, { onPick: i => acts[i].run() });
+  }
   if (id === MAIN || isLaneT(id)) {
     const key = id === MAIN ? "orchestrator" : id, name = targetName(id), restartNote = id === MAIN ? "어시스턴트가 다시 시작돼요." : "";
     const cur = M && (id === MAIN ? M.orchestrator : (M.lanes || []).find(l => `lane:${l.name}` === id));
@@ -1465,6 +1482,8 @@ function homeMenu(anchor, id) {
     add("사용량 열기", () => go("usage"));
     add("공급자 열기", () => go("providers"));
   }
+  const kind = homeKind(id);
+  if (kind && !homeGroups.has(kind)) add(`${HOME_KINDS[kind][0]} 한 카드로 묶기`, () => setHomeGroup(kind, true));
   showMenu(anchor, acts, { onPick: i => acts[i].run() });
 }
 
@@ -1491,8 +1510,26 @@ function laneLastFetch(name) {
 }
 
 let homeBoard = null;
-const HOME_BIG = { min: { w: 3, h: 3 }, max: { w: 12, h: 10 } }, HOME_SMALL = { min: { w: 2, h: 2 }, max: { w: 12, h: 6 } };
-// Every item is its own floating card: the assistant, each running lane, each context process, each usage limit, each provider.
+const HOME_BIG = { min: { w: 3, h: 3 }, max: { w: 12, h: 10 } }, HOME_SMALL = { min: { w: 2, h: 2 }, max: { w: 12, h: 6 } }, HOME_GROUP = { min: { w: 3, h: 2 }, max: { w: 12, h: 14 } };
+// Kinds of home items that can be bundled into one card (title, view the card opens); the bundled kinds are kept per browser.
+const HOME_KINDS = { lane: ["레인", "lanes"], ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
+const HOME_GROUPS_KEY = "dotz-home-groups";
+const homeKind = id => { const k = id.split(":")[0]; return HOME_KINDS[k] ? k : null; };
+let homeGroups = (() => { try { const v = JSON.parse(localStorage.getItem(HOME_GROUPS_KEY) || "null"); if (Array.isArray(v)) return new Set(v); } catch {} return new Set(["ctx", "limit", "prov"]); })();
+function setHomeGroup(kind, on) {
+  if (on) homeGroups.add(kind); else homeGroups.delete(kind);
+  try { localStorage.setItem(HOME_GROUPS_KEY, JSON.stringify([...homeGroups])); } catch {}
+  setTimeout(renderHome, 0);
+}
+const toneCls = t => t ? ` att${t === "err" ? " err" : ""}` : "";
+// One item inside a bundle card: clicking it opens the item, its own ⋯ menu keeps the item's actions.
+function homeRow(e) {
+  const r = el("div", { class: `grow${toneCls(e.tone)}`, role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); e.open(); }, onkeydown: ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === r) { ev.preventDefault(); ev.stopPropagation(); e.open(); } } },
+    el("div", { class: "gm" }, ...e.row()), menuBtn(e.id));
+  return r;
+}
+// Every item is its own floating card (the assistant, each running lane, each context process, each usage limit, each provider),
+// except kinds the owner bundled: those share one card with a row per item.
 function renderHome() {
   const box = $("#home");
   if (!box || current !== "home") return;
@@ -1512,42 +1549,53 @@ function renderHome() {
     el("div", { class: "sup sub", text: om && om.thinking ? `thinking ${om.thinking}` : "\u00a0" }),
     subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
 
-  // running lanes
+  // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}
+  const E = { lane: [], ctx: [], limit: [], prov: [] };
   for (const l of (S ? S.lanes : []).filter(laneAlive)) {
     const t = `lane:${l.name}`, k = attnKind(t), m = ((M && M.lanes) || []).find(x => x.name === l.name), model = (m && m.model) || l.model;
     laneLastFetch(l.name);
-    add(t, itemCard(() => openTarget(t, lastChatView()), k || l.status === "rate-limited" ? "warn" : "",
-      el("div", { class: "ch" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("h3", { text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(l.status)}`, text: statusKo(l.status) }), menuBtn(t)),
-      model ? el("div", { class: "sup", text: `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` }) : null,
-      subLine(t),
-      LAST[l.name] ? el("div", { class: "sup clamp", text: LAST[l.name] }) : null), { w: 4, h: 4 }, HOME_BIG);
+    E.lane.push({ id: t, tone: k || l.status === "rate-limited" ? "warn" : "", open: () => openTarget(t, lastChatView()), size: [{ w: 4, h: 4 }, HOME_BIG],
+      card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("h3", { text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(l.status)}`, text: statusKo(l.status) }), menuBtn(t)),
+        model ? el("div", { class: "sup", text: `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` }) : null,
+        subLine(t),
+        LAST[l.name] ? el("div", { class: "sup clamp", text: LAST[l.name] }) : null],
+      row: () => [el("div", { class: "row" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : el("span", { class: "sup", text: statusKo(l.status) }))] });
   }
-
-  // context: one card per running process
   for (const p of ((C && C.processes) || []).filter(x => x.running)) {
-    const id = `ctx:${p.name}`, pct = p.percent;
-    add(id, itemCard("context", pct >= 90 ? "err" : pct >= 80 ? "warn" : "",
-      el("div", { class: "ch" }, el("h3", { text: `컨텍스트 · ${p.kind === "lane" ? p.name : botName}` }), el("span", { class: "sup", text: pct != null ? `${pct}%` : `${num(p.tokens)} 토큰` }), menuBtn(id)),
-      el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }))), { w: 3, h: 2 }, HOME_SMALL);
+    const id = `ctx:${p.name}`, pct = p.percent, who = p.kind === "lane" ? p.name : botName, v = pct != null ? `${pct}%` : `${num(p.tokens)} 토큰`;
+    const bar = () => el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }));
+    E.ctx.push({ id, tone: pct >= 90 ? "err" : pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 3, h: 2 }, HOME_SMALL],
+      card: () => [el("div", { class: "ch" }, el("h3", { text: `컨텍스트 · ${who}` }), el("span", { class: "sup", text: v }), menuBtn(id)), bar()],
+      row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: who }), el("span", { class: "v", text: v })), bar()] });
   }
-
-  // usage: one card per limit
   if (HQ && !HQ.error) {
     const provs = (HQ.providers || []).filter(p => (p.limits || []).length), multi = provs.length > 1;
     for (const pr of provs) for (const l of pr.limits) {
-      const id = `limit:${pr.provider}:${l.id}`, f = limitFrac(l);
-      add(id, itemCard("usage", limitTone(l) === "err" ? "err" : f != null && f <= .2 ? "warn" : "",
-        el("div", { class: "ch" }, el("h3", { text: limitLabel(pr, l, multi) }), el("span", { class: "sup", text: pctText(l) }), menuBtn(id)), bar(l)), { w: 3, h: 2 }, HOME_SMALL);
+      const id = `limit:${pr.provider}:${l.id}`, f = limitFrac(l), name = limitLabel(pr, l, multi);
+      E.limit.push({ id, tone: limitTone(l) === "err" ? "err" : f != null && f <= .2 ? "warn" : "", open: () => go("usage"), size: [{ w: 3, h: 2 }, HOME_SMALL],
+        card: () => [el("div", { class: "ch" }, el("h3", { text: name }), el("span", { class: "sup", text: pctText(l) }), menuBtn(id)), bar(l)],
+        row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: name }), el("span", { class: "v", text: pctText(l) })), bar(l)] });
     }
   }
-
-  // providers: connected ones and the one in use that lost its login
   for (const p of (P && P.providers) || []) {
     if (!isConnected(p) && !needsAttention(p)) continue;
-    const id = `prov:${p.id}`, bad = needsAttention(p);
-    add(id, itemCard("providers", bad ? "err" : "",
-      el("div", { class: "ch" }, el("span", { class: `dot ${bad ? "err" : "ok"}` }), el("h3", { text: p.name || p.id }), el("span", { class: `tag ${bad ? "err" : ""}`, text: bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨" }), menuBtn(id)),
-      p.account ? el("div", { class: "sup", text: p.account }) : null), { w: 3, h: 2 }, HOME_SMALL);
+    const id = `prov:${p.id}`, bad = needsAttention(p), st = bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨";
+    E.prov.push({ id, tone: bad ? "err" : "", open: () => go("providers"), size: [{ w: 3, h: 2 }, HOME_SMALL],
+      card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${bad ? "err" : "ok"}` }), el("h3", { text: p.name || p.id }), el("span", { class: `tag ${bad ? "err" : ""}`, text: st }), menuBtn(id)),
+        p.account ? el("div", { class: "sup", text: p.account }) : null],
+      row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "err" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });
+  }
+  const loaded = { lane: !!S, ctx: !!C, limit: !!HQ, prov: !!P };
+  for (const [kind, list] of Object.entries(E)) {
+    if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, e.tone, ...e.card()), ...e.size); continue; }
+    // never shorter than its rows: header ~52px, bar rows ~44px, plain rows ~30px
+    const need = Math.min(HOME_GROUP.max.h, Math.max(2, Math.ceil((52 + Math.max(1, list.length) * (kind === "limit" || kind === "ctx" ? 44 : 30) + BGAP) / BSTEP)));
+    const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length;
+    const tone = list.some(e => e.tone === "err") ? "err" : nAtt ? "warn" : "";
+    const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : kind === "lane" ? "작동 중인 레인 없음" : "없음";
+    add(`group:${kind}`, itemCard(view, tone,
+      el("div", { class: "ch" }, el("h3", { text: title }), nAtt ? el("span", { class: "tag warn", text: `확인 필요 ${nAtt}` }) : null, list.length ? el("span", { class: "tag", text: String(list.length) }) : null, menuBtn(`group:${kind}`)),
+      list.length ? el("div", { class: "glist" }, ...list.map(homeRow)) : el("div", { class: "sup", text: empty })), { w: 4, h: need }, { min: { w: 3, h: need }, max: HOME_GROUP.max });
   }
 
   // cards of data that has not arrived yet keep their saved place
