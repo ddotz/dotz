@@ -151,11 +151,19 @@ is `"check"` by default (one worklog line per new version, nothing installed). `
 restarts the gateway once it is idle. `"off"` disables the check. Installs managed by another program (Tern) are
 skipped. `bun hub/update.ts --check-now` prints the result.
 
-## Feature folders (owner-added features)
+## Feature folders (shipped and personal)
 
-One owner feature = one folder `<DATA_DIR>/features/<id>/` (`<id>` is `[a-z0-9-]`, up to 40 chars). Nothing ships in the repo;
-the gateway and the omp extension read the folders at runtime (cached by file mtime). A malformed folder is skipped and the
-reason is written to `hub.log` (and returned as `skipped_dirs` by `GET /api/features`).
+One feature = one folder `<id>/` (`<id>` is `[a-z0-9-]`, up to 40 chars) in one of two roots:
+
+- **Shipped** (`features/` in this repo): features that come with dotz for every user. Only generic, owner-neutral
+  content belongs here.
+- **Personal** (`<DATA_DIR>/features/`): this owner's own rules (which machine handles mail, browser habits, …). A
+  personal folder with the same `<id>` replaces the shipped one, so a user turns a shipped feature off or changes it by
+  copying it into the personal root and editing the copy.
+
+The gateway and the omp extension read both roots at runtime (cached by file mtime). A malformed folder is skipped and
+the reason is written to `hub.log` (and returned as `skipped_dirs` by `GET /api/features`). `GET /api/features` marks
+every feature, folder or not, as `origin: "shipped" | "personal"`, and the 기능 목록 filters by it (출처).
 
 `feature.md` starts with a frontmatter block, then the body:
 
