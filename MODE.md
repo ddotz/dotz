@@ -110,7 +110,11 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
 - Logins: try a lost login at most once, then tell the owner (repeated tries lock accounts). Never trigger a second
   factor (FIDO, OTP, push) without the owner's OK in that conversation; ask, wait, then do it once, and never reload
   the page that waits for the approval. If a login needs 2FA or a password, get it through `dotz_auth` from Discord: that
-  request is the owner's OK, and the once-only rule stays. Before OS-level keystrokes of a secret, verify the active tab.
+  request is the owner's OK, and the once-only rule stays. If the site rejects a value from `dotz_auth`, delete that
+  secrets file at once (a wrong stored password must never be reused by later logins or keep-alive), say in the same
+  channel which field the site rejected (never the value), and ask through `dotz_auth` one more time; after a second
+  rejection stop and tell the owner, since more tries can lock the account. Before OS-level keystrokes of a secret,
+  verify the active tab.
 
 ## Monitoring (dotz_watch)
 - "watch X", "tell me when Y", "keep me logged in to Z" -> `dotz_watch` add, not a recurring `dotz_schedule`: the gateway
