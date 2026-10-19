@@ -9,7 +9,9 @@ import { dirname, join } from "node:path";
 import { cfg, DATA_DIR, HOME, IDENTITY_FILE, log, paths } from "./config.ts";
 import { loadFeatureDirs, TRIGGERS } from "./featuredirs.ts";
 import { harnessGraph, type HarnessNode } from "./harness.ts";
+import { lang } from "./i18n.ts";
 import { listSchedules } from "./schedule.ts";
+import { inLanguage, summarize } from "./summaries.ts";
 import { addWatch, allWatches, removeWatch } from "./watch.ts";
 import { listSetups } from "./workchannels.ts";
 
@@ -23,6 +25,8 @@ export type Feature = {
 	form: Form;
 	name: string;
 	what: string;
+	summary?: string; // two-line summary of what (and of name, when titled) in the user's main language, from hub/summaries.ts
+	titled?: boolean; // the summary's first line is the name (the original name is not in the user's language)
 	trigger: Trigger;
 	stage: string; // harness node id
 	strength: Strength;
@@ -438,6 +442,19 @@ export function syncFeatureWatches(): void {
 	}
 }
 
+// A card whose name is not in the user's language is summarized together with it ("name\nwhat"), and the summary's first line
+// then serves as the name. Summaries come from the cache; missing ones are filled in the background and show on the next refresh.
+function attachSummaries(features: Feature[]): void {
+	const language = lang();
+	const titled = new Set(features.filter(f => !inLanguage(f.name, language, true)).map(f => f.id));
+	const known = summarize(features.map(f => ({ key: f.id, text: titled.has(f.id) ? `${f.name}\n${f.what}`.trim() : f.what, foreign: titled.has(f.id) })), language);
+	for (const f of features) {
+		if (!known[f.id]) continue;
+		f.summary = known[f.id];
+		if (titled.has(f.id)) f.titled = true;
+	}
+}
+
 // ---- catalog -------------------------------------------------------------------------------------------------------
 export async function featureCatalog() {
 	const graph = await harnessGraph({ light: true });
@@ -457,5 +474,6 @@ export async function featureCatalog() {
 	];
 	markDuplicates(features);
 	for (const f of features) f.origin ??= originOf(f);
+	attachSummaries(features);
 	return { generated: new Date().toISOString(), forms: FORMS, triggers: TRIGGERS, features, stages: graph.nodes.map(n => n.id), data_dir: short(DATA_DIR), skipped_dirs: loadFeatureDirs(DATA_DIR, log).skipped };
 }

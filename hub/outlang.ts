@@ -96,12 +96,13 @@ function systemPrompt(language: string): string {
 
 export type Rewrite = { text: string; inputTokens: number; outputTokens: number; ms: number };
 
-// One omp call that translates `text`; throws on any failure.
-export async function translate(text: string, language: string, opts: { model?: string; timeoutMs?: number } = {}): Promise<Rewrite> {
+// One minimal omp call (the tiny model role, no tools/skills/extensions/rules/memory) with `system` as the system prompt
+// and `text` as the only message; throws on any failure. Shared by the translation below and hub/summaries.ts.
+export async function callModel(system: string, text: string, opts: { model?: string; timeoutMs?: number } = {}): Promise<Rewrite> {
 	prepareOverlay();
 	const started = Date.now();
 	const proc = Bun.spawn(
-		[OMP, "-p", "--mode", "json", `--config=${OVERLAY}`, "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-rules", "--no-lsp", "--no-title", "--thinking", "off", "--model", opts.model ?? setting().model ?? "@tiny", "--system-prompt", systemPrompt(languageName(language)), text],
+		[OMP, "-p", "--mode", "json", `--config=${OVERLAY}`, "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-rules", "--no-lsp", "--no-title", "--thinking", "off", "--model", opts.model ?? setting().model ?? "@tiny", "--system-prompt", system, text],
 		{ cwd: DATA_DIR, stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: opts.timeoutMs ?? (setting().timeout_s ?? 30) * 1000 },
 	);
 	const raw = await new Response(proc.stdout).text();
@@ -118,6 +119,9 @@ export async function translate(text: string, language: string, opts: { model?: 
 	const u = reply?.usage ?? {};
 	return { text: out, inputTokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), outputTokens: u.output ?? 0, ms: Date.now() - started };
 }
+
+// One omp call that translates `text`; throws on any failure.
+export const translate = (text: string, language: string, opts: { model?: string; timeoutMs?: number } = {}): Promise<Rewrite> => callModel(systemPrompt(languageName(language)), text, opts);
 
 // Code blocks must survive the rewrite verbatim and the length must stay plausible; otherwise the original is kept.
 function sane(original: string, rewritten: string): string | undefined {
