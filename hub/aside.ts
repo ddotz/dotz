@@ -28,9 +28,12 @@ export async function runCmd(argv: string[], timeoutMs: number): Promise<{ out: 
 }
 
 // Makes sure the local Aside answers `aside repl`. When the app is not running it is launched in the background and
-// hidden (`open -g -j`: no activation, no window shown), then the repl is polled until it answers or 20 s pass.
+// hidden (`open -g -j`: no activation, no window shown), then the repl is polled until it answers or 20 s pass. A running
+// Aside with no browser window cannot serve `aside repl`, and no CLI path opens one without bringing Aside to the front
+// (`open -g -a Aside <url>` activated it, measured 2026-10-19), so that case fails at once instead of waiting.
 export async function ensureAside(): Promise<void> {
-	if (Bun.spawnSync(["pgrep", "-x", "Aside"]).exitCode !== 0) {
+	const started = Bun.spawnSync(["pgrep", "-x", "Aside"]).exitCode !== 0;
+	if (started) {
 		const r = Bun.spawnSync(["open", "-g", "-j", "-a", "Aside"]);
 		if (r.exitCode !== 0) throw new Error(`could not start Aside: ${r.stderr.toString().trim().slice(0, 200)}`);
 	}
@@ -40,6 +43,8 @@ export async function ensureAside(): Promise<void> {
 		const r = await runCmd([ASIDE, "repl", "console.log('DZ_ASIDE_UP')"], 10_000);
 		if (r.out.includes("DZ_ASIDE_UP")) return;
 		last = (r.out + r.err).replace(/\x1b\[[0-9;]*m/g, "").trim();
+		if (!started && last.includes("No browser window is open"))
+			throw new Error("Aside is running with no browser window open; aside repl needs one (not opened here: that would bring Aside to the front)");
 		await Bun.sleep(1000);
 	}
 	throw new Error(`Aside did not answer aside repl within ${START_WAIT_MS / 1000}s: ${last.slice(-200)}`);
