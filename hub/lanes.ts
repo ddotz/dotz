@@ -379,7 +379,7 @@ function recover(lane: Lane, why: string, wasWorking: boolean): void {
 const activeCount = () => [...lanes.values()].filter(l => l.status === "working" || l.status === "starting").length;
 // Concurrent task workers a lane may run, from this machine's cores and memory (an omp worker is a process of a few
 // hundred MB, mostly waiting on the model), capped by omp's task.maxConcurrency default of 8.
-const WORKER_SLOTS = Math.max(2, Math.min(8, Math.floor(availableParallelism() / 2), Math.floor(totalmem() / 2 ** 32)));
+export const WORKER_SLOTS = Math.max(2, Math.min(8, Math.floor(availableParallelism() / 2), Math.floor(totalmem() / 2 ** 32)));
 
 function footer(lane: Lane): string {
 	return withReplyLine(msg().footer({ lane: lane.name, mode: modeFile(), workerModel: laneWorkerModel(lane), slots: WORKER_SLOTS, worktree: worktreeNote(lane.worktree) }));
