@@ -1129,7 +1129,7 @@ function renderHome() {
   const nAttn = lanes.filter(l => attnKind(`lane:${l.name}`)).length;
   const lanesCard = tapCard("lanes", cardHead("레인", nAttn ? el("span", { class: "tag warn", text: `확인 필요 ${nAttn}` }) : null, el("span", { class: "tag", text: `${alive.length}/${lanes.length}` })));
   if (!lanes.length) lanesCard.append(el("div", { class: "sup", text: "레인 없음" }));
-  const ordered = sortLanes(lanes);
+  const ordered = [...lanes.filter(laneAlive), ...lanes.filter(l => !laneAlive(l))];
   for (const l of ordered.slice(0, 3)) {
     const k = attnKind(`lane:${l.name}`);
     lanesCard.append(el("div", { class: "row" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : el("span", { class: "sup", text: statusKo(l.status) })));
@@ -1226,10 +1226,6 @@ function attnKind(t) {
   if (i.alive && i.status === "rate-limited") return "limit";
   return msOf(DONE[t]) > msOf(SEEN[t]) ? "done" : "";
 }
-// Order everywhere: 확인 필요, 작업 중, 대기, 종료.
-const attnRank = t => attnKind(t) ? 0 : !targetInfo(t).alive ? 3 : isWorking(t) ? 1 : 2;
-const byAttn = (a, b) => attnRank(a) - attnRank(b);
-const sortLanes = lanes => lanes.map(l => [l, attnRank(`lane:${l.name}`)]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
 const attnCount = () => S ? [MAIN, ...S.lanes.map(l => `lane:${l.name}`)].filter(attnKind).length : 0;
 // Targets needing attention, not messages: the 채팅 nav badge and the page title. Unread message counts stay on the chips.
 function paintAttn() {
@@ -1655,7 +1651,6 @@ function renderBars() {
   const lanes = S ? S.lanes : [];
   const alive = [MAIN, ...lanes.filter(laneAlive).map(l => `lane:${l.name}`)], dead = lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`);
   if (isLaneT(target) && !alive.includes(target) && !dead.includes(target)) alive.push(target);
-  alive.sort(byAttn); dead.sort(byAttn);
   const view = t => {
     const i = targetInfo(t);
     const k = attnKind(t);
@@ -1967,7 +1962,7 @@ function renderLanes() {
   const B = laneBoard;
   for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) { LP[n].node.remove(); delete LP[n]; delete laneDraft[n]; }
   for (const l of lanes) laneUpdate(LP[l.name] || (LP[l.name] = lanePane(l.name)), l, modelOf(l.name));
-  const sorted = sortLanes(lanes), alive = sorted.filter(laneAlive), dead = sorted.filter(l => !laneAlive(l));
+  const alive = lanes.filter(laneAlive), dead = lanes.filter(l => !laneAlive(l));
   B.empty.hidden = lanes.length > 0;
   B.none.hidden = !lanes.length || alive.length > 0;
   B.grid.hidden = !alive.length;
