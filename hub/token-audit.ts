@@ -6,26 +6,15 @@
 // Config: `token_audit_at` ("HH:MM" local time, default "04:30", "off" disables). The reflection digest reads the result.
 // usage: bun hub/token-audit.ts --dry [--hours N]    (--dry prints the alert instead of sending it; history is not recorded)
 // Last stdout line: RESULT {...}
-import type { Dirent } from "node:fs";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { cfg, DATA_DIR, HOME, log, writeAtomic } from "./config.ts";
+import { collectSessions, OMO_WAKE, projectLabel as labelOf, type Src } from "./session-sources.ts";
 import { trackTimer } from "./shutdown.ts";
 
-type Runtime = "omp" | "omo";
-// OmO keeps task workers outside the session tree, in the task stores this file lists (<store>/children/<id>/sessions/<id>/).
-const ROOTS: { dir: string; runtime: Runtime }[] = [
-	{ dir: join(HOME, ".omo", "agent", "sessions"), runtime: "omo" },
-	{ dir: join(HOME, ".omp", "agent", "sessions"), runtime: "omp" },
-];
-const OMO_STORES = join(HOME, ".omo", "agent", "rpc", "task-stores.json");
-const SKIP_DIRS = ["resident-blobs", "extensions", "session-holders"];
 // OmO (senpi) trims the context of every request once the last usage reaches 50% of the window; the trim is not saved, so
 // requests alternate full/trimmed and the trimmed prefix misses the cache (measured on the macmini 오모냥, 2026-10-08).
 const REDUCE_GATE = 500_000;
-// OmO events that start a turn without the owner (a task completion, a monitor line, a goal continuation). Bookkeeping
-// entries OmO writes around every turn (todo state, oauth binding, rules scan) do not count as a wake.
-const OMO_WAKE = new Set(["goal-continuation", "omo-senpi:wake", "senpi-monitor:notification", "senpi-codemode:notification", "senpi-terminal:notification"]);
 // Known causes of a cache break that are not a prompt-prefix change made here: the report names them instead of guessing.
 const CAUSE: Record<string, [string, string]> = {
 	shrink: ["OmO 맥락 축소(창 50% 넘으면 요청마다 비영속 축소)", "한 태스크 컨텍스트를 ~250K 아래로(단계별 워커, MODE 'Lanes and workers')"],
@@ -67,82 +56,12 @@ const usd = (n: number) => `$${n.toFixed(2)}`;
 const tilde = (p: string) => p.replace(HOME, "~");
 type Json = Record<string, any>; // omp session lines are external jsonl; fields are read defensively
 
-type Src = { file: string; label: string; child: boolean; runtime: Runtime; requested?: string };
 // An Anthropic 429 blocks until its retry-after (5h when unknown, capped at 7 days): a fallback inside one is expected.
 type Exhaust = { from: number; to: number };
 type Day = { date: string; tokens: number; cost: number; cacheWrite: number; sessions: number; flags: number; kinds?: string[]; report?: string };
 
-// A session folder is named after the cwd: omp "-<home-relative path with / as ->" (absolute outside home "--<path>--"),
-// OmO always "--<absolute path>--".
-export function projectLabel(dir: string): string {
-	const name = dir.replace(/(?<=.)--$/, "");
-	for (const orch of [`-${relative(HOME, DATA_DIR).replace(/\//g, "-")}`, `-${DATA_DIR.replace(/\//g, "-")}`]) {
-		if (name === orch) return "오케스트레이터";
-		const lane = name.match(new RegExp(`^${orch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-lanes-(.+)-worktree$`));
-		if (lane) return `레인 ${lane[1]}`;
-	}
-	if (dir.startsWith("--")) return `/${dir.replace(/^--|--$/g, "").replace(/-/g, "/")}`;
-	return `~/${dir.replace(/^-/, "")}`;
-}
-
-function collect(since: number): Src[] {
-	const out: Src[] = [];
-	const fresh = (p: string) => {
-		try {
-			return statSync(p).mtimeMs >= since;
-		} catch {
-			return false;
-		}
-	};
-	const tag = (runtime: Runtime) => (runtime === "omo" ? "OmO" : "omp");
-	const walk = (root: string, runtime: Runtime, dir: string, depth: number) => {
-		let entries: Dirent[] = [];
-		try {
-			entries = readdirSync(dir, { withFileTypes: true });
-		} catch {
-			return;
-		}
-		for (const e of entries) {
-			const p = join(dir, e.name);
-			if (e.isDirectory()) {
-				if (depth > 0 && !e.name.endsWith("-artifacts") && !SKIP_DIRS.includes(e.name)) walk(root, runtime, p, depth - 1);
-				continue;
-			}
-			if (!e.name.endsWith(".jsonl") || !fresh(p)) continue;
-			const parts = relative(root, p).split("/");
-			const project = projectLabel(parts[0]);
-			const child = parts.length >= 3;
-			const id = e.name.match(/_([0-9a-f]{8})/)?.[1] ?? e.name.replace(/\.jsonl$/, "");
-			out.push({ file: p, child, runtime, label: `${child ? `${project} 워커 ${e.name.replace(/\.jsonl$/, "")}` : `${project} ${id}`} [${tag(runtime)}]` });
-		}
-	};
-	for (const r of ROOTS) walk(r.dir, r.runtime, r.dir, 3);
-	let stores: string[] = [];
-	try {
-		stores = Object.keys(JSON.parse(readFileSync(OMO_STORES, "utf8")).stores ?? {});
-	} catch {}
-	for (const store of stores) {
-		const children = join(store, "children");
-		if (!existsSync(children)) continue;
-		for (const tid of readdirSync(children)) {
-			const dir = join(children, tid, "sessions", tid);
-			let files: string[] = [];
-			try {
-				files = readdirSync(dir).filter(f => f.endsWith(".jsonl") && fresh(join(dir, f)));
-			} catch {
-				continue;
-			}
-			let t: Json = {};
-			try {
-				t = JSON.parse(readFileSync(join(store, "tasks", `${tid}.json`), "utf8"));
-			} catch {}
-			const name = t.name && t.name !== tid ? String(t.name) : String(t.task_summary ?? tid).slice(0, 40);
-			const rq = t.requested_model;
-			for (const f of files) out.push({ file: join(dir, f), child: true, runtime: "omo", label: `task:${name} (${tid}) [OmO]`, ...(rq?.model_id ? { requested: `${rq.provider}/${rq.model_id}` } : {}) });
-		}
-	}
-	return out;
-}
+export const projectLabel = (dir: string) => labelOf(dir, HOME, DATA_DIR);
+const collect = (since: number) => collectSessions(since, { home: HOME, dataDir: DATA_DIR });
 
 type Bust = { ts: number; uncached: number; cr: number; prevCtx: number; cost: number; events: string[]; cause: string };
 type Stats = {
