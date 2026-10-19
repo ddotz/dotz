@@ -148,14 +148,15 @@ test("orchestrator: a refusal alerts the owner and goes back to the configured m
 	expect(alerts).toHaveLength(2);
 	expect(alerts[1]).toContain("Back on the original model (anthropic/test-orch)");
 
-	// It falls back again inside that turn: the alert repeats, but the revert is not repeated (no loop), not even later.
+	// It falls back again inside that turn: the alert repeats, nothing switches mid-turn, and it is undone again before the
+	// next prompt (a refusal is about one request; a process left on the fallback until restart is the bug being fixed).
 	await p.push(agentStart);
 	await p.push(fallbackFrame("Refusal (cyber): the request was declined"));
 	await p.push(agentEnd);
 	expect(alerts).toHaveLength(3);
 	const after = p.frames.length;
 	o.deliver("third question");
-	expect(p.types(after)).toEqual(["prompt"]);
+	expect(p.types(after)).toEqual(["set_model", "set_thinking_level", "prompt"]);
 	await stopOrchestrator();
 });
 

@@ -55,7 +55,8 @@ const queue = createPrompts({
 	log,
 	answered: answeredIds(),
 });
-function deliver(text: string, reply?: { target: string; replyTo?: string }): void {
+// `owner` marks the owner's own message (it leads with the what-runs-now line); schedules, watches and mail carry a target but are not.
+function deliver(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): void {
 	if (reply) discord.typing(reply.target);
 	queue.deliver(text, reply);
 }
@@ -161,7 +162,7 @@ function flush(target: string): void {
 	if (b.events.length === 1 && LIMITS_ASK.test(String(head.text)) && !head.attachments?.length) return void limitsAnswer(target, b.replyTo);
 	rateLimitNotice(target, b.replyTo);
 	const merged = b.events.length > 1 ? { ...head, message_id: b.events.at(-1)!.message_id, parts: b.events } : head;
-	deliver(inboxText(merged), { target, replyTo: b.replyTo });
+	deliver(inboxText(merged), { target, replyTo: b.replyTo, owner: true });
 	expectReply(target);
 }
 

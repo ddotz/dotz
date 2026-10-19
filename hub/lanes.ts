@@ -352,7 +352,6 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				wasWorking = lane.status === "working";
 				break;
 			case "turn_start":
-				lane.reverter?.turnStarted();
 				clearTimeout(lane.watchdog);
 				clearTimeout(lane.timer);
 				clearTimeout(lane.transientTimer);

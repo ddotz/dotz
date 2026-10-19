@@ -50,56 +50,60 @@ async function quiet(): Promise<void> {
 	while (pending > 0);
 	await flush(10);
 }
-async function run(seconds: number, each?: (s: number) => void): Promise<void> {
-	for (let s = 1; s <= seconds; s++) {
-		each?.(s);
-		await advance(1000);
+async function run(minutes: number, each?: (m: number) => void): Promise<void> {
+	for (let m = 0; m < minutes; m++) {
+		each?.(m);
+		await advance(60_000);
 		await quiet();
 	}
 }
 const toolCall = (intent: string) => emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "lane:live-test", type: "tool_call", text: `bash: ${intent}`, intent });
+const reports = () => requests.filter(r => r.method === "POST" && r.body!.content.startsWith("⏳"));
 
-test("live status line: one post, edits with the intents, delete after the answer, nothing after", async () => {
+test("progress reports: first at 5 min, a new message every 5 min, skipped when nothing moved, none after the answer", async () => {
 	requests.length = 0;
 	const t0 = Date.now();
 	livestatus.begin("ch:111", "lane:live-test");
 	emitEventActivity("lane:live-test", { type: "subagent", update: { id: "w1", agent: "task", description: "LiveStatusLine 구현", status: "running" } });
-	await run(15, s => {
-		if (s === 5) toolCall("설정 파일 읽는 중");
-		if (s === 11) toolCall("테스트 실행하는 중");
-		if (s === 13) toolCall("커밋 정리하는 중");
+	await run(23, m => {
+		if (m === 1) toolCall("설정 파일 읽는 중");
+		if (m === 3) toolCall("테스트 실행하는 중");
+		if (m === 7) toolCall("커밋 정리하는 중");
+		if (m === 21) toolCall("리뷰 반영하는 중");
 	});
-	// The answer arrives at 15 s: it is posted, then clearProgress removes the status line.
 	await discord.send("ch:111", "answer");
 	await discord.clearProgress("ch:111");
-	const cleared = requests.length;
-	await run(30);
+	const answeredAt = requests.length;
+	await run(12);
 
-	const posts = requests.filter(r => r.method === "POST" && r.body?.content !== "answer");
-	const patches = requests.filter(r => r.method === "PATCH");
-	const deletes = requests.filter(r => r.method === "DELETE");
-	expect(posts).toHaveLength(1);
-	expect(posts[0]!.at).toBe(t0 + 10_000);
-	expect(posts[0]!.body!.content).toStartWith("⏳");
-	expect(posts[0]!.body!.content).toContain("설정 파일 읽는 중");
-	expect(posts[0]!.body!.content).toContain("task: LiveStatusLine 구현");
-	expect(posts[0]!.body!.content.length).toBeLessThanOrEqual(300);
-	expect(patches.length).toBeGreaterThanOrEqual(2);
-	expect(patches.some(p => p.body!.content.includes("테스트 실행하는 중"))).toBe(true);
-	expect(patches.some(p => p.body!.content.includes("커밋 정리하는 중"))).toBe(true);
-	for (let i = 1; i < patches.length; i++) expect(patches[i]!.at - patches[i - 1]!.at).toBeGreaterThanOrEqual(2000);
-	expect(deletes).toHaveLength(1);
-	expect(deletes[0]!.path).toBe(patches[0]!.path);
-	expect(requests.indexOf(deletes[0]!)).toBe(cleared - 1);
-	expect(requests).toHaveLength(cleared);
+	const posted = reports();
+	// 15 and 20 min said nothing new (same current intent, lanes, workers; no tool call since): skipped as in Dori's sweep.
+	expect(posted.map(p => (p.at - t0) / 60_000)).toEqual([5, 10]);
+	expect(posted[0]!.body!.content).toMatch(/\b5\b/);
+	expect(posted[0]!.body!.content).toMatch(/: 설정 파일 읽는 중\n[^\n]*: 테스트 실행하는 중\n/);
+	expect(posted[0]!.body!.content).toContain("테스트 실행하는 중");
+	expect(posted[0]!.body!.content).toContain("w1: LiveStatusLine 구현");
+	expect(posted[1]!.body!.content).toContain("커밋 정리하는 중");
+	expect(posted[1]!.body!.content).not.toContain("설정 파일");
+	// Reports are new messages that stay: no edit, no delete.
+	expect(requests.filter(r => r.method !== "POST")).toEqual([]);
+	expect(requests).toHaveLength(answeredAt);
 });
 
-test("an answer within 10 s means no status line at all", async () => {
+test("an answer within 5 min means no report at all", async () => {
 	requests.length = 0;
 	livestatus.begin("ch:111", "lane:live-test");
 	await run(4);
 	await discord.send("ch:111", "quick answer");
-	await discord.clearProgress("ch:111");
-	await run(30);
-	expect(requests.map(r => r.method)).toEqual(["POST"]);
+	await run(12);
+	expect(requests.map(r => r.body?.content)).toEqual(["quick answer"]);
+});
+
+test("the turn's end stops the reports even when no answer reached the channel", async () => {
+	requests.length = 0;
+	livestatus.begin("ch:111", "lane:live-test");
+	await run(2);
+	emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "lane:live-test", type: "turn_end", text: "" });
+	await run(12);
+	expect(requests).toEqual([]);
 });
