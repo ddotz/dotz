@@ -63,7 +63,7 @@ const capReached = (e: FallbackEntry, at: number) => {
 // The key lives in <data dir>/secrets/<file>; the config holds only the file name. Never logged, never put in a config or event.
 // Only files named as API keys ("…api-key…", "…api_key…") qualify, so an entry cannot point at the hub token or a bot token
 // in the same folder and send it to a base_url.
-const KEY_FILE_NAME = /^[\w-][\w.-]*api[-_]?key[\w.-]*$/i;
+const KEY_FILE_NAME = /^(?!\.)[\w.-]*api[-_]?key[\w.-]*$/i;
 export const keyPath = (file: string) => join(DATA_DIR, "secrets", basename(file));
 export const keyFileOk = (file: string) => KEY_FILE_NAME.test(file) && existsSync(keyPath(file));
 const readKey = (file: string) => (keyFileOk(file) ? readFileSync(keyPath(file), "utf8").trim() : "");

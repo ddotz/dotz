@@ -372,7 +372,7 @@ export function start(): void {
 	}
 	orch.activeModel = spawnModel;
 	chained = !chain && entries.length > 0;
-	proc = runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, fallback: chain ? [] : entries.map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env });
+	proc = runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env });
 	orch.status = "starting";
 	orch.startedAt = now();
 	void readEvents(proc);
