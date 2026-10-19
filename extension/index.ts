@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
+import { runWithReceipt, summarize } from "../hub/receipts.ts";
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 const PKG = join(import.meta.dir, "..");
@@ -183,8 +184,25 @@ function recall(): string {
 	return `[dotz] Contract re-read after compaction:\n\nIdentity:\n${parts.identity}\n\n${mode}\n\nOwner rules:\n${parts.rules}\n\nLessons:\n${parts.lessons}\n\nWork channel setups (dotz_channel list for details):\n${parts.setups || "(none)"}\n\nCurrent state.json:\n${parts.state}${reply}`;
 }
 
+// Re-running a Done-when command on an unchanged checkout is wasted time: a stored pass for the same command, HEAD,
+// uncommitted state and env is returned instead of running it again. A failure always re-runs.
+function verifyTool(pi: any): void {
+	const z = pi.zod;
+	pi.registerTool({
+		name: "dotz_verify",
+		label: "Dotz verify",
+		description: "Run a verification command with a receipt. Use it when re-running a lane's Done-when command (or any check you would repeat): if the same command already passed on exactly this checkout (same HEAD, same uncommitted changes, same env), the stored result is returned with reused instead of running again; any commit or edit, or a previous failure, runs it for real. {command (run with bash -lc), cwd (the lane's worktree or project folder), env? (names of env vars whose values affect the result)}. Returns `receipt <key> reused|ran exit=N head=<sha7>` and the output tail.",
+		parameters: z.object({ command: z.string(), cwd: z.string(), env: z.array(z.string()).optional() }),
+		async execute(_id: string, p: { command: string; cwd: string; env?: string[] }) {
+			const r = await runWithReceipt(p);
+			return { content: [{ type: "text", text: summarize(r) }] };
+		},
+	});
+}
+
 function orchestratorTools(pi: any): void {
 	const z = pi.zod;
+	verifyTool(pi);
 	authTool(pi);
 	pi.on("session_compact", (_e: any, ctx: any) => {
 		if (ctx?.agent?.kind === "main") pi.sendMessage({ customType: "dotz-mode", content: recall(), display: false }, { deliverAs: "nextTurn" });
@@ -258,6 +276,7 @@ function orchestratorTools(pi: any): void {
 }
 
 function laneSession(pi: any): void {
+	verifyTool(pi);
 	authTool(pi, process.env.DOTZ_LANE);
 	pi.on("before_provider_request", (event: any, ctx: any) => {
 		if (ctx?.agent?.kind !== "main" || !event?.payload) return;
