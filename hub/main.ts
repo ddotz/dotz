@@ -17,6 +17,7 @@ import { addSchedule, listSchedules, removeSchedule, startSchedules } from "./sc
 import { startOmpUpdate } from "./update.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { addWatch, allWatches, listWatches, removeWatch, startWatches } from "./watch.ts";
+import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 
 const WEB = join(import.meta.dir, "..", "web", "index.html");
@@ -650,6 +651,7 @@ startSchedules(s => {
 });
 startReflection(text => deliver(text), () => orch.sessionFile);
 startOmpUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`omp update post failed: ${e}`)), restartGateway);
+startTokenAudit(alert);
 startWatches((w, reason, output) => {
 	if (w.to === "orchestrator") {
 		const event = { ts: now(), kind: "watch", source: `watch:${w.name}`, watch: w.name, channels: w.channels, reason, text: output };
