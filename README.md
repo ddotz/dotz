@@ -271,13 +271,20 @@ short "received, answering when the current step ends" notice from the gateway.
 ## Layout
 
 - `hub/` gateway: `main.ts` (API, auth, routing, auto-reply, budget gate on lane launch), `orchestrator.ts` (headless
-  session; 429 resume, crash restart, rotation past 50MB or 150K context), `lanes.ts` (brief contract, worker-model
-  overlay, persistence and resume across restarts, exit/429 handling, 15-minute progress posts), `context.ts`
+  session; 429 resume, crash restart, rotation past 50MB or 150K context), `lanes.ts` (brief contract, worktrees,
+  persistence and resume across restarts, exit/429 handling, 15-minute progress posts), `context.ts`
   (context usage and compaction state shared by orchestrator and lanes), `hygiene.ts` (nightly lane compaction and
   rotation, orphaned worktree cleanup), `schedule.ts` (reminders), `discord.ts`
   (eyes receipt, typing, 429 retry, heartbeat check, identity sync), `control.ts` (model/effort switching, context and
-  compaction, slash commands), `providers.ts` (keys, login/logout, model catalog, quota), `activity.ts` (omp frames to the terminal-view feed),
+  compaction, slash commands), `providers.ts` (keys, login/logout, model catalog, quota), `activity.ts` (runtime activity
+  rows and task-worker lists to the terminal-view feed),
   `events.ts`, `config.ts`, `i18n.ts` (message catalog and language selection), `language.ts` (language detection), `summaries.ts` (cached two-line card summaries).
+- `hub/runtime/` agent runtimes: `types.ts` (the adapter interface: `AgentProcess`, `AgentEvent`, `SpawnOpts`),
+  `omp.ts` (the omp adapter: spawn arguments, lane config overlay, RPC frames to events, handover text from a saved
+  session), `index.ts` (registry; `orchestrator.runtime` / `lanes.runtime` / `runtime` in `config.json` pick one,
+  default `omp`, an unknown name is logged and falls back to omp). The orchestrator and lanes hold the policy and only
+  see events. `bun test` replays recorded omp frames and two state-machine scenarios against goldens captured before the
+  adapter existed (`hub/runtime/fixtures`).
 - Audit against Dori / dori-kit / 오모냥: `docs/audit-2026-10-16.md`.
 - `extension/index.ts` omp extension: orchestrator tools, terminal thin client, nothing in lanes.
 - `web/index.html` web app. `MODE.md` the 땃쥐 contract (`MODE.ko.md` its Korean original). `setup.ts` onboarding.
