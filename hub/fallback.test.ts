@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { cfg, DATA_DIR } from "./config.ts";
 import { atTime, Chain, failsOver, failureReason, hubChain, keyHostOk, keyProviderOk, resetFallbackState } from "./fallback.ts";
-import { classifyProviderError } from "./providers.ts";
+import { classifyProviderError, resumeDelay } from "./providers.ts";
 
 mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
 
@@ -60,6 +60,15 @@ test("real provider errors get the kind that decides failover", () => {
 		["The provider rejected this turn because its input exceeds the provider size or context limit.", undefined],
 	];
 	for (const [text, kind] of cases) expect([text, classifyProviderError(text)]).toEqual([text, kind]);
+});
+
+// OmO's own text when the subscription's 5h window ran out (hub.log 2026-10-19 15:48Z): before, no kind, so nothing paused.
+test("OmO's blocked account pool is a usage limit that resumes at its soonest retry", () => {
+	const text = "All Claude accounts for anthropic-subscription are currently blocked (rate limit or auth errors).\n  Soonest automatic retry: 2026-10-19T16:40:00.000Z.\n  /claude-account list  - inspect account states\n  /login anthropic-subscription  - add another account";
+	expect(classifyProviderError(text)).toBe("rate");
+	expect(classifyProviderError("No credential slots available")).toBe("rate");
+	const at = Date.parse("2026-10-19T15:48:00Z");
+	expect(resumeDelay(text, [], at)).toEqual({ ms: 52 * 60_000 + 60_000, reset: false });
 });
 
 test("an API key goes only over https to a provider's own host or a configured one; another base_url is refused", () => {
