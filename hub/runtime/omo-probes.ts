@@ -201,7 +201,9 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 			const events = await run.turn('Use the task tool to spawn ONE subagent (category "quick") with this brief: "Replace the contents of probe.txt in the current directory with the single line after. Acceptance: probe.txt contains exactly after." Do not edit any file yourself. When its completion is back, reply with the full path of the .patch file it reports, and nothing else.', wait);
 			const call = toolCalls(events).find(c => c.tool === "task");
 			if (!call) return fail("the task tool was not used");
-			const said = (await run.waitFor(e => e.type === "assistant" && e.stop === "stop" && /\.patch\b/.test(e.text), wait, 0)) as Extract<AgentEvent, { type: "assistant" }> | undefined;
+			// OmO may end the turn while the worker runs (the answer then only says it started); its completion wakes the session
+			// for a new turn, so wait for an answer that names an absolute .patch path.
+			const said = (await run.waitFor(e => e.type === "assistant" && e.stop === "stop" && /\/\S+\.patch\b/.test(e.text), wait, 0)) as Extract<AgentEvent, { type: "assistant" }> | undefined;
 			const patch = said?.text.match(/(\/\S+\.patch)\b/)?.[1];
 			if (!patch || !existsSync(patch)) return fail(`no retained patch came back: "${answerOf(run.events).slice(0, 120)}"`);
 			if (readFileSync(join(ctx.cwd, "probe.txt"), "utf8") !== "before\n") return fail("the worker's change was merged into the checkout (not isolated with apply:false)");
@@ -217,6 +219,7 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 		fallback_chain: probe(async (_ctx, start, ms) => {
 			const first = start();
 			if (!/PONG/i.test(answerOf(await first.turn(PONG, ms)))) return fail("first turn did not answer");
+			first.proc.refreshSession();
 			const ref = await first.session(5000);
 			if (!ref) return fail("no session ref after the first turn");
 			await first.close();
