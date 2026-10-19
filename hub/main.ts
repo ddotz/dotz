@@ -12,11 +12,12 @@ import { isNote, msg } from "./i18n.ts";
 import { activityItems, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
-import { abortLane, approvesBudget, budgetLine, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
+import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, verifyLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
+import { parseTone } from "./tone.ts";
 import { startReflection } from "./reflect.ts";
 import { featureCatalog, syncFeatureWatches } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
@@ -238,7 +239,13 @@ async function limitsAnswer(target: string, replyTo?: string): Promise<void> {
 
 async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
 	const sent = await inOrder(target, async () => {
-		const t = await localize(text, target, "orchestrator");
+		let t = await localize(text, target, "orchestrator");
+		// The label goes in after the status marker ([done] becomes the leading emoji) and after localize (a rewrite must not touch it).
+		if (target === "worklog" && key.startsWith("lane:")) {
+			const prefix = claimPrefix(key.slice(5));
+			const rest = parseTone(t).text;
+			if (prefix) t = `${t.slice(0, t.length - rest.length)}${prefix}${rest}`;
+		}
 		emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key });
 		return t;
 	});
@@ -752,6 +759,10 @@ const server = Bun.serve({
 				if (req.method === "POST" && parts[3] === "resume") {
 					const text = String((await body(req)).text ?? "").trim();
 					resumeByName(parts[2], text || undefined);
+					return json({ ok: true });
+				}
+				if (req.method === "POST" && parts[3] === "verify") {
+					verifyLane(parts[2], String((await body(req)).text ?? ""));
 					return json({ ok: true });
 				}
 				if (req.method === "POST" && parts[3] === "abort") {
