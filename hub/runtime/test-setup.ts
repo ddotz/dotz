@@ -21,6 +21,9 @@ process.env.DOTZ_OMO = join(dir, "no-such-omo");
 // OmO's agent dir (auth.json pin, rpc hosts) is a throwaway one too, so the machine's real login state cannot change a test.
 process.env.OMO_CODING_AGENT_DIR = join(dir, "omo-agent");
 delete process.env.PI_AGENT_DIR;
+// The user omo.json a lane's worker profile is written to (omo.ts writeWorkerProfile).
+process.env.DOTZ_OMO_CONFIG = join(dir, "omo-home", "omo.json");
+delete process.env.OMO_PROFILE;
 mkdirSync(process.env.OMO_CODING_AGENT_DIR, { recursive: true });
 writeFileSync(
 	join(data, "config.json"),
