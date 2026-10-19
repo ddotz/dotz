@@ -8,6 +8,7 @@ import { type Block, blocks, joined, summary } from "../activity.ts";
 import { OMP, parseSelector } from "../config.ts";
 import { isNote } from "../i18n.ts";
 import { classifyProviderError } from "../providers.ts";
+import { detectBinary } from "./detect.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
 
 // The slice of an omp RPC frame this adapter reads.
@@ -277,4 +278,5 @@ export const omp: RuntimeAdapter = {
 	},
 	classifyError: classifyProviderError,
 	recentExchanges,
+	detect: () => detectBinary(OMP),
 };

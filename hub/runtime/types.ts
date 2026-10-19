@@ -1,10 +1,10 @@
 // The seam between the hub's policy (state machines, pause/retry, watchdog, rotation, handover) and one agent runtime.
 // The hub only sends commands through an AgentProcess and only reads AgentEvents; frame formats, spawn arguments,
-// per-run config files and session-file layout belong to the adapter of that runtime (omp.ts is the only one so far).
+// per-run config files and session-file layout belong to the adapter of that runtime (omp.ts, claude.ts).
 import type { Activity } from "../events.ts";
 import type { ProviderErrorKind } from "../providers.ts";
 
-export type RuntimeId = "omp";
+export type RuntimeId = "omp" | "claude" | "codex" | "opencode";
 export type Role = "orchestrator" | "lane";
 
 // What the hub may rely on without asking the runtime; hub code reads these instead of testing for a runtime id.
@@ -85,6 +85,10 @@ export interface SpawnOpts {
 	lane?: { name: string; dir: string; workerModel: string; compactAt: number; keepRecent: number };
 }
 
+// What a runtime's `detect()` finds on this machine; `reason` says why it is not installed. `plugins` lists add-ons the
+// runtime is known to be extended with (by plugin name), present or not.
+export type DetectResult = { installed: boolean; version?: string; path?: string; reason?: string; plugins?: Record<string, boolean> };
+
 export interface RuntimeAdapter {
 	id: RuntimeId;
 	caps: RuntimeCaps;
@@ -92,4 +96,6 @@ export interface RuntimeAdapter {
 	classifyError(text: string): ProviderErrorKind | undefined;
 	// The most recent user messages and final answers of a saved session, the body of a handover into a fresh one; undefined when unreadable.
 	recentExchanges(sessionRef: string): string | undefined;
+	// Is the runtime's CLI installed here, and which version (a short `--version` run); never throws.
+	detect(): Promise<DetectResult>;
 }

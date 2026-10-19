@@ -201,6 +201,18 @@ brief footer, one `### <name>` heading per feature, cut at 12,000 characters lik
 All behind the same auth as the rest of `/api`.
 
 - `GET /api/models`, `PUT /api/models {target: "orchestrator"|"lanes"|"workers"|"lane:<name>", model?, thinking?, force?}`
+- Agent runtime selection (설정 > 실행 하네스): `GET /api/runtimes` -> `{current: {orchestrator, lanes}, checklist, runtimes: [{id, label, installed, version?, path?, hasAdapter, usable, reason?, roles, report: {at, version, verdict, counts}|null, state, switchable, refusal}]}`
+  for `omp`, `claude`, `codex`, `opencode` (`?refresh=1` re-detects); `GET /api/runtimes/<id>` -> `{report, state}` (full last report
+  and the running check's progress); `POST /api/runtimes/<id>/verify` starts the compatibility check in the background (202, poll the
+  GET; progress also streams as `{kind: "runtime_check"}` on `/api/events`); `POST /api/runtimes/<id>/use {roles?: ["orchestrator","lanes"]}`
+  writes `orchestrator.runtime` / `lanes.runtime` to `config.json` and answers 409 with `{error}` when the runtime is not installed or has no
+  dotz adapter, has no report, its verdict is `blocked`, or the report was made for another version. `omp` is the reference runtime and
+  needs no report. Nothing is restarted: the change applies when the orchestrator / lane process next starts.
+  The check (`hub/runtime/verify.ts`) runs the adapter's probes for 14 items (core: `turn`, `model_effort`, `resume`, `usage_report`,
+  `deny_lines`); a failing core item blocks the switch, a failing non-core item is `adapted` (the hub substitutes, e.g. handover from the
+  saved session, own compaction timing, hub-side deny re-check, own model fallback) or `disabled` (dotz tools, worker spawn, isolated
+  patches, tool intent are turned off for that runtime). The last report per runtime is `<data>/runtime-checks/<id>.json`
+  (`disabledFeatures(id)` / `adaptedFeatures(id)` read it), the probe log `<id>.log`.
 - `GET /api/context`: `{note, processes: [{name, kind, status, running, model, tokens, window, percent, compaction: {state, at, tokensBefore, error}}]}`
   for the orchestrator and every lane; `POST /api/compact {target: "orchestrator"|"<lane>"}` compacts (or queues) one.
 - `GET /api/activity?source=orchestrator|lane:<name>&limit=N`: in-memory ring (300) of what an omp process did; the
@@ -283,7 +295,7 @@ short "received, answering when the current step ends" notice from the gateway.
   `omp.ts` (the omp adapter: spawn arguments, lane config overlay, RPC frames to events, handover text from a saved
   session), `index.ts` (registry; `orchestrator.runtime` / `lanes.runtime` / `runtime` in `config.json` pick one,
   default `omp`, an unknown name is logged and falls back to omp). The orchestrator and lanes hold the policy and only
-  see events. `bun test` replays recorded omp frames and two state-machine scenarios against goldens captured before the
+  see events. `verify.ts` detects the installed harnesses and runs the compatibility check before a switch (see API additions). `bun test` replays recorded omp frames and two state-machine scenarios against goldens captured before the
   adapter existed (`hub/runtime/fixtures`).
 - Audit against Dori / dori-kit / 오모냥: `docs/audit-2026-10-16.md`.
 - `extension/index.ts` omp extension: orchestrator tools, terminal thin client, nothing in lanes.
