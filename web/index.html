@@ -662,8 +662,9 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .fc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; margin: 10px 0 20px; }
 .fc-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--card); cursor: pointer; transition: border-color .15s, background .15s; }
 .fc-card:hover { background: var(--hover); border-color: var(--fg-3); }
-.fc-card.enforced { border-left: 3px solid var(--accent); }
-.fc-card.advisory { border-style: dashed; }
+/* Material 3 card types instead of a colored side stripe: enforced = filled card, advisory = outlined card. */
+.fc-card.enforced, .hs-ft.enforced { border-color: transparent; background: var(--layer); }
+.fc-card.enforced:hover, .hs-ft.enforced.go:hover { background: var(--active); border-color: transparent; }
 .fc-card.off { opacity: .6; }
 .fc-card .top, .hs-ft .top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .fc-card .nm, .hs-ft .nm { flex: 1; min-width: 0; font: 600 13px/20px var(--font); overflow-wrap: anywhere; }
@@ -673,8 +674,6 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .fc-card .dup, .hs-ft .dup { color: var(--warn); font-size: 11.5px; line-height: 16px; overflow-wrap: anywhere; }
 .hs-fts { display: flex; flex-direction: column; gap: 8px; }
 .hs-ft { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--card); }
-.hs-ft.enforced { border-left: 3px solid var(--accent); }
-.hs-ft.advisory { border-style: dashed; }
 .hs-ft.go { cursor: pointer; }
 .hs-ft.go:hover { background: var(--hover); }
 .hs-ft.on { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
@@ -692,8 +691,6 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .hm-bar .seg button { flex: none; padding: 0 12px; }
 .hm-mine { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 2px; }
 .hm-mine .mt { color: var(--mine); font: 500 11px/16px var(--font); }
-.hm-n.mine { border-left: 3px solid var(--mine); padding-left: 10px; }
-.hm-st.mine { border-left: 3px solid var(--mine); }
 .hm-chip.mine { border-color: color-mix(in srgb, var(--mine) 55%, var(--line-2)); }
 .hm-row .bd { flex: none; }
 .hm-cv { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
@@ -3735,7 +3732,7 @@ function fcBuild(box) {
   fcCount = el("div", { class: "sup fc-count" });
   fcList = el("div");
   box.append(el("div", { class: "sec", text: "기능 목록" }),
-    el("div", { class: "sup", text: "내가 더한 기능을 구현 형식별로 모았어요. 실선·강제는 코드가 막거나 실행하는 것, 점선·권고는 모델에게 따르라고 부탁한 글이에요. 카드를 누르면 작동하는 자리와 파일이 열려요." }),
+    el("div", { class: "sup", text: "내가 더한 기능을 구현 형식별로 모았어요. 회색으로 채운 카드(강제)는 코드가 막거나 실행하는 것, 테두리만 있는 카드(권고)는 모델에게 따르라고 부탁한 글이에요. 카드를 누르면 작동하는 자리와 파일이 열려요." }),
     el("div", { class: "fc-bar" }, q, pick("form", "형식", () => FC.forms), pick("trigger", "트리거", () => FC.triggers), hOrigin() ? pick("origin", "출처", () => Object.values(FC_ORIGIN)) : null, seg), fcCount, fcList);
 }
 
