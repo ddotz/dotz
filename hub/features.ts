@@ -147,15 +147,15 @@ function denyFeatures(): Feature[] {
 			});
 		});
 	}
-	// dotz's own built-in denies live in extension/index.ts (SYSTEM_DENY)
-	const ext = join(REPO, "extension", "index.ts");
+	// dotz's own built-in denies live in hub/systemdeny.ts (SYSTEM_DENY), shared by every runtime's guard
+	const ext = join(REPO, "hub", "systemdeny.ts");
 	const src = read(ext)?.split("\n") ?? [];
 	let on = false;
 	src.forEach((raw, i) => {
 		if (/const SYSTEM_DENY\b/.test(raw)) on = true;
 		else if (on && /^\];/.test(raw)) on = false;
 		const m = on ? /^\s*\[\/(.+)\/[a-z]*,\s*"([^"]+)"\],?\s*$/.exec(raw) : null;
-		if (m) out.push({ id: `sysdeny-${i + 1}`, form: "차단 명령", name: clip(m[2], 40), what: `dotz 기본 차단 · ${clip(m[2], 110)}`, trigger: "도구 실행 직전", stage: "guard", strength: "enforced", source: { label: `extension/index.ts:${i + 1}` }, extra: m[1], enabled: true, toggleable: false });
+		if (m) out.push({ id: `sysdeny-${i + 1}`, form: "차단 명령", name: clip(m[2], 40), what: `dotz 기본 차단 · ${clip(m[2], 110)}`, trigger: "도구 실행 직전", stage: "guard", strength: "enforced", source: { label: `hub/systemdeny.ts:${i + 1}` }, extra: m[1], enabled: true, toggleable: false });
 	});
 	return out;
 }
