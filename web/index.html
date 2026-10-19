@@ -273,10 +273,6 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .dropon { outline: 2px solid var(--accent); outline-offset: 2px; }
 .lhead[draggable="true"] { cursor: grab; }
 .tchip.on { background: var(--active); border-color: var(--line-2); color: var(--fg); }
-/* exited-lane fold: same chevron + "종료된 레인 N개" as the 레인 board's row */
-.tchip.fold .fc { width: 14px; height: 14px; color: var(--fg-3); transition: transform .15s; }
-.tchip.fold[aria-expanded="true"] .fc { transform: rotate(90deg); }
-.tchip.fold .fs { color: var(--fg-3); font-weight: 400; }
 .tchip .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb { flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 10.5px/16px var(--font); text-align: center; }
 .sb { flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
@@ -485,14 +481,6 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .lr.er .lb { color: var(--err); }
 .lcomp { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
 @media (pointer: fine) { .lcomp .fi { height: 28px; } }
-.lnone { padding: 4px 0; }
-.lex { display: flex; flex-direction: column; gap: 12px; }
-.lx { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); text-align: left; font-size: 13px; font-weight: 500; }
-.lx:hover { background: var(--hover); }
-.lx .lxc { color: var(--fg-3); transition: transform .15s; }
-.lx[aria-expanded="true"] .lxc { transform: rotate(90deg); }
-.lx .lxn { flex: none; }
-.lx .lxs { flex: 1; min-width: 0; color: var(--fg-3); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 599px) {
   .lgrid { grid-template-columns: minmax(0, 1fr); }
   .lpane { height: auto; }
@@ -558,6 +546,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 </div>
 <aside class="sheet" id="sheet" role="dialog" aria-label="서브에이전트" hidden>
   <div class="sh-head">
+    <button class="ib" id="sh-back" type="button" aria-label="목록으로" hidden></button>
     <div class="sh-t"><div class="sh-name" id="sh-name"></div><div class="sup" id="sh-sub"></div></div>
     <span class="tag" id="sh-tag"></span>
     <button class="ib" id="sh-close" type="button" aria-label="닫기"></button>
@@ -889,6 +878,8 @@ function openPalette() {
     } else {
       for (const [c, desc] of hintList) if (!v || c.includes(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
       for (const id of views) if (id !== "activity" && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], go: id === "chat" ? lastChatView() : id });
+      // Exited lanes are hidden everywhere else; the palette is the one way back to their history and resume.
+      for (const l of (S ? S.lanes : []).filter(l => !laneAlive(l))) if (!v || l.name.toLowerCase().includes(v) || "종료된 레인".includes(v)) items.push({ kind: "act", ic: "lanes", label: `종료된 레인 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
       if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
     }
     idx = 0;
@@ -951,7 +942,6 @@ function go(name, tgt) {
   $("#appbar").classList.toggle("back", !!back);
   $("#title").textContent = name === "home" ? botName : titles[name];
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
-  if (!tv) closeSheet();
   if (tv) enterTarget();
   if (name === "home") { renderHome(); loadHomeData(); }
   if (name === "lanes") { laneSig = ""; renderLanes(); }
@@ -997,60 +987,57 @@ function subsChanged(source) {
   if (current === "home") renderHome();
   renderSubs(); renderBars(); renderWorking();
   if (current === "lanes") renderLanes();
-  if (SUBD && (!source || SUBD.source === source)) renderSheet();
+  if (SUBD && (!source || (SUBD.id ? SUBD.source === source : SUBD.sources.includes(source)))) renderSheet();
 }
 function subLine(src) {
   const n = runningSubs(src).length;
   if (!n) return null;
-  return el("div", { class: "subline", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSource(src); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSource(src); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
+  return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs([src]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs([src]); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
 }
 function laneSubLine() {
   const srcs = Object.keys(SUBS).filter(k => k.startsWith("lane:") && runningSubs(k).length);
   if (!srcs.length) return null;
   const n = srcs.reduce((a, k) => a + runningSubs(k).length, 0);
-  return el("div", { class: "subline", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSource(srcs[0]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSource(srcs[0]); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
+  return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs(srcs); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs(srcs); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
 }
 function openSource(src) { setTarget(targetOfSource(src)); go("activity"); }
 function openTarget(t, view) { setTarget(t); go(view); }
-// The subagents of the selected target: one summary line, a list on demand, a detail sheet per subagent.
-let subsOpen = false;
+// The subagents of the selected target: one summary line; clicking it (or any subagent count) opens the side panel,
+// which lists them and shows one subagent's own transcript.
+const spawnOrder = list => list.sort((a, b) => (a.started_at || 0) - (b.started_at || 0) || String(a.id).localeCompare(String(b.id)));
 // Running ones only, in spawn order (oldest first, the newest added at the bottom); rows never reorder on progress.
 function renderSubs() {
   const src = sourceOf(target);
-  const list = runningSubs(src).sort((a, b) => (a.started_at || 0) - (b.started_at || 0) || String(a.id).localeCompare(String(b.id)));
+  const list = spawnOrder(runningSubs(src));
   const run = list.length;
-  const sig = JSON.stringify([src, subsOpen, list.map(s => [s.id, s.status, s.description, s.intent, s.tool])]);
+  const sig = JSON.stringify([src, list.length]);
   for (const box of document.querySelectorAll(".subs")) {
     box.hidden = !list.length;
     if (box.dataset.sig === sig) continue;
     box.dataset.sig = sig;
     clear(box);
     if (!list.length) continue;
-    box.append(el("button", { class: "subsum", type: "button", "aria-expanded": subsOpen ? "true" : "false", onclick: () => { subsOpen = !subsOpen; renderSubs(); } },
+    box.append(el("button", { class: "subsum", type: "button", onclick: () => openSubs([src]) },
       el("span", { class: `dot ${run ? "pri" : ""}` }),
       el("span", { class: "nm", text: `서브에이전트 ${run}개 진행 중` }),
-      icon("drop", "chev")));
-    if (subsOpen) {
-      const sl = el("div", { class: "sublist" }, ...list.map(s => el("button", { class: "subrow", type: "button", onclick: () => openSub(src, s.id) },
-        el("span", { class: "dot pri" }),
-        el("span", { class: "nm" }, el("b", { text: s.description || s.agent || "서브에이전트" }), s.intent || s.tool ? el("span", { class: "muted", text: ` · ${firstLine(s.intent || s.tool)}` }) : null),
-        icon("chev", "chev"))));
-      box.append(sl);
-      requestAnimationFrame(() => { sl.scrollTop = sl.scrollHeight; });
-    }
+      icon("chev", "chev")));
   }
 }
 let SUBD = null;
 const sheet = $("#sheet"), shBody = $("#sh-body");
-function openSub(source, id) {
+// SUBD: {sources} lists the running subagents of those sources; {source, id} shows one (with a way back when it was
+// opened from a list).
+function showSheet(d) {
   if (SUBD) clearTimeout(SUBD.timer);
-  SUBD = { source, id, data: null, err: "", timer: 0, opener: document.activeElement };
+  SUBD = { data: null, err: "", timer: 0, opener: SUBD ? SUBD.opener : document.activeElement, ...d };
   shBody.dataset.init = "";
   sheet.hidden = false;
   renderSheet();
   $("#sh-close").focus();
-  loadSub();
+  if (SUBD.id) loadSub();
 }
+function openSubs(sources) { showSheet({ sources }); }
+function openSub(source, id, from) { showSheet({ source, id, from }); }
 function closeSheet() {
   if (!SUBD) return;
   clearTimeout(SUBD.timer);
@@ -1073,6 +1060,22 @@ async function loadSub() {
 function renderSheet() {
   const d = SUBD;
   if (!d) return;
+  $("#sh-back").hidden = !d.from;
+  if (!d.id) {
+    const rows = d.sources.flatMap(s => spawnOrder(runningSubs(s)).map(x => [s, x]));
+    $("#sh-name").textContent = `서브에이전트 ${rows.length}개 진행 중`;
+    $("#sh-sub").textContent = d.sources.map(s => targetName(targetOfSource(s))).join(", ");
+    $("#sh-tag").hidden = true;
+    shBody.className = "sh-body";
+    clear(shBody);
+    if (!rows.length) shBody.append(el("div", { class: "a-div", text: "진행 중인 서브에이전트 없음" }));
+    for (const [s, x] of rows) shBody.append(el("button", { class: "subrow", type: "button", onclick: () => openSub(s, x.id, d.sources) },
+      el("span", { class: "dot pri" }),
+      el("span", { class: "nm" }, el("b", { text: x.description || x.agent || "서브에이전트" }), x.intent || x.tool ? el("span", { class: "muted", text: ` · ${firstLine(x.intent || x.tool)}` }) : null),
+      d.sources.length > 1 ? el("span", { class: "tag", text: targetName(targetOfSource(s)) }) : null,
+      icon("chev", "chev")));
+    return;
+  }
   const l = subNow(d), data = d.data || {};
   const st = data.status || l.status || "";
   $("#sh-name").textContent = data.description || l.description || data.agent || l.agent || "서브에이전트";
@@ -1098,6 +1101,8 @@ function renderSheet() {
 }
 $("#sh-close").append(icon("close"));
 $("#sh-close").onclick = closeSheet;
+$("#sh-back").append(icon("back"));
+$("#sh-back").onclick = () => { if (SUBD && SUBD.from) openSubs(SUBD.from); };
 document.addEventListener("keydown", ev => { if (ev.key === "Escape" && SUBD && !openMenu && !document.querySelector("dialog[open]")) closeSheet(); });
 
 /* ---------- home: every status at a glance, each card navigates ---------- */
@@ -1148,15 +1153,14 @@ function renderHome() {
 
   // lanes
   const alive = lanes.filter(laneAlive);
-  const nAttn = lanes.filter(l => attnKind(`lane:${l.name}`)).length;
-  const lanesCard = tapCard("lanes", cardHead("레인", nAttn ? el("span", { class: "tag warn", text: `확인 필요 ${nAttn}` }) : null, el("span", { class: "tag", text: `${alive.length}/${lanes.length}` })));
-  if (!lanes.length) lanesCard.append(el("div", { class: "sup", text: "레인 없음" }));
-  const ordered = [...lanes.filter(laneAlive), ...lanes.filter(l => !laneAlive(l))];
-  for (const l of ordered.slice(0, 3)) {
+  const nAttn = alive.filter(l => attnKind(`lane:${l.name}`)).length;
+  const lanesCard = tapCard("lanes", cardHead("레인", nAttn ? el("span", { class: "tag warn", text: `확인 필요 ${nAttn}` }) : null, el("span", { class: "tag", text: String(alive.length) })));
+  if (!alive.length) lanesCard.append(el("div", { class: "sup", text: "작동 중인 레인 없음" }));
+  for (const l of alive.slice(0, 3)) {
     const k = attnKind(`lane:${l.name}`);
     lanesCard.append(el("div", { class: "row" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : el("span", { class: "sup", text: statusKo(l.status) })));
   }
-  if (lanes.length > 3) lanesCard.append(el("div", { class: "more", text: `외 ${lanes.length - 3}개` }));
+  if (alive.length > 3) lanesCard.append(el("div", { class: "more", text: `외 ${alive.length - 3}개` }));
   const lsl = laneSubLine();
   if (lsl) lanesCard.append(lsl);
 
@@ -1248,7 +1252,7 @@ function attnKind(t) {
   if (i.alive && i.status === "rate-limited") return "limit";
   return msOf(DONE[t]) > msOf(SEEN[t]) ? "done" : "";
 }
-const attnCount = () => S ? [MAIN, ...S.lanes.map(l => `lane:${l.name}`)].filter(attnKind).length : 0;
+const attnCount = () => S ? [MAIN, ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)].filter(attnKind).length : 0;
 // Targets needing attention, not messages: the 채팅 nav badge and the page title. Unread message counts stay on the chips.
 function paintAttn() {
   const n = attnCount(), b = $("#nav-att");
@@ -1458,8 +1462,7 @@ function termNode(a, ctx) {
   switch (a.type) {
     case "owner": return el("div", { class: "tu", title: time }, el("span", { class: "tg", text: ">" }), el("span", { class: "tx", text: String(a.text ?? "") }));
     case "cmdout": return el("pre", { class: `tc${a.is_error ? " err" : ""}`, text: String(a.text ?? "") });
-    case "turn_start": return el("div", { class: "tdv", text: `시작 · ${time}` });
-    case "turn_end": return el("div", { class: "tdv", text: `완료 · ${time}` });
+    case "turn_start": case "turn_end": return null;   // turn boundaries are noise in a terminal; the working row shows it
     case "status": return el("div", { class: "tdv", text: `${oneLine(a.text ?? "")} · ${time}` });
     case "text": return el("div", { class: "tt", title: time }, el("span", { class: "tg", text: "⏺" }), mdNode(a.text));
     case "thinking": return clickable(el("div", { class: "tk", title: time }, el("span", { class: "tg", text: "✻" }), el("span", { class: "tkt", text: `생각… ${oneLine(a.text ?? "").slice(0, 100)}` }), el("div", { class: "tkf" }, mdNode(a.text))));
@@ -1712,7 +1715,6 @@ $("#ctx-ring").onclick = () => go("context");
 setInterval(() => { if (current === "chat" || current === "activity") loadContext(true).then(renderCtxRing); }, 15000);
 
 /* ---------- target switcher + 대화/터미널 toggle (rendered into the header of both views) ---------- */
-let showDead = false;
 // Manual order from dragging (chips and 레인 board panes share it); targets never dragged keep spawn order after the ordered ones.
 const ORDER_KEY = "dotz-order";
 let ORDER = (() => { try { const v = JSON.parse(localStorage.getItem(ORDER_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
@@ -1754,7 +1756,7 @@ function renderBars() {
   };
   const A = alive.map(view), D = dead.map(view);
   const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
-  const sig = JSON.stringify([A, D, cur, others, showDead, target, ORDER]);
+  const sig = JSON.stringify([A, D, cur, others, target, ORDER]);
   const chip = v => { const b = el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "aria-pressed": v.t === target ? "true" : "false", title: v.attn ? `확인 필요 · ${v.status}` : v.status, onclick: () => setTarget(v.t) },
     el("span", { class: `dot ${v.tone}` }), el("span", { class: "tx", text: v.name }),
     v.attn ? el("span", { class: "sb att", text: "확인 필요" }) : null,
@@ -1766,12 +1768,8 @@ function renderBars() {
     const mode = bar.dataset.mode, msig = `${sig}|${mode}`;
     if (bar.dataset.sig === msig || (openMenu && bar.contains(openMenu.anchor))) continue;
     bar.dataset.sig = msig;
-    // Folded means no exited chips at all; when the selected target is an exited lane, the fold chip shows it as selected.
-    const curDead = D.some(v => v.t === target);
-    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, ...A.map(chip), ...(showDead ? D : []).map(chip),
-      D.length ? el("button", { class: `tchip fold${!showDead && curDead ? " on" : ""}`, type: "button", "aria-expanded": showDead ? "true" : "false", onclick: () => { showDead = !showDead; renderBars(); } },
-        icon("chev", "fc"), el("span", { class: "tx", text: `종료된 레인 ${D.length}개` }), !showDead && curDead ? el("span", { class: "tx fs", text: cur.name }) : null,
-        !showDead && D.some(v => v.attn) ? el("span", { class: "sb att", text: `확인 필요 ${D.filter(v => v.attn).length}` }) : null) : null);
+    // Exited lanes are not shown; one opened from the palette shows as a chip only while it is the selected target.
+    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, ...A.map(chip), ...D.filter(v => v.t === target).map(chip));
     const drop = el("button", { type: "button", class: "sel tdrop", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `대화 대상: ${cur.name}` },
       el("span", { class: `dot ${cur.tone}` }), el("span", { class: "val", text: cur.name }),
       cur.attn ? el("span", { class: "sb att", text: "확인 필요" }) : null,
@@ -1780,7 +1778,7 @@ function renderBars() {
       icon("drop"));
     drop.onclick = () => showMenu(drop, [
       ...A.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.attn ? "확인 필요" : "", v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), badge: v.unread || "" })),
-      ...(D.length ? [{ header: "종료됨" }, ...D.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.attn ? `확인 필요 · ${v.status}` : v.status, badge: v.unread || "" }))] : [])], { value: target, onPick: setTarget });
+      ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" }))], { value: target, onPick: setTarget });
     const ud = mode === "term" && ts(target).unread > 0;
     const seg = el("div", { class: "vseg", role: "group", "aria-label": "보기 방식" },
       el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", onclick: () => go("chat") }, "대화", ud ? el("i", { class: "ud", title: "새 메시지" }) : null),
@@ -1796,7 +1794,8 @@ async function refreshState() {
     S = await api("/api/state?limit=0");
     setConn(true);
     if (S.name && S.name !== botName) { botName = S.name; setBrand(); if (current === "home") $("#title").textContent = botName; if (ts(target).hLoaded) renderAll(); }
-    if (isLaneT(target) && !S.lanes.some(l => `lane:${l.name}` === target)) setTarget(MAIN);
+    // A lane that exits disappears at once: the view falls back to the main assistant (it stays reachable from ⌘K).
+    if (isLaneT(target) && (!S.lanes.some(l => `lane:${l.name}` === target) || (PREV[target] && PREV[target] !== "exited" && targetInfo(target).status === "exited"))) setTarget(MAIN);
     noteStatus();
     renderSideStatus(); renderBars(); renderWorking(); updateComposerMeta();
     if (current === "lanes") renderLanes();
@@ -1845,8 +1844,7 @@ function toolBox(a, tool, withState) {
 function actNode(a, ctx) {
   const time = kstTime(a.ts);
   switch (a.type) {
-    case "turn_start": return el("div", { class: "a-div", text: `시작 · ${time}` });
-    case "turn_end": return el("div", { class: "a-div", text: `완료 · ${time}` });
+    case "turn_start": case "turn_end": return null;
     case "status": return el("div", { class: "a-div", text: `${oneLine(a.text ?? "")} · ${time}` });
     case "text": return el("div", { class: "a-text" }, el("span", { class: "a-time", text: time }), mdNode(a.text));
     case "thinking": return el("details", { class: "box think" }, el("summary", {}, el("span", { class: "tname", text: "생각" }), el("span", { class: "tsum", text: `· ${oneLine(a.text ?? "").slice(0, 80)}` }), el("span", { class: "sp" }), el("span", { class: "ttime", text: time })), mdNode(a.text));
@@ -1872,7 +1870,6 @@ function actNode(a, ctx) {
 /* ---------- lanes: multi-pane board ---------- */
 const laneDraft = {};
 let laneSig = "";
-let laneExitedOpen = false;
 const LANE_TAIL = 100;          // rows kept per pane
 const LP = {};                  // lane name -> persistent pane (DOM, scroll and tail state survive re-renders)
 let laneBoard = null;
@@ -1894,8 +1891,7 @@ function laneMark(st, a) { st.textContent = a.is_error ? "✗" : "✓"; st.class
 function laneRow(p, a) {
   const row = (cls, body, st) => el("div", { class: `lr ${cls}` }, el("span", { class: "lt", text: laneClock(a.ts) }), el("span", { class: "lb" }, ...body), st || null);
   switch (a.type) {
-    case "turn_start": return row("dv", ["시작"]);
-    case "turn_end": return row("dv", ["완료"]);
+    case "turn_start": case "turn_end": return null;
     case "status": return row("dv", [oneLine(a.text ?? "")]);
     case "text": return row("tx", [String(a.text ?? "").trim().slice(0, 600)]);
     case "thinking": return row("th", [`생각 · ${oneLine(a.text ?? "").slice(0, 100)}`]);
@@ -1990,7 +1986,7 @@ function lanePane(name) {
   p.nameBtn = el("button", { class: "lname", type: "button", title: "크게 보기", onclick: () => openSource(`lane:${name}`) });
   p.tag = el("span", { class: "tag" });
   p.att = el("span", { class: "tag warn", text: "확인 필요", hidden: true });
-  p.subs = el("span", { class: "tag pri", hidden: true });
+  p.subs = el("button", { class: "tag pri", type: "button", hidden: true, title: "서브에이전트 보기", onclick: ev => { ev.stopPropagation(); openSubs([`lane:${name}`]); } });
   p.model = el("div", { class: "lmodel" });
   p.acts = el("div", { class: "lacts" });
   p.tail = el("div", { class: "ltail", tabindex: "0", role: "log", "aria-label": `${name} 활동`, onclick: () => { if (!String(getSelection() || "")) openSource(`lane:${name}`); } });
@@ -2038,43 +2034,27 @@ function laneFill(parent, nodes) {
 }
 function laneBoardInit() {
   const grid = el("div", { class: "lgrid" });
-  const exGrid = el("div", { class: "lgrid" });
-  const exBtn = el("button", { class: "lx", type: "button", "aria-expanded": "false", onclick: () => { laneExitedOpen = !laneExitedOpen; laneSig = ""; renderLanes(); } },
-    icon("chev", "lxc"), el("span", { class: "lxn" }), el("span", { class: "lxs" }));
-  laneBoard = {
-    grid, exGrid, exBtn,
-    none: el("div", { class: "sup lnone", text: "작동 중인 레인 없음" }),
-    ex: el("div", { class: "lex" }, exBtn, exGrid),
-    empty: emptyNode("레인 없음"),
-  };
-  laneBoard.node = el("div", { class: "lboard" }, laneBoard.empty, laneBoard.none, grid, laneBoard.ex);
+  laneBoard = { grid, none: emptyNode("작동 중인 레인 없음") };
+  laneBoard.node = el("div", { class: "lboard" }, laneBoard.none, grid);
   $("#lanes").append(laneBoard.node);
 }
+// Running lanes only: an exited lane leaves the board at once (its history and resume stay reachable from ⌘K).
 function renderLanes() {
   if (!S) return;
   if (!laneBoard) laneBoardInit();
-  const lanes = S.lanes;
+  const lanes = S.lanes.filter(laneAlive);
   const modelOf = n => (M && M.lanes || []).find(l => l.name === n);
-  const sig = JSON.stringify([lanes.map(l => [l.name, l.status, l.model, l.resumable, runningSubs(`lane:${l.name}`).length, attnKind(`lane:${l.name}`)]), M && M.lanes, M && M.available && M.available.length, laneExitedOpen]);
+  const sig = JSON.stringify([lanes.map(l => [l.name, l.status, l.model, runningSubs(`lane:${l.name}`).length, attnKind(`lane:${l.name}`)]), M && M.lanes, M && M.available && M.available.length]);
   if (sig === laneSig) return;
   laneSig = sig;
   const B = laneBoard;
   for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) { LP[n].node.remove(); delete LP[n]; delete laneDraft[n]; }
   for (const l of lanes) laneUpdate(LP[l.name] || (LP[l.name] = lanePane(l.name)), l, modelOf(l.name));
   const ordered = byOrder(lanes.map(l => `lane:${l.name}`)).map(t => lanes.find(l => `lane:${l.name}` === t));
-  const alive = ordered.filter(laneAlive), dead = ordered.filter(l => !laneAlive(l));
-  B.empty.hidden = lanes.length > 0;
-  B.none.hidden = !lanes.length || alive.length > 0;
-  B.grid.hidden = !alive.length;
-  B.ex.hidden = !dead.length;
-  B.exBtn.setAttribute("aria-expanded", String(laneExitedOpen));
-  B.exBtn.querySelector(".lxn").textContent = `종료된 레인 ${dead.length}개`;
-  B.exBtn.querySelector(".lxs").textContent = laneExitedOpen ? "" : dead.map(l => l.name).join(", ");
-  B.exGrid.hidden = !laneExitedOpen;
-  const shown = [...alive, ...(laneExitedOpen ? dead : [])];
-  laneFill(B.grid, alive.map(l => LP[l.name].node));
-  laneFill(B.exGrid, laneExitedOpen ? dead.map(l => LP[l.name].node) : []);
-  for (const l of shown) {
+  B.none.hidden = ordered.length > 0;
+  B.grid.hidden = !ordered.length;
+  laneFill(B.grid, ordered.map(l => LP[l.name].node));
+  for (const l of ordered) {
     const p = LP[l.name];
     if (!p.loaded && !p.loading && Date.now() - p.failedAt > 15000) laneLoad(p);
     laneStick(p);
