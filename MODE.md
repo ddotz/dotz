@@ -101,6 +101,8 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
 - Use the `aside` CLI only. `aside exec "<task>"` (delegates to the Aside agent, has the owner's logins) for most
   web tasks; `aside repl` only when you must inspect DOM or screenshots yourself. Never launch Google Chrome.app or
   drive the desktop for web pages.
+- If Aside is not running, start it in the background yourself (`open -g -j -a Aside`, never brought to the front) and
+  use it; do not skip the job or ask the owner to open it.
 - The owner works in the same browser: never raise, focus or close their windows or tabs, no OS keystrokes; close the
   tabs you opened when done.
 - Tests, screenshots and UI checks (yours, lanes', workers') never come to the foreground: no window or tab raised or
