@@ -7,13 +7,13 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
-import { cfg, chainAfter, DATA_DIR, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, paths, selectorOf, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, DATA_DIR, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { atTime, Chain, failsOver, failureReason, hubDrivable, hubOwned, type Move } from "./fallback.ts";
+import { atTime, Chain, failsOver, failureReason, hubDrivable, hubOwned, type Move, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 
@@ -59,6 +59,9 @@ let errorHold: Timer | undefined;
 let chain: Chain | undefined;
 let capped: { move?: Move } | undefined;
 let continueAfterSwitch = false;
+// Going back to the configured model after the runtime moved the process to a fallback by itself (not when the hub drives a chain).
+const reverter = new Reverter();
+let startedModel = "";
 // Set when a compaction finished: the next owner message sent to the process carries the retain nudge once (no extra turn).
 let retainNext = false;
 // Set when a session was resumed (gateway or crash restart): the next owner message carries the lane questions still
@@ -71,12 +74,25 @@ export function setTurnHeader(fn: () => string): void {
 	turnHeader = fn;
 }
 function sendOwner(text: string, header = false): void {
+	settleRevert(false);
 	const nudge = retainNext ? `\n\n${msg().retainNudge}` : "";
 	const asks = asksNext ? pendingAsksBlock() : "";
 	retainNext = false;
 	asksNext = false;
 	const line = header ? turnHeader() : "";
 	proc?.send((line ? `${line}\n` : "") + text + nudge + (asks ? `\n\n${asks}` : ""), "followUp");
+}
+// Switches the process back to its configured model once that is due: before a prompt starts a turn (a refusal, a provider
+// error, or a usage limit that has reset), or at an idle moment for a usage limit that has reset. Never in the middle of a turn.
+function settleRevert(idle: boolean): void {
+	if (!proc?.setModel || chain || orch.status === "working" || orch.status === "rate-limited" || (idle && orch.status !== "idle")) return;
+	const to = reverter.take(idle);
+	if (!to) return;
+	proc.setModel(to);
+	orch.activeModel = to;
+	const line = msg().modelReverted(parseSelector(to).model);
+	log(`orchestrator ${line}`);
+	onAlert(`${NAME}: ${line}`);
 }
 // One line for the worklog when the runtime moves the orchestrator (or one of its task workers) to the next model of a fallback chain.
 let onNotice: (text: string) => void = () => {};
@@ -203,6 +219,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 		switch (ev.type) {
 			case "turn_start":
 				clearTimeout(errorHold);
+				reverter.turnStarted();
 				orch.status = "working";
 				clearTimeout(watchdog);
 				clearTimeout(transientTimer);
@@ -210,6 +227,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				break;
 			case "turn_end":
 				orch.status = orch.status === "rate-limited" ? "rate-limited" : "idle";
+				settleRevert(true);
 				if (orch.status === "idle" && settleChain()) break;
 				lastTurnEnd = Date.now();
 				if (inKeepalive) inKeepalive = false;
@@ -268,14 +286,21 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					else rotateWhenIdle = true;
 				}
 				break;
-			case "fallback":
+			case "fallback": {
 				log(`orchestrator model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
+				const line = msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker);
 				if (!ev.worker) {
 					clearTimeout(errorHold);
 					orch.activeModel = ev.to;
 				}
-				onNotice(msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker));
+				if (ev.worker || chain) onNotice(line);
+				else {
+					// A silent switch to a weaker model went unnoticed for 50 minutes: the owner hears about it where alerts go.
+					if (p.setModel) reverter.note(startedModel, revertWhy(ev.reason ?? "", adapter?.classifyError(ev.reason ?? "")), ev.from, ev.reason ?? "");
+					onAlert(`${NAME}: ${line}${p.setModel ? "" : ` ${msg().modelNoRevert}`}`);
+				}
 				break;
+			}
 		}
 	}
 }
@@ -415,6 +440,8 @@ export function start(): void {
 		spawnModel = chain.selector(chain.active);
 		Object.assign(env, chain.env(chain.active));
 	}
+	startedModel = spawnModel;
+	reverter.reset();
 	orch.activeModel = spawnModel;
 	chained = !chain && entries.length > 0;
 	proc = runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env });
@@ -538,4 +565,7 @@ export function compact(): Compaction {
 }
 
 // A hub-driven chain may owe a return to an earlier entry (its limit reset) or a spend-cap decision; checked once a minute while idle.
-setInterval(() => void settleChain(), 60_000);
+setInterval(() => {
+	settleRevert(true);
+	void settleChain();
+}, 60_000);

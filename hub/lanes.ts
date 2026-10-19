@@ -12,7 +12,7 @@ import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, f
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import type { AgentError, AgentProcess } from "./runtime/types.ts";
-import { atTime, Chain, failsOver, failureReason, hubDrivable, hubOwned, type Move } from "./fallback.ts";
+import { atTime, Chain, failsOver, failureReason, hubDrivable, hubOwned, type Move, Reverter, revertWhy } from "./fallback.ts";
 import { parseTone } from "./tone.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
@@ -74,6 +74,9 @@ export type Lane = Record_ & {
 	// The chain the hub drives itself (conditional entries, spend caps; hub/fallback.ts) and a spend-cap decision waiting for an idle moment.
 	chain?: Chain;
 	capped?: { move?: Move };
+	// Going back to the configured model after the runtime moved the process to a fallback by itself (not when the hub drives a chain).
+	reverter?: Reverter;
+	startedModel?: string;
 };
 
 export const lanes = new Map<string, Lane>();
@@ -124,6 +127,7 @@ function prompt(lane: Lane, text: string): void {
 		persist(lane);
 		return;
 	}
+	settleRevert(lane, false);
 	// Every lane turn ends with the reply-language line too: lane progress notes drifted into English ("Now a throwaway
 	// smoke script against a temp DOTZ_DIR.") because the language sat only in the launch footer.
 	const nudge = lane.retainNext ? `\n${msg().retainNudge}` : "";
@@ -290,6 +294,18 @@ function switchTo(lane: Lane, move: Move, again: boolean): boolean {
 	lane.proc.kill(true);
 	return true;
 }
+// Switches the lane's process back to its configured model once that is due: before a prompt starts a turn (a refusal, a
+// provider error, or a usage limit that has reset), or at an idle moment for a usage limit that has reset. Never mid-turn.
+function settleRevert(lane: Lane, idle: boolean): void {
+	if (!lane.proc?.setModel || lane.chain || lane.status === "working" || lane.status === "rate-limited" || (idle && lane.status !== "idle")) return;
+	const to = lane.reverter?.take(idle);
+	if (!to) return;
+	lane.proc.setModel(to);
+	lane.activeModel = to;
+	const line = msg().modelReverted(parseSelector(to).model);
+	log(`lane ${lane.name} ${line}`);
+	onNotice(lane, line);
+}
 // At an idle moment: act on a spend cap reached during the turn, or go back to an earlier entry whose limit has reset.
 function settleChain(lane: Lane): void {
 	if (!lane.chain || !lane.proc || lane.status !== "idle" || lane.revive || runningSubagents(`lane:${lane.name}`) > 0) return;
@@ -336,6 +352,7 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				wasWorking = lane.status === "working";
 				break;
 			case "turn_start":
+				lane.reverter?.turnStarted();
 				clearTimeout(lane.watchdog);
 				clearTimeout(lane.timer);
 				clearTimeout(lane.transientTimer);
@@ -361,6 +378,7 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				break;
 			case "turn_end":
 				scheduleReport(lane);
+				settleRevert(lane, true);
 				setTimeout(() => settleChain(lane), REPORT_DEBOUNCE_MS + 150);
 				if (lane.status === "idle" && (lane.pauseReported || lane.held?.length)) {
 					lane.pauseReported = false;
@@ -386,16 +404,23 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				if (ev.state === "error") recover(lane, `컨텍스트 압축이 실패했어요 (${ev.error.slice(0, 120)})`, wasWorking);
 				else lane.retainNext = true;
 				break;
-			case "fallback":
+			case "fallback": {
 				log(`lane ${lane.name} model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
+				let line = msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker);
 				if (ev.worker) lane.activeWorkerModel = ev.to;
 				else {
 					clearTimeout(lane.errorHold);
 					lane.failing = false;
 					lane.activeModel = ev.to;
+					// Undone later only when the hub is not driving a chain itself and the runtime can switch models.
+					if (!lane.chain) {
+						if (proc.setModel) lane.reverter?.note(lane.startedModel ?? lane.model, revertWhy(ev.reason ?? "", runtimeFor("lane").classifyError(ev.reason ?? "")), ev.from, ev.reason ?? "");
+						else line += ` ${msg().modelNoRevert}`;
+					}
 				}
-				onNotice(lane, msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker));
+				onNotice(lane, line);
 				break;
+			}
 		}
 	}
 }
@@ -430,6 +455,8 @@ function spawn(lane: Lane, resume: boolean): void {
 		lane: { name: lane.name, dir: dir(lane.name), workerModel: laneWorkerModel(lane), workerFallback: chainAfter(laneWorkerModel(lane), fallbackChain("workers")).map(e => e.model), compactAt: lanesCompactAt(), keepRecent: lanesKeepRecent() },
 	});
 	lane.activeModel = spawnModel;
+	lane.startedModel = spawnModel;
+	lane.reverter = new Reverter();
 	lane.chained = !lane.chain && entries.length > 0;
 	lane.activeWorkerModel = laneWorkerModel(lane);
 	lane.proc = proc;
@@ -812,6 +839,7 @@ export function shutdownLanes(): void {
 setInterval(() => {
 	for (const lane of lanes.values()) {
 		settleChain(lane);
+		settleRevert(lane, true);
 		if (lane.status !== "working" || !lane.lastText || lane.lastText === lane.progressText) continue;
 		if (Date.now() - (lane.progressAt ?? Date.now()) < PROGRESS_EVERY_MS) continue;
 		lane.progressAt = Date.now();

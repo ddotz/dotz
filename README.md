@@ -119,10 +119,16 @@ catalog, the model answering now is filled and marked "사용 중") or with `PUT
 bare models is walked by omp itself: the gateway writes `retry.fallbackChains` into the orchestrator's
 `omp-orchestrator-overlay.yml` / each lane's `omp-overlay.yml` (keyed by the exact primary model, and by role `task`
 for the workers; omp uses the exact key before a role, so a lane whose own model equals its worker model gets one chain
-for both). An empty chain writes nothing. Every switch writes one line (`모델 폴백: A → B (사유)`) to worklog for the
-orchestrator and its workers, to the lane's channel for a lane and its workers; none of them wakes the orchestrator, and
+for both). An empty chain writes nothing. Every switch writes one line (`모델 폴백: A → B (사유)`): the orchestrator's goes
+to the alert channel (a silent switch to a weaker model went unnoticed once), its task workers' to worklog, a lane's and
+its workers' to the lane's channel; none of them wakes the orchestrator, and
 while a fallback may follow, a failed request is not acted on for 3 seconds (so a usage limit that omp falls back from
-does not pause the process or send a lane-error report).
+does not pause the process or send a lane-error report). omp never walks back by itself (an Anthropic refusal also walks
+the chain), so the gateway sends an RPC `set_model` for the configured model (with its thinking level) and posts
+`원래 모델(…)로 되돌렸어요`: before the next prompt after a refusal or a provider error, after the reset for a usage limit
+(the error's retry-after or the usage report, else 15 minutes) when idle or before the next prompt. At most once per
+fallback: if the restored model falls back again in that same turn it stays on the fallback. A runtime without
+`setModel` stays on the fallback until restarted, and the alert says so. A chain the gateway drives itself is untouched.
 
 An entry of the orchestrator or lane chain can be an object with conditions, which the gateway switches itself (restart on
 the same session, as a model switch does; the task workers' chain stays bare models): `when` (`"quota"` = only after the

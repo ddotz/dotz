@@ -5,7 +5,7 @@ import type { Subprocess } from "bun";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Block, blocks, joined, summary } from "../activity.ts";
-import { DATA_DIR, OMP, parseSelector } from "../config.ts";
+import { DATA_DIR, OMP, parseSelector, splitThinking } from "../config.ts";
 import { isNote } from "../i18n.ts";
 import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
@@ -244,9 +244,13 @@ export class OmpProcess implements AgentProcess {
 	refreshSession(): void {
 		this.write({ type: "get_state" });
 	}
-	// The model is chosen after the process is up (a provider the dotz extension registers is unknown to `--model`).
-	setModel(provider: string, modelId: string): void {
-		this.write({ type: "set_model", provider, modelId });
+	// The model is chosen after the process is up (a provider the dotz extension registers is unknown to `--model`), and is
+	// switched back through the same frame after a fallback. A thinking suffix also sets the level (a fallback walk may have moved it).
+	setModel(selector: string): void {
+		const { model: id, thinking } = splitThinking(selector);
+		const slash = id.indexOf("/");
+		this.write({ type: "set_model", provider: id.slice(0, slash), modelId: id.slice(slash + 1) });
+		if (thinking) this.write({ type: "set_thinking_level", level: thinking });
 	}
 	watchSubagents(): void {
 		this.write({ type: "set_subagent_subscription", level: "progress" });
@@ -338,7 +342,7 @@ export const omp: RuntimeAdapter = {
 			env: { ...process.env, ...o.env },
 		});
 		const agent = new OmpProcess(proc, o.role === "orchestrator" ? "o" : "h");
-		if (key) agent.setModel(key.id, key.models[0].id);
+		if (key) agent.setModel(`${key.id}/${key.models[0].id}`);
 		return agent;
 	},
 	classifyError: classifyProviderError,

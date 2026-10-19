@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { cfg, DATA_DIR, entryId, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
+import { rateLimitDelay } from "./providers.ts";
 
 // A chain the hub switches itself: any entry omp cannot walk.
 export const hubOwned = (entries: FallbackEntry[]) => entries.some(e => !isPlain(e));
@@ -254,4 +255,50 @@ const MAX_TIMER_MS = 2 ** 31 - 1;
 export function atTime(until: number, keep: (t: Timer) => void, fn: () => void): void {
 	const left = until - Date.now();
 	keep(left > MAX_TIMER_MS ? setTimeout(() => atTime(until, keep, fn), MAX_TIMER_MS) : setTimeout(fn, Math.max(1000, left)));
+}
+
+// ---- going back after the runtime's own fallback walk --------------------------------------------------------------------
+// A runtime that moves a process to the next model by itself (omp's native chain, also on a refusal) never comes back: the
+// process then stays on the fallback until it restarts. One Reverter per process remembers the configured model and says when
+// to switch back: a refusal or a provider error before the next turn, a usage limit once it has reset. A process whose
+// chain the hub drives itself does not use one (the hub restarts it on the entry it wants).
+const QUOTA_REVERT_MS = 15 * 60_000;
+export type RevertWhy = "refusal" | "quota" | "error";
+export const revertWhy = (reason: string, kind?: string): RevertWhy => (/refusal/i.test(reason) ? "refusal" : failureReason({ kind, text: reason }));
+export class Reverter {
+	private plan?: { to: string; due: number };
+	private turns = 0;
+	// The turn that started on the restored model: if it falls back again, that is not undone a second time within it.
+	private guard = -1;
+	turnStarted(): void {
+		this.turns++;
+	}
+	// A fallback happened while the process ran `original` (its configured selector). False when it is not to be undone:
+	// the same turn already came back once. A second hop of the same walk keeps the first one's original.
+	note(original: string, why: RevertWhy, from: string, reason: string): boolean {
+		if (this.turns === this.guard) return false;
+		const plan = (this.plan ??= { to: original, due: 0 });
+		if (why !== "quota") return true;
+		plan.due = Math.max(plan.due, clock.now() + QUOTA_REVERT_MS);
+		// A usage report or the error's retry-after names the reset; the default above holds until it is known.
+		const mine = plan;
+		void rateLimitDelay(reason, from).then(d => {
+			if (this.plan === mine && (d.reset || /retry-after-ms:\s*\d+/.test(reason))) mine.due = clock.now() + d.ms;
+		}).catch(() => {});
+		return true;
+	}
+	pending = (): string | undefined => this.plan?.to;
+	// The configured selector when switching back is due, and it is spent: the caller must now switch the process to it.
+	// `idle`: the caller has no turn to start, so only a usage limit that has reset counts (a refusal waits for the next turn).
+	take(idle = false, at = clock.now()): string | undefined {
+		if (!this.plan || at < this.plan.due || (idle && !this.plan.due)) return undefined;
+		const { to } = this.plan;
+		this.plan = undefined;
+		this.guard = this.turns + 1;
+		return to;
+	}
+	reset(): void {
+		this.plan = undefined;
+		this.guard = -1;
+	}
 }
