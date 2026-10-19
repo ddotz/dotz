@@ -122,6 +122,13 @@ lanes are skipped. Each action goes to the hub log and the activity feed, nothin
 in `~/.dotz/lane-hygiene.json`; a run missed while the gateway was down is made up a minute after the next start.
 Settings apply when a lane starts or resumes.
 
+**Memory guard.** omp runs its bash tool's coreutils (grep, cat, find, ...) and the task workers inside the agent's own
+process, so one scan of a huge tree or a multi-GB file can grow an orchestrator or lane to tens of GB. Every 30 s the
+gateway reads each agent's RSS; one over `lanes.max_rss_gb` (default `8`, `0` turns the guard off) is restarted on
+the same session, and a lane that was working resumes with a note that names the cause. The lane channel (or alert,
+for the orchestrator) gets one line. After 3 restarts of the same agent within an hour the guard leaves it running
+and says so once.
+
 **Worktree cleanup.** Two minutes after the start and then hourly, the gateway deletes task-worker isolation worktrees
 that `omp worktree list --json` marks with an `orphanReason` (no live job) and that were not modified for an hour. Only
 paths under `~/.omp/wt/` are touched; they are made writable first (retained worktrees hold read-only files that make

@@ -490,8 +490,9 @@ export function resumeByName(name: string, text?: string): void {
 	resumeLane(lane, text || msg().laneOwnerResumed);
 }
 
-// Restarts the omp process of a lane, resuming its session (a turn that was running is cut off, so it is told to continue).
-export async function restartLane(name: string): Promise<void> {
+// Restarts the omp process of a lane, resuming its session (a turn that was running is cut off, so it is told to continue,
+// with `note` when the caller knows why).
+export async function restartLane(name: string, note = msg().laneOwnerRestarted): Promise<void> {
 	const lane = known(name);
 	if (!lane.proc) return resumeByName(name);
 	if (!lane.sessionFile || !existsSync(lane.sessionFile)) throw new Error(`lane ${name} has no session yet; try again in a few seconds`);
@@ -500,7 +501,7 @@ export async function restartLane(name: string): Promise<void> {
 	lane.quiet = true;
 	old.kill();
 	await old.exited;
-	if (wasWorking) resumeLane(lane, msg().laneOwnerRestarted);
+	if (wasWorking) resumeLane(lane, note);
 	else {
 		spawn(lane, true);
 		setStatus(lane, "idle");
