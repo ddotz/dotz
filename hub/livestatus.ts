@@ -14,6 +14,9 @@ import { lanes } from "./lanes.ts";
 
 const FIRST_AFTER_MS = 5 * 60_000;
 const EVERY_MS = 5 * 60_000;
+// After the first report a milestone (a lane or task worker started or finished) is reported at the next check instead
+// of waiting out EVERY_MS (owner 2026-10-19: "진행보고도 오모냥처럼": a reply at each milestone, at most every 5 min otherwise).
+const CHECK_MS = 30_000;
 // A turn that never reports its end (the process died) must not keep reporting forever.
 const MAX_MS = 6 * 3600_000;
 const TEXT_MAX = 400;
@@ -21,7 +24,7 @@ const TEXT_MAX = 400;
 // One reporter per target. While it is the entry of `active` it owns the target; a tick checks that before and after
 // every await, so a reporter that was stopped (the entry is gone or replaced) cannot post. `turnFrom` moves when another
 // owner message joins: the end of the turn that was running before it is not the end of the wait.
-type Live = { source: string; since: number; turnFrom: number; timer?: Timer; lastAt: number; lastState?: string; postedAt?: number; inflight: Promise<void> };
+type Live = { source: string; since: number; turnFrom: number; timer?: Timer; lastAt: number; lastState?: string; lastRunning?: string; postedAt?: number; inflight: Promise<void> };
 const active = new Map<string, Live>();
 
 const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -49,7 +52,7 @@ function list(items: string[], max: number): string {
 // What a report says, and whether it says anything new: a tool call since the last report, or a changed current intent,
 // lane or worker list (`state`, compared with the last report's). "Now" is the turn's latest intent; "since the last
 // report" lists the ones made after the previous report, before it.
-export function liveReport(live: { source: string; since: number; lastAt: number }): { state: string; moved: boolean; text: string } {
+export function liveReport(live: { source: string; since: number; lastAt: number }): { state: string; running: string; moved: boolean; text: string } {
 	const intents = turnIntents(live.source, live.since);
 	const now = intents.pop()?.t ?? "";
 	const between = intents.filter(i => i.at >= live.lastAt).map(i => i.t);
@@ -60,7 +63,7 @@ export function liveReport(live: { source: string; since: number; lastAt: number
 		.map(s => `${s.agent && s.agent !== "task" ? s.agent : s.id}${s.description ? `: ${short(s.description, 28)}` : ""}`);
 	const parts = [list(between, 4), now, list(laneNames, 4), list(workers, 3)] as const;
 	const minutes = Math.round((Date.now() - live.since) / 60_000);
-	return { state: parts.slice(1).join("\n"), moved: between.length > 0, text: short(msg().liveStatus(minutes, ...parts), TEXT_MAX) };
+	return { state: parts.slice(1).join("\n"), running: parts.slice(2).join("\n"), moved: between.length > 0, text: short(msg().liveStatus(minutes, ...parts), TEXT_MAX) };
 }
 
 async function tick(target: string, live: Live): Promise<void> {
@@ -72,20 +75,24 @@ async function tick(target: string, live: Live): Promise<void> {
 		active.delete(target);
 		return;
 	}
-	const { state, moved, text } = liveReport(live);
-	if (moved || state !== live.lastState) {
+	const { state, running, moved, text } = liveReport(live);
+	const first = live.postedAt === undefined;
+	const milestone = !first && running !== live.lastRunning;
+	const due = Date.now() - live.lastAt >= EVERY_MS - 1000 || first;
+	if (milestone || (due && (moved || state !== live.lastState))) {
 		live.inflight = discord
 			.send(target, text)
 			.then(r => {
 				if (!r.delivered) return;
 				live.lastState = state;
+				live.lastRunning = running;
 				live.lastAt = Date.now();
 				live.postedAt = discord.lastSendAt(target);
 			})
 			.catch(e => log(`live report in ${target} failed: ${e}`));
 		await live.inflight;
 	}
-	if (active.get(target) === live) live.timer = setTimeout(() => void tick(target, live), EVERY_MS);
+	if (active.get(target) === live) live.timer = setTimeout(() => void tick(target, live), CHECK_MS);
 }
 
 /** An owner message from Discord started (or joined) a turn of `source` ("orchestrator" or "lane:<name>"); `target` is where the answer goes. */
