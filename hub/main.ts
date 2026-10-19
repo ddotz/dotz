@@ -28,6 +28,7 @@ import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
 import { addWatch, allWatches, listWatches, removeWatch, startWatches, stopWatches } from "./watch.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
+import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
 
 const WEB = join(import.meta.dir, "..", "web", "index.html");
 const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
@@ -584,6 +585,28 @@ const server = Bun.serve({
 				return json(await setModel(String(b.target ?? ""), b.model ? String(b.model) : undefined, b.thinking ? String(b.thinking) : undefined, b.force === true));
 			} catch (error) {
 				return fail(error);
+			}
+		}
+		if (parts[0] === "api" && parts[1] === "runtimes") {
+			if (req.method === "GET" && parts.length === 2) return json(await runtimesView(url.searchParams.get("refresh") === "1"));
+			const id = parts[2];
+			if (!RUNTIME_IDS.includes(id as never)) return json({ error: `알 수 없는 실행 하네스예요: ${id}` }, 404);
+			if (req.method === "GET" && parts.length === 3) return json({ id, report: lastReport(id) ?? null, state: verifyState(id) ?? null });
+			if (req.method === "POST" && parts[3] === "verify" && parts.length === 4) {
+				const b = await body(req);
+				return json({ ok: true, state: startVerify(id as never, b.model ? { model: String(b.model) } : {}) }, 202);
+			}
+			if (req.method === "POST" && parts[3] === "use" && parts.length === 4) {
+				const b = await body(req);
+				const roles = (Array.isArray(b.roles) ? b.roles : ["orchestrator", "lanes"]).map(String) as UseRole[];
+				try {
+					const done = await useRuntime(id, roles);
+					log(`runtime ${id} selected for ${done.join(", ")}`);
+					return json({ ok: true, runtime: id, roles: done, applies: "오케스트레이터와 레인을 다시 시작하면 적용돼요. 지금 돌고 있는 프로세스는 그대로예요." });
+				} catch (error) {
+					if (error instanceof UseRefused) return json({ error: error.message, runtime: id }, 409);
+					throw error;
+				}
 			}
 		}
 		if (req.method === "GET" && url.pathname === "/api/context") return json(contextView());

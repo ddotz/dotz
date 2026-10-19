@@ -70,6 +70,15 @@ export function updateConfig(section: "orchestrator" | "lanes", values: Record<s
 	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
 	(cfg as any)[section] = { ...(cfg as any)[section], ...values };
 }
+// Selects the agent runtime for the given roles (`orchestrator.runtime` / `lanes.runtime`), keeping every other key of config.json.
+export function setRuntime(roles: ("orchestrator" | "lanes")[], runtime: string): void {
+	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
+	for (const role of roles) {
+		disk[role] = { ...disk[role], runtime };
+		(cfg as any)[role] = { ...(cfg as any)[role], runtime };
+	}
+	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
+}
 // The bot's name (onboarding asks for it); every user-facing string and Discord name derives from it.
 export const NAME = cfg.identity?.name?.trim() || "dotz";
 export const IDENTITY_FILE = join(DATA_DIR, "identity", "IDENTITY.md");
