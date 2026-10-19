@@ -41,6 +41,9 @@ type Ask = { text: string; at: string };
 type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; lastReportAt?: string; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask };
 export type Lane = Record_ & {
 	ctx: Ctx;
+	// The orchestrator sent work (launch, dotz_lane send) that no relayed report answered yet; an owner-only exchange in
+	// the lane channel leaves it false, so that reply is not relayed (lanerelay.ts); unknown (a restored lane) relays.
+	orchAsked?: boolean;
 	lastText: string;
 	proc?: AgentProcess;
 	timer?: ReturnType<typeof setTimeout>;
@@ -645,7 +648,7 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	const selector = model ?? selectorOf(lanesModel());
 	mkdirSync(dir(name), { recursive: true });
 	const place = laneWorktree(name, cwd);
-	const lane: Lane = { name, cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, ctx: newCtx() };
+	const lane: Lane = { name, cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, ctx: newCtx(), orchAsked: true };
 	lanes.set(name, lane);
 	persist(lane);
 	writeFileSync(join(dir(name), "brief.md"), `${brief}\n`);
@@ -666,6 +669,7 @@ export function sendToLane(name: string, text: string): void {
 		clearAsk(lane);
 		persist(lane);
 	}
+	if (!/^\[owner via /.test(text) && text !== "/budget-ok") lane.orchAsked = true;
 	if (lane.proc) return prompt(lane, text);
 	resumeLane(lane, text);
 }

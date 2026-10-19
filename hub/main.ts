@@ -264,8 +264,10 @@ const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliv
 setReportHandler((lane, text) => {
 	const event = { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text };
 	emit("inbox", event);
-	const how = laneRelay.report(lane.name, text, join(paths.lanes, lane.name, "report.md"));
-	if (how !== "relayed") log(`lane ${lane.name} report ${how === "disk" ? "kept on disk (routine progress)" : how === "held" ? "held for the orchestrator's next idle point" : "dropped (same as the last one)"}`);
+	const how = laneRelay.report(lane.name, text, join(paths.lanes, lane.name, "report.md"), lane.orchAsked === false);
+	if (how === "relayed" || how === "held") lane.orchAsked = false;
+	else log(`lane ${lane.name} report ${how === "disk" ? "kept on disk (routine progress)" : how === "owner" ? "kept on disk (answer to the owner in the lane channel)" : "dropped (same as the last one)"}`);
+	if (how === "held") log(`lane ${lane.name} report held for the orchestrator's next idle point`);
 	lastPost.set(`lane:${lane.name}`, Date.now());
 	const channel = `lane:${lane.name}`;
 	void inOrder(channel, () => localize(text.slice(0, 1800), channel, "lane"))
