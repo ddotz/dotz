@@ -30,7 +30,7 @@ const RULES: Record<string, string> = {
 	"반복 호출": "MODE.md 'Lanes and workers' (Brief: 폴링 대신 blocking 대기 한 번)",
 	"대형 컨텍스트": "MODE.md 'Lanes and workers' (한 태스크 ~250K 컨텍스트)",
 	"대형 하위에이전트": "MODE.md 'Lanes and workers' (Brief: 단계별 워커, 후속은 새 워커)",
-	"비싼 모델": "MODE.md 'Lanes and workers' (Budget estimate: Fable·max/xhigh는 오너가 요청할 때만)",
+	"비싼 모델": "MODE.md 'Lanes and workers' (Budget: Fable·max/xhigh는 오너가 요청할 때만)",
 };
 
 const kstDate = (ms: number) => new Date(ms + 9 * 3600e3).toISOString().slice(0, 10);
