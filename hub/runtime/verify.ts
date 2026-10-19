@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cfg, DATA_DIR, log, now, orchestratorModel, selectorOf, setRuntime, writeAtomic } from "../config.ts";
 import { broadcast } from "../events.ts";
-import { codex, opencode } from "./detect.ts";
+import { codex, omo } from "./detect.ts";
 import { adapters } from "./index.ts";
 import type { DetectResult, RuntimeAdapter, RuntimeId } from "./types.ts";
 
@@ -23,10 +23,10 @@ export type UseRole = "orchestrator" | "lanes";
 // Adapter surface this module reads beyond RuntimeAdapter: the probes of its checklist items.
 type Probing = RuntimeAdapter & { probes?: Record<string, Probe> };
 
-export const RUNTIME_IDS = ["omp", "claude", "codex", "opencode"] as RuntimeId[];
-export const RUNTIME_LABEL: Record<string, string> = { omp: "omp", claude: "Claude Code", codex: "Codex", opencode: "OpenCode (oh-my-opencode)" };
+export const RUNTIME_IDS = ["omp", "claude", "codex", "omo"] as RuntimeId[];
+export const RUNTIME_LABEL: Record<string, string> = { omp: "omp", claude: "Claude Code", codex: "Codex", omo: "OmO (oh-my-openagent)" };
 // Runtimes dotz can list but has no adapter for yet.
-const DETECT_ONLY: Record<string, { detect(): Promise<DetectResult> }> = { codex, opencode };
+const DETECT_ONLY: Record<string, { detect(): Promise<DetectResult> }> = { codex, omo };
 
 // The checklist. `core` items block a switch when they do not pass; the others are adapted or turned off.
 export const CHECKLIST: { id: string; label: string; core: boolean }[] = [

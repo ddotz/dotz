@@ -94,7 +94,7 @@ test("use: an ok report writes the runtime keys and keeps the rest of config.jso
 
 test("refusalFor: omp needs no report; uninstalled and adapterless runtimes are refused", () => {
 	expect(refusalFor("omp", undefined, undefined)).toBeUndefined();
-	expect(refusalFor("opencode", { id: "opencode", label: "", installed: false, hasAdapter: false, usable: false }, undefined)).toBe("설치되어 있지 않아요");
+	expect(refusalFor("omo", { id: "omo", label: "", installed: false, hasAdapter: false, usable: false }, undefined)).toBe("설치되어 있지 않아요");
 	expect(refusalFor("codex", { id: "codex", label: "", installed: true, hasAdapter: false, usable: false }, undefined)).toBe("dotz 어댑터가 없어요");
 	expect(existsSync(join(DATA_DIR, "runtime-checks", "omp.json"))).toBe(false);
 });

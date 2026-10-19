@@ -230,7 +230,7 @@ All behind the same auth as the rest of `/api`.
 
 - `GET /api/models`, `PUT /api/models {target: "orchestrator"|"lanes"|"workers"|"lane:<name>", model?, thinking?, force?}`; `GET /api/models` also carries `fallbacks: {max, orchestrator|lanes|workers: {chain: [entry + used?/down?], hub_driven, active: [model ids answering now]}}`; `PUT /api/fallbacks {target: "orchestrator"|"lanes"|"workers", chain: [model | {model, when?, cap?, revert?, key_file?}]}` replaces one chain (validated against the model catalog; applies at the next process start)
 - Agent runtime selection (설정 > 실행 하네스): `GET /api/runtimes` -> `{current: {orchestrator, lanes}, checklist, runtimes: [{id, label, installed, version?, path?, hasAdapter, usable, reason?, roles, report: {at, version, verdict, counts}|null, state, switchable, refusal}]}`
-  for `omp`, `claude`, `codex`, `opencode` (`?refresh=1` re-detects); `GET /api/runtimes/<id>` -> `{report, state}` (full last report
+  for `omp`, `claude`, `codex`, `omo` (`?refresh=1` re-detects); `GET /api/runtimes/<id>` -> `{report, state}` (full last report
   and the running check's progress); `POST /api/runtimes/<id>/verify` starts the compatibility check in the background (202, poll the
   GET; progress also streams as `{kind: "runtime_check"}` on `/api/events`); `POST /api/runtimes/<id>/use {roles?: ["orchestrator","lanes"]}`
   writes `orchestrator.runtime` / `lanes.runtime` to `config.json` and answers 409 with `{error}` when the runtime is not installed or has no
