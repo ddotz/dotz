@@ -1,6 +1,6 @@
 // Dotz mode extension; behaviour depends on which session loads it:
-// - gateway orchestrator (DOTZ_ORCHESTRATOR=1): dotz_send / dotz_lane / dotz_schedule tools, recall after compaction.
-// - lane session (DOTZ_LANE set): 5-minute prompt cache (1h is for the orchestrator only; idle warming covers waits).
+// - gateway orchestrator (DOTZ_ORCHESTRATOR=1): dotz_send / dotz_lane / dotz_schedule / dotz_auth tools, recall after compaction.
+// - lane session (DOTZ_LANE set): dotz_auth tool; 5-minute prompt cache (1h is for the orchestrator only; idle warming covers waits).
 // - any other session: "<name>모드 켜" (dotz_mode tool, /dotz on) makes this terminal a thin client of the
 //   gateway: typed input is forwarded to the gateway orchestrator instead of the local model, replies addressed to
 //   the terminal are shown here. "<name>모드 꺼" or /dotz off stops forwarding. No terminal needs to stay open.
@@ -83,8 +83,62 @@ async function call(path: string, init: RequestInit = {}): Promise<any> {
 	const r = await fetch(h.url + path, { ...init, headers: { "x-dotz-token": h.token, "Content-Type": "application/json", ...(init.headers ?? {}) } });
 	const text = await r.text();
 	const data = text ? JSON.parse(text) : {};
-	if (!r.ok) throw new Error(data.error ?? data.reason ?? `${r.status}`);
+	if (!r.ok) throw Object.assign(new Error(data.error ?? data.reason ?? `${r.status}`), { status: r.status });
 	return data;
+}
+
+type AuthParams = { site: string; kind: "secret" | "otp" | "approve"; fields?: string[]; purpose: string; target?: string; timeout_minutes?: number };
+
+// Web-login credentials from the owner via Discord (buttons + modal). The submitted value goes only to the gateway: the
+// secret kind lands in a 0600 file, the otp kind is fetched once with `take`; this tool never sees or returns a value.
+function authTool(pi: any, lane?: string): void {
+	const z = pi.zod;
+	const where = lane ? `It is posted to this lane's Discord channel.` : `target: chat (default), alert, lane:<name>, ch:<id>, th:<id>.`;
+	pi.registerTool({
+		name: "dotz_auth",
+		label: "Dotz auth",
+		description: `Ask the owner for a web-login credential through Discord: the gateway posts a message with buttons, the owner presses one and types the value into a Discord modal, and the value never enters the prompt, logs or chat. Use it when a login needs a password, an OTP code, or a push/FIDO approval, or when the account has no stored credentials. Asking through this tool is the owner's OK for the second factor (still trigger it only once, never retry). kind=secret {fields? [username,password] (default both; or any of username|password|code)}: stored as a JSON object {field: value} in a 0600 file under the secrets dir, whose path is returned. kind=otp: a one-time code you fetch once with the returned command. kind=approve: the owner confirms they approved the push/FIDO prompt on their device. site = a short key [a-z0-9._-] naming the service (the secrets file name). purpose = one line shown to the owner saying what it is for. ${where} timeout_minutes 1-30 (default 10). The call waits until the owner answers, cancels, or it times out; do the login step after it returns.`,
+		parameters: z.object({
+			site: z.string(),
+			kind: z.enum(["secret", "otp", "approve"]),
+			fields: z.array(z.enum(["username", "password", "code"])).optional(),
+			purpose: z.string(),
+			...(lane ? {} : { target: z.string().optional() }),
+			timeout_minutes: z.number().min(1).max(30).optional(),
+		}),
+		async execute(_id: string, p: AuthParams, signal?: AbortSignal) {
+			const text = (t: string) => ({ content: [{ type: "text", text: t }] });
+			const body: Record<string, unknown> = { site: p.site, kind: p.kind, purpose: p.purpose, target: lane ? `lane:${lane}` : (p.target ?? "chat") };
+			if (p.fields) body.fields = p.fields;
+			if (p.timeout_minutes) body.timeout_minutes = p.timeout_minutes;
+			const { id }: { id: string } = await call("/api/auth", { method: "POST", body: JSON.stringify(body), signal });
+			const cancel = async () => {
+				await call(`/api/auth/${id}`, { method: "DELETE" }).catch(() => undefined);
+				return text(`Auth request for ${p.site} cancelled (this call was aborted).`);
+			};
+			for (;;) {
+				if (signal?.aborted) return cancel();
+				let r: { status: string; path?: string; take?: string };
+				try {
+					r = await call(`/api/auth/${id}?wait=50`, { signal });
+				} catch (e: unknown) {
+					if (signal?.aborted) return cancel();
+					if (e instanceof Error && "status" in e && e.status === 404) return text(`Auth request for ${p.site} was lost (the gateway restarted). Ask again if it is still needed.`);
+					throw e;
+				}
+				if (r.status === "pending") continue;
+				if (r.status === "entered" && p.kind !== "otp") {
+					const fields = (p.fields ?? (p.kind === "secret" ? ["username", "password"] : [])).join(", ");
+					return text(`The owner entered the ${p.site} credentials. Stored at ${r.path} as a JSON object {${fields}}, mode 0600. Read it at run time; never put the values in prompts, briefs, reports or logs.`);
+				}
+				if (r.status === "entered") {
+					const h = hub();
+					return text(`The owner entered the ${p.site} OTP code. Take it once, within 5 minutes, and pipe it straight into the consumer without printing it: curl -s -H "x-dotz-token: $(cat ${join(DATA, "secrets", "hub-token")})" ${h?.url ?? ""}${r.take ?? `/api/auth/${id}/take`}`);
+				}
+				return text(`Auth request for ${p.site}: ${r.status}.`);
+			}
+		},
+	});
 }
 
 async function ensureGateway(): Promise<void> {
@@ -128,6 +182,7 @@ function recall(): string {
 
 function orchestratorTools(pi: any): void {
 	const z = pi.zod;
+	authTool(pi);
 	pi.on("session_compact", (_e: any, ctx: any) => {
 		if (ctx?.agent?.kind === "main") pi.sendMessage({ customType: "dotz-mode", content: recall(), display: false }, { deliverAs: "nextTurn" });
 	});
@@ -200,6 +255,7 @@ function orchestratorTools(pi: any): void {
 }
 
 function laneSession(pi: any): void {
+	authTool(pi, process.env.DOTZ_LANE);
 	pi.on("before_provider_request", (event: any, ctx: any) => {
 		if (ctx?.agent?.kind !== "main" || !event?.payload) return;
 		const payload = structuredClone(event.payload);
