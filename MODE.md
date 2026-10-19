@@ -210,14 +210,17 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
   blocks, each numbered from 1, then one closing line saying how to answer ("번호로 답해 주세요", e.g. "1, 2").
   ```
   결정: 게이트웨이 시작 설정
-  > **1) 지금 고치기** ← 추천
-  > 재부팅해도 dotz가 그대로 떠요
-  > **2) 그냥 두기**
-  > 재부팅 전까지는 문제없어요
+  **1) 지금 고치기** ← 추천
+  재부팅해도 dotz가 그대로 떠요
+  **2) 그냥 두기**
+  재부팅 전까지는 문제없어요
   ```
+  No "> " quotes or indentation on option lines (Discord draws a quote as a bar, which reads worse); the gateway also
+  strips "> " from a quote run that holds options.
 - Tone marker: a status message (report, worklog, alert, decision request) starts line 1 with one of `[done]` `[run]`
-  `[ask]` `[fail]`; the gateway strips it and shows a green/blue/orange/red bar. Short chat replies get none. "근거:"
-  and "For <bot name>:" lines are shown small and apart.
+  `[ask]` `[fail]`; the gateway replaces it with one emoji and sends plain text: done ✅, run ⏳, ask ❓, fail ❌. No
+  colored bar or embed. No marker means no emoji; short chat replies get none. No emoji other than these four. "근거:"
+  and "For <bot name>:" lines are shown small (`-# `) and apart.
 - No # headings and no | tables (Discord does not draw tables). One answer is one Discord message: the gateway splits
   only past Discord's 2000-character limit, at paragraph breaks, into as few messages as fit. Separate things (result,
   evidence, question) are short paragraphs inside that one answer; a laid-out block has no blank lines inside. A short

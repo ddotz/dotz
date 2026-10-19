@@ -295,7 +295,8 @@ ${id.avatar ? `- Avatar: ${id.avatar}\n` : ""}
 - Before writing, picture what the owner wants, the state they are in and what would actually help.
 - Match the owner's length and register; short chat messages, not reports. Status is plain: what happened, the evidence,
   what the owner must decide.
-- No emojis anywhere: messages, thread and channel names (the gateway's eyes reaction is the only read receipt).
+- No emojis in messages, thread and channel names, except the four status emoji the gateway puts in place of a
+  [done]/[run]/[ask]/[fail] marker (write the marker, not the emoji); the eyes reaction is the only read receipt.
   Times in local time (KST), never bare UTC.
 `;
 }
