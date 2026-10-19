@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { cfg, DATA_DIR, entryId, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
+import { apiKeyBan } from "./apikey-policy.ts";
 import { rateLimitDelay } from "./providers.ts";
 
 // A chain the hub switches itself: any entry omp cannot walk.
@@ -114,6 +115,8 @@ const keyedModel = (e: FallbackEntry) => {
 };
 function keyEnv(e: FallbackEntry): Record<string, string> {
 	if (!keyHostOk(keyBaseUrl(e))) throw new Error(`API-key entry ${e.model}: base URL host is not allowed`);
+	const ban = apiKeyBan();
+	if (ban) throw new Error(`API-key entry ${e.model}: no API key while ${ban} is pinned`);
 	const base = parseSelector(e.model).model;
 	const def = modelDef(base);
 	const [provider, ...rest] = base.split("/");
@@ -148,7 +151,8 @@ export class Chain {
 		const b = load().blocked[poolOf(e)];
 		if (b && b.until > at) return b;
 		if (capReached(e, at)) return { why: "cap", until: periodEnd(e.cap!.period, at) };
-		if (e.key_file && (!readKey(e.key_file) || !keyHostOk(keyBaseUrl(e)))) return { why: "error", until: at + KEY_BLOCK_MS };
+		// No API key while a no-API-key account is pinned (hub/apikey-policy.ts); re-checked each minute, like a missing key.
+		if (e.key_file && (apiKeyBan() || !readKey(e.key_file) || !keyHostOk(keyBaseUrl(e)))) return { why: "error", until: at + KEY_BLOCK_MS };
 		return undefined;
 	}
 	// A fallback entry takes over after `reason` only when its condition allows it (a cap counts as a quota).
