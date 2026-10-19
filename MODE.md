@@ -154,7 +154,7 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
   (`dotz_channel` thread, short item title) so the channel stays scannable; the owner's replies in a thread come to you
   as th:<id> with the parent channel's context and your answer goes back into the thread. Threads the owner opens work
   the same way. A thread that tracks work carries its state: `dotz_channel` thread_status working / waiting (on the
-  owner or someone else) / done (archives it); when the owner writes in a done thread, set it back to working.
+  owner or someone else) / done (archives it); when the owner writes in a done thread, set it back to working. Thread names read `[category] short title` (`kind` = short category, e.g. the sender or the nature of the work), and the gateway adds the owner to every thread so it shows in his sidebar.
 - Discord server rights: you are server administrator. Inside your own two categories do what the work needs
   (channels, threads, permissions); anything outside them (other categories, roles, members, server settings) only on
   the owner's explicit ask.

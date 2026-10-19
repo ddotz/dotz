@@ -40,7 +40,19 @@ const textName = (s: string) => s.toLowerCase().replace(/\s+/g, "-");
 const fixed = { chat: "대화", alert: "알림", worklog: "작업로그" } as const;
 const workCategoryName = () => `${NAME} 작업`;
 export const noEmoji = (s: string) => s.replace(/ ?[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]+/gu, "");
-const cleanName = (s: string) => noEmoji(s).replace(/[┃|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 90) || "작업";
+const scrub = (s: string) => noEmoji(s).replace(/[┃|]/g, " ").replace(/\s+/g, " ").trim();
+const cleanName = (s: string) => scrub(s).slice(0, 90) || "작업";
+// Thread names read "[분류] 짧은 제목": kind is the short category, both parts emoji- and pipe-cleaned, 100 chars at most.
+export const threadName = (title: string, kind?: string): string => {
+	const k = scrub(kind ?? "").replace(/[\[\]]/g, "").trim().slice(0, 30);
+	return k ? `[${k}] ${scrub(title) || "작업"}`.slice(0, 100) : cleanName(title);
+};
+// Puts the owner into a thread so it appears under its parent channel in the sidebar. PUT is idempotent; failures are only logged.
+async function addOwner(threadId: string): Promise<void> {
+	if (!OWNER) return;
+	// An archived thread refuses members (50083); expected for done threads, so it stays out of the log.
+	await rest("PUT", `/channels/${threadId}/thread-members/${OWNER}`).catch(e => /50083/.test(String(e)) || log(`discord: could not add owner to thread ${threadId}: ${e}`));
+}
 const isWorkParent = (parent?: string) => !!parent && (parent === channels.category || parent === channels.workCategory);
 
 async function rest(method: string, path: string, body?: unknown): Promise<any> {
@@ -94,6 +106,11 @@ export async function ensureChannels(): Promise<void> {
 	}
 	for (const [id, t] of Object.entries(channels.threads)) if (!existing.has(t.parent)) delete channels.threads[id];
 	save();
+	// One pass per gateway start: owner joins every known thread (archived ones just log an error).
+	void (async () => {
+		const ids = [...Object.entries(channels.lanes).filter(([lane]) => channels.homes[lane]).map(([, id]) => id), ...Object.keys(channels.threads)];
+		for (const id of new Set(ids)) await addOwner(id);
+	})();
 	await keepPrivate(all).catch(e => log(`discord: could not hide channels from other bots (needs administrator): ${e}`));
 }
 
@@ -122,10 +139,11 @@ async function keepPrivate(all: any[]): Promise<void> {
 // messages there arrive with the parent's context and the answer goes back into the thread.
 const threadParent = (parentId: string) => (parentId === channels.chat ? "chat" : channels.work[parentId] ? `ch:${parentId}` : undefined);
 
-export async function createThread(parent: string, name: string): Promise<{ id: string; name: string }> {
+export async function createThread(parent: string, name: string, kind?: string): Promise<{ id: string; name: string }> {
 	const parentId = resolve(parent);
 	if (!status.enabled || !parentId || !threadParent(parentId)) throw new Error(`threads can be made in chat or a work channel (ch:<id>), not ${parent}`);
-	const t = await rest("POST", `/channels/${parentId}/threads`, { name: cleanName(name), type: 11, auto_archive_duration: 10080 });
+	const t = await rest("POST", `/channels/${parentId}/threads`, { name: threadName(name, kind), type: 11, auto_archive_duration: 10080 });
+	await addOwner(t.id);
 	channels.threads[t.id] = { parent: parentId, name: String(t.name) };
 	save();
 	return { id: t.id, name: t.name };
@@ -195,12 +213,13 @@ export async function syncProfile(): Promise<void> {
 
 // `title` is the owner-facing channel name (their language, plain words); the lane name stays the internal key.
 // With `home` (ch:<id> of an existing work channel) no channel is made: the lane gets a thread in that channel instead.
-export async function laneChannel(lane: string, title?: string, home?: string): Promise<string | undefined> {
+export async function laneChannel(lane: string, title?: string, home?: string, kind?: string): Promise<string | undefined> {
 	if (!status.enabled || !channels.category) return undefined;
 	if (!channels.lanes[lane]) {
 		if (home) {
 			const parentId = homeChannel(home);
-			const t = await rest("POST", `/channels/${parentId}/threads`, { name: cleanName(title?.trim() || lane), type: 11, auto_archive_duration: 10080 });
+			const t = await rest("POST", `/channels/${parentId}/threads`, { name: threadName(title?.trim() || lane, kind), type: 11, auto_archive_duration: 10080 });
+			await addOwner(t.id);
 			channels.lanes[lane] = t.id;
 			channels.homes[lane] = parentId;
 		} else channels.lanes[lane] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: title?.trim() || lane, type: 0, parent_id: channels.workCategory ?? channels.category })).id;

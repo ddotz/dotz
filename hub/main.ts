@@ -575,7 +575,7 @@ const server = Bun.serve({
 				}
 				if (req.method === "POST" && parts[2] === "thread") {
 					const b = await body(req);
-					const t = await discord.createThread(String(b.channel ?? "chat"), String(b.name ?? "").trim() || "thread");
+					const t = await discord.createThread(String(b.channel ?? "chat"), String(b.name ?? "").trim() || "thread", b.kind ? String(b.kind) : undefined);
 					if (b.text) await out(`th:${t.id}`, String(b.text), undefined, { source: "orchestrator" });
 					return json({ ok: true, thread: `th:${t.id}`, name: t.name });
 				}
@@ -630,7 +630,7 @@ const server = Bun.serve({
 					const home = b.home ? String(b.home) : undefined;
 					if (home && discord.status.enabled) discord.homeChannel(home);
 					const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked);
-					const channel = await discord.laneChannel(lane.name, b.title ? String(b.title) : undefined, home).catch(e => {
+					const channel = await discord.laneChannel(lane.name, b.title ? String(b.title) : undefined, home, b.kind ? String(b.kind) : undefined).catch(e => {
 						log(`lane channel failed: ${e}`);
 						return undefined;
 					});
