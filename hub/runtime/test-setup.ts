@@ -1,5 +1,5 @@
 // bun test preload (bunfig.toml): an isolated DOTZ_DIR with a throwaway config, a binary path that cannot exist (so no
-// test can ever start a real omp), and the fake clock. Runs before any hub module reads config.ts.
+// test can ever start a real omo or omp), and the fake clock. Runs before any hub module reads config.ts.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,7 @@ const data = join(dir, "data");
 mkdirSync(data, { recursive: true });
 process.env.DOTZ_DIR = data;
 process.env.DOTZ_OMP = join(dir, "no-such-omp");
+process.env.DOTZ_OMO = join(dir, "no-such-omo");
 writeFileSync(
 	join(data, "config.json"),
 	JSON.stringify({

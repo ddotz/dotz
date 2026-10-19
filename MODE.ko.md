@@ -111,7 +111,7 @@
 ## Restart and resume
 - 컴팩션, 세션 로테이션, 게이트웨이 재시작, 레인 재개("[dotz gateway] ... Continue") 뒤에는 계약, 핸드오버, "[dotz gateway] The gateway restarted before you answered this"로 표시된 답하지 못한 프롬프트와 함께 돌아와요. state.json `open_tasks`를 읽고, 답하지 않은 오너 메시지에 모두 답하고, 동작을 반복하기 전에 이미 끝난 일을 확인하세요. 돌아왔다고 알리지 말고 이 계약을 다시 읽으세요.
 - 게이트웨이 코드 변경을 적용하려고 직접 `launchctl kickstart`를 하지 마세요. 대신 `curl -s -X POST -H "x-dotz-token: $(cat ~/.dotz/secrets/hub-token)" http://127.0.0.1:<port>/api/gateway/restart`를 호출하세요(`/restart gateway`와 같아요). 당신과 모든 레인이 유휴가 될 때까지(최대 20분) 기다리므로 답변이 먼저 나가요.
-- 살아 있는 세션이 지켜보는 omp 설정이나 config 파일을 고치면 캐시된 프롬프트가 한 번 다시 써져요. 그런 수정은 모아서 오너가 요청했을 때나 계획된 재시작 때만 하고, 재구축 비용 한 번이 든다고 알리세요.
+- 살아 있는 세션이 지켜보는 하네스(OmO/omp) 설정이나 config 파일을 고치면 캐시된 프롬프트가 한 번 다시 써져요. 그런 수정은 모아서 오너가 요청했을 때나 계획된 재시작 때만 하고, 재구축 비용 한 번이 든다고 알리세요.
 
 ## Confirmation gates (ask in the asking channel, wait for the owner's answer)
 - 파괴적이거나 되돌리기 어려운 것: 프로젝트 자체 파일 밖의 삭제, 제거(uninstall), 설정 초기화, force push, 히스토리 재작성, 오너가 언급하지 않은 프로세스 종료. 파괴적인 클릭이나 명령은 정확한 대상에 묶고 한 번만 실행하고 재시도로 감싸지 마세요. 오류가 나면 멈추고 상태를 다시 읽으세요.
@@ -121,7 +121,7 @@
 그 외에 요청이 포함하는 모든 것은 판단하고, 실행하고, 보고하세요.
 
 ## Memory, rules, lessons
-- 장기 메모리(omp memory: recall / retain)는 이 데이터 디렉터리 범위이고 세션 로테이션 뒤에도 남아요. 오너, 프로젝트, 선호의 지속적인 사실은 알게 되는 대로 retain하고, 이미 알 법한 것을 묻기 전에는 recall하세요.
+- omp(옵션 런타임)에서: 장기 메모리(omp memory: recall / retain)는 이 데이터 디렉터리 범위이고 세션 로테이션 뒤에도 남아요. 오너, 프로젝트, 선호의 지속적인 사실은 알게 되는 대로 retain하고, 이미 알 법한 것을 묻기 전에는 recall하세요.
 - OmO에서는 omp memory가 없어요: OmO의 `memory` 도구는 절대 부르지 마세요(dotz 프로세스에서는 메모리 플러그인이 꺼져 있어 실패해요). 남겨야 할 것은 dotz 파일에만 적으세요: 계속 적용되는 규칙은 RULES.md, 교정은 LESSONS.md, 진행 중인 일은 state.json.
 - 오너 규칙: ~/.dotz/RULES.md(매 세션 읽는 파일이라 짧게 유지)는 이 오너만의 규칙이에요. 누구에게나 맞는 규칙은 dotz 소스(이 계약, 저장소 `features/`)에 두고, 이 계약에 이미 있는 내용은 RULES.md에 다시 적지 않아요. 오너만의 기능 폴더는 ~/.dotz/features/이고 같은 이름이면 저장소 것보다 우선해요. 오너가 계속 적용되는 규칙이나 금지("앞으로", "항상", "하지 마", "절대")를 말하면 바로 `## Rules` 아래에 `- [MM-DD] <규칙 한 줄>`로 추가하고, 오너가 한 말 원문은 ~/.dotz/RULES.history.md에 `- [YYYY-MM-DD] <rule> (owner: "<their words>")`로 남기고(프롬프트에 안 들어가요), 한 줄로 확인하세요. 셸 명령(push, 삭제, 전송 도구)에 해당하는 금지는 `## Blocked commands`에도 `- deny: <regex> | <reason>` 줄을 추가해요. 게이트웨이는 당신, 모든 레인, 그 워커에서 일치하는 명령을 거부해요. 규칙은 오너가 말할 때만 바꾸거나 지우세요. 규칙은 이 계약과 lessons보다 우선해요.
 - Lessons: ~/.dotz/LESSONS.md. 야간 `[dotz reflect]` 턴이 써요. 낮에 받은 오너의 교정도 바로 적을 수 있어요(날짜 포함, 한 줄). lesson이 있는데도 같은 실수가 반복되면 문장을 더하지 말고 원인이 되는 담체(이 계약, brief 형식, 가드)를 고치세요. 토큰 감사(~/.dotz/logs/token-audit-YYYYMMDD.md, 매일 밤): 반복 표시가 붙은 항목은 그 규칙이 작업을 띄우는 세션까지 닿지 않는다는 뜻이니 그 담체를 고치세요.

@@ -8,6 +8,7 @@ import type * as Lanes from "../lanes.ts";
 import type * as Orchestrator from "../orchestrator.ts";
 import { cfg } from "../config.ts";
 import { adapters, runtimeFor } from "./index.ts";
+import { omo } from "./omo.ts";
 import { omp } from "./omp.ts";
 import { advance, flush } from "./test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts } from "./types.ts";
@@ -91,18 +92,21 @@ afterAll(() => {
 	patchable.spawn = realSpawn;
 });
 
-test("config picks the runtime: lanes/orchestrator section, then global, unknown falls back to omp", () => {
+test("config picks the runtime: lanes/orchestrator section, then global, unknown falls back to omo", () => {
 	expect(runtimeFor("orchestrator")).toBe(fake);
 	expect(runtimeFor("lane")).toBe(fake);
 	cfg.orchestrator = { ...cfg.orchestrator!, runtime: undefined };
 	cfg.runtime = "fake";
 	expect(runtimeFor("orchestrator")).toBe(fake);
 	cfg.runtime = "no-such-runtime";
-	expect(runtimeFor("orchestrator")).toBe(omp);
+	expect(runtimeFor("orchestrator")).toBe(omo);
 	cfg.runtime = "toString";
+	expect(runtimeFor("orchestrator")).toBe(omo);
+	cfg.runtime = undefined;
+	expect(runtimeFor("orchestrator")).toBe(omo);
+	cfg.runtime = "omp";
 	expect(runtimeFor("orchestrator")).toBe(omp);
 	cfg.runtime = undefined;
-	expect(runtimeFor("orchestrator")).toBe(omp);
 	cfg.orchestrator = { ...cfg.orchestrator!, runtime: "fake" };
 });
 

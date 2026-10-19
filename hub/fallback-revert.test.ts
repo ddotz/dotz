@@ -103,7 +103,7 @@ async function startOrchestrator(): Promise<void> {
 	writeFileSync(session, "");
 	writeFileSync(join(DATA, "orchestrator.json"), JSON.stringify({ sessionFile: session, model: "anthropic/test-orch:low" }));
 	resetFallbackState();
-	cfg.orchestrator = { model: "anthropic/test-orch", thinking: "low" };
+	cfg.orchestrator = { model: "anthropic/test-orch", thinking: "low", runtime: "omp" };
 	o.start();
 	await advance(4000);
 	await proc().push(stateResp(session));

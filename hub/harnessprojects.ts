@@ -93,7 +93,7 @@ function buildProject(lane: Lane, chans: Chan[], ctx: { disk: Record<string, any
 	const P = msg().harness.project, H = msg().harness, { disk, mName } = ctx;
 	const lm = lanesModel(), wm = parseSelector(workerModel());
 	const own = splitThinking(lane.model), ownWorker = lane.workerModel ? splitThinking(lane.workerModel) : undefined;
-	const runtimeGlobal = String(disk.lanes?.runtime ?? disk.runtime ?? "omp");
+	const runtimeGlobal = String(disk.lanes?.runtime ?? disk.runtime ?? "omo");
 	const laneRuntime = "runtime" in lane && typeof lane.runtime === "string" ? lane.runtime : undefined;
 	const fields = {
 		model: field(own.model, lm.model),

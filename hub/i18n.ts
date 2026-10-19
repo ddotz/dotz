@@ -39,8 +39,8 @@ const koLeads: Leads = {
 
 // One sentence reused by every handover and, once after a compaction, by the next prompt: a fresh or compacted session
 // loses what the old context held, so facts worth keeping are saved to memory before the work goes on.
-const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not in memory yet with the omp memory `retain` tool; skip this if there is none.";
-const koRetainNudge = "이어가기 전에, 지금까지의 대화에서 나온 오너·프로젝트·선호 중 오래 남길 사실이 아직 메모리에 없으면 omp memory `retain` 도구로 저장하세요. 없으면 건너뛰세요.";
+const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not in memory yet with the memory tool if this runtime has one (omp: `retain`), else in RULES.md / LESSONS.md / state.json in the dotz data directory; skip this if there is none.";
+const koRetainNudge = "이어가기 전에, 지금까지의 대화에서 나온 오너·프로젝트·선호 중 오래 남길 사실이 아직 메모리에 없으면 메모리 도구가 있으면 그것으로(omp: `retain`), 없으면(OmO) dotz 데이터 폴더의 RULES.md / LESSONS.md / state.json에 저장하세요. 없으면 건너뛰세요.";
 
 const en = {
 	...enLeads,

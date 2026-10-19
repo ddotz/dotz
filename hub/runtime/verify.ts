@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { cfg, DATA_DIR, log, now, orchestratorModel, selectorOf, setRuntime, writeAtomic } from "../config.ts";
 import { broadcast } from "../events.ts";
 import { codex } from "./detect.ts";
-import { adapters } from "./index.ts";
+import { adapters, DEFAULT_RUNTIME } from "./index.ts";
 import type { DetectResult, RuntimeAdapter, RuntimeId } from "./types.ts";
 
 export type CheckResult = "ok" | "adapted" | "disabled" | "unsupported" | "fail";
@@ -23,7 +23,8 @@ export type UseRole = "orchestrator" | "lanes";
 // Adapter surface this module reads beyond RuntimeAdapter: the probes of its checklist items.
 type Probing = RuntimeAdapter & { probes?: Record<string, Probe> };
 
-export const RUNTIME_IDS = ["omp", "claude", "codex", "omo"] as RuntimeId[];
+// Detection and menu order: the default (OmO) first; omp stays as an explicit opt-in.
+export const RUNTIME_IDS = ["omo", "omp", "claude", "codex"] as RuntimeId[];
 export const RUNTIME_LABEL: Record<string, string> = { omp: "omp", claude: "Claude Code", codex: "Codex", omo: "OmO (oh-my-openagent)" };
 // Runtimes dotz can list but has no adapter for yet.
 const DETECT_ONLY: Record<string, { detect(): Promise<DetectResult> }> = { codex };
@@ -143,7 +144,7 @@ export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<
 				announce(`checking ${c.id}`);
 				const probe = Object.hasOwn(probes, c.id) ? probes[c.id] : undefined;
 				let r: { result: CheckResult; note: string };
-				// omp is the reference harness the hub was built on: without probes of its own its items are the baseline.
+				// omp is the harness the hub was first built on: without probes of its own its items are the baseline.
 				if (!probe) r = id === "omp" ? { result: "ok", note: "기준 하네스예요" } : { result: "unsupported", note: "이 런타임에서 확인하는 방법이 없어요" };
 				else {
 					note(`probe ${c.id} start`);
@@ -185,10 +186,13 @@ export function startVerify(id: RuntimeId, o: VerifyOpts = {}): VerifyState {
 
 export class UseRefused extends Error {}
 
-// Why a switch to `id` is refused, or undefined when allowed. omp is the reference runtime and needs no report.
+// Why a switch to `id` is refused, or undefined when allowed. omp (the original baseline) needs no report; it is only
+// ever chosen explicitly. The default runtime (OmO) needs its report like any other, but going back to it when it is
+// installed is never refused, so a failed check cannot strand the gateway on an opt-in runtime.
 export function refusalFor(id: string, detected: Detected | undefined, report: VerifyReport | undefined): string | undefined {
 	if (!RUNTIME_IDS.includes(id as RuntimeId)) return `알 수 없는 실행 하네스예요: ${id}`;
 	if (id === "omp") return undefined;
+	if (id === DEFAULT_RUNTIME && detected?.installed && detected.hasAdapter) return undefined;
 	if (!detected?.installed) return "설치되어 있지 않아요";
 	if (!detected.hasAdapter) return "dotz 어댑터가 없어요";
 	if (states.get(id)?.running) return "호환성 검사가 아직 끝나지 않았어요";
@@ -210,8 +214,8 @@ export async function useRuntime(id: string, roles: UseRole[], detected?: Detect
 	return chosen;
 }
 
-// What config.json currently selects per role (before the hub's omp fallback for a name without an adapter).
-export const currentRuntimes = () => ({ orchestrator: cfg.orchestrator?.runtime ?? cfg.runtime ?? "omp", lanes: cfg.lanes?.runtime ?? cfg.runtime ?? "omp" });
+// What config.json currently selects per role (before the hub's default for a name without an adapter).
+export const currentRuntimes = () => ({ orchestrator: cfg.orchestrator?.runtime ?? cfg.runtime ?? DEFAULT_RUNTIME, lanes: cfg.lanes?.runtime ?? cfg.runtime ?? DEFAULT_RUNTIME });
 
 export async function runtimesView(refresh = false) {
 	const current = currentRuntimes();
