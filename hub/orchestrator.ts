@@ -22,7 +22,7 @@ const ROTATE_BYTES = 50e6;
 const ROTATE_TOKENS = cfg.orchestrator?.rotate_tokens ?? 150_000;
 const MAX_RESTARTS = 3;
 const RESTART_WINDOW_MS = 10 * 60_000;
-type Saved = { sessionFile?: string; model?: string };
+type Saved = { sessionFile?: string; model?: string; runtime?: string };
 
 export const orch = {
 	status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
@@ -261,7 +261,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				break;
 			case "session":
 				orch.sessionFile = ev.ref;
-				save({ sessionFile: orch.sessionFile, model: currentModel });
+				save({ sessionFile: orch.sessionFile, model: currentModel, runtime: adapter?.id });
 				if (orch.status === "starting") {
 					orch.status = "idle";
 					flushCompact(orch.ctx, port);
@@ -424,18 +424,19 @@ function rotate(): void {
 export function start(): void {
 	if (proc) return;
 	stopping = false;
-	const { sessionFile: prior, model: priorModel } = saved();
+	const { sessionFile: prior, model: priorModel, runtime: priorRuntime } = saved();
 	const model = selectorOf(orchestratorModel());
+	const runtime = runtimeFor("orchestrator");
 	// Resuming a session on another model or thinking level re-writes the whole context to cache, so a model change
-	// starts a fresh session with a handover instead (omonyang rule "model change = fresh session").
-	const rotate = prior && existsSync(prior) && (rotating || statSync(prior).size > ROTATE_BYTES || (priorModel !== undefined && priorModel !== model));
+	// starts a fresh session with a handover instead (omonyang rule "model change = fresh session"); so does a change of
+	// runtime (a session written by omp is not resumed by OmO; a state saved before the runtime was recorded is omp's).
+	const rotate = prior && existsSync(prior) && (rotating || statSync(prior).size > ROTATE_BYTES || (priorModel !== undefined && priorModel !== model) || (priorRuntime ?? "omp") !== runtime.id);
 	rotating = false;
 	orch.ctx = newCtx();
 	turnsSinceStart = 0;
 	const resume = prior && existsSync(prior) && !rotate;
 	currentModel = model;
 	clearTimeout(errorHold);
-	const runtime = runtimeFor("orchestrator");
 	adapter = runtime;
 	const entries = chainAfter(model, fallbackChain("orchestrator"));
 	// Conditional entries are switched by the hub on omp only; another runtime gets the models as its own plain fallback list.
