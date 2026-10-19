@@ -46,6 +46,13 @@ let lastTurnEnd = Date.now();
 let keepalives = 0;
 let inKeepalive = false;
 const held: string[] = [];
+// Set when a compaction finished: the next owner message sent to the process carries the retain nudge once (no extra turn).
+let retainNext = false;
+function sendOwner(text: string): void {
+	const nudge = retainNext ? `\n\n${msg().retainNudge}` : "";
+	retainNext = false;
+	proc?.send(text + nudge, "followUp");
+}
 let onAlert: (text: string) => void = () => {};
 export function setAlertHandler(fn: (text: string) => void): void {
 	onAlert = fn;
@@ -111,7 +118,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				else if (orch.status === "idle") keepalives = 0;
 				if (orch.status === "idle" && pauseAlerted) {
 					pauseAlerted = false;
-					for (const text of held.splice(0)) proc?.send(text, "followUp");
+					for (const text of held.splice(0)) sendOwner(text);
 				} else if (orch.status === "idle") {
 					if (++turnsSinceStart > 1 && orch.ctx.tokens > ROTATE_TOKENS) rotate();
 					else if (pendingRestart) {
@@ -141,6 +148,9 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					orch.status = "idle";
 					flushCompact(orch.ctx, port);
 				}
+				break;
+			case "compaction":
+				if (ev.state === "done") retainNext = true;
 				break;
 		}
 	}
@@ -268,9 +278,12 @@ export function start(): void {
 		orch.restarts.push(Date.now());
 		setTimeout(start, 10_000);
 	});
-	if (!resume) proc.send(recall() + (rotate ? handover(runtime, prior!) : ""), "prompt");
+	if (!resume) {
+		retainNext = false; // a fresh session's start prompt (and handover) already carries it
+		proc.send(recall() + (rotate ? handover(runtime, prior!) : ""), "prompt");
+	}
 	proc.watchSubagents();
-	for (const text of held.splice(0)) proc.send(text, "followUp");
+	for (const text of held.splice(0)) sendOwner(text);
 	setTimeout(() => proc?.refreshSession(), 4000);
 	log(`orchestrator ${resume ? `resumed ${prior}` : rotate ? "rotated to a fresh session" : "started"} (${model})`);
 	statusActivity("orchestrator", `orchestrator ${resume ? "resumed its session" : rotate ? "started a fresh session with a handover" : "started"} (${model})`);
@@ -299,7 +312,7 @@ export function deliver(text: string): void {
 		return;
 	}
 	if (!proc) start();
-	proc?.send(text, "followUp");
+	sendOwner(text);
 	armWatchdog();
 }
 

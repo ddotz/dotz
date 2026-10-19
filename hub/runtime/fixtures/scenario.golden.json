@@ -255,7 +255,7 @@
    0,
    {
     "type": "prompt",
-    "message": "before limit",
+    "message": "#1ucccd6lfajgr before limit\n\nBefore continuing, save any durable owner, pro…",
     "streamingBehavior": "followUp"
    }
   ],
@@ -771,7 +771,7 @@
    3,
    {
     "type": "prompt",
-    "message": "#kwk9gp16m295 [dotz gateway] You are tester, the dotz orchestrator hosted …"
+    "message": "#2e69ppvb9mm73 [dotz gateway] You are tester, the dotz orchestrator hosted …"
    }
   ],
   [
@@ -1411,7 +1411,7 @@
    0,
    {
     "type": "prompt",
-    "message": "go on\n(Answer the owner in English.)"
+    "message": "#1g1bbwfke8bw1 go on\nBefore continuing, save any durable owner, project or …"
    }
   ],
   [
@@ -1945,7 +1945,7 @@
    4,
    {
     "type": "prompt",
-    "message": "#bovx4w5dz7w3 [dotz gateway] Your session was rotated to a fresh one (nigh…"
+    "message": "#2c5pkyrx53i6o [dotz gateway] Your session was rotated to a fresh one (nigh…"
    }
   ],
   [

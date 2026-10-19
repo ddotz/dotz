@@ -37,13 +37,19 @@ const koLeads: Leads = {
 	transientLead: "[dotz gateway] 모델 제공자에 일시적인 오류(과부하 또는 네트워크)가 있어서 마지막 턴이 실패했어요",
 };
 
+// One sentence reused by every handover and, once after a compaction, by the next prompt: a fresh or compacted session
+// loses what the old context held, so facts worth keeping are saved to memory before the work goes on.
+const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not in memory yet with the omp memory `retain` tool; skip this if there is none.";
+const koRetainNudge = "이어가기 전에, 지금까지의 대화에서 나온 오너·프로젝트·선호 중 오래 남길 사실이 아직 메모리에 없으면 omp memory `retain` 도구로 저장하세요. 없으면 건너뛰세요.";
+
 const en = {
 	...enLeads,
 
 	recall: (a: RecallArgs) => `[dotz gateway] You are ${NAME}, the dotz orchestrator hosted headless by the gateway.\n\nIdentity (who you are and how you talk):\n${a.identity}\n\nContract:\n\n${a.mode}\n\nOwner rules (${paths.rules}; they override the contract):\n${a.rules}\n\nLessons (${paths.lessons}):\n${a.lessons}\n\nWork channel setups (dotz_channel list for login health):\n${a.setups}\n\nCurrent state.json:\n${a.state}`,
 	identityFallback: (character: string, tone: string) => `Name: ${NAME}\nCharacter: ${character}\nTone: ${tone}\nSpeak in this character and tone in every reply.`,
-	handover: (previous: string, tail: string) => `\n\n[handover] The previous session (${previous}) was rotated to keep the context small. Its most recent exchanges, oldest first; continue any open thread from here:\n${tail}`,
-	laneHandover: (previous: string, tail: string | undefined) => `[handover] The previous session (${previous}) was rotated.${tail ? ` Its most recent exchanges, oldest first:\n${tail}` : ""}`,
+	handover: (previous: string, tail: string) => `\n\n[handover] The previous session (${previous}) was rotated to keep the context small. Its most recent exchanges, oldest first; continue any open thread from here:\n${tail}\n\n${enRetainNudge}`,
+	laneHandover: (previous: string, tail: string | undefined) => `[handover] The previous session (${previous}) was rotated.${tail ? ` Its most recent exchanges, oldest first:\n${tail}\n\n${enRetainNudge}` : ""}`,
+	retainNudge: enRetainNudge,
 	keepalive: "[keepalive] Cache keepalive from the gateway. Reply only: ok. No tools, no sends, no state edits.",
 
 	orchRate: (held: number) => `${enLeads.rateLead}. Continue the request you were handling when it stopped.${held ? ` ${held} message(s) that arrived while you were paused come next, oldest first.` : ""}`,
@@ -296,8 +302,9 @@ const ko: Catalog = {
 
 	recall: a => `[dotz gateway] 당신은 게이트웨이가 헤드리스로 띄운 dotz 오케스트레이터(${NAME})예요.\n\n정체성 (당신이 누구이고 어떻게 말하는지):\n${a.identity}\n\n계약:\n\n${a.mode}\n\n오너 규칙 (${paths.rules}; 계약보다 우선해요):\n${a.rules}\n\n교훈 (${paths.lessons}):\n${a.lessons}\n\n작업 채널 설정 (로그인 상태는 dotz_channel list):\n${a.setups}\n\n현재 state.json:\n${a.state}`,
 	identityFallback: (character, tone) => `이름: ${NAME}\n성격: ${character}\n말투: ${tone}\n모든 답을 이 성격과 말투로 하세요.`,
-	handover: (previous, tail) => `\n\n[handover] 이전 세션(${previous})은 컨텍스트를 작게 유지하려고 교체했어요. 가장 최근 대화를 오래된 순으로 붙여요. 열려 있는 일이 있으면 여기서 이어가세요:\n${tail}`,
-	laneHandover: (previous, tail) => `[handover] 이전 세션(${previous})을 교체했어요.${tail ? ` 가장 최근 대화를 오래된 순으로 붙여요:\n${tail}` : ""}`,
+	handover: (previous, tail) => `\n\n[handover] 이전 세션(${previous})은 컨텍스트를 작게 유지하려고 교체했어요. 가장 최근 대화를 오래된 순으로 붙여요. 열려 있는 일이 있으면 여기서 이어가세요:\n${tail}\n\n${koRetainNudge}`,
+	laneHandover: (previous, tail) => `[handover] 이전 세션(${previous})을 교체했어요.${tail ? ` 가장 최근 대화를 오래된 순으로 붙여요:\n${tail}\n\n${koRetainNudge}` : ""}`,
+	retainNudge: koRetainNudge,
 	keepalive: "[keepalive] 게이트웨이의 캐시 유지 신호예요. ok 한 단어로만 답하세요. 도구, 전송, 상태 수정은 하지 마세요.",
 
 	orchRate: held => `${koLeads.rateLead}. 멈췄을 때 처리하던 요청을 이어서 하세요.${held ? ` 멈춰 있는 동안 도착한 메시지 ${held}건이 오래된 순으로 이어서 와요.` : ""}`,

@@ -51,6 +51,8 @@ export type Lane = Record_ & {
 	progressText?: string;
 	// Set while the handover turn of a rotated session runs: that turn only reloads context, so its reply is not a report.
 	silent?: { lastText: string };
+	// Set when a compaction finished: the next prompt sent to the process carries the retain nudge once (no extra turn).
+	retainNext?: boolean;
 };
 
 export const lanes = new Map<string, Lane>();
@@ -97,7 +99,9 @@ function prompt(lane: Lane, text: string): void {
 	}
 	// Every lane turn ends with the reply-language line too: lane progress notes drifted into English ("Now a throwaway
 	// smoke script against a temp DOTZ_DIR.") because the language sat only in the launch footer.
-	lane.proc?.send(`${text}\n${msg().replyIn(languageName(lang()), false)}`, lane.status === "working" ? "steer" : "prompt");
+	const nudge = lane.retainNext ? `\n${msg().retainNudge}` : "";
+	lane.retainNext = undefined;
+	lane.proc?.send(`${text}${nudge}\n${msg().replyIn(languageName(lang()), false)}`, lane.status === "working" ? "steer" : "prompt");
 	if (lane.status === "working") return;
 	clearTimeout(lane.watchdog);
 	lane.watchdog = setTimeout(() => {
@@ -254,6 +258,7 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				break;
 			case "compaction":
 				if (ev.state === "error") recover(lane, `컨텍스트 압축이 실패했어요 (${ev.error.slice(0, 120)})`, wasWorking);
+				else lane.retainNext = true;
 				break;
 		}
 	}
@@ -548,6 +553,7 @@ export async function rotateLane(name: string, why: string): Promise<void> {
 	old.kill();
 	await old.exited;
 	lane.ctx = newCtx();
+	lane.retainNext = undefined; // the fresh session's handover already carries the nudge
 	spawn(lane, false);
 	const tail = previous && existsSync(previous) ? runtimeFor("lane").recentExchanges(previous) : undefined;
 	const brief = join(dir(name), "brief.md");
