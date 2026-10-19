@@ -422,5 +422,20 @@ short "received, answering when the current step ends" notice from the gateway.
   adapter existed (`hub/runtime/fixtures`).
 - Audit against Dori / dori-kit / 오모냥: `docs/audit-2026-10-16.md`.
 - `extension/index.ts` omp extension: orchestrator tools, terminal thin client, the worker guard and harness commands (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `token-audit.ts`).
-- `web/index.html` web app. `MODE.md` the 땃쥐 contract (`MODE.ko.md` its Korean original). `setup.ts` onboarding.
+- `web/index.html` web app. `MODE.md` the behaviour contract (`MODE.ko.md` the same in Korean). `hub/threads.ts` the Discord thread rules (table in MODE "Threads"). `setup.ts` onboarding.
 - Runtime data: `~/.dotz` (config, secrets, state, inbox/outbox, lanes, logs).
+
+### Generic vs. per-install settings
+
+The repo holds only generic defaults; everything about one owner lives in `~/.dotz`. Later wins:
+
+| what | generic default (repo) | per install (`~/.dotz`) |
+|---|---|---|
+| behaviour contract | `MODE.md` / `MODE.<lang>.md` | `MODE.<lang>.md` or `MODE.md` (replaces the repo file) |
+| identity, language, tone, how the owner is addressed, timezone | none (machine zone, no title) | `config.json` `identity` {name, language, tone, address, timezone, notices}, `identity/IDENTITY.md` |
+| models | `hub/config.ts` DEFAULT | `config.json` orchestrator / lanes |
+| channels | names from the identity's language (`hub/i18n.ts` channelNames) | `discord-channels.json` (ids, work channels, threads) |
+| boundaries, owner facts | empty templates | `memory/boundaries.md` (verbatim don'ts), `memory/owner.md` |
+| standing rules, blocked commands | none | `RULES.md` (overrides MODE), words in `RULES.history.md` |
+| lessons | none | `LESSONS.md` |
+| project specifics | shipped `features/` | `features/` (same name wins), channel setups |

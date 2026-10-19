@@ -4,8 +4,10 @@
 
 // 2026-10-20: +440 / +566 bytes for the owner-memory bullet (where owner facts and verbatim don'ts live, check before asking),
 // +200 / +281 for the watch approval gate (ask once, approve on the owner's yes, never trigger a 2FA step without it).
-export const MODE_MD_MAX_BYTES = 29900; // measured 27177
-export const MODE_KO_MD_MAX_BYTES = 36210; // measured 32913
+// 2026-10-20: MODE rewritten to judgment rules only (gateway-enforced rules, owner facts and duplicates of the lane footer
+// moved out): 27177 -> 19781 / 32913 -> 23349 bytes; caps lowered to match.
+export const MODE_MD_MAX_BYTES = 21760; // measured 19781
+export const MODE_KO_MD_MAX_BYTES = 25690; // measured 23349
 export const RULES_TEMPLATE_MAX_BYTES = 780; // measured 703
 export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 // The owner card and boundaries go into the orchestrator's start prompt (observations.md does not).
