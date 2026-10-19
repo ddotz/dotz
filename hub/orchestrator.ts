@@ -45,6 +45,13 @@ let onAlert: (text: string) => void = () => {};
 export function setAlertHandler(fn: (text: string) => void): void {
 	onAlert = fn;
 }
+
+// Called when a turn ended and the orchestrator is idle again; main.ts sends the web messages queued for it.
+let onIdle: () => void = () => {};
+export function setIdleHandler(fn: () => void): void {
+	onIdle = fn;
+}
+
 // Messages that arrive while a turn runs are queued into the same agent run, so one run can answer several prompts.
 // Each user prompt and each final answer is reported as it happens, letting the gateway route every answer to the
 // channel that asked it instead of posting only the run's last text.
@@ -129,6 +136,7 @@ async function readFrames(p: Subprocess<"pipe", "pipe", "pipe">): Promise<void> 
 						flushCompact(orch.ctx, port);
 					}
 				}
+				if (orch.status === "idle") setTimeout(() => orch.status === "idle" && onIdle(), 200);
 			}
 			else if (f.type === "message_end" && f.message?.role === "user") {
 				const t = textOf(f.message) || (typeof f.message.content === "string" ? f.message.content.trim() : "");

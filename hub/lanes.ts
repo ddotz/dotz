@@ -62,6 +62,12 @@ export function setReportHandler(fn: ReportFn): void {
 export function setProgressHandler(fn: ReportFn): void {
 	onProgress = fn;
 }
+// Called when a lane's turn has ended and it is idle again (after its report had its chance to go out); main.ts sends
+// the web messages queued for that lane.
+let onIdle: (name: string) => void = () => {};
+export function setIdleHandler(fn: (name: string) => void): void {
+	onIdle = fn;
+}
 
 const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
@@ -257,6 +263,7 @@ async function readFrames(lane: Lane, proc: Subprocess<"pipe", "pipe", "pipe">):
 					write(lane, { type: "get_session_stats" });
 					flushCompact(lane.ctx, portOf(lane));
 				}
+				if (lane.status === "idle") setTimeout(() => lane.status === "idle" && onIdle(lane.name), REPORT_DEBOUNCE_MS + 100);
 			} else if (f.type === "response" && f.command === "get_state" && f.data?.sessionFile) {
 				lane.sessionFile = f.data.sessionFile;
 				persist(lane);
