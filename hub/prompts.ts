@@ -11,7 +11,7 @@
 
 export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string };
-export type Reply = { target: string; replyTo?: string };
+export type Reply = { target: string; replyTo?: string; owner?: boolean };
 
 export type PromptDeps = {
 	/** Starts a normal orchestrator turn with this prompt. */
@@ -63,7 +63,7 @@ export function createPrompts(deps: PromptDeps) {
 		prompts.push({ key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered });
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
 		save();
-		if (!steered) return deps.deliver(text, Boolean(reply));
+		if (!steered) return deps.deliver(text, Boolean(reply?.owner));
 		deps.steer(deps.note(reply!.target, reply!.replyTo, text));
 	}
 

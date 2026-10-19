@@ -219,7 +219,6 @@ async function readEvents(p: AgentProcess): Promise<void> {
 		switch (ev.type) {
 			case "turn_start":
 				clearTimeout(errorHold);
-				reverter.turnStarted();
 				orch.status = "working";
 				clearTimeout(watchdog);
 				clearTimeout(transientTimer);
@@ -354,6 +353,7 @@ async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<voi
 		// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
 		// retry that hits the limit again loses nothing.
 		const m = msg();
+		settleRevert(false);
 		proc?.send(owner ? m.orchProvider(held.length) : m.orchRate(held.length), "followUp");
 		armWatchdog();
 	}, retry);
@@ -375,6 +375,7 @@ function retryTransient(err: string): void {
 	transientTimer = setTimeout(() => {
 		transientTimer = undefined;
 		if (orch.status !== "idle") return;
+		settleRevert(false);
 		proc?.send(msg().orchTransient, "followUp");
 		armWatchdog();
 	}, wait);
