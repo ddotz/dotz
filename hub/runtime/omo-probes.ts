@@ -94,15 +94,17 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 			const run = start();
 			await run.turn(`Read this text, then reply with exactly the single word hi.\n\n${FILLER}`, ms);
 			await run.turn(`Read this text too, then reply with exactly the single word again.\n\n${FILLER}`, ms);
+			// OmO may add a todo continuation turn after an answer; compact once the session is quiet.
+			await Bun.sleep(8000);
 			const from = run.events.length;
 			run.proc.compact();
-			let done = await run.waitFor(e => e.type === "compaction", ms, from);
+			let done = await run.waitFor(e => e.type === "compaction", 300_000, from);
 			// OmO rejects a compaction when the session changed while the summary was made (a post-turn hook wrote to it); once more.
 			if (done?.type === "compaction" && done.state === "error" && /retry compaction/i.test(done.error ?? "")) {
 				const again = run.events.length;
 				await Bun.sleep(3000);
 				run.proc.compact();
-				done = await run.waitFor(e => e.type === "compaction", ms, again);
+				done = await run.waitFor(e => e.type === "compaction", 300_000, again);
 			}
 			if (!done || done.type !== "compaction") return fail("no compaction event after compact()");
 			if (done.state !== "done") return fail(`compaction failed: ${done.error}`);
@@ -179,10 +181,13 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 		}),
 
 		workers_spawn: probe(async (_ctx, start, ms) => {
-			const events = await start().turn("Use the task tool to spawn ONE subagent (any cheap category) whose only job is to run the bash command `echo from-worker` and report its output. Wait for its result, then reply with the output line only.", Math.max(ms, 240_000));
+			const run = start();
+			const events = await run.turn("Use the task tool to spawn ONE subagent (any cheap category) whose only job is to run the shell command `echo from-worker` and report its output. When its result is back, reply with the output line only.", Math.max(ms, 240_000));
 			if (!toolCalls(events).some(c => c.tool === "task")) return fail("the task tool was not used");
-			if (!/from-worker/.test(answerOf(events))) return fail(`the worker's result did not come back: "${answerOf(events).slice(0, 80)}"`);
-			return { result: "adapted", note: "OmO task tool: the worker runs in OmO's rpc host and its result comes back into the session (no live worker frames; the rpc host is stopped when the process exits)" };
+			// OmO may end the turn while the worker runs; its result then wakes the session for a new turn without a prompt.
+			const back = /from-worker/.test(answerOf(events)) || (await run.waitFor(e => e.type === "assistant" && e.stop === "stop" && /from-worker/.test(e.text), 240_000, 0));
+			if (!back) return fail(`the worker's result did not come back: "${answerOf(run.events).slice(0, 80)}"`);
+			return { result: "adapted", note: "OmO task tool: the worker runs in OmO's rpc host; its result comes back into the session, in the same turn or by waking it for a new one whose answer goes to the same channel (no live worker frames; the rpc host is stopped when the process exits)" };
 		}),
 
 		workers_isolated_patch: async () => ({ result: "unsupported", note: "omp task isolation + orchestrator-guard patch review has no OmO equivalent wired into dotz; OmO children merge their own changes" }),
