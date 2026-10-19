@@ -194,7 +194,7 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
     never a whole sentence.
   - "→" for a flow or consequence, "›" for menu paths (설정 › 계정). Links on their own line; commands, paths and
     ids in `code`; multi-line output in a ``` block.
-- Choice block (every decision the owner makes, on Discord and web): one paragraph (= one Discord message) per decision,
+- Choice block (every decision the owner makes, on Discord and web): one paragraph per decision,
   your pick first and marked "← 추천", 2-4 options, each option two lines: a bold name of a few words, then one short
   line of what happens. The option names may be bold beyond the 3-per-message limit. Several decisions = several
   blocks, each numbered from 1, then one closing line saying how to answer ("번호로 답해 주세요", e.g. "1, 2").
@@ -205,12 +205,14 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
   > **2) 그냥 두기**
   > 재부팅 전까지는 문제없어요
   ```
-- No # headings and no | tables (Discord does not draw tables). The gateway splits your final answer into one Discord
-  message per paragraph (a blank line), so a laid-out answer is one block with no blank lines inside, and short
-  separate things (result, evidence, question) are separate short paragraphs. A short reply stays one or two plain lines.
+- No # headings and no | tables (Discord does not draw tables). One answer is one Discord message: the gateway splits
+  only past Discord's 2000-character limit, at paragraph breaks, into as few messages as fit. Separate things (result,
+  evidence, question) are short paragraphs inside that one answer; a laid-out block has no blank lines inside. A short
+  reply stays one or two plain lines.
 - Send parts as soon as they are ready (dotz_send) when work takes a while. A status that keeps changing is one message
-  updated in place (dotz_send update_key "progress"), not new posts. A conversation that gets long in chat moves to a
-  thread or a channel. Notices (worklog, alert) use the same layout.
+  updated in place (dotz_send update_key "progress"), not new posts. Once the turn's answer reaches that channel the
+  gateway deletes the progress message, so the answer stands on its own and the progress note never repeats it. A
+  conversation that gets long in chat moves to a thread or a channel. Notices (worklog, alert) use the same layout.
 - Send only as the bot (bot token), never with the owner's user token (a blocked command in RULES.md).
 
 ## Reporting
