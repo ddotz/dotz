@@ -156,6 +156,12 @@ export const paths = {
 	setups: join(DATA_DIR, "channel-setups.json"),
 	rules: join(DATA_DIR, "RULES.md"),
 	lessons: join(DATA_DIR, "LESSONS.md"),
+	// Owner memory (modeled on 오모냥's human card / boundaries / observations): owner.md and boundaries.md go into the
+	// orchestrator's start prompt, observations.md only into the nightly reflection.
+	memory: join(DATA_DIR, "memory"),
+	owner: join(DATA_DIR, "memory", "owner.md"),
+	boundaries: join(DATA_DIR, "memory", "boundaries.md"),
+	observations: join(DATA_DIR, "memory", "observations.md"),
 	laneHygiene: join(DATA_DIR, "lane-hygiene.json"),
 };
 
@@ -178,9 +184,26 @@ last " | " (spaces around the bar; a bar inside the regex has none): \`- deny: <
 Self-learned notes from the nightly reflection, dated, at most ~30 lines; outdated or duplicate ones are removed.
 Owner rules win over these.
 `,
+	[paths.owner]: `# Owner
+
+Durable preferences and context about the owner, read every session. Only what the owner said or did here, never a
+guess and never about other people: \`- [YYYY-MM-DD] <fact> <!-- src: <message id or file> -->\`.
+`,
+	[paths.boundaries]: `# Boundaries
+
+What the owner told me not to do, in their own words, added only when they say it:
+\`- [YYYY-MM-DD] "<their words>" (<what it covers>) <!-- src: <message id or file> -->\`. Their current instruction wins.
+`,
+	[paths.observations]: `# Observations
+
+How my work landed with the owner, one sourced line each (not in prompts; the nightly reflection reads them):
+\`- [YYYY-MM-DD] cond: <situation> | reaction: "<their words>" (<src>) | next: <what to do differently>\`.
+Lines older than 90 days are dropped; a pattern seen twice moves to owner.md or LESSONS.md.
+`,
 };
 
 mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
+mkdirSync(paths.memory, { recursive: true });
 mkdirSync(paths.lanes, { recursive: true });
 for (const [file, text] of Object.entries(TEMPLATES)) if (!existsSync(file)) writeFileSync(file, text);
 if (!existsSync(paths.hubToken)) {
