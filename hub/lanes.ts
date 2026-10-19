@@ -4,7 +4,8 @@ import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
 import { cfg, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, OMP, parseSelector, paths, selectorOf, splitThinking, workerModel, writeAtomic } from "./config.ts";
-import { modeFile, msg, withReplyLine } from "./i18n.ts";
+import { lang, modeFile, msg, withReplyLine } from "./i18n.ts";
+import { languageName } from "./language.ts";
 import { abandonCompact, type CompactPort, type Compaction, compactionError, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 
@@ -93,7 +94,9 @@ function prompt(lane: Lane, text: string): void {
 		persist(lane);
 		return;
 	}
-	write(lane, { type: lane.status === "working" ? "steer" : "prompt", message: text });
+	// Every lane turn ends with the reply-language line too: lane progress notes drifted into English ("Now a throwaway
+	// smoke script against a temp DOTZ_DIR.") because the language sat only in the launch footer.
+	write(lane, { type: lane.status === "working" ? "steer" : "prompt", message: `${text}\n${msg().replyIn(languageName(lang()), false)}` });
 	if (lane.status === "working") return;
 	clearTimeout(lane.watchdog);
 	lane.watchdog = setTimeout(() => {
