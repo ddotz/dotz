@@ -18,7 +18,7 @@ import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queu
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { startReflection } from "./reflect.ts";
-import { featureCatalog, toggleFeature } from "./features.ts";
+import { featureCatalog, syncFeatureWatches, toggleFeature } from "./features.ts";
 import { harnessGraph, patchConfig, readHarnessFile, writeHarnessFile } from "./harness.ts";
 import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
 import { startOmpUpdate } from "./update.ts";
@@ -822,6 +822,7 @@ startWatches((w, reason, output) => {
 	}
 	void out(w.to, `[${w.name}] ${reason}\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
+syncFeatureWatches();
 writeAtomic(paths.pid, String(process.pid));
 log(`hub listening on 127.0.0.1:${server.port} as ${NAME} (discord ${discord.status.enabled ? "on" : "off"})`);
 for (const sig of ["SIGTERM", "SIGINT"] as const)

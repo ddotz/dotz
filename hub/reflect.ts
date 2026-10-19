@@ -84,7 +84,7 @@ function laneUsage(since: number): string[] {
 }
 
 // Local history of the files the bot edits itself (rules, lessons, identity, schedules), so a bad edit can be undone.
-const SNAPSHOT = ["RULES.md", "LESSONS.md", "identity", "schedules.json", "watches.json", "channel-setups.json", "config.json", "channels.json"];
+const SNAPSHOT = ["RULES.md", "LESSONS.md", "identity", "features", "schedules.json", "watches.json", "channel-setups.json", "config.json", "channels.json"];
 export async function snapshot(): Promise<string | undefined> {
 	const git = (...a: string[]) => Bun.$`git -C ${DATA_DIR} ${a}`.nothrow().quiet();
 	if (!existsSync(join(DATA_DIR, ".git"))) {

@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
+import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 const PKG = join(import.meta.dir, "..");
@@ -50,9 +51,10 @@ function enforceRules(pi: any): void {
 		const system = SYSTEM_DENY.find(([re]) => re.test(command));
 		if (system) return { block: true, reason: `Blocked by dotz: ${system[1]}.` };
 		const file = join(DATA, "RULES.md");
-		if (!existsSync(file)) return;
-		const reason = blockedBy(command, readFileSync(file, "utf8"));
+		const reason = existsSync(file) ? blockedBy(command, readFileSync(file, "utf8")) : undefined;
 		if (reason) return { block: true, reason: `Blocked by the owner's rule (${file}): ${reason}. Do not work around it; report it if the task needs it.` };
+		const feature = blockedByFeatures(DATA, command);
+		if (feature) return { block: true, reason: `Blocked by the owner's feature (${join(DATA, "features", feature.id, "feature.md")}): ${feature.reason}. Do not work around it; report it if the task needs it.` };
 	});
 }
 
@@ -174,7 +176,8 @@ function recall(): string {
 	const base = baseLanguage(code);
 	const chain = [...(base === "en" ? [] : [join(DATA, `MODE.${base}.md`), join(PKG, `MODE.${base}.md`)]), join(DATA, "MODE.md"), join(PKG, "MODE.md")];
 	const mode = file(chain.find(existsSync) ?? join(PKG, "MODE.md"), 30000);
-	const parts = { identity: file(join(DATA, "identity", "IDENTITY.md"), 3000), rules: file(join(DATA, "RULES.md"), 12000), lessons: file(join(DATA, "LESSONS.md"), 3000), setups: file(join(DATA, "channel-setups.json"), 3000), state: file(join(DATA, "state.json"), 4000) || "{}" };
+	const features = featurePrompt(DATA, "orchestrator");
+	const parts = { identity: file(join(DATA, "identity", "IDENTITY.md"), 3000), rules: file(join(DATA, "RULES.md"), 12000) + (features ? `\n\n${features}` : ""), lessons: file(join(DATA, "LESSONS.md"), 3000), setups: file(join(DATA, "channel-setups.json"), 3000), state: file(join(DATA, "state.json"), 4000) || "{}" };
 	if (base === "ko") return `[dotz] 컨텍스트 압축 뒤 계약을 다시 읽어요:\n\n정체성:\n${parts.identity}\n\n${mode}\n\n오너 규칙:\n${parts.rules}\n\n교훈:\n${parts.lessons}\n\n작업 채널 설정 (자세한 건 dotz_channel list):\n${parts.setups || "(없음)"}\n\n현재 state.json:\n${parts.state}`;
 	const reply = base === "en" ? "" : `\n\nReply to the owner in ${languageName(code)} (${code}).`;
 	return `[dotz] Contract re-read after compaction:\n\nIdentity:\n${parts.identity}\n\n${mode}\n\nOwner rules:\n${parts.rules}\n\nLessons:\n${parts.lessons}\n\nWork channel setups (dotz_channel list for details):\n${parts.setups || "(none)"}\n\nCurrent state.json:\n${parts.state}${reply}`;
