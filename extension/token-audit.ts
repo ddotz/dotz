@@ -275,6 +275,7 @@ function analyze(src: Src, since: number, isExpensive: (model: string) => boolea
 	let prev: { ts: number; ctx: number; ttlMin: number } | undefined;
 	let prevStop = "stop";
 	let errStreak = 0, bigStreak = 0, toolHash = "", toolStreak = 0, readTok = 0, readCost = 0;
+	let omoLong = false;
 	const text = readFileSync(src.file, "utf8");
 	for (const line of text.split("\n")) {
 		if (line.length < 20) continue;
@@ -413,8 +414,10 @@ function analyze(src: Src, since: number, isExpensive: (model: string) => boolea
 			}
 		}
 		s.intended ??= model;
-		// omp reports the cache TTL in cttl; OmO in cacheWrite1h, and a write without it is a 5-minute write
-		const ttlMin = u.cttl?.ephemeral1h || (u.cacheWrite1h ?? 0) > 0 ? 60 : u.cttl?.ephemeral5m || (src.runtime === "omo" && cw > 0) ? 5 : (prev?.ttlMin ?? 5);
+		// omp reports the cache TTL in cttl. OmO's record has no TTL (senpi's claude-sdk-oauth usage drops cacheWrite1h), so
+		// its TTL is what the session showed: a cache read after a gap over 5 minutes means the 1h cache (PI_CACHE_RETENTION=long).
+		if (src.runtime === "omo" && prev && ts - prev.ts > 5 * 60e3 && cr >= prev.ctx * 0.8) omoLong = true;
+		const ttlMin = u.cttl?.ephemeral1h ? 60 : u.cttl?.ephemeral5m ? 5 : src.runtime === "omo" ? (omoLong ? 60 : 5) : (prev?.ttlMin ?? 5);
 		prev = { ts, ctx, ttlMin };
 		prevStop = m.stopReason ?? "stop";
 		events = [];
