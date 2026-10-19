@@ -269,6 +269,9 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .tsw::-webkit-scrollbar { display: none; }
 .tchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; max-width: 220px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; }
 .tchip:hover { background: var(--hover); color: var(--fg); }
+.dragging { opacity: .4; }
+.dropon { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lhead[draggable="true"] { cursor: grab; }
 .tchip.on { background: var(--active); border-color: var(--line-2); color: var(--fg); }
 /* exited-lane fold: same chevron + "종료된 레인 N개" as the 레인 board's row */
 .tchip.fold .fc { width: 14px; height: 14px; color: var(--fg-3); transition: transform .15s; }
@@ -1646,10 +1649,39 @@ function renderWorking() {
 
 /* ---------- target switcher + 대화/터미널 toggle (rendered into the header of both views) ---------- */
 let showDead = false;
+// Manual order from dragging (chips and 레인 board panes share it); targets never dragged keep spawn order after the ordered ones.
+const ORDER_KEY = "dotz-order";
+let ORDER = (() => { try { const v = JSON.parse(localStorage.getItem(ORDER_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
+const byOrder = list => list.map((t, i) => [t, ORDER.indexOf(t), i]).sort((a, b) => (a[1] < 0 ? 1e9 + a[2] : a[1]) - (b[1] < 0 ? 1e9 + b[2] : b[1])).map(x => x[0]);
+// Move `from` to just before `to` (or after it when `after`), given the list as currently shown.
+function moveInOrder(shown, from, to, after) {
+  if (from === to) return;
+  const next = shown.filter(t => t !== from);
+  next.splice(next.indexOf(to) + (after ? 1 : 0), 0, from);
+  ORDER = [...next, ...ORDER.filter(t => !next.includes(t))];
+  try { localStorage.setItem(ORDER_KEY, JSON.stringify(ORDER)); } catch {}
+  document.querySelectorAll(".thead").forEach(b => { b.dataset.sig = ""; });
+  renderBars();
+  if (current === "lanes") { laneSig = ""; renderLanes(); }
+}
+// HTML5 drag: `handle` starts the drag (defaults to the node), `node` takes drops for target `t` within `shown()`;
+// it lands before or after `t` by which half the pointer is in.
+function dragItem(node, t, shown, horizontal, handle = node) {
+  handle.draggable = true;
+  handle.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/x-dotz-target", t); ev.dataTransfer.effectAllowed = "move"; node.classList.add("dragging"); });
+  handle.addEventListener("dragend", () => node.classList.remove("dragging"));
+  node.addEventListener("dragover", ev => { if (ev.dataTransfer.types.includes("text/x-dotz-target")) { ev.preventDefault(); node.classList.add("dropon"); } });
+  node.addEventListener("dragleave", () => node.classList.remove("dropon"));
+  node.addEventListener("drop", ev => {
+    ev.preventDefault(); node.classList.remove("dropon");
+    const from = ev.dataTransfer.getData("text/x-dotz-target"), r = node.getBoundingClientRect();
+    if (from) moveInOrder(shown(), from, t, horizontal ? ev.clientX > r.left + r.width / 2 : ev.clientY > r.top + r.height / 2);
+  });
+}
 function renderBars() {
   paintAttn();
   const lanes = S ? S.lanes : [];
-  const alive = [MAIN, ...lanes.filter(laneAlive).map(l => `lane:${l.name}`)], dead = lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`);
+  const alive = byOrder([MAIN, ...lanes.filter(laneAlive).map(l => `lane:${l.name}`)]), dead = byOrder(lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`));
   if (isLaneT(target) && !alive.includes(target) && !dead.includes(target)) alive.push(target);
   const view = t => {
     const i = targetInfo(t);
@@ -1658,12 +1690,14 @@ function renderBars() {
   };
   const A = alive.map(view), D = dead.map(view);
   const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
-  const sig = JSON.stringify([A, D, cur, others, showDead, target]);
-  const chip = v => el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "aria-pressed": v.t === target ? "true" : "false", title: v.attn ? `확인 필요 · ${v.status}` : v.status, onclick: () => setTarget(v.t) },
+  const sig = JSON.stringify([A, D, cur, others, showDead, target, ORDER]);
+  const chip = v => { const b = el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "aria-pressed": v.t === target ? "true" : "false", title: v.attn ? `확인 필요 · ${v.status}` : v.status, onclick: () => setTarget(v.t) },
     el("span", { class: `dot ${v.tone}` }), el("span", { class: "tx", text: v.name }),
     v.attn ? el("span", { class: "sb att", text: "확인 필요" }) : null,
     v.subs ? el("span", { class: "sb", title: "서브에이전트", text: `서브 ${v.subs}` }) : null,
     v.unread ? el("span", { class: "nb", text: v.unread > 99 ? "99+" : String(v.unread) }) : null);
+    dragItem(b, v.t, () => (D.some(d => d.t === v.t) ? D : A).map(x => x.t), true);
+    return b; };
   for (const bar of document.querySelectorAll(".thead")) {
     const mode = bar.dataset.mode, msig = `${sig}|${mode}`;
     if (bar.dataset.sig === msig || (openMenu && bar.contains(openMenu.anchor))) continue;
@@ -1903,10 +1937,11 @@ function lanePane(name) {
   });
   p.input = input({ type: "text", enterkeyhint: "send", value: laneDraft[name] || "", oninput: ev => { laneDraft[name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); p.send.click(); } } });
   p.send = el("button", { class: "ib pri", type: "button" }, icon("send"));
-  p.node = el("section", { class: "lpane", "aria-label": name },
-    el("div", { class: "lhead" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.att, p.tag, p.subs), p.model, p.acts),
+  const head = el("div", { class: "lhead", title: "끌어서 순서 바꾸기" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.att, p.tag, p.subs), p.model, p.acts);
+  p.node = el("section", { class: "lpane", "aria-label": name, "data-t": `lane:${name}` }, head,
     p.tail,
     el("div", { class: "lcomp" }, p.input, p.send));
+  dragItem(p.node, `lane:${name}`, () => [...p.node.parentElement.children].map(n => n.dataset.t), true, head);
   return p;
 }
 function laneUpdate(p, l, m) {
@@ -1962,7 +1997,8 @@ function renderLanes() {
   const B = laneBoard;
   for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) { LP[n].node.remove(); delete LP[n]; delete laneDraft[n]; }
   for (const l of lanes) laneUpdate(LP[l.name] || (LP[l.name] = lanePane(l.name)), l, modelOf(l.name));
-  const alive = lanes.filter(laneAlive), dead = lanes.filter(l => !laneAlive(l));
+  const ordered = byOrder(lanes.map(l => `lane:${l.name}`)).map(t => lanes.find(l => `lane:${l.name}` === t));
+  const alive = ordered.filter(laneAlive), dead = ordered.filter(l => !laneAlive(l));
   B.empty.hidden = lanes.length > 0;
   B.none.hidden = !lanes.length || alive.length > 0;
   B.grid.hidden = !alive.length;
