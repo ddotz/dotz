@@ -74,7 +74,7 @@ export function needsRewrite(text: string, source?: string): boolean {
 }
 
 // The Tone line of IDENTITY.md ("- Tone: ..."), else identity.tone from config.json.
-function tone(): string {
+export function tone(): string {
 	try {
 		const line = readFileSync(IDENTITY_FILE, "utf8").split("\n").find(l => /^\s*[-*]?\s*Tone\s*[:：]/i.test(l));
 		if (line) return line.replace(/^\s*[-*]?\s*Tone\s*[:：]\s*/i, "").trim().slice(0, 300);

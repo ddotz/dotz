@@ -3,29 +3,34 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createSummarizer, inLanguage, parseBatch, sha, type ModelCall } from "./summaries.ts";
+import { createSummarizer, parseBatch, sha, type ModelCall } from "./summaries.ts";
 
 let dir = "";
+const VOICE = "편한 해요체";
+let voice = VOICE;
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "dotz-sum-"));
+	voice = VOICE;
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 const LONG_EN = (n: number) => `Always verify the result of every change before telling the owner that it is finished, number ${n}.`;
 
-// A stub model: answers every input string with "요약 <first 12 chars>\n둘째 줄"; records each call's inputs.
+// A stub model: answers every input string with "요약 <first 12 chars>\n둘째 줄"; records each call's system prompt and inputs.
 function stub(reply?: (inputs: string[]) => string) {
 	const calls: string[][] = [];
-	const call: ModelCall = async (_system: string, text: string) => {
+	const systems: string[] = [];
+	const call: ModelCall = async (system: string, text: string) => {
 		const inputs = JSON.parse(text) as string[];
 		calls.push(inputs);
+		systems.push(system);
 		return { text: reply ? reply(inputs) : JSON.stringify(inputs.map(t => `요약 ${t.slice(0, 12)}\n둘째 줄`)) };
 	};
-	return { calls, call };
+	return { calls, systems, call };
 }
 
 function make(call: ModelCall, opts: { now?: () => number; batchSize?: number } = {}) {
-	return createSummarizer({ call, file: join(dir, "cache", "card-summaries.json"), now: opts.now ?? (() => 1_000_000), batchSize: opts.batchSize ?? 40 });
+	return createSummarizer({ call, file: join(dir, "cache", "card-summaries.json"), now: opts.now ?? (() => 1_000_000), batchSize: opts.batchSize ?? 40, voice: () => voice });
 }
 
 test("miss starts a background fill, the next call hits the cache without another model call", async () => {
@@ -53,7 +58,7 @@ test("cache is keyed by language and text", async () => {
 	expect(s.summarize([{ key: "a", text: LONG_EN(1) }], "ja")).toEqual({});
 	await s.idle();
 	expect(m.calls).toHaveLength(2);
-	expect(sha("ko", "x")).not.toBe(sha("ja", "x"));
+	expect(sha("ko", voice, "x")).not.toBe(sha("ja", voice, "x"));
 });
 
 test("missing texts go out in batches of batchSize", async () => {
@@ -98,12 +103,12 @@ test("a throwing call and a wrong-sized array both count as failures", async () 
 	expect(n).toBe(1);
 	expect(parseBatch('["x"]', 2)).toBeUndefined();
 	expect(parseBatch("```json\n[\"a\\nb\"]\n```", 1)).toEqual(["a\nb"]);
-	expect(parseBatch('["a\\nb\\nc"]', 1)).toEqual([undefined]);
+	expect(parseBatch('["a\\nb\\nc"]', 1)).toEqual(["a\nb c"]);
 	expect(parseBatch("[1]", 1)).toEqual([undefined]);
 });
 
 test("one unusable element keeps its original while the others are cached", async () => {
-	const m = stub(inputs => JSON.stringify(inputs.map((_, i) => (i === 1 ? "a\nb\nc" : "좋은 요약"))));
+	const m = stub(inputs => JSON.stringify(inputs.map((_, i) => (i === 1 ? 42 : "좋은 요약"))));
 	const s = make(m.call);
 	const items = [0, 1, 2].map(i => ({ key: `k${i}`, text: LONG_EN(i) }));
 	s.summarize(items, "ko");
@@ -111,30 +116,26 @@ test("one unusable element keeps its original while the others are cached", asyn
 	expect(s.summarize(items, "ko")).toEqual({ k0: "좋은 요약", k2: "좋은 요약" });
 });
 
-test("a short text already in the language is used as is with no call", async () => {
+test("short texts already in the language also go through the model, in the main voice", async () => {
 	const m = stub();
 	const s = make(m.call);
-	const out = s.summarize([{ key: "a", text: "실행 전에 막아요" }, { key: "b", text: "Run it" }], "ko");
+	expect(s.summarize([{ key: "a", text: "실행 전에 막아요" }], "ko")).toEqual({});
 	await s.idle();
-	expect(out.a).toBe("실행 전에 막아요");
-	expect(m.calls).toHaveLength(0);
-	// English target: English short text as is, Korean text is not in the language
-	const en = s.summarize([{ key: "c", text: "Blocks the command" }, { key: "d", text: "실행 전에 막아요" }], "en");
-	expect(en.c).toBe("Blocks the command");
-	expect(en.d).toBeUndefined();
-	await s.idle();
-	expect(m.calls).toHaveLength(1);
-	expect(m.calls[0]).toEqual(["실행 전에 막아요"]);
+	expect(m.calls).toEqual([["실행 전에 막아요"]]);
+	expect(m.systems[0]).toContain(`Voice: ${voice}.`);
 });
 
-test("a long text in the language still gets a summary; foreign texts are never used as is", async () => {
+test("a new voice is a cache miss, so every card is rewritten in it", async () => {
 	const m = stub();
 	const s = make(m.call);
-	const longKo = "이 규칙은 모든 변경을 끝냈다고 말하기 전에 결과를 직접 확인하고 그 증거를 함께 보고하라는 뜻이라서 꽤 길어요. 그리고 증거가 없으면 끝난 것으로 치지 않는다는 점도 함께 적혀 있어요.";
-	const out = s.summarize([{ key: "a", text: longKo }, { key: "b", text: "Short title\n짧은 설명", foreign: true }], "ko");
-	expect(out).toEqual({});
+	s.summarize([{ key: "a", text: LONG_EN(1) }], "ko");
 	await s.idle();
-	expect(m.calls[0]).toHaveLength(2);
+	voice = "terse and formal";
+	expect(s.summarize([{ key: "a", text: LONG_EN(1) }], "ko")).toEqual({});
+	await s.idle();
+	expect(m.calls).toHaveLength(2);
+	expect(m.systems[1]).toContain("Voice: terse and formal.");
+	expect(sha("ko", "a", "x")).not.toBe(sha("ko", "b", "x"));
 });
 
 test("cache rewrite drops entries the latest call did not ask for", async () => {
@@ -147,12 +148,5 @@ test("cache rewrite drops entries the latest call did not ask for", async () => 
 	s.summarize([{ key: "a", text: LONG_EN(1) }, { key: "c", text: LONG_EN(3) }], "ko");
 	await s.idle();
 	const entries = JSON.parse(readFileSync(file, "utf8")).entries as Record<string, string>;
-	expect(Object.keys(entries).sort()).toEqual([sha("ko", LONG_EN(1)), sha("ko", LONG_EN(3))].sort());
-});
-
-test("names: three Latin words in a CJK language are foreign even next to a native word", () => {
-	expect(inLanguage('A vague or negative owner reply ("할…', "ko")).toBe(true);
-	expect(inLanguage('A vague or negative owner reply ("할…', "ko", true)).toBe(false);
-	expect(inLanguage("Aside 브라우저", "ko", true)).toBe(true);
-	expect(inLanguage("성격", "en")).toBe(false);
+	expect(Object.keys(entries).sort()).toEqual([sha("ko", voice, LONG_EN(1)), sha("ko", voice, LONG_EN(3))].sort());
 });
