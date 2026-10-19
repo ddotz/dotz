@@ -78,12 +78,23 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .ni:hover { background: var(--hover); color: var(--fg); }
 .ni.on { background: var(--active); color: var(--fg); }
 .ni .nl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ni .nnb { margin-left: auto; background: var(--warn); }
 .sfoot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 8px; color: var(--fg-2); font-size: 12px; }
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .appbar { flex: none; display: flex; align-items: center; gap: 4px; height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0 20px; border-bottom: 1px solid var(--line); background: var(--bg); }
 .appbar.back { padding-left: 12px; }
 .appbar h1 { flex: 1; min-width: 0; margin: 0; font: 600 13px/20px var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conn { flex: none; height: 20px; padding: 0 8px; border-radius: 10px; background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); font-size: 12px; line-height: 20px; font-weight: 500; white-space: nowrap; }
+.ustrip { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; }
+.ustrip:hover { background: var(--hover); color: var(--fg); }
+.ustrip .ubar { width: 48px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.ustrip .ubar i { display: block; height: 100%; border-radius: 2px; background: var(--fg-2); }
+.ustrip.warn { color: var(--warn); } .ustrip.warn .ubar i { background: var(--warn); }
+.ustrip.err { color: var(--err); } .ustrip.err .ubar i { background: var(--err); }
+.ustrip .uring, .ustrip .upct { display: none; }
+.ustrip .uring { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--fg-2) calc(var(--p) * 1%), var(--track) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
+.ustrip.warn .uring { background: conic-gradient(var(--warn) calc(var(--p) * 1%), var(--track) 0); }
+.ustrip.err .uring { background: conic-gradient(var(--err) calc(var(--p) * 1%), var(--track) 0); }
 .views { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .view { max-width: 920px; margin: 0 auto; padding: 24px; }
 .view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
@@ -96,6 +107,10 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
   .rail { flex: 1; min-width: 0; flex-direction: row; gap: 0; }
   .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 2px; height: 52px; padding: 0 2px; border-radius: 0; background: transparent !important; font-size: 10.5px; line-height: 14px; text-align: center; }
   .ni .ic { width: 18px; height: 18px; }
+  .ni .nnb { position: absolute; top: 3px; left: calc(50% + 4px); margin: 0; }
+  .ustrip { gap: 4px; padding: 0 4px; font-size: 11px; }
+  .ustrip .ulab, .ustrip .ubar { display: none; }
+  .ustrip .uring, .ustrip .upct { display: inline-block; }
   .ni.on::before { content: ""; position: absolute; top: -1px; left: 25%; right: 25%; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent); }
   .appbar { padding-left: 16px; }
   .only-phone { display: inline-grid !important; }
@@ -140,6 +155,7 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
 .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
 .dot.pri { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.dot.att { background: var(--warn); }
 @keyframes pulse { 50% { opacity: .35; } }
 .tag { display: inline-flex; align-items: center; flex: none; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--layer); color: var(--fg-2); font-size: 11px; line-height: 16px; font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .tag.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
@@ -261,6 +277,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .tchip .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb { flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 10.5px/16px var(--font); text-align: center; }
 .sb { flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
+.sb.att { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
 .tdrop { display: none; flex: 1 1 120px; width: auto; min-width: 0; }
 .vseg { flex: none; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--layer); }
 .vseg button { position: relative; height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
@@ -478,6 +495,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
       <h1 id="title">dotz</h1>
       <span class="conn" id="conn" hidden>연결 끊김</span>
       <button class="ib only-phone" id="pal" type="button" aria-label="명령"></button>
+      <button class="ustrip" id="ustrip" type="button" hidden></button>
       <button class="ib" id="theme" type="button"></button>
     </header>
     <div class="views" id="views">
@@ -790,7 +808,7 @@ const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
 /* ---------- chrome: nav, theme, back ---------- */
-for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id === "chat" ? lastChatView() : id) }, icon(id), el("span", { class: "nl", text: label })));
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id === "chat" ? lastChatView() : id) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
 // Light<->dark toggle: the icon shows the mode a click switches to.
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
@@ -806,7 +824,7 @@ paintTheme();
 $("#pal").append(icon("search"));
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
-const setBrand = () => { $("#brand-name").textContent = botName; document.title = botName; };
+const setBrand = () => { $("#brand-name").textContent = botName; paintAttn(); };
 function renderSideStatus() {
   const o = (S && S.orchestrator) || {};
   $("#side-dot").className = `dot ${S ? statusTone(o.status) : ""}`;
@@ -1065,7 +1083,7 @@ let HQ = null, homeTimer;
 async function loadHomeData() {
   clearTimeout(homeTimer);
   await Promise.all([
-    api("/api/quota").then(q => { HQ = q; }, () => { HQ = { error: true }; }),
+    api("/api/quota").then(q => { HQ = q; noteQuota(q); }, () => { HQ = { error: true }; }),
     loadProviderData().catch(() => {}),
   ]);
   if (current === "home") { renderHome(); homeTimer = setTimeout(loadHomeData, 60000); }
@@ -1086,8 +1104,9 @@ function renderHome() {
   const om = M && M.orchestrator;
   const stText = o.status === "rate-limited" && o.rateLimitedUntil ? `${statusKo(o.status)} · ${kstTime(o.rateLimitedUntil)}까지` : statusKo(o.status);
   const stop = o.status === "working" ? el("button", { class: "ib err", type: "button", "aria-label": "중단", title: "중단", onclick: ev => { ev.stopPropagation(); abortOrch(ev.currentTarget); } }, icon("stop")) : null;
+  const mainAttn = attnKind(MAIN);
   const assistant = tapCard("models",
-    el("div", { class: "ch" }, el("span", { class: `dot ${statusTone(o.status)}` }), el("h3", { text: botName }), el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), stop,
+    el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), stop,
       el("button", { class: "ib", type: "button", "aria-label": "재시작", title: "재시작", onclick: ev => { ev.stopPropagation(); restartOrch(ev.currentTarget); } }, icon("refresh")), icon("chev", "chev")),
     el("div", { class: "big", text: om ? modelName(om.model) : "…" }),
     el("div", { class: "sup sub", text: om && om.thinking ? `thinking ${om.thinking}` : "\u00a0" }),
@@ -1107,10 +1126,14 @@ function renderHome() {
 
   // lanes
   const alive = lanes.filter(laneAlive);
-  const lanesCard = tapCard("lanes", cardHead("레인", el("span", { class: "tag", text: `${alive.length}/${lanes.length}` })));
+  const nAttn = lanes.filter(l => attnKind(`lane:${l.name}`)).length;
+  const lanesCard = tapCard("lanes", cardHead("레인", nAttn ? el("span", { class: "tag warn", text: `확인 필요 ${nAttn}` }) : null, el("span", { class: "tag", text: `${alive.length}/${lanes.length}` })));
   if (!lanes.length) lanesCard.append(el("div", { class: "sup", text: "레인 없음" }));
-  const ordered = [...lanes.filter(laneAlive), ...lanes.filter(l => !laneAlive(l))];
-  for (const l of ordered.slice(0, 3)) lanesCard.append(el("div", { class: "row" }, el("span", { class: `dot ${statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), el("span", { class: "sup", text: statusKo(l.status) })));
+  const ordered = sortLanes(lanes);
+  for (const l of ordered.slice(0, 3)) {
+    const k = attnKind(`lane:${l.name}`);
+    lanesCard.append(el("div", { class: "row" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : el("span", { class: "sup", text: statusKo(l.status) })));
+  }
   if (lanes.length > 3) lanesCard.append(el("div", { class: "more", text: `외 ${lanes.length - 3}개` }));
   const lsl = laneSubLine();
   if (lsl) lanesCard.append(lsl);
@@ -1158,6 +1181,100 @@ function targetInfo(t) {
   return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable } : { status: "", alive: true, known: false };
 }
 const isWorking = t => { const i = targetInfo(t); return i.alive && (i.status === "working" || i.status === "starting"); };
+
+/* ---------- needs-you: a target whose last finished turn this browser has not looked at yet ---------- */
+// SEEN: when this browser last had the target open in 채팅 (대화 or 터미널) while the page was visible. DONE: the newest finished turn
+// of the target (activity turn_end, a lane's working->idle change, or the last turn_end of loaded history). Both are ISO strings kept in localStorage.
+const SEEN_KEY = "dotz-seen", DONE_KEY = "dotz-done";
+const readMap = k => { try { const o = JSON.parse(localStorage.getItem(k) || "null"); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } };
+const SEEN = readMap(SEEN_KEY), DONE = readMap(DONE_KEY), PREV = {};
+const saveMap = (k, m) => { try { localStorage.setItem(k, JSON.stringify(m)); } catch {} };
+const msOf = s => Date.parse(s) || 0;
+const watching = t => t === target && (current === "chat" || current === "activity") && document.visibilityState === "visible";
+// Looking at the open target counts it as seen up to now (or up to its newest finished turn when the clocks differ).
+function markSeen() {
+  if (!watching(target)) return;
+  SEEN[target] = new Date(Math.max(Date.now(), msOf(DONE[target]))).toISOString();
+  saveMap(SEEN_KEY, SEEN);
+}
+function noteDone(t, at, live) {
+  const m = msOf(at);
+  if (!m || m <= msOf(DONE[t])) return;
+  if (SEEN[t] === undefined) SEEN[t] = new Date(live ? m - 1 : Date.now()).toISOString();   // first sight of a target: only turns after this one count
+  DONE[t] = new Date(m).toISOString();
+  saveMap(SEEN_KEY, SEEN); saveMap(DONE_KEY, DONE);
+  markSeen();
+  attnChanged();
+}
+// From /api/state: first sight of a target starts as seen; a working->idle change is a finished turn; gone lanes are forgotten.
+function noteStatus() {
+  if (!S) return;
+  const now = new Date().toISOString(), all = [[MAIN, (S.orchestrator || {}).status], ...S.lanes.map(l => [`lane:${l.name}`, l.status])], names = new Set(all.map(x => x[0]));
+  let dirty = false;
+  for (const k of [...Object.keys(SEEN), ...Object.keys(DONE)]) if (!names.has(k)) { delete SEEN[k]; delete DONE[k]; delete PREV[k]; dirty = true; }
+  for (const [t, st] of all) {
+    if (SEEN[t] === undefined) { SEEN[t] = now; dirty = true; }
+    if (PREV[t] === "working" && st === "idle") noteDone(t, now, true);
+    PREV[t] = st;
+  }
+  if (dirty) { saveMap(SEEN_KEY, SEEN); saveMap(DONE_KEY, DONE); }
+}
+// "limit": rate-limited; "done": finished while this browser was not looking; "": nothing. Looking at the target clears both.
+function attnKind(t) {
+  if (watching(t)) return "";
+  const i = targetInfo(t);
+  if (i.alive && i.status === "rate-limited") return "limit";
+  return msOf(DONE[t]) > msOf(SEEN[t]) ? "done" : "";
+}
+// Order everywhere: 확인 필요, 작업 중, 대기, 종료.
+const attnRank = t => attnKind(t) ? 0 : !targetInfo(t).alive ? 3 : isWorking(t) ? 1 : 2;
+const byAttn = (a, b) => attnRank(a) - attnRank(b);
+const sortLanes = lanes => lanes.map(l => [l, attnRank(`lane:${l.name}`)]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
+const attnCount = () => S ? [MAIN, ...S.lanes.map(l => `lane:${l.name}`)].filter(attnKind).length : 0;
+// Targets needing attention, not messages: the 채팅 nav badge and the page title. Unread message counts stay on the chips.
+function paintAttn() {
+  const n = attnCount(), b = $("#nav-att");
+  b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n); b.title = `확인 필요 ${n}개`;
+  b.parentElement.setAttribute("aria-label", n ? `채팅, 확인 필요 ${n}개` : "채팅");
+  document.title = n ? `(${n}) ${botName}` : botName;
+}
+function attnChanged() {
+  renderBars();
+  if (current === "home") renderHome();
+  if (current === "lanes") renderLanes();
+}
+
+/* ---------- usage strip in the app header: the tightest Anthropic-like limit ---------- */
+let SQ = null, stripAt = 0;
+const limitWord = l => {
+  const m = `${l.id} ${l.window} ${l.label}`.match(/(\d+)\s*(h|d|w)/i);
+  if (!m) return l.label || l.id;
+  const n = Number(m[1]), u = m[2].toLowerCase();
+  return u === "h" ? `${n}시간` : u === "d" ? `${n}일` : `${n}주`;
+};
+function tightLimit(q) {
+  const provs = (q.providers || []).filter(p => (p.limits || []).length), an = provs.filter(p => /anthropic|claude/i.test(p.provider));
+  let best = null;
+  for (const p of an.length ? an : provs) for (const l of p.limits) { const f = limitFrac(l); if (f != null && (!best || f < best.f)) best = { l, f }; }
+  return best;
+}
+function paintStrip() {
+  const b = $("#ustrip"), t = SQ && tightLimit(SQ);
+  b.hidden = !t;
+  if (!t) return;
+  const pct = Math.round(t.f * 100), word = limitWord(t.l);
+  b.className = `ustrip${pct <= 20 ? " err" : pct <= 40 ? " warn" : ""}`;
+  b.style.setProperty("--p", pct);
+  b.title = `사용량 · ${word} ${pct}% 남음`; b.setAttribute("aria-label", b.title);
+  clear(b).append(el("span", { class: "ulab", text: `${word} ${pct}%` }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${pct}%` }));
+}
+function noteQuota(q) { SQ = q; stripAt = Date.now(); paintStrip(); }
+// At most one fetch per 3 minutes, and only while the page is visible (the home and usage views feed it through noteQuota too).
+async function loadStrip() {
+  if (document.visibilityState !== "visible" || Date.now() - stripAt < 180000) return;
+  stripAt = Date.now();
+  try { noteQuota(await api("/api/quota")); } catch {}
+}
 
 // Per-target data, shared by both views: conversation events (msgs) and what the agent did (acts).
 const TS = {};
@@ -1380,6 +1497,7 @@ async function loadTarget(t) {
       api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k)) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
     ]);
     s.hLoaded = s.aLoaded = true;
+    { const te = s.acts.findLast(a => a.type === "turn_end"); if (te) noteDone(t, te.ts, false); }
   })().finally(() => { s.loading = null; });
   await s.loading;
   if (t === target) renderAll();
@@ -1410,6 +1528,7 @@ function renderAll() {
 function onActivity(a) {
   if (a.source === "orchestrator" || a.type === "turn_start" || a.type === "turn_end" || a.type === "status") scheduleState();
   ingestAct(a);
+  if (a.type === "turn_end") noteDone(targetOfSource(a.source), a.ts, true);
 }
 
 /* ---------- switching the target ---------- */
@@ -1423,6 +1542,7 @@ function setTarget(t) {
   if (current === "chat" || current === "activity") history.replaceState(null, "", `#${current}/${t}`);
   const s = ts(t);
   if (current === "chat") s.unread = 0;
+  markSeen();
   ta.value = s.draft; autosize(); updateHints();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
   renderAll();
@@ -1431,6 +1551,7 @@ function setTarget(t) {
 function enterTarget() {
   $(current === "activity" ? "#v-activity" : "#v-chat").append($("#composer"));
   if (current === "chat") ts(target).unread = 0;
+  markSeen();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
   if (current === "chat") scrollChat(true); else scrollTerm(true);
   if (SUBD) renderSheet();
@@ -1530,18 +1651,22 @@ function renderWorking() {
 /* ---------- target switcher + 대화/터미널 toggle (rendered into the header of both views) ---------- */
 let showDead = false;
 function renderBars() {
+  paintAttn();
   const lanes = S ? S.lanes : [];
   const alive = [MAIN, ...lanes.filter(laneAlive).map(l => `lane:${l.name}`)], dead = lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`);
   if (isLaneT(target) && !alive.includes(target) && !dead.includes(target)) alive.push(target);
+  alive.sort(byAttn); dead.sort(byAttn);
   const view = t => {
     const i = targetInfo(t);
-    return { t, name: targetName(t), tone: i.alive ? statusTone(i.status) : "", status: i.alive ? statusKo(i.status) : "종료됨", unread: ts(t).unread, subs: runningSubs(sourceOf(t)).length };
+    const k = attnKind(t);
+    return { t, name: targetName(t), tone: k ? "att" : i.alive ? statusTone(i.status) : "", attn: k, status: i.alive ? statusKo(i.status) : "종료됨", unread: ts(t).unread, subs: runningSubs(sourceOf(t)).length };
   };
   const A = alive.map(view), D = dead.map(view);
   const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
   const sig = JSON.stringify([A, D, cur, others, showDead, target]);
-  const chip = v => el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "aria-pressed": v.t === target ? "true" : "false", title: v.status, onclick: () => setTarget(v.t) },
+  const chip = v => el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "aria-pressed": v.t === target ? "true" : "false", title: v.attn ? `확인 필요 · ${v.status}` : v.status, onclick: () => setTarget(v.t) },
     el("span", { class: `dot ${v.tone}` }), el("span", { class: "tx", text: v.name }),
+    v.attn ? el("span", { class: "sb att", text: "확인 필요" }) : null,
     v.subs ? el("span", { class: "sb", title: "서브에이전트", text: `서브 ${v.subs}` }) : null,
     v.unread ? el("span", { class: "nb", text: v.unread > 99 ? "99+" : String(v.unread) }) : null);
   for (const bar of document.querySelectorAll(".thead")) {
@@ -1552,15 +1677,17 @@ function renderBars() {
     const curDead = D.some(v => v.t === target);
     const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, ...A.map(chip), ...(showDead ? D : []).map(chip),
       D.length ? el("button", { class: `tchip fold${!showDead && curDead ? " on" : ""}`, type: "button", "aria-expanded": showDead ? "true" : "false", onclick: () => { showDead = !showDead; renderBars(); } },
-        icon("chev", "fc"), el("span", { class: "tx", text: `종료된 레인 ${D.length}개` }), !showDead && curDead ? el("span", { class: "tx fs", text: cur.name }) : null) : null);
+        icon("chev", "fc"), el("span", { class: "tx", text: `종료된 레인 ${D.length}개` }), !showDead && curDead ? el("span", { class: "tx fs", text: cur.name }) : null,
+        !showDead && D.some(v => v.attn) ? el("span", { class: "sb att", text: `확인 필요 ${D.filter(v => v.attn).length}` }) : null) : null);
     const drop = el("button", { type: "button", class: "sel tdrop", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `대화 대상: ${cur.name}` },
       el("span", { class: `dot ${cur.tone}` }), el("span", { class: "val", text: cur.name }),
+      cur.attn ? el("span", { class: "sb att", text: "확인 필요" }) : null,
       cur.subs ? el("span", { class: "sb", text: `서브 ${cur.subs}` }) : null,
       others ? el("span", { class: "nb", title: "다른 대상의 새 메시지", text: others > 99 ? "99+" : String(others) }) : null,
       icon("drop"));
     drop.onclick = () => showMenu(drop, [
-      ...A.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.subs ? `${v.status} · 서브 ${v.subs}` : v.status, badge: v.unread || "" })),
-      ...(D.length ? [{ header: "종료됨" }, ...D.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" }))] : [])], { value: target, onPick: setTarget });
+      ...A.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.attn ? "확인 필요" : "", v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), badge: v.unread || "" })),
+      ...(D.length ? [{ header: "종료됨" }, ...D.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.attn ? `확인 필요 · ${v.status}` : v.status, badge: v.unread || "" }))] : [])], { value: target, onPick: setTarget });
     const ud = mode === "term" && ts(target).unread > 0;
     const seg = el("div", { class: "vseg", role: "group", "aria-label": "보기 방식" },
       el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", onclick: () => go("chat") }, "대화", ud ? el("i", { class: "ud", title: "새 메시지" }) : null),
@@ -1577,6 +1704,7 @@ async function refreshState() {
     setConn(true);
     if (S.name && S.name !== botName) { botName = S.name; setBrand(); if (current === "home") $("#title").textContent = botName; if (ts(target).hLoaded) renderAll(); }
     if (isLaneT(target) && !S.lanes.some(l => `lane:${l.name}` === target)) setTarget(MAIN);
+    noteStatus();
     renderSideStatus(); renderBars(); renderWorking(); updateComposerMeta();
     if (current === "lanes") renderLanes();
     if (current === "home") renderHome();
@@ -1768,6 +1896,7 @@ function lanePane(name) {
   p.dot = el("span", { class: "dot" });
   p.nameBtn = el("button", { class: "lname", type: "button", title: "크게 보기", onclick: () => openSource(`lane:${name}`) });
   p.tag = el("span", { class: "tag" });
+  p.att = el("span", { class: "tag warn", text: "확인 필요", hidden: true });
   p.subs = el("span", { class: "tag pri", hidden: true });
   p.model = el("div", { class: "lmodel" });
   p.acts = el("div", { class: "lacts" });
@@ -1780,7 +1909,7 @@ function lanePane(name) {
   p.input = input({ type: "text", enterkeyhint: "send", value: laneDraft[name] || "", oninput: ev => { laneDraft[name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); p.send.click(); } } });
   p.send = el("button", { class: "ib pri", type: "button" }, icon("send"));
   p.node = el("section", { class: "lpane", "aria-label": name },
-    el("div", { class: "lhead" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.tag, p.subs), p.model, p.acts),
+    el("div", { class: "lhead" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.att, p.tag, p.subs), p.model, p.acts),
     p.tail,
     el("div", { class: "lcomp" }, p.input, p.send));
   return p;
@@ -1789,7 +1918,9 @@ function laneUpdate(p, l, m) {
   const alive = laneAlive(l), tone = statusTone(l.status);
   p.lane = l;
   p.send.onclick = () => laneSend(p, l);
-  p.dot.className = `dot ${tone}`;
+  const k = attnKind(`lane:${l.name}`);
+  p.dot.className = `dot ${k ? "att" : tone}`;
+  p.att.hidden = !k;
   p.nameBtn.textContent = l.name;
   p.tag.className = `tag ${tone}`; p.tag.textContent = statusKo(l.status);
   const subs = runningSubs(`lane:${l.name}`).length;
@@ -1830,13 +1961,13 @@ function renderLanes() {
   if (!laneBoard) laneBoardInit();
   const lanes = S.lanes;
   const modelOf = n => (M && M.lanes || []).find(l => l.name === n);
-  const sig = JSON.stringify([lanes.map(l => [l.name, l.status, l.model, l.resumable, runningSubs(`lane:${l.name}`).length]), M && M.lanes, M && M.available && M.available.length, laneExitedOpen]);
+  const sig = JSON.stringify([lanes.map(l => [l.name, l.status, l.model, l.resumable, runningSubs(`lane:${l.name}`).length, attnKind(`lane:${l.name}`)]), M && M.lanes, M && M.available && M.available.length, laneExitedOpen]);
   if (sig === laneSig) return;
   laneSig = sig;
   const B = laneBoard;
   for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) { LP[n].node.remove(); delete LP[n]; delete laneDraft[n]; }
   for (const l of lanes) laneUpdate(LP[l.name] || (LP[l.name] = lanePane(l.name)), l, modelOf(l.name));
-  const alive = lanes.filter(laneAlive), dead = lanes.filter(l => !laneAlive(l));
+  const sorted = sortLanes(lanes), alive = sorted.filter(laneAlive), dead = sorted.filter(l => !laneAlive(l));
   B.empty.hidden = lanes.length > 0;
   B.none.hidden = !lanes.length || alive.length > 0;
   B.grid.hidden = !alive.length;
@@ -2134,6 +2265,7 @@ async function loadQuota() {
   let q;
   try { q = await api("/api/quota"); }
   catch (e) { clear(box).append(emptyNode("사용량을 불러오지 못했어요")); return; }
+  noteQuota(q);
   if (current === "usage") quotaTimer = setTimeout(loadQuota, 60000);
   clear(box);
   box.append(el("div", { class: "tools-bar" }, el("span", { class: "sup", text: q.fetched_at ? kstStamp(q.fetched_at) : "" }),
@@ -2200,6 +2332,9 @@ function renderSettings() {
     else { ingestMsg(e); scheduleState(); }
   };
   setInterval(refreshState, 15000);
+  $("#ustrip").onclick = () => go("usage");
+  loadStrip(); setInterval(loadStrip, 60000);
+  document.addEventListener("visibilitychange", () => { markSeen(); attnChanged(); loadStrip(); });
   setInterval(() => loadModels(true), 60000);
 })();
 </script>
