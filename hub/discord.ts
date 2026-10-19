@@ -57,20 +57,22 @@ async function threadFromMessage(parentId: string, starter: string, name: string
 	const t = mid ? await rest("POST", `/channels/${parentId}/messages/${mid}/threads`, body) : await rest("POST", `/channels/${parentId}/threads`, { ...body, type: 11 });
 	return { id: String(t.id), name: String(t.name) };
 }
-// Thread status is a traffic-light dot at the start of the name (owner 2026-10-19): working 🟡, waiting 🔴 (needs the
-// owner or someone else), done 🟢. The old [working]/[waiting]/[done] text prefixes are still stripped.
+// Thread status is a traffic-light reaction on the parent-channel message the thread hangs from (owner 2026-10-19,
+// option 3): working 🟡, waiting 🔴 (needs the owner or someone else), done 🟢. Names are never changed for status:
+// every rename posts a "changed the channel name" system message that cannot be deleted (50021), and a channel allows
+// only 2 renames per 10 minutes. A thread started from a message has that message's id; a bare thread gets no light.
 export type ThreadState = "working" | "waiting" | "done";
 const LIGHT: Record<ThreadState, string> = { working: "🟡", waiting: "🔴", done: "🟢" };
-const withState = (state: ThreadState, base: string) =>
-	`${LIGHT[state]} ${base.replace(/^(?:[🟡🔴🟢]\s*|\[(?:working|waiting|done)\]\s*)+/u, "")}`.slice(0, 100);
-// Every rename makes Discord post a "changed the channel name" system message that cannot be deleted (50021), and a
-// channel allows 2 renames per 10 minutes.
+async function setLight(id: string, parentId: string, state: ThreadState): Promise<void> {
+	const base = `/channels/${parentId}/messages/${id}/reactions`;
+	for (const [s, e] of Object.entries(LIGHT)) if (s !== state) await rest("DELETE", `${base}/${encodeURIComponent(e)}/@me`).catch(() => undefined);
+	await rest("PUT", `${base}/${encodeURIComponent(LIGHT[state])}/@me`).catch(e => log(`thread light ${state} failed on ${id}: ${e}`));
+}
 // Marks a thread done now and archives it an hour later (kept across restarts in channels.archiveAt).
-async function markDone(id: string, base: string): Promise<string> {
-	const name = String((await rest("PATCH", `/channels/${id}`, { name: withState("done", base) })).name);
+async function markDone(id: string, parentId: string): Promise<void> {
+	await setLight(id, parentId, "done");
 	channels.archiveAt[id] = Date.now() + ARCHIVE_DELAY_MS;
 	save();
-	return name;
 }
 let archiveTimer: Timer | undefined;
 function startArchiveTimer(): void {
@@ -248,9 +250,10 @@ export async function laneChannel(lane: string, title?: string, home?: string, k
 		if (home) {
 			const parentId = homeChannel(home);
 			const full = threadName(title?.trim() || lane, kind);
-			const t = await threadFromMessage(parentId, starter?.trim() || `[run] ${full} 작업을 시작했어요.`, withState("working", full));
+			const t = await threadFromMessage(parentId, starter?.trim() || `[run] ${full} 작업을 시작했어요.`, full);
 			channels.lanes[lane] = t.id;
 			channels.homes[lane] = parentId;
+			await setLight(t.id, parentId, "working");
 		} else channels.lanes[lane] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: title?.trim() || lane, type: 0, parent_id: channels.workCategory ?? channels.category })).id;
 		save();
 	}
@@ -264,20 +267,19 @@ export function homeChannel(home: string): string {
 	return id;
 }
 
-// Lane stop for a home lane: a short done marker, the thread archived with a done light, the mapping dropped. The parent
+// Lane stop for a home lane: a short done marker, a done light and an archive an hour later, the mapping dropped. The parent
 // channel is never touched and the thread is not locked, so an owner message there still reaches the orchestrator as a
 // thread of that work channel. Other lanes keep their channel.
 export async function releaseLane(lane: string): Promise<void> {
 	const id = channels.lanes[lane];
-	if (!channels.homes[lane] || !id) return;
+	const parentId = channels.homes[lane];
+	if (!parentId || !id) return;
 	delete channels.lanes[lane];
 	delete channels.homes[lane];
 	save();
 	if (!status.enabled) return;
 	await post(id, buildPayloads(`레인 ${lane} 작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.`)[0]!, true).catch(e => log(`lane ${lane} done marker failed: ${e}`));
-	const t = await rest("GET", `/channels/${id}`).catch(() => undefined);
-	const base = String(t?.name ?? lane);
-	await markDone(id, base).catch(e => log(`lane ${lane} thread done failed: ${e}`));
+	await markDone(id, parentId).catch(e => log(`lane ${lane} thread done failed: ${e}`));
 }
 
 function resolve(target: string): string | undefined {
@@ -469,21 +471,20 @@ export async function clearProgress(target: string): Promise<void> {
 	for (const mid of tracked.values()) await deleteMessage(target, mid).catch(e => log(`progress message ${mid} in ${target} not deleted: ${e}`));
 }
 
-// Thread status as in Dori, shown as the traffic light above; done archives it an hour later, other states reopen it and
-// cancel a pending archive.
+// Thread status as in Dori, shown as the traffic-light reaction above; done archives it an hour later, other states
+// reopen it and cancel a pending archive.
 export async function threadStatus(target: string, state: ThreadState): Promise<string> {
 	const id = resolve(target);
 	const t = id && channels.threads[id];
 	if (!status.enabled || !t) throw new Error(`${target} is not a known thread (th:<id>)`);
-	const base = t.name;
-	if (state === "done") t.name = await markDone(id, base);
+	if (state === "done") await markDone(id, t.parent);
 	else {
 		delete channels.archiveAt[id];
 		await rest("PATCH", `/channels/${id}`, { archived: false });
-		t.name = String((await rest("PATCH", `/channels/${id}`, { name: withState(state, base) })).name);
+		await setLight(id, t.parent, state);
 	}
 	save();
-	return t.name;
+	return `${LIGHT[state]} ${t.name}`;
 }
 
 export function ack(channelId: string, messageId: string): void {
