@@ -1,9 +1,9 @@
 // Optional off-machine copy of the ~/.dotz git snapshot (config `backup.remote`, off by default). Nothing leaves the
 // machine unless every file about to be pushed passes the secret scan below (ported from 오모냥 backup.py).
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { log } from "./config.ts";
+import { log, writeAtomic } from "./config.ts";
 
 const SECRET = new RegExp(
 	[
@@ -82,7 +82,7 @@ function alertOnce(dir: string, text: string): string | undefined {
 		last = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).alertDay : "";
 	} catch {}
 	if (last === day) return undefined;
-	writeFileSync(file, JSON.stringify({ alertDay: day }));
+	writeAtomic(file, JSON.stringify({ alertDay: day }));
 	return text;
 }
 

@@ -50,13 +50,18 @@ export function splitThinking(input: string): { model: string; thinking?: string
 	const i = input.lastIndexOf(":");
 	return i > 0 && (THINKING_LEVELS as readonly string[]).includes(input.slice(i + 1)) ? { model: input.slice(0, i), thinking: input.slice(i + 1) } : { model: input };
 }
+// Overwrites a state file all-or-nothing: the text goes to a sibling temp file, then rename() swaps it in (same directory,
+// so the rename is atomic). A crash or a second writer never leaves a half-written file behind.
+export function writeAtomic(file: string, text: string, mode?: number): void {
+	const tmp = `${file}.${process.pid}.tmp`;
+	writeFileSync(tmp, text, mode === undefined ? undefined : { mode });
+	renameSync(tmp, file);
+}
 // Edits config.json (re-read from disk so keys this process never parsed survive) and mirrors the change into `cfg`.
 export function updateConfig(section: "orchestrator" | "lanes", values: Record<string, string>): void {
 	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
 	disk[section] = { ...disk[section], ...values };
-	const tmp = `${CONFIG_FILE}.tmp`;
-	writeFileSync(tmp, `${JSON.stringify(disk, null, 2)}\n`);
-	renameSync(tmp, CONFIG_FILE);
+	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
 	(cfg as any)[section] = { ...(cfg as any)[section], ...values };
 }
 // The bot's name (onboarding asks for it); every user-facing string and Discord name derives from it.

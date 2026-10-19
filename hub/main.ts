@@ -2,7 +2,8 @@
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT } from "./config.ts";
+import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT, writeAtomic } from "./config.ts";
+import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
@@ -39,7 +40,7 @@ try {
 } catch {}
 function savePending(): void {
 	const open = [...(current && !current.done ? [current] : []), ...prompts].map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
-	writeFileSync(PENDING, `${JSON.stringify(open, null, 2)}\n`);
+	writeAtomic(PENDING, `${JSON.stringify(open, null, 2)}\n`);
 }
 
 // An owner message that arrives while the orchestrator is mid-turn is steered into that turn instead of waiting
@@ -609,8 +610,10 @@ const server = Bun.serve({
 					const est = estimateOf(b.est, String(b.brief ?? ""));
 					const tight = b.force ? undefined : await budgetProblem(est);
 					if (tight) return json({ error: `budget gate: ${tight}. Ask the owner (now / after reset / smaller); relaunch with force=true only after they say now, or with a smaller est.` }, 409);
+					const home = b.home ? String(b.home) : undefined;
+					if (home && discord.status.enabled) discord.homeChannel(home);
 					const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked);
-					const channel = await discord.laneChannel(lane.name, b.title ? String(b.title) : undefined).catch(e => {
+					const channel = await discord.laneChannel(lane.name, b.title ? String(b.title) : undefined, home).catch(e => {
 						log(`lane channel failed: ${e}`);
 						return undefined;
 					});
@@ -636,6 +639,7 @@ const server = Bun.serve({
 				}
 				if (req.method === "DELETE" && parts.length === 3) {
 					stopLane(parts[2]);
+					void discord.releaseLane(parts[2]).catch(e => log(`lane ${parts[2]} thread release failed: ${e}`));
 					return json({ ok: true });
 				}
 			} catch (error) {
@@ -688,7 +692,7 @@ startWatches((w, reason, output) => {
 	}
 	void out(w.to, `[${w.name}] ${reason}\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
-writeFileSync(paths.pid, String(process.pid));
+writeAtomic(paths.pid, String(process.pid));
 log(`hub listening on 127.0.0.1:${server.port} as ${NAME} (discord ${discord.status.enabled ? "on" : "off"})`);
 for (const sig of ["SIGTERM", "SIGINT"] as const)
 	process.on(sig, () => {

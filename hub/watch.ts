@@ -2,10 +2,10 @@
 // interval and only reports when something happened. Failure policy from session-keeper: 2 consecutive failures -> one
 // alert per watch per 12h, and one recovery note when it passes again.
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { blockedBy } from "../extension/index.ts";
 import { replInTab } from "./aside-window.ts";
-import { log, now, paths } from "./config.ts";
+import { log, now, paths, writeAtomic } from "./config.ts";
 
 export type Watch = {
 	id: string;
@@ -27,7 +27,7 @@ const FAIL_ALERT_EVERY_MS = 12 * 3600_000;
 const items: Watch[] = existsSync(paths.watches) ? JSON.parse(readFileSync(paths.watches, "utf8")) : [];
 const timers = new Map<string, ReturnType<typeof setInterval>>();
 const running = new Set<string>();
-const save = () => writeFileSync(paths.watches, `${JSON.stringify(items, null, 2)}\n`);
+const save = () => writeAtomic(paths.watches, `${JSON.stringify(items, null, 2)}\n`);
 let notify: (w: Watch, reason: string, output: string) => void = () => {};
 
 async function exec(argv: string[], cwd?: string): Promise<{ code: number; output: string }> {

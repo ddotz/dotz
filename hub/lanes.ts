@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
-import { cfg, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, OMP, parseSelector, paths, selectorOf, splitThinking, workerModel } from "./config.ts";
+import { cfg, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, OMP, parseSelector, paths, selectorOf, splitThinking, workerModel, writeAtomic } from "./config.ts";
 import { modeFile, msg, withReplyLine } from "./i18n.ts";
 import { abandonCompact, type CompactPort, type Compaction, compactionError, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
@@ -66,7 +66,7 @@ const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
 	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, reports, held, worktree } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeFileSync(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, reports, ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}) }, null, 2)}\n`);
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -140,7 +140,7 @@ function scheduleReport(lane: Lane): void {
 		return;
 	}
 	lane.silent = undefined;
-	if (lane.lastText) writeFileSync(pendingFile(lane), lane.lastText);
+	if (lane.lastText) writeAtomic(pendingFile(lane), lane.lastText);
 	clearTimeout(lane.timer);
 	lane.timer = setTimeout(() => {
 		if (lane.status !== "idle" || !lane.lastText) return;

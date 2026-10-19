@@ -8,7 +8,7 @@
 import type { Dirent } from "node:fs";
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { cfg, DATA_DIR, HOME, log } from "./config.ts";
+import { cfg, DATA_DIR, HOME, log, writeAtomic } from "./config.ts";
 
 const SESSIONS = join(HOME, ".omp", "agent", "sessions");
 const LOG_DIR = join(DATA_DIR, "logs");
@@ -419,7 +419,7 @@ export function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditRes
 	const reportPath = join(LOG_DIR, `token-audit-${today.replace(/-/g, "")}.md`);
 	if (!opts.dry) {
 		history = [...history.filter(d => d.date !== today), { date: today, tokens: total, cost: totalCost, cacheWrite: totalCw, sessions: results.length, flags: flags.length, kinds, report: reportPath }].slice(-14);
-		writeFileSync(HISTORY, `${JSON.stringify({ updated: new Date(now).toISOString(), days: history }, null, 1)}\n`);
+		writeAtomic(HISTORY, `${JSON.stringify({ updated: new Date(now).toISOString(), days: history }, null, 1)}\n`);
 	}
 	const ordered = [...findings].sort((a, b) => Number(b.flag) - Number(a.flag) || b.save - a.save);
 	const sorted = [...results].sort((a, b) => b.tokens - a.tokens);

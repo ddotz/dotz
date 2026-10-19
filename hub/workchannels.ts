@@ -1,8 +1,8 @@
 // Per-channel automation. The owner hands out work by Discord channel; when a channel's work needs a login kept alive
 // or something watched, the orchestrator sets that up for the channel. Logins are session watches shared across
 // channels on the same site and kept for as long as some channel needs them; a deleted channel drops its setup.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { now, paths } from "./config.ts";
+import { existsSync, readFileSync } from "node:fs";
+import { now, paths, writeAtomic } from "./config.ts";
 import { addWatch, allWatches, removeWatch, setWatchChannels, type Watch } from "./watch.ts";
 
 export type Login = { session_url: string; expect?: string; host?: string; profile?: string };
@@ -10,7 +10,7 @@ export type Monitor = { command: string; every_minutes?: number; on?: "change" |
 export type Setup = { channel: string; name: string; purpose: string; standing?: string; basis?: string; logins: string[]; monitors: string[]; updated: string };
 
 const setups: Setup[] = existsSync(paths.setups) ? JSON.parse(readFileSync(paths.setups, "utf8")) : [];
-const save = () => writeFileSync(paths.setups, `${JSON.stringify(setups, null, 2)}\n`);
+const save = () => writeAtomic(paths.setups, `${JSON.stringify(setups, null, 2)}\n`);
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "ch";
 
 function release(channel: string, keep: Set<string> = new Set()): void {

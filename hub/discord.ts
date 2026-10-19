@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { cfg, DATA_DIR, expand, log, NAME, paths } from "./config.ts";
+import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
 
 const LIMIT = 1900;
 const INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
@@ -12,9 +12,11 @@ const OWNER = String(cfg.discord?.owner_id ?? "");
 const AVATAR_MARK = join(DATA_DIR, "identity", ".avatar-applied");
 
 export type Thread = { parent: string; name: string };
-export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; dm?: string; lanes: Record<string, string>; work: Record<string, string>; threads: Record<string, Thread> };
+export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; threads: Record<string, Thread> };
 export const channels: Channels = existsSync(paths.channels) ? JSON.parse(readFileSync(paths.channels, "utf8")) : { lanes: {} };
 channels.lanes ??= {};
+// A home lane lives in a thread of an existing work channel: lanes[name] is the thread id, homes[name] the parent channel id.
+channels.homes ??= {};
 channels.work ??= {};
 channels.threads ??= {};
 delete (channels as any).rails;
@@ -23,7 +25,7 @@ let onGone: (id: string) => void = () => {};
 export function setChannelGoneHandler(fn: (id: string) => void): void {
 	onGone = fn;
 }
-const save = () => writeFileSync(paths.channels, `${JSON.stringify(channels, null, 2)}\n`);
+const save = () => writeAtomic(paths.channels, `${JSON.stringify(channels, null, 2)}\n`);
 export const status = { enabled: Boolean(TOKEN && GUILD && OWNER), connected: false, user: "", error: "" };
 
 // Discord lowercases text channel names and turns spaces into dashes; compare in that form.
@@ -74,9 +76,11 @@ export async function ensureChannels(): Promise<void> {
 	}
 	// Lane channels keep the owner-facing name they were created or renamed with; only their category is fixed here.
 	for (const [lane, id] of Object.entries(channels.lanes)) {
+		if (channels.homes[lane]) continue; // a home lane is a thread; the channel list does not include threads
 		if (!existing.has(id)) delete channels.lanes[lane];
 		else await place(id, existing.get(id)!, channels.workCategory);
 	}
+	for (const lane of Object.keys(channels.homes)) if (!channels.lanes[lane]) delete channels.homes[lane];
 	for (const id of Object.keys(channels.work)) {
 		if (!existing.has(id)) {
 			delete channels.work[id];
@@ -185,13 +189,42 @@ export async function syncProfile(): Promise<void> {
 }
 
 // `title` is the owner-facing channel name (their language, plain words); the lane name stays the internal key.
-export async function laneChannel(lane: string, title?: string): Promise<string | undefined> {
+// With `home` (ch:<id> of an existing work channel) no channel is made: the lane gets a thread in that channel instead.
+export async function laneChannel(lane: string, title?: string, home?: string): Promise<string | undefined> {
 	if (!status.enabled || !channels.category) return undefined;
 	if (!channels.lanes[lane]) {
-		channels.lanes[lane] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: title?.trim() || lane, type: 0, parent_id: channels.workCategory ?? channels.category })).id;
+		if (home) {
+			const parentId = homeChannel(home);
+			const t = await rest("POST", `/channels/${parentId}/threads`, { name: cleanName(title?.trim() || lane), type: 11, auto_archive_duration: 10080 });
+			channels.lanes[lane] = t.id;
+			channels.homes[lane] = parentId;
+		} else channels.lanes[lane] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: title?.trim() || lane, type: 0, parent_id: channels.workCategory ?? channels.category })).id;
 		save();
 	}
 	return channels.lanes[lane];
+}
+
+// Validates a lane `home` argument (ch:<id> of a known work channel) and returns the channel id.
+export function homeChannel(home: string): string {
+	const id = home.startsWith("ch:") ? home.slice(3) : "";
+	if (!id || !channels.work[id]) throw new Error(`home must be a work channel (ch:<id> from the inbox header or dotz_channel list), not ${home}`);
+	return id;
+}
+
+// Lane stop for a home lane: a short done marker, the thread archived with a [done] name, the mapping dropped. The parent
+// channel is never touched and the thread is not locked, so an owner message there still reaches the orchestrator as a
+// thread of that work channel. Other lanes keep their channel.
+export async function releaseLane(lane: string): Promise<void> {
+	const id = channels.lanes[lane];
+	if (!channels.homes[lane] || !id) return;
+	delete channels.lanes[lane];
+	delete channels.homes[lane];
+	save();
+	if (!status.enabled) return;
+	await post(id, `레인 ${lane} 작업을 마쳤어요. 이 스레드는 보관할게요.`, undefined, true).catch(e => log(`lane ${lane} done marker failed: ${e}`));
+	const t = await rest("GET", `/channels/${id}`).catch(() => undefined);
+	const base = String(t?.name ?? lane).replace(/^\[(working|waiting|done)\]\s*/, "");
+	await rest("PATCH", `/channels/${id}`, { name: `[done] ${base}`.slice(0, 100), archived: true }).catch(e => log(`lane ${lane} thread archive failed: ${e}`));
 }
 
 function resolve(target: string): string | undefined {
@@ -239,12 +272,14 @@ export function chunks(text: string): string[] {
 	return merged.flatMap(split);
 }
 
-async function post(id: string, content: string, replyTo?: string): Promise<string> {
+// `reopen` allows unarchiving a thread that Discord auto-archived (50083); lane threads and sub-topic threads qualify.
+async function post(id: string, content: string, replyTo?: string, reopen = false): Promise<string> {
 	const body = { content: noEmoji(content), allowed_mentions: { parse: [] }, ...(replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {}) };
 	try {
 		return (await rest("POST", `/channels/${id}/messages`, body)).id;
 	} catch (error) {
-		if (!channels.threads[id] || !/50083/.test(String(error))) throw error;
+		const laneThread = Object.keys(channels.homes).some(lane => channels.lanes[lane] === id);
+		if (!(reopen || laneThread || channels.threads[id]) || !/50083/.test(String(error))) throw error;
 		await rest("PATCH", `/channels/${id}`, { archived: false });
 		return (await rest("POST", `/channels/${id}/messages`, body)).id;
 	}
@@ -337,7 +372,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 		if (handled.size > 500) handled.delete(handled.values().next().value!);
 		if (!lastSeen || BigInt(m.id) > BigInt(lastSeen)) {
 			lastSeen = m.id;
-			writeFileSync(SEEN_FILE, `${JSON.stringify({ last: lastSeen })}\n`);
+			writeAtomic(SEEN_FILE, `${JSON.stringify({ last: lastSeen })}\n`);
 		}
 		const ref = m.referenced_message;
 		onMessage({
@@ -389,8 +424,12 @@ export function connect(onMessage: (m: Incoming) => void): void {
 			else if (p.op === 0 && p.t === "MESSAGE_UPDATE") {
 				const edited = editedText(p.d);
 				if (edited !== undefined) handle(p.d, edited);
-			} else if (p.op === 0 && p.t === "THREAD_DELETE" && channels.threads[p.d.id]) {
+			} else if (p.op === 0 && p.t === "THREAD_DELETE" && (channels.threads[p.d.id] || Object.values(channels.lanes).includes(p.d.id))) {
 				delete channels.threads[p.d.id];
+				for (const [lane, id] of Object.entries(channels.lanes)) if (id === p.d.id && channels.homes[lane]) {
+					delete channels.lanes[lane];
+					delete channels.homes[lane];
+				}
 				save();
 			} else if (p.op === 0 && p.t === "CHANNEL_DELETE" && channels.work[p.d.id]) {
 				delete channels.work[p.d.id];

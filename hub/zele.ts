@@ -2,9 +2,9 @@
 // browser login), ported from 오모냥's zele-watch.ts. The gateway polls; calendar notices go straight to the alert
 // channel with no model call, new mail wakes the orchestrator in the mail work channel (one thread per mail), and the
 // morning brief is one orchestrator turn in chat. First run only records what exists, so old mail is never replayed.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, log } from "./config.ts";
+import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 
 type Item = Record<string, string | number | undefined>;
 type Seen = { summary: string; start: string; end: string };
@@ -57,7 +57,7 @@ async function stillThere(id: string): Promise<boolean> {
 	const r = await Bun.$`zele cal get ${id}`.nothrow().quiet();
 	return r.exitCode === 0 && !/status:\s*cancelled/i.test(r.stdout.toString());
 }
-const save = (s: State) => writeFileSync(STATE, `${JSON.stringify(s)}\n`);
+const save = (s: State) => writeAtomic(STATE, `${JSON.stringify(s)}\n`);
 const cap = (xs: string[]) => xs.slice(-2000);
 
 async function zele(args: string[]): Promise<Item[]> {
