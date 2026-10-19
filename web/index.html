@@ -2740,7 +2740,7 @@ function laneUpdate(p, l, m) {
   p.claim.hidden = !claim; p.claim.className = `tag ${claim === "verified" ? "ok" : "pri"}`; p.claim.textContent = claim === "verified" ? "확인됨" : "보고됨"; p.claim.title = claim === "verified" ? `오케스트레이터가 확인했어요${l.claim.evidence ? `: ${l.claim.evidence}` : ""}` : "레인이 완료라고 보고했어요 (아직 확인 전)";
   // A lane's [ask] report waits for the owner's answer until the owner (or the orchestrator) writes to the lane.
   const pa = l.pendingAsk;
-  p.ask.hidden = !pa; p.ask.title = pa ? `형 답을 기다리는 질문 (${kstStamp(pa.at)}): ${String(pa.text).slice(0, 500)}` : "";
+  p.ask.hidden = !pa; p.ask.title = pa ? `답을 기다리는 질문 (${kstStamp(pa.at)}): ${String(pa.text).slice(0, 500)}` : "";
   const subs = runningSubs(`lane:${l.name}`).length;
   p.subs.hidden = !subs; p.subs.textContent = `서브 ${subs}`; p.subs.title = `서브에이전트 ${subs}개 진행 중`;
   const model = (m && m.model) || l.model;
