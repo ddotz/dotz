@@ -1,17 +1,43 @@
 // Nightly token-leak audit, ported from the macmini 오모냥 token-audit.ts. Pure TS, no LLM calls, report only.
-// Scans the omp session jsonl files (orchestrator, lane worktrees, task workers) active in the last 24h, writes the full
+// Scans the session jsonl files of both runtimes (OmO ~/.omo/agent/sessions plus its task-worker stores, omp
+// ~/.omp/agent/sessions; orchestrator, lane worktrees, task workers) active in the last 24h, writes the full
 // report to ~/.dotz/logs/token-audit-YYYYMMDD.md (KST), keeps a 14-day history in ~/.dotz/token-audit.json, and posts ONE
 // short Korean message to the alert channel only when something is flagged. Nothing is ever applied automatically.
 // Config: `token_audit_at` ("HH:MM" local time, default "04:30", "off" disables). The reflection digest reads the result.
 // usage: bun hub/token-audit.ts --dry [--hours N]    (--dry prints the alert instead of sending it; history is not recorded)
 // Last stdout line: RESULT {...}
 import type { Dirent } from "node:fs";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { cfg, DATA_DIR, HOME, log, writeAtomic } from "./config.ts";
 import { trackTimer } from "./shutdown.ts";
 
-const SESSIONS = join(HOME, ".omp", "agent", "sessions");
+type Runtime = "omp" | "omo";
+// OmO keeps task workers outside the session tree, in the task stores this file lists (<store>/children/<id>/sessions/<id>/).
+const ROOTS: { dir: string; runtime: Runtime }[] = [
+	{ dir: join(HOME, ".omo", "agent", "sessions"), runtime: "omo" },
+	{ dir: join(HOME, ".omp", "agent", "sessions"), runtime: "omp" },
+];
+const OMO_STORES = join(HOME, ".omo", "agent", "rpc", "task-stores.json");
+const SKIP_DIRS = ["resident-blobs", "extensions", "session-holders"];
+// OmO (senpi) trims the context of every request once the last usage reaches 50% of the window; the trim is not saved, so
+// requests alternate full/trimmed and the trimmed prefix misses the cache (measured on the macmini 오모냥, 2026-10-08).
+const REDUCE_GATE = 500_000;
+// OmO events that start a turn without the owner (a task completion, a monitor line, a goal continuation). Bookkeeping
+// entries OmO writes around every turn (todo state, oauth binding, rules scan) do not count as a wake.
+const OMO_WAKE = new Set(["goal-continuation", "omo-senpi:wake", "senpi-monitor:notification", "senpi-codemode:notification", "senpi-terminal:notification"]);
+// Known causes of a cache break that are not a prompt-prefix change made here: the report names them instead of guessing.
+const CAUSE: Record<string, [string, string]> = {
+	shrink: ["OmO 맥락 축소(창 50% 넘으면 요청마다 비영속 축소)", "한 태스크 컨텍스트를 ~250K 아래로(단계별 워커, MODE 'Lanes and workers')"],
+	repin: ["압축 직후 메모리 projection 재핀", "로컬 조치 없음(OmO 쪽)"],
+	date: ["UTC 날짜 변경(environment-context 재주입)", "로컬 조치 없음(하루 1회)"],
+};
+// Unexplained OmO breaks: what the injected event before them points at (from 오모냥's audit), instead of a generic hint.
+const BUST_FIX: [RegExp, string][] = [
+	[/^pi-rules\.scan\((reload|startup|resume)\)$|^senpi-memory\.session-binding$/, "재개·리로드 때 OmO가 프롬프트를 새로 조립해 프리픽스가 바뀜(재시작 직후 1회면 정상, 반복되면 재시작 원인 확인)"],
+	[/^omo-memory:(projection-pin|notice|soul-updated)$/, "메모리 projection 재핀이 프롬프트 앞부분을 바꾸는지 확인(dotz는 OmO 메모리를 끔)"],
+	[/^environment-context$/, "environment-context 재주입(날짜·cwd 변경)이 프리픽스를 깨는지 확인"],
+];
 const LOG_DIR = join(DATA_DIR, "logs");
 const HISTORY = join(DATA_DIR, "token-audit.json");
 const BUST_UNCACHED = 50_000;
@@ -41,22 +67,35 @@ const usd = (n: number) => `$${n.toFixed(2)}`;
 const tilde = (p: string) => p.replace(HOME, "~");
 type Json = Record<string, any>; // omp session lines are external jsonl; fields are read defensively
 
-type Src = { file: string; label: string; child: boolean };
+type Src = { file: string; label: string; child: boolean; runtime: Runtime; requested?: string };
+// An Anthropic 429 blocks until its retry-after (5h when unknown, capped at 7 days): a fallback inside one is expected.
+type Exhaust = { from: number; to: number };
 type Day = { date: string; tokens: number; cost: number; cacheWrite: number; sessions: number; flags: number; kinds?: string[]; report?: string };
 
-// omp names a session folder after the cwd: home-relative "-<path with / as ->", absolute "--<path>--".
-function projectLabel(dir: string): string {
-	const orch = `-${relative(HOME, DATA_DIR).replace(/\//g, "-")}`;
-	if (dir === orch) return "오케스트레이터";
-	const lane = dir.match(new RegExp(`^${orch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-lanes-(.+)-worktree$`));
-	if (lane) return `레인 ${lane[1]}`;
+// A session folder is named after the cwd: omp "-<home-relative path with / as ->" (absolute outside home "--<path>--"),
+// OmO always "--<absolute path>--".
+export function projectLabel(dir: string): string {
+	const name = dir.replace(/(?<=.)--$/, "");
+	for (const orch of [`-${relative(HOME, DATA_DIR).replace(/\//g, "-")}`, `-${DATA_DIR.replace(/\//g, "-")}`]) {
+		if (name === orch) return "오케스트레이터";
+		const lane = name.match(new RegExp(`^${orch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-lanes-(.+)-worktree$`));
+		if (lane) return `레인 ${lane[1]}`;
+	}
 	if (dir.startsWith("--")) return `/${dir.replace(/^--|--$/g, "").replace(/-/g, "/")}`;
 	return `~/${dir.replace(/^-/, "")}`;
 }
 
 function collect(since: number): Src[] {
 	const out: Src[] = [];
-	const walk = (dir: string, depth: number) => {
+	const fresh = (p: string) => {
+		try {
+			return statSync(p).mtimeMs >= since;
+		} catch {
+			return false;
+		}
+	};
+	const tag = (runtime: Runtime) => (runtime === "omo" ? "OmO" : "omp");
+	const walk = (root: string, runtime: Runtime, dir: string, depth: number) => {
 		let entries: Dirent[] = [];
 		try {
 			entries = readdirSync(dir, { withFileTypes: true });
@@ -66,34 +105,53 @@ function collect(since: number): Src[] {
 		for (const e of entries) {
 			const p = join(dir, e.name);
 			if (e.isDirectory()) {
-				if (depth > 0) walk(p, depth - 1);
+				if (depth > 0 && !e.name.endsWith("-artifacts") && !SKIP_DIRS.includes(e.name)) walk(root, runtime, p, depth - 1);
 				continue;
 			}
-			if (!e.name.endsWith(".jsonl")) continue;
-			try {
-				if (statSync(p).mtimeMs < since) continue;
-			} catch {
-				continue;
-			}
-			const parts = relative(SESSIONS, p).split("/");
+			if (!e.name.endsWith(".jsonl") || !fresh(p)) continue;
+			const parts = relative(root, p).split("/");
 			const project = projectLabel(parts[0]);
 			const child = parts.length >= 3;
 			const id = e.name.match(/_([0-9a-f]{8})/)?.[1] ?? e.name.replace(/\.jsonl$/, "");
-			out.push({ file: p, child, label: child ? `${project} 워커 ${e.name.replace(/\.jsonl$/, "")}` : `${project} ${id}` });
+			out.push({ file: p, child, runtime, label: `${child ? `${project} 워커 ${e.name.replace(/\.jsonl$/, "")}` : `${project} ${id}`} [${tag(runtime)}]` });
 		}
 	};
-	walk(SESSIONS, 3);
+	for (const r of ROOTS) walk(r.dir, r.runtime, r.dir, 3);
+	let stores: string[] = [];
+	try {
+		stores = Object.keys(JSON.parse(readFileSync(OMO_STORES, "utf8")).stores ?? {});
+	} catch {}
+	for (const store of stores) {
+		const children = join(store, "children");
+		if (!existsSync(children)) continue;
+		for (const tid of readdirSync(children)) {
+			const dir = join(children, tid, "sessions", tid);
+			let files: string[] = [];
+			try {
+				files = readdirSync(dir).filter(f => f.endsWith(".jsonl") && fresh(join(dir, f)));
+			} catch {
+				continue;
+			}
+			let t: Json = {};
+			try {
+				t = JSON.parse(readFileSync(join(store, "tasks", `${tid}.json`), "utf8"));
+			} catch {}
+			const name = t.name && t.name !== tid ? String(t.name) : String(t.task_summary ?? tid).slice(0, 40);
+			const rq = t.requested_model;
+			for (const f of files) out.push({ file: join(dir, f), child: true, runtime: "omo", label: `task:${name} (${tid}) [OmO]`, ...(rq?.model_id ? { requested: `${rq.provider}/${rq.model_id}` } : {}) });
+		}
+	}
 	return out;
 }
 
-type Bust = { ts: number; uncached: number; cr: number; prevCtx: number; cost: number; events: string[] };
+type Bust = { ts: number; uncached: number; cr: number; prevCtx: number; cost: number; events: string[]; cause: string };
 type Stats = {
 	src: Src; start?: number; turns: number; tokens: number; cost: number; cw: number; cr: number; out: number; maxCtx: number; compactions: number;
 	busts: Bust[]; explained: Record<string, number>; bigNew: number;
 	wakes: Record<string, { n: number; tokens: number; cost: number }>; warmings: number;
 	errTurns: number; maxErrStreak: number; errCodes: Record<string, number>; compactErr: number;
 	maxBigStreak: number; bigTokens: number; bigCost: number;
-	fbTurns: number; fbModels: Set<string>; intended?: string;
+	fbTurns: number; fbModels: Set<string>; intended?: string; fbSegs: number[][]; shrinks: number;
 	fable: number; fableCost: number; effortTurns: number; effortCost: number; expensiveCost: number; efforts: Set<string>;
 	maxToolStreak: number; maxToolDesc: string; loopTokens: number; loopCost: number; readRate: number;
 };
@@ -104,16 +162,17 @@ const sameModel = (a: string, b: string) => {
 	return x.includes(y) || y.includes(x);
 };
 
-function analyze(src: Src, since: number): Stats {
+export function analyze(src: Src, since: number, exhaust: Exhaust[] = []): Stats {
 	const s: Stats = {
-		src, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], explained: {}, bigNew: 0, wakes: {}, warmings: 0,
+		src, intended: src.requested, fbSegs: [], shrinks: 0, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], explained: {}, bigNew: 0, wakes: {}, warmings: 0,
 		errTurns: 0, maxErrStreak: 0, errCodes: {}, compactErr: 0, maxBigStreak: 0, bigTokens: 0, bigCost: 0, fbTurns: 0, fbModels: new Set(),
 		fable: 0, fableCost: 0, effortTurns: 0, effortCost: 0, expensiveCost: 0, efforts: new Set(), maxToolStreak: 0, maxToolDesc: "", loopTokens: 0, loopCost: 0, readRate: 0,
 	};
 	let events: string[] = [];
 	let compacted = false, modelChanged = false, thinkChanged = false, user = false;
-	let prev: { ts: number; ctx: number; ttlMin: number } | undefined;
+	let prev: { ts: number; ctx: number; ttlMin: number; out: number } | undefined;
 	let prevStop = "stop";
+	let lastCompactTs = 0, fbOpen = false;
 	let errStreak = 0, bigStreak = 0, toolHash = "", toolStreak = 0, readTok = 0, readCost = 0;
 	let level = "";
 	for (const line of readFileSync(src.file, "utf8").split("\n")) {
@@ -135,13 +194,17 @@ function analyze(src: Src, since: number): Stats {
 			compacted = true;
 			bigStreak = 0;
 			if (!(ts < since)) s.compactions++;
+			if (ts) lastCompactTs = ts;
 			continue;
 		} else if (head.startsWith('{"type":"model_change"')) {
 			modelChanged = true;
 			try {
 				const o = JSON.parse(line);
 				const model = o.model ?? (o.provider && o.modelId ? `${o.provider}/${o.modelId}` : "");
-				if (model && o.reason !== "fallback" && !o.resolvedModelIsFallback) s.intended = model;
+				// A fallback switch keeps the model it replaced as the intended one (OmO names it originalModelId).
+				if (o.reason === "fallback" || o.resolvedModelIsFallback) {
+					if (o.originalModelId) s.intended = `${o.originalProvider ?? o.provider}/${o.originalModelId}`;
+				} else if (model) s.intended = model;
 			} catch {}
 			continue;
 		} else if (head.startsWith('{"type":"thinking_level_change"')) {
@@ -151,7 +214,7 @@ function analyze(src: Src, since: number): Stats {
 		} else {
 			const kind = head.match(/"customType":"([^"]+)"/)?.[1];
 			if (kind && (head.startsWith('{"type":"custom"') || head.startsWith('{"type":"custom_message"'))) {
-				events.push(kind);
+				events.push(kind === "pi-rules.scan" ? `pi-rules.scan(${head.match(/"reason":"([^"]+)"/)?.[1] ?? "?"})` : kind);
 				if (/warm|keepalive/i.test(kind)) s.warmings++;
 			}
 			continue;
@@ -183,6 +246,11 @@ function analyze(src: Src, since: number): Stats {
 				s.errCodes[code] = (s.errCodes[code] ?? 0) + 1;
 				if (/compaction/i.test(m.errorMessage ?? "")) s.compactErr++;
 			}
+			const limited = /429|rate_limit/i.test(m.errorMessage ?? "") || (m.diagnostics ?? []).some((d: Json) => d?.details?.statusCode === 429);
+			if (limited && /anthropic|claude/i.test(model)) {
+				const after = Number(String(m.errorMessage ?? "").match(/retry-after-ms:\s*(\d+)/)?.[1] ?? m.diagnostics?.map((d: Json) => d?.details?.retryAfterMs).find((v: unknown) => typeof v === "number") ?? 5 * 3600e3);
+				exhaust.push({ from: ts, to: ts + Math.min(after, 7 * 24 * 3600e3) });
+			}
 			prevStop = "error";
 			if (!tokens) continue;
 		} else errStreak = 0;
@@ -213,17 +281,27 @@ function analyze(src: Src, since: number): Stats {
 				s.efforts.add(`${m.model ?? "?"}:${level}`);
 			}
 			if (/fable/i.test(model) || /^(max|xhigh)$/i.test(level)) s.expensiveCost += cost; // once per turn even when both apply
+			// context shrink (OmO only): the request after one at the 50% gate came back >10% smaller without a compaction
+			const shrunk = src.runtime === "omo" && !!prev && !compacted && prev.ctx + prev.out >= REDUCE_GATE * 0.98 && ctx < prev.ctx * 0.9;
+			if (shrunk) s.shrinks++;
 			// cache bust: a big uncached write that did not reuse the prefix, with no compaction / model change / TTL gap before it
 			if (uncached > BUST_UNCACHED && prev) {
 				const gapMin = (ts - prev.ts) / 60e3;
 				const why = compacted ? "compaction" : modelChanged ? "model change" : thinkChanged ? "thinking change" : gapMin > prev.ttlMin ? `gap>${prev.ttlMin}m` : "";
 				if (why) s.explained[why] = (s.explained[why] ?? 0) + 1;
-				else if (cr < prev.ctx * 0.8) s.busts.push({ ts, uncached, cr, prevCtx: prev.ctx, cost: (u.cost?.cacheWrite ?? 0) + (u.cost?.input ?? 0), events: [...new Set(events)] });
+				else if (cr < prev.ctx * 0.8) {
+					const seen = [...new Set(events)];
+					const cause = shrunk ? "shrink"
+						: seen.includes("omo-memory:projection-pin") && ts - lastCompactTs < 20 * 60e3 ? "repin"
+						: seen.includes("environment-context") && new Date(prev.ts).toISOString().slice(0, 10) !== new Date(ts).toISOString().slice(0, 10) ? "date" : "";
+					s.busts.push({ ts, uncached, cr, prevCtx: prev.ctx, cost: (u.cost?.cacheWrite ?? 0) + (u.cost?.input ?? 0), events: seen, cause });
+				}
 				else s.bigNew++; // prefix reused; the write is genuinely new content
 			}
 			// idle wake: a new turn started by notifications only, ending with no tool call and a tiny reply
-			if (newTurn && !user && events.length && !calls.length && (u.output ?? 0) <= IDLE_OUT) {
-				const key = events.at(-1) ?? "custom";
+			const wakeBy = src.runtime === "omo" ? events.filter(e => OMO_WAKE.has(e)) : events;
+			if (newTurn && !user && wakeBy.length && !calls.length && (u.output ?? 0) <= IDLE_OUT) {
+				const key = wakeBy.at(-1) ?? "custom";
 				const w = (s.wakes[key] ??= { n: 0, tokens: 0, cost: 0 });
 				w.n++;
 				w.tokens += tokens;
@@ -238,7 +316,10 @@ function analyze(src: Src, since: number): Stats {
 			if (s.intended && !sameModel(model, s.intended)) {
 				s.fbTurns++;
 				s.fbModels.add(model);
-			}
+				if (!fbOpen) s.fbSegs.push([]);
+				fbOpen = true;
+				s.fbSegs.at(-1)!.push(ts);
+			} else fbOpen = false;
 			for (const call of calls) {
 				const hash = `${call.name}${JSON.stringify(call.arguments ?? {}).slice(0, 4000)}`;
 				if (hash === toolHash) {
@@ -258,8 +339,9 @@ function analyze(src: Src, since: number): Stats {
 			}
 		}
 		s.intended ??= model;
-		const ttlMin = u.cttl?.ephemeral1h ? 60 : u.cttl?.ephemeral5m ? 5 : (prev?.ttlMin ?? 5);
-		prev = { ts, ctx, ttlMin };
+		// omp reports the cache TTL in cttl; OmO in cacheWrite1h, and a write without it is a 5-minute write
+		const ttlMin = u.cttl?.ephemeral1h || (u.cacheWrite1h ?? 0) > 0 ? 60 : u.cttl?.ephemeral5m || (src.runtime === "omo" && cw > 0) ? 5 : (prev?.ttlMin ?? 5);
+		prev = { ts, ctx, ttlMin, out: u.output ?? 0 };
 		prevStop = m.stopReason ?? "stop";
 		events = [];
 		compacted = modelChanged = thinkChanged = user = false;
@@ -270,7 +352,15 @@ function analyze(src: Src, since: number): Stats {
 
 type Finding = { flag: boolean; kind: string; who: string; what: string; amount: string; save: number; evidence?: string; fix?: string; hold?: string; tip?: string; recur?: number };
 
-function findingsOf(results: Stats[]): Finding[] {
+// Minutes a fallback segment ran after the intended model had capacity again (0 when every turn sat inside a 429 window).
+export function fallbackAfterCapacity(seg: number[], exhaust: Exhaust[]): number {
+	const free = seg.filter(t => !exhaust.some(e => t >= e.from && t <= e.to));
+	if (!free.length) return 0;
+	const back = Math.max(seg[0], ...exhaust.filter(e => e.to <= free[0]).map(e => e.to));
+	return (free.at(-1)! - back) / 60e3;
+}
+
+export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[] {
 	const F: Finding[] = [];
 	for (const s of results) {
 		const who = s.src.label;
@@ -279,13 +369,18 @@ function findingsOf(results: Stats[]): Finding[] {
 			const cost = s.busts.reduce((a, b) => a + b.cost, 0);
 			const save = s.busts.reduce((a, b) => a + Math.max(0, b.cost - b.uncached * s.readRate), 0);
 			const count: Record<string, number> = {};
-			for (const e of s.busts.flatMap(b => b.events)) count[e] = (count[e] ?? 0) + 1;
+			for (const e of s.busts.filter(b => !b.cause).flatMap(b => b.events)) count[e] = (count[e] ?? 0) + 1;
 			const top = Object.entries(count).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([e]) => e);
+			const known = Object.keys(CAUSE).map(c => [c, s.busts.filter(b => b.cause === c).length] as const).filter(([, n]) => n);
 			F.push({
 				flag: s.busts.length >= 3 || uncached > 1e6, kind: "캐시 깨짐", who, tip: "직전 주입 이벤트 확인",
 				what: `캐시 깨짐 ${s.busts.length}회 (압축/모델 변경/TTL 공백 아님)`, amount: `미캐시 재입력 ${M(uncached)} tok, ${usd(cost)}`, save,
-				evidence: s.busts.slice(0, 6).map(b => `${kst(b.ts)} 새로 ${K(b.uncached)}/읽기 ${K(b.cr)} (직전 ${K(b.prevCtx)}) <- ${b.events.join(", ") || "이벤트 없음: 도구 목록/시스템 프롬프트 변경 의심"}`).join("; "),
-				fix: `제안: 직전 주입 이벤트(${top.join(", ") || "없음"})가 프롬프트 앞부분을 바꾸는지 확인해 고정 - 예상 절감 ~${usd(save)} (같은 토큰을 쓰기 대신 읽기로). 컨텍스트·모델은 그대로라 성능 영향 없음`,
+				evidence: s.busts.slice(0, 6).map(b => `${kst(b.ts)} 새로 ${K(b.uncached)}/읽기 ${K(b.cr)} (직전 ${K(b.prevCtx)}) <- ${b.cause ? `원인: ${CAUSE[b.cause][0]}` : b.events.join(", ") || "이벤트 없음: 도구 목록/시스템 프롬프트 변경 의심"}`).join("; "),
+				fix: [
+					...known.map(([c, n]) => `${CAUSE[c][0]} x${n} -> ${CAUSE[c][1]}`),
+					...new Set(top.flatMap(e => BUST_FIX.find(([re]) => re.test(e))?.[1] ?? [])),
+					...(known.reduce((a, [, n]) => a + n, 0) < s.busts.length ? [`제안: 직전 주입 이벤트(${top.join(", ") || "없음"})가 프롬프트 앞부분을 바꾸는지 확인해 고정 - 예상 절감 ~${usd(save)} (같은 토큰을 쓰기 대신 읽기로). 컨텍스트·모델은 그대로라 성능 영향 없음`] : []),
+				].join(" / "),
 			});
 		}
 		const wakes = Object.entries(s.wakes);
@@ -327,9 +422,12 @@ function findingsOf(results: Stats[]): Finding[] {
 			});
 		}
 		if (s.fbTurns >= 5) {
+			// A fallback while the intended model is rate-limited is the chain working; staying on it >60 min after is the leak.
+			const after = Math.max(0, ...s.fbSegs.map(seg => fallbackAfterCapacity(seg, exhaust)));
 			F.push({
-				flag: s.fbTurns >= 20, kind: "폴백 모델", who, tip: "원래 모델 복귀 확인", what: `의도한 ${s.intended}이 아닌 ${[...s.fbModels].join(", ")}로 ${s.fbTurns}턴`, amount: `${s.fbTurns}턴`, save: 0,
-				fix: "제안: 한도가 풀린 뒤에도 폴백에 머무는지 확인 - 의도한 모델 복원",
+				flag: s.fbTurns >= 20 && after > 60, kind: "폴백 모델", who, tip: "원래 모델 복귀 확인", what: `의도한 ${s.intended}이 아닌 ${[...s.fbModels].join(", ")}로 ${s.fbTurns}턴`, amount: `${s.fbTurns}턴`, save: 0,
+				evidence: after > 0 ? `한도(429)가 풀린 뒤에도 폴백 ${Math.round(after)}분` : "모두 한도(429 retry-after) 안의 폴백: 체인이 제대로 도는 중",
+				fix: after > 60 ? "제안: 한도가 풀린 뒤에도 폴백에 머무는지 확인 - 의도한 모델 복원" : undefined,
 			});
 		}
 		if (s.maxToolStreak >= 5) {
@@ -381,16 +479,18 @@ export function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditRes
 	const now = Date.now();
 	const hours = opts.hours && opts.hours > 0 ? opts.hours : 24;
 	const since = now - hours * 3600e3;
+	const exhaust: Exhaust[] = [];
 	const results = collect(since).flatMap(src => {
 		try {
-			const s = analyze(src, since);
+			const s = analyze(src, since, exhaust);
 			return s.turns + s.errTurns > 0 ? [s] : [];
 		} catch (error) {
 			console.error(`skip ${src.file}: ${error}`);
 			return [];
 		}
 	});
-	const findings = findingsOf(results);
+	const findings = findingsOf(results, exhaust);
+	const omo = results.filter(s => s.src.runtime === "omo").length;
 	const total = results.reduce((a, s) => a + s.tokens, 0);
 	const totalCost = results.reduce((a, s) => a + s.cost, 0);
 	const totalCw = results.reduce((a, s) => a + s.cw, 0);
@@ -427,7 +527,7 @@ export function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditRes
 	const report = [
 		`# 토큰 누수 점검 ${today} (KST)`,
 		"",
-		`기간: ${kst(since)} ~ ${kst(now)} KST (${hours}h) · 세션 ${results.length}개 · 합계 ${M(total)} tok · ${usd(totalCost)} · 캐시 쓰기 ${M(totalCw)} · 분석 ${((Date.now() - t0) / 1000).toFixed(1)}s${opts.dry ? " · dry(기록 안 함)" : ""}`,
+		`기간: ${kst(since)} ~ ${kst(now)} KST (${hours}h) · 세션 ${results.length}개 (OmO ${omo}, omp ${results.length - omo}) · 합계 ${M(total)} tok · ${usd(totalCost)} · 캐시 쓰기 ${M(totalCw)} · 분석 ${((Date.now() - t0) / 1000).toFixed(1)}s${opts.dry ? " · dry(기록 안 함)" : ""}`,
 		`7일 중앙값: ${prior.length ? `${M(medTok)} tok / ${usd(medCost)} (${prior.length}일)` : "기록 없음"}`,
 		"",
 		"모든 항목은 보고만 합니다. 자동 적용 없음. \"제안\"은 성능 트레이드오프가 없는 것만, 트레이드오프가 있는 후보는 \"보류\"로 따로 표시합니다.",
@@ -447,13 +547,13 @@ export function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditRes
 		"",
 		"| 세션 | 시작(KST) | 턴 | 토큰 | 비용 | 캐시 읽기 | 캐시 쓰기 | 출력 | 깨짐 | 설명된 큰 쓰기 | 헛깨움 | 워밍 | 에러 | 최대 컨텍스트 | 압축 |",
 		"|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
-		...sorted.map(s => `| ${s.src.label} | ${s.start ? kst(s.start) : "-"} | ${s.turns} | ${M(s.tokens)} | ${usd(s.cost)} | ${M(s.cr)} | ${M(s.cw)} | ${K(s.out)} | ${s.busts.length} | ${Object.entries(s.explained).map(([k, v]) => `${k}x${v}`).join(" ") || "-"}${s.bigNew ? ` 새내용x${s.bigNew}` : ""} | ${Object.values(s.wakes).reduce((a, w) => a + w.n, 0)} | ${s.warmings} | ${s.errTurns} | ${K(s.maxCtx)} | ${s.compactions} |`),
+		...sorted.map(s => `| ${s.src.label} | ${s.start ? kst(s.start) : "-"} | ${s.turns} | ${M(s.tokens)} | ${usd(s.cost)} | ${M(s.cr)} | ${M(s.cw)} | ${K(s.out)} | ${s.busts.length} | ${Object.entries(s.explained).map(([k, v]) => `${k}x${v}`).join(" ") || "-"}${s.bigNew ? ` 새내용x${s.bigNew}` : ""}${s.shrinks ? ` 축소x${s.shrinks}` : ""} | ${Object.values(s.wakes).reduce((a, w) => a + w.n, 0)} | ${s.warmings} | ${s.errTurns} | ${K(s.maxCtx)} | ${s.compactions} |`),
 		"",
 		"## 최근 기록",
 		"",
 		...(opts.dry ? ["(dry 실행: 기록 없음)"] : history.map(d => `- ${d.date}: ${M(d.tokens)} tok, ${usd(d.cost)}, 캐시 쓰기 ${M(d.cacheWrite)}, 세션 ${d.sessions}, 경고 ${d.flags}`)),
 		"",
-		`기준: 캐시 깨짐 = 미캐시 입력(캐시 쓰기+input) >${K(BUST_UNCACHED)}이면서 캐시 읽기가 직전 컨텍스트의 80% 미만이고, 직전에 압축/모델·thinking 변경/TTL(1h, 5m) 초과 공백이 없음. 헛깨움 = 사용자 입력 없이 알림만으로 시작된 턴이 도구 호출 없이 출력 ${IDLE_OUT} tok 이하로 끝남. 하위에이전트 >${M(SUB_NOTE)} 참고, >${M(SUB_FLAG)} 경고. 비싼 모델 = Fable 응답 또는 max/xhigh 생각 수준 ${EFFORT_FLAG_TURNS}턴 이상. 🔁 = 같은 클래스가 어제까지 연속으로 경고였음(기존 규칙은 MODE.md 섹션명으로 표기).`,
+		`기준: 캐시 깨짐 = 미캐시 입력(캐시 쓰기+input) >${K(BUST_UNCACHED)}이면서 캐시 읽기가 직전 컨텍스트의 80% 미만이고, 직전에 압축/모델·thinking 변경/TTL(1h, 5m) 초과 공백이 없음. 헛깨움 = 사용자 입력 없이 알림만으로 시작된 턴이 도구 호출 없이 출력 ${IDLE_OUT} tok 이하로 끝남. 하위에이전트 >${M(SUB_NOTE)} 참고, >${M(SUB_FLAG)} 경고. 비싼 모델 = Fable 응답 또는 max/xhigh 생각 수준 ${EFFORT_FLAG_TURNS}턴 이상. 깨짐 원인(OmO): 직전 요청이 ${K(REDUCE_GATE)} 이상이고 압축 없이 10% 넘게 줄면 맥락 축소, 압축 20분 안의 projection-pin이면 재핀, environment-context와 UTC 날짜 변경이면 날짜. 폴백 = 의도한 모델(폴백 전환 전 모델, 워커는 요청 모델)과 다른 모델 턴; Anthropic 429 retry-after 안이면 참고, 풀린 뒤 60분 넘게 폴백이면 경고. 🔁 = 같은 클래스가 어제까지 연속으로 경고였음(기존 규칙은 MODE.md 섹션명으로 표기).`,
 	].join("\n");
 	mkdirSync(LOG_DIR, { recursive: true });
 	writeFileSync(reportPath, `${report}\n`);

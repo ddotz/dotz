@@ -1,0 +1,74 @@
+// Nightly token audit on OmO session files: context shrink, projection re-pin and fallback attribution (hub/token-audit.ts).
+import { expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { DATA_DIR } from "./config.ts";
+import { analyze, fallbackAfterCapacity, findingsOf, projectLabel } from "./token-audit.ts";
+
+const T0 = Date.UTC(2026, 9, 19, 12);
+const at = (min: number) => new Date(T0 + min * 60e3).toISOString();
+const turn = (min: number, cr: number, cw: number, o: { model?: string; provider?: string; error?: string; out?: number } = {}) =>
+	JSON.stringify({
+		type: "message", timestamp: at(min),
+		message: {
+			role: "assistant", provider: o.provider ?? "anthropic-subscription", model: o.model ?? "claude-opus-5-5", stopReason: o.error ? "error" : "stop", content: [],
+			usage: { input: 2, output: o.out ?? 500, cacheRead: cr, cacheWrite: cw, totalTokens: o.error ? 0 : cr + cw + 502, cost: { total: 0.1 } },
+			...(o.error ? { errorMessage: o.error } : {}),
+		},
+	});
+const user = (min: number) => JSON.stringify({ type: "message", timestamp: at(min), message: { role: "user", content: "hi" } });
+const custom = (min: number, kind: string) => JSON.stringify({ type: "custom", customType: kind, timestamp: at(min) });
+const session = (name: string, lines: string[]) => {
+	const file = join(DATA_DIR, `${name}.jsonl`);
+	writeFileSync(file, `${lines.join("\n")}\n`);
+	return { file, label: name, child: false, runtime: "omo" as const };
+};
+
+test("OmO session folders name the orchestrator and lanes", () => {
+	const omo = `-${DATA_DIR.replace(/\//g, "-")}`;
+	expect(projectLabel(`${omo}--`)).toBe("오케스트레이터");
+	expect(projectLabel(`${omo}-lanes-site-fix-worktree--`)).toBe("레인 site-fix");
+	expect(projectLabel("--private-tmp--")).toBe("/private/tmp");
+});
+
+test("a cache break after the 50% gate is a context shrink; one right after a compaction and a re-pin is a re-pin", () => {
+	const src = session("audit-causes", [
+		user(0), turn(0, 0, 60_000), turn(1, 60_000, 435_000), turn(2, 300_000, 100_000),
+		JSON.stringify({ type: "compaction", timestamp: at(10) }), turn(10, 0, 100_000),
+		custom(12, "omo-memory:projection-pin"), turn(12, 10_000, 90_000),
+	]);
+	const s = analyze(src, T0 - 1);
+	expect(s.shrinks).toBe(1);
+	expect(s.busts.map(b => b.cause)).toEqual(["shrink", "repin"]);
+	expect(s.explained).toEqual({ compaction: 1 });
+	expect(findingsOf([s])[0].fix).toContain("OmO 맥락 축소");
+});
+
+test("an OmO turn after bookkeeping entries is not a wake; one after a task wake is", () => {
+	const src = session("audit-wakes", [user(0), turn(0, 0, 60_000), custom(1, "senpi.todo-state"), turn(1, 60_000, 1_000, { out: 50 }), custom(2, "omo-senpi:wake"), turn(2, 61_000, 1_000, { out: 50 })]);
+	expect(analyze(src, T0 - 1).wakes).toEqual({ "omo-senpi:wake": { n: 1, tokens: 62_502, cost: 0.1 } });
+});
+
+test("a fallback inside a 429 window is attributed to the intended model and stays a note", () => {
+	const fb = (min: number) => turn(min, 20_000, 1_000, { provider: "openai", model: "gpt-5.5" });
+	const src = session("audit-fallback", [
+		JSON.stringify({ type: "model_change", timestamp: at(0), provider: "anthropic-subscription", modelId: "claude-opus-5-5" }),
+		user(0), turn(0, 0, 20_000), turn(1, 0, 0, { error: "429 rate_limit_error retry-after-ms: 3600000" }),
+		JSON.stringify({ type: "model_change", timestamp: at(1), reason: "fallback", provider: "openai", modelId: "gpt-5.5", originalProvider: "anthropic-subscription", originalModelId: "claude-opus-5-5" }),
+		...[2, 3, 4, 5, 6].map(fb),
+	]);
+	const exhaust: { from: number; to: number }[] = [];
+	const s = analyze(src, T0 - 1, exhaust);
+	expect(s.intended).toBe("anthropic-subscription/claude-opus-5-5");
+	expect(s.fbTurns).toBe(5);
+	expect(exhaust).toEqual([{ from: T0 + 60e3, to: T0 + 61 * 60e3 }]);
+	const f = findingsOf([s], exhaust).find(x => x.kind === "폴백 모델")!;
+	expect(f.flag).toBe(false);
+	expect(f.evidence).toContain("한도");
+});
+
+test("fallback minutes count only after the 429 window ends", () => {
+	const w = [{ from: 0, to: 60 * 60e3 }];
+	expect(fallbackAfterCapacity([10 * 60e3, 50 * 60e3], w)).toBe(0);
+	expect(fallbackAfterCapacity([10 * 60e3, 70 * 60e3, 150 * 60e3], w)).toBe(90);
+});
