@@ -278,6 +278,19 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .snack.act { display: flex; align-items: center; gap: 12px; }
 .snack .sa { flex: none; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; }
 @media (max-width: 639px) { .snack { bottom: calc(68px + env(safe-area-inset-bottom)); } }
+/* floating notices (alert / worklog / lane report events) */
+.ntf-box { position: fixed; z-index: 1900; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 24px)); pointer-events: none; }
+.ntf { pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 10px 8px 10px 12px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--pop); color: var(--fg); box-shadow: 0 8px 24px rgb(0 0 0 / .14); cursor: pointer; animation: ntf-in .18s ease-out; }
+.ntf.alert { border-color: color-mix(in srgb, var(--err) 45%, var(--line-2)); background: color-mix(in srgb, var(--err) 7%, var(--pop)); }
+.ntf .ic { flex: none; width: 18px; height: 18px; margin-top: 1px; color: var(--fg-2); }
+.ntf.alert .ic { color: var(--err); }
+.ntf .tx { flex: 1; min-width: 0; }
+.ntf .hd { font: 600 12.5px/18px var(--font); }
+.ntf .bd2 { color: var(--fg-2); font-size: 12.5px; line-height: 18px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; white-space: pre-line; }
+.ntf .x { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--fg-3); font-size: 16px; line-height: 24px; }
+.ntf .x:hover { background: var(--hover); color: var(--fg); }
+@keyframes ntf-in { from { opacity: 0; transform: translateY(-6px); } }
+@media (max-width: 639px) { .ntf-box { top: calc(8px + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); } }
 
 /* target header: one switcher + 대화/터미널 toggle, shared by both views */
 .thead { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 12px; }
@@ -854,6 +867,7 @@ const ICONS = {
   chat: "M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-5.4A8 8 0 1 1 21 12z",
   activity: "M3 12h4l3-8 4 16 3-8h4",
   lanes: "M5 4h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM5 14h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z",
+  bell: "M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0",
   settings: "M4 7h9M17 7h3M4 17h3M11 17h9M13 7a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7 17a2 2 0 1 0 4 0a2 2 0 1 0-4 0",
   back: "M15 5l-7 7 7 7",
   send: "M12 19V5M5 12l7-7 7 7",
@@ -971,6 +985,29 @@ function toast(msg, bad, action) {
   (document.querySelector("dialog[open]") || document.body).append(n);
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => n.remove(), bad || action ? 6000 : 3500);
+}
+
+/* ---------- floating notices: alerts stay until closed, worklog and lane reports fade after 8s ---------- */
+const NTF_MAX = 4, ntfSeen = new Set();
+function notify(e) {
+  const text = String(e.text || "").replace(/\s+\n/g, "\n").trim();
+  // A reconnect replays recent events: each notice shows once.
+  const key = `${e.ts}|${e.kind}|${e.target || e.lane || ""}|${text.slice(0, 80)}`;
+  if (!text || ntfSeen.has(key)) return;
+  ntfSeen.add(key);
+  const alertish = e.kind === "out" && e.target === "alert";
+  const box = document.querySelector(".ntf-box") || document.body.appendChild(el("div", { class: "ntf-box", "aria-live": "polite" }));
+  const lane = e.kind === "lane_report" ? String(e.lane || "") : "";
+  const title = lane ? `레인 ${lane}` : alertish ? "알림" : `${botName} 작업 기록`;
+  const n = el("div", { class: `ntf${alertish ? " alert" : ""}`, role: alertish ? "alert" : "status" },
+    icon(alertish ? "bell" : lane ? "lanes" : "chat"),
+    el("div", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "bd2", text: text.slice(0, 400) })));
+  const close = () => n.remove();
+  n.append(el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
+  n.addEventListener("click", () => { close(); openTarget(lane ? `lane:${lane}` : MAIN, lastChatView()); });
+  box.prepend(n);
+  while (box.children.length > NTF_MAX) box.lastChild.remove();
+  if (!alertish) setTimeout(close, 8000);
 }
 
 /* ---------- dialog ---------- */
@@ -2698,7 +2735,8 @@ function renderContext() {
   const box = $("#context");
   if (!C) { clear(box).append(emptyNode("불러오는 중…")); return; }
   const list = el("div", { class: "col" });
-  for (const p of C.processes) {
+  // Exited lanes leave this list at once, like the lanes board; the orchestrator always stays.
+  for (const p of C.processes.filter(x => x.kind !== "lane" || x.status !== "exited")) {
     const cs = compactState(p.compaction);
     const inFlight = p.compaction && (p.compaction.state === "queued" || p.compaction.state === "compacting");
     const btn = el("button", { class: "btn tonal", type: "button", disabled: !p.running || inFlight, onclick: ev => busy(ev.currentTarget, async () => {
@@ -4027,7 +4065,12 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
     else if (e.kind === "subagents") setSubs(e.source, e.items);
     else if (e.kind === "queue") { QUEUE = e.items || []; renderQueue(); }
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
-    else { ingestMsg(e); scheduleState(); }
+    else {
+      ingestMsg(e); scheduleState();
+      // Live notices only (not the replay after a reconnect): alert / worklog posts and lane reports float in the corner.
+      const fresh = !e.ts || Date.now() - Date.parse(e.ts) < 60_000;
+      if (fresh && ((e.kind === "out" && (e.target === "alert" || e.target === "worklog")) || e.kind === "lane_report")) notify(e);
+    }
   };
   setInterval(refreshState, 15000);
   $("#ustrip").onclick = () => go("usage");
