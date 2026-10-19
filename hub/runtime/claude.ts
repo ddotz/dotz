@@ -398,7 +398,8 @@ const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 function writeSettings(dir: string, name: string, dataDir: string): string {
 	mkdirSync(dir, { recursive: true });
 	const file = join(dir, name);
-	const command = `DOTZ_DIR=${shq(dataDir)} ${shq(process.execPath)} ${shq(DENY_HOOK)}`;
+	// Any exit other than 0 (allow) becomes 2 (block): a hook that crashes or fails to load must not let the command through.
+	const command = `DOTZ_DIR=${shq(dataDir)} ${shq(process.execPath)} ${shq(DENY_HOOK)} || exit 2`;
 	writeFileSync(file, `${JSON.stringify({ disableAllHooks: false, hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command, timeout: 10 }] }] } }, null, 2)}\n`);
 	return file;
 }

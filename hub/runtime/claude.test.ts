@@ -179,6 +179,18 @@ test("the deny hook blocks Bash commands with the RULES.md deny lines and the fe
 	expect((await run({ tool_name: "Bash", tool_input: { command: "ls" } })).code).toBe(0);
 	expect((await run({ tool_name: "Read", tool_input: { file_path: "git push" } })).code).toBe(0);
 	expect((await run("not an object")).code).toBe(0);
+
+	// No answer in time (here: stdin never closes) blocks instead of letting Claude Code run the command after its own hook
+	// timeout. A real process and a real (short) deadline: the timeout is the hook process's own behaviour under test.
+	const stuck = Bun.spawn([process.execPath, join(import.meta.dir, "claude-deny-hook.ts")], { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, DOTZ_DIR: data, DOTZ_HOOK_DEADLINE_MS: "200" } });
+	expect(await stuck.exited).toBe(2);
+	expect(await new Response(stuck.stderr).text()).toContain("could not check this command in time");
+	stuck.stdin.end();
+	// Unreadable input blocks too.
+	const bad = Bun.spawn([process.execPath, join(import.meta.dir, "claude-deny-hook.ts")], { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, DOTZ_DIR: data } });
+	bad.stdin.write("{not json");
+	bad.stdin.end();
+	expect(await bad.exited).toBe(2);
 });
 
 test("recentExchanges reads a saved Claude Code session by id, keeping prompts and final answers only", () => {

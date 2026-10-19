@@ -134,7 +134,9 @@ resets, at the next idle moment) and `key_file` (the same model billed through a
 or report). Spend (tokens, USD from the model catalog's prices) is counted per key/model in `<data dir>/fallback-usage.json`.
 An API-key entry runs as its own provider `<provider>-apikey`, registered inside the process by the dotz extension
 (omp prefers a stored login over an API key for the provider's own id); `anthropic`, `openai` and `openrouter` are
-built in, other providers need `base_url` and `api` on the entry.
+built in, other providers need `base_url` and `api` on the entry. The key goes over https only, to `api.anthropic.com`,
+`api.openai.com`, `openrouter.ai` or a host listed in the top-level `key_hosts` array of `config.json`; an entry pointing
+anywhere else is refused when saved and never started. The key file's name must contain `api-key` or `api_key`.
 
 **Lane context management.** Five `lanes.*` keys in `config.json` (all optional): `compact_at` (default `400000`
 tokens) and `keep_recent` (default `40000`) go into each lane's `omp-overlay.yml` as `compaction.modelThresholds`

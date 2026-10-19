@@ -1,7 +1,12 @@
 // The hub-driven chain's decisions on their own (no process): where a spent cap goes, when every entry is out, and which
 // failures move the chain at all.
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { atTime, Chain, failsOver, failureReason, resetFallbackState } from "./fallback.ts";
+import { cfg, DATA_DIR } from "./config.ts";
+import { atTime, Chain, failsOver, failureReason, keyHostOk, keyProviderOk, resetFallbackState } from "./fallback.ts";
+
+mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
 
 const HOUR = 3600e3;
 
@@ -34,6 +39,32 @@ test("only provider-side failures move the chain; a too-long context is not a qu
 	expect(failsOver(undefined)).toBe(false);
 	expect(failureReason({ text: "prompt is too long: context length exceeded" })).toBe("error");
 	expect(failureReason({ text: "credit balance is too low" })).toBe("quota");
+});
+
+test("an API key goes only over https to a provider's own host or a configured one; another base_url is refused", () => {
+	expect(keyHostOk("https://api.anthropic.com")).toBe(true);
+	expect(keyHostOk("https://openrouter.ai/api/v1")).toBe(true);
+	expect(keyHostOk("http://api.anthropic.com")).toBe(false);
+	expect(keyHostOk("https://evil.example/v1")).toBe(false);
+	expect(keyHostOk("https://api.anthropic.com.evil.example")).toBe(false);
+	expect(keyHostOk("https://user:pw@api.anthropic.com")).toBe(false);
+	expect(keyHostOk("not a url")).toBe(false);
+	const entry = { model: "anthropic/m", key_file: "x-api-key", base_url: "https://gw.example/v1", api: "openai-completions" };
+	expect(keyProviderOk(entry)).toBe(false);
+	const saved = cfg.key_hosts;
+	cfg.key_hosts = ["gw.example"];
+	try {
+		expect(keyHostOk("https://gw.example/v1")).toBe(true);
+		expect(keyProviderOk(entry)).toBe(true);
+	} finally {
+		cfg.key_hosts = saved;
+	}
+	// A stored entry whose host is not allowed is never started, even with its key file present.
+	writeFileSync(join(DATA_DIR, "secrets", "x-api-key"), "sk-test");
+	resetFallbackState();
+	const c = new Chain("anthropic/sub:low", [entry], "low");
+	expect(c.down(1)?.why).toBe("error");
+	expect(() => c.env(1)).toThrow("not allowed");
 });
 
 test("atTime re-arms past setTimeout's 24.8-day limit instead of firing at once", () => {
