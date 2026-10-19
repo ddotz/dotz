@@ -12,6 +12,7 @@ import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hyg
 import { abortLane, approvesBudget, budgetVerdict, estimateOf, isExpensive, laneBusy, lanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setProgressHandler, setReportHandler, shutdownLanes, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, start as startOrchestrator, steer as steerOrchestrator } from "./orchestrator.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
+import { inOrder, localize } from "./outlang.ts";
 import { startReflection } from "./reflect.ts";
 import { addSchedule, listSchedules, removeSchedule, startSchedules } from "./schedule.ts";
 import { startOmpUpdate } from "./update.ts";
@@ -70,11 +71,15 @@ function redeliverSteered(): void {
 }
 
 const isLocal = (target: string) => target === "web" || target === "terminal";
-function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
-	emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text, reply_to: replyTo ?? null, ...extra });
+async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	lastPost.set(target, Date.now());
-	if (isLocal(target)) return Promise.resolve({ delivered: true });
-	return discord.send(target, text, replyTo);
+	const sent = await inOrder(target, async () => {
+		const t = await localize(text, target, typeof extra.source === "string" ? extra.source : "orchestrator");
+		emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text: t, reply_to: replyTo ?? null, ...extra });
+		return t;
+	});
+	if (isLocal(target)) return { delivered: true };
+	return discord.send(target, sent, replyTo);
 }
 
 // No owner message goes unanswered for long (owner 2026-10-17: "대답 누락하면 안되는데"). If nothing was posted to the
@@ -217,11 +222,15 @@ async function limitsAnswer(target: string, replyTo?: string): Promise<void> {
 const progressIds = new Map<string, string>();
 async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
 	const k = `${target}|${key}`;
-	emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text, update_key: key });
+	const sent = await inOrder(target, async () => {
+		const t = await localize(text, target, "orchestrator");
+		emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key });
+		return t;
+	});
 	if (isLocal(target)) return { delivered: true };
 	const prev = progressIds.get(k);
-	if (prev) return { ...(await discord.edit(target, prev, text)), edited: true };
-	const r = await discord.send(target, text, replyTo, { single: true });
+	if (prev) return { ...(await discord.edit(target, prev, sent)), edited: true };
+	const r = await discord.send(target, sent, replyTo, { single: true });
 	if (r.ids?.[0]) progressIds.set(k, r.ids[0]);
 	return r;
 }
@@ -265,13 +274,22 @@ setReportHandler((lane, text) => {
 	emit("inbox", event);
 	deliver(inboxText(event));
 	lastPost.set(`lane:${lane.name}`, Date.now());
-	void discord.send(`lane:${lane.name}`, text.slice(0, 1800)).catch(e => log(`lane report send failed: ${e}`));
+	const channel = `lane:${lane.name}`;
+	void inOrder(channel, () => localize(text.slice(0, 1800), channel, "lane"))
+		.then(shown => discord.send(channel, shown))
+		.catch(e => log(`lane report send failed: ${e}`));
 });
 
 setProgressHandler((lane, text) => {
-	emit("outbox", { ts: now(), kind: "out", source: `lane:${lane.name}`, target: `lane:${lane.name}`, text: `진행 중: ${text.slice(0, 900)}` });
-	lastPost.set(`lane:${lane.name}`, Date.now());
-	void discord.send(`lane:${lane.name}`, `진행 중: ${text.slice(0, 900)}`).catch(e => log(`lane progress send failed: ${e}`));
+	const channel = `lane:${lane.name}`;
+	lastPost.set(channel, Date.now());
+	void inOrder(channel, async () => {
+		const shown = `진행 중: ${await localize(text.slice(0, 900), channel, "lane")}`;
+		emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown });
+		return shown;
+	})
+		.then(shown => discord.send(channel, shown))
+		.catch(e => log(`lane progress send failed: ${e}`));
 });
 
 discord.setChannelGoneHandler(id => {
