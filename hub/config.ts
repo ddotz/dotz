@@ -88,9 +88,9 @@ export const paths = {
 const TEMPLATES: Record<string, string> = {
 	[paths.rules]: `# Owner rules
 
-Standing rules and prohibitions from the owner. The bot adds one the moment the owner states it (date + the owner's
-words) and changes or removes one only when the owner says so. They override MODE.md defaults and lessons, and lanes
-read this file too.
+Standing rules and prohibitions from the owner, one short line each (this file is read every session). The bot adds one
+the moment the owner states it and changes or removes one only when the owner says so; the owner's own words go to
+RULES.history.md. They override MODE.md defaults and lessons, and lanes read this file too.
 
 ## Rules
 
