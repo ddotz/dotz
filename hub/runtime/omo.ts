@@ -3,6 +3,7 @@
 // tool frames; the same session-file entries), so omp.ts's reader is reused and this file holds only what differs:
 // spawn arguments, provider names, compaction frame names, task workers that report back into the session instead of a
 // live subscription, and closing the rpc host OmO starts for task workers (omo-hosts.ts).
+import { apiKeyBan, withoutApiKeys } from "../apikey-policy.ts";
 import { parseSelector } from "../config.ts";
 import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
@@ -49,7 +50,7 @@ const NO_ASK = "--no-ask-user";
 // An API-key fallback entry runs as its own provider, which only exists once the dotz extension has registered it from
 // DOTZ_KEY_PROVIDER (hub/fallback.ts keyEnv): the process starts on the entry's own model and is switched to the key
 // provider's copy before the first prompt (RPC commands run in order), as on omp.
-const keyProviderOf = (o: SpawnOpts) => (o.env.DOTZ_KEY_PROVIDER ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined);
+const keyProviderOf = (o: SpawnOpts) => (o.env.DOTZ_KEY_PROVIDER && !apiKeyBan() ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined);
 
 // --no-model-fallback: OmO's own chain would follow the owner's global settings; the hub drives every chain of an OmO
 // process itself (hub/fallback.ts hubChain), restarting it on the same session with the next model.
@@ -67,7 +68,7 @@ export const omo: RuntimeAdapter = {
 	// once a 1h cache write is seen on OmO.
 	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: false, contextLimit: "compact" },
 	start(o) {
-		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...o.env, DOTZ_RUNTIME: "omo" } });
+		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ ...process.env, ...o.env, DOTZ_RUNTIME: "omo" }) });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
 		const agent = new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);
