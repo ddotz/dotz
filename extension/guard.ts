@@ -1047,7 +1047,9 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			if ("reason" in verdict) return { block: true, reason: verdict.reason };
 			const dear = fableOk() ? undefined : expensiveTaskModel(event.input);
 			if (dear) return { block: true, reason: fableReason("this task call", dear) };
-			if (config.budget_gate && Date.now() >= budgetOkUntil) {
+			// The quota comes from `omp usage`, i.e. omp's own login; an OmO process may run on another account, so the gate
+			// would block on a quota that is not the one it spends. No gate on OmO until OmO's own usage can be read.
+			if (config.budget_gate && process.env.DOTZ_RUNTIME !== "omo" && Date.now() >= budgetOkUntil) {
 				const workers = Array.isArray(event.input?.tasks) ? event.input.tasks.length : 1;
 				const limits = await anthropicLimits();
 				const est = estimateFrom(event.input, config);

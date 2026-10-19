@@ -149,7 +149,9 @@ export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<
 				else {
 					note(`probe ${c.id} start`);
 					try {
-						r = await withTimeout(probe({ cwd, model, log: s => note(`${c.id}: ${s}`), timeoutMs }), timeoutMs);
+						// A worker item runs a real worker (and, isolated, snapshots the repo) and may need a second turn for its result.
+						const limit = c.id.startsWith("workers_") ? Math.max(timeoutMs, 360_000) : timeoutMs;
+						r = await withTimeout(probe({ cwd, model, log: s => note(`${c.id}: ${s}`), timeoutMs: limit }), limit);
 					} catch (e) {
 						r = { result: "fail", note: String((e as Error)?.message ?? e).slice(0, 300) };
 					}
