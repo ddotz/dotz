@@ -1,7 +1,8 @@
 // Owner controls shared by the web API, the web chat box and Discord: model/effort switching, provider and quota
 // views, and the slash/bang command parser that drives them.
 import { DEFAULT_WORKER_MODEL, entryId, entryOf, FALLBACK_MAX, type FallbackEntry, type FallbackTarget, fallbackChain, isPlain, lanesModel, log, orchestratorModel, parseSelector, selectorOf, setFallbackChain, splitThinking, THINKING_LEVELS, updateConfig, workerModel } from "./config.ts";
-import { entryView, hubOwned, keyFileOk, keyProviderOk } from "./fallback.ts";
+import { entryView, hubChain, keyFileOk, keyProviderOk } from "./fallback.ts";
+import { runtimeFor } from "./runtime/index.ts";
 import { type Compaction, ctxView, describeCompaction, describeCtx } from "./context.ts";
 import * as discord from "./discord.ts";
 import { abortLane, compactLane, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
@@ -29,8 +30,8 @@ function fallbacksView() {
 	const ids = (list: Array<string | undefined>) => [...new Set(list.filter((s): s is string => Boolean(s)).map(s => parseSelector(s).model))];
 	return {
 		max: FALLBACK_MAX,
-		orchestrator: { chain: fallbackChain("orchestrator").map(entryView), hub_driven: hubOwned(fallbackChain("orchestrator")), active: orch.status === "stopped" ? [] : ids([orch.activeModel]) },
-		lanes: { chain: fallbackChain("lanes").map(entryView), hub_driven: hubOwned(fallbackChain("lanes")), active: ids(running.map(l => l.active_model)) },
+		orchestrator: { chain: fallbackChain("orchestrator").map(entryView), hub_driven: Boolean(hubChain(runtimeFor("orchestrator").id, fallbackChain("orchestrator"))), active: orch.status === "stopped" ? [] : ids([orch.activeModel]) },
+		lanes: { chain: fallbackChain("lanes").map(entryView), hub_driven: Boolean(hubChain(runtimeFor("lane").id, fallbackChain("lanes"))), active: ids(running.map(l => l.active_model)) },
 		workers: { chain: fallbackChain("workers").map(entryView), hub_driven: false, active: ids(running.map(l => l.active_worker_model)) },
 	};
 }

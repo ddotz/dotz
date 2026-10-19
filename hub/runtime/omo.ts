@@ -33,6 +33,10 @@ export function translateFrame(f: Frame & { reason?: string }): Frame {
 class OmoProcess extends OmpProcess {
 	// OmO has no task-worker subscription: a worker's result comes back into the session as a message.
 	watchSubagents(): void {}
+	// dotz selectors keep omp's provider names (`anthropic` = the subscription); OmO's `anthropic` bills the API key.
+	setModel(selector: string): void {
+		super.setModel(omoSelector(selector));
+	}
 }
 
 // OmO's own memory plugin would create a memory agent per cwd and run reflection turns on every dotz process; dotz
@@ -42,19 +46,31 @@ const MEMORY_OFF = "--omo-senpi-memory-disabled";
 // owner in its channels instead.
 const NO_ASK = "--no-ask-user";
 
+// An API-key fallback entry runs as its own provider, which only exists once the dotz extension has registered it from
+// DOTZ_KEY_PROVIDER (hub/fallback.ts keyEnv): the process starts on the entry's own model and is switched to the key
+// provider's copy before the first prompt (RPC commands run in order), as on omp.
+const keyProviderOf = (o: SpawnOpts) => (o.env.DOTZ_KEY_PROVIDER ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined);
+
+// --no-model-fallback: OmO's own chain would follow the owner's global settings; the hub drives every chain of an OmO
+// process itself (hub/fallback.ts hubChain), restarting it on the same session with the next model.
 export function omoArgs(o: SpawnOpts): string[] {
-	return [OMO, "--mode", "rpc", "--model", omoSelector(o.model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, NO_ASK, ...(o.resume ? ["--session", o.resume] : [])];
+	const key = keyProviderOf(o);
+	const model = key ? `${key.baseModel}:${parseSelector(o.model).thinking}` : o.model;
+	return [OMO, "--mode", "rpc", "--model", omoSelector(model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, NO_ASK, ...(o.resume ? ["--session", o.resume] : [])];
 }
 
 export const omo: RuntimeAdapter = {
 	id: "omo",
-	// No live worker frames; the hub's own chain switching is omp-only (fallback.ts hubDrivable), and OmO's own chain is off (--no-model-fallback).
+	// No live worker frames; every fallback chain is switched by the hub (fallback.ts hubChain), OmO's own chain is off (--no-model-fallback).
 	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact" },
 	start(o) {
 		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...o.env, DOTZ_RUNTIME: "omo" } });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
-		return new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);
+		const agent = new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);
+		const key = keyProviderOf(o);
+		if (key) agent.setModel(`${key.id}/${key.models[0].id}`);
+		return agent;
 	},
 	classifyError: classifyProviderError,
 	recentExchanges,

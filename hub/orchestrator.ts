@@ -13,7 +13,7 @@ import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { atTime, Chain, failsOver, failureReason, hubDrivable, hubOwned, type Move, Reverter, revertWhy } from "./fallback.ts";
+import { atTime, Chain, failsOver, failureReason, hubChain, type Move, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 
@@ -173,6 +173,8 @@ function switchTo(move: Move, again: boolean): boolean {
 	const line = msg().fallbackMove(chain.label(move.from), chain.label(move.to), move.why);
 	log(`orchestrator ${line}`);
 	onNotice(line);
+	// A switch away from the configured model after a failure is the owner's to hear, like a runtime's own fallback.
+	if (move.why === "quota" || move.why === "error") onAlert(`${NAME}: ${line}`);
 	continueAfterSwitch = again;
 	restart();
 	return true;
@@ -439,8 +441,10 @@ export function start(): void {
 	clearTimeout(errorHold);
 	adapter = runtime;
 	const entries = chainAfter(model, fallbackChain("orchestrator"));
-	// Conditional entries are switched by the hub on omp only; another runtime gets the models as its own plain fallback list.
-	chain = hubOwned(entries) && hubDrivable(runtime.id) ? new Chain(model, entries, orchestratorModel().thinking) : undefined;
+	// The hub switches the chain itself on OmO, and on omp when an entry is conditional (fallback.ts hubChain); otherwise the
+	// runtime gets the models as its own plain fallback list.
+	const driven = hubChain(runtime.id, entries);
+	chain = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
 	capped = undefined;
 	let spawnModel = model;
 	const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1" };
