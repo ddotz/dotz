@@ -7,6 +7,7 @@ import "./lock.ts"; // must stay right after config.ts: takes the single-instanc
 import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
 import * as discord from "./discord.ts";
+import * as livestatus from "./livestatus.ts";
 import { authRoute } from "./auth.ts";
 import { isNote, msg } from "./i18n.ts";
 import { activityItems, answeredIds, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
@@ -81,6 +82,7 @@ const REPLY_WAIT_MS = 60_000;
 const lastPost = new Map<string, number>();
 function expectReply(target: string): void {
 	if (isLocal(target)) return;
+	livestatus.begin(target, "orchestrator");
 	const since = Date.now();
 	setTimeout(() => {
 		if ((lastPost.get(target) ?? 0) >= since) return;
@@ -330,6 +332,7 @@ discord.connect(m => {
 		try {
 			if (approvesBudget(lane, m.content)) sendToLane(lane, "/budget-ok");
 			sendToLane(lane, [`[owner via Discord] ${m.content}`, extra].filter(Boolean).join("\n"));
+			livestatus.begin(target, `lane:${lane}`);
 		} catch (error) {
 			void discord.send(target, `레인 ${lane}을(를) 이어갈 수 없어요 (${(error as Error).message}). 대화 채널에서 다시 맡겨 주세요.`, m.id);
 		}

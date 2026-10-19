@@ -91,7 +91,7 @@ const isWorkParent = (parent?: string) => !!parent && (parent === channels.categ
 
 async function rest(method: string, path: string, body?: unknown): Promise<any> {
 	for (let attempt = 0; ; attempt++) {
-		const r = await fetch(`https://discord.com/api/v10${path}`, {
+		const r = await fetch(`${process.env.DOTZ_DISCORD_API || "https://discord.com/api/v10"}${path}`, {
 			method,
 			headers: { Authorization: `Bot ${TOKEN}`, "Content-Type": "application/json" },
 			body: body === undefined ? undefined : JSON.stringify(body),
@@ -423,11 +423,17 @@ export async function interactionCallback(d: Interaction, type: number, data?: u
 	}
 }
 
+const sentAt = new Map<string, number>();
+// When the last message (not a progress note) went to a target through send(); the live status line reads it to know
+// whether an answer already reached the channel.
+export const lastSendAt = (target: string): number => sentAt.get(target) ?? 0;
+
 export async function send(target: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
 	const id = resolve(target);
 	if (!id) return { delivered: false, reason: `unknown target ${target}` };
 	const ids: string[] = [];
+	sentAt.set(target, Date.now());
 	for (const body of buildPayloads(text, replyTo)) ids.push(await post(id, body));
 	return { delivered: true, ids };
 }
@@ -464,7 +470,15 @@ export async function progress(target: string, key: string, text: string, replyT
 	return { delivered: true, ids: [mid] };
 }
 
+// Runs first in clearProgress: the live status line stops its ticker there (and waits for a post still in flight), so no
+// late tick can put a message back after the clearing.
+let beforeClear: (target: string) => Promise<void> | void = () => {};
+export function setBeforeClearHook(fn: (target: string) => Promise<void> | void): void {
+	beforeClear = fn;
+}
+
 export async function clearProgress(target: string): Promise<void> {
+	await beforeClear(target);
 	const tracked = progressIds.get(target);
 	if (!tracked) return;
 	progressIds.delete(target);
