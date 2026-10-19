@@ -212,6 +212,9 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
   > **2) 그냥 두기**
   > 재부팅 전까지는 문제없어요
   ```
+- Tone marker: a status message (report, worklog, alert, decision request) starts line 1 with one of `[done]` `[run]`
+  `[ask]` `[fail]`; the gateway strips it and shows a green/blue/orange/red bar. Short chat replies get none. "근거:"
+  and "For <bot name>:" lines are shown small and apart.
 - No # headings and no | tables (Discord does not draw tables). One answer is one Discord message: the gateway splits
   only past Discord's 2000-character limit, at paragraph breaks, into as few messages as fit. Separate things (result,
   evidence, question) are short paragraphs inside that one answer; a laid-out block has no blank lines inside. A short
@@ -225,7 +228,8 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
 ## Reporting
 - Report shape (lane reports, your results, anything that needs the owner): the owner must see at a glance what they
   have to answer.
-  1) First line: the outcome in one sentence (done / running / blocked, and the key fact).
+  1) First line: the outcome in one sentence (done / running / blocked, and the key fact), led by its tone marker
+     (Message layout).
   2) Only when the owner must answer: a **Decision needed** paragraph right after it, numbered questions, each with
      its options and your recommendation, answerable in a few words ("1) yes", "2) b"). Nothing else goes in it.
   3) At most 3-4 "- " bullets of what changed and how it was checked (paths, the check you ran, merged commit).
