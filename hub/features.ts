@@ -34,7 +34,12 @@ export type Feature = {
 	enabled: boolean;
 	toggleable: boolean;
 	dup?: { id: string; name: string }[];
+	origin?: "shipped" | "personal"; // shipped: comes with dotz for every user; personal: this owner's own files and settings
 };
+// Owner files (RULES/LESSONS/identity, RULES deny lines, schedules, watches, channel setups) and anything under the home
+// directory (skills, omp extensions) are personal; dotz's own code, built-in denies and repo files ship with dotz.
+const originOf = (f: Feature): "shipped" | "personal" =>
+	f.form === "글 지시" || f.form === "예약" || f.form === "감시" || f.form === "작업 채널 설정" || f.id.startsWith("deny-") || f.source.label.startsWith("~") ? "personal" : "shipped";
 
 const REPO = join(import.meta.dir, "..");
 const short = (p: string) => (p.startsWith(`${HOME}/`) ? `~${p.slice(HOME.length)}` : p.startsWith(`${REPO}/`) ? p.slice(REPO.length + 1) : p);
@@ -247,7 +252,9 @@ function extensionFeatures(): Feature[] {
 		const src = read(file);
 		if (src === undefined) return;
 		const lines = src.split("\n");
-		const label = short(file);
+		// an extension linked to this repo (dotz's own) is labelled by its repo path, which also marks it as shipped
+		const real = (() => { try { return realpathSync(file); } catch { return file; } })();
+		const label = short(real.startsWith(`${realpathSync(REPO)}/`) ? join(REPO, real.slice(realpathSync(REPO).length + 1)) : file);
 		const marked = annotated(lines);
 		if (marked.length) {
 			for (const f of marked) out.push({ id: `${id}-${f.line}`, form: "omp 확장", name: clip(f.name, 40), what: clip(f.what, 150), trigger: f.trigger ?? hookTrigger(src), stage: f.stage ?? "orchestrator", strength: "enforced", source: { label: `${label}:${f.line}`, line: f.line }, enabled: true, toggleable: false });
@@ -407,10 +414,10 @@ function dirFeatures(nodeIds: Set<string>): Feature[] {
 	for (const f of loadFeatureDirs(DATA_DIR, log).features) {
 		const parts = [f.body ? "글 지시" : "", f.deny.length ? `차단 ${f.deny.length}줄` : "", f.watch ? "감시" : "", f.schedule ? "예약 파일은 아직 실행되지 않아요" : ""].filter(Boolean);
 		const stage = nodeIds.has(f.stage) ? f.stage : "rules";
-		const src = { label: `features/${f.id}/feature.md` };
+		const src = { label: short(f.file) };
 		const enforced = f.deny.length > 0 || Boolean(f.watch);
-		out.push({ id: dirId(f.id), form: "기능 폴더", name: f.name, what: `${clip(f.what, 110)}${parts.length ? ` · ${parts.join(" + ")}` : ""}${f.enabled ? "" : " (꺼짐)"}`, trigger: f.trigger as Trigger, stage, strength: enforced ? "enforced" : "advisory", source: src, enabled: f.enabled, toggleable: true });
-		f.deny.forEach((d, i) => out.push({ id: `${dirId(f.id)}-deny-${i + 1}`, form: "기능 폴더", name: clip(d.reason, 40), what: `${f.enabled ? "실행 전에 막아요" : "꺼져 있어서 막지 않아요"} (${f.name}) · ${clip(d.reason, 100)}`, trigger: "도구 실행 직전", stage: "guard", strength: "enforced", source: { label: `features/${f.id}/feature.md:${d.line}` }, extra: d.pattern, enabled: f.enabled, toggleable: false }));
+		out.push({ id: dirId(f.id), form: "기능 폴더", name: f.name, what: `${clip(f.what, 110)}${parts.length ? ` · ${parts.join(" + ")}` : ""}${f.enabled ? "" : " (꺼짐)"}`, trigger: f.trigger as Trigger, stage, strength: enforced ? "enforced" : "advisory", source: src, enabled: f.enabled, toggleable: f.origin === "personal", origin: f.origin });
+		f.deny.forEach((d, i) => out.push({ id: `${dirId(f.id)}-deny-${i + 1}`, form: "기능 폴더", name: clip(d.reason, 40), what: `${f.enabled ? "실행 전에 막아요" : "꺼져 있어서 막지 않아요"} (${f.name}) · ${clip(d.reason, 100)}`, trigger: "도구 실행 직전", stage: "guard", strength: "enforced", source: { label: `${short(f.file)}:${d.line}` }, extra: d.pattern, enabled: f.enabled, toggleable: false, origin: f.origin }));
 	}
 	return out;
 }
@@ -450,6 +457,7 @@ export async function featureCatalog() {
 		...nodeFeatures(graph.nodes),
 	];
 	markDuplicates(features);
+	for (const f of features) f.origin ??= originOf(f);
 	return { generated: new Date().toISOString(), forms: FORMS, triggers: TRIGGERS, features, stages: graph.nodes.map(n => n.id), data_dir: short(DATA_DIR), skipped_dirs: loadFeatureDirs(DATA_DIR, log).skipped };
 }
 

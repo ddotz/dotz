@@ -2864,7 +2864,8 @@ function renderSettings() {
 let HG = null, hSel = "", hLoading = false, hDirty = null, hEdgeRefs = [], hNodeEls = new Map(), hTimer = 0;
 let FC = null, hGoto = null, hMapBox = null, hFcBox = null, fcSig = "", fcList = null, fcCount = null;
 let hFeat = (() => { try { return localStorage.getItem("dotz-hfeat") === "1"; } catch { return false; } })();
-const fcFilter = { q: "", form: "", trigger: "", strength: "" }, fcCollapsed = new Set(["스킬"]);
+const fcFilter = { q: "", form: "", trigger: "", strength: "", origin: "" }, fcCollapsed = new Set(["스킬"]);
+const FC_ORIGIN = { shipped: "배포용", personal: "개인용" };
 const H_MQ = matchMedia("(max-width: 639px)");
 const H_COLS = ["들어오는 곳", "게이트웨이", "오케스트레이터", "레인", "작업자"];
 const H_TONE = { ok: "ok", busy: "pri", warn: "warn", err: "err", off: "" };
@@ -3266,6 +3267,7 @@ function fcCard(f) {
     el("div", { class: "fc-tags" },
       el("span", { class: `tag st ${f.strength}`, title: f.strength === "enforced" ? "코드·훅·차단 줄이 막거나 실행해요" : "모델에게 따르라고 부탁한 글이에요", text: FC_STR[f.strength] }),
       el("span", { class: "tag", text: f.trigger }),
+      f.origin ? el("span", { class: `tag${f.origin === "personal" ? " pri" : ""}`, title: f.origin === "personal" ? "이 사용자의 파일·설정에만 있는 기능이에요 (~/.dotz, ~/.omp)" : "dotz 와 함께 배포되는 기능이에요", text: FC_ORIGIN[f.origin] }) : null,
       node ? el("span", { class: "tag", text: node.label.replace(/\s*\(.*\)$/, "") }) : null,
       !f.enabled ? el("span", { class: "tag", text: "꺼짐" }) : null,
       dup ? el("span", { class: "tag warn", title: dup, text: "중복" }) : null),
@@ -3278,12 +3280,12 @@ function fcCard(f) {
 
 const fcMatch = f => {
   const q = fcFilter.q.trim().toLowerCase();
-  return (!fcFilter.form || f.form === fcFilter.form) && (!fcFilter.strength || f.strength === fcFilter.strength) && (!fcFilter.trigger || f.trigger === fcFilter.trigger)
+  return (!fcFilter.form || f.form === fcFilter.form) && (!fcFilter.strength || f.strength === fcFilter.strength) && (!fcFilter.trigger || f.trigger === fcFilter.trigger) && (!fcFilter.origin || FC_ORIGIN[f.origin] === fcFilter.origin)
     && (!q || `${f.name} ${f.what} ${f.source.label} ${f.trigger} ${f.form} ${f.extra || ""}`.toLowerCase().includes(q));
 };
 
 function fcPaintList() {
-  const all = FC.features, hit = all.filter(fcMatch), filtering = !!(fcFilter.q.trim() || fcFilter.form || fcFilter.strength || fcFilter.trigger);
+  const all = FC.features, hit = all.filter(fcMatch), filtering = !!(fcFilter.q.trim() || fcFilter.form || fcFilter.strength || fcFilter.trigger || fcFilter.origin);
   const e = hit.filter(f => f.strength === "enforced").length;
   fcCount.textContent = `${filtering ? `${hit.length} / ${all.length}개` : `${all.length}개`} · 강제 ${e} · 권고 ${hit.length - e}`;
   clear(fcList);
@@ -3322,7 +3324,7 @@ function fcBuild(box) {
   fcList = el("div");
   box.append(el("div", { class: "sec", text: "기능 목록" }),
     el("div", { class: "sup", text: "내가 더한 기능을 구현 형식별로 모았어요. 실선·강제는 코드가 막거나 실행하는 것, 점선·권고는 모델에게 따르라고 부탁한 글이에요. 카드를 누르면 작동하는 자리와 파일이 열려요." }),
-    el("div", { class: "fc-bar" }, q, pick("form", "형식", () => FC.forms), pick("trigger", "트리거", () => FC.triggers), seg), fcCount, fcList);
+    el("div", { class: "fc-bar" }, q, pick("form", "형식", () => FC.forms), pick("trigger", "트리거", () => FC.triggers), pick("origin", "출처", () => Object.values(FC_ORIGIN)), seg), fcCount, fcList);
 }
 
 function renderFeatures() {

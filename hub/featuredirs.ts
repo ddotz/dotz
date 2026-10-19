@@ -1,4 +1,5 @@
-// Owner feature folders: <DATA_DIR>/features/<id>/feature.md (+ optional watch.json, schedule.json).
+// Feature folders: <repo>/features/<id>/ (shipped with dotz) and <DATA_DIR>/features/<id>/ (the owner's own), each with
+// feature.md (+ optional watch.json, schedule.json).
 //   feature.md  frontmatter: name, what (one line), trigger (one of TRIGGERS), stage (harness node id), enabled (default true),
 //               applies_to (orchestrator|lanes|workers|all, default all), deny: list of "- <regex> | <reason>".
 //               The body is advisory text that goes into the prompt after RULES.md.
@@ -21,11 +22,15 @@ export type FeatureDir = {
 	deny: { pattern: string; reason: string; line: number }[];
 	body: string;
 	file: string; // absolute feature.md
+	origin: "shipped" | "personal";
 	watch?: Record<string, any>;
 	schedule?: Record<string, any>;
 };
 export type Loaded = { features: FeatureDir[]; skipped: { id: string; reason: string }[] };
 
+// Two roots: `features/` in this repo ships with dotz for every user ("shipped"); <DATA_DIR>/features is this owner's own
+// ("personal": machine/person-specific rules such as which machine handles mail). Owner-specific content never goes in the repo root.
+export const SHIPPED_ROOT = join(import.meta.dir, "..", "features");
 export const featuresRoot = (dataDir: string) => join(dataDir, "features");
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const DENY_ITEM = /^(.+)\s+\|\s+(.+?)$/;
@@ -74,7 +79,7 @@ function readJson(file: string, what: string): Record<string, any> | undefined {
 	return v as Record<string, any>;
 }
 
-function loadOne(dir: string, id: string): FeatureDir | string {
+function loadOne(dir: string, id: string, origin: FeatureDir["origin"]): FeatureDir | string {
 	if (!ID.test(id)) return "폴더 이름은 [a-z0-9-] (최대 40자) 여야 해요";
 	const file = join(dir, id, "feature.md");
 	if (!existsSync(file)) return "feature.md 가 없어요";
@@ -102,7 +107,7 @@ function loadOne(dir: string, id: string): FeatureDir | string {
 	} catch (e) {
 		return (e as Error).message;
 	}
-	return { id, name: meta.name, what: meta.what, trigger: meta.trigger, stage: meta.stage, enabled: meta.enabled !== "false", appliesTo: applies, deny, body: p.body, file, ...(watch ? { watch } : {}), ...(schedule ? { schedule } : {}) };
+	return { id, name: meta.name, what: meta.what, trigger: meta.trigger, stage: meta.stage, enabled: meta.enabled !== "false", appliesTo: applies, deny, body: p.body, file, origin, ...(watch ? { watch } : {}), ...(schedule ? { schedule } : {}) };
 }
 
 type Entry = { sig: string; feature?: FeatureDir; reason?: string };
@@ -115,35 +120,37 @@ const mt = (p: string) => {
 	}
 };
 
-// Every folder under <dataDir>/features, malformed ones listed in `skipped` (reported once per change through `warn`).
+// Every folder under the shipped root and <dataDir>/features. A personal folder with the same id replaces the shipped one
+// (copy it and edit, e.g. `enabled: false`). Malformed ones are listed in `skipped` (reported once per change through `warn`).
 export function loadFeatureDirs(dataDir: string, warn?: (msg: string) => void): Loaded {
-	const root = featuresRoot(dataDir);
-	let names: string[] = [];
-	try {
-		names = readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith(".")).map(e => e.name).sort();
-	} catch {
-		return { features: [], skipped: [] };
-	}
-	const out: Loaded = { features: [], skipped: [] };
-	for (const id of names) {
-		const key = join(root, id);
-		const sig = ["feature.md", "watch.json", "schedule.json"].map(f => mt(join(key, f))).join(":");
-		let e = cache.get(key);
-		if (!e || e.sig !== sig) {
-			let r: FeatureDir | string;
-			try {
-				r = loadOne(root, id);
-			} catch (err) {
-				r = `읽지 못했어요: ${err}`;
-			}
-			e = typeof r === "string" ? { sig, reason: r } : { sig, feature: r };
-			cache.set(key, e);
-			if (e.reason) warn?.(`feature folder ${id} skipped: ${e.reason}`);
+	const byId = new Map<string, FeatureDir>(), skipped = new Map<string, { id: string; reason: string }>();
+	for (const [root, origin] of [[SHIPPED_ROOT, "shipped"], [featuresRoot(dataDir), "personal"]] as const) {
+		let names: string[] = [];
+		try {
+			names = readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith(".")).map(e => e.name).sort();
+		} catch {
+			continue;
 		}
-		if (e.feature) out.features.push(e.feature);
-		else out.skipped.push({ id, reason: e.reason! });
+		for (const id of names) {
+			const key = join(root, id);
+			const sig = ["feature.md", "watch.json", "schedule.json"].map(f => mt(join(key, f))).join(":");
+			let e = cache.get(key);
+			if (!e || e.sig !== sig) {
+				let r: FeatureDir | string;
+				try {
+					r = loadOne(root, id, origin);
+				} catch (err) {
+					r = `읽지 못했어요: ${err}`;
+				}
+				e = typeof r === "string" ? { sig, reason: r } : { sig, feature: r };
+				cache.set(key, e);
+				if (e.reason) warn?.(`${origin} feature folder ${id} skipped: ${e.reason}`);
+			}
+			if (e.feature) { byId.set(id, e.feature); skipped.delete(id); }
+			else skipped.set(id, { id, reason: `${origin === "shipped" ? "배포용" : "개인용"}: ${e.reason!}` });
+		}
 	}
-	return out;
+	return { features: [...byId.values()].sort((a, b) => a.id.localeCompare(b.id)), skipped: [...skipped.values()] };
 }
 
 const CAP = 12_000;
@@ -151,9 +158,9 @@ const CAP = 12_000;
 export function featurePrompt(dataDir: string, role: "orchestrator" | "lanes", warn?: (msg: string) => void, max = CAP): string {
 	const mine = loadFeatureDirs(dataDir, warn).features.filter(f => f.enabled && f.body && (f.appliesTo === "all" || f.appliesTo === role || (role === "lanes" && f.appliesTo === "workers")));
 	if (!mine.length) return "";
-	const text = mine.map(f => `### ${f.name} (features/${f.id}${f.appliesTo === "workers" ? "; pass this to your task workers in their briefs" : ""})\n${f.body}`).join("\n\n");
-	const body = text.length > max ? `${text.slice(0, max)}\n[... cut at ${max} characters; read ${featuresRoot(dataDir)}/<id>/feature.md for the rest]` : text;
-	return `## Owner features (${featuresRoot(dataDir)}; same weight as the owner rules above)\n\n${body}`;
+	const text = mine.map(f => `### ${f.name} (${f.file}${f.appliesTo === "workers" ? "; pass this to your task workers in their briefs" : ""})\n${f.body}`).join("\n\n");
+	const body = text.length > max ? `${text.slice(0, max)}\n[... cut at ${max} characters; read the feature.md named in each heading for the rest]` : text;
+	return `## Features (shipped ones from ${SHIPPED_ROOT}, the owner's own from ${featuresRoot(dataDir)}; same weight as the owner rules above)\n\n${body}`;
 }
 
 // Same matching as the RULES.md "- deny:" lines (case-insensitive regex on the whole command).
@@ -169,7 +176,7 @@ export function blockedByFeatures(dataDir: string, command: string, warn?: (msg:
 export function setFeatureEnabled(dataDir: string, id: string, enabled: boolean): void {
 	if (!ID.test(id)) throw new Error(`"${id}" 은(는) 기능 폴더 이름이 아니에요`);
 	const file = join(featuresRoot(dataDir), id, "feature.md");
-	if (!existsSync(file)) throw new Error(`features/${id}/feature.md 가 없어요`);
+	if (!existsSync(file)) throw new Error(`개인 기능 폴더 features/${id}/feature.md 가 없어요 (배포용 기능은 같은 id 로 개인 폴더에 복사해서 바꿔요)`);
 	const before = readFileSync(file, "utf8");
 	const m = /^(---\r?\n)([\s\S]*?)(\r?\n---)/.exec(before);
 	if (!m) throw new Error("frontmatter 가 없어서 바꿀 수 없어요");
