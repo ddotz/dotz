@@ -75,7 +75,8 @@
    "saved",
    {
     "sessionFile": "<DATA>/orch-session.jsonl",
-    "model": "anthropic/test-orch:low"
+    "model": "anthropic/test-orch:low",
+    "runtime": "omp"
    },
    true
   ],
