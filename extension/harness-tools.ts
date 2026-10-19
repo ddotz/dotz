@@ -1,5 +1,5 @@
 // Harness-management commands for an omp session the user drives directly (ported from the owner's harness-tools extension):
-//   /token-audit [hours]  token-leak audit over omp sessions (report only; extension/token-audit.ts)
+//   /token-audit [hours]  token-leak audit over omp and OmO sessions (report only; extension/token-audit.ts)
 //   /doctor [fix]         session health: context, session file size, model/default role, last 429, quota, open workers
 //                         and patches, worker-guard health over this project's last 7 days of sessions, orphaned omp RPC
 //                         processes (`fix` kills the orphans)
@@ -202,7 +202,7 @@ function lastRateLimit(entries: any[]): string | undefined {
 async function tokenAuditReport(hours: number): Promise<{ text: string; flags: number; ok: boolean }> {
 	try {
 		const config = loadGuardConfig();
-		const result = await runTokenAudit({ hours, sessionsDir: join(agentDir(host), "sessions"), expensiveModels: config.ask_before_expensive ? config.expensive_models : [] });
+		const result = await runTokenAudit({ hours, expensiveModels: config.ask_before_expensive ? config.expensive_models : [] });
 		return { text: result.text, flags: result.flags, ok: true };
 	} catch (error) {
 		return { text: `token-audit failed: ${error instanceof Error ? error.message : String(error)}`, flags: 0, ok: false };
@@ -299,7 +299,7 @@ export function installHarnessTools(pi: any): void {
 	});
 
 	pi.registerCommand("token-audit", {
-		description: "Token-leak audit over omp sessions (report only): /token-audit [hours, default 24]",
+		description: "Token-leak audit over omp and OmO sessions (report only): /token-audit [hours, default 24]",
 		handler: async (args: unknown, ctx: any) => {
 			const hours = Number(String(args ?? "").trim()) || 24;
 			ctx.ui.notify(`token-audit: scanning the last ${hours}h...`, "info");

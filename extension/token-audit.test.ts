@@ -58,6 +58,32 @@ test("audit: a session older than the window is skipped; a missing directory is 
 	expect(later.sessions).toBe(0);
 });
 
+test("audit: OmO sessions are read with the OmO rules (only its wake events count as an idle wake)", async () => {
+	const now = realNow();
+	const at = (min: number) => new Date(now - min * 60_000).toISOString();
+	const reply = (min: number) => ({
+		type: "message",
+		timestamp: at(min),
+		message: { role: "assistant", provider: "anthropic", model: "opus", stopReason: "stop", usage: { totalTokens: 1000, input: 100, output: 20, cacheRead: 800, cacheWrite: 100, cacheWrite1h: 100, cost: { total: 0.1 } }, content: [] },
+	});
+	const custom = (min: number, customType: string) => ({ type: "custom_message", timestamp: at(min), customType });
+	const lines = [reply(9), custom(8, "senpi-monitor:notification"), reply(7), custom(6, "todo-state"), reply(5)];
+	const tree = (name: string) => {
+		const root = join(dir, name);
+		mkdirSync(join(root, "--tmp-proj--"), { recursive: true });
+		writeFileSync(join(root, "--tmp-proj--", "2026-10-19_0a1b2c3d.jsonl"), `${lines.map(l => JSON.stringify(l)).join("\n")}\n`);
+		return root;
+	};
+	const reportDir = join(dir, "logs-omo");
+	const omo = await runTokenAudit({ hours: 1, roots: [{ dir: tree("omo"), runtime: "omo" }], reportDir, lang: "en", now });
+	const omoReport = readFileSync(omo.report!, "utf8");
+	expect(omo.sessions).toBe(1);
+	expect(omoReport).toContain("/tmp/proj 0a1b2c3d [OmO]");
+	expect(omoReport).toContain("1 turn(s) woke with nothing to do");
+	const omp = await runTokenAudit({ hours: 1, roots: [{ dir: tree("omp"), runtime: "omp" }], reportDir, lang: "en", now });
+	expect(readFileSync(omp.report!, "utf8")).toContain("2 turn(s) woke with nothing to do");
+});
+
 test("guardHealth: unmarked briefs and unisolated writers are reported", () => {
 	const dirOf = join(dir, "health");
 	mkdirSync(dirOf, { recursive: true });
