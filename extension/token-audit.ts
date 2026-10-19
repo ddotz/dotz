@@ -1,17 +1,18 @@
-// Token-leak audit for omp sessions (ported from the owner's harness token-audit script). Pure TS, no LLM calls, report only.
-// Scans the omp session files (main sessions and their subagent children) active in the last N hours, writes the full
+// Token-leak audit for omp and OmO sessions (ported from the owner's harness token-audit script). Pure TS, no LLM calls, report only.
+// Scans the session files of both runtimes (hub/session-sources.ts, the reader the nightly audit uses: main sessions,
+// their subagent children and OmO task workers) active in the last N hours, writes the full
 // report to <DOTZ_DIR>/logs/token-audit-session-YYYYMMDD.md and returns a short summary. The 7-day history for the spike
 // check is the one the gateway's nightly audit keeps (<DOTZ_DIR>/token-audit.json); it is only read here. Every fix is a
 // suggestion; nothing is applied. Suggestions are limited to no-trade-off fixes; cuts that could cost capability go to "hold".
 // Used by /token-audit and the harness_token_audit tool (harness-tools.ts); `bun extension/token-audit.ts [hours]` prints it.
 
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import type { Dirent } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { setImmediate as nextTick } from "node:timers/promises";
 import { baseLanguage, systemLanguage } from "../hub/language.ts";
-import { agentDir, dataDir } from "./guard-config.ts";
+import { collectSessions, OMO_WAKE, type Runtime, type Src } from "../hub/session-sources.ts";
+import { dataDir } from "./guard-config.ts";
 
 const BUST_UNCACHED = 50_000;
 const BIG_CTX = 300_000;
@@ -32,7 +33,6 @@ const M = (n: number) => `${(n / 1e6).toFixed(1)}M`;
 const K = (n: number) => `${Math.round(n / 1e3)}K`;
 const usd = (n: number) => `$${n.toFixed(2)}`;
 
-type Src = { file: string; label: string; child: boolean };
 type Bust = { ts: number; uncached: number; cr: number; prevCtx: number; cost: number; events: string[] };
 type Stats = {
 	src: Src;
@@ -154,7 +154,7 @@ const LANG = {
 		newContent: (n: number) => ` 새내용x${n}`,
 		day: (d: Day) => `- ${d.date}: ${M(d.tokens)} tok, ${usd(d.cost)}, 캐시 쓰기 ${M(d.cacheWrite)}, 세션 ${d.sessions}, 경고 ${d.flags}`,
 		basis: `기준: 캐시 깨짐 = 미캐시 입력(캐시 쓰기+input) >${K(BUST_UNCACHED)}이면서 캐시 읽기가 직전 컨텍스트의 80% 미만이고, 직전에 압축/모델·thinking 변경/TTL(1h, 5m) 초과 공백이 없음. 헛깨움 = 사용자 입력 없이 알림만으로 시작된 턴이 도구 호출 없이 출력 ${IDLE_OUT} tok 이하로 끝남. 워커 >${M(SUB_NOTE)} 참고, >${M(SUB_FLAG)} 경고.`,
-		worker_label: "워커",
+		words: { orchestrator: "오케스트레이터", lane: "레인", worker: "워커" },
 		summary: (from: string, to: string, sessions: number, tok: string, cost: string, flags: number) => `토큰 점검 (${from}~${to}): 세션 ${sessions}개, ${tok} tok ${cost}, 경고 ${flags}건`,
 		report: "보고서",
 	},
@@ -237,7 +237,7 @@ const LANG = {
 		newContent: (n: number) => ` new-content x${n}`,
 		day: (d: Day) => `- ${d.date}: ${M(d.tokens)} tok, ${usd(d.cost)}, cache writes ${M(d.cacheWrite)}, ${d.sessions} session(s), ${d.flags} warning(s)`,
 		basis: `Basis: cache bust = uncached input (cache write + input) >${K(BUST_UNCACHED)} while cache read is under 80% of the previous context and no compaction, model/thinking change or TTL (1h, 5m) gap came right before. Idle wake = a turn started by a notification alone (no user input) that ended without tool calls and at most ${IDLE_OUT} output tokens. Workers >${M(SUB_NOTE)} are a note, >${M(SUB_FLAG)} a warning.`,
-		worker_label: "worker",
+		words: { orchestrator: "orchestrator", lane: "lane", worker: "worker" },
 		summary: (from: string, to: string, sessions: number, tok: string, cost: string, flags: number) => `Token audit (${from}~${to}): ${sessions} session(s), ${tok} tok ${cost}, ${flags} warning(s)`,
 		report: "Report",
 	},
@@ -266,7 +266,7 @@ const expensiveMatcher = (entries: readonly string[]) => {
 
 function analyze(src: Src, since: number, isExpensive: (model: string) => boolean): Stats {
 	const s: Stats = {
-		src, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], explained: {}, bigNew: 0,
+		src, intended: src.requested, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], explained: {}, bigNew: 0,
 		wakes: {}, warmings: 0, ttsr: 0, errTurns: 0, maxErrStreak: 0, errCodes: {}, compactErr: 0, maxBigStreak: 0, bigTokens: 0, bigCost: 0,
 		fbTurns: 0, fbModels: new Set(), expensive: 0, expensiveCost: 0, expensiveModels: new Set(), maxToolStreak: 0, maxToolDesc: "", loopTokens: 0, loopCost: 0, readRate: 0,
 	};
@@ -373,9 +373,11 @@ function analyze(src: Src, since: number, isExpensive: (model: string) => boolea
 				else if (cr < prev.ctx * 0.8) s.busts.push({ ts, uncached, cr, prevCtx: prev.ctx, cost: (u.cost?.cacheWrite ?? 0) + (u.cost?.input ?? 0), events: [...new Set(events)] });
 				else s.bigNew++;
 			}
-			if (newTurn && !user && events.length) {
+			// OmO writes bookkeeping entries around every turn; only its wake events start a turn without the owner.
+			const wakeBy = src.runtime === "omo" ? events.filter(e => OMO_WAKE.has(e)) : events;
+			if (newTurn && !user && wakeBy.length) {
 				if (!calls.length && (u.output ?? 0) <= IDLE_OUT) {
-					const key = events.at(-1) ?? "custom";
+					const key = wakeBy.at(-1) ?? "custom";
 					const w = (s.wakes[key] ??= { n: 0, tokens: 0, cost: 0 });
 					w.n++;
 					w.tokens += tokens;
@@ -411,7 +413,8 @@ function analyze(src: Src, since: number, isExpensive: (model: string) => boolea
 			}
 		}
 		s.intended ??= model;
-		const ttlMin = u.cttl?.ephemeral1h ? 60 : u.cttl?.ephemeral5m ? 5 : (prev?.ttlMin ?? 5);
+		// omp reports the cache TTL in cttl; OmO in cacheWrite1h, and a write without it is a 5-minute write
+		const ttlMin = u.cttl?.ephemeral1h || (u.cacheWrite1h ?? 0) > 0 ? 60 : u.cttl?.ephemeral5m || (src.runtime === "omo" && cw > 0) ? 5 : (prev?.ttlMin ?? 5);
 		prev = { ts, ctx, ttlMin };
 		prevStop = m.stopReason ?? "stop";
 		events = [];
@@ -486,7 +489,9 @@ export function findingsOf(results: Stats[], t: Messages, spike?: Finding): Find
 
 export interface AuditOptions {
 	hours?: number;
-	// Directory of omp session files (default <agent dir>/sessions).
+	// Session trees to read (default ~/.omo/agent/sessions and ~/.omp/agent/sessions plus OmO's task stores); given
+	// roots skip the task stores. sessionsDir is one omp tree.
+	roots?: { dir: string; runtime: Runtime }[];
 	sessionsDir?: string;
 	// `guard.expensive_models` while the owner rule is on; empty = no expensive-model finding.
 	expensiveModels?: readonly string[];
@@ -508,40 +513,13 @@ export interface AuditResult {
 export async function runTokenAudit(opts: AuditOptions = {}): Promise<AuditResult> {
 	const HOME = homedir();
 	const hours = opts.hours && opts.hours > 0 ? opts.hours : 24;
-	const root = opts.sessionsDir ?? join(agentDir(undefined), "sessions");
 	const now = opts.now ?? Date.now();
 	const since = now - hours * 3600e3;
 	const t = LANG[opts.lang ?? auditLanguage()];
 	const isExpensive = expensiveMatcher(opts.expensiveModels ?? []);
 
-	const srcs: Src[] = [];
-	const walk = (dir: string, depth: number): void => {
-		let entries: Dirent[] = [];
-		try {
-			entries = readdirSync(dir, { withFileTypes: true });
-		} catch {
-			return;
-		}
-		for (const entry of entries) {
-			const path = join(dir, entry.name);
-			if (entry.isDirectory()) {
-				if (depth > 0) walk(path, depth - 1);
-				continue;
-			}
-			if (!entry.name.endsWith(".jsonl")) continue;
-			try {
-				if (statSync(path).mtimeMs < since) continue;
-			} catch {
-				continue;
-			}
-			const parts = relative(root, path).split("/");
-			const project = parts[0].replace(/^--|--$/g, "").replace(/-/g, "/").replace(HOME.slice(1), "~");
-			const child = parts.length >= 3;
-			const id = child ? `${parts[1].match(/_([0-9a-f]{8})/)?.[1] ?? parts[1].slice(0, 8)}/${entry.name.replace(/\.jsonl$/, "")}` : entry.name.match(/_([0-9a-f]{8})/)?.[1] ?? entry.name.slice(0, 8);
-			srcs.push({ file: path, label: `${project} ${child ? `${t.worker_label} ` : ""}${id}`, child });
-		}
-	};
-	walk(root, 2);
+	const roots = opts.roots ?? (opts.sessionsDir ? [{ dir: opts.sessionsDir, runtime: "omp" as const }] : undefined);
+	const srcs: Src[] = collectSessions(since, { home: HOME, dataDir: dataDir(), roots, omoStores: roots ? false : undefined, words: t.words });
 
 	const results: Stats[] = [];
 	for (const src of srcs) {
