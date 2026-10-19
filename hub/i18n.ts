@@ -13,6 +13,8 @@ import { baseLanguage, detectLanguage, languageName } from "./language.ts";
 export type LaneFooterArgs = { lane: string; mode: string; workerModel: string; slots: number; worktree: string };
 export type WorktreeArgs = { path: string; repo: string; branch: string; base: string };
 export type RecallArgs = { mode: string; identity: string; rules: string; lessons: string; setups: string; state: string };
+export type SettingText = { label: string; hint?: string; unit?: string; options?: Record<string, string> };
+export type FileText = { label: string; note: string };
 
 // Prefixes (leads) of notes that are matched later; every note that has a lead starts with it.
 const enLeads = {
@@ -105,6 +107,184 @@ Do this, briefly:
 		incomplete: "Some fields were empty. Press the button again.",
 		storeFailed: "Could not save it. Press the button again.",
 	},
+
+	// Owner-facing strings of the 구성 map (hub/harness.ts); `locale` formats its dates and numbers.
+	harness: {
+		locale: "en-US",
+		common: { state: "State", disabled: "Turned off", off: "Off", set: "Set", none: "None", count: (n: number) => `${n}`, daily: (time: string) => `daily ${time}` },
+		status: { working: "Working", idle: "Idle", starting: "Starting", stopped: "Stopped", "rate-limited": "Rate-limited", exited: "Exited" } as Record<string, string>,
+		ago: { now: "<1 min", min: (m: number) => `${m} min`, hourMin: (h: number, m: number) => `${h} h ${m} min`, day: (d: number) => `${d} d`, before: (d: string) => `${d} ago` },
+		fileFact: { label: "File", missing: "Not there yet", size: "Size", chars: (n: string) => `${n} chars`, modified: "Last modified" },
+		files: {
+			"MODE.md": { label: "Behaviour rules (MODE)", note: "Ships with the repository, so it is read-only here." },
+			"RULES.md": { label: "My rules", note: "Blocked commands apply at once; the rest is picked up the next time it is read, after a new session or compaction." },
+			"LESSONS.md": { label: "Lessons", note: "Picked up the next time it is read, after a new session or compaction." },
+			"identity/IDENTITY.md": { label: "Identity", note: "Picked up the next time it is read, after a new session or compaction." },
+		} as Record<string, FileText>,
+		notOpenable: (name: string) => `"${name}" is not a file you can open (MODE.md, RULES.md, LESSONS.md, identity/IDENTITY.md)`,
+		settings: {
+			"orchestrator.model": { label: "Model" },
+			"orchestrator.thinking": { label: "Thinking effort" },
+			"orchestrator.rotate_tokens": { label: "Switch-to-new-session threshold", unit: "tokens", hint: "When the conversation gets this long, it moves to a new session with a handover while idle" },
+			"lanes.model": { label: "Default model for new lanes" },
+			"lanes.thinking": { label: "Thinking effort for new lanes" },
+			"lanes.max_active": { label: "Lanes working at once", unit: "lanes" },
+			"lanes.compact_at": { label: "Auto-compaction starts at", unit: "tokens", hint: "When a lane's context fills this far, it is summarized and shrunk" },
+			"lanes.keep_recent": { label: "Recent conversation kept when compacting", unit: "tokens" },
+			"lanes.worker_model": { label: "Worker model" },
+			"lanes.worker_effort": { label: "Worker thinking effort" },
+			"lanes.nightly_at": { label: "Nightly cleanup time", hint: "HH:MM or off" },
+			"lanes.nightly_compact_at": { label: "Nightly compaction threshold", unit: "tokens" },
+			"lanes.rotate_mb": { label: "Session file rotation size", unit: "MB" },
+			"lanes.max_rss_gb": { label: "Process memory limit", unit: "GB", hint: "Above this, the process restarts on the same session. To turn it off, set 0 in config.json" },
+			"gateway.coalesce_ms": { label: "Time to merge consecutive messages", unit: "ms", hint: "Messages arriving in the same channel within this time are handled together" },
+			"reflect_at": { label: "Nightly review time", hint: "HH:MM or off" },
+			"token_audit_at": { label: "Token audit time", hint: "HH:MM or off" },
+			"omp_update.mode": { label: "Update mode", options: { check: "Notify of new versions only", install: "Install automatically and restart", off: "Off" } },
+			"omp_update.at": { label: "Update check time", hint: "HH:MM or off" },
+			"backup.remote": { label: "Backup repository address", hint: "If empty, snapshots stay on this computer only. Files containing secrets are never uploaded" },
+			"output_language.mode": { label: "Output language check", options: { rewrite: "Rewrite if in another language", off: "Off" } },
+			"output_language.model": { label: "Model for rewriting", hint: "If empty, omp's default small model" },
+			"output_language.timeout_s": { label: "Rewrite time limit", unit: "s" },
+			"zele.enabled": { label: "Mail and calendar check" },
+			"zele.poll_sec": { label: "Check interval", unit: "s" },
+			"zele.brief_hour": { label: "Morning briefing hour", unit: "h" },
+			"identity.name": { label: "Name" },
+			"identity.language": { label: "Reply language", hint: "ko, en, ja … If empty, detected from the identity text" },
+			"identity.character": { label: "Character", hint: "If the identity file (IDENTITY.md) exists, it takes precedence" },
+			"identity.tone": { label: "Tone", hint: "Also the tone reference for output-language rewriting" },
+		} as Record<string, SettingText>,
+		nodes: {
+			discord: {
+				summary: { connected: (n: number) => `Connected · work channels: ${n}`, disconnected: "Disconnected" },
+				desc: "Receives what is written in chat rooms, work channels and lane threads, passes it to the gateway, and posts the reply in the same place. Received messages are marked with 👀 first. Connection details (token, server, owner) cannot be changed from this screen for security.",
+				state: { off: "Off (token, server or owner is missing)", connected: "Connected", disconnected: (err: string) => `Disconnected${err ? ` · ${err}` : ""}` },
+				workChannels: "Work channels", laneThreads: "Lane threads", token: "Bot token", owner: "Owner", guild: "Server",
+			},
+			web: {
+				label: "Web app", summary: "This screen · reachable only inside the tailnet",
+				desc: "The screen you are looking at. See chats, lanes and settings; a message you send goes through the gateway to the orchestrator. The server listens only on this computer (127.0.0.1); from outside, Tailscale attaches the login identity and lets you in.",
+				access: "Access", accessValue: "Only logins allowed through Tailscale", sending: "Sending messages", sendingValue: "Normal / Insert / Interrupt and send",
+				port: "Port", tailscalePort: "Tailscale HTTPS port", logins: "Allowed logins", loginCount: (n: number) => `${n}`,
+			},
+			terminal: {
+				label: "Terminal", summary: (n: number) => `Connected terminals: ${n}`, none: "No terminals connected",
+				desc: (_name: string) => `Run /dotz on in a terminal and that terminal becomes an input box: what you type goes to the gateway orchestrator. Run /dotz off and it is a normal terminal again.`,
+				connected: "Connected terminals",
+			},
+			schedule: {
+				label: "Schedules", summary: (n: number, next: string) => `${n} scheduled${next}`, none: "No schedules", next: (d: string, future: boolean) => ` · next ${future ? `in ${d}` : `was ${d} ago`}`,
+				desc: "Sends a prepared sentence to the orchestrator at a set time (once, or repeating at intervals of 5 minutes or more). The orchestrator can create and delete schedules.",
+				schedules: "Schedules", nextRun: "Next run", repeating: "Repeating schedules",
+			},
+			watch: {
+				label: "Watches", summary: (n: number, failing: number) => `Watches: ${n}${failing ? ` · failing in a row: ${failing}` : ""}`, none: "No watches",
+				desc: "Runs a command at a set interval without waking the model, and tells you only when the value changed, a condition matched, or it failed. Keeping logins alive (session checks) is done here too. After 2 failures in a row it notifies once per 12 hours, and once more when it recovers.",
+				watches: "Watches", setups: "Per-work-channel setups", failing: "Failing in a row",
+			},
+			mail: {
+				label: "Mail and calendar", summary: (sec: number, hour: number) => `Checks every ${sec} s · morning briefing at ${hour}:00`,
+				desc: "Checks Google mail and calendar with zele: new mail goes to a thread in the mail channel, upcoming events become notifications, and a daily briefing arrives in the morning. Promotional and notification mail is filtered out.",
+				on: "On (rechecks every 10 minutes if there is no account)",
+			},
+			gateway: {
+				label: "Gateway", summary: "Merge messages · handle commands · deliver replies",
+				desc: "The door every input goes through. Consecutive messages in the same channel are merged into one; commands like /model and /restart and the \"limits\" question are answered directly without waking the orchestrator. Replies go back to the channel that asked, and if no reply goes out within 60 seconds, a progress report is requested. Messages left unanswered at a restart are handled again.",
+				merge: "Merge window", mergeValue: (ms: number) => `${ms}ms (up to 20 s)`, direct: "Answered directly", directValue: `/commands, "limits"`,
+				route: "Reply route", routeValue: "The channel the question came from (Discord, web, terminal)", restart: "Restart", restartValue: "After all work is done (up to 20 min), restarts with the new code",
+			},
+			orchestrator: {
+				label: (name: string) => `Orchestrator (${name})`,
+				desc: "The always-on assistant that receives every message (one omp session). It does light work itself and hands long work to lanes. When a usage limit hits, it holds messages and handles them in order right after the reset; server errors are retried up to 4 times. If it dies it is restarted automatically (up to 3 times in 10 minutes), and when the conversation grows long it moves to a new session with a handover. Changing the model starts a new session.",
+				context: "Context", resumes: "Resumes at", cache: "Cache keep-alive", cacheValue: "One ping at 50-58 minutes while idle (up to 12)",
+				startPrompt: "Start prompt", startPromptValue: "Behaviour rules + identity + my rules + lessons + work-channel summary",
+			},
+			mode: {
+				label: "Behaviour rules (MODE)", summary: (file: string) => `${file} · read-only`,
+				desc: "The base contract that decides how the orchestrator and lanes work. It ships with the repository, so it is read-only here.",
+				file: "File in use", language: "Language",
+			},
+			identity: {
+				label: "Identity", summary: (name: string, language: string) => `Name ${name} · reply language ${language}`,
+				desc: "Name, character and tone. If IDENTITY.md exists its content goes into the start prompt, otherwise the character and tone from settings do. The reply language is also the reference for the output-language check.",
+			},
+			rules: {
+				label: "My rules (RULES)", summary: (n: number) => `Rules file · blocked commands: ${n}`,
+				desc: "The standing rules and prohibitions I set. They take precedence over the behaviour rules and lanes read them too. Lines under \"Blocked commands\" are blocked before the orchestrator, lanes and workers run them.",
+				blocked: "Blocked commands",
+			},
+			lessons: {
+				label: "Lessons (LESSONS)", summary: "Notes built by the nightly review",
+				desc: "Notes the orchestrator tidies itself in the nightly review (about 30 lines). My rules always win. You can edit or delete them.",
+			},
+			lanes: {
+				label: "Lanes", summary: (n: number, working: number, max: number) => `${n} · ${working} working · up to ${max} at once`, none: (max: number) => `None · up to ${max} at once`,
+				desc: "Independent sessions that take on long project work (one lane per channel). In a git repository each lane works in its own worktree and branch, so my working folder is untouched, and it is cleaned up once merged. Each start rewrites the settings file (omp overlay) to apply the worker model and auto-compaction threshold. A stopped lane is restarted automatically (up to 3 times an hour).",
+				lanes: "Lanes", lanesValue: (n: number, working: number) => `${n} (${working} working)`, workDir: "Work folder", workDirValue: "In a git repository, a worktree just for the lane",
+				compaction: "Compaction", compactionValue: (tokens: string) => `Automatic at ${tokens} tokens of context`,
+			},
+			workers: {
+				label: "Workers (subagents)", running: (n: number) => ` · ${n} running`,
+				desc: "Hands that lanes split implementation, testing and exploration across. A lane plans and reviews with its own model while workers run in parallel on a cheaper one. Workers that write files work in an isolated copy and return the result as a patch. A patch can be applied only after it has been read.",
+				kinds: "Kinds", kindsValue: "task (implement, test, render), scout (explore)", limit: "Concurrency limit", limitValue: (n: number) => `${n} per lane (based on this computer's specs)`,
+				runningFact: "Running", isolation: "Isolation", isolationValue: "Writing workers: isolated copy + patch applied after review",
+				expensive: "Expensive model", expensiveValue: "Fable and top effort only when I ask for it myself",
+			},
+			outlang: {
+				label: "Output language check", summary: (language: string) => `Rewritten and sent if not in ${language}`,
+				desc: "If text going to me differs from the identity language (e.g. leaked while thinking in English), it is translated with one call to a small model. Language detection is local, so it is free, and if it fails the original goes out as is.",
+				reference: "Reference language",
+			},
+			update: {
+				label: "omp update check", install: "automatic install", check: "new versions only",
+				desc: "Checks daily whether a new omp version exists and tells the work-log channel. With 'automatic install' it installs and restarts the gateway when everything is idle.",
+			},
+			audit: {
+				label: "Token usage audit",
+				desc: "Scans omp session records daily for waste, such as a cache that broke for no reason or a session with an abnormally large context. If something is off, it tells the alert channel.",
+			},
+			reflect: {
+				label: "Nightly review", summary: (when: string) => `${when} · lessons tidy-up + backup`,
+				desc: "Each night it summarizes the previous day's conversations for the orchestrator to look back on and has it write what it learned to the lessons file. Before that it leaves a git snapshot of the settings folder. Quiet days are skipped.",
+			},
+			backup: {
+				label: "Backup", remote: "Snapshot + external repository", local: "Snapshot on this computer only",
+				desc: "Snapshots settings, rules and lessons with git every night. If you enter a repository address it also uploads them, but nothing is uploaded if even one file looks like a secret.",
+				external: "External repository", credentialed: "Set (contains credentials)", credentialedHint: "Contains credentials, so it cannot be changed from this screen",
+			},
+			providers: {
+				label: "Providers and limits", summary: (n: number, low: number | undefined) => (low === undefined ? `${n} in use` : `${n} in use · lowest limit ${low}% left`),
+				desc: "Login/keys and usage for model providers (Anthropic etc.). Before starting a lane it looks at the 5-hour limit and asks first if less than 10% would remain after this work's share (default 15%). The 7-day limit is shown only.",
+				used: "Providers in use", remaining: (pct: number) => `${pct}% left`,
+			},
+			hygiene: {
+				label: "Lane nightly cleanup", summary: (when: string) => `${when} · compact and rotate long lanes`,
+				desc: "At a set time each day it checks idle lanes: if the session file is big it moves to a new session (handover), and if the context is big it compacts. Lanes that were working are left alone. It also deletes leftover temporary folders of finished workers every hour.",
+			},
+			memguard: {
+				label: "Memory guard", summary: (gb: number) => `Restarts above ${gb} GB per process`,
+				desc: "Every 30 seconds it checks the memory of the orchestrator and lane processes and restarts them on the same session when over the limit (it stops a stray grep from eating tens of GB). If that happens more than 3 times an hour it only sends an alert and stops.",
+			},
+			guard: {
+				label: "Work guard (omp extension)", summary: "Checks briefs, patches, budget and external commands", missing: "Not installed",
+				desc: "The orchestrator-guard extension installed on the omp side (outside the gateway, in this computer's omp settings). It enforces the rules below when a worker is called and while it runs. Read-only here.",
+				installed: "Installed", notInstalled: "Not installed (the rules are not enforced)",
+				briefing: "Briefing", briefingValue: "Done-when required · 8000-character and 40-line code limits · answers within 800 characters",
+				patch: "Patches", patchValue: "Writing workers isolated + patch must be read before it can be applied",
+				budget: "Budget", budgetValue: "Blocks and asks permission if the 5-hour limit is short",
+				expensive: "Expensive model", expensiveValue: "Fable and top effort only when I ask",
+				external: "External commands", externalValue: "Workers cannot push, deploy, ssh or send externally, and hand them back",
+				context: "Context", contextValue: "Worker compaction 1st: nudge to wrap up, 2nd: block tools",
+				blocked: "Blocked commands in my rules",
+			},
+		},
+		edges: {
+			discord: "Message", web: "Chat", terminal: "Terminal input", schedule: "Scheduled time", watch: "Change detected", mail: "New mail and events",
+			batch: "Passed on merged", delegate: "Delegate work", parallel: "Parallel run", mode: "Behaviour rules", identity: "Name and tone", rules: "My rules", rulesLanes: "Lanes read it too",
+			lessons: "Lessons", lessonsWrite: "Write lessons", snapshot: "Snapshot", review: "Review request", outlang: "Reply language check", update: "New version notice", audit: "Waste alert",
+			providers: "Model and limits", budget: "Budget gate", hygiene: "Nightly cleanup", memguard: "Memory watch", guard: "Enforce rules",
+		},
+	},
 };
 type Catalog = typeof en;
 
@@ -176,6 +356,183 @@ const ko: Catalog = {
 		received: "받았어요. 값은 게이트웨이에만 전달돼요.",
 		incomplete: "비어 있는 칸이 있어요. 버튼을 다시 눌러 주세요.",
 		storeFailed: "저장하지 못했어요. 버튼을 다시 눌러 주세요.",
+	},
+
+	harness: {
+		locale: "ko-KR",
+		common: { state: "상태", disabled: "꺼져 있어요", off: "꺼짐", set: "설정됨", none: "없음", count: n => `${n}개`, daily: time => `매일 ${time}` },
+		status: { working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 제한", exited: "종료됨" },
+		ago: { now: "방금", min: m => `${m}분`, hourMin: (h, m) => `${h}시간 ${m}분`, day: d => `${d}일`, before: d => `${d} 전` },
+		fileFact: { label: "파일", missing: "아직 없어요", size: "크기", chars: n => `${n}자`, modified: "마지막 수정" },
+		files: {
+			"MODE.md": { label: "행동 규칙(MODE)", note: "저장소와 함께 배포되는 파일이라 여기서는 읽기만 돼요." },
+			"RULES.md": { label: "내 규칙", note: "차단 명령은 바로, 나머지는 다음 세션·압축 뒤 다시 읽을 때 반영돼요." },
+			"LESSONS.md": { label: "교훈", note: "다음 세션·압축 뒤 다시 읽을 때 반영돼요." },
+			"identity/IDENTITY.md": { label: "정체성", note: "다음 세션·압축 뒤 다시 읽을 때 반영돼요." },
+		},
+		notOpenable: name => `"${name}" 은(는) 열 수 있는 파일이 아니에요 (MODE.md, RULES.md, LESSONS.md, identity/IDENTITY.md)`,
+		settings: {
+			"orchestrator.model": { label: "모델" },
+			"orchestrator.thinking": { label: "추론 강도" },
+			"orchestrator.rotate_tokens": { label: "새 세션으로 넘어가는 기준", unit: "토큰", hint: "대화가 이만큼 길어지면 한가한 때 핸드오버와 함께 새 세션으로 넘어가요" },
+			"lanes.model": { label: "새 레인 기본 모델" },
+			"lanes.thinking": { label: "새 레인 추론 강도" },
+			"lanes.max_active": { label: "동시에 일하는 레인 수", unit: "개" },
+			"lanes.compact_at": { label: "자동 압축 시작", unit: "토큰", hint: "레인 컨텍스트가 이만큼 차면 요약해서 줄여요" },
+			"lanes.keep_recent": { label: "압축해도 남기는 최근 대화", unit: "토큰" },
+			"lanes.worker_model": { label: "작업자 모델" },
+			"lanes.worker_effort": { label: "작업자 추론 강도" },
+			"lanes.nightly_at": { label: "야간 정리 시각", hint: "HH:MM 또는 off" },
+			"lanes.nightly_compact_at": { label: "야간 압축 기준", unit: "토큰" },
+			"lanes.rotate_mb": { label: "세션 파일 교체 크기", unit: "MB" },
+			"lanes.max_rss_gb": { label: "프로세스 메모리 한도", unit: "GB", hint: "넘으면 같은 세션으로 다시 시작해요. 끄려면 config.json 에서 0 으로" },
+			"gateway.coalesce_ms": { label: "연달아 온 메시지 묶는 시간", unit: "ms", hint: "같은 채널에서 이 시간 안에 온 메시지는 한 번에 처리해요" },
+			"reflect_at": { label: "야간 회고 시각", hint: "HH:MM 또는 off" },
+			"token_audit_at": { label: "토큰 감사 시각", hint: "HH:MM 또는 off" },
+			"omp_update.mode": { label: "업데이트 방식", options: { check: "새 버전만 알림", install: "자동 설치 후 재시작", off: "끄기" } },
+			"omp_update.at": { label: "업데이트 확인 시각", hint: "HH:MM 또는 off" },
+			"backup.remote": { label: "백업 저장소 주소", hint: "비우면 이 컴퓨터에만 스냅샷을 남겨요. 비밀이 든 파일은 올리지 않아요" },
+			"output_language.mode": { label: "출력 언어 점검", options: { rewrite: "다른 언어면 다시 쓰기", off: "끄기" } },
+			"output_language.model": { label: "다시 쓰기에 쓸 모델", hint: "비우면 omp 의 기본 작은 모델" },
+			"output_language.timeout_s": { label: "다시 쓰기 제한 시간", unit: "초" },
+			"zele.enabled": { label: "메일·캘린더 확인" },
+			"zele.poll_sec": { label: "확인 간격", unit: "초" },
+			"zele.brief_hour": { label: "아침 브리핑 시각", unit: "시" },
+			"identity.name": { label: "이름" },
+			"identity.language": { label: "응답 언어", hint: "ko, en, ja … 비우면 정체성 글에서 자동 감지" },
+			"identity.character": { label: "성격", hint: "정체성 파일(IDENTITY.md)이 있으면 그쪽이 우선이에요" },
+			"identity.tone": { label: "말투", hint: "출력 언어 다시 쓰기의 말투 기준이기도 해요" },
+		},
+		nodes: {
+			discord: {
+				summary: { connected: n => `연결됨 · 작업 채널 ${n}개`, disconnected: "연결 끊김" },
+				desc: "대화방·작업 채널·레인 스레드에 쓴 글을 받아 게이트웨이로 넘기고, 답장을 같은 곳에 올려요. 받은 글에는 👀 로 먼저 표시해요. 연결 정보(토큰·서버·소유자)는 보안상 화면에서 바꿀 수 없어요.",
+				state: { off: "꺼짐 (토큰·서버·소유자 중 빠진 게 있어요)", connected: "연결됨", disconnected: err => `끊김${err ? ` · ${err}` : ""}` },
+				workChannels: "작업 채널", laneThreads: "레인 스레드", token: "봇 토큰", owner: "소유자", guild: "서버",
+			},
+			web: {
+				label: "웹 앱", summary: "이 화면 · tailnet 안에서만 열려요",
+				desc: "지금 보고 있는 화면이에요. 채팅·레인·설정을 보고, 메시지를 보내면 게이트웨이를 거쳐 오케스트레이터에게 가요. 서버는 이 컴퓨터(127.0.0.1)에만 열리고, 밖에서는 Tailscale 이 로그인 신원을 붙여 들여보내요.",
+				access: "접속", accessValue: "Tailscale 로 허용된 로그인만", sending: "메시지 보내기", sendingValue: "보통 / 끼워넣기 / 중단하고 보내기",
+				port: "포트", tailscalePort: "Tailscale HTTPS 포트", logins: "허용된 로그인", loginCount: n => `${n}명`,
+			},
+			terminal: {
+				label: "터미널", summary: n => `연결된 터미널 ${n}개`, none: "연결된 터미널 없음",
+				desc: name => `터미널에서 "${name}모드 켜"라고 하면 그 터미널이 입력창이 돼서 쓴 글이 게이트웨이 오케스트레이터에게 가요. 꺼"라고 하면 다시 일반 터미널이에요.`,
+				connected: "연결된 터미널",
+			},
+			schedule: {
+				label: "예약 작업", summary: (n, next) => `예약 ${n}개${next}`, none: "예약 없음", next: (d, future) => ` · 다음은 ${d} ${future ? "뒤" : "전"}`,
+				desc: "정해진 시각(한 번 또는 5분 이상 간격 반복)에 정해 둔 문장을 오케스트레이터에게 보내요. 오케스트레이터가 예약을 만들고 지울 수 있어요.",
+				schedules: "예약", nextRun: "다음 실행", repeating: "반복 예약",
+			},
+			watch: {
+				label: "감시", summary: (n, failing) => `감시 ${n}개${failing ? ` · 연속 실패 ${failing}개` : ""}`, none: "감시 없음",
+				desc: "모델을 깨우지 않고 정해진 간격으로 명령을 실행해서, 값이 바뀌었거나 조건에 맞거나 실패했을 때만 알려요. 로그인 유지(세션 확인)도 여기서 해요. 2번 연속 실패하면 12시간에 한 번만 알리고, 복구되면 한 번 알려요.",
+				watches: "감시", setups: "작업 채널별 설정", failing: "연속 실패 중",
+			},
+			mail: {
+				label: "메일·캘린더", summary: (sec, hour) => `${sec}초마다 확인 · 아침 ${hour}시 브리핑`,
+				desc: "zele 로 구글 메일·캘린더를 확인해서 새 메일은 메일 채널 스레드로, 곧 있을 일정은 알림으로, 아침에는 하루 브리핑으로 보내요. 광고·알림성 메일은 걸러요.",
+				on: "켜짐 (계정이 없으면 10분마다 다시 확인)",
+			},
+			gateway: {
+				label: "게이트웨이", summary: "메시지 묶기 · 명령 처리 · 답장 전달",
+				desc: "모든 입력이 지나가는 문이에요. 같은 채널에서 연달아 온 글은 한 번에 묶어서 넘기고, /model·/restart 같은 명령과 \"한도\" 질문은 오케스트레이터를 깨우지 않고 직접 답해요. 답장은 질문한 채널로 돌려보내고, 60초 안에 답이 안 나가면 중간 보고를 요청해요. 재시작해도 답 못 한 메시지는 다시 처리해요.",
+				merge: "묶는 시간", mergeValue: ms => `${ms}ms (최대 20초까지)`, direct: "직접 답하는 것", directValue: "/명령, \"한도\"",
+				route: "답장 길", routeValue: "질문이 온 채널(Discord·웹·터미널)로", restart: "재시작", restartValue: "작업이 모두 끝난 뒤(최대 20분) 새 코드로 다시 시작",
+			},
+			orchestrator: {
+				label: name => `오케스트레이터 (${name})`,
+				desc: "모든 메시지를 받는 상시 비서예요(omp 세션 하나). 가벼운 일은 직접 하고, 오래 걸리는 일은 레인에 맡겨요. 사용량 한도에 걸리면 메시지를 모아 뒀다가 리셋 직후 순서대로 처리하고, 서버 오류는 최대 4번 재시도해요. 죽으면 자동으로 다시 띄우고(10분에 3번까지), 대화가 길어지면 핸드오버와 함께 새 세션으로 넘어가요. 모델을 바꾸면 새 세션으로 시작해요.",
+				context: "컨텍스트", resumes: "재개 예정", cache: "캐시 유지", cacheValue: "한가할 때 50~58분에 한 번 신호(최대 12번)",
+				startPrompt: "시작 프롬프트", startPromptValue: "행동 규칙 + 정체성 + 내 규칙 + 교훈 + 작업 채널 요약",
+			},
+			mode: {
+				label: "행동 규칙 (MODE)", summary: file => `${file} · 읽기 전용`,
+				desc: "오케스트레이터와 레인이 어떻게 일할지 정한 기본 계약이에요. 저장소와 함께 배포되는 파일이라 여기서는 읽기만 돼요.",
+				file: "사용 중인 파일", language: "언어",
+			},
+			identity: {
+				label: "정체성", summary: (name, language) => `이름 ${name} · 응답 언어 ${language}`,
+				desc: "이름·성격·말투예요. IDENTITY.md 가 있으면 그 내용을, 없으면 설정의 성격·말투를 시작 프롬프트에 넣어요. 응답 언어는 출력 언어 점검의 기준이기도 해요.",
+			},
+			rules: {
+				label: "내 규칙 (RULES)", summary: n => `규칙 파일 · 차단 명령 ${n}개`,
+				desc: "내가 정한 상시 규칙과 금지예요. 행동 규칙보다 우선하고 레인도 읽어요. \"Blocked commands\" 줄은 오케스트레이터·레인·작업자가 실행하기 전에 막아요.",
+				blocked: "차단 명령",
+			},
+			lessons: {
+				label: "교훈 (LESSONS)", summary: "야간 회고가 쌓는 메모",
+				desc: "오케스트레이터가 매일 밤 회고하면서 스스로 정리하는 메모예요(대략 30줄). 내 규칙이 항상 우선해요. 고치거나 지워도 돼요.",
+			},
+			lanes: {
+				label: "레인", summary: (n, working, max) => `${n}개 · 작업 중 ${working} · 동시 ${max}개까지`, none: max => `없음 · 동시 ${max}개까지`,
+				desc: "오래 걸리는 프로젝트 작업을 맡는 독립 세션이에요(채널 하나에 레인 하나). git 저장소면 레인마다 전용 작업 폴더(worktree)와 브랜치에서 일해서 내 작업 폴더를 건드리지 않고, 끝나서 병합되면 정리해요. 시작할 때마다 설정 파일(omp 오버레이)을 새로 써서 작업자 모델과 자동 압축 기준을 적용해요. 멈춘 레인은 자동으로 이어서 시작해요(1시간에 3번까지).",
+				lanes: "레인", lanesValue: (n, working) => `${n}개 (작업 중 ${working})`, workDir: "작업 폴더", workDirValue: "git 저장소면 레인 전용 worktree",
+				compaction: "압축", compactionValue: tokens => `컨텍스트 ${tokens}토큰에서 자동`,
+			},
+			workers: {
+				label: "작업자 (서브에이전트)", running: n => ` · 실행 중 ${n}개`,
+				desc: "레인이 구현·테스트·탐색을 나눠 맡기는 일꾼이에요. 레인은 계획과 검토를 자기 모델로 하고, 작업자는 더 싼 모델로 병렬 실행해요. 파일을 쓰는 작업자는 격리된 사본에서 일하고 결과를 패치로 돌려줘요. 패치는 읽어 본 뒤에만 적용할 수 있어요.",
+				kinds: "종류", kindsValue: "task(구현·테스트·렌더), scout(탐색)", limit: "동시 실행 상한", limitValue: n => `레인당 ${n}개 (이 컴퓨터 사양 기준)`,
+				runningFact: "실행 중", isolation: "격리", isolationValue: "쓰기 작업자는 격리 사본 + 패치 검토 후 적용",
+				expensive: "비싼 모델", expensiveValue: "Fable·최고 강도는 내가 직접 요청한 때만",
+			},
+			outlang: {
+				label: "출력 언어 점검", summary: language => `${language} 가 아니면 다시 써서 보내요`,
+				desc: "내게 가는 글이 정체성 언어와 다르면(영어로 생각하다 새어 나온 경우 등) 작은 모델 한 번으로 번역해서 보내요. 언어 감지는 로컬이라 공짜고, 실패하면 원문이 그대로 나가요.",
+				reference: "기준 언어",
+			},
+			update: {
+				label: "omp 업데이트 확인", install: "자동 설치", check: "새 버전만 알림",
+				desc: "매일 새 omp 버전이 있는지 확인해서 작업 로그 채널에 알려요. '자동 설치'로 두면 설치하고 모두 한가해질 때 게이트웨이를 재시작해요.",
+			},
+			audit: {
+				label: "토큰 사용 감사",
+				desc: "매일 omp 세션 기록을 훑어서 이유 없이 캐시가 깨졌거나 컨텍스트가 비정상적으로 큰 세션 같은 낭비를 찾아내요. 이상이 있으면 알림 채널로 알려요.",
+			},
+			reflect: {
+				label: "야간 회고", summary: when => `${when} · 교훈 정리 + 백업`,
+				desc: "매일 밤 전날 대화를 요약해서 오케스트레이터에게 돌아보게 하고, 배운 것을 교훈 파일에 적게 해요. 그 전에 설정 폴더를 git 스냅샷으로 남겨요. 조용한 날은 건너뛰어요.",
+			},
+			backup: {
+				label: "백업", remote: "스냅샷 + 외부 저장소", local: "이 컴퓨터에만 스냅샷",
+				desc: "매일 밤 설정·규칙·교훈을 git 으로 스냅샷해요. 저장소 주소를 적으면 밖으로도 올리는데, 비밀처럼 보이는 파일이 하나라도 있으면 올리지 않아요.",
+				external: "외부 저장소", credentialed: "설정됨 (인증 정보 포함)", credentialedHint: "인증 정보가 들어 있어서 화면에서는 바꿀 수 없어요",
+			},
+			providers: {
+				label: "공급자·한도", summary: (n, low) => (low === undefined ? `${n}곳 사용 중` : `${n}곳 사용 · 가장 적은 한도 ${low}% 남음`),
+				desc: "모델 제공자(Anthropic 등) 로그인·키와 사용량이에요. 레인을 시작하기 전에 5시간 한도를 보고, 이 작업이 쓸 몫(기본 15%)을 빼고도 10%가 안 남으면 먼저 물어봐요. 7일 한도는 보여주기만 해요.",
+				used: "쓰는 공급자", remaining: pct => `${pct}% 남음`,
+			},
+			hygiene: {
+				label: "레인 야간 정리", summary: when => `${when} · 길어진 레인 압축·교체`,
+				desc: "매일 정해진 시각에 한가한 레인을 살펴서, 세션 파일이 크면 새 세션으로 넘기고(핸드오버) 컨텍스트가 크면 압축해요. 일하던 레인은 건드리지 않아요. 끝난 작업자의 남은 임시 폴더도 한 시간마다 지워요.",
+			},
+			memguard: {
+				label: "메모리 가드", summary: gb => `프로세스당 ${gb}GB 넘으면 재시작`,
+				desc: "30초마다 오케스트레이터·레인 프로세스의 메모리를 보고 한도를 넘으면 같은 세션으로 다시 시작해요(엉뚱한 grep 하나가 수십 GB를 먹는 일을 막아요). 한 시간에 3번을 넘기면 알림만 보내고 멈춰요.",
+			},
+			guard: {
+				label: "작업 가드 (omp 확장)", summary: "브리핑·패치·예산·외부 명령 점검", missing: "설치돼 있지 않아요",
+				desc: "omp 쪽에 설치된 orchestrator-guard 확장이에요(게이트웨이 밖, 이 컴퓨터의 omp 설정). 작업자를 부르는 순간과 작업자가 도는 동안 아래 규칙을 강제해요. 여기서는 읽기만 돼요.",
+				installed: "설치됨", notInstalled: "설치 안 됨 (규칙이 강제되지 않아요)",
+				briefing: "브리핑", briefingValue: "완료 조건 필수 · 8000자·코드 40줄 제한 · 답변 800자 이내",
+				patch: "패치", patchValue: "쓰기 작업자는 격리 + 패치를 읽어야 적용 가능",
+				budget: "예산", budgetValue: "5시간 한도가 모자라면 막고 허락을 받아요",
+				expensive: "비싼 모델", expensiveValue: "Fable·최고 강도는 내가 요청했을 때만",
+				external: "외부 명령", externalValue: "push·배포·ssh·외부 전송은 작업자가 못 하고 돌려줘요",
+				context: "컨텍스트", contextValue: "작업자 압축 1번: 마무리 유도, 2번: 도구 차단",
+				blocked: "내 규칙의 차단 명령",
+			},
+		},
+		edges: {
+			discord: "메시지", web: "채팅", terminal: "터미널 입력", schedule: "정해진 시각", watch: "변화 감지", mail: "새 메일·일정",
+			batch: "묶어서 전달", delegate: "작업 위임", parallel: "병렬 실행", mode: "행동 규칙", identity: "이름·말투", rules: "내 규칙", rulesLanes: "레인도 읽음",
+			lessons: "교훈", lessonsWrite: "교훈 기록", snapshot: "스냅샷", review: "회고 요청", outlang: "답장 언어 점검", update: "새 버전 알림", audit: "낭비 알림",
+			providers: "모델·한도", budget: "예산 게이트", hygiene: "야간 정리", memguard: "메모리 감시", guard: "규칙 강제",
+		},
 	},
 };
 
