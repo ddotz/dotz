@@ -11,11 +11,13 @@ export const expand = (p: string) => p.replace(/^~(?=\/|$)/, HOME);
 export type Identity = { name: string; character?: string; tone?: string; avatar?: string; language?: string };
 export type Config = {
 	identity?: Identity;
+	// Agent runtime of the orchestrator and the lanes unless their own section names one; see hub/runtime/index.ts.
+	runtime?: string;
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string };
 	web: { port: number; tailscale_https_port: number; allow_logins: string[] };
-	orchestrator?: { model: string; thinking: string; rotate_tokens?: number };
+	orchestrator?: { model: string; thinking: string; rotate_tokens?: number; runtime?: string };
 	ui?: { origin_view?: boolean };
-	lanes: { model: string; thinking: string; max_active?: number; worker_model?: string; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number };
+	lanes: { model: string; thinking: string; runtime?: string; max_active?: number; worker_model?: string; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number };
 };
 
 export const CONFIG_FILE = join(DATA_DIR, "config.json");

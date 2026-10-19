@@ -1,0 +1,2448 @@
+{
+ "orchestrator": [
+  [
+   "spawn",
+   0,
+   [
+    "--mode",
+    "rpc",
+    "--model",
+    "anthropic/test-orch:low",
+    "--extension",
+    "<REPO>/extension/index.ts"
+   ],
+   "<DATA>",
+   {
+    "DOTZ_ORCHESTRATOR": "1"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#hu16t29no17p [dotz gateway] You are tester, the dotz orchestrator hosted …"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "set_subagent_subscription",
+    "level": "progress"
+   }
+  ],
+  [
+   "snap",
+   "started",
+   "starting",
+   "rate",
+   "",
+   "",
+   [
+    0,
+    0,
+    null,
+    null,
+    null
+   ],
+   ""
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_state"
+   }
+  ],
+  [
+   "snap",
+   "known",
+   "idle",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "",
+   [
+    1500,
+    200000,
+    null,
+    null,
+    null
+   ],
+   ""
+  ],
+  [
+   "saved",
+   {
+    "sessionFile": "<DATA>/orch-session.jsonl",
+    "model": "anthropic/test-orch:low"
+   },
+   true
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "hello there",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "snap",
+   "working",
+   "working",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "",
+   [
+    1500,
+    200000,
+    null,
+    null,
+    null
+   ],
+   ""
+  ],
+  [
+   "prompt",
+   "hello there"
+  ],
+  [
+   "prompt",
+   "[dotz gateway] You are the resident"
+  ],
+  [
+   "answer",
+   "hi, here is the answer"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "snap",
+   "turn done",
+   "idle",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "hi, here is the answer",
+   [
+    1120,
+    200000,
+    null,
+    null,
+    null
+   ],
+   ""
+  ],
+  [
+   "idle"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "second request",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "steer",
+    "message": "mid-turn note"
+   }
+  ],
+  [
+   "compact",
+   "queued"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "abort"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "compact"
+   }
+  ],
+  [
+   "snap",
+   "after abort, compaction flushed",
+   "idle",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "hi, here is the answer",
+   [
+    1120,
+    200000,
+    "compacting",
+    null,
+    null
+   ],
+   ""
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "snap",
+   "compacted",
+   "idle",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "hi, here is the answer",
+   [
+    1200,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   ""
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "compact"
+   }
+  ],
+  [
+   "compact again",
+   "compacting"
+  ],
+  [
+   "snap",
+   "compaction failed",
+   "idle",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "hi, here is the answer",
+   [
+    1200,
+    200000,
+    "error",
+    null,
+    "compaction failed: boom"
+   ],
+   ""
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "before limit",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "alert",
+   "tester: 사용량 한도(#)로 멈춤. #. #. ~ ~ #:#쯤부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리합니다."
+  ],
+  [
+   "snap",
+   "rate limited",
+   "rate-limited",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "hi, here is the answer",
+   [
+    1120,
+    200000,
+    "error",
+    null,
+    "compaction failed: boom"
+   ],
+   "until"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#213cyx0pkkmjm [dotz gateway] The rate limit has passed. Continue the reque…",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "snap",
+   "probing",
+   "idle",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "hi, here is the answer",
+   [
+    1120,
+    200000,
+    "error",
+    null,
+    "compaction failed: boom"
+   ],
+   "until"
+  ],
+  [
+   "snap",
+   "limited again",
+   "rate-limited",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "hi, here is the answer",
+   [
+    1120,
+    200000,
+    "error",
+    null,
+    "compaction failed: boom"
+   ],
+   "until"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#213cyx0pkkmjm [dotz gateway] The rate limit has passed. Continue the reque…",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "answer",
+   "back again"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "held one",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "held two",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "snap",
+   "resumed, held flushed",
+   "idle",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "back again",
+   [
+    1120,
+    200000,
+    "error",
+    null,
+    "compaction failed: boom"
+   ],
+   "until"
+  ],
+  [
+   "idle"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "flaky provider",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "idle"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#78slu26q8jbx [dotz gateway] The provider had a temporary error (overloade…",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "idle"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#78slu26q8jbx [dotz gateway] The provider had a temporary error (overloade…",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "answer",
+   "recovered"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "snap",
+   "transient recovered",
+   "idle",
+   "rate",
+   "<DATA>/orch-session.jsonl",
+   "recovered",
+   [
+    1120,
+    200000,
+    "error",
+    null,
+    "compaction failed: boom"
+   ],
+   "until"
+  ],
+  [
+   "idle"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "needs credit",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "alert",
+   "tester: 모델 제공자 결제/인증 문제로 멈춤 (Your credit balance is too low). 크레딧 충전이나 로그인 확인이 필요합니다. 그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리하고, #분마다 다시 시도합니다."
+  ],
+  [
+   "snap",
+   "owner pause",
+   "rate-limited",
+   "owner",
+   "<DATA>/orch-session.jsonl",
+   "recovered",
+   [
+    1120,
+    200000,
+    "error",
+    null,
+    "compaction failed: boom"
+   ],
+   "until"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "[dotz gateway] The provider problem (billing/auth) may have been fixed. Continue the request you were handling when it stopped.",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "answer",
+   "fixed"
+  ],
+  [
+   "snap",
+   "owner resolved",
+   "idle",
+   "owner",
+   "<DATA>/orch-session.jsonl",
+   "fixed",
+   [
+    1120,
+    200000,
+    "error",
+    null,
+    "compaction failed: boom"
+   ],
+   "until"
+  ],
+  [
+   "idle"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "[keepalive] Cache keepalive from the gateway. Reply only: ok. No tools, no sends, no state edits."
+   }
+  ],
+  [
+   "answer",
+   "ok"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "snap",
+   "keepalive done",
+   "idle",
+   "owner",
+   "<DATA>/orch-session.jsonl",
+   "ok",
+   [
+    1120,
+    200000,
+    "error",
+    null,
+    "compaction failed: boom"
+   ],
+   "until"
+  ],
+  [
+   "idle"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "are you there",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "kill",
+   0,
+   "TERM"
+  ],
+  [
+   "kill",
+   0,
+   9
+  ],
+  [
+   "exit",
+   0,
+   137
+  ],
+  [
+   "snap",
+   "exited",
+   "stopped",
+   "owner",
+   "<DATA>/orch-session.jsonl",
+   "ok",
+   [
+    1120,
+    200000,
+    "error",
+    null,
+    "compaction failed: boom"
+   ],
+   "until"
+  ],
+  [
+   "spawn",
+   1,
+   [
+    "--mode",
+    "rpc",
+    "--model",
+    "anthropic/test-orch:low",
+    "--extension",
+    "<REPO>/extension/index.ts",
+    "--resume",
+    "<DATA>/orch-session.jsonl"
+   ],
+   "<DATA>",
+   {
+    "DOTZ_ORCHESTRATOR": "1"
+   }
+  ],
+  [
+   "stdin",
+   1,
+   {
+    "type": "set_subagent_subscription",
+    "level": "progress"
+   }
+  ],
+  [
+   "snap",
+   "restarted",
+   "starting",
+   "owner",
+   "<DATA>/orch-session.jsonl",
+   "ok",
+   [
+    0,
+    0,
+    null,
+    null,
+    null
+   ],
+   "until"
+  ],
+  [
+   "stdin",
+   1,
+   {
+    "type": "get_state"
+   }
+  ],
+  [
+   "stdin",
+   1,
+   {
+    "type": "prompt",
+    "message": "long job",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
+   "applyModelChange",
+   "next-start"
+  ],
+  [
+   "answer",
+   "done long job"
+  ],
+  [
+   "kill",
+   1,
+   "TERM"
+  ],
+  [
+   "idle"
+  ],
+  [
+   "kill",
+   1,
+   9
+  ],
+  [
+   "exit",
+   1,
+   0
+  ],
+  [
+   "spawn",
+   2,
+   [
+    "--mode",
+    "rpc",
+    "--model",
+    "anthropic/test-orch:low",
+    "--extension",
+    "<REPO>/extension/index.ts",
+    "--resume",
+    "<DATA>/orch-session.jsonl"
+   ],
+   "<DATA>",
+   {
+    "DOTZ_ORCHESTRATOR": "1"
+   }
+  ],
+  [
+   "stdin",
+   2,
+   {
+    "type": "set_subagent_subscription",
+    "level": "progress"
+   }
+  ],
+  [
+   "stdin",
+   2,
+   {
+    "type": "get_state"
+   }
+  ],
+  [
+   "snap",
+   "after pending restart",
+   "starting",
+   "owner",
+   "<DATA>/orch-session.jsonl",
+   "done long job",
+   [
+    0,
+    0,
+    null,
+    null,
+    null
+   ],
+   "until"
+  ],
+  [
+   "answer",
+   "one"
+  ],
+  [
+   "stdin",
+   2,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "answer",
+   "two"
+  ],
+  [
+   "kill",
+   2,
+   "TERM"
+  ],
+  [
+   "idle"
+  ],
+  [
+   "idle"
+  ],
+  [
+   "exit",
+   2,
+   0
+  ],
+  [
+   "spawn",
+   3,
+   [
+    "--mode",
+    "rpc",
+    "--model",
+    "anthropic/test-orch:low",
+    "--extension",
+    "<REPO>/extension/index.ts"
+   ],
+   "<DATA>",
+   {
+    "DOTZ_ORCHESTRATOR": "1"
+   }
+  ],
+  [
+   "stdin",
+   3,
+   {
+    "type": "prompt",
+    "message": "#kwk9gp16m295 [dotz gateway] You are tester, the dotz orchestrator hosted …"
+   }
+  ],
+  [
+   "stdin",
+   3,
+   {
+    "type": "set_subagent_subscription",
+    "level": "progress"
+   }
+  ],
+  [
+   "snap",
+   "rotated",
+   "starting",
+   "owner",
+   "<DATA>/orch-session.jsonl",
+   "two",
+   [
+    0,
+    0,
+    null,
+    null,
+    null
+   ],
+   "until"
+  ],
+  [
+   "kill",
+   3,
+   "TERM"
+  ],
+  [
+   "exit",
+   3,
+   0
+  ],
+  [
+   "snap",
+   "stopped",
+   "stopped",
+   "owner",
+   "<DATA>/orch-session.jsonl",
+   "two",
+   [
+    0,
+    0,
+    null,
+    null,
+    null
+   ],
+   "until"
+  ],
+  [
+   "activity",
+   [
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "orchestrator started (anthropic/test-orch:low)"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "> hello there"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "text",
+     "text": "checking"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "tool_call",
+     "tool": "bash",
+     "call_id": "c1",
+     "intent": "date",
+     "text": "bash: date",
+     "args": "{\n  \"command\": \"date\"\n}"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "tool_result",
+     "tool": "bash",
+     "call_id": "c1",
+     "text": "now",
+     "is_error": false
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "text",
+     "text": "hi, here is the answer"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "aborted"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "error",
+     "text": "429 usage limit reached",
+     "is_error": true
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "error",
+     "text": "429 usage limit reached",
+     "is_error": true
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "text",
+     "text": "back again"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "error",
+     "text": "overloaded_error",
+     "is_error": true
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "error",
+     "text": "503 service unavailable",
+     "is_error": true
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "text",
+     "text": "recovered"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "error",
+     "text": "Your credit balance is too low",
+     "is_error": true
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "text",
+     "text": "fixed"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "text",
+     "text": "ok"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "orchestrator exited (code 137)"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "orchestrator resumed its session (anthropic/test-orch:low)"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "text",
+     "text": "done long job"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "orchestrator exited (code 0)"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "orchestrator resumed its session (anthropic/test-orch:low)"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "text",
+     "text": "one"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "text",
+     "text": "two"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "orchestrator exited (code 0)"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "orchestrator started a fresh session with a handover (anthropic/test-orch:low)"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "orchestrator exited (code 0)"
+    }
+   ]
+  ]
+ ],
+ "lane": [
+  [
+   "spawn",
+   0,
+   [
+    "--mode",
+    "rpc",
+    "--model",
+    "anthropic/test-lane:medium",
+    "--config=<DATA>/lanes/alpha/omp-overlay.yml"
+   ],
+   "<DATA>/work",
+   {
+    "DOTZ_LANE": "alpha",
+    "DOTZ_OWNER_ASKED_FABLE": "1"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "set_subagent_subscription",
+    "level": "progress"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#1akdu7j487szf Build the thing.\nDone when: tests pass\n\n---\n[dotz lane alpha…"
+   }
+  ],
+  [
+   "overlay",
+   "# Written by the dotz gateway each time lane alpha starts; passed to omp as --config.\nmodelRoles:\n  task: \"anthropic/test-worker:high\"\ntask:\n  agentModelOverrides:\n    task: \"@task\"\n    scout: \"@task\"\ncompaction:\n  modelThresholds:\n    \"anthropic/test-lane\": \"f300000\"\n    \"anthropic/test-worker\": \"f300000\"\n  keepRecentTokens: 30000\n"
+  ],
+  [
+   "snap",
+   "launched",
+   "starting",
+   "",
+   "",
+   [
+    0,
+    0,
+    null,
+    null,
+    null
+   ],
+   true,
+   null,
+   0,
+   null
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_state"
+   }
+  ],
+  [
+   "snap",
+   "session known",
+   "starting",
+   "<DATA>/lane-session.jsonl",
+   "",
+   [
+    1500,
+    200000,
+    null,
+    null,
+    null
+   ],
+   true,
+   null,
+   0,
+   null
+  ],
+  [
+   "persisted",
+   "{\n  \"name\": \"alpha\",\n  \"cwd\": \"<DATA>/work\",\n  \"model\": \"anthropic/test-lane:medium\",\n  \"fableOk\": true,\n  \"status\": \"starting\",\n  \"startedAt\": \"<t>\",\n  \"sessionFile\": \"<DATA>/lane-session.jsonl\",\n  \"reports\": 0\n}\n"
+  ],
+  [
+   "busy while worker runs",
+   true
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "snap",
+   "turn ended",
+   "idle",
+   "<DATA>/lane-session.jsonl",
+   "finished: all green",
+   [
+    1120,
+    200000,
+    null,
+    null,
+    null
+   ],
+   true,
+   null,
+   0,
+   null
+  ],
+  [
+   "report",
+   "alpha",
+   "finished: all green"
+  ],
+  [
+   "idle",
+   "alpha"
+  ],
+  [
+   "snap",
+   "stats",
+   "idle",
+   "<DATA>/lane-session.jsonl",
+   "finished: all green",
+   [
+    5000,
+    200000,
+    null,
+    null,
+    null
+   ],
+   true,
+   null,
+   1,
+   null
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "next please\n(Answer the owner in English.)"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "steer",
+    "message": "also this\n(Answer the owner in English.)"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "abort"
+   }
+  ],
+  [
+   "compact",
+   "queued"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "compact"
+   }
+  ],
+  [
+   "snap",
+   "aborted, compaction flushed",
+   "idle",
+   "<DATA>/lane-session.jsonl",
+   "finished: all green",
+   [
+    1120,
+    200000,
+    "compacting",
+    null,
+    null
+   ],
+   true,
+   null,
+   1,
+   null
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "snap",
+   "compacted",
+   "idle",
+   "<DATA>/lane-session.jsonl",
+   "finished: all green",
+   [
+    1800,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   null,
+   1,
+   null
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "report",
+   "alpha",
+   "finished: all green"
+  ],
+  [
+   "idle",
+   "alpha"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "go on\n(Answer the owner in English.)"
+   }
+  ],
+  [
+   "report",
+   "alpha",
+   "사용량 한도에 걸려서 멈췄어요. #. #. ~ ~ #:#쯤부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요."
+  ],
+  [
+   "snap",
+   "rate limited",
+   "rate-limited",
+   "<DATA>/lane-session.jsonl",
+   "finished: all green",
+   [
+    1120,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   null,
+   3,
+   "rate"
+  ],
+  [
+   "snap",
+   "held",
+   "rate-limited",
+   "<DATA>/lane-session.jsonl",
+   "finished: all green",
+   [
+    1120,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   [
+    "while paused"
+   ],
+   3,
+   "rate"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#f6q7umv5knub [dotz gateway] The rate limit has passed. Continue the work …"
+   }
+  ],
+  [
+   "snap",
+   "resumed",
+   "idle",
+   "<DATA>/lane-session.jsonl",
+   "finished: all green",
+   [
+    1120,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   [
+    "while paused"
+   ],
+   3,
+   "rate"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "snap",
+   "after pause",
+   "idle",
+   "<DATA>/lane-session.jsonl",
+   "after the pause",
+   [
+    1120,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   null,
+   3,
+   "rate"
+  ],
+  [
+   "report",
+   "alpha",
+   "after the pause"
+  ],
+  [
+   "idle",
+   "alpha"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "flaky\n(Answer the owner in English.)"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "idle",
+   "alpha"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#1119ql0ho1tt0 [dotz gateway] The provider had a temporary error (overloade…"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "idle",
+   "alpha"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#1119ql0ho1tt0 [dotz gateway] The provider had a temporary error (overloade…"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "idle",
+   "alpha"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#1119ql0ho1tt0 [dotz gateway] The provider had a temporary error (overloade…"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "idle",
+   "alpha"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#1119ql0ho1tt0 [dotz gateway] The provider had a temporary error (overloade…"
+   }
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "report",
+   "alpha",
+   "[lane error] overloaded one more time"
+  ],
+  [
+   "idle",
+   "alpha"
+  ],
+  [
+   "snap",
+   "transient spent",
+   "idle",
+   "<DATA>/lane-session.jsonl",
+   "[lane error] overloaded one more time",
+   [
+    1120,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   null,
+   5,
+   "rate"
+  ],
+  [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "compaction trouble\n(Answer the owner in English.)"
+   }
+  ],
+  [
+   "report",
+   "alpha",
+   "[lane recovery] 컨텍스트 압축이 실패했어요 (auto compaction failed: provider error). 진행 중이던 요청을 중단하고 같은 세션으로 다시 이어서 시작해요 (#/#)."
+  ],
+  [
+   "kill",
+   0,
+   9
+  ],
+  [
+   "snap",
+   "recovering",
+   "working",
+   "<DATA>/lane-session.jsonl",
+   "",
+   [
+    1120,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   null,
+   5,
+   "rate"
+  ],
+  [
+   "exit",
+   0,
+   137
+  ],
+  [
+   "spawn",
+   1,
+   [
+    "--mode",
+    "rpc",
+    "--model",
+    "anthropic/test-lane:medium",
+    "--config=<DATA>/lanes/alpha/omp-overlay.yml",
+    "--resume",
+    "<DATA>/lane-session.jsonl"
+   ],
+   "<DATA>/work",
+   {
+    "DOTZ_LANE": "alpha",
+    "DOTZ_OWNER_ASKED_FABLE": "1"
+   }
+  ],
+  [
+   "stdin",
+   1,
+   {
+    "type": "set_subagent_subscription",
+    "level": "progress"
+   }
+  ],
+  [
+   "stdin",
+   1,
+   {
+    "type": "prompt",
+    "message": "[dotz gateway] Your process was restarted after it stopped responding. Continue the last request.\n(Answer the owner in English.)"
+   }
+  ],
+  [
+   "snap",
+   "revived",
+   "starting",
+   "<DATA>/lane-session.jsonl",
+   "",
+   [
+    1120,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   null,
+   5,
+   "rate"
+  ],
+  [
+   "stdin",
+   1,
+   {
+    "type": "get_state"
+   }
+  ],
+  [
+   "snap",
+   "kept alive by deltas",
+   "working",
+   "<DATA>/lane-session.jsonl",
+   "",
+   [
+    900,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   null,
+   5,
+   "rate"
+  ],
+  [
+   "report",
+   "alpha",
+   "[lane recovery] #분 넘게 아무 응답이 없어요. 진행 중이던 요청을 중단하고 같은 세션으로 다시 이어서 시작해요 (#/#)."
+  ],
+  [
+   "kill",
+   1,
+   9
+  ],
+  [
+   "snap",
+   "stall recovered",
+   "working",
+   "<DATA>/lane-session.jsonl",
+   "",
+   [
+    900,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   null,
+   5,
+   "rate"
+  ],
+  [
+   "exit",
+   1,
+   137
+  ],
+  [
+   "spawn",
+   2,
+   [
+    "--mode",
+    "rpc",
+    "--model",
+    "anthropic/test-lane:medium",
+    "--config=<DATA>/lanes/alpha/omp-overlay.yml",
+    "--resume",
+    "<DATA>/lane-session.jsonl"
+   ],
+   "<DATA>/work",
+   {
+    "DOTZ_LANE": "alpha",
+    "DOTZ_OWNER_ASKED_FABLE": "1"
+   }
+  ],
+  [
+   "stdin",
+   2,
+   {
+    "type": "set_subagent_subscription",
+    "level": "progress"
+   }
+  ],
+  [
+   "stdin",
+   2,
+   {
+    "type": "prompt",
+    "message": "[dotz gateway] Your process was restarted after it stopped responding. Continue the last request.\n(Answer the owner in English.)"
+   }
+  ],
+  [
+   "stdin",
+   2,
+   {
+    "type": "get_state"
+   }
+  ],
+  [
+   "stdin",
+   2,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "report",
+   "alpha",
+   "worked again"
+  ],
+  [
+   "idle",
+   "alpha"
+  ],
+  [
+   "kill",
+   2,
+   "TERM"
+  ],
+  [
+   "exit",
+   2,
+   0
+  ],
+  [
+   "spawn",
+   3,
+   [
+    "--mode",
+    "rpc",
+    "--model",
+    "anthropic/test-lane:medium",
+    "--config=<DATA>/lanes/alpha/omp-overlay.yml",
+    "--resume",
+    "<DATA>/lane-session.jsonl"
+   ],
+   "<DATA>/work",
+   {
+    "DOTZ_LANE": "alpha",
+    "DOTZ_OWNER_ASKED_FABLE": "1"
+   }
+  ],
+  [
+   "stdin",
+   3,
+   {
+    "type": "set_subagent_subscription",
+    "level": "progress"
+   }
+  ],
+  [
+   "snap",
+   "restarted idle",
+   "idle",
+   "<DATA>/lane-session.jsonl",
+   "worked again",
+   [
+    1120,
+    200000,
+    "done",
+    99000,
+    null
+   ],
+   true,
+   null,
+   6,
+   "rate"
+  ],
+  [
+   "stdin",
+   3,
+   {
+    "type": "get_state"
+   }
+  ],
+  [
+   "kill",
+   3,
+   "TERM"
+  ],
+  [
+   "exit",
+   3,
+   0
+  ],
+  [
+   "spawn",
+   4,
+   [
+    "--mode",
+    "rpc",
+    "--model",
+    "anthropic/test-lane:medium",
+    "--config=<DATA>/lanes/alpha/omp-overlay.yml"
+   ],
+   "<DATA>/work",
+   {
+    "DOTZ_LANE": "alpha",
+    "DOTZ_OWNER_ASKED_FABLE": "1"
+   }
+  ],
+  [
+   "stdin",
+   4,
+   {
+    "type": "set_subagent_subscription",
+    "level": "progress"
+   }
+  ],
+  [
+   "stdin",
+   4,
+   {
+    "type": "prompt",
+    "message": "#bovx4w5dz7w3 [dotz gateway] Your session was rotated to a fresh one (nigh…"
+   }
+  ],
+  [
+   "snap",
+   "rotated",
+   "starting",
+   "<DATA>/lane-session.jsonl",
+   "worked again",
+   [
+    0,
+    0,
+    null,
+    null,
+    null
+   ],
+   true,
+   null,
+   6,
+   "rate"
+  ],
+  [
+   "stdin",
+   4,
+   {
+    "type": "get_state"
+   }
+  ],
+  [
+   "stdin",
+   4,
+   {
+    "type": "get_session_stats"
+   }
+  ],
+  [
+   "idle",
+   "alpha"
+  ],
+  [
+   "snap",
+   "silent handover turn",
+   "idle",
+   "<DATA>/lane-session.jsonl",
+   "worked again",
+   [
+    1120,
+    0,
+    null,
+    null,
+    null
+   ],
+   true,
+   null,
+   6,
+   "rate"
+  ],
+  [
+   "report",
+   "alpha",
+   "[lane recovery] 컨텍스트 압축이 실패했어요 (Compaction failed while summarising). 진행 중이던 요청을 중단하고 같은 세션으로 다시 이어서 시작해요 (#/#)."
+  ],
+  [
+   "kill",
+   4,
+   9
+  ],
+  [
+   "snap",
+   "compaction message error",
+   "working",
+   "<DATA>/lane-session.jsonl",
+   "worked again",
+   [
+    1120,
+    0,
+    null,
+    null,
+    null
+   ],
+   true,
+   null,
+   6,
+   "rate"
+  ],
+  [
+   "exit",
+   4,
+   137
+  ],
+  [
+   "spawn",
+   5,
+   [
+    "--mode",
+    "rpc",
+    "--model",
+    "anthropic/test-lane:medium",
+    "--config=<DATA>/lanes/alpha/omp-overlay.yml",
+    "--resume",
+    "<DATA>/lane-session.jsonl"
+   ],
+   "<DATA>/work",
+   {
+    "DOTZ_LANE": "alpha",
+    "DOTZ_OWNER_ASKED_FABLE": "1"
+   }
+  ],
+  [
+   "stdin",
+   5,
+   {
+    "type": "set_subagent_subscription",
+    "level": "progress"
+   }
+  ],
+  [
+   "stdin",
+   5,
+   {
+    "type": "prompt",
+    "message": "[dotz gateway] Your process was restarted after it stopped responding. Continue the last request.\n(Answer the owner in English.)"
+   }
+  ],
+  [
+   "stdin",
+   5,
+   {
+    "type": "get_state"
+   }
+  ],
+  [
+   "kill",
+   5,
+   "TERM"
+  ],
+  [
+   "exit",
+   5,
+   0
+  ],
+  [
+   "snap",
+   "stopped",
+   "exited",
+   "<DATA>/lane-session.jsonl",
+   "worked again",
+   [
+    1120,
+    0,
+    null,
+    null,
+    null
+   ],
+   false,
+   null,
+   6,
+   "rate"
+  ],
+  [
+   "summary",
+   [
+    {
+     "name": "alpha",
+     "model": "anthropic/test-lane:medium",
+     "worker_model": "anthropic/test-worker:high",
+     "status": "exited",
+     "reports": 6,
+     "resumable": true,
+     "lastText": "worked again",
+     "context": {
+      "tokens": 1120,
+      "window": 0,
+      "percent": null,
+      "compaction": {}
+     },
+     "cwd": "<DATA>/work",
+     "sessionFile": "<DATA>/lane-session.jsonl"
+    }
+   ]
+  ],
+  [
+   "activity",
+   [
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process started (anthropic/test-lane:medium)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "text",
+     "text": "working on it"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "text",
+     "text": "finished: all green"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "aborted"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "error",
+     "is_error": true,
+     "text": "429 usage limit reached"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "text",
+     "text": "after the pause"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "error",
+     "is_error": true,
+     "text": "overloaded_error"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "error",
+     "is_error": true,
+     "text": "fetch failed"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "error",
+     "is_error": true,
+     "text": "ETIMEDOUT"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "error",
+     "is_error": true,
+     "text": "overloaded again"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "error",
+     "is_error": true,
+     "text": "overloaded one more time"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "context compacted"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process exited (code 137)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process resumed (anthropic/test-lane:medium)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process exited (code 137)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process resumed (anthropic/test-lane:medium)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "text",
+     "text": "worked again"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process exited (code 0)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process resumed (anthropic/test-lane:medium)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process exited (code 0)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process started (anthropic/test-lane:medium)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "text",
+     "text": "reloaded"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_end",
+     "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "turn_start",
+     "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "error",
+     "is_error": true,
+     "text": "Compaction failed while summarising"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process exited (code 137)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process resumed (anthropic/test-lane:medium)"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
+     "text": "lane process exited (code 0)"
+    }
+   ]
+  ]
+ ]
+}

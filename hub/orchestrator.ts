@@ -1,15 +1,18 @@
-// The gateway-hosted dotz orchestrator: one headless omp RPC session (cwd = data dir) that receives every
+// The gateway-hosted dotz orchestrator: one headless agent session (cwd = data dir) that receives every
 // owner message and lane report. Also does the omonyang session-doctor duties for it: resume after a rate limit at
 // retry-after, restart after a crash (max 3 per 10 min), and rotate to a fresh session with a handover past 50MB.
-import type { Subprocess } from "bun";
+// The agent itself runs behind a runtime adapter (hub/runtime): this module is policy and talks to it only through
+// an AgentProcess and its events.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { emitFrameActivity, statusActivity } from "./activity.ts";
-import { cfg, DATA_DIR, IDENTITY_FILE, log, NAME, now, OMP, orchestratorModel, paths, selectorOf, writeAtomic } from "./config.ts";
+import { emitEventActivity, statusActivity } from "./activity.ts";
+import { cfg, DATA_DIR, IDENTITY_FILE, log, NAME, now, orchestratorModel, paths, selectorOf, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
-import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
-import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
+import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
+import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
+import { runtimeFor } from "./runtime/index.ts";
+import type { AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 
 const STATE = join(DATA_DIR, "orchestrator.json");
@@ -30,9 +33,10 @@ export const orch = {
 	restarts: [] as number[],
 	ctx: newCtx(),
 };
-let proc: Subprocess<"pipe", "pipe", "pipe"> | undefined;
+let proc: AgentProcess | undefined;
+// The runtime of the running process, chosen at each start().
+let adapter: RuntimeAdapter | undefined;
 export const orchestratorPid = (): number | undefined => proc?.pid;
-let seq = 0;
 let stopping = false;
 let rotating = false;
 let restarting = false;
@@ -62,19 +66,12 @@ export function setAnswerHandlers(prompt: (text: string) => void, answer: (text:
 	onPrompt = prompt;
 	onAnswer = answer;
 }
-const EXTENSION = join(import.meta.dir, "..", "extension", "index.ts");
 
 const saved = (): Saved => (existsSync(STATE) ? JSON.parse(readFileSync(STATE, "utf8")) : {});
 let currentModel = "";
 const save = (s: Saved) => writeAtomic(STATE, `${JSON.stringify(s, null, 2)}\n`);
-function write(frame: Record<string, unknown>): void {
-	if (!proc) return;
-	proc.stdin.write(`${JSON.stringify({ id: `o${++seq}`, ...frame })}\n`);
-	proc.stdin.flush();
-}
-const textOf = (m: any) => (Array.isArray(m?.content) ? m.content : []).filter((b: any) => b?.type === "text").map((b: any) => b.text).join("").trim();
-// Compaction needs an idle process: omp aborts a running turn to compact, so a busy orchestrator queues it until agent_end.
-const port: CompactPort = { idle: () => orch.status === "idle", send: write };
+// Compaction needs an idle process: a runtime may abort a running turn to compact, so a busy orchestrator queues it until turn_end.
+const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(), refreshUsage: () => proc?.refreshUsage() };
 
 function recall(): string {
 	const mode = readFileSync(modeFile(), "utf8");
@@ -90,85 +87,66 @@ function recall(): string {
 	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, 3000), setups: setupsSummary(), state }));
 }
 
-function handover(previous: string): string {
-	const tail = recentExchanges(previous);
+function handover(runtime: RuntimeAdapter, previous: string): string {
+	const tail = runtime.recentExchanges(previous);
 	if (tail === undefined) return "";
 	return msg().handover(previous, tail);
 }
 
-async function readFrames(p: Subprocess<"pipe", "pipe", "pipe">): Promise<void> {
-	const decoder = new TextDecoder();
-	let buffer = "";
-	for await (const chunk of p.stdout) {
-		buffer += decoder.decode(chunk);
-		let nl: number;
-		while ((nl = buffer.indexOf("\n")) >= 0) {
-			const line = buffer.slice(0, nl);
-			buffer = buffer.slice(nl + 1);
-			let f: any;
-			try {
-				f = JSON.parse(line);
-			} catch {
-				continue;
-			}
-			emitFrameActivity("orchestrator", f);
-			noteResponse(orch.ctx, f);
-			noteCompactResponse(orch.ctx, f, port);
-			if (f.type === "agent_start") {
+async function readEvents(p: AgentProcess): Promise<void> {
+	for await (const ev of p.events) {
+		emitEventActivity("orchestrator", ev);
+		noteEvent(orch.ctx, ev, port);
+		switch (ev.type) {
+			case "turn_start":
 				orch.status = "working";
 				clearTimeout(watchdog);
 				clearTimeout(transientTimer);
 				transientTimer = undefined;
-			}
-			else if (f.type === "agent_end") {
+				break;
+			case "turn_end":
 				orch.status = orch.status === "rate-limited" ? "rate-limited" : "idle";
 				lastTurnEnd = Date.now();
 				if (inKeepalive) inKeepalive = false;
 				else if (orch.status === "idle") keepalives = 0;
 				if (orch.status === "idle" && pauseAlerted) {
 					pauseAlerted = false;
-					for (const text of held.splice(0)) write({ type: "prompt", message: text, streamingBehavior: "followUp" });
+					for (const text of held.splice(0)) proc?.send(text, "followUp");
 				} else if (orch.status === "idle") {
 					if (++turnsSinceStart > 1 && orch.ctx.tokens > ROTATE_TOKENS) rotate();
 					else if (pendingRestart) {
 						pendingRestart = false;
 						restart();
 					} else {
-						write({ type: "get_session_stats" });
+						proc?.refreshUsage();
 						flushCompact(orch.ctx, port);
 					}
 				}
 				if (orch.status === "idle") setTimeout(() => orch.status === "idle" && onIdle(), 200);
-			}
-			else if (f.type === "message_end" && f.message?.role === "user") {
-				const t = textOf(f.message) || (typeof f.message.content === "string" ? f.message.content.trim() : "");
-				if (!isResumeNote(t)) onPrompt(t);
-			}
-			else if (f.type === "message_end" && f.message?.role === "assistant") {
-				const t = textOf(f.message);
-				if (t) orch.lastText = t;
-				if (t && (f.message.stopReason === "stop" || f.message.stopReason === "length")) onAnswer(t);
-				noteMessageUsage(orch.ctx, f.message);
-				const err = String(f.message.errorMessage ?? "");
-				if (f.message.stopReason !== "error") transientTries = 0;
-				else {
-					const kind = classifyProviderError(err);
-					if (kind === "rate" || kind === "owner") void scheduleResume(err, kind);
-					else if (kind === "transient") retryTransient(err);
-				}
-			} else if (f.type === "response" && f.command === "get_state" && f.data?.sessionFile) {
-				orch.sessionFile = f.data.sessionFile;
+				break;
+			case "user":
+				if (!isResumeNote(ev.text)) onPrompt(ev.text);
+				break;
+			case "assistant":
+				if (ev.text) orch.lastText = ev.text;
+				if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);
+				if (ev.stop !== "error") transientTries = 0;
+				else if (ev.error.kind === "rate" || ev.error.kind === "owner") void scheduleResume(ev.error.text, ev.error.kind);
+				else if (ev.error.kind === "transient") retryTransient(ev.error.text);
+				break;
+			case "session":
+				orch.sessionFile = ev.ref;
 				save({ sessionFile: orch.sessionFile, model: currentModel });
 				if (orch.status === "starting") {
 					orch.status = "idle";
 					flushCompact(orch.ctx, port);
 				}
-			}
+				break;
 		}
 	}
 }
 
-// omp can stop reading prompts after a failed turn; if no turn starts soon after a delivery, restart it (the session is resumed).
+// The runtime can stop reading prompts after a failed turn; if no turn starts soon after a delivery, restart it (the session is resumed).
 const WATCHDOG_MS = 120_000;
 let watchdog: ReturnType<typeof setTimeout> | undefined;
 function armWatchdog(): void {
@@ -179,7 +157,7 @@ function armWatchdog(): void {
 		const hung = proc;
 		hung?.kill();
 		setTimeout(() => {
-			if (proc === hung) hung?.kill(9);
+			if (proc === hung) hung?.kill(true);
 		}, 10_000);
 	}, WATCHDOG_MS);
 }
@@ -217,7 +195,7 @@ async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<voi
 		// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
 		// retry that hits the limit again loses nothing.
 		const m = msg();
-		write({ type: "prompt", message: owner ? m.orchProvider(held.length) : m.orchRate(held.length), streamingBehavior: "followUp" });
+		proc?.send(owner ? m.orchProvider(held.length) : m.orchRate(held.length), "followUp");
 		armWatchdog();
 	}, retry);
 }
@@ -238,7 +216,7 @@ function retryTransient(err: string): void {
 	transientTimer = setTimeout(() => {
 		transientTimer = undefined;
 		if (orch.status !== "idle") return;
-		write({ type: "prompt", message: msg().orchTransient, streamingBehavior: "followUp" });
+		proc?.send(msg().orchTransient, "followUp");
 		armWatchdog();
 	}, wait);
 }
@@ -265,11 +243,12 @@ export function start(): void {
 	turnsSinceStart = 0;
 	const resume = prior && existsSync(prior) && !rotate;
 	currentModel = model;
-	const args = [OMP, "--mode", "rpc", "--model", model, "--extension", EXTENSION, ...(resume ? ["--resume", prior!] : [])];
-	proc = Bun.spawn(args, { cwd: DATA_DIR, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, DOTZ_ORCHESTRATOR: "1" } });
+	const runtime = runtimeFor("orchestrator");
+	adapter = runtime;
+	proc = runtime.start({ role: "orchestrator", cwd: DATA_DIR, model, resume: resume ? prior : undefined, env: { DOTZ_ORCHESTRATOR: "1" } });
 	orch.status = "starting";
 	orch.startedAt = now();
-	void readFrames(proc);
+	void readEvents(proc);
 	const self = proc;
 	void proc.exited.then(code => {
 		if (proc !== self) return;
@@ -289,10 +268,10 @@ export function start(): void {
 		orch.restarts.push(Date.now());
 		setTimeout(start, 10_000);
 	});
-	if (!resume) write({ type: "prompt", message: recall() + (rotate ? handover(prior!) : "") });
-	write({ type: "set_subagent_subscription", level: "progress" });
-	for (const text of held.splice(0)) write({ type: "prompt", message: text, streamingBehavior: "followUp" });
-	setTimeout(() => write({ type: "get_state" }), 4000);
+	if (!resume) proc.send(recall() + (rotate ? handover(runtime, prior!) : ""), "prompt");
+	proc.watchSubagents();
+	for (const text of held.splice(0)) proc.send(text, "followUp");
+	setTimeout(() => proc?.refreshSession(), 4000);
 	log(`orchestrator ${resume ? `resumed ${prior}` : rotate ? "rotated to a fresh session" : "started"} (${model})`);
 	statusActivity("orchestrator", `orchestrator ${resume ? "resumed its session" : rotate ? "started a fresh session with a handover" : "started"} (${model})`);
 }
@@ -305,12 +284,12 @@ const KEEPALIVE_TO_MS = Number(process.env.DOTZ_KEEPALIVE_TO_MS ?? 58 * 60_000);
 const KEEPALIVE_MAX = 12;
 setInterval(() => {
 	const idle = Date.now() - lastTurnEnd;
-	if (!proc || rotating || orch.status !== "idle" || keepalives >= KEEPALIVE_MAX) return;
+	if (!proc || !adapter?.caps.promptCacheKeepalive || rotating || orch.status !== "idle" || keepalives >= KEEPALIVE_MAX) return;
 	if (idle < KEEPALIVE_FROM_MS || idle > KEEPALIVE_TO_MS) return;
 	keepalives++;
 	inKeepalive = true;
 	log(`keepalive ${keepalives}/${KEEPALIVE_MAX} after ${Math.round(idle / 60_000)} min idle`);
-	write({ type: "prompt", message: msg().keepalive });
+	proc.send(msg().keepalive, "prompt");
 	armWatchdog();
 }, Math.min(60_000, Math.max(5_000, (KEEPALIVE_TO_MS - KEEPALIVE_FROM_MS) / 2)));
 
@@ -320,13 +299,13 @@ export function deliver(text: string): void {
 		return;
 	}
 	if (!proc) start();
-	write({ type: "prompt", message: text, streamingBehavior: "followUp" });
+	proc?.send(text, "followUp");
 	armWatchdog();
 }
 
 // Injects a note into the running turn (no effect when idle: the next prompt starts a turn anyway).
 export function steer(text: string): void {
-	if (orch.status === "working") write({ type: "steer", message: text });
+	if (orch.status === "working") proc?.send(text, "steer");
 }
 
 export function stop(): void {
@@ -334,7 +313,7 @@ export function stop(): void {
 	proc?.kill();
 }
 
-// Restart the omp process; the session is resumed unless the configured model or thinking level changed since it was
+// Restart the agent process; the session is resumed unless the configured model or thinking level changed since it was
 // saved (start() then begins a fresh session with a handover, the model-change rule above). Prompts arriving
 // meanwhile are held and delivered by the new process.
 export function restart(): void {
@@ -344,7 +323,7 @@ export function restart(): void {
 	const old = proc;
 	old.kill();
 	setTimeout(() => {
-		if (proc === old) old.kill(9);
+		if (proc === old) old.kill(true);
 	}, 10_000);
 }
 
@@ -362,7 +341,7 @@ export function applyModelChange(): "restarted" | "next-start" {
 
 export function abort(): void {
 	if (!proc) throw new Error("the orchestrator is not running");
-	write({ type: "abort" });
+	proc.abort();
 }
 
 // Compacts the orchestrator's context: now when idle, after the running turn otherwise. Rewrites the prompt cache once.

@@ -1,15 +1,9 @@
-import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// DOTZ_DIR points at the throwaway config of the bun test preload (hub/runtime/test-setup.ts).
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ModelCall } from "./summaries.ts";
-
-// hub/config.ts reads DOTZ_DIR/config.json when it is first imported, so a throwaway one is set up before importing summaries.ts.
-const root = mkdtempSync(join(tmpdir(), "dotz-sum-root-"));
-writeFileSync(join(root, "config.json"), JSON.stringify({ discord: { token_file: join(root, "none"), owner_id: "0", guild: "0" }, web: { port: 0, tailscale_https_port: 0, allow_logins: [] }, lanes: { model: "m", thinking: "off" } }));
-process.env.DOTZ_DIR = root;
-const { createSummarizer, inLanguage, parseBatch, sha } = await import("./summaries.ts");
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+import { createSummarizer, inLanguage, parseBatch, sha, type ModelCall } from "./summaries.ts";
 
 let dir = "";
 beforeEach(() => {
