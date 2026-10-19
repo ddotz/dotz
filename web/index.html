@@ -35,6 +35,7 @@
   --accent: #5b5bd6;
   --ok: #18884f; --warn: #b25e00; --err: #d92d20;
   --scrim: rgb(0 0 0 / .4);
+  --float: 0 8px 24px rgb(0 0 0 / .10), 0 1px 3px rgb(0 0 0 / .06);
   /* terminal panel: dark in both themes */
   --tb: #101012; --tf: #e6e6ea; --td: #8d8d96; --tl2: #2b2b30; --tok: #4ade80; --terr: #ff7b7b; --tac: #a9a9ff;
   --font: Inter, Geist, system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
@@ -49,6 +50,7 @@
   --accent: #8e8ef0;
   --ok: #3ecf8e; --warn: #f5a524; --err: #ff6369;
   --scrim: rgb(0 0 0 / .6);
+  --float: 0 8px 24px rgb(0 0 0 / .5), 0 1px 3px rgb(0 0 0 / .4);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 [hidden] { display: none !important; }
@@ -271,7 +273,6 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .tchip:hover { background: var(--hover); color: var(--fg); }
 .dragging { opacity: .4; }
 .dropon { outline: 2px solid var(--accent); outline-offset: 2px; }
-.lhead[draggable="true"] { cursor: grab; }
 .tchip.on { background: var(--active); border-color: var(--line-2); color: var(--fg); }
 .tchip .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb { flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 10.5px/16px var(--font); text-align: center; }
@@ -455,7 +456,41 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 /* lanes board */
 #v-lanes { max-width: none; }
 .lboard { display: flex; flex-direction: column; gap: 12px; }
-.lgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; align-items: start; }
+/* board: free-form 12-column card grid shared by 홈 and 레인 (positions are calc() of the container width, so no JS layout pass is needed) */
+.bbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.bbar .btn { height: 24px; font-size: 12px; }
+.board { position: relative; }
+.bi { position: absolute; border-radius: 8px; transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease, box-shadow .15s; }
+.bi > .card, .bi > .lpane { width: 100%; height: 100%; }
+.bi > .card { overflow: hidden auto; }
+.bi:hover, .bi.bdrag { box-shadow: var(--float); }
+.bi.bdrag { z-index: 6; transition: box-shadow .15s; }
+.bph { position: absolute; border: 1.5px dashed var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 9%, transparent); transition: left .12s ease, top .12s ease, width .12s ease, height .12s ease; pointer-events: none; }
+.boarding { user-select: none; -webkit-user-select: none; }
+.board:not(.narrow) .bhead { cursor: grab; touch-action: none; }
+.board:not(.narrow) .bi.bdrag .bhead { cursor: grabbing; }
+.board .card { padding: 12px 14px; }
+.board .ch { margin-bottom: 8px; }
+.board .ch .ib { width: 24px; height: 24px; }
+.brz { position: absolute; z-index: 3; touch-action: none; }
+.brz.se { right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; }
+.brz.se::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; border-right: 2px solid var(--fg-3); border-bottom: 2px solid var(--fg-3); border-bottom-right-radius: 3px; opacity: .35; transition: opacity .15s; }
+.bi:hover .brz.se::after, .bi.bdrag .brz.se::after, .brz.se:hover::after { opacity: .9; }
+.brz.e { top: 14px; bottom: 16px; right: -3px; width: 8px; cursor: ew-resize; }
+.brz.s { left: 14px; right: 16px; bottom: -3px; height: 8px; cursor: ns-resize; }
+.board.narrow .brz { display: none; }
+.board.narrow { display: flex; flex-direction: column; gap: 12px; }
+.board.narrow .bi { position: relative; }
+.board.narrow .bi > .card { height: auto; overflow: visible; }
+.board.narrow .bhead { cursor: default; }
+.card.att, .lpane.att { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 8%, var(--card)); }
+.card.att.err { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); background: color-mix(in srgb, var(--err) 8%, var(--card)); }
+.card.tap.att:hover { border-color: color-mix(in srgb, var(--warn) 75%, var(--line)); background: color-mix(in srgb, var(--warn) 14%, var(--card)); }
+.card.tap.att.err:hover { border-color: color-mix(in srgb, var(--err) 75%, var(--line)); background: color-mix(in srgb, var(--err) 14%, var(--card)); }
+.card.tap .lstat { color: var(--fg-2); }
+.card .subline { margin-top: 6px; }
+.card .clamp { margin-top: 6px; }
+@media (pointer: coarse) { .brz.e, .brz.s { display: none; } .brz.se { width: 24px; height: 24px; } .brz.se::after { right: 6px; bottom: 6px; } .board:not(.narrow) .bi > .lpane .lcomp { padding: 8px 24px 24px 8px; } }
 .lpane { display: flex; flex-direction: column; min-width: 0; height: 360px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
 .lpane.off .lname { color: var(--fg-2); }
 .lhead { flex: none; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 6px; border-bottom: 1px solid var(--line); }
@@ -482,9 +517,6 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .lcomp { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
 @media (pointer: fine) { .lcomp .fi { height: 28px; } }
 @media (max-width: 599px) {
-  .lgrid { grid-template-columns: minmax(0, 1fr); }
-  .lpane { height: auto; }
-  .ltail { flex: none; height: 112px; }
   .lr.tx .lb { -webkit-line-clamp: 1; }
 }
 /* 구성: harness map */
@@ -550,6 +582,11 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .hs-chips .chip { height: auto; min-height: 28px; padding: 3px 10px; text-align: left; }
 .hs-chips .chip .tx { white-space: normal; overflow-wrap: anywhere; }
 @media (min-width: 640px) { #harness.hs-open { padding-right: 480px; } }
+.bi > .lpane .lcomp { padding: 8px 12px 12px 8px; }
+.board.narrow .bi > .lpane { height: auto; }
+.board.narrow .ltail { flex: none; height: 112px; }
+.board.narrow .bi > .lpane .lcomp { padding: 8px; }
+.lpane.att .lhead { border-bottom-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
 </style>
 </head>
 <body>
@@ -570,7 +607,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
       <button class="ib" id="theme" type="button"></button>
     </header>
     <div class="views" id="views">
-      <section class="view" id="v-home" hidden><div class="grid" id="home"></div></section>
+      <section class="view" id="v-home" hidden><div id="home"></div></section>
       <section class="view fill" id="v-chat" hidden>
         <div class="thead" data-mode="chat"></div>
         <div class="subs" hidden></div>
@@ -674,6 +711,7 @@ const ICONS = {
   close: "M6 6l12 12M18 6L6 18",
   harness: "M4 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 5a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 19a2 2 0 1 0 4 0a2 2 0 1 0-4 0M8 11l8-5M8 13l8 5",
   file: "M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v5h5",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
 };
 const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", lanes: "lanes", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context" };
 const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
@@ -1069,12 +1107,6 @@ function subLine(src) {
   if (!n) return null;
   return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs([src]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs([src]); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
 }
-function laneSubLine() {
-  const srcs = Object.keys(SUBS).filter(k => k.startsWith("lane:") && runningSubs(k).length);
-  if (!srcs.length) return null;
-  const n = srcs.reduce((a, k) => a + runningSubs(k).length, 0);
-  return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs(srcs); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs(srcs); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
-}
 function openSource(src) { setTarget(targetOfSource(src)); go("activity"); }
 function openTarget(t, view) { setTarget(t); go(view); }
 // The subagents of the selected target: one summary line; clicking it (or any subagent count) opens the side panel,
@@ -1180,6 +1212,204 @@ $("#sh-back").append(icon("back"));
 $("#sh-back").onclick = () => { if (SUBD && SUBD.from) openSubs(SUBD.from); };
 document.addEventListener("keydown", ev => { if (ev.key === "Escape" && SUBD && !openMenu && !document.querySelector("dialog[open]")) closeSheet(); });
 
+/* ---------- board: free-form 12-column card grid shared by 홈 and 레인 ---------- */
+// Each card is {id, x, y, w, h} in grid units. Positions are calc() of the container width, so a saved layout paints correctly on the first frame.
+// Dragging a card (by its header) pushes the cards it overlaps down, then everything is compacted upward. Layout is kept per board in localStorage.
+const BCOLS = 12, BGAP = 12, BROW = 40, BSTEP = BROW + BGAP;
+const boards = new Set();
+const narrowMQ = matchMedia("(max-width: 639px), (pointer: coarse) and (max-width: 767px)");
+narrowMQ.addEventListener("change", () => boards.forEach(b => b.paint()));
+const bClamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const bHit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+const bOrder = (list, first) => list.sort((a, b) => a.y - b.y || (a.id === first ? -1 : b.id === first ? 1 : 0) || a.x - b.x);
+// Push every card that overlaps `m` below it (and whatever those then overlap).
+function bPush(list, m) {
+  for (const c of bOrder([...list])) if (c !== m && bHit(m, c)) { c.y = m.y + m.h; bPush(list, c); }
+}
+// Vertical compaction; `first` wins ties, `fixed` are cards that are not shown right now but keep their place.
+function bCompact(list, first, fixed = []) {
+  const out = [...fixed];
+  for (const c of bOrder(list, first)) {
+    while (c.y > 0 && !out.some(o => bHit({ ...c, y: c.y - 1 }, o))) c.y--;
+    while (out.some(o => bHit(c, o))) c.y++;
+    out.push(c);
+  }
+}
+function bFree(list, w, h) {
+  for (let y = 0; ; y++) for (let x = 0; x + w <= BCOLS; x++) if (!list.some(o => bHit({ x, y, w, h }, o))) return { x, y };
+}
+function bFit(r, it) {
+  const w = bClamp(r.w, it.min.w, Math.min(it.max.w, BCOLS)), h = bClamp(r.h, it.min.h, it.max.h);
+  return { x: bClamp(r.x, 0, BCOLS - w), y: Math.max(0, r.y), w, h };
+}
+function bLoad(store) {
+  const out = {};
+  try {
+    const o = JSON.parse(localStorage.getItem(store) || "null");
+    if (o && typeof o === "object" && !Array.isArray(o)) for (const [id, r] of Object.entries(o)) if (r && ["x", "y", "w", "h"].every(k => Number.isInteger(r[k]) && r[k] >= 0) && r.w > 0 && r.h > 0) out[id] = { x: r.x, y: r.y, w: r.w, h: r.h };
+  } catch { /* unreadable layout: start from defaults */ }
+  return out;
+}
+const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .ltail, [data-nodrag]";
+// items: [{id, node, head (selector of the drag handle inside node), def {w,h}, min {w,h}, max {w,h}}]. `keep(id)` tells which saved
+// cards that are not in `items` only wait for their data (and so keep their place) instead of being gone.
+function makeBoard(container, key, opts = {}) {
+  const store = `dotz-board-${key}`;
+  let saved = bLoad(store), lastJson = JSON.stringify(saved), cur = [], lay = [], ghost = [], act = null, pending = null, swallow = false;
+  const wraps = new Map();
+  const ph = el("div", { class: "bph", hidden: true });
+  const bar = el("div", { class: "bbar" }, el("button", { class: "btn text", type: "button", onclick: () => reset() }, "배치 초기화"));
+  container.classList.add("board");
+  container.before(bar);
+  container.append(ph);
+  const views = $("#views");
+  const meta = id => cur.find(i => i.id === id);
+  const pos = (n, r) => {
+    n.style.left = `calc((100% + ${BGAP}px) * ${r.x} / ${BCOLS})`;
+    n.style.width = `calc((100% + ${BGAP}px) * ${r.w} / ${BCOLS} - ${BGAP}px)`;
+    n.style.top = `${r.y * BSTEP}px`;
+    n.style.height = `${r.h * BSTEP - BGAP}px`;
+  };
+  const rows = list => list.reduce((m, r) => Math.max(m, r.y + r.h), 0);
+  function paint(list = lay, skip = null) {
+    const narrow = narrowMQ.matches;
+    container.classList.toggle("narrow", narrow);
+    if (narrow) {
+      container.style.height = ""; ph.hidden = true;
+      bOrder(lay.map(r => ({ ...r }))).forEach((r, i) => { const w = wraps.get(r.id); if (w) { w.removeAttribute("style"); w.style.order = i; } });
+    } else {
+      for (const r of list) { const w = skip === r.id ? ph : wraps.get(r.id); if (w) { pos(w, r); if (w !== ph) w.style.order = ""; } }
+      container.style.height = `${Math.max(0, rows(list) * BSTEP - BGAP)}px`;
+    }
+    if (!skip && opts.onLayout) opts.onLayout();
+  }
+  function persist() {
+    const o = {};
+    for (const r of [...ghost, ...lay]) o[r.id] = { x: r.x, y: r.y, w: r.w, h: r.h };
+    saved = o;
+    const j = JSON.stringify(o);
+    if (j !== lastJson) { lastJson = j; try { localStorage.setItem(store, j); } catch { /* storage full or blocked */ } }
+  }
+  function set(items, keep = () => false) {
+    if (act) { pending = [items, keep]; return; }
+    cur = items;
+    const ids = new Set(items.map(i => i.id));
+    const placed = [];
+    for (const it of items) if (saved[it.id]) placed.push({ id: it.id, ...bFit(saved[it.id], it) });
+    ghost = Object.entries(saved).filter(([id]) => !ids.has(id) && keep(id)).map(([id, r]) => ({ id, ...r }));
+    bCompact(placed, null, ghost);
+    for (const it of items) if (!saved[it.id]) { const d = bFit({ x: 0, y: 0, ...it.def }, it); placed.push({ id: it.id, ...d, ...bFree([...placed, ...ghost], d.w, d.h) }); }
+    lay = placed;
+    persist();
+    for (const [id, w] of wraps) if (!ids.has(id)) { w.remove(); wraps.delete(id); }
+    for (const it of items) {
+      let w = wraps.get(it.id);
+      if (!w) { w = el("div", { class: "bi", "data-id": it.id }, ...["e", "s", "se"].map(d => el("div", { class: `brz ${d}`, "data-dir": d }))); wraps.set(it.id, w); container.append(w); }
+      const h0 = it.node.querySelector(it.head);
+      if (h0) { h0.classList.add("bhead"); h0.tabIndex = 0; h0.title = "끌어서 이동 · 방향키로 이동, Shift+방향키로 크기"; }
+      const first = w.firstElementChild, old = first && !first.classList.contains("brz") ? first : null;
+      // A card whose markup did not change keeps its node, so scroll positions and hover survive a re-render.
+      if (old !== it.node && !(old && old.outerHTML === it.node.outerHTML)) {
+        const top = old ? old.scrollTop : 0, oh = old && old.querySelector(it.head), refocus = !!oh && document.activeElement === oh;
+        if (old) old.replaceWith(it.node); else w.prepend(it.node);
+        if (top) it.node.scrollTop = top;
+        if (refocus && h0) h0.focus({ preventScroll: true });
+      }
+    }
+    bar.hidden = !items.length;
+    paint();
+  }
+  function reset() {
+    saved = {}; ghost = []; lastJson = "{}";
+    try { localStorage.removeItem(store); } catch { /* ignore */ }
+    set(cur);
+  }
+  function settle() {
+    const p = pending; pending = null;
+    if (p) set(...p); else paint();
+  }
+  function finish() {
+    window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancel);
+    act.w.classList.remove("bdrag"); ph.hidden = true; document.body.classList.remove("boarding");
+    const a = act; act = null; return a;
+  }
+  function begin() {
+    const wr = act.w.getBoundingClientRect();
+    act.on = true; act.ox = act.x0 - wr.left; act.oy = act.y0 - wr.top; act.w0 = wr.width; act.h0 = wr.height;
+    closeMenu(false);
+    act.w.classList.add("bdrag"); pos(ph, act.r); ph.hidden = false;
+    document.body.classList.add("boarding");
+    const s = getSelection(); if (s) s.removeAllRanges();
+  }
+  function preview(patch) {
+    const key = JSON.stringify(patch);
+    if (key === act.key) return;
+    act.key = key;
+    const list = act.base.map(x => ({ ...x })), t = list.find(x => x.id === act.id);
+    Object.assign(t, patch);
+    bPush(list, t); bCompact(list, act.id, ghost);
+    act.next = list; paint(list, act.id);
+  }
+  function move(ev) {
+    if (!act || ev.pointerId !== act.pid) return;
+    const dx = ev.clientX - act.x0, dy = ev.clientY - act.y0;
+    if (!act.on) { if (Math.hypot(dx, dy) < 4) return; begin(); }
+    const cr = container.getBoundingClientRect(), step = (cr.width + BGAP) / BCOLS, { it, w, r, mode } = act;
+    if (mode === "move") {
+      const left = ev.clientX - cr.left - act.ox, top = ev.clientY - cr.top - act.oy;
+      w.style.left = `${left}px`; w.style.top = `${top}px`;
+      preview({ x: bClamp(Math.round(left / step), 0, BCOLS - r.w), y: Math.max(0, Math.round(top / BSTEP)) });
+      const vr = views.getBoundingClientRect();
+      if (ev.clientY > vr.bottom - 36) views.scrollTop += 16; else if (ev.clientY < vr.top + 36) views.scrollTop -= 16;
+    } else {
+      const maxW = Math.min(it.max.w, BCOLS - r.x), minW = Math.min(it.min.w, maxW);
+      const pw = bClamp(act.w0 + (mode.includes("e") ? dx : 0), minW * step - BGAP, maxW * step - BGAP);
+      const pht = bClamp(act.h0 + (mode.includes("s") ? dy : 0), it.min.h * BSTEP - BGAP, it.max.h * BSTEP - BGAP);
+      w.style.width = `${pw}px`; w.style.height = `${pht}px`;
+      preview({ w: bClamp(Math.round((pw + BGAP) / step), minW, maxW), h: bClamp(Math.round((pht + BGAP) / BSTEP), it.min.h, it.max.h) });
+    }
+  }
+  function up(ev) {
+    if (!act || ev.pointerId !== act.pid) return;
+    const a = finish();
+    if (a.on) {
+      if (a.next) { lay = a.next; persist(); }
+      swallow = true; setTimeout(() => { swallow = false; }, 60);
+    }
+    settle();
+  }
+  function cancel(ev) {
+    if (!act || ev.pointerId !== act.pid) return;
+    finish(); settle();
+  }
+  container.addEventListener("pointerdown", ev => {
+    if (act || narrowMQ.matches || (ev.pointerType === "mouse" && ev.button !== 0)) return;
+    const w = ev.target.closest(".bi"), it = w && container.contains(w) && meta(w.dataset.id);
+    if (!it) return;
+    const rz = ev.target.closest(".brz");
+    if (!rz) { const h = ev.target.closest(it.head); if (!h || !w.contains(h) || ev.target.closest(B_IGNORE)) return; }
+    else ev.preventDefault();
+    act = { id: it.id, it, w, mode: rz ? rz.dataset.dir : "move", pid: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false, base: lay.map(x => ({ ...x })), r: lay.find(x => x.id === it.id), key: "", next: null };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", cancel);
+    if (rz) begin();
+  });
+  container.addEventListener("click", ev => { if (swallow) { ev.stopPropagation(); ev.preventDefault(); } }, true);
+  container.addEventListener("keydown", ev => {
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
+    if (!d || act || narrowMQ.matches || !ev.target.classList.contains("bhead")) return;
+    const w = ev.target.closest(".bi"), it = w && meta(w.dataset.id), r = it && lay.find(x => x.id === it.id);
+    if (!r) return;
+    ev.preventDefault();
+    const list = lay.map(x => ({ ...x })), t = list.find(x => x.id === it.id);
+    Object.assign(t, bFit(ev.shiftKey ? { ...r, w: r.w + d[0], h: r.h + d[1] } : { ...r, x: r.x + d[0], y: r.y + d[1] }, it));
+    bPush(list, t); bCompact(list, it.id, ghost);
+    lay = list; persist(); paint();
+  });
+  const board = { set, reset, paint, bar };
+  boards.add(board);
+  return board;
+}
+
 /* ---------- home: every status at a glance, each card navigates ---------- */
 let HQ = null, homeTimer;
 async function loadHomeData() {
@@ -1191,65 +1421,137 @@ async function loadHomeData() {
   if (current === "home") { renderHome(); homeTimer = setTimeout(loadHomeData, 60000); }
 }
 function tapCard(to, ...kids) {
-  const c = el("div", { class: "card tap", role: "link", tabindex: "0", onclick: () => go(to), onkeydown: ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === c) { ev.preventDefault(); go(to); } } }, ...kids);
+  const open = () => typeof to === "function" ? to() : go(to);
+  const c = el("div", { class: "card tap", role: "link", tabindex: "0", onclick: open, onkeydown: ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === c) { ev.preventDefault(); open(); } } }, ...kids);
   return c;
 }
-const cardHead = (title, ...extra) => el("div", { class: "ch" }, el("h3", { text: title }), ...extra, icon("chev", "chev"));
+// tone: "" | "warn" | "err" colours the whole card the same way for every kind of item that needs the owner.
+const itemCard = (to, tone, ...kids) => { const c = tapCard(to, ...kids); if (tone) c.classList.add("att", ...(tone === "err" ? ["err"] : [])); return c; };
+const menuBtn = id => el("button", { class: "ib", type: "button", "aria-label": "설정", title: "설정", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => { ev.stopPropagation(); homeMenu(ev.currentTarget, id); } }, icon("more"));
+
+// The ⋯ menu of a home card: only what an existing endpoint already does for that item, built from the state at click time.
+function homeMenu(anchor, id) {
+  const acts = [];
+  const add = (label, run) => acts.push({ value: acts.length, label, run });
+  if (id === MAIN || isLaneT(id)) {
+    const key = id === MAIN ? "orchestrator" : id, name = targetName(id), restartNote = id === MAIN ? "어시스턴트가 다시 시작돼요." : "";
+    const cur = M && (id === MAIN ? M.orchestrator : (M.lanes || []).find(l => `lane:${l.name}` === id));
+    if (cur) {
+      add("모델 변경…", () => showMenu(anchor, modelItems(key, cur.model, ""), { value: cur.model, onPick: v => busy(null, () => putModel(key, name, { model: v }, restartNote, `${modelName(v)} · ${cur.thinking}`)) }));
+      add("추론 강도…", () => showMenu(anchor, (M.thinking_levels || []).map(v => ({ value: v, label: v })), { value: cur.thinking, onPick: v => busy(null, () => putModel(key, name, { thinking: v }, restartNote, `${modelName(cur.model)} · ${v}`)) }));
+    }
+    if (id === MAIN) {
+      if (S && S.orchestrator && S.orchestrator.status === "working") add("중단", () => abortOrch(null));
+      add("재시작", () => restartOrch(null));
+    } else {
+      const n = laneOf(id);
+      add("중단", () => busy(null, async () => { await api(`/api/lanes/${enc(n)}/abort`, "POST", {}); toast("작업을 중단했어요"); refreshState(); }));
+      add("재시작", () => busy(null, async () => { if (!await ask(`${n} 재시작`, "이 레인을 다시 시작할까요?", "재시작", true)) return; await api(`/api/lanes/${enc(n)}/restart`, "POST", {}); toast("재시작했어요"); refreshState(); }));
+    }
+  } else if (id.startsWith("prov:")) {
+    const p = ((P && P.providers) || []).find(x => x.id === id.slice(5));
+    if (p && p.can_login) add(isConnected(p) ? "다시 로그인" : "로그인", () => startLogin(p));
+    if (p && (p.can_logout ?? p.removable)) add(p.auth === "api_key" ? "키 삭제" : "로그아웃", () => busy(null, () => logoutProvider(p)));
+    add("공급자 열기", () => go("providers"));
+  } else if (id.startsWith("ctx:")) {
+    const c = ((C && C.processes) || []).find(x => x.name === id.slice(4));
+    if (c && c.running && !(c.compaction && (c.compaction.state === "queued" || c.compaction.state === "compacting"))) add("압축", () => busy(null, async () => {
+      const r = await api("/api/compact", "POST", { target: c.name });
+      toast(r.state === "queued" ? `${c.name}: 작업 중이라 턴이 끝나면 압축해요` : `${c.name}: 압축을 시작했어요`);
+      loadContext(true);
+    }));
+    add("컨텍스트 열기", () => go("context"));
+  } else {
+    add("사용량 열기", () => go("usage"));
+    add("공급자 열기", () => go("providers"));
+  }
+  showMenu(anchor, acts, { onPick: i => acts[i].run() });
+}
+
+// Last meaningful line of each running lane, kept from the live activity stream (fetched once per lane for the first sight).
+const LAST = {}, LAST_ASKED = new Set();
+let homeSoonT;
+const homeSoon = () => { clearTimeout(homeSoonT); homeSoonT = setTimeout(() => { if (current === "home") renderHome(); }, 500); };
+function actLine(a) {
+  switch (a.type) {
+    case "text": case "error": case "status": return oneLine(a.text ?? "");
+    case "tool_call": { const l = laneToolLabel(a); return `${capName(a.tool)}${l ? ` · ${l}` : ""}`; }
+    default: return "";
+  }
+}
+function laneLastFetch(name) {
+  if (LAST[name] !== undefined || LAST_ASKED.has(name)) return;
+  LAST_ASKED.add(name);
+  api(`/api/activity?source=${enc(`lane:${name}`)}&limit=30`).then(r => {
+    const items = (r && r.items) || [];
+    for (let i = items.length - 1; i >= 0 && LAST[name] === undefined; i--) { const s = actLine(items[i]); if (s) LAST[name] = s; }
+    if (LAST[name] === undefined) LAST[name] = "";
+    homeSoon();
+  }, () => {});
+}
+
+let homeBoard = null;
+const HOME_BIG = { min: { w: 3, h: 3 }, max: { w: 12, h: 10 } }, HOME_SMALL = { min: { w: 2, h: 2 }, max: { w: 12, h: 6 } };
+// Every item is its own floating card: the assistant, each running lane, each context process, each usage limit, each provider.
 function renderHome() {
   const box = $("#home");
   if (!box || current !== "home") return;
+  if (openMenu && box.contains(openMenu.anchor)) return;   // a ⋯ menu is open: repaint after it closes
   $("#title").textContent = botName;
-  const o = (S && S.orchestrator) || {};
-  const lanes = S ? S.lanes : [];
+  if (!homeBoard) homeBoard = makeBoard(box, "home");
+  const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, items = [], seen = new Set();
+  const add = (id, node, def, size) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def, ...size }); } };
 
   // assistant
-  const om = M && M.orchestrator;
   const stText = o.status === "rate-limited" && o.rateLimitedUntil ? `${statusKo(o.status)} · ${kstTime(o.rateLimitedUntil)}까지` : statusKo(o.status);
   const stop = o.status === "working" ? el("button", { class: "ib err", type: "button", "aria-label": "중단", title: "중단", onclick: ev => { ev.stopPropagation(); abortOrch(ev.currentTarget); } }, icon("stop")) : null;
   const mainAttn = attnKind(MAIN);
-  const assistant = tapCard("models",
-    el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), stop,
-      el("button", { class: "ib", type: "button", "aria-label": "재시작", title: "재시작", onclick: ev => { ev.stopPropagation(); restartOrch(ev.currentTarget); } }, icon("refresh")), icon("chev", "chev")),
+  add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), mainAttn || o.status === "rate-limited" ? "warn" : "",
+    el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), stop, menuBtn(MAIN)),
     el("div", { class: "big", text: om ? modelName(om.model) : "…" }),
     el("div", { class: "sup sub", text: om && om.thinking ? `thinking ${om.thinking}` : "\u00a0" }),
-    subLine("orchestrator"));
+    subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
 
-  // usage
-  const usage = tapCard("usage", cardHead("사용량"));
-  if (!HQ) usage.append(el("div", { class: "sup", text: "불러오는 중…" }));
-  else if (HQ.error) usage.append(el("div", { class: "sup err-t", text: "사용량을 불러오지 못했어요" }));
-  else {
+  // running lanes
+  for (const l of (S ? S.lanes : []).filter(laneAlive)) {
+    const t = `lane:${l.name}`, k = attnKind(t), m = ((M && M.lanes) || []).find(x => x.name === l.name), model = (m && m.model) || l.model;
+    laneLastFetch(l.name);
+    add(t, itemCard(() => openTarget(t, lastChatView()), k || l.status === "rate-limited" ? "warn" : "",
+      el("div", { class: "ch" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("h3", { text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(l.status)}`, text: statusKo(l.status) }), menuBtn(t)),
+      model ? el("div", { class: "sup", text: `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` }) : null,
+      subLine(t),
+      LAST[l.name] ? el("div", { class: "sup clamp", text: LAST[l.name] }) : null), { w: 4, h: 4 }, HOME_BIG);
+  }
+
+  // context: one card per running process
+  for (const p of ((C && C.processes) || []).filter(x => x.running)) {
+    const id = `ctx:${p.name}`, pct = p.percent;
+    add(id, itemCard("context", pct >= 90 ? "err" : pct >= 80 ? "warn" : "",
+      el("div", { class: "ch" }, el("h3", { text: `컨텍스트 · ${p.kind === "lane" ? p.name : botName}` }), el("span", { class: "sup", text: pct != null ? `${pct}%` : `${num(p.tokens)} 토큰` }), menuBtn(id)),
+      el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }))), { w: 3, h: 2 }, HOME_SMALL);
+  }
+
+  // usage: one card per limit
+  if (HQ && !HQ.error) {
     const provs = (HQ.providers || []).filter(p => (p.limits || []).length), multi = provs.length > 1;
-    const all = provs.flatMap(p => p.limits.map(l => [p, l]));
-    for (const [p, l] of all.slice(0, 5)) usage.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: limitLabel(p, l, multi) }), el("span", { class: "v", text: pctText(l) })), bar(l)));
-    if (all.length > 5) usage.append(el("div", { class: "more", text: `외 ${all.length - 5}개` }));
-    if (!all.length) usage.append(el("div", { class: "sup", text: "없음" }));
+    for (const pr of provs) for (const l of pr.limits) {
+      const id = `limit:${pr.provider}:${l.id}`, f = limitFrac(l);
+      add(id, itemCard("usage", limitTone(l) === "err" ? "err" : f != null && f <= .2 ? "warn" : "",
+        el("div", { class: "ch" }, el("h3", { text: limitLabel(pr, l, multi) }), el("span", { class: "sup", text: pctText(l) }), menuBtn(id)), bar(l)), { w: 3, h: 2 }, HOME_SMALL);
+    }
   }
 
-  // lanes
-  const alive = lanes.filter(laneAlive);
-  const nAttn = alive.filter(l => attnKind(`lane:${l.name}`)).length;
-  const lanesCard = tapCard("lanes", cardHead("레인", nAttn ? el("span", { class: "tag warn", text: `확인 필요 ${nAttn}` }) : null, el("span", { class: "tag", text: String(alive.length) })));
-  if (!alive.length) lanesCard.append(el("div", { class: "sup", text: "작동 중인 레인 없음" }));
-  for (const l of alive.slice(0, 3)) {
-    const k = attnKind(`lane:${l.name}`);
-    lanesCard.append(el("div", { class: "row" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : el("span", { class: "sup", text: statusKo(l.status) })));
+  // providers: connected ones and the one in use that lost its login
+  for (const p of (P && P.providers) || []) {
+    if (!isConnected(p) && !needsAttention(p)) continue;
+    const id = `prov:${p.id}`, bad = needsAttention(p);
+    add(id, itemCard("providers", bad ? "err" : "",
+      el("div", { class: "ch" }, el("span", { class: `dot ${bad ? "err" : "ok"}` }), el("h3", { text: p.name || p.id }), el("span", { class: `tag ${bad ? "err" : ""}`, text: bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨" }), menuBtn(id)),
+      p.account ? el("div", { class: "sup", text: p.account }) : null), { w: 3, h: 2 }, HOME_SMALL);
   }
-  if (alive.length > 3) lanesCard.append(el("div", { class: "more", text: `외 ${alive.length - 3}개` }));
-  const lsl = laneSubLine();
-  if (lsl) lanesCard.append(lsl);
 
-  // providers
-  const plist = (P && P.providers) || [];
-  const issues = plist.filter(needsAttention), ok = plist.filter(isConnected);
-  const provCard = tapCard("providers", cardHead("공급자", issues.length ? el("span", { class: "tag err", text: `확인 필요 ${issues.length}` }) : null, P ? el("span", { class: "tag", text: `${ok.length}개 연결` }) : null));
-  if (!P) provCard.append(el("div", { class: "sup", text: "불러오는 중…" }));
-  else if (!plist.length) provCard.append(el("div", { class: "sup", text: "연결된 공급자 없음" }));
-  const shown = [...issues, ...ok.filter(p => !issues.includes(p))].slice(0, 3);
-  for (const p of shown) provCard.append(el("div", { class: "row" }, el("span", { class: `dot ${needsAttention(p) ? "err" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: needsAttention(p) ? "로그인 필요" : p.account || (p.auth === "api_key" ? "API 키" : "로그인됨") })));
-  if (plist.length > 3 && shown.length === 3) provCard.append(el("div", { class: "more", text: `외 ${Math.max(0, plist.length - 3)}개` }));
-
-  clear(box).append(assistant, ctxHomeCard(), usage, lanesCard, provCard);
+  // cards of data that has not arrived yet keep their saved place
+  homeBoard.set(items, id => id.startsWith("lane:") ? !S : id.startsWith("ctx:") ? !C : id.startsWith("limit:") ? !HQ || !!HQ.error : id.startsWith("prov:") ? !P : false);
 }
 
 /* ---------- assistant actions ---------- */
@@ -1790,7 +2092,7 @@ $("#ctx-ring").onclick = () => go("context");
 setInterval(() => { if (current === "chat" || current === "activity") loadContext(true).then(renderCtxRing); }, 15000);
 
 /* ---------- target switcher + 대화/터미널 toggle (rendered into the header of both views) ---------- */
-// Manual order from dragging (chips and 레인 board panes share it); targets never dragged keep spawn order after the ordered ones.
+// Manual order from dragging the chips; 레인 panes and 홈 cards have their own free layout (makeBoard) and do not use it. Never-dragged targets keep spawn order after the ordered ones.
 const ORDER_KEY = "dotz-order";
 let ORDER = (() => { try { const v = JSON.parse(localStorage.getItem(ORDER_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
 const byOrder = list => list.map((t, i) => [t, ORDER.indexOf(t), i]).sort((a, b) => (a[1] < 0 ? 1e9 + a[2] : a[1]) - (b[1] < 0 ? 1e9 + b[2] : b[1])).map(x => x[0]);
@@ -1803,7 +2105,6 @@ function moveInOrder(shown, from, to, after) {
   try { localStorage.setItem(ORDER_KEY, JSON.stringify(ORDER)); } catch {}
   document.querySelectorAll(".thead").forEach(b => { b.dataset.sig = ""; });
   renderBars();
-  if (current === "lanes") { laneSig = ""; renderLanes(); }
 }
 // HTML5 drag: `handle` starts the drag (defaults to the node), `node` takes drops for target `t` within `shown()`;
 // it lands before or after `t` by which half the pointer is in.
@@ -2020,6 +2321,7 @@ async function laneLoad(p) {
 // SSE "activity": keep every loaded pane live, even while another view is open.
 function laneActivity(a) {
   const name = typeof a.source === "string" && a.source.startsWith("lane:") ? a.source.slice(5) : null;
+  if (name) { const s = actLine(a); if (s && LAST[name] !== s) { LAST[name] = s; homeSoon(); } }
   const p = name && LP[name];
   if (!p) return;
   if (p.loading) p.queue.push(a);
@@ -2058,7 +2360,7 @@ function laneActions(p, l) {
 function lanePane(name) {
   const p = { name, seen: new Set(), calls: new Map(), queue: [], stick: true, scroll: 0, loaded: false, loading: false, failedAt: 0, noted: false, alive: null };
   p.dot = el("span", { class: "dot" });
-  p.nameBtn = el("button", { class: "lname", type: "button", title: "크게 보기", onclick: () => openSource(`lane:${name}`) });
+  p.nameBtn = el("button", { class: "lname", type: "button", title: "대화 열기", onclick: () => openTarget(`lane:${name}`, lastChatView()) });
   p.tag = el("span", { class: "tag" });
   p.att = el("span", { class: "tag warn", text: "확인 필요", hidden: true });
   p.subs = el("button", { class: "tag pri", type: "button", hidden: true, title: "서브에이전트 보기", onclick: ev => { ev.stopPropagation(); openSubs([`lane:${name}`]); } });
@@ -2072,11 +2374,10 @@ function lanePane(name) {
   });
   p.input = input({ type: "text", enterkeyhint: "send", value: laneDraft[name] || "", oninput: ev => { laneDraft[name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); p.send.click(); } } });
   p.send = el("button", { class: "ib pri", type: "button" }, icon("send"));
-  const head = el("div", { class: "lhead", title: "끌어서 순서 바꾸기" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.att, p.tag, p.subs), p.model, p.acts);
+  const head = el("div", { class: "lhead" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.att, p.tag, p.subs), p.model, p.acts);
   p.node = el("section", { class: "lpane", "aria-label": name, "data-t": `lane:${name}` }, head,
     p.tail,
     el("div", { class: "lcomp" }, p.input, p.send));
-  dragItem(p.node, `lane:${name}`, () => [...p.node.parentElement.children].map(n => n.dataset.t), true, head);
   return p;
 }
 function laneUpdate(p, l, m) {
@@ -2100,18 +2401,16 @@ function laneUpdate(p, l, m) {
     p.send.setAttribute("aria-label", alive ? "전송" : "재개");
     p.node.classList.toggle("off", !alive);
   }
+  p.node.classList.toggle("att", !!k || l.status === "rate-limited");
   clear(p.acts).append(...laneActions(p, l));
 }
-// Put exactly `nodes` in `parent`; untouched when already in order (re-attaching would reset scroll positions).
-function laneFill(parent, nodes) {
-  const same = parent.children.length === nodes.length && nodes.every((n, i) => parent.children[i] === n);
-  if (!same) parent.replaceChildren(...nodes);
-}
 function laneBoardInit() {
-  const grid = el("div", { class: "lgrid" });
+  const grid = el("div", {});
   laneBoard = { grid, none: emptyNode("작동 중인 레인 없음") };
   laneBoard.node = el("div", { class: "lboard" }, laneBoard.none, grid);
   $("#lanes").append(laneBoard.node);
+  // The tail of a pane follows the card height; a resize or move only re-sticks the tails.
+  laneBoard.board = makeBoard(grid, "lanes", { onLayout: () => { for (const p of Object.values(LP)) laneStick(p); } });
 }
 // Running lanes only: an exited lane leaves the board at once (its history and resume stay reachable from ⌘K).
 function renderLanes() {
@@ -2125,10 +2424,11 @@ function renderLanes() {
   const B = laneBoard;
   for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) { LP[n].node.remove(); delete LP[n]; delete laneDraft[n]; }
   for (const l of lanes) laneUpdate(LP[l.name] || (LP[l.name] = lanePane(l.name)), l, modelOf(l.name));
-  const ordered = byOrder(lanes.map(l => `lane:${l.name}`)).map(t => lanes.find(l => `lane:${l.name}` === t));
+  const ordered = lanes;
   B.none.hidden = ordered.length > 0;
   B.grid.hidden = !ordered.length;
-  laneFill(B.grid, ordered.map(l => LP[l.name].node));
+  B.board.bar.hidden = !ordered.length;
+  B.board.set(ordered.map(l => ({ id: `lane:${l.name}`, node: LP[l.name].node, head: ".lhead", def: { w: 4, h: 9 }, min: { w: 3, h: 6 }, max: { w: 12, h: 24 } })));
   for (const l of ordered) {
     const p = LP[l.name];
     if (!p.loaded && !p.loading && Date.now() - p.failedAt > 15000) laneLoad(p);
@@ -2186,14 +2486,6 @@ function renderContext() {
   }
   clear(box).append(list);
 }
-function ctxHomeCard() {
-  const c = tapCard("context", cardHead("컨텍스트"));
-  const list = ((C && C.processes) || []).filter(p => p.running);
-  if (!list.length) c.append(el("div", { class: "sup", text: C ? "없음" : "불러오는 중…" }));
-  for (const p of list.slice(0, 4)) c.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "v", text: p.percent != null ? `${p.percent}%` : `${num(p.tokens)} 토큰` })), el("div", { class: `bar ${ctxTone(p.percent)}` }, el("i", { style: `width:${Math.min(100, p.percent || 0).toFixed(1)}%` }))));
-  if (list.length > 4) c.append(el("div", { class: "more", text: `외 ${list.length - 4}개` }));
-  return c;
-}
 
 /* ---------- models ---------- */
 const pending = {};
@@ -2208,16 +2500,40 @@ async function loadModels(quiet) {
   if (current === "context") renderContext();
   if (current === "lanes") { laneSig = ""; renderLanes(); }
 }
-function modelItems(key, curModel) {
+function modelItems(key, curModel, filter = providerFilter) {
   const val = (pending[key] || {}).model ?? curModel;
   const avail = M.available || [];
-  const shown = avail.filter(a => !providerFilter || a.provider === providerFilter);
+  const shown = avail.filter(a => !filter || a.provider === filter);
   const items = [];
   if (val && !shown.some(a => a.selector === val)) items.push({ header: "현재" }, { value: val, label: modelName(val) });
   const byProv = new Map();
   for (const a of shown) { if (!byProv.has(a.provider)) byProv.set(a.provider, []); byProv.get(a.provider).push(a); }
   for (const [p, list] of byProv) items.push({ header: providerName(p) }, ...list.map(a => ({ value: a.selector, label: a.name || a.selector })));
   return items;
+}
+// PUT /api/models for one target (the 모델 view and the 홈 card menus share it); confirms first when `confirmText` is set and again when the cache would be rewritten.
+async function putModel(key, title, change, confirmText, label) {
+  const body = { target: key, ...change };
+  if (confirmText && !await ask(title, `${confirmText}\n${label}`, "적용")) return false;
+  let r;
+  try { r = await api("/api/models", "PUT", body); }
+  catch (e) {
+    if (!(e.data && e.data.requires_force)) throw e;
+    if (!await ask(title, `캐시가 다시 쓰여요 · 컨텍스트 ${num(e.data.context_tokens)} 토큰\n${label}`, "적용")) return false;
+    r = await api("/api/models", "PUT", { ...body, force: true });
+  }
+  delete pending[key];
+  toast(applyKo[r.applied] || "적용했어요");
+  await loadModels(true); refreshState();
+  return true;
+}
+async function logoutProvider(p) {
+  const name = p.name || p.id, key = p.auth === "api_key";
+  if (!await ask(key ? `${name} 키 삭제` : `${name} 로그아웃`, key ? "저장된 API 키를 삭제할까요?" : "저장된 로그인 정보가 삭제돼요.", key ? "삭제" : "로그아웃", true)) return;
+  await api(`/api/providers/${enc(p.id)}/logout`, "POST", {});
+  toast(key ? "키를 삭제했어요" : "로그아웃했어요");
+  await loadProviders(); loadModels(true);
+  if (current === "home") renderHome();
 }
 function targetCard(key, title, status, cur, confirmText) {
   const p = pending[key] || {};
@@ -2228,20 +2544,10 @@ function targetCard(key, title, status, cur, confirmText) {
   const seg = el("div", { class: "seg", role: "radiogroup", "aria-label": "thinking" }, ...levels.map(lv => el("button", { type: "button", role: "radio", "aria-checked": lv === thinking, class: lv === thinking ? "on" : "", onclick: () => { (pending[key] ||= {}).thinking = lv; renderModels(); } }, lv)));
   const info = (M.available || []).find(a => a.selector === model);
   const apply = el("button", { class: "btn", type: "button", disabled: !dirty, onclick: ev => busy(ev.currentTarget, async () => {
-    const body = { target: key };
-    if (p.model != null && p.model !== cur.model) body.model = p.model;
-    if (p.thinking != null && p.thinking !== cur.thinking) body.thinking = p.thinking;
-    if (confirmText && !await ask(title, `${confirmText}\n${modelName(model)} · ${thinking}`, "적용")) return;
-    let r;
-    try { r = await api("/api/models", "PUT", body); }
-    catch (e) {
-      if (!(e.data && e.data.requires_force)) throw e;
-      if (!await ask(title, `캐시가 다시 쓰여요 · 컨텍스트 ${num(e.data.context_tokens)} 토큰\n${modelName(model)} · ${thinking}`, "적용")) return;
-      r = await api("/api/models", "PUT", { ...body, force: true });
-    }
-    delete pending[key];
-    toast(applyKo[r.applied] || "적용했어요");
-    await loadModels(true); refreshState();
+    const change = {};
+    if (p.model != null && p.model !== cur.model) change.model = p.model;
+    if (p.thinking != null && p.thinking !== cur.thinking) change.thinking = p.thinking;
+    await putModel(key, title, change, confirmText, `${modelName(model)} · ${thinking}`);
   }) }, "적용");
   return el("div", { class: "card" },
     el("div", { class: "heads", style: "margin-bottom:12px" }, status ? el("span", { class: `dot ${statusTone(status)}` }) : null, el("span", { class: "t", text: title })),
@@ -2294,13 +2600,7 @@ function renderProviders() {
     const sub = p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨");
     const btns = el("div", { class: "btns" });
     if (p.can_login) btns.append(el("button", { class: `btn ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인"));
-    if (canLogout) btns.append(el("button", { class: "btn danger", type: "button", onclick: ev => busy(ev.currentTarget, async () => {
-      const key = p.auth === "api_key";
-      if (!await ask(key ? `${name} 키 삭제` : `${name} 로그아웃`, key ? "저장된 API 키를 삭제할까요?" : "저장된 로그인 정보가 삭제돼요.", key ? "삭제" : "로그아웃", true)) return;
-      await api(`/api/providers/${enc(p.id)}/logout`, "POST", {});
-      toast(key ? "키를 삭제했어요" : "로그아웃했어요");
-      await loadProviders(); loadModels(true);
-    }) }, p.auth === "api_key" ? "키 삭제" : "로그아웃"));
+    if (canLogout) btns.append(el("button", { class: "btn danger", type: "button", onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, p.auth === "api_key" ? "키 삭제" : "로그아웃"));
     return el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
       el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
         sub ? el("div", { class: "sup", text: sub }) : null),
