@@ -1,12 +1,12 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { log, paths } from "./config.ts";
+import { log, paths, writeAtomic } from "./config.ts";
 
 export type Schedule = { id: string; text: string; at: string; every_minutes?: number; created: string };
 
 const items: Schedule[] = existsSync(paths.schedules) ? JSON.parse(readFileSync(paths.schedules, "utf8")) : [];
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
-const save = () => writeFileSync(paths.schedules, `${JSON.stringify(items, null, 2)}\n`);
+const save = () => writeAtomic(paths.schedules, `${JSON.stringify(items, null, 2)}\n`);
 let onFire: (s: Schedule) => void = () => {};
 const MAX_DELAY = 2 ** 31 - 1;
 

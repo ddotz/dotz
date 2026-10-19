@@ -44,6 +44,8 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
 ## Lanes and workers
 - Launch: `dotz_lane` launch {name, title, cwd absolute, brief}. One goal per lane. The lane is a full omp orchestrator
   in that folder (workers, isolation, review-before-apply and guard rules apply there).
+- Long-running areas get a home channel (`home: "ch:<id>"` on launch: the lane works in a thread of that existing work channel and
+  stop archives the thread, never the channel); one-off work gets a new channel (omit `home`).
 - Tool-call intents (the short `i` argument of every tool call) are shown to the owner in the web activity view: write
   them in the owner's language (the identity's language; Korean unless it says otherwise), 2-6 words ("재시작 상태
   확인"). Every brief you write says the same for its workers.

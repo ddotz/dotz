@@ -2,10 +2,10 @@
 // owner message and lane report. Also does the omonyang session-doctor duties for it: resume after a rate limit at
 // retry-after, restart after a crash (max 3 per 10 min), and rotate to a fresh session with a handover past 50MB.
 import type { Subprocess } from "bun";
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { emitFrameActivity, statusActivity } from "./activity.ts";
-import { cfg, DATA_DIR, IDENTITY_FILE, log, NAME, now, OMP, orchestratorModel, paths, selectorOf } from "./config.ts";
+import { cfg, DATA_DIR, IDENTITY_FILE, log, NAME, now, OMP, orchestratorModel, paths, selectorOf, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
@@ -58,7 +58,7 @@ const EXTENSION = join(import.meta.dir, "..", "extension", "index.ts");
 
 const saved = (): Saved => (existsSync(STATE) ? JSON.parse(readFileSync(STATE, "utf8")) : {});
 let currentModel = "";
-const save = (s: Saved) => writeFileSync(STATE, `${JSON.stringify(s, null, 2)}\n`);
+const save = (s: Saved) => writeAtomic(STATE, `${JSON.stringify(s, null, 2)}\n`);
 function write(frame: Record<string, unknown>): void {
 	if (!proc) return;
 	proc.stdin.write(`${JSON.stringify({ id: `o${++seq}`, ...frame })}\n`);

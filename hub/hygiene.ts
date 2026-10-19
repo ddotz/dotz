@@ -2,11 +2,11 @@
 // every idle lane is looked at. A session file past lanes.rotate_mb starts a fresh session with a handover; otherwise a
 // context of lanes.nightly_compact_at tokens or more (default 300K, below the 400K daytime auto-compaction) is compacted.
 // Working, rate-limited and stopped lanes are left alone.
-import { existsSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 import { statusActivity } from "./activity.ts";
-import { lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OMP, paths } from "./config.ts";
+import { lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OMP, paths, writeAtomic } from "./config.ts";
 import { describeCtx } from "./context.ts";
 import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
 import { orchestratorPid } from "./orchestrator.ts";
@@ -82,7 +82,7 @@ export function startLaneHygiene(): void {
 	const arm = (delay: number) =>
 		setTimeout(async () => {
 			// The date is recorded before the run, so a crash in the middle never repeats it on the next start.
-			writeFileSync(paths.laneHygiene, `${JSON.stringify({ date: localDate(new Date()) })}\n`);
+			writeAtomic(paths.laneHygiene, `${JSON.stringify({ date: localDate(new Date()) })}\n`);
 			await runLaneHygiene().catch(e => log(`lane hygiene failed: ${e}`));
 			arm(untilNext());
 		}, delay);

@@ -2,9 +2,9 @@
 // omp_update.mode: "check" (default) posts one worklog line per new version and never installs; "install" runs
 // `omp update`, then restarts the gateway once it is idle; "off" does nothing. Install is never the default.
 // `bun hub/update.ts --check-now` runs the check path once and prints the result without posting.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, log } from "./config.ts";
+import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 
 export type Mode = "check" | "install" | "off";
 export type Check =
@@ -69,7 +69,7 @@ export async function runOmpUpdate({ mode, post, restart, run = defaultRun, stat
 	if (mode === "check") {
 		if (readState(stateFile).notified === c.latest) return undefined;
 		const line = `${describe(c)} 설치는 오너 확인 후.`;
-		writeFileSync(stateFile, JSON.stringify({ notified: c.latest }));
+		writeAtomic(stateFile, JSON.stringify({ notified: c.latest }));
 		post(line);
 		return line;
 	}

@@ -45,6 +45,8 @@ headless로 호스팅해요(상시 실행, launchd `dev.dotz.gateway`). 터미�
 ## Lanes and workers
 - Launch: `dotz_lane` launch {name, title, cwd absolute, brief}. 레인 하나에 목표 하나예요. 레인은 해당 폴더의 완전한
   omp 오케스트레이터예요(워커, 격리, 적용 전 리뷰, 가드 규칙이 거기서도 적용돼요).
+- 오래 이어지는 영역은 홈 채널을 쓰세요(launch에 `home: "ch:<id>"`: 기존 작업 채널의 스레드에서 일하고, stop하면 채널이 아니라
+  스레드만 보관해요). 한 번으로 끝나는 일은 새 채널을 쓰세요(`home` 생략).
 - 도구 호출 intent(모든 도구 호출의 짧은 `i` 인자)는 웹 활동 화면에서 오너에게 보여요. 오너의 언어(identity의 언어,
   별도 지정이 없으면 한국어)로 2-6단어로 쓰세요("재시작 상태 확인"). 당신이 쓰는 모든 brief에도 워커에게 같은 내용을
   적으세요.

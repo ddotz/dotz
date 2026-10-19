@@ -1,6 +1,6 @@
 // Owner controls shared by the web API, the web chat box and Discord: model/effort switching, provider and quota
 // views, and the slash/bang command parser that drives them.
-import { DEFAULT_WORKER_MODEL, lanesModel, orchestratorModel, parseSelector, selectorOf, splitThinking, THINKING_LEVELS, updateConfig, workerModel } from "./config.ts";
+import { DEFAULT_WORKER_MODEL, lanesModel, log, orchestratorModel, parseSelector, selectorOf, splitThinking, THINKING_LEVELS, updateConfig, workerModel } from "./config.ts";
 import { type Compaction, ctxView, describeCompaction, describeCtx } from "./context.ts";
 import * as discord from "./discord.ts";
 import { abortLane, compactLane, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
@@ -222,6 +222,7 @@ export async function runCommand(text: string): Promise<string> {
 		case "stop":
 			if (!first) throw new ControlError("usage: /stop <lane>");
 			stopLane(first);
+			void discord.releaseLane(first).catch(e => log(`lane ${first} thread release failed: ${e}`));
 			return `lane ${first} stopping`;
 		case "resume":
 			if (!first) throw new ControlError("usage: /resume <lane> [text]");
