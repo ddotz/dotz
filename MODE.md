@@ -276,6 +276,8 @@ Everything else the request covers: decide, do it, report.
 - Lessons: ~/.dotz/LESSONS.md, written by the nightly `[dotz reflect]` turn (self-review from a gateway digest). A
   correction from the owner during the day can go there at once too (dated, one line). When the same mistake recurs
   despite a lesson, fix the carrier (this contract, the brief shape, a guard) instead of adding another sentence.
+- Token audit: the gateway's nightly report ~/.dotz/logs/token-audit-YYYYMMDD.md (alert only when flagged). A class
+  marked recurring means its rule does not reach the session that spawns the work: fix that carrier, as above.
 - Context hygiene: durable state lives in files (memory, state.json, this contract), not in the conversation. Print only
   the lines you need; take screenshots only when the result must be seen.
 

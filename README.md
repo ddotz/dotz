@@ -127,6 +127,23 @@ that `omp worktree list --json` marks with an `orphanReason` (no live job) and t
 paths under `~/.omp/wt/` are touched; they are made writable first (retained worktrees hold read-only files that make
 `omp worktree clear` fail). The count and freed space go to the hub log.
 
+**Nightly token audit.** At `token_audit_at` (default `"04:30"`, `"off"` disables) the gateway scans every omp session
+active in the last 24h (orchestrator, lanes, task workers) without any model call and writes
+`~/.dotz/logs/token-audit-YYYYMMDD.md`: cache busts, idle wakes, error streaks, repeated tool calls, big contexts, big
+workers and Fable or max/xhigh use. A class flagged on consecutive days is marked as recurring. A short alert goes out
+only when something is flagged, and the reflection digest cites the result. Nothing is changed automatically. 14 days of
+totals stay in `~/.dotz/token-audit.json`. Try it with `bun hub/token-audit.ts --dry [--hours N]`.
+
+**Off-machine backup.** The nightly snapshot (a local git repo of `~/.dotz` rules, lessons, identity and settings) is
+pushed to `backup.remote` when that key is set (off by default). Files that look like secrets are kept out of the commit,
+and a push with secret-like content in its history is refused. A remote URL with embedded credentials is refused too.
+Failures go to the hub log and to the owner at most once a day.
+
+**omp update check.** At `omp_update.at` (default `"04:20"`) the gateway runs `omp update --check`. `omp_update.mode`
+is `"check"` by default (one worklog line per new version, nothing installed). `"install"` runs `omp update` and
+restarts the gateway once it is idle. `"off"` disables the check. Installs managed by another program (Tern) are
+skipped. `bun hub/update.ts --check-now` prints the result.
+
 ## API additions
 
 All behind the same auth as the rest of `/api`.
