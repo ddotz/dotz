@@ -86,6 +86,24 @@ Do this, briefly:
 3. If something recurred although RULES.md or LESSONS.md already covers it, more text will not help: send the owner (dotz_send alert) a concrete fix for the carrier (which file, hook, brief footer or check to change).
 4. Never edit RULES.md here; propose rule changes to the owner in alert and wait for their answer.
 5. Finish with one dotz_send worklog post in the identity's language and Notices style: a first line "Nightly review", then "- " bullets in plain words for what you did (e.g. "- 1 lesson noted in LESSONS.md", "- 1 proposed fix posted to alert"), at most 4 bullets. Nothing else is sent.`,
+
+	// Owner-facing strings of the Discord login-auth prompts (hub/auth.ts).
+	auth: {
+		titles: { secret: "Login details needed", otp: "Verification code needed", approve: "Login approval needed" },
+		site: "Site",
+		expires: (time: string) => `Until ${time} KST`,
+		input: "Enter",
+		approve: "I approved",
+		cancel: "Cancel",
+		labels: { username: "Username", password: "Password", code: "Verification code" },
+		modalTitle: (site: string) => `${site} login`,
+		statuses: { entered: "Received.", approved: "Approved.", cancelled: "Cancelled.", timeout: "Expired without an answer." },
+		notOwner: "Only the owner can answer this.",
+		finished: "This request is already finished or expired.",
+		received: "Received. The value goes only to the gateway.",
+		incomplete: "Some fields were empty. Press the button again.",
+		storeFailed: "Could not save it. Press the button again.",
+	},
 };
 type Catalog = typeof en;
 
@@ -140,6 +158,23 @@ const ko: Catalog = {
 3. RULES.md나 LESSONS.md가 이미 다루는데도 되풀이된 일은 글을 더 쓴다고 나아지지 않아요. 오너에게 (dotz_send alert로) 전달 경로를 고치는 구체적인 방법(어느 파일, 훅, 브리프 footer, 확인을 바꿀지)을 보내세요.
 4. 여기서 RULES.md는 절대 수정하지 마세요. 규칙 변경은 alert로 오너에게 제안하고 답을 기다리세요.
 5. 마지막으로 dotz_send worklog 글 하나를 한국어로, identity의 Notices 문체로 올리세요: 첫 줄은 "야간 정리", 이어서 한 일을 쉬운 말로 "- " 글머리 항목으로(예: "- 배운 점 1개 LESSONS.md에 정리했어요", "- 고칠 거 제안 1건은 알림에 올렸어요"), 최대 4개, 영어로 된 개수 표기는 쓰지 마세요. 그 밖에는 아무것도 보내지 않아요.`,
+
+	auth: {
+		titles: { secret: "로그인 정보가 필요해요", otp: "인증 코드가 필요해요", approve: "로그인 승인이 필요해요" },
+		site: "사이트",
+		expires: time => `${time} KST까지`,
+		input: "입력하기",
+		approve: "승인했어요",
+		cancel: "취소",
+		labels: { username: "아이디", password: "비밀번호", code: "인증 코드" },
+		modalTitle: site => `${site} 로그인`,
+		statuses: { entered: "입력을 받았어요.", approved: "승인됐어요.", cancelled: "취소됐어요.", timeout: "시간이 지나 만료됐어요." },
+		notOwner: "주인만 답할 수 있어요.",
+		finished: "이미 끝났거나 만료된 요청이에요.",
+		received: "받았어요. 값은 게이트웨이에만 전달돼요.",
+		incomplete: "비어 있는 칸이 있어요. 버튼을 다시 눌러 주세요.",
+		storeFailed: "저장하지 못했어요. 버튼을 다시 눌러 주세요.",
+	},
 };
 
 const CATALOGS: Record<string, Catalog> = { en, ko };
