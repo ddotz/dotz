@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
 import { emitFrameActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
-import { cfg, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, OMP, parseSelector, paths, selectorOf, splitThinking, workerModel, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, OMP, parseSelector, paths, selectorOf, splitThinking, workerModel, writeAtomic } from "./config.ts";
 import { lang, modeFile, msg, withReplyLine } from "./i18n.ts";
+import { featurePrompt } from "./featuredirs.ts";
 import { languageName } from "./language.ts";
 import { abandonCompact, type CompactPort, type Compaction, compactionError, type Ctx, ctxView, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
@@ -382,7 +383,8 @@ const activeCount = () => [...lanes.values()].filter(l => l.status === "working"
 export const WORKER_SLOTS = Math.max(2, Math.min(8, Math.floor(availableParallelism() / 2), Math.floor(totalmem() / 2 ** 32)));
 
 function footer(lane: Lane): string {
-	return withReplyLine(msg().footer({ lane: lane.name, mode: modeFile(), workerModel: laneWorkerModel(lane), slots: WORKER_SLOTS, worktree: worktreeNote(lane.worktree) }));
+	const features = featurePrompt(DATA_DIR, "lanes", log);
+	return withReplyLine(msg().footer({ lane: lane.name, mode: modeFile(), workerModel: laneWorkerModel(lane), slots: WORKER_SLOTS, worktree: worktreeNote(lane.worktree) })) + (features ? `\n\n${features}` : "");
 }
 
 function worktreeNote(w: Worktree | undefined): string {

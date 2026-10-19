@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { emitFrameActivity, statusActivity } from "./activity.ts";
 import { cfg, DATA_DIR, IDENTITY_FILE, log, NAME, now, OMP, orchestratorModel, paths, selectorOf, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
+import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteCompactResponse, noteMessageUsage, noteResponse, recentExchanges, requestCompact } from "./context.ts";
 import { classifyProviderError, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { setupsSummary } from "./workchannels.ts";
@@ -85,7 +86,8 @@ function recall(): string {
 		const t = existsSync(p) ? readFileSync(p, "utf8") : "";
 		return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
 	};
-	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000), lessons: file(paths.lessons, 3000), setups: setupsSummary(), state }));
+	const features = featurePrompt(DATA_DIR, "orchestrator", log);
+	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, 3000), setups: setupsSummary(), state }));
 }
 
 function handover(previous: string): string {

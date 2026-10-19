@@ -151,6 +151,40 @@ is `"check"` by default (one worklog line per new version, nothing installed). `
 restarts the gateway once it is idle. `"off"` disables the check. Installs managed by another program (Tern) are
 skipped. `bun hub/update.ts --check-now` prints the result.
 
+## Feature folders (owner-added features)
+
+One owner feature = one folder `<DATA_DIR>/features/<id>/` (`<id>` is `[a-z0-9-]`, up to 40 chars). Nothing ships in the repo;
+the gateway and the omp extension read the folders at runtime (cached by file mtime). A malformed folder is skipped and the
+reason is written to `hub.log` (and returned as `skipped_dirs` by `GET /api/features`).
+
+`feature.md` starts with a frontmatter block, then the body:
+
+```
+---
+name: Short name
+what: One line saying what it does
+trigger: 도구 실행 직전      # one of TRIGGERS in hub/featuredirs.ts (same list as the 기능 목록 filter)
+stage: guard                 # a harness node id (an unknown id is shown under "rules")
+enabled: true                # optional, default true
+applies_to: all              # optional: orchestrator | lanes | workers | all (default all)
+deny:                        # optional, one "- <regex> | <reason>" per line
+  - curl\b.*evil\.example | evil.example is off limits
+---
+Advisory text. It is appended to the owner rules in the orchestrator prompt (and after compaction) and to the lane
+brief footer, one `### <name>` heading per feature, cut at 12,000 characters like RULES.md.
+```
+
+- **Advisory**: the body only. The model is asked to follow it. Disabled features are not injected. `applies_to`
+  picks the audience (`workers`-only text reaches the lane footer with a note to pass it on in worker briefs).
+- **Enforced** (the feature shows as enforced; a feature with a body and enforcement shows both parts):
+  `deny` lines block bash commands exactly like the RULES.md `- deny:` lines (orchestrator, lanes, their workers; also
+  `POST /api/watches` commands); `watch.json` (one entry in the shape `POST /api/watches` takes) is added through the
+  same `addWatch` at gateway start and on toggle, and removed when the feature is disabled.
+- `schedule.json` (one schedule) is recognised but not run yet: the schedule store has no stable id to de-duplicate on restart.
+- `GET /api/features` lists each folder under the form "기능 폴더" (plus one entry per deny line);
+  `POST /api/features/dir-<id>/toggle {enabled}` flips `enabled` in that `feature.md` only (atomic write, previous text
+  kept as `feature.md.bak`). Deny changes apply at once, prompt text from the next session or after compaction.
+
 ## API additions
 
 All behind the same auth as the rest of `/api`.

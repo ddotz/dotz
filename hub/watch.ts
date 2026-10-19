@@ -5,7 +5,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { blockedBy } from "../extension/index.ts";
 import { ensureAside, replInTab } from "./aside.ts";
-import { log, now, paths, writeAtomic } from "./config.ts";
+import { DATA_DIR, log, now, paths, writeAtomic } from "./config.ts";
+import { blockedByFeatures } from "./featuredirs.ts";
 
 export type Watch = {
 	id: string;
@@ -151,7 +152,7 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 		input.on = "fail";
 		input.every_minutes ??= 30;
 	}
-	const blocked = blockedBy(command, rulesText);
+	const blocked = blockedBy(command, rulesText) ?? blockedByFeatures(DATA_DIR, command)?.reason;
 	if (blocked) throw new Error(`blocked by the owner's rule: ${blocked}`);
 	const every = Number(input.every_minutes ?? 10);
 	if (!(every >= 1)) throw new Error("every_minutes must be at least 1");

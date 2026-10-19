@@ -6,15 +6,16 @@
 //   strength "advisory": text the model is asked to follow (RULES, LESSONS, identity, skills)
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { cfg, DATA_DIR, HOME, IDENTITY_FILE, paths } from "./config.ts";
+import { cfg, DATA_DIR, HOME, IDENTITY_FILE, log, paths } from "./config.ts";
+import { loadFeatureDirs, setFeatureEnabled, TRIGGERS } from "./featuredirs.ts";
 import { harnessGraph, patchConfig, type HarnessNode } from "./harness.ts";
 import { ControlError } from "./providers.ts";
 import { listSchedules } from "./schedule.ts";
-import { allWatches } from "./watch.ts";
+import { addWatch, allWatches, removeWatch } from "./watch.ts";
 import { listSetups } from "./workchannels.ts";
 
-export const FORMS = ["글 지시", "차단 명령", "스킬", "omp 확장", "예약", "감시", "작업 채널 설정", "게이트웨이 기능", "외부 연동"] as const;
-export const TRIGGERS = ["메시지 도착", "정해진 시각", "변화 감지", "도구 실행 직전", "워커 생성 시", "턴 끝", "답장 전송 전", "항상(프롬프트)"] as const;
+export const FORMS = ["글 지시", "차단 명령", "기능 폴더", "스킬", "omp 확장", "예약", "감시", "작업 채널 설정", "게이트웨이 기능", "외부 연동"] as const;
+export { TRIGGERS };
 export type Form = (typeof FORMS)[number];
 export type Trigger = (typeof TRIGGERS)[number];
 export type Strength = "enforced" | "advisory";
@@ -396,14 +397,51 @@ function markDuplicates(all: Feature[]): void {
 	}
 }
 
+// ---- 기능 폴더 -----------------------------------------------------------------------------------------------------
+// <DATA_DIR>/features/<id>/feature.md (hub/featuredirs.ts). Text body = advisory; deny lines and a valid watch.json = enforced.
+// schedule.json is read but not run yet (addSchedule has no stable id, so a restart would duplicate it).
+const dirId = (id: string) => `dir-${id}`;
+
+function dirFeatures(nodeIds: Set<string>): Feature[] {
+	const out: Feature[] = [];
+	for (const f of loadFeatureDirs(DATA_DIR, log).features) {
+		const parts = [f.body ? "글 지시" : "", f.deny.length ? `차단 ${f.deny.length}줄` : "", f.watch ? "감시" : "", f.schedule ? "예약 파일은 아직 실행되지 않아요" : ""].filter(Boolean);
+		const stage = nodeIds.has(f.stage) ? f.stage : "rules";
+		const src = { label: `features/${f.id}/feature.md` };
+		const enforced = f.deny.length > 0 || Boolean(f.watch);
+		out.push({ id: dirId(f.id), form: "기능 폴더", name: f.name, what: `${clip(f.what, 110)}${parts.length ? ` · ${parts.join(" + ")}` : ""}${f.enabled ? "" : " (꺼짐)"}`, trigger: f.trigger as Trigger, stage, strength: enforced ? "enforced" : "advisory", source: src, enabled: f.enabled, toggleable: true });
+		f.deny.forEach((d, i) => out.push({ id: `${dirId(f.id)}-deny-${i + 1}`, form: "기능 폴더", name: clip(d.reason, 40), what: `${f.enabled ? "실행 전에 막아요" : "꺼져 있어서 막지 않아요"} (${f.name}) · ${clip(d.reason, 100)}`, trigger: "도구 실행 직전", stage: "guard", strength: "enforced", source: { label: `features/${f.id}/feature.md:${d.line}` }, extra: d.pattern, enabled: f.enabled, toggleable: false }));
+	}
+	return out;
+}
+
+// A feature folder's watch.json goes through addWatch (the same path as POST /api/watches): added when enabled and not yet
+// there (by name), removed when the folder is disabled. Runs at gateway start and after a toggle.
+export function syncFeatureWatches(): void {
+	const rules = existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "";
+	for (const f of loadFeatureDirs(DATA_DIR, log).features) {
+		if (!f.watch) continue;
+		const name = String(f.watch.name ?? "");
+		try {
+			const there = allWatches().some(w => w.name === name);
+			if (f.enabled && !there) addWatch({ ...f.watch }, rules);
+			else if (!f.enabled && there) removeWatch(name);
+		} catch (e) {
+			log(`feature ${f.id}: watch.json not applied: ${e instanceof Error ? e.message : e}`);
+		}
+	}
+}
+
 // ---- catalog + toggle ----------------------------------------------------------------------------------------------
 export async function featureCatalog() {
 	const graph = await harnessGraph({ light: true });
+	const nodeIds = new Set(graph.nodes.map(n => n.id));
 	const features: Feature[] = [
 		...textFeatures("RULES.md", paths.rules, "rules", "RULES.md", /^Blocked commands$/),
 		...textFeatures("LESSONS.md", paths.lessons, "lessons", "LESSONS.md"),
 		...identityFeatures(),
 		...denyFeatures(),
+		...dirFeatures(nodeIds),
 		...skillFeatures(),
 		...extensionFeatures(),
 		...scheduleFeatures(),
@@ -412,12 +450,20 @@ export async function featureCatalog() {
 		...nodeFeatures(graph.nodes),
 	];
 	markDuplicates(features);
-	return { generated: new Date().toISOString(), forms: FORMS, triggers: TRIGGERS, features, stages: graph.nodes.map(n => n.id), data_dir: short(DATA_DIR) };
+	return { generated: new Date().toISOString(), forms: FORMS, triggers: TRIGGERS, features, stages: graph.nodes.map(n => n.id), data_dir: short(DATA_DIR), skipped_dirs: loadFeatureDirs(DATA_DIR, log).skipped };
 }
 
-// Only switches that already exist in config.json (a node's own on/off key). "on" resets the key to its default.
+// Feature folders flip `enabled` in their own feature.md; the other switches already exist in config.json (a node's own
+// on/off key, "on" resets the key to its default).
 export async function toggleFeature(id: string, enabled: unknown) {
 	if (typeof enabled !== "boolean") throw new ControlError("enabled(true/false) required");
+	if (id.startsWith("dir-")) {
+		const folder = id.slice(4);
+		if (!loadFeatureDirs(DATA_DIR, log).features.some(f => f.id === folder)) throw new ControlError(`"${id}" 은(는) 기능 폴더가 아니에요`, 404);
+		setFeatureEnabled(DATA_DIR, folder, enabled);
+		syncFeatureWatches();
+		return { ok: true, id, enabled, note: `features/${folder}/feature.md 의 enabled 를 ${enabled} 로 바꿨어요 (원래 내용은 feature.md.bak). 차단은 바로, 글 지시는 다음 세션·압축 뒤부터 반영돼요.` };
+	}
 	const nodeId = Object.keys(NODE_SPECS).find(k => featureIdOf(k) === id);
 	const toggle = nodeId ? NODE_SPECS[nodeId].toggle : undefined;
 	if (!nodeId || !toggle) throw new ControlError(`"${id}" 은(는) 여기서 켜고 끌 수 있는 기능이 아니에요`, 404);
