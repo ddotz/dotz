@@ -551,7 +551,10 @@ export const WORKER_SLOTS = Math.max(2, Math.min(8, Math.floor(availableParallel
 
 function footer(lane: Lane): string {
 	const features = featurePrompt(DATA_DIR, "lanes", log);
-	return withReplyLine(msg().footer({ lane: lane.name, mode: modeFile(), workerModel: laneWorkerModel(lane), slots: WORKER_SLOTS, worktree: worktreeNote(lane.worktree) })) + (features ? `\n\n${features}` : "");
+	// The owner's verbatim don'ts (memory/boundaries.md) bind a lane too; the empty template adds nothing.
+	const boundaries = existsSync(paths.boundaries) ? readFileSync(paths.boundaries, "utf8").trim() : "";
+	const donts = boundaries.includes("\n- [") ? `\n\n${boundaries.slice(0, 2000)}` : "";
+	return withReplyLine(msg().footer({ lane: lane.name, mode: modeFile(), workerModel: laneWorkerModel(lane), slots: WORKER_SLOTS, worktree: worktreeNote(lane.worktree) })) + donts + (features ? `\n\n${features}` : "");
 }
 
 function worktreeNote(w: Worktree | undefined): string {
