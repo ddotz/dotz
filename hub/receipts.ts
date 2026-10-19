@@ -73,7 +73,9 @@ function run(command: string, cwd: string): Promise<{ exitCode: number; stdout: 
 	const { promise, resolve: done } = Promise.withResolvers<{ exitCode: number; stdout: string; stderr: string }>();
 	// Own process group, so a hung check is killed with everything it started.
 	const child = spawn("bash", ["-lc", command], { cwd, stdio: ["ignore", "pipe", "pipe"], detached: true });
+	let timedOut = false;
 	const timer = setTimeout(() => {
+		timedOut = true;
 		try {
 			process.kill(-child.pid!, "SIGKILL");
 		} catch {}
@@ -90,7 +92,7 @@ function run(command: string, cwd: string): Promise<{ exitCode: number; stdout: 
 		done({ exitCode, stdout: tails[0]!.toString(), stderr: tails[1]!.toString() + extra });
 	};
 	child.on("error", e => finish(127, String(e)));
-	child.on("close", (code, signal) => finish(code ?? (signal ? 128 : 1), signal ? `killed by ${signal}` : ""));
+	child.on("close", (code, signal) => finish(code ?? (signal ? 128 : 1), timedOut ? `timed out after ${RUN_TIMEOUT_MS / 60_000} min` : signal ? `killed by ${signal}` : ""));
 	return promise;
 }
 
