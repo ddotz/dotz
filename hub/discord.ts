@@ -303,7 +303,8 @@ const reference = (replyTo?: string) => (replyTo ? { message_reference: { messag
 function embedParts(text: string): { title?: string; description: string; footer?: string } {
 	const { body, footer } = extractMeta(noEmoji(text));
 	const lines = embedChoice(body).trimStart().split("\n");
-	const title = lines[0]!.replace(/\*\*|`/g, "").trim();
+	// A first line that opens a ``` fence stays in the description, or the fence would lose its opener.
+	const title = /^\s*```/.test(lines[0]!) ? "" : lines[0]!.replace(/\*\*|`/g, "").trim();
 	const fits = title.length > 0 && title.length <= 256;
 	return { ...(fits ? { title } : {}), description: (fits ? lines.slice(1).join("\n") : lines.join("\n")).trim(), ...(footer ? { footer: noEmoji(footer) } : {}) };
 }
@@ -330,7 +331,8 @@ export function buildSingle(text: string, fallback?: Tone): Body {
 	if (!tone) return { content: noEmoji(metaToSubtext(bare)).slice(0, LIMIT), embeds: [] };
 	const p = embedParts(bare);
 	const description = p.description.slice(0, Math.min(EMBED_MAX, EMBED_TOTAL - (p.title?.length ?? 0) - (p.footer?.length ?? 0)));
-	return { content: "", embeds: [{ color: TONE_COLORS[tone], ...(p.title ? { title: p.title } : {}), ...(description ? { description } : {}), ...(p.footer ? { footer: { text: p.footer } } : {}) }] };
+	// An embed with no title, description or footer is rejected by Discord (50006): a bare-marker note gets a blank description.
+	return { content: "", embeds: [{ color: TONE_COLORS[tone], ...(p.title ? { title: p.title } : {}), description: description || "\u200b", ...(p.footer ? { footer: { text: p.footer } } : {}) }] };
 }
 
 // `reopen` allows unarchiving a thread that Discord auto-archived (50083); lane threads and sub-topic threads qualify.
