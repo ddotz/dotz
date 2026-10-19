@@ -4,7 +4,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { blockedBy } from "../extension/index.ts";
-import { replInTab } from "./aside-window.ts";
+import { ensureAside, replInTab } from "./aside.ts";
 import { log, now, paths, writeAtomic } from "./config.ts";
 
 export type Watch = {
@@ -40,24 +40,31 @@ async function exec(argv: string[], cwd?: string): Promise<{ code: number; outpu
 
 // Login keeping in the owner's Aside browser, no model calls. A REPL fetch sends the stored cookies (enough to check
 // the login and to extend server-side sliding sessions) but does not store Set-Cookie (measured 2026-10-16), so every
-// refresh_hours a real tab load renews rotating cookies. On this machine's default profile that load runs in the
-// gateway's dedicated minimized Aside window (aside-window.ts): never focused, the owner's windows are untouched, so it
-// needs no waiting. A remote host or another profile cannot be reached that way and still loads the tab through the
-// REPL only while Aside is not the front app (the owner is not looking at it).
+// refresh_hours a real tab load renews rotating cookies. On this machine's default profile the local Aside is started in
+// the background when it is stopped (aside.ts), and the load is a background `openTab()` tab that is closed at once: the
+// front app and the owner's active tabs stay as they were, so it needs no waiting. A remote host or another profile is not
+// started from here and still loads the tab only while Aside is not the front app (the owner is not looking at it).
 async function sessionRun(w: Watch): Promise<{ code: number; output: string }> {
 	const s = w.session!;
 	const check = `const dz = await fetch(${JSON.stringify(s.url)}, { redirect: 'manual' }); const dzBody = dz.status === 200 ? await dz.text() : ''; const dzOk = dz.status === 200 && ${s.expect ? `new RegExp(${JSON.stringify(s.expect)}, 'i').test(dzBody)` : "true"}; console.log(dzOk ? 'DOTZ_SESSION_OK' : 'DOTZ_SESSION_LOST', dz.status, dz.headers.get('location') ?? '');`;
 	const where = [...(s.host ? ["--host", s.host] : []), ...(s.profile ? ["--profile", s.profile] : [])];
+	const dedicated = !s.profile && (!s.host || s.host === "local");
+	if (dedicated) {
+		try {
+			await ensureAside();
+		} catch (error) {
+			return { code: 1, output: `check could not run: ${String(error).slice(-400)}` };
+		}
+	}
 	const r = await exec(["aside", "repl", ...where, check]);
 	if (!r.output.includes("DOTZ_SESSION_OK")) return { code: 1, output: r.output.includes("DOTZ_SESSION_LOST") ? `logged out: ${r.output.match(/DOTZ_SESSION_LOST.*/)?.[0]}` : `check could not run (is Aside running?): ${r.output.slice(-400)}` };
 	const due = !w.state.refreshedAt || Date.now() - w.state.refreshedAt > s.refresh_hours * 3600_000;
 	if (due) {
-		const dedicated = !s.profile && (!s.host || s.host === "local");
 		if (dedicated) {
 			try {
 				await replInTab(s.url, "return 'DOTZ_REFRESHED';");
 				w.state.refreshedAt = Date.now();
-				log(`watch ${w.name} refreshed cookies with a tab load in the automation window`);
+				log(`watch ${w.name} refreshed cookies with a background tab load`);
 			} catch (error) {
 				log(`watch ${w.name} tab refresh failed: ${String(error).slice(-300)}`);
 			}
