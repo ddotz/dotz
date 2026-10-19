@@ -1340,6 +1340,21 @@ function makeBoard(container, key, opts = {}) {
     const j = JSON.stringify(o);
     if (j !== lastJson) { lastJson = j; try { localStorage.setItem(store, j); } catch { /* storage full or blocked */ } }
   }
+  // Cards that sit side by side (same top row) take one height: the card being resized sets it, otherwise the tallest
+  // does; each stays within its own min/max. Growing can overlap the cards below, so they are pushed and compacted again.
+  function bEven(list, lead, first) {
+    const rows = new Map();
+    for (const c of list) { if (!meta(c.id)) continue; if (!rows.has(c.y)) rows.set(c.y, []); rows.get(c.y).push(c); }
+    let changed = false;
+    for (const g of rows.values()) {
+      if (g.length < 2) continue;
+      const L = g.find(c => c.id === lead), target = L ? L.h : Math.max(...g.map(c => c.h));
+      for (const c of g) { const m = meta(c.id), h = bClamp(target, m.min.h, m.max.h); if (h !== c.h) { c.h = h; changed = true; } }
+    }
+    if (!changed) return;
+    for (const c of bOrder([...list], first)) bPush(list, c);
+    bCompact(list, first, ghost);
+  }
   function set(items, keep = () => false) {
     if (act) { pending = [items, keep]; return; }
     cur = items;
@@ -1349,6 +1364,7 @@ function makeBoard(container, key, opts = {}) {
     ghost = Object.entries(saved).filter(([id]) => !ids.has(id) && keep(id)).map(([id, r]) => ({ id, ...r }));
     bCompact(placed, null, ghost);
     for (const it of items) if (!saved[it.id]) { const d = bFit({ x: 0, y: 0, ...it.def }, it); placed.push({ id: it.id, ...d, ...bFree([...placed, ...ghost], d.w, d.h) }); }
+    bEven(placed, null, null);
     lay = placed;
     persist();
     for (const [id, w] of wraps) if (!ids.has(id)) { w.remove(); wraps.delete(id); }
@@ -1397,7 +1413,7 @@ function makeBoard(container, key, opts = {}) {
     act.key = key;
     const list = act.base.map(x => ({ ...x })), t = list.find(x => x.id === act.id);
     Object.assign(t, patch);
-    bPush(list, t); bCompact(list, act.id, ghost);
+    bPush(list, t); bCompact(list, act.id, ghost); bEven(list, act.mode === "move" ? null : act.id, act.id);
     act.next = list; paint(list, act.id);
   }
   function move(ev) {
@@ -1452,7 +1468,7 @@ function makeBoard(container, key, opts = {}) {
     ev.preventDefault();
     const list = lay.map(x => ({ ...x })), t = list.find(x => x.id === it.id);
     Object.assign(t, bFit(ev.shiftKey ? { ...r, w: r.w + d[0], h: r.h + d[1] } : { ...r, x: r.x + d[0], y: r.y + d[1] }, it));
-    bPush(list, t); bCompact(list, it.id, ghost);
+    bPush(list, t); bCompact(list, it.id, ghost); bEven(list, ev.shiftKey ? it.id : null, it.id);
     lay = list; persist(); paint();
   });
   const board = { set, reset, paint, bar };
@@ -1603,7 +1619,7 @@ function renderHome() {
   for (const p of ((C && C.processes) || []).filter(x => x.running)) {
     const id = `ctx:${p.name}`, pct = p.percent, who = p.kind === "lane" ? p.name : botName, v = pct != null ? `${pct}%` : `${num(p.tokens)} 토큰`;
     const bar = () => el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }));
-    E.ctx.push({ id, tone: pct >= 90 ? "err" : pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 3, h: 2 }, HOME_SMALL],
+    E.ctx.push({ id, tone: pct >= 90 ? "err" : pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 2 }, HOME_SMALL],
       card: () => [el("div", { class: "ch" }, el("h3", { text: `컨텍스트 · ${who}` }), el("span", { class: "sup", text: v }), menuBtn(id)), bar()],
       row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: who }), el("span", { class: "v", text: v })), bar()] });
   }
@@ -1611,7 +1627,7 @@ function renderHome() {
     const provs = (HQ.providers || []).filter(p => (p.limits || []).length), multi = provs.length > 1;
     for (const pr of provs) for (const l of pr.limits) {
       const id = `limit:${pr.provider}:${l.id}`, f = limitFrac(l), name = limitLabel(pr, l, multi);
-      E.limit.push({ id, tone: limitTone(l) === "err" ? "err" : f != null && f <= .2 ? "warn" : "", open: () => go("usage"), size: [{ w: 3, h: 2 }, HOME_SMALL],
+      E.limit.push({ id, tone: limitTone(l) === "err" ? "err" : f != null && f <= .2 ? "warn" : "", open: () => go("usage"), size: [{ w: 4, h: 2 }, HOME_SMALL],
         card: () => [el("div", { class: "ch" }, el("h3", { text: name }), el("span", { class: "sup", text: pctText(l) }), menuBtn(id)), bar(l)],
         row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: name }), el("span", { class: "v", text: pctText(l) })), bar(l)] });
     }
@@ -1619,7 +1635,7 @@ function renderHome() {
   for (const p of (P && P.providers) || []) {
     if (!isConnected(p) && !needsAttention(p)) continue;
     const id = `prov:${p.id}`, bad = needsAttention(p), st = bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨";
-    E.prov.push({ id, tone: bad ? "err" : "", open: () => go("providers"), size: [{ w: 3, h: 2 }, HOME_SMALL],
+    E.prov.push({ id, tone: bad ? "err" : "", open: () => go("providers"), size: [{ w: 4, h: 2 }, HOME_SMALL],
       card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${bad ? "err" : "ok"}` }), el("h3", { text: p.name || p.id }), el("span", { class: `tag ${bad ? "err" : ""}`, text: st }), menuBtn(id)),
         p.account ? el("div", { class: "sup", text: p.account }) : null],
       row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "err" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });
