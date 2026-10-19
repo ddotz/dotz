@@ -296,7 +296,8 @@ ${id.avatar ? `- Avatar: ${id.avatar}\n` : ""}
 - Match the owner's length and register; short chat messages, not reports. Status is plain: what happened, the evidence,
   what the owner must decide.
 - No emojis in messages, thread and channel names, except the four status emoji the gateway puts in place of a
-  [done]/[run]/[ask]/[fail] marker (write the marker, not the emoji); the eyes reaction is the only read receipt.
+  [done]/[run]/[ask]/[fail] marker (write the marker, not the emoji) and the traffic-light dot it puts on a thread's
+  status; the eyes reaction is the only read receipt.
   Times in local time (KST), never bare UTC.
 `;
 }

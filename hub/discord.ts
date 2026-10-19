@@ -57,9 +57,15 @@ async function threadFromMessage(parentId: string, starter: string, name: string
 	const t = mid ? await rest("POST", `/channels/${parentId}/messages/${mid}/threads`, body) : await rest("POST", `/channels/${parentId}/threads`, { ...body, type: 11 });
 	return { id: String(t.id), name: String(t.name) };
 }
-// Marks a thread [done] now and archives it an hour later (kept across restarts in channels.archiveAt).
+// Thread status is a traffic-light dot at the start of the name (owner 2026-10-19): working 🟡, waiting 🔴 (needs the
+// owner or someone else), done 🟢. The old [working]/[waiting]/[done] text prefixes are still stripped.
+export type ThreadState = "working" | "waiting" | "done";
+const LIGHT: Record<ThreadState, string> = { working: "🟡", waiting: "🔴", done: "🟢" };
+const withState = (state: ThreadState, base: string) =>
+	`${LIGHT[state]} ${base.replace(/^(?:[🟡🔴🟢]\s*|\[(?:working|waiting|done)\]\s*)+/u, "")}`.slice(0, 100);
+// Marks a thread done now and archives it an hour later (kept across restarts in channels.archiveAt).
 async function markDone(id: string, base: string): Promise<string> {
-	const r = await rest("PATCH", `/channels/${id}`, { name: `[done] ${base}`.slice(0, 100) });
+	const r = await rest("PATCH", `/channels/${id}`, { name: withState("done", base) });
 	channels.archiveAt[id] = Date.now() + ARCHIVE_DELAY_MS;
 	save();
 	return String(r.name);
@@ -240,7 +246,7 @@ export async function laneChannel(lane: string, title?: string, home?: string, k
 		if (home) {
 			const parentId = homeChannel(home);
 			const full = threadName(title?.trim() || lane, kind);
-			const t = await threadFromMessage(parentId, starter?.trim() || `[run] ${full} 작업을 시작했어요.`, full);
+			const t = await threadFromMessage(parentId, starter?.trim() || `[run] ${full} 작업을 시작했어요.`, withState("working", full));
 			channels.lanes[lane] = t.id;
 			channels.homes[lane] = parentId;
 		} else channels.lanes[lane] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: title?.trim() || lane, type: 0, parent_id: channels.workCategory ?? channels.category })).id;
@@ -256,7 +262,7 @@ export function homeChannel(home: string): string {
 	return id;
 }
 
-// Lane stop for a home lane: a short done marker, the thread archived with a [done] name, the mapping dropped. The parent
+// Lane stop for a home lane: a short done marker, the thread archived with a done light, the mapping dropped. The parent
 // channel is never touched and the thread is not locked, so an owner message there still reaches the orchestrator as a
 // thread of that work channel. Other lanes keep their channel.
 export async function releaseLane(lane: string): Promise<void> {
@@ -268,7 +274,7 @@ export async function releaseLane(lane: string): Promise<void> {
 	if (!status.enabled) return;
 	await post(id, buildPayloads(`레인 ${lane} 작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.`)[0]!, true).catch(e => log(`lane ${lane} done marker failed: ${e}`));
 	const t = await rest("GET", `/channels/${id}`).catch(() => undefined);
-	const base = String(t?.name ?? lane).replace(/^\[(working|waiting|done)\]\s*/, "");
+	const base = String(t?.name ?? lane);
 	await markDone(id, base).catch(e => log(`lane ${lane} thread done failed: ${e}`));
 }
 
@@ -461,18 +467,18 @@ export async function clearProgress(target: string): Promise<void> {
 	for (const mid of tracked.values()) await deleteMessage(target, mid).catch(e => log(`progress message ${mid} in ${target} not deleted: ${e}`));
 }
 
-// Thread status as in Dori: a [working]/[waiting]/[done] prefix on the name; done archives it an hour later, other states
-// reopen it and cancel a pending archive.
-export async function threadStatus(target: string, state: "working" | "waiting" | "done"): Promise<string> {
+// Thread status as in Dori, shown as the traffic light above; done archives it an hour later, other states reopen it and
+// cancel a pending archive.
+export async function threadStatus(target: string, state: ThreadState): Promise<string> {
 	const id = resolve(target);
 	const t = id && channels.threads[id];
 	if (!status.enabled || !t) throw new Error(`${target} is not a known thread (th:<id>)`);
-	const base = t.name.replace(/^\[(working|waiting|done)\]\s*/, "");
+	const base = t.name;
 	if (state === "done") t.name = await markDone(id, base);
 	else {
 		delete channels.archiveAt[id];
 		await rest("PATCH", `/channels/${id}`, { archived: false });
-		t.name = String((await rest("PATCH", `/channels/${id}`, { name: `[${state}] ${base}`.slice(0, 100) })).name);
+		t.name = String((await rest("PATCH", `/channels/${id}`, { name: withState(state, base) })).name);
 	}
 	save();
 	return t.name;
