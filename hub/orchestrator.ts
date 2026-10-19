@@ -73,8 +73,12 @@ function recall(): string {
 	const state = existsSync(join(DATA_DIR, "state.json")) ? readFileSync(join(DATA_DIR, "state.json"), "utf8").slice(0, 4000) : "{}";
 	const id = cfg.identity;
 	const identity = existsSync(IDENTITY_FILE) ? readFileSync(IDENTITY_FILE, "utf8").slice(0, 3000) : msg().identityFallback(id?.character ?? "", id?.tone ?? "");
-	const file = (p: string, max: number) => (existsSync(p) ? readFileSync(p, "utf8").slice(0, max) : "");
-	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 6000), lessons: file(paths.lessons, 3000), setups: setupsSummary(), state }));
+	// A cut file says so: RULES.md outgrew the old 6000-character cap and silently lost its last lines (blocked commands).
+	const file = (p: string, max: number) => {
+		const t = existsSync(p) ? readFileSync(p, "utf8") : "";
+		return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
+	};
+	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000), lessons: file(paths.lessons, 3000), setups: setupsSummary(), state }));
 }
 
 function handover(previous: string): string {
