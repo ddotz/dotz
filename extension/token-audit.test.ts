@@ -64,7 +64,7 @@ test("audit: OmO sessions are read with the OmO rules (only its wake events coun
 	const reply = (min: number) => ({
 		type: "message",
 		timestamp: at(min),
-		message: { role: "assistant", provider: "anthropic", model: "opus", stopReason: "stop", usage: { totalTokens: 1000, input: 100, output: 20, cacheRead: 800, cacheWrite: 100, cacheWrite1h: 100, cost: { total: 0.1 } }, content: [] },
+		message: { role: "assistant", provider: "anthropic", model: "opus", stopReason: "stop", usage: { totalTokens: 1000, input: 100, output: 20, cacheRead: 800, cacheWrite: 100, cost: { total: 0.1 } }, content: [] },
 	});
 	const custom = (min: number, customType: string) => ({ type: "custom_message", timestamp: at(min), customType });
 	const lines = [reply(9), custom(8, "senpi-monitor:notification"), reply(7), custom(6, "todo-state"), reply(5)];

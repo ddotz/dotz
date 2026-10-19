@@ -63,12 +63,12 @@ export function omoArgs(o: SpawnOpts): string[] {
 export const omo: RuntimeAdapter = {
 	id: "omo",
 	// No live worker frames; every fallback chain is switched by the hub (fallback.ts hubChain), OmO's own chain is off (--no-model-fallback).
-	// No idle keepalive: OmO's usage shows only 5-minute cache writes (no cacheWrite1h in any OmO session record, checked
-	// 2026-10-20), so a ping inside a 1h TTL would rewrite the whole context into a 5-minute cache each time. Turn it back on
-	// once a 1h cache write is seen on OmO.
-	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: false, contextLimit: "compact" },
+	// OmO writes the 1h prompt cache when started with PI_CACHE_RETENTION=long (start below; measured 2026-10-20: a full cache
+	// read after a 6.7-minute gap), so the idle keepalive pays off as on omp. OmO's usage records never show it: senpi's
+	// claude-sdk-oauth stream drops the cacheWrite1h field, so nothing here reads that field.
+	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact" },
 	start(o) {
-		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ ...process.env, ...o.env, DOTZ_RUNTIME: "omo" }) });
+		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...process.env, ...o.env, DOTZ_RUNTIME: "omo" }) });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
 		const agent = new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);

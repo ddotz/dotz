@@ -44,6 +44,14 @@ test("a cache break after the 50% gate is a context shrink; one right after a co
 	expect(findingsOf([s])[0].fix).toContain("OmO 맥락 축소");
 });
 
+test("OmO's cache TTL is what the session showed: a full read after a 7-minute gap makes a later break after a gap a real break", () => {
+	const short = analyze(session("audit-ttl-5m", [user(0), turn(0, 0, 100_000), user(20), turn(20, 0, 100_000)]), T0 - 1);
+	expect(short.explained).toEqual({ "gap>5m": 1 });
+	const long = analyze(session("audit-ttl-1h", [user(0), turn(0, 0, 100_000), user(7), turn(7, 100_000, 1_000), user(27), turn(27, 0, 101_000)]), T0 - 1);
+	expect(long.explained).toEqual({});
+	expect(long.busts).toHaveLength(1);
+});
+
 test("an OmO turn after bookkeeping entries is not a wake; one after a task wake is", () => {
 	const src = session("audit-wakes", [user(0), turn(0, 0, 60_000), custom(1, "senpi.todo-state"), turn(1, 60_000, 1_000, { out: 50 }), custom(2, "omo-senpi:wake"), turn(2, 61_000, 1_000, { out: 50 })]);
 	expect(analyze(src, T0 - 1).wakes).toEqual({ "omo-senpi:wake": { n: 1, tokens: 62_502, cost: 0.1 } });
