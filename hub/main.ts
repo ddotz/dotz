@@ -578,8 +578,13 @@ const server = Bun.serve({
 				}
 				if (req.method === "POST" && parts[2] === "thread") {
 					const b = await body(req);
-					const t = await discord.createThread(String(b.channel ?? "chat"), String(b.name ?? "").trim() || "thread", b.kind ? String(b.kind) : undefined);
-					if (b.text) await out(`th:${t.id}`, String(b.text), undefined, { source: "orchestrator" });
+					// The first paragraph is the parent-channel message the thread hangs from; the rest goes inside the thread.
+					const text = String(b.text ?? "").trim();
+					const cut = text.indexOf("\n\n");
+					const starter = cut < 0 ? text : text.slice(0, cut);
+					const rest = cut < 0 ? "" : text.slice(cut + 2).trim();
+					const t = await discord.createThread(String(b.channel ?? "chat"), String(b.name ?? "").trim() || "thread", b.kind ? String(b.kind) : undefined, starter || undefined);
+					if (rest) await out(`th:${t.id}`, rest, undefined, { source: "orchestrator" });
 					return json({ ok: true, thread: `th:${t.id}`, name: t.name });
 				}
 				if (req.method === "POST" && parts[2] === "setup") {
@@ -633,7 +638,10 @@ const server = Bun.serve({
 					const home = b.home ? String(b.home) : undefined;
 					if (home && discord.status.enabled) discord.homeChannel(home);
 					const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked);
-					const channel = await discord.laneChannel(lane.name, b.title ? String(b.title) : undefined, home, b.kind ? String(b.kind) : undefined).catch(e => {
+					// The goal line of the brief ("목표...: ...") is the thread's starter message in the home channel.
+					const goal = /^목표[^:：]*[:：]\s*(.+)$/m.exec(String(b.brief ?? ""))?.[1]?.slice(0, 300);
+					const starter = goal ? `[run] ${b.title ? String(b.title) : lane.name}: ${goal}` : undefined;
+					const channel = await discord.laneChannel(lane.name, b.title ? String(b.title) : undefined, home, b.kind ? String(b.kind) : undefined, starter).catch(e => {
 						log(`lane channel failed: ${e}`);
 						return undefined;
 					});
