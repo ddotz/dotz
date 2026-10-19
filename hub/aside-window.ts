@@ -44,8 +44,55 @@ async function stored(): Promise<{ id: string | null; name: string }> {
 	return { id: String(j.id ?? "") || null, name: String(j.name ?? "") || `${NAME}-automation` };
 }
 
+// `tell application "Aside"` launches a stopped app (and Aside then takes the foreground), so every AppleScript call is
+// preceded by this check: Aside not running is a failure, never something we start.
+async function requireAsideRunning(): Promise<void> {
+	const r = await osa('tell application "System Events" to exists process "Aside"');
+	if (r !== "true") throw new Error("Aside is not running (not started on purpose: launching it would take the foreground)");
+}
+
+// One-shot CDP call sequence on Aside's browser endpoint (<Aside data dir>/DevToolsActivePort). `make new window` in
+// AppleScript activates the app; Target.createTarget{newWindow, background} does not.
+type CdpSend = <R>(method: string, params?: object) => Promise<R>;
+async function cdp<T>(steps: (send: CdpSend) => Promise<T>): Promise<T> {
+	const f = join(process.env.HOME ?? "", "Library", "Application Support", "Aside", "DevToolsActivePort");
+	if (!existsSync(f)) throw new Error("Aside DevToolsActivePort not found");
+	const [port, path] = readFileSync(f, "utf8").trim().split("\n");
+	const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
+	let n = 0;
+	const pending: Record<number, { ok: (v: unknown) => void; ko: (e: Error) => void }> = {};
+	ws.onmessage = ev => {
+		const m = JSON.parse(String(ev.data)) as { id?: number; result?: unknown; error?: { message: string } };
+		const p = m.id === undefined ? undefined : pending[m.id];
+		if (!p || m.id === undefined) return;
+		delete pending[m.id];
+		if (m.error) p.ko(new Error(`CDP ${m.error.message}`));
+		else p.ok(m.result);
+	};
+	const send: CdpSend = <R>(method: string, params: object = {}) =>
+		new Promise<R>((ok, ko) => {
+			const id = ++n;
+			pending[id] = { ok: v => ok(v as R), ko };
+			ws.send(JSON.stringify({ id, method, params }));
+		});
+	const timer = setTimeout(() => ws.close(), OSA_MS);
+	try {
+		await new Promise<void>((ok, ko) => {
+			ws.onopen = () => ok();
+			ws.onerror = () => ko(new Error("Aside CDP endpoint unreachable"));
+		});
+		ws.onerror = null;
+		ws.onclose = () => { for (const p of Object.values(pending)) p.ko(new Error("CDP closed")); };
+		return await steps(send);
+	} finally {
+		clearTimeout(timer);
+		ws.close();
+	}
+}
+
 // Returns the AppleScript id of the automation window, creating it (minimized, never activated) when it is gone.
 export async function ensureAutomationWindow(): Promise<string> {
+	await requireAsideRunning();
 	const ids = (await osa('tell application "Aside" to get id of every window')).split(/,\s*/).filter(Boolean);
 	let { id, name } = await stored();
 	if (!id || !ids.includes(id)) {
@@ -53,14 +100,16 @@ export async function ensureAutomationWindow(): Promise<string> {
 		id = named.split(/,\s*/).filter(Boolean)[0] ?? null;
 	}
 	if (!id) {
-		id = await osa(`tell application "Aside"
-  set w to make new window
-  set minimized of w to true
-  set given name of w to ${q(name)}
-  set URL of active tab of w to ${q(ANCHOR)}
-  return id of w
-end tell`);
-		if (!/^\d+$/.test(id)) throw new Error(`could not create automation window: ${id}`);
+		// The CDP windowId is the browser window's session id, which is also the AppleScript window id.
+		const created = await cdp(async send => {
+			const { targetId } = await send<{ targetId: string }>("Target.createTarget", { url: ANCHOR, newWindow: true, background: true });
+			const { windowId } = await send<{ windowId: number }>("Browser.getWindowForTarget", { targetId });
+			await send("Browser.setWindowBounds", { windowId, bounds: { windowState: "minimized" } });
+			return String(windowId);
+		});
+		if (!/^\d+$/.test(created)) throw new Error(`could not create automation window: ${created}`);
+		id = created;
+		await osa(`tell application "Aside" to set given name of window id ${q(id)} to ${q(name)}`);
 	}
 	await Bun.write(STORE, JSON.stringify({ id, name, updated: new Date().toISOString() }));
 	// Anchor tab and minimized state are re-checked on every use (both are cheap and both protect the owner's view).
@@ -110,6 +159,7 @@ await ${v}.waitForLoadState('domcontentloaded').catch(() => {});`;
 
 // Closes one tab (AppleScript id) of the automation window; no-op when it is already gone. Never the anchor tab.
 export async function closeTab(windowId: string, tabId: string): Promise<void> {
+	if ((await osa('tell application "System Events" to exists process "Aside"')) !== "true") return; // never relaunch Aside just to close a tab
 	await osa(`tell application "Aside"
   if not (exists window id ${q(windowId)}) then return
   set w to window id ${q(windowId)}
