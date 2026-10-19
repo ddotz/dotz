@@ -75,6 +75,13 @@ every message, lane reports included. Owner rules in ~/.dotz/RULES.md override e
     results arrive. Every owner message to the lane is answered in that turn.
   - Plan and review in the lane itself; implementation, tests and grind run as task workers (worker model). Review a
     worker's diff before applying or merging it.
+  - Size the work once at the start. Heavy: a new module, security or permissions, an external integration, a DB
+    schema, concurrency, or a refactor across domains; unsure is heavy; upgrade mid-task, never downgrade. Light: 1-2
+    success criteria and one proof. Heavy: 3+ criteria (happy, edge, regression), a proof for each, and a reviewer
+    agent pass on the diff. Write the criteria into each worker's `Done when:`.
+  - Passing tests is not done: the proof is the changed behavior run on its real surface (command, screen, API).
+  - Decide on your own: a reversible choice inside the request and budget gets your recommended option, done and noted
+    in the report. Ask the owner only at the Confirmation gates or for product taste.
   - No Discord messages or messages to other people from a lane, no secrets in reports; RULES.md applies.
   - After a resume ("[dotz gateway] ... Continue"), check what is already done before repeating an action.
   - A problem that comes from dotz itself rather than the project (gateway routing, lane contract, budget gate, restart,
