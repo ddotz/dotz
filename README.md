@@ -155,7 +155,7 @@ anywhere else is refused when saved and never started. The key file's name must 
 **Lane context management.** Five `lanes.*` keys in `config.json` (all optional): `compact_at` (default `400000`
 tokens) and `keep_recent` (default `40000`) go into each lane's `omp-overlay.yml` as `compaction.modelThresholds`
 (`f<compact_at>` for the lane model and its worker model) and `compaction.keepRecentTokens`, so omp compacts a lane
-itself at 400K and keeps the last 40K; `nightly_at` (default `"04:30"`, gateway-local time, `"off"` disables),
+itself at 300K and keeps the last 40K (OmO lanes: the hub compacts an idle lane at the same value); `nightly_at` (default `"04:30"`, gateway-local time, `"off"` disables),
 `nightly_compact_at` (default `300000` tokens) and `rotate_mb` (default `50`) drive the nightly hygiene. Once a day at
 `nightly_at` every idle lane is checked: a session file over `rotate_mb` MB starts a fresh session with a handover
 (recent exchanges plus a note to re-read its brief and last report; same model, folder and goal; the reload turn posts
