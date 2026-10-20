@@ -49,7 +49,7 @@ let notify: (w: Watch, reason: string, output: string) => void = () => {};
 // The check gets its own process group and the deadline SIGKILLs the whole group: killing only the shell left a
 // grandchild holding the output pipe, so the read waited for it (measured: `sleep 3 &` held a 0.5 s kill for 3 s).
 // What the check leaves running after it exits is killed too, and the read gets a short grace after the exit.
-export async function exec(argv: string[], cwd?: string, timeoutMs = RUN_TIMEOUT_MS, env?: Record<string, string>): Promise<{ code: number; output: string; timedOut: boolean }> {
+export async function exec(argv: string[], cwd?: string, timeoutMs = RUN_TIMEOUT_MS, env?: Record<string, string>, maxOutput = 1500): Promise<{ code: number; output: string; timedOut: boolean }> {
 	const proc = Bun.spawn(argv, { cwd, stdout: "pipe", stderr: "pipe", detached: true, ...(env ? { env: { ...process.env, ...env } } : {}) });
 	const killGroup = () => {
 		try {
@@ -69,7 +69,7 @@ export async function exec(argv: string[], cwd?: string, timeoutMs = RUN_TIMEOUT
 	killGroup();
 	await Promise.race([reading, new Promise(r => setTimeout(r, READ_GRACE_MS))]);
 	const output = `${stdout}${stderr ? `\n${stderr}` : ""}${timedOut ? `\n(killed after ${Math.round(timeoutMs / 1000)} s)` : ""}`;
-	return { code, timedOut, output: output.replace(/\x1b\[[0-9;]*m/g, "").trim().slice(-1500) };
+	return { code, timedOut, output: output.replace(/\x1b\[[0-9;]*m/g, "").trim().slice(-maxOutput) };
 }
 
 const KIND = /^DOTZ_FAIL[ =:]([a-z0-9-]{1,20})\b/m;

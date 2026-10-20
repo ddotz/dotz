@@ -1,0 +1,27 @@
+{
+  "projects": [
+    {
+      "name": "dotz 게이트웨이",
+      "path": "~/Code/dotz",
+      "note": "작업 채널은 레인에서 자동으로 붙어요"
+    }
+  ],
+  "hide_projects": [],
+  "routines": [
+    {
+      "id": "morning-check",
+      "name": "아침 점검",
+      "prompt": "레인, 감시, 예약 상태를 훑고 오늘 내가 볼 것만 짧게 정리해줘",
+      "target": "main",
+      "schedule": {
+        "at": "09:00"
+      }
+    }
+  ],
+  "links": [
+    {
+      "name": "Cloudflare",
+      "url": "https://dash.cloudflare.com"
+    }
+  ]
+}

@@ -32,6 +32,7 @@ import { startReflection } from "./reflect.ts";
 import { featureCatalog, syncFeatureWatches } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
+import { customRoute, syncRoutineSchedules } from "./custom.ts";
 import { startOmpUpdate } from "./update.ts";
 import { startSelfUpdate, updateRoute } from "./selfupdate.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
@@ -518,10 +519,16 @@ const server = Bun.serve({
 		const authResponse = authRoute(req, url);
 		if (authResponse) return authResponse;
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") return new Response(req.method === "HEAD" ? null : Bun.file(WEB), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/custom.js") {
+			const file = Bun.file(join(import.meta.dir, "..", "web", "custom.js"));
+			return (await file.exists()) ? new Response(req.method === "HEAD" ? null : file, { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" } }) : new Response("not found", { status: 404 });
+		}
 		const pushResponse = await pushRoute(req, url);
 		if (pushResponse) return pushResponse;
 		const updateResponse = await updateRoute(req, url, { boot: BOOT_ID, busy: busyNow, restartIdle: restartGateway, restartNow: restartGatewayNow });
 		if (updateResponse) return updateResponse;
+		const customResponse = await customRoute(req, url, { lanes: laneSummary, channels: () => discord.channels, send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }) });
+		if (customResponse) return customResponse;
 		if (url.pathname === "/api/health") return json({ ok: true });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
@@ -954,6 +961,7 @@ startSchedules(s => {
 	emit("inbox", event);
 	deliver(inboxText(event), { target: channel });
 });
+syncRoutineSchedules();
 startReflection(text => deliver(text), () => orch.sessionFile);
 startOmpUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`omp update post failed: ${e}`)), restartGateway);
 startTokenAudit(alert);
