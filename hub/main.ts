@@ -1,6 +1,7 @@
 // Dotz hub entry: bun hub/main.ts. Owns Discord, lanes and the event bus; serves the web app + API on
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
@@ -12,13 +13,13 @@ import { setAskAnswer } from "./askbuttons.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { notify as pushNotify, pushRoute, startPush } from "./push.ts";
 import { isNote, msg } from "./i18n.ts";
-import { activityItems, answeredIds, broadcast, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
+import { activityItems, answeredIds, broadcast, emit, emitDelivery, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
 import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
-import { abortLane, applyAccountChange as applyLaneAccount, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane } from "./lanes.ts";
+import { abortLane, applyAccountChange as applyLaneAccount, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, type LaneDelivery, ownerNotes, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane } from "./lanes.ts";
 import { accountView, onSwitch as onAccountSwitch, stickyAccount } from "./account-sticky.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { abort as abortOrchestrator, applyAccountChange as applyOrchestratorAccount, deliver as deliverToOrchestrator, orch, orchBusy, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
@@ -105,6 +106,24 @@ function deliver(text: string, reply?: { target: string; replyTo?: string; owner
 const isLocal = (target: string) => target === "web" || target === "terminal";
 // The newest owner message per target (threads.ts replyRef: a thread answer carries a reply reference only when it is not to that one).
 const lastOwner = new Map<string, string>();
+// Delivery state of owner messages (hub/events.ts emitDelivery): the owner events' ids per orchestrator target, until its answer.
+const awaiting = new Map<string, string[]>();
+const refOf = (e: Record<string, any>): string | undefined => e.mid ?? e.message_id ?? undefined;
+const newMid = () => randomUUID().slice(0, 8);
+// Web has no message to edit: the receipt and progress line are one "out" note per conversation (the page keeps the newest).
+const webNote = (target: string, text: string) => emit("outbox", { ts: now(), kind: "out", source: "gateway", target, text, update_key: "progress" });
+livestatus.setWebProgress(webNote);
+const receiptNote = (how: LaneDelivery): string | undefined =>
+	how === "steered" ? "📨 받았어요. 하던 작업에 바로 넣었고, 답이 준비되면 여기로 올게요." : how === "held" ? "📨 받았어요. 사용량 한도가 풀리면 바로 전달할게요." : how === "resumed" ? "📨 받았어요. 멈춰 있던 세션을 다시 시작해서 전달했어요." : undefined;
+// An owner message that could not reach its session: the failed state on the message and, in that chat, a gateway message with the way forward.
+function laneFailed(target: string, lane: string, ref: string | undefined, error: unknown, replyTo?: string): void {
+	const reason = (error as Error).message;
+	emitDelivery(target, ref, "failed", reason.slice(0, 200));
+	log(`lane ${lane}: owner message not delivered: ${reason}`);
+	// A session of another runtime: the refusal itself offers the handover (answer "인계" here).
+	const text = error instanceof LaneRuntimeMismatch ? error.message : `세션 ${lane}을(를) 이어갈 수 없어요 (${reason}). 대화 채널에서 다시 맡겨 주세요. 이전 보고는 ${join(paths.lanes, lane, "report.md")}에 있어요.`;
+	void out(target, text, replyTo, { source: "gateway" }).catch(e => log(`lane failure notice failed: ${e}`));
+}
 async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answers = extra.source === undefined || extra.source === "orchestrator" ? replyTo : undefined;
@@ -113,6 +132,8 @@ async function out(target: string, text: string, replyTo?: string, extra: Record
 		emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text: t, reply_to: replyTo ?? null, ...extra });
 		return t;
 	});
+	// An answer (not a progress note, not a gateway notice) settles the owner messages waiting in this conversation.
+	if ((extra.source === undefined || extra.source === "orchestrator") && !extra.update_key) for (const ref of awaiting.get(target)?.splice(0) ?? []) emitDelivery(target, ref, "answered");
 	if (isLocal(target)) {
 		queue.markAnswered(answers);
 		return { delivered: true };
@@ -199,8 +220,16 @@ function flush(target: string): void {
 	if (b.events.length === 1 && LIMITS_ASK.test(String(head.text)) && !head.attachments?.length) return void limitsAnswer(target, b.replyTo);
 	rateLimitNotice(target, b.replyTo);
 	const merged = b.events.length > 1 ? { ...head, message_id: b.events.at(-1)!.message_id, parts: b.events } : head;
+	const how = orch.status === "working" ? "steered" : orch.status === "rate-limited" ? "held" : "received";
 	deliver(inboxText(merged), { target, replyTo: b.replyTo, owner: true });
 	expectReply(target);
+	const refs = b.events.flatMap(e => refOf(e) ?? []);
+	for (const ref of refs) emitDelivery(target, ref, how);
+	if (refs.length) awaiting.set(target, [...(awaiting.get(target) ?? []), ...refs]);
+	// A project's web chat gets the same receipt and progress line as its Discord channel.
+	if (b.events.some(e => e.source === "web") && target.startsWith("ch:")) {
+		livestatus.begin(target, "orchestrator", true);
+	}
 }
 
 function alert(text: string): void {
@@ -288,7 +317,7 @@ async function budgetProblem(name: string, est: number, force: boolean): Promise
 }
 
 const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });
-setReportHandler((lane, raw) => {
+setReportHandler((lane, raw, answering) => {
 	const text = stripHandoff(raw);
 	emit("inbox", { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text });
 	const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), lane.orchAsked === false);
@@ -298,13 +327,32 @@ setReportHandler((lane, raw) => {
 	if (how === "held") log(`lane ${lane.name} report held for the orchestrator's next idle point`);
 	const channel = `lane:${lane.name}`;
 	// A [run] report is progress: it edits the lane's one progress message. Results, questions and failures are real messages.
-	const running = parseTone(text).tone === "run";
+	// A [run] text that is the answer to an owner message is that answer, not progress to edit away.
+	const running = parseTone(text).tone === "run" && !answering;
 	void inOrder(channel, () => localize(text.slice(0, 1800), channel, "lane"))
 		.then(async shown => {
 			if (running) return void (await discord.progress(channel, "progress", shown));
 			if ((await send(channel, shown)).delivered) await discord.clearProgress(channel);
 		})
 		.catch(e => log(`lane report send failed: ${e}`));
+});
+
+// A session's short answer to an owner message, said before a tool call mid-turn (the footer asks for it): a real message in the
+// session's chat and Discord channel at once, with the progress line it replaces cleared; the owner's messages become "answered".
+setOwnerNoteHandlers({
+	note: (lane, raw, refs) => {
+		const channel = `lane:${lane}`;
+		void inOrder(channel, async () => {
+			const shown = await localize(stripHandoff(raw).slice(0, 900), channel, "lane");
+			emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, answers: refs });
+			return shown;
+		})
+			.then(shown => send(channel, shown))
+			.then(r => (r.delivered ? discord.clearProgress(channel) : undefined))
+			.catch(e => log(`lane answer note failed: ${e}`));
+	},
+	answered: (lane, refs) => refs.forEach(ref => emitDelivery(`lane:${lane}`, ref, "answered")),
+	lost: (lane, refs) => refs.forEach(ref => emitDelivery(`lane:${lane}`, ref, "failed", "세션이 끝났어요")),
 });
 
 // Mid-turn lane text: an [ask], [fail] or [done] line is something the owner must see and keep, so it is a real message;
@@ -403,22 +451,21 @@ const onOwner = (m: discord.Incoming) => {
 	}
 	if (typeof m.channel === "object") {
 		const lane = m.channel.lane;
-		emit("inbox", { ...event, kind: "lane_message", lane });
+		const ref = m.id || undefined;
+		emit("inbox", { ...event, kind: "lane_message", lane, mid: ref });
 		const extra = [m.replyTo ? msg().replyingTo(m.replyTo.author, m.replyTo.content) : "", ...m.attachments.map(a => `[attachment] ${a.name} ${a.url}`)].filter(Boolean).join("\n");
 		try {
 			if (approvesBudget(lane, m.content)) sendToLane(lane, "/budget-ok");
 			const busy = lanes.get(lane) ? laneBusy(lanes.get(lane)!) : false;
-			sendToLane(lane, [`[owner via Discord] ${m.content}`, extra].filter(Boolean).join("\n"));
+			const how = sendToLane(lane, [`[owner via Discord] ${m.content}`, extra].filter(Boolean).join("\n"), ref);
+			emitDelivery(target, ref, how);
 			livestatus.begin(target, `lane:${lane}`);
 			// A busy lane answers when its current step allows; until then the owner sees at once that the message reached it,
 			// in the lane's one progress message (no answer is sent before it is ready).
-			if (busy) void discord.progress(target, "progress", "📨 받았어요. 하던 작업에 바로 넣었고, 답이 준비되면 여기로 올게요.").catch(e => log(`lane receipt note failed: ${e}`));
+			const receipt = receiptNote(busy && how === "received" ? "steered" : how);
+			if (receipt) void discord.progress(target, "progress", receipt).catch(e => log(`lane receipt note failed: ${e}`));
 		} catch (error) {
-			// A session of another runtime: the refusal itself offers the handover (answer "인계" here).
-			if (error instanceof LaneRuntimeMismatch) {
-				log(`lane ${lane}: owner message refused, session of ${error.from}; handover offered`);
-				void send(target, error.message, m.id);
-			} else void send(target, `세션 ${lane}을(를) 이어갈 수 없어요 (${(error as Error).message}). 대화 채널에서 다시 맡겨 주세요.`, m.id);
+			laneFailed(target, lane, ref, error, m.id);
 		}
 		return;
 	}
@@ -477,17 +524,29 @@ if (!restarted) {
 // `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
 type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[] };
 async function sendWeb(s: WebSend): Promise<void> {
-	const extra = { ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}) };
+	const mid = newMid();
+	const extra = { mid, ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}) };
 	if (s.lane) {
 		const name = s.lane;
+		const channel = `lane:${name}`;
 		emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: s.login, lane: name, text: s.text, ...extra });
-		if (approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
 		if (s.mode === "interrupt" && lanes.get(name)?.status === "working") {
 			abortLane(name);
 			// Let the aborted turn end first, or the message would be steered into it.
 			for (let i = 0; i < 50 && lanes.get(name)?.status === "working"; i++) await Bun.sleep(200);
 		}
-		sendToLane(name, [`[owner via web] ${s.text}`, s.files?.length ? attachmentLines(s.files) : ""].filter(Boolean).join("\n"));
+		// The state of this message shows in its meta line at once (hub/events.ts emitDelivery); a refusal comes back as a
+		// gateway message in the session's chat, not only as the request's error.
+		try {
+			if (approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
+			const how = sendToLane(name, [`[owner via web] ${s.text}`, s.files?.length ? attachmentLines(s.files) : ""].filter(Boolean).join("\n"), mid);
+			emitDelivery(channel, mid, how);
+			// The web shows the receipt as the message's delivery state only (no canned receipt message, owner 2026-10-17).
+			livestatus.begin(channel, channel, true);
+		} catch (error) {
+			laneFailed(channel, name, mid, error);
+			throw error;
+		}
 		return;
 	}
 	const to = s.project?.target ?? s.channel;
@@ -499,6 +558,8 @@ async function sendWeb(s: WebSend): Promise<void> {
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
 		deliver(inboxText(event), { target: to, owner: true });
 		expectReply(to);
+		emitDelivery(to, mid, "steered");
+		awaiting.set(to, [...(awaiting.get(to) ?? []), mid]);
 	} else {
 		if (s.mode === "interrupt" && orch.status === "working") abortOrchestrator();
 		intake(event, to);
@@ -508,6 +569,7 @@ async function sendWeb(s: WebSend): Promise<void> {
 // Web messages queued while their target works (see queue.ts) go out when that target is idle again: oldest first, as
 // one message through the normal path (main: intake, which merges messages of one burst into one turn; lane: one prompt).
 const QUEUE_SWEEP_MS = 5000;
+const queueFailed = new Set<string>();
 function flushQueue(target: string): void {
 	const lane = target.startsWith("lane:") ? target.slice(5) : undefined;
 	const status = lane ? lanes.get(lane)?.status : orch.status;
@@ -521,18 +583,30 @@ function flushQueue(target: string): void {
 	if (!items.length) return;
 	try {
 		if (lane) {
-			for (const i of items) emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: i.author ?? "local", lane, text: i.text });
 			for (const i of items) if (approvesBudget(lane, i.text)) sendToLane(lane, "/budget-ok");
-			sendToLane(lane, `[owner via web] ${items.map(i => i.text).join("\n\n")}`);
+			const how = sendToLane(lane, `[owner via web] ${items.map(i => i.text).join("\n\n")}`, items[0].id);
+			for (const i of items.slice(1)) ownerNotes.asked(lane, i.id);
+			queueFailed.delete(target);
+			// The messages waited for the session's turn to end and went in as one: "queued" unless the stopped session had to be resumed.
+			for (const i of items) {
+				emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: i.author ?? "local", lane, text: i.text, mid: i.id });
+				emitDelivery(target, i.id, how === "received" ? "queued" : how);
+			}
+			livestatus.begin(target, target, true);
 		} else {
 			for (const i of items) {
-				const event = { ts: now(), kind: "message", source: "web", channel: "web", author: i.author ?? "local", text: i.text };
+				const event = { ts: now(), kind: "message", source: "web", channel: "web", author: i.author ?? "local", text: i.text, mid: i.id };
 				emit("inbox", event);
 				intake(event, "web");
 			}
 		}
 	} catch (error) {
 		log(`queued web messages for ${target} not sent: ${(error as Error).message}`);
+		// Said once in the session's chat; the messages stay queued and are tried again.
+		if (lane && !queueFailed.has(target)) {
+			queueFailed.add(target);
+			laneFailed(target, lane, undefined, error);
+		}
 		restore(items);
 	}
 }

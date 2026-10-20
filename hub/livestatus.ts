@@ -26,8 +26,15 @@ const TYPING_MS = 8000;
 // One reporter per target. While it is the entry of `active` it owns the target; a tick checks that before and after
 // every await, so a reporter that was stopped (the entry is gone or replaced) cannot post. `turnFrom` moves when another
 // owner message joins: the end of the turn that was running before it is not the end of the wait.
-type Live = { source: string; since: number; turnFrom: number; timer?: Timer; typing?: Timer; lastAt: number; lastState?: string; lastRunning?: string; posted?: boolean; inflight: Promise<void> };
+type Live = { web?: boolean; key: string; source: string; since: number; turnFrom: number; timer?: Timer; typing?: Timer; lastAt: number; lastState?: string; lastRunning?: string; posted?: boolean; inflight: Promise<void> };
 const active = new Map<string, Live>();
+
+// The web chat has no Discord message to edit: its progress line is an "out" event with update_key "progress" that the page
+// keeps as one note per conversation (main.ts wires this; the answer drops it).
+let webPost: (target: string, text: string) => void = () => {};
+export function setWebProgress(fn: (target: string, text: string) => void): void {
+	webPost = fn;
+}
 
 const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
@@ -74,18 +81,18 @@ function over(target: string, live: Live): boolean {
 	return ended || discord.lastSendAt(target) >= live.since || Date.now() - live.since >= MAX_MS;
 }
 
-function end(target: string, live: Live): void {
-	if (active.get(target) === live) active.delete(target);
+function end(_target: string, live: Live): void {
+	if (active.get(live.key) === live) active.delete(live.key);
 	clearTimeout(live.timer);
 	clearInterval(live.typing);
 }
 
 async function tick(target: string, live: Live): Promise<void> {
-	if (active.get(target) !== live) return;
+	if (active.get(live.key) !== live) return;
 	if (over(target, live)) {
 		end(target, live);
 		// A turn that ended with no answer here ("-", or its answer went elsewhere) leaves no stale progress message behind.
-		if (live.posted) void discord.clearProgress(target).catch(e => log(`progress clear in ${target} failed: ${e}`));
+		if (live.posted && !live.web) void discord.clearProgress(target).catch(e => log(`progress clear in ${target} failed: ${e}`));
 		return;
 	}
 	const { state, running, moved, text } = liveReport(live);
@@ -93,8 +100,7 @@ async function tick(target: string, live: Live): Promise<void> {
 	const milestone = !first && running !== live.lastRunning;
 	const due = Date.now() - live.lastAt >= EVERY_MS - 1000 || first;
 	if (milestone || (due && (moved || state !== live.lastState))) {
-		live.inflight = discord
-			.progress(target, "progress", text)
+		live.inflight = (live.web ? Promise.resolve({ delivered: (webPost(target, text), true) }) : discord.progress(target, "progress", text))
 			.then(r => {
 				if (!r.delivered) return;
 				live.lastState = state;
@@ -105,22 +111,24 @@ async function tick(target: string, live: Live): Promise<void> {
 			.catch(e => log(`live report in ${target} failed: ${e}`));
 		await live.inflight;
 	}
-	if (active.get(target) === live) live.timer = setTimeout(() => void tick(target, live), CHECK_MS);
+	if (active.get(live.key) === live) live.timer = setTimeout(() => void tick(target, live), CHECK_MS);
 }
 
-/** An owner message from Discord started (or joined) a turn of `source` ("orchestrator" or "lane:<name>"); `target` is where the answer goes. */
-export function begin(target: string, source: string): void {
-	if (!discord.status.enabled) return;
+/** An owner message from Discord (or, with `web`, from the web chat) started (or joined) a turn of `source` ("orchestrator" or "lane:<name>"); `target` is where the answer goes. */
+export function begin(target: string, source: string, web = false): void {
+	if (!web && !discord.status.enabled) return;
 	const since = Date.now();
-	const joined = active.get(target);
+	// The web chat's progress line and the Discord channel's are separate waits on the same target.
+	const key = web ? `web|${target}` : target;
+	const joined = active.get(key);
 	if (joined) {
 		joined.turnFrom = since;
 		return;
 	}
-	const live: Live = { source, since, turnFrom: since, lastAt: since, inflight: Promise.resolve() };
+	const live: Live = { web, key, source, since, turnFrom: since, lastAt: since, inflight: Promise.resolve() };
 	live.timer = setTimeout(() => void tick(target, live), FIRST_AFTER_MS);
-	live.typing = setInterval(() => (active.get(target) !== live || over(target, live) ? end(target, live) : discord.typing(target)), TYPING_MS);
-	active.set(target, live);
+	live.typing = setInterval(() => (active.get(key) !== live || over(target, live) ? end(target, live) : live.web || discord.typing(target)), TYPING_MS);
+	active.set(key, live);
 }
 
 // Stops the reporter of a target and waits for a report still in flight, so the answer lands after it.
