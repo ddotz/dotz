@@ -5,8 +5,8 @@ import { entryView, hubChain, keyFileOk, keyProviderOk } from "./fallback.ts";
 import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import { type Compaction, ctxView, describeCompaction, describeCtx } from "./context.ts";
 import * as discord from "./discord.ts";
-import { abortLane, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
-import { abort as abortOrchestrator, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
+import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
+import { abort as abortOrchestrator, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
 import { availableModels, cancelLogin, completeLogin, ControlError, listProviders, loginProviders, logoutProvider, type ModelInfo, pendingLogin, quota, startLogin } from "./providers.ts";
 
 export { ControlError };
@@ -21,7 +21,7 @@ function providersInUse(): Set<string> {
 	return new Set([orchestratorModel().model, lanesModel().model, parseSelector(workerModel()).model, ...laneModels().map(l => l.model), ...(["orchestrator", "lanes", "workers"] as const).flatMap(t => fallbackChain(t).map(e => parseSelector(e.model).model))].map(providerOf));
 }
 
-const FALLBACK_NOTE = "폴백 순서는 프로세스가 다음에 시작될 때부터 적용돼요. 이미 실행 중인 오케스트레이터나 레인은 그대로 가요. 첫 번째 모델이 요청 단계에서 실패하면(사용량 한도, 장애) 순서대로 다음 모델로 넘어가요.";
+const FALLBACK_NOTE = "오케스트레이터와 레인의 폴백 순서는 저장하면 바로 적용돼요: 기본 모델로 도는 중이면 그대로 바뀌고, 폴백 모델로 돌거나 한도로 멈춰 있으면 같은 세션으로 다시 시작해요(일하는 중이면 끝난 뒤). 작업자 폴백은 다음 시작부터예요. 첫 번째 모델이 요청 단계에서 실패하면(사용량 한도, 장애) 순서대로 다음 모델로 넘어가요.";
 
 // Each layer's fallback chain and the models its running processes answer on right now (model ids, thinking stripped),
 // so the settings tab can highlight the one in use.
@@ -248,8 +248,11 @@ export async function setFallback(target: string, chain: unknown[]) {
 		seen.add(entryId(next));
 		clean.push(next);
 	}
+	const changed = JSON.stringify(fallbackChain(target as FallbackTarget)) !== JSON.stringify(clean);
 	setFallbackChain(target as FallbackTarget, clean);
-	return { ok: true, target, chain: clean.map(entryView), applied: "next-start" as const, note: FALLBACK_NOTE };
+	// Running processes take the new chain now (an API key added while the subscription is out must work on the next turn).
+	const applied = !changed || target === "workers" ? "next-start" : target === "orchestrator" ? applyOrchestratorChain() : (applyLaneChain(), "updated");
+	return { ok: true, target, chain: clean.map(entryView), applied, note: FALLBACK_NOTE };
 }
 
 const COMMANDS = ["help", "status", "context", "compact", "lanes", "model", "effort", "restart", "stop", "resume", "abort", "providers", "login", "logout", "quota"];

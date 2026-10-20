@@ -4237,8 +4237,8 @@ function fbBar(e) {
 }
 async function fbSave(layer, list) {
   try {
-    await api("/api/fallbacks", "PUT", { target: layer, chain: list.map(fbStored) });
-    toast("다음에 시작될 때부터 적용돼요");
+    const r = await api("/api/fallbacks", "PUT", { target: layer, chain: list.map(fbStored) });
+    toast(r && (r.applied === "updated" || r.applied === "restarted") ? "바로 적용돼요" : r && r.applied === "after-turn" ? "지금 하던 일이 끝나면 적용돼요" : "다음에 시작될 때부터 적용돼요");
     await loadModels(true);
   } catch (e) { toast(e.message || "저장하지 못했어요", true); await loadModels(true); }
 }
@@ -4249,7 +4249,7 @@ function fbEditMenu(layer, list, i, anchor) {
     { value: "when", label: "사용 조건", sub: e.when ? FB_WHEN[e.when] : "항상 (앞 모델이 안 될 때)" },
     { value: "cap", label: "사용 상한", sub: e.cap ? fbCapText(e.cap) : "없음" },
     { value: "revert", label: e.revert ? "복귀 끄기" : "리셋되면 복귀 켜기" },
-    { value: "key", label: "API 키 파일", sub: e.key_file || "없음 (로그인 사용)" },
+    { value: "key", label: "API 키", sub: e.key_file ? "API 키 사용" : "없음 (로그인 사용)" },
     { value: "clear", label: "조건 모두 지우기" },
   ];
   showMenu(anchor, items, { value: null, onPick: v => {
@@ -4271,11 +4271,32 @@ function fbCapDialog(e, done) {
     { label: "취소", onclick: c => c() },
     { label: "저장", kind: "pri", onclick: c => { const u = Number(usd.value), t = Number(tokens.value); done(u > 0 || t > 0 ? { period, ...(u > 0 ? { usd: u } : {}), ...(t > 0 ? { tokens: t } : {}) } : undefined); c(); } }] });
 }
-function fbKeyDialog(e, done) {
-  const f = input({ value: e.key_file || "", placeholder: "예: anthropic-api-key" });
-  dialog({ title: "API 키 파일", body: el("div", { class: "col" }, el("p", { class: "sup", text: "같은 모델을 API 키로 쓰고 싶을 때, 키가 든 파일의 이름을 적어요. 파일은 데이터 폴더의 secrets 안에 있어야 하고, 키 값은 설정이나 기록에 남지 않아요. 비우면 로그인을 써요." }), textField("파일 이름", f)), actions: [
-    { label: "취소", onclick: c => c() },
-    { label: "저장", kind: "pri", onclick: c => { done(f.value.trim()); c(); } }] });
+// The API key of a fallback entry: the owner pastes the key (hub/apikey-store.ts checks it once with the provider and keeps it
+// in the data folder's secrets); the page only ever sees its prefix and last 4. A key file name stays as an advanced option.
+async function fbKeyDialog(e, done) {
+  const provider = fbBase(e.model).split("/")[0];
+  let K;
+  try { K = await api("/api/apikeys"); } catch (err) { return toast(err.message, true); }
+  const cur = (K.providers || []).find(p => p.provider === provider);
+  if (!cur) return toast(`${provider} 모델은 API 키를 쓸 수 없어요`, true);
+  const key = input({ type: "password", autocomplete: "new-password", name: "api-key", placeholder: provider === "anthropic" ? "sk-ant-…" : provider === "openrouter" ? "sk-or-…" : "sk-…" });
+  const custom = e.key_file && e.key_file !== cur.file ? e.key_file : "";
+  const file = input({ value: custom, placeholder: cur.file });
+  const status = el("p", { class: "sup", text: cur.present ? `저장된 키: ${cur.masked}${e.key_file === cur.file ? " (사용 중)" : ""}` : "저장된 키가 없어요" });
+  const adv = el("details", custom ? { open: "" } : {}, el("summary", { class: "sup", text: "고급: 키 파일 이름으로 지정" }), el("p", { class: "sup", text: "데이터 폴더 secrets 안의 파일 이름(이름에 api-key 포함). 키를 붙여 넣으면 이 칸은 쓰지 않아요." }), textField("파일 이름", file));
+  const saveWith = async (c, body) => { const r = await api("/api/apikeys", "PUT", body); key.value = ""; toast(`키를 확인하고 저장했어요 (${r.masked})`); done(r.file); c(); };
+  const actions = [{ label: "취소", onclick: c => c() }];
+  if (provider === "anthropic" && K.omo_anthropic) actions.push({ label: "OmO 키 쓰기", onclick: (c, b) => busy(b, () => saveWith(c, { from: "omo" })) });
+  if (e.key_file) actions.push({ label: "키 끄기", onclick: c => { done(""); c(); } });
+  actions.push({ label: "저장", kind: "pri", onclick: (c, b) => busy(b, async () => {
+    const v = key.value.trim();
+    if (v) return saveWith(c, { provider, key: v });
+    if (file.value.trim()) { done(file.value.trim()); return c(); }
+    if (cur.present) { done(cur.file); return c(); }
+    toast("API 키를 붙여 넣어 주세요", true);
+  }) });
+  dialog({ title: "API 키", body: el("div", { class: "col" }, el("p", { class: "sup", text: "구독 대신 API 키로 쓸 때 키를 붙여 넣어요. 저장하기 전에 한 번 확인하고, 키 값은 다시 보여주거나 기록에 남기지 않아요. 비워 두면 저장된 키를 써요." }), status, textField("API 키", key), adv), actions });
+  setTimeout(() => key.focus(), 0);
 }
 // Drag a fallback item to another place in its chain (pointer events); the arrow buttons do the same from the keyboard.
 function fbDrag(item, layer, list, i) {
@@ -4341,13 +4362,15 @@ function fbParts(L) {
     const only = F.providers && F.providers.length === 1 ? F.providers[0] : "";
     showMenu(ev.currentTarget, modelItems(`fb:${L.id}`, "", only), { value: "", onPick: v => { if (list.some(x => x.model === v && !x.key_file) || fbBase(v) === prim) toast("이미 있는 모델이에요", true); else fbSave(L.id, [...list, { model: v }]); } });
   } }, icon("add"), full ? "더 넣을 수 없어요" : "폴백 모델 추가");
+  // The usual case: the subscription ran out, so the same model goes on through an API key (only after a usage limit).
+  const addKey = F.conditions && L.id !== "workers" && prim && !full && !list.some(x => x.key_file && fbBase(x.model) === prim) ? el("button", { type: "button", class: "fb-add", onclick: () => fbKeyDialog({ model: prim }, file => file && fbSave(L.id, [...list, { model: prim, key_file: file, when: "quota" }])) }, icon("add"), "구독 소진 시 API 키로 계속") : null;
   const how = L.id === "workers" ? "작업자 폴백은 순서만 정해요. 조건·상한·API 키는 쓰지 않아요."
     : F.harness && F.harness.id === "claude" ? "Claude Code는 Anthropic 모델만, 조건 없이 순서대로 넘어가요."
     : "끌거나 화살표로 순서를 바꿔요. ⋯ 에서 조건(한도 소진 시·오류 시), 상한, API 키를 정해요.";
   return {
     sub: L.sub,
     tags: F.harness ? [el("span", { class: "tag", title: "이 대상을 돌리는 하네스", text: F.harness.name })] : [],
-    body: [el("div", { class: "mt-fb" }, el("div", { class: "mt-fb-h" }, el("span", { class: "lb", text: "폴백 순서" }), el("span", { class: "sup", text: list.length ? `${list.length}개` : "없음" })), chain, add, el("div", { class: "note", text: how }))],
+    body: [el("div", { class: "mt-fb" }, el("div", { class: "mt-fb-h" }, el("span", { class: "lb", text: "폴백 순서" }), el("span", { class: "sup", text: list.length ? `${list.length}개` : "없음" })), chain, add, addKey, el("div", { class: "note", text: how }))],
   };
 }
 /* ---------- settings ---------- */
