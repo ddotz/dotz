@@ -14,6 +14,7 @@ import { isNote, msg } from "./i18n.ts";
 import { activityItems, answeredIds, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
+import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
 import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
 import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, turnHeader, verifyLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
@@ -342,6 +343,7 @@ discord.setFileLink(p => (webBase ? `${webBase}/api/file?path=${encodeURICompone
 // Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
 startPush({ subject: () => webBase ?? "mailto:dotz@example.com" });
 
+setTrashChannels({ take: discord.takeLaneChannel, put: discord.putLaneChannel, remove: discord.deleteChannel });
 discord.setChannelGoneHandler(id => {
 	if (clearChannel(id)) log(`work channel ${id} is gone; its logins and monitors were released`);
 });
@@ -826,6 +828,21 @@ const server = Bun.serve({
 		if (parts[0] === "api" && parts[1] === "lanes") {
 			try {
 				if (req.method === "GET" && parts.length === 2) return json(laneList());
+				// Ended lanes only, into the trash (lanetrash.ts); 409 when nothing could be deleted, with the reason per lane.
+				if (req.method === "GET" && parts[2] === "trash" && parts.length === 3) return json({ items: trashList() });
+				if (req.method === "POST" && (parts[2] === "delete" || parts[2] === "restore") && parts.length === 3) {
+					const b = await body(req);
+					const given = parts[2] === "delete" ? b.names : b.ids;
+					const list = (Array.isArray(given) ? given : []).map(String);
+					if (!list.length) return json({ error: parts[2] === "delete" ? "names required" : "ids required" }, 400);
+					const results = parts[2] === "delete" ? deleteLanes(list) : restoreTrashedLanes(list);
+					const ok = results.some(r => r.ok);
+					return json({ ok, results, ...(ok ? {} : { error: results.map(r => (r.ok ? "" : r.error)).join("; ") }) }, ok ? 200 : 409);
+				}
+				if (req.method === "DELETE" && parts[3] === "data" && parts.length === 4) {
+					const [r] = deleteLanes([parts[2]]);
+					return r!.ok ? json(r) : json({ error: r!.error }, 409);
+				}
 				if (req.method === "POST" && parts.length === 2) {
 					const b = await body(req);
 					const asked = Boolean(b.owner_asked_for_fable);

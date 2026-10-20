@@ -498,6 +498,22 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .ended .er { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 18px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg); font-size: 14px; text-align: left; }
 .ended .er:hover { background: var(--card-hover); }
 .ended .er .sup { margin-left: auto; color: var(--fg-3); font-size: 12px; }
+.ended > summary > span:first-of-type { flex: 1; min-width: 0; }
+.ended .etools { display: flex; align-items: center; gap: 4px; margin: -6px -8px -6px 0; }
+.ended:not([open]) .etools { display: none; }
+.ended .etools .btn { height: 28px; font-size: 13px; }
+.ended .erow { display: flex; align-items: center; border-top: 1px solid var(--line); }
+.ended .erow .er { flex: 1; min-width: 0; border-top: 0; padding-right: 8px; }
+.ended .erow .edel { margin-right: 12px; color: var(--fg-3); }
+.ended .erow .edel:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+.ended .en { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ended label.er { cursor: pointer; min-height: 48px; }
+.ended label.ck-all { color: var(--fg-2); font-weight: 600; }
+.ended .ck { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.dl-list { margin: 0; padding: 8px 12px; max-height: 40vh; overflow-y: auto; list-style: none; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font-size: 14px; line-height: 24px; }
+.dl-list li { overflow-wrap: anywhere; }
+.dl-body { display: flex; flex-direction: column; gap: 12px; }
+@media (pointer: coarse) { .ended .etools .btn { height: 36px; } .ended .erow .edel { margin-right: 6px; } }
 .bm.alert .mn::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: var(--err); vertical-align: middle; }
 .bm .more { margin-top: 8px; }
 .bm .more > summary { width: fit-content; color: var(--fg-2); font-size: 13px; line-height: 20px; cursor: pointer; list-style: none; text-decoration: underline; text-underline-offset: 3px; }
@@ -1197,6 +1213,7 @@ const ICONS = {
   check: "M5 12.5l4.5 4.5L19 7",
   drop: "M6 9l6 6 6-6",
   chev: "M9 6l6 6-6 6",
+  trash: "M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3",
   add: "M12 5v14M5 12h14",
   sun: "M12 8a4 4 0 1 0 0 8a4 4 0 0 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
   moon: "M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z",
@@ -1317,12 +1334,12 @@ async function busy(btn, fn) {
 
 /* ---------- snackbar ---------- */
 let toastTimer;
-function toast(msg, bad, action) {
+function toast(msg, bad, action, ms) {
   document.querySelectorAll(".snack").forEach(n => n.remove());
   const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: msg }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { n.remove(); action.onclick(); } }) : null);
   (document.querySelector("dialog[open]") || document.body).append(n);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => n.remove(), bad || action ? 6000 : 3500);
+  toastTimer = setTimeout(() => n.remove(), ms || (bad || action ? 6000 : 3500));
 }
 
 /* ---------- floating notices: top-right cards that leave ~4s after the owner has seen them ---------- */
@@ -1517,17 +1534,73 @@ const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인
 // The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
 const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
 const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
-// Ended lanes fold into one "종료된 레인 n" row; opening one shows its history (and resume). Nothing is deleted.
-let endedOpen = false;
+// Ended lanes fold into one "종료된 레인 n" row; opening one shows its history (and resume). Each row has a delete button,
+// and 선택 turns the rows into checkboxes for deleting several at once. Delete moves the lane into the gateway's trash
+// (lanetrash.ts, kept 7 days); the toast's 되돌리기 restores it.
+let endedOpen = false, endedSel = null;
+const UNDO_MS = 8000;
+function refreshEnded() {
+  const box = $("#lanes-ended");
+  if (box) box.dataset.sig = "";
+  document.querySelectorAll("details.ended").forEach(d => d.replaceWith(endedGroup() || ""));
+}
 function endedGroup() {
   const list = endedLanes();
-  if (!list.length) return null;
-  const d = el("details", { class: "ended" }, el("summary", {}, icon("chev"), `종료된 레인 ${list.length}`),
-    ...list.map(l => el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
-      el("span", { class: "dot" }), el("span", { text: l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" }))));
+  if (endedSel) for (const n of endedSel) if (!list.some(l => l.name === n)) endedSel.delete(n);
+  if (!list.length) { endedSel = null; return null; }
+  const sel = endedSel;
+  const stop = fn => ev => { ev.preventDefault(); ev.stopPropagation(); fn(ev); };
+  const tools = sel
+    ? el("span", { class: "etools" },
+        el("button", { type: "button", class: "btn text", onclick: stop(() => { endedSel = null; refreshEnded(); }) }, "취소"),
+        el("button", { type: "button", class: "btn danger fill", disabled: !sel.size, onclick: stop(() => deleteEnded([...sel])) }, `삭제 ${sel.size}개`))
+    : el("span", { class: "etools" }, el("button", { type: "button", class: "btn text", onclick: stop(() => { endedSel = new Set(); endedOpen = true; refreshEnded(); }) }, "선택"));
+  const all = sel && el("label", { class: "er ck-all" },
+    el("input", { type: "checkbox", class: "ck", checked: sel.size === list.length, onchange: ev => { endedSel = new Set(ev.currentTarget.checked ? list.map(l => l.name) : []); refreshEnded(); } }),
+    el("span", { text: "전체 선택" }), el("span", { class: "sup", text: `${sel.size}/${list.length}` }));
+  const row = l => sel
+    ? el("label", { class: "er" },
+        el("input", { type: "checkbox", class: "ck", checked: sel.has(l.name), onchange: ev => { if (ev.currentTarget.checked) sel.add(l.name); else sel.delete(l.name); refreshEnded(); } }),
+        el("span", { class: "en", text: l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" }))
+    : el("div", { class: "erow" },
+        el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
+          el("span", { class: "dot" }), el("span", { class: "en", text: l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" })),
+        el("button", { class: "ib edel", type: "button", "aria-label": `${l.name} 삭제`, title: "삭제", onclick: () => deleteEnded([l.name]) }, icon("trash")));
+  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { text: `종료된 레인 ${list.length}` }), tools),
+    ...(all ? [all] : []), ...list.map(row));
   d.open = endedOpen;
-  d.addEventListener("toggle", () => { endedOpen = d.open; });
+  d.addEventListener("toggle", () => { endedOpen = d.open; if (!d.open && endedSel) { endedSel = null; refreshEnded(); } });
   return d;
+}
+async function deleteEnded(names) {
+  if (!names.length) return;
+  const one = names.length === 1;
+  const sure = await new Promise(res => {
+    let v = false;
+    dialog({ title: one ? `${names[0]} 삭제` : `레인 ${names.length}개 삭제`, onclose: () => res(v),
+      body: el("div", { class: "dl-body" }, el("p", { text: "휴지통으로 옮겨요. 7일 안에는 되돌릴 수 있어요." }),
+        el("ul", { class: "dl-list" }, ...names.map(n => el("li", { text: n })))),
+      actions: [{ label: "취소", onclick: c => c() }, { label: one ? "삭제" : `${names.length}개 삭제`, kind: "danger fill", onclick: c => { v = true; c(); } }] });
+  });
+  if (!sure) return;
+  try {
+    const r = await api("/api/lanes/delete", "POST", { names });
+    const ok = r.results.filter(x => x.ok), bad = r.results.filter(x => !x.ok);
+    endedSel = null;
+    if (S && S.lanes) S.lanes = S.lanes.filter(l => !ok.some(x => x.name === l.name));
+    refreshEnded();
+    refreshState();
+    const why = bad.length ? ` · ${bad.length}개는 못 지웠어요: ${bad[0].error}` : "";
+    toast(`${ok.length === 1 ? ok[0].name : `${ok.length}개`} 삭제했어요${why}`, false, { label: "되돌리기", onclick: () => restoreEnded(ok.map(x => x.id)) }, UNDO_MS);
+  } catch (e) { toast(e.message, true); }
+}
+async function restoreEnded(ids) {
+  try {
+    const r = await api("/api/lanes/restore", "POST", { ids });
+    const bad = r.results.filter(x => !x.ok);
+    toast(bad.length ? `${bad.length}개는 되돌리지 못했어요: ${bad[0].error}` : "되돌렸어요", bad.length > 0);
+    refreshState();
+  } catch (e) { toast(e.message, true); }
 }
 // An exited or stopped lane is a normal end, so it gets the neutral dot; red is kept for real failures.
 const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
