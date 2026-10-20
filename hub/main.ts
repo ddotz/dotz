@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { ADDRESS, cfg, COALESCE_MAX_MS, DATA_DIR, DEFAULTS, HOST, HUB_TOKEN, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
-import { changeTarget, compactTarget, ControlError, contextView, targetView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
+import { changeTarget, compactTarget, limitsCard, ControlError, contextView, targetView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
@@ -29,7 +29,6 @@ import { createSendLedger } from "./sendlog.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { createLaneRelay } from "./lanerelay.ts";
 import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
-import { limitsText } from "./usage-account.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, replyRef } from "./threads.ts";
@@ -247,8 +246,8 @@ function rateLimitNotice(target: string, replyTo?: string): void {
 
 // Slash/bang commands (/model, /restart, ...) are answered by the gateway itself, never by the orchestrator.
 async function answerCommand(target: string, text: string, replyTo?: string): Promise<void> {
-	const output = await runCommand(text).catch(e => `error: ${(e as Error).message}`);
-	await out(target, output, replyTo, { source: "gateway" }).catch(e => log(`command reply to ${target} failed: ${e}`));
+	const card = await runCommand(text);
+	await out(target, card.text, replyTo, { source: "gateway", card }).catch(e => log(`command reply to ${target} failed: ${e}`));
 }
 
 // "한도" is answered by the gateway without waking the orchestrator, from the account the orchestrator really runs on
@@ -257,9 +256,8 @@ const LIMITS_ASK = /^\s*(한도|사용량|limits?)\s*[?？]?\s*$/i;
 async function limitsAnswer(target: string, replyTo?: string): Promise<void> {
 	const r = await anthropicUsage("orchestrator").catch(() => undefined);
 	const last = accountView(1).switches[0];
-	const moved = last && last.kind !== "start" ? `\n마지막 계정 전환: ${new Date(last.at).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ${last.from ?? "?"} → ${last.to} (${last.reason})` : "";
-	const text = r ? `${limitsText(r, Date.now())}${moved}` : "사용량을 읽지 못했어요 (Anthropic 계정을 찾지 못함).";
-	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`limits reply failed: ${e}`));
+	const card = limitsCard(r, last);
+	await out(target, card.text, replyTo, { source: "gateway", card }).catch(e => log(`limits reply failed: ${e}`));
 }
 
 async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
@@ -895,7 +893,8 @@ const server = Bun.serve({
 			const text = String((await body(req)).text ?? "").trim();
 			if (!text) return json({ error: "text required" }, 400);
 			try {
-				return json({ ok: true, output: await runCommand(/^[/!]/.test(text) ? text : `/${text}`) });
+				const card = await runCommand(/^[/!]/.test(text) ? text : `/${text}`);
+				return card.tone === "err" ? json({ error: card.note ?? card.title, output: card.text, card }, 400) : json({ ok: true, output: card.text, card });
 			} catch (error) {
 				return fail(error);
 			}
