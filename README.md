@@ -1,16 +1,14 @@
 # dotz (땃쥐모드)
 
-An always-on, Dori-style global orchestrator. A gateway process (launchd `dev.dotz.gateway`) hosts the 땃쥐
-orchestrator as a headless agent session, so no terminal has to stay open. You talk to it from Discord, from a
-tailnet-only web app, or (with omp installed) from any omp terminal after saying "땃쥐모드 켜". Project work runs in
-lanes: one headless orchestrator per project folder, each with its own Discord channel.
+An always-on, Dori-style global orchestrator. A gateway process (launchd `dev.dotz.gateway`) hosts the orchestrator
+as a headless OmO session, so no terminal has to stay open. You talk to it from Discord or a tailnet-only web app.
+Project work runs in lanes: one headless OmO session per project folder, each with its own Discord channel. The bot's
+name is chosen in setup; 땃쥐 is the default and is used in the examples below.
 
-**Runtime: OmO by default.** Every role (orchestrator, lanes and their task workers) runs on OmO (`omo`, oh-my-openagent)
-unless `config.json` names another runtime (`runtime`, `orchestrator.runtime`, `lanes.runtime`); setup writes `"omo"`
-for both roles, an unknown name falls back to OmO, and the gateway's small model calls (translation, card summaries) use
-OmO as well. omp stays supported as an explicit opt-in. Much of the text below was written on omp: where it names omp
-mechanisms (overlays, `retry.fallbackChains`, `omp worktree`, omp memory, the omp terminal plugin) those apply only when
-omp is selected; the OmO equivalents are in "Runtime differences on OmO" further down.
+**Runtime.** Every role (orchestrator, lanes and their task workers) runs on OmO (`omo`, package `omo-ai`) unless
+`config.json` names another runtime (`runtime`, `orchestrator.runtime`, `lanes.runtime`). Setup writes `"omo"` for both
+roles, an unknown name falls back to OmO, and the gateway's small model calls (translation, card summaries) use OmO
+too. omp (oh-my-pi) and Claude Code are explicit opt-ins; what changes then is in "Runtime differences".
 
 ## Install and onboard
 
@@ -31,13 +29,18 @@ this copy; a gateway from another checkout is never touched), `--purge` the data
 `--answers FILE`, `--tailscale`, `--no-open`, `--no-service`, `--no-setup`, `--yes`. From a checkout:
 `bun setup.ts --load --tailscale --open` (interactive; or `--answers answers.json`).
 
+The tools step installs (after asking) and signs in Aside (app, CLI and CLI login), Tailscale and zele (mail and
+calendar; `bun add -g zele`, accounts through zele's own login). Tailscale on macOS comes from Homebrew
+(`tailscale-app`), and the app's bundled CLI (`/Applications/Tailscale.app/Contents/MacOS/Tailscale`) is used when
+`tailscale` is not on PATH. A missing tool is skipped with a note; Aside is not asked on Linux.
+
 The wizard's first step is the harness: it lists OmO, omp, Claude Code and Codex with their install state, takes OmO
 by default (Codex is listed but has no adapter yet), installs OmO with bun when it is the pick and missing, and checks
 the login without reading credentials (`omo auth check --json`: an account pool with at least one account counts as
 signed in; `claude auth status`). Sign-in itself happens in the harness (`omo`, then `/login`; another `/login` adds an
 account to the pool). The pick is written to `orchestrator.runtime` and `lanes.runtime`; `--answers` takes `runtime`
 (`omo` | `omp` | `claude`) and `install_harness: true`. Tailscale is optional: without it the web app stays off and
-Discord and terminals work. On Linux setup writes a systemd user unit (`~/.config/systemd/user/dotz-gateway.service`)
+Discord works. On Linux setup writes a systemd user unit (`~/.config/systemd/user/dotz-gateway.service`)
 instead of the launchd plist and skips the Aside and macOS-permission steps.
 
 The wizard (Korean) then asks for the bot's name, character and tone (presets or your own line; Enter takes the default,
@@ -45,14 +48,17 @@ a short casual-polite tone), the notice style, what the bot calls you (optional;
 title at all) and an optional avatar, then Discord and web access. The identity
 lands in `~/.dotz/identity/IDENTITY.md` and drives everything: how the bot talks, its Discord username/avatar, the
 category names (`<name>`, `<name> 작업`), and the terminal phrase
-"<name>모드 켜". Re-run setup any time to change it; existing answers are the defaults.
+"<name>모드 켜" (omp only). Re-run setup any time to change it; existing answers are the defaults.
 
 Setup writes `~/.dotz/config.json` (no secrets, `runtime: "omo"` for the orchestrator and lanes), keeps the bot token in
-`~/.dotz/secrets/` (0600), links the plugin into omp (`~/.omp/agent/extensions/dotz`) only when omp is installed (OmO
-processes get the extension from the gateway with `--extension`; nothing is installed into OmO's own agent directory), generates and (with `--load`) starts the launchd gateway,
-and serves the web app on the tailnet only (interactive runs with web logins do it on their own; `--answers` runs only
-with `--tailscale`). The tools step installs and signs in Tailscale when missing; on macOS it uses the app's bundled CLI
-(`/Applications/Tailscale.app/Contents/MacOS/Tailscale`) when `tailscale` is not on PATH. It prints the bot invite link.
+`~/.dotz/secrets/` (0600), generates and (with `--load`) starts the gateway service, and runs `tailscale serve` for
+the web app on the tailnet only: an interactive run with web logins does it itself, an `--answers` run only with
+`--tailscale`. The gateway re-checks on every start: with web logins set and no proxy on `web.tailscale_https_port`, it
+runs the same `tailscale serve` (a port another service already serves is left alone and logged). OmO sessions get the dotz extension from the gateway (`--extension`); nothing is installed into OmO's
+agent directory. Only when omp is installed is the extension also linked into omp (`~/.omp/agent/extensions/dotz`) for
+terminal mode. Setup prints the bot invite link, then the web address as the last block (`웹 앱 주소: https://...`,
+plus a line on opening it from another device). With `--load` it first waits until the gateway (40 s) and the
+tailnet serve (15 s) answer; `--open` opens the browser only once both did.
 
 **Language.** `identity.language` in `config.json` (a code such as `ko`, `en`, `ja`) is the identity's main language.
 Setup writes it automatically, detected from the script of the identity answers (Hangul `ko`, kana `ja`, Han only `zh`),
@@ -69,7 +75,8 @@ literal in every language. The contract file for a language other than English i
 `MODE.md`, so a translation for another language is a drop-in file.
 
 Onboarding also asks for the macOS permissions (`onboard/permissions.ts`). The gateway is a launchd job whose program is `bun`, so
-macOS attributes every protected access by the gateway and everything it spawns (omp, osascript, aside, git) to `bun`:
+macOS attributes every protected access by the gateway and everything it spawns (agent sessions, osascript, aside,
+git) to `bun`:
 the prompts and the Settings entries are for the bun binary, not your terminal. Setup asks for them once, up front:
 Full Disk Access (no prompt, you switch it on in Settings; it also covers Desktop/Documents/Downloads and removable and
 network volumes), Files and Folders for Desktop, Documents and Downloads (prompts), Automation for System Events (prompt),
@@ -79,8 +86,8 @@ too. `bun setup.ts permissions` runs the same step any time and is safe to rerun
 gateway after `launchctl kickstart -k gui/$(id -u)/dev.dotz.gateway`.
 
 Discord: create a dedicated bot in the Developer Portal, enable the MESSAGE CONTENT intent, give its token to setup,
-and invite it with the printed link. The gateway creates two categories: "땃쥐" (the main channels 대화, 알림, 작업로그)
-and "땃쥐 작업" (one channel per project, topic or lane, named plainly with no emoji). Every text channel in these two categories
+and invite it with the printed link. The gateway creates two categories named after the bot, e.g. "땃쥐" (the main
+channels 대화, 알림, 작업로그) and "땃쥐 작업" (one channel per project, topic or lane, named plainly with no emoji). Every text channel in these two categories
 is a work channel; threads in them are sub-items. It listens to nothing else, and only the configured owner id can
 command it.
 
@@ -90,8 +97,9 @@ command it.
   splits long-running work into a new channel. Write in a project channel or a thread to work on just that; write in a
   lane channel to talk to that lane directly.
 - Web: `https://<this-machine>.<tailnet>.ts.net:<tailscale_https_port>` (allowed Tailscale logins only).
-- Terminal: in any omp session say "땃쥐모드 켜"; your input then goes to 땃쥐 and replies appear there.
-  "땃쥐모드 꺼" returns the terminal to normal.
+- Terminal (omp only): the terminal client is part of the dotz extension, which is installed only into omp. In an
+  omp session say "<name>모드 켜" and your input goes to the orchestrator, replies appear there; "<name>모드 꺼" ends
+  it. Interactive OmO sessions don't load the extension, so there is no terminal mode on OmO.
 
 ## Commands
 
@@ -102,7 +110,7 @@ name are answered by the gateway itself and never reach the orchestrator; unknow
 | Command | Effect |
 | --- | --- |
 | `/help`, `/status`, `/lanes` | commands, orchestrator/lane/Discord state (with context usage and compaction state), lane list |
-| `/context` | per process (orchestrator and every lane): context tokens, context window, percent, compaction state |
+| `/context` | per session (orchestrator and every lane): context tokens, context window, percent, compaction state |
 | `/compact <orchestrator\|<lane>>` | compact that process's context; queued after the current turn if it is working |
 | `/model [orchestrator\|lanes\|workers\|<lane>] [<model>] [<thinking>] [--force]` | show or set model and thinking level; a model may be a unique part of its name; `workers` sets `models.workers` |
 | `/effort <target> <level> [--force]` | thinking level: off, minimal, low, medium, high, xhigh, max, auto |
@@ -121,45 +129,40 @@ cache prefix at about 2x input cost; the handover drops the old context instead 
 needed. `lanes` applies to lanes launched afterwards (free, no confirmation); `<lane>` is saved on that lane and
 restarts its process on the same session.
 
-**Force rule for running lanes.** Anthropic invalidates the message cache when the output effort changes, and omp has
-`supportsPerMessageEffort=false` for anthropic, so changing a running lane's model or effort re-writes that lane's
+**Force rule for running lanes.** Anthropic invalidates the message cache when the output effort changes, so changing a running lane's model or effort re-writes that lane's
 whole context into the cache. `/model <lane> ...` and `/effort <lane> ...` on a running lane are therefore refused
 with a warning that names the lane's current context tokens; repeat the command with `--force` (or `force`) to apply
 it. The API (`PUT /api/models`) answers 409 `{requires_force: true, context_tokens}` until the body has
 `"force": true`; the web UI shows that warning as a confirm dialog and then sends with force.
 
-**Context and compaction.** Context tokens come from each assistant message's usage and from omp's own
-`get_state` / `get_session_stats` (`contextUsage`: tokens, window, percent), per process. `/compact` sends omp's RPC
-`compact`: immediately when the process is idle, otherwise the state is `queued` and it is sent right after the next
-`agent_end` (omp aborts a running turn to compact, so it is never sent mid-turn). States: `queued`, `compacting`,
+**Context and compaction.** Context tokens come from each assistant message's usage and from the session's
+RPC `get_state` / `get_session_stats` (`contextUsage`: tokens, window, percent; OmO and omp speak the same pi RPC).
+`/compact` sends the RPC `compact`: immediately when the session is idle, otherwise the state is `queued` and it is
+sent right after the next `agent_end` (a compact aborts a running turn, so it is never sent mid-turn). States: `queued`, `compacting`,
 `done` (with time and the size before), `error`; they show in `/context`, `/status` and the web UI.
 Compaction rewrites the conversation into a summary, so the prompt cache is re-written once on the next turn.
 
 **Lane worker model.** A lane plans and reviews on its own model and delegates implementation, tests, renders and grind
 work to task workers on a cheaper model: `models.workers` in `config.json` (default
-`anthropic/claude-sonnet-5-5:high`; `/model workers <model> [<thinking>]` or the web UI's model page writes it). At
-every lane start or resume the gateway writes `~/.dotz/lanes/<name>/omp-overlay.yml` (`modelRoles.task` plus
-`task.agentModelOverrides` for `task` and `scout` set to `@task`) and starts omp with `--config=<that file>`. The
-`dotz_lane` launch tool takes an optional `worker_model` that is stored on the lane and wins over `models.workers`.
+`anthropic/claude-sonnet-5-5:high`; `/model workers <model> [<thinking>]` or the web UI's model page writes it). How
+the lane session gets it depends on the runtime (OmO: an `omo.json` profile; omp: a config overlay), see "Runtime
+differences". The `dotz_lane` launch tool takes an optional `worker_model` that is stored on the lane and wins over `models.workers`.
 The lane brief contract tells the lane to review a worker's diff itself before applying it. A running lane keeps its
-process's overlay until it restarts.
+worker model until it restarts.
 
 **Model fallback chains.** When a model fails at request time (usage limit, outage), the next model of a chain takes
 over. Three chains, each a list in `config.json`: `models.orchestrator.fallback`, `models.lanes.fallback` (every lane's own
 model) and `models.workers.fallback` (the lanes' task workers); an entry is a model selector (`provider/id[:thinking]`, the
-thinking level of the failing turn when omitted). They apply the next time a process starts and are edited on the web
+thinking level of the failing turn when omitted). They apply the next time a session starts and are edited on the web
 UI's 모델 · 폴백 screen (under each target's model and effort: drag an item or use its arrow buttons to reorder, "모델
 추가" picks from the model catalog the target's harness can run, the model answering now is marked "사용 중") or with
-`PUT /api/models {target, fallback}` (`PUT /api/fallbacks {target, chain}` still works). A chain of
-bare models is walked by omp itself: the gateway writes `retry.fallbackChains` into the orchestrator's
-`omp-orchestrator-overlay.yml` / each lane's `omp-overlay.yml` (keyed by the exact primary model, and by role `task`
-for the workers; omp uses the exact key before a role, so a lane whose own model equals its worker model gets one chain
-for both). An empty chain writes nothing. Every switch writes one line (`모델 폴백: A → B (사유)`): the orchestrator's goes
+`PUT /api/models {target, fallback}` (`PUT /api/fallbacks {target, chain}` still works). On OmO the gateway drives
+every chain itself; on omp a chain of bare models is left to omp (see "Runtime differences"). Every switch writes one line (`모델 폴백: A → B (사유)`): the orchestrator's goes
 to the alert channel (a silent switch to a weaker model went unnoticed once), its task workers' to worklog, a lane's and
 its workers' to the lane's channel; none of them wakes the orchestrator, and
-while a fallback may follow, a failed request is not acted on for 3 seconds (so a usage limit that omp falls back from
-does not pause the process or send a lane-error report). omp never walks back by itself (an Anthropic refusal also walks
-the chain), so the gateway sends an RPC `set_model` for the configured model (with its thinking level) and posts
+while a fallback may follow, a failed request is not acted on for 3 seconds (so a usage limit the runtime falls back
+from does not pause the session or send a lane-error report). For a chain walked by the runtime (omp), which never
+walks back by itself (an Anthropic refusal also walks the chain), the gateway sends an RPC `set_model` for the configured model (with its thinking level) and posts
 `원래 모델(…)로 되돌렸어요`: before the next prompt after a refusal or a provider error, after the reset for a usage limit
 (the error's retry-after or the usage report, else 15 minutes) when idle or before the next prompt. At most once per
 fallback: if the restored model falls back again in that same turn it stays on the fallback. A runtime without
@@ -173,16 +176,15 @@ left: the process pauses with an alert until the period ends), `revert` (go back
 resets, at the next idle moment) and `key_file` (the same model billed through an API key stored in the file
 `<data dir>/secrets/<key_file>`; the key reaches the process only through its environment, never a config, log, event
 or report). Spend (tokens, USD from the model catalog's prices) is counted per key/model in `<data dir>/fallback-usage.json`.
-An API-key entry runs as its own provider `<provider>-apikey`, registered inside the process by the dotz extension
-(omp prefers a stored login over an API key for the provider's own id); `anthropic`, `openai` and `openrouter` are
+An API-key entry runs as its own provider `<provider>-apikey`, registered inside the session by the dotz extension
+(the runtime prefers a stored login over an API key for the provider's own id); `anthropic`, `openai` and `openrouter` are
 built in, other providers need `base_url` and `api` on the entry. The key goes over https only, to `api.anthropic.com`,
 `api.openai.com`, `openrouter.ai` or a host listed in the top-level `key_hosts` array of `config.json`; an entry pointing
 anywhere else is refused when saved and never started. The key file's name must contain `api-key` or `api_key`.
 
 **Lane context management.** Five `lanes.*` keys in `config.json` (all optional): `compact_at` (default `400000`
-tokens) and `keep_recent` (default `40000`) go into each lane's `omp-overlay.yml` as `compaction.modelThresholds`
-(`f<compact_at>` for the lane model and its worker model) and `compaction.keepRecentTokens`, so omp compacts a lane
-itself at 300K and keeps the last 40K (OmO lanes: the hub compacts an idle lane at the same value); `nightly_at` (default `"04:30"`, gateway-local time, `"off"` disables),
+tokens; the hub compacts an idle OmO lane at that value, on omp it goes into the lane's overlay) and `keep_recent`
+(default `40000`, omp only); `nightly_at` (default `"04:30"`, gateway-local time, `"off"` disables),
 `nightly_compact_at` (default `300000` tokens) and `rotate_mb` (default `50`) drive the nightly hygiene. Once a day at
 `nightly_at` every idle lane is checked: a session file over `rotate_mb` MB starts a fresh session with a handover
 (recent exchanges plus a note to re-read its brief and last report; same model, folder and goal; the reload turn posts
@@ -191,19 +193,19 @@ lanes are skipped. Each action goes to the hub log and the activity feed, nothin
 in `~/.dotz/lane-hygiene.json`; a run missed while the gateway was down is made up a minute after the next start.
 Settings apply when a lane starts or resumes.
 
-**Memory guard.** omp runs its bash tool's coreutils (grep, cat, find, ...) and the task workers inside the agent's own
-process, so one scan of a huge tree or a multi-GB file can grow an orchestrator or lane to tens of GB. Every 30 s the
+**Memory guard.** One scan of a huge tree or a multi-GB file can grow an orchestrator or lane session to tens of GB.
+Every 30 s the
 gateway reads each agent's RSS; one over `lanes.max_rss_gb` (default `8`, `0` turns the guard off) is restarted on
 the same session, and a lane that was working resumes with a note that names the cause. The lane channel (or alert,
 for the orchestrator) gets one line. After 3 restarts of the same agent within an hour the guard leaves it running
 and says so once.
 
-**Worktree cleanup.** Two minutes after the start and then hourly, the gateway deletes task-worker isolation worktrees
+**Worktree cleanup (omp only).** Two minutes after the start and then hourly, the gateway deletes task-worker isolation worktrees
 that `omp worktree list --json` marks with an `orphanReason` (no live job) and that were not modified for an hour. Only
 paths under `~/.omp/wt/` are touched; they are made writable first (retained worktrees hold read-only files that make
 `omp worktree clear` fail). The count and freed space go to the hub log.
 
-**Nightly token audit.** At `token_audit_at` (default `"04:30"`, `"off"` disables) the gateway scans every omp session
+**Nightly token audit.** At `token_audit_at` (default `"04:30"`, `"off"` disables) the gateway scans every OmO and omp session
 active in the last 24h (orchestrator, lanes, task workers) without any model call and writes
 `~/.dotz/logs/token-audit-YYYYMMDD.md`: cache busts, idle wakes, error streaks, repeated tool calls, big contexts, big
 workers and Fable or max/xhigh use. A class flagged on consecutive days is marked as recurring. A short alert goes out
@@ -211,7 +213,7 @@ only when something is flagged, and the reflection digest cites the result. Noth
 totals stay in `~/.dotz/token-audit.json`. Try it with `bun hub/token-audit.ts --dry [--hours N]`.
 
 **Worker guard and harness commands** (`extension/guard.ts`, `extension/harness-tools.ts`, `extension/token-audit.ts`) load with
-the dotz omp extension into every session it is in: terminals, the orchestrator and lanes. `guard.enabled: false` turns the guard off.
+the dotz extension into every session it is in: the orchestrator, lanes and their workers (and omp terminals). `guard.enabled: false` turns the guard off.
 - *Briefs* (`task` calls of the main agent): blocked without a done-condition line (`Acceptance:`, `Done when:`, ...), over
   `max_brief_chars` (8000) characters, or with a fenced code block over `max_fence_lines` (40) lines; every brief gets a
   budget line (answer length, context budget); writing workers are forced `isolated` in a git repo and checkout paths in the
@@ -227,13 +229,14 @@ the dotz omp extension into every session it is in: terminals, the orchestrator 
 - *Searches*: recursive grep/find/rg/du/ls -R of `/`, `~`, `~/Library` or with an unquoted shell expansion is blocked.
 - *Budget gate*: a `task` call is blocked when the Anthropic 5h window would drop under `budget_margin_percent` (10) after the
   job's estimate (`budget_default_estimate_percent` 15, or an `Estimate: N%` line in the brief) until `/budget-ok`
-  (`override_minutes`, 30). The 7d window is only shown. No Anthropic usage data from omp: no gate. `budget_gate: false` turns it off.
+  (`override_minutes`, 30). The 7d window is only shown. The usage data comes from `omp usage`, so without omp
+there is no gate. `budget_gate: false` turns it off.
 - *State*: spawned workers, results and unapplied patches are kept per project (and lane) under
-  `~/.omp/agent/orchestrator-state` (`ORCH_GUARD_STATE_DIR`) and re-injected after a compaction or a new session.
+  `<agent dir>/orchestrator-state` (`~/.omo/agent` on OmO; `ORCH_GUARD_STATE_DIR` overrides) and re-injected after a compaction or a new session.
 - `/compact-switch provider/model[:thinking]` compacts on the current model (cache still warm, only above
   `switch_compact_min_tokens`, 50000) before switching. `/doctor [fix]` (and the `harness_doctor` tool) checks context,
   session file size, model vs default role, last rate limit, quota, open workers/patches, guard health and orphaned omp RPC
-  processes; `/handover [note]` starts a fresh session with recent reports, git status and open workers;
+  hosts; `/handover [note]` starts a fresh session with recent reports, git status and open workers;
   `/token-audit [hours]` (and `harness_token_audit`) is the on-demand form of the nightly audit and writes
   `~/.dotz/logs/token-audit-session-YYYYMMDD.md`. `guard.harness_tools: false` leaves these out.
 - *Owner rule, off by default*: `ask_before_expensive: true` with `expensive_models: ["fable", ":max", ":xhigh"]` (substring
@@ -244,9 +247,9 @@ the dotz omp extension into every session it is in: terminals, the orchestrator 
   `max_output_chars`, `worker_answer_chars` 800, `worker_context_tokens` 400000, `budget_gate`, `budget_margin_percent`,
   `budget_default_estimate_percent`, `override_minutes`, `repeat_block_threshold`, `switch_compact_min_tokens`,
   `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `defer_to_installed`, `harness_tools`).
-- *Already installed copies*: omp lists no loaded extensions to an extension, so the guard looks for
-  `<agent dir>/extensions/orchestrator-guard.ts` (and `harness-tools.ts` for the commands), unless omp runs with
-  `--no-extensions` or `disabledExtensions` names it. When it exists, this copy leaves those hooks to it (the same hooks
+- *Already installed copies*: the runtime lists no loaded extensions to an extension, so the guard looks for
+  `<agent dir>/extensions/orchestrator-guard.ts` (and `harness-tools.ts` for the commands), unless discovery is
+  switched off or the config disables it. When it exists, this copy leaves those hooks to it (the same hooks
   twice would double every block, steer and state write) and logs one warning per process; `/doctor` reports which copy
   is in effect. `guard.defer_to_installed: false` runs this copy anyway.
 
@@ -255,7 +258,7 @@ pushed to `backup.remote` when that key is set (off by default). Files that look
 and a push with secret-like content in its history is refused. A remote URL with embedded credentials is refused too.
 Failures go to the hub log and to the owner at most once a day.
 
-**omp update check.** At `omp_update.at` (default `"04:20"`) the gateway runs `omp update --check`. `omp_update.mode`
+**omp update check (omp only).** At `omp_update.at` (default `"04:20"`) the gateway runs `omp update --check`. `omp_update.mode`
 is `"check"` by default (one worklog line per new version, nothing installed). `"install"` runs `omp update` and
 restarts the gateway once it is idle. `"off"` disables the check. Installs managed by another program (Tern) are
 skipped. `bun hub/update.ts --check-now` prints the result.
@@ -270,7 +273,7 @@ One feature = one folder `<id>/` (`<id>` is `[a-z0-9-]`, up to 40 chars) in one 
   personal folder with the same `<id>` replaces the shipped one, so a user turns a shipped feature off or changes it by
   copying it into the personal root and editing the copy.
 
-The gateway and the omp extension read both roots at runtime (cached by file mtime). A malformed folder is skipped and
+The gateway and the dotz extension read both roots at runtime (cached by file mtime). A malformed folder is skipped and
 the reason is written to `hub.log` (and returned as `skipped_dirs` by `GET /api/features`). `GET /api/features` marks
 every feature, folder or not, as `origin: "shipped" | "personal"`. The web UI shows that distinction (배포용/개인용 tags,
 the 출처 filter in the 기능 목록) only with `ui.origin_view` (see below).
@@ -325,7 +328,8 @@ All behind the same auth as the rest of `/api`.
   log `<id>.log`. The hub drives every fallback chain on OmO (see below); on omp it drives a chain with conditions, caps, revert or
   API-key entries and leaves a chain of bare models to omp; on Claude Code the models go as a plain `--fallback-model` list.
 
-**Runtime differences on OmO.**
+**Runtime differences.** OmO is the default; the first bullets say how dotz runs on it, the last ones what changes
+when omp is selected.
 - *Fallback chain*: OmO runs with `--no-model-fallback` (its own chain would follow the owner's global OmO settings, and the
   per-process RPC override is refused on a resumed session). The hub drives every OmO chain itself: on a usage limit or
   provider error it restarts the process on the same session with the next entry (bare entries go back to the primary once
@@ -345,13 +349,22 @@ All behind the same auth as the rest of `/api`.
   `profiles.dotz-workers-<model>` into `~/.omo/omo.json` (every category on the lane's worker model, then
   `models.workers.fallback`) and starts the lane with `OMO_PROFILE` naming it; the owner's own OmO sessions, which set no
   profile, keep their categories. With an `omo.jsonc` dotz writes nothing and the workers keep OmO's categories.
-- *Memory*: no omp memory; durable facts go to RULES.md / LESSONS.md / state.json (MODE.md).
-- *Still omp-only*: the budget gate on spawns and the Anthropic quota numbers (`omp usage`), provider login (`omp auth`), the
-  nightly `omp worktree` cleanup and the omp update check. They call the `omp` binary, so they need omp installed and
-  see only omp's own state (the budget gate has no usage data without it and does not gate).
+- *Memory*: OmO's memory is turned off for dotz sessions; durable facts go to RULES.md / LESSONS.md / state.json (MODE.md).
+- *Needs the `omp` binary on any runtime*: the budget gate on spawns and the Anthropic quota numbers (`omp usage`), the
+  provider list, API keys, login and logout (`omp auth`, `omp login`, `omp auth-broker`; below), the nightly
+  `omp worktree` cleanup, the orphaned omp RPC host reaper and the omp update check. Without omp installed they see
+  nothing (the budget gate does not gate). On OmO the Anthropic account a role runs on is read from OmO's account pool.
+- *When the runtime is omp*: the dotz extension is linked into `~/.omp/agent/extensions/dotz`, so omp terminals get
+  terminal mode, the worker guard and harness commands. Each lane start or resume writes
+  `~/.dotz/lanes/<name>/omp-overlay.yml` and starts omp with `--config=<that file>` (the orchestrator gets
+  `omp-orchestrator-overlay.yml`): `modelRoles.task` plus `task.agentModelOverrides` for `task` and `scout` set to
+  `@task` (worker model); `retry.fallbackChains` for a chain of bare models, keyed by the exact primary model and by role
+  `task` for workers (omp walks it itself; the hub drives chains with conditions, caps, revert or API keys);
+  `compaction.modelThresholds` (`f<compact_at>`) and `compaction.keepRecentTokens` (`keep_recent`), so omp compacts a
+  lane itself. omp has `supportsPerMessageEffort=false` for anthropic, which is behind the force rule.
 - `GET /api/context`: `{note, processes: [{name, kind, status, running, model, tokens, window, percent, compaction: {state, at, tokensBefore, error}}]}`
   for the orchestrator and every lane; `POST /api/compact {target: "orchestrator"|"<lane>"}` compacts (or queues) one.
-- `GET /api/activity?source=orchestrator|lane:<name>&limit=N`: in-memory ring (300) of what an omp process did; the
+- `GET /api/activity?source=orchestrator|lane:<name>&limit=N`: in-memory ring (300) of what an agent session did; the
   same items stream on `/api/events` as `{kind: "activity", ...}` (live only, not in the inbox/outbox files).
 - `GET /api/providers` -> `{providers: [{id, name, auth: "oauth"|"api_key"|"none", account?, masked?, models, in_use, can_login, can_logout}], addable: [{id, name, kind: "oauth"|"api_key"}]}`
   (`addable` = providers the runtime supports that are not configured yet); `POST /api/providers {provider, key}` saves
@@ -403,10 +416,10 @@ instruction files and project-only features as chips on the lane card), with a b
 requests as on the main map. In the project view every request carries `범위: 프로젝트 (<channel name> · <cwd>)` and the
 tag sits next to each request button, whether or not `ui.origin_view` is on.
 
-The gateway keeps no credentials of its own: API keys added through it go into omp's credential store
+Provider management calls the `omp` binary (see "Runtime differences"). The gateway keeps no credentials of its own:
+API keys added through it go into omp's credential store
 (`omp auth import`), sign-out removes the login or key there (`omp auth-broker logout <provider>`), and keys are shown
-only masked (`sk-…a1b2`), never written to `config.json`, events or logs. Every orchestrator and lane process reads
-them from that store. Only API-key providers omp documents an env var for are accepted for `POST /api/providers`.
+only masked (`sk-…a1b2`), never written to `config.json`, events or logs. omp sessions read them from that store. Only API-key providers omp documents an env var for are accepted for `POST /api/providers`.
 
 Sign-in (subscription/OAuth) runs `omp login <provider>` server-side with piped stdin: the gateway reads the authorize
 URL from its output and returns it. If the browser that opens the URL runs on this machine, omp's own localhost
@@ -421,7 +434,7 @@ step. The provider list comes from `omp auth-broker list`, not from this repo. O
 
 Logout runs `omp auth-broker logout <provider>` (deletes the provider's credentials from omp's store) and removes the
 key saved through the gateway. Keys supplied through the gateway's own environment variables cannot be removed here.
-Running orchestrator and lane processes keep their loaded token until they restart.
+Running sessions keep their loaded token until they restart.
 
 Throwaway sessions stay off the live gateway (`hub/live-guard.ts`): a gateway on a temp data dir (or `DOTZ_DRY_RUN=1`) does not
 connect to Discord, and an orchestrator or lane process the live gateway did not start (its parent is not `hub.pid`), a runtime
@@ -455,13 +468,14 @@ short "received, answering when the current step ends" notice from the gateway.
   rows and task-worker lists to the terminal-view feed),
   `events.ts`, `config.ts`, `i18n.ts` (message catalog and language selection), `language.ts` (language detection), `summaries.ts` (cached two-line card summaries).
 - `hub/runtime/` agent runtimes: `types.ts` (the adapter interface: `AgentProcess`, `AgentEvent`, `SpawnOpts`),
-  `omp.ts` (the omp adapter: spawn arguments, lane config overlay, RPC frames to events, handover text from a saved
-  session), `index.ts` (registry; `orchestrator.runtime` / `lanes.runtime` / `runtime` in `config.json` pick one,
-  default `omo`, an unknown name is logged and falls back to OmO; `omo.ts` is the OmO adapter on top of the omp one). The orchestrator and lanes hold the policy and only
+  `omo.ts` (the OmO adapter: spawn arguments, provider names, compaction frames, worker profile), `omp.ts` (the omp
+  adapter, whose RPC reader `omo.ts` reuses: lane config overlay, RPC frames to events, handover text from a saved
+  session), `claude.ts`, `index.ts` (registry; `orchestrator.runtime` / `lanes.runtime` / `runtime` in `config.json` pick one,
+  default `omo`, an unknown name is logged and falls back to OmO). The orchestrator and lanes hold the policy and only
   see events. `verify.ts` detects the installed harnesses and runs the compatibility check before a switch (see API additions). `bun test` replays recorded omp frames and two state-machine scenarios against goldens captured before the
   adapter existed (`hub/runtime/fixtures`).
 - Audit against Dori / dori-kit / 오모냥: `docs/audit-2026-10-16.md`.
-- `extension/index.ts` omp extension: orchestrator tools, terminal thin client, the worker guard and harness commands (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `token-audit.ts`).
+- `extension/index.ts` dotz extension (loaded by OmO and omp sessions): orchestrator tools, terminal thin client (omp), the worker guard and harness commands (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `token-audit.ts`).
 - `web/index.html` web app. `MODE.md` the behaviour contract (`MODE.ko.md` the same in Korean). `hub/threads.ts` the Discord thread rules (table in MODE "Threads"). `setup.ts` onboarding.
 - Runtime data: `~/.dotz` (config, secrets, state, inbox/outbox, lanes, logs).
 
