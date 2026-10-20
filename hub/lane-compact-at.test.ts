@@ -2,7 +2,7 @@
 // omp overlay read it), so the hub compacts an idle lane whose context reached it.
 import { expect, test } from "bun:test";
 import { GUARD_DEFAULTS } from "../extension/guard-config.ts";
-import { cfg, lanesCompactAt } from "./config.ts";
+import { cfg, LANES_COMPACT_AT, lanesCompactAt } from "./config.ts";
 import { compactDue, newCtx } from "./context.ts";
 
 test("defaults: lanes compact at 300K, workers are told a 300K context budget", () => {
@@ -28,4 +28,22 @@ test("an idle lane at or past the threshold is due a compaction; below it, or on
 	expect(compactDue(c, 300_000)).toBe(false);
 	c.compaction = { state: "done", at: 1, tokensBefore: 310_000 };
 	expect(compactDue(c, 300_000)).toBe(true);
+});
+
+test("the 구성 page shows the default lane compaction threshold (300K) when config.json leaves it unset", async () => {
+	const { readFileSync, writeFileSync } = await import("node:fs");
+	const { CONFIG_FILE } = await import("./config.ts");
+	const { harnessGraph } = await import("./harness.ts");
+	const saved = readFileSync(CONFIG_FILE, "utf8");
+	const unset = JSON.parse(saved);
+	delete unset.lanes.compact_at;
+	writeFileSync(CONFIG_FILE, JSON.stringify(unset));
+	try {
+		const g: any = await harnessGraph({ light: true });
+		const facts: { value: unknown }[] = (g.nodes ?? g).find((n: any) => n.id === "lanes").facts;
+		const shown = facts.map(f => String(f.value)).find(v => /\d{3}[,.]\d{3}/.test(v));
+		expect(shown).toContain(LANES_COMPACT_AT.toLocaleString("en-US"));
+	} finally {
+		writeFileSync(CONFIG_FILE, saved);
+	}
 });
