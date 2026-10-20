@@ -59,7 +59,7 @@ export function writeWorkerProfile(lane: { workerModel: string; workerFallback?:
 		return undefined;
 	}
 	const models = [lane.workerModel, ...(lane.workerFallback ?? [])].map(categoryModel);
-	const profiles = { ...(doc.profiles as Record<string, unknown> | undefined), [name]: { task: { max_depth: WORKER_MAX_DEPTH }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) } };
+	const profiles = { ...(doc.profiles as Record<string, unknown> | undefined), [name]: { task: { max_depth: WORKER_MAX_DEPTH }, memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) } };
 	mkdirSync(dirname(file), { recursive: true });
 	writeAtomic(file, `${JSON.stringify({ ...doc, profiles }, null, 2)}\n`);
 	return name;
@@ -86,7 +86,10 @@ class OmoProcess extends OmpProcess {
 }
 
 // OmO's own memory plugin would create a memory agent per cwd and run reflection turns on every dotz process; dotz
-// keeps its own memory (state.json, the owner's files), so it is off.
+// keeps its own memory (state.json, the owner's files), so it is off. Task workers do not inherit the flag, so the lane's
+// worker profile turns it off for them (memory.enabled false). Measured 2026-10-20 on a quick worker's first request: 36,054
+// -> 34,968 tokens, and no memory binding or projection pin in its session. The rest of the base is OmO's system prompt,
+// tool definitions and the skills list (~4.6K, kept: lanes and workers do read skills).
 const MEMORY_OFF = "--omo-senpi-memory-disabled";
 // The question tool waits for an interactive UI answer that no dotz process gives (it would hang the turn); dotz asks the
 // owner in its channels instead.
