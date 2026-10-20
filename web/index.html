@@ -103,11 +103,9 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .ustrip .ubar { width: 48px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
 .ustrip .ubar i { display: block; height: 100%; border-radius: 2px; background: var(--fg-2); }
 .ustrip.warn { color: var(--warn); } .ustrip.warn .ubar i { background: var(--warn); }
-.ustrip.err { color: var(--err); } .ustrip.err .ubar i { background: var(--err); }
 .ustrip .uring, .ustrip .upct { display: none; }
 .ustrip .uring { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--fg-2) calc(var(--p) * 1%), var(--track) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
 .ustrip.warn .uring { background: conic-gradient(var(--warn) calc(var(--p) * 1%), var(--track) 0); }
-.ustrip.err .uring { background: conic-gradient(var(--err) calc(var(--p) * 1%), var(--track) 0); }
 .views { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .view { max-width: 920px; margin: 0 auto; padding: 24px; }
 .view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
@@ -2536,7 +2534,7 @@ function paintStrip() {
   b.hidden = !t;
   if (!t) return;
   const pct = Math.round(t.f * 100), word = limitWord(t.l);
-  b.className = `ustrip${pct <= 20 ? " err" : pct <= 40 ? " warn" : ""}`;
+  b.className = `ustrip${pct <= 40 ? " warn" : ""}`;
   b.style.setProperty("--p", pct);
   b.title = `사용량 · ${word} ${pct}% 남음`; b.setAttribute("aria-label", b.title);
   clear(b).append(el("span", { class: "ulab", text: `${word} ${pct}% 남음` }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${word} ${pct}%` }));
