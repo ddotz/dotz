@@ -7,7 +7,7 @@ function ingestMsg(e) {
   s.mk.add(k); s.msgs.push(e);
   if (s.msgs.length > 400) s.mk.delete(msgKey(s.msgs.shift()));
   if (isRestart(e)) paintRestartBanner();
-  if (!ownerish(e) && e.kind !== "delivery" && !cleanRestart(e) && !(t === target && current === "chat")) { s.unread++; renderBars(); }
+  convNote(e, t);
   if (t === target && s.hLoaded) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }
   if (t === target) paintDecision();
   if (isLaneT(t) && isLaneReport(e) && LP[t.slice(5)]) laneRefresh(LP[t.slice(5)]);
@@ -83,7 +83,7 @@ function renderAll0(keepScroll) {
   }
   if (!tl.children.length) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));
   if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동 없음" }));
-  if (!keepScroll) { scrollChat(true); scrollTerm(true); }
+  if (!keepScroll) { if (!convLand()) scrollChat(true); scrollTerm(true); }
   markLive();
 }
 function onActivity(a) {
@@ -103,7 +103,7 @@ function setTarget(t) {
   try { localStorage.setItem(TARGET_KEY, t); } catch {}
   if (current === "chat" || current === "activity") history.replaceState(null, "", `#${current}/${t}`);
   const s = ts(t);
-  if (current === "chat") s.unread = 0;
+  convSync();
   markSeen();
   if (!s.draft) { try { s.draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {} }
   ta.value = s.draft; autosize(); updateHints();
@@ -114,10 +114,9 @@ function setTarget(t) {
 }
 function enterTarget() {
   $(current === "activity" ? "#v-activity" : "#v-chat").append($("#composer"));
-  if (current === "chat") ts(target).unread = 0;
   markSeen();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking(); paintDecision();
-  if (current === "chat") scrollChat(true); else scrollTerm(true);
+  if (current === "chat") { if (!CV.landed) scrollChat(true); } else scrollTerm(true);
   if (SUBD) renderSheet();
   autosize();
   if (!matchMedia("(pointer: coarse)").matches && !document.querySelector("dialog[open]")) ta.focus({ preventScroll: true });

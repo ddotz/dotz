@@ -4,6 +4,10 @@ let M = null;          // /api/models
 let P = null;          // /api/providers
 let botName = "dotz";
 let current = "home", prevView = null;
+// Narrow screens: 채팅 shows the chat list (31-conversations.js) until a row is opened; from 1100px the list always sits beside the conversation.
+let chatList = false;
+const narrowChat = () => matchMedia("(max-width: 1099px)").matches;
+const convListing = () => current === "chat" && chatList && narrowChat();
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
 const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["lanes", "세션"], ["settings", "설정"]];
 const CHAT_MODE_KEY = "dotz-chat-mode";
@@ -104,12 +108,7 @@ const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) 
 
 /* ---------- chrome: nav, theme, back ---------- */
 // Phone: tapping 채팅 again while in it opens the session list as a bottom sheet above the tab bar (owner 2026-10-20).
-const isPhone = () => matchMedia("(max-width: 639px)").matches;
-function sessionSheet(anchor) {
-  const d = $("#thead .tdrop");
-  if (d && d._items) showMenu(anchor, [{ header: "대화 기록" }, ...d._items()], { value: target, onPick: d._pick, sheet: true });
-}
-for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: ev => id === "chat" && isPhone() && (current === "chat" || current === "activity") ? sessionSheet(ev.currentTarget) : go(id === "chat" ? lastChatView() : id) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => (id === "chat" && narrowChat() ? go("chat", "list") : go(id === "chat" ? lastChatView() : id)) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
@@ -129,4 +128,4 @@ function renderSideStatus() {
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
 const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? "projects" : null;
-$("#back").onclick = () => go(backTarget() || "home");
+$("#back").onclick = () => (convOnPhone() ? go("chat", "list") : go(backTarget() || "home"));

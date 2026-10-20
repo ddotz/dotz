@@ -36,7 +36,7 @@ function todoActivity(a) {
   const own = targetOfSource(a.source);
   if (own === target || (own === MAIN && isProjT(target))) { clearTimeout(TD.timer); TD.timer = setTimeout(() => loadTodo(target), 250); }
 }
-function resetChat() { clear(tl); CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; }
+function resetChat() { clear(tl); CV.divNode = null; CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; }
 function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; CS.who = ""; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
 // Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
 function speakerOf(e) {
@@ -233,6 +233,7 @@ function chatPush(en, bulk) {
     }
     const n = msgNode(e);
     if (n) {
+      if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { CV.divNode = tl.appendChild(convDivider()); CS.who = ""; }
       const who = n.matches(".um, .bm") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000) n.classList.add("cont");
       CS.who = who; CS.whoT = t;

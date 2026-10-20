@@ -6,7 +6,7 @@ const readMap = k => { try { const o = JSON.parse(localStorage.getItem(k) || "nu
 const SEEN = readMap(SEEN_KEY), DONE = readMap(DONE_KEY), PREV = {};
 const saveMap = (k, m) => { try { localStorage.setItem(k, JSON.stringify(m)); } catch {} };
 const msOf = s => Date.parse(s) || 0;
-const watching = t => t === target && (current === "chat" || current === "activity") && document.visibilityState === "visible";
+const watching = t => t === target && (current === "chat" || current === "activity") && !convListing() && document.visibilityState === "visible";
 // Looking at the open target counts it as seen up to now (or up to its newest finished turn when the clocks differ).
 function markSeen() {
   if (!watching(target)) return;
@@ -122,7 +122,7 @@ const ownerish = e => OWNER.has(e.kind) || e.kind === "_cmdout";
 const ownerAct = e => ({ type: e.kind === "_cmdout" ? "cmdout" : "owner", ts: e.ts, text: e.text, is_error: e.is_error });
 // Same rule as the hub's eventTarget (hub/events.ts): which conversation an event belongs to.
 function eventTarget(e) {
-  if (e.kind === "activity" || e.kind === "subagents" || e.kind === "notice" || e.kind === "notice_read") return null;
+  if (e.kind === "activity" || e.kind === "subagents" || e.kind === "notice" || e.kind === "notice_read" || e.kind === "read") return null;
   let lane = typeof e.lane === "string" ? e.lane : "";
   if (!lane) for (const v of [e.source, e.target, e.channel]) if (typeof v === "string" && v.startsWith("lane:")) { lane = v.slice(5); break; }
   if (lane) return `lane:${lane}`;
@@ -132,7 +132,7 @@ function eventTarget(e) {
 /* ---------- conversation view (대화) ---------- */
 const timeline = $("#timeline"), tl = $("#tl"), term = $("#term");
 let chatStick = true, termStick = true;
-timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; });
+timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; if (chatStick) convMaybeRead(); });
 timeline.addEventListener("scroll", () => edgeFade(timeline), { passive: true });
 term.addEventListener("scroll", () => edgeFade(term), { passive: true });
 term.addEventListener("scroll", () => { termStick = term.scrollTop + term.clientHeight >= term.scrollHeight - 40; $("#act-jump").hidden = termStick; if (term.scrollTop < 80) loadOlder(); });
@@ -140,7 +140,7 @@ $("#chat-jump").prepend(icon("down")); $("#act-jump").prepend(icon("down"));
 $("#chat-jump").onclick = () => scrollChat(true);
 $("#act-jump").onclick = () => scrollTerm(true);
 function scrollChat(force) {
-  if (force || chatStick) requestAnimationFrame(() => { timeline.scrollTop = timeline.scrollHeight; chatStick = true; $("#chat-jump").hidden = true; });
+  if (force || chatStick) requestAnimationFrame(() => { timeline.scrollTop = timeline.scrollHeight; chatStick = true; $("#chat-jump").hidden = true; convMaybeRead(); });
 }
 function scrollTerm(force) {
   if (force || termStick) requestAnimationFrame(() => { term.scrollTop = term.scrollHeight; termStick = true; $("#act-jump").hidden = true; });
@@ -156,3 +156,9 @@ function fmtDur(ms) {
   return m % 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${Math.floor(m / 60)}시간`;
 }
 let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 };
+// The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened
+// (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
+const CV = { key: "", div: "", divNode: null, landed: false, loaded: false, captured: false };
+// 31-conversations.js state; declared here because the boot code calls go() before that file has run.
+const CONV = new Map(), READ = {}, convPend = new Map();
+let convRaf = 0, convSig = "", convHeadSig = "", convRetry = 0, convReadT = 0, convPendT = 0;

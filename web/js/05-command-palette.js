@@ -81,24 +81,26 @@ function go(name, tgt) {
   closeMenu(false);
   if (!views.includes(name)) name = "home";
   if (name === "project" && !tgt) name = "projects";
+  // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
+  chatList = name === "chat" && tgt === "list" && narrowChat();
+  if (name === "chat" && tgt === "list") tgt = undefined;
   if (tgt && name !== "project" && tgt !== target && validTarget(tgt)) setTarget(tgt);
   if (name !== current) prevView = current;
   current = name;
+  if (convSync()) renderAll();
   const tv = name === "chat" || name === "activity";
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
-  const hash = tv ? `${name}/${target}` : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name;
+  const hash = tv ? (chatList ? "chat/list" : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name;
   if (location.hash !== `#${hash}`) history.replaceState(null, "", `#${hash}`);
   for (const v of views) $(`#v-${v}`).hidden = v !== name;
-  const back = backTarget();
   if (name === "chat" || name === "activity") try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
   document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
-  $("#back").hidden = !back;
-  $("#appbar").classList.toggle("back", !!back);
   $("#appbar").classList.toggle("tv", tv);
   const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
   th.hidden = !tv; $("#vtog").hidden = !tv || isLaneT(target);
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
   $("#title").textContent = name === "home" ? botName : titles[name];
+  convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
   if (name === "harness") loadHarness(); else closeHSheet();
   if (tv) enterTarget();

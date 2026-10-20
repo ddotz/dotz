@@ -28,7 +28,7 @@ function dragItem(node, t, shown, horizontal, handle = node) {
   });
 }
 function renderBars() {
-  paintAttn();
+  paintAttn(); convSchedule();
   const lanes = S ? S.lanes : [];
   // Three groups in this order: the main assistant, 프로젝트 (project orchestrators), 레인. Dragging reorders within a group.
   const projs = byOrder(projTargets()), live = byOrder(lanes.filter(laneAlive).map(l => `lane:${l.name}`)), dead = byOrder(lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`));
@@ -89,7 +89,7 @@ function renderBars() {
     vt.title = vt.ariaLabel = to === "chat" ? "대화 보기" : "로그 보기";
     vt.onclick = () => go(to === "chat" ? "chat" : "activity");
     // a session has its own 로그 보기 / 대화 보기 button in the header, so the icon would only repeat it
-    vt.hidden = isLaneT(target) || !$("#appbar").classList.contains("tv");
+    vt.hidden = isLaneT(target) || !$("#appbar").classList.contains("tv") || convListing();
   }
 }
 // Desktop: target chips that do not fit fold into one "더보기 n" chip at the end (the selected one always stays visible;
