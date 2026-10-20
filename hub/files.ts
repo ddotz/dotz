@@ -97,7 +97,7 @@ export function resolveAllowed(input: string, roots: string[]): string {
 
 const TEXTISH = /\.(md|txt|log|json|jsonl|ya?ml|toml|csv|tsv|ts|tsx|js|jsx|mjs|py|rs|go|sh|css|html?|xml|svg|diff|patch)$/i;
 
-// GET /api/file?path=...&dl=1. Inline for preview unless dl=1; Range for media and big files. The CSP sandbox keeps an
+// GET /api/file?path=...&download=1 (or dl=1). Inline for preview unless asked to download; Range for media and big files. The CSP sandbox keeps an
 // HTML or SVG file opened directly from running script on the gateway's origin.
 export function serveFile(path: string, req: Request, dl = false): Response {
 	const f = Bun.file(path);
