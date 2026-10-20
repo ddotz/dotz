@@ -13,7 +13,7 @@ import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { atTime, Chain, failsOver, failureReason, hubChain, type Move, Reverter, revertWhy } from "./fallback.ts";
+import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, type Move, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 
@@ -254,8 +254,19 @@ async function readEvents(p: AgentProcess): Promise<void> {
 			case "assistant":
 				if (ev.text) orch.lastText = ev.text;
 				if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);
-				if (ev.stop !== "error") transientTries = 0;
-				else if (chained) {
+				if (ev.stop !== "error") {
+					transientTries = 0;
+					errorStreak.ok();
+					streakAlerted = false;
+				} else if (ev.error.kind !== "rate" && ev.error.kind !== "owner" && errorStreak.fail() !== "go") {
+					// A run of failed turns: no more automatic retries, failovers or keepalives until a turn succeeds (the owner's
+					// next message is the next try); the owner hears it once.
+					if (errorStreak.stopped && !streakAlerted) {
+						streakAlerted = true;
+						log(`orchestrator ${ERROR_STREAK_STOP} failed turns in a row; automatic retries stop until a turn succeeds`);
+						onAlert(`${NAME}: 모델 오류가 ${ERROR_STREAK_STOP}턴 연속이라 자동 재시도·전환을 멈췄습니다(${ev.error.text.replace(/\s+/g, " ").slice(0, 160)}). 다음 메시지부터 다시 시도합니다.`);
+					}
+				} else if (chained) {
 					const failed = ev.error;
 					clearTimeout(errorHold);
 					errorHold = setTimeout(() => handleError(failed), FALLBACK_GRACE_MS);
@@ -371,6 +382,8 @@ async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<voi
 // Overloaded/5xx/network errors: after a failed turn, retry with backoff (bounded). Messages arriving meanwhile are not
 // held: a new turn cancels the pending retry and itself serves as the retry. Past the limit the owner is told once.
 let transientTries = 0;
+const errorStreak = new ErrorStreak();
+let streakAlerted = false;
 let transientTimer: Timer | undefined;
 function retryTransient(err: string): void {
 	if (transientTimer) return;
@@ -539,7 +552,7 @@ const KEEPALIVE_TO_MS = Number(process.env.DOTZ_KEEPALIVE_TO_MS ?? 58 * 60_000);
 const KEEPALIVE_MAX = 12;
 setInterval(() => {
 	const idle = Date.now() - lastTurnEnd;
-	if (!proc || !adapter?.caps.promptCacheKeepalive || rotating || orch.status !== "idle" || keepalives >= KEEPALIVE_MAX) return;
+	if (!proc || !adapter?.caps.promptCacheKeepalive || rotating || orch.status !== "idle" || keepalives >= KEEPALIVE_MAX || errorStreak.stopped) return;
 	if (idle < KEEPALIVE_FROM_MS || idle > KEEPALIVE_TO_MS) return;
 	keepalives++;
 	inKeepalive = true;
