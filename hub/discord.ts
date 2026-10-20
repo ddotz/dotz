@@ -315,6 +315,31 @@ export async function releaseLane(lane: string, info?: { cwd?: string; sessionFi
 	await markDone(id, parentId).catch(e => log(`lane ${lane} thread done failed: ${e}`));
 }
 
+// A deleted lane (lanetrash.ts) gives up its channel mapping; restore puts it back. deleteChannel removes the lane's own
+// channel; lanetrash never calls it for a home thread, and the fixed channels and work channels are refused here too.
+export function takeLaneChannel(lane: string): { id: string; home?: string } | undefined {
+	const id = channels.lanes[lane];
+	if (!id) return undefined;
+	const home = channels.homes[lane];
+	delete channels.lanes[lane];
+	delete channels.homes[lane];
+	save();
+	return home ? { id, home } : { id };
+}
+export function putLaneChannel(lane: string, ch: { id: string; home?: string }): void {
+	channels.lanes[lane] = ch.id;
+	if (ch.home) channels.homes[lane] = ch.home;
+	save();
+}
+export async function deleteChannel(id: string): Promise<void> {
+	if ([channels.category, channels.workCategory, channels.chat, channels.worklog, channels.alert, channels.dm, ...Object.values(channels.lanes), ...Object.values(channels.homes)].includes(id) || channels.work[id]) throw new Error(`channel ${id} is still in use`);
+	if (!status.enabled) throw new Error("discord not configured");
+	await rest("DELETE", `/channels/${id}`).catch(e => {
+		// Already gone (deleted by hand): nothing left to do.
+		if (!/: 404 /.test(String(e))) throw e;
+	});
+}
+
 function resolve(target: string): string | undefined {
 	if (target.startsWith("lane:")) return channels.lanes[target.slice(5)];
 	if (target.startsWith("ch:")) return channels.work[target.slice(3)] ? target.slice(3) : undefined;
