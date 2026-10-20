@@ -88,10 +88,10 @@ test("handover texts carry the nudge once, and only when there are exchanges to 
 });
 
 test("orchestrator: a rotated start carries the nudge in its handover, a compaction nudges the next message once", async () => {
-	// A session saved under another model makes start() begin a fresh one with a handover.
+	// A session saved by another runtime makes start() begin a fresh one with a handover.
 	const session = join(DATA, "retain-orch-session.jsonl");
 	writeFileSync(session, "{}\n");
-	writeFileSync(join(DATA, "orchestrator.json"), JSON.stringify({ sessionFile: session, model: "anthropic/other-model" }));
+	writeFileSync(join(DATA, "orchestrator.json"), JSON.stringify({ sessionFile: session, runtime: "other-runtime" }));
 	o.start();
 	const { agent } = started.at(-1)!;
 	expect(agent.sent).toHaveLength(1);
