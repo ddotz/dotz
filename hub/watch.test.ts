@@ -4,12 +4,19 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DATA_DIR } from "./config.ts";
+import { DATA_DIR, paths } from "./config.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
-import { addWatch, allWatches, approveWatch, exec, removeWatch, runWatch, startWatches } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, exec, listWatches, patchWatch, removeWatch, runWatch, startWatches } from "./watch.ts";
 
 const notes: { name: string; reason: string }[] = [];
-beforeAll(() => startWatches((w, reason) => notes.push({ name: w.name, reason })));
+let waiter: (() => void) | undefined;
+const nextNote = () => new Promise<void>(r => (waiter = r));
+beforeAll(() =>
+	startWatches((w, reason) => {
+		notes.push({ name: w.name, reason });
+		waiter?.();
+	}),
+);
 afterEach(() => {
 	for (const w of allWatches()) removeWatch(w.id);
 	notes.length = 0;
@@ -66,6 +73,47 @@ test("the approval gate asks the owner once, the check sees the approval, and th
 	await runWatch("t-approve");
 	expect(existsSync(approval("t-approve"))).toBe(false);
 	expect(state("t-approve")).toMatchObject({ kind: "fido", nextAt: Date.now() + 30 * 60_000 });
+});
+
+const stored = (name: string) => JSON.parse(readFileSync(paths.watches, "utf8")).find((w: { name: string }) => w.name === name);
+
+test("a watch edit is persisted, validated, and the timer follows the new interval", async () => {
+	const out = join(DATA_DIR, "watch-patch.txt");
+	writeFileSync(out, "");
+	const w = addWatch({ name: "t-patch", command: `echo run >> '${out}'; wc -l < '${out}'`, every_minutes: 60, on: "change", to: "alert" }, "");
+	await runWatch("t-patch");
+	const view = patchWatch(w.id, { every_minutes: 5, on: "match", pattern: "^2$" });
+	expect(view).toMatchObject({ every_minutes: 5, on: "match", pattern: "^2$" });
+	expect(stored("t-patch")).toMatchObject({ every_minutes: 5, on: "match", pattern: "^2$" });
+	const second = nextNote();
+	await advance(6 * 60_000);
+	await second;
+	expect(notes.at(-1)).toEqual({ name: "t-patch", reason: "matched /^2$/" });
+	expect(readFileSync(out, "utf8")).toBe("run\nrun\n");
+	expect(patchWatch("t-patch", { on: "change" })).not.toHaveProperty("pattern");
+	for (const bad of [{ every_minutes: 0 }, { every_minutes: 10081 }, { every_minutes: 2.5 }, { every_minutes: "5" }, { on: "sometimes" }, { pattern: "x" }, { on: "match", pattern: "(" }, { paused: "yes" }]) expect(() => patchWatch(w.id, bad)).toThrow();
+	expect(stored("t-patch")).toMatchObject({ every_minutes: 5, on: "change" });
+	expect(() => patchWatch("nope", { paused: true })).toThrow("no watch");
+});
+
+test("a paused watch stays listed and persisted but stops running; resuming arms it again", async () => {
+	const out = join(DATA_DIR, "watch-pause.txt");
+	writeFileSync(out, "");
+	const w = addWatch({ name: "t-pause", command: `echo run >> '${out}'; wc -l < '${out}'`, every_minutes: 5, on: "change", to: "alert" }, "");
+	await runWatch("t-pause");
+	patchWatch(w.id, { paused: true });
+	await advance(30 * 60_000);
+	await runWatch("t-pause");
+	expect(readFileSync(out, "utf8")).toBe("run\n");
+	expect(notes).toEqual([]);
+	expect(listWatches().find(x => x.name === "t-pause")).toMatchObject({ paused: true });
+	expect(stored("t-pause").paused).toBe(true);
+	const resumed = nextNote();
+	patchWatch(w.id, { paused: false });
+	expect(listWatches().find(x => x.name === "t-pause")).not.toHaveProperty("paused");
+	await advance(5 * 60_000);
+	await resumed;
+	expect(readFileSync(out, "utf8")).toBe("run\nrun\n");
 });
 
 test("an approval expires after approval_minutes", async () => {

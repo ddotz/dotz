@@ -246,7 +246,7 @@ test("projectsView groups lanes by cwd, homes channel, orphan work channel, pins
 	expect(dotz.lanes[1]).toEqual({ name: "a", status: "idle", live: true, startedAt: "2026-10-01T00:00:00Z", lastText: "x".repeat(300), reports: 2, channel: "900" });
 	expect(manual).toMatchObject({ pinned: true, lanes: [] });
 	expect(chan).toMatchObject({ name: "Chan only", pinned: true, channel: { id: "300", name: "300" } });
-	expect(solo).toMatchObject({ name: "solo", pinned: false, channel: { id: "100", name: "solo-ch" } });
+	expect(solo).toMatchObject({ name: "solo-ch", pinned: false, channel: { id: "100", name: "solo-ch" } });
 	expect(orphan).toMatchObject({ name: "orphan", pinned: false, channel: { id: "200", name: "orphan" }, lanes: [] });
 });
 
@@ -402,6 +402,42 @@ test("project detail: ended lanes' report.md fill results newest first, with rec
 	expect(projectDetailView({ ...input, self: true }).tasks.map(t => t.id)).toEqual(["t-p", "t-none"]);
 	expect(d.linked).toMatchObject({ channel: { id: "9", name: "작업" }, threads: [{ id: "t1", name: "스레드" }], routines: [{ id: "r" }], schedules: [{ id: "s" }] });
 	expect(d.repo).toMatchObject({ dirty: 2 });
+});
+
+test("project titles: record, pin, work channel name, first session's title, folder basename, in that order", () => {
+	const lanes = [lane("late", `${HOME}/Code/dotz`, "2026-10-05T00:00:00Z", { title: "나중 세션" }), lane("first", `${HOME}/Code/dotz`, "2026-10-01T00:00:00Z", { title: "디스코드 설정" })];
+	const only = (input: Partial<Parameters<typeof projectsView>[0]> = {}) => view({ lanes, channels: {}, pins: noPins, ...input })[0]!;
+	expect(only().name).toBe("디스코드 설정");
+	expect(only({ lanes: [lane("x", `${HOME}/Code/dotz`, "2026-10-01T00:00:00Z")] }).name).toBe("dotz");
+	expect(only({ channels: { work: { "100": "채널 이름" }, homes: { first: "100" } } }).name).toBe("채널 이름");
+	const pins = { ...noPins, projects: [{ name: "고정 이름", path: "~/Code/dotz" }] };
+	expect(only({ pins, channels: { work: { "100": "채널 이름" }, homes: { first: "100" } } }).name).toBe("고정 이름");
+	const record = { title: "기록 제목", purpose: "목적", updated: "2026-10-21T00:00:00Z" };
+	const withRecord = only({ pins, records: { "dir:~/Code/dotz": record, "ch:1": { title: "다른 것", updated: "x" } } });
+	expect(withRecord).toMatchObject({ name: "기록 제목", record });
+	expect(only({ records: { "dir:~/Code/dotz": { purpose: "제목 없음", updated: "x" } } }).name).toBe("디스코드 설정");
+	expect(only().lanes.map(l => l.title)).toEqual(["나중 세션", "디스코드 설정"]);
+});
+
+test("project detail adds the record, the monitors of its channel and the routines and schedules scoped to it", () => {
+	const channels = { work: { "9": "작업" }, homes: { a: "9" } };
+	const lanes = [lane("a", "/h/Code/proj", "2026-10-01T00:00:00Z")];
+	const record = { title: "기록", goal: "목표", milestones: [{ text: "하나", done: true }], updated: "2026-10-21T00:00:00Z" };
+	const all = projectsView({ lanes, channels, pins: noPins, records: { "dir:~/Code/proj": record }, home: "/h", tmpDirs: [] });
+	const watch = (id: string, channelsOf: string[], extra: Record<string, unknown> = {}) => ({ id, name: `w-${id}`, command: "curl -s https://x\nsecond line", every_minutes: 10, on: "change", channels: channelsOf, fails: 0, ...extra });
+	const d = projectDetailView({
+		project: all[0]!, record, others: all, lanes, reports: {}, receipts: [], tasks: [], home: "/h", channels,
+		watches: [watch("m1", ["9"], { on: "match", pattern: "fail", lastRun: "2026-10-21T00:00:00Z", nextAt: "2026-10-21T00:10:00Z", fails: 2, paused: true }), watch("m2", ["9", "8"]), watch("o1", ["8"])],
+		routines: [{ id: "r1", name: "채널 루틴", prompt: "x", target: "ch:9", schedule: { every_minutes: 60 } }, { id: "r2", name: "남의 루틴", prompt: "y", target: "main" }],
+		schedules: [{ id: "s1", text: "[routine:r1:abc123] x", at: "2026-10-22T00:00:00Z", every_minutes: 60, paused: true, created: "x" }, { id: "s2", text: "[routine:r2:abc123] y", at: "2026-10-22T00:00:00Z", created: "x" }, { id: "s3", text: "ch:9 에 보고", at: "2026-10-22T00:00:00Z", created: "x" }],
+	});
+	expect(d.record).toEqual(record);
+	expect(d.monitors.map(m => m.id)).toEqual(["m1", "m2"]);
+	expect(d.monitors[0]).toEqual({ id: "m1", name: "w-m1", command: "curl -s https://x", every_minutes: 10, on: "match", pattern: "fail", lastRun: "2026-10-21T00:00:00Z", nextAt: "2026-10-21T00:10:00Z", fails: 2, paused: true });
+	expect(d.monitors[1]).toMatchObject({ paused: false });
+	expect(d.routines.map(r => r.id)).toEqual(["r1"]);
+	expect(d.schedules.map(s => [s.id, s.routine ?? null, s.paused ?? false])).toEqual([["s3", null, false], ["s1", "r1", true]]);
+	expect(projectDetailView({ project: { ...all[0]!, channel: undefined }, others: all, lanes, reports: {}, receipts: [], tasks: [], home: "/h", channels: {}, watches: [watch("m1", ["9"])], routines: [], schedules: [] }).monitors).toEqual([]);
 });
 
 test("GET /api/custom/project answers 404 for an unknown key", async () => {

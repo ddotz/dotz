@@ -30,6 +30,7 @@ export type Watch = {
 	timeout_seconds?: number;
 	retry?: Record<string, number[]>;
 	approval_minutes?: number;
+	paused?: boolean;
 	state: {
 		hash?: string; fails: number; failAlertAt?: number; lastRun?: string; lastOk?: string; refreshedAt?: number;
 		kind?: string; kindFails?: number; nextAt?: number; paused?: string; approvalAskedAt?: number;
@@ -154,6 +155,7 @@ function run(w: Watch): Promise<void> {
 
 async function runOnce(w: Watch): Promise<void> {
 	try {
+		if (w.paused) return;
 		const ok = approved(w);
 		if (w.state.paused && !ok) return;
 		if (w.state.paused) w.state.paused = undefined;
@@ -207,6 +209,7 @@ async function runOnce(w: Watch): Promise<void> {
 // The next run: at the retry time a failure kind set, else every_minutes after this one.
 function arm(w: Watch): void {
 	clearTimeout(timers.get(w.id));
+	if (w.paused) return;
 	const wait = w.state.nextAt ? Math.max(0, w.state.nextAt - Date.now()) : w.every_minutes * 60_000;
 	timers.set(w.id, setTimeout(() => void run(w), wait));
 }
@@ -292,6 +295,43 @@ export function removeWatch(idOrName: string): boolean {
 
 export const allWatches = () => [...items];
 
+export const MAX_EVERY_MINUTES = 7 * 24 * 60;
+export const everyMinutes = (v: unknown): number => {
+	if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > MAX_EVERY_MINUTES) throw new Error(`every_minutes must be an integer from 1 to ${MAX_EVERY_MINUTES}`);
+	return v;
+};
+
+// The owner's edit from the project page (PATCH /api/watches/<id>): persisted, the timer re-armed with the new interval, and
+// `paused` stops the timer without deleting the watch (state.paused is the unrelated stop-until-approval of a failure kind).
+export function patchWatch(idOrName: string, input: Record<string, unknown>): ReturnType<typeof listWatches>[number] {
+	const w = items.find(x => x.id === idOrName || x.name === idOrName);
+	if (!w) throw new Error(`no watch ${idOrName}`);
+	const every = input.every_minutes === undefined ? w.every_minutes : everyMinutes(input.every_minutes);
+	if (input.on !== undefined && input.on !== "change" && input.on !== "match" && input.on !== "fail") throw new Error("on must be change, match or fail");
+	const on = (input.on as Watch["on"] | undefined) ?? w.on;
+	if (input.pattern !== undefined && typeof input.pattern !== "string") throw new Error("pattern must be a string");
+	const pattern = (input.pattern as string | undefined) ?? w.pattern;
+	if (on === "match") {
+		if (!pattern) throw new Error("on=match needs pattern");
+		new RegExp(pattern);
+	} else if (input.pattern !== undefined) throw new Error("pattern only applies to on=match");
+	if (input.paused !== undefined && typeof input.paused !== "boolean") throw new Error("paused must be true or false");
+	w.every_minutes = every;
+	w.on = on;
+	if (on === "match") w.pattern = pattern;
+	else delete w.pattern;
+	if (input.paused !== undefined) {
+		if (input.paused) w.paused = true;
+		else delete w.paused;
+	}
+	save();
+	if (w.paused) {
+		clearTimeout(timers.get(w.id));
+		timers.delete(w.id);
+	} else if (!running.has(w.id) && !stopped) arm(w);
+	return watchView(w);
+}
+
 export function setWatchChannels(id: string, channels: string[]): void {
 	const w = items.find(x => x.id === id);
 	if (!w) return;
@@ -299,4 +339,7 @@ export function setWatchChannels(id: string, channels: string[]): void {
 	save();
 }
 
-export const listWatches = () => items.map(({ state, ...w }) => ({ ...w, fails: state.fails, lastRun: state.lastRun, lastOk: state.lastOk, ...(state.kind ? { kind: state.kind } : {}), ...(state.nextAt ? { nextAt: new Date(state.nextAt).toISOString() } : {}), ...(state.paused ? { paused: state.paused } : {}), ...(state.approvalAskedAt ? { awaitingApproval: true } : {}) }));
+// `paused` is the failure kind that stopped the watch until approval, or true when the owner paused it.
+const watchView = ({ state, paused, ...w }: Watch) => ({ ...w, fails: state.fails, lastRun: state.lastRun, lastOk: state.lastOk, ...(state.kind ? { kind: state.kind } : {}), ...(state.nextAt ? { nextAt: new Date(state.nextAt).toISOString() } : {}), ...(state.paused || paused ? { paused: state.paused ?? true } : {}), ...(state.approvalAskedAt ? { awaitingApproval: true } : {}) });
+
+export const listWatches = () => items.map(watchView);

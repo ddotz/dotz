@@ -7,6 +7,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { DATA_DIR, expand, HOME, log, TZ } from "./config.ts";
+import { loadProjects, type ProjectRecord } from "./projects.ts";
 import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
 import { parseTone } from "./tone.ts";
 import { exec, listWatches } from "./watch.ts";
@@ -21,8 +22,8 @@ export type Routine = { id: string; name: string; prompt: string; target: string
 export type Link = { name: string; url: string };
 export type Pins = { projects: PinProject[]; hide_projects: string[]; routines: Routine[]; links: Link[] };
 export type CustomError = { file: string; error: string };
-export type ProjectLane = { name: string; status: string; live: boolean; startedAt?: string; lastReportAt?: string; waiting?: boolean; lastText: string; reports: number; channel?: string };
-export type Project = { key: string; name: string; path?: string; note?: string; pinned: boolean; channel?: { id: string; name: string }; lanes: ProjectLane[] };
+export type ProjectLane = { name: string; title?: string; status: string; live: boolean; startedAt?: string; lastReportAt?: string; waiting?: boolean; lastText: string; reports: number; channel?: string };
+export type Project = { key: string; name: string; path?: string; note?: string; pinned: boolean; channel?: { id: string; name: string }; record?: ProjectRecord; lanes: ProjectLane[] };
 export type ChannelsIn = { work?: Record<string, string>; homes?: Record<string, string>; lanes?: Record<string, string>; threads?: Record<string, { parent?: string; name?: string }> };
 export type CustomDeps = {
 	lanes: () => Array<Record<string, unknown>>;
@@ -367,7 +368,9 @@ export function syncRoutineSchedules(): void {
 // ---- projects (pure) -------------------------------------------------------------------------------------------------
 type Auto = Project & { newest: number };
 
-export function projectsView(input: { lanes: Array<Record<string, unknown>>; channels: ChannelsIn; pins: Pins; home?: string; tmpDirs?: string[] }): Project[] {
+// The title of a project, first hit wins (docs/layers.md §2): the stored record, the pinned name, the work channel name,
+// the title of its first session, the folder basename.
+export function projectsView(input: { lanes: Array<Record<string, unknown>>; channels: ChannelsIn; pins: Pins; records?: Record<string, ProjectRecord>; home?: string; tmpDirs?: string[] }): Project[] {
 	const home = input.home ?? HOME;
 	const tmp = input.tmpDirs ?? ["/tmp", "/private/tmp", "/var/folders", tmpdir()];
 	const work = input.channels.work ?? {};
@@ -394,7 +397,7 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 		const path = norm(cwd);
 		const p = projects.get(`dir:${path}`) ?? make(`dir:${path}`, basename(path), path);
 		const name = String(l.name);
-		p.lanes.push({ name, status: String(l.status ?? ""), live: Boolean(l.live), ...(l.startedAt ? { startedAt: String(l.startedAt) } : {}), ...(l.lastReportAt ? { lastReportAt: String(l.lastReportAt) } : {}), ...(l.pendingAsk ? { waiting: true } : {}), lastText: String(l.lastText ?? "").slice(0, 300), reports: Number(l.reports ?? 0) || 0, ...(laneCh[name] ? { channel: laneCh[name] } : {}) });
+		p.lanes.push({ name, ...(typeof l.title === "string" && l.title ? { title: l.title } : {}), status: String(l.status ?? ""), live: Boolean(l.live), ...(l.startedAt ? { startedAt: String(l.startedAt) } : {}), ...(l.lastReportAt ? { lastReportAt: String(l.lastReportAt) } : {}), ...(l.pendingAsk ? { waiting: true } : {}), lastText: String(l.lastText ?? "").slice(0, 300), reports: Number(l.reports ?? 0) || 0, ...(laneCh[name] ? { channel: laneCh[name] } : {}) });
 		p.newest = Math.max(p.newest, at);
 		if (homes[name] && !p.channel) p.channel = chan(homes[name]);
 	}
@@ -418,6 +421,13 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 		if (pin.channel && !p.channel) p.channel = chan(pin.channel);
 		if (!pinned.includes(p)) pinned.push(p);
 	}
+	for (const p of projects.values()) {
+		if (!p.pinned) p.name = (p.channel && work[p.channel.id]) || [...p.lanes].reverse().find(l => l.title)?.title || p.name;
+		const record = input.records?.[p.key];
+		if (!record) continue;
+		p.record = record;
+		if (record.title) p.name = record.title;
+	}
 	const hidden = new Set(input.pins.hide_projects.map(h => (h.startsWith("dir:") ? `dir:${norm(h.slice(4))}` : h)));
 	const auto = [...projects.values()].filter(p => !p.pinned && !hidden.has(p.key)).sort((a, b) => b.newest - a.newest).slice(0, MAX_AUTO_PROJECTS);
 	return [...pinned, ...auto].map(({ newest, ...p }) => p);
@@ -439,6 +449,7 @@ export type DetailInput = {
 	routines: Routine[];
 	schedules: Schedule[];
 	watches: Array<Record<string, unknown>>;
+	record?: ProjectRecord;
 	channels: ChannelsIn;
 	git?: GitState;
 	// the gateway's own source checkout: an open task that names no other project is about it
@@ -508,13 +519,27 @@ export function projectDetailView(d: DetailInput) {
 
 	const laneRef = (s: string) => [...laneNames].some(n => s.includes(`lane:${n}`));
 	const threads = p.channel ? Object.entries(d.channels.threads ?? {}).filter(([, t]) => t.parent === p.channel!.id).map(([id, t]) => ({ id, name: String(t.name ?? id) })).slice(0, 10) : [];
-	const routines = d.routines.filter(r => (r.target.startsWith("lane:") && laneNames.has(r.target.slice(5))) || names(r.prompt, mine)).map(r => ({ id: r.id, name: r.name, ...(r.schedule ? { schedule: r.schedule } : {}) }));
-	const schedules = d.schedules.filter(s => !s.text.startsWith("[routine:") && (laneRef(s.text) || names(s.text, mine))).map(s => ({ id: s.id, text: s.text.split("\n")[0]!.slice(0, 120), at: s.at, ...(s.every_minutes ? { every_minutes: s.every_minutes } : {}) }));
+	const chTarget = p.channel ? `ch:${p.channel.id}` : undefined;
+	const routineRows = d.routines.filter(r => r.target === chTarget || (r.target.startsWith("lane:") && laneNames.has(r.target.slice(5))) || names(r.prompt, mine));
+	const routines = routineRows.map(r => ({ id: r.id, name: r.name, target: r.target, ...(r.schedule ? { schedule: r.schedule } : {}) }));
+	const scheduleRow = (s: Schedule, routine?: string) => ({ id: s.id, text: s.text.split("\n")[0]!.slice(0, 120), at: s.at, ...(s.every_minutes ? { every_minutes: s.every_minutes } : {}), ...(s.paused ? { paused: true } : {}), ...(routine ? { routine } : {}) });
+	const plainSchedules = d.schedules.filter(s => !s.text.startsWith("[routine:") && (laneRef(s.text) || names(s.text, mine) || Boolean(chTarget && s.text.includes(chTarget)))).map(s => scheduleRow(s));
+	const routineSchedules = routineRows.flatMap(r => d.schedules.filter(s => s.text.startsWith(`[routine:${r.id}:`)).map(s => scheduleRow(s, r.id)));
+	const schedules = plainSchedules;
+	const monitors = d.watches.filter(w => p.channel && Array.isArray(w.channels) && w.channels.includes(p.channel.id)).map(w => ({
+		id: String(w.id), name: String(w.name ?? w.id), command: String(w.command ?? "").split("\n")[0]!.slice(0, 120), every_minutes: Number(w.every_minutes) || 0, on: String(w.on ?? "change"),
+		...(w.pattern ? { pattern: String(w.pattern) } : {}), ...(w.lastRun ? { lastRun: String(w.lastRun) } : {}), ...(w.lastOk ? { lastOk: String(w.lastOk) } : {}), ...(w.nextAt ? { nextAt: String(w.nextAt) } : {}),
+		fails: Number(w.fails) || 0, paused: Boolean(w.paused),
+	}));
 	const watches = d.watches.filter(w => (typeof w.cwd === "string" && roots.some(r => within(full(w.cwd as string), r))) || names(`${w.name ?? ""} ${w.command ?? ""}`, mine)).map(w => ({ id: String(w.id), name: String(w.name ?? w.id), every_minutes: Number(w.every_minutes) || 0, ...(w.paused ? { paused: true } : {}) }));
 
 	const lastActivity = Math.max(0, ...lanes.map(l => at(l.finishedAt)), ...rows.map(l => (l.live ? at(String(l.startedAt ?? "")) : 0)), ...results.map(r => at(r.at)));
 	return {
 		key: p.key,
+		...(d.record ? { record: d.record } : {}),
+		monitors,
+		routines,
+		schedules: [...plainSchedules, ...routineSchedules],
 		summary: { lanes: lanes.length, running: lanes.filter(l => l.live && l.status !== "idle").length, waiting: lanes.filter(l => l.waiting).length, ...(lastActivity ? { lastActivity: new Date(lastActivity).toISOString() } : {}) },
 		lanes,
 		results: results.slice(0, 15),
@@ -595,7 +620,7 @@ async function projectDetail(key: string, deps: CustomDeps) {
 	const { pins } = readPins({ sync: false });
 	const lanes = deps.lanes();
 	const channels = deps.channels();
-	const all = projectsView({ lanes, channels, pins });
+	const all = projectsView({ lanes, channels, pins, records: loadProjects() });
 	const project = all.find(p => p.key === key);
 	if (!project) return undefined;
 	const dir = project.path ? project.path.replace(/^~(?=\/|$)/, HOME) : undefined;
@@ -605,7 +630,7 @@ async function projectDetail(key: string, deps: CustomDeps) {
 		if (r) reports[l.name] = r;
 	}
 	return projectDetailView({
-		project, others: all, lanes, reports, receipts: readReceipts(), tasks: openTasks(), routines: pins.routines, schedules: listSchedules(), watches: listWatches(), channels,
+		project, record: project.record, others: all, lanes, reports, receipts: readReceipts(), tasks: openTasks(), routines: pins.routines, schedules: listSchedules(), watches: listWatches(), channels,
 		...(dir ? { git: await gitState(dir), self: real(dir) === real(join(import.meta.dir, "..")) } : {}),
 	});
 }
@@ -626,7 +651,7 @@ async function listAll(deps: CustomDeps) {
 		const s = sched.find(x => x.text.startsWith(`[routine:${r.id}:`));
 		return { ...r, ...(s ? { next: s.at } : {}) };
 	});
-	return { dir: customDirLabel(), cards, projects: projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins }), routines, links: pins.links, errors };
+	return { dir: customDirLabel(), cards, projects: projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins, records: loadProjects() }), routines, links: pins.links, errors };
 }
 
 export async function customRoute(req: Request, url: URL, deps: CustomDeps): Promise<Response | undefined> {

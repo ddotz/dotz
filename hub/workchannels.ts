@@ -71,6 +71,16 @@ export function clearChannel(channel: string): boolean {
 
 export const getSetup = (channel: string) => setups.find(s => s.channel === channel);
 
+// The owner edited the project's purpose on its page: the setup (and so the orchestrator prompt) follows. False without a setup.
+export function setSetupPurpose(channel: string, purpose: string): boolean {
+	const s = setups.find(x => x.channel === channel.replace(/^ch:/, ""));
+	if (!s) return false;
+	s.purpose = purpose;
+	s.updated = now();
+	save();
+	return true;
+}
+
 function health(s: Setup) {
 	const watches = allWatches();
 	return s.logins.map(n => {
