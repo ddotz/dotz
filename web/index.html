@@ -1251,6 +1251,11 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
   .pmv-col { display: flex; flex-direction: column; min-width: 0; }
 }
 .pmv-goal { display: flex; flex-direction: column; gap: 12px; }
+.pmv-glance { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.pmv-gl { display: grid; grid-template-columns: auto 88px minmax(0, 1fr); align-items: baseline; gap: 8px; font-size: 14px; line-height: 22px; }
+.pmv-gl .dot { align-self: center; }
+.pmv-gl-k { color: var(--fg-3); font-size: 13px; }
+.pmv-gl-v { min-width: 0; overflow-wrap: anywhere; }
 .pmv-prog { display: flex; align-items: center; gap: 12px; }
 .pmv-prog .bar { flex: 1; margin-top: 0; height: 6px; border-radius: 3px; }
 .pmv-prog .bar i { border-radius: 3px; }
@@ -2594,7 +2599,18 @@ const projTargets = () => Object.keys((S && S.channels && S.channels.work) || {}
 const validTarget = t => t === MAIN || isProjT(t) || (isLaneT(t) && t.length > 5);
 const sourceOf = t => t === MAIN || isProjT(t) ? "orchestrator" : t;
 const targetOfSource = s => s === "orchestrator" ? MAIN : s;
-const targetName = t => t === MAIN ? botName : isProjT(t) ? `#${((S && S.channels && S.channels.work) || {})[projOf(t)] || "프로젝트"}` : laneOf(t);
+// Owner-facing names: a project by its title (else its channel name), a session by its title (else its key).
+const targetName = t => {
+  if (t === MAIN) return botName;
+  if (isProjT(t)) {
+    let list = [];
+    try { list = (PRJ && PRJ.projects) || []; } catch { /* PRJ (the project list, declared further down) is not set up yet */ }
+    const p = list.find(x => x.recordKey === t || x.key === t);
+    return (p && ((p.record && p.record.title) || p.name)) || ((S && S.channels && S.channels.work) || {})[projOf(t)] || "프로젝트";
+  }
+  const l = S && (S.lanes || []).find(x => x.name === laneOf(t));
+  return (l && l.title) || laneOf(t);
+};
 // Every target the switcher and the needs-you count list: the main assistant, the projects, the live lanes.
 const liveTargets = () => S ? [MAIN, ...projTargets(), ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)] : [MAIN];
 const modeOf = () => current === "activity" ? "term" : "chat";
@@ -3665,7 +3681,7 @@ function renderCtxRing() {
   const sel = orchT ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model;
   // The chips say whose they are: the orchestrator and a lane often run the same model with a similar context, and
   // unlabeled they read as one (owner 2026-10-20: "오케스트레이터와 레인별로 구분 안되는거 같은데").
-  const owner = orchT ? botName : lane ? `세션 ${lane.name}` : "";
+  const owner = orchT ? botName : lane ? `세션 ${lane.title || lane.name}` : "";
   const ob = $("#c-own"), wb = $("#c-worker"), wsel = lane && lane.worker_model;
   ob.hidden = !(sel && owner); ob.textContent = owner;
   wb.hidden = !wsel;
@@ -4378,7 +4394,8 @@ async function pmReload() {
   st.open = 0;
   await Promise.all([pmLoad(), prjLoad()]);
 }
-const pmWrite = body => api("/api/projects", "PUT", { key: PM.key, ...body });
+// The record lives under the project's channel when it has one (hub/custom.ts recordKey).
+const pmWrite = body => api("/api/projects", "PUT", { key: (pmProject() || {}).recordKey || PM.key, ...body });
 // Runs a write; a failure stays as a calm note under the control, a success re-fetches.
 async function pmDo(note, fn) {
   note.className = "note"; note.textContent = "";
@@ -4408,13 +4425,14 @@ function pmPaint() {
   const sig = JSON.stringify([q, D, rows, botName]);
   if (root.dataset.sig === sig) return;
   root.dataset.sig = sig;
-  $("#title").textContent = prjTitle(q);
+  // The page header carries the (editable) name; the app bar says where you are, so the name is not shown twice.
+  $("#title").textContent = "프로젝트";
   const old = $(".pmv-add input", root), focused = old && document.activeElement === old;
   if (old) PM.draft = old.value;
   const sec = (order, label, node) => el("section", { class: "pmv-sec", style: `order:${order}` }, el("div", { class: "sec", text: label }), node);
   clear(root).append(pmHead(q),
     el("div", { class: "pmv-cols" },
-      el("div", { class: "pmv-col" }, sec(1, "목표와 진행", pmGoal(q)), sec(3, rows.length ? `세션 ${rows.length}` : "세션", pmSessions(rows))),
+      el("div", { class: "pmv-col" }, sec(1, "목표와 진행", pmGoal(q, rows)), sec(3, rows.length ? `세션 ${rows.length}` : "세션", pmSessions(rows))),
       el("div", { class: "pmv-col" }, sec(2, "루틴과 모니터링", pmRoutines(D)), sec(4, "최근 결과", pmResults(D)))));
   const add = $(".pmv-add input", root);
   if (add && PM.draft) { add.value = PM.draft; add.dispatchEvent(new Event("input")); if (focused) add.focus(); }
@@ -4463,7 +4481,18 @@ function pmHead(q) {
       can ? null : el("div", { class: "note", text: "작업 채널이 생기면 채팅할 수 있어요" })));
 }
 
-function pmGoal(q) {
+// At a glance, in plain words (owner 2026-10-21: the old '열린 할 일' list of internal open tasks was not readable): what runs
+// now, what waits on the owner, and the next milestone. No ids, paths or English status words.
+function pmGlance(ms, rows) {
+  const who = (S && S.address) || "형";
+  const now = rows.filter(r => r.live && r.status === "working"), wait = rows.filter(r => r.waiting), next = ms.find(m => !m.done);
+  const line = (label, text, tone) => el("div", { class: "pmv-gl" }, el("span", { class: `dot ${tone}` }), el("span", { class: "pmv-gl-k", text: label }), el("span", { class: "pmv-gl-v", text }));
+  return el("div", { class: "pmv-glance" },
+    line("지금 하는 일", now.length ? now.map(r => r.title).join(", ") : "지금 돌고 있는 세션은 없어요", now.length ? "pri" : ""),
+    line("기다리는 것", wait.length ? `${wait.map(r => r.title).join(", ")} · ${who} 답이 필요해요` : "없어요", wait.length ? "att" : ""),
+    line("다음에 할 일", next ? next.text : ms.length ? "목표를 모두 끝냈어요" : "아직 정한 단계가 없어요", ""));
+}
+function pmGoal(q, sessions = []) {
   const ms = prjMiles(q), done = ms.filter(m => m.done).length, rec = q.record || {}, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
   const note = el("div", { class: "note" });
   const put = milestones => pmDo(note, () => pmWrite({ milestones }));
@@ -4485,6 +4514,7 @@ function pmGoal(q) {
   addBtn.onclick = doAdd;
   addIn.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); doAdd(); } });
   return el("div", { class: "card pmv-goal" },
+    pmGlance(ms, sessions),
     pmEditable({ value: rec.goal || "", label: "목표", placeholder: "목표를 적어 주세요", multiline: true, save: v => pmWrite({ goal: v }) }),
     ms.length ? el("div", { class: "pmv-prog" }, el("span", { class: "pmv-big", text: `${done}/${ms.length}` }), el("div", { class: "bar", role: "progressbar", "aria-label": "마일스톤 진행", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` }))) : null,
     ms.length ? el("div", { class: "pmv-mlist" }, ...rows) : null,
@@ -4513,7 +4543,8 @@ function pmRoutine(x) {
   const next = x.nextAt || (x.kind === "schedule" ? x.at : "") || (x.schedule && x.schedule.at) || "";
   const [tone, why] = pmHealth(x);
   const url = x.kind === "monitor" ? `/api/watches/${enc(x.id)}` : x.kind === "schedule" ? `/api/schedules/${enc(x.id)}` : "";
-  const name = x.name || x.text || x.id;
+  // A schedule's text starts with its internal target (ch:<id>, lane:<name>) for the orchestrator; the owner reads the words.
+  const name = x.name || String(x.text || "").replace(/^\s*(?:(?:ch|lane|th):\S+\s*)+/, "") || x.id;
   const note = el("div", { class: "note" }), box = el("div", { class: "pmv-rt" });
   const meta = [PM_KIND[x.kind], mins ? pmEvery(mins) : once ? "한 번" : "", x.lastRun ? `마지막 ${kstStamp(x.lastRun)}` : x.kind === "monitor" ? "아직 안 돌았어요" : "", !x.paused && next ? `다음 ${kstStamp(next)}` : ""].filter(Boolean);
   const patch = body => pmDo(note, () => api(url, "PATCH", body));
@@ -6393,7 +6424,7 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
   const h = parseHash();
   go(h.view || "home", h.t);
   await refreshState();
-  loadTarget(target); loadTodo(target);
+  loadTarget(target); loadTodo(target); prjLoad().then(() => renderBars(), () => {});
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);
