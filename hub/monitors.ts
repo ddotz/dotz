@@ -23,7 +23,8 @@ export function listMonitors(): Monitor[] {
 		return {
 			name: w.name,
 			kind: "watch",
-			...(w.channels?.[0] ? { channel: w.channels[0] } : {}),
+			// watch channels are bare Discord ids; the web opens conversations by ch:<id>
+			...(w.channels?.[0] ? { channel: /^\d+$/.test(w.channels[0]) ? `ch:${w.channels[0]}` : w.channels[0] } : {}),
 			...(last ? { last_run: last } : {}),
 			...(result ? { last_result: result } : {}),
 			...(next && Number.isFinite(next) ? { next_run: iso(next) } : {}),

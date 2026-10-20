@@ -130,7 +130,7 @@ function ntMonSection() {
   const sec = el("section", { class: "nt-grp" }, el("h3", { class: "nt-gh", text: "감시·예약 현황" }));
   if (!NM.loaded) sec.append(el("div", { class: "nt-empty nt-empty-s", text: NM.failed ? "불러오지 못했어요" : "불러오는 중…" }));
   else if (!NM.items.length) sec.append(el("div", { class: "nt-empty nt-empty-s", text: "감시 중인 것이 없어요" }));
-  else sec.append(ntMons().map(ntMonRow));
+  else sec.append(...ntMons().map(ntMonRow));
   return sec;
 }
 
