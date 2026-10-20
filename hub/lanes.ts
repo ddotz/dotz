@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, totalmem } from "node:os";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { emitEventActivity, endSubagents, runningSubagents, statusActivity, workerCheck } from "./activity.ts";
 import { pendingAskFile } from "./asks.ts";
 import { cfg, chainAfter, DATA_DIR, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, TZ, workerModel, writeAtomic } from "./config.ts";
@@ -40,7 +40,7 @@ type Claim = { state: "reported" | "verified"; at: string; evidence?: string; pr
 // The full text also sits in pending-ask.md (dir(name)) while pending, because report.md is overwritten by gateway notices.
 type Ask = { text: string; at: string };
 // `runtime`: the runtime that wrote sessionFile (omo, omp, claude); a session is only ever resumed by that runtime.
-type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask };
+type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	// The orchestrator sent work (launch, dotz_lane send) that no relayed report answered yet; an owner-only exchange in
@@ -114,9 +114,9 @@ export function setIdleHandler(fn: (name: string) => void): void {
 
 const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
-	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, runtime, reports, lastReportAt, held, worktree, claim, pendingAsk } = lane;
+	const { name, title, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, runtime, reports, lastReportAt, held, worktree, claim, pendingAsk } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}) }, null, 2)}\n`);
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -732,7 +732,20 @@ export function budgetLine(name: string, est: number, five: number | undefined, 
 	return `budget gate: lane ${name} est ${est}% 5h ${left(five)} 7d ${left(week)} -> ${outcome}`;
 }
 
-export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string, fableOk?: boolean): Lane {
+// The owner-facing title of a lane or work channel (docs/layers.md §2): 2-4 plain words of the work, never the key, the
+// folder or repo basename, or anything codename-shaped. A reason in one line for the agent to retry with, else undefined.
+const CODENAME = /^[a-z0-9._-]+$/;
+export function titleProblem(title: unknown, ctx: { key?: string; cwd?: string; repo?: string } = {}): string | undefined {
+	const t = typeof title === "string" ? title.trim() : "";
+	const hint = "use 2-4 plain words of the work in the owner's language (e.g. 디스코드 설정)";
+	if (!t) return `title required: ${hint}`;
+	const same = [ctx.key, ctx.cwd && basename(ctx.cwd.replace(/\/+$/, "")), ctx.repo && basename(ctx.repo.replace(/\/+$/, ""))].filter(Boolean).map(s => s!.toLowerCase());
+	if (same.includes(t.toLowerCase())) return `title "${t}" is the key or a folder name, not a title: ${hint}`;
+	if (CODENAME.test(t)) return `title "${t}" looks like a codename (only a-z, 0-9, . _ -): ${hint}`;
+	return undefined;
+}
+
+export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string, fableOk?: boolean, title?: string): Lane {
 	if (!NAME_RE.test(name)) throw new Error("lane name must match [a-z0-9][a-z0-9-]{0,31}");
 	if (!cwd.startsWith("/") || !existsSync(cwd)) throw new Error(`cwd must be an existing absolute path: ${cwd}`);
 	const prior = lanes.get(name);
@@ -743,7 +756,7 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	const selector = model ?? selectorOf(lanesModel());
 	mkdirSync(dir(name), { recursive: true });
 	const place = laneWorktree(name, cwd);
-	const lane: Lane = { name, cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, ctx: newCtx(), orchAsked: true };
+	const lane: Lane = { name, ...(title ? { title } : {}), cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, ctx: newCtx(), orchAsked: true };
 	lanes.set(name, lane);
 	persist(lane);
 	writeFileSync(join(dir(name), "brief.md"), `${brief}\n`);
@@ -1071,6 +1084,7 @@ export const laneModels = () => [...lanes.values()].map(l => ({ name: l.name, ..
 export function laneSummary(): Array<Record<string, unknown>> {
 	return [...lanes.values()].map(l => ({
 		name: l.name,
+		...(l.title ? { title: l.title } : {}),
 		cwd: l.cwd,
 		// the checkout a worktree lane works for (its cwd is ~/.dotz/lanes/<name>/worktree)
 		...(l.worktree ? { repo: l.worktree.repo } : {}),

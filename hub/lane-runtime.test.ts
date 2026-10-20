@@ -144,3 +144,30 @@ test("a restart never moves a running lane's session to a runtime switched in co
 	l.stopLane("rt-run");
 	await advance(300);
 });
+
+test("titleProblem rejects the key, a folder or repo name and codename-shaped titles, and accepts plain words", () => {
+	const ctx = { key: "discord-fix", cwd: "/Users/h/Code/dotz/", repo: "/Users/h/Code/gateway-ui" };
+	for (const bad of ["discord-fix", "Discord-Fix", "dotz", "gateway-ui", "dotz2", "gw_api.v2", "", "   ", undefined]) expect(l.titleProblem(bad, ctx)).toBeString();
+	expect(l.titleProblem("dotz", ctx)).toContain("2-4 plain words");
+	for (const good of ["디스코드 설정", "메일 자동답장", "discord setup", "게이트웨이-화면"]) expect(l.titleProblem(good, ctx)).toBeUndefined();
+	expect(l.titleProblem("x2", {})).toBeString();
+	expect(l.titleProblem("메일", {})).toBeUndefined();
+});
+
+test("a launched lane stores its title in lane.json and shows it in the summary; an older lane.json without one still loads", async () => {
+	const cwd = join(DATA, "rt-work");
+	mkdirSync(cwd, { recursive: true });
+	const lane = l.launch("rt-title", cwd, "Polish the theme.\nDone when: owner approves", undefined, undefined, undefined, "디스코드 설정");
+	l.stopLane("rt-title");
+	await advance(300);
+	await flush();
+	expect(lane.title).toBe("디스코드 설정");
+	expect(JSON.parse(readFileSync(join(DATA, "lanes", "rt-title", "lane.json"), "utf8")).title).toBe("디스코드 설정");
+	expect(l.laneSummary().find(s => s.name === "rt-title")?.title).toBe("디스코드 설정");
+	mkdirSync(join(DATA, "lanes", "rt-old"), { recursive: true });
+	writeFileSync(join(DATA, "lanes", "rt-old", "lane.json"), JSON.stringify({ name: "rt-old", cwd, model: "m", status: "exited", startedAt: "2026-10-01T00:00:00.000Z", reports: 0 }));
+	l.restoreLanes();
+	const old = l.laneSummary().find(s => s.name === "rt-old");
+	expect(old).toBeDefined();
+	expect(old).not.toHaveProperty("title");
+});
