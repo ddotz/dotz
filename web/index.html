@@ -541,6 +541,19 @@ details.work.live .wdot { display: block; }
 .working { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-bottom: 8px; color: var(--fg-3); font-size: 12.5px; line-height: 20px; }
 #working-tx { min-width: 0; overflow-wrap: anywhere; }
 .working .btn { flex: none; height: 24px; padding: 0 8px; font-size: 12px; }
+/* running state: a pulsing line above the composer, a spinner on the model chip, and the send button turns into stop */
+.runline { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 0 0 8px 6px; color: var(--accent); font-size: 13px; font-weight: 600; line-height: 20px; animation: runpulse 1.6s ease-in-out infinite; }
+.runline[hidden] { display: none; }
+.runline .dot { width: 7px; height: 7px; }
+.runline.warn { color: var(--warn); }
+@keyframes runpulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+#working > .dot, #working-tx, #working > .sp, #working-stop { display: none !important; }
+#c-model.run::after { content: ""; flex: none; width: 11px; height: 11px; margin-left: 2px; border: 1.6px solid color-mix(in srgb, currentColor 25%, transparent); border-top-color: currentColor; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#send-btn.stop { background: var(--fg); color: var(--bg); }
+#send-btn.stop > svg { display: none; }
+#send-btn.stop::before { content: ""; width: 12px; height: 12px; border: 2px solid currentColor; border-radius: 3px; }
+@media (prefers-reduced-motion: reduce) { .runline, #c-model.run::after { animation: none; } }
 @media (pointer: coarse) { .working .btn { height: 36px; padding: 0 10px; } }
 .qlist { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .qitem { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--layer); min-width: 0; }
@@ -1067,6 +1080,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
         <div class="composer" id="composer">
           <div class="qlist" id="queue" hidden></div>
           <div class="hintrow" id="hints" hidden></div>
+          <div class="runline" id="runline" hidden><span class="dot pri"></span><span id="runline-tx"></span></div>
           <form class="sendrow" id="send">
             <div class="atray" id="atray" hidden></div>
             <input type="file" id="c-file" multiple hidden>
@@ -2881,7 +2895,7 @@ ta.addEventListener("keydown", ev => {
   ev.preventDefault();
   sendChat(ev.altKey ? "interrupt" : ev.metaKey || ev.ctrlKey ? "queue" : undefined);
 });
-$("#send").onsubmit = ev => { ev.preventDefault(); sendChat(); };
+$("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length) stopTarget(); else sendChat(); };
 $("#working-stop").onclick = () => stopTarget();
 $("#working-int").onclick = () => sendChat("interrupt");
 $("#working-queue").onclick = () => sendChat("queue");
@@ -2936,11 +2950,17 @@ function renderWorking() {
   const st = info.alive ? info.status : "";
   const on = st === "working" || st === "starting" || st === "rate-limited";
   box.hidden = !on;
+  // Only while the gateway reports this target running: status line, model-chip spinner, and stop in place of send
+  // (with text typed the button sends it into the running turn instead).
+  const line = $("#runline"), stopMode = on && st !== "rate-limited" && !ta.value.trim() && !ATT.length;
+  line.hidden = !on; line.classList.toggle("warn", st === "rate-limited");
+  $("#c-model").classList.toggle("run", on && st !== "rate-limited");
+  const sb = $("#send-btn"); sb.classList.toggle("stop", stopMode); sb.setAttribute("aria-label", stopMode ? "중단" : "보내기"); sb.title = stopMode ? "지금 턴 중단" : "";
   if (on) {
     const n = runningSubs(sourceOf(target)).length;
     $(".dot", box).className = `dot ${st === "rate-limited" ? "warn" : "pri"}`;
     const g = CS.group, since = g && g.live ? Date.now() - g.t0 : 0;
-    $("#working-tx").textContent = `${st === "rate-limited" ? "한도 제한, 잠시 쉬는 중" : "작업 중"}${since >= 5000 ? ` ${fmtDur(since)}` : ""}${n ? ` · 워커 ${n}` : ""}`;
+    $("#working-tx").textContent = $("#runline-tx").textContent = `${st === "rate-limited" ? "한도 제한, 잠시 쉬는 중" : "작업 중..."}${since >= 5000 ? ` ${fmtDur(since)}` : ""}${n ? ` · 워커 ${n}` : ""}`;
     $("#working-stop").hidden = st === "rate-limited";
     $("#working-int").hidden = st === "rate-limited" || !ta.value.trim();
     $("#working-queue").hidden = st === "rate-limited" || !ta.value.trim();
@@ -2962,11 +2982,11 @@ function renderActChips(on) {
     return b;
   };
   const term = modeOf() === "term", proc = target === MAIN ? "orchestrator" : laneOf(target);
-  clear(row).append(
+  clear(row).append(...[
     chip("중단", null, () => stopTarget(), " stop"),
     ta.value.trim() ? chip("다음 턴에", null, () => sendChat("queue")) : null,
     chip("끝으로", "down", () => (term ? scrollTerm(true) : scrollChat(true))),
-    chip("압축", null, () => busy(null, async () => { const r = await api("/api/compact", "POST", { target: proc }); toast(r.state === "queued" ? "작업 중이라 턴이 끝나면 압축해요" : "압축을 시작했어요"); })));
+    chip("압축", null, () => busy(null, async () => { const r = await api("/api/compact", "POST", { target: proc }); toast(r.state === "queued" ? "작업 중이라 턴이 끝나면 압축해요" : "압축을 시작했어요"); })).filter(Boolean));
 }
 
 /* ---------- queued messages (server queue, sent when the target's turn ends) + context ring ---------- */
