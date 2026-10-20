@@ -1,6 +1,8 @@
 // Owner controls shared by the web API, the web chat box and Discord: model/effort switching, provider and quota
 // views, and the slash/bang command parser that drives them.
 import { DEFAULT_WORKER_MODEL, entryId, NAME, entryOf, FALLBACK_MAX, type FallbackEntry, type FallbackTarget, fallbackChain, isPlain, lanesModel, log, orchestratorModel, parseSelector, selectorOf, setFallbackChain, splitThinking, THINKING_LEVELS, TZ, updateModels, workerModel } from "./config.ts";
+import { label, readAliases } from "./account-alias.ts";
+import { AccountsError, accountCommand } from "./accounts-api.ts";
 import { entryView, hubChain, keyFileOk, keyProviderOk } from "./fallback.ts";
 import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import { homedir } from "node:os";
@@ -261,7 +263,7 @@ export async function setFallback(target: string, chain: unknown[]) {
 	return { ok: true, target, chain: clean.map(entryView), applied, note: FALLBACK_NOTE };
 }
 
-const COMMANDS = ["help", "status", "context", "compact", "lanes", "model", "effort", "restart", "stop", "resume", "abort", "providers", "login", "logout", "quota"];
+const COMMANDS = ["help", "status", "context", "compact", "lanes", "model", "effort", "restart", "stop", "resume", "abort", "providers", "login", "logout", "quota", "account"];
 
 // "/name args" or "!name args" with a known command name; anything else is not a command.
 export function parseCommand(text: string): { name: string; args: string[]; rest: string } | undefined {
@@ -317,13 +319,19 @@ function errorCard(e: unknown, text: string): CommandCard {
 }
 
 // The "한도" answer: each window's remaining share and reset time, and the last account switch.
-export function limitsCard(r: AccountReport | undefined, last: AccountSwitch | undefined): CommandCard {
+// The 한도 card names accounts by the owner's aliases; the raw ids go on one note line, only when they differ.
+export function limitsCard(r: AccountReport | undefined, last: AccountSwitch | undefined, aliases = readAliases()): CommandCard {
 	const t = T();
 	if (!r) return card(t.quotaTitle, [], { tone: "warn", note: t.readFailed });
+	const lab = (n: string) => label(n, undefined, aliases);
 	const facts = r.limits.map(l => ({ label: t.windows[l.id] ?? l.label, value: [t.left(`${Math.round(l.amount.remaining)}%`), l.window.resetsAt ? t.resets(clock(l.window.resetsAt)) : ""].filter(Boolean).join(" · ") }));
-	facts.push({ label: t.account, value: r.account });
-	if (last && last.kind !== "start") facts.push({ label: t.lastSwitch, value: `${clock(Date.parse(last.at))} · ${last.from ?? t.none} → ${last.to}` });
-	return card(t.quotaTitle, facts, { tone: r.problem ? "warn" : undefined, note: r.problem ? t.problem[r.problem] : r.limits.length ? undefined : t.noLimits });
+	facts.push({ label: t.account, value: lab(r.account) });
+	const moved = last && last.kind !== "start" ? last : undefined;
+	if (moved) facts.push({ label: t.lastSwitch, value: `${clock(Date.parse(moved.at))} · ${moved.from ? lab(moved.from) : t.none} → ${lab(moved.to)}` });
+	const ids = moved ? [moved.from, moved.to].filter((x): x is string => Boolean(x)) : [r.account];
+	const idLine = ids.some(n => lab(n) !== n) ? `${t.accountId}: ${ids.join(" → ")}` : undefined;
+	const note = [r.problem ? t.problem[r.problem] : r.limits.length ? undefined : t.noLimits, idLine].filter(Boolean).join("\n") || undefined;
+	return card(t.quotaTitle, facts, { tone: r.problem ? "warn" : undefined, note });
 }
 
 // The gateway restart lives in main.ts (it owns the message ledger and shutdown); main registers it here.
@@ -503,11 +511,16 @@ async function execute(text: string): Promise<CommandCard> {
 		case "quota": {
 			const q = await quota();
 			const facts = [
-				...q.providers.flatMap(p => p.limits.map(l => ({ label: `${p.provider}${p.account ? ` (${p.account})` : ""} · ${l.label}`, value: [l.remaining === null ? t.none : t.left(l.unit === "percent" || l.limit === 100 ? `${Math.round(l.remaining)}%` : kTokens(l.remaining)), l.resets_at ? t.resets(clock(l.resets_at)) : ""].filter(Boolean).join(" · ") }))),
+				...q.providers.flatMap(p => p.limits.map(l => ({ label: `${p.provider}${p.account ? ` (${label(p.account)})` : ""} · ${l.label}`, value: [l.remaining === null ? t.none : t.left(l.unit === "percent" || l.limit === 100 ? `${Math.round(l.remaining)}%` : kTokens(l.remaining)), l.resets_at ? t.resets(clock(l.resets_at)) : ""].filter(Boolean).join(" · ") }))),
 				...q.unavailable.map(u => ({ label: u.provider, value: u.reason })),
 			];
 			return card(t.quotaTitle, facts, { note: facts.length ? undefined : t.noQuota });
 		}
+		case "account":
+			return accountCommand(cmd.rest).then(s => card(t.accountTitle, [], { note: s }), e => {
+				if (e instanceof AccountsError) throw new ControlError(e.message, e.status);
+				throw e;
+			});
 		default:
 			throw new ControlError(`unknown command "${cmd.name}"`);
 	}
