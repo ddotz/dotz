@@ -5,7 +5,7 @@
 // - a routine [run] progress report is not a turn: it stays on disk and in the what-runs-now line of the next prompt;
 // - an untagged reply in an exchange between the owner and the lane alone (the orchestrator sent nothing since its last
 //   relayed report) is not a turn either: the owner read it in the lane channel;
-// - a report repeating the lane's last relayed one is dropped;
+// - a report repeating the lane's last relayed one is dropped (a gateway notice such as [lane exited] never is);
 // - a report arriving while the orchestrator is in a turn is steered into that turn at once (2026-10-20: held reports
 //   reached it after p90 368 s); only when the turn cannot take it are reports batched into one prompt for idle.
 import { parseTone, type Tone } from "./tone.ts";
@@ -29,7 +29,9 @@ export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: str
 		if (tone === "run") return "disk";
 		if (!tone && ownerOnly && !/^\[lane [a-z]+\]/.test(text)) return "owner";
 		const key = norm(text);
-		if (last.get(lane) === key) return "duplicate";
+		// A gateway notice ([lane exited], [lane error]) is a new event each time, even in the same words: an owner message
+		// that resumed a lane which died again at once must still reach the orchestrator (2026-10-20 17:16, gateway-ui).
+		if (last.get(lane) === key && !/^\[lane [a-z]+\]/.test(text)) return "duplicate";
 		last.set(lane, key);
 		const item = { lane, tone, text, file };
 		if (deps.busy()) {
