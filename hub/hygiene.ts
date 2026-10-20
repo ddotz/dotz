@@ -6,8 +6,10 @@ import { existsSync, readFileSync, realpathSync, rmSync, statSync } from "node:f
 import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 import { statusActivity } from "./activity.ts";
-import { lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OMP, paths, writeAtomic } from "./config.ts";
+import { closeDeadLaneTasks, pruneArchives, pruneTempSessions, pruneUploads, rotateFile, sessionDirs } from "./cleanup.ts";
+import { DATA_DIR, lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OMP, paths, writeAtomic } from "./config.ts";
 import { describeCtx } from "./context.ts";
+import { UPLOADS } from "./files.ts";
 import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
 import { nightlyHandover, orchestratorPid } from "./orchestrator.ts";
 import { trackTimer } from "./shutdown.ts";
@@ -237,4 +239,82 @@ export function startOrphanReaper(): void {
 		run();
 		trackTimer("orphan reaper", setInterval(run, ORPHAN_EVERY_MS));
 	}, ORPHAN_FIRST_MS));
+}
+
+// Hourly data cleanup (eval 2026-10-20 L3/C1), DATA_CLEANUP_FIRST_MS after the start and then every hour. Sizes stay small
+// and nothing the owner needs is dropped: rotated log/inbox/outbox heads are archived (inbox/outbox archives kept for
+// good, hub.log ones for HUB_LOG_ARCHIVE_DAYS), uploads go after UPLOAD_KEEP_DAYS, only sessions of deleted temp folders
+// idle for a day go, and an open task waiting on a lane that ended at least LANE_DEAD_MS ago is closed into
+// tasks-closed.jsonl with the reason (the orchestrator can reopen it from there).
+const DATA_CLEANUP_FIRST_MS = 3 * 60_000;
+const DATA_CLEANUP_EVERY_MS = 3600_000;
+const LOG_MAX_BYTES = 5e6;
+const LOG_KEEP_BYTES = 1e6;
+const EVENTS_MAX_BYTES = 5e6;
+const EVENTS_KEEP_BYTES = 2e6;
+const HUB_LOG_ARCHIVE_DAYS = 90;
+const UPLOAD_KEEP_DAYS = 60;
+const TEMP_SESSION_IDLE_MS = 86_400_000;
+const LANE_DEAD_MS = 3600_000;
+
+// Why a lane counts as ended for its open tasks, or undefined while it is live or restarting. A lane must be seen ended
+// by two sweeps at least LANE_DEAD_MS apart (lane.json's mtime moves on every persist, so it cannot date the exit).
+const endedSeen = new Map<string, number>();
+export function laneEndedReason(name: string, now = Date.now()): string | undefined {
+	const lane = lanes.get(name);
+	const ended = lane ? lane.status === "exited" && !lane.proc && !lane.quiet : !existsSync(join(paths.lanes, name, "lane.json"));
+	if (!ended) {
+		endedSeen.delete(name);
+		return undefined;
+	}
+	const since = endedSeen.get(name) ?? now;
+	endedSeen.set(name, since);
+	if (now - since < LANE_DEAD_MS) return undefined;
+	return lane ? `lane ${name} ended (status exited, seen ended since ${new Date(since).toISOString()})` : `lane ${name} no longer exists`;
+}
+
+export function runDataCleanup(now = Date.now()): string[] {
+	const actions: string[] = [];
+	const step = (what: string, fn: () => string | undefined) => {
+		try {
+			const r = fn();
+			if (r) actions.push(r);
+		} catch (e) {
+			actions.push(`${what} failed: ${e instanceof Error ? e.message : e}`);
+		}
+	};
+	const mb = (n: number) => `${(n / 1e6).toFixed(2)} MB`;
+	for (const [file, max, keep] of [[paths.log, LOG_MAX_BYTES, LOG_KEEP_BYTES], [paths.inbox, EVENTS_MAX_BYTES, EVENTS_KEEP_BYTES], [paths.outbox, EVENTS_MAX_BYTES, EVENTS_KEEP_BYTES]] as const)
+		step(`rotate ${basename(file)}`, () => {
+			const r = rotateFile(file, max, keep, now);
+			return r && `rotated ${basename(file)} ${mb(r.before)} -> ${mb(r.after)} (head in ${basename(r.archive)})`;
+		});
+	step("hub.log archives", () => {
+		const gone = pruneArchives(join(DATA_DIR, "archive"), basename(paths.log), HUB_LOG_ARCHIVE_DAYS, now);
+		return gone.length ? `removed ${gone.length} hub.log archive(s) older than ${HUB_LOG_ARCHIVE_DAYS} days` : undefined;
+	});
+	step("uploads", () => {
+		const gone = pruneUploads(UPLOADS, UPLOAD_KEEP_DAYS, now);
+		return gone.length ? `removed upload folder(s) older than ${UPLOAD_KEEP_DAYS} days: ${gone.join(", ")}` : undefined;
+	});
+	for (const dir of sessionDirs())
+		step(`temp sessions in ${dir}`, () => {
+			const r = pruneTempSessions(dir, TEMP_SESSION_IDLE_MS, now);
+			return r.removed.length ? `removed ${r.removed.length} session folder(s) of deleted temp folders in ${dir} (${(r.kb / 1024).toFixed(1)} MB)` : undefined;
+		});
+	step("open tasks", () => {
+		const closed = closeDeadLaneTasks(join(DATA_DIR, "state.json"), join(DATA_DIR, "tasks-closed.jsonl"), name => laneEndedReason(name, now), now);
+		return closed.length ? `closed ${closed.length} open task(s) of ended lanes: ${closed.map(t => `${t.id} (${t.lane})`).join(", ")}` : undefined;
+	});
+	for (const a of actions) log(`data cleanup: ${a}`);
+	if (actions.length) statusActivity("hub", `data cleanup: ${actions.join("; ")}`);
+	return actions;
+}
+
+export function startDataCleanup(): void {
+	const run = () => void runDataCleanup();
+	trackTimer("data cleanup", setTimeout(() => {
+		run();
+		trackTimer("data cleanup", setInterval(run, DATA_CLEANUP_EVERY_MS));
+	}, DATA_CLEANUP_FIRST_MS));
 }
