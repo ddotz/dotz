@@ -79,3 +79,11 @@ test("project folder: instruction files by name/size/heading only, deny lines, s
 	expect(p!.map.nodes.some(n => n.id === "p-lane")).toBe(true);
 	expect(p!.map.nodes.find(n => n.id === "gateway")!.settings).toEqual([]);
 });
+
+test("lanes working in a /tmp scratch folder are not listed as projects", () => {
+	lanes.set("real", lane("real", dir));
+	lanes.set("fix5-block", lane("fix5-block", "/tmp/dotz-fix5-block"));
+	lanes.set("lat-probe", lane("lat-probe", "/private/tmp/dotz-latprobe"));
+	discord.channels.lanes = { real: "10", "fix5-block": "11", "lat-probe": "12" };
+	expect(projects().map(p => p.name)).toEqual(["real"]);
+});
