@@ -183,7 +183,10 @@ function report(lane: Lane, text: string, notice = false): void {
 	const tone = parseTone(text).tone;
 	// A report without a marker (a gateway notice, or the OmO handoff block "Ask: ... wanted: ..." that an OmO lane posts
 	// as a separate turn right after its [done], custom-ui 2026-10-20) leaves the claim as it was; [run]/[ask]/[fail] withdraw it.
-	lane.claim = tone === "done" ? { state: "reported", at: now() } : tone ? undefined : lane.claim;
+	// A report that opens with that block and says [done] further down is a done claim (account-switch and layers-redesign
+	// 2026-10-21: their [done] could not be verified).
+	const claimsDone = tone === "done" || (!tone && /\[(done|완료)\]/i.test(text));
+	lane.claim = claimsDone ? { state: "reported", at: now() } : tone ? undefined : lane.claim;
 	if (tone === "ask" && !notice) {
 		lane.pendingAsk = { text, at: now() };
 		writeAtomic(pendingAskFile(lane.name), `${text}\n`);
@@ -192,7 +195,6 @@ function report(lane: Lane, text: string, notice = false): void {
 	writeFileSync(join(dir(lane.name), "report.md"), `${text}\n`);
 	// A [done] is checked against the task metadata before it is relayed; what contradicts it goes along with it. So is a
 	// report without a leading marker that says [done] further down (an OmO lane can open with its handoff block, "Ask: ...").
-	const claimsDone = tone === "done" || (!tone && /\[(done|완료)\]/i.test(text));
 	if (notice || !claimsDone) return onReport(lane, text, answering);
 	const what = tone === "done" ? "[done]" : "report";
 	const claim = lane.claim;

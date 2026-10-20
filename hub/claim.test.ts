@@ -116,6 +116,11 @@ test("claim: [done] reports, verify only from reported, any other report clears 
 	await turn(agent, "[ask] which branch?");
 	expect(lane.claim).toBeUndefined();
 	expect(saved()).toBeUndefined();
+	// A final report that opens with the handoff block and says [done] below it is a claim too (2026-10-21).
+	await turn(agent, "Ask: pick the branch - wanted: main. For you: merged.\n\n[done] merged to main");
+	expect(lane.claim?.state).toBe("reported");
+	await turn(agent, "[ask] which branch?");
+	expect(lane.claim).toBeUndefined();
 	expect(() => l.verifyLane("nope", "x")).toThrow("no lane nope");
 
 	l.sendToLane("cl", "main, please"); // answers the pending [ask], so it does not leak into other tests' pending-ask blocks
