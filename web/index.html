@@ -457,18 +457,18 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .sendrow.has-att { grid-template-areas: "at at" "ta ta" "bar send"; }
 .atray { grid-area: at; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: -2px 0 4px -6px; padding: 2px; }
 .atray::-webkit-scrollbar { display: none; }
-.att { position: relative; flex: none; display: flex; align-items: center; gap: 10px; height: 56px; max-width: 220px; padding: 0 30px 0 10px; border-radius: 12px; background: var(--layer); color: var(--fg); }
-.att.img { width: 56px; padding: 0; overflow: hidden; }
-.att.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.att .fi-ic { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--card); color: var(--fg-2); }
-.att .fi-ic svg { width: 18px; height: 18px; }
-.att .fi-t { min-width: 0; display: flex; flex-direction: column; }
-.att .fi-n { font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.att .fi-m { font-size: 12px; line-height: 16px; color: var(--fg-3); }
-.att.up { opacity: .55; }
-.att .ax { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: rgb(0 0 0 / .55); color: #fff; }
-.att .ax svg { width: 12px; height: 12px; }
-.att:not(.img) .ax { background: transparent; color: var(--fg-3); top: 18px; }
+.fatt { position: relative; flex: none; display: flex; align-items: center; gap: 10px; height: 56px; max-width: 220px; padding: 0 30px 0 10px; border-radius: 12px; background: var(--layer); color: var(--fg); }
+.fatt.img { width: 56px; padding: 0; overflow: hidden; }
+.fatt.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fatt .fi-ic { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--card); color: var(--fg-2); }
+.fatt .fi-ic svg { width: 18px; height: 18px; }
+.fatt .fi-t { min-width: 0; display: flex; flex-direction: column; }
+.fatt .fi-n { font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fatt .fi-m { font-size: 12px; line-height: 16px; color: var(--fg-3); }
+.fatt.up { opacity: .55; }
+.fatt .ax { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: rgb(0 0 0 / .55); color: #fff; }
+.fatt .ax svg { width: 12px; height: 12px; }
+.fatt:not(.img) .ax { background: transparent; color: var(--fg-3); top: 18px; }
 #c-attach { width: 30px; padding: 0; justify-content: center; }
 #c-attach svg { width: 18px; height: 18px; }
 .composer.dropping .sendrow { background: color-mix(in srgb, var(--accent) 7%, var(--card)) !important; }
@@ -476,8 +476,8 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .bm .mfiles { justify-content: flex-start; margin-top: 10px; }
 .mfiles .thumb { display: block; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: var(--layer); cursor: zoom-in; }
 .mfiles .thumb img { display: block; max-width: min(240px, 60vw); max-height: 200px; object-fit: cover; }
-.mfiles .att { cursor: pointer; padding-right: 12px; text-decoration: none; }
-.mfiles .att:hover { background: var(--hover); }
+.mfiles .fatt { cursor: pointer; padding-right: 12px; text-decoration: none; }
+.mfiles .fatt:hover { background: var(--hover); }
 .bm .md code.path.fp { cursor: pointer; }
 .bm .md code.path.fp:hover { text-decoration: underline; text-underline-offset: 3px; }
 dialog.lbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; color: #fff; }
@@ -3176,7 +3176,7 @@ async function addFiles(list) {
 }
 function dropAtt(id) { const a = ATT.find(x => x.id === id); if (a && a.url) URL.revokeObjectURL(a.url); ATT = ATT.filter(x => x.id !== id); renderAtt(); }
 function fileChip(name, meta, extra = {}) {
-  return el(extra.href ? "a" : "div", { class: `att${extra.cls ? ` ${extra.cls}` : ""}`, ...(extra.href ? { href: extra.href, target: "_blank", rel: "noopener", title: `${name} · 미리보기` } : { title: name }) },
+  return el(extra.href ? "a" : "div", { class: `fatt${extra.cls ? ` ${extra.cls}` : ""}`, ...(extra.href ? { href: extra.href, target: "_blank", rel: "noopener", title: `${name} · 미리보기` } : { title: name }) },
     el("span", { class: "fi-ic" }, icon("file")), el("span", { class: "fi-t" }, el("span", { class: "fi-n", text: name }), el("span", { class: "fi-m", text: meta })), extra.x || null);
 }
 function renderAtt() {
@@ -3185,7 +3185,7 @@ function renderAtt() {
   box.hidden = !ATT.length;
   clear(box).append(...ATT.map(a => {
     const x = el("button", { class: "ax", type: "button", "aria-label": `${a.name} 빼기`, onclick: () => dropAtt(a.id) }, icon("close"));
-    if (a.url) return el("div", { class: `att img${a.file ? "" : " up"}`, title: a.name }, el("img", { src: a.url, alt: a.name }), x);
+    if (a.url) return el("div", { class: `fatt img${a.file ? "" : " up"}`, title: a.name }, el("img", { src: a.url, alt: a.name }), x);
     return fileChip(a.name, a.file ? [extOf(a.name), fsize(a.size)].filter(Boolean).join(" · ") : "올리는 중…", { cls: a.file ? "" : "up", x });
   }));
 }
