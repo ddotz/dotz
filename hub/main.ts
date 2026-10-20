@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
-import { subagentDetail, subagentLists, transcriptItems } from "./activity.ts";
+import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { authRoute } from "./auth.ts";
@@ -643,12 +643,18 @@ const server = Bun.serve({
 			const source = url.searchParams.get("source") ?? "orchestrator";
 			if (source !== "orchestrator" && !source.startsWith("lane:")) return json({ error: "source must be orchestrator or lane:<name>" }, 400);
 			const limit = Number(url.searchParams.get("limit") ?? 300) || 300;
-			const live = activityItems(source, limit);
-			// After a gateway restart or for a lane that has exited, the live buffer is empty: show the lane's saved
-			// transcript instead, so the owner can see where it stopped before resuming it.
+			const before = url.searchParams.get("before") || undefined;
 			const lane = source.startsWith("lane:") ? lanes.get(source.slice(5)) : undefined;
-			if (!live.length && lane?.sessionFile) return json({ source, history: true, items: await transcriptItems(lane.sessionFile, limit) });
-			return json({ source, items: live });
+			const file = source === "orchestrator" ? orch.sessionFile : lane?.sessionFile;
+			// Older pages ("load more" in the terminal view) come from the saved session transcript.
+			if (before) return json({ source, history: true, ...(await transcriptPage(file, limit, before)) });
+			// The live buffer is memory only (300 items, empty after a gateway restart): the transcript fills in everything
+			// older than it, for the orchestrator and lanes alike, so the view survives restarts and can page back with `before`.
+			const live = activityItems(source, limit);
+			if (!file) return json({ source, items: live, more: false });
+			if (live.length >= limit) return json({ source, items: live, more: true });
+			const page = await transcriptPage(file, limit - live.length, live[0]?.ts);
+			return json({ source, history: page.items.length > 0, items: [...page.items, ...live], more: page.more });
 		}
 		if (req.method === "GET" && url.pathname === "/api/quota") return json(await quota());
 		if (req.method === "POST" && url.pathname === "/api/command") {
