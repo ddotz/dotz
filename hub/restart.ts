@@ -2,6 +2,9 @@
 // restart waits for idle however long that takes, and says once that it is waiting (2026-10-19: three forced kills of a
 // lane after 20 min). Requests close together are coalesced: every request while one waits joins it, and a restart never
 // happens sooner than minGapMs after this process started (2026-10-19: 30 restarts in a day from a lane developing dotz).
+// A restart waiting on busy work posts one notice after this long (hub/main.ts).
+export const RESTART_NOTICE_MS = 20 * 60_000;
+
 export type RestartGateDeps = {
 	busy: () => string[];
 	/** Owner messages still being collected; they go into the ledger at shutdown, but waiting for them is cheaper. */

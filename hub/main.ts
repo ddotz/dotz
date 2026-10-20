@@ -3,7 +3,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
+import { ADDRESS, cfg, COALESCE_MAX_MS, DATA_DIR, DEFAULTS, HOST, HUB_TOKEN, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import { changeTarget, compactTarget, ControlError, contextView, targetView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
@@ -19,14 +19,14 @@ import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCle
 import { startMemoryGuard } from "./memguard.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
 import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
-import { abortLane, applyAccountChange as applyLaneAccount, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, type LaneDelivery, ownerNotes, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane } from "./lanes.ts";
+import { abortLane, applyAccountChange as applyLaneAccount, approvesBudget, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, type LaneDelivery, ownerNotes, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane } from "./lanes.ts";
 import { accountView, onSwitch as onAccountSwitch, stickyAccount } from "./account-sticky.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { abort as abortOrchestrator, applyAccountChange as applyOrchestratorAccount, deliver as deliverToOrchestrator, orch, orchBusy, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { createPrompts } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
-import { createRestartGate } from "./restart.ts";
+import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { createLaneRelay } from "./lanerelay.ts";
 import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { limitsText } from "./usage-account.ts";
@@ -195,8 +195,7 @@ function inboxBody(e: Record<string, any>): string {
 // Owners often send one thought as several short messages. Messages from the same channel that arrive within
 // COALESCE_MS of each other (at most COALESCE_MAX_MS after the first) become one turn, the way 오모냥's inbox monitor
 // batched lines that arrived together.
-const COALESCE_MS = Number((cfg as any).gateway?.coalesce_ms ?? 4000);
-const COALESCE_MAX_MS = 20_000;
+const COALESCE_MS = Number((cfg as any).gateway?.coalesce_ms ?? DEFAULTS.coalesce_ms);
 const bursts = new Map<string, { events: Record<string, any>[]; replyTo?: string; first: number; timer?: ReturnType<typeof setTimeout> }>();
 
 function intake(event: Record<string, any>, target: string, replyTo?: string): void {
@@ -308,7 +307,7 @@ async function budgetProblem(name: string, est: number, force: boolean): Promise
 	}
 	// The account lanes really run on (OmO's pinned account may not be omp's login).
 	const r = await anthropicUsage("lane").catch(() => undefined);
-	const five = r?.limits.find(l => l.id === "anthropic:5h")?.amount.remaining;
+	const five = r?.limits.find(l => l.id === `anthropic:${BUDGET_WINDOW_HOURS}h`)?.amount.remaining;
 	const week = r?.limits.find(l => l.id === "anthropic:7d")?.amount.remaining;
 	// The 5h window gates (est % assumed use, default 15, and 10% kept); the week is shown, never gates.
 	const verdict = budgetVerdict(five, week, est);
@@ -621,7 +620,7 @@ setLaneIdleHandler(name => flushQueue(`lane:${name}`));
 setInterval(() => queuedTargets().forEach(flushQueue), QUEUE_SWEEP_MS);
 
 const server = Bun.serve({
-	hostname: "127.0.0.1",
+	hostname: HOST,
 	port: PORT,
 	idleTimeout: 0,
 	async fetch(req) {
@@ -1215,7 +1214,7 @@ const restartGate = createRestartGate({
 	collecting: () => bursts.size > 0,
 	startedAt: Date.now(),
 	minGapMs: Number(process.env.DOTZ_RESTART_MIN_GAP_MS ?? 5 * 60_000),
-	noticeAfterMs: 20 * 60_000,
+	noticeAfterMs: RESTART_NOTICE_MS,
 	notice: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`restart wait notice failed: ${e}`)),
 	log,
 	exit: () => void shutdown(),

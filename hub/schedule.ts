@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto";
 import { log, paths, writeAtomic } from "./config.ts";
 import { everyMinutes } from "./watch.ts";
 
+export const MIN_EVERY_MINUTES = 5; // shortest repeat a schedule takes
+
 export type Schedule = { id: string; text: string; at: string; every_minutes?: number; created: string; paused?: boolean };
 
 const items: Schedule[] = existsSync(paths.schedules) ? JSON.parse(readFileSync(paths.schedules, "utf8")) : [];
@@ -47,7 +49,7 @@ export function addSchedule(input: { text?: string; at?: string; in_minutes?: nu
 	if (!text) throw new Error("text required");
 	const at = input.at ? Date.parse(input.at) : Date.now() + Number(input.in_minutes ?? Number.NaN) * 60_000;
 	if (!Number.isFinite(at)) throw new Error("give at (ISO time with offset, e.g. 2026-10-17T09:00:00+09:00) or in_minutes");
-	if (input.every_minutes !== undefined && !(Number(input.every_minutes) >= 5)) throw new Error("every_minutes must be at least 5");
+	if (input.every_minutes !== undefined && !(Number(input.every_minutes) >= MIN_EVERY_MINUTES)) throw new Error(`every_minutes must be at least ${MIN_EVERY_MINUTES}`);
 	const s: Schedule = { id: randomBytes(3).toString("hex"), text, at: new Date(at).toISOString(), ...(input.every_minutes ? { every_minutes: Number(input.every_minutes) } : {}), created: new Date().toISOString() };
 	items.push(s);
 	save();

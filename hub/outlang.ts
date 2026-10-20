@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withoutApiKeys } from "./apikey-policy.ts";
-import { cfg, DATA_DIR, IDENTITY_FILE, log, OMP } from "./config.ts";
+import { cfg, DATA_DIR, DEFAULTS, IDENTITY_FILE, log, OMP } from "./config.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
 import { lang, msg } from "./i18n.ts";
 import { baseLanguage, languageName } from "./language.ts";
@@ -116,7 +116,7 @@ export async function callModel(system: string, text: string, opts: { model?: st
 	const started = Date.now();
 	const proc = Bun.spawn(
 		modelArgv(system, text, opts.model ?? setting().model),
-		{ cwd: DATA_DIR, env: withoutApiKeys({ ...process.env }), stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: opts.timeoutMs ?? (setting().timeout_s ?? 30) * 1000 },
+		{ cwd: DATA_DIR, env: withoutApiKeys({ ...process.env }), stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: opts.timeoutMs ?? (setting().timeout_s ?? DEFAULTS.outlang_timeout_s) * 1000 },
 	);
 	const raw = await new Response(proc.stdout).text();
 	const code = await proc.exited;

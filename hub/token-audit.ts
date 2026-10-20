@@ -8,7 +8,7 @@
 // Last stdout line: RESULT {...}
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, HOME, log, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, DEFAULTS, HOME, log, writeAtomic } from "./config.ts";
 import { collectSessions, OMO_WAKE, projectLabel as labelOf, type Src } from "./session-sources.ts";
 import { trackTimer } from "./shutdown.ts";
 
@@ -385,7 +385,7 @@ function readHistory(): Day[] {
 export type AuditResult = { flags: number; notes: number; sessions: number; tokens: number; cost: number; report: string; alert?: string; summary: string };
 
 export function auditEnabled(): boolean {
-	return String((cfg as { token_audit_at?: string }).token_audit_at ?? "04:30") !== "off";
+	return String((cfg as { token_audit_at?: string }).token_audit_at ?? DEFAULTS.token_audit_at) !== "off";
 }
 
 // One-line audit summary for the nightly reflection digest: the latest recorded audit (today or yesterday, KST).
@@ -495,7 +495,7 @@ export function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditRes
 
 // Same local-time setTimeout scheduling as the nightly reflection; the audit runs before it so the digest can cite it.
 export function startTokenAudit(alert: (text: string) => void): void {
-	const at = String((cfg as { token_audit_at?: string }).token_audit_at ?? "04:30");
+	const at = String((cfg as { token_audit_at?: string }).token_audit_at ?? DEFAULTS.token_audit_at);
 	if (at === "off") return;
 	const [h, m] = at.split(":").map(Number);
 	const next = () => {

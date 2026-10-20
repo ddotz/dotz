@@ -7,7 +7,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import { join } from "node:path";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
-import { cfg, chainAfter, DATA_DIR, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
@@ -19,9 +19,9 @@ import { setupsSummary } from "./workchannels.ts";
 
 const STATE = join(DATA_DIR, "orchestrator.json");
 const ROTATE_BYTES = 50e6;
-const ROTATE_TOKENS = cfg.orchestrator?.rotate_tokens ?? 150_000;
-const MAX_RESTARTS = 3;
-const RESTART_WINDOW_MS = 10 * 60_000;
+const ROTATE_TOKENS = cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens;
+export const MAX_RESTARTS = 3;
+export const RESTART_WINDOW_MS = 10 * 60_000;
 type Saved = { sessionFile?: string; model?: string; runtime?: string };
 
 export const orch = {
@@ -580,9 +580,11 @@ export const keepaliveErrorDropped = (kind: ProviderErrorKind): boolean => kind 
 // Keepalive (as on the macmini 오모냥): the 1h prompt cache would expire after an idle hour and the next message would
 // re-write the whole prefix at 2x. A ping at 50-58 min idle costs a 0.1x read, so pinging wins for any gap shorter than
 // ~18 pings; after KEEPALIVE_MAX consecutive pings (a night or longer away) the cache is allowed to expire.
-const KEEPALIVE_FROM_MS = Number(process.env.DOTZ_KEEPALIVE_FROM_MS ?? 50 * 60_000);
-const KEEPALIVE_TO_MS = Number(process.env.DOTZ_KEEPALIVE_TO_MS ?? 58 * 60_000);
-const KEEPALIVE_MAX = 12;
+export const KEEPALIVE_FROM_MS = Number(process.env.DOTZ_KEEPALIVE_FROM_MS ?? 50 * 60_000);
+export const KEEPALIVE_TO_MS = Number(process.env.DOTZ_KEEPALIVE_TO_MS ?? 58 * 60_000);
+export const KEEPALIVE_MAX = 12;
+// Whether this runtime's prompt cache pays for an idle ping (the 구성 view shows the keep-alive only then).
+export const keepaliveSupported = (): boolean => Boolean(adapter?.caps.promptCacheKeepalive);
 setInterval(() => {
 	const idle = Date.now() - lastTurnEnd;
 	if (!proc || !adapter?.caps.promptCacheKeepalive || rotating || orch.status !== "idle" || keepalives >= KEEPALIVE_MAX || errorStreak.stopped) return;

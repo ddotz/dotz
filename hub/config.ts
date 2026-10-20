@@ -159,13 +159,23 @@ export function updateModels(target: FallbackTarget, values: TargetModels): void
 const positive = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback);
 // Owner value 2026-10-20 (was 400K); the 구성 page shows this default when config.json leaves it unset.
 export const LANES_COMPACT_AT = 300_000;
+// Defaults of the config.json keys the 구성 view shows and edits: the module that reads each key and the view (hub/harness.ts)
+// take them from here, so the screen never shows a value the gateway does not use (owner 2026-10-21: per-install values).
+export const DEFAULTS = {
+	rotate_tokens: 150_000, max_active: 4, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8,
+	coalesce_ms: 4000, reflect_at: "04:40", token_audit_at: "04:30", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
+} as const;
+// The web server listens only here; the tailnet reaches it through `tailscale serve` (web.tailscale_https_port).
+export const HOST = "127.0.0.1";
+// Messages of one channel merge for at most this long after the first (hub/main.ts intake).
+export const COALESCE_MAX_MS = 20_000;
 export const lanesCompactAt = () => positive(cfg.lanes?.compact_at, LANES_COMPACT_AT);
-export const lanesNightlyCompactAt = () => positive(cfg.lanes?.nightly_compact_at, 300_000);
-export const lanesKeepRecent = () => positive(cfg.lanes?.keep_recent, 40_000);
-export const lanesRotateMb = () => positive(cfg.lanes?.rotate_mb, 50);
-export const lanesNightlyAt = () => String(cfg.lanes?.nightly_at ?? "04:30");
+export const lanesNightlyCompactAt = () => positive(cfg.lanes?.nightly_compact_at, DEFAULTS.nightly_compact_at);
+export const lanesKeepRecent = () => positive(cfg.lanes?.keep_recent, DEFAULTS.keep_recent);
+export const lanesRotateMb = () => positive(cfg.lanes?.rotate_mb, DEFAULTS.rotate_mb);
+export const lanesNightlyAt = () => String(cfg.lanes?.nightly_at ?? DEFAULTS.nightly_at);
 // RSS limit of one agent process (orchestrator or lane, task workers included) before the memory guard restarts it; 0 turns the guard off.
-export const lanesMaxRssGb = () => (typeof cfg.lanes?.max_rss_gb === "number" && cfg.lanes.max_rss_gb >= 0 ? cfg.lanes.max_rss_gb : 8);
+export const lanesMaxRssGb = () => (typeof cfg.lanes?.max_rss_gb === "number" && cfg.lanes.max_rss_gb >= 0 ? cfg.lanes.max_rss_gb : DEFAULTS.max_rss_gb);
 // `ui.origin_view` (default false): the 구성 view marks what the owner changed against what ships with dotz, and its requests carry a
 // 범위 (개인/배포) line. Off, the view shows no such distinction. Read once at start like the other cfg flags.
 export const uiOriginView = () => cfg.ui?.origin_view === true;
@@ -211,7 +221,7 @@ export const TZ = cfg.identity?.timezone?.trim() || Intl.DateTimeFormat().resolv
 export const tzLabel = () => (TZ === "Asia/Seoul" ? "KST" : TZ);
 // What the bot calls the owner (identity.address); empty = no title.
 export const ADDRESS = cfg.identity?.address?.trim() ?? "";
-export const PORT = Number(process.env.DOTZ_PORT ?? cfg.web?.port ?? 7420);
+export const PORT = Number(process.env.DOTZ_PORT ?? cfg.web?.port ?? DEFAULTS.web_port);
 export const OMP = process.env.DOTZ_OMP ?? "omp";
 export const paths = {
 	inbox: join(DATA_DIR, "inbox.jsonl"),

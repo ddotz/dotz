@@ -28,7 +28,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, loadGuardConfig, logOnce, stateDir, statePath as stateFile } from "./guard-config.ts";
+import { type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, loadGuardConfig, logOnce, stateDir, statePath as stateFile, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./guard-config.ts";
 
 // Active configuration: the defaults until installGuard() loads <DOTZ_DIR>/config.json. The exported checks take their
 // limits as a parameter that defaults to it, so tests pass their own.
@@ -936,8 +936,8 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		if (ctx?.agent?.kind !== "sub") return;
 		compactions++;
 		debug({ phase: "sub-compact", agent: ctx.agent.id, compactions });
-		if (compactions === 1) pi.sendUserMessage(WRAP_UP_STEER, { deliverAs: "steer" });
-		else if (compactions === 2) pi.sendUserMessage(STOP_REASON, { deliverAs: "steer" });
+		if (compactions === SUB_COMPACT_WRAP_UP) pi.sendUserMessage(WRAP_UP_STEER, { deliverAs: "steer" });
+		else if (compactions === SUB_COMPACT_STOP) pi.sendUserMessage(STOP_REASON, { deliverAs: "steer" });
 	});
 
 	pi.on("before_provider_request", (event: any, ctx: any) => {
@@ -1011,7 +1011,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 
 	const guardToolCall = async (event: any, ctx: any): Promise<any> => {
 		const tool = String(event?.toolName ?? "");
-		if (ctx?.agent?.kind === "sub" && compactions >= 2) {
+		if (ctx?.agent?.kind === "sub" && compactions >= SUB_COMPACT_STOP) {
 			debug({ phase: "sub-stop-block", agent: ctx.agent.id, tool });
 			return { block: true, reason: STOP_REASON };
 		}

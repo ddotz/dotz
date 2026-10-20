@@ -11,8 +11,8 @@ import { lanes, restartLane } from "./lanes.ts";
 import { orch, orchestratorPid, restart as restartOrchestrator } from "./orchestrator.ts";
 import { trackTimer } from "./shutdown.ts";
 
-const CHECK_MS = 30_000;
-const WINDOW_MS = 60 * 60_000;
+export const CHECK_MS = 30_000;
+export const WINDOW_MS = 60 * 60_000;
 export const MAX_RESTARTS = 3;
 
 export type GuardVerdict = "ok" | "restart" | "give-up" | "gave-up";

@@ -7,18 +7,24 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { runningSubagents } from "./activity.ts";
-import { cfg, CONFIG_FILE, DATA_DIR, IDENTITY_FILE, LANES_COMPACT_AT, NAME, orchestratorModel, lanesModel, parseSelector, paths, THINKING_LEVELS, uiOriginView, workerModel } from "./config.ts";
+import { cfg, COALESCE_MAX_MS, CONFIG_FILE, DATA_DIR, DEFAULTS, HOST, IDENTITY_FILE, LANES_COMPACT_AT, NAME, orchestratorModel, lanesModel, parseSelector, paths, THINKING_LEVELS, uiOriginView, workerModel } from "./config.ts";
 import { kTokens, percentOf } from "./context.ts";
 import * as discord from "./discord.ts";
 import { modeFile, lang, msg } from "./i18n.ts";
-import { laneLive, lanes, WORKER_SLOTS } from "./lanes.ts";
-import { orch } from "./orchestrator.ts";
-import { availableModels, ControlError, type ModelInfo, quota } from "./providers.ts";
-import { listSchedules } from "./schedule.ts";
+import { BUDGET_MARGIN, BUDGET_WINDOW_HOURS, DEFAULT_EST, laneLive, lanes, RECOVERY_MAX, RECOVERY_WINDOW_MS, WORKER_SLOTS } from "./lanes.ts";
+import { KEEPALIVE_FROM_MS, KEEPALIVE_MAX, KEEPALIVE_TO_MS, keepaliveSupported, MAX_RESTARTS as ORCH_RESTARTS, orch, RESTART_WINDOW_MS } from "./orchestrator.ts";
+import { availableModels, ControlError, type ModelInfo, quota, TRANSIENT_RETRIES } from "./providers.ts";
+import { listSchedules, MIN_EVERY_MINUTES } from "./schedule.ts";
+import { CHECK_MS as MEM_CHECK_MS, MAX_RESTARTS as MEM_RESTARTS, WINDOW_MS as MEM_WINDOW_MS } from "./memguard.ts";
+import { FIRST_AFTER_MS } from "./livestatus.ts";
+import { WORKTREE_EVERY_MS } from "./hygiene.ts";
+import { RESTART_NOTICE_MS } from "./restart.ts";
+import { NO_ACCOUNT_RETRY_MS, zeleState } from "./zele.ts";
+import { loadGuardConfig, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "../extension/guard-config.ts";
 import { harnessProjects, denyLines } from "./harnessprojects.ts";
 import { listSetups } from "./workchannels.ts";
-import { allWatches } from "./watch.ts";
-import { activeHarness, EXTENSION_DIRS } from "./runtime/index.ts";
+import { allWatches, FAIL_ALERT_AFTER, FAIL_ALERT_EVERY_MS } from "./watch.ts";
+import { activeHarness, EXTENSION_DIRS, runtimeFor } from "./runtime/index.ts";
 
 export type Applies = "live" | "restart" | "next-turn";
 type SettingType = "text" | "number" | "bool" | "select" | "model" | "effort";
@@ -80,39 +86,39 @@ const DEFS = new Map<string, Def>([
 	["orchestrator.model", { type: "model", applies: "live", mirror: true, source: "config.json:models.orchestrator.model" }],
 	["orchestrator.thinking", { type: "effort", applies: "live", mirror: true, source: "config.json:models.orchestrator.thinking" }],
 	// orchestrator.ts ROTATE_TOKENS
-	["orchestrator.rotate_tokens", { type: "number", applies: "restart", default: 150_000, min: 20_000, max: 1_000_000 }],
+	["orchestrator.rotate_tokens", { type: "number", applies: "restart", default: DEFAULTS.rotate_tokens, min: 20_000, max: 1_000_000 }],
 	["lanes.model", { type: "model", applies: "next-turn", mirror: true, source: "config.json:models.lanes.model" }],
 	["lanes.thinking", { type: "effort", applies: "next-turn", mirror: true, source: "config.json:models.lanes.thinking" }],
 	// lanes.ts MAX_ACTIVE
-	["lanes.max_active", { type: "number", applies: "restart", default: 4, min: 1, max: 16 }],
+	["lanes.max_active", { type: "number", applies: "restart", default: DEFAULTS.max_active, min: 1, max: 16 }],
 	// config.ts lanesCompactAt / lanesKeepRecent (read when a lane process starts)
-	["lanes.compact_at", { type: "number", applies: "next-turn", mirror: true, default: 300_000, min: 50_000, max: 2_000_000 }],
-	["lanes.keep_recent", { type: "number", applies: "next-turn", mirror: true, default: 40_000, min: 5_000, max: 400_000 }],
+	["lanes.compact_at", { type: "number", applies: "next-turn", mirror: true, default: LANES_COMPACT_AT, min: 50_000, max: 2_000_000 }],
+	["lanes.keep_recent", { type: "number", applies: "next-turn", mirror: true, default: DEFAULTS.keep_recent, min: 5_000, max: 400_000 }],
 	["lanes.worker_model", { type: "model", applies: "next-turn", mirror: true, source: "config.json:models.workers.model" }],
 	["lanes.worker_effort", { type: "effort", applies: "next-turn", mirror: true, source: "config.json:models.workers.thinking" }],
 	// config.ts lanesNightlyAt (hygiene.ts arms its timer at start)
-	["lanes.nightly_at", { type: "text", applies: "restart", default: "04:30" }],
-	["lanes.nightly_compact_at", { type: "number", applies: "live", mirror: true, default: 300_000, min: 50_000, max: 2_000_000 }],
-	["lanes.rotate_mb", { type: "number", applies: "live", mirror: true, default: 50, min: 5, max: 1000 }],
+	["lanes.nightly_at", { type: "text", applies: "restart", default: DEFAULTS.nightly_at }],
+	["lanes.nightly_compact_at", { type: "number", applies: "live", mirror: true, default: DEFAULTS.nightly_compact_at, min: 50_000, max: 2_000_000 }],
+	["lanes.rotate_mb", { type: "number", applies: "live", mirror: true, default: DEFAULTS.rotate_mb, min: 5, max: 1000 }],
 	// memguard.ts reads the limit on every check, but only starts its timer when it is above 0 at start
-	["lanes.max_rss_gb", { type: "number", applies: "restart", default: 8, min: 1, max: 128 }],
+	["lanes.max_rss_gb", { type: "number", applies: "restart", default: DEFAULTS.max_rss_gb, min: 1, max: 128 }],
 	// main.ts COALESCE_MS
-	["gateway.coalesce_ms", { type: "number", applies: "restart", default: 4000, min: 0, max: 20_000 }],
+	["gateway.coalesce_ms", { type: "number", applies: "restart", default: DEFAULTS.coalesce_ms, min: 0, max: COALESCE_MAX_MS }],
 	// reflect.ts / token-audit.ts / update.ts
-	["reflect_at", { type: "text", applies: "restart", default: "04:40" }],
-	["token_audit_at", { type: "text", applies: "restart", default: "04:30" }],
+	["reflect_at", { type: "text", applies: "restart", default: DEFAULTS.reflect_at }],
+	["token_audit_at", { type: "text", applies: "restart", default: DEFAULTS.token_audit_at }],
 	["omp_update.mode", { type: "select", applies: "restart", default: "check", options: ["check", "install", "off"] }],
-	["omp_update.at", { type: "text", applies: "restart", default: "04:20" }],
+	["omp_update.at", { type: "text", applies: "restart", default: DEFAULTS.update_at }],
 	// reflect.ts reads backup.remote on every snapshot
 	["backup.remote", { type: "text", applies: "live", mirror: true, default: "" }],
 	// outlang.ts
 	["output_language.mode", { type: "select", applies: "live", mirror: true, default: "rewrite", options: ["rewrite", "off"] }],
 	["output_language.model", { type: "text", applies: "live", mirror: true, default: "" }],
-	["output_language.timeout_s", { type: "number", applies: "live", mirror: true, default: 30, min: 5, max: 300 }],
+	["output_language.timeout_s", { type: "number", applies: "live", mirror: true, default: DEFAULTS.outlang_timeout_s, min: 5, max: 300 }],
 	// zele.ts
 	["zele.enabled", { type: "bool", applies: "restart", default: true }],
-	["zele.poll_sec", { type: "number", applies: "restart", default: 120, min: 60, max: 3600 }],
-	["zele.brief_hour", { type: "number", applies: "restart", default: 8, min: 0, max: 23 }],
+	["zele.poll_sec", { type: "number", applies: "restart", default: DEFAULTS.zele_poll_sec, min: 60, max: 3600 }],
+	["zele.brief_hour", { type: "number", applies: "restart", default: DEFAULTS.zele_brief_hour, min: 0, max: 23 }],
 	["identity.name", { type: "text", applies: "restart" }],
 	["identity.language", { type: "text", applies: "live", mirror: true, default: "" }],
 	["identity.character", { type: "text", applies: "next-turn", mirror: true, multiline: true }],
@@ -220,6 +226,8 @@ const fileFact = (name: string): { label: string; value: string }[] => {
 	const st = statSync(f);
 	return [{ label: t.size, value: t.chars(readFileSync(f, "utf8").length.toLocaleString(h.locale)) }, { label: t.modified, value: h.ago.before(ago(Date.now() - st.mtimeMs)) }];
 };
+// A duration in the catalog's units (seconds under a minute, minutes under an hour, else hours).
+const dur = (ms: number) => { const u = msg().harness.common.unit; return ms < 60_000 ? u.s(Math.round(ms / 1000)) : ms < 3600_000 ? u.min(Math.round(ms / 60_000)) : u.h(Math.round(ms / 3600_000)); };
 const timeOr = (v: unknown, dflt: string) => { const c = msg().harness.common; return String(v ?? dflt) === "off" ? c.off : c.daily(String(v ?? dflt)); };
 
 // `ui.origin_view`: prompt files the owner wrote and the owner's own orchestrator-guard (when the harness loads it) are personal; MODE and the gateway's own systems ship with dotz.
@@ -257,17 +265,23 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 	const watches = allWatches();
 	const failing = watches.filter(w => w.state.fails >= 2).length;
 	const setups = listSetups();
-	const maxActive = typeof disk.lanes?.max_active === "number" ? disk.lanes.max_active : 4;
+	const maxActive = typeof disk.lanes?.max_active === "number" ? disk.lanes.max_active : DEFAULTS.max_active;
 	// The worker guard of the harness that runs dotz: the owner's original orchestrator-guard.ts in that harness's extension
 	// folder wins (dotz's port then steps aside); otherwise dotz's port (extension/guard.ts) rides on every OmO and omp process.
 	const hx = activeHarness();
 	const guardOriginal = hx.ids.filter(i => Object.hasOwn(EXTENSION_DIRS, i)).map(i => join(EXTENSION_DIRS[i](), "orchestrator-guard.ts")).find(f => existsSync(f));
 	const guardOn = Boolean(guardOriginal) || hx.ids.some(i => i === "omo" || i === "omp");
 	const guardShown = guardOriginal ? guardOriginal.replace(homedir(), "~") : "dotz/extension/guard.ts";
-	const expensiveOn = (disk as { guard?: { ask_before_expensive?: unknown } }).guard?.ask_before_expensive === true;
+	// The work guard's rules as this install configures them (config.json guard, extension/guard-config.ts).
+	const g = loadGuardConfig(DATA_DIR);
+	const expensiveOn = g.ask_before_expensive;
+	const expensiveModels = g.expensive_models.join(", ") || c.none;
+	const laneOmo = runtimeFor("lane").id === "omo";
+	const ompUsed = hx.ids.includes("omp");
+	const tailnet = Boolean(disk.web?.tailscale_https_port);
 	const rules = existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "";
 	const subagents = ["orchestrator", ...laneList.map(l => `lane:${l.name}`)].reduce((n, s) => n + runningSubagents(s), 0);
-	const zeleOn = disk.zele?.enabled !== false;
+	const mailState = disk.zele?.enabled === false ? "off" : zeleState() === "missing" ? "missing" : "on";
 	const nextSchedule = schedules.map(s => Date.parse(s.at)).filter(Number.isFinite).sort((a, b) => a - b)[0];
 	const orchTone: HarnessNode["status"] = ({ idle: "ok", working: "busy", starting: "busy", "rate-limited": "warn", stopped: "err" } as const)[orch.status];
 
@@ -287,10 +301,10 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 			settings: [ro("discord.token_file", N.discord.token, disk.discord?.token_file ? c.set : c.none, "config.json:discord.token_file"), ro("discord.owner_id", N.discord.owner, disk.discord?.owner_id ? c.set : c.none, "config.json:discord.owner_id"), ro("discord.guild", N.discord.guild, disk.discord?.guild ? c.set : c.none, "config.json:discord.guild")],
 		},
 		{
-			id: "web", kind: "channel", group: "flow", label: N.web.label, status: "ok", summary: N.web.summary,
-			desc: N.web.desc,
-			facts: [{ label: N.web.access, value: N.web.accessValue }, { label: N.web.sending, value: N.web.sendingValue }],
-			settings: [ro("web.port", N.web.port, String(disk.web?.port ?? 7420), "config.json:web.port"), ro("web.tailscale_https_port", N.web.tailscalePort, String(disk.web?.tailscale_https_port ?? ""), "config.json:web.tailscale_https_port"), ro("web.allow_logins", N.web.logins, N.web.loginCount((disk.web?.allow_logins ?? []).length), "config.json:web.allow_logins")],
+			id: "web", kind: "channel", group: "flow", label: N.web.label, status: "ok", summary: N.web.summary(tailnet),
+			desc: N.web.desc(HOST, tailnet),
+			facts: [{ label: N.web.access, value: N.web.accessValue(tailnet, (disk.web?.allow_logins ?? []).length) }],
+			settings: [ro("web.port", N.web.port, String(disk.web?.port ?? DEFAULTS.web_port), "config.json:web.port"), ro("web.tailscale_https_port", N.web.tailscalePort, tailnet ? String(disk.web?.tailscale_https_port) : c.none, "config.json:web.tailscale_https_port"), ro("web.allow_logins", N.web.logins, N.web.loginCount((disk.web?.allow_logins ?? []).length), "config.json:web.allow_logins")],
 		},
 		{
 			id: "terminal", kind: "channel", group: "flow", label: N.terminal.label, status: opts.terminals ? "ok" : "off", summary: opts.terminals ? N.terminal.summary(opts.terminals) : N.terminal.none,
@@ -300,37 +314,37 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{
 			id: "schedule", kind: "channel", group: "flow", label: N.schedule.label, status: "ok",
 			summary: schedules.length ? N.schedule.summary(schedules.length, nextSchedule ? N.schedule.next(ago(Math.abs(nextSchedule - Date.now())), nextSchedule > Date.now()) : "") : N.schedule.none,
-			desc: N.schedule.desc,
+			desc: N.schedule.desc(MIN_EVERY_MINUTES),
 			facts: [{ label: N.schedule.schedules, value: c.count(schedules.length) }, ...(nextSchedule ? [{ label: N.schedule.nextRun, value: stamp(nextSchedule) }] : []), { label: N.schedule.repeating, value: c.count(schedules.filter(s => s.every_minutes).length) }], settings: [],
 		},
 		{
 			id: "watch", kind: "channel", group: "flow", label: N.watch.label, status: failing ? "warn" : watches.length ? "ok" : "off", summary: watches.length ? N.watch.summary(watches.length, failing) : N.watch.none,
-			desc: N.watch.desc,
+			desc: N.watch.desc(FAIL_ALERT_AFTER, dur(FAIL_ALERT_EVERY_MS)),
 			facts: [{ label: N.watch.watches, value: c.count(watches.length) }, { label: N.watch.setups, value: c.count(setups.length) }, { label: N.watch.failing, value: c.count(failing) }], settings: [],
 		},
 		{
-			id: "mail", kind: "channel", group: "flow", label: N.mail.label, status: zeleOn ? "ok" : "off", summary: zeleOn ? N.mail.summary(disk.zele?.poll_sec ?? 120, disk.zele?.brief_hour ?? 8) : c.disabled,
+			id: "mail", kind: "channel", group: "flow", label: N.mail.label, status: mailState === "on" ? "ok" : "off", summary: mailState === "on" ? N.mail.summary(disk.zele?.poll_sec ?? DEFAULTS.zele_poll_sec, disk.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : mailState === "off" ? c.disabled : N.mail.missing,
 			desc: N.mail.desc,
-			facts: [{ label: c.state, value: zeleOn ? N.mail.on : c.off }],
+			facts: [{ label: c.state, value: mailState === "on" ? N.mail.on(dur(NO_ACCOUNT_RETRY_MS)) : mailState === "off" ? c.off : N.mail.missing }],
 			settings: [S("zele.enabled"), S("zele.poll_sec"), S("zele.brief_hour")],
 		},
 		// ---- gateway
 		{
 			id: "gateway", kind: "gateway", group: "flow", label: N.gateway.label, status: "ok", summary: N.gateway.summary,
-			desc: N.gateway.desc,
-			facts: [{ label: N.gateway.merge, value: N.gateway.mergeValue(disk.gateway?.coalesce_ms ?? 4000) }, { label: N.gateway.direct, value: N.gateway.directValue }, { label: N.gateway.route, value: N.gateway.routeValue }, { label: N.gateway.restart, value: N.gateway.restartValue }],
+			desc: N.gateway.desc(dur(FIRST_AFTER_MS)),
+			facts: [{ label: N.gateway.merge, value: N.gateway.mergeValue(disk.gateway?.coalesce_ms ?? DEFAULTS.coalesce_ms, dur(COALESCE_MAX_MS)) }, { label: N.gateway.direct, value: N.gateway.directValue }, { label: N.gateway.route, value: N.gateway.routeValue }, { label: N.gateway.restart, value: N.gateway.restartValue(dur(RESTART_NOTICE_MS)) }],
 			settings: [S("gateway.coalesce_ms")],
 		},
 		// ---- orchestrator
 		{
 			id: "orchestrator", kind: "orchestrator", group: "flow", label: N.orchestrator.label(NAME), status: orchTone,
 			summary: `${mName(om.model)} · ${om.thinking} · ${T.status[orch.status] ?? orch.status}`,
-			desc: N.orchestrator.desc(hx.name),
+			desc: N.orchestrator.desc(hx.name, TRANSIENT_RETRIES, ORCH_RESTARTS, dur(RESTART_WINDOW_MS)),
 			facts: [
 				{ label: c.state, value: T.status[orch.status] ?? orch.status },
 				{ label: N.orchestrator.context, value: orch.ctx.window ? `${kTokens(orch.ctx.tokens)} / ${kTokens(orch.ctx.window)} (${percentOf(orch.ctx) ?? 0}%)` : orch.ctx.tokens ? kTokens(orch.ctx.tokens) : "-" },
 				...(orch.status === "rate-limited" && orch.rateLimitedUntil ? [{ label: N.orchestrator.resumes, value: stamp(orch.rateLimitedUntil) }] : []),
-				{ label: N.orchestrator.cache, value: N.orchestrator.cacheValue },
+				{ label: N.orchestrator.cache, value: keepaliveSupported() ? N.orchestrator.cacheValue(Math.round(KEEPALIVE_FROM_MS / 60_000), Math.round(KEEPALIVE_TO_MS / 60_000), KEEPALIVE_MAX) : N.orchestrator.cacheNa },
 				{ label: N.orchestrator.startPrompt, value: N.orchestrator.startPromptValue },
 			],
 			settings: [S("orchestrator.model"), S("orchestrator.thinking"), S("orchestrator.rotate_tokens")],
@@ -344,7 +358,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{
 			id: "lanes", kind: "lanes", group: "flow", label: N.lanes.label, status: working ? "busy" : aliveLanes.length ? "ok" : "off",
 			summary: aliveLanes.length ? N.lanes.summary(aliveLanes.length, working, maxActive) : N.lanes.none(maxActive),
-			desc: N.lanes.desc,
+			desc: N.lanes.desc(RECOVERY_MAX, dur(RECOVERY_WINDOW_MS)),
 			facts: [{ label: N.lanes.lanes, value: N.lanes.lanesValue(aliveLanes.length, working) }, ...aliveLanes.slice(0, 8).map(l => ({ label: l.name, value: `${mName(l.model)} · ${T.status[l.status] ?? l.status}` })), { label: N.lanes.workDir, value: N.lanes.workDirValue }, { label: N.lanes.compaction, value: N.lanes.compactionValue((disk.lanes?.compact_at ?? LANES_COMPACT_AT).toLocaleString(T.locale)) }],
 			settings: [S("lanes.model"), S("lanes.thinking"), S("lanes.max_active"), S("lanes.compact_at"), S("lanes.keep_recent")],
 		},
@@ -352,32 +366,32 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{
 			id: "workers", kind: "workers", group: "flow", label: N.workers.label, status: subagents ? "busy" : "ok", summary: `${mName(workerModel().replace(/:[a-z]+$/, ""))} · ${wm.thinking}${subagents ? N.workers.running(subagents) : ""}`,
 			desc: N.workers.desc,
-			facts: [{ label: N.workers.kinds, value: N.workers.kindsValue }, { label: N.workers.limit, value: N.workers.limitValue(WORKER_SLOTS) }, { label: N.workers.runningFact, value: c.count(subagents) }, { label: N.workers.isolation, value: N.workers.isolationValue }, { label: N.workers.expensive, value: (expensiveOn ? N.workers.expensiveValue : N.guard.expensiveOff) }],
+			facts: [{ label: N.workers.kinds, value: N.workers.kindsValue(laneOmo) }, { label: N.workers.limit, value: N.workers.limitValue(WORKER_SLOTS) }, { label: N.workers.runningFact, value: c.count(subagents) }, { label: N.workers.isolation, value: N.workers.isolationValue(guardOn && g.enabled) }, { label: N.workers.expensive, value: expensiveOn ? N.workers.expensiveValue(expensiveModels) : N.guard.expensiveOff }],
 			settings: [S("lanes.worker_model"), S("lanes.worker_effort")],
 		},
 		// ---- support: around the gateway
 		{ id: "outlang", kind: "system", group: "support", anchor: "gateway", order: 1, label: N.outlang.label, status: modeOf(disk) === "off" ? "off" : "ok", summary: modeOf(disk) === "off" ? c.disabled : N.outlang.summary(lang()), desc: N.outlang.desc, facts: [{ label: N.outlang.reference, value: lang() }], settings: [S("output_language.mode"), S("output_language.model"), S("output_language.timeout_s")] },
-		{ id: "update", kind: "system", group: "support", anchor: "gateway", order: 2, label: N.update.label, status: disk.omp_update?.mode === "off" || disk.omp_update?.at === "off" ? "off" : "ok", summary: disk.omp_update?.mode === "off" ? c.disabled : `${timeOr(disk.omp_update?.at, "04:20")} · ${N.update[disk.omp_update?.mode === "install" ? "install" : "check"]}`, desc: N.update.desc, facts: [], settings: [S("omp_update.mode"), S("omp_update.at")] },
-		{ id: "audit", kind: "system", group: "support", anchor: "gateway", order: 3, label: N.audit.label, status: String(disk.token_audit_at ?? "04:30") === "off" ? "off" : "ok", summary: timeOr(disk.token_audit_at, "04:30"), desc: N.audit.desc, facts: [], settings: [S("token_audit_at")] },
-		{ id: "reflect", kind: "system", group: "support", anchor: "gateway", order: 4, label: N.reflect.label, status: String(disk.reflect_at ?? "04:40") === "off" ? "off" : "ok", summary: N.reflect.summary(timeOr(disk.reflect_at, "04:40")), desc: N.reflect.desc, facts: [], settings: [S("reflect_at")] },
+		{ id: "update", kind: "system", group: "support", anchor: "gateway", order: 2, label: N.update.label, status: !ompUsed || disk.omp_update?.mode === "off" || disk.omp_update?.at === "off" ? "off" : "ok", summary: !ompUsed ? N.update.na(hx.name) : disk.omp_update?.mode === "off" ? c.disabled : `${timeOr(disk.omp_update?.at, DEFAULTS.update_at)} · ${N.update[disk.omp_update?.mode === "install" ? "install" : "check"]}`, desc: N.update.desc, facts: [], settings: [S("omp_update.mode"), S("omp_update.at")] },
+		{ id: "audit", kind: "system", group: "support", anchor: "gateway", order: 3, label: N.audit.label, status: String(disk.token_audit_at ?? DEFAULTS.token_audit_at) === "off" ? "off" : "ok", summary: timeOr(disk.token_audit_at, DEFAULTS.token_audit_at), desc: N.audit.desc, facts: [], settings: [S("token_audit_at")] },
+		{ id: "reflect", kind: "system", group: "support", anchor: "gateway", order: 4, label: N.reflect.label, status: String(disk.reflect_at ?? DEFAULTS.reflect_at) === "off" ? "off" : "ok", summary: N.reflect.summary(timeOr(disk.reflect_at, DEFAULTS.reflect_at)), desc: N.reflect.desc, facts: [], settings: [S("reflect_at")] },
 		{ id: "backup", kind: "system", group: "support", anchor: "reflect", order: 1, label: N.backup.label, status: disk.backup?.remote ? "ok" : "off", summary: disk.backup?.remote ? N.backup.remote : N.backup.local, desc: N.backup.desc, facts: [{ label: N.backup.external, value: disk.backup?.remote ? c.set : c.none }], settings: [S("backup.remote", disk.backup?.remote && /\/\/[^/@\s]+@/.test(String(disk.backup.remote)) ? { value: N.backup.credentialed, editable: false, hint: N.backup.credentialedHint } : {})] },
 		// ---- support: orchestrator column
-		{ id: "providers", kind: "system", group: "support", anchor: "orchestrator", order: 5, label: N.providers.label, status: low === undefined ? "ok" : low <= 10 ? "err" : low <= 30 ? "warn" : "ok", summary: N.providers.summary(used.length, low), desc: N.providers.desc, facts: [{ label: N.providers.used, value: used.join(", ") }, ...limits.slice(0, 6).map(l => ({ label: `${l.p} ${l.label}`, value: N.providers.remaining(l.pct) }))], settings: [] },
+		{ id: "providers", kind: "system", group: "support", anchor: "orchestrator", order: 5, label: N.providers.label, status: low === undefined ? "ok" : low <= 10 ? "err" : low <= 30 ? "warn" : "ok", summary: N.providers.summary(used.length, low), desc: N.providers.desc(BUDGET_WINDOW_HOURS, BUDGET_MARGIN, DEFAULT_EST), facts: [{ label: N.providers.used, value: used.join(", ") }, ...limits.slice(0, 6).map(l => ({ label: `${l.p} ${l.label}`, value: N.providers.remaining(l.pct) }))], settings: [] },
 		// ---- support: lanes column
-		{ id: "hygiene", kind: "system", group: "support", anchor: "lanes", order: 1, label: N.hygiene.label, status: String(disk.lanes?.nightly_at ?? "04:30") === "off" ? "off" : "ok", summary: N.hygiene.summary(timeOr(disk.lanes?.nightly_at, "04:30")), desc: N.hygiene.desc, facts: [], settings: [S("lanes.nightly_at"), S("lanes.nightly_compact_at"), S("lanes.rotate_mb")] },
-		{ id: "memguard", kind: "system", group: "support", anchor: "lanes", order: 2, label: N.memguard.label, status: (disk.lanes?.max_rss_gb ?? 8) === 0 ? "off" : "ok", summary: (disk.lanes?.max_rss_gb ?? 8) === 0 ? c.disabled : N.memguard.summary(disk.lanes?.max_rss_gb ?? 8), desc: N.memguard.desc, facts: [], settings: [S("lanes.max_rss_gb")] },
+		{ id: "hygiene", kind: "system", group: "support", anchor: "lanes", order: 1, label: N.hygiene.label, status: String(disk.lanes?.nightly_at ?? DEFAULTS.nightly_at) === "off" ? "off" : "ok", summary: N.hygiene.summary(timeOr(disk.lanes?.nightly_at, DEFAULTS.nightly_at)), desc: N.hygiene.desc(dur(WORKTREE_EVERY_MS)), facts: [], settings: [S("lanes.nightly_at"), S("lanes.nightly_compact_at"), S("lanes.rotate_mb")] },
+		{ id: "memguard", kind: "system", group: "support", anchor: "lanes", order: 2, label: N.memguard.label, status: (disk.lanes?.max_rss_gb ?? DEFAULTS.max_rss_gb) === 0 ? "off" : "ok", summary: (disk.lanes?.max_rss_gb ?? DEFAULTS.max_rss_gb) === 0 ? c.disabled : N.memguard.summary(disk.lanes?.max_rss_gb ?? DEFAULTS.max_rss_gb), desc: N.memguard.desc(dur(MEM_CHECK_MS), MEM_RESTARTS, dur(MEM_WINDOW_MS)), facts: [], settings: [S("lanes.max_rss_gb")] },
 		// ---- support: workers column
 		{
 			id: "guard", kind: "system", group: "support", anchor: "workers", order: 1, label: N.guard.label(hx.name), status: guardOn ? "ok" : "warn", summary: guardOn ? N.guard.summary : N.guard.missing,
 			desc: N.guard.desc(hx.name, guardShown),
 			facts: [
 				{ label: c.state, value: guardOn ? N.guard.installed : N.guard.notInstalled },
-				{ label: N.guard.briefing, value: N.guard.briefingValue },
+				{ label: N.guard.briefing, value: N.guard.briefingValue(g.max_brief_chars, g.max_fence_lines, g.worker_answer_chars) },
 				{ label: N.guard.patch, value: N.guard.patchValue },
-				{ label: N.guard.budget, value: N.guard.budgetValue },
-				{ label: N.guard.expensive, value: expensiveOn ? N.guard.expensiveValue : N.guard.expensiveOff },
+				{ label: N.guard.budget, value: g.budget_gate ? N.guard.budgetValue(BUDGET_WINDOW_HOURS, g.budget_margin_percent) : N.guard.budgetOff },
+				{ label: N.guard.expensive, value: expensiveOn ? N.guard.expensiveValue(expensiveModels) : N.guard.expensiveOff },
 				{ label: N.guard.external, value: N.guard.externalValue },
-				{ label: N.guard.context, value: N.guard.contextValue },
+				{ label: N.guard.context, value: N.guard.contextValue(SUB_COMPACT_WRAP_UP, SUB_COMPACT_STOP) },
 				{ label: N.guard.blocked, value: c.count(denyLines(rules).length) },
 			], settings: [],
 		},

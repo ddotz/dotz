@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pushBackup, unstageSecrets } from "./backup.ts";
-import { cfg, DATA_DIR, log, paths } from "./config.ts";
+import { cfg, DATA_DIR, DEFAULTS, log, paths } from "./config.ts";
 import { msg, withReplyLine } from "./i18n.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { trackTimer } from "./shutdown.ts";
@@ -159,7 +159,7 @@ if (import.meta.main && process.argv[2] === "--candidates" && process.argv[3]) {
 }
 
 export function startReflection(deliver: (text: string) => void, sessionFile: () => string): void {
-	const at = String((cfg as { reflect_at?: string }).reflect_at ?? "04:40");
+	const at = String((cfg as { reflect_at?: string }).reflect_at ?? DEFAULTS.reflect_at);
 	if (at === "off") return;
 	const [h, m] = at.split(":").map(Number);
 	const next = () => {

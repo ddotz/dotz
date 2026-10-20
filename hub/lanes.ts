@@ -3,7 +3,7 @@ import { availableParallelism, totalmem } from "node:os";
 import { basename, join, relative } from "node:path";
 import { emitEventActivity, endSubagents, runningSubagents, statusActivity, workerCheck } from "./activity.ts";
 import { pendingAskFile } from "./asks.ts";
-import { cfg, chainAfter, DATA_DIR, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, TZ, workerModel, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, TZ, workerModel, writeAtomic } from "./config.ts";
 import { formatHeader, kstClock, workersOf } from "./lanevis.ts";
 import { lang, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
@@ -26,9 +26,9 @@ const WATCHDOG_MS = 120_000;
 // A turn in flight with no rpc frame for this long (a hung omp or provider call) is aborted and resumed; a lane
 // recovers at most RECOVERY_MAX times per RECOVERY_WINDOW_MS, then it is left alone and the owner told once.
 const STALL_MS = Number(process.env.DOTZ_STALL_MS ?? 20 * 60_000);
-const RECOVERY_MAX = 3;
-const RECOVERY_WINDOW_MS = 60 * 60_000;
-const MAX_ACTIVE = cfg.lanes?.max_active ?? 4;
+export const RECOVERY_MAX = 3;
+export const RECOVERY_WINDOW_MS = 60 * 60_000;
+const MAX_ACTIVE = cfg.lanes?.max_active ?? DEFAULTS.max_active;
 const BRIEF_MAX = 8000;
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const DONE_RE = /(done[- ]?when|done\s*=|acceptance|완료\s*조건)/i;
@@ -730,15 +730,18 @@ export const isExpensive = (selector: string) => /fable/i.test(selector) || /^(m
 
 // Budget gate (owner rule 2026-10-18): a job is assumed to use `est` % of the 5h window (default 15) and 10% must stay.
 // The 7d window never gates; its remaining % is only shown in the message.
-const DEFAULT_EST = 15;
+export const DEFAULT_EST = 15;
+// The share of the 5h window that must stay after a job's estimate (budget gate).
+export const BUDGET_MARGIN = 10;
+export const BUDGET_WINDOW_HOURS = 5; // the provider window the gate reads (anthropic:<n>h)
 // `est` (launch arg) wins over an "Estimate: N%" line in the brief; absent or invalid -> DEFAULT_EST.
 export function estimateOf(est: unknown, brief = ""): number {
 	const n = Number(est ?? /^\s*Estimate:\s*(\d+(?:\.\d+)?)\s*%?/im.exec(brief)?.[1]);
 	return Number.isFinite(n) && n >= 0 && n <= 100 ? n : DEFAULT_EST;
 }
 export function budgetVerdict(five: number | undefined, week: number | undefined, est: number): string | undefined {
-	if (typeof five !== "number" || five - est >= 10) return undefined;
-	return `5h window ${five}% left; this job is assumed to use ~${est}%, leaving under 10%${typeof week === "number" ? `; 7d window ${week}% left (info only)` : ""}`;
+	if (typeof five !== "number" || five - est >= BUDGET_MARGIN) return undefined;
+	return `${BUDGET_WINDOW_HOURS}h window ${five}% left; this job is assumed to use ~${est}%, leaving under ${BUDGET_MARGIN}%${typeof week === "number" ? `; 7d window ${week}% left (info only)` : ""}`;
 }
 
 export type BudgetOutcome = "go" | "blocked" | "forced" | "unknown";
