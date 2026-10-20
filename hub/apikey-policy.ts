@@ -32,10 +32,23 @@ export function pinnedAccount(): string | undefined {
 	return pinned;
 }
 
+// The owner's temporary lift (2026-10-20, "api폴백은 임시로 바로 사용 가능하게 풀고 진행해"): <DOTZ_DIR>/api-allow-while-pinned
+// holds an expiry in epoch seconds. Before it a pinned account does not ban API keys; at it the ban applies again by
+// itself. Removing the file ends the lift at once.
+export const allowFile = () => join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "api-allow-while-pinned");
+export function liftedUntil(): number | undefined {
+	try {
+		const ms = Number(readFileSync(allowFile(), "utf8").trim()) * 1000;
+		return ms > Date.now() ? ms : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 // The pinned account that forbids API keys right now, or undefined when keys are allowed.
 export function apiKeyBan(): string | undefined {
 	const a = pinnedAccount();
-	return a && NO_API_KEY_ACCOUNTS.has(a) ? a : undefined;
+	return a && NO_API_KEY_ACCOUNTS.has(a) && !liftedUntil() ? a : undefined;
 }
 
 // `env` without API-key variables while the ban holds (unchanged otherwise).
