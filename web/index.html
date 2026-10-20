@@ -1220,6 +1220,65 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .tg-drop { border: 1.5px dashed var(--fg-3); }
 @media (pointer: coarse) { .dc-fold { width: 44px; height: 44px; margin: -6px -4px 0 0; } .dc-chip { height: 36px; line-height: 36px; } .td-bar { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .dc-fold .ic, .td-ch { transition: none; } }
+/* ---- 프로젝트 · 세션 (docs/layers.md §5) ---- */
+.prj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.prj-card { display: flex; flex-direction: column; gap: 8px; width: 100%; color: inherit; font: inherit; text-align: left; }
+.prj-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.prj-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 16px/22px var(--font); }
+.prj-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--fg-2); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.prj-prog { display: flex; align-items: center; gap: 10px; }
+.prj-prog .bar { flex: 1; margin-top: 0; }
+.prj-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+#v-project { max-width: 1180px; }
+.pmv-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 16px; }
+.pmv-hmain { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.pmv-hact { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.pmv-edit { display: block; width: 100%; margin: 0 -8px; padding: 2px 8px; border: 0; border-radius: var(--r-ctl); background: transparent; color: inherit; font: inherit; text-align: left; cursor: text; overflow-wrap: anywhere; box-sizing: content-box; }
+.pmv-edit:hover { background: var(--hover); }
+.pmv-edit.empty { color: var(--fg-3); }
+.pmv-title { font: 700 20px/28px var(--font); }
+.pmv-purpose { color: var(--fg-2); font-size: 14px; line-height: 22px; }
+.pmv-form { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.pmv-form .fi { width: 100%; }
+.pmv-ta { height: auto; min-height: 72px; padding: 8px 12px; resize: vertical; line-height: 22px; }
+.pmv-acts { display: flex; justify-content: flex-end; gap: 8px; }
+.pmv-cols { display: flex; flex-direction: column; }
+.pmv-col { display: contents; }
+.pmv-sec { display: flex; flex-direction: column; min-width: 0; margin-top: 28px; }
+.pmv-sec > .sec { margin-top: 0; }
+@media (min-width: 640px) {
+  .pmv-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; align-items: start; }
+  .pmv-col { display: flex; flex-direction: column; min-width: 0; }
+}
+.pmv-goal { display: flex; flex-direction: column; gap: 12px; }
+.pmv-prog { display: flex; align-items: center; gap: 12px; }
+.pmv-prog .bar { flex: 1; margin-top: 0; height: 6px; border-radius: 3px; }
+.pmv-prog .bar i { border-radius: 3px; }
+.pmv-big { flex: none; font: 700 20px/28px var(--font); }
+.pmv-mlist { display: flex; flex-direction: column; }
+.pmv-ms { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 6px 0; }
+.pmv-ms + .pmv-ms { border-top: 1px solid var(--line); }
+.pmv-ms .pmv-edit { font-size: 15px; line-height: 22px; }
+.pmv-ms.done .pmv-edit { color: var(--fg-3); text-decoration: line-through; }
+.pmv-mtx { flex: 1; min-width: 0; padding-top: 1px; }
+.pmv-ck { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-top: 4px; padding: 0; border: 1.5px solid var(--line-2); border-radius: 50%; background: transparent; color: var(--bg); }
+.pmv-ck .ic { width: 14px; height: 14px; opacity: 0; }
+.pmv-ck[aria-checked="true"] { border-color: var(--fg); background: var(--fg); }
+.pmv-ck[aria-checked="true"] .ic { opacity: 1; }
+.pmv-add { display: flex; gap: 8px; }
+.pmv-add .fi { flex: 1; min-width: 0; }
+.pmv-rt { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; }
+.pmv-rt-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
+.pmv-rt-name { flex: 1 1 120px; min-width: 0; font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
+.pmv-rt-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--fg-3); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
+.pmv-rt-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.pmv-rt-form { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 12px; }
+.pmv-fld { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pmv-fld .fi { flex: 1; min-width: 0; }
+.pmv-day { margin: 14px 4px 6px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.pmv-day:first-child { margin-top: 0; }
+.pmv-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lproj { padding-left: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 </style>
 </head>
 <body>
@@ -1245,6 +1304,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
     <div class="views" id="views">
       <section class="view" id="v-home" hidden><div id="home-now"></div><div class="sec" id="home-sec">상태</div><div id="home"></div><div id="home-custom"></div></section>
       <section class="view" id="v-project" hidden></section>
+      <section class="view" id="v-projects" hidden></section>
       <section class="view fill" id="v-chat" hidden>
         <div class="subs" hidden></div>
         <div class="todo" id="todo" hidden></div>
@@ -1334,6 +1394,7 @@ const enc = encodeURIComponent;
 const ICONS = {
   home: "M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
   chat: "M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-5.4A8 8 0 1 1 21 12z",
+  projects: "M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z",
   activity: "M3 12h4l3-8 4 16 3-8h4",
   lanes: "M5 4h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM5 14h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z",
   bell: "M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0",
@@ -1367,7 +1428,7 @@ const ICONS = {
   code: "M9 8l-4 4 4 4M15 8l4 4-4 4M13.5 6l-3 12",
   braces: "M9 4C7 4 6 5 6 7v3c0 1-1 2-2 2 1 0 2 1 2 2v3c0 2 1 3 3 3M15 4c2 0 3 1 3 3v3c0 1 1 2 2 2-1 0-2 1-2 2v3c0 2-1 3-3 3",
 };
-const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", lanes: "lanes", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context" };
+const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", projects: "projects", project: "projects", lanes: "lanes", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context" };
 const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
 
 /* ---------- formatting ---------- */
@@ -1677,13 +1738,13 @@ let P = null;          // /api/providers
 let botName = "dotz";
 let current = "home", prevView = null;
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
-const NAV = [["home", "홈"], ["chat", "채팅"], ["lanes", "레인"], ["harness", "구성"], ["settings", "설정"]];
+const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["lanes", "세션"], ["settings", "설정"]];
 const CHAT_MODE_KEY = "dotz-chat-mode";
-const navView = v => v === "activity" ? "chat" : v;
+const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : v;
 const lastChatView = () => { try { return localStorage.getItem(CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
-const SUB = new Set(["models", "providers", "usage", "context"]);
-const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context", "project"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", project: "프로젝트" };
+const SUB = new Set(["models", "providers", "usage", "context", "harness"]);
+const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context", "project", "projects"];
+const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "세션", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", project: "프로젝트", projects: "프로젝트" };
 // The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
 const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
 const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
@@ -1717,9 +1778,9 @@ function endedGroup() {
         el("span", { class: "en", text: l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" }))
     : el("div", { class: "erow" },
         el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
-          el("span", { class: "dot" }), el("span", { class: "en", text: l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" })),
+          el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" })),
         el("button", { class: "ib edel", type: "button", "aria-label": `${l.name} 삭제`, title: "삭제", onclick: () => deleteEnded([l.name]) }, icon("trash")));
-  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { text: `종료된 레인 ${list.length}` }), tools),
+  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { text: `종료된 세션 ${list.length}` }), tools),
     ...(all ? [all] : []), ...list.map(row));
   d.open = endedOpen;
   d.addEventListener("toggle", () => { endedOpen = d.open; if (!d.open && endedSel) { endedSel = null; refreshEnded(); } });
@@ -1730,7 +1791,7 @@ async function deleteEnded(names) {
   const one = names.length === 1;
   const sure = await new Promise(res => {
     let v = false;
-    dialog({ title: one ? `${names[0]} 삭제` : `레인 ${names.length}개 삭제`, onclose: () => res(v),
+    dialog({ title: one ? `${names[0]} 삭제` : `세션 ${names.length}개 삭제`, onclose: () => res(v),
       body: el("div", { class: "dl-body" }, el("p", { text: "휴지통으로 옮겨요. 7일 안에는 되돌릴 수 있어요." }),
         el("ul", { class: "dl-list" }, ...names.map(n => el("li", { text: n })))),
       actions: [{ label: "취소", onclick: c => c() }, { label: one ? "삭제" : `${names.length}개 삭제`, kind: "danger fill", onclick: c => { v = true; c(); } }] });
@@ -1753,7 +1814,7 @@ const keptWhy = err => /uncommitted/i.test(err) ? "아직 커밋하지 않은 �
   : /live|running|working|busy|실행 중|작업 중/i.test(err) ? "아직 돌고 있어요. 멈춘 뒤에 지울 수 있어요."
   : "작업 폴더를 정리하지 못했어요. 잠시 뒤에 다시 해 보세요.";
 function keptLanes(bad) {
-  dialog({ title: bad.length === 1 ? `${bad[0].name} 레인은 그대로 뒀어요` : `레인 ${bad.length}개는 그대로 뒀어요`,
+  dialog({ title: bad.length === 1 ? `${bad[0].name} 세션은 그대로 뒀어요` : `세션 ${bad.length}개는 그대로 뒀어요`,
     body: el("div", { class: "dl-body" }, el("p", { text: "아무것도 지우지 않았어요. 안전하게 남겨 두었어요." }),
       el("ul", { class: "dl-list" }, ...bad.map(x => el("li", { text: `${x.name} · ${keptWhy(String(x.error || ""))}` })))),
     actions: [{ label: "확인", kind: "fill", onclick: c => c() }] });
@@ -1777,7 +1838,7 @@ const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) 
 const isPhone = () => matchMedia("(max-width: 639px)").matches;
 function sessionSheet(anchor) {
   const d = $("#thead .tdrop");
-  if (d && d._items) showMenu(anchor, [{ header: "세션" }, ...d._items()], { value: target, onPick: d._pick, sheet: true });
+  if (d && d._items) showMenu(anchor, [{ header: "대화 기록" }, ...d._items()], { value: target, onPick: d._pick, sheet: true });
 }
 for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: ev => id === "chat" && isPhone() && (current === "chat" || current === "activity") ? sessionSheet(ev.currentTarget) : go(id === "chat" ? lastChatView() : id) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
@@ -1798,7 +1859,7 @@ function renderSideStatus() {
 }
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
-const backTarget = () => SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? "home" : null;
+const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? "projects" : null;
 $("#back").onclick = () => go(backTarget() || "home");
 
 /* ---------- command palette: jump to a view or run a /command ---------- */
@@ -1830,11 +1891,11 @@ function openPalette() {
       else for (const [c, desc] of hintList) if (c.startsWith(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
     } else {
       for (const [c, desc] of hintList) if (!v || c.includes(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
-      for (const id of views) if (id !== "activity" && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], go: id === "chat" ? lastChatView() : id });
+      for (const id of views) if (id !== "activity" && id !== "project" && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
-      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `종료된 레인 ${ended.length}`, act: () => { endedOpen = true; go("lanes"); } });
-      else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || "종료된 레인".startsWith(v))) items.push({ kind: "act", ic: "lanes", label: `종료된 레인 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
+      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 ${ended.length}`, act: () => { endedOpen = true; go("lanes"); } });
+      else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || "종료된 세션".startsWith(v))) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
       if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
     }
     idx = 0;
@@ -1883,7 +1944,8 @@ function parseHash() {
 function go(name, tgt) {
   closeMenu(false);
   if (!views.includes(name)) name = "home";
-  if (tgt && tgt !== target && validTarget(tgt)) setTarget(tgt);
+  if (name === "project" && !tgt) name = "projects";
+  if (tgt && name !== "project" && tgt !== target && validTarget(tgt)) setTarget(tgt);
   if (name !== current) prevView = current;
   current = name;
   const tv = name === "chat" || name === "activity";
@@ -1905,7 +1967,9 @@ function go(name, tgt) {
   if (name === "harness") loadHarness(); else closeHSheet();
   if (tv) enterTarget();
   if (name === "home") { renderHome(); loadHomeData(); }
-  if (name === "lanes") { laneSig = ""; renderLanes(); }
+  if (name === "lanes") { laneSig = ""; renderLanes(); prjLoad(); }
+  if (name === "projects") { renderProjects(); prjLoad(); }
+  if (name === "project") pmOpen(tgt);
   if (name === "settings") { loadUpdate(); renderSettings(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
   if (name === "providers") loadProviders();
@@ -2318,7 +2382,7 @@ function homeMenu(anchor, id) {
     } else {
       const n = laneOf(id);
       add("중단", () => busy(null, async () => { await api(`/api/lanes/${enc(n)}/abort`, "POST", {}); toast("작업을 중단했어요"); refreshState(); }));
-      add("재시작", () => busy(null, async () => { if (!await ask(`${n} 재시작`, "이 레인을 다시 시작할까요?", "재시작", true)) return; await api(`/api/lanes/${enc(n)}/restart`, "POST", {}); toast("재시작했어요"); refreshState(); }));
+      add("재시작", () => busy(null, async () => { if (!await ask(`${n} 재시작`, "이 세션을 다시 시작할까요?", "재시작", true)) return; await api(`/api/lanes/${enc(n)}/restart`, "POST", {}); toast("재시작했어요"); refreshState(); }));
     }
   } else if (id.startsWith("prov:")) {
     const p = ((P && P.providers) || []).find(x => x.id === id.slice(5));
@@ -2367,7 +2431,7 @@ function laneLastFetch(name) {
 let homeBoard = null;
 const HOME_BIG = { min: { w: 3, h: 3 }, max: { w: 12, h: 10 } }, HOME_SMALL = { min: { w: 2, h: 2 }, max: { w: 12, h: 6 } }, HOME_GROUP = { min: { w: 3, h: 2 }, max: { w: 12, h: 14 } };
 // Kinds of home items that can be bundled into one card (title, view the card opens); the bundled kinds are kept per browser.
-const HOME_KINDS = { lane: ["레인", "lanes"], ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
+const HOME_KINDS = { lane: ["세션", "lanes"], ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
 const HOME_GROUPS_KEY = "dotz-home-groups";
 const homeKind = id => { const k = id.split(":")[0]; return HOME_KINDS[k] ? k : null; };
 let homeGroups = (() => { try { const v = JSON.parse(localStorage.getItem(HOME_GROUPS_KEY) || "null"); if (Array.isArray(v)) return new Set(v); } catch {} return new Set(["ctx", "limit", "prov"]); })();
@@ -2494,7 +2558,7 @@ function renderHome() {
     const need = Math.min(HOME_GROUP.max.h, Math.max(2, Math.ceil((52 + Math.max(1, list.length) * (kind === "limit" || kind === "ctx" ? 44 : 30) + BGAP) / BSTEP)));
     const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length;
     const tone = list.some(e => e.tone === "err") ? "err" : nAtt ? "warn" : "";
-    const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : kind === "lane" ? "작동 중인 레인 없음" : "없음";
+    const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : kind === "lane" ? "작동 중인 세션 없음" : "없음";
     add(`group:${kind}`, itemCard(view, tone,
       el("div", { class: "ch" }, el("h3", { text: title }), nAtt ? el("span", { class: "tag warn", text: `확인 필요 ${nAtt}` }) : null, list.length ? el("span", { class: "tag", text: String(list.length) }) : null, menuBtn(`group:${kind}`)),
       list.length ? el("div", { class: "glist" }, ...list.map(homeRow)) : el("div", { class: "sup", text: empty })), { w: 4, h: need }, { min: { w: 3, h: need }, max: HOME_GROUP.max });
@@ -3061,7 +3125,7 @@ const kindOf = tool => (KINDS.find(([r]) => r.test(String(tool || ""))) || [0, "
 // Status lines from the runtime, said in Korean.
 function statusKoLine(text) {
   const t = oneLine(text), m = t.match(/^(\S+) (?:resumed its session|started a new session) \(([^)]+)\)/);
-  if (m) return `${m[1] === "orchestrator" ? botName : m[1]} 세션 ${/resumed/.test(t) ? "이어서" : "새로"} 시작 · ${modelChipText(m[2])}`;
+  if (m) return `${m[1] === "orchestrator" ? botName : m[1]} 대화 기록 ${/resumed/.test(t) ? "이어서" : "새로"} 시작 · ${modelChipText(m[2])}`;
   if (/^compacting context/.test(t)) return "컨텍스트 압축 중";
   if (/^context compacted/.test(t)) return "컨텍스트 압축 완료";
   if (/^retrying/.test(t)) return `다시 시도 중${(t.match(/attempt (\d+\/?\d*)/) || [])[1] ? ` (${t.match(/attempt (\d+\/?\d*)/)[1]})` : ""}`;
@@ -3857,7 +3921,7 @@ function renderBars() {
       el("span", { class: `dot ${cur.tone}` }), el("span", { class: "val", text: cur.name }),
       cur.attn ? el("span", { class: "sb warn", text: attnLabel(cur.attn) }) : null,
       cur.subs ? el("span", { class: "sb", text: `서브 ${cur.subs}` }) : null,
-      othersAttn ? el("span", { class: "nb warn", title: `다른 세션 확인 필요 ${othersAttn}개`, text: String(othersAttn) })
+      othersAttn ? el("span", { class: "nb warn", title: `다른 대상 확인 필요 ${othersAttn}개`, text: String(othersAttn) })
         : others ? el("span", { class: "nb", title: "다른 대상의 새 메시지", text: others > 99 ? "99+" : String(others) }) : null,
       icon("drop"));
     drop._items = () => [
@@ -3952,6 +4016,7 @@ async function refreshState() {
     noteStatus(); paintAuth(); paintDecision();
     renderSideStatus(); renderBars(); renderWorking(); updateComposerMeta();
     if (current === "lanes") renderLanes();
+    if (current === "project") pmPaint();
     if (current === "home") renderHome();
     if (current === "settings") renderSettings();
     loadContext(true);
@@ -4128,9 +4193,9 @@ function laneActions(p, l) {
   return [
     el("button", { class: "btn text", type: "button", onclick: () => p.input.focus() }, "메시지"),
     act("중단", "text", async () => { await post("abort"); toast("작업을 중단했어요"); }),
-    act("재시작", "text", async () => { if (!await ask(`${p.name} 재시작`, "이 레인을 다시 시작할까요?", "재시작", true)) return; await post("restart"); toast("재시작했어요"); }),
+    act("재시작", "text", async () => { if (!await ask(`${p.name} 재시작`, "이 세션을 다시 시작할까요?", "재시작", true)) return; await post("restart"); toast("재시작했어요"); }),
     // Same look as its siblings; the confirm dialog carries the danger styling.
-    act("종료", "text", async () => { if (!await ask(`${p.name} 종료`, "이 레인을 종료할까요?", "종료", true)) return; await api(`/api/lanes/${enc(p.name)}`, "DELETE"); toast("종료했어요"); }),
+    act("종료", "text", async () => { if (!await ask(`${p.name} 종료`, "이 세션을 종료할까요?", "종료", true)) return; await api(`/api/lanes/${enc(p.name)}`, "DELETE"); toast("종료했어요"); }),
   ];
 }
 function lanePane(name) {
@@ -4143,6 +4208,7 @@ function lanePane(name) {
   p.ask = el("span", { class: "tag warn", text: "질문 대기", hidden: true });
   p.subs = el("button", { class: "tag pri", type: "button", hidden: true, title: "서브에이전트 보기", onclick: ev => { ev.stopPropagation(); openSubs([`lane:${name}`]); } });
   p.model = el("div", { class: "lmodel" });
+  p.proj = el("div", { class: "lproj", hidden: true });
   p.acts = el("div", { class: "lacts" });
   p.tail = el("div", { class: "ltail", tabindex: "0", role: "log", "aria-label": `${name} 활동`, onclick: () => { if (!String(getSelection() || "")) openSource(`lane:${name}`); } });
   p.tail.addEventListener("scroll", () => {
@@ -4152,7 +4218,7 @@ function lanePane(name) {
   });
   p.input = input({ type: "text", enterkeyhint: "send", value: laneDraft[name] || "", oninput: ev => { laneDraft[name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); p.send.click(); } } });
   p.send = el("button", { class: "ib pri", type: "button" }, icon("send"));
-  const head = el("div", { class: "lhead" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.att, p.tag, p.claim, p.ask, p.subs), p.model, p.acts);
+  const head = el("div", { class: "lhead" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.att, p.tag, p.claim, p.ask, p.subs), p.proj, p.model, p.acts);
   p.node = el("section", { class: "lpane", "aria-label": name, "data-t": `lane:${name}` }, head,
     p.tail,
     el("div", { class: "lcomp" }, p.input, p.send));
@@ -4165,16 +4231,20 @@ function laneUpdate(p, l, m) {
   const k = attnKind(`lane:${l.name}`);
   p.dot.className = `dot ${k ? "att" : tone}`;
   p.att.hidden = !k;
-  p.nameBtn.textContent = l.name;
+  p.nameBtn.textContent = l.title || l.name;
+  p.nameBtn.title = l.title ? `${l.name} · 대화 열기` : "대화 열기";
+  const proj = laneProject(l);
+  p.proj.hidden = !proj; p.proj.textContent = proj ? `프로젝트 · ${proj}` : "";
   p.tag.className = `tag ${tone}`; p.tag.textContent = statusKo(l.status);
   // "reported" is the lane's own done claim; "verified" only after the orchestrator checked it (dotz_lane verify).
   const claim = l.claim && l.claim.state;
-  p.claim.hidden = !claim; p.claim.className = `tag ${claim === "verified" ? "ok" : "pri"}`; p.claim.textContent = claim === "verified" ? "확인됨" : "보고됨"; p.claim.title = claim === "verified" ? `오케스트레이터가 확인했어요${l.claim.evidence ? `: ${l.claim.evidence}` : ""}` : "레인이 완료라고 보고했어요 (아직 확인 전)";
+  p.claim.hidden = !claim; p.claim.className = `tag ${claim === "verified" ? "ok" : "pri"}`; p.claim.textContent = claim === "verified" ? "확인됨" : "보고됨"; p.claim.title = claim === "verified" ? `오케스트레이터가 확인했어요${l.claim.evidence ? `: ${l.claim.evidence}` : ""}` : "세션이 완료라고 보고했어요 (아직 확인 전)";
   // A lane's [ask] report waits for the owner's answer until the owner (or the orchestrator) writes to the lane.
   const pa = l.pendingAsk;
   p.ask.hidden = !pa; p.ask.title = pa ? `답을 기다리는 질문 (${kstStamp(pa.at)}): ${String(pa.text).slice(0, 500)}` : "";
-  const subs = runningSubs(`lane:${l.name}`).length;
-  p.subs.hidden = !subs; p.subs.textContent = `서브 ${subs}`; p.subs.title = `서브에이전트 ${subs}개 진행 중`;
+  const allSubs = SUBS[`lane:${l.name}`] || [], runSubs = runningSubs(`lane:${l.name}`).length;
+  p.subs.hidden = !allSubs.length; p.subs.className = `tag${runSubs ? " pri" : ""}`;
+  p.subs.textContent = `서브에이전트 ${allSubs.length - runSubs}/${allSubs.length}`; p.subs.title = `서브에이전트 끝난 수 / 전체 · ${runSubs}개 진행 중`;
   const model = (m && m.model) || l.model;
   p.model.textContent = model ? `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` : "";
   p.model.hidden = !model;
@@ -4190,7 +4260,7 @@ function laneUpdate(p, l, m) {
 }
 function laneBoardInit() {
   const grid = el("div", {});
-  laneBoard = { grid, none: emptyNode("작동 중인 레인 없음") };
+  laneBoard = { grid, none: emptyNode("작동 중인 세션 없음") };
   laneBoard.node = el("div", { class: "lboard" }, laneBoard.none, grid);
   $("#lanes").append(laneBoard.node);
   // The tail of a pane follows the card height; a resize or move only re-sticks the tails.
@@ -4202,7 +4272,7 @@ function renderLanes() {
   if (!laneBoard) laneBoardInit();
   const lanes = S.lanes.filter(laneAlive);
   const modelOf = n => (M && M.lanes || []).find(l => l.name === n);
-  const sig = JSON.stringify([lanes.map(l => [l.name, l.status, l.model, runningSubs(`lane:${l.name}`).length, attnKind(`lane:${l.name}`), l.claim && l.claim.state, l.pendingAsk && l.pendingAsk.at]), M && M.lanes, M && M.available && M.available.length]);
+  const sig = JSON.stringify([lanes.map(l => [l.name, l.title, l.home, l.status, l.model, (SUBS[`lane:${l.name}`] || []).map(s => s.status).join(), attnKind(`lane:${l.name}`), l.claim && l.claim.state, l.pendingAsk && l.pendingAsk.at]), prjRev, M && M.lanes, M && M.available && M.available.length]);
   if (sig === laneSig) return renderEndedLanes();
   laneSig = sig;
   const B = laneBoard;
@@ -4226,6 +4296,304 @@ function renderEndedLanes() {
   box.dataset.sig = `${names}|${endedOpen}`;
   clear(box).append(endedGroup() || "");
 }
+
+/* ---------- 프로젝트 (docs/layers.md §5): the list (GET /api/custom) and the main view (GET /api/custom/project?key=) ---------- */
+let PRJ = null, PRJ_FAIL = false, prjFlight = null, prjRev = 0;
+const prjTitle = p => (p.record && p.record.title) || p.title || p.name;
+const prjPurpose = p => (p.record && p.record.purpose) || p.purpose || p.note || "";
+const prjMiles = p => { const m = (p.record && p.record.milestones) || p.milestones; return Array.isArray(m) ? m : []; };
+const prjMonitors = p => Array.isArray(p.monitors) ? p.monitors.length : typeof p.monitors === "number" ? p.monitors : null;
+const prjChat = p => p.key.startsWith("ch:") ? p.key : p.channel ? `ch:${p.channel.id}` : "";
+const prjPaused = p => !!(p.paused || (p.record && p.record.paused));
+function prjLoad() {
+  if (prjFlight) return prjFlight;
+  prjFlight = api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
+    prjFlight = null; prjRev++;
+    if (current === "projects") renderProjects();
+    else if (current === "project") pmPaint();
+    else if (current === "lanes") renderLanes();
+  });
+  return prjFlight;
+}
+// The project a session belongs to, by name: its home channel (ch:<id>), else the folder project that lists it.
+function laneProject(l) {
+  const list = (PRJ && PRJ.projects) || [];
+  const p = (l.home && list.find(x => x.key === l.home || (x.channel && `ch:${x.channel.id}` === l.home))) || list.find(x => (x.lanes || []).some(z => z.name === l.name));
+  if (p) return prjTitle(p);
+  const work = (S && S.channels && S.channels.work) || {};
+  return l.home && l.home.startsWith("ch:") ? work[l.home.slice(3)] || "" : "";
+}
+
+// Status dot and word of a project: waiting on the owner > working > a live session or channel > nothing running.
+function prjStatus(p) {
+  const ls = p.lanes || [];
+  if (prjPaused(p)) return ["", "쉬는 중"];
+  if (ls.some(l => l.waiting)) return ["att", "질문 대기"];
+  if (ls.some(l => l.live && l.status === "working")) return ["pri", "작업 중"];
+  return [ls.some(l => l.live) || p.channel ? "ok" : "", ""];
+}
+function prjCard(p) {
+  const [tone, word] = prjStatus(p), ms = prjMiles(p), done = ms.filter(m => m.done).length, ls = p.lanes || [], mon = prjMonitors(p);
+  const pct = ms.length ? Math.round(done / ms.length * 100) : 0;
+  const meta = [ls.length ? `세션 ${ls.filter(l => l.live).length}/${ls.length}` : "세션 없음", mon != null ? `모니터 ${mon}` : ""].filter(Boolean);
+  return el("button", { class: "card tap prj-card", type: "button", onclick: () => go("project", p.key) },
+    el("div", { class: "prj-top" }, el("span", { class: `dot ${tone}` }), el("span", { class: "prj-title", text: prjTitle(p) }),
+      word ? el("span", { class: `tag ${tone === "att" ? "warn" : tone}`, text: word }) : null, icon("chev", "chev")),
+    prjPurpose(p) ? el("div", { class: "prj-note", text: prjPurpose(p) }) : null,
+    ms.length ? el("div", { class: "prj-prog" }, el("div", { class: "bar", role: "progressbar", "aria-label": "목표 진행", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "sup", text: `${done}/${ms.length}` })) : null,
+    el("div", { class: "prj-meta" }, ...meta.map(t => el("span", { text: t }))));
+}
+function renderProjects() {
+  const box = $("#v-projects");
+  if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
+  const list = PRJ.projects || [];
+  if (!list.length) { delete box.dataset.sig; clear(box).append(emptyNode("아직 프로젝트가 없어요. 채팅에서 계속 돌아가야 하는 일을 맡기면 여기에 생겨요")); return; }
+  const sig = JSON.stringify(list);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  clear(box).append(el("div", { class: "prj-grid" }, ...list.map(prjCard)));
+}
+
+/* ---------- 프로젝트 main: header, 목표와 진행, 루틴과 모니터링, 세션, 최근 결과 ---------- */
+// PM.D = the detail; PM.open counts fields being edited (a refresh never repaints under them); PM.draft keeps the milestone input.
+let PM = { key: "", D: null, fail: false, open: 0, flight: null, draft: "" };
+function pmOpen(key) {
+  if (PM.key !== key) PM = { key, D: null, fail: false, open: 0, flight: null, draft: "" };
+  pmPaint(); prjLoad(); pmLoad();
+}
+function pmLoad() {
+  const st = PM;
+  if (!st.key) return Promise.resolve(false);
+  if (st.flight) return st.flight;
+  st.flight = api(`/api/custom/project?key=${enc(st.key)}`).then(d => { st.D = d; st.fail = false; return true; }, () => { if (!st.D) st.fail = true; return false; })
+    .then(ok => { st.flight = null; if (PM === st) pmPaint(); return ok; });
+  return st.flight;
+}
+// After a write: fetch again and repaint from what the gateway kept (the page never shows the typed value as saved).
+async function pmReload() {
+  const st = PM;
+  if (st.flight) await st.flight;
+  const root = $("#v-project");
+  if (root) delete root.dataset.sig;
+  st.open = 0;
+  await Promise.all([pmLoad(), prjLoad()]);
+}
+const pmWrite = body => api("/api/projects", "PUT", { key: PM.key, ...body });
+// Runs a write; a failure stays as a calm note under the control, a success re-fetches.
+async function pmDo(note, fn) {
+  note.className = "note"; note.textContent = "";
+  try { await fn(); } catch (e) { note.className = "note err"; note.textContent = `저장하지 못했어요 · ${e.message}`; return false; }
+  await pmReload();
+  return true;
+}
+function pmProject() {
+  const found = ((PRJ && PRJ.projects) || []).find(x => x.key === PM.key);
+  if (found) return found;
+  const D = PM.D;
+  return D ? { key: PM.key, name: (D.record && D.record.title) || PM.key, lanes: D.lanes || [], record: D.record } : null;
+}
+function pmSessionRows(p, D) {
+  const dl = (D && D.lanes) || [], all = (S && S.lanes) || [], names = new Set([...dl.map(l => l.name), ...(p.lanes || []).map(l => l.name)]);
+  if (p.key.startsWith("ch:")) for (const l of all) if (l.home === p.key) names.add(l.name);
+  return [...names].map(n => {
+    const s = all.find(l => l.name === n), d = dl.find(l => l.name === n) || (p.lanes || []).find(l => l.name === n) || {};
+    return { name: n, title: (s && s.title) || d.title || n, live: s ? laneAlive(s) : !!d.live, status: s ? s.status : d.status, waiting: s ? !!s.pendingAsk : !!d.waiting, line: String(d.line || d.lastText || "").slice(0, 140) };
+  }).sort((a, b) => (b.live - a.live) || (b.waiting - a.waiting) || a.title.localeCompare(b.title));
+}
+function pmPaint() {
+  if (current !== "project" || PM.open > 0) return;
+  const root = $("#v-project"), D = PM.D, p = pmProject();
+  if (!p) { delete root.dataset.sig; clear(root).append(emptyNode(PM.fail || PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
+  const q = { ...p, record: (D && D.record) || p.record }, rows = pmSessionRows(p, D);
+  const sig = JSON.stringify([q, D, rows, botName]);
+  if (root.dataset.sig === sig) return;
+  root.dataset.sig = sig;
+  $("#title").textContent = prjTitle(q);
+  const old = $(".pmv-add input", root), focused = old && document.activeElement === old;
+  if (old) PM.draft = old.value;
+  const sec = (order, label, node) => el("section", { class: "pmv-sec", style: `order:${order}` }, el("div", { class: "sec", text: label }), node);
+  clear(root).append(pmHead(q),
+    el("div", { class: "pmv-cols" },
+      el("div", { class: "pmv-col" }, sec(1, "목표와 진행", pmGoal(q)), sec(3, rows.length ? `세션 ${rows.length}` : "세션", pmSessions(rows))),
+      el("div", { class: "pmv-col" }, sec(2, "루틴과 모니터링", pmRoutines(D)), sec(4, "최근 결과", pmResults(D)))));
+  const add = $(".pmv-add input", root);
+  if (add && PM.draft) { add.value = PM.draft; add.dispatchEvent(new Event("input")); if (focused) add.focus(); }
+}
+
+// A value that edits in place: tap -> field with 저장/취소; save() writes it, then the page shows the re-fetched value.
+function pmEditable({ value, placeholder = "비어 있어요", label, multiline, required, cls = "", save }) {
+  const wrap = el("div", { class: "pmv-ed" });
+  const show = () => clear(wrap).append(el("button", { type: "button", class: `pmv-edit ${cls}${value ? "" : " empty"}`, title: "눌러서 고쳐요", "aria-label": `${label} 고치기`, onclick: edit, text: value || placeholder }));
+  const edit = () => {
+    PM.open++;
+    const f = multiline ? el("textarea", { class: "fi pmv-ta", rows: 3, "aria-label": label }) : input({ "aria-label": label });
+    f.value = value || "";
+    const err = el("div", { class: "note err" });
+    const close = () => { PM.open = Math.max(0, PM.open - 1); show(); };
+    const ok = el("button", { class: "btn", type: "button", text: "저장" });
+    const commit = async () => {
+      const v = f.value.trim();
+      if (v === (value || "")) return close();
+      if (required && !v) { err.textContent = "비워 둘 수 없어요"; return; }
+      ok.disabled = true; err.textContent = "";
+      try { await save(v); } catch (e) { err.textContent = `저장하지 못했어요 · ${e.message}`; ok.disabled = false; return; }
+      await pmReload();
+    };
+    ok.onclick = commit;
+    f.addEventListener("keydown", ev => {
+      if (ev.isComposing || ev.keyCode === 229) return;
+      if (ev.key === "Escape") { ev.stopPropagation(); close(); }
+      else if (ev.key === "Enter" && (!multiline || ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commit(); }
+    });
+    clear(wrap).append(el("div", { class: "pmv-form" }, f, err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text", type: "button", text: "취소", onclick: close }), ok)));
+    f.focus();
+  };
+  show();
+  return wrap;
+}
+
+function pmHead(q) {
+  const chat = prjChat(q), can = !!chat && validTarget(chat);
+  return el("div", { class: "pmv-head" },
+    el("div", { class: "pmv-hmain" },
+      pmEditable({ value: prjTitle(q), label: "프로젝트 이름", required: true, cls: "pmv-title", save: v => pmWrite({ title: v }) }),
+      pmEditable({ value: prjPurpose(q), label: "프로젝트 설명", placeholder: "무엇을 하는 프로젝트인지 적어 주세요", multiline: true, cls: "pmv-purpose", save: v => pmWrite({ purpose: v }) })),
+    el("div", { class: "pmv-hact" },
+      el("button", { class: "btn", type: "button", disabled: !can, title: can ? "이 프로젝트의 오케스트레이터와 대화해요" : "작업 채널이 없는 프로젝트예요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }),
+      can ? null : el("div", { class: "note", text: "작업 채널이 생기면 채팅할 수 있어요" })));
+}
+
+function pmGoal(q) {
+  const ms = prjMiles(q), done = ms.filter(m => m.done).length, rec = q.record || {}, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
+  const note = el("div", { class: "note" });
+  const put = milestones => pmDo(note, () => pmWrite({ milestones }));
+  const once = (btn, p) => { btn.disabled = true; p.then(ok => { if (!ok) btn.disabled = false; }); };
+  const rows = ms.map((m, i) => {
+    const ck = el("button", { class: "pmv-ck", type: "button", role: "checkbox", "aria-checked": String(!!m.done), "aria-label": `${m.text} 완료 표시`, onclick: () => once(ck, put(ms.map((x, j) => j === i ? { ...x, done: !x.done } : x))) }, icon("check"));
+    const del = el("button", { class: "ib", type: "button", "aria-label": `${m.text} 삭제`, title: "삭제", onclick: () => once(del, put(ms.filter((_, j) => j !== i))) }, icon("trash"));
+    return el("div", { class: `pmv-ms${m.done ? " done" : ""}` }, ck,
+      el("div", { class: "pmv-mtx" }, pmEditable({ value: m.text, label: "마일스톤", required: true, save: v => pmWrite({ milestones: ms.map((x, j) => j === i ? { ...x, text: v } : x) }) })), del);
+  });
+  const addBtn = el("button", { class: "btn tonal", type: "button", disabled: true, text: "추가" });
+  const addIn = input({ placeholder: "마일스톤 추가", "aria-label": "마일스톤 추가", maxlength: "200", oninput: ev => { PM.draft = ev.target.value; addBtn.disabled = !ev.target.value.trim(); } });
+  const doAdd = async () => {
+    const t = addIn.value.trim(), keep = PM.draft;
+    if (!t) return;
+    addBtn.disabled = true; PM.draft = "";
+    if (!await put([...ms, { text: t, done: false }])) { PM.draft = keep; addBtn.disabled = false; }
+  };
+  addBtn.onclick = doAdd;
+  addIn.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); doAdd(); } });
+  return el("div", { class: "card pmv-goal" },
+    pmEditable({ value: rec.goal || "", label: "목표", placeholder: "목표를 적어 주세요", multiline: true, save: v => pmWrite({ goal: v }) }),
+    ms.length ? el("div", { class: "pmv-prog" }, el("span", { class: "pmv-big", text: `${done}/${ms.length}` }), el("div", { class: "bar", role: "progressbar", "aria-label": "마일스톤 진행", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` }))) : null,
+    ms.length ? el("div", { class: "pmv-mlist" }, ...rows) : null,
+    el("div", { class: "pmv-add" }, addIn, addBtn), note);
+}
+
+const PM_KIND = { monitor: "모니터", routine: "루틴", schedule: "일정" };
+const pmEvery = n => !(n > 0) ? "" : n % 60 === 0 ? `매 ${n / 60}시간` : `매 ${n}분`;
+// Health dot: ok after a clean run, warn after a failed one, err after three in a row; a paused item has none.
+function pmHealth(x) {
+  if (x.paused) return ["", ""];
+  const n = x.fails || 0;
+  if (x.lastOk === false) return n >= 3 ? ["err", `계속 실패 ${n}번`] : ["warn", "마지막 실행 실패"];
+  if (n > 0) return ["warn", `실패 ${n}번`];
+  return [x.lastRun ? "ok" : "", ""];
+}
+function pmRoutines(D) {
+  if (!D) return emptyNode(PM.fail ? "불러오지 못했어요" : "불러오는 중…");
+  const L = D.linked || {};
+  const items = [...(D.monitors || L.watches || []).map(x => ({ ...x, kind: "monitor" })), ...(D.routines || L.routines || []).map(x => ({ ...x, kind: "routine" })), ...(D.schedules || L.schedules || []).map(x => ({ ...x, kind: "schedule" }))];
+  return items.length ? el("div", { class: "list" }, ...items.map(pmRoutine)) : emptyNode("아직 루틴이나 모니터가 없어요");
+}
+function pmRoutine(x) {
+  const mins = x.every_minutes ?? (x.schedule && x.schedule.every_minutes) ?? 0;
+  const once = !mins && (x.at || (x.schedule && x.schedule.at));
+  const next = x.nextAt || (x.kind === "schedule" ? x.at : "") || (x.schedule && x.schedule.at) || "";
+  const [tone, why] = pmHealth(x);
+  const url = x.kind === "monitor" ? `/api/watches/${enc(x.id)}` : x.kind === "schedule" ? `/api/schedules/${enc(x.id)}` : "";
+  const name = x.name || x.text || x.id;
+  const note = el("div", { class: "note" }), box = el("div", { class: "pmv-rt" });
+  const meta = [PM_KIND[x.kind], mins ? pmEvery(mins) : once ? "한 번" : "", x.lastRun ? `마지막 ${kstStamp(x.lastRun)}` : x.kind === "monitor" ? "아직 안 돌았어요" : "", !x.paused && next ? `다음 ${kstStamp(next)}` : ""].filter(Boolean);
+  const patch = body => pmDo(note, () => api(url, "PATCH", body));
+  const view = () => {
+    PM.open = Math.max(0, PM.open - (box.dataset.editing ? 1 : 0)); delete box.dataset.editing;
+    const acts = el("div", { class: "pmv-rt-acts" });
+    if (url) {
+      const pause = el("button", { class: "btn tonal", type: "button", text: x.paused ? "다시 시작" : "일시정지", onclick: () => { pause.disabled = true; patch({ paused: !x.paused }).then(ok => { if (!ok) pause.disabled = false; }); } });
+      acts.append(mins || (x.kind === "monitor" && x.on === "match") ? el("button", { class: "btn text", type: "button", text: "수정", onclick: form }) : "", pause);
+    } else if (x.kind === "routine") {
+      const run = el("button", { class: "btn tonal", type: "button", text: "지금 실행", onclick: () => { run.disabled = true; pmDo(note, () => api("/api/custom/routine", "POST", { id: x.id })).then(() => { run.disabled = false; }); } });
+      acts.append(run);
+    }
+    clear(box).append(
+      el("div", { class: "pmv-rt-top" }, el("span", { class: `dot ${tone}`, role: "img", "aria-label": why || (tone === "ok" ? "정상" : "상태 없음"), title: why || (tone === "ok" ? "정상" : "") }),
+        el("span", { class: "pmv-rt-name", text: name }),
+        // How it runs (owner 2026-10-21: recurring work runs as scripts first): a monitor is a script the gateway runs with no
+        // tokens, a routine or schedule wakes the model.
+        el("span", { class: "tag", title: x.kind === "monitor" ? "게이트웨이가 직접 돌려요 · 토큰 없음" : "돌 때마다 모델이 깨어나요", text: x.kind === "monitor" ? "스크립트" : "모델" }),
+        x.paused ? el("span", { class: "tag", text: "쉬는 중" }) : null, why && tone ? el("span", { class: `tag ${tone}`, text: why }) : null),
+      el("div", { class: "pmv-rt-meta" }, ...meta.map(t => el("span", { text: t }))),
+      ...(x.pattern ? [el("div", { class: "pmv-rt-meta" }, el("span", { text: `패턴 · ${x.pattern}` }))] : []), acts, note);
+  };
+  const form = () => {
+    PM.open++; box.dataset.editing = "1";
+    const iv = mins ? input({ type: "number", min: "1", step: "1", inputmode: "numeric", value: String(mins), "aria-label": "간격(분)" }) : null;
+    const pt = x.kind === "monitor" && x.on === "match" ? input({ value: x.pattern || "", placeholder: "패턴", "aria-label": "패턴" }) : null;
+    const err = el("div", { class: "note err" }), ok = el("button", { class: "btn", type: "button", text: "저장" });
+    ok.onclick = async () => {
+      const body = {};
+      if (iv) { const n = Number(iv.value); if (!Number.isInteger(n) || n < 1) { err.textContent = "간격은 1분 이상의 정수로 적어 주세요"; return; } if (n !== mins) body.every_minutes = n; }
+      if (pt && pt.value.trim() !== (x.pattern || "")) body.pattern = pt.value.trim();
+      if (!Object.keys(body).length) return view();
+      ok.disabled = true; err.textContent = "";
+      try { await api(url, "PATCH", body); } catch (e) { err.textContent = `저장하지 못했어요 · ${e.message}`; ok.disabled = false; return; }
+      await pmReload();
+    };
+    const field = (label, node, unit) => [el("span", { class: "sup", text: label }), el("span", { class: "pmv-fld" }, node, unit ? el("span", { class: "sup", text: unit }) : null)];
+    clear(box).append(el("div", { class: "pmv-rt-top" }, el("span", { class: "pmv-rt-name", text: name })),
+      el("div", { class: "pmv-rt-form" }, ...(iv ? field("간격", iv, "분마다") : []), ...(pt ? field("패턴", pt) : [])),
+      err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text", type: "button", text: "취소", onclick: view }), ok));
+    (iv || pt).focus();
+  };
+  view();
+  return box;
+}
+
+function pmSessions(rows) {
+  if (!rows.length) return emptyNode("이 프로젝트의 세션이 없어요");
+  return el("div", { class: "list" }, ...rows.map(r => el("button", { class: "li tap", type: "button", onclick: () => openTarget(`lane:${r.name}`, lastChatView()) },
+    el("span", { class: `dot ${r.waiting ? "att" : r.live ? statusTone(r.status) : ""}` }),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), el("div", { class: "sup", text: [r.live ? statusKo(r.status) : "끝남", r.line].filter(Boolean).join(" · ") })),
+    r.waiting ? el("span", { class: "tag warn", text: "질문 대기" }) : null, icon("chev", "lead"))));
+}
+
+const PM_RES = { report: "보고", verify: "확인", commit: "커밋" };
+const pmDay = at => { const d = kstDay(at), n = Date.now(); return d === kstDay(n) ? "오늘" : d === kstDay(n - 864e5) ? "어제" : d; };
+function pmResults(D) {
+  if (!D || !D.results) return emptyNode(PM.fail ? "불러오지 못했어요" : "불러오는 중…");
+  if (!D.results.length) return emptyNode("아직 결과가 없어요");
+  const groups = [], titleOf = n => (((S && S.lanes) || []).find(l => l.name === n) || {}).title || n;
+  for (const r of D.results) {
+    const day = pmDay(r.at);
+    if (!groups.length || groups[groups.length - 1].day !== day) groups.push({ day, rows: [] });
+    groups[groups.length - 1].rows.push(r);
+  }
+  return el("div", {}, ...groups.flatMap(g => [el("div", { class: "pmv-day", text: g.day }), el("div", { class: "list" }, ...g.rows.map(r => {
+    const tap = r.kind === "report" && r.lane;
+    const tag = r.kind === "report" ? (r.tone === "fail" ? ["err", "안 됨"] : r.verified ? ["ok", "확인됨"] : ["", "보고만 함"]) : r.kind === "verify" ? (r.ok ? ["ok", "통과"] : ["err", "안 됨"]) : null;
+    return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => openTarget(`lane:${r.lane}`, lastChatView()) : null },
+      el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: r.title || "" }),
+        el("div", { class: "sup", text: [PM_RES[r.kind] || r.kind, r.kind === "commit" ? r.hash : "", r.lane ? titleOf(r.lane) : "", kstHM(r.at)].filter(Boolean).join(" · ") })),
+      tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
+  }))]));
+}
+setInterval(() => {
+  if (document.hidden) return;
+  if (current === "projects") prjLoad();
+  else if (current === "project" && !PM.open) { pmLoad(); prjLoad(); }
+}, 20000);
 
 /* ---------- context ---------- */
 let C = null, ctxTimer;
@@ -4378,10 +4746,10 @@ function renderModels() {
   const lanes = (M.lanes || []).filter(laneAlive);
   clear(box).append(
     el("div", { class: "col mt" },
-      el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: "대상마다 모델과 추론 강도, 막혔을 때 넘어갈 순서를 정해요. 어시스턴트·레인 폴백은 저장하면 바로 적용돼요." }), el("div", { class: "mt-filter" }, filter)),
+      el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: "대상마다 모델과 추론 강도, 막혔을 때 넘어갈 순서를 정해요. 어시스턴트·세션 폴백은 저장하면 바로 적용돼요." }), el("div", { class: "mt-filter" }, filter)),
       ...FB_LAYERS.map(L => targetCard(L.id, L.title(), "", L.cur(), L.confirm, fbParts(L))),
-      lanes.length ? el("div", { class: "sec", text: "실행 중 레인" }) : null,
-      ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l, "", { body: [el("div", { class: "note mt-foot", text: "폴백은 레인 기본값 순서를 따라요" })] }))));
+      lanes.length ? el("div", { class: "sec", text: "실행 중 세션" }) : null,
+      ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l, "", { body: [el("div", { class: "note mt-foot", text: "폴백은 세션 기본값 순서를 따라요" })] }))));
   if (modelsFocus) {
     const n = box.querySelector(`[data-target="${CSS.escape(modelsFocus)}"]`);
     modelsFocus = "";
@@ -4568,8 +4936,8 @@ async function loadQuota() {
 /* ---------- settings: model fallback chains (orchestrator / lanes / task workers) ---------- */
 const FB_LAYERS = [
   { id: "orchestrator", title: () => botName, sub: "오케스트레이터", cur: () => M.orchestrator, confirm: "어시스턴트가 다시 시작돼요." },
-  { id: "lanes", title: () => "레인 기본값", sub: "새로 시작하는 레인", cur: () => M.lanes_default },
-  { id: "workers", title: () => "작업자", sub: "레인이 맡기는 구현·테스트", cur: () => M.workers },
+  { id: "lanes", title: () => "세션 기본값", sub: "새로 시작하는 세션", cur: () => M.lanes_default },
+  { id: "workers", title: () => "서브에이전트", sub: "세션이 맡기는 구현·테스트", cur: () => M.workers },
 ];
 const FB_KEYS = ["model", "when", "cap", "revert", "key_file", "base_url", "api"];
 const FB_WHEN = { quota: "구독 소진 시", error: "오류 시" };
@@ -4756,7 +5124,7 @@ function fbParts(L) {
   } }, icon("add"), full ? "더 넣을 수 없어요" : "폴백 모델 추가");
   // The usual case: the subscription ran out, so the same model goes on through an API key (only after a usage limit).
   const addKey = F.conditions && L.id !== "workers" && prim && !full && !list.some(x => x.key_file && fbBase(x.model) === prim) ? el("button", { type: "button", class: "fb-add", onclick: () => fbKeyDialog({ model: prim }, file => file && fbSave(L.id, [...list, { model: prim, key_file: file, when: "quota" }])) }, icon("add"), "구독 소진 시 API 키로 계속") : null;
-  const how = L.id === "workers" ? "작업자 폴백은 순서만 정해요. 조건·상한·API 키는 쓰지 않아요."
+  const how = L.id === "workers" ? "서브에이전트 폴백은 순서만 정해요. 조건·상한·API 키는 쓰지 않아요."
     : F.harness && F.harness.id === "claude" ? "Claude Code는 Anthropic 모델만, 조건 없이 순서대로 넘어가요."
     : "단계를 누르면 바로 수정해요(모델·추론 강도·구독/API 키·넘어가는 때·복귀·상한). 끌거나 화살표로 순서를 바꿔요.";
   return {
@@ -4768,7 +5136,7 @@ function fbParts(L) {
 /* ---------- settings ---------- */
 /* ---------- installable app + web push (web/sw.js, /api/push in hub/push.ts) ---------- */
 const PWA = { reg: null, sub: null, info: null };
-const PUSH_KINDS = [["answer", "웹에서 맡긴 작업 완료 (짧은 답은 안 울려요)"], ["ask", "개입 필요 (질문 · 승인)"], ["lane", "레인 시작 · 완료 · 실패"], ["usage", "중대한 경고 (한도 · 오류 · 멈춤)"], ["update", "dotz 새 버전"]];
+const PUSH_KINDS = [["answer", "웹에서 맡긴 작업 완료 (짧은 답은 안 울려요)"], ["ask", "개입 필요 (질문 · 승인)"], ["lane", "세션 시작 · 완료 · 실패"], ["usage", "중대한 경고 (한도 · 오류 · 멈춤)"], ["update", "dotz 새 버전"]];
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const pushCapable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -4968,6 +5336,7 @@ function renderSettings() {
     row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
     row("usage", "사용량", "", () => go("usage")),
     row("context", "컨텍스트", "", () => go("context")),
+    row("harness", "구성", "시스템 지도", () => go("harness")),
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null),
     ...pushSection(), ...updateSection(), ...rtSection());
@@ -4976,7 +5345,7 @@ function renderSettings() {
 /* ---------- settings: 실행 하네스 (runtime menu + compatibility check; data from /api/runtimes) ---------- */
 let RT = null, rtLive = null;
 const RT_ICON = { omp: "term", claude: "spark", codex: "code", omo: "braces" };
-const RT_ROLE = { orchestrator: "오케스트레이터", lanes: "레인" };
+const RT_ROLE = { orchestrator: "오케스트레이터", lanes: "세션" };
 const RT_RESULT = { ok: ["통과", "ok"], adapted: ["대체", "pri"], disabled: ["끔", ""], unsupported: ["미지원", "warn"], fail: ["실패", "err"] };
 async function loadRuntimes(refresh) {
   try { RT = await api(`/api/runtimes${refresh ? "?refresh=1" : ""}`); } catch { return; }
@@ -4992,7 +5361,7 @@ function rtSection() {
     if (!r.installed) return el("div", { class: "li off", "aria-disabled": "true", title: r.reason || "" }, ...kids);
     return el("button", { class: "li tap", type: "button", "data-runtime": r.id, onclick: () => (cur && r.roles.length === 2 ? toast(`${r.label}를 쓰고 있어요`) : rtFlow(r)) }, ...kids);
   });
-  return [el("div", { class: "sec", text: "실행 하네스" }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: "바꾼 뒤에는 오케스트레이터와 레인을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요." })];
+  return [el("div", { class: "sec", text: "실행 하네스" }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: "바꾼 뒤에는 오케스트레이터와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요." })];
 }
 function rtBadge(it) {
   const [label, tone] = RT_RESULT[it.result] || [it.result, ""];
@@ -5091,7 +5460,7 @@ function hMark(ids, full) {
   return el("span", { class: "hm-mine", title }, el("span", { class: "bd m", text: "내 설정" }), parts.length ? el("span", { class: "mt", text: parts.join(" · ") }) : null);
 }
 const H_MQ = matchMedia("(max-width: 639px)");
-const H_COLS = ["들어오는 곳", "게이트웨이", "오케스트레이터", "레인", "작업자"];
+const H_COLS = ["들어오는 곳", "게이트웨이", "오케스트레이터", "세션", "서브에이전트"];
 const H_TONE = { ok: "ok", busy: "pri", warn: "warn", err: "err", off: "" };
 const H_STATE = { ok: "정상", busy: "작업 중", warn: "주의", err: "멈춤", off: "꺼짐" };
 const H_APPLY = { live: ["바로 적용", ""], "next-turn": ["다음 턴부터", ""], restart: ["재시작 후 적용", "warn"] };
@@ -5251,7 +5620,7 @@ const hPj = () => (HGB && hProjId && (HGB.projects || []).find(p => p.id === hPr
 const hProjWhere = p => `${(p.channels[0] || {}).name || p.name} · ${p.cwd}`;
 const pjSize = b => (b < 1024 ? `${b}B` : `${(b / 1024).toFixed(1)}KB`);
 const pjChain = c => (c.length ? c.map(e => [modelName(fbBase(e.model)) + (e.key_file ? " (API 키)" : ""), e.when ? FB_WHEN[e.when] : "", e.cap ? fbCapText(e.cap) : "", e.revert ? "리셋되면 복귀" : ""].filter(Boolean).join(" · ")).join(" → ") : "없음");
-const PJ_ROWS = [["모델", "model", modelName], ["강도", "effort", v => v], ["작업자 모델", "worker_model", modelName], ["작업자 강도", "worker_effort", v => v], ["런타임", "runtime", v => v || "–"], ["폴백", "fallback", pjChain], ["작업자 폴백", "worker_fallback", pjChain]];
+const PJ_ROWS = [["모델", "model", modelName], ["강도", "effort", v => v], ["서브에이전트 모델", "worker_model", modelName], ["서브에이전트 강도", "worker_effort", v => v], ["런타임", "runtime", v => v || "–"], ["폴백", "fallback", pjChain], ["서브에이전트 폴백", "worker_fallback", pjChain]];
 
 // One field: the project's value against the global one. A differing value is emphasised like the 내 설정 marker (바뀜 badge,
 // --mine) and shows global → project; an equal one is muted with "전역 기본".
@@ -5285,7 +5654,7 @@ function hProjCard(p) {
 function hProjBand() {
   const list = HGB.projects || [];
   const head = el("div", { class: "pj-hd" }, el("span", { class: "t", text: `프로젝트 · ${list.length}` }),
-    el("span", { class: "sup", text: list.length ? "작업 채널·홈 채널에 묶인 레인이에요. 나란히 놓고 비교해 보고, 카드를 누르면 그 프로젝트만의 지도가 열려요." : "작업 채널이나 홈 채널에 묶인 레인이 아직 없어요. 레인을 채널에 묶으면 여기서 프로젝트별로 비교해 볼 수 있어요." }),
+    el("span", { class: "sup", text: list.length ? "작업 채널·홈 채널에 묶인 세션이에요. 나란히 놓고 비교해 보고, 카드를 누르면 그 프로젝트만의 지도가 열려요." : "작업 채널이나 홈 채널에 묶인 세션이 아직 없어요. 세션을 채널에 묶으면 여기서 프로젝트별로 비교해 볼 수 있어요." }),
     list.length ? el("span", { class: "pj-lg" }, el("span", { class: "bd m", text: "바뀜" }), "전역과 다른 값", el("span", { class: "pj-g", text: "전역 기본" }), "전역 그대로") : null);
   return list.length ? [head, el("div", { class: "pj-row" }, ...list.map(hProjCard))] : [head];
 }
