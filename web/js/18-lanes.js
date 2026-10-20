@@ -43,7 +43,9 @@ function laneRepPaint(p) {
   const { tone, text } = parseTone(noHandoff(String(r.text ?? ""))), lt = tone ? LANE_TONE[tone] : null;
   const long = text.length > 120 || text.split("\n").length > 4;
   p.rep.append(el("div", { class: "mt" }, kstHM(r.ts), lt ? el("span", { class: `tag ${lt[0]}`, text: lt[1] }) : null),
-    mdNode(text, `md lclamp${long ? " long" : ""}`), long ? el("button", { class: "btn text lmore", type: "button", onclick: ev => { ev.stopPropagation(); openLaneChat(p.name); } }, "더 보기") : null);
+    mdNode(text, `md lclamp${long ? " long" : ""}`));
+  // (DOM append prints a null argument as the text "null", so the button is appended only when there is one)
+  if (long) p.rep.append(el("button", { class: "btn text lmore", type: "button", onclick: ev => { ev.stopPropagation(); openLaneChat(p.name); } }, "더 보기"));
 }
 function laneRefresh(p) { laneRepPaint(p); if (p.lane) p.stat.textContent = laneStatusLine(p, p.lane); }
 function laneIngest(p, a) {
