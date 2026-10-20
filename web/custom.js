@@ -255,12 +255,12 @@ button.pv-res:hover { background: var(--card-hover); }
       const running = ls.filter(l => l.live && l.status !== "idle").length, waiting = ls.filter(l => l.waiting).length;
       if (!side) {
         // Phone 바로가기: one tile per project with what is going on there.
-        const state = waiting ? `답을 기다리는 레인 ${waiting}` : running ? `작업 중인 레인 ${running}` : ls.length ? `레인 ${ls.length}개 · 쉬는 중` : "레인 없음";
+        const state = waiting ? `답을 기다리는 세션 ${waiting}` : running ? `작업 중인 세션 ${running}` : ls.length ? `세션 ${ls.length}개 · 쉬는 중` : "세션 없음";
         return el("button", { class: "pv-ptile", type: "button", onclick: () => go("project", p.key) },
           el("span", { class: "pv-ptn", text: p.name }), p.path ? el("span", { class: "pv-path", text: shortPath(p.path), title: p.path }) : null,
           el("span", { class: "pv-pts" }, el("span", { class: `dot ${waiting ? "att" : running ? "pri" : ""}` }), el("span", { text: state })));
       }
-      const badge = waiting ? el("span", { class: "dot att", title: `답을 기다리는 레인 ${waiting}` }) : running ? el("span", { class: "pv-cnt", title: `작업 중인 레인 ${running}`, text: String(running) }) : null;
+      const badge = waiting ? el("span", { class: "dot att", title: `답을 기다리는 세션 ${waiting}` }) : running ? el("span", { class: "pv-cnt", title: `작업 중인 세션 ${running}`, text: String(running) }) : null;
       return el("button", { class: `${base}${on ? " on" : ""}`, type: "button", title: p.path || p.name, onclick: () => go("project", p.key) },
         icon("lanes"), el("span", { class: nm, text: p.name }), badge);
     });
@@ -507,7 +507,7 @@ button.pv-res:hover { background: var(--card-hover); }
 
   function paintProject() {
     const root = $("#v-project");
-    if (!root || current !== "project") return;
+    if (!root || current !== "project" || typeof pmPaint === "function") return;
     root.classList.add("pv");
     const p = curProject();
     $("#title").textContent = p ? p.name : "프로젝트";
@@ -545,12 +545,10 @@ button.pv-res:hover { background: var(--card-hover); }
   function view(name, tgt) {
     if (name !== "project") return;
     projKey = tgt || "";
-    if (matchMedia("(max-width: 639px)").matches) $('#nav .ni[data-view="home"]')?.classList.add("on");
     if (detailKey !== projKey) DETAIL = null;
     paintPins();
-    paintProject();
     load(5000);
-    loadDetail(5000);
+    if (typeof pmPaint !== "function") { paintProject(); loadDetail(5000); }
   }
   function pins() {
     paintPins();
@@ -565,7 +563,7 @@ button.pv-res:hover { background: var(--card-hover); }
   setInterval(() => {
     if (document.hidden) return;
     if (current === "home" || current === "project") load(25000); else pins();
-    if (current === "project") loadDetail(25000);
+    if (current === "project" && typeof pmPaint !== "function") loadDetail(25000);
   }, 30000);
   setInterval(() => { if (!document.hidden && current !== "home" && current !== "project") pins(); }, 60000);
 })();
