@@ -1,0 +1,77 @@
+/* ---------- settings: 실행 하네스 (runtime menu + compatibility check; data from /api/runtimes) ---------- */
+let RT = null, rtLive = null;
+const RT_ICON = { omp: "term", claude: "spark", codex: "code", omo: "braces" };
+const RT_ROLE = { orchestrator: "오케스트레이터", lanes: "세션" };
+const RT_RESULT = { ok: ["통과", "ok"], adapted: ["대체", "pri"], disabled: ["끔", ""], unsupported: ["미지원", "warn"], fail: ["실패", "err"] };
+async function loadRuntimes(refresh) {
+  try { RT = await api(`/api/runtimes${refresh ? "?refresh=1" : ""}`); } catch { return; }
+  if (current === "settings") renderSettings();
+}
+function rtSection() {
+  if (!RT) return [];
+  const rows = RT.runtimes.map(r => {
+    const cur = r.roles.length > 0;
+    const sub = [r.version ? `v${r.version}` : "", r.reason || ""].filter(Boolean).join(" · ");
+    const trail = cur ? el("span", { class: "tag ok", text: r.roles.length === 2 ? "현재" : `현재 · ${RT_ROLE[r.roles[0]]}` }) : r.installed ? icon("chev", "lead") : null;
+    const kids = [el("span", { class: "lead" }, icon(RT_ICON[r.id] || "harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: r.label }), sub ? el("div", { class: "sup", text: sub }) : null), trail];
+    if (!r.installed) return el("div", { class: "li off", "aria-disabled": "true", title: r.reason || "" }, ...kids);
+    return el("button", { class: "li tap", type: "button", "data-runtime": r.id, onclick: () => (cur && r.roles.length === 2 ? toast(`${r.label}를 쓰고 있어요`) : rtFlow(r)) }, ...kids);
+  });
+  return [el("div", { class: "sec", text: "실행 하네스" }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: "바꾼 뒤에는 오케스트레이터와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요." })];
+}
+function rtBadge(it) {
+  const [label, tone] = RT_RESULT[it.result] || [it.result, ""];
+  return el("span", { class: `tag ${it.core && it.result !== "ok" && tone === "warn" ? "err" : tone}`, text: label });
+}
+function rtReportView(r, report) {
+  const core = report.items.filter(i => i.core && (i.result === "fail" || i.result === "unsupported"));
+  const changed = report.items.filter(i => i.result === "adapted" || i.result === "disabled").length;
+  const stale = !!(r.version && report.version !== r.version);
+  const sum = !r.hasAdapter ? "dotz 어댑터가 없어서 바꿀 수 없어요."
+    : report.verdict === "blocked" ? `핵심 항목이 통과하지 못해서 바꿀 수 없어요: ${core.map(i => i.label).join(", ")}`
+    : stale ? `검사한 뒤 버전이 바뀌었어요 (v${report.version || "?"} → v${r.version}). 다시 검사해 주세요.`
+    : report.verdict === "adjusted" ? `핵심 항목은 모두 통과했어요. ${changed}개 기능은 허브가 대신 처리하거나 꺼요.` : "모든 항목이 통과했어요.";
+  const meta = `${new Date(report.at).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" })}${report.version ? ` · v${report.version}` : ""}`;
+  return el("div", { class: "rt-rep", style: "display:flex;flex-direction:column;gap:8px" },
+    el("p", { text: sum }), el("div", { class: "note", text: `검사 ${meta}` }),
+    el("div", { class: "list rt-rows" }, ...report.items.map(i => el("div", { class: "rt-row" },
+      el("div", { class: "top" }, el("span", { class: "nm", text: i.label }), i.core ? el("span", { class: "tag", text: "핵심" }) : null, el("span", { class: "sp" }), rtBadge(i)),
+      i.note ? el("div", { class: "sup", text: i.note }) : null))));
+}
+function rtFlow(r) {
+  const roles = new Set(["orchestrator", "lanes"]);
+  let report = null, st = null, timer = 0, checking = false;
+  const box = el("div", { style: "display:flex;flex-direction:column;gap:12px" });
+  const d = dialog({ title: `${r.label}로 바꾸기`, body: box, wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
+  const usable = () => r.hasAdapter && (r.id === "omp" || (r.id === "omo" && r.installed !== false) || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
+  async function pull() {
+    try { const x = await api(`/api/runtimes/${r.id}`); report = x.report; st = x.state; } catch { return; }
+    if (checking && !(st && st.running)) { checking = false; clearInterval(timer); rtLive = null; }
+    paint();
+  }
+  const roleBar = () => el("div", { class: "rt-roles" }, el("span", { class: "sup", text: "적용 대상" }),
+    el("div", { class: "seg", role: "group" }, ...Object.entries(RT_ROLE).map(([k, v]) => el("button", { type: "button", class: roles.has(k) ? "on" : "", "aria-pressed": roles.has(k) ? "true" : "false", text: v, onclick: () => { roles.has(k) ? roles.delete(k) : roles.add(k); paint(); } }))));
+  async function check() {
+    try { await api(`/api/runtimes/${r.id}/verify`, "POST", { real: true }); } catch (e) { toast(e.message, true); return; }
+    checking = true; st = { running: true, done: 0, total: 0 }; rtLive = pull; clearInterval(timer); timer = setInterval(pull, 1000); paint();
+  }
+  function paint() {
+    clear(box);
+    const running = checking || (st && st.running);
+    if (r.id !== "omp") {
+      if (running) box.append(el("div", {}, el("p", { text: `호환성을 검사하는 중이에요${st && st.current ? ` · ${st.current}` : ""}` }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? `${st.done}/${st.total} 항목` : "시작하는 중…" })));
+      else if (report) box.append(rtReportView(r, report));
+      else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: "OmO는 기본 하네스라서 검사 없이 돌아갈 수 있어요. 호환성 검사로 항목별 상태도 볼 수 있어요." }));
+      else box.append(el("p", { text: r.hasAdapter ? "바꾸기 전에 호환성을 검사해요. 짧은 실행을 실제로 해 보기 때문에 1~2분쯤 걸릴 수 있어요." : "dotz 어댑터가 없어서 이 하네스로는 바꿀 수 없어요. 호환성 검사를 하면 어떤 항목이 막히는지 볼 수 있어요." }));
+    } else box.append(el("p", { text: "omp는 옵션 하네스예요. 처음 기준이었던 하네스라 검사 없이 바꿀 수 있어요." }));
+    if (r.hasAdapter) box.append(roleBar());
+    const acts = [{ label: "취소", onclick: c => c() }];
+    if (r.id !== "omp" && !running) acts.push({ label: report ? "다시 검사" : "호환성 검사", kind: report ? "text" : "tonal", onclick: () => check() });
+    acts.push({ label: r.id === "omp" ? "사용" : "조정 후 사용", kind: "pri", disabled: running || !usable() || !roles.size, onclick: (c, btn) => busy(btn, async () => {
+      try { const res = await api(`/api/runtimes/${r.id}/use`, "POST", { roles: [...roles] }); toast(res.applies); c(); }
+      catch (e) { await pull(); throw e; } }) });
+    d.setActions(acts);
+  }
+  pull().then(() => { if (st && st.running) { checking = true; rtLive = pull; timer = setInterval(pull, 1000); paint(); } });
+  paint();
+}

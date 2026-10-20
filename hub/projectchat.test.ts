@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { eventTarget } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
+import { webSource } from "./webapp.ts";
 
 const WORK = { "1561565203714408448": "dotz-개선" };
 const CH = "ch:1561565203714408448";
@@ -48,7 +47,7 @@ describe("project orchestrator target", () => {
 	for (const [name, e, want] of EVENTS) test(`history: ${name} -> ${want}`, () => expect(eventTarget(e as never)).toBe(want));
 
 	test("the web app sorts events into the same conversations as the hub", () => {
-		const html = readFileSync(join(import.meta.dir, "..", "web", "index.html"), "utf8");
+		const html = webSource();
 		const fn = html.match(/\nfunction eventTarget\(e\) \{[\s\S]*?\n\}\n/)?.[0];
 		const proj = html.match(/\nconst isProjT = .*\n/)?.[0];
 		expect(fn && proj).toBeTruthy();

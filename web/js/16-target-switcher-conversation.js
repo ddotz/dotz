@@ -1,0 +1,151 @@
+/* ---------- target switcher + 대화/터미널 toggle (rendered into the header of both views) ---------- */
+// Manual order from dragging the chips; 레인 panes and 홈 cards have their own free layout (makeBoard) and do not use it. Never-dragged targets keep spawn order after the ordered ones.
+const ORDER_KEY = "dotz-order";
+let ORDER = (() => { try { const v = JSON.parse(localStorage.getItem(ORDER_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
+const byOrder = list => list.map((t, i) => [t, ORDER.indexOf(t), i]).sort((a, b) => (a[1] < 0 ? 1e9 + a[2] : a[1]) - (b[1] < 0 ? 1e9 + b[2] : b[1])).map(x => x[0]);
+// Move `from` to just before `to` (or after it when `after`), given the list as currently shown.
+function moveInOrder(shown, from, to, after) {
+  if (from === to) return;
+  const next = shown.filter(t => t !== from);
+  next.splice(next.indexOf(to) + (after ? 1 : 0), 0, from);
+  ORDER = [...next, ...ORDER.filter(t => !next.includes(t))];
+  try { localStorage.setItem(ORDER_KEY, JSON.stringify(ORDER)); } catch {}
+  document.querySelectorAll(".thead").forEach(b => { b.dataset.sig = ""; });
+  renderBars();
+}
+// HTML5 drag: `handle` starts the drag (defaults to the node), `node` takes drops for target `t` within `shown()`;
+// it lands before or after `t` by which half the pointer is in.
+function dragItem(node, t, shown, horizontal, handle = node) {
+  handle.draggable = true;
+  handle.addEventListener("dragstart", ev => { ev.dataTransfer.setData("text/x-dotz-target", t); ev.dataTransfer.effectAllowed = "move"; node.classList.add("dragging"); });
+  handle.addEventListener("dragend", () => node.classList.remove("dragging"));
+  node.addEventListener("dragover", ev => { if (ev.dataTransfer.types.includes("text/x-dotz-target")) { ev.preventDefault(); node.classList.add("dropon"); } });
+  node.addEventListener("dragleave", () => node.classList.remove("dropon"));
+  node.addEventListener("drop", ev => {
+    ev.preventDefault(); node.classList.remove("dropon");
+    const from = ev.dataTransfer.getData("text/x-dotz-target"), r = node.getBoundingClientRect();
+    if (from) moveInOrder(shown(), from, t, horizontal ? ev.clientX > r.left + r.width / 2 : ev.clientY > r.top + r.height / 2);
+  });
+}
+function renderBars() {
+  paintAttn();
+  const lanes = S ? S.lanes : [];
+  // Three groups in this order: the main assistant, 프로젝트 (project orchestrators), 레인. Dragging reorders within a group.
+  const projs = byOrder(projTargets()), live = byOrder(lanes.filter(laneAlive).map(l => `lane:${l.name}`)), dead = byOrder(lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`));
+  if (isLaneT(target) && !live.includes(target) && !dead.includes(target)) live.push(target);
+  const alive = [MAIN, ...projs, ...live];
+  const view = t => {
+    const i = targetInfo(t);
+    const k = attnKind(t);
+    return { t, name: targetName(t), tone: k ? "warn" : i.alive ? statusTone(i.status) : "", attn: k, status: i.alive ? statusKo(i.status) : "종료됨", unread: ts(t).unread, subs: runningSubs(sourceOf(t)).length };
+  };
+  const A = alive.map(view), D = dead.map(view), PA = A.filter(v => isProjT(v.t)), LA = A.filter(v => isLaneT(v.t));
+  const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
+  const othersAttn = [...A, ...D].filter(v => v.t !== target && v.attn).length;
+  const sig = JSON.stringify([A, D, cur, others, target, ORDER]);
+  const chip = v => { const b = el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "data-t": v.t, "aria-pressed": v.t === target ? "true" : "false", title: v.attn ? `${attnLabel(v.attn)} · ${v.status}` : v.status, onclick: () => pickTarget(v.t) },
+    el("span", { class: `dot ${v.tone}` }), el("span", { class: "tx", text: v.name }),
+    v.attn ? el("span", { class: "sb warn", text: attnLabel(v.attn) }) : null,
+    v.subs ? el("span", { class: "sb", title: "서브에이전트", text: `서브 ${v.subs}` }) : null,
+    v.unread ? el("span", { class: "nb", text: v.unread > 99 ? "99+" : String(v.unread) }) : null);
+    if (v.t !== MAIN) dragItem(b, v.t, () => (D.some(d => d.t === v.t) ? D : isProjT(v.t) ? PA : LA).map(x => x.t), true);
+    return b; };
+  const sep = () => el("span", { class: "tsep", "aria-hidden": "true" });
+  const menuItem = v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" });
+  for (const bar of document.querySelectorAll(".thead")) {
+    const mode = bar.dataset.mode, msig = `${sig}|${mode}`;
+    if (bar.dataset.sig === msig || (openMenu && bar.contains(openMenu.anchor))) continue;
+    bar.dataset.sig = msig; bar.classList.toggle("lanev", isLaneT(target));
+    // Exited lanes are not shown; one opened from the palette shows as a chip only while it is the selected target.
+    const shownV = [...A, ...D.filter(v => v.t === target)], laneV = shownV.filter(v => isLaneT(v.t));
+    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, chip(A[0]),
+      ...(PA.length ? [sep(), ...PA.map(chip)] : []), ...(laneV.length ? [sep(), ...laneV.map(chip)] : []),
+      el("button", { type: "button", class: "tchip tmore", hidden: true, "aria-haspopup": "listbox", "aria-expanded": "false" }));
+    sw._views = shownV;
+    const drop = el("button", { type: "button", class: "sel tdrop", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `대화 대상: ${cur.name}` },
+      el("span", { class: `dot ${cur.tone}` }), el("span", { class: "val", text: cur.name }),
+      cur.attn ? el("span", { class: "sb warn", text: attnLabel(cur.attn) }) : null,
+      cur.subs ? el("span", { class: "sb", text: `서브 ${cur.subs}` }) : null,
+      othersAttn ? el("span", { class: "nb warn", title: `다른 대상 확인 필요 ${othersAttn}개`, text: String(othersAttn) })
+        : others ? el("span", { class: "nb", title: "다른 대상의 새 메시지", text: others > 99 ? "99+" : String(others) }) : null,
+      icon("drop"));
+    drop._items = () => [
+      menuItem(A[0]),
+      ...(PA.length ? [{ header: "프로젝트" }, ...PA.map(menuItem)] : []),
+      ...(PA.length && (LA.length || D.length) ? [{ header: "세션" }] : []),
+      ...LA.map(menuItem),
+      ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
+      ...(D.length ? [{ value: "__ended", label: `종료된 세션 ${D.length}`, sub: "기록 보기 · 재개" }] : [])];
+    drop._pick = v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else pickTarget(v); };
+    drop.onclick = () => showMenu(drop, drop._items(), { value: target, onPick: drop._pick });
+    const ud = mode === "term" && ts(target).unread > 0;
+    // a session's raw log is one visible tap away (and back)
+    const lvt = isLaneT(target) ? el("button", { class: "btn text lvt", type: "button", onclick: () => go(mode === "chat" ? "activity" : "chat") }, mode === "chat" ? "로그 보기" : "대화 보기") : null;
+    clear(bar).append(sw, drop, ...(lvt ? [lvt] : []));
+    fitChips(sw);
+    // 대화/로그: one icon button next to the 돋보기; the icon is the view a tap switches to
+    const vt = $("#vtog"), to = mode === "chat" ? "term" : "chat";
+    clear(vt).append(...[icon(to), ud ? el("i", { class: "ud" }) : null].filter(Boolean));
+    vt.title = vt.ariaLabel = to === "chat" ? "대화 보기" : "로그 보기";
+    vt.onclick = () => go(to === "chat" ? "chat" : "activity");
+    // a session has its own 로그 보기 / 대화 보기 button in the header, so the icon would only repeat it
+    vt.hidden = isLaneT(target) || !$("#appbar").classList.contains("tv");
+  }
+}
+// Desktop: target chips that do not fit fold into one "더보기 n" chip at the end (the selected one always stays visible;
+// its badge counts the folded sessions that need the owner). Phones hide the chips and use the picker instead.
+function fitChips(sw) {
+  const more = sw.querySelector(".tmore"), chips = [...sw.querySelectorAll(".tchip[data-t]")];
+  for (const c of chips) c.hidden = false;
+  more.hidden = true;
+  // A group divider shows only while a chip of its group is visible after it.
+  const seps = () => { for (const s of sw.querySelectorAll(".tsep")) { let n = s.nextElementSibling, vis = false; for (; n && !n.matches(".tsep, .tmore"); n = n.nextElementSibling) if (!n.hidden) { vis = true; break; } s.hidden = !vis; } };
+  seps();
+  if (!sw.clientWidth || sw.scrollWidth <= sw.clientWidth) return;
+  const label = vs => { const n = vs.filter(v => v.attn).length; clear(more).append(...[el("span", { class: "tx", text: `더보기 ${vs.length}` }), n ? el("span", { class: "nb warn", title: `확인 필요 ${n}개`, text: String(n) }) : null, icon("drop")].filter(Boolean)); };
+  more.hidden = false;
+  label(sw._views.filter(v => v.attn));   // widest likely label first, so the fold leaves it room
+  const hid = [];
+  for (let i = chips.length - 1; i >= 0 && sw.scrollWidth > sw.clientWidth; i--) if (!chips[i].classList.contains("on")) { chips[i].hidden = true; hid.unshift(chips[i].dataset.t); }
+  seps();
+  const vs = sw._views.filter(v => hid.includes(v.t));
+  label(vs);
+  more.onclick = () => showMenu(more, vs.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" })), { value: target, onPick: pickTarget });
+}
+new ResizeObserver(() => { const sw = $("#thead .tsw"); if (sw) fitChips(sw); }).observe($("#thead"));
+
+/* ---------- login requests (dotz_auth) ---------- */
+// A credential the agent asked for: answered here or on Discord. Values go straight to the gateway, which stores them in a
+// 0600 secrets file; they are never kept in the page.
+const AUTH_DONE = new Set();
+function paintAuth() {
+  const list = ((S && S.auth) || []).filter(a => !AUTH_DONE.has(a.id));
+  let box = $("#authbox");
+  if (!list.length) { if (box) box.remove(); return; }
+  if (!box) { box = el("div", { id: "authbox" }); document.body.append(box); }
+  const have = new Set([...box.children].map(n => n.dataset.id));
+  for (const n of [...box.children]) if (!list.some(a => a.id === n.dataset.id)) n.remove();
+  for (const a of list) {
+    if (have.has(a.id)) continue;
+    const inputs = (a.fields || []).map(f => el("input", { type: f.name === "username" ? "text" : "password", name: f.name, placeholder: f.label, "aria-label": f.label, autocomplete: f.name === "username" ? "username" : f.name === "code" ? "one-time-code" : "current-password" }));
+    const done = async (action, values) => {
+      try { await api(`/api/auth/${encodeURIComponent(a.id)}`, "POST", { action, ...(values ? { values } : {}) }); }
+      catch { toast("전달하지 못했어요. 다시 시도해 주세요"); return; }
+      AUTH_DONE.add(a.id); card.remove(); if (!box.children.length) box.remove();
+      toast(action === "cancel" ? "요청을 취소했어요" : "전달했어요");
+    };
+    const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? "승인했어요" : "보내기" });
+    const no = el("button", { class: "btn tonal", type: "button", text: "취소", onclick: () => done("cancel") });
+    const card = el("form", { class: "au", "data-id": a.id }, el("h3", { text: a.title }), el("p", { text: a.purpose }), ...inputs,
+      a.kind === "approve" ? null : el("div", { class: "note", text: "입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요." }),
+      el("div", { class: "row" }, no, ok));
+    card.addEventListener("submit", ev => {
+      ev.preventDefault();
+      if (a.kind === "approve") return done("approve");
+      const values = Object.fromEntries(inputs.map(i => [i.name, i.value]));
+      if (inputs.some(i => !i.value)) { (inputs.find(i => !i.value) || inputs[0]).focus(); return; }
+      done("submit", values);
+    });
+    box.append(card);
+  }
+}

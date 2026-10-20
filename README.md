@@ -479,7 +479,7 @@ short "received, answering when the current step ends" notice from the gateway.
   adapter existed (`hub/runtime/fixtures`).
 - Audit against Dori / dori-kit / 오모냥: `docs/audit-2026-10-16.md`.
 - `extension/index.ts` dotz extension (loaded by OmO and omp processes): orchestrator tools, terminal thin client (omp), the subagent guard and harness commands (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `token-audit.ts`).
-- `web/index.html` web app. `MODE.md` the behaviour contract (`MODE.ko.md` the same in Korean). `hub/threads.ts` the Discord thread rules (table in MODE "Threads"). `setup.ts` onboarding.
+- `web/index.html` web app shell; its script and styles are modules in `web/js/*.js` and `web/css/*.css` (one topic per file, served joined in file-name order as `/app.js` and `/app.css` by `hub/webapp.ts`). `MODE.md` the behaviour contract (`MODE.ko.md` the same in Korean). `hub/threads.ts` the Discord thread rules (table in MODE "Threads"). `setup.ts` onboarding.
 - Runtime data: `~/.dotz` (config, secrets, state, inbox/outbox, sessions, logs).
 
 ### Generic vs. per-install settings
