@@ -220,7 +220,7 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
   // the first connect and when the gap cannot be replayed (gateway restarted, or too long away): only then refetch.
   es.onopen = () => setConn(true);
   es.addEventListener("reset", () => {
-    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; renderAll(); loadTarget(target); loadSubs(); loadQueue(); laneTailsStale(); }
+    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; renderAll(); loadTarget(target); loadSubs(); loadQueue(); laneTailsStale(); convLoad(); }
     opened = true;
   });
   es.onerror = () => setConn(false);
@@ -231,6 +231,7 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
     else if (e.kind === "subagents") setSubs(e.source, e.items);
     else if (e.kind === "queue") { QUEUE = e.items || []; renderQueue(); }
     else if (e.kind === "notice" || e.kind === "notice_read") noticeLive(e);
+    else if (e.kind === "read") convOnRead(e);
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
     else if (e.kind === "update_available") { if (!e.ts || Date.now() - Date.parse(e.ts) < 60_000) toast(e.text, false, { label: "보기", onclick: () => go("settings") }, 10000); if (current === "settings") loadUpdate(); }
     // 구성 (lanes node, 프로젝트) is drawn from /api/harness, not the state: reload it too when a lane starts or ends.

@@ -1,12 +1,14 @@
-/* conversations (web/js/31-conversations.js): messenger rows on 홈 and the left column of 채팅 */
-#home-convo { margin-bottom: 24px; }
-#home-convo:empty { display: none; }
-.cv-more { margin: 4px 0 0 4px; }
+/* 채팅 (web/js/31-conversations.js): the chat list and the "새 메시지" divider.
+   Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
+.cv-side { display: none; background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
+.cv-head { display: none; }
+#v-chat.cv-listing > .cv-side { display: block; }
+#v-chat.cv-listing > :not(.cv-side) { display: none; }
 
-.cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 64px; padding: 10px 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
+.cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 68px; padding: 10px 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
+.cv-row + .cv-row { border-top: 1px solid var(--line); }
 .cv-row:hover { background: var(--card-hover); }
-.cv-row.on { background: var(--layer); }
-.cv-av { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 700 16px/24px var(--font); }
+.cv-av { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 700 17px/24px var(--font); }
 .cv-av .ic { width: 20px; height: 20px; }
 .cv-av.bot { background: var(--fg); color: var(--bg); }
 .cv-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -15,22 +17,37 @@
 .cv-p { color: var(--fg-3); font: 400 14px/20px var(--font); }
 .cv-row.unread .cv-n { font-weight: 700; }
 .cv-row.unread .cv-p { color: var(--fg); }
-.cv-row.none .cv-p { color: var(--fg-3); }
 .cv-m { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 40px; }
 .cv-t { color: var(--fg-3); font: 400 12px/16px var(--font); }
 
-/* 채팅, wide: the list sits in the chat view's left column; below 1100px the header picker stays the only switcher */
-.cv-side { display: none; }
+/* the header picker (chips / caret menu) is replaced by the list in 대화; 로그 keeps it */
+.thead[data-mode="chat"] :is(.tsw, .tdrop) { display: none !important; }
+/* phone, inside a conversation: back arrow + the conversation's name take the whole bar */
+.appbar.cvconv h1 { flex: 1 1 0; min-width: 0; margin-right: 0; }
+.appbar.cvconv .thead { flex: 0 0 auto; margin: 0; }
+
+.tl-in > .cv-new { display: flex; align-items: center; gap: 12px; margin: 8px 0 0; color: var(--accent); font: 600 12px/16px var(--font); }
+.tl-in > .cv-new::before, .tl-in > .cv-new::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
+
+@media (max-width: 1099px) {
+  .cv-row.on { background: transparent; }
+}
+
 @media (min-width: 1100px) {
-  :root { --cv-w: 264px; }
-  #v-chat { position: relative; max-width: calc(940px + var(--cv-w)); padding-left: calc(44px + var(--cv-w)); }
-  .cv-side { display: block; position: absolute; left: 24px; top: 8px; bottom: 16px; width: var(--cv-w); padding: 8px; overflow-y: auto; border-radius: var(--r-card); background: var(--card); }
-  .cv-side .cv-row { min-height: 56px; padding: 8px 10px; gap: 10px; border-radius: var(--r-ctl); }
-  .cv-side .cv-row + .cv-row { margin-top: 2px; }
-  .cv-side .cv-av { width: 32px; height: 32px; font-size: 14px; }
-  .cv-side .cv-av .ic { width: 16px; height: 16px; }
-  .cv-side .cv-n { font-size: 14px; line-height: 20px; }
-  .cv-side .cv-p { font-size: 12px; line-height: 16px; }
+  :root { --cv-w: 296px; }
+  #v-chat { display: grid; max-width: 1360px; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  #v-chat > * { grid-column: 2; }
+  #v-chat > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 8px; }
+  #v-chat > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px 12px; }
+  #v-chat > .subs { grid-row: 2; }
+  #v-chat > .todo { grid-row: 3; }
+  #v-chat > .chatbox { grid-row: 4; }
+  #v-chat > .composer { grid-row: 5; }
+  .cv-row { min-height: 60px; padding: 8px 10px; gap: 10px; border-radius: var(--r-ctl); }
+  .cv-row + .cv-row { margin-top: 2px; border-top: 0; }
+  .cv-row.on { background: var(--layer); }
+  .cv-side .cv-av { width: 40px; height: 40px; font-size: 16px; }
+  .cv-head .cv-av { width: 36px; height: 36px; font-size: 15px; }
   .cv-side .cv-m { min-width: 32px; }
 }
-@media (min-width: 1280px) { :root { --cv-w: 300px; } }
+@media (min-width: 1280px) { :root { --cv-w: 320px; } }

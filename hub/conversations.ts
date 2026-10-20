@@ -1,12 +1,14 @@
 import { eventTarget, onEmit, tailEvents, type HubEvent } from "./events.ts";
 import { paths } from "./config.ts";
+import { readOf, unreadFrom } from "./reads.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 
 // The messenger overview: one row per conversation (the main chat, each project channel, each session) with its newest real
 // message. Built once from the inbox/outbox tail, then kept current by onEmit; a request never rescans the files.
 // The web mirrors the "real message" rule (web/js/31-conversations.js), so keep the two in step.
 export type ConversationLast = { ts: string; text: string; from: "owner" | "bot" | "session" };
-export type Conversation = { target: string; last: ConversationLast | null };
+// `read`: where the owner has read up to (hub/reads.ts), `unread`: real messages after it that are not the owner's own.
+export type Conversation = { target: string; last: ConversationLast | null; read: string | null; unread: number };
 
 const PREVIEW_MAX = 120;
 // Kinds that show as a message in a conversation. Not here: delivery states, activity, progress notes (`out` with an
@@ -55,13 +57,35 @@ function lastOf(e: HubEvent): ConversationLast | undefined {
 
 const known = new Map<string, ConversationLast | null>([["main", null]]);
 let loaded = false;
-let sorted: Conversation[] | undefined;
+let sorted: { target: string; last: ConversationLast | null }[] | undefined;
+
+// The newest messages that can be unread, per target: event key -> ts. The load from the log tail and the live event of the
+// same message meet here, so the key keeps it counted once.
+const UNREAD_KEEP = 500;
+const incoming = new Map<string, Map<string, string>>();
+const cleanRestart = (e: HubEvent) => e.kind === "out" && e.source === "gateway" && /^게이트웨이 재시작했어요/.test(String(e.text ?? "")) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
+
+function countIncoming(target: string, e: HubEvent, last: ConversationLast): void {
+	if (last.from === "owner" || cleanRestart(e)) return;
+	let bucket = incoming.get(target);
+	if (!bucket) incoming.set(target, (bucket = new Map()));
+	bucket.set(`${e.ts}|${e.kind}|${String(e.text ?? "").slice(0, 60)}`, e.ts);
+	if (bucket.size > UNREAD_KEEP) bucket.delete(bucket.keys().next().value as string);
+}
+
+export function unreadOf(target: string): number {
+	const read = unreadFrom(target);
+	let n = 0;
+	for (const ts of incoming.get(target)?.values() ?? []) if (!read || ts > read) n++;
+	return n;
+}
 
 function note(e: HubEvent): void {
 	if (typeof e.ts !== "string") return;
 	const target = eventTarget(e);
 	const last = target ? lastOf(e) : undefined;
 	if (!target || !last) return;
+	countIncoming(target, e, last);
 	const prev = known.get(target);
 	if (prev && prev.ts > last.ts) return;
 	known.set(target, last);
@@ -84,5 +108,5 @@ export function conversationList(live: readonly string[] = []): Conversation[] {
 	if (!sorted || sorted.length !== known.size) {
 		sorted = [...known].map(([target, last]) => ({ target, last })).sort((a, b) => (b.last?.ts ?? "").localeCompare(a.last?.ts ?? ""));
 	}
-	return sorted;
+	return sorted.map(c => ({ ...c, read: readOf(c.target), unread: unreadOf(c.target) }));
 }

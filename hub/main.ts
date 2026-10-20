@@ -14,6 +14,7 @@ import { authRoute, pendingAuth } from "./auth.ts";
 import { notify as pushNotify, pushRoute, startPush } from "./push.ts";
 import { isNote, msg } from "./i18n.ts";
 import { conversationList } from "./conversations.ts";
+import { markRead } from "./reads.ts";
 import { activityItems, answeredIds, broadcast, emit, emitDelivery, historyEvents, recentEvents, recentOwnerMessages, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
@@ -707,6 +708,10 @@ const server = Bun.serve({
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
+		if (req.method === "POST" && url.pathname === "/api/read") {
+			const r = markRead(await body(req));
+			return json(r, r.ok ? 200 : 400);
+		}
 		if (req.method === "GET" && url.pathname === "/api/conversations") return json({ items: conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`)]) });
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
