@@ -8,7 +8,7 @@ import { changeTarget, compactTarget, ControlError, contextView, targetView, For
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
-import { authRoute } from "./auth.ts";
+import { authRoute, pendingAuth } from "./auth.ts";
 import { notify as pushNotify, pushRoute, startPush } from "./push.ts";
 import { isNote, msg } from "./i18n.ts";
 import { activityItems, answeredIds, broadcast, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
@@ -579,7 +579,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/health") return json({ ok: true });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)) });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)) });
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main";

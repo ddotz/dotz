@@ -49,7 +49,11 @@ a.cu-li:hover .cu-lt { color: var(--accent); }
 .pv-ptile:hover { background: var(--card-hover); }
 .pv-ptn { max-width: 100%; font: 600 16px/22px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pv-pts { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--fg-2); font-size: 13px; line-height: 18px; }
-.pv-path { max-width: 100%; color: var(--fg-3); font: 12px/16px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-path { max-width: 100%; color: var(--fg-3); font: 13px/18px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.pv-path { padding: 0; border: 0; background: none; cursor: copy; }
+button.pv-path:hover { color: var(--fg-2); }
+.pv-desc { color: var(--fg); font-size: 15px; line-height: 23px; }
+.pv-hint { margin-top: 8px; color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
 #v-project.pv { max-width: 1180px; }
 .pv-top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .pv-ov { display: flex; flex-direction: column; gap: 16px; padding: 18px 20px; }
@@ -57,7 +61,7 @@ a.cu-li:hover .cu-lt { color: var(--accent); }
 .pv-last > .pv-lx { flex: 1; min-width: 0; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pv-last > .cu-m { flex: none; }
 .pv-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; color: var(--fg-3); font-size: 13px; line-height: 18px; }
-.pv-facts .pv-path { font-size: 12.5px; }
+
 .pv-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .pv-tile { min-width: 0; }
 .pv-tile + .pv-tile { padding-left: 12px; border-left: 1px solid var(--line); }
@@ -253,7 +257,7 @@ button.pv-res:hover { background: var(--card-hover); }
         // Phone 바로가기: one tile per project with what is going on there.
         const state = waiting ? `답을 기다리는 레인 ${waiting}` : running ? `작업 중인 레인 ${running}` : ls.length ? `레인 ${ls.length}개 · 쉬는 중` : "레인 없음";
         return el("button", { class: "pv-ptile", type: "button", onclick: () => go("project", p.key) },
-          el("span", { class: "pv-ptn", text: p.name }), p.path ? el("span", { class: "pv-path", text: p.path }) : null,
+          el("span", { class: "pv-ptn", text: p.name }), p.path ? el("span", { class: "pv-path", text: shortPath(p.path), title: p.path }) : null,
           el("span", { class: "pv-pts" }, el("span", { class: `dot ${waiting ? "att" : running ? "pri" : ""}` }), el("span", { text: state })));
       }
       const badge = waiting ? el("span", { class: "dot att", title: `답을 기다리는 레인 ${waiting}` }) : running ? el("span", { class: "pv-cnt", title: `작업 중인 레인 ${running}`, text: String(running) }) : null;
@@ -332,6 +336,16 @@ button.pv-res:hover { background: var(--card-hover); }
     if (m < 24 * 60) return `${Math.floor(m / 60)}시간 전`;
     return `${Math.floor(m / 1440)}일 전`;
   }
+  // A folder as people read it: its last two names ("workspace › score_from_midi"), the full path on hover.
+  function shortPath(path) {
+    const parts = String(path).replace(/^~\/?/, "").split("/").filter(Boolean);
+    return parts.length ? `${parts.length > 2 ? "… › " : ""}${parts.slice(-2).join(" › ")}` : "홈 폴더";
+  }
+  function pathNode(path) {
+    const b = el("button", { class: "pv-path", type: "button", title: `${path}\n누르면 경로를 복사해요`, text: `폴더 · ${shortPath(path)}` });
+    b.addEventListener("click", () => navigator.clipboard.writeText(path).then(() => toast("경로를 복사했어요"), () => toast(path)));
+    return b;
+  }
   const sec = (label, extra) => el("div", { class: "pv-sh" }, el("div", { class: "sec", text: label }), extra || null);
   const emptyCard = t => el("div", { class: "card empty", text: t });
 
@@ -356,15 +370,15 @@ button.pv-res:hover { background: var(--card-hover); }
     const own = new Set(((D && D.lanes) || []).map(l => `lane/${l.name}`));
     const loose = g ? g.unmerged.filter(u => !own.has(u.branch)) : [];
     const fact = t => el("span", { text: t });
-    const facts = el("div", { class: "pv-facts" }, ...[p.path ? el("span", { class: "pv-path", text: p.path }) : null,
+    const facts = el("div", { class: "pv-facts" }, ...[p.path ? pathNode(p.path) : null,
       g ? fact(`${g.branch} 브랜치`) : null, g ? fact(g.dirty ? `커밋 안 한 파일 ${g.dirty}개` : "커밋 안 한 파일 없음") : null,
       loose.length ? el("span", { text: `${g.base}에 안 들어간 브랜치 ${loose.length}개`, title: loose.map(u => `${u.branch} (커밋 ${u.ahead}개)`).join("\n") }) : null,
-      p.channel ? fact(`#${p.channel.name}`) : null, p.note ? fact(p.note) : null].filter(Boolean));
+      p.channel ? fact(`#${p.channel.name}`) : null].filter(Boolean));
     const tile = (v, label, tone) => el("div", { class: "pv-tile" }, el("div", { class: "pv-tv" }, tone ? el("span", { class: `dot ${tone}` }) : null, el("span", { text: String(v) })), el("div", { class: "cu-m", text: label }));
     // The newest report, else the newest result: what happened last, in one line.
     const rs = (D && D.results) || [], last = rs.find(r => r.kind === "report") || rs[0];
     const lastRow = last ? el("div", { class: "pv-last" }, el("span", { class: "cu-m", text: last.kind === "report" ? `${last.lane} 마지막 보고` : `마지막 ${KIND[last.kind] || ""}` }), el("span", { class: "pv-lx", text: last.title || "" }), el("span", { class: "cu-m", text: when(last.at) })) : null;
-    return el("div", { class: "card pv-ov" }, facts, el("div", { class: "pv-stats" },
+    return el("div", { class: "card pv-ov" }, p.note ? el("div", { class: "pv-desc", text: p.note }) : null, facts, el("div", { class: "pv-stats" },
       tile(s.running ?? 0, "작업 중인 레인", s.running ? "pri" : ""),
       tile(s.waiting ?? 0, "답을 기다리는 레인", s.waiting ? "att" : ""),
       tile(D ? tasks.length : "…", "열린 할 일"),
@@ -476,17 +490,19 @@ button.pv-res:hover { background: var(--card-hover); }
     const fire = () => busy(send, async () => { if (await sendReq(ta.value.trim(), reqTarget)) { ta.value = ""; grow(); } });
     send.addEventListener("click", fire);
     ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing && !matchMedia("(pointer: coarse)").matches) { ev.preventDefault(); if (ta.value.trim()) fire(); } });
-    const targets = [["main", botName], ...live.map(n => [`lane:${n}`, n]), ["new", "새 레인"]];
-    const chips = el("div", { class: "pv-chips", role: "radiogroup", "aria-label": "받는 곳" });
-    const paintChips = () => { clear(chips).append(el("span", { class: "cu-m", text: "받는 곳" }), ...targets.map(([v, label]) => {
+    // Who takes the request, in words: the assistant decides where it goes, a lane adds it to what it is doing, or a new lane.
+    const targets = [["main", botName, "알맞은 곳을 골라 맡겨요"], ...live.map(n => [`lane:${n}`, `${n} 레인`, `${n} 레인이 하던 일에 이어서 넣어요`]), ["new", "새 레인으로", "새 레인을 열어 따로 진행해요"]];
+    const chips = el("div", { class: "pv-chips", role: "radiogroup", "aria-label": "맡길 곳" });
+    const hint = el("div", { class: "pv-hint" });
+    const paintChips = () => { clear(chips).append(el("span", { class: "cu-m", text: "맡길 곳" }), ...targets.map(([v, label]) => {
       const c = el("button", { class: `chip${reqTarget === v ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(reqTarget === v) }, el("span", { class: "tx", text: label }));
       c.addEventListener("click", () => { reqTarget = v; paintChips(); ta.focus(); });
       return c;
-    })); };
+    })); hint.textContent = (targets.find(t => t[0] === reqTarget) || targets[0])[2]; };
     paintChips();
-    const quick = ["지금 상태 알려줘", "남은 할 일 정리해줘", "테스트 돌려서 확인해줘", "끝난 작업 main에 반영해줘"];
+    const quick = ["지금 상태 알려줘", "남은 할 일 정리해줘", "잘 되는지 확인해줘", "끝난 작업 합쳐줘"];
     const qs = el("div", { class: "pv-quick" }, ...quick.map(q => el("button", { class: "pv-q", type: "button", text: q, onclick: () => { ta.value = q; grow(); ta.focus(); } })));
-    return el("div", { class: "card pv-req" }, chips, el("div", { class: "pv-box" }, ta, send), qs);
+    return el("div", { class: "card pv-req" }, chips, hint, el("div", { class: "pv-box" }, ta, send), qs);
   }
 
   function paintProject() {

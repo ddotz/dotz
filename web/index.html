@@ -591,6 +591,13 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .pn .mt { flex: none; }
 .sn { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 10px 14px; border-radius: 12px; background: var(--layer); font-size: 14px; line-height: 22px; }
 .sn .st { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#authbox { position: fixed; z-index: 60; right: 16px; bottom: 16px; width: min(380px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; }
+#authbox .au { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: 0 8px 28px rgba(0,0,0,.12); display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 20px; }
+#authbox .au h3 { margin: 0; font-size: 15px; }
+#authbox .au p { margin: 0; color: var(--fg-2); }
+#authbox .au input { height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--layer); color: var(--fg); font: 15px var(--font); }
+#authbox .au .row { display: flex; gap: 8px; justify-content: flex-end; }
+#authbox .au .note { color: var(--fg-3); font-size: 12px; }
 .sn .ml-from { font-weight: 600; color: var(--fg); }
 .sn .ml-subj { color: var(--fg); }
 .sn .ml-snip { color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -3618,6 +3625,42 @@ function fitChips(sw) {
 }
 new ResizeObserver(() => { const sw = $("#thead .tsw"); if (sw) fitChips(sw); }).observe($("#thead"));
 
+/* ---------- login requests (dotz_auth) ---------- */
+// A credential the agent asked for: answered here or on Discord. Values go straight to the gateway, which stores them in a
+// 0600 secrets file; they are never kept in the page.
+const AUTH_DONE = new Set();
+function paintAuth() {
+  const list = ((S && S.auth) || []).filter(a => !AUTH_DONE.has(a.id));
+  let box = $("#authbox");
+  if (!list.length) { if (box) box.remove(); return; }
+  if (!box) { box = el("div", { id: "authbox" }); document.body.append(box); }
+  const have = new Set([...box.children].map(n => n.dataset.id));
+  for (const n of [...box.children]) if (!list.some(a => a.id === n.dataset.id)) n.remove();
+  for (const a of list) {
+    if (have.has(a.id)) continue;
+    const inputs = (a.fields || []).map(f => el("input", { type: f.name === "username" ? "text" : "password", name: f.name, placeholder: f.label, "aria-label": f.label, autocomplete: f.name === "username" ? "username" : f.name === "code" ? "one-time-code" : "current-password" }));
+    const done = async (action, values) => {
+      try { await api(`/api/auth/${encodeURIComponent(a.id)}`, "POST", { action, ...(values ? { values } : {}) }); }
+      catch { toast("전달하지 못했어요. 다시 시도해 주세요"); return; }
+      AUTH_DONE.add(a.id); card.remove(); if (!box.children.length) box.remove();
+      toast(action === "cancel" ? "요청을 취소했어요" : "전달했어요");
+    };
+    const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? "승인했어요" : "보내기" });
+    const no = el("button", { class: "btn tonal", type: "button", text: "취소", onclick: () => done("cancel") });
+    const card = el("form", { class: "au", "data-id": a.id }, el("h3", { text: a.title }), el("p", { text: a.purpose }), ...inputs,
+      a.kind === "approve" ? null : el("div", { class: "note", text: "입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요." }),
+      el("div", { class: "row" }, no, ok));
+    card.addEventListener("submit", ev => {
+      ev.preventDefault();
+      if (a.kind === "approve") return done("approve");
+      const values = Object.fromEntries(inputs.map(i => [i.name, i.value]));
+      if (inputs.some(i => !i.value)) { (inputs.find(i => !i.value) || inputs[0]).focus(); return; }
+      done("submit", values);
+    });
+    box.append(card);
+  }
+}
+
 /* ---------- state refresh ---------- */
 // A short drop (the stream reconnects and replays what it missed) shows nothing; past 2s the header says it is reconnecting.
 let connTimer = 0;
@@ -3630,7 +3673,7 @@ async function refreshState() {
     // A lane that exits disappears at once: the view falls back to the main assistant (it stays reachable from ⌘K).
     if (isLaneT(target) && (!S.lanes.some(l => `lane:${l.name}` === target) || (PREV[target] && PREV[target] !== "exited" && targetInfo(target).status === "exited"))) setTarget(MAIN);
     if (isProjT(target) && !projTargets().includes(target)) setTarget(MAIN);   // its work channel was deleted
-    noteStatus();
+    noteStatus(); paintAuth();
     renderSideStatus(); renderBars(); renderWorking(); updateComposerMeta();
     if (current === "lanes") renderLanes();
     if (current === "home") renderHome();
