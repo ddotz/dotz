@@ -27,7 +27,7 @@ export function periodEnd(period: Period, at: number): number {
 
 // ---- persisted state ------------------------------------------------------------------------------------------------
 type Counter = { key: string; tokens: number; usd: number };
-type Blocked = { until: number; why: "quota" | "error" };
+type Blocked = { until: number; why: "quota" | "error"; since?: number };
 type State = { pools: Record<string, Partial<Record<Period, Counter>>>; blocked: Record<string, Blocked> };
 let state: State | undefined;
 function load(): State {
@@ -132,9 +132,27 @@ function keyEnv(e: FallbackEntry): Record<string, string> {
 }
 
 // ---- the chain ------------------------------------------------------------------------------------------------------
+export const REVERT_PROBE_MS = 10 * 60_000;
+// Consecutive failed turns (any cause) after which automatic retries, failovers and keepalives stop until a turn succeeds;
+// the owner is told once (2026-10-20: nine "stream start timed out" turns in a row, each retried).
+export const ERROR_STREAK_STOP = 5;
+export class ErrorStreak {
+	private n = 0;
+	get stopped(): boolean {
+		return this.n >= ERROR_STREAK_STOP;
+	}
+	// One more failed turn: "stop" exactly when the run reaches the limit (alert then), "stopped" past it.
+	fail(): "go" | "stop" | "stopped" {
+		this.n++;
+		return this.n < ERROR_STREAK_STOP ? "go" : this.n === ERROR_STREAK_STOP ? "stop" : "stopped";
+	}
+	ok(): void {
+		this.n = 0;
+	}
+}
 export type Why = "quota" | "error" | "cap" | "revert";
 export type Move = { from: number; to: number; why: Why };
-type Down = { why: "quota" | "error" | "cap"; until: number };
+type Down = { why: "quota" | "error" | "cap"; until: number; since?: number };
 const ERROR_BLOCK_MS = 10 * 60_000;
 const KEY_BLOCK_MS = 60_000;
 
@@ -184,7 +202,7 @@ export class Chain {
 	}
 	// The active entry failed (`quota`: usage limit until `until`; `error`: provider error): the entry to switch to, if any.
 	fail(reason: "quota" | "error", until?: number, at = clock.now()): Move | undefined {
-		load().blocked[poolOf(this.list[this.active])] = { why: reason, until: until ?? at + ERROR_BLOCK_MS };
+		load().blocked[poolOf(this.list[this.active])] = { why: reason, until: until ?? at + ERROR_BLOCK_MS, since: at };
 		save();
 		const to = this.next(this.active, reason, at);
 		return to === undefined ? undefined : { from: this.active, to, why: reason };
@@ -208,9 +226,22 @@ export class Chain {
 		return { capped: true, ...(to === undefined ? {} : { move: { from: this.active, to, why: "cap" as const } }) };
 	}
 	// An earlier entry is usable again and the active one is marked `revert`: where to go back to.
+	// Every fallback entry goes back (a keyed or conditional one too, 2026-10-20: an API-key fallback stayed ~30 min after the
+	// subscription's limit reset because only bare entries were marked); `revert: false` keeps an entry. An earlier entry out
+	// on a usage limit is tried again REVERT_PROBE_MS after the limit was written (the reset time is an estimate); a failed try
+	// writes the limit again, so tries stay that far apart.
 	revertTarget(at = clock.now()): Move | undefined {
-		if (!this.list[this.active].revert) return undefined;
-		for (let j = 0; j < this.active; j++) if (!this.down(j, at)) return { from: this.active, to: j, why: "revert" };
+		if (this.active === 0 || this.list[this.active].revert === false) return undefined;
+		for (let j = 0; j < this.active; j++) {
+			const d = this.down(j, at);
+			if (!d) return { from: this.active, to: j, why: "revert" };
+			if (d.why === "quota" && at - (d.since ?? 0) >= REVERT_PROBE_MS) {
+				// The restart picks its entry from the recorded limits (initial()), so the try lifts this one.
+				delete load().blocked[poolOf(this.list[j])];
+				save();
+				return { from: this.active, to: j, why: "revert" };
+			}
+		}
 		return undefined;
 	}
 	// The model selector a process runs entry i as (thinking as the primary's unless the entry names one).
