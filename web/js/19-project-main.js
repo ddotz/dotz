@@ -259,7 +259,7 @@ function pmResults(D) {
     const tap = r.kind === "report" && r.lane;
     const tag = r.kind === "report" ? (r.tone === "fail" ? ["err", "안 됨"] : r.verified ? ["ok", "확인됨"] : ["", "보고만 함"]) : r.kind === "verify" ? (r.ok ? ["ok", "통과"] : ["err", "안 됨"]) : null;
     return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => openTarget(`lane:${r.lane}`, lastChatView()) : null },
-      el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: r.title || "" }),
+      el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: r.title || PM_RES[r.kind] || "결과" }),
         el("div", { class: "sup", text: [PM_RES[r.kind] || r.kind, r.kind === "commit" ? r.hash : "", r.lane ? titleOf(r.lane) : "", kstHM(r.at)].filter(Boolean).join(" · ") })),
       tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
   }))]));

@@ -440,6 +440,15 @@ test("project detail adds the record, the monitors of its channel and the routin
 	expect(projectDetailView({ project: { ...all[0]!, channel: undefined }, others: all, lanes, reports: {}, receipts: [], tasks: [], home: "/h", channels: {}, watches: [watch("m1", ["9"])], routines: [], schedules: [] }).monitors).toEqual([]);
 });
 
+test("project detail of a fresh project (no sessions, no record) keeps every list an array, so the page can render its empty states", () => {
+	const all = projectsView({ lanes: [], channels: {}, pins: { ...noPins, projects: [{ name: "새 프로젝트", path: "~/fresh" }] }, home: "/h", tmpDirs: [] });
+	const d = projectDetailView({ project: all[0]!, others: all, lanes: [], reports: {}, receipts: [], tasks: [], home: "/h", channels: {}, watches: [], routines: [], schedules: [] });
+	for (const k of ["monitors", "routines", "schedules", "lanes", "results", "tasks"] as const) expect(d[k]).toEqual([]);
+	expect(d.record).toBeUndefined();
+	expect(d.summary).toEqual({ lanes: 0, running: 0, waiting: 0 });
+	expect(d.linked).toEqual({ threads: [], laneChannels: [], routines: [], schedules: [], watches: [] });
+});
+
 test("GET /api/custom/project answers 404 for an unknown key", async () => {
 	expect((await call("GET", "/api/custom/project?key=dir:~/nope"))!.status).toBe(404);
 });

@@ -242,8 +242,9 @@ function prjCard(p) {
   return el("button", { class: "card tap prj-card", type: "button", onclick: () => go("project", p.key) },
     el("div", { class: "prj-top" }, el("span", { class: `dot ${tone}` }), el("span", { class: "prj-title", text: prjTitle(p) }),
       word ? el("span", { class: `tag ${tone === "att" ? "warn" : tone}`, text: word }) : null, icon("chev", "chev")),
-    prjPurpose(p) ? el("div", { class: "prj-note", text: prjPurpose(p) }) : null,
-    ms.length ? el("div", { class: "prj-prog" }, el("div", { class: "bar", role: "progressbar", "aria-label": "목표 진행", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "sup", text: `${done}/${ms.length}` })) : null,
+    // A fresh project (no description, no milestones) keeps the same three rows as a filled one, so cards in the grid line up.
+    el("div", { class: `prj-note${prjPurpose(p) ? "" : " blank"}`, text: prjPurpose(p) || "아직 설명이 없어요" }),
+    el("div", { class: "prj-prog" }, ...(ms.length ? [el("div", { class: "bar", role: "progressbar", "aria-label": "목표 진행", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "sup", text: `${done}/${ms.length}` })] : [el("span", { class: "sup", text: "아직 목표가 없어요" })])),
     el("div", { class: "prj-meta" }, ...meta.map(t => el("span", { text: t }))));
 }
 function renderProjects() {
