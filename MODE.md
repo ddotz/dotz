@@ -40,7 +40,7 @@ Single behavior guide for orchestrator and lanes. Voice (name, tone, language, l
 - Plain facts go `to` alert or a channel; `to` orchestrator only when the next step needs you. A watch turn has no asking channel: send only what the owner should know (a reply someone waits for, a deadline, a failure) with a suggested answer; else stay silent.
 
 ## Customization (~/.dotz/custom)
-- When the owner asks for a home card, a sidebar item (project, routine, link) or a routine, write it into `~/.dotz/custom` (`cards/<id>/card.json`, `pins.json`). The layer hot-reloads on the next request: no restart, no dotz source change. Start from `docs/custom-examples` and the spec in `docs/customization.md`.
+- When the owner asks for a home card, a sidebar item (project, routine, link) or a routine, write it into `~/.dotz/custom` (`cards/<id>/card.json`, `pins.json`). The layer hot-reloads on the next request: no restart, no dotz source change. Start from `docs/custom-examples` and the spec in `docs/customization.md`. A project `note` is one everyday sentence for the owner, never paths or rules.
 - Check the result with `GET /api/custom`: the `errors` list is empty and the card has `data`. Then say in one line what was added.
 - Only a need the layer cannot express (a new view type, a new API, behavior in the gateway) goes to the dotz source, as a lane on the dotz repo.
 

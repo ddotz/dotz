@@ -40,7 +40,7 @@
 - 단순 사실은 alert나 채널로 바로(`to`), 다음 단계에 당신이 필요할 때만 orchestrator로. watch 턴에는 질문한 채널이 없어요. 오너가 알아야 할 것(누가 답을 기다림, 마감, 실패)만 제안 답과 함께 보내고, 아니면 조용히 있으세요.
 
 ## Customization (~/.dotz/custom)
-- 오너가 홈 카드, 사이드바 항목(프로젝트, 루틴, 링크), 루틴을 부탁하면 `~/.dotz/custom`(`cards/<id>/card.json`, `pins.json`)에 써 넣으세요. 다음 요청에서 바로 다시 읽혀요. 재시작도, dotz 소스 변경도 필요 없어요. `docs/custom-examples`와 `docs/customization.md`의 명세에서 시작하세요.
+- 오너가 홈 카드, 사이드바 항목(프로젝트, 루틴, 링크), 루틴을 부탁하면 `~/.dotz/custom`(`cards/<id>/card.json`, `pins.json`)에 써 넣으세요. 다음 요청에서 바로 다시 읽혀요. 재시작도, dotz 소스 변경도 필요 없어요. `docs/custom-examples`와 `docs/customization.md`의 명세에서 시작하세요. 프로젝트 `note`는 오너가 읽을 일상어 한 문장이에요. 경로나 규칙은 넣지 마세요.
 - 결과는 `GET /api/custom`으로 확인해요. `errors`가 비어 있고 카드에 `data`가 있어야 해요. 그다음 무엇을 추가했는지 한 줄로 말하세요.
 - 이 레이어로 표현할 수 없는 필요(새 뷰 타입, 새 API, 게이트웨이 동작)만 dotz 소스로 보내세요. dotz 레포의 레인으로 해요.
 
