@@ -37,7 +37,7 @@ export type Watch = {
 	approval_minutes?: number;
 	paused?: boolean;
 	state: {
-		hash?: string; fails: number; failAlertAt?: number; lastRun?: string; lastOk?: string; refreshedAt?: number;
+		hash?: string; fails: number; failAlertAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
 		kind?: string; kindFails?: number; nextAt?: number; paused?: string; approvalAskedAt?: number;
 	};
 };
@@ -210,8 +210,15 @@ async function runOnce(w: Watch): Promise<void> {
 		const hash = createHash("sha256").update(output).digest("hex").slice(0, 16);
 		const changed = w.state.hash !== undefined && hash !== w.state.hash;
 		w.state.hash = hash;
-		if (w.on === "change" && changed) notify(w, "output changed", output);
-		if (w.on === "match" && changed && new RegExp(w.pattern!, "i").test(output)) notify(w, `matched /${w.pattern}/`, output);
+		w.state.lastChanged = false;
+		if (w.on === "change" && changed) {
+			w.state.lastChanged = true;
+			notify(w, "output changed", output);
+		}
+		if (w.on === "match" && changed && new RegExp(w.pattern!, "i").test(output)) {
+			w.state.lastChanged = true;
+			notify(w, `matched /${w.pattern}/`, output);
+		}
 	} catch (error) {
 		log(`watch ${w.name} could not run: ${error}`);
 	}

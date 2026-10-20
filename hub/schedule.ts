@@ -5,7 +5,7 @@ import { everyMinutes } from "./watch.ts";
 
 export const MIN_EVERY_MINUTES = 5; // shortest repeat a schedule takes
 
-export type Schedule = { id: string; text: string; at: string; every_minutes?: number; created: string; paused?: boolean };
+export type Schedule = { id: string; text: string; at: string; every_minutes?: number; created: string; paused?: boolean; last?: string };
 
 const items: Schedule[] = existsSync(paths.schedules) ? JSON.parse(readFileSync(paths.schedules, "utf8")) : [];
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -22,6 +22,7 @@ function arm(s: Schedule): void {
 
 function fire(s: Schedule): void {
 	timers.delete(s.id);
+	s.last = new Date().toISOString();
 	if (s.every_minutes) {
 		let next = Date.parse(s.at);
 		while (next <= Date.now()) next += s.every_minutes * 60_000;

@@ -5,6 +5,7 @@ async function loadHomeData() {
   await Promise.all([
     api("/api/quota").then(q => { HQ = q; noteQuota(q); }, () => { HQ = { error: true }; }),
     loadProviderData().catch(() => {}),
+    loadMonitors(),
   ]);
   if (current === "home") { renderHome(); homeTimer = setTimeout(loadHomeData, 60000); }
 }
@@ -85,6 +86,36 @@ function laneLastFetch(name) {
     if (LAST[name] === undefined) LAST[name] = "";
     homeSoon();
   }, () => {});
+}
+
+// The 알림 / 작업내역 / 모니터링 cards: data and the panel they open live in 30-notices.js; they repaint from its live frames (homeSoon).
+const HOME_NOTICE = { min: { w: 3, h: 5 }, max: { w: 12, h: 10 } };
+const hcState = () => (NT.loaded ? "" : NT.failed ? "불러오지 못했어요" : "불러오는 중…");
+const hcCard = (tab, ...kids) => { const c = tapCard(() => openNotices(tab), ...kids); c.classList.add("hc"); return c; };
+const hcDot = tone => el("span", { class: `nt-dot tone-${tone || "none"}`, "aria-hidden": "true" });
+const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row" }, hcDot(n.tone), el("span", { class: "t", text: ntPlain(n.title) || "알림" }), el("span", { class: "m", text: ntWhen(n) }))));
+const hcRecent = pick => NT.items.filter(pick).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
+function homeAlertCard() {
+  const unread = ntUnreadIn("alert"), fresh = hcRecent(n => !n.read && ntTabOf(n) === "alert"), state = hcState();
+  return hcCard("alert", el("div", { class: "ch" }, el("h3", { text: "알림" })),
+    el("div", { class: "big", text: state ? "…" : `${unread}개` }), el("div", { class: "sup", text: "안 읽은 알림" }),
+    state || !fresh.length ? el("div", { class: "hc-none", text: state || "새 알림이 없어요" }) : hcNotices(fresh));
+}
+function homeWorklogCard() {
+  const recent = hcRecent(n => n.kind === "worklog" || n.kind === "result"), state = hcState();
+  return hcCard("worklog", el("div", { class: "ch" }, el("h3", { text: "작업내역" })),
+    state || !recent.length ? el("div", { class: "hc-none", text: state || "아직 작업내역이 없어요" }) : hcNotices(recent));
+}
+function homeMonitorCard() {
+  const list = ntMons(), shown = list.slice(0, 4), bad = list.filter(m => m.last_result === "fail").length;
+  const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…";
+  return hcCard("watch", el("div", { class: "ch" }, el("h3", { text: "모니터링" }), bad ? el("span", { class: "tag err", text: `실패 ${bad}` }) : null),
+    state || !list.length ? el("div", { class: "hc-none", text: state || "감시 중인 것이 없어요" }) : el("div", { class: "hc-list" }, ...shown.map(m => {
+      const r = m.last_result ? NT_RESULT[m.last_result] : null;
+      return el("div", { class: "hc-mon" }, hcDot(r && r[1]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "감시" }),
+        el("span", { class: "s", text: [ntMonRun(m), r && r[0], ntMonNext(m)].filter(Boolean).join(" · ") })));
+    })),
+    list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
 }
 
 let homeBoard = null;
@@ -173,6 +204,9 @@ function renderHome() {
     el("div", { class: "big", text: om ? modelName(om.model) : "…" }),
     el("div", { class: "sup sub", text: om && om.thinking ? `thinking ${om.thinking}` : "\u00a0" }),
     subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
+  add("notices:alert", homeAlertCard(), { w: 4, h: 6 }, HOME_NOTICE);
+  add("notices:worklog", homeWorklogCard(), { w: 4, h: 6 }, HOME_NOTICE);
+  add("notices:watch", homeMonitorCard(), { w: 4, h: 6 }, HOME_NOTICE);
 
   // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}
   const E = { lane: [], ctx: [], limit: [], prov: [] };
