@@ -270,3 +270,37 @@ test("OmO frames of a run with a raw mid-run message still deliver the answer", 
 	await Promise.resolve();
 	expect(state.posts).toEqual([{ target: "web", text: "both are done", replyTo: undefined }]);
 });
+
+test("a turn that defers to a background worker sends nothing; the run the worker's result wakes answers that request", async () => {
+	const { q, state, open, startTurn } = setup([], []);
+	startTurn("fix the sidebar", { target: "web" });
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	expect(state.posts).toEqual([]);
+	expect(open().map(p => p.text)).toEqual(["fix the sidebar"]);
+	expect(q.waitingOnWorkers()).toBe(1);
+	// A wake before the result is in: still waiting, nothing sent.
+	q.onAnswer("[later]");
+	expect(state.posts).toEqual([]);
+	// The worker's result wakes a run with no user prompt of ours.
+	q.onAnswer("sidebar fixed, tests pass");
+	expect(state.posts).toEqual([{ target: "web", text: "sidebar fixed, tests pass", replyTo: undefined }]);
+	expect(q.waitingOnWorkers()).toBe(0);
+	// A later promptless answer does not go to the settled request again.
+	q.onAnswer("another unrelated note");
+	expect(state.posts.length).toBe(1);
+});
+
+test("a deferred request answered with dotz_send reply_to from another turn is settled", async () => {
+	const { q, state, startTurn } = setup();
+	startTurn("fix it", chat("m1"));
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	startTurn("what time is it", chat("m2"));
+	q.sent("chat", "fix done", "m1");
+	q.onAnswer("it is noon");
+	expect(state.posts).toEqual([{ target: "chat", text: "it is noon", replyTo: "m2" }]);
+	expect(q.waitingOnWorkers()).toBe(0);
+});
