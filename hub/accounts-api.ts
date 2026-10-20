@@ -240,7 +240,7 @@ const leftText = (a: AccountsBody["accounts"][number]): string => {
 	return parts.length ? `${parts.join(" · ")} 남음` : "남은 한도는 아직 몰라요";
 };
 // Why the current account, with no raw ids: only the owner-driven layers have a reason worth quoting.
-const whyText = (d: AccountsBody["decision"]): string => (d.source === "auto" ? "자동으로 골랐어요 (직접 고정·스크립트·규칙에 걸리는 게 없어요)" : `${d.source_text} · ${d.reason}`);
+const whyText = (d: AccountsBody["decision"]): string => (d.source === "auto" ? "자동으로 골랐어요 (직접 고정·스크립트·규칙에 걸리는 게 없어요)" : d.reason.startsWith(d.source_text) ? d.reason : `${d.source_text} · ${d.reason}`);
 
 // "/account": the whole picture in Korean, labels first.
 export function accountText(now = Date.now()): string {
