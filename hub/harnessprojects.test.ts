@@ -11,7 +11,8 @@ import { lanesModel, workerModel } from "./config.ts";
 
 let dir = "";
 const node = (id: string): HarnessNode => ({ id, kind: "gateway", group: "flow", label: id, summary: "", desc: "", facts: [], settings: [] });
-const lane = (name: string, cwd: string, extra: Partial<Lane> = {}): Lane => ({ name, cwd, model: `${lanesModel().model}:${lanesModel().thinking}`, status: "idle", startedAt: "", reports: 0, ctx: {} as Lane["ctx"], lastText: "", ...extra });
+// A running lane (its process up), so it counts as live unless a test says otherwise.
+const lane = (name: string, cwd: string, extra: Partial<Lane> = {}): Lane => ({ name, cwd, model: `${lanesModel().model}:${lanesModel().thinking}`, status: "idle", startedAt: "", reports: 0, ctx: {} as Lane["ctx"], lastText: "", proc: {} as Lane["proc"], ...extra });
 const projects = (disk: Record<string, any> = {}) => harnessProjects({ disk, mName: s => s, gateway: node("gateway"), orchestrator: node("orchestrator") });
 
 beforeEach(() => {
@@ -45,6 +46,16 @@ test("a lane with a work channel or a home channel is a project; a channel-less 
 	expect(got.map(p => p.id)).toEqual(["home-lane", "work-lane"]);
 	expect(got[0]!.channels.map(c => [c.name, c.kind])).toEqual([["api", "home"], ["[run] auth", "thread"]]);
 	expect(got[1]!.channels.map(c => [c.name, c.kind])).toEqual([["site", "work"]]);
+});
+
+test("an ended lane (exited, or its process gone) is not a project, even with a channel; its data stays", () => {
+	lanes.set("live", lane("live", dir));
+	lanes.set("exited", lane("exited", dir, { status: "exited", proc: undefined }));
+	lanes.set("dead", lane("dead", dir, { status: "idle", proc: undefined }));
+	discord.channels.lanes = { live: "1", exited: "2", dead: "3" };
+	discord.channels.work = { "1": "one", "2": "two", "3": "three" };
+	expect(projects().map(p => p.id)).toEqual(["live"]);
+	expect([...lanes.keys()].sort()).toEqual(["dead", "exited", "live"]);
 });
 
 test("fields say what overrides the global default and keep the global value", () => {
