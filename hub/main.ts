@@ -696,7 +696,9 @@ const server = Bun.serve({
 			if (req.method === "GET" && parts.length === 3) return json({ id, report: lastReport(id) ?? null, state: verifyState(id) ?? null });
 			if (req.method === "POST" && parts[3] === "verify" && parts.length === 4) {
 				const b = await body(req);
-				return json({ ok: true, state: startVerify(id as never, b.model ? { model: String(b.model) } : {}) }, 202);
+				// Each check starts ~14 paid OmO sessions: only on an explicit {real: true} (the web check button sends it).
+				if (b.real !== true) return json({ error: "a runtime check starts real paid sessions: send {\"real\": true} to run it", report: lastReport(id) ?? null }, 400);
+				return json({ ok: true, state: startVerify(id as never, { real: true, ...(b.model ? { model: String(b.model) } : {}) }) }, 202);
 			}
 			if (req.method === "POST" && parts[3] === "use" && parts.length === 4) {
 				const b = await body(req);
@@ -1007,7 +1009,7 @@ startWatches((w, reason, output) => {
 });
 syncFeatureWatches();
 writeAtomic(paths.pid, String(process.pid));
-log(`hub listening on 127.0.0.1:${server.port} as ${NAME} (discord ${discord.status.enabled ? "on" : "off"})`);
+log(`hub listening on 127.0.0.1:${server.port} as ${NAME} (discord ${discord.status.enabled ? "on" : discord.dryRunReason ? `off, dry run: ${discord.dryRunReason}; DOTZ_ALLOW_LIVE=1 connects` : "off"})`);
 for (const sig of ["SIGTERM", "SIGINT"] as const)
 	process.on(sig, () => {
 		log(`hub ${sig}`);

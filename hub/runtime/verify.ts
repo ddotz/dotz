@@ -6,6 +6,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeSessionsFor } from "../cleanup.ts";
+import { withRealProbes } from "./claude-probes.ts";
 import { cfg, DATA_DIR, log, now, orchestratorModel, selectorOf, setRuntime, writeAtomic } from "../config.ts";
 import { broadcast } from "../events.ts";
 import { codex } from "./detect.ts";
@@ -116,7 +117,7 @@ const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => {
 	return Promise.race([p, new Promise<T>((_, rej) => (timer = setTimeout(() => rej(new Error(`시간 초과 (${Math.round(ms / 1000)}초)`)), ms)))]).finally(() => clearTimeout(timer));
 };
 
-export type VerifyOpts = { adapter?: Probing; probes?: Record<string, Probe>; model?: string; timeoutMs?: number; version?: string; persist?: boolean };
+export type VerifyOpts = { adapter?: Probing; probes?: Record<string, Probe>; model?: string; timeoutMs?: number; version?: string; persist?: boolean; real?: boolean };
 
 // Runs every checklist item, never throws. Without an adapter every item fails; without a probe it is unsupported.
 export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<VerifyReport> {
@@ -186,7 +187,7 @@ export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<
 export function startVerify(id: RuntimeId, o: VerifyOpts = {}): VerifyState {
 	const running = states.get(id);
 	if (running?.running) return running;
-	void verifyRuntime(id, o).catch(e => log(`runtime check ${id} failed: ${String(e)}`));
+	void (o.real ? withRealProbes(() => verifyRuntime(id, o)) : verifyRuntime(id, o)).catch(e => log(`runtime check ${id} failed: ${String(e)}`));
 	return states.get(id)!;
 }
 

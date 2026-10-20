@@ -20,6 +20,7 @@ import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { systemDeny } from "../hub/systemdeny.ts";
 import { installCompactKept } from "./compact-kept.ts";
+import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason } from "../hub/live-guard.ts";
 import { dropLongTtl, installGuard } from "./guard.ts";
 import { installHarnessTools } from "./harness-tools.ts";
 import { installOutputCap } from "./output-cap.ts";
@@ -58,8 +59,14 @@ export function shellText(event: any): string | undefined {
 	return undefined;
 }
 
+// A test, probe or hand-started copy (hub/live-guard.ts): read once per call, since hub.pid changes with the gateway.
+const throwaway = () => throwawayReason({ hubPid: hubPid(DATA) });
+
 function enforceRules(pi: any): void {
 	pi.on("tool_call", (event: any) => {
+		const copy = throwaway();
+		const live = copy ? liveWrite(event, [...new Set([liveDataDir(DATA), defaultDataDir()].filter((d): d is string => Boolean(d)))]) : undefined;
+		if (live) return { block: true, reason: `Blocked by dotz: this session is a throwaway (${copy}) and may not change the owner's live state: ${live}. Set DOTZ_ALLOW_LIVE=1 for a deliberate live run.` };
 		const command = shellText(event);
 		if (command === undefined) return;
 		const system = systemDeny(command);
@@ -84,6 +91,8 @@ function hub(): { url: string; token: string } | undefined {
 async function call(path: string, init: RequestInit = {}): Promise<any> {
 	const h = hub();
 	if (!h) throw new Error("dotz is not set up yet: run `bun <plugin>/setup.ts`");
+	const copy = (init.method ?? "GET") !== "GET" ? throwaway() : undefined;
+	if (copy) return dryRun(path, init as { method?: string; body?: unknown }, copy);
 	const r = await fetch(h.url + path, { ...init, headers: { "x-dotz-token": h.token, "Content-Type": "application/json", ...(init.headers ?? {}) } });
 	const text = await r.text();
 	const data = text ? JSON.parse(text) : {};
