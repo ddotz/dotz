@@ -497,7 +497,7 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .ended[open] > summary svg { transform: rotate(90deg); }
 .ended .er { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 18px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg); font-size: 14px; text-align: left; }
 .ended .er:hover { background: var(--card-hover); }
-.ended .er .sup { margin-left: auto; color: var(--fg-3); font-size: 12px; }
+.ended .er .sup { flex: none; margin-left: auto; color: var(--fg-3); font-size: 12px; white-space: nowrap; }
 .ended > summary > span:first-of-type { flex: 1; min-width: 0; }
 .ended .etools { display: flex; align-items: center; gap: 4px; margin: -6px -8px -6px 0; }
 .ended:not([open]) .etools { display: none; }
