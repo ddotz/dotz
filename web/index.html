@@ -5471,7 +5471,7 @@ function accountSection() {
     return el("button", { class: "li tap", type: "button", onclick: () => accDialog(a) }, tx(label, sub), ...accTags(a).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t })), icon("chev", "lead"));
   });
   const who = dec && (dec.label || (dec.account && accLabel(dec.account)));
-  const why = dec ? [dec.source_text, dec.reason].filter(Boolean).join(" · ") : "";
+  const why = !dec ? "" : dec.reason && dec.source_text && dec.reason.startsWith(dec.source_text) ? dec.reason : [dec.source_text, dec.reason].filter(Boolean).join(" · ");
   rows.push(el("div", { class: "li" }, tx(who ? `지금은 ${who}` : "지금 쓰는 계정이 없어요", why),
     dec && dec.source === "manual" ? el("button", { class: "btn text", type: "button", onclick: ev => accMut(ev.currentTarget, () => api("/api/accounts/use", "POST", { account: "auto" }), "자동으로 돌렸어요") }, "자동으로 돌리기") : null));
   rows.push(el("div", { class: "li" }, tx("전환 규칙"), el("button", { class: "btn tonal", type: "button", onclick: () => rulesDialog() }, "편집")));
