@@ -32,6 +32,7 @@ function paintBell() {
   n.hidden = c === 0;
   n.textContent = c > 99 ? "99+" : String(c);
   b.setAttribute("aria-label", c ? `알림, 안 읽은 알림 ${c > 99 ? "99개 이상" : `${c}개`}` : "알림");
+  convSchedule();   // phone: the same count is the badge of the chat list's 알림 모아보기 row
 }
 
 async function loadNotices() {
@@ -68,8 +69,11 @@ function ntSync(s) {
 function noticeLive(e) {
   if (e.kind === "notice" && e.item && e.item.id != null) {
     const i = NT.items.findIndex(x => x.id === e.item.id);
-    if (i < 0) NT.items.push(e.item); else NT.items[i] = e.item;
+    if (e.item.dismissed) { if (i >= 0) NT.items.splice(i, 1); }
+    else if (i < 0) NT.items.push(e.item); else NT.items[i] = e.item;
     if (e.item.kind === "watch") loadMonitors();
+  } else if (e.kind === "notice_dismiss") {
+    NT.items = NT.items.filter(x => x.id !== e.id);
   } else if (e.kind === "notice_read") {
     const ids = new Set(e.ids || []);
     for (const n of NT.items) if (e.all || ids.has(n.id)) n.read = true;
@@ -101,21 +105,164 @@ function ntNavigate(open) {
   go("home");
 }
 
+/* ---- tap: go to the source message ---- */
+// The conversation holding the notice's message (n.src; older items fall back to n.open) is opened on its chat view, older history
+// is fetched until the message's time is covered, the message is scrolled to the middle and flashed. A message the chat does not
+// show (worklog posts live only in the bell) lands on the nearest one in time. Nothing here ever reports an error.
+const ntRaf = () => new Promise(r => requestAnimationFrame(() => r()));
+const ntWait = ms => new Promise(r => setTimeout(r, ms));
+function ntGo(t) {
+  if (isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // the session is gone: its result card is in the main chat
+  if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast("이 프로젝트를 찾을 수 없어요"); go("projects"); return ""; }
+  if (!validTarget(t)) { go("home"); return ""; }
+  go("chat", t);
+  return t;
+}
+// The rendered message of an event ts (data-ts is set in chatPush): the exact one, else the nearest in time.
+function ntFind(at) {
+  const want = Date.parse(at);
+  let best = null, gap = Infinity;
+  for (const m of tl.querySelectorAll("[data-ts]")) {
+    if (m.dataset.ts === at) return m;
+    const d = Math.abs(Date.parse(m.dataset.ts) - want);
+    if (d < gap) { gap = d; best = m; }
+  }
+  return best;
+}
+// Older messages, 300 at a time (up to four rounds), until the loaded history reaches back to `at`.
+async function ntReach(t, at) {
+  const s = ts(t);
+  for (let i = 0; i < 4 && s.msgs.length && s.msgs[0].ts > at; i++) {
+    let r;
+    try { r = await api(`/api/history?target=${enc(t)}&limit=300&before=${enc(s.msgs[0].ts)}`); } catch { return; }
+    const add = (r.events || []).filter(e => !s.mk.has(msgKey(e)));
+    if (!add.length) return;
+    for (const e of add) { s.mk.add(msgKey(e)); s.msgs.push(e); }
+    s.msgs.sort(byTs); s.cap += add.length;
+    if (t === target) renderAll(true);
+  }
+}
+function ntCenter(node) {
+  const a = timeline.getBoundingClientRect(), b = node.getBoundingClientRect();
+  timeline.scrollTop += b.top - a.top - (b.height >= a.height - 24 ? 12 : (a.height - b.height) / 2);
+}
+// ~1.5s accent wash that fades (a static outline that fades under reduced motion: 09-notices.css).
+function ntFlash(node) {
+  node.classList.remove("nt-hl");
+  void node.offsetWidth;
+  node.classList.add("nt-hl");
+  clearTimeout(node._hl);
+  node._hl = setTimeout(() => node.classList.remove("nt-hl"), 1700);
+}
+let ntJumpSeq = 0;
+async function ntJump(n) {
+  const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, t = ntGo(n.src || n.open || "main");
+  if (!t) return;
+  CV.landed = true;   // no jump to the "새 메시지" divider: this opening lands on the message
+  try {
+    if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t);
+    await ntReach(t, at);
+    await ntRaf(); await ntRaf();   // after the renders' own scroll-to-bottom
+    if (seq !== ntJumpSeq || target !== t || current !== "chat") return;
+    const m = ntFind(at);
+    if (m) { ntCenter(m); ntFlash(m); }
+  } catch {}
+}
+
 function openNotice(n) {
   closeNotices(false);
   if (!n.read) { n.read = true; NT.unread = Math.max(0, NT.unread - 1); paintBell(); ntMarkRead({ ids: [n.id] }); }
-  ntNavigate(n.open);
+  ntJump(n);
+}
+// Hook: open a notice by id as if it was tapped (tap + scroll + highlight).
+function noticeOpen(id) { const n = NT.items.find(x => String(x.id) === String(id)); if (n) openNotice(n); return !!n; }
+
+/* ---- dismiss: swipe sideways (touch / pen) or the x button (mouse) ---- */
+// Read and removed from every list and count, on the server too (POST /api/notices/:id/dismiss) so other tabs drop it as well.
+async function ntDismiss(n) {
+  NT.items = NT.items.filter(x => x !== n);
+  if (!n.read) NT.unread = Math.max(0, NT.unread - 1);
+  paintBell();
+  if (NT.open) renderNotices();
+  homeSoon();
+  try {
+    const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
+    if (r && typeof r.unread === "number") { NT.unread = r.unread; paintBell(); }
+  } catch (err) { toast(err.message, true); loadNotices(); }
+}
+// Slide the row out in its direction, collapse the gap, then dismiss.
+async function ntVanish(item, n, dir) {
+  if (item._gone) return;
+  item._gone = true;
+  const row = item.firstElementChild, w = item.offsetWidth, h = item.offsetHeight;
+  item.classList.add("sw");
+  row.style.transition = "transform .18s ease-in, opacity .18s ease-in";
+  row.style.transform = `translateX(${dir * w}px)`;
+  row.style.opacity = "0";
+  await ntWait(190);
+  item.style.height = `${h}px`;
+  item.style.transition = "height .16s ease";
+  void item.offsetHeight;
+  item.style.height = "0px";
+  await ntWait(170);
+  ntDismiss(n);
+}
+let ntSwiped = false;   // the click that ends a swipe must not open the notice
+// Direction is decided on the first 8px: vertical hands the gesture to the scroll (touch-action: pan-y), horizontal follows the finger.
+function ntSwipe(item, row, n) {
+  let st = null;
+  row.addEventListener("pointerdown", ev => {
+    if (ev.pointerType === "mouse" || !ev.isPrimary || item._gone) return;
+    st = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, dx: 0, mode: "", w: item.offsetWidth || 320, lx: ev.clientX, lt: ev.timeStamp, v: 0 };
+  });
+  row.addEventListener("pointermove", ev => {
+    if (!st || ev.pointerId !== st.id) return;
+    const dx = ev.clientX - st.x, dy = ev.clientY - st.y;
+    if (!st.mode) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      if (Math.abs(dy) > Math.abs(dx)) { st = null; return; }
+      st.mode = "h";
+      try { row.setPointerCapture(ev.pointerId); } catch {}
+      item.classList.add("sw");
+      row.style.transition = "none";
+    }
+    const dt = ev.timeStamp - st.lt;
+    if (dt > 0) st.v = .7 * ((ev.clientX - st.lx) / dt) + .3 * st.v;
+    st.lx = ev.clientX; st.lt = ev.timeStamp; st.dx = dx;
+    row.style.transform = `translateX(${dx}px)`;
+    row.style.opacity = String(1 - Math.min(.5, Math.abs(dx) / st.w));
+  });
+  const end = ev => {
+    if (!st || ev.pointerId !== st.id) return;
+    const s = st;
+    st = null;
+    if (s.mode !== "h") return;
+    ntSwiped = true;
+    setTimeout(() => { ntSwiped = false; }, 350);
+    const far = Math.abs(s.dx) > s.w * .35, flick = Math.abs(s.v) > .5 && Math.abs(s.dx) > 24 && Math.sign(s.v) === Math.sign(s.dx);
+    if (ev.type === "pointerup" && (far || flick)) { ntVanish(item, n, Math.sign(s.dx) || 1); return; }
+    row.style.transition = "transform .26s cubic-bezier(.34, 1.56, .64, 1), opacity .2s";
+    row.style.transform = ""; row.style.opacity = "";
+    setTimeout(() => { if (!item._gone) { row.style.transition = ""; item.classList.remove("sw"); } }, 280);
+  };
+  row.addEventListener("pointerup", end);
+  row.addEventListener("pointercancel", end);
 }
 
 function ntRow(n) {
   const un = !n.read, text = ntPlain(n.text);
-  return el("button", { type: "button", class: `nt-row${un ? " un" : ""}`, "data-id": String(n.id), onclick: () => openNotice(n) },
+  const row = el("button", { type: "button", class: `nt-row${un ? " un" : ""}`, "data-id": String(n.id), onclick: () => { if (!ntSwiped) openNotice(n); }, onkeydown: ev => { if (ev.key === "Delete") { ev.preventDefault(); ntVanish(item, n, 1); } } },
     el("span", { class: `nt-dot tone-${n.tone || "none"}`, "aria-hidden": "true" }),
     el("span", { class: "nt-b" },
       el("span", { class: "nt-t", text: ntPlain(n.title) || "알림" }),
       text ? el("span", { class: "nt-x", text }) : null,
       el("span", { class: "nt-m", text: ntWhen(n) })),
     un ? el("span", { class: "nt-un", role: "img", "aria-label": "안 읽음" }) : null);
+  const del = el("button", { type: "button", class: "nt-del", "aria-label": "알림 지우기", onclick: () => ntVanish(item, n, 1) });
+  del.append(icon("close"));
+  const item = el("div", { class: "nt-item" }, row, del);
+  ntSwipe(item, row, n);
+  return item;
 }
 
 function ntMonRow(m) {
@@ -219,7 +366,7 @@ function ntKey(ev) {
   if (!ntPanel) return;
   if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); closeNotices(); return; }
   if (ev.key !== "Tab" || ntWide.matches) return;   // the phone sheet is modal: keep Tab inside it
-  const f = [...ntPanel.querySelectorAll("button:not([hidden]):not([disabled])")];
+  const f = [...ntPanel.querySelectorAll("button:not([hidden]):not([disabled])")].filter(b => b.offsetParent);
   if (!f.length) return;
   const first = f[0], last = f[f.length - 1], at = document.activeElement;
   if (!ntPanel.contains(at)) { ev.preventDefault(); first.focus(); }

@@ -235,6 +235,7 @@ function chatPush(en, bulk) {
     }
     const n = msgNode(e);
     if (n) {
+      n.dataset.ts = e.ts;   // the notice bell finds its source message by this (30-notices.js ntFind)
       if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { CV.divNode = tl.appendChild(convDivider()); CS.who = ""; }
       const who = n.matches(".um, .bm") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000) n.classList.add("cont");

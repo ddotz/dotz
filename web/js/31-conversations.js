@@ -149,6 +149,21 @@ function convRow(r) {
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: r.name }), el("span", { class: "cv-p", text })),
     el("span", { class: "cv-m" }, el("span", { class: "cv-t", text: r.last ? convTime(r.last.ts) : "" }), r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
 }
+// Phone only (no header bell there): the first row of the list opens the notice hub, with the unread count as its badge.
+const convPhone = matchMedia("(max-width: 639px)");
+function convNoticeInfo() {
+  if (!convPhone.matches) return null;
+  const un = NT.items.filter(n => !n.read).sort((a, b) => ntAt(b) - ntAt(a))[0];
+  const text = !NT.loaded ? "" : un ? [ntPlain(un.title) || "알림", ntPlain(un.text)].filter(Boolean).join(": ") : "새 알림이 없어요";
+  return { unread: NT.unread, text, at: un ? un.updated || un.ts : "" };
+}
+function convNoticeRow(r) {
+  return el("button", { class: `cv-row cv-nt${r.unread ? " unread" : ""}`, type: "button", "data-nt": "1", onclick: () => openNotices("all") },
+    el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon("bell")),
+    el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "알림 모아보기" }), el("span", { class: "cv-p", text: r.text })),
+    el("span", { class: "cv-m" }, el("span", { class: "cv-t", text: r.at ? convTime(r.at) : "" }), r.unread ? el("span", { class: "nb", "aria-label": `안 읽은 알림 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
+}
+convPhone.addEventListener("change", () => { convSig = ""; convSchedule(); });
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
 const convHead = el("div", { id: "cv-head", class: "cv-head" });
@@ -164,11 +179,11 @@ function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
   convTitle();
-  const rows = convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.name, r.last, r.unread]), target]);
+  const rows = convRows(), note = convNoticeInfo(), sig = JSON.stringify([rows.map(r => [r.t, r.name, r.last, r.unread]), target, note]);
   if (sig !== convSig) {
     convSig = sig;
     const top = convSide.scrollTop;
-    clear(convSide).append(...rows.map(convRow));
+    clear(convSide).append(...(note ? [convNoticeRow(note)] : []), ...rows.map(convRow));
     convSide.scrollTop = top;
   }
   convPaintHead();

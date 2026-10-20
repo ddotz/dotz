@@ -11,6 +11,7 @@
 .cv-av { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 700 17px/24px var(--font); }
 .cv-av .ic { width: 20px; height: 20px; }
 .cv-av.bot { background: var(--fg); color: var(--bg); }
+.cv-av.nt { background: var(--layer); color: var(--fg); }
 .cv-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cv-n, .cv-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-n { font: 500 15px/22px var(--font); }

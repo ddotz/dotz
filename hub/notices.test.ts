@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { paths } from "./config.ts";
 import { emit, eventTarget, lastEventId, recentEvents, replayAfter } from "./events.ts";
-import { laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, setLaneTitleResolver, unreadCount } from "./notices.ts";
+import { dismissNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, setLaneTitleResolver, unreadCount } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -103,6 +104,58 @@ test("verifying a session reopens its result and puts one compact card into the 
 test("notice broadcasts belong to no conversation", () => {
 	expect(eventTarget({ ts: ts(), kind: "notice", source: "gateway", text: "" })).toBeUndefined();
 	expect(eventTarget({ ts: ts(), kind: "notice_read", source: "gateway", text: "" })).toBeUndefined();
+});
+
+test("a notice links to its source message: the conversation and the event ts", () => {
+	const at = ts();
+	emit("outbox", { ts: at, kind: "out", source: "gateway", target: "ch:77", text: "[네이버] 링크 시험 글" });
+	expect(byText("링크 시험 글")[0]).toMatchObject({ open: "ch:77", src: "ch:77", at });
+	const alertAt = ts();
+	emit("outbox", { ts: alertAt, kind: "out", source: "orchestrator", target: "alert", text: "[fail] 링크 경고" });
+	expect(byText("링크 경고")[0]).toMatchObject({ src: "main", at: alertAt });
+
+	const card = (laneVerified("x", "[done] 무시"), recentEvents(300).at(-1)!);
+	expect(stored().find(n => n.key === "lane:x")).toMatchObject({ open: "lane:x", src: "main", at: card.ts });
+});
+
+test("dismissing a notice reads it and removes it from the list and the count, and survives a reload from disk", () => {
+	markNoticesRead({ all: true });
+	post("worklog", "지울 글 A");
+	post("worklog", "지울 글 B");
+	const [a, b] = [byText("지울 글 A")[0]!, byText("지울 글 B")[0]!];
+	expect(unreadCount()).toBe(2);
+	const seen = lastEventId();
+
+	expect(dismissNotice(a.id)).toEqual({ ok: true, unread: 1 });
+	expect(dismissNotice(a.id)).toEqual({ ok: true, unread: 1 });
+	expect(dismissNotice("nope")).toEqual({ ok: false, unread: 1 });
+	expect(byText("지울 글 A")[0]).toMatchObject({ dismissed: true, read: true });
+	expect(listNotices(300).items.map(n => n.id)).not.toContain(a.id);
+	expect(listNotices(300)).toMatchObject({ unread: 1 });
+	expect(listNotices(300).items.map(n => n.id)).toContain(b.id);
+	expect(replayAfter(seen)?.filter(f => f.includes('"kind":"notice_dismiss"'))).toHaveLength(1);
+	expect(eventTarget({ ts: ts(), kind: "notice_dismiss", source: "gateway", text: "" })).toBeUndefined();
+
+	// A fresh process reads notices.json again: the dismissed item stays gone and uncounted.
+	const script = `import { listNotices, unreadCount } from "./hub/notices.ts"; console.log(JSON.stringify({ ids: listNotices(300).items.map(n => n.id), unread: unreadCount() })); process.exit(0);`;
+	const run = Bun.spawnSync([process.execPath, "-e", script], { cwd: join(import.meta.dir, ".."), env: process.env });
+	expect(run.exitCode).toBe(0);
+	const fresh = JSON.parse(run.stdout.toString().trim().split("\n").at(-1)!);
+	expect(fresh.ids).not.toContain(a.id);
+	expect(fresh.ids).toContain(b.id);
+	expect(fresh.unread).toBe(1);
+});
+
+test("a dismissed session result stays gone on quiet progress and returns on a new result", () => {
+	post("worklog", "[done] 끝났어요 하나", { update_key: "lane:dz" });
+	const id = stored().find(n => n.key === "lane:dz")!.id;
+	dismissNotice(id);
+	post("worklog", "[done] 끝났어요 하나", { update_key: "lane:dz" });
+	expect(listNotices(300).items.map(n => n.id)).not.toContain(id);
+	post("worklog", "[done] 새 결과예요", { update_key: "lane:dz" });
+	const back = listNotices(300).items.find(n => n.id === id);
+	expect(back).toMatchObject({ read: false, text: "새 결과예요" });
+	expect(back!.dismissed).toBeUndefined();
 });
 
 test("the store keeps at most 300 items, dropping read ones first and then the oldest", () => {
