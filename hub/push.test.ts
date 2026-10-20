@@ -1,14 +1,32 @@
 // Which hub events become a phone notification, and where a tap on it leads.
 import { expect, test } from "bun:test";
 import { createECDH } from "node:crypto";
-import { classify, pushRoute } from "./push.ts";
+import { classify, LONG_TURN_MS, pushRoute } from "./push.ts";
 import { b64u } from "./webpush.ts";
 
 const ev = (e: Record<string, unknown>) => ({ ts: "2026-10-20T00:00:00Z", kind: "out", source: "orchestrator", text: "", ...e });
 
-test("an answer to a web message notifies as answer and opens the main chat", () => {
-	expect(classify(ev({ target: "web", text: "다 했어요" }))).toMatchObject({ kind: "answer", url: "/#chat/main", body: "다 했어요" });
+test("a web answer notifies only when it finishes work or needs the owner; a quick reply does not", () => {
+	expect(classify(ev({ target: "web", text: "네, 맞아요" }), 5_000)).toBeUndefined();
+	expect(classify(ev({ target: "web", text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: "dotz · 완료", url: "/#chat/main", body: "다 했어요" });
+	expect(classify(ev({ target: "web", text: "[done] 배포 끝" }), 5_000)).toMatchObject({ title: "dotz · 완료" });
 	expect(classify(ev({ target: "web", text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", body: "어느 쪽?" });
+});
+
+test("a lane's worklog entry notifies once as a start; its later edits do not", () => {
+	expect(classify(ev({ target: "worklog", update_key: "lane:custom-ui", text: "[run] 맞춤 화면 레인 시작했어요." }))).toMatchObject({ kind: "lane", title: "custom-ui · 시작" });
+	expect(classify(ev({ target: "worklog", update_key: "lane:custom-ui", text: "[run] 테스트 돌리는 중" }))).toBeUndefined();
+	expect(classify(ev({ target: "worklog", update_key: "lane:custom-ui", text: "[done] 끝났어요" }))).toBeUndefined();
+	expect(classify(ev({ target: "web", update_key: "progress", text: "[run] 시작했어요" }))).toBeUndefined();
+});
+
+test("alerts notify only when critical or when the owner is needed", () => {
+	expect(classify(ev({ source: "gateway", target: "alert", text: "뙃쥐: 사용량 한도(429)로 멈춤." }))).toMatchObject({ kind: "usage", title: "dotz · 경고" });
+	expect(classify(ev({ source: "gateway", target: "alert", text: "토큰 누수 점검 (10-19): 경고 3건" }))).toBeUndefined();
+	expect(classify(ev({ target: "alert", reply_to: "1", text: "ㅇㅋ 형, 바로 할게요." }))).toBeUndefined();
+	expect(classify(ev({ target: "alert", text: "어제 영어 답변이 또 나왔어요. 고칠 곳을 정리했어요." }))).toBeUndefined();
+	expect(classify(ev({ target: "alert", text: "형, 주간 사용량이 2%만 남아서 레인 실행이 막혔어요." }))).toMatchObject({ kind: "usage" });
+	expect(classify(ev({ target: "alert", text: "[ask] 전달 경로를 고칠까요?" }))).toMatchObject({ kind: "ask" });
 });
 
 test("lane [ask]/[done]/[fail] lines notify and open that lane; progress does not", () => {
