@@ -24,10 +24,18 @@ export function omoSelector(selector: string): string {
 }
 
 // OmO task workers take their model from OmO's categories (the user omo.json), never from the spawn, so a lane's worker
-// model goes into a dotz-owned profile there: every category on that model, then its fallbacks, and the lane process
+// model goes into a dotz-owned profile there: every category on that model, then its fallbacks (with WORKER_RULE and
+// WORKER_MAX_DEPTH below), and the lane process
 // starts with OMO_PROFILE naming the profile. A profile applies only where OMO_PROFILE names it, so the owner's own OmO
 // sessions keep their categories. Without it a lane's `quick` worker ran on OmO's default (Haiku, seen 2026-10-20).
 export const WORKER_CATEGORIES = ["quick", "unspecified-low", "unspecified-high", "deep-low", "deep-high", "ultrabrain", "artistry", "writing", "visual-engineering", "architect"];
+// OmO's task.max_depth defaults to 1: a lane's worker (depth 1) was refused every spawn of its own (depth 2), and the
+// refusal came back as plain text. The profile lets a worker delegate one level further; deeper spawns stay refused.
+export const WORKER_MAX_DEPTH = 2;
+// Appended to every worker category's prompt: a blocked worker once wrote the expected answer itself and the lane
+// reported success (2026-10-19 lat-probe2).
+export const WORKER_RULE =
+	"dotz worker rule: if a step you need is refused or fails (a tool error, a denied or refused task spawn, a missing permission) and you cannot do it another real way, stop and report [fail] with what was blocked and the exact reason. Never write the expected output, a guessed result or a placeholder in its place.";
 export const omoConfigFile = () => process.env.OMO_USER_CONFIG ?? join(process.env.HOME ?? homedir(), ".omo", "omo.json");
 export const workerProfileName = (workerModel: string) => `dotz-workers-${workerModel.replace(/[^A-Za-z0-9.-]+/g, "-")}`;
 const categoryModel = (selector: string) => {
@@ -51,7 +59,7 @@ export function writeWorkerProfile(lane: { workerModel: string; workerFallback?:
 		return undefined;
 	}
 	const models = [lane.workerModel, ...(lane.workerFallback ?? [])].map(categoryModel);
-	const profiles = { ...(doc.profiles as Record<string, unknown> | undefined), [name]: { categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models }])) } };
+	const profiles = { ...(doc.profiles as Record<string, unknown> | undefined), [name]: { task: { max_depth: WORKER_MAX_DEPTH }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) } };
 	mkdirSync(dirname(file), { recursive: true });
 	writeAtomic(file, `${JSON.stringify({ ...doc, profiles }, null, 2)}\n`);
 	return name;

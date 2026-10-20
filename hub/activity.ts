@@ -85,6 +85,12 @@ export function subagentLists(): Record<string, Subagent[]> {
 	return Object.fromEntries([...subagents].map(([source, list]) => [source, [...list.values()]]));
 }
 
+// OmO hands a refused nested task spawn (its depth limit) back as plain tool text, not as an error (omo-task.js; seen
+// 2026-10-20, st_01a15660: recorded is_error:false, and the blocked worker wrote the expected answer itself), so dotz
+// reads that refusal as a failed call wherever it reads tool results.
+const DEPTH_REFUSAL = /Subagent nesting limit reached/;
+export const failedCall = (tool: string | undefined, text: string, isError: unknown) => Boolean(isError) || (tool === "task" && DEPTH_REFUSAL.test(text));
+
 export type TranscriptItem = { ts: string; type: "status" | "thinking" | "text" | "tool_call" | "tool_result"; text: string; tool?: string; intent?: string; args?: string; is_error?: boolean };
 const TRANSCRIPT_MAX = 200;
 // The fields read from an omp session transcript line; every field is optional and checked before use.
@@ -118,7 +124,10 @@ export async function transcriptItems(file: string | undefined, max = TRANSCRIPT
 					items.push({ ts, type: "tool_call", tool: b.name, intent: scrub(label), text: label ? `${b.name}: ${scrub(label)}` : String(b.name ?? ""), args: scrub(JSON.stringify(b.arguments ?? {}, null, 2)) });
 				}
 			}
-		} else if (m.role === "toolResult") items.push({ ts, type: "tool_result", tool: m.toolName, text: scrub(joined(m.content)), is_error: Boolean(m.isError) });
+		} else if (m.role === "toolResult") {
+			const text = joined(m.content);
+			items.push({ ts, type: "tool_result", tool: m.toolName, text: scrub(text), is_error: failedCall(m.toolName, text, m.isError) });
+		}
 	}
 	return items.slice(-max);
 }
