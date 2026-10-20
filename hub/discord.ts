@@ -291,9 +291,21 @@ export function homeChannel(home: string): string {
 // Lane stop for a home lane: a short done marker, a done light and an archive an hour later, the mapping dropped. The parent
 // channel is never touched and the thread is not locked, so an owner message there still reaches the orchestrator as a
 // thread of that work channel. Other lanes keep their channel.
-export async function releaseLane(lane: string): Promise<void> {
+// A lane with its own channel keeps it while its session can be resumed (an owner message there resumes the lane) and
+// gets a one-line stopped marker; a throwaway lane (cwd under /tmp) or one whose session file is gone loses the channel,
+// since nothing could come back to it (owner 2026-10-20, option 1).
+export async function releaseLane(lane: string, info?: { cwd?: string; sessionFile?: string }): Promise<void> {
 	const id = channels.lanes[lane];
 	const parentId = channels.homes[lane];
+	if (id && !parentId) {
+		const throwaway = /^\/(private\/)?tmp\//.test(info?.cwd ?? "") || !info?.sessionFile || !existsSync(info.sessionFile);
+		if (throwaway) {
+			delete channels.lanes[lane];
+			save();
+			if (status.enabled) await rest("DELETE", `/channels/${id}`).catch(e => log(`lane ${lane} channel delete failed: ${e}`));
+		} else if (status.enabled) await post(id, buildPayloads(msg().laneParked)[0]!, true).catch(e => log(`lane ${lane} stopped marker failed: ${e}`));
+		return;
+	}
 	if (!parentId || !id) return;
 	delete channels.lanes[lane];
 	delete channels.homes[lane];

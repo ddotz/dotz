@@ -351,7 +351,7 @@ export async function runCommand(text: string): Promise<string> {
 		case "stop":
 			if (!first) throw new ControlError("usage: /stop <lane>");
 			stopLane(first);
-			void discord.releaseLane(first).catch(e => log(`lane ${first} thread release failed: ${e}`));
+			void discord.releaseLane(first, lanes.get(first)).catch(e => log(`lane ${first} thread release failed: ${e}`));
 			return `lane ${first} stopping`;
 		case "resume":
 			if (!first) throw new ControlError("usage: /resume <lane> [text]");
