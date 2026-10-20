@@ -89,12 +89,15 @@ function laneLastFetch(name) {
 }
 
 // The 알림 / 작업내역 / 모니터링 cards: data and the panel they open live in 30-notices.js; they repaint from its live frames (homeSoon).
-const HOME_NOTICE = { min: { w: 3, h: 5 }, max: { w: 12, h: 10 } };
+const HOME_NOTICE = { min: { w: 3, h: 4 }, max: { w: 12, h: 10 } };
 const hcState = () => (NT.loaded ? "" : NT.failed ? "불러오지 못했어요" : "불러오는 중…");
 const hcCard = (tab, ...kids) => { const c = tapCard(() => openNotices(tab), ...kids); c.classList.add("hc"); return c; };
 const hcDot = tone => el("span", { class: `nt-dot tone-${tone || "none"}`, "aria-hidden": "true" });
-const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row" }, hcDot(n.tone), el("span", { class: "t", text: ntPlain(n.title) || "알림" }), el("span", { class: "m", text: ntWhen(n) }))));
-const hcRecent = pick => NT.items.filter(pick).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
+// A generic title (작업 기록, 알림) says nothing in a 3-row card: the row shows the entry's first line instead.
+const hcLine = n => { const t = ntPlain(n.title); return !t || t === "작업 기록" || t === "알림" ? ntPlain(String(n.text || "").split("\n")[0]) || t || "알림" : t; };
+const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row" }, hcDot(n.tone), el("span", { class: "t", text: hcLine(n) }), el("span", { class: "m", text: ntWhen(n) }))));
+// Gateway restarts are kept in the store (born read) but never shown on 홈 (owner 2026-10-19: restarts are not his news).
+const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이 재시작/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
 function homeAlertCard() {
   const unread = ntUnreadIn("alert"), fresh = hcRecent(n => !n.read && ntTabOf(n) === "alert"), state = hcState();
   return hcCard("alert", el("div", { class: "ch" }, el("h3", { text: "알림" })),
@@ -204,9 +207,9 @@ function renderHome() {
     el("div", { class: "big", text: om ? modelName(om.model) : "…" }),
     el("div", { class: "sup sub", text: om && om.thinking ? `thinking ${om.thinking}` : "\u00a0" }),
     subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
-  add("notices:alert", homeAlertCard(), { w: 4, h: 6 }, HOME_NOTICE);
-  add("notices:worklog", homeWorklogCard(), { w: 4, h: 6 }, HOME_NOTICE);
-  add("notices:watch", homeMonitorCard(), { w: 4, h: 6 }, HOME_NOTICE);
+  add("notices:alert", homeAlertCard(), { w: 4, h: 4 }, HOME_NOTICE);
+  add("notices:worklog", homeWorklogCard(), { w: 4, h: 4 }, HOME_NOTICE);
+  add("notices:watch", homeMonitorCard(), { w: 4, h: 4 }, HOME_NOTICE);
 
   // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}
   const E = { lane: [], ctx: [], limit: [], prov: [] };
