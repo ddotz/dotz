@@ -134,6 +134,14 @@ export async function transcriptItems(file: string | undefined, max = TRANSCRIPT
 	return items.slice(-max);
 }
 
+// One page of a session transcript for the activity view: the newest `limit` items older than `before` (every item when
+// it is absent), and whether older ones remain.
+export async function transcriptPage(file: string | undefined, limit: number, before?: string): Promise<{ items: TranscriptItem[]; more: boolean }> {
+	const all = await transcriptItems(file, Number.POSITIVE_INFINITY);
+	const older = before ? all.filter(i => i.ts < before) : all;
+	return { items: limit > 0 ? older.slice(-limit) : [], more: older.length > Math.max(0, limit) };
+}
+
 // One subagent with its own transcript.
 export async function subagentDetail(source: string, id: string): Promise<(Subagent & { items: TranscriptItem[] }) | undefined> {
 	const sub = subagents.get(source)?.get(id);

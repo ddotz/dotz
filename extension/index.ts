@@ -405,7 +405,9 @@ export default function dotz(host: any) {
 		return laneSession(pi);
 	}
 	// Action methods such as setLabel only work once the session is bound (OmO throws during extension loading).
-	pi.on("session_start", () => pi.setLabel?.("Dotz mode"));
+	// OmO's setLabel(entryId, label) labels a transcript entry, so the one-argument call failed there on every start
+	// ("Entry Dotz mode not found" in the terminal view); OmO names the session with setSessionName instead.
+	pi.on("session_start", () => (process.env.DOTZ_RUNTIME === "omo" ? pi.setSessionName?.("Dotz mode") : pi.setLabel?.("Dotz mode")));
 	if (process.env.DOTZ_ORCHESTRATOR === "1") {
 		enforceRules(pi);
 		orchestratorTools(pi);

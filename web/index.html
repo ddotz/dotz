@@ -497,6 +497,8 @@ button.cchip:hover { background: var(--layer); color: var(--fg); }
 .term .md pre { margin: 6px 0; padding: 8px 10px; border-radius: 6px; background: rgb(255 255 255 / .06); color: var(--tf); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
 .term .a-div, .term .tdv { color: var(--td); }
 .tg { flex: none; width: 14px; color: var(--td); text-align: center; }
+.term .tmore { display: flex; margin: 0 auto 8px; color: var(--td); }
+.term .tmore:hover { background: rgb(255 255 255 / .06); color: var(--tf); }
 .tu, .th, .tt, .tk, .tr, .te { display: flex; gap: 8px; min-width: 0; }
 .tu { margin: 14px -8px 6px; padding: 4px 8px; border-radius: 4px; background: rgb(255 255 255 / .07); }
 .tu .tg { color: var(--tac); }
@@ -2055,7 +2057,7 @@ async function loadStrip() {
 
 // Per-target data, shared by both views: conversation events (msgs) and what the agent did (acts).
 const TS = {};
-const ts = t => TS[t] || (TS[t] = { msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", loading: null, ahist: false });
+const ts = t => TS[t] || (TS[t] = { msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", loading: null, ahist: false, amore: false, older: false, cap: 600 });
 const byTs = (a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0;
 const msgKey = e => `${e.ts}|${e.kind}|${e.lane ?? ""}|${String(e.text ?? "").slice(0, 60)}`;
 const actKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
@@ -2074,7 +2076,7 @@ function eventTarget(e) {
 const timeline = $("#timeline"), tl = $("#tl"), term = $("#term");
 let chatStick = true, termStick = true;
 timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; });
-term.addEventListener("scroll", () => { termStick = term.scrollTop + term.clientHeight >= term.scrollHeight - 40; $("#act-jump").hidden = termStick; });
+term.addEventListener("scroll", () => { termStick = term.scrollTop + term.clientHeight >= term.scrollHeight - 40; $("#act-jump").hidden = termStick; if (term.scrollTop < 80) loadOlder(); });
 $("#chat-jump").prepend(icon("down")); $("#act-jump").prepend(icon("down"));
 $("#chat-jump").onclick = () => scrollChat(true);
 $("#act-jump").onclick = () => scrollTerm(true);
@@ -2217,7 +2219,7 @@ function chatPush(en, bulk) {
     if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
     CS.group.add(en.a);
   }
-  while (tl.children.length > 500) tl.firstChild.remove();
+  while (tl.children.length > ts(target).cap) tl.firstChild.remove();
   markLive();
   if (!bulk) scrollChat();
 }
@@ -2288,7 +2290,7 @@ function termPush(a, bulk) {
   if (termEmpty) { termEmpty.remove(); termEmpty = null; }
   const n = termNode(a, termCtx);
   if (n) term.append(n);
-  while (term.children.length > 600) term.firstChild.remove();
+  while (term.children.length > ts(target).cap) term.firstChild.remove();
   if (!bulk) scrollTerm();
 }
 
@@ -2309,7 +2311,7 @@ function ingestAct(a) {
   const s = ts(t), k = actKey(a);
   if (s.ak.has(k)) return;
   s.ak.add(k); s.acts.push(a);
-  if (s.acts.length > 600) s.ak.delete(actKey(s.acts.shift()));
+  if (s.acts.length > s.cap) s.ak.delete(actKey(s.acts.shift()));
   if (t === target && s.aLoaded) { chatPush({ a }); termPush(a); }
 }
 async function loadTarget(t) {
@@ -2318,7 +2320,7 @@ async function loadTarget(t) {
   s.loading = (async () => {
     await Promise.all([
       api(`/api/history?target=${enc(t)}&limit=150`).then(r => { for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); s.herr = false; }, () => { s.herr = true; }),
-      api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k)) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
+      api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k)) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
     ]);
     s.hLoaded = s.aLoaded = true;
     if (t === MAIN) paintRestartBanner();
@@ -2327,7 +2329,25 @@ async function loadTarget(t) {
   await s.loading;
   if (t === target) renderAll();
 }
-function renderAll() {
+// Older activity from the saved session transcript, 300 at a time, prepended while the scroll position stays put.
+async function loadOlder() {
+  const t = target, s = ts(t);
+  if (!s.amore || s.older || !s.aLoaded || !s.acts.length) return;
+  s.older = true;
+  try {
+    const r = await api(`/api/activity?source=${enc(sourceOf(t))}&limit=300&before=${enc(s.acts[0].ts)}`);
+    const add = (r.items || []).filter(a => !s.ak.has(actKey(a)));
+    for (const a of add) s.ak.add(actKey(a));
+    s.acts = [...add, ...s.acts]; s.cap += add.length; s.amore = !!r.more && add.length > 0; s.ahist = true;
+    if (t === target) {
+      const th = term.scrollHeight - term.scrollTop, ch = timeline.scrollHeight - timeline.scrollTop;
+      renderAll(true);
+      term.scrollTop = term.scrollHeight - th; timeline.scrollTop = timeline.scrollHeight - ch;
+    }
+  } catch { toast("이전 기록을 불러오지 못했어요", true); }
+  finally { s.older = false; }
+}
+function renderAll(keepScroll) {
   const s = ts(target);
   resetChat(); resetTerm();
   if (!(s.hLoaded && s.aLoaded)) {
@@ -2336,6 +2356,7 @@ function renderAll() {
     return;
   }
   const A = s.acts, M = s.msgs, first = A.length ? A[0].ts : null;
+  if (s.amore && A.length) term.append(el("button", { class: "btn text tmore", type: "button", onclick: () => loadOlder() }, "이전 기록 더 보기"));
   if (s.ahist && A.length) { tl.append(el("div", { class: "a-div", text: "지난 기록" })); term.append(el("div", { class: "tdv", text: "지난 기록" })); }
   let i = 0, j = 0;
   while (i < A.length || j < M.length) {
@@ -2347,7 +2368,7 @@ function renderAll() {
   }
   if (!tl.children.length) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));
   if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동 없음" }));
-  scrollChat(true); scrollTerm(true);
+  if (!keepScroll) { scrollChat(true); scrollTerm(true); }
   markLive();
 }
 function onActivity(a) {
