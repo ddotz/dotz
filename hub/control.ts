@@ -5,7 +5,7 @@ import { entryView, hubChain, keyFileOk, keyProviderOk } from "./fallback.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { type Compaction, ctxView, describeCompaction, describeCtx } from "./context.ts";
 import * as discord from "./discord.ts";
-import { abortLane, compactLane, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
+import { abortLane, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
 import { availableModels, cancelLogin, completeLogin, ControlError, listProviders, loginProviders, logoutProvider, type ModelInfo, pendingLogin, quota, startLogin } from "./providers.ts";
 
@@ -44,6 +44,7 @@ export async function modelsView() {
 		lanes: laneModels(),
 		thinking_levels: [...THINKING_LEVELS],
 		available: await availableModels(),
+		pickable: pickable(await availableModels()),
 		notes: { orchestrator: ORCHESTRATOR_NOTE, workers: WORKERS_NOTE, fallback: FALLBACK_NOTE },
 		fallbacks: fallbacksView(),
 	};
@@ -55,9 +56,46 @@ export function contextView() {
 		note: COMPACT_NOTE,
 		processes: [
 			{ name: "orchestrator", kind: "orchestrator", status: orch.status, running: orch.status !== "stopped", model: selectorOf(orchestratorModel()), ...ctxView(orch.ctx) },
-			...[...lanes.values()].map(l => ({ name: l.name, kind: "lane", status: l.status, running: Boolean(l.proc), model: l.model, ...ctxView(l.ctx) })),
+			...[...lanes.values()].map(l => ({ name: l.name, kind: "lane", status: l.status, live: laneLive(l), running: Boolean(l.proc), model: l.model, ...ctxView(l.ctx) })),
 		],
 	};
+}
+
+// Model pickers never offer Haiku (owner: never) or Fable (only on the owner's explicit ask; still settable by name).
+export const HIDDEN_MODEL = /haiku|fable/i;
+export const pickable = (list: ModelInfo[]): ModelInfo[] => list.filter(m => !HIDDEN_MODEL.test(m.selector) && !HIDDEN_MODEL.test(m.name ?? ""));
+
+// The composer's chip popovers: model, effort and context of one chat target ("main" or "lane:<name>").
+const targetKey = (target: string): string => (target === "main" || target === "orchestrator" ? "orchestrator" : `lane:${target.replace(/^lane:/, "")}`);
+export async function targetView(target: string) {
+	const key = targetKey(target);
+	const lane = key === "orchestrator" ? undefined : lanes.get(key.slice(5));
+	if (key !== "orchestrator" && !lane) throw new ControlError(`no lane ${key.slice(5)}`, 404);
+	const cur = lane ? parseSelector(lane.model) : orchestratorModel();
+	const proc = contextView().processes.find(p => p.name === (lane ? lane.name : "orchestrator"))!;
+	const models = pickable(await availableModels());
+	return {
+		target: lane ? `lane:${lane.name}` : "main",
+		key,
+		model: cur.model,
+		thinking: cur.thinking,
+		active_model: lane ? lane.activeModel : orch.activeModel,
+		running: proc.running,
+		busy: lane ? lane.status === "working" || lane.status === "starting" : orch.status === "working",
+		context: { tokens: proc.tokens, window: proc.window, percent: proc.percent, compaction: proc.compaction },
+		models: models.some(m => m.selector === cur.model) ? models : [...models, ...(await availableModels()).filter(m => m.selector === cur.model)],
+		thinking_levels: [...THINKING_LEVELS],
+		note: lane ? "" : ORCHESTRATOR_NOTE,
+	};
+}
+// Changes the target in place: model and/or effort (setModel's rules: a running lane needs force), or compacts its context.
+export async function changeTarget(target: string, change: { model?: string; thinking?: string; compact?: boolean; force?: boolean }) {
+	const key = targetKey(target);
+	if (change.compact) {
+		const r = compactTarget(key === "orchestrator" ? key : key.slice(5));
+		return { ok: true, target: key, compaction: r.compaction.state, note: r.message };
+	}
+	return setModel(key, change.model, change.thinking, change.force === true);
 }
 
 const ctxLine = (p: { status: string; running: boolean; tokens: number; window: number; percent: number | null; compaction: Compaction }) => {
