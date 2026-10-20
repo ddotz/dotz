@@ -341,10 +341,27 @@ if (!webBase && cfg.web?.tailscale_https_port) {
 	void (async () => {
 		for (const bin of ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]) {
 			const dns = await Bun.$`${bin} status --json`.quiet().json().then(s => String(s?.Self?.DNSName ?? "").replace(/\.$/, ""), () => "");
-			if (dns) return void (webBase = `https://${dns}${port === 443 ? "" : `:${port}`}`);
+			if (!dns) continue;
+			webBase = `https://${dns}${port === 443 ? "" : `:${port}`}`;
+			if (cfg.web?.allow_logins?.length) await ensureServe(bin, port, cfg.web.port);
+			return;
 		}
 		log("files: no tailnet address found (set web.public_url); files too big to attach are named, not linked");
 	})();
+}
+// The web app is reachable only through `tailscale serve`. Setup sets it up once, but an upgrade, a scripted install or a
+// skipped step left the port with no proxy (2026-10-20, a second Mac). The gateway restores it on start, and never takes
+// over a port another service already serves.
+async function ensureServe(bin: string, httpsPort: number, localPort: number): Promise<void> {
+	const st = await Bun.$`${bin} serve status --json`.quiet().json().catch(() => undefined) as { TCP?: Record<string, unknown>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> } | undefined;
+	if (!st) return log("web: tailscale serve status unreadable; not touching the serve config");
+	if (st.TCP?.[String(httpsPort)]) {
+		const proxy = Object.entries(st.Web ?? {}).find(([k]) => k.endsWith(`:${httpsPort}`))?.[1]?.Handlers?.["/"]?.Proxy ?? "";
+		if (!new RegExp(`:${localPort}/?$`).test(proxy)) log(`web: tailnet port ${httpsPort} already serves ${proxy || "something else"}; set web.tailscale_https_port to a free port`);
+		return;
+	}
+	const r = await Bun.$`${bin} serve --bg --https=${httpsPort} http://127.0.0.1:${localPort}`.nothrow().quiet();
+	log(r.exitCode === 0 ? `web: tailscale serve was missing; opened port ${httpsPort} -> ${localPort}` : `web: tailscale serve failed: ${`${r.stdout}${r.stderr}`.trim().slice(0, 300)}`);
 }
 discord.setFileLink(p => (webBase ? `${webBase}/api/file?path=${encodeURIComponent(p)}&dl=1` : undefined));
 // Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
