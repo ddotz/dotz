@@ -25,6 +25,8 @@ test("a lane's worker model becomes a dotz profile of omo.json: every category o
 	expect(doc.profiles[name!].task).toEqual({ max_depth: 2 });
 	for (const c of WORKER_CATEGORIES) expect(doc.profiles[name!].categories[c].prompt_append).toBe(WORKER_RULE);
 	expect(WORKER_RULE).toContain("[fail]");
+	// OmO memory is off for the workers too (the lane runs with --omo-senpi-memory-disabled, which workers do not inherit).
+	expect(doc.profiles[name!].memory).toEqual({ enabled: false });
 	expect(writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high" }, file)).toBeUndefined();
 });
 
