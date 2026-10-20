@@ -104,6 +104,9 @@ async function restoreEnded(ids) {
 const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
 const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 제한", exited: "종료됨" })[s] || s || "알 수 없음";
 const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
+// Thinking levels said in Korean (the stored value stays the API id).
+const THINK_KO = { off: "끔", minimal: "최소", low: "낮음", medium: "보통", high: "높음", xhigh: "최고", max: "최고", auto: "자동" };
+const thinkKo = v => THINK_KO[String(v || "").toLowerCase()] || String(v || "");
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) || []).find(x => x.selector === sel) || ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
 /* ---------- chrome: nav, theme, back ---------- */
