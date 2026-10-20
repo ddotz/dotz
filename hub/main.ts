@@ -34,6 +34,7 @@ import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { createLaneRelay } from "./lanerelay.ts";
 import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin, usageSnapshot } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
+import { listMonitors } from "./monitors.ts";
 import { laneVerified, listNotices, markNoticesRead, setLaneTitleResolver, unreadCount } from "./notices.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, replyRef } from "./threads.ts";
@@ -704,6 +705,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/state")
 			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
+		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
 		if (req.method === "GET" && url.pathname === "/api/conversations") return json({ items: conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`)]) });
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
