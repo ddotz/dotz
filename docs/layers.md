@@ -8,14 +8,17 @@ travel up, the data model and its migration, and the screen map per device class
 | Layer (owner word) | Was | What it is for | Who runs it | Where the owner talks to it |
 |---|---|---|---|---|
 | 채팅 (chat) | chat | the super-orchestrator: routes every request, owns the whole picture | the main orchestrator | web 채팅 (main), Discord chat / dm |
-| 프로젝트 (project) | work channel / 구성 project band | long-running, continuous or routine work: monitors, schedules, logins, mail watch and auto-reply, a goal with progress | the orchestrator acting in the project's channel (`ch:<id>`) = the project orchestrator | web 프로젝트 -> project chat, Discord work channel |
+| 프로젝트 (project) | work channel / 구성 project band | every long-term secretary role: continuous, recurring or routine work (monitors, schedules, logins, mail watch and auto-reply are examples) with a goal and progress | the orchestrator acting in the project's channel (`ch:<id>`) = the project orchestrator | web 프로젝트 -> project chat, Discord work channel |
 | 세션 (session) | lane | one small-to-medium job with one goal (a feature, a migration, a research pass) | a dotz session process (`dotz_lane`) | web 세션, Discord session channel / thread |
 | 서브에이전트 (subagent) | worker | one parallel piece inside a session or the orchestrator turn | `task` children | shown under their parent, never addressed directly |
 
 Rules:
-- Chat decides where a request goes: answer directly, hand it to a project (`ch:<id>`), or start a session. Anything that
-  repeats or must keep running (a monitor, a schedule, a routine, a login to keep, mail watch + auto-reply) is a
-  project, never a bare chat timer: chat creates the project first, then the monitor inside it.
+- Chat decides where a request goes: answer directly, hand it to a project (`ch:<id>`), or start a session.
+- A project is any long-term role the assistant plays for the owner as their secretary (owner 2026-10-21: the listed
+  kinds are examples, not the boundary): whatever repeats, must keep running, or keeps being looked after over time.
+  Examples: monitors, schedules, routines, logins to keep, mail watch + auto-reply, a recurring report, keeping an eye
+  on a service, an ongoing personal errand. Such work is never a bare chat timer or a loose session: chat creates (or
+  reuses) the project first, then the monitor, schedule or session inside it.
 - A project may run sessions (`home: "ch:<id>"`); a session started from chat with no project stays a top-level
   session. A session never owns a monitor or a schedule; it reports and ends.
 - Subagents belong to exactly one parent (chat, a project turn or a session) and report only to it.
