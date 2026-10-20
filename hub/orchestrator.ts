@@ -3,7 +3,7 @@
 // retry-after, restart after a crash (max 3 per 10 min), and rotate to a fresh session with a handover past 50MB.
 // The agent itself runs behind a runtime adapter (hub/runtime): this module is policy and talks to it only through
 // an AgentProcess and its events.
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
@@ -437,6 +437,9 @@ export function start(): void {
 	orch.ctx = newCtx();
 	turnsSinceStart = 0;
 	const resume = prior && existsSync(prior) && !rotate;
+	// The keepalive's idle clock continues from the session's last answer, not from this process start: the cache of a
+	// resumed session aged while the gateway was down (2026-10-20: a ping 2 h after the last turn re-wrote 98.7K).
+	if (resume) lastTurnEnd = lastAnswerAt(prior) ?? lastTurnEnd;
 	currentModel = model;
 	clearTimeout(errorHold);
 	adapter = runtime;
@@ -499,6 +502,33 @@ export function start(): void {
 	setTimeout(() => proc?.refreshSession(), 4000);
 	log(`orchestrator ${resume ? `resumed ${prior}` : rotate ? "rotated to a fresh session" : "started"} (${model})`);
 	statusActivity("orchestrator", `orchestrator ${resume ? "resumed its session" : rotate ? "started a fresh session with a handover" : "started"} (${model})`);
+}
+
+// When the model last answered in a session file: the timestamp of its last assistant message, read from the file's tail
+// (startup bookkeeping lines after it and the file's mtime say nothing about the prompt cache).
+export function lastAnswerAt(file: string, tailBytes = 512 * 1024): number | undefined {
+	try {
+		const size = statSync(file).size;
+		const start = Math.max(0, size - tailBytes);
+		const buf = Buffer.alloc(size - start);
+		const fd = openSync(file, "r");
+		try {
+			readSync(fd, buf, 0, buf.length, start);
+		} finally {
+			closeSync(fd);
+		}
+		const lines = buf.toString("utf8").split("\n");
+		for (let i = lines.length - 1; i >= 0; i--) {
+			if (!lines[i]!.includes('"assistant"')) continue;
+			try {
+				const e = JSON.parse(lines[i]!);
+				if (e.type !== "message" || e.message?.role !== "assistant") continue;
+				const at = Date.parse(e.timestamp);
+				if (Number.isFinite(at)) return at;
+			} catch {}
+		}
+	} catch {}
+	return undefined;
 }
 
 // Keepalive (as on the macmini 오모냥): the 1h prompt cache would expire after an idle hour and the next message would
