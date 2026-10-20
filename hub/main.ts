@@ -119,7 +119,7 @@ function expectReply(target: string): void {
 }
 
 // The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
-setAnswerHandlers(queue.onPrompt, queue.onAnswer);
+setAnswerHandlers(queue.onPrompt, queue.onAnswer, queue.onText);
 setTurnHeader(turnHeader);
 
 // Chat is the hub over every work channel: each chat turn carries a short directory so the orchestrator can route the
@@ -491,6 +491,7 @@ function flushQueue(target: string): void {
 	}
 }
 setOrchIdleHandler(() => {
+	queue.settleTurn();
 	queue.redeliverSteered();
 	laneRelay.flush();
 	flushQueue("main");
