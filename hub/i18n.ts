@@ -21,6 +21,7 @@ const enLeads = {
 	youAre: "[dotz gateway] You are",
 	replayLead: "[dotz gateway] The gateway restarted before you answered this",
 	newMessageLead: "[dotz gateway] A new message arrived while you are working",
+	laneReportLead: "[dotz gateway] A lane report arrived while you are working",
 	waitedLead: "[dotz gateway] The owner has waited",
 	rateLead: "[dotz gateway] The rate limit has passed",
 	providerLead: "[dotz gateway] The provider problem (billing/auth) may have been fixed",
@@ -31,6 +32,7 @@ const koLeads: Leads = {
 	youAre: "[dotz gateway] 당신은",
 	replayLead: "[dotz gateway] 게이트웨이가 다시 시작돼서 이 요청에 아직 답하지 못했어요",
 	newMessageLead: "[dotz gateway] 작업 중에 새 메시지가 도착했어요",
+	laneReportLead: "[dotz gateway] 작업 중에 레인 보고가 도착했어요",
 	waitedLead: "[dotz gateway] 오너가 기다리는 중이에요",
 	rateLead: "[dotz gateway] 사용량 한도가 풀렸어요",
 	providerLead: "[dotz gateway] 모델 제공자 문제(결제/인증)가 해결됐을 수 있어요",
@@ -93,6 +95,7 @@ const en = {
 
 	inboxLaneReport: (lane: string) => `[dotz inbox] lane report from ${lane}:`,
 	inboxLaneReports: (n: number) => `[dotz inbox] ${n === 1 ? "lane report" : `${n} lane reports`} (routine progress stays in report.md and the what-runs-now line):`,
+	laneReportSteer: (body: string) => `${enLeads.laneReportLead}. Act on it now if it needs you (a result to pass on, a question, a failure): pass it on with dotz_send or answer the lane with dotz_lane, then continue the current work; it does not come back later.\n\n${body}`,
 	// A progress report of a running turn every 5 minutes (hub/livestatus.ts); never rewritten by a model.
 	liveStatus: (minutes: number, since: string, now: string, lanes: string, workers: string) => `[run] Still working, ${minutes} min so far.${since ? `\nSince the last report: ${since}` : ""}${now ? `\nNow: ${now}` : ""}${lanes ? `\nLanes: ${lanes}` : ""}${workers ? `\nWorkers: ${workers}` : ""}`,
 	liveMore: (n: number) => `+${n} more`,
@@ -404,6 +407,7 @@ const ko: Catalog = {
 
 	inboxLaneReport: lane => `[dotz inbox] 레인 ${lane}의 보고:`,
 	inboxLaneReports: n => `[dotz inbox] 레인 보고 ${n}건 (일상 진행은 report.md와 지금 도는 것 줄에만 있어요):`,
+	laneReportSteer: body => `${koLeads.laneReportLead}. 처리가 필요하면(전달할 결과, 질문, 실패) 지금 처리하세요. dotz_send로 전달하거나 dotz_lane으로 레인에 답한 뒤 하던 일을 이어가세요. 이 보고는 나중에 다시 오지 않아요.\n\n${body}`,
 	liveStatus: (minutes, since, now, lanes, workers) => `[run] ${minutes}분째 작업 중이에요.${since ? `\n그동안: ${since}` : ""}${now ? `\n지금: ${now}` : ""}${lanes ? `\n레인: ${lanes}` : ""}${workers ? `\n워커: ${workers}` : ""}`,
 	liveMore: n => `외 ${n}`,
 	inboxWatchNoChannel: (watch, reason) => `[dotz inbox] watch ${watch} ${reason} (이 턴을 기다리는 사람이 없어요. 중요할 때만 dotz_send로 오너에게 알리세요):`,
