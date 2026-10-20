@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { beforeEach, expect, test } from "bun:test";
 import { DATA_DIR } from "./config.ts";
-import { type CustomDeps, customRoute, projectsView, readCards, readPins, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
+import { type CustomDeps, customRoute, type DetailInput, projectDetailView, projectsView, readCards, readPins, reportHead, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import { addSchedule, listSchedules, removeSchedule } from "./schedule.ts";
 
@@ -361,4 +361,49 @@ test("customRoute ignores paths and methods that are not its own", async () => {
 	expect(await call("GET", "/api/state")).toBeUndefined();
 	expect(await call("DELETE", "/api/custom/refresh")).toBeUndefined();
 	expect(await call("POST", "/api/custom/unknown", {})).toBeUndefined();
+});
+
+// ---- project page detail ----
+test("reportHead picks the marker line even after an OmO handoff block", () => {
+	expect(reportHead("Ask: x - wanted: y\n\n[done] 머지했어요(abc123).\n- 바뀐 것")).toEqual({ tone: "done", line: "머지했어요(abc123).", body: "- 바뀐 것" });
+	expect(reportHead("**[fail]** 빌드가 안 돼요")).toMatchObject({ tone: "fail", line: "빌드가 안 돼요" });
+	expect(reportHead("그냥 글")).toEqual({ line: "그냥 글", body: "" });
+});
+
+test("project detail: ended lanes' report.md fill results newest first, with receipts, commits, tasks and links", () => {
+	const lanes = [
+		{ name: "a", cwd: "/h/.dotz/lanes/a/worktree", repo: "/h/Code/proj", status: "exited", live: false, startedAt: "2026-10-01T00:00:00Z", reports: 1, lastText: "", resumable: true, claim: { state: "verified" } },
+		{ name: "b", cwd: "/h/.dotz/lanes/b/worktree", repo: "/h/Code/proj", status: "working", live: true, startedAt: "2026-10-02T00:00:00Z", reports: 0, lastText: "하는 중", pendingAsk: { text: "?", at: "x" } },
+		{ name: "z", cwd: "/h/Code/other", status: "exited", live: false, startedAt: "2026-10-01T00:00:00Z", reports: 1, lastText: "" },
+	];
+	const all = projectsView({ lanes, channels: { work: { "9": "작업" }, homes: { a: "9" }, threads: { t1: { parent: "9", name: "스레드" }, t2: { parent: "8", name: "남의 것" } } }, pins: { projects: [], hide_projects: [], routines: [], links: [] }, home: "/h", tmpDirs: [] });
+	const project = all.find(p => p.key === "dir:~/Code/proj")!;
+	const input: DetailInput = {
+		project, others: all, lanes, home: "/h",
+		reports: { a: { text: "[done] 끝냈어요\n세부", at: "2026-10-03T00:00:00Z" } },
+		receipts: [
+			{ command: "bun test", cwd: "/h/.dotz/lanes/a/worktree", exitCode: 0, ranAt: Date.parse("2026-10-04T00:00:00Z") },
+			{ command: "bun test", cwd: "/h/Code/proj", exitCode: 1, ranAt: Date.parse("2026-10-01T00:00:00Z") },
+			{ command: "ls", cwd: "/h/Code/other", exitCode: 0, ranAt: Date.parse("2026-10-05T00:00:00Z") },
+		],
+		tasks: [{ id: "t-p", what: "proj 저장소 정리" }, { id: "t-other", what: "other 쪽 일" }, { id: "t-none", what: "어디에도 안 속함" }],
+		routines: [{ id: "r", name: "점검", prompt: "x", target: "lane:a" }, { id: "r2", name: "남", prompt: "y", target: "main" }],
+		schedules: [{ id: "s", text: "lane:b 확인", at: "2026-10-06T00:00:00Z", created: "x" }],
+		watches: [], channels: { work: { "9": "작업" }, threads: { t1: { parent: "9", name: "스레드" }, t2: { parent: "8", name: "남의 것" } } },
+		git: { branch: "main", base: "main", dirty: 2, commits: [{ hash: "c1", at: "2026-10-02T00:00:00Z", subject: "커밋" }], unmerged: [] },
+	};
+	const d = projectDetailView(input);
+	expect(d.summary).toEqual({ lanes: 2, running: 1, waiting: 1, lastActivity: "2026-10-04T00:00:00.000Z" });
+	expect(d.lanes.find(l => l.name === "a")).toMatchObject({ line: "끝냈어요", tone: "done", claim: "verified", resumable: true, finishedAt: "2026-10-03T00:00:00Z" });
+	expect(d.lanes.find(l => l.name === "b")).toMatchObject({ line: "하는 중", waiting: true, resumable: false });
+	expect(d.results.map(r => [r.kind, r.title])).toEqual([["verify", "bun test"], ["report", "끝냈어요"], ["commit", "커밋"]]);
+	expect(d.results[0]).toMatchObject({ ok: true, lane: "a" });
+	expect(d.tasks.map(t => t.id)).toEqual(["t-p"]);
+	expect(projectDetailView({ ...input, self: true }).tasks.map(t => t.id)).toEqual(["t-p", "t-none"]);
+	expect(d.linked).toMatchObject({ channel: { id: "9", name: "작업" }, threads: [{ id: "t1", name: "스레드" }], routines: [{ id: "r" }], schedules: [{ id: "s" }] });
+	expect(d.repo).toMatchObject({ dirty: 2 });
+});
+
+test("GET /api/custom/project answers 404 for an unknown key", async () => {
+	expect((await call("GET", "/api/custom/project?key=dir:~/nope"))!.status).toBe(404);
 });

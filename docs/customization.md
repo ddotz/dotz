@@ -118,8 +118,15 @@ that card turns into an error card.
   pin's name wins, and pinned projects come first, in file order. Auto projects follow, newest lane first, at most 12.
 - `hide_projects` hides auto projects by key. It never hides a manual pin.
 
-The project page (`#project/<key>`) shows the folder, the work channel, that folder's lanes (a tap opens the lane), the
-latest results, and a box that messages the orchestrator. The message is prefixed `[프로젝트 <name> · <path>]`.
+The project page (`#project/<key>`) reads `GET /api/custom/project?key=<key>`: a summary strip (running lanes, lanes
+waiting on the owner, last activity), the lanes with their last report line (from `lanes/<name>/report.md`, which
+outlives a gateway restart), finished time, verified or reported-only, resume and clean-up; the latest results (lane
+`[done]`/`[fail]` reports, the folder's verification receipts, the newest commits, newest first); for a git folder the
+branch, uncommitted file count, last 5 commits and `lane/*` branches not merged into main; the open tasks of
+`state.json` that name the project (in the gateway's own checkout, also those that name no other project), a tap sends
+one as a request; and the work channel, threads, lane channels, routines, schedules and watches tied to it. Two
+columns from 1100px, one on a phone. The request box sends to the orchestrator (prefixed
+`[프로젝트 <name> · <path>]`), to a running lane of the project, or asks the orchestrator for a new lane.
 
 ### Routines
 
