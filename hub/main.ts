@@ -454,7 +454,9 @@ async function sendWeb(s: WebSend): Promise<void> {
 	emit("inbox", event);
 	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(s.channel, event.text);
 	else if (s.mode === "steer" && orch.status === "working") {
-		steerOrchestrator(inboxText(event));
+		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
+		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
+		deliver(inboxText(event), { target: s.channel, owner: true });
 		expectReply(s.channel);
 	} else {
 		if (s.mode === "interrupt" && orch.status === "working") abortOrchestrator();
