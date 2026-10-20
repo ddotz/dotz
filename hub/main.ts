@@ -9,9 +9,9 @@ import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { authRoute } from "./auth.ts";
-import { pushRoute, startPush } from "./push.ts";
+import { notify as pushNotify, pushRoute, startPush } from "./push.ts";
 import { isNote, msg } from "./i18n.ts";
-import { activityItems, answeredIds, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
+import { activityItems, answeredIds, broadcast, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
@@ -33,6 +33,7 @@ import { featureCatalog, syncFeatureWatches } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
 import { startOmpUpdate } from "./update.ts";
+import { startSelfUpdate, updateRoute } from "./selfupdate.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
 import { addWatch, allWatches, approveWatch, listWatches, removeWatch, startWatches, stopWatches } from "./watch.ts";
@@ -42,6 +43,7 @@ import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRunt
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 
 const WEB = join(import.meta.dir, "..", "web", "index.html");
+const BOOT_ID = Date.now().toString(36);
 // Installable-app files next to index.html: manifest, service worker (never cached by HTTP, so an update is seen at once), icons.
 const APP_FILES: Record<string, [string, string]> = {
 	"/manifest.webmanifest": ["manifest.webmanifest", "application/manifest+json"],
@@ -518,6 +520,8 @@ const server = Bun.serve({
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") return new Response(req.method === "HEAD" ? null : Bun.file(WEB), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
 		const pushResponse = await pushRoute(req, url);
 		if (pushResponse) return pushResponse;
+		const updateResponse = await updateRoute(req, url, { boot: BOOT_ID, busy: busyNow, restartIdle: restartGateway, restartNow: restartGatewayNow });
+		if (updateResponse) return updateResponse;
 		if (url.pathname === "/api/health") return json({ ok: true });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
@@ -953,6 +957,11 @@ startSchedules(s => {
 startReflection(text => deliver(text), () => orch.sessionFile);
 startOmpUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`omp update post failed: ${e}`)), restartGateway);
 startTokenAudit(alert);
+// Settings → 업데이트: the daily check only announces a new dotz version (push + a toast on open pages), never applies it.
+void startSelfUpdate(text => {
+	pushNotify({ kind: "update", title: "dotz 업데이트", body: text, url: "/#settings", tag: "update" });
+	broadcast({ ts: now(), kind: "update_available", source: "gateway", text });
+}).catch(e => log(`self-update start failed: ${e}`));
 startWatches((w, reason, output) => {
 	if (w.to === "orchestrator") {
 		const event = { ts: now(), kind: "watch", source: `watch:${w.name}`, watch: w.name, channels: w.channels, reason, text: output };
@@ -1003,8 +1012,11 @@ function replayPending(): number {
 // Restart the gateway the way 오모냥's herdr-restart does: wait until the orchestrator and every lane are idle, task
 // workers included, then exit; launchd (KeepAlive) starts the new code. Called during an orchestrator turn, it waits for
 // that turn to end, so the answer goes out first. restart.ts: a busy lane is never killed, requests are coalesced.
+function busyNow(): string[] {
+	return [orch.status === "working" || orch.status === "starting" ? "orchestrator" : "", ...[...lanes.values()].filter(laneBusy).map(l => `lane ${l.name}`)].filter(Boolean);
+}
 const restartGate = createRestartGate({
-	busy: () => [orch.status === "working" || orch.status === "starting" ? "orchestrator" : "", ...[...lanes.values()].filter(laneBusy).map(l => `lane ${l.name}`)].filter(Boolean),
+	busy: busyNow,
 	collecting: () => bursts.size > 0,
 	startedAt: Date.now(),
 	minGapMs: Number(process.env.DOTZ_RESTART_MIN_GAP_MS ?? 5 * 60_000),
@@ -1015,5 +1027,12 @@ const restartGate = createRestartGate({
 });
 function restartGateway(): string {
 	return restartGate.request();
+}
+// The owner chose '지금 재시작' in settings → 업데이트: running turns are cut (unanswered prompts replay on the next start).
+// The short delay lets the HTTP answer reach the page first.
+function restartGatewayNow(): string {
+	log(`gateway restart now (owner, settings → 업데이트; busy: ${busyNow().join(", ") || "none"})`);
+	setTimeout(() => void shutdown(), 500);
+	return "gateway restarting now";
 }
 setGatewayRestart(restartGateway);
