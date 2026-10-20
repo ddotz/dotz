@@ -8,7 +8,7 @@ import { formatHeader, kstClock, workersOf } from "./lanevis.ts";
 import { lang, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { languageName, baseLanguage } from "./language.ts";
-import { abandonCompact, type CompactPort, type Compaction, type Ctx, ctxView, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
+import { abandonCompact, type CompactPort, type Compaction, compactDue, type Ctx, ctxView, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import type { AgentError, AgentProcess } from "./runtime/types.ts";
@@ -405,7 +405,9 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				}
 				if (lane.status === "idle") {
 					lane.proc?.refreshUsage();
-					flushCompact(lane.ctx, portOf(lane));
+					// OmO lanes do not read lanes.compact_at (only the omp overlay does), so the hub compacts an idle lane at it.
+					if (compactDue(lane.ctx, lanesCompactAt())) requestCompact(lane.ctx, portOf(lane));
+					else flushCompact(lane.ctx, portOf(lane));
 				}
 				if (lane.status === "idle") setTimeout(() => lane.status === "idle" && onIdle(lane.name), REPORT_DEBOUNCE_MS + 100);
 				break;

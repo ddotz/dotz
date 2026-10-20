@@ -50,7 +50,7 @@ export const GUARD_DEFAULTS: GuardConfig = {
 	max_fence_lines: 40,
 	max_output_chars: 2000,
 	worker_answer_chars: 800,
-	worker_context_tokens: 400_000,
+	worker_context_tokens: 300_000,
 	budget_gate: true,
 	budget_margin_percent: 10,
 	budget_default_estimate_percent: 15,

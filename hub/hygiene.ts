@@ -1,6 +1,6 @@
 // Nightly lane hygiene (what 오모냥's session doctor did for its tabs): once a day at lanes.nightly_at (gateway-local time)
 // every idle lane is looked at. A session file past lanes.rotate_mb starts a fresh session with a handover; otherwise a
-// context of lanes.nightly_compact_at tokens or more (default 300K, below the 400K daytime auto-compaction) is compacted.
+// context of lanes.nightly_compact_at tokens or more (default 300K, the same as the daytime lanes.compact_at) is compacted.
 // Working, rate-limited and stopped lanes are left alone.
 import { existsSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";

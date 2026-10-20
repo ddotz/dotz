@@ -95,7 +95,7 @@ export function setFallbackChain(target: FallbackTarget, chain: FallbackEntry[])
 // at `nightly_at` (local time, "off" disables) idle lanes past `rotate_mb` of session file start a fresh session with a
 // handover and idle lanes at `nightly_compact_at` tokens or more are compacted.
 const positive = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback);
-export const lanesCompactAt = () => positive(cfg.lanes?.compact_at, 400_000);
+export const lanesCompactAt = () => positive(cfg.lanes?.compact_at, 300_000);
 export const lanesNightlyCompactAt = () => positive(cfg.lanes?.nightly_compact_at, 300_000);
 export const lanesKeepRecent = () => positive(cfg.lanes?.keep_recent, 40_000);
 export const lanesRotateMb = () => positive(cfg.lanes?.rotate_mb, 50);

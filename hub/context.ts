@@ -46,6 +46,9 @@ export function requestCompact(c: Ctx, port: CompactPort): Compaction {
 	return c.compaction;
 }
 
+// A process whose context reached `at` tokens is due a compaction unless one is already queued or running.
+export const compactDue = (c: Ctx, at: number): boolean => c.tokens >= at && c.compaction.state !== "queued" && c.compaction.state !== "compacting";
+
 // Called at each point the process becomes idle (turn_end, start-up): starts a queued compaction.
 export function flushCompact(c: Ctx, port: CompactPort): void {
 	if (c.compaction.state === "queued" && port.idle()) startNow(c, port);

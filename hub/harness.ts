@@ -85,7 +85,7 @@ const DEFS = new Map<string, Def>([
 	// lanes.ts MAX_ACTIVE
 	["lanes.max_active", { type: "number", applies: "restart", default: 4, min: 1, max: 16 }],
 	// config.ts lanesCompactAt / lanesKeepRecent (read when a lane process starts)
-	["lanes.compact_at", { type: "number", applies: "next-turn", mirror: true, default: 400_000, min: 50_000, max: 2_000_000 }],
+	["lanes.compact_at", { type: "number", applies: "next-turn", mirror: true, default: 300_000, min: 50_000, max: 2_000_000 }],
 	["lanes.keep_recent", { type: "number", applies: "next-turn", mirror: true, default: 40_000, min: 5_000, max: 400_000 }],
 	["lanes.worker_model", { type: "model", applies: "next-turn", mirror: true }],
 	["lanes.worker_effort", { type: "effort", applies: "next-turn", mirror: true, source: "config.json:lanes.worker_model" }],
