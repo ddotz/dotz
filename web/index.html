@@ -4276,7 +4276,7 @@ function fbParts(L) {
 /* ---------- settings ---------- */
 /* ---------- installable app + web push (web/sw.js, /api/push in hub/push.ts) ---------- */
 const PWA = { reg: null, sub: null, info: null };
-const PUSH_KINDS = [["answer", "웹에서 보낸 메시지의 답변"], ["ask", "나에게 묻는 질문"], ["lane", "레인 완료 · 실패"], ["usage", "사용량 · 한도 경고"], ["update", "dotz 새 버전"]];
+const PUSH_KINDS = [["answer", "웹에서 맡긴 작업 완료 (짧은 답은 안 울려요)"], ["ask", "개입 필요 (질문 · 승인)"], ["lane", "레인 시작 · 완료 · 실패"], ["usage", "중대한 경고 (한도 · 오류 · 멈춤)"], ["update", "dotz 새 버전"]];
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const pushCapable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -4362,7 +4362,7 @@ function pushSection() {
   const subscribed = PWA.sub && PWA.info && PWA.info.subscribed;
   if (!pushCapable()) rows.push(li("bell", "알림", ios && !standalone ? "iPhone은 홈 화면에 추가한 dotz 앱에서 켤 수 있어요 (iOS 16.4 이상)" : "이 브라우저는 푸시 알림을 지원하지 않아요"));
   else if (Notification.permission === "denied") rows.push(li("bell", "알림", "알림 권한이 막혀 있어요. 기기 설정에서 dotz 알림을 허용해 주세요"));
-  else if (!subscribed) rows.push(li("bell", "알림", "답변 · 질문 · 레인 완료 · 경고를 폰으로 받아요", el("button", { class: "btn", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
+  else if (!subscribed) rows.push(li("bell", "알림", "작업 시작 · 완료 · 개입 필요 · 중대한 경고만 폰으로 받아요", el("button", { class: "btn", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
   else {
     for (const [k, label] of PUSH_KINDS) {
       const on = PWA.info.prefs[k] !== false;

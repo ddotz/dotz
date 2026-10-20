@@ -55,15 +55,36 @@ const plain = (t: string, max = 180) => {
 	return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 };
 
-// Which events become a notification. Progress edits (update_key) never do; a lane's [ask]/[done]/[fail] line can
-// arrive twice (mid-turn line and turn-end report), the caller dedupes.
-export function classify(e: HubEvent): PushMessage | undefined {
+// Only four things notify (owner 2026-10-20: "작업시작/완료/개입필요/중대한 경고에만 지능적으로 알림 보내. 전부 다 보낼 필요는 없다"):
+// - work started: a lane's worklog entry when it is first posted ([run] ... 시작);
+// - work done: a lane's [done]/[fail], and an answer on web that was marked [done]/[fail] or took LONG_TURN_MS or more
+//   since the owner's message (the owner has likely left); a quick reply does not notify;
+// - input needed: any [ask];
+// - critical warning: the gateway's own alerts (limits, provider errors, memory) and alerts marked [fail] or worded as
+//   something stopped or failed; replies in the alert channel and routine reports do not.
+// Other progress edits (update_key) never notify; a lane's [ask]/[done]/[fail] line can arrive twice (mid-turn line and
+// turn-end report), the caller dedupes.
+export const LONG_TURN_MS = 2 * 60_000;
+const CRITICAL = /멈췄|멈춤|막혔|실패|오류|끊겼|한도|위험|소진|확인이 필요|failed|error|stopped|limit/i;
+const ROUTINE_ALERT = /^토큰 누수 점검/;
+export function classify(e: HubEvent, sinceOwner?: number): PushMessage | undefined {
 	const text = typeof e.text === "string" ? e.text : "";
-	if (!text || e.update_key) return undefined;
+	if (!text) return undefined;
 	const src = String(e.source ?? "");
-	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
 	const { tone, text: rest } = parseTone(text);
-	if (e.kind === "out" && e.target === "alert") return { kind: "usage", title: "dotz 경고", body: plain(rest), url: "/#chat/main", tag: "alert" };
+	const key = typeof e.update_key === "string" ? e.update_key : "";
+	if (key) {
+		if (e.kind !== "out" || e.target !== "worklog" || !key.startsWith("lane:") || tone !== "run" || !/시작/.test(rest)) return undefined;
+		const name = key.slice(5);
+		return { kind: "lane", title: `${name} · 시작`, body: plain(rest), url: `/#chat/lane:${encodeURIComponent(name)}`, tag: `start:${name}` };
+	}
+	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
+	if (e.kind === "out" && e.target === "alert") {
+		if (tone === "ask") return { kind: "ask", title: "dotz · 개입 필요", body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
+		if (e.reply_to || tone === "done" || tone === "run" || ROUTINE_ALERT.test(rest)) return undefined;
+		if (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest)) return undefined;
+		return { kind: "usage", title: "dotz · 경고", body: plain(rest), url: "/#chat/main", tag: "alert" };
+	}
 	if (lane && (e.kind === "out" || e.kind === "lane_report")) {
 		const url = `/#chat/lane:${encodeURIComponent(lane)}`;
 		if (tone === "ask") return { kind: "ask", title: `${lane} · 질문`, body: plain(rest), url, tag: `ask:${lane}` };
@@ -71,8 +92,10 @@ export function classify(e: HubEvent): PushMessage | undefined {
 		return undefined;
 	}
 	if (e.kind === "out" && e.source === "orchestrator" && e.target === "web") {
-		if (tone === "ask") return { kind: "ask", title: "dotz · 질문", body: plain(rest), url: "/#chat/main", tag: "ask:main" };
-		return { kind: "answer", title: "dotz · 답변", body: plain(rest), url: "/#chat/main", tag: "answer" };
+		if (tone === "ask") return { kind: "ask", title: "dotz · 개입 필요", body: plain(rest), url: "/#chat/main", tag: "ask:main" };
+		if (tone === "fail") return { kind: "answer", title: "dotz · 실패", body: plain(rest), url: "/#chat/main", tag: "answer" };
+		if (tone === "done" || (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: "dotz · 완료", body: plain(rest), url: "/#chat/main", tag: "answer" };
+		return undefined;
 	}
 	return undefined;
 }
@@ -108,8 +131,11 @@ export function notify(m: PushMessage): void {
 
 export function startPush(opts: { subject: () => string }): void {
 	subject = opts.subject;
+	// When the owner's last web message arrived: an answer long after it is a finished piece of work.
+	let ownerAt = 0;
 	onEmit(e => {
-		const m = classify(e);
+		if (e.kind === "message" && e.source === "web") ownerAt = Date.parse(String(e.ts)) || Date.now();
+		const m = classify(e, ownerAt ? Date.now() - ownerAt : undefined);
 		if (m) notify(m);
 	});
 }
