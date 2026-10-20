@@ -177,3 +177,22 @@ test("a held text repeated as the final answer is posted once", () => {
 	q.onAnswer("the answer");
 	expect(state.posts.map(p => p.text)).toEqual(["the answer"]);
 });
+
+test("a web message steered mid-turn through the queue keeps the running turn's answer paired (raw text would unpair it)", async () => {
+	const { q, state, startTurn } = setup();
+	startTurn("[inbox] notifications only for start/done/ask", { target: "web" });
+	q.deliver("[inbox] label the context chips", { target: "web" });
+	expect(state.steered).toEqual(["[note] [inbox] label the context chips"]);
+	q.onPrompt("[note] [inbox] label the context chips");
+	q.onAnswer("both fixed");
+	await Promise.resolve();
+	expect(state.posts).toEqual([{ target: "web", text: "both fixed", replyTo: undefined }]);
+
+	// The old web steer path sent the raw text past the queue: admitted mid-turn, it unpaired the turn and the answer was lost.
+	const raw = setup();
+	raw.startTurn("[inbox] first", { target: "web" });
+	raw.q.onPrompt("[inbox] steered raw");
+	raw.q.onAnswer("lost");
+	await Promise.resolve();
+	expect(raw.state.posts).toEqual([]);
+});
