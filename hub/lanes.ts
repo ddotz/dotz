@@ -906,6 +906,8 @@ export function laneSummary(): Array<Record<string, unknown>> {
 	return [...lanes.values()].map(l => ({
 		name: l.name,
 		cwd: l.cwd,
+		// the checkout a worktree lane works for (its cwd is ~/.dotz/lanes/<name>/worktree)
+		...(l.worktree ? { repo: l.worktree.repo } : {}),
 		model: l.model,
 		worker_model: laneWorkerModel(l),
 		status: l.status,

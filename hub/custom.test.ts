@@ -250,6 +250,11 @@ test("projectsView groups lanes by cwd, homes channel, orphan work channel, pins
 	expect(orphan).toMatchObject({ name: "orphan", pinned: false, channel: { id: "200", name: "orphan" }, lanes: [] });
 });
 
+test("projectsView puts a worktree lane under the checkout it works for", () => {
+	const out = view({ lanes: [lane("w", `${HOME}/.dotz/lanes/w/worktree`, "2026-10-01T00:00:00Z", { repo: `${HOME}/Code/dotz` })], channels: {}, pins: noPins });
+	expect(out.map(p => [p.key, p.name, p.lanes.map(l => l.name)])).toEqual([["dir:~/Code/dotz", "dotz", ["w"]]]);
+});
+
 test("projectsView merges a pin by channel id, folds an orphan channel into a path pin, never hides pinned", () => {
 	const lanes = [lane("d", `${HOME}/Code/solo`, "2026-10-04T00:00:00Z")];
 	const channels = { work: { "100": "solo-ch", "200": "orphan" }, homes: { d: "100" } };
