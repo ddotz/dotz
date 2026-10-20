@@ -3023,7 +3023,7 @@ const slModelTargets = () => [["orchestrator", botName], ["lanes", "레인 기�
 const slModels = () => ((M && M.available) || []).filter(m => !/haiku|fable/i.test(`${m.selector} ${m.name || ""}`) && !/-\d{8}$/.test(m.selector)).sort((a, b) => b.selector.localeCompare(a.selector, "en", { numeric: true })).map(m => [m.selector, m.name || ""]);
 const slProviders = () => ((P && P.providers) || []).map(p => [p.id, p.name || ""]);
 const CMDS = [
-  { c: "/status", d: "땃쥐·레인·디스코드 상태와 컨텍스트" },
+  { c: "/status", d: "봇·레인·디스코드 상태와 컨텍스트" },
   { c: "/context", d: "프로세스별 컨텍스트 사용량과 압축 상태" },
   { c: "/compact", d: "컨텍스트 압축 (작업 중이면 턴이 끝난 뒤)", args: [{ n: "대상", opts: slProcs }] },
   { c: "/lanes", d: "레인마다 상태·모델·폴더" },
@@ -3032,7 +3032,7 @@ const CMDS = [
   { c: "/restart", d: "에이전트 재시작, gateway는 전체 재시작", args: [{ n: "대상", opts: () => [["orchestrator", botName], ["gateway", "게이트웨이 전체 (한가할 때)"], ...slLanes()] }] },
   { c: "/stop", d: "레인 멈추기 (나중에 재개)", args: [{ n: "레인", opts: slLanes }] },
   { c: "/resume", d: "멈춘 레인 재개, 또는 도는 레인에 글 보내기", args: [{ n: "레인", opts: slLanes }, { n: "글", free: true, opt: true }] },
-  { c: "/abort", d: "지금 턴 취소 (비우면 땃쥐)", args: [{ n: "대상", opts: slProcs, opt: true }] },
+  { c: "/abort", d: "지금 턴 취소 (비우면 봇)", args: [{ n: "대상", opts: slProcs, opt: true }] },
   { c: "/providers", d: "로그인·API 키·공급자별 모델" },
   { c: "/login", d: "공급자 로그인 (링크가 열려요)", args: [{ n: "공급자", opts: slProviders, opt: true }] },
   { c: "/logout", d: "공급자 로그아웃", args: [{ n: "공급자", opts: slProviders }] },
@@ -5391,7 +5391,7 @@ const FC_NOTE = {
   "작업 채널 설정": "작업 채널마다 묶어 둔 로그인 유지와 감시예요.",
   "게이트웨이 기능": "게이트웨이 코드에 들어 있는 기능이에요.",
   "외부 연동": "Discord·메일(zele)·브라우저(Aside) 같은 바깥 서비스와의 연결이에요.",
-  "웹 맞춤": "~/.dotz/custom 의 홈 카드·사이드바 고정·루틴이에요. 땃쥐가 파일로 만들고 재시작 없이 바로 보여요.",
+  "웹 맞춤": "~/.dotz/custom 의 홈 카드·사이드바 고정·루틴이에요. 봇이 파일로 만들고 재시작 없이 바로 보여요.",
 };
 const FC_STR = { enforced: "강제", advisory: "권고" };
 // Extensions installed for another harness are not loaded by the one running dotz: they leave every count and stage card
