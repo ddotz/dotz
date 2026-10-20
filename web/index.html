@@ -1090,6 +1090,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
             <div class="cbar" id="cbar">
               <button class="cchip" type="button" id="c-attach" aria-label="파일 첨부" title="파일 첨부 · 끌어다 놓거나 붙여넣기도 돼요"></button>
               <button class="cchip" type="button" id="c-model" aria-haspopup="listbox" hidden></button>
+              <button class="cchip" type="button" id="c-effort" aria-haspopup="listbox" hidden></button>
               <button class="cchip" type="button" id="ctx-ring" hidden></button>
               <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-queue" hidden>다음 턴에</button><button class="btn text" type="button" id="working-int" hidden>중단하고 보내기</button><button class="btn text" type="button" id="working-stop">중단</button></div>
             </div>
@@ -3025,8 +3026,11 @@ function modelChipText(sel) {
 function renderCtxRing() {
   const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;
   const sel = target === MAIN ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model;
-  mb.hidden = !sel;
-  if (sel) { const t = modelChipText(sel); mb.textContent = t; mb.title = `모델 · ${t}`; }
+  // model and effort are separate chips, each with its own popover
+  const [base, level] = String(sel || "").split(":"), eb = $("#c-effort");
+  mb.hidden = !sel; eb.hidden = !level;
+  if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `모델 · ${t}`; }
+  if (level) { eb.textContent = level; eb.title = `추론 강도 · ${level}`; }
   const b = $("#ctx-ring"), p = ((C && C.processes) || []).find(x => x.name === (target === MAIN ? "orchestrator" : laneOf(target)));
   b.hidden = !(p && p.running && p.tokens != null);
   if (b.hidden) return;
@@ -3055,11 +3059,15 @@ $("#c-model").onclick = ev => busy(null, async () => {
   const name = targetName(target), byProv = new Map();
   for (const m of T.models) { if (!byProv.has(m.provider)) byProv.set(m.provider, []); byProv.get(m.provider).push(m); }
   const items = [];
-  for (const [p, list] of byProv) items.push({ header: providerName(p) }, ...list.map(m => ({ value: `m:${m.selector}`, label: m.name || m.selector })));
-  items.push({ header: "추론 강도" }, ...T.thinking_levels.map(v => ({ value: `t:${v}`, label: v, sub: v === T.thinking ? "지금" : "" })));
-  showMenu(anchor, items, { value: `m:${T.model}`, onPick: v => busy(null, () => v.startsWith("m:")
-    ? targetChange(name, { model: v.slice(2) }, `${modelName(v.slice(2))} · ${T.thinking}`)
-    : targetChange(name, { thinking: v.slice(2) }, `${modelName(T.model)} · ${v.slice(2)}`)) });
+  for (const [p, list] of byProv) items.push({ header: providerName(p) }, ...list.map(m => ({ value: m.selector, label: m.name || m.selector })));
+  showMenu(anchor, items, { value: T.model, onPick: v => busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
+});
+// Effort only: low / medium / high (plus the current level when it is another one); the model is never touched.
+$("#c-effort").onclick = ev => busy(null, async () => {
+  const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(targetParam())}`), name = targetName(target);
+  const levels = ["low", "medium", "high"].filter(v => T.thinking_levels.includes(v));
+  if (T.thinking && !levels.includes(T.thinking)) levels.push(T.thinking);
+  showMenu(anchor, [{ header: "추론 강도" }, ...levels.map(v => ({ value: v, label: v }))], { value: T.thinking, onPick: v => busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${v}`)) });
 });
 $("#ctx-ring").setAttribute("aria-haspopup", "listbox");
 $("#ctx-ring").onclick = ev => busy(null, async () => {
