@@ -4,7 +4,7 @@
 // `bun hub/update.ts --check-now` runs the check path once and prints the result without posting.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export type Mode = "check" | "install" | "off";
@@ -93,7 +93,7 @@ export function startOmpUpdate(post: (text: string) => void, restart: () => stri
 	const raw: unknown = "omp_update" in cfg ? cfg.omp_update : undefined;
 	const o = raw && typeof raw === "object" ? raw : {};
 	const mode: Mode = "mode" in o && (o.mode === "install" || o.mode === "off") ? o.mode : "check";
-	const at = "at" in o && typeof o.at === "string" ? o.at : "04:20";
+	const at = "at" in o && typeof o.at === "string" ? o.at : DEFAULTS.update_at;
 	if (mode === "off" || at === "off") return;
 	const [h, m] = at.split(":").map(Number);
 	const next = () => {
