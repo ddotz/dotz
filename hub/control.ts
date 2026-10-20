@@ -64,6 +64,20 @@ export function contextView() {
 // Model pickers never offer Haiku (owner: never) or Fable (only on the owner's explicit ask; still settable by name).
 export const HIDDEN_MODEL = /haiku|fable/i;
 export const pickable = (list: ModelInfo[]): ModelInfo[] => list.filter(m => !HIDDEN_MODEL.test(m.selector) && !HIDDEN_MODEL.test(m.name ?? ""));
+// One entry per model in the pickers: a dated snapshot ("claude-sonnet-4-5-20250929", "claude-opus-4-20250514") is
+// dropped when its undated alias is listed ("claude-sonnet-4-5", "claude-opus-4-0"), then one entry per display name.
+const snapshotBase = (selector: string): string => selector.replace(/-\d{8}$/, "").replace(/-0$/, "");
+export function dedupeModels(list: ModelInfo[]): ModelInfo[] {
+	const undated = new Set(list.filter(m => !/-\d{8}$/.test(m.selector)).map(m => snapshotBase(m.selector)));
+	const names = new Set<string>();
+	return list.filter(m => {
+		if (/-\d{8}$/.test(m.selector) && undated.has(snapshotBase(m.selector))) return false;
+		const name = `${m.provider}|${m.name ?? m.selector}`;
+		if (names.has(name)) return false;
+		names.add(name);
+		return true;
+	});
+}
 
 // The composer's chip popovers: model, effort and context of one chat target ("main" or "lane:<name>").
 const targetKey = (target: string): string => (target === "main" || target === "orchestrator" ? "orchestrator" : `lane:${target.replace(/^lane:/, "")}`);
@@ -73,7 +87,7 @@ export async function targetView(target: string) {
 	if (key !== "orchestrator" && !lane) throw new ControlError(`no lane ${key.slice(5)}`, 404);
 	const cur = lane ? parseSelector(lane.model) : orchestratorModel();
 	const proc = contextView().processes.find(p => p.name === (lane ? lane.name : "orchestrator"))!;
-	const models = pickable(await availableModels());
+	const models = dedupeModels(pickable(await availableModels()));
 	return {
 		target: lane ? `lane:${lane.name}` : "main",
 		key,
