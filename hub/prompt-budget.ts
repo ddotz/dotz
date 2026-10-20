@@ -8,8 +8,10 @@
 // moved out): 27177 -> 19781 / 32913 -> 23349 bytes; caps lowered to match.
 // 2026-10-20: +281 / +323 bytes for the split-independent-tracks rule (owner: split parallel tracks into their own
 // workers/lanes and worktrees yourself, never pile them on one worker or ask first).
-export const MODE_MD_MAX_BYTES = 22070; // measured 20062
-export const MODE_KO_MD_MAX_BYTES = 26040; // measured 23672
+// 2026-10-21: layer rules (chat routes, projects, scripts first, sessions, subagents, title rule) and the lane -> session,
+// worker -> subagent rename (longer words): ~21119 -> 22154 / ~24902 -> 26109 bytes.
+export const MODE_MD_MAX_BYTES = 24370; // measured 22154
+export const MODE_KO_MD_MAX_BYTES = 28720; // measured 26109
 export const RULES_TEMPLATE_MAX_BYTES = 780; // measured 703
 export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 // The owner card and boundaries go into the orchestrator's start prompt (observations.md does not).

@@ -41,7 +41,7 @@ export type Permission = {
 export const PERMISSIONS: Permission[] = [
 	{
 		key: "fda", label: "전체 디스크 접근", service: "kTCCServiceSystemPolicyAllFiles", how: "pane", pane: `${PANE}Privacy_AllFiles`,
-		evidence: "레인과 오케스트레이터는 임의 폴더에서 OmO(또는 omp)를 띄워 파일을 읽어요 (hub/lanes.ts spawn, hub/orchestrator.ts). 데스크탑·문서·다운로드·iCloud·외장·네트워크 볼륨을 한 번에 해결해요. 팝업이 없어서 설정 창에서 켜요.",
+		evidence: "세션과 오케스트레이터는 임의 폴더에서 OmO(또는 omp)를 띄워 파일을 읽어요 (hub/lanes.ts spawn, hub/orchestrator.ts). 데스크탑·문서·다운로드·iCloud·외장·네트워크 볼륨을 한 번에 해결해요. 팝업이 없어서 설정 창에서 켜요.",
 	},
 	{
 		key: "desktop", label: "파일 및 폴더: 데스크탑", service: "kTCCServiceSystemPolicyDesktopFolder", folder: "Desktop", how: "prompt", pane: `${PANE}Privacy_FilesAndFolders`, viaFda: true,
