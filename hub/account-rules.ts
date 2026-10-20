@@ -308,7 +308,9 @@ export async function runScript(path: string, input: ScriptInput, timeoutMs: num
 	const code = await proc.exited;
 	if (proc.signalCode) return { error: "timeout", at };
 	if (code !== 0) return { error: "exit", at };
-	const lines = (await out).split("\n").map(l => l.trim()).filter(Boolean);
+	// A grandchild that inherited stdout can keep the pipe open after the script exits: give it 500 ms after exit, then treat it as no output.
+	const text = await Promise.race([out, Bun.sleep(500).then(() => "")]);
+	const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 	if (!lines.length) return { at };
 	const aliases = Object.fromEntries(input.accounts.flatMap(a => (a.alias ? [[a.name, a.alias]] : [])));
 	const account = resolveAccount(lines[0], input.accounts.map(a => a.name), aliases);
