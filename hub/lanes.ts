@@ -163,8 +163,11 @@ function report(lane: Lane, text: string, notice = false): void {
 	} else if (!notice) clearAsk(lane);
 	persist(lane);
 	writeFileSync(join(dir(lane.name), "report.md"), `${text}\n`);
-	if (tone !== "done" || notice) return onReport(lane, text);
-	// A [done] is checked against the task metadata before it is relayed; what contradicts it goes along with it.
+	// A [done] is checked against the task metadata before it is relayed; what contradicts it goes along with it. So is a
+	// report without a leading marker that says [done] further down (an OmO lane can open with its handoff block, "Ask: ...").
+	const claimsDone = tone === "done" || (!tone && /\[(done|완료)\]/i.test(text));
+	if (notice || !claimsDone) return onReport(lane, text);
+	const what = tone === "done" ? "[done]" : "report";
 	const claim = lane.claim;
 	void workerCheck(`lane:${lane.name}`, lane.workingSince ?? 0, lane.sessionFile)
 		.catch(e => [`task metadata unreadable: ${e}`])
@@ -174,8 +177,8 @@ function report(lane: Lane, text: string, notice = false): void {
 				claim.problems = problems.slice(0, 10);
 				persist(lane);
 			}
-			log(`lane ${lane.name} [done] contradicted by task metadata: ${problems.join("; ")}`);
-			onReport(lane, `${text}\n\n[gateway check] task metadata contradicts this [done]; do not take it as verified:\n- ${problems.slice(0, 10).join("\n- ")}`);
+			log(`lane ${lane.name} ${what} contradicted by task metadata: ${problems.join("; ")}`);
+			onReport(lane, `${text}\n\n[gateway check] task metadata contradicts this ${what}; do not take it as verified:\n- ${problems.slice(0, 10).join("\n- ")}`);
 		});
 }
 // Drops the pending ask; the caller persists.
