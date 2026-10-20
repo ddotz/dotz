@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { stickyEnv } from "../account-sticky.ts";
 import { apiKeyBan, withoutApiKeys } from "../apikey-policy.ts";
-import { log, parseSelector, writeAtomic } from "../config.ts";
+import { chainAfter, fallbackChain, log, parseSelector, workerModel, writeAtomic } from "../config.ts";
 import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
 import { closeHostsOf, OMO, recordStarted } from "./omo-hosts.ts";
@@ -76,12 +76,18 @@ export function writeWorkerProfile(lane: { workerModel: string; workerFallback?:
 	return writeProfile(workerProfileName(lane.workerModel), { task: WORKER_TASK, memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) }, file);
 }
 
-// The orchestrator's own task workers had the same gap: OmO's shared rpc host, no dotz, no output caps. Its profile only
-// moves them into child processes (WORKER_TASK) and turns OmO memory off as for lane workers; it has no categories, and OmO
-// layers a profile over the base config, so they keep the owner's category models and every tool (a child gets the
-// parent's extensions, not its --exclude-tools).
+// The orchestrator's own task workers had the same gap: OmO's shared rpc host, no dotz, no output caps. Its profile
+// moves them into child processes (WORKER_TASK) and turns OmO memory off as for lane workers, and every category runs on
+// the task-worker model and its fallbacks on the subscription login. Without categories they took OmO's defaults, whose
+// provider list goes on to `anthropic` (the API key): with the subscription account rate-limited, the orchestrator's
+// unspecified-high workers started on a dead API key and failed with 401 "invalid x-api-key" (2026-10-21 00:55 KST).
+// API-key fallback entries are left out: a worker never falls back to a key. A child gets the parent's extensions, not
+// its --exclude-tools, so the workers keep every tool.
 export const ORCHESTRATOR_WORKERS = "dotz-orchestrator-workers";
-export const writeOrchestratorProfile = (file = omoConfigFile()) => writeProfile(ORCHESTRATOR_WORKERS, { task: WORKER_TASK, memory: { enabled: false } }, file);
+export function writeOrchestratorProfile(file = omoConfigFile(), worker = workerModel(), chain = fallbackChain("workers")): string | undefined {
+	const models = [worker, ...chainAfter(worker, chain).filter(e => !e.key_file).map(e => e.model)].map(categoryModel);
+	return writeProfile(ORCHESTRATOR_WORKERS, { task: WORKER_TASK, memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) }, file);
+}
 
 // OmO names its compaction frames compaction_start/compaction_end (omp: auto_compaction_*). A requested compaction is
 // answered by the `compact` response already, so its end frame is dropped instead of reporting it twice.
