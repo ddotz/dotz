@@ -18,7 +18,8 @@ const MESSAGE_KINDS = new Set([...OWNER_KINDS, "out", "lane_report", "result", "
 
 export function isRealMessage(e: HubEvent): boolean {
 	if (!MESSAGE_KINDS.has(e.kind)) return false;
-	return !(e.kind === "out" && e.update_key);
+	// Worklog posts live in the bell (hub/notices.ts); the chat shows a verified session as its compact result card instead.
+	return !(e.kind === "out" && (e.update_key || e.target === "worklog"));
 }
 
 // First meaningful line of a message as plain text: the handoff block, the [done]-style marker, code fences and markdown
