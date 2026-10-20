@@ -1,7 +1,8 @@
 // Dotz mode extension; behaviour depends on which session loads it:
 // - gateway orchestrator (DOTZ_ORCHESTRATOR=1): dotz_send / dotz_lane / dotz_schedule / dotz_auth tools, recall after compaction.
 // - lane session (DOTZ_LANE set): dotz_auth tool; 5-minute prompt cache (1h is for the orchestrator only; idle warming covers waits).
-// - a lane's OmO task worker (DOTZ_LANE + OMO_SENPI_TASK_DEPTH): owner rules, output caps, 5-minute cache only.
+// - an OmO task worker of a lane or the orchestrator (DOTZ_LANE or DOTZ_ORCHESTRATOR=1, + OMO_SENPI_TASK_DEPTH): owner rules,
+//   output caps, 5-minute cache only.
 // - any other session: "<name>모드 켜" (dotz_mode tool, /dotz on) makes this terminal a thin client of the
 //   gateway: typed input is forwarded to the gateway orchestrator instead of the local model, replies addressed to
 //   the terminal are shown here. "<name>모드 꺼" or /dotz off stops forwarding. No terminal needs to stay open.
@@ -400,9 +401,10 @@ function compatHost(pi: any): any {
 
 export default function dotz(host: any) {
 	const pi = compatHost(host);
-	// A lane's OmO task worker (a child process with the lane's environment; OmO sets OMO_SENPI_TASK_DEPTH): the owner's
-	// rules, the output caps and the 5-minute cache, none of the lane's tools or commands (as before, no prompt growth).
-	if (process.env.DOTZ_LANE && process.env.OMO_SENPI_TASK_DEPTH) {
+	// An OmO task worker of a lane or of the orchestrator (a child process with its parent's environment, hub/runtime/omo.ts
+	// WORKER_TASK; OmO sets OMO_SENPI_TASK_DEPTH): the owner's rules, the output caps and the 5-minute cache, none of the
+	// parent's tools or commands (as before, no prompt growth).
+	if ((process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1") && process.env.OMO_SENPI_TASK_DEPTH) {
 		enforceRules(pi);
 		installOutputCap(pi);
 		return shortCache(pi);
