@@ -385,7 +385,9 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 	};
 	const lanes = input.lanes.filter(l => typeof l.cwd === "string" && l.cwd && typeof l.name === "string").map(l => ({ l, at: Date.parse(String(l.startedAt ?? "")) || 0 })).sort((a, b) => b.at - a.at);
 	for (const { l, at } of lanes) {
-		const cwd = String(l.cwd);
+		// A worktree lane belongs to the checkout it works for, not to its own ~/.dotz/lanes/<name>/worktree folder (every
+		// such lane showed as a project named "worktree").
+		const cwd = String(typeof l.repo === "string" && l.repo ? l.repo : l.cwd);
 		const expanded = cwd.replace(/^~(?=\/|$)/, home);
 		if (tmp.some(t => expanded === t || expanded.startsWith(`${t.replace(/\/+$/, "")}/`))) continue;
 		const path = norm(cwd);
