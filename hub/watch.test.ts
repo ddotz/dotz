@@ -1,12 +1,12 @@
 // dotz_watch robustness from 오모냥's launchd watchers: process-group SIGKILL deadline, per-kind retry, owner-approval gate.
 import { afterEach, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, paths } from "./config.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
-import { addWatch, allWatches, approveWatch, exec, listWatches, patchWatch, removeWatch, runWatch, startWatches } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, exec, listWatches, patchWatch, putWatchScript, reloadWatches, removeWatch, runWatch, startWatches, watchScript } from "./watch.ts";
 
 const notes: { name: string; reason: string }[] = [];
 let waiter: (() => void) | undefined;
@@ -128,4 +128,80 @@ test("an approval expires after approval_minutes", async () => {
 	expect(readFileSync(seen, "utf8")).toBe("0\n1\n0\n");
 	expect(existsSync(approval("t-expire"))).toBe(false);
 	expect(() => addWatch({ name: "t-bad", command: "true", retry: { fido: [0] } }, "")).toThrow("retry.fido");
+});
+
+const stateDirOf = (id: string) => join(DATA_DIR, "watches", id);
+const script = (body: string, mode = 0o755) => {
+	const file = join(mkdtempSync(join(tmpdir(), "dotz-script-")), "check.sh");
+	writeFileSync(file, `#!/bin/sh\n${body}\n`);
+	chmodSync(file, mode);
+	return file;
+};
+
+test("every watch gets its own state folder (DOTZ_WATCH_STATE_DIR), a baseline there survives a gateway restart, and remove deletes the folder", async () => {
+	const cmd = `n=$(cat "$DOTZ_WATCH_STATE_DIR/runs" 2>/dev/null || echo 0); echo $((n + 1)) > "$DOTZ_WATCH_STATE_DIR/runs"; echo "$DOTZ_WATCH_STATE_DIR"`;
+	const w = addWatch({ name: "t-state", command: cmd, on: "fail", to: "alert" }, "");
+	await runWatch("t-state");
+	const dir = stateDirOf(w.id);
+	expect(existsSync(dir)).toBe(true);
+	expect(readFileSync(join(dir, "runs"), "utf8").trim()).toBe("1");
+	expect(state("t-state").hash).toBe(new Bun.CryptoHasher("sha256").update(dir).digest("hex").slice(0, 16));
+	reloadWatches();
+	expect(allWatches().find(x => x.name === "t-state")?.id).toBe(w.id);
+	await runWatch("t-state");
+	expect(readFileSync(join(dir, "runs"), "utf8").trim()).toBe("2");
+	const other = addWatch({ name: "t-state-2", command: "true", on: "fail", to: "alert" }, "");
+	await runWatch("t-state-2");
+	expect(stateDirOf(other.id)).not.toBe(dir);
+	expect(existsSync(stateDirOf(other.id))).toBe(true);
+	removeWatch("t-state");
+	expect(existsSync(dir)).toBe(false);
+	expect(existsSync(stateDirOf(other.id))).toBe(true);
+});
+
+test("the approval env and the state folder env reach the check together", async () => {
+	const seen = join(DATA_DIR, "watch-env.txt");
+	addWatch({ name: "t-env", command: `echo "$DOTZ_APPROVED $(basename "$DOTZ_WATCH_STATE_DIR")" > '${seen}'`, on: "fail", to: "alert", approval_minutes: 30 }, "");
+	await runWatch("t-env");
+	expect(readFileSync(seen, "utf8")).toBe(`0 ${allWatches().find(w => w.name === "t-env")!.id}\n`);
+});
+
+test("a script watch is validated, run directly in its folder with the state folder, and listed with its script", async () => {
+	const file = script('pwd -P > "$DOTZ_WATCH_STATE_DIR/cwd"; echo "ran $0" >> "$DOTZ_WATCH_STATE_DIR/log"');
+	for (const [bad, why] of [[{ script: "check.sh" }, "absolute"], [{ script: join(file, "..", "missing.sh") }, "does not exist"], [{ script: join(file, "..") }, "not a file"], [{ script: script("true", 0o644) }, "not executable"], [{ script: file, command: "true" }, "not both"]] as const) {
+		expect(() => addWatch({ name: "t-script-bad", on: "fail", ...bad }, "")).toThrow(why);
+	}
+	expect(allWatches().find(w => w.name === "t-script-bad")).toBeUndefined();
+	const w = addWatch({ name: "t-script", script: file, on: "fail", to: "alert" }, "");
+	expect(w).toMatchObject({ script: file, command: file, cwd: join(file, "..") });
+	await runWatch("t-script");
+	expect(readFileSync(join(stateDirOf(w.id), "cwd"), "utf8").trim()).toBe(realpathSync(join(file, "..")));
+	expect(readFileSync(join(stateDirOf(w.id), "log"), "utf8")).toBe(`ran ${file}\n`);
+	expect(listWatches().find(x => x.name === "t-script")).toMatchObject({ script: file });
+	expect(stored("t-script")).toMatchObject({ script: file });
+	const elsewhere = addWatch({ name: "t-script-cwd", script: file, cwd: tmpdir(), on: "fail", to: "alert" }, "");
+	expect(elsewhere.cwd).toBe(tmpdir());
+});
+
+test("GET returns the script of a script watch; PUT replaces it atomically, keeps its mode, and the next run uses it", async () => {
+	const file = script('echo old >> "$DOTZ_WATCH_STATE_DIR/log"', 0o750);
+	const w = addWatch({ name: "t-edit", script: file, on: "fail", to: "alert" }, "");
+	await runWatch("t-edit");
+	expect(watchScript("t-edit")).toEqual({ path: file, text: readFileSync(file, "utf8") });
+	expect(putWatchScript(w.id, '#!/bin/sh\necho new >> "$DOTZ_WATCH_STATE_DIR/log"\n')).toMatchObject({ path: file });
+	expect(statSync(file).mode & 0o777).toBe(0o750);
+	expect(watchScript(w.id).text).toContain("echo new");
+	await runWatch("t-edit");
+	expect(readFileSync(join(stateDirOf(w.id), "log"), "utf8")).toBe("old\nnew\n");
+	expect(() => putWatchScript("t-edit", "x".repeat(64 * 1024 + 1))).toThrow("64 KB");
+	expect(() => putWatchScript("t-edit", 5)).toThrow("string");
+	expect(() => putWatchScript("t-edit", "a\0b")).toThrow("text");
+	expect(watchScript("t-edit").text).toContain("echo new");
+	const plain = addWatch({ name: "t-plain", command: "true", on: "fail", to: "alert" }, "");
+	expect(() => watchScript(plain.id)).toThrow("not a script watch");
+	expect(() => putWatchScript(plain.id, "x")).toThrow("not a script watch");
+	expect(() => watchScript("nope")).toThrow("no watch");
+	writeFileSync(file, Buffer.from([0x7f, 0x45, 0x00, 0x4c]));
+	expect(() => watchScript("t-edit")).toThrow("not a text file");
+	expect(() => putWatchScript("t-edit", "#!/bin/sh\n")).toThrow("not a text file");
 });

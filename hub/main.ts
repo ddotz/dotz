@@ -44,7 +44,7 @@ import { startOmpUpdate } from "./update.ts";
 import { startSelfUpdate, updateRoute } from "./selfupdate.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
-import { addWatch, allWatches, approveWatch, listWatches, patchWatch, removeWatch, startWatches, stopWatches } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, startWatches, stopWatches, watchScript } from "./watch.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
@@ -913,6 +913,10 @@ const server = Bun.serve({
 		}
 		if (parts[0] === "api" && parts[1] === "watches") {
 			try {
+				if (parts[2] && parts[3] === "script" && parts.length === 4) {
+					if (req.method === "GET") return json(watchScript(parts[2]));
+					if (req.method === "PUT") return json({ ok: true, ...putWatchScript(parts[2], (await body(req)).text) });
+				}
 				if (req.method === "GET") return json(listWatches());
 				if (req.method === "POST" && parts[2] && parts[3] === "approve") return json({ ok: true, watch: approveWatch(parts[2]) });
 				if (req.method === "PATCH" && parts[2]) return json(patchWatch(parts[2], await body(req)));

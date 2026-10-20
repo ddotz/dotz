@@ -531,7 +531,7 @@ export function projectDetailView(d: DetailInput) {
 	const routineSchedules = routineRows.flatMap(r => d.schedules.filter(s => s.text.startsWith(`[routine:${r.id}:`)).map(s => scheduleRow(s, r.id)));
 	const schedules = plainSchedules;
 	const monitors = d.watches.filter(w => p.channel && Array.isArray(w.channels) && w.channels.includes(p.channel.id)).map(w => ({
-		id: String(w.id), name: String(w.name ?? w.id), command: String(w.command ?? "").split("\n")[0]!.slice(0, 120), every_minutes: Number(w.every_minutes) || 0, on: String(w.on ?? "change"),
+		id: String(w.id), name: String(w.name ?? w.id), command: String(w.command ?? "").split("\n")[0]!.slice(0, 120), ...(w.script ? { script: String(w.script) } : {}), every_minutes: Number(w.every_minutes) || 0, on: String(w.on ?? "change"),
 		...(w.pattern ? { pattern: String(w.pattern) } : {}), ...(w.lastRun ? { lastRun: String(w.lastRun) } : {}), ...(w.lastOk ? { lastOk: String(w.lastOk) } : {}), ...(w.nextAt ? { nextAt: String(w.nextAt) } : {}),
 		fails: Number(w.fails) || 0, paused: Boolean(w.paused),
 	}));
