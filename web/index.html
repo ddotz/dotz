@@ -425,6 +425,51 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .chatbox > .jump, .termbox > .jump { position: absolute; left: 50%; right: auto; bottom: 14px; z-index: 2; transform: translateX(-50%); display: grid; place-items: center; width: 36px; height: 36px; min-width: 0; padding: 0; border: 1px solid var(--line-2); border-radius: 50%; background: var(--card); color: var(--fg); font-size: 0; line-height: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
 .chatbox > .jump svg, .termbox > .jump svg { display: block; width: 18px; height: 18px; margin: 0; }
 .chatbox > .jump[hidden], .termbox > .jump[hidden] { display: none; }
+/* Track B: attachments (composer tray, message files, lightbox), ended-lanes fold, target popovers */
+.sendrow.has-att { grid-template-areas: "at at" "ta ta" "bar send"; }
+.atray { grid-area: at; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: -2px 0 4px -6px; padding: 2px; }
+.atray::-webkit-scrollbar { display: none; }
+.att { position: relative; flex: none; display: flex; align-items: center; gap: 10px; height: 56px; max-width: 220px; padding: 0 30px 0 10px; border-radius: 12px; background: var(--layer); color: var(--fg); }
+.att.img { width: 56px; padding: 0; overflow: hidden; }
+.att.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.att .fi-ic { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--card); color: var(--fg-2); }
+.att .fi-ic svg { width: 18px; height: 18px; }
+.att .fi-t { min-width: 0; display: flex; flex-direction: column; }
+.att .fi-n { font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.att .fi-m { font-size: 12px; line-height: 16px; color: var(--fg-3); }
+.att.up { opacity: .55; }
+.att .ax { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: rgb(0 0 0 / .55); color: #fff; }
+.att .ax svg { width: 12px; height: 12px; }
+.att:not(.img) .ax { background: transparent; color: var(--fg-3); top: 18px; }
+#c-attach { width: 30px; padding: 0; justify-content: center; }
+#c-attach svg { width: 18px; height: 18px; }
+.composer.dropping .sendrow { background: color-mix(in srgb, var(--accent) 7%, var(--card)) !important; }
+.mfiles { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 100%; }
+.bm .mfiles { justify-content: flex-start; margin-top: 10px; }
+.mfiles .thumb { display: block; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: var(--layer); cursor: zoom-in; }
+.mfiles .thumb img { display: block; max-width: min(240px, 60vw); max-height: 200px; object-fit: cover; }
+.mfiles .att { cursor: pointer; padding-right: 12px; text-decoration: none; }
+.mfiles .att:hover { background: var(--hover); }
+.bm .md code.path.fp { cursor: pointer; }
+.bm .md code.path.fp:hover { text-decoration: underline; text-underline-offset: 3px; }
+dialog.lbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; color: #fff; }
+dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
+.lbox .lb-in { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; }
+.lbox .lb-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-size: 14px; }
+.lbox .lb-n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.lbox .lb-bar a, .lbox .lb-bar button { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: rgb(255 255 255 / .12); color: #fff; font-size: 13px; text-decoration: none; }
+.lbox .lb-bar button.x { width: 32px; padding: 0; justify-content: center; }
+.lbox .lb-img:focus { outline: 0; }
+.lbox .lb-img { display: grid; place-items: center; min-height: 0; padding: 0 16px 24px; }
+.lbox .lb-img img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.ended { margin-top: 12px; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.ended > summary { display: flex; align-items: center; gap: 8px; padding: 14px 18px; list-style: none; cursor: pointer; color: var(--fg-2); font-size: 14px; font-weight: 600; }
+.ended > summary::-webkit-details-marker { display: none; }
+.ended > summary svg { width: 16px; height: 16px; transition: transform .15s; }
+.ended[open] > summary svg { transform: rotate(90deg); }
+.ended .er { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 18px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg); font-size: 14px; text-align: left; }
+.ended .er:hover { background: var(--card-hover); }
+.ended .er .sup { margin-left: auto; color: var(--fg-3); font-size: 12px; }
 .bm.alert .mn::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: var(--err); vertical-align: middle; }
 .bm .more { margin-top: 8px; }
 .bm .more > summary { width: fit-content; color: var(--fg-2); font-size: 13px; line-height: 20px; cursor: pointer; list-style: none; text-decoration: underline; text-underline-offset: 3px; }
@@ -1023,10 +1068,13 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
           <div class="qlist" id="queue" hidden></div>
           <div class="hintrow" id="hints" hidden></div>
           <form class="sendrow" id="send">
+            <div class="atray" id="atray" hidden></div>
+            <input type="file" id="c-file" multiple hidden>
             <span class="prompt" aria-hidden="true">&gt;</span>
             <textarea id="text" rows="1" autocomplete="off" placeholder="메시지 또는 /명령" aria-label="메시지"></textarea>
             <div class="cbar" id="cbar">
-              <button class="cchip" type="button" id="c-model" hidden></button>
+              <button class="cchip" type="button" id="c-attach" aria-label="파일 첨부" title="파일 첨부 · 끌어다 놓거나 붙여넣기도 돼요"></button>
+              <button class="cchip" type="button" id="c-model" aria-haspopup="listbox" hidden></button>
               <button class="cchip" type="button" id="ctx-ring" hidden></button>
               <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-queue" hidden>다음 턴에</button><button class="btn text" type="button" id="working-int" hidden>중단하고 보내기</button><button class="btn text" type="button" id="working-stop">중단</button></div>
             </div>
@@ -1042,7 +1090,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
           <button class="btn tonal jump" id="act-jump" type="button" aria-label="맨 아래로" title="맨 아래로" hidden></button>
         </div>
       </section>
-      <section class="view" id="v-lanes" hidden><div id="lanes"></div></section>
+      <section class="view" id="v-lanes" hidden><div id="lanes"></div><div id="lanes-ended"></div></section>
       <section class="view" id="v-harness" hidden><div id="harness"></div></section>
       <section class="view" id="v-settings" hidden><div id="settings"></div></section>
       <section class="view" id="v-models" hidden><div id="models"></div></section>
@@ -1407,7 +1455,21 @@ const lastChatView = () => { try { return localStorage.getItem(CHAT_MODE_KEY) ==
 const SUB = new Set(["models", "providers", "usage", "context"]);
 const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context"];
 const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인", harness: "구성", settings: "설정", models: "모델", providers: "공급자", usage: "사용량", context: "컨텍스트" };
-const laneAlive = l => l.status !== "exited";
+// The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
+const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
+const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
+// Ended lanes fold into one "종료된 레인 n" row; opening one shows its history (and resume). Nothing is deleted.
+let endedOpen = false;
+function endedGroup() {
+  const list = endedLanes();
+  if (!list.length) return null;
+  const d = el("details", { class: "ended" }, el("summary", {}, icon("chev"), `종료된 레인 ${list.length}`),
+    ...list.map(l => el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
+      el("span", { class: "dot" }), el("span", { text: l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" }))));
+  d.open = endedOpen;
+  d.addEventListener("toggle", () => { endedOpen = d.open; });
+  return d;
+}
 // An exited or stopped lane is a normal end, so it gets the neutral dot; red is kept for real failures.
 const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
 const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 제한", exited: "종료됨" })[s] || s || "알 수 없음";
@@ -1474,8 +1536,10 @@ function openPalette() {
     } else {
       for (const [c, desc] of hintList) if (!v || c.includes(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
       for (const id of views) if (id !== "activity" && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], go: id === "chat" ? lastChatView() : id });
-      // Exited lanes are hidden everywhere else; the palette is the one way back to their history and resume.
-      for (const l of (S ? S.lanes : []).filter(l => !laneAlive(l))) if (!v || l.name.toLowerCase().includes(v) || "종료된 레인".includes(v)) items.push({ kind: "act", ic: "lanes", label: `종료된 레인 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
+      // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
+      const ended = endedLanes();
+      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `종료된 레인 ${ended.length}`, act: () => { endedOpen = true; go("lanes"); } });
+      else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || "종료된 레인".startsWith(v))) items.push({ kind: "act", ic: "lanes", label: `종료된 레인 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
       if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
     }
     idx = 0;
@@ -2056,7 +2120,8 @@ function renderHomeNow() {
     el("div", { class: "hn-h" }, el("h2", { text: "형 답 필요" }), need.length ? el("span", { class: "sup", text: `${need.length}` }) : null),
     el("div", { class: "hn" }, ...(need.length ? need.map(x => homeNowRow(x.t, NEED[x.k], "att")) : [el("div", { class: "empty", text: "기다리는 것 없어요" })])),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
-    el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", ""))));
+    el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", ""))),
+    endedGroup());
 }
 function renderHome() {
   const box = $("#home");
@@ -2343,7 +2408,7 @@ function msgNode(e) {
       const ub = el("div", { class: "ub", text }), long = text.length > 420 || text.split("\n").length > 6;
       if (long) ub.classList.add("clamp");
       const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? "더 보기" : "접기"; } }, "더 보기") : null;
-      return el("div", { class: "um" }, ub, more, el("div", { class: "mt", text: [hm, via].filter(Boolean).join(" · ") }));
+      return el("div", { class: "um" }, filesNode(e.files), text ? ub : null, more, el("div", { class: "mt", text: [hm, via].filter(Boolean).join(" · ") }));
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, el("pre", { text }), el("div", { class: "mt", text: hm }));
     case "lane_start": return el("div", { class: "a-div", text: `레인 시작 · ${hm}` });
@@ -2365,7 +2430,8 @@ function msgNode(e) {
         const line = humanAlert(body);
         return el("div", { class: `bm${card}` }, head, mdNode(line), line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
       }
-      return el("div", { class: `bm${card}` }, head, mdNode(body));
+      const md = mdNode(body);
+      return el("div", { class: `bm${card}` }, head, md, pathFiles(md));
     }
   }
 }
@@ -2829,7 +2895,11 @@ async function stopTarget() {
 }
 async function sendChat(how) {
   const text = ta.value.trim();
-  if (!text || ta.disabled) return;
+  if (ATT.some(a => !a.file)) { toast("파일을 올리는 중이에요"); return; }
+  const files = ATT.map(a => a.file);
+  if ((!text && !files.length) || ta.disabled) return;
+  if (files.length && text.startsWith("/")) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
+  const sentAtt = ATT; ATT = []; renderAtt();
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   const mk = (kind, extra) => ({ ts: new Date().toISOString(), kind, source: "local", ...(lane ? { lane } : {}), ...extra });
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
@@ -2845,12 +2915,12 @@ async function sendChat(how) {
   }
   const mode = how || (isWorking(t) ? "steer" : undefined);
   try {
-    const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(mode ? { mode } : {}) });
+    const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) });
     scrollChat(true); scrollTerm(true);
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast("다음 턴에 전달할게요"); }
     else if (mode && mode !== "queue") toast(mode === "steer" ? "작업 중에 끼워 넣었어요" : "중단하고 보냈어요");
   }
-  catch (e) { toast(e.message, true); ta.value = text; autosize(); }
+  catch (e) { toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); }
 }
 // The composer follows the selected target and the view mode.
 function updateComposerMeta() {
@@ -2945,8 +3015,134 @@ function renderCtxRing() {
   b.textContent = p.percent != null ? `컨텍스트 ${Math.round(p.percent)}%` : `컨텍스트 ${kfmt(p.tokens)}`;
   b.classList.toggle("err", pct >= 80);
 }
-$("#ctx-ring").onclick = () => go("context");
-$("#c-model").onclick = () => go("models");
+/* ---------- composer chips: model / effort / context of the current target (GET/PUT /api/target) ---------- */
+const targetParam = () => isLaneT(target) ? target : "main";
+async function targetChange(title, change, label) {
+  const body = { target: targetParam(), ...change };
+  let r;
+  try { r = await api("/api/target", "PUT", body); }
+  catch (e) {
+    if (!(e.data && e.data.requires_force)) throw e;
+    if (!await ask(title, `작업 중인 레인이라 컨텍스트 ${num(e.data.context_tokens)} 토큰이 캐시에 다시 쓰여요\n${label}`, "적용")) return;
+    r = await api("/api/target", "PUT", { ...body, force: true });
+  }
+  toast(change.compact ? (r.compaction === "queued" ? "작업이 끝나면 압축해요" : "압축을 시작했어요") : (applyKo[r.applied] || "적용했어요"));
+  await Promise.all([loadModels(true), loadContext(true)]); refreshState();
+}
+$("#c-model").onclick = ev => busy(null, async () => {
+  const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(targetParam())}`);
+  const name = targetName(target), byProv = new Map();
+  for (const m of T.models) { if (!byProv.has(m.provider)) byProv.set(m.provider, []); byProv.get(m.provider).push(m); }
+  const items = [];
+  for (const [p, list] of byProv) items.push({ header: providerName(p) }, ...list.map(m => ({ value: `m:${m.selector}`, label: m.name || m.selector })));
+  items.push({ header: "추론 강도" }, ...T.thinking_levels.map(v => ({ value: `t:${v}`, label: v, sub: v === T.thinking ? "지금" : "" })));
+  showMenu(anchor, items, { value: `m:${T.model}`, onPick: v => busy(null, () => v.startsWith("m:")
+    ? targetChange(name, { model: v.slice(2) }, `${modelName(v.slice(2))} · ${T.thinking}`)
+    : targetChange(name, { thinking: v.slice(2) }, `${modelName(T.model)} · ${v.slice(2)}`)) });
+});
+$("#ctx-ring").setAttribute("aria-haspopup", "listbox");
+$("#ctx-ring").onclick = ev => busy(null, async () => {
+  const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(targetParam())}`), c = T.context || {};
+  const inFlight = c.compaction && (c.compaction.state === "queued" || c.compaction.state === "compacting");
+  const items = [{ header: c.percent != null ? `컨텍스트 ${Math.round(c.percent)}% · ${kfmt(c.tokens)}/${kfmt(c.window)}` : `컨텍스트 ${kfmt(c.tokens || 0)} 토큰` }];
+  if (T.running && !inFlight) items.push({ value: "compact", label: "지금 압축", sub: T.busy ? "작업이 끝나면 압축해요" : "캐시가 한 번 다시 쓰여요" });
+  else if (inFlight) items.push({ value: "none", label: "압축 진행 중" });
+  items.push({ value: "open", label: "컨텍스트 화면 열기" });
+  showMenu(anchor, items, { onPick: v => v === "open" ? go("context") : v === "compact" ? busy(null, () => targetChange(targetName(target), { compact: true }, "")) : null });
+});
+
+/* ---------- attachments: + button, drag-drop, paste -> POST /api/upload; sent as `files` with the message ---------- */
+let ATT = [];   // [{id, name, type, size, url (local preview), file (server record once uploaded)}]
+const IMG_RE = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
+const fileUrl = (p, dl) => `/api/file?path=${enc(p)}${dl ? "&dl=1" : ""}`;
+const fsize = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : n >= 1024 ? `${Math.round(n / 1024)}KB` : `${n}B`;
+const extOf = n => (String(n).match(/\.([A-Za-z0-9]{1,6})$/) || [0, ""])[1].toUpperCase();
+$("#c-attach").append(icon("add"));
+$("#c-attach").onclick = () => $("#c-file").click();
+$("#c-file").onchange = ev => { addFiles([...ev.target.files]); ev.target.value = ""; };
+async function addFiles(list) {
+  if (!list.length) return;
+  if (ATT.length + list.length > 10) { toast("한 번에 10개까지 보낼 수 있어요", true); list = list.slice(0, Math.max(0, 10 - ATT.length)); }
+  const items = list.map(f => ({ id: Math.random().toString(36).slice(2), name: f.name || "붙여넣은 이미지.png", type: f.type, size: f.size, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : "", raw: f }));
+  ATT = ATT.concat(items); renderAtt(); ta.focus();
+  await Promise.all(items.map(async a => {
+    const form = new FormData();
+    form.append("file", a.raw, a.name);
+    try {
+      const r = await fetch("/api/upload", { method: "POST", body: form });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      a.file = d.files[0];
+    } catch (e) { toast(`${a.name}: ${e.message}`, true); dropAtt(a.id); }
+    renderAtt();
+  }));
+}
+function dropAtt(id) { const a = ATT.find(x => x.id === id); if (a && a.url) URL.revokeObjectURL(a.url); ATT = ATT.filter(x => x.id !== id); renderAtt(); }
+function fileChip(name, meta, extra = {}) {
+  return el(extra.href ? "a" : "div", { class: `att${extra.cls ? ` ${extra.cls}` : ""}`, ...(extra.href ? { href: extra.href, target: "_blank", rel: "noopener", title: `${name} · 미리보기` } : { title: name }) },
+    el("span", { class: "fi-ic" }, icon("file")), el("span", { class: "fi-t" }, el("span", { class: "fi-n", text: name }), el("span", { class: "fi-m", text: meta })), extra.x || null);
+}
+function renderAtt() {
+  const box = $("#atray");
+  $("#send").classList.toggle("has-att", ATT.length > 0);
+  box.hidden = !ATT.length;
+  clear(box).append(...ATT.map(a => {
+    const x = el("button", { class: "ax", type: "button", "aria-label": `${a.name} 빼기`, onclick: () => dropAtt(a.id) }, icon("close"));
+    if (a.url) return el("div", { class: `att img${a.file ? "" : " up"}`, title: a.name }, el("img", { src: a.url, alt: a.name }), x);
+    return fileChip(a.name, a.file ? [extOf(a.name), fsize(a.size)].filter(Boolean).join(" · ") : "올리는 중…", { cls: a.file ? "" : "up", x });
+  }));
+}
+ta.addEventListener("paste", ev => {
+  const files = [...(ev.clipboardData && ev.clipboardData.files || [])];
+  if (!files.length) return;
+  ev.preventDefault();
+  addFiles(files);
+});
+{
+  const zone = $("#v-chat"), comp = $("#composer");
+  let depth = 0;
+  const hasFiles = ev => [...(ev.dataTransfer && ev.dataTransfer.types || [])].includes("Files");
+  zone.addEventListener("dragenter", ev => { if (!hasFiles(ev)) return; ev.preventDefault(); depth++; comp.classList.add("dropping"); });
+  zone.addEventListener("dragover", ev => { if (hasFiles(ev)) { ev.preventDefault(); ev.dataTransfer.dropEffect = "copy"; } });
+  zone.addEventListener("dragleave", ev => { if (hasFiles(ev) && --depth <= 0) { depth = 0; comp.classList.remove("dropping"); } });
+  zone.addEventListener("drop", ev => { if (!hasFiles(ev)) return; ev.preventDefault(); depth = 0; comp.classList.remove("dropping"); if (!ta.disabled) addFiles([...ev.dataTransfer.files]); });
+}
+// Files in a message: image thumbnails open the lightbox, other files open the read-only preview in a new tab.
+function filesNode(files) {
+  if (!files || !files.length) return null;
+  return el("div", { class: "mfiles" }, ...files.map(f => IMG_RE.test(f.name || f.path)
+    ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name) }, el("img", { src: fileUrl(f.path), alt: f.name, loading: "lazy" }))
+    : fileChip(f.name, [extOf(f.name), f.size ? fsize(f.size) : ""].filter(Boolean).join(" · "), { href: fileUrl(f.path) })));
+}
+function lightbox(path, name) {
+  const d = el("dialog", { class: "lbox", "aria-label": name },
+    el("div", { class: "lb-in" },
+      el("div", { class: "lb-bar" }, el("span", { class: "lb-n", text: name }),
+        el("a", { href: fileUrl(path), target: "_blank", rel: "noopener" }, "새 탭"),
+        el("a", { href: fileUrl(path, true), download: name }, "다운로드"),
+        el("button", { class: "x", type: "button", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      el("div", { class: "lb-img", tabindex: "-1", autofocus: true, onclick: ev => { if (ev.target === ev.currentTarget) d.close(); } }, el("img", { src: fileUrl(path), alt: name }))));
+  d.addEventListener("close", () => d.remove());
+  document.body.append(d); d.showModal();
+}
+// A path an agent writes in a reply (`code.path`) opens as a preview when the gateway allows it; images show inline.
+async function openPath(p) {
+  const r = await fetch(fileUrl(p), { method: "HEAD" }).catch(() => null);
+  if (!r || !r.ok) { toast(r && r.status === 404 ? "파일이 없어요" : "열 수 없는 위치예요", true); return; }
+  if (IMG_RE.test(p)) lightbox(p, p.split("/").pop()); else window.open(fileUrl(p), "_blank", "noopener");
+}
+function pathFiles(md) {
+  const imgs = [];
+  for (const c of md.querySelectorAll("code.path")) {
+    const p = c.textContent.replace(/:\d+(-\d+)?$/, "");
+    if (!/^(~\/|\/)[^\s]+\.[A-Za-z0-9]{1,6}$/.test(p)) continue;
+    c.classList.add("fp"); c.title = "미리보기"; c.onclick = () => openPath(p);
+    if (IMG_RE.test(p) && imgs.length < 4 && !imgs.some(f => f.path === p)) imgs.push({ path: p, name: p.split("/").pop() });
+  }
+  const n = imgs.length ? filesNode(imgs) : null;
+  if (n) for (const img of n.querySelectorAll("img")) img.onerror = () => img.closest(".thumb").remove();
+  return n;
+}
 setInterval(() => { if (current === "chat" || current === "activity") loadContext(true).then(renderCtxRing); }, 15000);
 
 /* ---------- target switcher + 대화/터미널 toggle (rendered into the header of both views) ---------- */
@@ -3012,7 +3208,8 @@ function renderBars() {
       icon("drop"));
     drop.onclick = () => showMenu(drop, [
       ...A.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.attn ? "확인 필요" : "", v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), badge: v.unread || "" })),
-      ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" }))], { value: target, onPick: setTarget });
+      ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
+      ...(D.length ? [{ value: "__ended", label: `종료된 레인 ${D.length}`, sub: "기록 보기 · 재개" }] : [])], { value: target, onPick: v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else setTarget(v); } });
     const ud = mode === "term" && ts(target).unread > 0;
     const seg = el("div", { class: "vseg", role: "group", "aria-label": "보기 방식" },
       el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", onclick: () => go("chat") }, "대화", ud ? el("i", { class: "ud", title: "새 메시지" }) : null),
@@ -3286,7 +3483,7 @@ function renderLanes() {
   const lanes = S.lanes.filter(laneAlive);
   const modelOf = n => (M && M.lanes || []).find(l => l.name === n);
   const sig = JSON.stringify([lanes.map(l => [l.name, l.status, l.model, runningSubs(`lane:${l.name}`).length, attnKind(`lane:${l.name}`), l.claim && l.claim.state, l.pendingAsk && l.pendingAsk.at]), M && M.lanes, M && M.available && M.available.length]);
-  if (sig === laneSig) return;
+  if (sig === laneSig) return renderEndedLanes();
   laneSig = sig;
   const B = laneBoard;
   for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) { LP[n].node.remove(); delete LP[n]; delete laneDraft[n]; }
@@ -3301,6 +3498,13 @@ function renderLanes() {
     if (!p.loaded && !p.loading && Date.now() - p.failedAt > 15000) laneLoad(p);
     laneStick(p);
   }
+  renderEndedLanes();
+}
+function renderEndedLanes() {
+  const box = $("#lanes-ended"), names = endedLanes().map(l => l.name).join("|");
+  if (box.dataset.sig === `${names}|${endedOpen}`) return;
+  box.dataset.sig = `${names}|${endedOpen}`;
+  clear(box).append(endedGroup() || "");
 }
 
 /* ---------- context ---------- */
@@ -3338,7 +3542,7 @@ function renderContext() {
   if (!C) { clear(box).append(emptyNode("불러오는 중…")); return; }
   const list = el("div", { class: "col" });
   // Exited lanes leave this list at once, like the lanes board; the orchestrator always stays.
-  for (const p of C.processes.filter(x => x.kind !== "lane" || x.status !== "exited")) {
+  for (const p of C.processes.filter(x => x.kind !== "lane" || laneAlive(x))) {
     const cs = compactState(p.compaction);
     const inFlight = p.compaction && (p.compaction.state === "queued" || p.compaction.state === "compacting");
     const btn = el("button", { class: "btn tonal", type: "button", disabled: !p.running || inFlight, onclick: ev => busy(ev.currentTarget, async () => {
@@ -3370,7 +3574,8 @@ async function loadModels(quiet) {
 }
 function modelItems(key, curModel, filter = providerFilter) {
   const val = (pending[key] || {}).model ?? curModel;
-  const avail = M.available || [];
+  // Pickers list M.pickable (no Haiku, no Fable); a target already on a hidden model still shows it under "현재".
+  const avail = M.pickable || M.available || [];
   const shown = avail.filter(a => !filter || a.provider === filter);
   const items = [];
   if (val && !shown.some(a => a.selector === val)) items.push({ header: "현재" }, { value: val, label: modelName(val) });
@@ -3431,7 +3636,7 @@ function renderModels() {
   if (!M) { clear(box).append(emptyNode("불러오는 중…")); return; }
   const provs = [...new Set((M.available || []).map(a => a.provider))].sort((a, b) => providerName(a).localeCompare(providerName(b)));
   const filter = selectField("공급자", providerFilter ? providerName(providerFilter) : "전체", [{ value: "", label: "전체" }, ...provs.map(p => ({ value: p, label: providerName(p) }))], providerFilter, v => { providerFilter = v; renderModels(); });
-  const lanes = M.lanes || [];
+  const lanes = (M.lanes || []).filter(laneAlive);
   clear(box).append(
     el("div", { class: "col" },
       el("div", { style: "max-width:280px" }, filter),
@@ -4393,7 +4598,7 @@ async function openHSheet(id, focus = {}) {
 }
 
 function hModelItems(cur) {
-  const avail = (M && M.available) || [];
+  const avail = (M && (M.pickable || M.available)) || [];
   const items = [];
   if (cur && !avail.some(a => a.selector === cur)) items.push({ header: "현재" }, { value: cur, label: modelName(cur) });
   const byProv = new Map();
@@ -4823,6 +5028,7 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
     else if (e.kind === "subagents") setSubs(e.source, e.items);
     else if (e.kind === "queue") { QUEUE = e.items || []; renderQueue(); }
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
+    else if (e.kind === "lanes") { if (e.was_live && !e.live) refreshState(); else scheduleState(); }
     else {
       ingestMsg(e); scheduleState();
       // Live notices only (not the replay after a reconnect): alert / worklog posts, the gateway's own notes (sent to the web
