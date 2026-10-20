@@ -2,6 +2,7 @@
 // started and finished through the gateway), API keys (`omp auth import`), sign-out (`omp auth-broker logout`), plus
 // the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
 import { OMP } from "./config.ts";
+import { type AccountReport, AccountUsage, fromOmp, runtimeIdOf, subscriptionAccount } from "./usage-account.ts";
 
 // omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
 export const PROVIDER_ENV: Record<string, string> = {
@@ -55,7 +56,7 @@ export function secretValues(): string[] {
 type OmpModel = { kind?: string; selector: string; id?: string; name?: string; provider: string; reasoning?: boolean };
 type OmpCredential = { provider: string; credential?: Record<string, unknown> };
 type OmpLimit = { id: string; label?: string; window?: { id?: string; label?: string; resetsAt?: number }; amount?: { used?: number; limit?: number; remaining?: number; unit?: string }; status?: string };
-export type OmpUsageReport = { provider: string; limits?: OmpLimit[] };
+export type OmpUsageReport = { provider: string; limits?: OmpLimit[]; metadata?: { email?: string }; account?: string };
 
 async function ompJson<T>(args: string[], timeoutMs = 30_000): Promise<T | undefined> {
 	try {
@@ -105,6 +106,17 @@ const authInfos = async (): Promise<AuthInfo[]> =>
 
 export const usageReports = async (): Promise<OmpUsageReport[]> =>
 	(await cached("usage", async () => (await ompJson<{ reports?: OmpUsageReport[] }>(["usage", "--json"], 45_000))?.reports)) ?? [];
+
+// The Anthropic limits of the account the role really runs on (hub/usage-account.ts): OmO's own subscription account
+// under OmO, else omp's login. `force` asks again sooner (a 429 just happened). Undefined: nothing to read.
+const accountUsage = new AccountUsage();
+export async function anthropicUsage(role: "orchestrator" | "lane" = "orchestrator", force = false): Promise<AccountReport | undefined> {
+	const acct = runtimeIdOf(role) === "omo" ? subscriptionAccount() : undefined;
+	if (acct) return accountUsage.report(acct, force);
+	if (force) invalidate();
+	const r = (await usageReports()).find(x => x.provider === "anthropic");
+	return r && fromOmp(r);
+}
 
 // Every provider the runtime can log into (`auth-broker list`) with its human label; fixed for the runtime's lifetime.
 export type LoginProvider = { id: string; name: string };
@@ -316,12 +328,13 @@ export async function logoutProvider(provider: string): Promise<void> {
 export type QuotaLimit = { id: string; label: string; window: string; used: number | null; limit: number | null; remaining: number | null; unit: string; resets_at: number | null; status: string };
 // Pure: maps the usage reports to the API shape; providers holding credentials but absent from the reports
 // (or reporting no limits) are listed as unavailable with a plain reason.
-export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): { providers: { provider: string; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {
+export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): { providers: { provider: string; account?: string; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {
 	const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 	const providers = reports
 		.filter((r): r is OmpUsageReport & { limits: OmpLimit[] } => Array.isArray(r.limits) && r.limits.length > 0)
 		.map(r => ({
 			provider: r.provider,
+			...(r.account ?? r.metadata?.email ? { account: r.account ?? r.metadata?.email } : {}),
 			limits: r.limits.map((l): QuotaLimit => ({
 				id: String(l.id), label: String(l.label ?? l.id), window: String(l.window?.id ?? l.window?.label ?? ""),
 				used: num(l.amount?.used), limit: num(l.amount?.limit), remaining: num(l.amount?.remaining), unit: String(l.amount?.unit ?? ""),
@@ -335,7 +348,8 @@ export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): {
 
 export async function quota() {
 	const rows = (await listProviders(new Set())).providers;
-	const reports = await usageReports();
+	const anthropic = await anthropicUsage();
+	const reports = [...(anthropic ? [anthropic] : []), ...(await usageReports()).filter(r => r.provider !== "anthropic")];
 	return { fetched_at: Date.now(), ...buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)) };
 }
 
@@ -354,10 +368,12 @@ export function resumeDelay(err: string, limits: QuotaLimit[], at: number): { ms
 	const base = resets.length ? Math.max(...resets) - at : Number.isFinite(hint) ? hint : 10 * 60_000;
 	return { ms: Math.min(base, RESUME_MAX_MS) + RESUME_MARGIN_MS, reset: resets.length > 0 };
 }
-export async function rateLimitDelay(err: string, model: string): Promise<{ ms: number; reset: boolean }> {
+export async function rateLimitDelay(err: string, model: string, role: "orchestrator" | "lane" = "orchestrator"): Promise<{ ms: number; reset: boolean }> {
 	const provider = model.split("/")[0];
 	invalidate();
-	const limits = buildQuota(await usageReports().catch(() => []), []).providers.find(p => p.provider === provider)?.limits ?? [];
+	// Anthropic: the account the role runs on, which may not be omp's login
+	const reports = provider === "anthropic" ? [await anthropicUsage(role, true).catch(() => undefined)].filter(r => r !== undefined) : await usageReports().catch(() => []);
+	const limits = buildQuota(reports, []).providers.find(p => p.provider === provider)?.limits ?? [];
 	return resumeDelay(err, limits, Date.now());
 }
 
