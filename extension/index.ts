@@ -6,6 +6,8 @@
 // - any other session: "<name>모드 켜" (dotz_mode tool, /dotz on) makes this terminal a thin client of the
 //   gateway: typed input is forwarded to the gateway orchestrator instead of the local model, replies addressed to
 //   the terminal are shown here. "<name>모드 꺼" or /dotz off stops forwarding. No terminal needs to stay open.
+// - orchestrator, lanes and their workers: the thinking of finished turns kept across a compaction is left out of
+//   later requests (compact-kept.ts).
 // - every session above also gets the worker guard (guard.ts) and the /doctor, /handover, /token-audit commands (harness-tools.ts);
 //   config key `guard`, see README. Each skips itself when the owner's original ~/.omp extension of that name is installed.
 
@@ -17,6 +19,7 @@ import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { systemDeny } from "../hub/systemdeny.ts";
+import { installCompactKept } from "./compact-kept.ts";
 import { dropLongTtl, installGuard } from "./guard.ts";
 import { installHarnessTools } from "./harness-tools.ts";
 import { installOutputCap } from "./output-cap.ts";
@@ -407,6 +410,7 @@ export default function dotz(host: any) {
 	if ((process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1") && process.env.OMO_SENPI_TASK_DEPTH) {
 		enforceRules(pi);
 		installOutputCap(pi);
+		installCompactKept(pi);
 		return shortCache(pi);
 	}
 	keyProvider(pi);
@@ -417,6 +421,7 @@ export default function dotz(host: any) {
 	if (process.env.DOTZ_LANE) {
 		enforceRules(pi);
 		installOutputCap(pi);
+		installCompactKept(pi);
 		return laneSession(pi);
 	}
 	// Action methods such as setLabel only work once the session is bound (OmO throws during extension loading).
@@ -425,6 +430,7 @@ export default function dotz(host: any) {
 	pi.on("session_start", () => (process.env.DOTZ_RUNTIME === "omo" ? pi.setSessionName?.("Dotz mode") : pi.setLabel?.("Dotz mode")));
 	if (process.env.DOTZ_ORCHESTRATOR === "1") {
 		enforceRules(pi);
+		installCompactKept(pi);
 		orchestratorTools(pi);
 	}
 	else terminalClient(pi);
