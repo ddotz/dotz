@@ -126,6 +126,14 @@ export function removeSessionsFor(cwd: string, dirs = sessionDirs()): string[] {
 
 export type OpenTask = { id?: string; lane?: unknown; [key: string]: unknown };
 
+// A task that waits for the owner (an answer, a choice, an approval, a needs-you question) stays open when its lane ends:
+// only the owner closes it (2026-10-20 18:57: the hourly cleanup closed gateway-ui-m3, whose next step was the owner's
+// pick of 5 ideas). Read from its words; a false match only keeps a task open.
+const OWNER_WAIT_RE = /needs[- ]?you|\[ask\]|\bquestion\b|\bapprov|owner'?s? (?:answer|reply|choice|pick|decision|ok)|(?:wait|waiting|waits) (?:for|on) (?:the )?owner|형\s*(?:의\s*)?(?:답|대답|선택|결정|승인|확인|오케이|ok)|형이\s*(?:고르|정하|답하|승인|선택|확인)|(?:승인|답|선택|결정)\s*(?:대기|기다)/i;
+export function waitsForOwner(task: OpenTask): boolean {
+	return [task.next, task.what].some(v => typeof v === "string" && OWNER_WAIT_RE.test(v));
+}
+
 // isDead returns the reason a lane counts as ended, or undefined while it may still come back.
 export function closeDeadLaneTasks(stateFile: string, historyFile: string, isDead: (lane: string) => string | undefined, now = Date.now()): OpenTask[] {
 	if (!existsSync(stateFile)) return [];
@@ -135,7 +143,7 @@ export function closeDeadLaneTasks(stateFile: string, historyFile: string, isDea
 	const closed: OpenTask[] = [];
 	for (const task of state.open_tasks as OpenTask[]) {
 		const reason = typeof task?.lane === "string" ? isDead(task.lane) : undefined;
-		if (!reason) {
+		if (!reason || waitsForOwner(task)) {
 			keep.push(task);
 			continue;
 		}
