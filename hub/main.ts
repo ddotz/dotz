@@ -1207,7 +1207,9 @@ function replayPending(): number {
 // workers included, then exit; launchd (KeepAlive) starts the new code. Called during an orchestrator turn, it waits for
 // that turn to end, so the answer goes out first. restart.ts: a busy lane is never killed, requests are coalesced.
 function busyNow(): string[] {
-	return [orchBusy() ?? "", ...[...lanes.values()].filter(laneBusy).map(l => `lane ${l.name}`)].filter(Boolean);
+	// The orchestrator's background task workers die with its process: a request deferred to one ([later]) holds the restart.
+	const workers = queue.waitingOnWorkers() ? "orchestrator background workers" : "";
+	return [orchBusy() ?? "", workers, ...[...lanes.values()].filter(laneBusy).map(l => `lane ${l.name}`)].filter(Boolean);
 }
 const restartGate = createRestartGate({
 	busy: busyNow,
