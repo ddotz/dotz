@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { closeDeadLaneTasks, pruneArchives, pruneTempSessions, pruneUploads, removeSessionsFor, rotateFile } from "./cleanup.ts";
+import { closeDeadLaneTasks, waitsForOwner, pruneArchives, pruneTempSessions, pruneUploads, removeSessionsFor, rotateFile } from "./cleanup.ts";
 
 const NOW = Date.parse("2026-10-20T09:00:00Z");
 const DAY = 86_400_000;
@@ -111,4 +111,21 @@ test("open tasks of an ended lane move to the history file with a reason; others
 	expect(readFileSync(state, "utf8")).toBe(before);
 	expect(closeDeadLaneTasks(join(dir, "none.json"), history, dead, NOW)).toEqual([]);
 	expect(existsSync(join(dir, "none.json"))).toBe(false);
+});
+
+test("closeDeadLaneTasks keeps a task of an ended lane that waits for the owner; only plain tasks close", () => {
+	const dir = mkdtempSync(join(tmpdir(), "owner-wait-"));
+	const state = join(dir, "state.json");
+	const history = join(dir, "tasks-closed.jsonl");
+	const tasks = [
+		{ id: "pick", lane: "gone", next: "외부 조사 아이디어 5개 중 무엇을 할지 형 답을 레인 채널에서 기다림" },
+		{ id: "approve", lane: "gone", next: "merge waits for the owner's approval" },
+		{ id: "needs", lane: "gone", what: "needs-you: which theme" },
+		{ id: "plain", lane: "gone", next: "레인 보고 오면 머지 SHA 확인 후 재시작" },
+	];
+	writeFileSync(state, JSON.stringify({ open_tasks: tasks }));
+	const closed = closeDeadLaneTasks(state, history, () => "lane gone ended");
+	expect(closed.map(t => t.id)).toEqual(["plain"]);
+	expect(JSON.parse(readFileSync(state, "utf8")).open_tasks.map((t: { id: string }) => t.id)).toEqual(["pick", "approve", "needs"]);
+	expect(waitsForOwner({ next: "형이 C(범용) 선택함, 머지 SHA 확인" })).toBe(false);
 });
