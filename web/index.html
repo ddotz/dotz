@@ -2986,7 +2986,7 @@ function renderActChips(on) {
     chip("중단", null, () => stopTarget(), " stop"),
     ta.value.trim() ? chip("다음 턴에", null, () => sendChat("queue")) : null,
     chip("끝으로", "down", () => (term ? scrollTerm(true) : scrollChat(true))),
-    chip("압축", null, () => busy(null, async () => { const r = await api("/api/compact", "POST", { target: proc }); toast(r.state === "queued" ? "작업 중이라 턴이 끝나면 압축해요" : "압축을 시작했어요"); })).filter(Boolean));
+    chip("압축", null, () => busy(null, async () => { const r = await api("/api/compact", "POST", { target: proc }); toast(r.state === "queued" ? "작업 중이라 턴이 끝나면 압축해요" : "압축을 시작했어요"); }))].filter(Boolean));
 }
 
 /* ---------- queued messages (server queue, sent when the target's turn ends) + context ring ---------- */
