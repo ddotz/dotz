@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
-import { compactTarget, ControlError, contextView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
+import { changeTarget, compactTarget, ControlError, contextView, targetView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
@@ -13,7 +13,8 @@ import { isNote, msg } from "./i18n.ts";
 import { activityItems, answeredIds, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
-import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, laneJustification, lanes, laneList, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, turnHeader, verifyLane } from "./lanes.ts";
+import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
+import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, turnHeader, verifyLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { createPrompts } from "./prompts.ts";
@@ -411,9 +412,10 @@ if (!restarted) {
 
 // Sends one web message the way the composer's modes mean it. "default" (no mode): the main assistant takes it as the next
 // message, a working lane gets it steered in; "steer": into the running turn now; "interrupt": abort, then new prompt.
-type WebSend = { lane?: string; channel: "web" | "terminal"; text: string; mode: "default" | "steer" | "interrupt"; login: string };
+// `files` are uploads (files.ts): the chat shows them as chips, the agent gets one [attachment] line per file with its path.
+type WebSend = { lane?: string; channel: "web" | "terminal"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[] };
 async function sendWeb(s: WebSend): Promise<void> {
-	const extra = s.mode === "default" ? {} : { mode: s.mode };
+	const extra = { ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}) };
 	if (s.lane) {
 		const name = s.lane;
 		emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: s.login, lane: name, text: s.text, ...extra });
@@ -423,10 +425,10 @@ async function sendWeb(s: WebSend): Promise<void> {
 			// Let the aborted turn end first, or the message would be steered into it.
 			for (let i = 0; i < 50 && lanes.get(name)?.status === "working"; i++) await Bun.sleep(200);
 		}
-		sendToLane(name, `[owner via web] ${s.text}`);
+		sendToLane(name, [`[owner via web] ${s.text}`, s.files?.length ? attachmentLines(s.files) : ""].filter(Boolean).join("\n"));
 		return;
 	}
-	const event = { ts: now(), kind: "message", source: s.channel, channel: s.channel, author: s.login, text: s.text, ...extra };
+	const event = { ts: now(), kind: "message", source: s.channel, channel: s.channel, author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
 	emit("inbox", event);
 	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(s.channel, event.text);
 	else if (s.mode === "steer" && orch.status === "working") {
@@ -506,10 +508,40 @@ const server = Bun.serve({
 			else terminals.set(String(b.session), { cwd: b.cwd, at: now() });
 			return json({ ok: true });
 		}
+		if (req.method === "POST" && url.pathname === "/api/upload") {
+			try {
+				return json({ ok: true, files: await uploadsFrom(req) });
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
+			}
+		}
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/file") {
+			try {
+				const path = resolveAllowed(url.searchParams.get("path") ?? "", allowedRoots([...lanes.values()].flatMap(l => [l.cwd, l.worktree?.path ?? ""])));
+				const res = serveFile(path, req, url.searchParams.get("dl") === "1");
+				return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
+			}
+		}
+		if (req.method === "GET" && url.pathname === "/api/lanes/live") return json(liveLanes());
+		if (url.pathname === "/api/target") {
+			const fail = (error: unknown) => json({ error: (error as Error).message, ...(error instanceof ForceRequired ? { requires_force: true, context_tokens: error.contextTokens } : {}) }, error instanceof ControlError ? error.status : 400);
+			try {
+				if (req.method === "GET") return json(await targetView(url.searchParams.get("target") ?? "main"));
+				if (req.method === "PUT") {
+					const b = await body(req);
+					return json(await changeTarget(String(b.target ?? "main"), { model: b.model ? String(b.model) : undefined, thinking: b.thinking ? String(b.thinking) : undefined, compact: b.compact === true, force: b.force === true }));
+				}
+			} catch (error) {
+				return fail(error);
+			}
+		}
 		if (req.method === "POST" && url.pathname === "/api/message") {
 			const b = await body(req);
-			if (!b.text) return json({ error: "text required" }, 400);
-			const text = String(b.text);
+			const files = messageFiles(b.files);
+			if (!b.text && !files.length) return json({ error: "text required" }, 400);
+			const text = String(b.text ?? "");
 			const login = req.headers.get("tailscale-user-login") ?? "local";
 			// mode: none (main takes it as the next message, a working lane is steered), "steer" (into the running turn
 			// now), "interrupt" (abort the running turn, then send as a new prompt), "queue" (a working target gets it
@@ -518,11 +550,11 @@ const server = Bun.serve({
 			const lane = b.lane ? String(b.lane) : undefined;
 			const channel = b.channel === "terminal" ? "terminal" : "web";
 			if (mode === "queue" && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
-				const item = enqueue(lane ? `lane:${lane}` : "main", text, login);
+				const item = enqueue(lane ? `lane:${lane}` : "main", [text, files.length ? attachmentLines(files) : ""].filter(Boolean).join("\n"), login);
 				return json({ ok: true, queued: item });
 			}
 			try {
-				await sendWeb({ lane, channel, text, mode: mode === "queue" ? "default" : mode, login });
+				await sendWeb({ lane, channel, text, mode: mode === "queue" ? "default" : mode, login, files });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}

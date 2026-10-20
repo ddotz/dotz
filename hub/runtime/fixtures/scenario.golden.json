@@ -2113,6 +2113,7 @@
      "model": "anthropic/test-lane:medium",
      "worker_model": "anthropic/test-worker:high",
      "status": "exited",
+     "live": false,
      "reports": 6,
      "resumable": true,
      "lastText": "worked again",
