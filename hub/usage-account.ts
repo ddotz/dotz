@@ -18,11 +18,11 @@ export const RETRY_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 
-export type SubscriptionAccount = { name: string; pinned: boolean; token: string; expiresAt: number | null };
+export type SubscriptionAccount = { name: string; pinned: boolean; sticky?: boolean; token: string; expiresAt: number | null };
 export type AccountProblem = "expired" | "rate_limited" | "failed";
 type Limit = { id: string; label: string; window: { id: string; label: string; durationMs: number; resetsAt?: number }; amount: { used: number; limit: number; remaining: number; usedFraction: number; remainingFraction: number; unit: "percent" }; status: string };
 // Shaped like one `omp usage --json` report, plus whose numbers they are.
-export type AccountReport = { provider: "anthropic"; account: string; via: "omo-pinned" | "omo-pool" | "omp"; limits: Limit[]; fetchedAt?: number; problem?: AccountProblem; retryAt?: number };
+export type AccountReport = { provider: "anthropic"; account: string; via: "omo-pinned" | "omo-sticky" | "omo-pool" | "omp"; limits: Limit[]; fetchedAt?: number; problem?: AccountProblem; retryAt?: number };
 
 type Json = Record<string, any>;
 const readJson = (file: string): Json | undefined => {
@@ -40,8 +40,9 @@ export function runtimeIdOf(role: "orchestrator" | "lane"): string {
 	return id === "omp" || id === "claude" ? id : "omo";
 }
 
-// OmO's subscription account for Anthropic models: the pinned one, else the pool's pick (not blocked, latest success).
-export function subscriptionAccount(file = authFile(), now = Date.now()): SubscriptionAccount | undefined {
+// OmO's subscription account for Anthropic models: the pinned one, else the one dotz keeps its processes on (`prefer`,
+// hub/account-sticky.ts), else the pool's pick (not blocked, latest success).
+export function subscriptionAccount(file = authFile(), now = Date.now(), prefer?: string): SubscriptionAccount | undefined {
 	const sub = readJson(file)?.["anthropic-subscription"];
 	const accounts: Json[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: Json) => typeof a?.name === "string" && typeof a?.access === "string" && a.access) : [];
 	if (!accounts.length) return undefined;
@@ -49,8 +50,9 @@ export function subscriptionAccount(file = authFile(), now = Date.now()): Subscr
 	const slots: Json = readJson(join(dirname(file), "credential-pool-state.json"))?.providers?.["anthropic-subscription"]?.lanes?.stored?.slots ?? {};
 	const usable = (a: Json) => !slots[a.name]?.blockReason || (typeof slots[a.name].blockedUntil === "number" && slots[a.name].blockedUntil <= now);
 	const last = (a: Json) => Number(slots[a.name]?.lastSuccessAt ?? 0);
-	const chosen = pinned ?? [...accounts].sort((a, b) => Number(usable(b)) - Number(usable(a)) || last(b) - last(a))[0];
-	return { name: chosen.name, pinned: Boolean(pinned), token: chosen.access, expiresAt: typeof chosen.expires === "number" ? chosen.expires : null };
+	const sticky = pinned ? undefined : accounts.find(a => a.name === prefer);
+	const chosen = pinned ?? sticky ?? [...accounts].sort((a, b) => Number(usable(b)) - Number(usable(a)) || last(b) - last(a))[0];
+	return { name: chosen.name, pinned: Boolean(pinned), ...(sticky ? { sticky: true } : {}), token: chosen.access, expiresAt: typeof chosen.expires === "number" ? chosen.expires : null };
 }
 
 const WINDOWS: [key: string, id: string, label: string, windowId: string, durationMs: number][] = [
@@ -102,7 +104,7 @@ export class AccountUsage {
 		const t = this.now();
 		const held = this.last.get(acct.name);
 		if (held && t < held.next && !(force && t - held.at >= MIN_REFRESH_MS && held.report.problem !== "rate_limited")) return held.report;
-		const via = acct.pinned ? "omo-pinned" : "omo-pool";
+		const via = acct.pinned ? "omo-pinned" : acct.sticky ? "omo-sticky" : "omo-pool";
 		// the last numbers stay, marked with what went wrong since
 		const keep = (problem: AccountProblem, wait: number, retryAt?: number): AccountReport => this.settle(acct.name, { provider: "anthropic", account: acct.name, via, limits: held?.report.limits ?? [], ...(held?.report.fetchedAt ? { fetchedAt: held.report.fetchedAt } : {}), problem, ...(retryAt ? { retryAt } : {}) }, t, wait);
 		if (acct.expiresAt !== null && acct.expiresAt <= t) return keep("expired", RETRY_MS);
@@ -135,7 +137,7 @@ const span = (ms: number): string => {
 	const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
 	return d ? `${d}d${h}h` : h ? `${h}h${mm}m` : `${mm}m`;
 };
-const VIA: Record<AccountReport["via"], string> = { "omo-pinned": "OmO 고정 계정", "omo-pool": "OmO 계정 풀", omp: "omp 로그인" };
+const VIA: Record<AccountReport["via"], string> = { "omo-pinned": "OmO 고정 계정", "omo-sticky": "dotz가 유지하는 계정", "omo-pool": "OmO 계정 풀", omp: "omp 로그인" };
 const PROBLEM: Record<AccountProblem, string> = { expired: "토큰 만료 - OmO가 다음 요청 때 갱신해요", rate_limited: "사용량 조회가 429로 막힘", failed: "사용량 조회 실패" };
 
 // Pure: the "한도" answer, naming whose limits these are.

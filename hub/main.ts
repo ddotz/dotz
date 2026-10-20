@@ -16,8 +16,10 @@ import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCle
 import { startMemoryGuard } from "./memguard.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
 import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
-import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, turnHeader, verifyLane } from "./lanes.ts";
-import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, orchBusy, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
+import { abortLane, applyAccountChange as applyLaneAccount, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, turnHeader, verifyLane } from "./lanes.ts";
+import { accountView, onSwitch as onAccountSwitch, stickyAccount } from "./account-sticky.ts";
+import { runtimeFor } from "./runtime/index.ts";
+import { abort as abortOrchestrator, applyAccountChange as applyOrchestratorAccount, deliver as deliverToOrchestrator, orch, orchBusy, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { createPrompts } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
@@ -221,7 +223,9 @@ async function answerCommand(target: string, text: string, replyTo?: string): Pr
 const LIMITS_ASK = /^\s*(한도|사용량|limits?)\s*[?？]?\s*$/i;
 async function limitsAnswer(target: string, replyTo?: string): Promise<void> {
 	const r = await anthropicUsage("orchestrator").catch(() => undefined);
-	const text = r ? limitsText(r, Date.now()) : "사용량을 읽지 못했어요 (Anthropic 계정을 찾지 못함).";
+	const last = accountView(1).switches[0];
+	const moved = last && last.kind !== "start" ? `\n마지막 계정 전환: ${new Date(last.at).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} ${last.from ?? "?"} → ${last.to} (${last.reason})` : "";
+	const text = r ? `${limitsText(r, Date.now())}${moved}` : "사용량을 읽지 못했어요 (Anthropic 계정을 찾지 못함).";
 	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`limits reply failed: ${e}`));
 }
 
@@ -957,6 +961,15 @@ if (restarted) {
 	if (picked.length) void out(discord.status.enabled ? "worklog" : "web", `게이트웨이 재시작했어요 (${at} ${tzLabel()}).\n- ${picked.join("\n- ")}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
 	else log(`restart at ${at}: nothing interrupted, worklog notice skipped`);
 }
+// One Claude account for the orchestrator and its lanes (hub/account-sticky.ts). A switch (a limit, the owner pinning
+// another account) moves each running OmO process to it at its next idle moment; checked each minute, so a limit is
+// followed without waiting for the next spawn.
+onAccountSwitch(() => {
+	if (runtimeFor("orchestrator").id === "omo") log(`orchestrator account change: ${applyOrchestratorAccount()}`);
+	if (runtimeFor("lane").id === "omo") applyLaneAccount();
+});
+stickyAccount();
+setInterval(() => stickyAccount(), 60_000);
 startLaneHygiene();
 startWorktreeCleanup();
 startDataCleanup();

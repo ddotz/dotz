@@ -84,6 +84,8 @@ export type Lane = Record_ & {
 	startedModel?: string;
 	// The owner message a cross-runtime resume refused; it goes along with the handover once the owner accepts it.
 	pendingHandover?: string;
+	// dotz's Claude account changed while this process ran: it is restarted on its session at the next idle moment.
+	accountStale?: boolean;
 };
 
 export const lanes = new Map<string, Lane>();
@@ -963,7 +965,22 @@ export function shutdownLanes(): void {
 	}
 }
 
+// dotz's Claude account changed (hub/account-sticky.ts): every running lane takes it by a restart on its session, at once
+// when idle, else at the first idle check after its turn and workers end (a restart would cut them off).
+export function applyAccountChange(): void {
+	for (const lane of lanes.values()) if (lane.proc) lane.accountStale = true;
+	restartStaleLanes();
+}
+function restartStaleLanes(): void {
+	for (const lane of lanes.values()) {
+		if (!lane.accountStale || !lane.proc || lane.status !== "idle" || laneBusy(lane) || lane.revive) continue;
+		lane.accountStale = false;
+		void restartLane(lane.name).catch(e => log(`lane ${lane.name} account restart failed: ${(e as Error).message}`));
+	}
+}
+
 setInterval(() => {
+	restartStaleLanes();
 	for (const lane of lanes.values()) {
 		settleChain(lane);
 		settleRevert(lane, true);

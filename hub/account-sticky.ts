@@ -1,0 +1,141 @@
+// One Claude subscription account for the orchestrator and its lanes (audit 2026-10-20: the orchestrator re-wrote its
+// whole prompt cache 4 times in a day because the account under it changed; OmO keys its cache and session continuity to
+// the account). dotz keeps the account it runs on and switches only when that account is blocked (a usage limit or 429,
+// as OmO records it in credential-pool-state.json), when it left the pool, or when the owner pins another one
+// (auth.json "anthropic-subscription".pinned). Unpinning keeps the current account. Every switch is logged with its reason
+// (hub.log and <DATA_DIR>/account-switches.jsonl) and shown on the usage screen.
+//
+// The account reaches OmO as SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT in each process dotz spawns: a soft pin. OmO still
+// moves a request to another account when this one is blocked (account fallback stays on), so a limit never strands a
+// turn; dotz then follows on its next check and restarts its idle processes on the new account (onSwitch), so they do not
+// drift back when the old account's limit resets. Nothing here writes auth.json or touches a token.
+import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { authFile } from "./apikey-policy.ts";
+import { DATA_DIR, log, writeAtomic } from "./config.ts";
+
+export const PIN_ENV = "SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT";
+export type SwitchKind = "start" | "limit" | "owner" | "gone";
+export type AccountSwitch = { at: string; from?: string; to: string; kind: SwitchKind; reason: string };
+export type Pool = { names: string[]; pinned?: string; blocked: Record<string, { until?: number; reason: string }>; lastSuccess: Record<string, number> };
+type Saved = { account?: string; since?: string; reason?: string };
+
+const stateFile = () => join(DATA_DIR, "account.json");
+export const switchesFile = () => join(DATA_DIR, "account-switches.jsonl");
+
+const readJson = (file: string): any => {
+	try {
+		return JSON.parse(readFileSync(file, "utf8"));
+	} catch {
+		return undefined;
+	}
+};
+
+// OmO's pool for Anthropic models, names and states only (tokens are never read into it).
+export function readPool(file = authFile(), now = Date.now()): Pool | undefined {
+	const sub = readJson(file)?.["anthropic-subscription"];
+	const names: string[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: any) => typeof a?.name === "string" && a.access).map((a: any) => a.name) : [];
+	if (!names.length) return undefined;
+	const slots = readJson(join(dirname(file), "credential-pool-state.json"))?.providers?.["anthropic-subscription"]?.lanes?.stored?.slots ?? {};
+	const blocked: Pool["blocked"] = {};
+	const lastSuccess: Pool["lastSuccess"] = {};
+	for (const n of names) {
+		const s = slots[n];
+		if (typeof s?.lastSuccessAt === "number") lastSuccess[n] = s.lastSuccessAt;
+		if (!s?.blockReason) continue;
+		const until = typeof s.blockedUntil === "number" ? s.blockedUntil : undefined;
+		// An auth block without an expiry lasts until the owner logs in again; an elapsed block is over.
+		if (until === undefined || until > now) blocked[n] = { ...(until !== undefined ? { until } : {}), reason: String(s.blockReason) };
+	}
+	return { names, ...(typeof sub.pinned === "string" && names.includes(sub.pinned) ? { pinned: sub.pinned } : {}), blocked, lastSuccess };
+}
+
+const usableFirst = (p: Pool) => [...p.names].sort((a, b) => Number(Boolean(p.blocked[a])) - Number(Boolean(p.blocked[b])) || (p.lastSuccess[b] ?? 0) - (p.lastSuccess[a] ?? 0));
+const blockText = (p: Pool, n: string) => {
+	const b = p.blocked[n];
+	return `${n} blocked (${b.reason}${b.until ? `, until ${new Date(b.until).toISOString()}` : ""})`;
+};
+
+// Pure: the account to run on now, given the one dotz ran on, and the switch when it changes.
+export function decide(current: string | undefined, p: Pool | undefined, now = Date.now()): { account?: string; change?: Omit<AccountSwitch, "at"> } {
+	if (!p) return { account: current };
+	if (p.pinned) {
+		if (p.pinned === current) return { account: current };
+		return { account: p.pinned, change: { ...(current ? { from: current } : {}), to: p.pinned, kind: current ? "owner" : "start", reason: `the owner pinned ${p.pinned} in OmO` } };
+	}
+	if (current && p.names.includes(current) && !p.blocked[current]) return { account: current };
+	const pick = usableFirst(p).find(n => n !== current && !p.blocked[n]);
+	if (current && p.names.includes(current)) {
+		// Blocked, and nothing else usable: stay; OmO reports the limit and dotz pauses as before.
+		if (!pick) return { account: current };
+		return { account: pick, change: { from: current, to: pick, kind: "limit", reason: `${blockText(p, current)}; ${pick} is usable` } };
+	}
+	const to = pick ?? usableFirst(p)[0];
+	if (current) return { account: to, change: { from: current, to, kind: "gone", reason: `${current} is no longer in OmO's account pool` } };
+	return { account: to, change: { to, kind: "start", reason: "first account dotz runs on (OmO's last successful, unblocked)" } };
+}
+
+let saved: Saved | undefined;
+let checkedStamp = "";
+const listeners: ((s: AccountSwitch) => void)[] = [];
+// Called after a switch other than the first pick; main.ts restarts idle processes there so they take the new account.
+export function onSwitch(fn: (s: AccountSwitch) => void): void {
+	listeners.push(fn);
+}
+
+const stamp = (...files: string[]) =>
+	files
+		.map(f => {
+			try {
+				const s = statSync(f);
+				return `${s.mtimeMs}:${s.size}`;
+			} catch {
+				return "-";
+			}
+		})
+		.join("|");
+
+// The account dotz runs on now (re-checked when auth.json or the pool state changed, or once a minute for block expiry).
+export function stickyAccount(now = Date.now()): string | undefined {
+	saved ??= readJson(stateFile()) ?? {};
+	const file = authFile();
+	const key = `${file}|${stamp(file, join(dirname(file), "credential-pool-state.json"))}|${Math.floor(now / 60_000)}`;
+	if (key === checkedStamp) return saved?.account;
+	checkedStamp = key;
+	const { account, change } = decide(saved?.account, readPool(file, now), now);
+	if (!change) return account;
+	const s: AccountSwitch = { at: new Date(now).toISOString(), ...change };
+	saved = { account, since: s.at, reason: s.reason };
+	writeAtomic(stateFile(), `${JSON.stringify(saved, null, 2)}\n`);
+	appendFileSync(switchesFile(), `${JSON.stringify(s)}\n`);
+	log(`account ${s.kind}: ${s.from ? `${s.from} -> ` : ""}${s.to} (${s.reason})`);
+	if (s.kind !== "start") for (const fn of listeners) fn(s);
+	return account;
+}
+
+// What a spawned OmO process gets: its soft pin to the sticky account (nothing when OmO has no subscription accounts).
+export function stickyEnv(now = Date.now()): Record<string, string> {
+	const a = stickyAccount(now);
+	return a ? { [PIN_ENV]: a } : {};
+}
+
+// The usage screen: the account, since when and why, and the latest switches (newest first).
+export function accountView(limit = 10): { account?: string; since?: string; reason?: string; switches: AccountSwitch[] } {
+	const account = stickyAccount();
+	const lines = existsSync(switchesFile()) ? readFileSync(switchesFile(), "utf8").trim().split("\n").filter(Boolean) : [];
+	const switches = lines.slice(-limit).reverse().flatMap(l => {
+		try {
+			return [JSON.parse(l) as AccountSwitch];
+		} catch {
+			return [];
+		}
+	});
+	return { ...(account ? { account } : {}), ...(saved?.since ? { since: saved.since } : {}), ...(saved?.reason ? { reason: saved.reason } : {}), switches };
+}
+
+// Tests: forget the in-memory state so the next call re-reads the files.
+export function resetStickyForTest(): void {
+	saved = undefined;
+	checkedStamp = "";
+	listeners.length = 0;
+}
