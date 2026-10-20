@@ -3,12 +3,13 @@
 // comes back as an error entry. Data commands run through watch.ts exec with an in-memory cache; routines are kept as
 // `[routine:<id>:<hash6>] ` entries of hub/schedule.ts. customRoute() takes its gateway state as deps so tests can call it.
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { DATA_DIR, expand, HOME, log, TZ } from "./config.ts";
-import { addSchedule, listSchedules, removeSchedule } from "./schedule.ts";
-import { exec } from "./watch.ts";
+import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
+import { parseTone } from "./tone.ts";
+import { exec, listWatches } from "./watch.ts";
 
 export const VIEWS = ["text", "stat", "list", "kv"] as const;
 export type View = (typeof VIEWS)[number];
@@ -20,9 +21,9 @@ export type Routine = { id: string; name: string; prompt: string; target: string
 export type Link = { name: string; url: string };
 export type Pins = { projects: PinProject[]; hide_projects: string[]; routines: Routine[]; links: Link[] };
 export type CustomError = { file: string; error: string };
-export type ProjectLane = { name: string; status: string; live: boolean; startedAt?: string; lastText: string; reports: number; channel?: string };
+export type ProjectLane = { name: string; status: string; live: boolean; startedAt?: string; lastReportAt?: string; waiting?: boolean; lastText: string; reports: number; channel?: string };
 export type Project = { key: string; name: string; path?: string; note?: string; pinned: boolean; channel?: { id: string; name: string }; lanes: ProjectLane[] };
-export type ChannelsIn = { work?: Record<string, string>; homes?: Record<string, string>; lanes?: Record<string, string> };
+export type ChannelsIn = { work?: Record<string, string>; homes?: Record<string, string>; lanes?: Record<string, string>; threads?: Record<string, { parent?: string; name?: string }> };
 export type CustomDeps = {
 	lanes: () => Array<Record<string, unknown>>;
 	channels: () => ChannelsIn;
@@ -393,7 +394,7 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 		const path = norm(cwd);
 		const p = projects.get(`dir:${path}`) ?? make(`dir:${path}`, basename(path), path);
 		const name = String(l.name);
-		p.lanes.push({ name, status: String(l.status ?? ""), live: Boolean(l.live), ...(l.startedAt ? { startedAt: String(l.startedAt) } : {}), lastText: String(l.lastText ?? "").slice(0, 300), reports: Number(l.reports ?? 0) || 0, ...(laneCh[name] ? { channel: laneCh[name] } : {}) });
+		p.lanes.push({ name, status: String(l.status ?? ""), live: Boolean(l.live), ...(l.startedAt ? { startedAt: String(l.startedAt) } : {}), ...(l.lastReportAt ? { lastReportAt: String(l.lastReportAt) } : {}), ...(l.pendingAsk ? { waiting: true } : {}), lastText: String(l.lastText ?? "").slice(0, 300), reports: Number(l.reports ?? 0) || 0, ...(laneCh[name] ? { channel: laneCh[name] } : {}) });
 		p.newest = Math.max(p.newest, at);
 		if (homes[name] && !p.channel) p.channel = chan(homes[name]);
 	}
@@ -422,6 +423,191 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 	return [...pinned, ...auto].map(({ newest, ...p }) => p);
 }
 
+// ---- project page (GET /api/custom/project?key=) --------------------------------------------------------------------
+// What one project's page shows beyond the sidebar list: each lane's last report (report.md, which survives a gateway
+// restart; a restored lane's lastText is empty, so the old page showed "결과 없음" for lanes that all reported), the
+// verification receipts and commits of its folder, the repo state, the open tasks naming it, and what is tied to it.
+export type GitState = { branch: string; base: string; dirty: number; commits: Array<{ hash: string; at: string; subject: string }>; unmerged: Array<{ branch: string; at: string; ahead: number }> };
+export type ReceiptIn = { command: string; cwd: string; exitCode: number; ranAt: number };
+export type DetailInput = {
+	project: Project;
+	others: Project[];
+	lanes: Array<Record<string, unknown>>;
+	reports: Record<string, { text: string; at?: string }>;
+	receipts: ReceiptIn[];
+	tasks: Array<Record<string, unknown>>;
+	routines: Routine[];
+	schedules: Schedule[];
+	watches: Array<Record<string, unknown>>;
+	channels: ChannelsIn;
+	git?: GitState;
+	// the gateway's own source checkout: an open task that names no other project is about it
+	self?: boolean;
+	home?: string;
+};
+const MARK_LINE = /^\s*(?:[-*]\s*)?\**\s*\[(done|run|ask|fail|완료)\]/i;
+
+// The line a report is summed up by: its [done]/[fail]/... line (an OmO lane may open with an "Ask: ..." handoff block),
+// else its first line; the marker and markdown emphasis are stripped. `body` is what follows that line.
+export function reportHead(text: string): { tone?: string; line: string; body: string } {
+	const lines = text.split("\n");
+	let i = lines.findIndex(l => MARK_LINE.test(l));
+	if (i < 0) i = lines.findIndex(l => l.trim());
+	if (i < 0) return { line: "", body: "" };
+	const raw = lines[i]!.replace(/\*\*/g, "").replace(/^\s*[-*]\s+/, "").trim();
+	const t = parseTone(raw.replace(/\[완료\]/, "[done]"));
+	return { ...(t.tone ? { tone: t.tone } : {}), line: t.text.trim().slice(0, 240), body: lines.slice(i + 1).join("\n").trim().slice(0, 600) };
+}
+
+export function projectDetailView(d: DetailInput) {
+	const home = d.home ?? HOME;
+	const p = d.project;
+	const full = (x: string) => x.replace(/^~(?=\/|$)/, home).replace(/(.)\/+$/, "$1");
+	const within = (x: string, root: string) => x === root || x.startsWith(`${root}/`);
+	const laneNames = new Set(p.lanes.map(l => l.name));
+	const rows = d.lanes.filter(l => laneNames.has(String(l.name)));
+	const roots = [...(p.path ? [full(p.path)] : []), ...rows.map(l => String(l.cwd ?? "")).filter(Boolean)];
+	const lanes = p.lanes.map(pl => {
+		const raw = rows.find(r => r.name === pl.name) ?? {};
+		const rep = d.reports[pl.name];
+		const head = reportHead(rep?.text || pl.lastText);
+		const claim = (raw.claim as { state?: string } | undefined)?.state;
+		return {
+			name: pl.name, status: pl.status, live: pl.live, waiting: Boolean(pl.waiting), resumable: Boolean(raw.resumable) && !pl.live,
+			...(pl.channel ? { channel: pl.channel } : {}),
+			...(pl.lastReportAt || rep?.at ? { finishedAt: pl.lastReportAt ?? rep!.at } : {}),
+			line: head.line, ...(head.tone ? { tone: head.tone } : {}), body: head.body,
+			...(claim === "verified" || claim === "reported" ? { claim } : {}),
+		};
+	});
+	const at = (x?: string) => Date.parse(x ?? "") || 0;
+	const results: Array<Record<string, unknown> & { at: string }> = [];
+	for (const l of lanes) if ((l.tone === "done" || l.tone === "fail") && l.finishedAt) results.push({ kind: "report", at: l.finishedAt, lane: l.name, tone: l.tone, title: l.line, text: l.body, verified: l.claim === "verified" });
+	const seen = new Set<string>();
+	for (const r of [...d.receipts].sort((a, b) => b.ranAt - a.ranAt)) {
+		if (!roots.some(root => within(r.cwd, root)) || seen.has(r.command) || seen.size >= 3) continue;
+		seen.add(r.command);
+		const lane = rows.find(l => within(r.cwd, String(l.cwd ?? "")))?.name;
+		results.push({ kind: "verify", at: new Date(r.ranAt).toISOString(), title: r.command.slice(0, 160), ok: r.exitCode === 0, ...(lane ? { lane } : {}) });
+	}
+	// the repo card lists the last 5 commits; results keep the newest 3 so reports and checks stay in view
+	for (const c of (d.git?.commits ?? []).slice(0, 3)) results.push({ kind: "commit", at: c.at, title: c.subject, hash: c.hash });
+	results.sort((a, b) => at(b.at) - at(a.at));
+
+	const lower = (s: string) => s.toLowerCase();
+	const termsOf = (x: Project) => [x.name, ...(x.path ? [x.path, basename(x.path)] : []), ...x.lanes.map(l => l.name), ...(x.channel ? [x.channel.name] : [])].filter(t => t.length >= 3).map(lower);
+	const mine = termsOf(p);
+	const theirs = d.others.filter(o => o.key !== p.key).flatMap(termsOf).filter(t => !mine.includes(t));
+	const names = (s: string, terms: string[]) => terms.some(t => lower(s).includes(t));
+	const tasks = d.tasks.filter(t => {
+		const s = [t.id, t.what, t.next, t.project].filter(x => typeof x === "string").join(" ");
+		return names(s, mine) || (d.self && !names(s, theirs));
+	}).map(t => ({ id: String(t.id ?? ""), what: String(t.what ?? ""), ...(t.next ? { next: String(t.next) } : {}), ...(t.since ? { since: String(t.since) } : {}) }));
+
+	const laneRef = (s: string) => [...laneNames].some(n => s.includes(`lane:${n}`));
+	const threads = p.channel ? Object.entries(d.channels.threads ?? {}).filter(([, t]) => t.parent === p.channel!.id).map(([id, t]) => ({ id, name: String(t.name ?? id) })).slice(0, 10) : [];
+	const routines = d.routines.filter(r => (r.target.startsWith("lane:") && laneNames.has(r.target.slice(5))) || names(r.prompt, mine)).map(r => ({ id: r.id, name: r.name, ...(r.schedule ? { schedule: r.schedule } : {}) }));
+	const schedules = d.schedules.filter(s => !s.text.startsWith("[routine:") && (laneRef(s.text) || names(s.text, mine))).map(s => ({ id: s.id, text: s.text.split("\n")[0]!.slice(0, 120), at: s.at, ...(s.every_minutes ? { every_minutes: s.every_minutes } : {}) }));
+	const watches = d.watches.filter(w => (typeof w.cwd === "string" && roots.some(r => within(full(w.cwd as string), r))) || names(`${w.name ?? ""} ${w.command ?? ""}`, mine)).map(w => ({ id: String(w.id), name: String(w.name ?? w.id), every_minutes: Number(w.every_minutes) || 0, ...(w.paused ? { paused: true } : {}) }));
+
+	const lastActivity = Math.max(0, ...lanes.map(l => at(l.finishedAt)), ...rows.map(l => (l.live ? at(String(l.startedAt ?? "")) : 0)), ...results.map(r => at(r.at)));
+	return {
+		key: p.key,
+		summary: { lanes: lanes.length, running: lanes.filter(l => l.live).length, waiting: lanes.filter(l => l.waiting).length, ...(lastActivity ? { lastActivity: new Date(lastActivity).toISOString() } : {}) },
+		lanes,
+		results: results.slice(0, 15),
+		...(d.git ? { repo: d.git } : {}),
+		tasks,
+		linked: { ...(p.channel ? { channel: p.channel } : {}), threads, laneChannels: lanes.filter(l => l.channel).map(l => ({ lane: l.name, id: l.channel! })), routines, schedules, watches },
+	};
+}
+
+const gitCache = new Map<string, { at: number; v?: GitState }>();
+async function gitState(dir: string): Promise<GitState | undefined> {
+	const hit = gitCache.get(dir);
+	if (hit && Date.now() - hit.at < 15_000) return hit.v;
+	const run = async (cmd: string) => {
+		const r = await exec(["/bin/sh", "-c", cmd], dir, 5000, undefined, 8000).catch(() => undefined);
+		return r && r.code === 0 && !r.timedOut ? r.output.trim() : undefined;
+	};
+	let v: GitState | undefined;
+	const branch = existsSync(dir) ? await run("git rev-parse --abbrev-ref HEAD 2>/dev/null") : undefined;
+	if (branch) {
+		const base = (await run("git rev-parse --verify -q main >/dev/null && echo main")) || branch;
+		const [dirty, log5, refs] = await Promise.all([
+			run("git status --porcelain 2>/dev/null | wc -l"),
+			run("git log -5 --format='%h%x1f%cI%x1f%s'"),
+			run(`git for-each-ref --no-merged=${base} --sort=-committerdate --count=8 --format='%(refname:short) %(committerdate:iso-strict)' refs/heads/lane/`),
+		]);
+		const split = (s?: string) => (s ? s.split("\n").filter(Boolean).map(l => l.split("\x1f")) : []);
+		const unmerged = await Promise.all((refs ? refs.split("\n").filter(Boolean).map(l => l.split(" ")) : []).map(async ([b, at]) => ({ branch: b!, at: at!, ahead: Number(await run(`git rev-list --count ${base}..'${b!.replace(/'/g, "")}'`)) || 0 })));
+		v = { branch, base, dirty: Number(dirty) || 0, commits: split(log5).map(([hash, at, subject]) => ({ hash: hash!, at: at!, subject: (subject ?? "").slice(0, 200) })), unmerged };
+	}
+	gitCache.set(dir, { at: Date.now(), v });
+	return v;
+}
+
+function readReceipts(): ReceiptIn[] {
+	const dir = join(DATA_DIR, "receipts");
+	try {
+		return readdirSync(dir).filter(f => f.endsWith(".json")).map(f => join(dir, f)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs).slice(0, 200).flatMap(f => {
+			try {
+				const r = JSON.parse(readFileSync(f, "utf8"));
+				return typeof r.command === "string" && typeof r.cwd === "string" ? [{ command: r.command, cwd: r.cwd, exitCode: Number(r.exitCode), ranAt: Number(r.ranAt) || 0 }] : [];
+			} catch {
+				return [];
+			}
+		});
+	} catch {
+		return [];
+	}
+}
+
+function readReport(name: string): { text: string; at?: string } | undefined {
+	const file = join(DATA_DIR, "lanes", name, "report.md");
+	try {
+		return { text: readFileSync(file, "utf8").slice(0, 4000), at: new Date(statSync(file).mtimeMs).toISOString() };
+	} catch {
+		return undefined;
+	}
+}
+
+function openTasks(): Array<Record<string, unknown>> {
+	try {
+		const j = JSON.parse(readFileSync(join(DATA_DIR, "state.json"), "utf8"));
+		return Array.isArray(j?.open_tasks) ? j.open_tasks.filter(isObj) : [];
+	} catch {
+		return [];
+	}
+}
+
+const real = (p: string) => {
+	try {
+		return realpathSync(p);
+	} catch {
+		return p;
+	}
+};
+
+async function projectDetail(key: string, deps: CustomDeps) {
+	const { pins } = readPins({ sync: false });
+	const lanes = deps.lanes();
+	const channels = deps.channels();
+	const all = projectsView({ lanes, channels, pins });
+	const project = all.find(p => p.key === key);
+	if (!project) return undefined;
+	const dir = project.path ? project.path.replace(/^~(?=\/|$)/, HOME) : undefined;
+	const reports: Record<string, { text: string; at?: string }> = {};
+	for (const l of project.lanes) {
+		const r = readReport(l.name);
+		if (r) reports[l.name] = r;
+	}
+	return projectDetailView({
+		project, others: all, lanes, reports, receipts: readReceipts(), tasks: openTasks(), routines: pins.routines, schedules: listSchedules(), watches: listWatches(), channels,
+		...(dir ? { git: await gitState(dir), self: real(dir) === real(join(import.meta.dir, "..")) } : {}),
+	});
+}
+
 // ---- HTTP ------------------------------------------------------------------------------------------------------------
 const NO_CACHE = { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" };
 const jsonOf = (v: unknown, status = 200) => Response.json(v, { status });
@@ -445,6 +631,10 @@ export async function customRoute(req: Request, url: URL, deps: CustomDeps): Pro
 	const p = url.pathname;
 	if (!p.startsWith("/api/custom")) return undefined;
 	if (req.method === "GET" && p === "/api/custom") return jsonOf(await listAll(deps));
+	if (req.method === "GET" && p === "/api/custom/project") {
+		const d = await projectDetail(url.searchParams.get("key") ?? "", deps);
+		return d ? jsonOf(d) : jsonOf({ error: "project not found" }, 404);
+	}
 	if (req.method === "GET" && p === "/api/custom/render") {
 		const id = url.searchParams.get("id") ?? "";
 		const file = ID.test(id) ? join(customDir(), "cards", id, "render.js") : "";
