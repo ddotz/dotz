@@ -356,7 +356,8 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 @keyframes ntf-in { from { opacity: 0; transform: translateX(16px) scale(.98); } }
 @media (max-width: 639px) { .ntf-box { top: calc(8px + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); } }
 
-/* target header: one switcher + 대화/로그 toggle in the app bar, after the title (shared by both views) */
+/* 채팅 uses the same app bar as every page (title, 돋보기, usage); it only adds the session switcher right after the title
+   and one 대화/로그 icon button next to the 돋보기 (shared by both views) */
 .thead { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 4px 0 0; }
 .appbar.tv h1 { flex: none; margin-right: 12px; }
 .view.fill { padding-top: 8px; }
@@ -376,30 +377,18 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .sb { flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
 .sb.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
 .tdrop { display: none; flex: 1 1 120px; width: auto; min-width: 0; }
-.vseg { flex: none; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--layer); }
-.vseg button { position: relative; height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
-.vseg button:hover { color: var(--fg); }
-.vseg button.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / .1); }
-/* 채팅 and 터미널 sit on the card surface so the owner's light-gray bubble reads against it */
-/* 로그 stays on the gray canvas: its turns are white cards */
-.vseg { background: var(--active); }
-.vseg .ud, #vtog .ud { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-#vtog { display: none; position: relative; }
-#vtog .ud { top: 8px; right: 8px; }
-@media (pointer: coarse) { .vseg button { height: 34px; } .tchip { height: 36px; } }
-/* phone: one ~44px row - the current target as one small chip (name + caret opens the picker) on the left, and 대화/로그 as
-   one icon button at the right edge, so the top-center camera cutout stays clear */
+#vtog { position: relative; }
+#vtog .ud { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+@media (pointer: coarse) { .tchip { height: 36px; } }
+/* phone: the switcher is one small chip after the title (name + caret opens the session list) */
 @media (max-width: 639px) {
-  .appbar.tv h1 { display: none; }
-  .appbar.tv { height: calc(44px + env(safe-area-inset-top)); padding-left: 12px; }
+  .appbar.tv h1 { margin-right: 8px; }
   .view.fill { padding-top: 4px; }
   .appbar .tsw { display: none; }
   .appbar .tdrop.sel { display: inline-flex; flex: 0 1 auto; width: auto; max-width: 168px; height: 32px; gap: 6px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg); font: 600 14px/18px var(--font); }
   .appbar .tdrop .val { flex: 0 1 auto; }
   .appbar.tv .tdrop.sel { flex: none; }
   .appbar.tv .conn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .appbar .vseg { display: none; }
-  .appbar.tv #vtog:not([hidden]) { display: inline-grid; }
 }
 
 /* chat: Material 3 type scale + tonal surfaces, one reading column.
@@ -411,7 +400,6 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
    - secondary text uses --fg-2 (AA on both themes); --fg-3 stays for non-text only */
 .chatbox { position: relative; flex: 1; min-height: 0; }
 .timeline { height: 100%; overflow-y: auto; overflow-x: hidden; }
-.thead .vseg { margin-left: auto; }
 .tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto; padding: 8px 0 32px; }
 @media (max-width: 639px) { .tl-in { padding: 0 0 24px; } .tl-in > .bm { padding: 14px 16px; } }
 .ub.clamp { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1126,9 +1114,9 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
       <h1 id="title">dotz</h1>
       <div class="thead" id="thead" data-mode="chat" hidden></div>
       <span class="conn" id="conn" hidden>연결 끊김 · 다시 연결 중</span>
+      <button class="ib" id="vtog" type="button" hidden></button>
       <button class="ib only-phone" id="pal" type="button" aria-label="명령"></button>
       <button class="ustrip" id="ustrip" type="button" hidden></button>
-      <button class="ib" id="vtog" type="button" hidden></button>
     </header>
     <div class="gban" id="gban" role="status" hidden><span class="dot" id="gban-dot"></span><span class="tx" id="gban-tx"></span><button class="x" id="gban-x" type="button" aria-label="재시작 알림 닫기">×</button></div>
     <div class="views" id="views">
@@ -3455,12 +3443,9 @@ function renderBars() {
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
       ...(D.length ? [{ value: "__ended", label: `종료된 레인 ${D.length}`, sub: "기록 보기 · 재개" }] : [])], { value: target, onPick: v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else setTarget(v); } });
     const ud = mode === "term" && ts(target).unread > 0;
-    const seg = el("div", { class: "vseg", role: "group", "aria-label": "보기 방식" },
-      el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", onclick: () => go("chat") }, "대화", ud ? el("i", { class: "ud", title: "새 메시지" }) : null),
-      el("button", { type: "button", class: mode === "term" ? "on" : "", "aria-pressed": mode === "term" ? "true" : "false", onclick: () => go("activity") }, "로그"));
-    clear(bar).append(sw, drop, seg);
+    clear(bar).append(sw, drop);
     fitChips(sw);
-    // phone: one icon button at the right edge of the bar; the icon is the view a tap switches to
+    // 대화/로그: one icon button next to the 돋보기; the icon is the view a tap switches to
     const vt = $("#vtog"), to = mode === "chat" ? "term" : "chat";
     clear(vt).append(...[icon(to), ud ? el("i", { class: "ud" }) : null].filter(Boolean));
     vt.title = vt.ariaLabel = to === "chat" ? "대화 보기" : "로그 보기";
