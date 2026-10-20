@@ -1,0 +1,42 @@
+/* Notification bell + panel (30-notices.js). Phone: full-height sheet. 700px and up: popover under the bell (same breakpoint as ntWide in JS). */
+#bell { position: relative; }
+/* Unread count uses --err like messenger apps do: a count badge must read at a glance on the gray bar and the accent is reserved for selection and progress. DESIGN.md keeps status colors for status, so this is the one deliberate exception. */
+.bn { position: absolute; top: -2px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--err); color: var(--on-accent); font: 600 11px/16px var(--font); text-align: center; pointer-events: none; }
+.bn[hidden] { display: none; }
+@media (pointer: coarse) { .bn { top: 0; right: -2px; } }
+
+.nt-panel { position: fixed; z-index: 1200; inset: 0; display: flex; flex-direction: column; height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--pop); color: var(--fg); outline: 0; animation: nt-in .14s ease-out; }
+.nt-head { flex: none; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 12px 0 20px; }
+.nt-title { flex: 1; min-width: 0; margin: 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; }
+.nt-all { flex: none; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: 500 14px/20px var(--font); }
+.nt-all:hover { background: var(--hover); color: var(--fg); }
+.nt-all[hidden] { display: none; }
+.nt-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px 16px; }
+.nt-grp { padding-top: 8px; }
+.nt-gh { margin: 0; padding: 8px 12px 4px; color: var(--fg-2); font: 600 14px/20px var(--font); }
+.nt-empty { padding: 32px 12px; color: var(--fg-3); font: 400 14px/22px var(--font); text-align: center; }
+
+.nt-row { display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 48px; padding: 10px 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; }
+.nt-row:hover { background: var(--card-hover); }
+.nt-row:active { background: var(--active); }
+.nt-dot { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--fg-3); }
+.nt-dot.tone-done { background: var(--ok); }
+.nt-dot.tone-run { background: var(--accent); }
+.nt-dot.tone-ask { background: var(--warn); }
+.nt-dot.tone-fail { background: var(--err); }
+.nt-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nt-t { font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
+.nt-row.un .nt-t { font-weight: 600; }
+.nt-x { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; color: var(--fg-2); font: 400 14px/20px var(--font); overflow-wrap: anywhere; }
+.nt-m { color: var(--fg-3); font: 400 12px/16px var(--font); }
+.nt-un { flex: none; width: 6px; height: 6px; margin-top: 9px; border-radius: 50%; background: var(--accent); }
+
+@keyframes nt-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .nt-panel { animation: none; } }
+
+@media (min-width: 700px) {
+  .nt-panel { inset: auto; top: var(--nt-top, 68px); right: var(--nt-right, 12px); width: 380px; max-width: calc(100vw - 24px); height: auto; max-height: min(70vh, calc(100dvh - var(--nt-top, 68px) - 12px)); padding: 0; border-radius: 14px; box-shadow: var(--float); }
+  .nt-head { min-height: 48px; padding: 0 8px 0 16px; }
+  .nt-title { font: 600 16px/22px var(--font); }
+  .nt-x-btn { display: none; }
+}

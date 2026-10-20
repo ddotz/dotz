@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { appAsset, bundle, moduleFiles } from "./webapp.ts";
 
 describe("web app modules", () => {
@@ -17,5 +19,12 @@ describe("web app modules", () => {
 			expect(appAsset(new Request(`http://x${path}`, { headers: { "if-none-match": etag } }), path)?.status).toBe(304);
 		}
 		expect(appAsset(new Request("http://x/other.js"), "/other.js")).toBeUndefined();
+	});
+
+	test("the notification bell is in the shell and its module and styles are served", async () => {
+		const html = readFileSync(join(import.meta.dir, "..", "web", "index.html"), "utf8");
+		expect(html).toContain('id="bell"');
+		expect(await appAsset(new Request("http://x/app.js"), "/app.js")?.text()).toContain("function openNotices");
+		expect(await appAsset(new Request("http://x/app.css"), "/app.css")?.text()).toContain(".nt-panel");
 	});
 });

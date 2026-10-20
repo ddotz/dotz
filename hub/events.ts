@@ -114,7 +114,7 @@ export function recentEvents(limit = 150): HubEvent[] {
 // Which conversation an event belongs to: "main" (owner <-> the assistant) or "lane:<name>". The web app mirrors this rule
 // for live events, so keep the two in step.
 export function eventTarget(e: HubEvent): string | undefined {
-	if (e.kind === "activity" || e.kind === "subagents") return undefined;
+	if (e.kind === "activity" || e.kind === "subagents" || e.kind === "notice" || e.kind === "notice_read") return undefined;
 	const lane = typeof e.lane === "string" ? e.lane : [e.source, e.target, e.channel].find(v => typeof v === "string" && v.startsWith("lane:"))?.slice(5);
 	if (lane) return `lane:${lane}`;
 	// A project's work channel is its own conversation (hub/projectchat.ts): the owner's message there and the answers to it.

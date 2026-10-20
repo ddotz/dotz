@@ -136,6 +136,15 @@ function msgNode(e) {
       return el("div", { class: "um" }, filesNode(e.files), text ? ub : null, more, mt);
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, e.card ? cardNode(e.card) : el("pre", { text }), el("div", { class: "mt", text: hm }));
+    case "notice": case "notice_read": return null;
+    case "result": {
+      const go = el("button", { class: "btn tonal", type: "button", text: "세션 열기" });
+      go.onclick = () => pickTarget(e.open || "main");
+      const lines = text.split("\n").filter(Boolean).slice(0, 3).join("\n");
+      return el("div", { class: "bm" }, el("div", { class: "mt", text: ["세션 결과", hm].filter(Boolean).join(" · ") }),
+        el("div", { class: "ccard" }, el("div", { class: "cc-hd" }, el("span", { class: "dot ok" }), el("span", { text: `${e.title || "세션"} 끝났어요` }), e.verified ? el("span", { class: "tag ok", text: "확인됨" }) : null),
+          lines ? el("div", { class: "cc-note", text: lines }) : null, el("div", { class: "btns cc-act" }, go)));
+    }
     case "lane_start": return el("div", { class: "a-div", text: `세션 시작 · ${hm}` });
     case "mail": {
       const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
