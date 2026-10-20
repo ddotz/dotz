@@ -3,7 +3,7 @@
 // the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
 import { OMP } from "./config.ts";
 import { accountView, stickyAccount } from "./account-sticky.ts";
-import { type AccountReport, AccountUsage, fromOmp, runtimeIdOf, subscriptionAccount } from "./usage-account.ts";
+import { type AccountReport, AccountUsage, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 
 // omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
 export const PROVIDER_ENV: Record<string, string> = {
@@ -117,6 +117,23 @@ export async function anthropicUsage(role: "orchestrator" | "lane" = "orchestrat
 	if (force) invalidate();
 	const r = (await usageReports()).find(x => x.provider === "anthropic");
 	return r && fromOmp(r);
+}
+
+// The percent left in each OmO subscription account's 5-hour and 7-day windows, from the cached oauth/usage reads (not a model
+// call; each account is asked at most every 2 minutes). The owner's account rules (hub/account-rules.ts) read it.
+export async function usageSnapshot(): Promise<Record<string, { five_hour_left?: number; seven_day_left?: number }>> {
+	if (runtimeIdOf("orchestrator") !== "omo" && runtimeIdOf("lane") !== "omo") return {};
+	const out: Record<string, { five_hour_left?: number; seven_day_left?: number }> = {};
+	await Promise.all(
+		subscriptionAccounts().map(async acct => {
+			const r = await accountUsage.report(acct).catch(() => undefined);
+			if (!r) return;
+			const five = r.limits.find(l => l.id === "anthropic:5h")?.amount.remaining;
+			const week = r.limits.find(l => l.id === "anthropic:7d")?.amount.remaining;
+			out[acct.name] = { ...(five !== undefined ? { five_hour_left: five } : {}), ...(week !== undefined ? { seven_day_left: week } : {}) };
+		}),
+	);
+	return out;
 }
 
 // Every provider the runtime can log into (`auth-broker list`) with its human label; fixed for the runtime's lifetime.
