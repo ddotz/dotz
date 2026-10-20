@@ -1,7 +1,7 @@
 // A lane's [done] report is only a claim ("reported"); the orchestrator's verify makes it "verified"; the next report that
 // is not [done] withdraws it. Lanes run on a minimal fake runtime adapter (the same approach as runtime/fake-adapter.test.ts).
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type * as Lanes from "./lanes.ts";
 import { cfg } from "./config.ts";
@@ -119,3 +119,37 @@ test("claim: [done] reports, verify only from reported, any other report clears 
 	l.stopLane("cl");
 	await advance(300);
 });
+
+// 2026-10-20 fix5-block: an OmO lane's final report opened with its handoff block ("Ask: ...") and carried "[done]" further
+// down, so no tone was parsed and the task-metadata check never ran although a nested spawn had been depth-refused.
+test("claim: a report without a tone marker is checked against OmO task metadata too; a contradiction goes along with it", async () => {
+	const cwd = join(DATA, "claim-work");
+	mkdirSync(cwd, { recursive: true });
+	rmSync(join(DATA, "lanes", "cb"), { recursive: true, force: true });
+	const agentDir = join(DATA, "omo-agent-cb");
+	const root = "01a15708-ce99-764c-8217-6527175aa850";
+	mkdirSync(join(agentDir, "sessions", "--w--"), { recursive: true });
+	const session = join(agentDir, "sessions", "--w--", `2026-10-20T01-59-17-000Z_${root}.jsonl`);
+	writeFileSync(session, "");
+	const store = join(agentDir, "projects", "w-1", "senpi-task");
+	mkdirSync(join(store, "tasks"), { recursive: true });
+	mkdirSync(join(store, "children", "st_9", "sessions", "st_9"), { recursive: true });
+	writeFileSync(join(store, "tasks", "st_9.json"), JSON.stringify({ task_id: "st_9", status: "completed", root_session_id: root, category: "quick", updated_at: "2100-01-01T00:00:00Z" }));
+	const refused = { type: "message", timestamp: "2100-01-01T00:00:00Z", message: { role: "toolResult", toolName: "task", isError: false, content: [{ type: "text", text: "Subagent nesting limit reached: this spawn would run at depth 3, beyond max_depth 2." }] } };
+	writeFileSync(join(store, "children", "st_9", "sessions", "st_9", "a.jsonl"), JSON.stringify(refused));
+	// The check reads files (real I/O), so the test waits for the relayed report itself; bun's test timeout bounds it.
+	const relayed = Promise.withResolvers<string>();
+	l.setReportHandler((_lane, text) => relayed.resolve(text));
+	l.setIdleHandler(() => {});
+	l.launch("cb", cwd, "Relay it.\nDone when: relayed");
+	const agent = agents.at(-1)!;
+	await agent.push({ type: "session", ref: session });
+	await advance(3000);
+	await turn(agent, "Ask: relay the nested answer.\nFor you: [done] DEEP-OK");
+	const text = await relayed.promise;
+	expect(text).toContain("[gateway check] task metadata contradicts this report");
+	expect(text).toContain("st_9: task spawn failed: Subagent nesting limit reached");
+	l.stopLane("cb");
+	await advance(300);
+});
+
