@@ -68,7 +68,7 @@ test("OmO's blocked account pool is a usage limit that resumes at its soonest re
 	expect(classifyProviderError(text)).toBe("rate");
 	expect(classifyProviderError("No credential slots available")).toBe("rate");
 	const at = Date.parse("2026-10-19T15:48:00Z");
-	expect(resumeDelay(text, [], at)).toEqual({ ms: 52 * 60_000 + 60_000, reset: false });
+	expect(resumeDelay(text, [], at)).toEqual({ ms: 52 * 60_000 + 60_000, reset: true });
 });
 
 test("an API key goes only over https to a provider's own host or a configured one; another base_url is refused", () => {

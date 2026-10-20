@@ -13,6 +13,7 @@ import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
+import { firstAlertForReset } from "./rate-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, type Move, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
@@ -23,7 +24,8 @@ const ROTATE_BYTES = 50e6;
 const ROTATE_TOKENS = cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens;
 export const MAX_RESTARTS = 3;
 export const RESTART_WINDOW_MS = 10 * 60_000;
-type Saved = { sessionFile?: string; model?: string; runtime?: string };
+// pausedUntil: a usage-limit pause, so a gateway restart inside it holds messages instead of replaying them into the limit.
+type Saved = { sessionFile?: string; model?: string; runtime?: string; pausedUntil?: string };
 
 export const orch = {
 	status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
@@ -132,7 +134,7 @@ export function setAnswerHandlers(prompt: (text: string) => void, answer: (text:
 
 const saved = (): Saved => (existsSync(STATE) ? JSON.parse(readFileSync(STATE, "utf8")) : {});
 let currentModel = "";
-const save = (s: Saved) => writeAtomic(STATE, `${JSON.stringify(s, null, 2)}\n`);
+const save = (s: Saved) => writeAtomic(STATE, `${JSON.stringify({ ...saved(), ...s }, null, 2)}\n`);
 // Compaction needs an idle process: a runtime may abort a running turn to compact, so a busy orchestrator queues it until turn_end.
 const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(), refreshUsage: () => proc?.refreshUsage() };
 
@@ -388,13 +390,18 @@ async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<voi
 	const at = until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
 	const changed = orch.pauseKind !== (owner ? "owner" : "rate");
 	orch.pauseKind = owner ? "owner" : "rate";
-	if (!pauseAlerted || changed) {
+	if (!owner) save({ pausedUntil: orch.rateLimitedUntil });
+	if ((!pauseAlerted || changed) && (owner || firstAlertForReset("orchestrator", until.getTime()))) {
 		if (owner) onAlert(`${NAME}: 모델 제공자 결제/인증 문제로 멈춤 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요합니다. 그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리하고, ${Math.round(retry / 60_000)}분마다 다시 시도합니다.`);
 		else onAlert(`${NAME}: 사용량 한도(429)로 멈춤. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리합니다.`);
 	}
 	pauseAlerted = true;
+	armResume(retry, owner);
+}
+function armResume(retry: number, owner: boolean): void {
 	resumeTimer = setTimeout(() => {
 		resumeTimer = undefined;
+		save({ pausedUntil: undefined });
 		orch.status = "idle";
 		// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
 		// retry that hits the limit again loses nothing.
@@ -505,6 +512,16 @@ export function start(): void {
 	proc = runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env });
 	orch.status = "starting";
 	orch.startedAt = now();
+	const pausedUntil = Date.parse(saved().pausedUntil ?? "");
+	if (pausedUntil > Date.now()) {
+		orch.status = "rate-limited";
+		orch.pauseKind = "rate";
+		orch.rateLimitedUntil = new Date(pausedUntil).toISOString();
+		pauseAlerted = true;
+		clearTimeout(resumeTimer);
+		armResume(pausedUntil - Date.now(), false);
+		log(`orchestrator still paused on a usage limit until ${orch.rateLimitedUntil}; messages are held`);
+	}
 	void readEvents(proc);
 	const self = proc;
 	void proc.exited.then(code => {
@@ -701,6 +718,7 @@ export function applyChainChange(): "updated" | "restarted" | "after-turn" | "ne
 		clearTimeout(resumeTimer);
 		resumeTimer = undefined;
 		pauseAlerted = false;
+		save({ pausedUntil: undefined });
 		continueAfterSwitch = Boolean(proc);
 		restart();
 		return "restarted";
