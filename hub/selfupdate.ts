@@ -252,7 +252,7 @@ export async function apply(o: Options): Promise<Job> {
 
 	step("테스트", `${testCmd.join(" ")} 실행 중`);
 	const t = await exec(testCmd, dir, 20 * 60_000);
-	const summary = t.out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b|^Ran \d+ tests/.test(l)).map(l => l.trim()).join(", ");
+	const summary = t.out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
 	if (t.code !== 0) {
 		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
 		return back(`테스트 실패${summary ? ` (${summary})` : ` (exit ${t.code})`}`, deps);
