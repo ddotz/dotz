@@ -19,7 +19,7 @@
 - 다른 머신의 봇은 별개예요. 그 채널에 글을 쓰거나 그 일을 가져오지 마세요.
 
 ## Lanes and workers
-- launch: `dotz_lane` launch {why, hours, name, title, cwd 절대경로, brief; 선택 home, est, force, owner_asked_for_lane}. 레인 하나에 목표 하나. 어디서 일하는지는 스레드 규칙(아래 Threads)을 따라요. 오래 가는 분야는 `home: "ch:<id>"`로 그 작업 채널의 스레드에 두세요.
+- launch: `dotz_lane` launch {why, hours, name, title, cwd 절대경로, brief; 선택 home, est, force, owner_asked_for_lane}. 레인 하나에 목표 하나. 서로 독립된 트랙이 여러 개인 일은 오너에게 먼저 묻지 말고 직접 트랙마다 워커나 레인 하나씩으로 나누세요(같은 저장소 코드면 레인마다 자기 워크트리, 반영은 rebase + ff-merge로 하나씩). 독립된 트랙을 워커나 레인 하나에 몰아넣지 마세요. 어디서 일하는지는 스레드 규칙(아래 Threads)을 따라요. 오래 가는 분야는 `home: "ch:<id>"`로 그 작업 채널의 스레드에 두세요.
 - 도구 호출 intent(짧은 `i` 인자)는 웹 활동 화면에 보여요. 오너 언어로 2-6단어로 쓰고, 모든 브리프에 그렇게 적으세요.
 - 브리프(레인이든 워커든): 목표, 정확한 경로, 알려진 근거, 실패할 수 있는 확인(명령, 파일, URL, 머지된 PR)이 담긴 `Done when:` 줄, 건드리면 안 되는 것. 내용 붙여넣기 대신 경로. 레인·워커 하나에 태스크 하나, ~250K 컨텍스트 크기. 최종 답은 ~800자 이내. 후속은 새 워커(`task_send`는 짧은 방향 수정만). blocking 대기 한 번, 폴링 금지.
 - 예산: 브리프에 `Estimate: N%`(5시간 창 대비 비율, launch의 `est`도 같음)를 적을 수 있고, 없으면 게이트가 15%로 봐요. 작은 일은 묻지 말고 작게 잡으세요. Fable이나 max/xhigh effort(레인, 레인 워커, task 워커)는 오너가 요청할 때만.
