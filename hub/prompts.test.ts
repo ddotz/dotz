@@ -5,10 +5,10 @@ import { emit, answeredIds } from "./events.ts";
 import { createPrompts, type Pending } from "./prompts.ts";
 
 function setup(answered: string[] = []) {
-	const state = { working: false, delivered: [] as string[], steered: [] as string[], posts: [] as { target: string; text: string; replyTo?: string }[], saved: [] as Pending[][] };
+	const state = { working: false, steerFails: false, delivered: [] as string[], steered: [] as string[], posts: [] as { target: string; text: string; replyTo?: string }[], saved: [] as Pending[][] };
 	const q = createPrompts({
 		deliver: text => state.delivered.push(text),
-		steer: text => state.steered.push(text),
+		steer: text => (state.steered.push(text), !state.steerFails),
 		working: () => state.working,
 		note: (_t, _r, text) => `[note] ${text}`,
 		isNote: text => text.startsWith("[note]"),
@@ -56,6 +56,35 @@ test("a harness reminder injected mid-turn does not drop the turn's answer", asy
 	q.onPrompt("<system-reminder>Detached eval cell x (js) completed.</system-reminder>");
 	q.onAnswer("fixed");
 	expect(state.posts).toEqual([{ target: "web", text: "fixed", replyTo: undefined }]);
+});
+
+test("a turn that ends without a stop answer sends its last text once", () => {
+	const { q, state, startTurn } = setup();
+	startTurn("fix it", { target: "web" });
+	q.onText("half done, here is where it stands");
+	q.settleTurn();
+	q.settleTurn();
+	q.onAnswer("late stop");
+	expect(state.posts).toEqual([{ target: "web", text: "half done, here is where it stands", replyTo: undefined }]);
+});
+
+test("a turn answered normally gets nothing more at idle", () => {
+	const { q, state, startTurn } = setup();
+	startTurn("fix it", { target: "web" });
+	q.onText("fixed");
+	q.onAnswer("fixed");
+	q.settleTurn();
+	expect(state.posts).toHaveLength(1);
+});
+
+test("a message whose steer finds no running turn goes in as a normal prompt", () => {
+	const { q, state, startTurn } = setup();
+	startTurn("first", chat("m1"));
+	state.steerFails = true;
+	q.deliver("second", chat("m2"));
+	expect(state.delivered).toEqual(["first", "second"]);
+	q.redeliverSteered();
+	expect(state.delivered).toEqual(["first", "second"]);
 });
 
 test("restart replay skips messages the outbox log shows as answered", () => {
