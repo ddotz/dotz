@@ -7,9 +7,13 @@
 // watch with `approval_minutes` gates its human step (a 2FA push) on an owner-approval file that expires after that time:
 // the check gets DOTZ_APPROVED=1 while it is valid, prints `DOTZ_APPROVAL_USED` once the step went out (the file is
 // consumed), and `DOTZ_FAIL approval` asks the owner once until they approve (dotz_watch approve).
+// Script-first, as OmO's monitor contract: the check does its own waiting and filtering and prints only what matters; every
+// watch has its own state folder <DATA_DIR>/watches/<id>/ (env DOTZ_WATCH_STATE_DIR) where the check keeps its baseline, so
+// the next run, also after a gateway restart, misses nothing. A watch may name a `script` (an executable file in the
+// project's folder) instead of a shell `command`; the gateway runs it directly and the project page can read and edit it.
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { blockedBy } from "../extension/index.ts";
 import { ensureAside, replInTab } from "./aside.ts";
 import { DATA_DIR, log, now, paths, writeAtomic } from "./config.ts";
@@ -19,6 +23,7 @@ export type Watch = {
 	id: string;
 	name: string;
 	command: string;
+	script?: string;
 	cwd?: string;
 	every_minutes: number;
 	on: "change" | "match" | "fail";
@@ -40,7 +45,10 @@ export type Watch = {
 const RUN_TIMEOUT_MS = 120_000;
 const READ_GRACE_MS = 2_000;
 const FAIL_ALERT_EVERY_MS = 12 * 3600_000;
-const items: Watch[] = existsSync(paths.watches) ? JSON.parse(readFileSync(paths.watches, "utf8")) : [];
+const loadItems = (): Watch[] => (existsSync(paths.watches) ? JSON.parse(readFileSync(paths.watches, "utf8")) : []);
+const items: Watch[] = loadItems();
+const SCRIPT_MAX_BYTES = 64 * 1024;
+const stateDir = (w: Watch) => join(DATA_DIR, "watches", w.id);
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const running = new Map<string, Promise<void>>();
 let stopped = false;
@@ -159,8 +167,10 @@ async function runOnce(w: Watch): Promise<void> {
 		const ok = approved(w);
 		if (w.state.paused && !ok) return;
 		if (w.state.paused) w.state.paused = undefined;
-		const env = w.approval_minutes ? { DOTZ_APPROVED: ok ? "1" : "0", DOTZ_APPROVAL_FILE: approvalFile(w) } : undefined;
-		const { code, output } = w.session ? await serialSessionRun(w) : await exec(["/bin/zsh", "-lc", w.command], w.cwd, (w.timeout_seconds ?? RUN_TIMEOUT_MS / 1000) * 1000, env);
+		mkdirSync(stateDir(w), { recursive: true });
+		const env = { DOTZ_WATCH_STATE_DIR: stateDir(w), ...(w.approval_minutes ? { DOTZ_APPROVED: ok ? "1" : "0", DOTZ_APPROVAL_FILE: approvalFile(w) } : {}) };
+		const argv = w.script ? [w.script] : ["/bin/zsh", "-lc", w.command];
+		const { code, output } = w.session ? await serialSessionRun(w) : await exec(argv, w.cwd, (w.timeout_seconds ?? RUN_TIMEOUT_MS / 1000) * 1000, env);
 		w.state.lastRun = now();
 		w.state.nextAt = undefined;
 		if (/^DOTZ_APPROVAL_USED\b/m.test(output)) rmSync(approvalFile(w), { force: true });
@@ -245,6 +255,14 @@ export function startWatches(handler: typeof notify): void {
 	for (const w of items) arm(w);
 }
 
+// What a gateway restart does: the watches come back from watches.json (their state folders stay on disk) and are armed again.
+export function reloadWatches(): void {
+	for (const t of timers.values()) clearTimeout(t);
+	timers.clear();
+	items.splice(0, items.length, ...loadItems());
+	for (const w of items) arm(w);
+}
+
 export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	const name = String(input.name ?? "").trim();
 	if (!/^[a-z0-9-]{1,40}$/.test(name)) throw new Error("name must be [a-z0-9-], up to 40 chars");
@@ -252,8 +270,15 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	if (url && !/^https:\/\//.test(url)) throw new Error("session_url must be https://");
 	if (url && input.expect) new RegExp(String(input.expect));
 	const session = url ? { url, ...(input.expect ? { expect: String(input.expect) } : {}), refresh_hours: Math.max(1, Number(input.refresh_hours ?? 6)), ...(input.host ? { host: String(input.host) } : {}), ...(input.profile ? { profile: String(input.profile) } : {}) } : undefined;
-	const command = session ? `session check ${url}` : String(input.command ?? "").trim();
-	if (!command) throw new Error("command or session_url required");
+	const script = input.script ? String(input.script) : "";
+	if (script && (input.command || session)) throw new Error("give script or command, not both");
+	if (script) {
+		if (!script.startsWith("/")) throw new Error("script must be an absolute path");
+		if (!existsSync(script) || !statSync(script).isFile()) throw new Error(`script ${script} does not exist or is not a file`);
+		if (!(statSync(script).mode & 0o111)) throw new Error(`script ${script} is not executable (chmod +x)`);
+	}
+	const command = session ? `session check ${url}` : script || String(input.command ?? "").trim();
+	if (!command) throw new Error("command, script or session_url required");
 	if (session) {
 		input.on = "fail";
 		input.every_minutes ??= 30;
@@ -276,7 +301,7 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	}
 	const old = items.findIndex(w => w.name === name);
 	if (old >= 0) removeWatch(items[old].id);
-	const w: Watch = { id: randomBytes(3).toString("hex"), name, command, ...(input.cwd ? { cwd: String(input.cwd) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), state: { fails: 0 } };
+	const w: Watch = { id: randomBytes(3).toString("hex"), name, command, ...(script ? { script } : {}), ...(input.cwd ? { cwd: String(input.cwd) } : script ? { cwd: dirname(script) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), state: { fails: 0 } };
 	items.push(w);
 	save();
 	void run(w);
@@ -288,9 +313,42 @@ export function removeWatch(idOrName: string): boolean {
 	if (i < 0) return false;
 	clearTimeout(timers.get(items[i].id));
 	timers.delete(items[i].id);
+	rmSync(stateDir(items[i]), { recursive: true, force: true });
 	items.splice(i, 1);
 	save();
 	return true;
+}
+
+// The script of a script watch, for the project page. Only the file registered to the watch, only text up to 64 KB.
+function scriptFile(idOrName: string): { w: Watch; path: string } {
+	const w = items.find(x => x.id === idOrName || x.name === idOrName);
+	if (!w) throw new Error(`no watch ${idOrName}`);
+	if (!w.script) throw new Error(`watch ${w.name} is not a script watch`);
+	if (!existsSync(w.script) || !statSync(w.script).isFile()) throw new Error(`script ${w.script} is gone`);
+	return { w, path: realpathSync(w.script) };
+}
+
+export function watchScript(idOrName: string): { path: string; text: string } {
+	const { w, path } = scriptFile(idOrName);
+	if (statSync(path).size > SCRIPT_MAX_BYTES) throw new Error(`script is over ${SCRIPT_MAX_BYTES / 1024} KB`);
+	const text = readFileSync(path, "utf8");
+	if (text.includes("\0")) throw new Error("script is not a text file");
+	return { path: w.script!, text };
+}
+
+// Atomic: write next to the file, keep its mode, rename over it. The next run (also one in flight started earlier) sees the old or the new file whole.
+export function putWatchScript(idOrName: string, text: unknown): { path: string; bytes: number } {
+	if (typeof text !== "string") throw new Error("text must be a string");
+	if (Buffer.byteLength(text) > SCRIPT_MAX_BYTES) throw new Error(`script is over ${SCRIPT_MAX_BYTES / 1024} KB`);
+	if (text.includes("\0")) throw new Error("script is not a text file");
+	const shown = watchScript(idOrName).path; // refuses a script that is not text up to 64 KB, so a binary is never overwritten
+	const { path } = scriptFile(idOrName);
+	const mode = statSync(path).mode & 0o7777;
+	const tmp = `${path}.${process.pid}.tmp`;
+	writeFileSync(tmp, text);
+	chmodSync(tmp, mode);
+	renameSync(tmp, path);
+	return { path: shown, bytes: Buffer.byteLength(text) };
 }
 
 export const allWatches = () => [...items];
