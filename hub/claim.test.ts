@@ -110,6 +110,9 @@ test("claim: [done] reports, verify only from reported, any other report clears 
 	expect(lane.claim).toBeUndefined();
 	await turn(agent, "[done] README fixed");
 	expect(lane.claim?.state).toBe("reported");
+	// OmO's handoff block, posted as its own turn after the [done], is no new report: the claim stays verifiable.
+	await turn(agent, "Ask: fix the README - wanted: a fixed README. For you: done.");
+	expect(lane.claim?.state).toBe("reported");
 	await turn(agent, "[ask] which branch?");
 	expect(lane.claim).toBeUndefined();
 	expect(saved()).toBeUndefined();
