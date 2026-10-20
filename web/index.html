@@ -4015,7 +4015,7 @@ function renderModels() {
   const lanes = (M.lanes || []).filter(laneAlive);
   clear(box).append(
     el("div", { class: "col mt" },
-      el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: "대상마다 모델과 추론 강도, 막혔을 때 넘어갈 순서를 정해요. 폴백은 다음 시작부터 적용돼요." }), el("div", { class: "mt-filter" }, filter)),
+      el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: "대상마다 모델과 추론 강도, 막혔을 때 넘어갈 순서를 정해요. 어시스턴트·레인 폴백은 저장하면 바로 적용돼요." }), el("div", { class: "mt-filter" }, filter)),
       ...FB_LAYERS.map(L => targetCard(L.id, L.title(), "", L.cur(), L.confirm, fbParts(L))),
       lanes.length ? el("div", { class: "sec", text: "실행 중 레인" }) : null,
       ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l, "", { body: [el("div", { class: "note mt-foot", text: "폴백은 레인 기본값 순서를 따라요" })] }))));
