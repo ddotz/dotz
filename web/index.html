@@ -508,10 +508,28 @@ details.work.live .wdot { display: block; }
 .qitem .qa { display: flex; gap: 4px; flex: none; }
 .composer.tmode .qitem { background: var(--tb); border-color: var(--tl2); color: var(--tf); }
 .composer.tmode .qitem .qm { color: var(--td); }
-.hintrow { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-bottom: 8px; }
-.hintrow::-webkit-scrollbar { display: none; }
-.hintchip { flex: none; height: 24px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--card); color: var(--fg-2); font: 500 12px/20px var(--mono); }
-.hintchip:hover { background: var(--hover); color: var(--fg); }
+/* slash menu: a floating card above the composer (Discord-style) */
+.composer { position: relative; }
+.hintrow { position: absolute; z-index: 30; left: 0; right: 0; display: flex; flex-direction: column; max-height: min(360px, 50vh); padding: 6px; border-radius: 16px; background: var(--pop); box-shadow: 0 0 0 1px rgb(0 0 0 / .05), 0 2px 6px rgb(0 0 0 / .06), 0 12px 32px -6px rgb(0 0 0 / .16); }
+:root[data-theme="dark"] .hintrow { background: #2a2a30; box-shadow: inset 0 1px 0 rgb(255 255 255 / .06), 0 0 0 1px rgb(255 255 255 / .06), 0 12px 32px -6px rgb(0 0 0 / .6); }
+.sl-hd { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 8px 4px; color: var(--fg-3); font: 600 11.5px/16px var(--font); }
+.sl-hd .logo { width: 14px; height: 14px; border-radius: 4px; }
+.sl-hd .logo::after { inset: 4px; background: var(--pop); }
+:root[data-theme="dark"] .sl-hd .logo::after { background: #2a2a30; }
+.sl-hd .nm { color: var(--fg-2); }
+.sl-args { flex: none; display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 6px 6px; border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+.sl-c, .sl-a { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 12px; background: var(--layer); color: var(--fg-3); font: 500 12px/16px var(--font); }
+.sl-c { background: var(--fg); color: var(--bg); font-weight: 600; }
+.sl-a.done { color: var(--fg); }
+.sl-a.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.sl-list { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.sl-i { flex: none; display: flex; align-items: baseline; gap: 8px; width: 100%; min-height: 36px; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--fg); text-align: left; }
+.sl-i.on { background: var(--layer); }
+:root[data-theme="dark"] .sl-i.on { background: #34343b; }
+.sl-i .c { flex: none; font-weight: 700; font-size: 14px; line-height: 20px; }
+.sl-i .ph { flex: none; color: var(--fg-3); font-size: 12.5px; line-height: 20px; }
+.sl-i .d { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: 12.5px; line-height: 20px; text-align: right; }
+@media (max-width: 639px) { .sl-i { min-height: 44px; flex-wrap: wrap; row-gap: 0; } .sl-i .d { flex-basis: 100%; text-align: left; } .sl-i .ph { display: none; } }
 .sendrow { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 18px; border: 1px solid transparent; border-radius: 24px; background: var(--layer); }
 .sendrow:focus-within { border-color: var(--accent); }
 .cbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 28px; margin-top: 8px; padding: 0 4px; }
@@ -1419,7 +1437,6 @@ $("#back").onclick = () => go(backTarget() || "home");
 function openPalette() {
   if (document.querySelector("dialog.pal")) return;
   closeMenu(false);
-  loadHelp();
   const inp = el("input", { class: "pal-in", type: "text", placeholder: "명령 또는 이동", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "명령" });
   const list = el("div", { class: "pal-list", role: "listbox" });
   const out = el("pre", { class: "pal-out", hidden: true });
@@ -2670,33 +2687,115 @@ function enterTarget() {
   autosize();
   if (!matchMedia("(pointer: coarse)").matches && !document.querySelector("dialog[open]")) ta.focus({ preventScroll: true });
 }
-const COMMANDS = [["/help", ""], ["/status", ""], ["/context", ""], ["/compact", ""], ["/lanes", ""], ["/model", ""], ["/effort", ""], ["/restart", ""], ["/stop", ""], ["/resume", ""], ["/abort", ""], ["/providers", ""], ["/quota", ""]];
-let hintList = COMMANDS, helpLoaded = false;
-async function loadHelp() {
-  if (helpLoaded) return;
-  helpLoaded = true;
-  try {
-    const r = await api("/api/command", "POST", { text: "/help" });
-    const seen = new Set(), found = [];
-    for (const line of String(r.output || "").split("\n")) {
-      const m = line.match(/^\s*[-*•]?\s*`?(\/[a-z][\w-]*)`?\s*(.*)$/i);
-      if (m && !seen.has(m[1])) { seen.add(m[1]); found.push([m[1], m[2].replace(/^[-–—:]\s*/, "").replace(/`/g, "")]); }
-    }
-    if (found.length >= 3) hintList = found;
-  } catch { helpLoaded = false; }
-  updateHints();
+/* ---------- slash commands: Discord-style menu above the composer (hub/control.ts COMMANDS) ---------- */
+// Each arg: n = placeholder, opts() = [value, label?] choices from live state, opt = may be left out, free = any text.
+const SL_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"];
+const slLanes = () => ((S && S.lanes) || []).filter(laneAlive).map(l => [l.name, `레인 · ${statusKo(l.status)}`]);
+const slProcs = () => [["orchestrator", botName], ...slLanes()];
+const slModelTargets = () => [["orchestrator", botName], ["lanes", "레인 기본값"], ["workers", "작업자"], ...slLanes()];
+// Current models only: no Haiku, no Fable, no dated snapshots; newest versions first.
+const slModels = () => ((M && M.available) || []).filter(m => !/haiku|fable/i.test(`${m.selector} ${m.name || ""}`) && !/-\d{8}$/.test(m.selector)).sort((a, b) => b.selector.localeCompare(a.selector, "en", { numeric: true })).map(m => [m.selector, m.name || ""]);
+const slProviders = () => ((P && P.providers) || []).map(p => [p.id, p.name || ""]);
+const CMDS = [
+  { c: "/status", d: "땃쥐·레인·디스코드 상태와 컨텍스트" },
+  { c: "/context", d: "프로세스별 컨텍스트 사용량과 압축 상태" },
+  { c: "/compact", d: "컨텍스트 압축 (작업 중이면 턴이 끝난 뒤)", args: [{ n: "대상", opts: slProcs }] },
+  { c: "/lanes", d: "레인마다 상태·모델·폴더" },
+  { c: "/model", d: "모델 보기, 또는 대상의 모델 바꾸기", args: [{ n: "대상", opts: slModelTargets, opt: true }, { n: "모델", opts: slModels, opt: true }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]), opt: true }] },
+  { c: "/effort", d: "생각 강도 바꾸기", args: [{ n: "대상", opts: slModelTargets }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]) }] },
+  { c: "/restart", d: "에이전트 재시작, gateway는 전체 재시작", args: [{ n: "대상", opts: () => [["orchestrator", botName], ["gateway", "게이트웨이 전체 (한가할 때)"], ...slLanes()] }] },
+  { c: "/stop", d: "레인 멈추기 (나중에 재개)", args: [{ n: "레인", opts: slLanes }] },
+  { c: "/resume", d: "멈춘 레인 재개, 또는 도는 레인에 글 보내기", args: [{ n: "레인", opts: slLanes }, { n: "글", free: true, opt: true }] },
+  { c: "/abort", d: "지금 턴 취소 (비우면 땃쥐)", args: [{ n: "대상", opts: slProcs, opt: true }] },
+  { c: "/providers", d: "로그인·API 키·공급자별 모델" },
+  { c: "/login", d: "공급자 로그인 (링크가 열려요)", args: [{ n: "공급자", opts: slProviders, opt: true }] },
+  { c: "/logout", d: "공급자 로그아웃", args: [{ n: "공급자", opts: slProviders }] },
+  { c: "/quota", d: "공급자·모델별 사용 한도" },
+  { c: "/help", d: "명령 전체 설명" },
+];
+// The command palette lists the same commands.
+const hintList = CMDS.map(x => [x.c, x.d]);
+let SL = { items: [], idx: -1, hide: "" };
+// Where the caret is in "/cmd a b c": which command, which args are done, and the partial token being typed.
+function slParse(v) {
+  const m = v.match(/^\/(\S*)(\s+([\s\S]*))?$/);
+  if (!m) return null;
+  if (m[2] === undefined) return { stage: "cmd", q: `/${m[1]}`.toLowerCase() };
+  const cmd = CMDS.find(x => x.c === `/${m[1].toLowerCase()}`);
+  if (!cmd) return null;
+  const rest = m[3], toks = rest.split(/\s+/), done = toks.slice(0, -1).filter(Boolean), q = toks[toks.length - 1] || "";
+  return { stage: "arg", cmd, done, q, i: done.length };
 }
 function updateHints() {
-  const v = $("#text").value, box = $("#hints");
-  if (!v.startsWith("/") || /\s/.test(v)) { box.hidden = true; return; }
-  const list = hintList.filter(([c]) => c.startsWith(v.toLowerCase()));
-  if (!list.length) { box.hidden = true; return; }
-  clear(box).append(...list.map(([c, d]) => el("button", { class: "hintchip", type: "button", title: d || null, onclick: () => { const t = $("#text"); t.value = `${c} `; t.focus(); updateHints(); autosize(); } }, c)));
+  const box = $("#hints"), v = ta.value, p = slParse(v);
+  const off = () => { box.hidden = true; clear(box); SL.items = []; SL.idx = -1; };
+  if (!p || v === SL.hide || document.activeElement !== ta) return off();
+  SL.hide = "";
+  let head, items = [], chips = null, idx = 0;
+  if (p.stage === "cmd") {
+    const pre = CMDS.filter(x => x.c.startsWith(p.q)), sub = CMDS.filter(x => !x.c.startsWith(p.q) && x.c.includes(p.q.slice(1)));
+    items = [...pre, ...sub].map(x => ({ kind: "cmd", x, fill: `${x.c} ` }));
+    head = el("div", { class: "sl-hd" }, el("span", { class: "logo" }), el("span", { class: "nm", text: botName }), el("span", { class: "tx", text: "명령" }));
+  } else {
+    const args = p.cmd.args || [], a = args[p.i];
+    if (!a || a.free) return off();
+    const q = p.q.toLowerCase(), base = `${p.cmd.c} ${p.done.length ? `${p.done.join(" ")} ` : ""}`;
+    items = a.opts().filter(([val, lab]) => !q || val.toLowerCase().includes(q) || (lab || "").toLowerCase().includes(q)).sort((x, y) => (y[0].toLowerCase().startsWith(q) ? 1 : 0) - (x[0].toLowerCase().startsWith(q) ? 1 : 0)).slice(0, 40)
+      .map(([val, lab]) => ({ kind: "arg", val, lab, fill: `${base}${val} ` }));
+    if (!items.length) return off();
+    // An optional arg is not preselected, so Enter still sends the command as typed.
+    idx = a.opt && !q ? -1 : 0;
+    chips = el("div", { class: "sl-args" }, el("span", { class: "sl-c", text: p.cmd.c }),
+      ...args.map((x, i) => el("span", { class: `sl-a${i < p.i ? " done" : i === p.i ? " on" : ""}`, text: i < p.i ? p.done[i] : `${x.n}${x.opt ? "?" : ""}` })));
+    head = el("div", { class: "sl-hd" }, el("span", { class: "tx", text: `${a.n}${a.opt ? " · 비워도 돼요" : ""}` }));
+  }
+  if (!items.length) return off();
+  SL.items = items; SL.idx = idx;
+  const list = el("div", { class: "sl-list", role: "listbox", id: "sl-list" }, ...items.map((it, i) => {
+    const b = el("button", { type: "button", role: "option", class: "sl-i", id: `sl-${i}`, tabindex: "-1" },
+      it.kind === "cmd"
+        ? [el("span", { class: "c", text: it.x.c }), (it.x.args || []).length ? el("span", { class: "ph", text: it.x.args.map(x => x.opt ? `[${x.n}]` : `<${x.n}>`).join(" ") }) : null, el("span", { class: "d", text: it.x.d })]
+        : [el("span", { class: "c", text: it.val }), it.lab ? el("span", { class: "d", text: it.lab }) : null]);
+    // Taps and clicks must not take focus from the textarea (the phone keyboard stays up).
+    b.addEventListener("pointerdown", ev => ev.preventDefault());
+    b.addEventListener("click", () => slPick(i));
+    b.addEventListener("mousemove", () => { if (SL.idx !== i) { SL.idx = i; slMark(); } });
+    return b;
+  }));
+  clear(box).append(...[chips, head, list].filter(Boolean));
   box.hidden = false;
+  const sr = $("#send");
+  box.style.bottom = `${$("#composer").offsetHeight - sr.offsetTop + 8}px`;
+  slMark();
+}
+function slMark() {
+  const items = [...$("#hints").querySelectorAll(".sl-i")];
+  items.forEach((n, i) => { n.classList.toggle("on", i === SL.idx); n.setAttribute("aria-selected", i === SL.idx ? "true" : "false"); });
+  if (items[SL.idx]) items[SL.idx].scrollIntoView({ block: "nearest" });
+  ta.setAttribute("aria-activedescendant", SL.idx >= 0 ? `sl-${SL.idx}` : "");
+}
+function slPick(i) {
+  const it = SL.items[i];
+  if (!it) return;
+  ta.value = it.fill; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  autosize(); saveDraft(); updateHints();
 }
 const ta = $("#text");
+ta.setAttribute("aria-controls", "sl-list");
 function autosize() { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`; }
-ta.addEventListener("input", () => { autosize(); saveDraft(); if (ta.value.startsWith("/")) loadHelp(); updateHints(); });
+ta.addEventListener("input", () => { autosize(); saveDraft(); updateHints(); });
+ta.addEventListener("focus", () => updateHints());
+ta.addEventListener("blur", () => { const box = $("#hints"); box.hidden = true; });
+// Registered before the send/stop key handler: while the menu is open, arrows move, Tab/Enter pick, Esc closes it.
+ta.addEventListener("keydown", ev => {
+  if ($("#hints").hidden || !SL.items.length || ev.isComposing || ev.keyCode === 229) return;
+  const n = SL.items.length, stop = () => { ev.preventDefault(); ev.stopImmediatePropagation(); };
+  if (ev.key === "ArrowDown") { stop(); SL.idx = (SL.idx + 1) % n; slMark(); }
+  else if (ev.key === "ArrowUp") { stop(); SL.idx = SL.idx <= 0 ? n - 1 : SL.idx - 1; slMark(); }
+  else if (ev.key === "Tab" && !ev.shiftKey) { stop(); slPick(Math.max(0, SL.idx)); }
+  else if (ev.key === "Enter" && !ev.shiftKey && !ev.metaKey && !ev.ctrlKey && !ev.altKey && SL.idx >= 0) { stop(); slPick(SL.idx); }
+  else if (ev.key === "Escape") { stop(); SL.hide = ta.value; updateHints(); }
+});
 // While the target works: Enter steers into the running turn, ⌘/Ctrl+Enter queues it for the next turn, ⌥/Alt+Enter stops it and sends, Esc stops it.
 ta.addEventListener("keydown", ev => {
   if (ev.key === "Escape" && isWorking(target) && !document.querySelector("dialog[open]") && !openMenu) { ev.preventDefault(); stopTarget(); return; }
