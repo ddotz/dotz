@@ -65,7 +65,7 @@ const queue = createPrompts({
 	steer: steerOrchestrator,
 	working: () => orch.status === "working",
 	note: (target, replyTo, text) => msg().newMessage(target, replyTo, text),
-	isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead"),
+	isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead") || isNote(text, "laneReportLead"),
 	post: (target, text, replyTo) => out(target, text, replyTo, { auto: true }),
 	clearProgress: target => void discord.clearProgress(target),
 	persist: open => writeAtomic(PENDING, `${JSON.stringify(open, null, 2)}\n`),
@@ -275,12 +275,13 @@ async function budgetProblem(name: string, est: number, force: boolean): Promise
 	return verdict;
 }
 
-const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n) });
+const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });
 setReportHandler((lane, text) => {
 	const event = { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text };
 	emit("inbox", event);
 	const how = laneRelay.report(lane.name, text, join(paths.lanes, lane.name, "report.md"), lane.orchAsked === false);
-	if (how === "relayed" || how === "held") lane.orchAsked = false;
+	if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
+	if (how === "steered") log(`lane ${lane.name} report steered into the orchestrator's turn`);
 	else log(`lane ${lane.name} report ${how === "disk" ? "kept on disk (routine progress)" : how === "owner" ? "kept on disk (answer to the owner in the lane channel)" : "dropped (same as the last one)"}`);
 	if (how === "held") log(`lane ${lane.name} report held for the orchestrator's next idle point`);
 	const channel = `lane:${lane.name}`;
@@ -356,8 +357,12 @@ discord.connect(m => {
 		const extra = [m.replyTo ? msg().replyingTo(m.replyTo.author, m.replyTo.content) : "", ...m.attachments.map(a => `[attachment] ${a.name} ${a.url}`)].filter(Boolean).join("\n");
 		try {
 			if (approvesBudget(lane, m.content)) sendToLane(lane, "/budget-ok");
+			const busy = lanes.get(lane) ? laneBusy(lanes.get(lane)!) : false;
 			sendToLane(lane, [`[owner via Discord] ${m.content}`, extra].filter(Boolean).join("\n"));
 			livestatus.begin(target, `lane:${lane}`);
+			// A busy lane answers when its current step allows; until then the owner sees at once that the message reached it,
+			// in the lane's one progress message (no answer is sent before it is ready).
+			if (busy) void discord.progress(target, "progress", "📨 받았어요. 하던 작업에 바로 넣었고, 답이 준비되면 여기로 올게요.").catch(e => log(`lane receipt note failed: ${e}`));
 		} catch (error) {
 			void send(target, `레인 ${lane}을(를) 이어갈 수 없어요 (${(error as Error).message}). 대화 채널에서 다시 맡겨 주세요.`, m.id);
 		}

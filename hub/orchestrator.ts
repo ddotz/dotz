@@ -560,8 +560,11 @@ export function deliver(text: string, owner = false): void {
 }
 
 // Injects a note into the running turn (no effect when idle: the next prompt starts a turn anyway).
-export function steer(text: string): void {
-	if (orch.status === "working") proc?.send(text, "steer");
+// True when the text went into the running turn.
+export function steer(text: string): boolean {
+	if (orch.status !== "working" || !proc) return false;
+	proc.send(text, "steer");
+	return true;
 }
 
 export function stop(): void {

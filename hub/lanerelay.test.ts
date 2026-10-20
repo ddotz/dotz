@@ -41,3 +41,17 @@ test("reports while the orchestrator is busy become one prompt at idle; a lane's
 	expect(sent[0]).toContain("staged");
 	expect(r.flush()).toBe(0);
 });
+
+test("a report while the orchestrator is busy goes into its running turn at once; it is held only when the turn cannot take it", () => {
+	const steered: string[] = [];
+	let accepts = true;
+	const sent: string[] = [];
+	const r = createLaneRelay({ busy: () => true, deliver: t => sent.push(t), lead: n => `[lane reports ${n}]`, steer: t => (accepts ? (steered.push(t), true) : false) });
+	expect(r.report("a", "[done] merged abc", "/a")).toBe("steered");
+	expect(steered).toEqual(["[lane reports 1]\n- lane a status=done (full: /a)\n[done] merged abc"]);
+	expect(r.held()).toEqual([]);
+	accepts = false;
+	expect(r.report("b", "[ask] which one?", "/b")).toBe("held");
+	expect(r.held().map(h => h.lane)).toEqual(["b"]);
+	expect(sent).toEqual([]);
+});
