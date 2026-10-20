@@ -8,7 +8,7 @@ const VERSION_TIMEOUT_MS = 8000;
 
 // `bin` is a command name or a path. The first semver-looking token of the output is the version (else its first line).
 export async function detectBinary(bin: string, args: string[] = ["--version"]): Promise<DetectResult> {
-	const path = bin.includes("/") ? (existsSync(bin) ? bin : undefined) : (Bun.which(bin) ?? undefined);
+	const path = bin.includes("/") ? (existsSync(bin) ? bin : undefined) : (Bun.which(bin, { PATH: process.env.PATH }) ?? undefined);
 	if (!path) return { installed: false, reason: `\`${bin}\` was not found on PATH` };
 	try {
 		const proc = Bun.spawn([path, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: VERSION_TIMEOUT_MS, killSignal: "SIGKILL" });

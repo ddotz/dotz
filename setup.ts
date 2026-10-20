@@ -1,12 +1,16 @@
 #!/usr/bin/env bun
 // Dotz onboarding wizard (Korean, step by step), modeled on the omonyang ~/.ddotz/setup.ts and the dori-kit setup.ts.
-// 1) bot identity: name, character, tone, notices, how to address the owner, optional avatar -> ~/.dotz/identity/IDENTITY.md
-//    (the orchestrator talks this way)
-// 2) Discord: owner id, server id; the bot itself is provisioned through the Aside browser (onboard/discord.ts) unless a
-//    token is pasted; the owner only approves Discord's 2FA prompt. 3) web app access. Advanced: ports and models.
-// Writes ~/.dotz/config.json (no secrets), secrets/ (0600), links the plugin into omp, writes the launchd plist; runs
-// launchctl only with --load and tailscale serve only with --tailscale. Re-running keeps every answer as the default.
-//   bun setup.ts [--answers answers.json] [--load] [--tailscale] [--no-discord-auto] [--dir ~/.dotz]
+// 1) harness: the coding-agent CLI the orchestrator and lanes run on (onboard/harness.ts; OmO by default, installed with
+//    bun when missing; omp and Claude Code selectable; Codex listed, no adapter yet) and its login state
+// 2) tools: Aside and zele. 3) bot identity: name, character, tone, notices, how to address the owner, optional avatar
+//    -> ~/.dotz/identity/IDENTITY.md (the orchestrator talks this way)
+// 4) Discord: owner id, server id; the bot itself is provisioned through the Aside browser (onboard/discord.ts) unless a
+//    token is pasted; the owner only approves Discord's 2FA prompt. 5) web app access (Tailscale, optional). Advanced: ports and models.
+// Writes ~/.dotz/config.json (no secrets), secrets/ (0600), links the plugin into omp only when omp is installed (OmO gets
+// the extension from the gateway with --extension), writes the service file (launchd plist on macOS, systemd user unit on
+// Linux; onboard/service.ts); starts it only with --load, runs tailscale serve only with --tailscale, opens the web app
+// only with --open. Re-running keeps every answer as the default.
+//   bun setup.ts [--answers answers.json] [--load] [--tailscale] [--open] [--no-discord-auto] [--dir ~/.dotz]
 // Onboarding ends with the macOS permissions step (onboard/permissions.ts): bun is what launchd runs, so the prompts and
 // the Settings entries are for bun. Interactive runs ask for them; --answers runs only print their state. Standalone, safe to rerun:
 //   bun setup.ts permissions [--check]     (--check only prints the state, never raises a dialog)
@@ -15,7 +19,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { asideState, installApp, installCli, loginCli, openApp } from "./onboard/aside.ts";
 import { AsideRepl, createApp, ensureBrowser, invite, isAdmin, PERMISSIONS, resetToken } from "./onboard/discord.ts";
+import { defaultHarness, detectHarnesses, type Detected, harness, harnessLine, HARNESSES, loginState } from "./onboard/harness.ts";
 import { checkPermissions, printPermissions, requestPermissions } from "./onboard/permissions.ts";
+import { LABEL, serviceFile, servicePath, UNIT } from "./onboard/service.ts";
 import { detectLanguage, languageName } from "./hub/language.ts";
 
 const HOME = homedir();
@@ -25,8 +31,8 @@ const flag = (n: string) => args.includes(n);
 const opt = (n: string) => (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
 const expandHome = (p: string) => p.replace(/^~(?=\/|$)/, HOME);
 const DIR = expandHome(opt("--dir") ?? join(HOME, ".dotz"));
-const LABEL = "dev.dotz.gateway";
-const PLIST = join(HOME, "Library", "LaunchAgents", `${LABEL}.plist`);
+const MAC = process.platform === "darwin";
+const PLIST = servicePath({ home: HOME });
 const TOKEN_FILE = join(DIR, "secrets", "discord-bot-token");
 const IDENTITY_FILE = join(DIR, "identity", "IDENTITY.md");
 const SNOWFLAKE = /^\d{17,20}$/;
@@ -43,6 +49,8 @@ type Answers = {
 	orchestrator_model: string;
 	lane_model: string;
 	install_aside?: boolean;
+	runtime: string;
+	install_harness?: boolean;
 };
 
 const prior = existsSync(join(DIR, "config.json")) ? JSON.parse(readFileSync(join(DIR, "config.json"), "utf8")) : {};
@@ -114,6 +122,17 @@ function secret(q: string): string {
 	}
 }
 
+async function tailnetUrl(port: number): Promise<string> {
+	if (!Bun.which("tailscale")) return "";
+	const r = await Bun.$`tailscale status --json`.nothrow().quiet();
+	try {
+		const host = String(JSON.parse(r.stdout.toString()).Self?.DNSName ?? "").replace(/\.$/, "");
+		return host ? `https://${host}${port === 443 ? "" : `:${port}`}/` : "";
+	} catch {
+		return "";
+	}
+}
+
 async function tailscaleLogin(): Promise<string> {
 	const r = await Bun.$`tailscale status --json`.nothrow().quiet();
 	try {
@@ -143,10 +162,10 @@ async function prepareAside(interactiveRun: boolean, autoInstall = false): Promi
 	if (!s.cli && yes("  Aside CLI(aside 명령)가 없어요. 지금 설치할까요? (curl -fsSL https://releases.aside.com/install.sh | bash)")) await installCli();
 	s = await asideState();
 	if (s.cli && !s.signedIn) {
-		if (interactiveRun) {
+		if (interactiveRun && yes("  Aside CLI 로그인이 필요해요. 지금 할까요?")) {
 			console.log("  Aside CLI 로그인: 아래에 나오는 코드를 Aside 앱 설정 > 계정 > 기기에서 승인해 주세요.");
 			await loginCli(s.cli);
-		} else console.log(`  Aside CLI 로그인이 필요해요: ${s.cli} login (Aside 앱 설정 > 계정 > 기기에서 승인)`);
+		} else if (interactiveRun) console.log(`  나중에 ${s.cli} login 으로 로그인하면 돼요.`); else console.log(`  Aside CLI 로그인이 필요해요: ${s.cli} login (Aside 앱 설정 > 계정 > 기기에서 승인)`);
 		s = await asideState();
 	}
 	const missing = [!s.app && "Aside 앱 (brew install --cask aside 또는 aside.com/download)", !s.cli && "Aside CLI (curl -fsSL https://releases.aside.com/install.sh | bash)", s.cli && !s.signedIn && "CLI 로그인 (aside login)"].filter(Boolean);
@@ -178,13 +197,63 @@ async function prepareZele(interactiveRun: boolean, autoInstall = false): Promis
 	if (!interactiveRun && !accounts.length) console.log("  zele 계정이 없어요: zele login 으로 연결하면 게이트웨이가 다음 재시작부터 메일·일정을 봐요.");
 }
 
+const priorRuntime = (prior.orchestrator?.runtime ?? prior.lanes?.runtime ?? prior.runtime) as string | undefined;
+
+// Step 1: shows every harness with its install state, lets the user pick one dotz has an adapter for, installs OmO when
+// it is the pick and missing (interactive: asked; --answers: only with install_harness), then checks the login.
+async function prepareHarness(interactiveRun: boolean, pick?: string, autoInstall = false): Promise<string> {
+	let found = await detectHarnesses();
+	const def = defaultHarness(pick ?? priorRuntime);
+	let id = def;
+	if (interactiveRun) {
+		console.log("  봇의 오케스트레이터와 레인(프로젝트 작업)이 돌아갈 코딩 에이전트예요. 기본은 OmO 예요.");
+		found.forEach((d, i) => console.log(`    ${i + 1}) ${harnessLine(d, d.id === def)}`));
+		for (;;) {
+			const v = (prompt("  번호 (Enter = 기본):") ?? "").trim();
+			const d = v ? found[Number(v) - 1] : harness(def);
+			if (d?.adapter) {
+				id = d.id as typeof id;
+				break;
+			}
+			console.log(d ? `    ${d.label}: ${d.installHint}. 다른 번호를 골라 주세요.` : `    1~${found.length} 중에서 골라 주세요`);
+		}
+	}
+	const chosen = () => found.find(d => d.id === id) as Detected;
+	if (!chosen().found.installed) {
+		const h = chosen();
+		const yes = h.install && (interactiveRun ? !/^n/i.test(ask(`  ${h.label} 가 없어요. 지금 설치할까요? (${h.installHint}) Y/n`, "y")) : autoInstall);
+		if (yes && h.install) {
+			await Bun.spawn(h.install, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited;
+			// A fresh bun install's global bin folder is often not on PATH yet (bun add -g only warns about it).
+			const globalBin = (await Bun.$`bun pm bin -g`.nothrow().quiet()).stdout.toString().trim();
+			if (globalBin && !(process.env.PATH ?? "").split(":").includes(globalBin)) process.env.PATH = `${globalBin}:${process.env.PATH ?? ""}`;
+			found = await detectHarnesses();
+		}
+		if (!chosen().found.installed) console.log(`  ${h.label} 가 아직 없어요: ${h.installHint}. 설치 전에는 게이트웨이가 에이전트를 띄우지 못해요. 설치 후 setup 을 다시 실행하세요.`);
+	}
+	const d = chosen();
+	if (d.found.installed) {
+		let login = await loginState(d);
+		while (interactiveRun && login.checked && !login.ready) {
+			console.log(`  ${d.label} 에 로그인된 계정이 없어요. ${d.loginHint} (명령을 못 찾으면 전체 경로로: ${d.found.path})`);
+			if (ask("  다른 터미널에서 로그인한 다음 Enter, 나중에 하려면 s", "", false).toLowerCase() === "s") break;
+			login = await loginState(d);
+		}
+		console.log(`  하네스: ${d.label} ${d.found.version ?? ""} (${d.found.path})${login.checked ? (login.ready ? `, 로그인된 계정 ${login.accounts}개` : `, 로그인 필요: ${d.loginHint}`) : `. 로그인이 안 돼 있으면: ${d.loginHint}`}`);
+	}
+	return id;
+}
+
 async function interactive(): Promise<Answers> {
 	console.log("\n봇 온보딩을 시작합니다. 대괄호 [ ] 안의 값은 Enter로 그대로 쓸 수 있어요.\n");
-	console.log("1/4 도구 준비: 봇이 쓰는 Aside 브라우저와 메일·일정 도구(zele)를 확인하고, 없으면 설치해요.");
-	await prepareAside(true);
+	console.log("1/5 하네스");
+	const runtime = await prepareHarness(true);
+	console.log("\n2/5 도구 준비: 봇이 쓰는 Aside 브라우저와 메일·일정 도구(zele)를 확인하고, 없으면 설치해요.");
+	if (MAC) await prepareAside(true);
+	else console.log("  Aside 는 macOS 앱이라 건너뛰어요. 봇 자동 생성 대신 디스코드 봇 토큰을 붙여넣어 주세요.");
 	await prepareZele(true);
 
-	console.log("\n2/4 봇 정체성: 이름, 성격, 말투, 호칭. 봇은 디스코드, 웹, 터미널 어디서나 이 성격과 말투로 대답해요.");
+	console.log("\n3/5 봇 정체성: 이름, 성격, 말투, 호칭. 봇은 디스코드, 웹, 터미널 어디서나 이 성격과 말투로 대답해요.");
 	if (!priorIdentity.name) console.log("  먼저 봇의 이름을 지어 주세요. 디스코드 봇 이름, 카테고리, '<이름>모드 켜' 문구가 모두 이 이름을 써요.");
 	const name = askValid("봇 이름 (2~32자, 예: 땃쥐, 오모냥)", priorIdentity.name, v => v.length >= 2 && v.length <= 32, "2~32자로 적어 주세요");
 	const character = choose("성격을 골라 주세요", CHARACTERS, priorIdentity.character);
@@ -193,7 +262,7 @@ async function interactive(): Promise<Answers> {
 	const address = ask("봇이 주인을 부르는 호칭 (예: 형, 대표님, 이름. 없으면 Enter: 호칭 없이 말해요)", priorIdentity.address ?? "", false);
 	const avatar = askValid("프로필 이미지 파일 경로 (png/jpg, 없으면 Enter)", priorIdentity.avatar ?? "", v => existsSync(expandHome(v)), "그 경로에 파일이 없어요", false);
 
-	console.log("\n3/4 디스코드. ID는 디스코드 설정 > 고급 > 개발자 모드를 켠 뒤, 내 프로필이나 서버 이름을 우클릭 > 'ID 복사'로 얻어요.");
+	console.log("\n4/5 디스코드. ID는 디스코드 설정 > 고급 > 개발자 모드를 켠 뒤, 내 프로필이나 서버 이름을 우클릭 > 'ID 복사'로 얻어요.");
 	const guild = askValid("봇이 들어갈 서버 ID (디스코드 없이 웹/터미널만 쓰려면 Enter)", prior.discord?.guild ?? "", v => SNOWFLAKE.test(v), "17~20자리 숫자여야 해요", false);
 	const owner_id = guild ? askValid("내 디스코드 사용자 ID (이 계정의 말만 명령으로 들어요)", prior.discord?.owner_id ?? "", v => SNOWFLAKE.test(v), "17~20자리 숫자여야 해요") : "";
 	let bot_token = "";
@@ -202,9 +271,11 @@ async function interactive(): Promise<Answers> {
 		bot_token = secret("이미 만든 봇 토큰이 있으면 붙여넣기 (화면에 안 보여요, 자동 생성은 Enter)");
 	} else if (guild) console.log("  저장된 봇 토큰을 그대로 써요.");
 
-	console.log("\n4/4 웹 앱 (테일넷 안에서만 열려요).");
-	const login = (prior.web?.allow_logins ?? [])[0] ?? (await tailscaleLogin());
-	const allow_logins = ask("웹 앱에 들어올 수 있는 Tailscale 로그인 (쉼표로 여러 개)", login).split(",").map(s => s.trim()).filter(Boolean);
+	console.log("\n5/5 웹 앱 (테일넷 안에서만 열려요).");
+	const hasTailscale = Boolean(Bun.which("tailscale"));
+	const login = (prior.web?.allow_logins ?? [])[0] ?? (hasTailscale ? await tailscaleLogin() : "");
+	if (!hasTailscale && !login) console.log("  Tailscale 이 없어서 웹 앱은 꺼 둬요. 디스코드와 터미널로 쓸 수 있고, Tailscale 을 설치한 뒤 setup 을 다시 실행하면 켜져요.");
+	const allow_logins = (hasTailscale || login ? ask("웹 앱에 들어올 수 있는 Tailscale 로그인 (쉼표로 여러 개, 없으면 Enter)", login, false) : "").split(",").map(s => s.trim()).filter(Boolean);
 
 	const defaults = {
 		web_port: Number(prior.web?.port ?? 7420),
@@ -215,6 +286,7 @@ async function interactive(): Promise<Answers> {
 	const port = (v: string) => Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) < 65536;
 	const advanced = /^y/i.test(ask("포트나 모델도 바꿀까요? y/N", "n"));
 	const a: Answers = {
+		runtime,
 		identity: { name, character, tone, notices, ...(address ? { address } : {}), ...(avatar ? { avatar } : {}) },
 		owner_id,
 		guild,
@@ -232,12 +304,13 @@ async function interactive(): Promise<Answers> {
 	};
 
 	console.log(`\n정리하면:
+  하네스 ${harness(runtime)?.label ?? runtime}
   이름 ${name} / 성격 ${character}
   말투 ${tone}
   알림 문체 ${notices}
   호칭 ${address || "(없음)"}${avatar ? `\n  프로필 이미지 ${avatar}` : ""}
   디스코드 ${guild ? `서버 ${guild}, 주인 ${owner_id}, 봇 ${existsSync(TOKEN_FILE) ? "저장된 토큰" : bot_token ? "붙여넣은 토큰" : "자동 생성"}` : "사용 안 함"}
-  웹 ${allow_logins.join(", ") || "(허용 로그인 없음)"}, 포트 ${a.web_port} -> ${a.tailscale_https_port}`);
+  웹 ${allow_logins.length ? `${allow_logins.join(", ")}, 포트 ${a.web_port} -> ${a.tailscale_https_port}` : "사용 안 함 (Tailscale 로그인 없음)"}`);
 	if (/^n/i.test(ask("이대로 진행할까요? Y/n", "y"))) {
 		console.log("취소했어요. 다시 실행하면 방금 값은 저장되지 않은 상태로 시작해요.");
 		process.exit(1);
@@ -261,11 +334,15 @@ function validate(a: Partial<Answers>): Answers {
 	const owner = String(a.owner_id ?? "");
 	if (guild && !SNOWFLAKE.test(guild)) errors.push("guild: 17~20자리 숫자");
 	if (guild && !SNOWFLAKE.test(owner)) errors.push("owner_id: 17~20자리 숫자 (guild 가 있으면 필수)");
+	const runtime = String(a.runtime ?? defaultHarness(priorRuntime));
+	if (!harness(runtime)?.adapter) errors.push(`runtime: ${HARNESSES.filter(h => h.adapter).map(h => h.id).join(" | ")} 중 하나`);
 	if (errors.length) {
 		console.error(`answers 파일 오류:\n  ${errors.join("\n  ")}`);
 		process.exit(1);
 	}
 	return {
+		runtime,
+		install_harness: a.install_harness === true,
 		identity,
 		owner_id: owner,
 		guild,
@@ -311,7 +388,8 @@ if (args[0] === "permissions") {
 const answersFile = opt("--answers");
 const a = validate(answersFile ? JSON.parse(readFileSync(answersFile, "utf8")) : await interactive());
 if (answersFile) {
-	await prepareAside(false, a.install_aside === true);
+	await prepareHarness(false, a.runtime, a.install_harness === true);
+	if (MAC) await prepareAside(false, a.install_aside === true);
 	await prepareZele(false, a.install_aside === true);
 }
 const split = (sel: string) => {
@@ -330,8 +408,8 @@ const config = {
 	identity: a.identity,
 	discord: { token_file: TOKEN_FILE.replace(HOME, "~"), owner_id: a.owner_id, guild: a.guild, ...(prior.discord?.app_id ? { app_id: prior.discord.app_id } : {}) },
 	web: { port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins },
-	orchestrator: { runtime: prior.orchestrator?.runtime ?? "omo", ...split(a.orchestrator_model), ...(prior.orchestrator?.rotate_tokens ? { rotate_tokens: prior.orchestrator.rotate_tokens } : {}) },
-	lanes: { runtime: prior.lanes?.runtime ?? "omo", ...split(a.lane_model), ...(prior.lanes?.max_active ? { max_active: prior.lanes.max_active } : {}) },
+	orchestrator: { runtime: a.runtime, ...split(a.orchestrator_model), ...(prior.orchestrator?.rotate_tokens ? { rotate_tokens: prior.orchestrator.rotate_tokens } : {}) },
+	lanes: { runtime: a.runtime, ...split(a.lane_model), ...(prior.lanes?.max_active ? { max_active: prior.lanes.max_active } : {}) },
 };
 writeFileSync(join(DIR, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 if (!existsSync(join(DIR, "state.json"))) writeFileSync(join(DIR, "state.json"), `${JSON.stringify({ open_tasks: [] }, null, 2)}\n`);
@@ -355,32 +433,21 @@ if (ompInstalled) {
 }
 
 const bun = (await Bun.$`which bun`.nothrow().quiet()).stdout.toString().trim() || join(HOME, ".bun", "bin", "bun");
-const binDir = async (bin: string) => ((await Bun.$`command -v ${bin}`.nothrow().quiet()).exitCode === 0 ? (await Bun.$`dirname "$(command -v ${bin})"`.nothrow().quiet()).stdout.toString().trim() : "");
-const omoDir = await binDir("omo"), ompDir = await binDir("omp");
-const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>${LABEL}</string>
-  <key>ProgramArguments</key><array><string>${bun}</string><string>${join(PKG, "hub", "main.ts")}</string></array>
-  <key>EnvironmentVariables</key><dict>
-    <key>HOME</key><string>${HOME}</string>
-    <key>PATH</key><string>${[omoDir, ompDir, join(HOME, ".bun", "bin"), join(HOME, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].filter(Boolean).join(":")}</string>
-    <key>DOTZ_DIR</key><string>${DIR}</string>
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>${join(DIR, "gateway.out.log")}</string>
-  <key>StandardErrorPath</key><string>${join(DIR, "gateway.err.log")}</string>
-</dict></plist>
-`;
-// Without --load an existing launch agent is left alone (a test run with --dir once pointed the live gateway's plist
-// at /tmp); the new plist goes into the data dir instead.
-const plistOut = !flag("--load") && existsSync(PLIST) ? join(DIR, `${LABEL}.plist`) : PLIST;
+// The service PATH reaches every installed harness CLI, whichever one config.json names now or later.
+const harnessDirs = (await detectHarnesses()).filter(d => d.found.path).map(d => dirname(d.found.path!));
+const plist = serviceFile({ home: HOME, bun, pkg: PKG, dir: DIR, pathDirs: harnessDirs });
+const kind = MAC ? "launchd" : "systemd";
+// Without --load an existing service file is left alone (a test run with --dir once pointed the live gateway's plist
+// at /tmp); the new file goes into the data dir instead.
+const plistOut = !flag("--load") && existsSync(PLIST) ? join(DIR, MAC ? `${LABEL}.plist` : UNIT) : PLIST;
 mkdirSync(dirname(plistOut), { recursive: true });
 writeFileSync(plistOut, plist);
-console.log(`launchd: ${plistOut}${flag("--load") ? "" : plistOut === PLIST ? " (not loaded; re-run with --load)" : " (existing launch agent kept; re-run with --load to install this one)"}`);
-if (flag("--load")) {
+console.log(`${kind}: ${plistOut}${flag("--load") ? "" : plistOut === PLIST ? " (not loaded; re-run with --load)" : " (existing service kept; re-run with --load to install this one)"}`);
+if (flag("--load") && !MAC) {
+	const r = await Bun.$`systemctl --user daemon-reload && systemctl --user enable --now ${UNIT} && systemctl --user restart ${UNIT}`.nothrow().quiet();
+	console.log(r.exitCode === 0 ? "systemd: gateway started (loginctl enable-linger $USER keeps it running after logout)" : `systemd: start failed: ${r.stderr.toString().trim()}`);
+}
+if (flag("--load") && MAC) {
 	const uid = process.getuid?.() ?? 501;
 	await Bun.$`launchctl bootout gui/${uid}/${LABEL}`.nothrow().quiet();
 	for (let i = 0; i < 20 && (await Bun.$`launchctl print gui/${uid}/${LABEL}`.nothrow().quiet()).exitCode === 0; i++) await Bun.sleep(500);
@@ -397,17 +464,20 @@ if (flag("--tailscale")) {
 	console.log(r.exitCode === 0 ? `tailscale: web app on port ${a.tailscale_https_port} (tailnet only)` : `tailscale serve failed: ${r.stderr.toString().trim()}`);
 }
 
-if (answersFile) {
+if (MAC && answersFile) {
 	console.log("macOS 권한 상태 (bun 이 launchd 로 도는 프로그램이라 bun 앞으로 묻고 허용돼요):");
 	printPermissions(bun, await checkPermissions(bun));
 	console.log("권한을 허용하려면 터미널에서 bun setup.ts permissions 를 실행하세요.");
-} else {
+} else if (MAC) {
 	console.log("\nmacOS 권한. 게이트웨이가 쓰는 권한을 지금 한 번에 허용해요 (나중에 bun setup.ts permissions 로 다시 할 수 있어요).");
 	await requestPermissions(bun, q => ask(q, "", false));
 }
 
 let provisioned = false;
-if (!existsSync(TOKEN_FILE) && a.guild && !flag("--no-discord-auto")) {
+// Bot provisioning drives the Aside browser; without the Aside CLI the owner pastes a token instead.
+const discordAuto = !flag("--no-discord-auto") && Boolean(Bun.which("aside", { PATH: process.env.PATH }));
+if (!existsSync(TOKEN_FILE) && a.guild && !discordAuto) console.log("discord: Aside CLI 가 없어서 봇을 자동으로 만들지 않아요. 개발자 포털에서 만든 봇 토큰을 setup 을 다시 실행해 붙여넣어 주세요.");
+if (!existsSync(TOKEN_FILE) && a.guild && discordAuto) {
 	const repl = new AsideRepl();
 	try {
 		await ensureBrowser();
@@ -437,7 +507,7 @@ if (token) {
 		// Every install runs the bot as server administrator; an older install invited with fewer rights is re-authorized.
 		if (a.guild && !(await isAdmin(token, a.guild))) {
 			const url = `https://discord.com/oauth2/authorize?client_id=${app.id}&scope=bot&permissions=${PERMISSIONS}&guild_id=${a.guild}&disable_guild_select=true`;
-			if (flag("--no-discord-auto")) console.log(`discord: 봇에 관리자 권한이 없어요. 이 주소로 다시 승인해 주세요: ${url}`);
+			if (!discordAuto) console.log(`discord: 봇에 관리자 권한이 없어요. 이 주소로 다시 승인해 주세요: ${url}`);
 			else {
 				const repl = new AsideRepl();
 				try {
@@ -455,5 +525,14 @@ if (token) {
 		console.log("discord: 개발자 포털 > Bot > Privileged Gateway Intents > MESSAGE CONTENT 가 켜져 있어야 해요.");
 	} else console.log(`discord: 토큰이 거절됐어요 (${me.status}). secrets/discord-bot-token 을 지우고 setup 을 다시 실행하세요.`);
 } else if (a.guild) console.log("discord: 아직 봇 토큰이 없어요. 웹 앱과 터미널로는 지금도 쓸 수 있어요.");
-if (flag("--load") && provisioned) await Bun.$`launchctl kickstart -k gui/${process.getuid?.() ?? 501}/${LABEL}`.nothrow().quiet();
-console.log(`\n끝! ${a.identity.name}는 OmO로 돌아가요.${a.guild ? ` 디스코드에서는 ${a.identity.name} 카테고리의 대화 채널에 말을 걸면 돼요.` : ""}${ompInstalled ? ` omp 터미널에서도 "${a.identity.name}모드 켜"라고 하면 그 터미널이 ${a.identity.name}와(과) 연결돼요.` : ""}`);
+if (flag("--load") && provisioned) {
+	if (MAC) await Bun.$`launchctl kickstart -k gui/${process.getuid?.() ?? 501}/${LABEL}`.nothrow().quiet();
+	else await Bun.$`systemctl --user restart ${UNIT}`.nothrow().quiet();
+}
+
+const webUrl = await tailnetUrl(a.tailscale_https_port);
+if (webUrl && a.allow_logins.length) console.log(`web: ${webUrl}${flag("--tailscale") ? "" : " (bun setup.ts --tailscale 로 테일넷에 열어요)"}`);
+if (!flag("--load")) console.log(`게이트웨이 시작: bun ${join(PKG, "setup.ts")} --load (또는 지금 창에서 ${DIR === join(HOME, ".dotz") ? "" : `DOTZ_DIR=${DIR} `}bun ${join(PKG, "hub", "main.ts")})`);
+if (flag("--open") && webUrl && a.allow_logins.length) await Bun.$`${MAC ? "open" : "xdg-open"} ${webUrl}`.nothrow().quiet();
+const runtimeLabel = harness(a.runtime)?.label ?? a.runtime;
+console.log(`\n끝! ${a.identity.name}는 ${runtimeLabel}로 돌아가요.${a.guild ? ` 디스코드에서는 ${a.identity.name} 카테고리의 대화 채널에 말을 걸면 돼요.` : ""}${ompInstalled ? ` omp 터미널에서도 "${a.identity.name}모드 켜"라고 하면 그 터미널이 ${a.identity.name}와(과) 연결돼요.` : ""}`);

@@ -15,12 +15,32 @@ omp is selected; the OmO equivalents are in "Runtime differences on OmO" further
 ## Install and onboard
 
 ```bash
-git clone <this repo> ~/Code/dotz
-cd ~/Code/dotz
-bun setup.ts --load --tailscale     # interactive; or --answers answers.json
+curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh                 # install, then the wizard
+curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh -s -- --service  # also start the gateway service
 ```
 
-The wizard (Korean) asks for the bot's name, character and tone (presets or your own line; Enter takes the default,
+`install.sh` (POSIX sh, macOS and Linux) installs bun when missing (bun.sh installer), installs OmO (`bun add -g --trust
+omo-ai`) unless `DOTZ_HARNESS` says otherwise or another harness is already there, downloads the code to
+`~/.local/share/dotz` (`DOTZ_HOME`), creates the data dir `~/.dotz` (`DOTZ_DIR`, nothing in it but what the wizard writes)
+and runs the wizard on the terminal (`/dev/tty`, so it works under `curl | sh`). Source: the GitHub tarball of
+`DOTZ_REPO` (default `ddotz/dotz`) at `DOTZ_REF` (default `main`); while the repo is private it uses `GITHUB_TOKEN` /
+`GH_TOKEN` or an existing `gh` login; `DOTZ_TARBALL` (https URL, `file://` or a path) replaces GitHub. Running it again
+is the upgrade: the code is replaced, the data dir kept, the wizard skipped (`--setup` runs it) and the gateway
+restarted when its service runs this copy. `--uninstall` removes the code and the service (only a service file that runs
+this copy; a gateway from another checkout is never touched), `--purge` the data dir too. Other options:
+`--answers FILE`, `--tailscale`, `--no-open`, `--no-service`, `--no-setup`, `--yes`. From a checkout:
+`bun setup.ts --load --tailscale --open` (interactive; or `--answers answers.json`).
+
+The wizard's first step is the harness: it lists OmO, omp, Claude Code and Codex with their install state, takes OmO
+by default (Codex is listed but has no adapter yet), installs OmO with bun when it is the pick and missing, and checks
+the login without reading credentials (`omo auth check --json`: an account pool with at least one account counts as
+signed in; `claude auth status`). Sign-in itself happens in the harness (`omo`, then `/login`; another `/login` adds an
+account to the pool). The pick is written to `orchestrator.runtime` and `lanes.runtime`; `--answers` takes `runtime`
+(`omo` | `omp` | `claude`) and `install_harness: true`. Tailscale is optional: without it the web app stays off and
+Discord and terminals work. On Linux setup writes a systemd user unit (`~/.config/systemd/user/dotz-gateway.service`)
+instead of the launchd plist and skips the Aside and macOS-permission steps.
+
+The wizard (Korean) then asks for the bot's name, character and tone (presets or your own line; Enter takes the default,
 the short casual-polite tone of the 오모냥 secretary), the notice style, what the bot calls you (optional; empty = no
 title at all) and an optional avatar, then Discord and web access. The identity
 lands in `~/.dotz/identity/IDENTITY.md` and drives everything: how the bot talks, its Discord username/avatar, the
