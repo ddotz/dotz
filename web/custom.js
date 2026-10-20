@@ -234,7 +234,7 @@ a.cu-li:hover .cu-lt { color: var(--accent); }
       return;
     }
     if (same(root, JSON.stringify(p))) return;
-    clear(head).append(p.path ? el("div", { class: "cu-m", text: p.path }) : null, p.channel ? el("div", { class: "cu-m", text: `#${p.channel.name}` }) : null, p.note ? el("div", { class: "cu-m", text: p.note }) : null);
+    clear(head).append(...[p.path ? el("div", { class: "cu-m", text: p.path }) : null, p.channel ? el("div", { class: "cu-m", text: `#${p.channel.name}` }) : null, p.note ? el("div", { class: "cu-m", text: p.note }) : null].filter(Boolean));
     const ls = p.lanes || [];
     clear(lanes).append(ls.length
       ? el("div", { class: "list" }, ...ls.map(l => el("button", { class: "cu-r", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
