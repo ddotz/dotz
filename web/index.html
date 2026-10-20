@@ -4167,6 +4167,16 @@ async function loadQuota() {
     grid.append(card);
   }
   if (grid.children.length) box.append(grid);
+  // The one Claude account the assistant and its lanes run on, and every switch with its reason (hub/account-sticky.ts).
+  if (q.account && q.account.account) {
+    const A = q.account, KIND = { start: "처음 선택", limit: "한도", owner: "직접 변경", gone: "계정 사라짐" };
+    box.append(el("div", { class: "sec", text: "사용 계정" }));
+    box.append(el("div", { class: "list" },
+      el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: A.account }), el("div", { class: "sup", text: `${A.since ? `${kstStamp(Date.parse(A.since))}부터 · ` : ""}한도에 걸리거나 직접 바꾸기 전에는 이 계정을 계속 써요` })),
+      ...(A.switches || []).map(s => el("div", { class: "li", style: "display:block" },
+        el("div", { class: "hd", text: `${s.from ? `${s.from} → ` : ""}${s.to} · ${KIND[s.kind] || s.kind}` }),
+        el("div", { class: "sup", text: `${kstStamp(Date.parse(s.at))} · ${s.reason}` })))));
+  }
   if ((q.unavailable || []).length) {
     box.append(el("div", { class: "sec", text: "정보 없음" }));
     box.append(el("div", { class: "list" }, ...q.unavailable.map(u => el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: providerName(u.provider) }), el("div", { class: "sup", text: u.reason })))));

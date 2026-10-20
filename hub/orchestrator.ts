@@ -634,6 +634,20 @@ export function applyModelChange(): "restarted" | "next-start" {
 	return "restarted";
 }
 
+// dotz's Claude account changed (hub/account-sticky.ts: a limit, or the owner pinned another): the process takes it at
+// its next start, now when idle, after the running turn otherwise. No keepalive pings until the next real turn: a ping
+// right after a switch would pay the whole prefix on the new account for nothing (2 of the 4 switches of 2026-10-20 did).
+export function applyAccountChange(): "restarted" | "after-turn" | "next-start" {
+	keepalives = KEEPALIVE_MAX;
+	if (!proc) return "next-start";
+	if (orch.status !== "idle") {
+		pendingRestart = true;
+		return "after-turn";
+	}
+	restart();
+	return "restarted";
+}
+
 export function abort(): void {
 	if (!proc) throw new Error("the orchestrator is not running");
 	proc.abort();
