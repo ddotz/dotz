@@ -262,7 +262,7 @@ button.pv-res:hover { background: var(--card-hover); }
       }
       const badge = waiting ? el("span", { class: "dot att", title: `답을 기다리는 세션 ${waiting}` }) : running ? el("span", { class: "pv-cnt", title: `작업 중인 세션 ${running}`, text: String(running) }) : null;
       return el("button", { class: `${base}${on ? " on" : ""}`, type: "button", title: p.path || p.name, onclick: () => go("project", p.key) },
-        icon("lanes"), el("span", { class: nm, text: p.name }), badge);
+        icon("projects"), el("span", { class: nm, text: p.name }), badge);
     });
     const routines = (D.routines || []).map(r => {
       const b = el("button", { class: "ib", type: "button", "aria-label": `${r.name} 실행`, title: "지금 실행" }, icon("send"));
