@@ -101,3 +101,17 @@ test("on a host without zod (OmO) every orchestrator and lane tool registers: a 
 	expect(await load("DOTZ_ORCHESTRATOR")).toEqual(expect.arrayContaining(["dotz_send", "dotz_lane", "dotz_schedule", "dotz_watch", "dotz_verify"]));
 	expect(await load("DOTZ_LANE")).toContain("dotz_verify");
 });
+
+test("light profile: tools dotz never uses are left out (goal loop, html viewer; the orchestrator also lsp, workpool, pty resize); every tool dotz relies on stays", () => {
+	const excluded = (role: "orchestrator" | "lane") => {
+		const args = omoArgs({ role, cwd: "/tmp", model: "anthropic/claude-opus-5-5:medium", env: {} });
+		return args.includes("--exclude-tools") ? args[args.indexOf("--exclude-tools") + 1]!.split(",") : [];
+	};
+	expect(excluded("lane")).toEqual(["create_goal", "get_goal", "update_goal", "show_html_page"]);
+	expect(excluded("orchestrator")).toEqual(["create_goal", "get_goal", "update_goal", "show_html_page", "lsp_diagnostics", "lsp_find_references", "lsp_goto_definition", "lsp_prepare_rename", "lsp_rename", "lsp_symbols", "workpool", "bash_resize"]);
+	for (const role of ["orchestrator", "lane"] as const)
+		for (const kept of ["task", "task_output", "task_send", "task_cancel", "memory", "eval", "edit", "write", "Read", "todo", "web_search", "webfetch", "tool_search", "bash_output", "bash_input", "kill_bash"]) expect(excluded(role)).not.toContain(kept);
+	expect(excluded("lane")).not.toContain("lsp_diagnostics");
+	expect(excluded("lane")).not.toContain("workpool");
+});
+
