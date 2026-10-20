@@ -4594,7 +4594,7 @@ function rtFlow(r) {
   const roleBar = () => el("div", { class: "rt-roles" }, el("span", { class: "sup", text: "적용 대상" }),
     el("div", { class: "seg", role: "group" }, ...Object.entries(RT_ROLE).map(([k, v]) => el("button", { type: "button", class: roles.has(k) ? "on" : "", "aria-pressed": roles.has(k) ? "true" : "false", text: v, onclick: () => { roles.has(k) ? roles.delete(k) : roles.add(k); paint(); } }))));
   async function check() {
-    try { await api(`/api/runtimes/${r.id}/verify`, "POST", {}); } catch (e) { toast(e.message, true); return; }
+    try { await api(`/api/runtimes/${r.id}/verify`, "POST", { real: true }); } catch (e) { toast(e.message, true); return; }
     checking = true; st = { running: true, done: 0, total: 0 }; rtLive = pull; clearInterval(timer); timer = setInterval(pull, 1000); paint();
   }
   function paint() {

@@ -13,6 +13,20 @@ export type ProbeStart = (o?: { model?: string; resume?: string; env?: Record<st
 const fail = (note: string): ProbeOutcome => ({ result: "fail", note });
 const ok = (note: string): ProbeOutcome => ({ result: "ok", note });
 
+// Real probe processes cost a paid session each (2026-10-20: 197 throwaway sessions, $11.4, most from probe scripts run
+// by hand and repeated runtime checks). They start only inside a check the owner asked for (verifyRuntime with real) or
+// a deliberate end-to-end run (DOTZ_E2E=1); anything else gets an error before a process exists.
+let realDepth = 0;
+export const realProbesAllowed = (): boolean => realDepth > 0 || process.env.DOTZ_E2E === "1";
+export async function withRealProbes<T>(fn: () => Promise<T>): Promise<T> {
+	realDepth++;
+	try {
+		return await fn();
+	} finally {
+		realDepth--;
+	}
+}
+
 // One probe process with everything it emitted, so a probe can wait for an event after the moment it sent something.
 export class Run {
 	readonly events: AgentEvent[] = [];
@@ -20,6 +34,7 @@ export class Run {
 	private waiters: { pred: (e: AgentEvent) => boolean; from: number; resolve: (e: AgentEvent | undefined) => void }[] = [];
 	private closed = false;
 	constructor(adapter: RuntimeAdapter, ctx: ProbeCtx, id: string, o: { model: string; resume?: string; env?: Record<string, string>; fallback?: string[] }) {
+		if (!realProbesAllowed()) throw new Error("real runtime probes start only in a requested runtime check (POST /api/runtimes/<id>/verify {real:true}) or with DOTZ_E2E=1");
 		this.proc = adapter.start({
 			role: "lane",
 			cwd: ctx.cwd,

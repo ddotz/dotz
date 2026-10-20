@@ -310,7 +310,8 @@ All behind the same auth as the rest of `/api`.
 - `GET /api/models`, `PUT /api/models {target: "orchestrator"|"lanes"|"workers"|"lane:<name>", model?, thinking?, force?}`; `GET /api/models` also carries `fallbacks: {max, orchestrator|lanes|workers: {chain: [entry + used?/down?], hub_driven, active: [model ids answering now]}}`; `PUT /api/fallbacks {target: "orchestrator"|"lanes"|"workers", chain: [model | {model, when?, cap?, revert?, key_file?}]}` replaces one chain (validated against the model catalog; applies at the next process start)
 - Agent runtime selection (설정 > 실행 하네스): `GET /api/runtimes` -> `{current: {orchestrator, lanes}, checklist, runtimes: [{id, label, installed, version?, path?, hasAdapter, usable, reason?, roles, report: {at, version, verdict, counts}|null, state, switchable, refusal}]}`
   for `omo`, `omp`, `claude`, `codex` (`?refresh=1` re-detects); `GET /api/runtimes/<id>` -> `{report, state}` (full last report
-  and the running check's progress); `POST /api/runtimes/<id>/verify` starts the compatibility check in the background (202, poll the
+  and the running check's progress); `POST /api/runtimes/<id>/verify {real: true}` starts the compatibility check in the background (each run starts ~14 paid
+  sessions, so without `real: true` it answers 400 with the last report; probe processes outside a check need `DOTZ_E2E=1`; 202, poll the
   GET; progress also streams as `{kind: "runtime_check"}` on `/api/events`); `POST /api/runtimes/<id>/use {roles?: ["orchestrator","lanes"]}`
   writes `orchestrator.runtime` / `lanes.runtime` to `config.json` and answers 409 with `{error}` when the runtime is not installed or has no
   dotz adapter, has no report, its verdict is `blocked`, or the report was made for another version. `omo` (the default) is
@@ -419,6 +420,12 @@ step. The provider list comes from `omp auth-broker list`, not from this repo. O
 Logout runs `omp auth-broker logout <provider>` (deletes the provider's credentials from omp's store) and removes the
 key saved through the gateway. Keys supplied through the gateway's own environment variables cannot be removed here.
 Running orchestrator and lane processes keep their loaded token until they restart.
+
+Throwaway sessions stay off the live gateway (`hub/live-guard.ts`): a gateway on a temp data dir (or `DOTZ_DRY_RUN=1`) does not
+connect to Discord, and an orchestrator or lane process the live gateway did not start (its parent is not `hub.pid`), a runtime
+probe, or a `DOTZ_DRY_RUN=1` session writes its gateway calls to `$TMPDIR/dotz-dry-run.jsonl` instead of sending them and may not
+write into the live data dir. `DOTZ_ALLOW_LIVE=1` lets a deliberate end-to-end run through. The Claude account the orchestrator
+and lanes run on is kept by `hub/account-sticky.ts` (switches and their reasons: `account-switches.jsonl`, usage screen).
 
 ## Updating a running gateway
 

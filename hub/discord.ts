@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { basename, dirname, join } from "node:path";
 import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
 import { msg } from "./i18n.ts";
+import { gatewayDryRun } from "./live-guard.ts";
 import { threadForReply, threadTitle } from "./threads.ts";
 import { metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
@@ -34,7 +35,9 @@ export function setChannelGoneHandler(fn: (id: string) => void): void {
 	onGone = fn;
 }
 const save = () => writeAtomic(paths.channels, `${JSON.stringify(channels, null, 2)}\n`);
-export const status = { enabled: Boolean(TOKEN && GUILD && OWNER), connected: false, user: "", error: "" };
+// A gateway on a temp data dir (a test or a copy, hub/live-guard.ts) never connects, even with a real token in its config.
+export const dryRunReason = gatewayDryRun(DATA_DIR);
+export const status = { enabled: Boolean(TOKEN && GUILD && OWNER && !dryRunReason), connected: false, user: "", error: dryRunReason ? `dry run: ${dryRunReason}` : "" };
 
 // Discord lowercases text channel names and turns spaces into dashes; compare in that form.
 const textName = (s: string) => s.toLowerCase().replace(/\s+/g, "-");

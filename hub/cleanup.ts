@@ -16,6 +16,8 @@ import { writeAtomic } from "./config.ts";
 const DAY = 86_400_000;
 const TEMP_CWD = /^\/(private\/)?(tmp|var\/folders)\//;
 const MKDTEMP_CWD = /^\/(private\/)?var\/folders\//;
+// A mkdtemp folder's sessions are a script's or a probe's, never resumed: gone after an idle hour, not a day.
+export const MKDTEMP_IDLE_MS = 3600_000;
 
 export const sessionDirs = (): string[] => [
 	join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "sessions"),
@@ -99,7 +101,7 @@ export function pruneTempSessions(sessionsDir: string, minIdleMs: number, now = 
 		if (!statSync(dir).isDirectory()) continue;
 		const cwd = sessionCwd(dir);
 		if (!cwd || !TEMP_CWD.test(cwd) || (!MKDTEMP_CWD.test(cwd) && existsSync(cwd))) continue;
-		if (now - newestMtime(dir) < minIdleMs) continue;
+		if (now - newestMtime(dir) < (MKDTEMP_CWD.test(cwd) ? Math.min(minIdleMs, MKDTEMP_IDLE_MS) : minIdleMs)) continue;
 		const size = sizeKb(dir);
 		rmSync(dir, { recursive: true, force: true });
 		removed.push(name);
