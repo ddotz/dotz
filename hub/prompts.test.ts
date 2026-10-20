@@ -50,6 +50,14 @@ test("a steered message answered with dotz_send reply_to is not delivered again,
 	expect(state.delivered).toEqual(["first"]);
 });
 
+test("a harness reminder injected mid-turn does not drop the turn's answer", async () => {
+	const { q, state, startTurn } = setup();
+	startTurn("fix it", { target: "web" });
+	q.onPrompt("<system-reminder>Detached eval cell x (js) completed.</system-reminder>");
+	q.onAnswer("fixed");
+	expect(state.posts).toEqual([{ target: "web", text: "fixed", replyTo: undefined }]);
+});
+
 test("restart replay skips messages the outbox log shows as answered", () => {
 	const { q, state } = setup(["old1"]);
 	const n = q.replay(
