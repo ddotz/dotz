@@ -123,7 +123,7 @@ export function eventTarget(e: HubEvent): string | undefined {
 
 // Last HISTORY_TAIL bytes of a jsonl file, parsed; a cut first line is dropped.
 const HISTORY_TAIL = 4 * 1024 * 1024;
-function tailEvents(file: string): HubEvent[] {
+export function tailEvents(file: string): HubEvent[] {
 	if (!existsSync(file)) return [];
 	const size = statSync(file).size;
 	const start = Math.max(0, size - HISTORY_TAIL);
