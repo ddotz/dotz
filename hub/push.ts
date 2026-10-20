@@ -8,7 +8,7 @@ import { type HubEvent, onEmit } from "./events.ts";
 import { parseTone } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
 
-export const PUSH_KINDS = ["answer", "ask", "lane", "usage"] as const;
+export const PUSH_KINDS = ["answer", "ask", "lane", "usage", "update"] as const;
 export type PushKind = (typeof PUSH_KINDS)[number];
 type Prefs = Record<PushKind, boolean>;
 type Stored = Subscription & { prefs: Prefs; ua?: string; at: string };
@@ -18,7 +18,7 @@ const KEY_FILE = join(DATA_DIR, "secrets", "vapid.json");
 const SUBS_FILE = join(DATA_DIR, "push.json");
 const PRESENCE_MS = 60_000;
 const DEDUPE_MS = 10 * 60_000;
-const defaults = (): Prefs => ({ answer: true, ask: true, lane: true, usage: true });
+const defaults = (): Prefs => ({ answer: true, ask: true, lane: true, usage: true, update: true });
 
 let keys: VapidKeys | undefined;
 function vapid(): VapidKeys {
