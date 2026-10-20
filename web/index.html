@@ -577,6 +577,26 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 @media (max-width: 639px) { .sheet { width: 100vw; border-left: 0; } .sh-body { padding: 12px; } }
 .tl-in > .a-div { margin: 0; }
 
+/* home: '답 필요' and '지금 진행 중' lists (one row per target: dot, name, one-line activity, worker n/m, status) */
+.hn-h { display: flex; align-items: baseline; gap: 8px; margin: 4px 4px 10px; }
+.hn-h h2 { margin: 0; font: 700 18px/26px var(--font); letter-spacing: -.02em; }
+.hn-h .sup { color: var(--fg-3); }
+.hn + .hn-h { margin-top: 24px; }
+.hn { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.hr { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
+.hr + .hr { box-shadow: inset 0 1px 0 var(--line); }
+.hr:hover { background: var(--card-hover); }
+.hr .dot { width: 10px; height: 10px; }
+.hr .hb { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hr .hn1 { display: flex; align-items: center; gap: 8px; min-width: 0; font: 600 15px/22px var(--font); }
+.hr .hn1 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr .ha { min-width: 0; color: var(--fg-2); font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr .hp { flex: none; color: var(--fg-3); font-size: 12.5px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.hr .hs { flex: none; min-width: 44px; text-align: right; color: var(--fg-2); font-size: 13px; font-weight: 500; }
+.hr .hs.pri { color: var(--accent); } .hr .hs.warn { color: var(--warn); } .hr .hs.err { color: var(--err); }
+.hn .empty { padding: 18px 16px; text-align: left; font-size: 13px; color: var(--fg-3); }
+#home-sec { margin-top: 28px; }
+
 /* lanes board */
 #v-lanes { max-width: none; }
 .lboard { display: flex; flex-direction: column; gap: 12px; }
@@ -883,7 +903,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
     </header>
     <div class="gban" id="gban" role="status" hidden><span class="dot" id="gban-dot"></span><span class="tx" id="gban-tx"></span><button class="x" id="gban-x" type="button" aria-label="재시작 알림 닫기">×</button></div>
     <div class="views" id="views">
-      <section class="view" id="v-home" hidden><div id="home"></div></section>
+      <section class="view" id="v-home" hidden><div id="home-now"></div><div class="sec" id="home-sec">상태</div><div id="home"></div></section>
       <section class="view fill" id="v-chat" hidden>
         <div class="thead" data-mode="chat"></div>
         <div class="subs" hidden></div>
@@ -1862,9 +1882,48 @@ function homeRow(e) {
 }
 // Every item is its own floating card (the assistant, each running lane, each context process, each usage limit, each provider),
 // except kinds the owner bundled: those share one card with a row per item.
+// The newest meaningful line of what a target is doing: its loaded activity, else the lane's last fetched line, else its last text.
+function nowLine(t) {
+  const acts = ts(t).acts;
+  for (let i = acts.length - 1; i >= 0 && i >= acts.length - 40; i--) { const s = actLine(acts[i]); if (s) return s; }
+  if (isLaneT(t) && LAST[laneOf(t)]) return LAST[laneOf(t)];
+  const l = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null, last = t === MAIN ? (S && S.orchestrator && S.orchestrator.lastText) : l && l.lastText;
+  return last ? oneLine(parseTone(String(last)).text) : "";
+}
+function askOf(t) {
+  if (!isLaneT(t) || !S) return false;
+  const l = S.lanes.find(x => x.name === laneOf(t));
+  return !!(l && l.lastText && parseTone(String(l.lastText)).tone === "ask" && l.status !== "working");
+}
+function homeNowRow(t, label, tone) {
+  const i = targetInfo(t), subs = SUBS[sourceOf(t)] || [], done = subs.filter(s => s.status !== "running").length;
+  const lane = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null;
+  const line = nowLine(t) || modelChipText(t === MAIN ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model) || (i.alive ? statusKo(i.status) : "종료됨");
+  return el("button", { class: "hr", type: "button", onclick: () => openTarget(t, lastChatView()), "aria-label": `${targetName(t)} · ${label}` },
+    el("span", { class: `dot ${tone === "att" ? "att" : statusTone(i.status)}` }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: targetName(t) })), el("span", { class: "ha", text: line })),
+    subs.length ? el("span", { class: "hp", title: "워커 끝난 수 / 전체", text: `워커 ${done}/${subs.length}` }) : null,
+    el("span", { class: `hs ${tone === "att" ? "warn" : statusTone(i.status)}`, text: label }));
+}
+function renderHomeNow() {
+  const box = $("#home-now");
+  if (!box) return;
+  const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
+  const need = all.map(t => ({ t, k: askOf(t) ? "ask" : attnKind(t) })).filter(x => x.k);
+  const NEED = { ask: "답 필요", done: "결과 확인", limit: "한도 제한" };
+  const rank = t => ({ working: 0, starting: 1, "rate-limited": 2 })[targetInfo(t).status] ?? 3;
+  const run = [...all].sort((a, b) => rank(a) - rank(b));
+  const working = run.filter(t => rank(t) < 2).length;
+  clear(box).append(
+    el("div", { class: "hn-h" }, el("h2", { text: "형 답 필요" }), need.length ? el("span", { class: "sup", text: `${need.length}` }) : null),
+    el("div", { class: "hn" }, ...(need.length ? need.map(x => homeNowRow(x.t, NEED[x.k], "att")) : [el("div", { class: "empty", text: "기다리는 것 없어요" })])),
+    el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
+    el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", ""))));
+}
 function renderHome() {
   const box = $("#home");
   if (!box || current !== "home") return;
+  renderHomeNow();
   if (openMenu && box.contains(openMenu.anchor)) return;   // a ⋯ menu is open: repaint after it closes
   $("#title").textContent = botName;
   if (!homeBoard) homeBoard = makeBoard(box, "home");
