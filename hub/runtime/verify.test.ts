@@ -85,8 +85,7 @@ test("use: an ok report writes the runtime keys and keeps the rest of config.jso
 	const disk = await Bun.file(join(DATA_DIR, "config.json")).json();
 	expect(disk.orchestrator.runtime).toBe("claude");
 	expect(disk.lanes.runtime).toBe("claude");
-	expect(disk.orchestrator.model).toBe(before.orchestrator.model);
-	expect(disk.lanes.worker_model).toBe(before.lanes.worker_model);
+	expect(disk.models).toEqual(before.models);
 	expect(disk.discord).toEqual(before.discord);
 	await useRuntime("omp", ["orchestrator", "lanes"]);
 	expect((await Bun.file(join(DATA_DIR, "config.json")).json()).orchestrator.runtime).toBe("omp");

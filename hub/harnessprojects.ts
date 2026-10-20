@@ -101,8 +101,8 @@ function buildProject(lane: Lane, chans: Chan[], ctx: { disk: Record<string, any
 		worker_model: field(ownWorker?.model, wm.model),
 		worker_effort: field(ownWorker?.thinking, wm.thinking),
 		runtime: field(laneRuntime, runtimeGlobal),
-		fallback: field<Fallback[] | undefined>(undefined, fallbackChain(disk.lanes?.fallback)) as Field<Fallback[]>,
-		worker_fallback: field<Fallback[] | undefined>(undefined, fallbackChain(disk.lanes?.worker_fallback)) as Field<Fallback[]>,
+		fallback: field<Fallback[] | undefined>(undefined, fallbackChain(disk.models?.lanes?.fallback)) as Field<Fallback[]>,
+		worker_fallback: field<Fallback[] | undefined>(undefined, fallbackChain(disk.models?.workers?.fallback)) as Field<Fallback[]>,
 	};
 	const overrides = Object.values(fields).filter(f => f.source === "project").length;
 
@@ -125,7 +125,7 @@ function buildProject(lane: Lane, chans: Chan[], ctx: { disk: Record<string, any
 		({ key: `lane:${lane.name}:${key}`, label: text.label, value: f.value, type, editable: true, applies, source: `lane ${lane.name}`, default: f.global ?? f.value, ...(text.hint ? { hint: text.hint } : {}), ...extra });
 	const effortOptions = THINKING_LEVELS.map(v => ({ value: v, label: v }));
 	const globalNode = (n: HarnessNode, extraFacts: HarnessNode["facts"] = []): HarnessNode => ({ ...n, facts: [...n.facts, ...extraFacts, { label: n.label, value: P.globalNote }], settings: [], custom: undefined, origin: undefined, fileMeta: undefined });
-	const orchFallback = fallbackChain(disk.orchestrator?.fallback);
+	const orchFallback = fallbackChain(disk.models?.orchestrator?.fallback);
 
 	const inputs: HarnessNode[] = chans.filter(c => c.kind !== "thread").map(c => {
 		const s = ctx.setups.find(x => x.channel === c.id);

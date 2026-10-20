@@ -102,14 +102,18 @@ name are answered by the gateway itself and never reach the orchestrator; unknow
 | `/help`, `/status`, `/lanes` | commands, orchestrator/lane/Discord state (with context usage and compaction state), lane list |
 | `/context` | per process (orchestrator and every lane): context tokens, context window, percent, compaction state |
 | `/compact <orchestrator\|<lane>>` | compact that process's context; queued after the current turn if it is working |
-| `/model [orchestrator\|lanes\|workers\|<lane>] [<model>] [<thinking>] [--force]` | show or set model and thinking level; a model may be a unique part of its name; `workers` sets `lanes.worker_model` |
+| `/model [orchestrator\|lanes\|workers\|<lane>] [<model>] [<thinking>] [--force]` | show or set model and thinking level; a model may be a unique part of its name; `workers` sets `models.workers` |
 | `/effort <target> <level> [--force]` | thinking level: off, minimal, low, medium, high, xhigh, max, auto |
 | `/restart gateway\|orchestrator\|<lane>`, `/stop <lane>`, `/resume <lane> [text]`, `/abort [orchestrator\|<lane>]` | process control (restart and resume keep the session; `gateway` waits until the orchestrator and lanes are idle, at most 20 min) |
 | `/providers`, `/quota` | logins and keys (masked) plus providers you can add, usage limits per provider and model window |
 | `/login [<provider>]`, `/login <provider> <code or redirect URL>`, `/login cancel`, `/logout <provider>` | sign in (prints a link; the second form finishes a login opened on another device), cancel a pending login, sign out |
 
-Model changes: `orchestrator`, `lanes` and `workers` are saved in `~/.dotz/config.json` (`orchestrator.{model,thinking}`,
-`lanes.{model,thinking}`, `lanes.worker_model`). The orchestrator restarts on a new model or level (immediately when
+Model changes: `orchestrator`, `lanes` and `workers` are saved in `~/.dotz/config.json` under one block,
+`models.<target>.{model,thinking,fallback}` (an older file's `orchestrator.{model,thinking,fallback}`,
+`lanes.{model,thinking,fallback,worker_model,worker_fallback}` are moved there on the next start, the old file kept as
+`config.json.bak-models-<time>`). The web UI edits a target's model, effort and fallback order on one screen (설정 →
+모델 · 폴백; the composer's model chip links to it), and `PUT /api/models {target, model?, thinking?, fallback?}` takes
+the same three. The orchestrator restarts on a new model or level (immediately when
 idle, after the running turn otherwise) as a fresh session with a handover, and its next turn re-writes the prompt
 cache prefix at about 2x input cost; the handover drops the old context instead of re-caching it, so no `--force` is
 needed. `lanes` applies to lanes launched afterwards (free, no confirmation); `<lane>` is saved on that lane and
@@ -130,20 +134,21 @@ it. The API (`PUT /api/models`) answers 409 `{requires_force: true, context_toke
 Compaction rewrites the conversation into a summary, so the prompt cache is re-written once on the next turn.
 
 **Lane worker model.** A lane plans and reviews on its own model and delegates implementation, tests, renders and grind
-work to task workers on a cheaper model: `lanes.worker_model` in `config.json` (default
+work to task workers on a cheaper model: `models.workers` in `config.json` (default
 `anthropic/claude-sonnet-5-5:high`; `/model workers <model> [<thinking>]` or the web UI's model page writes it). At
 every lane start or resume the gateway writes `~/.dotz/lanes/<name>/omp-overlay.yml` (`modelRoles.task` plus
 `task.agentModelOverrides` for `task` and `scout` set to `@task`) and starts omp with `--config=<that file>`. The
-`dotz_lane` launch tool takes an optional `worker_model` that is stored on the lane and wins over `lanes.worker_model`.
+`dotz_lane` launch tool takes an optional `worker_model` that is stored on the lane and wins over `models.workers`.
 The lane brief contract tells the lane to review a worker's diff itself before applying it. A running lane keeps its
 process's overlay until it restarts.
 
 **Model fallback chains.** When a model fails at request time (usage limit, outage), the next model of a chain takes
-over. Three chains, each a list in `config.json`: `orchestrator.fallback`, `lanes.fallback` (every lane's own model)
-and `lanes.worker_fallback` (the lanes' task workers); an entry is a model selector (`provider/id[:thinking]`, the
+over. Three chains, each a list in `config.json`: `models.orchestrator.fallback`, `models.lanes.fallback` (every lane's own
+model) and `models.workers.fallback` (the lanes' task workers); an entry is a model selector (`provider/id[:thinking]`, the
 thinking level of the failing turn when omitted). They apply the next time a process starts and are edited on the web
-UI's settings tab ("모델 폴백": drag an item or use its arrow buttons to reorder, "모델 추가" picks from the model
-catalog, the model answering now is filled and marked "사용 중") or with `PUT /api/fallbacks {target, chain}`. A chain of
+UI's 모델 · 폴백 screen (under each target's model and effort: drag an item or use its arrow buttons to reorder, "모델
+추가" picks from the model catalog the target's harness can run, the model answering now is marked "사용 중") or with
+`PUT /api/models {target, fallback}` (`PUT /api/fallbacks {target, chain}` still works). A chain of
 bare models is walked by omp itself: the gateway writes `retry.fallbackChains` into the orchestrator's
 `omp-orchestrator-overlay.yml` / each lane's `omp-overlay.yml` (keyed by the exact primary model, and by role `task`
 for the workers; omp uses the exact key before a role, so a lane whose own model equals its worker model gets one chain
@@ -335,7 +340,7 @@ All behind the same auth as the rest of `/api`.
   its snapshot budget) gets in-place workers. Probe: `workers_isolated_patch`.
 - *Lane worker model*: OmO task workers take their model from OmO's categories (`omo.json`), so each lane spawn writes
   `profiles.dotz-workers-<model>` into `~/.omo/omo.json` (every category on the lane's worker model, then
-  `lanes.worker_fallback`) and starts the lane with `OMO_PROFILE` naming it; the owner's own OmO sessions, which set no
+  `models.workers.fallback`) and starts the lane with `OMO_PROFILE` naming it; the owner's own OmO sessions, which set no
   profile, keep their categories. With an `omo.jsonc` dotz writes nothing and the workers keep OmO's categories.
 - *Memory*: no omp memory; durable facts go to RULES.md / LESSONS.md / state.json (MODE.md).
 - *Still omp-only*: the budget gate on spawns and the Anthropic quota numbers (`omp usage`), provider login (`omp auth`), the
@@ -380,8 +385,8 @@ vertically). `GET /api/harness` carries them as `projects: [...]`, one per such 
 with neither is not a project). Each entry has `id` (the lane name), `name`, `status`, `channels: [{id, name, kind:
 work|home|thread}]`, `cwd` (+ `repo`/`branch` for a worktree lane), `fields` = `{model, effort, worker_model, worker_effort,
 runtime, fallback, worker_fallback}` where every field is `{value, source: "global"|"project", global?}` (`global` only
-when the project differs; fallback values are `[{model, when?, cap?, revert?}]` read from `lanes.fallback` /
-`lanes.worker_fallback`; `runtime` is the global `lanes.runtime`/`runtime`/omp unless the lane state carries `runtime`),
+when the project differs; fallback values are `[{model, when?, cap?, revert?}]` read from `models.lanes.fallback` /
+`models.workers.fallback`; `runtime` is the global `lanes.runtime`/`runtime`/omp unless the lane state carries `runtime`),
 `overrides` (how many fields differ), `files` (instruction files found in the lane folder: `AGENTS.md`, `CLAUDE.md`,
 `GEMINI.md`, `.cursorrules`, `CONVENTIONS.md`, `.github/copilot-instructions.md` and the entries of `.omp/`: name, size,
 mtime, first heading only, never content), `setup` (the channel's purpose, login names and health, monitors, standing

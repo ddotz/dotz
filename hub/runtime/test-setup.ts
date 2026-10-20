@@ -31,8 +31,8 @@ writeFileSync(
 		identity: { name: "tester", language: "en", timezone: "Asia/Seoul" },
 		discord: { token_file: join(dir, "missing-token"), owner_id: "1", guild: "1" },
 		web: { port: 47999, tailscale_https_port: 0, allow_logins: [] },
-		orchestrator: { model: "anthropic/test-orch", thinking: "low" },
-		lanes: { model: "anthropic/test-lane", thinking: "medium", worker_model: "anthropic/test-worker:high", compact_at: 300000, keep_recent: 30000 },
+		lanes: { compact_at: 300000, keep_recent: 30000 },
+		models: { orchestrator: { model: "anthropic/test-orch", thinking: "low" }, lanes: { model: "anthropic/test-lane", thinking: "medium" }, workers: { model: "anthropic/test-worker", thinking: "high" } },
 	}),
 );
 installClock();

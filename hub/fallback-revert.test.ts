@@ -57,7 +57,8 @@ class FakeProc {
 
 const patchable = Bun as unknown as { spawn: unknown };
 const realSpawn = Bun.spawn;
-const savedCfg = { orchestrator: cfg.orchestrator, lanes: cfg.lanes };
+const savedCfg = { orchestrator: cfg.orchestrator, lanes: cfg.lanes, models: cfg.models };
+const orchModel = { model: "anthropic/test-orch", thinking: "low" };
 const alerts: string[] = [];
 const notices: string[] = [];
 const laneNotices: string[] = [];
@@ -103,7 +104,8 @@ async function startOrchestrator(): Promise<void> {
 	writeFileSync(session, "");
 	writeFileSync(join(DATA, "orchestrator.json"), JSON.stringify({ sessionFile: session, model: "anthropic/test-orch:low" }));
 	resetFallbackState();
-	cfg.orchestrator = { model: "anthropic/test-orch", thinking: "low", runtime: "omp" };
+	cfg.orchestrator = { runtime: "omp" };
+	cfg.models = { ...savedCfg.models, orchestrator: orchModel };
 	o.start();
 	await advance(4000);
 	await proc().push(stateResp(session));
@@ -254,7 +256,8 @@ test("orchestrator on a runtime that cannot switch models: the alert says it sta
 	};
 	adapters.fake = fake;
 	writeFileSync(join(DATA, "orchestrator.json"), "{}");
-	cfg.orchestrator = { model: "anthropic/test-orch", thinking: "low", runtime: "fake" };
+	cfg.orchestrator = { runtime: "fake" };
+	cfg.models = { ...savedCfg.models, orchestrator: orchModel };
 	alerts.length = 0;
 	o.start();
 	await advance(4000);
