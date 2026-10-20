@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { availableParallelism, totalmem } from "node:os";
 import { basename, join, relative } from "node:path";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
+import { firstAlertForReset } from "./rate-alert.ts";
 import { emitEventActivity, endSubagents, runningSubagents, statusActivity, workerCheck } from "./activity.ts";
 import { pendingAskFile } from "./asks.ts";
 import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, TZ, workerModel, writeAtomic } from "./config.ts";
@@ -261,7 +262,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	lane.pausing = false;
 	if (lane.status !== "rate-limited") return;
 	const at = new Date(Date.now() + wait).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
-	if (!lane.pauseReported || lane.pauseKind !== kind) {
+	if ((!lane.pauseReported || lane.pauseKind !== kind) && (owner || firstAlertForReset(`lane:${lane.name}`, Date.now() + wait))) {
 		report(lane, owner
 			? `모델 제공자 결제/인증 문제로 멈췄어요 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요해요. 그동안 온 메시지는 모아뒀다가 해결되면 이어서 처리하고, ${Math.round(wait / 60_000)}분마다 다시 시도해요.`
 			: `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`, true);

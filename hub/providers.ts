@@ -378,17 +378,24 @@ export async function quota() {
 // the report, the error's retry-after is used, else 10 minutes. One minute of margin so the first retry lands after it.
 const RESUME_MARGIN_MS = 60_000;
 const RESUME_MAX_MS = 8 * 24 * 3600_000;
+// OmO's account pool, when every account is blocked, names the time the first one frees: "Soonest automatic retry: 2026-10-19T16:40:00.000Z."
+export function poolRetryAt(err: string): number | undefined {
+	const t = Date.parse(err.match(/automatic retry:\s*(\d{4}-\d\d-\d\dT[\d:.]+Z)/i)?.[1] ?? "");
+	return Number.isFinite(t) ? t : undefined;
+}
 export function resumeDelay(err: string, limits: QuotaLimit[], at: number): { ms: number; reset: boolean } {
+	// That time is the reset: OmO tracks each account's block itself, a usage report would only add a guess.
+	const pool = poolRetryAt(err);
+	if (pool !== undefined && pool > at) return { ms: Math.min(pool - at, RESUME_MAX_MS) + RESUME_MARGIN_MS, reset: true };
 	const resets = limits
 		.filter(l => (l.remaining !== null && l.remaining <= 0) || (l.used !== null && l.limit !== null && l.used >= l.limit) || /exhaust|exceed|blocked/i.test(l.status))
 		.flatMap(l => (l.resets_at !== null && l.resets_at > at ? [l.resets_at] : []));
-	// OmO's account pool names the time instead: "Soonest automatic retry: 2026-10-19T16:40:00.000Z."
-	const soonest = Date.parse(err.match(/automatic retry:\s*(\d{4}-\d\d-\d\dT[\d:.]+Z)/i)?.[1] ?? "");
-	const hint = Number.isFinite(soonest) ? Math.max(0, soonest - at) : Number(err.match(/retry-after-ms:\s*(\d+)/)?.[1] ?? Number.NaN);
+	const hint = Number(err.match(/retry-after-ms:\s*(\d+)/)?.[1] ?? Number.NaN);
 	const base = resets.length ? Math.max(...resets) - at : Number.isFinite(hint) ? hint : 10 * 60_000;
 	return { ms: Math.min(base, RESUME_MAX_MS) + RESUME_MARGIN_MS, reset: resets.length > 0 };
 }
 export async function rateLimitDelay(err: string, model: string, role: "orchestrator" | "lane" = "orchestrator"): Promise<{ ms: number; reset: boolean }> {
+	if ((poolRetryAt(err) ?? 0) > Date.now()) return resumeDelay(err, [], Date.now());
 	const provider = model.split("/")[0];
 	invalidate();
 	// Anthropic: the account the role runs on, which may not be omp's login
