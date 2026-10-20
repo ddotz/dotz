@@ -407,6 +407,9 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .sb { flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
 .sb.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
 .tdrop { display: none; flex: 1 1 120px; width: auto; min-width: 0; }
+.lvt { flex: none; height: 32px; padding: 0 8px; font-size: 13px; white-space: nowrap; }
+@media (pointer: coarse) { .lvt { height: 36px; } }
+@media (max-width: 639px) { .thead.lanev .tdrop.sel { max-width: 112px; } }
 #vtog { position: relative; }
 #vtog .ud { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 @media (pointer: coarse) { .tchip { height: 36px; } }
@@ -923,7 +926,18 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .lacts .btn { height: 24px; padding: 0 6px; font-size: 12px; }
 .lacts .btn.tonal { padding: 0 10px; margin-left: 6px; }
 @media (pointer: coarse) { .lacts .btn { height: 36px; padding: 0 10px; } .lname { min-height: 36px; } }
-.ltail { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0; background: var(--layer); font: 12px/20px var(--mono); cursor: pointer; overscroll-behavior: contain; }
+.lrep { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; overflow: hidden; background: var(--layer); cursor: pointer; }
+.lrep .mt { display: flex; align-items: center; gap: 6px; flex: none; }
+.lrep .md { min-width: 0; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.lrep .md pre { max-width: 100%; overflow-x: auto; }
+/* markdown has block children (lists, code), so a line clamp would cut through a line: cap the height and fade a long report */
+.lclamp { max-height: 100px; overflow: hidden; }
+.lclamp.long { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
+.board:not(.narrow) .lclamp { flex: 0 1 auto; min-height: 0; max-height: none; }
+.lmore { align-self: flex-start; flex: none; height: 24px; margin-left: -6px; padding: 0 6px; font-size: 12px; }
+@media (pointer: coarse) { .lmore { height: 36px; } }
+.lnone { color: var(--fg-3); font-size: 13px; line-height: 20px; }
+.lstat { flex: none; padding: 6px 12px; border-top: 1px solid var(--line); color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lr { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; padding: 0 12px; }
 .lr:hover { background: var(--hover); }
 .lr .lt { flex: none; color: var(--fg-3); font-size: 11px; }
@@ -1098,7 +1112,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 @media (min-width: 640px) { #harness.hs-open { padding-right: 480px; } }
 .bi > .lpane .lcomp { padding: 8px 12px 12px 8px; }
 .board.narrow .bi > .lpane { height: auto; }
-.board.narrow .ltail { flex: none; height: 112px; }
+.board.narrow .lrep { flex: none; }
 .board.narrow .bi > .lpane .lcomp { padding: 8px; }
 .lpane.att .lhead { border-bottom-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
 /* 구성: 기능 보기 (badges on the map, 기능 목록 panel, 상세의 "여기서 작동하는 기능") */
@@ -1535,6 +1549,7 @@ const mdNode = (src, cls = "md") => el("div", { class: cls, safeHtml: mdHtml(src
 /* ---------- message status (only an explicit line-1 marker sets it; it becomes one leading emoji) ---------- */
 const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
 const TONE_EMOJI = { done: "✅", run: "⏳", ask: "❓", fail: "❌" };
+const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], ask: ["warn", "질문"], fail: ["err", "실패"] };
 function parseTone(text) {
   const m = text.match(/^\[([^\]\n]+)\][ \t]*/), tag = m && TONE_TAGS.get(m[1].toLowerCase());
   return tag ? { tone: tag, text: text.slice(m[0].length) } : { tone: "", text };
@@ -1758,7 +1773,9 @@ let current = "home", prevView = null;
 const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["lanes", "세션"], ["settings", "설정"]];
 const CHAT_MODE_KEY = "dotz-chat-mode";
 const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : v;
-const lastChatView = () => { try { return localStorage.getItem(CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
+// 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
+const viewFor = t => { try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
+const lastChatView = () => viewFor(target);
 const SUB = new Set(["models", "providers", "usage", "context", "harness"]);
 const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context", "project", "projects"];
 const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "세션", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", project: "프로젝트", projects: "프로젝트" };
@@ -1971,13 +1988,13 @@ function go(name, tgt) {
   if (location.hash !== `#${hash}`) history.replaceState(null, "", `#${hash}`);
   for (const v of views) $(`#v-${v}`).hidden = v !== name;
   const back = backTarget();
-  if (name === "chat" || name === "activity") try { localStorage.setItem(CHAT_MODE_KEY, name); } catch {}
+  if (name === "chat" || name === "activity") try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
   document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#back").hidden = !back;
   $("#appbar").classList.toggle("back", !!back);
   $("#appbar").classList.toggle("tv", tv);
   const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
-  th.hidden = !tv; $("#vtog").hidden = !tv;
+  th.hidden = !tv; $("#vtog").hidden = !tv || isLaneT(target);
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
   $("#title").textContent = name === "home" ? botName : titles[name];
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
@@ -2038,7 +2055,9 @@ function subLine(src) {
   return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs([src]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs([src]); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
 }
 function openSource(src) { setTarget(targetOfSource(src)); go("activity"); }
-function openTarget(t, view) { setTarget(t); go(view); }
+function openTarget(t, view) { setTarget(t); go(isLaneT(t) && (view === "chat" || view === "activity") ? viewFor(t) : view); }
+// A switcher pick: the chat/log view follows the picked target's own choice.
+function pickTarget(t) { setTarget(t); const v = viewFor(t); if ((current === "chat" || current === "activity") && v !== current) go(v); }
 // The subagents of the selected target: one summary line; clicking it (or any subagent count) opens the side panel,
 // which lists them and shows one subagent's own transcript.
 const spawnOrder = list => list.sort((a, b) => (a.started_at || 0) - (b.started_at || 0) || String(a.id).localeCompare(String(b.id)));
@@ -2180,7 +2199,7 @@ function bLoad(store) {
   } catch { /* unreadable layout: start from defaults */ }
   return out;
 }
-const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .ltail, [data-nodrag]";
+const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .lrep, [data-nodrag]";
 // items: [{id, node, head (selector of the drag handle inside node), def {w,h}, min {w,h}, max {w,h}}]. `keep(id)` tells which saved
 // cards that are not in `items` only wait for their data (and so keep their place) instead of being gone.
 function makeBoard(container, key, opts = {}) {
@@ -3080,18 +3099,23 @@ function msgNode(e) {
     case "schedule": case "watch":
       return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL[e.kind] }), el("div", { class: "st" }, mdNode(text), el("div", { class: "mt", text: hm })));
     default: {
-      const isNote = e.kind === "out" && ((typeof e.source === "string" && e.source.startsWith("lane:")) || (e.update_key && typeof e.target === "string" && e.target.startsWith("lane:")));
+      const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
+      // A session's report or answer is a full message; only the gateway's progress line (update_key) stays one compact note.
+      const laneMsg = e.kind === "lane_report" || (e.kind === "out" && fromLane);
+      const isNote = e.kind === "out" && !!e.update_key && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:")));
       const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text)) : { tone: "", text };
-      const body = (tone ? `${TONE_EMOJI[tone]} ` : "") + parsed;
+      // The orchestrator keeps its leading status emoji; a session's tone is a short word in the meta line instead.
+      const body = (tone && !laneMsg ? `${TONE_EMOJI[tone]} ` : "") + parsed;
       if (isNote) {
-        const n = el("div", { class: "pn", tabindex: "0", role: "button" }, el("span", { class: "mt", text: hm }), el("span", { class: "pt", text: body.replace(/^((?:✅|⏳|❓|❌) )?진행 중:\s*/, "$1") }));
+        const n = el("div", { class: "pn", tabindex: "0", role: "button" }, el("span", { class: "mt", text: hm }), el("span", { class: "pt", text: body.replace(/^진행 중:\s*/, "") }));
         n.onclick = () => { if (!getSelection().toString()) n.classList.toggle("open"); };
         return n;
       }
-      const name = e.kind === "lane_report" ? String(e.lane ?? "") : e.target === "alert" ? "알림" : isRestart(e) ? "게이트웨이" : botName;
+      const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : isRestart(e) ? "게이트웨이" : botName;
       if (e.kind === "out" && e.card && Array.isArray(e.card.facts)) return el("div", { class: "bm" }, el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null), cardNode(e.card));
-      const card = e.kind === "lane_report" ? " rep" : e.target === "alert" ? " alert" : "";
-      const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null);
+      const card = e.kind === "lane_report" && !isLaneT(target) ? " rep" : e.target === "alert" ? " alert" : "";
+      const lt = laneMsg && tone ? LANE_TONE[tone] : null;
+      const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null, lt ? el("span", { class: `tag ${lt[0]}`, text: lt[1] }) : null);
       if (e.target === "alert") {
         const line = humanAlert(body);
         return el("div", { class: `bm${card}` }, head, mdNode(line), line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
@@ -3139,10 +3163,12 @@ function chatPush(en, bulk) {
     if (CS.group) { CS.group.live = false; CS.group.node.classList.remove("live"); CS.group.update(); }
     CS.group = null;
     const e = en.m, pkey = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
-    // One progress note per target+key (newest text at the newest position); the answer to that target (or its lane report) drops them.
-    if (pkey) dropProgress(pkey);
-    else if (e.kind === "lane_report" || (e.kind === "out" && !(typeof e.source === "string" && e.source.startsWith("lane:")))) {
-      const t = e.kind === "lane_report" ? `lane:${e.lane ?? ""}` : String(e.target ?? "");
+    const et = eventTarget(e) || "", laneT = isLaneT(et) ? et : "";
+    // One progress note per target+key (newest text at the newest position; a session keeps only its newest note);
+    // the answer to that target (or its lane report) drops them.
+    if (pkey) { dropProgress(pkey); if (laneT) for (const [k, v] of CS.prog) if (v.target === laneT) dropProgress(k); }
+    else if (e.kind === "lane_report" || e.kind === "out") {
+      const t = e.kind === "lane_report" || laneT ? et : String(e.target ?? "");
       for (const [k, v] of CS.prog) if (v.target === t) dropProgress(k);
     }
     const n = msgNode(e);
@@ -3150,7 +3176,7 @@ function chatPush(en, bulk) {
       const who = n.matches(".um, .bm") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000) n.classList.add("cont");
       CS.who = who; CS.whoT = t;
-      tl.append(n); if (pkey) CS.prog.set(pkey, { node: n, target: String(e.target ?? "") });
+      tl.append(n); if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
     if (!WORK.has(en.a.type)) return;
@@ -3381,6 +3407,7 @@ function ingestMsg(e) {
   if (!ownerish(e) && e.kind !== "delivery" && !cleanRestart(e) && !(t === target && current === "chat")) { s.unread++; renderBars(); }
   if (t === target && s.hLoaded) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }
   if (t === target) paintDecision();
+  if (isLaneT(t) && isLaneReport(e) && LP[t.slice(5)]) laneRefresh(LP[t.slice(5)]);
   if (projAnswer(t, e)) noteDone(t, e.ts, true);
 }
 // A project's finished turn is the orchestrator's answer posted to its channel (not a progress note).
@@ -3965,7 +3992,7 @@ function renderBars() {
   const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
   const othersAttn = [...A, ...D].filter(v => v.t !== target && v.attn).length;
   const sig = JSON.stringify([A, D, cur, others, target, ORDER]);
-  const chip = v => { const b = el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "data-t": v.t, "aria-pressed": v.t === target ? "true" : "false", title: v.attn ? `${attnLabel(v.attn)} · ${v.status}` : v.status, onclick: () => setTarget(v.t) },
+  const chip = v => { const b = el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "data-t": v.t, "aria-pressed": v.t === target ? "true" : "false", title: v.attn ? `${attnLabel(v.attn)} · ${v.status}` : v.status, onclick: () => pickTarget(v.t) },
     el("span", { class: `dot ${v.tone}` }), el("span", { class: "tx", text: v.name }),
     v.attn ? el("span", { class: "sb warn", text: attnLabel(v.attn) }) : null,
     v.subs ? el("span", { class: "sb", title: "서브에이전트", text: `서브 ${v.subs}` }) : null,
@@ -3977,7 +4004,7 @@ function renderBars() {
   for (const bar of document.querySelectorAll(".thead")) {
     const mode = bar.dataset.mode, msig = `${sig}|${mode}`;
     if (bar.dataset.sig === msig || (openMenu && bar.contains(openMenu.anchor))) continue;
-    bar.dataset.sig = msig;
+    bar.dataset.sig = msig; bar.classList.toggle("lanev", isLaneT(target));
     // Exited lanes are not shown; one opened from the palette shows as a chip only while it is the selected target.
     const shownV = [...A, ...D.filter(v => v.t === target)], laneV = shownV.filter(v => isLaneT(v.t));
     const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, chip(A[0]),
@@ -3998,16 +4025,20 @@ function renderBars() {
       ...LA.map(menuItem),
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
       ...(D.length ? [{ value: "__ended", label: `종료된 세션 ${D.length}`, sub: "기록 보기 · 재개" }] : [])];
-    drop._pick = v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else setTarget(v); };
+    drop._pick = v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else pickTarget(v); };
     drop.onclick = () => showMenu(drop, drop._items(), { value: target, onPick: drop._pick });
     const ud = mode === "term" && ts(target).unread > 0;
-    clear(bar).append(sw, drop);
+    // a session's raw log is one visible tap away (and back)
+    const lvt = isLaneT(target) ? el("button", { class: "btn text lvt", type: "button", onclick: () => go(mode === "chat" ? "activity" : "chat") }, mode === "chat" ? "로그 보기" : "대화 보기") : null;
+    clear(bar).append(sw, drop, ...(lvt ? [lvt] : []));
     fitChips(sw);
     // 대화/로그: one icon button next to the 돋보기; the icon is the view a tap switches to
     const vt = $("#vtog"), to = mode === "chat" ? "term" : "chat";
     clear(vt).append(...[icon(to), ud ? el("i", { class: "ud" }) : null].filter(Boolean));
     vt.title = vt.ariaLabel = to === "chat" ? "대화 보기" : "로그 보기";
     vt.onclick = () => go(to === "chat" ? "chat" : "activity");
+    // a session has its own 로그 보기 / 대화 보기 button in the header, so the icon would only repeat it
+    vt.hidden = isLaneT(target) || !$("#appbar").classList.contains("tv");
   }
 }
 // Desktop: target chips that do not fit fold into one "더보기 n" chip at the end (the selected one always stays visible;
@@ -4028,7 +4059,7 @@ function fitChips(sw) {
   seps();
   const vs = sw._views.filter(v => hid.includes(v.t));
   label(vs);
-  more.onclick = () => showMenu(more, vs.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" })), { value: target, onPick: setTarget });
+  more.onclick = () => showMenu(more, vs.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" })), { value: target, onPick: pickTarget });
 }
 new ResizeObserver(() => { const sw = $("#thead .tsw"); if (sw) fitChips(sw); }).observe($("#thead"));
 
@@ -4154,10 +4185,9 @@ function actNode(a, ctx) {
 /* ---------- lanes: multi-pane board ---------- */
 const laneDraft = {};
 let laneSig = "";
-const LANE_TAIL = 100;          // rows kept per pane
+const LANE_TAIL = 300;          // activity rows read per card (this turn's time and commands)
 const LP = {};                  // lane name -> persistent pane (DOM, scroll and tail state survive re-renders)
 let laneBoard = null;
-const laneClock = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleTimeString("ko-KR", { ...KST, hour: "2-digit", minute: "2-digit", hour12: false }); };
 const laneKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
 function laneToolLabel(a) {
   const pre = `${a.tool}: `;
@@ -4170,61 +4200,53 @@ function laneToolLabel(a) {
   } catch { /* args may be cut off */ }
   return "";
 }
-function laneMark(st, a) { st.textContent = a.is_error ? "✗" : "✓"; st.className = `st ${a.is_error ? "bad" : "ok"}`; }
-// One compact terminal-style row; tool results fold into their call's row as a ✓/✗ mark.
-function laneRow(p, a) {
-  const row = (cls, body, st) => el("div", { class: `lr ${cls}` }, el("span", { class: "lt", text: laneClock(a.ts) }), el("span", { class: "lb" }, ...body), st || null);
-  switch (a.type) {
-    case "turn_start": case "turn_end": return null;
-    case "status": return row("dv", [oneLine(a.text ?? "")]);
-    case "text": return row("tx", [String(a.text ?? "").trim().slice(0, 600)]);
-    case "thinking": return row("th", [`생각 · ${oneLine(a.text ?? "").slice(0, 100)}`]);
-    case "error": return row("er", [String(a.text ?? "").trim().slice(0, 300)]);
-    case "tool_call": {
-      const label = laneToolLabel(a), st = el("span", { class: "st", text: "…" });
-      if (a.call_id) p.calls.set(a.call_id, st);
-      return row("tl", [el("span", { class: "tn", text: capName(a.tool) }), label ? el("span", { class: "ts", text: ` · ${label}` }) : null], st);
-    }
-    case "tool_result": {
-      const st = a.call_id && p.calls.get(a.call_id);
-      if (st) { laneMark(st, a); return null; }
-      const mark = el("span", { class: "st" });
-      laneMark(mark, a);
-      return row("tl", [el("span", { class: "tn", text: a.tool ? capName(a.tool) : "결과" })], mark);
-    }
-    default: return a.text ? row("dv", [oneLine(a.text)]) : null;
-  }
+// A session's last report or answer (not a progress note), from the conversation events this page has seen.
+const isLaneReport = e => e.kind === "lane_report" || (e.kind === "out" && !e.update_key && typeof e.source === "string" && e.source.startsWith("lane:"));
+const laneReport = name => ts(`lane:${name}`).msgs.findLast(isLaneReport) || null;
+// This turn's start and command count, read from the card's activity feed (the status line's "3분 · 명령 12").
+function laneStat(p, a) {
+  if (a.type === "turn_start") { p.t0 = Date.parse(a.ts) || 0; p.cmds = 0; }
+  else if (a.type === "turn_end") p.t0 = 0;
+  else if (a.type === "tool_call" && kindOf(a.tool) === "명령") p.cmds++;
 }
-function laneStick(p) { if (p.tail.clientHeight) p.tail.scrollTop = p.stick ? p.tail.scrollHeight : p.scroll; }
-function laneNote(p, text) { clear(p.tail).append(el("div", { class: "lr dv" }, el("span", { class: "lb", text }))); p.noted = true; }
-function laneAppend(p, a) {
-  if (p.noted) { clear(p.tail); p.noted = false; }
-  const n = laneRow(p, a);
-  if (n) p.tail.append(n);
-  while (p.tail.children.length > LANE_TAIL) p.tail.firstChild.remove();
-  if (p.stick && p.tail.clientHeight) p.tail.scrollTop = p.tail.scrollHeight;
+function laneStatusLine(p, l) {
+  const parts = [statusKo(l.status)];
+  if (l.status === "working" || l.status === "starting") {
+    if (p.t0) parts.push(fmtDur(Date.now() - p.t0));
+    if (p.cmds) parts.push(`명령 ${p.cmds}`);
+  } else { const r = laneReport(p.name); if (r) parts.push(`마지막 보고 ${kstHM(r.ts)}`); }
+  return parts.join(" · ");
 }
+const openLaneChat = name => { setTarget(`lane:${name}`); go("chat"); };
+function laneRepPaint(p) {
+  const r = laneReport(p.name), sig = r ? `${r.ts}|${String(r.text ?? "").length}` : "";
+  if (p.repSig === sig) return;
+  if (!r && !p.loaded) return;
+  p.repSig = sig; clear(p.rep);
+  if (!r) { p.rep.append(el("div", { class: "lnone", text: "아직 보고가 없어요" })); return; }
+  const { tone, text } = parseTone(noHandoff(String(r.text ?? ""))), lt = tone ? LANE_TONE[tone] : null;
+  const long = text.length > 120 || text.split("\n").length > 4;
+  p.rep.append(el("div", { class: "mt" }, kstHM(r.ts), lt ? el("span", { class: `tag ${lt[0]}`, text: lt[1] }) : null),
+    mdNode(text, `md lclamp${long ? " long" : ""}`), long ? el("button", { class: "btn text lmore", type: "button", onclick: ev => { ev.stopPropagation(); openLaneChat(p.name); } }, "더 보기") : null);
+}
+function laneRefresh(p) { laneRepPaint(p); if (p.lane) p.stat.textContent = laneStatusLine(p, p.lane); }
 function laneIngest(p, a) {
   const k = laneKey(a);
   if (p.seen.has(k)) return;
-  p.seen.add(k);
-  laneAppend(p, a);
+  p.seen.add(k); laneStat(p, a); laneRefresh(p);
 }
 async function laneLoad(p) {
   p.loading = true; p.queue = [];
-  if (!p.tail.children.length) laneNote(p, "불러오는 중…");
-  let r;
-  try { r = await api(`/api/activity?source=${enc(`lane:${p.name}`)}&limit=${LANE_TAIL}`); }
-  catch { p.loading = false; p.failedAt = Date.now(); if (p.noted) laneNote(p, "활동을 불러오지 못했어요"); return; }
-  p.seen = new Set(); p.calls = new Map(); p.stick = true; p.noted = false;
-  clear(p.tail);
-  const items = r.items || [];
-  if (r.history && items.length) p.tail.append(el("div", { class: "lr dv" }, el("span", { class: "lb", text: "저장된 기록" })));
-  for (const a of items) { p.seen.add(laneKey(a)); laneAppend(p, a); }
+  const t = `lane:${p.name}`;
+  let r, h;
+  try { [r, h] = await Promise.all([api(`/api/activity?source=${enc(t)}&limit=${LANE_TAIL}`), api(`/api/history?target=${enc(t)}&limit=60`).catch(() => null)]); }
+  catch { p.loading = false; p.failedAt = Date.now(); return; }
+  if (h) { const st = ts(t); for (const e of h.events || []) { const k = msgKey(e); if (!st.mk.has(k)) { st.mk.add(k); st.msgs.push(e); } } st.msgs.sort(byTs); }
+  p.seen = new Set(); p.t0 = 0; p.cmds = 0;
+  for (const a of r.items || []) { p.seen.add(laneKey(a)); laneStat(p, a); }
   for (const a of p.queue) laneIngest(p, a);
   p.queue = []; p.loading = false; p.loaded = true;
-  if (!p.tail.children.length) laneNote(p, "활동 없음");
-  laneStick(p);
+  laneRefresh(p);
 }
 // SSE "activity": keep every loaded pane live, even while another view is open.
 function laneActivity(a) {
@@ -4266,7 +4288,7 @@ function laneActions(p, l) {
   ];
 }
 function lanePane(name) {
-  const p = { name, seen: new Set(), calls: new Map(), queue: [], stick: true, scroll: 0, loaded: false, loading: false, failedAt: 0, noted: false, alive: null };
+  const p = { name, seen: new Set(), queue: [], t0: 0, cmds: 0, repSig: null, loaded: false, loading: false, failedAt: 0, alive: null };
   p.dot = el("span", { class: "dot" });
   p.nameBtn = el("button", { class: "lname", type: "button", title: "대화 열기", onclick: () => openTarget(`lane:${name}`, lastChatView()) });
   p.tag = el("span", { class: "tag" });
@@ -4277,17 +4299,13 @@ function lanePane(name) {
   p.model = el("div", { class: "lmodel" });
   p.proj = el("div", { class: "lproj", hidden: true });
   p.acts = el("div", { class: "lacts" });
-  p.tail = el("div", { class: "ltail", tabindex: "0", role: "log", "aria-label": `${name} 활동`, onclick: () => { if (!String(getSelection() || "")) openSource(`lane:${name}`); } });
-  p.tail.addEventListener("scroll", () => {
-    if (!p.tail.clientHeight) return;   // hidden panes report 0
-    p.scroll = p.tail.scrollTop;
-    p.stick = p.tail.scrollTop + p.tail.clientHeight >= p.tail.scrollHeight - 24;
-  });
+  p.rep = el("div", { class: "lrep", tabindex: "0", role: "region", "aria-label": `${name} 마지막 보고`, onclick: () => { if (!String(getSelection() || "")) openLaneChat(name); } });
+  p.stat = el("div", { class: "lstat" });
   p.input = input({ type: "text", enterkeyhint: "send", value: laneDraft[name] || "", oninput: ev => { laneDraft[name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); p.send.click(); } } });
   p.send = el("button", { class: "ib pri", type: "button" }, icon("send"));
   const head = el("div", { class: "lhead" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.att, p.tag, p.claim, p.ask, p.subs), p.proj, p.model, p.acts);
   p.node = el("section", { class: "lpane", "aria-label": name, "data-t": `lane:${name}` }, head,
-    p.tail,
+    p.rep, p.stat,
     el("div", { class: "lcomp" }, p.input, p.send));
   return p;
 }
@@ -4324,6 +4342,7 @@ function laneUpdate(p, l, m) {
   }
   p.node.classList.toggle("att", !!k || l.status === "rate-limited");
   clear(p.acts).append(...laneActions(p, l));
+  laneRefresh(p);
 }
 function laneBoardInit() {
   const grid = el("div", {});
@@ -4331,7 +4350,7 @@ function laneBoardInit() {
   laneBoard.node = el("div", { class: "lboard" }, laneBoard.none, grid);
   $("#lanes").append(laneBoard.node);
   // The tail of a pane follows the card height; a resize or move only re-sticks the tails.
-  laneBoard.board = makeBoard(grid, "lanes", { onLayout: () => { for (const p of Object.values(LP)) laneStick(p); } });
+  laneBoard.board = makeBoard(grid, "lanes");
 }
 // Running lanes only: an exited lane leaves the board at once (its history and resume stay reachable from ⌘K).
 function renderLanes() {
@@ -4353,7 +4372,6 @@ function renderLanes() {
   for (const l of ordered) {
     const p = LP[l.name];
     if (!p.loaded && !p.loading && Date.now() - p.failedAt > 15000) laneLoad(p);
-    laneStick(p);
   }
   renderEndedLanes();
 }
