@@ -586,6 +586,14 @@ export function deliver(text: string, owner = false): void {
 
 // Injects a note into the running turn (no effect when idle: the next prompt starts a turn anyway).
 // True when the text went into the running turn.
+// What keeps a requested gateway restart waiting: a turn, or a compaction queued or running (2026-10-20 19:47 KST: a restart
+// 1 s after "compacting in place" lost the compaction, and the session came back at 244K tokens).
+export function orchBusy(o: Pick<typeof orch, "status" | "ctx"> = orch): string | undefined {
+	if (o.status === "working" || o.status === "starting") return "orchestrator";
+	if (o.ctx.compaction.state === "queued" || o.ctx.compaction.state === "compacting") return "orchestrator compaction";
+	return undefined;
+}
+
 export function steer(text: string): boolean {
 	if (orch.status !== "working" || !proc) return false;
 	proc.send(text, "steer");
