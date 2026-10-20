@@ -1,7 +1,7 @@
 // dotz service worker: app-shell cache for a fast start, and Web Push display. /api (JSON, SSE, files) is never touched,
 // the page itself is network-first so an update shows on the next open; the cache only answers when the network fails.
-const CACHE = "dotz-shell-v1";
-const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"];
+const CACHE = "dotz-shell-v2";
+const SHELL = ["/", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"];
 
 self.addEventListener("install", ev => {
   ev.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -15,6 +15,8 @@ self.addEventListener("fetch", ev => {
   const req = ev.request;
   const url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== location.origin || url.pathname.startsWith("/api/")) return;
+  // the manifest is never answered from the cache: a stale one would decide the install (name, start_url, display)
+  if (url.pathname === "/manifest.webmanifest") return;
   if (req.mode === "navigate" || url.pathname === "/") {
     ev.respondWith(fetch(req).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put("/", copy)); }

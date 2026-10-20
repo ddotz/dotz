@@ -5,13 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f2f4f6">
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="manifest" href="/manifest.webmanifest?v=2">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="dotz">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>dotz</title>
 <script>
 // Theme is applied before first paint: the saved light/dark choice, else the system setting (read only until the first toggle).
@@ -308,6 +307,7 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 /* dialog, palette, toast */
 dialog.dlg, dialog.pal { margin: auto; border: 0; border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: 0 16px 48px rgb(0 0 0 / .22); overflow: auto; }
 dialog.dlg { width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 20px; }
+.steps { display: grid; gap: 8px; margin: 0; padding-left: 20px; font-size: 14px; line-height: 21px; }
 dialog.dlg::backdrop, dialog.pal::backdrop { background: var(--scrim); }
 dialog.dlg.wide { width: min(640px, calc(100vw - 24px)); }
 .dtitle { margin: 0 0 16px; font: 700 18px/26px var(--font); letter-spacing: -.01em; overflow-wrap: anywhere; }
@@ -4297,11 +4297,33 @@ function presence() {
 document.addEventListener("visibilitychange", presence);
 ["focus", "blur", "pagehide"].forEach(t => window.addEventListener(t, presence));
 window.addEventListener("load", pwaInit);
+// Install: Chrome/Edge/Samsung hand over beforeinstallprompt (a real app install, never the menu's shortcut);
+// iOS has no prompt, so the button opens the Share -> 홈 화면에 추가 steps.
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", ev => { ev.preventDefault(); installEvt = ev; if (current === "settings") renderSettings(); });
+window.addEventListener("appinstalled", () => { installEvt = null; toast("앱을 설치했어요. 홈 화면의 dotz로 열어 주세요"); if (current === "settings") renderSettings(); });
+async function installApp() {
+  if (installEvt) {
+    const e = installEvt;
+    installEvt = null;
+    await e.prompt();
+    await e.userChoice.catch(() => null);
+    if (current === "settings") renderSettings();
+    return;
+  }
+  const ua = navigator.userAgent;
+  const steps = isIOS()
+    ? [/CriOS|FxiOS|EdgiOS/.test(ua) ? "주소창의 공유 버튼을 눌러요" : "Safari 아래쪽(또는 주소창)의 공유 버튼을 눌러요", "'홈 화면에 추가'를 골라요", "'웹 앱으로 열기'가 켜져 있는지 보고 '추가'를 눌러요"]
+    : /Android/.test(ua)
+      ? ["브라우저 메뉴(⋮)를 열어요", "'앱 설치'를 골라요. '홈 화면에 추가'라면 다음 창에서 '설치'를 골라요", "'바로가기 만들기'는 브라우저로 열려요. 고르지 마세요"]
+      : ["주소창 오른쪽의 설치 아이콘을 눌러요", "없으면 브라우저 메뉴에서 '앱 설치'를 골라요"];
+  dialog({ title: "앱 설치", body: el("div", {}, el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))), el("p", { class: "note", text: "전에 추가한 dotz 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요." })), actions: [{ label: "확인", kind: "pri", onclick: c => c() }] });
+}
 function pushSection() {
   const li = (ic, title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), ...trail);
   const ios = isIOS(), standalone = isStandalone();
   const rows = [];
-  if (!standalone) rows.push(li("home", "홈 화면에 추가", ios ? "Safari 공유 버튼 → '홈 화면에 추가'. 주소창 없이 앱처럼 열려요" : "브라우저 메뉴 → '앱 설치' 또는 '홈 화면에 추가'"));
+  if (!standalone) rows.push(li("home", "앱 설치", "주소창 없이 홈 화면에서 앱으로 열어요", el("button", { class: "btn", type: "button", onclick: () => installApp() }, "앱 설치")));
   const subscribed = PWA.sub && PWA.info && PWA.info.subscribed;
   if (!pushCapable()) rows.push(li("bell", "알림", ios && !standalone ? "iPhone은 홈 화면에 추가한 dotz 앱에서 켤 수 있어요 (iOS 16.4 이상)" : "이 브라우저는 푸시 알림을 지원하지 않아요"));
   else if (Notification.permission === "denied") rows.push(li("bell", "알림", "알림 권한이 막혀 있어요. 기기 설정에서 dotz 알림을 허용해 주세요"));
