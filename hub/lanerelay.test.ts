@@ -55,3 +55,14 @@ test("a report while the orchestrator is busy goes into its running turn at once
 	expect(r.held().map(h => h.lane)).toEqual(["b"]);
 	expect(sent).toEqual([]);
 });
+
+test("a gateway notice like [lane exited] is relayed every time, even in the same words as the last one", () => {
+	const sent: string[] = [];
+	const r = createLaneRelay({ busy: () => false, deliver: t => sent.push(t), lead: n => `[lane reports ${n}]` });
+	const exited = "[lane exited] 프로세스가 종료됐습니다 (code 1). 마지막 상태: 없음";
+	expect(r.report("gateway-ui", exited, "/f")).toBe("relayed");
+	expect(r.report("gateway-ui", exited, "/f")).toBe("relayed");
+	expect(sent.length).toBe(2);
+	expect(r.report("gateway-ui", "[done] merged abc", "/f")).toBe("relayed");
+	expect(r.report("gateway-ui", "[done] merged abc", "/f")).toBe("duplicate");
+});
