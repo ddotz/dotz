@@ -389,6 +389,8 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .tchip.on .sb { background: color-mix(in srgb, var(--bg) 22%, transparent); color: inherit; }
 .tchip .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tchip[hidden] { display: none; }
+.tsep { flex: none; align-self: center; width: 1px; height: 16px; margin: 0 4px; background: var(--line); }
+.tsep[hidden] { display: none; }
 .tchip.tmore .ic { width: 14px; height: 14px; }
 .nb.warn { background: var(--warn); }
 .nb { flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 10.5px/16px var(--font); text-align: center; }
@@ -2432,15 +2434,23 @@ const abortOrch = btn => busy(btn, async () => {
 const MAIN = "main", TARGET_KEY = "dotz-target";
 const isLaneT = t => t.startsWith("lane:");
 const laneOf = t => t.slice(5);
-const validTarget = t => t === MAIN || (isLaneT(t) && t.length > 5);
-const sourceOf = t => t === MAIN ? "orchestrator" : t;
+// A project orchestrator (hub/projectchat.ts): the one orchestrator in a project's work channel, target ch:<id>. Its
+// conversation is the channel's messages; its process, model and log are the orchestrator's.
+const isProjT = t => /^ch:\d+$/.test(t);
+const projOf = t => t.slice(3);
+const projTargets = () => Object.keys((S && S.channels && S.channels.work) || {}).map(id => `ch:${id}`);
+const validTarget = t => t === MAIN || isProjT(t) || (isLaneT(t) && t.length > 5);
+const sourceOf = t => t === MAIN || isProjT(t) ? "orchestrator" : t;
 const targetOfSource = s => s === "orchestrator" ? MAIN : s;
-const targetName = t => t === MAIN ? botName : laneOf(t);
+const targetName = t => t === MAIN ? botName : isProjT(t) ? `#${((S && S.channels && S.channels.work) || {})[projOf(t)] || "프로젝트"}` : laneOf(t);
+// Every target the switcher and the needs-you count list: the main assistant, the projects, the live lanes.
+const liveTargets = () => S ? [MAIN, ...projTargets(), ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)] : [MAIN];
 const modeOf = () => current === "activity" ? "term" : "chat";
 let target = MAIN;
 try { const v = localStorage.getItem(TARGET_KEY); if (v && validTarget(v)) target = v; } catch {}
 function targetInfo(t) {
   if (t === MAIN) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
+  if (isProjT(t)) { const o = (S && S.orchestrator) || {}, known = projTargets().includes(t); return { status: o.status || "", alive: known || !S, known }; }
   const l = S && S.lanes.find(x => x.name === laneOf(t));
   return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable, ask: l.pendingAsk && l.pendingAsk.text ? l.pendingAsk : null } : { status: "", alive: true, known: false };
 }
@@ -2473,8 +2483,10 @@ function noteDone(t, at, live) {
 // From /api/state: first sight of a target starts as seen; a working->idle change is a finished turn; gone lanes are forgotten.
 function noteStatus() {
   if (!S) return;
-  const now = new Date().toISOString(), all = [[MAIN, (S.orchestrator || {}).status], ...S.lanes.map(l => [`lane:${l.name}`, l.status])], names = new Set(all.map(x => x[0]));
+  // A project shares the orchestrator's status, so its working->idle is not its turn: its answers count (ingestMsg).
+  const now = new Date().toISOString(), all = [[MAIN, (S.orchestrator || {}).status], ...S.lanes.map(l => [`lane:${l.name}`, l.status])], names = new Set([...all.map(x => x[0]), ...projTargets()]);
   let dirty = false;
+  for (const t of projTargets()) if (SEEN[t] === undefined) { SEEN[t] = now; dirty = true; }
   for (const k of [...Object.keys(SEEN), ...Object.keys(DONE)]) if (!names.has(k)) { delete SEEN[k]; delete DONE[k]; delete PREV[k]; dirty = true; }
   for (const [t, st] of all) {
     if (SEEN[t] === undefined) { SEEN[t] = now; dirty = true; }
@@ -2488,12 +2500,12 @@ function noteStatus() {
 function attnRaw(t) {
   const i = targetInfo(t);
   if (i.alive && i.ask) return "ask";
-  if (i.alive && i.status === "rate-limited") return "limit";
+  if (i.alive && i.status === "rate-limited" && !isProjT(t)) return "limit";
   return msOf(DONE[t]) > msOf(SEEN[t]) ? "done" : "";
 }
 const attnKind = t => watching(t) ? "" : attnRaw(t);
 const attnLabel = k => ({ ask: "답변 필요", limit: "한도 대기" })[k] || "확인 필요";
-const attnCount = () => S ? [MAIN, ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)].filter(attnKind).length : 0;
+const attnCount = () => S ? liveTargets().filter(attnKind).length : 0;
 // Targets needing attention, not messages: the 채팅 nav badge and the page title. Unread message counts stay on the chips.
 function paintAttn() {
   const n = attnCount(), b = $("#nav-att");
@@ -2508,10 +2520,10 @@ const ATTN_LAST = {};
 let attnPainted = false;
 function toastAttn() {
   if (!S) return;
-  for (const t of [MAIN, ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)]) {
+  for (const t of liveTargets()) {
     const k = attnRaw(t), was = ATTN_LAST[t] || "";
     ATTN_LAST[t] = k;
-    if (!k || k === was || watching(t) || (k === "done" && t !== MAIN) || (!attnPainted && k !== "ask")) continue;
+    if (!k || k === was || watching(t) || (k === "done" && isLaneT(t)) || (!attnPainted && k !== "ask")) continue;
     const ask = targetInfo(t).ask;
     notify({ kind: "needs", target: t, open: t, tone: "warn", title: `${targetName(t)} · ${attnLabel(k)}`,
       ts: k === "ask" ? ask.at : k === "done" ? DONE[t] : new Date().toISOString(),
@@ -2571,7 +2583,8 @@ function eventTarget(e) {
   if (e.kind === "activity" || e.kind === "subagents") return null;
   let lane = typeof e.lane === "string" ? e.lane : "";
   if (!lane) for (const v of [e.source, e.target, e.channel]) if (typeof v === "string" && v.startsWith("lane:")) { lane = v.slice(5); break; }
-  return lane ? `lane:${lane}` : MAIN;
+  if (lane) return `lane:${lane}`;
+  return [e.channel, e.target].find(v => typeof v === "string" && isProjT(v)) || MAIN;
 }
 
 /* ---------- conversation view (대화) ---------- */
@@ -2928,14 +2941,21 @@ function ingestMsg(e) {
   if (isRestart(e)) paintRestartBanner();
   if (!ownerish(e) && !cleanRestart(e) && !(t === target && current === "chat")) { s.unread++; renderBars(); }
   if (t === target && s.hLoaded) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }
+  if (projAnswer(t, e)) noteDone(t, e.ts, true);
 }
+// A project's finished turn is the orchestrator's answer posted to its channel (not a progress note).
+const projAnswer = (t, e) => isProjT(t) && e.kind === "out" && e.source === "orchestrator" && !e.update_key;
+// The orchestrator's activity is also the log of every loaded project target; a project's 대화 shows only its messages,
+// since the same process also works for the main chat and other channels.
 function ingestAct(a) {
-  const t = targetOfSource(a.source);
-  const s = ts(t), k = actKey(a);
-  if (s.ak.has(k)) return;
-  s.ak.add(k); s.acts.push(a);
-  if (s.acts.length > s.cap) s.ak.delete(actKey(s.acts.shift()));
-  if (t === target && s.aLoaded) { chatPush({ a }); termPush(a); }
+  const own = targetOfSource(a.source);
+  for (const t of own === MAIN ? [MAIN, ...Object.keys(TS).filter(isProjT)] : [own]) {
+    const s = ts(t), k = actKey(a);
+    if (s.ak.has(k)) continue;
+    s.ak.add(k); s.acts.push(a);
+    if (s.acts.length > s.cap) s.ak.delete(actKey(s.acts.shift()));
+    if (t === target && s.aLoaded) { if (!isProjT(t)) chatPush({ a }); termPush(a); }
+  }
 }
 async function loadTarget(t) {
   const s = ts(t);
@@ -2947,7 +2967,7 @@ async function loadTarget(t) {
     ]);
     s.hLoaded = s.aLoaded = true;
     if (t === MAIN) paintRestartBanner();
-    { const te = s.acts.findLast(a => a.type === "turn_end"); if (te) noteDone(t, te.ts, false); }
+    { const te = isProjT(t) ? s.msgs.findLast(e => projAnswer(t, e)) : s.acts.findLast(a => a.type === "turn_end"); if (te) noteDone(t, te.ts, false); }
   })().finally(() => { s.loading = null; });
   await s.loading;
   if (t === target) renderAll();
@@ -2989,7 +3009,7 @@ function renderAll0(keepScroll) {
       const m = M[j++];
       chatPush({ m }, true);
       if (ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
-    } else { const a = A[i++]; chatPush({ a }, true); termPush(a, true); }
+    } else { const a = A[i++]; if (!isProjT(target)) chatPush({ a }, true); termPush(a, true); }
   }
   if (!tl.children.length) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));
   if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동 없음" }));
@@ -3182,7 +3202,7 @@ async function sendChat(how) {
   }
   const mode = how || (isWorking(t) ? "steer" : undefined);
   try {
-    const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) });
+    const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) });
     scrollChat(true); scrollTerm(true);
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast("다음 턴에 전달할게요"); }
     // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.
@@ -3196,7 +3216,7 @@ function updateComposerMeta() {
   const gone = isLaneT(target) && info.known && !info.alive;
   const off = gone && !info.resumable;
   ta.disabled = off; $("#send-btn").disabled = off;
-  ta.placeholder = off ? "종료된 레인이에요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기 · ⌘Enter 다음 턴에 · ⌥Enter 중단하고 보내기 · Esc 중단" : isTerm ? "메시지 또는 /명령" : `${targetName(target)}에게 메시지 · /명령`;
+  ta.placeholder = off ? "종료된 레인이에요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기 · ⌘Enter 다음 턴에 · ⌥Enter 중단하고 보내기 · Esc 중단" : isTerm ? "메시지 또는 /명령" : isProjT(target) ? `${targetName(target)} 프로젝트의 ${botName}에게 메시지 · /명령` : `${targetName(target)}에게 메시지 · /명령`;
   $("#composer").classList.toggle("tmode", isTerm);
 }
 // The elapsed time ticks every second on its own; events only arrive when a tool runs, so a time drawn only on events
@@ -3239,7 +3259,7 @@ function renderActChips(on) { $("#c-more").hidden = !on; }
 $("#c-more").append(icon("more"));
 $("#c-more").addEventListener("pointerdown", ev => ev.preventDefault());
 $("#c-more").onclick = ev => {
-  const proc = target === MAIN ? "orchestrator" : laneOf(target);
+  const proc = isLaneT(target) ? laneOf(target) : "orchestrator";
   showMenu(ev.currentTarget, [
     ...(ta.value.trim() ? [{ value: "queue", label: "다음 턴에 보내기", sub: "지금 턴이 끝나면 보내요" }] : []),
     { value: "stop", label: "중단", sub: "지금 턴을 멈춰요" },
@@ -3284,10 +3304,11 @@ function modelChipText(sel) {
 }
 function renderCtxRing() {
   const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;
-  const sel = target === MAIN ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model;
+  const orchT = target === MAIN || isProjT(target);
+  const sel = orchT ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model;
   // The chips say whose they are: the orchestrator and a lane often run the same model with a similar context, and
   // unlabeled they read as one (owner 2026-10-20: "오케스트레이터와 레인별로 구분 안되는거 같은데").
-  const owner = target === MAIN ? botName : lane ? `레인 ${lane.name}` : "";
+  const owner = orchT ? botName : lane ? `레인 ${lane.name}` : "";
   const ob = $("#c-own"), wb = $("#c-worker"), wsel = lane && lane.worker_model;
   ob.hidden = !(sel && owner); ob.textContent = owner;
   wb.hidden = !wsel;
@@ -3297,7 +3318,7 @@ function renderCtxRing() {
   mb.hidden = !sel; eb.hidden = !level;
   if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${owner} 모델 · ${t}`; }
   if (level) { eb.textContent = level; eb.title = `${owner} 추론 강도 · ${level}`; }
-  const b = $("#ctx-ring"), p = ((C && C.processes) || []).find(x => x.name === (target === MAIN ? "orchestrator" : laneOf(target)));
+  const b = $("#ctx-ring"), p = ((C && C.processes) || []).find(x => x.name === (orchT ? "orchestrator" : laneOf(target)));
   b.hidden = !(p && p.running && p.tokens != null);
   if (b.hidden) return;
   const pct = p.percent != null ? Math.min(100, Math.max(0, p.percent)) : 0;
@@ -3507,14 +3528,16 @@ function dragItem(node, t, shown, horizontal, handle = node) {
 function renderBars() {
   paintAttn();
   const lanes = S ? S.lanes : [];
-  const alive = byOrder([MAIN, ...lanes.filter(laneAlive).map(l => `lane:${l.name}`)]), dead = byOrder(lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`));
-  if (isLaneT(target) && !alive.includes(target) && !dead.includes(target)) alive.push(target);
+  // Three groups in this order: the main assistant, 프로젝트 (project orchestrators), 레인. Dragging reorders within a group.
+  const projs = byOrder(projTargets()), live = byOrder(lanes.filter(laneAlive).map(l => `lane:${l.name}`)), dead = byOrder(lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`));
+  if (isLaneT(target) && !live.includes(target) && !dead.includes(target)) live.push(target);
+  const alive = [MAIN, ...projs, ...live];
   const view = t => {
     const i = targetInfo(t);
     const k = attnKind(t);
     return { t, name: targetName(t), tone: k ? "warn" : i.alive ? statusTone(i.status) : "", attn: k, status: i.alive ? statusKo(i.status) : "종료됨", unread: ts(t).unread, subs: runningSubs(sourceOf(t)).length };
   };
-  const A = alive.map(view), D = dead.map(view);
+  const A = alive.map(view), D = dead.map(view), PA = A.filter(v => isProjT(v.t)), LA = A.filter(v => isLaneT(v.t));
   const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
   const othersAttn = [...A, ...D].filter(v => v.t !== target && v.attn).length;
   const sig = JSON.stringify([A, D, cur, others, target, ORDER]);
@@ -3523,15 +3546,18 @@ function renderBars() {
     v.attn ? el("span", { class: "sb warn", text: attnLabel(v.attn) }) : null,
     v.subs ? el("span", { class: "sb", title: "서브에이전트", text: `서브 ${v.subs}` }) : null,
     v.unread ? el("span", { class: "nb", text: v.unread > 99 ? "99+" : String(v.unread) }) : null);
-    dragItem(b, v.t, () => (D.some(d => d.t === v.t) ? D : A).map(x => x.t), true);
+    if (v.t !== MAIN) dragItem(b, v.t, () => (D.some(d => d.t === v.t) ? D : isProjT(v.t) ? PA : LA).map(x => x.t), true);
     return b; };
+  const sep = () => el("span", { class: "tsep", "aria-hidden": "true" });
+  const menuItem = v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" });
   for (const bar of document.querySelectorAll(".thead")) {
     const mode = bar.dataset.mode, msig = `${sig}|${mode}`;
     if (bar.dataset.sig === msig || (openMenu && bar.contains(openMenu.anchor))) continue;
     bar.dataset.sig = msig;
     // Exited lanes are not shown; one opened from the palette shows as a chip only while it is the selected target.
-    const shownV = [...A, ...D.filter(v => v.t === target)];
-    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, ...shownV.map(chip),
+    const shownV = [...A, ...D.filter(v => v.t === target)], laneV = shownV.filter(v => isLaneT(v.t));
+    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, chip(A[0]),
+      ...(PA.length ? [sep(), ...PA.map(chip)] : []), ...(laneV.length ? [sep(), ...laneV.map(chip)] : []),
       el("button", { type: "button", class: "tchip tmore", hidden: true, "aria-haspopup": "listbox", "aria-expanded": "false" }));
     sw._views = shownV;
     const drop = el("button", { type: "button", class: "sel tdrop", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `대화 대상: ${cur.name}` },
@@ -3542,7 +3568,10 @@ function renderBars() {
         : others ? el("span", { class: "nb", title: "다른 대상의 새 메시지", text: others > 99 ? "99+" : String(others) }) : null,
       icon("drop"));
     drop._items = () => [
-      ...A.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" })),
+      menuItem(A[0]),
+      ...(PA.length ? [{ header: "프로젝트" }, ...PA.map(menuItem)] : []),
+      ...(PA.length && (LA.length || D.length) ? [{ header: "레인" }] : []),
+      ...LA.map(menuItem),
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
       ...(D.length ? [{ value: "__ended", label: `종료된 레인 ${D.length}`, sub: "기록 보기 · 재개" }] : [])];
     drop._pick = v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else setTarget(v); };
@@ -3563,12 +3592,16 @@ function fitChips(sw) {
   const more = sw.querySelector(".tmore"), chips = [...sw.querySelectorAll(".tchip[data-t]")];
   for (const c of chips) c.hidden = false;
   more.hidden = true;
+  // A group divider shows only while a chip of its group is visible after it.
+  const seps = () => { for (const s of sw.querySelectorAll(".tsep")) { let n = s.nextElementSibling, vis = false; for (; n && !n.matches(".tsep, .tmore"); n = n.nextElementSibling) if (!n.hidden) { vis = true; break; } s.hidden = !vis; } };
+  seps();
   if (!sw.clientWidth || sw.scrollWidth <= sw.clientWidth) return;
   const label = vs => { const n = vs.filter(v => v.attn).length; clear(more).append(...[el("span", { class: "tx", text: `더보기 ${vs.length}` }), n ? el("span", { class: "nb warn", title: `확인 필요 ${n}개`, text: String(n) }) : null, icon("drop")].filter(Boolean)); };
   more.hidden = false;
   label(sw._views.filter(v => v.attn));   // widest likely label first, so the fold leaves it room
   const hid = [];
   for (let i = chips.length - 1; i >= 0 && sw.scrollWidth > sw.clientWidth; i--) if (!chips[i].classList.contains("on")) { chips[i].hidden = true; hid.unshift(chips[i].dataset.t); }
+  seps();
   const vs = sw._views.filter(v => hid.includes(v.t));
   label(vs);
   more.onclick = () => showMenu(more, vs.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" })), { value: target, onPick: setTarget });
@@ -3586,6 +3619,7 @@ async function refreshState() {
     if (S.name && S.name !== botName) { botName = S.name; setBrand(); if (current === "home") $("#title").textContent = botName; if (ts(target).hLoaded) renderAll(); }
     // A lane that exits disappears at once: the view falls back to the main assistant (it stays reachable from ⌘K).
     if (isLaneT(target) && (!S.lanes.some(l => `lane:${l.name}` === target) || (PREV[target] && PREV[target] !== "exited" && targetInfo(target).status === "exited"))) setTarget(MAIN);
+    if (isProjT(target) && !projTargets().includes(target)) setTarget(MAIN);   // its work channel was deleted
     noteStatus();
     renderSideStatus(); renderBars(); renderWorking(); updateComposerMeta();
     if (current === "lanes") renderLanes();
