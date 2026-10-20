@@ -81,9 +81,18 @@ function toolLineKo(a) {
   const base = p.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
   return base ? `${verb} · ${base}` : verb;
 }
+// The runtime's status rows are English internals ("compacting context", "retrying (attempt 2/3)", "orchestrator started (...)"):
+// 홈 says the known ones in Korean and skips the rest; a quoted note ("> ...") is shown as written.
+function statusLineKo(t) {
+  const s = String(t ?? "");
+  if (s.startsWith("> ")) return oneLine(s.slice(2));
+  const k = [[/^compacting context/, "컨텍스트 정리 중"], [/^context compacted/, "컨텍스트 정리됨"], [/^retrying/, "다시 시도 중"], [/^aborted/, "중단됨"], [/^model fallback/, "다른 모델로 전환"]].find(([re]) => re.test(s));
+  return k ? k[1] : /[가-힣]/.test(s) ? oneLine(s) : "";
+}
 function actLine(a) {
   switch (a.type) {
-    case "text": case "error": case "status": return oneLine(a.text ?? "");
+    case "text": case "error": return oneLine(a.text ?? "");
+    case "status": return statusLineKo(a.text);
     case "tool_call": return toolLineKo(a);
     default: return "";
   }
@@ -215,7 +224,7 @@ function renderHome() {
   const mainAttn = attnKind(MAIN);
   add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), mainAttn || o.status === "rate-limited" ? "warn" : "",
     el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), stop, menuBtn(MAIN)),
-    el("div", { class: "big", text: om ? modelName(om.model) : "…" }),
+    el("div", { class: "big", text: om ? (modelName(om.model).includes("-") ? modelChipText(om.model) : modelName(om.model)) : "…" }),
     el("div", { class: "sup sub", text: om && om.thinking ? `생각 수준 ${thinkKo(om.thinking)}` : "\u00a0" }),
     subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
   add("notices:alert", homeAlertCard(), { w: 4, h: 4 }, HOME_NOTICE);
