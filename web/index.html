@@ -132,6 +132,8 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .ib:hover { background: var(--hover); color: var(--fg); }
 .ib.pri { background: var(--accent); color: var(--on-accent); border-radius: 50%; }
 .ib.pri:hover { background: var(--accent); opacity: .88; }
+.menu .mi.more { color: var(--fg-2); }
+.menu .mi.more svg { margin-left: auto; width: 14px; height: 14px; }
 .ib.err { color: var(--err); }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 14px; border: 1px solid var(--accent); border-radius: var(--r-ctl); background: var(--accent); color: var(--on-accent); font-size: 14px; line-height: 20px; font-weight: 600; text-decoration: none; white-space: nowrap; max-width: 100%; }
 .btn:hover { opacity: .85; }
@@ -1394,8 +1396,19 @@ function showMenu(anchor, items, { value, onPick }) {
   closeMenu(false);
   const node = el("div", { class: "menu", role: "listbox", tabindex: "-1" });
   const opts = [];
-  for (const it of items) {
-    if (it.header != null) { node.append(el("div", { class: "mh", role: "presentation", text: it.header })); continue; }
+  // An item with `fold` (a list of items) is a "더 보기" row that expands in place.
+  const mk = it => {
+    if (it.header != null) return [el("div", { class: "mh", role: "presentation", text: it.header }), null];
+    if (it.fold) {
+      const b = el("button", { type: "button", class: "mi more", tabindex: "-1", onclick: ev => {
+        ev.stopPropagation();
+        let at = opts.indexOf(b); const first = at; opts.splice(at, 1);
+        for (const x of it.fold) { const [n, o] = mk(x); node.insertBefore(n, b); if (o) opts.splice(at++, 0, o); }
+        b.remove(); place(); focusAt(first);
+      } }, el("span", { class: "ck" }), el("span", { class: "ml", text: it.label }), icon("drop"));
+      b._label = String(it.label).toLowerCase();
+      return [b, b];
+    }
     const on = it.value === value;
     const b = el("button", { type: "button", role: "option", class: `mi${on ? " sel-on" : ""}`, "aria-selected": on ? "true" : "false", tabindex: "-1", onclick: () => { closeMenu(); onPick(it.value); } },
       on ? icon("check", "ck") : el("span", { class: "ck" }),
@@ -1403,21 +1416,25 @@ function showMenu(anchor, items, { value, onPick }) {
       el("span", { class: "ml" }, it.label, it.sub ? el("small", { text: it.sub }) : null),
       it.badge ? el("span", { class: "nb", text: String(it.badge) }) : null);
     b._label = String(it.label).toLowerCase();
-    opts.push(b); node.append(b);
-  }
+    return [b, b];
+  };
+  for (const it of items) { const [n, o] = mk(it); node.append(n); if (o) opts.push(o); }
   const host = anchor.closest("dialog") || document.body;
   host.append(node);
-  const r = anchor.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
-  node.style.minWidth = `${Math.max(112, r.width)}px`;
-  node.style.maxWidth = `${vw - 16}px`;
-  const below = vh - r.bottom - 12, above = r.top - 12;
-  const up = below < 220 && above > below;
-  node.style.maxHeight = `${Math.min(400, up ? above : below)}px`;
-  const w = node.offsetWidth, h = node.offsetHeight;
-  let left = r.left;
-  if (left + w > vw - 8) left = Math.max(8, r.right - w);
-  node.style.left = `${left}px`;
-  node.style.top = `${Math.max(8, up ? r.top - h - 4 : r.bottom + 4)}px`;
+  const place = () => {
+    const r = anchor.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
+    node.style.minWidth = `${Math.max(112, r.width)}px`;
+    node.style.maxWidth = `${vw - 16}px`;
+    const below = vh - r.bottom - 12, above = r.top - 12;
+    const up = below < 220 && above > below;
+    node.style.maxHeight = `${Math.min(400, up ? above : below)}px`;
+    const w = node.offsetWidth, h = node.offsetHeight;
+    let left = r.left;
+    if (left + w > vw - 8) left = Math.max(8, r.right - w);
+    node.style.left = `${left}px`;
+    node.style.top = `${Math.max(8, up ? r.top - h - 4 : r.bottom + 4)}px`;
+  };
+  place();
   anchor.setAttribute("aria-expanded", "true");
   const focusAt = i => { const o = opts[Math.max(0, Math.min(opts.length - 1, i))]; if (o) { o.focus(); o.scrollIntoView({ block: "nearest" }); } };
   const start = opts.findIndex(o => o.getAttribute("aria-selected") === "true");
@@ -1490,7 +1507,7 @@ function endedGroup() {
 const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
 const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 제한", exited: "종료됨" })[s] || s || "알 수 없음";
 const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
-const modelName = sel => { if (!sel) return "–"; const a = ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
+const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) || []).find(x => x.selector === sel) || ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
 /* ---------- chrome: nav, theme, back ---------- */
 for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id === "chat" ? lastChatView() : id) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
@@ -3019,7 +3036,7 @@ const kfmt = n => n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.ro
 function modelChipText(sel) {
   const [base, level] = String(sel || "").split(":");
   if (!base) return "";
-  const a = ((M && M.available) || []).find(x => x.selector === base || x.selector === sel);
+  const a = [...((M && M.pickable) || []), ...((M && M.available) || [])].find(x => x.selector === base || x.selector === sel);
   const nm = a && a.name ? a.name.replace(/^Claude\s+/i, "") : base.split("/").pop().replace(/^claude-/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase());
   return level ? `${nm} · ${level}` : nm;
 }
@@ -3056,10 +3073,7 @@ async function targetChange(title, change, label) {
 }
 $("#c-model").onclick = ev => busy(null, async () => {
   const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(targetParam())}`);
-  const name = targetName(target), byProv = new Map();
-  for (const m of T.models) { if (!byProv.has(m.provider)) byProv.set(m.provider, []); byProv.get(m.provider).push(m); }
-  const items = [];
-  for (const [p, list] of byProv) items.push({ header: providerName(p) }, ...list.map(m => ({ value: m.selector, label: m.name || m.selector })));
+  const name = targetName(target), items = modelPickItems(T.models, T.model);
   showMenu(anchor, items, { value: T.model, onPick: v => busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
 });
 // Effort only: low / medium / high (plus the current level when it is another one); the model is never touched.
@@ -3601,6 +3615,20 @@ async function loadModels(quiet) {
   if (current === "context") renderContext();
   if (current === "lanes") { laneSig = ""; renderLanes(); }
 }
+// Model picker rows from the server's choices: one "<Family> <version>" per model grouped by family, the latest two per
+// family shown and the rest folded under '이전 모델' (the current selection is never folded).
+function modelPickItems(avail, val) {
+  const items = [], groups = new Map(), older = [];
+  for (const a of avail) { const g = a.family || providerName(a.provider); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(a); }
+  const row = a => ({ value: a.selector, label: a.name || a.selector });
+  for (const [g, list] of groups) {
+    const now = list.filter(a => !a.older || a.selector === val);
+    if (now.length) items.push({ header: g }, ...now.map(row));
+    older.push(...list.filter(a => a.older && a.selector !== val));
+  }
+  if (older.length) items.push({ fold: older.map(row), label: `이전 모델 ${older.length}개` });
+  return items;
+}
 function modelItems(key, curModel, filter = providerFilter) {
   const val = (pending[key] || {}).model ?? curModel;
   // Pickers list M.pickable (no Haiku, no Fable); a target already on a hidden model still shows it under "현재".
@@ -3608,9 +3636,7 @@ function modelItems(key, curModel, filter = providerFilter) {
   const shown = avail.filter(a => !filter || a.provider === filter);
   const items = [];
   if (val && !shown.some(a => a.selector === val)) items.push({ header: "현재" }, { value: val, label: modelName(val) });
-  const byProv = new Map();
-  for (const a of shown) { if (!byProv.has(a.provider)) byProv.set(a.provider, []); byProv.get(a.provider).push(a); }
-  for (const [p, list] of byProv) items.push({ header: providerName(p) }, ...list.map(a => ({ value: a.selector, label: a.name || a.selector })));
+  items.push(...modelPickItems(shown, val));
   return items;
 }
 // PUT /api/models for one target (the 모델 view and the 홈 card menus share it); confirms first when `confirmText` is set and again when the cache would be rewritten.
@@ -4630,9 +4656,7 @@ function hModelItems(cur) {
   const avail = (M && (M.pickable || M.available)) || [];
   const items = [];
   if (cur && !avail.some(a => a.selector === cur)) items.push({ header: "현재" }, { value: cur, label: modelName(cur) });
-  const byProv = new Map();
-  for (const a of avail) { if (!byProv.has(a.provider)) byProv.set(a.provider, []); byProv.get(a.provider).push(a); }
-  for (const [p, list] of byProv) items.push({ header: providerName(p) }, ...list.map(a => ({ value: a.selector, label: a.name || a.selector })));
+  items.push(...modelPickItems(avail, cur));
   return items;
 }
 

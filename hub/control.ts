@@ -44,7 +44,7 @@ export async function modelsView() {
 		lanes: laneModels(),
 		thinking_levels: [...THINKING_LEVELS],
 		available: await availableModels(),
-		pickable: pickable(await availableModels()),
+		pickable: modelChoices(await availableModels()),
 		notes: { orchestrator: ORCHESTRATOR_NOTE, workers: WORKERS_NOTE, fallback: FALLBACK_NOTE },
 		fallbacks: fallbacksView(),
 	};
@@ -64,19 +64,49 @@ export function contextView() {
 // Model pickers never offer Haiku (owner: never) or Fable (only on the owner's explicit ask; still settable by name).
 export const HIDDEN_MODEL = /haiku|fable/i;
 export const pickable = (list: ModelInfo[]): ModelInfo[] => list.filter(m => !HIDDEN_MODEL.test(m.selector) && !HIDDEN_MODEL.test(m.name ?? ""));
-// One entry per model in the pickers: a dated snapshot ("claude-sonnet-4-5-20250929", "claude-opus-4-20250514") is
-// dropped when its undated alias is listed ("claude-sonnet-4-5", "claude-opus-4-0"), then one entry per display name.
-const snapshotBase = (selector: string): string => selector.replace(/-\d{8}$/, "").replace(/-0$/, "");
-export function dedupeModels(list: ModelInfo[]): ModelInfo[] {
-	const undated = new Set(list.filter(m => !/-\d{8}$/.test(m.selector)).map(m => snapshotBase(m.selector)));
-	const names = new Set<string>();
-	return list.filter(m => {
-		if (/-\d{8}$/.test(m.selector) && undated.has(snapshotBase(m.selector))) return false;
-		const name = `${m.provider}|${m.name ?? m.selector}`;
-		if (names.has(name)) return false;
-		names.add(name);
-		return true;
+// Pickers show one entry per model as "<Family> <version>" taken from the id, not the provider's free-text name
+// ("claude-sonnet-4-20250514" and "claude-sonnet-4-0" are both "Sonnet 4"; "claude-3-5-sonnet-20241022" is "Sonnet 3.5").
+// Per family+version the undated alias wins, else the newest snapshot (`keep` wins over both). Opus, Sonnet, then other
+// families, newest version first; all but the latest two of a family are marked `older` (folded under '이전 모델').
+export type ModelChoice = ModelInfo & { family?: string; version?: string; older: boolean };
+const DATED = /-(\d{8})$/;
+const cap = (w: string): string => w.charAt(0).toUpperCase() + w.slice(1);
+const ver = (major: string, minor?: string): string => (minor && minor !== "0" ? `${major}.${minor}` : major);
+export function modelIdentity(selector: string): { family: string; version: string } | undefined {
+	const id = (selector.split("/").pop() ?? "").replace(DATED, "");
+	let m = id.match(/^claude-(\d+)(?:-(\d))?-([a-z]+)$/);
+	if (m) return { family: cap(m[3]!), version: ver(m[1]!, m[2]) };
+	m = id.match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?$/);
+	if (m) return { family: cap(m[1]!), version: ver(m[2]!, m[3]) };
+	return undefined;
+}
+const FAMILY_ORDER = ["Opus", "Sonnet"];
+export function modelChoices(list: ModelInfo[], keep?: string): ModelChoice[] {
+	const rank = (m: ModelInfo): number => (m.selector === keep ? Infinity : DATED.test(m.selector) ? Number(m.selector.match(DATED)![1]) : 1e9);
+	const best = new Map<string, ModelChoice>();
+	for (const m of pickable(list)) {
+		const idn = modelIdentity(m.selector);
+		const c: ModelChoice = { ...m, ...(idn ? { name: `${idn.family} ${idn.version}`, family: idn.family, version: idn.version } : {}), older: false };
+		const key = idn ? `${m.provider}|${idn.family}|${idn.version}` : `${m.provider}|${m.name}`;
+		const prev = best.get(key);
+		if (!prev || rank(c) > rank(prev)) best.set(key, c);
+	}
+	const fam = (c: ModelChoice): number => (!c.family ? 99 : FAMILY_ORDER.includes(c.family) ? FAMILY_ORDER.indexOf(c.family) : 50);
+	const num = (v?: string): number[] => (v ?? "0").split(".").map(Number);
+	const out = [...best.values()].sort((a, b) => {
+		if (fam(a) !== fam(b)) return fam(a) - fam(b);
+		if (a.family !== b.family) return (a.family ?? "").localeCompare(b.family ?? "");
+		const [x, y] = [num(a.version), num(b.version)];
+		return (y[0]! - x[0]!) || ((y[1] ?? 0) - (x[1] ?? 0));
 	});
+	const seen = new Map<string, number>();
+	for (const c of out) {
+		if (!c.family) continue;
+		const n = seen.get(c.family) ?? 0;
+		seen.set(c.family, n + 1);
+		c.older = n >= 2;
+	}
+	return out;
 }
 
 // The composer's chip popovers: model, effort and context of one chat target ("main" or "lane:<name>").
@@ -87,7 +117,7 @@ export async function targetView(target: string) {
 	if (key !== "orchestrator" && !lane) throw new ControlError(`no lane ${key.slice(5)}`, 404);
 	const cur = lane ? parseSelector(lane.model) : orchestratorModel();
 	const proc = contextView().processes.find(p => p.name === (lane ? lane.name : "orchestrator"))!;
-	const models = dedupeModels(pickable(await availableModels()));
+	const models = modelChoices(await availableModels(), cur.model);
 	return {
 		target: lane ? `lane:${lane.name}` : "main",
 		key,
@@ -97,7 +127,7 @@ export async function targetView(target: string) {
 		running: proc.running,
 		busy: lane ? lane.status === "working" || lane.status === "starting" : orch.status === "working",
 		context: { tokens: proc.tokens, window: proc.window, percent: proc.percent, compaction: proc.compaction },
-		models: models.some(m => m.selector === cur.model) ? models : [...models, ...(await availableModels()).filter(m => m.selector === cur.model)],
+		models: models.some(m => m.selector === cur.model) ? models : [...models, ...(await availableModels()).filter(m => m.selector === cur.model).map(m => ({ ...m, older: false }))],
 		thinking_levels: [...THINKING_LEVELS],
 		note: lane ? "" : ORCHESTRATOR_NOTE,
 	};
