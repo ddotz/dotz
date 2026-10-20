@@ -18,6 +18,7 @@ import { listSchedules } from "./schedule.ts";
 import { harnessProjects, denyLines } from "./harnessprojects.ts";
 import { listSetups } from "./workchannels.ts";
 import { allWatches } from "./watch.ts";
+import { activeHarness, EXTENSION_DIRS } from "./runtime/index.ts";
 
 export type Applies = "live" | "restart" | "next-turn";
 type SettingType = "text" | "number" | "bool" | "select" | "model" | "effort";
@@ -221,11 +222,11 @@ const fileFact = (name: string): { label: string; value: string }[] => {
 };
 const timeOr = (v: unknown, dflt: string) => { const c = msg().harness.common; return String(v ?? dflt) === "off" ? c.off : c.daily(String(v ?? dflt)); };
 
-// `ui.origin_view`: prompt files the owner wrote and the omp extension installed under ~/.omp are personal; MODE and the gateway's own systems ship with dotz.
-const PERSONAL_NODES: Record<string, true> = { rules: true, lessons: true, identity: true, guard: true };
-function markOrigin(nodes: HarnessNode[]): void {
+// `ui.origin_view`: prompt files the owner wrote and the owner's own orchestrator-guard (when the harness loads it) are personal; MODE and the gateway's own systems ship with dotz.
+const PERSONAL_NODES: Record<string, true> = { rules: true, lessons: true, identity: true };
+function markOrigin(nodes: HarnessNode[], ownGuard: boolean): void {
 	for (const n of nodes) {
-		n.origin = PERSONAL_NODES[n.id] ? "personal" : "shipped";
+		n.origin = PERSONAL_NODES[n.id] || (n.id === "guard" && ownGuard) ? "personal" : "shipped";
 		n.custom = n.settings.filter(s => s.editable && s.default !== undefined && !same(s.value, s.default)).map(s => ({ key: s.key, label: s.label, value: s.value, default: s.default!, ...(s.unit ? { unit: s.unit } : {}) }));
 		if (n.origin === "personal" && n.file) {
 			const f = fileDef(n.file).path();
@@ -257,8 +258,13 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 	const failing = watches.filter(w => w.state.fails >= 2).length;
 	const setups = listSetups();
 	const maxActive = typeof disk.lanes?.max_active === "number" ? disk.lanes.max_active : 4;
-	const guardFile = join(homedir(), ".omp", "agent", "extensions", "orchestrator-guard.ts");
-	const guardOn = existsSync(guardFile);
+	// The worker guard of the harness that runs dotz: the owner's original orchestrator-guard.ts in that harness's extension
+	// folder wins (dotz's port then steps aside); otherwise dotz's port (extension/guard.ts) rides on every OmO and omp process.
+	const hx = activeHarness();
+	const guardOriginal = hx.ids.filter(i => Object.hasOwn(EXTENSION_DIRS, i)).map(i => join(EXTENSION_DIRS[i](), "orchestrator-guard.ts")).find(f => existsSync(f));
+	const guardOn = Boolean(guardOriginal) || hx.ids.some(i => i === "omo" || i === "omp");
+	const guardShown = guardOriginal ? guardOriginal.replace(homedir(), "~") : "dotz/extension/guard.ts";
+	const expensiveOn = (disk as { guard?: { ask_before_expensive?: unknown } }).guard?.ask_before_expensive === true;
 	const rules = existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "";
 	const subagents = ["orchestrator", ...laneList.map(l => `lane:${l.name}`)].reduce((n, s) => n + runningSubagents(s), 0);
 	const zeleOn = disk.zele?.enabled !== false;
@@ -319,7 +325,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{
 			id: "orchestrator", kind: "orchestrator", group: "flow", label: N.orchestrator.label(NAME), status: orchTone,
 			summary: `${mName(om.model)} · ${om.thinking} · ${T.status[orch.status] ?? orch.status}`,
-			desc: N.orchestrator.desc,
+			desc: N.orchestrator.desc(hx.name),
 			facts: [
 				{ label: c.state, value: T.status[orch.status] ?? orch.status },
 				{ label: N.orchestrator.context, value: orch.ctx.window ? `${kTokens(orch.ctx.tokens)} / ${kTokens(orch.ctx.window)} (${percentOf(orch.ctx) ?? 0}%)` : orch.ctx.tokens ? kTokens(orch.ctx.tokens) : "-" },
@@ -346,7 +352,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{
 			id: "workers", kind: "workers", group: "flow", label: N.workers.label, status: subagents ? "busy" : "ok", summary: `${mName(workerModel().replace(/:[a-z]+$/, ""))} · ${wm.thinking}${subagents ? N.workers.running(subagents) : ""}`,
 			desc: N.workers.desc,
-			facts: [{ label: N.workers.kinds, value: N.workers.kindsValue }, { label: N.workers.limit, value: N.workers.limitValue(WORKER_SLOTS) }, { label: N.workers.runningFact, value: c.count(subagents) }, { label: N.workers.isolation, value: N.workers.isolationValue }, { label: N.workers.expensive, value: N.workers.expensiveValue }],
+			facts: [{ label: N.workers.kinds, value: N.workers.kindsValue }, { label: N.workers.limit, value: N.workers.limitValue(WORKER_SLOTS) }, { label: N.workers.runningFact, value: c.count(subagents) }, { label: N.workers.isolation, value: N.workers.isolationValue }, { label: N.workers.expensive, value: (expensiveOn ? N.workers.expensiveValue : N.guard.expensiveOff) }],
 			settings: [S("lanes.worker_model"), S("lanes.worker_effort")],
 		},
 		// ---- support: around the gateway
@@ -362,14 +368,14 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{ id: "memguard", kind: "system", group: "support", anchor: "lanes", order: 2, label: N.memguard.label, status: (disk.lanes?.max_rss_gb ?? 8) === 0 ? "off" : "ok", summary: (disk.lanes?.max_rss_gb ?? 8) === 0 ? c.disabled : N.memguard.summary(disk.lanes?.max_rss_gb ?? 8), desc: N.memguard.desc, facts: [], settings: [S("lanes.max_rss_gb")] },
 		// ---- support: workers column
 		{
-			id: "guard", kind: "system", group: "support", anchor: "workers", order: 1, label: N.guard.label, status: guardOn ? "ok" : "warn", summary: guardOn ? N.guard.summary : N.guard.missing,
-			desc: N.guard.desc,
+			id: "guard", kind: "system", group: "support", anchor: "workers", order: 1, label: N.guard.label(hx.name), status: guardOn ? "ok" : "warn", summary: guardOn ? N.guard.summary : N.guard.missing,
+			desc: N.guard.desc(hx.name, guardShown),
 			facts: [
 				{ label: c.state, value: guardOn ? N.guard.installed : N.guard.notInstalled },
 				{ label: N.guard.briefing, value: N.guard.briefingValue },
 				{ label: N.guard.patch, value: N.guard.patchValue },
 				{ label: N.guard.budget, value: N.guard.budgetValue },
-				{ label: N.guard.expensive, value: N.guard.expensiveValue },
+				{ label: N.guard.expensive, value: expensiveOn ? N.guard.expensiveValue : N.guard.expensiveOff },
 				{ label: N.guard.external, value: N.guard.externalValue },
 				{ label: N.guard.context, value: N.guard.contextValue },
 				{ label: N.guard.blocked, value: c.count(denyLines(rules).length) },
@@ -405,7 +411,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{ from: "guard", to: "workers", label: E.guard },
 	];
 	const originView = uiOriginView();
-	if (originView) markOrigin(nodes);
+	if (originView) markOrigin(nodes, Boolean(guardOriginal));
 	const gateway = nodes.find(n => n.id === "gateway")!, orchestrator = nodes.find(n => n.id === "orchestrator")!;
 	const projects = harnessProjects({ disk, mName, gateway, orchestrator });
 	return { generated: new Date().toISOString(), name: NAME, nodes, edges, projects, ...(originView ? { origin_view: true, data_dir: DATA_DIR.startsWith(`${homedir()}/`) ? `~${DATA_DIR.slice(homedir().length)}` : DATA_DIR } : {}) };

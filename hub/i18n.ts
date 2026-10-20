@@ -231,7 +231,7 @@ Do this, briefly:
 			},
 			orchestrator: {
 				label: (name: string) => `Orchestrator (${name})`,
-				desc: "The always-on assistant that receives every message (one omp session). It does light work itself and hands long work to lanes. When a usage limit hits, it holds messages and handles them in order right after the reset; server errors are retried up to 4 times. If it dies it is restarted automatically (up to 3 times in 10 minutes), and when the conversation grows long it moves to a new session with a handover. Changing the model starts a new session.",
+				desc: (h: string) => `The always-on assistant that receives every message (one ${h} session). It does light work itself and hands long work to lanes. When a usage limit hits, it holds messages and handles them in order right after the reset; server errors are retried up to 4 times. If it dies it is restarted automatically (up to 3 times in 10 minutes), and when the conversation grows long it moves to a new session with a handover. Changing the model starts a new session.`,
 				context: "Context", resumes: "Resumes at", cache: "Cache keep-alive", cacheValue: "One ping at 50-58 minutes while idle (up to 12)",
 				startPrompt: "Start prompt", startPromptValue: "Behaviour rules + identity + my rules + lessons + work-channel summary",
 			},
@@ -277,7 +277,7 @@ Do this, briefly:
 			},
 			audit: {
 				label: "Token usage audit",
-				desc: "Scans omp session records daily for waste, such as a cache that broke for no reason or a session with an abnormally large context. If something is off, it tells the alert channel.",
+				desc: "Scans OmO and omp session records daily for waste, such as a cache that broke for no reason or a session with an abnormally large context. If something is off, it tells the alert channel.",
 			},
 			reflect: {
 				label: "Nightly review", summary: (when: string) => `${when} · lessons tidy-up + backup`,
@@ -302,8 +302,9 @@ Do this, briefly:
 				desc: "Every 30 seconds it checks the memory of the orchestrator and lane processes and restarts them on the same session when over the limit (it stops a stray grep from eating tens of GB). If that happens more than 3 times an hour it only sends an alert and stops.",
 			},
 			guard: {
-				label: "Work guard (omp extension)", summary: "Checks briefs, patches, budget and external commands", missing: "Not installed",
-				desc: "The orchestrator-guard extension installed on the omp side (outside the gateway, in this computer's omp settings). It enforces the rules below when a worker is called and while it runs. Read-only here.",
+				label: (h: string) => `Work guard (${h})`, summary: "Checks briefs, patches, budget and external commands", missing: "Not loaded",
+				desc: (h: string, file: string) => `The worker guard ${h} loads (${file}). It enforces the rules below when a worker is called and while it runs. Read-only here.`,
+				expensiveOff: "Off (config.json guard.ask_before_expensive is not on)",
 				installed: "Installed", notInstalled: "Not installed (the rules are not enforced)",
 				briefing: "Briefing", briefingValue: "Done-when required · 8000-character and 40-line code limits · answers within 800 characters",
 				patch: "Patches", patchValue: "Writing workers isolated + patch must be read before it can be applied",
@@ -537,7 +538,7 @@ const ko: Catalog = {
 			},
 			orchestrator: {
 				label: name => `오케스트레이터 (${name})`,
-				desc: "모든 메시지를 받는 상시 비서예요(omp 세션 하나). 가벼운 일은 직접 하고, 오래 걸리는 일은 레인에 맡겨요. 사용량 한도에 걸리면 메시지를 모아 뒀다가 리셋 직후 순서대로 처리하고, 서버 오류는 최대 4번 재시도해요. 죽으면 자동으로 다시 띄우고(10분에 3번까지), 대화가 길어지면 핸드오버와 함께 새 세션으로 넘어가요. 모델을 바꾸면 새 세션으로 시작해요.",
+				desc: (h: string) => `모든 메시지를 받는 상시 비서예요(${h} 세션 하나). 가벼운 일은 직접 하고, 오래 걸리는 일은 레인에 맡겨요. 사용량 한도에 걸리면 메시지를 모아 뒀다가 리셋 직후 순서대로 처리하고, 서버 오류는 최대 4번 재시도해요. 죽으면 자동으로 다시 띄우고(10분에 3번까지), 대화가 길어지면 핸드오버와 함께 새 세션으로 넘어가요. 모델을 바꾸면 새 세션으로 시작해요.`,
 				context: "컨텍스트", resumes: "재개 예정", cache: "캐시 유지", cacheValue: "한가할 때 50~58분에 한 번 신호(최대 12번)",
 				startPrompt: "시작 프롬프트", startPromptValue: "행동 규칙 + 정체성 + 내 규칙 + 교훈 + 작업 채널 요약",
 			},
@@ -583,7 +584,7 @@ const ko: Catalog = {
 			},
 			audit: {
 				label: "토큰 사용 감사",
-				desc: "매일 omp 세션 기록을 훑어서 이유 없이 캐시가 깨졌거나 컨텍스트가 비정상적으로 큰 세션 같은 낭비를 찾아내요. 이상이 있으면 알림 채널로 알려요.",
+				desc: "매일 OmO·omp 세션 기록을 훑어서 이유 없이 캐시가 깨졌거나 컨텍스트가 비정상적으로 큰 세션 같은 낭비를 찾아내요. 이상이 있으면 알림 채널로 알려요.",
 			},
 			reflect: {
 				label: "야간 회고", summary: when => `${when} · 교훈 정리 + 백업`,
@@ -608,8 +609,9 @@ const ko: Catalog = {
 				desc: "30초마다 오케스트레이터·레인 프로세스의 메모리를 보고 한도를 넘으면 같은 세션으로 다시 시작해요(엉뚱한 grep 하나가 수십 GB를 먹는 일을 막아요). 한 시간에 3번을 넘기면 알림만 보내고 멈춰요.",
 			},
 			guard: {
-				label: "작업 가드 (omp 확장)", summary: "브리핑·패치·예산·외부 명령 점검", missing: "설치돼 있지 않아요",
-				desc: "omp 쪽에 설치된 orchestrator-guard 확장이에요(게이트웨이 밖, 이 컴퓨터의 omp 설정). 작업자를 부르는 순간과 작업자가 도는 동안 아래 규칙을 강제해요. 여기서는 읽기만 돼요.",
+				label: (h: string) => `작업 가드 (${h})`, summary: "브리핑·패치·예산·외부 명령 점검", missing: "불러오지 않아요",
+				desc: (h: string, file: string) => `${h} 가 불러오는 작업 가드예요(${file}). 작업자를 부르는 순간과 작업자가 도는 동안 아래 규칙을 강제해요. 여기서는 읽기만 돼요.`,
+				expensiveOff: "꺼짐 (config.json 의 guard.ask_before_expensive 가 꺼져 있어요)",
 				installed: "설치됨", notInstalled: "설치 안 됨 (규칙이 강제되지 않아요)",
 				briefing: "브리핑", briefingValue: "완료 조건 필수 · 8000자·코드 40줄 제한 · 답변 800자 이내",
 				patch: "패치", patchValue: "쓰기 작업자는 격리 + 패치를 읽어야 적용 가능",
