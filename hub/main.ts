@@ -17,7 +17,7 @@ import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCle
 import { startMemoryGuard } from "./memguard.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
 import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
-import { abortLane, applyAccountChange as applyLaneAccount, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, turnHeader, verifyLane } from "./lanes.ts";
+import { abortLane, applyAccountChange as applyLaneAccount, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane } from "./lanes.ts";
 import { accountView, onSwitch as onAccountSwitch, stickyAccount } from "./account-sticky.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { abort as abortOrchestrator, applyAccountChange as applyOrchestratorAccount, deliver as deliverToOrchestrator, orch, orchBusy, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
@@ -34,14 +34,16 @@ import { answerMovesToLane, lanePlace, replyRef } from "./threads.ts";
 import { startReflection } from "./reflect.ts";
 import { featureCatalog, syncFeatureWatches } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
-import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
+import { loadProjects, saveProject } from "./projects.ts";
+import { addSchedule, listSchedules, patchSchedule, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
+import { readTodo } from "./todo.ts";
 import { customRoute, syncRoutineSchedules } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { startOmpUpdate } from "./update.ts";
 import { startSelfUpdate, updateRoute } from "./selfupdate.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
-import { addWatch, allWatches, approveWatch, listWatches, removeWatch, startWatches, stopWatches } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, listWatches, patchWatch, removeWatch, startWatches, stopWatches } from "./watch.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
@@ -562,6 +564,22 @@ const server = Bun.serve({
 		if (updateResponse) return updateResponse;
 		const customResponse = await customRoute(req, url, { lanes: laneSummary, channels: () => discord.channels, send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }) });
 		if (customResponse) return customResponse;
+		// Project records (hub/projects.ts) and the todo strip (hub/todo.ts), docs/layers.md §4.
+		if (url.pathname === "/api/projects" && req.method === "PUT") {
+			try {
+				return json(saveProject(await body(req)).record);
+			} catch (error) {
+				return json({ error: (error as Error).message }, 400);
+			}
+		}
+		if (url.pathname === "/api/projects" && req.method === "GET") return json({ projects: loadProjects() });
+		if (url.pathname === "/api/todo" && req.method === "GET") {
+			const target = url.searchParams.get("target") ?? "main";
+			if (target !== "main" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, lane:<name> or ch:<id>" }, 400);
+			const lane = target.startsWith("lane:") ? lanes.get(target.slice(5)) : undefined;
+			if (target.startsWith("lane:") && !lane) return json({ error: `no lane ${target.slice(5)}` }, 404);
+			return json(readTodo(lane ? lane.sessionFile : orch.sessionFile));
+		}
 		// API keys for fallback entries (hub/apikey-store.ts): GET shows masks only; PUT {provider, key} or {from: "omo"}; DELETE /api/apikeys/<provider>.
 		if (parts[0] === "api" && parts[1] === "apikeys") {
 			try {
@@ -847,7 +865,10 @@ const server = Bun.serve({
 			try {
 				if (req.method === "GET") return json({ work_channels: Object.entries(discord.channels.work).map(([id, name]) => ({ channel: `ch:${id}`, name })), setups: listSetups() });
 				if (req.method === "POST" && parts[2] === "create") {
-					const c = await discord.createWorkChannel(String((await body(req)).name ?? ""));
+					const wanted = String((await body(req)).name ?? "");
+					const plain = titleProblem(wanted);
+					if (plain) return json({ error: plain.replace(/^title/, "channel name") }, 409);
+					const c = await discord.createWorkChannel(wanted);
 					return json({ ok: true, channel: `ch:${c.id}`, name: c.name });
 				}
 				if (req.method === "POST" && parts[2] === "thread_status") {
@@ -886,6 +907,7 @@ const server = Bun.serve({
 			try {
 				if (req.method === "GET") return json(listWatches());
 				if (req.method === "POST" && parts[2] && parts[3] === "approve") return json({ ok: true, watch: approveWatch(parts[2]) });
+				if (req.method === "PATCH" && parts[2]) return json(patchWatch(parts[2], await body(req)));
 				if (req.method === "POST") return json({ ok: true, watch: addWatch(await body(req), existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "") });
 				if (req.method === "DELETE" && parts[2]) {
 					const owned = allWatches().find(w => (w.id === parts[2] || w.name === parts[2]) && w.channels?.length);
@@ -900,6 +922,7 @@ const server = Bun.serve({
 			try {
 				if (req.method === "GET") return json(listSchedules());
 				if (req.method === "POST") return json({ ok: true, schedule: addSchedule(await body(req)) });
+				if (req.method === "PATCH" && parts[2]) return json(patchSchedule(parts[2], await body(req)));
 				if (req.method === "DELETE" && parts[2]) return json({ ok: removeSchedule(parts[2]) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 400);
@@ -933,6 +956,11 @@ const server = Bun.serve({
 						log(`lane ${String(b.name)} refused: ${unjustified}`);
 						return json({ error: unjustified }, 409);
 					}
+					const unnamed = titleProblem(b.title, { key: String(b.name), cwd: String(b.cwd ?? "") });
+					if (unnamed) {
+						log(`lane ${String(b.name)} refused: ${unnamed}`);
+						return json({ error: unnamed }, 409);
+					}
 					const est = estimateOf(b.est, String(b.brief ?? ""));
 					const tight = await budgetProblem(String(b.name), est, Boolean(b.force));
 					if (tight) return json({ error: `budget gate: ${tight}. Ask the owner (now / after reset / smaller); relaunch with force=true only after they say now, or with a smaller est.` }, 409);
@@ -940,7 +968,7 @@ const server = Bun.serve({
 					if (home && discord.status.enabled) discord.homeChannel(home);
 					const asking = queue.current();
 					const place = lanePlace({ home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: id => Boolean(discord.channels.work[id]), threadParent: id => discord.channels.threads[id]?.parent });
-					const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked);
+					const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim());
 					// The goal line of the brief ("목표...: ...") is the thread's starter message in the home channel.
 					const goal = /^(?:목표|Goal)[^:：]*[:：]\s*(.+)$/im.exec(String(b.brief ?? ""))?.[1]?.slice(0, 300);
 					const starter = goal ? `[run] ${b.title ? String(b.title) : lane.name}: ${goal}` : undefined;
