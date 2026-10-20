@@ -2,7 +2,7 @@
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
+import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import { changeTarget, compactTarget, ControlError, contextView, targetView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
@@ -28,7 +28,7 @@ import { createLaneRelay } from "./lanerelay.ts";
 import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { limitsText } from "./usage-account.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
-import { parseTone } from "./tone.ts";
+import { parseTone, stripHandoff } from "./tone.ts";
 import { lanePlace, replyRef } from "./threads.ts";
 import { startReflection } from "./reflect.ts";
 import { featureCatalog, syncFeatureWatches } from "./features.ts";
@@ -104,7 +104,7 @@ async function out(target: string, text: string, replyTo?: string, extra: Record
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answers = extra.source === undefined || extra.source === "orchestrator" ? replyTo : undefined;
 	const sent = await inOrder(target, async () => {
-		const t = await localize(text, target, typeof extra.source === "string" ? extra.source : "orchestrator");
+		const t = await localize(stripHandoff(text), target, typeof extra.source === "string" ? extra.source : "orchestrator");
 		emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text: t, reply_to: replyTo ?? null, ...extra });
 		return t;
 	});
@@ -231,7 +231,7 @@ async function limitsAnswer(target: string, replyTo?: string): Promise<void> {
 
 async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
 	const sent = await inOrder(target, async () => {
-		let t = await localize(text, target, "orchestrator");
+		let t = await localize(stripHandoff(text), target, "orchestrator");
 		// The label goes in after the status marker ([done] becomes the leading emoji) and after localize (a rewrite must not touch it).
 		if (target === "worklog" && key.startsWith("lane:")) {
 			const prefix = claimPrefix(key.slice(5));
@@ -283,10 +283,10 @@ async function budgetProblem(name: string, est: number, force: boolean): Promise
 }
 
 const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });
-setReportHandler((lane, text) => {
-	const event = { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text };
-	emit("inbox", event);
-	const how = laneRelay.report(lane.name, text, join(paths.lanes, lane.name, "report.md"), lane.orchAsked === false);
+setReportHandler((lane, raw) => {
+	const text = stripHandoff(raw);
+	emit("inbox", { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text });
+	const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), lane.orchAsked === false);
 	if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
 	if (how === "steered") log(`lane ${lane.name} report steered into the orchestrator's turn`);
 	else log(`lane ${lane.name} report ${how === "disk" ? "kept on disk (routine progress)" : how === "owner" ? "kept on disk (answer to the owner in the lane channel)" : "dropped (same as the last one)"}`);
@@ -304,7 +304,8 @@ setReportHandler((lane, text) => {
 
 // Mid-turn lane text: an [ask], [fail] or [done] line is something the owner must see and keep, so it is a real message;
 // anything else edits the lane channel's one progress message.
-setProgressHandler((lane, text) => {
+setProgressHandler((lane, raw) => {
+	const text = stripHandoff(raw);
 	const channel = `lane:${lane.name}`;
 	const tone = parseTone(text).tone;
 	const real = tone === "ask" || tone === "fail" || tone === "done";
@@ -435,7 +436,8 @@ void startZele({
 	brief: text => {
 		const target = discord.status.enabled ? "chat" : "web";
 		const event = { ts: now(), kind: "schedule", source: "zele", id: "zele", channel: target, text };
-		emit("inbox", event);
+		// Without a mail channel (no Discord) a new mail comes through here too: shown as mail, not as a schedule.
+		emit("inbox", text.startsWith("[mail") ? { ...event, kind: "mail", text: text.replace(/^\[mail[^\]]*\]\s*/, "") } : event);
 		deliver(inboxText(event), { target });
 	},
 	mailChannel: async () => {
@@ -559,7 +561,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/health") return json({ ok: true });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)) });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)) });
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main";
