@@ -18,6 +18,7 @@ import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, res
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { createPrompts } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
+import { createRestartGate } from "./restart.ts";
 import { createLaneRelay } from "./lanerelay.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
@@ -906,22 +907,19 @@ function replayPending(): number {
 }
 
 // Restart the gateway the way 오모냥's herdr-restart does: wait until the orchestrator and every lane are idle, task
-// workers included (at most 20 min), then exit; launchd (KeepAlive) starts the new code. Called during an orchestrator
-// turn, it waits for that turn to end, so the answer goes out first.
-let draining = false;
+// workers included, then exit; launchd (KeepAlive) starts the new code. Called during an orchestrator turn, it waits for
+// that turn to end, so the answer goes out first. restart.ts: a busy lane is never killed, requests are coalesced.
+const restartGate = createRestartGate({
+	busy: () => [orch.status === "working" || orch.status === "starting" ? "orchestrator" : "", ...[...lanes.values()].filter(laneBusy).map(l => `lane ${l.name}`)].filter(Boolean),
+	collecting: () => bursts.size > 0,
+	startedAt: Date.now(),
+	minGapMs: Number(process.env.DOTZ_RESTART_MIN_GAP_MS ?? 5 * 60_000),
+	noticeAfterMs: 20 * 60_000,
+	notice: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`restart wait notice failed: ${e}`)),
+	log,
+	exit: () => void shutdown(),
+});
 function restartGateway(): string {
-	if (draining) return "gateway restart is already waiting for idle";
-	draining = true;
-	const until = Date.now() + 20 * 60_000;
-	const busy = () => [orch.status === "working" || orch.status === "starting" ? "orchestrator" : "", ...[...lanes.values()].filter(laneBusy).map(l => `lane ${l.name}`)].filter(Boolean);
-	const tick = () => {
-		const b = busy();
-		if ((b.length || bursts.size) && Date.now() < until) return void setTimeout(tick, 2000);
-		log(`gateway restart${b.length ? ` (still busy after 20 min: ${b.join(", ")})` : ""}`);
-		void shutdown();
-	};
-	setTimeout(tick, 2000);
-	const waiting = busy();
-	return waiting.length ? `gateway restarts when idle (waiting for: ${waiting.join(", ")}; at most 20 min)` : "gateway restarting";
+	return restartGate.request();
 }
 setGatewayRestart(restartGateway);
