@@ -1159,6 +1159,67 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .hm-cr .m2 { color: var(--fg-3); font-weight: 400; font-size: 11.5px; line-height: 16px; overflow-wrap: anywhere; }
 .hm-cr .m2.mono { font-family: var(--mono); font-size: 11px; }
 .hs-or { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; color: var(--fg-2); font-size: 12px; line-height: 18px; }
+/* ---------- chat: decision card above the composer, todo strip above the timeline ---------- */
+.dcard { display: flex; flex-direction: column; max-height: max(60dvh, 240px); margin: 0 0 8px; border-radius: var(--r-card); background: color-mix(in srgb, var(--accent) 6%, var(--card)); overflow: hidden; }
+.dcard[hidden] { display: none; }
+.dc-hd { flex: none; display: flex; align-items: flex-start; gap: 8px; padding: 12px 8px 8px 16px; }
+.dc-tt { flex: 1; min-width: 0; }
+.dc-ey { display: block; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
+.dc-q { margin-top: 2px; font-size: 15px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.dc-q p { margin: 0; }
+.dcard.fold .dc-q { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.dcard.fold .dc-hd { padding-bottom: 12px; }
+.dc-fold { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--fg-3); }
+.dc-fold:hover { background: var(--hover); }
+.dc-fold .ic { width: 18px; height: 18px; transition: transform .15s; }
+.dcard.fold .dc-fold .ic { transform: rotate(180deg); }
+.dc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 0 8px 8px; overflow-y: auto; overscroll-behavior: contain; }
+.dc-steps { flex: none; display: flex; gap: 6px; padding-bottom: 2px; overflow-x: auto; scrollbar-width: none; }
+.dc-steps::-webkit-scrollbar { display: none; }
+.dc-chip { flex: none; max-width: 70%; height: 28px; padding: 0 12px; border: 0; border-radius: 14px; background: var(--card); color: var(--fg-2); font: inherit; font-size: 13px; line-height: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dc-chip.got { color: var(--fg); }
+.dc-chip.on { background: var(--fg); color: var(--bg); }
+.dc-sub, .dcm-sub { padding: 2px 4px 0; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 600; }
+.dc-row, .dcm-row { flex: none; display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 48px; padding: 10px 12px; border: 0; border-radius: 12px; background: var(--card); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.dcm-row { background: var(--layer); }
+.dc-row:hover:not(:disabled), .dcm-row:hover:not(:disabled) { background: var(--card-hover); }
+.dc-row:active:not(:disabled), .dcm-row:active:not(:disabled) { background: var(--active); }
+.dc-row:disabled, .dcm-row:disabled { cursor: default; }
+.dc-row:disabled:not(.on), .dcm-row:disabled:not(.on) { opacity: .6; }
+.dc-row.rec, .dcm-row.rec { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
+.dc-row.on, .dcm-row.on { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
+.dc-key { flex: none; display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 6px; background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dcm-row .dc-key { background: var(--card); }
+.dc-row.rec .dc-key, .dcm-row.rec .dc-key { background: var(--accent); color: var(--on-accent); }
+.dc-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 15px; line-height: 24px; font-weight: 600; overflow-wrap: anywhere; }
+.dc-tag { flex: none; padding: 0 6px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 11px; line-height: 18px; font-weight: 600; }
+.dc-ds { color: var(--fg-3); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.dc-st { flex: none; padding: 4px 16px 10px; color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+.dcm { display: flex; flex-direction: column; gap: 6px; max-width: 520px; margin-top: 10px; }
+.todo { flex: none; margin: 0 0 8px; border-radius: 12px; background: var(--card); }
+.todo[hidden] { display: none; }
+.td-bar { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 4px 12px; border: 0; border-radius: 12px; background: transparent; color: var(--fg); font: inherit; font-size: 13.5px; line-height: 20px; text-align: left; cursor: pointer; }
+.td-bar .td-g { margin-top: 0; }
+.td-cur { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-n { flex: none; color: var(--fg-3); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.td-ch { flex: none; width: 16px; height: 16px; color: var(--fg-3); transition: transform .15s; }
+.td-bar[aria-expanded="true"] .td-ch { transform: rotate(180deg); }
+.td-list { max-height: min(40dvh, 320px); padding: 0 12px 10px; overflow-y: auto; overscroll-behavior: contain; }
+.td-ph { margin: 8px 0 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
+.td-r { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; font-size: 13.5px; line-height: 20px; }
+.td-tx { min-width: 0; overflow-wrap: anywhere; }
+.tr-done .td-tx { color: var(--fg-3); }
+.tr-drop .td-tx { color: var(--fg-3); text-decoration: line-through; }
+.td-g { flex: none; position: relative; width: 14px; height: 14px; margin-top: 3px; box-sizing: border-box; border-radius: 50%; }
+.tg-pend { border: 1.5px solid var(--fg-3); }
+.tg-act { border: 1.5px solid var(--fg); }
+.tg-act::after { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--fg); }
+.tg-done { background: var(--fg-3); }
+.tg-done::after { content: ""; position: absolute; left: 4px; top: 1.5px; width: 3px; height: 6px; border: solid var(--card); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.tg-drop { border: 1.5px dashed var(--fg-3); }
+@media (pointer: coarse) { .dc-fold { width: 44px; height: 44px; margin: -6px -4px 0 0; } .dc-chip { height: 36px; line-height: 36px; } .td-bar { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .dc-fold .ic, .td-ch { transition: none; } }
 </style>
 </head>
 <body>
@@ -1186,11 +1247,13 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
       <section class="view" id="v-project" hidden></section>
       <section class="view fill" id="v-chat" hidden>
         <div class="subs" hidden></div>
+        <div class="todo" id="todo" hidden></div>
         <div class="chatbox">
           <div class="timeline" id="timeline"><div class="tl-in" id="tl"></div></div>
           <button class="btn tonal jump" id="chat-jump" type="button" aria-label="맨 아래로" title="맨 아래로" hidden></button>
         </div>
         <div class="composer" id="composer">
+          <section class="dcard" id="dcard" aria-label="답변 필요" hidden></section>
           <div class="qlist" id="queue" hidden></div>
           <div class="hintrow" id="hints" hidden></div>
           <div class="runline" id="runline" hidden><span class="dot pri"></span><span id="runline-tx"></span></div>
@@ -1206,7 +1269,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
               <button class="cchip" type="button" id="c-effort" aria-haspopup="listbox" hidden></button>
               <span class="cchip cown" id="c-worker" hidden></span>
               <button class="cchip" type="button" id="ctx-ring" hidden></button>
-              <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-queue" hidden>다음 턴에</button><button class="btn text" type="button" id="working-int" hidden>중단하고 보내기</button><button class="btn text" type="button" id="working-stop">중단</button></div>
+              <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-stop">중단</button></div>
             </div>
             <button class="ib pri" type="submit" aria-label="보내기" id="send-btn"></button>
           </form>
@@ -1440,7 +1503,7 @@ function notify(e) {
   const alertish = e.kind === "out" && e.target === "alert";
   const box = document.querySelector(".ntf-box") || document.body.appendChild(el("div", { class: "ntf-box", "aria-live": "polite" }));
   const lane = e.kind === "lane_report" ? String(e.lane || "") : "";
-  const title = e.title || (lane ? `레인 ${lane}` : alertish ? "알림" : `${botName} 작업 기록`);
+  const title = e.title || (lane ? `세션 ${lane}` : alertish ? "알림" : `${botName} 작업 기록`);
   const at = e.ts ? new Date(e.ts) : null;
   const tm = at && !isNaN(at) ? at.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }) : "";
   const first = text.split("\n").find(l => l.trim()) || text;
@@ -2349,7 +2412,7 @@ function homeNowRow(t, label, tone) {
   return el("button", { class: "hr", type: "button", onclick: () => openTarget(t, lastChatView()), "aria-label": `${targetName(t)} · ${label}` },
     el("span", { class: `dot ${tone === "att" ? "att" : statusTone(i.status)}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: targetName(t) })), el("span", { class: "ha", text: line })),
-    subs.length ? el("span", { class: "hp", title: "워커 끝난 수 / 전체", text: `워커 ${done}/${subs.length}` }) : null,
+    subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
     el("span", { class: `hs ${tone === "att" ? "warn" : statusTone(i.status)}`, text: label }));
 }
 function renderHomeNow() {
@@ -2639,6 +2702,178 @@ function fmtDur(ms) {
   return m % 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${Math.floor(m / 60)}시간`;
 }
 let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 };
+
+/* ---------- decision card: a question that waits on the owner, docked above the composer ---------- */
+// Choice block (MODE.md "Message layout"): `**1) name** ← 추천`, then one description line; a `결정:` line titles a block.
+// Several blocks = several decisions: the card walks them one at a time and sends the numbers as "1-2".
+function parseChoices(text) {
+  const OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
+  const HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
+  const CLOSE = /번호(?:로|를).*(?:답|알려)/;
+  const lines = String(text ?? "").replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
+  let i = 0, question = "", cur = null;
+  while (i < lines.length && !lines[i].trim()) i++;
+  if (i < lines.length && !OPT.test(lines[i]) && !HEAD.test(lines[i])) question = lines[i++].trim();
+  const blocks = [];
+  for (; i < lines.length; i++) {
+    const h = HEAD.exec(lines[i]);
+    if (h) { cur = { title: h[1].trim(), options: [] }; blocks.push(cur); continue; }
+    const m = OPT.exec(lines[i]);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (!cur || (cur.options.length && n <= cur.options[cur.options.length - 1].n)) { cur = { title: "", options: [] }; blocks.push(cur); }
+    let desc = "";
+    const nx = lines[i + 1];
+    if (nx !== undefined && nx.trim() && !OPT.test(nx) && !HEAD.test(nx) && !CLOSE.test(nx)) { desc = nx.trim(); i++; }
+    cur.options.push({ n, label: m[2].replace(/^\*+|\*+$/g, "").trim(), desc, rec: !!m[3] });
+  }
+  return { question, blocks: blocks.filter(b => b.options.length) };
+}
+const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {} };
+const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36); };
+// What the target waits on: a session's pendingAsk, else its last bot message when that is an [ask] with a choice block and no
+// owner message came after it. Null when nothing waits (so the card goes away once the answer lands).
+function decisionOf(t) {
+  if (!S) return null;
+  const info = targetInfo(t), s = ts(t);
+  if (isLaneT(t) && info.known && !info.alive && !info.resumable) return null;
+  let raw = "", at = "";
+  if (info.ask) { raw = String(info.ask.text); at = info.ask.at || ""; }
+  else {
+    for (let k = s.msgs.length - 1; k >= 0; k--) {
+      const e = s.msgs[k];
+      if (OWNER.has(e.kind)) return null;
+      if ((e.kind !== "out" && e.kind !== "lane_report") || e.update_key || (typeof e.source === "string" && e.source.startsWith("lane:"))) continue;
+      if (parseTone(noHandoff(String(e.text ?? ""))).tone !== "ask") return null;
+      raw = String(e.text ?? ""); at = e.ts; break;
+    }
+    if (!raw) return null;
+  }
+  const body = parseTone(noHandoff(raw)).text, pc = parseChoices(body);
+  if (!info.ask && !pc.blocks.length) return null;
+  if (at && s.msgs.some(e => OWNER.has(e.kind) && msOf(e.ts) > msOf(at))) return null;
+  const sig = hashOf(body.trim());
+  return { key: `${t}|${sig}`, sig, question: pc.question, blocks: pc.blocks };
+}
+async function answerDecision(dc, text) {
+  const t = target, lane = isLaneT(t) ? laneOf(t) : "";
+  DC.st[dc.key] = "sending"; paintDecision();
+  try {
+    const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
+    if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
+    DC.st[dc.key] = "sent"; chatStick = true; scrollChat(true);
+  } catch (e) { delete DC.st[dc.key]; delete DC.picks[dc.key]; toast(e.message, true); }
+  paintDecision();
+}
+function pickOption(dc, bi, opt) {
+  if (DC.st[dc.key]) return;
+  const p = DC.picks[dc.key] || [];
+  DC.picks[dc.key] = p;
+  p[bi] = opt;
+  const next = dc.blocks.findIndex((_, i) => !p[i]);
+  if (next >= 0) { DC.step[dc.key] = next; paintDecision(); return; }
+  answerDecision(dc, dc.blocks.length === 1 ? `${opt.n}) ${opt.label}` : dc.blocks.map((_, i) => p[i].n).join("-"));
+}
+function renderDecision(box, dc, picks, step) {
+  const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
+  const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt" },
+    el("span", { class: "dc-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" }),
+    dc.question ? mdNode(dc.question, "md dc-q") : null),
+    el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop")));
+  const kids = [head];
+  if (!fold) {
+    const body = el("div", { class: "dc-body" });
+    if (dc.blocks.length > 1) body.append(el("div", { class: "dc-steps", role: "group", "aria-label": "결정 단계" }, ...dc.blocks.map((b, i) =>
+      el("button", { class: `dc-chip${i === step ? " on" : ""}${picks[i] ? " got" : ""}`, type: "button", disabled: !!st, "aria-pressed": String(i === step), onclick: () => { DC.step[dc.key] = i; paintDecision(); } }, `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}`))));
+    const blk = dc.blocks[step];
+    if (blk) {
+      if (blk.title && dc.blocks.length > 1) body.append(el("div", { class: "dc-sub", text: blk.title }));
+      for (const o of blk.options) body.append(el("button", { class: `dc-row${o.rec ? " rec" : ""}${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
+        el("span", { class: "dc-key", text: String(o.n) }),
+        el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
+    }
+    kids.push(body);
+  }
+  if (st) kids.push(el("div", { class: "dc-st", role: "status", text: st === "sending" ? "보내는 중…" : "보냈어요 · 답을 기다려요" }));
+  clear(box).append(...kids);
+  box.classList.toggle("fold", fold);
+  const nb = $(".dc-body", box); if (nb) nb.scrollTop = top;
+}
+// In-message rows follow the same state: tappable only while their question is the pending one.
+function syncInlineChoices() {
+  const dc = DC.cur;
+  for (const n of document.querySelectorAll(".dcm")) {
+    const live = !!dc && dc.sig === n.dataset.sig && !DC.st[dc.key], p = live || (dc && dc.sig === n.dataset.sig) ? DC.picks[dc.key] || [] : [];
+    for (const b of n.querySelectorAll(".dcm-row")) {
+      b.disabled = !live;
+      b.classList.toggle("on", !!p[b.dataset.b] && p[b.dataset.b].n === Number(b.dataset.n));
+    }
+  }
+}
+function choicesNode(sig, pc) {
+  const box = el("div", { class: "dcm", "data-sig": sig });
+  pc.blocks.forEach((b, bi) => {
+    if (b.title && pc.blocks.length > 1) box.append(el("div", { class: "dcm-sub", text: b.title }));
+    for (const o of b.options) box.append(el("button", { class: `dcm-row${o.rec ? " rec" : ""}`, type: "button", disabled: true, "data-b": bi, "data-n": o.n, onclick: () => { const dc = DC.cur; if (dc && dc.sig === sig) pickOption(dc, bi, o); } },
+      el("span", { class: "dc-key", text: String(o.n) }),
+      el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
+  });
+  return box;
+}
+function paintDecision() {
+  const box = $("#dcard");
+  if (!box) return;
+  const dc = decisionOf(target), had = !!DC.cur;
+  DC.cur = dc;
+  if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; clear(box); }
+  else {
+    const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
+    const sig = JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || ""]);
+    box.hidden = false;
+    if (box.dataset.sig !== sig) { renderDecision(box, dc, picks, step); box.dataset.sig = sig; box.dataset.key = dc.key; }
+  }
+  syncInlineChoices();
+  if (had !== !!dc) updateComposerMeta();
+}
+
+/* ---------- todo strip: the target's plan (GET /api/todo), one line above the timeline ---------- */
+const TD = { by: {}, open: {}, timer: 0, calls: new Set() };
+async function loadTodo(t = target) {
+  let r;
+  try { r = await api(`/api/todo?target=${enc(t)}`); } catch { return; }
+  TD.by[t] = r && Array.isArray(r.phases) ? r.phases : [];
+  if (t === target) paintTodo();
+}
+const todoState = x => x.status === "in_progress" ? "act" : x.status === "completed" ? "done" : x.status === "abandoned" ? "drop" : "pend";
+function paintTodo() {
+  const box = $("#todo");
+  if (!box) return;
+  const phases = TD.by[target] || [], all = phases.flatMap(p => p.tasks || []);
+  if (!all.length || all.every(x => todoState(x) === "done" || todoState(x) === "drop")) { box.hidden = true; delete box.dataset.sig; clear(box); return; }
+  const open = !!TD.open[target], sig = JSON.stringify([phases, open]);
+  box.hidden = false;
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  const live = all.filter(x => todoState(x) !== "drop"), done = live.filter(x => todoState(x) === "done").length;
+  const cur = all.find(x => todoState(x) === "act") || all.find(x => todoState(x) === "pend"), g = x => el("span", { class: `td-g tg-${todoState(x)}`, "aria-hidden": "true" });
+  const bar = el("button", { class: "td-bar", type: "button", "aria-expanded": String(open), onclick: () => { TD.open[target] = !open; paintTodo(); } },
+    g(cur), el("span", { class: "td-cur", text: cur.content }), el("span", { class: "td-n", text: `${done}/${live.length}` }), icon("drop", "td-ch"));
+  const kids = [bar];
+  if (open) kids.push(el("div", { class: "td-list" }, ...phases.flatMap(p => [
+    p.name ? el("div", { class: "td-ph", text: p.name }) : null,
+    ...(p.tasks || []).map(x => el("div", { class: `td-r tr-${todoState(x)}` }, g(x), el("span", { class: "td-tx", text: x.content })))])));
+  const keep = $(".td-list", box), top = keep ? keep.scrollTop : 0;
+  clear(box).append(...kids);
+  const nl = $(".td-list", box); if (nl) nl.scrollTop = top;
+}
+// A todo tool call finishing means the plan changed: refetch (debounced) when it belongs to the open target.
+function todoActivity(a) {
+  const isTodo = /(^|__)todo/i.test(String(a.tool || ""));
+  if (a.type === "tool_call" && isTodo && a.call_id) { TD.calls.add(a.call_id); return; }
+  if (a.type !== "tool_result" || !(isTodo || (a.call_id && TD.calls.delete(a.call_id)))) return;
+  const own = targetOfSource(a.source);
+  if (own === target || (own === MAIN && isProjT(target))) { clearTimeout(TD.timer); TD.timer = setTimeout(() => loadTodo(target), 250); }
+}
 function resetChat() { clear(tl); CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; }
 function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; CS.who = ""; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
 // Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
@@ -2705,7 +2940,7 @@ function msgNode(e) {
       return el("div", { class: "um" }, filesNode(e.files), text ? ub : null, more, el("div", { class: "mt", text: [hm, via].filter(Boolean).join(" · ") }));
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, el("pre", { text }), el("div", { class: "mt", text: hm }));
-    case "lane_start": return el("div", { class: "a-div", text: `레인 시작 · ${hm}` });
+    case "lane_start": return el("div", { class: "a-div", text: `세션 시작 · ${hm}` });
     case "mail": {
       const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
       const subj = f("subject"), acct = (text.match(/^new mail \(([^)]*)\)/m) || [])[1] || "";
@@ -2736,7 +2971,8 @@ function msgNode(e) {
       }
       const fl = fileLines(body), md = mdNode(fl.text), files = pathFiles(md);
       if (e.kind === "out" && !isRestart(e)) streamIn(md, `${e.ts}|${text.length}`, e.ts);
-      return el("div", { class: `bm${card}` }, head, md, filesNode(fl.files), files);
+      const pc = tone === "ask" && (e.kind === "out" || e.kind === "lane_report") ? parseChoices(parsed) : null;
+      return el("div", { class: `bm${card}` }, head, md, filesNode(fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc) : null);
     }
   }
 }
@@ -2820,7 +3056,7 @@ function clickable(n) {
 }
 const capName = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : "tool";
 // Tool name -> the kind word used in summaries ("12초 작업 · 명령 3 · 읽기 2") and row labels.
-const KINDS = [[/^(bash|eval|shell|exec|run|python|js)/i, "명령"], [/^(read|view|cat|ls|open)/i, "읽기"], [/^(edit|write|multiedit|patch|apply|notebook)/i, "수정"], [/^(grep|glob|find|search|ast|lsp|symbols)/i, "검색"], [/^(task|agent|spawn|subagent)/i, "워커"], [/^(web|fetch|browser|http)/i, "웹"], [/^(todo|memory|goal)/i, "기록"]];
+const KINDS = [[/^(bash|eval|shell|exec|run|python|js)/i, "명령"], [/^(read|view|cat|ls|open)/i, "읽기"], [/^(edit|write|multiedit|patch|apply|notebook)/i, "수정"], [/^(grep|glob|find|search|ast|lsp|symbols)/i, "검색"], [/^(task|agent|spawn|subagent)/i, "서브에이전트"], [/^(web|fetch|browser|http)/i, "웹"], [/^(todo|memory|goal)/i, "기록"]];
 const kindOf = tool => (KINDS.find(([r]) => r.test(String(tool || ""))) || [0, "도구"])[1];
 // Status lines from the runtime, said in Korean.
 function statusKoLine(text) {
@@ -2945,10 +3181,10 @@ function termNode(a) {
   const g = LG.cur && !LG.cur.ended ? LG.cur : logGroup(a, "");
   g.used = true; if (t > g.t1) g.t1 = t;
   switch (a.type) {
-    case "tool_call": if (kindOf(a.tool) === "워커") {
+    case "tool_call": if (kindOf(a.tool) === "서브에이전트") {
       // a worker run is its own row in the turn (not folded), with the subagents it started nested under it
       LG.steps = null;
-      const rec = logRow(a, "워커", toolLabel(a) || capName(a.tool));
+      const rec = logRow(a, "서브에이전트", toolLabel(a) || capName(a.tool));
       rec.node.classList.add("lw"); rec.subs = el("div", { class: "lw-s" }); rec.node.append(rec.subs);
       LG.workers.push(rec);
       if (a.call_id) LG.calls.set(a.call_id, { rec, st: { errs: 0, t1: 0, paint() {} } });
@@ -3016,6 +3252,7 @@ function ingestMsg(e) {
   if (isRestart(e)) paintRestartBanner();
   if (!ownerish(e) && !cleanRestart(e) && !(t === target && current === "chat")) { s.unread++; renderBars(); }
   if (t === target && s.hLoaded) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }
+  if (t === target) paintDecision();
   if (projAnswer(t, e)) noteDone(t, e.ts, true);
 }
 // A project's finished turn is the orchestrator's answer posted to its channel (not a progress note).
@@ -3065,7 +3302,7 @@ async function loadOlder() {
   } catch { toast("이전 기록을 불러오지 못했어요", true); }
   finally { s.older = false; }
 }
-function renderAll(keepScroll) { renderAll0(keepScroll); paintWorkers(); edgeFade(timeline); edgeFade(term); }
+function renderAll(keepScroll) { renderAll0(keepScroll); paintDecision(); paintTodo(); paintWorkers(); edgeFade(timeline); edgeFade(term); }
 function edgeFade(t) { const b = t.parentElement; b.classList.toggle("fade-t", t.scrollTop > 4); b.classList.toggle("fade-b", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
 function renderAll0(keepScroll) {
   const s = ts(target);
@@ -3093,7 +3330,7 @@ function renderAll0(keepScroll) {
 }
 function onActivity(a) {
   if (a.source === "orchestrator" || a.type === "turn_start" || a.type === "turn_end" || a.type === "status") scheduleState();
-  ingestAct(a);
+  ingestAct(a); todoActivity(a);
   if (a.type === "turn_end") noteDone(targetOfSource(a.source), a.ts, true);
 }
 
@@ -3115,12 +3352,13 @@ function setTarget(t) {
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
   renderAll();
   if (!(s.hLoaded && s.aLoaded)) loadTarget(t);
+  loadTodo(t);
 }
 function enterTarget() {
   $(current === "activity" ? "#v-activity" : "#v-chat").append($("#composer"));
   if (current === "chat") ts(target).unread = 0;
   markSeen();
-  updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
+  updateComposerMeta(); renderBars(); renderSubs(); renderWorking(); paintDecision();
   if (current === "chat") scrollChat(true); else scrollTerm(true);
   if (SUBD) renderSheet();
   autosize();
@@ -3129,22 +3367,22 @@ function enterTarget() {
 /* ---------- slash commands: Discord-style menu above the composer (hub/control.ts COMMANDS) ---------- */
 // Each arg: n = placeholder, opts() = [value, label?] choices from live state, opt = may be left out, free = any text.
 const SL_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"];
-const slLanes = () => ((S && S.lanes) || []).filter(laneAlive).map(l => [l.name, `레인 · ${statusKo(l.status)}`]);
+const slLanes = () => ((S && S.lanes) || []).filter(laneAlive).map(l => [l.name, `세션 · ${statusKo(l.status)}`]);
 const slProcs = () => [["orchestrator", botName], ...slLanes()];
-const slModelTargets = () => [["orchestrator", botName], ["lanes", "레인 기본값"], ["workers", "작업자"], ...slLanes()];
+const slModelTargets = () => [["orchestrator", botName], ["lanes", "세션 기본값"], ["workers", "서브에이전트"], ...slLanes()];
 // Current models only: no Haiku, no Fable, no dated snapshots; newest versions first.
 const slModels = () => ((M && M.available) || []).filter(m => !/haiku|fable/i.test(`${m.selector} ${m.name || ""}`) && !/-\d{8}$/.test(m.selector)).sort((a, b) => b.selector.localeCompare(a.selector, "en", { numeric: true })).map(m => [m.selector, m.name || ""]);
 const slProviders = () => ((P && P.providers) || []).map(p => [p.id, p.name || ""]);
 const CMDS = [
-  { c: "/status", d: "봇·레인·디스코드 상태와 컨텍스트" },
+  { c: "/status", d: "봇·세션·디스코드 상태와 컨텍스트" },
   { c: "/context", d: "프로세스별 컨텍스트 사용량과 압축 상태" },
   { c: "/compact", d: "컨텍스트 압축 (작업 중이면 턴이 끝난 뒤)", args: [{ n: "대상", opts: slProcs }] },
-  { c: "/lanes", d: "레인마다 상태·모델·폴더" },
+  { c: "/lanes", d: "세션마다 상태·모델·폴더" },
   { c: "/model", d: "모델 보기, 또는 대상의 모델 바꾸기", args: [{ n: "대상", opts: slModelTargets, opt: true }, { n: "모델", opts: slModels, opt: true }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]), opt: true }] },
   { c: "/effort", d: "생각 강도 바꾸기", args: [{ n: "대상", opts: slModelTargets }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]) }] },
   { c: "/restart", d: "에이전트 재시작, gateway는 전체 재시작", args: [{ n: "대상", opts: () => [["orchestrator", botName], ["gateway", "게이트웨이 전체 (한가할 때)"], ...slLanes()] }] },
-  { c: "/stop", d: "레인 멈추기 (나중에 재개)", args: [{ n: "레인", opts: slLanes }] },
-  { c: "/resume", d: "멈춘 레인 재개, 또는 도는 레인에 글 보내기", args: [{ n: "레인", opts: slLanes }, { n: "글", free: true, opt: true }] },
+  { c: "/stop", d: "세션 멈추기 (나중에 재개)", args: [{ n: "세션", opts: slLanes }] },
+  { c: "/resume", d: "멈춘 세션 재개, 또는 도는 세션에 글 보내기", args: [{ n: "세션", opts: slLanes }, { n: "글", free: true, opt: true }] },
   { c: "/abort", d: "지금 턴 취소 (비우면 봇)", args: [{ n: "대상", opts: slProcs, opt: true }] },
   { c: "/providers", d: "로그인·API 키·공급자별 모델" },
   { c: "/login", d: "공급자 로그인 (링크가 열려요)", args: [{ n: "공급자", opts: slProviders, opt: true }] },
@@ -3245,8 +3483,6 @@ ta.addEventListener("keydown", ev => {
 });
 $("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length) stopTarget(); else sendChat(); };
 $("#working-stop").onclick = () => stopTarget();
-$("#working-int").onclick = () => sendChat("interrupt");
-$("#working-queue").onclick = () => sendChat("queue");
 ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
 async function stopTarget() {
   try {
@@ -3291,7 +3527,7 @@ function updateComposerMeta() {
   const gone = isLaneT(target) && info.known && !info.alive;
   const off = gone && !info.resumable;
   ta.disabled = off; $("#send-btn").disabled = off;
-  ta.placeholder = off ? "종료된 레인이에요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기 · ⌘Enter 다음 턴에 · ⌥Enter 중단하고 보내기 · Esc 중단" : isTerm ? "메시지 또는 /명령" : isProjT(target) ? `${targetName(target)} 프로젝트의 ${botName}에게 메시지 · /명령` : `${targetName(target)}에게 메시지 · /명령`;
+  ta.placeholder = off ? "종료된 세션이에요" : DC.cur ? "번호를 누르거나 직접 입력하세요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기" : isTerm ? "메시지 또는 /명령" : isProjT(target) ? `${targetName(target)} 프로젝트의 ${botName}에게 메시지 · /명령` : `${targetName(target)}에게 메시지 · /명령`;
   $("#composer").classList.toggle("tmode", isTerm);
 }
 // The elapsed time ticks every second on its own; events only arrive when a tool runs, so a time drawn only on events
@@ -3301,7 +3537,7 @@ function tickWorking() {
   if ($("#working").hidden) return;
   // The bottom line shows only the state (owner 2026-10-20); elapsed time lives on the work card.
   const g = CS.group;
-  $("#working-tx").textContent = $("#runline-tx").textContent = `${workingLabel}${workingSubs ? ` · 워커 ${workingSubs}` : ""}`;
+  $("#working-tx").textContent = $("#runline-tx").textContent = `${workingLabel}${workingSubs ? ` · 서브에이전트 ${workingSubs}` : ""}`;
   if (g && g.live) g.update();
 }
 setInterval(() => { if (!document.hidden) tickWorking(); }, 1000);
@@ -3322,8 +3558,6 @@ function renderWorking() {
     workingLabel = `${st === "rate-limited" ? "한도 제한, 잠시 쉬는 중" : "작업 중..."}`; workingSubs = n;
     tickWorking();
     $("#working-stop").hidden = st === "rate-limited";
-    $("#working-int").hidden = st === "rate-limited" || !ta.value.trim();
-    $("#working-queue").hidden = st === "rate-limited" || !ta.value.trim();
   }
   renderQueue(); renderCtxRing();
   markLive();
@@ -3367,11 +3601,11 @@ function renderCtxRing() {
   const sel = orchT ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model;
   // The chips say whose they are: the orchestrator and a lane often run the same model with a similar context, and
   // unlabeled they read as one (owner 2026-10-20: "오케스트레이터와 레인별로 구분 안되는거 같은데").
-  const owner = orchT ? botName : lane ? `레인 ${lane.name}` : "";
+  const owner = orchT ? botName : lane ? `세션 ${lane.name}` : "";
   const ob = $("#c-own"), wb = $("#c-worker"), wsel = lane && lane.worker_model;
   ob.hidden = !(sel && owner); ob.textContent = owner;
   wb.hidden = !wsel;
-  if (wsel) { const [wbase, wlevel] = String(wsel).split(":"); wb.textContent = `워커 ${modelChipText(wbase)}${wlevel ? ` · ${wlevel}` : ""}`; wb.title = `이 레인의 작업자(워커) 모델`; }
+  if (wsel) { const [wbase, wlevel] = String(wsel).split(":"); wb.textContent = `서브에이전트 ${modelChipText(wbase)}${wlevel ? ` · ${wlevel}` : ""}`; wb.title = `이 세션의 서브에이전트 모델`; }
   // model and effort are separate chips, each with its own popover
   const [base, level] = String(sel || "").split(":"), eb = $("#c-effort");
   mb.hidden = !sel; eb.hidden = !level;
@@ -3396,7 +3630,7 @@ async function targetChange(title, change, label) {
   try { r = await api("/api/target", "PUT", body); }
   catch (e) {
     if (!(e.data && e.data.requires_force)) throw e;
-    if (!await ask(title, `작업 중인 레인이라 컨텍스트 ${num(e.data.context_tokens)} 토큰이 캐시에 다시 쓰여요\n${label}`, "적용")) return;
+    if (!await ask(title, `작업 중인 세션이라 컨텍스트 ${num(e.data.context_tokens)} 토큰이 캐시에 다시 쓰여요\n${label}`, "적용")) return;
     r = await api("/api/target", "PUT", { ...body, force: true });
   }
   toast(change.compact ? (r.compaction === "queued" ? "작업이 끝나면 압축해요" : "압축을 시작했어요") : (applyKo[r.applied] || "적용했어요"));
@@ -3629,10 +3863,10 @@ function renderBars() {
     drop._items = () => [
       menuItem(A[0]),
       ...(PA.length ? [{ header: "프로젝트" }, ...PA.map(menuItem)] : []),
-      ...(PA.length && (LA.length || D.length) ? [{ header: "레인" }] : []),
+      ...(PA.length && (LA.length || D.length) ? [{ header: "세션" }] : []),
       ...LA.map(menuItem),
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
-      ...(D.length ? [{ value: "__ended", label: `종료된 레인 ${D.length}`, sub: "기록 보기 · 재개" }] : [])];
+      ...(D.length ? [{ value: "__ended", label: `종료된 세션 ${D.length}`, sub: "기록 보기 · 재개" }] : [])];
     drop._pick = v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else setTarget(v); };
     drop.onclick = () => showMenu(drop, drop._items(), { value: target, onPick: drop._pick });
     const ud = mode === "term" && ts(target).unread > 0;
@@ -3715,7 +3949,7 @@ async function refreshState() {
     // A lane that exits disappears at once: the view falls back to the main assistant (it stays reachable from ⌘K).
     if (isLaneT(target) && (!S.lanes.some(l => `lane:${l.name}` === target) || (PREV[target] && PREV[target] !== "exited" && targetInfo(target).status === "exited"))) setTarget(MAIN);
     if (isProjT(target) && !projTargets().includes(target)) setTarget(MAIN);   // its work channel was deleted
-    noteStatus(); paintAuth();
+    noteStatus(); paintAuth(); paintDecision();
     renderSideStatus(); renderBars(); renderWorking(); updateComposerMeta();
     if (current === "lanes") renderLanes();
     if (current === "home") renderHome();
@@ -5790,7 +6024,7 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
   const h = parseHash();
   go(h.view || "home", h.t);
   await refreshState();
-  loadTarget(target);
+  loadTarget(target); loadTodo(target);
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);
@@ -5824,6 +6058,8 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
     }
   };
   setInterval(refreshState, 15000);
+  // The plan normally refetches when a todo tool call ends; this is the fallback while the open target works.
+  setInterval(() => { if (current === "chat" && !document.hidden && isWorking(target)) loadTodo(target); }, 20000);
   $("#ustrip").onclick = () => go("usage");
   loadStrip(); setInterval(loadStrip, 60000);
   document.addEventListener("visibilitychange", () => { markSeen(); attnChanged(); loadStrip(); });
