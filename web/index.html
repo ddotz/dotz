@@ -354,7 +354,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .vseg button:hover { color: var(--fg); }
 .vseg button.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / .1); }
 /* 채팅 and 터미널 sit on the card surface so the owner's light-gray bubble reads against it */
-.main:has(> .views > #v-chat:not([hidden])), .main:has(> .views > #v-activity:not([hidden])) { --bg: var(--card); }
+.main:has(> .views > #v-chat:not([hidden])), .main:has(> .views > #v-activity:not([hidden])) { --bg: var(--card); background: var(--bg); }
 .main:has(> .views > #v-chat:not([hidden])) .vseg, .main:has(> .views > #v-activity:not([hidden])) .vseg { background: var(--layer); }
 .main:has(> .views > #v-chat:not([hidden])) .vseg button.on, .main:has(> .views > #v-activity:not([hidden])) .vseg button.on { background: var(--card); }
 .vseg .ud { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
@@ -381,7 +381,20 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .bm.cont { margin-top: -4px; }
 .bm { min-width: 0; overflow-wrap: anywhere; }
 .bm .mt { margin-bottom: 4px; }
-.bm.rep, .bm.alert { max-width: 672px; padding: 12px 16px 14px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--layer); }
+.bm.rep, .bm.alert { max-width: 672px; padding: 14px 18px 16px; border: 0; border-radius: 16px; background: var(--layer); }
+.bm.alert .mn::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: var(--err); vertical-align: middle; }
+.bm .more { margin-top: 8px; }
+.bm .more > summary { width: fit-content; color: var(--fg-2); font-size: 13px; line-height: 20px; cursor: pointer; list-style: none; text-decoration: underline; text-underline-offset: 3px; }
+.bm .more > summary::-webkit-details-marker { display: none; }
+.bm .more[open] > summary { margin-bottom: 4px; }
+.bm .more pre { margin: 0; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--card); color: var(--fg-2); font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; }
+.gban { flex: none; display: flex; align-items: center; gap: 10px; width: calc(100% - 48px); max-width: 872px; margin: 0 auto 4px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; }
+.main:has(> .views > #v-chat:not([hidden])) .gban, .main:has(> .views > #v-activity:not([hidden])) .gban { background: var(--layer); }
+.gban .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gban .tx b { color: var(--fg); font-weight: 600; }
+.gban .x { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3); font-size: 18px; line-height: 28px; }
+.gban .x:hover { background: var(--hover); color: var(--fg); }
+@media (max-width: 639px) { .gban { width: calc(100% - 24px); } }
 .bm .md { max-width: 40em; font-size: 15px; line-height: 26px; }
 .bm > .mt { margin-bottom: 6px; } .bm > .mt .mn { color: var(--fg); }
 .bm .md p { margin: 0 0 12px; } .bm .md p:last-child { margin-bottom: 0; }
@@ -422,7 +435,7 @@ details.work > summary:hover { background: var(--hover); color: var(--fg); }
 details.work > summary::-webkit-details-marker { display: none; }
 details.work > summary::before { content: ""; flex: none; width: 5px; height: 5px; border-right: 1.5px solid var(--fg-2); border-bottom: 1.5px solid var(--fg-2); transform: rotate(-45deg); transition: transform .15s; }
 details.work[open] > summary::before { transform: rotate(45deg); }
-details.work.bad > summary { color: var(--err); }
+
 .wdot { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
 details.work.live .wdot { display: block; }
 .wsum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -866,6 +879,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
       <button class="ustrip" id="ustrip" type="button" hidden></button>
       <button class="ib" id="theme" type="button"></button>
     </header>
+    <div class="gban" id="gban" role="status" hidden><span class="dot" id="gban-dot"></span><span class="tx" id="gban-tx"></span><button class="x" id="gban-x" type="button" aria-label="재시작 알림 닫기">×</button></div>
     <div class="views" id="views">
       <section class="view" id="v-home" hidden><div id="home"></div></section>
       <section class="view fill" id="v-chat" hidden>
@@ -2092,6 +2106,33 @@ function speakerOf(e) {
   return "";
 }
 const SYS_LABEL = { schedule: "예약", watch: "감시", mail: "메일" };
+// Gateway restart notices: a clean one (nothing was cut off) leaves the chat and only counts toward the top banner.
+const isRestart = e => e.kind === "out" && e.source === "gateway" && /^게이트웨이 재시작했어요/.test(String(e.text ?? ""));
+const cleanRestart = e => isRestart(e) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
+const BAN_KEY = "dotz-restart-seen";
+function paintRestartBanner() {
+  const today = kstDay(Date.now()), list = ts(MAIN).msgs.filter(e => isRestart(e) && kstDay(e.ts) === today);
+  const b = $("#gban"), last = list.length ? list[list.length - 1].ts : "";
+  let seen = ""; try { seen = localStorage.getItem(BAN_KEY) || ""; } catch {}
+  b.hidden = !last || last <= seen;
+  if (b.hidden) return;
+  const cut = list.filter(e => !cleanRestart(e)).length;
+  $("#gban-dot").className = `dot ${cut ? "warn" : ""}`;
+  $("#gban-tx").innerHTML = `오늘 재시작 <b>${list.length}회</b> · 끊긴 작업 <b>${cut}</b>`;
+  b.title = `오늘 게이트웨이 재시작 ${list.length}회, 끊긴 작업 ${cut}, 마지막 ${kstHM(last)}`;
+  $("#gban-x").onclick = () => { try { localStorage.setItem(BAN_KEY, last); } catch {} b.hidden = true; };
+}
+// Alerts: one plain Korean line; the raw text (provider error strings, report lines) folds under 자세히.
+function humanAlert(text) {
+  const m = text.match(/^(.+?): 모델 제공자 오류\(([\s\S]*)\)가 (\d+)번 재시도해도 계속돼서 멈췄습니다/);
+  if (m) {
+    const c = m[2];
+    const why = /timed out|timeout/i.test(c) ? "모델 응답이 너무 오래 없어서" : /ENOTFOUND|reach|network|ECONN|fetch failed/i.test(c) ? "모델 서버에 연결되지 않아서" : /rate|limit|429/i.test(c) ? "사용 한도에 걸려서" : /overload|529|50\d/i.test(c) ? "모델 서버가 바빠서" : "모델 오류가 계속돼서";
+    const last = m[1].charCodeAt(m[1].length - 1) - 0xac00, josa = last >= 0 && last < 11172 && last % 28 ? "이" : "가";
+    return `${m[1]}${josa} ${why} ${m[3]}번 다시 해보고 멈췄어요. 다음 메시지부터 다시 해요.`;
+  }
+  return text.split("\n")[0].replace(/\s*\([^()]*[A-Za-z]{4,}[^()]*\)/g, "").trim() || text;
+}
 function msgNode(e) {
   const text = String(e.text ?? ""), hm = kstHM(e.ts);
   switch (e.kind) {
@@ -2112,9 +2153,14 @@ function msgNode(e) {
         n.onclick = () => { if (!getSelection().toString()) n.classList.toggle("open"); };
         return n;
       }
-      const name = e.kind === "lane_report" ? String(e.lane ?? "") : e.target === "alert" ? "알림" : botName;
+      const name = e.kind === "lane_report" ? String(e.lane ?? "") : e.target === "alert" ? "알림" : isRestart(e) ? "게이트웨이" : botName;
       const card = e.kind === "lane_report" ? " rep" : e.target === "alert" ? " alert" : "";
-      return el("div", { class: `bm${card}` }, el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null), mdNode(body));
+      const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null);
+      if (e.target === "alert") {
+        const line = humanAlert(body);
+        return el("div", { class: `bm${card}` }, head, mdNode(line), line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
+      }
+      return el("div", { class: `bm${card}` }, head, mdNode(body));
     }
   }
 }
@@ -2148,6 +2194,7 @@ function dropProgress(key) { const p = CS.prog.get(key); if (p) { p.node.remove(
 function chatPush(en, bulk) {
   if (CS.empty) { CS.empty.remove(); CS.empty = null; }
   if (en.m) {
+    if (cleanRestart(en.m)) return;
     dayDiv(en.m.ts);
     if (CS.group) { CS.group.live = false; CS.group.node.classList.remove("live"); CS.group.update(); }
     CS.group = null;
@@ -2253,7 +2300,8 @@ function ingestMsg(e) {
   if (s.mk.has(k)) return;
   s.mk.add(k); s.msgs.push(e);
   if (s.msgs.length > 400) s.mk.delete(msgKey(s.msgs.shift()));
-  if (!ownerish(e) && !(t === target && current === "chat")) { s.unread++; renderBars(); }
+  if (isRestart(e)) paintRestartBanner();
+  if (!ownerish(e) && !cleanRestart(e) && !(t === target && current === "chat")) { s.unread++; renderBars(); }
   if (t === target && s.hLoaded) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }
 }
 function ingestAct(a) {
@@ -2273,6 +2321,7 @@ async function loadTarget(t) {
       api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k)) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
     ]);
     s.hLoaded = s.aLoaded = true;
+    if (t === MAIN) paintRestartBanner();
     { const te = s.acts.findLast(a => a.type === "turn_end"); if (te) noteDone(t, te.ts, false); }
   })().finally(() => { s.loading = null; });
   await s.loading;
