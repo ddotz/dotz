@@ -206,7 +206,7 @@ function orchestratorTools(pi: any): void {
 	pi.registerTool({
 		name: "dotz_send",
 		label: "Dotz send",
-		description: `Send a message as ${NAME} to a channel other than the one that asked, or the one progress note (update_key) mid-turn. Your final answer is already delivered to the asking channel; text you send there before it is held and goes out with it, so answer only when it is ready. target: chat, dm, worklog, alert, lane:<name>, ch:<id> (a work channel), th:<id> (a thread), web, terminal. reply_to = a Discord msg id. update_key (e.g. "progress") = one evolving status message per target and key, edited in place on each call instead of posting again (not counted as your answer). Never include secrets.`,
+		description: `Send a message as ${NAME} to a channel other than the one that asked, or the one progress note (update_key) mid-turn. Your final answer is already delivered to the asking channel; text you send there before it is held and goes out with it, so answer only when it is ready. target: chat, dm, worklog, alert, lane:<name>, ch:<id> (a work channel), th:<id> (a thread), web, terminal. reply_to = a Discord msg id. update_key (e.g. "progress") = one evolving status message per target and key, edited in place on each call instead of posting again (not counted as your answer). A \`[file] /absolute/path\` line in text attaches that file (too big: a download link). Never include secrets.`,
 		parameters: z.object({ target: z.string(), text: z.string(), reply_to: z.string().optional(), update_key: z.string().optional() }),
 		async execute(_id: string, p: any) {
 			const r = await call("/api/send", { method: "POST", body: JSON.stringify(p) });
