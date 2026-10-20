@@ -160,7 +160,9 @@ function report(lane: Lane, text: string, notice = false): void {
 	lane.reports++;
 	lane.lastReportAt = now();
 	const tone = parseTone(text).tone;
-	lane.claim = tone === "done" ? { state: "reported", at: now() } : undefined;
+	// A report without a marker (a gateway notice, or the OmO handoff block "Ask: ... wanted: ..." that an OmO lane posts
+	// as a separate turn right after its [done], custom-ui 2026-10-20) leaves the claim as it was; [run]/[ask]/[fail] withdraw it.
+	lane.claim = tone === "done" ? { state: "reported", at: now() } : tone ? undefined : lane.claim;
 	if (tone === "ask" && !notice) {
 		lane.pendingAsk = { text, at: now() };
 		writeAtomic(pendingAskFile(lane.name), `${text}\n`);
