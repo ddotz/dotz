@@ -44,7 +44,10 @@ const textName = (s: string) => s.toLowerCase().replace(/\s+/g, "-");
 // Layout without emoji: category "<name>" holds the three main channels (chat, alerts, worklog in the identity's language);
 // the work category holds one channel per project, topic or lane, named plainly, with no bot-name prefix.
 const fixedNames = () => { const n = msg().channelNames; return { chat: n.chat, alert: n.alert, worklog: n.worklog } as const; };
-const workCategoryName = () => msg().channelNames.workCategory(NAME);
+// config discord.category / discord.work_category rename them (a shared server, e.g. one category per bot); the same
+// name for both keeps every channel, work and lane ones too, under that one category.
+const categoryName = () => String(cfg.discord?.category || NAME);
+const workCategoryName = () => String(cfg.discord?.work_category || msg().channelNames.workCategory(NAME));
 export const noEmoji = (s: string) => s.replace(/ ?[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]+/gu, "");
 const scrub = (s: string) => noEmoji(s).replace(/[┃|]/g, " ").replace(/\s+/g, " ").trim();
 const cleanName = (s: string) => scrub(s).slice(0, 90) || "work";
@@ -130,9 +133,10 @@ export async function ensureChannels(): Promise<void> {
 		if (parent && parentOf.get(id) !== parent) patch.parent_id = parent;
 		if (Object.keys(patch).length) await rest("PATCH", `/channels/${id}`, patch);
 	};
-	if (!channels.category || !existing.has(channels.category)) channels.category = (await rest("POST", `/guilds/${GUILD}/channels`, { name: NAME, type: 4 })).id;
-	else await place(channels.category, NAME, undefined, false);
-	if (!channels.workCategory || !existing.has(channels.workCategory)) channels.workCategory = (await rest("POST", `/guilds/${GUILD}/channels`, { name: workCategoryName(), type: 4 })).id;
+	if (!channels.category || !existing.has(channels.category)) channels.category = (await rest("POST", `/guilds/${GUILD}/channels`, { name: categoryName(), type: 4 })).id;
+	else await place(channels.category, categoryName(), undefined, false);
+	if (workCategoryName() === categoryName()) channels.workCategory = channels.category;
+	else if (!channels.workCategory || channels.workCategory === channels.category || !existing.has(channels.workCategory)) channels.workCategory = (await rest("POST", `/guilds/${GUILD}/channels`, { name: workCategoryName(), type: 4 })).id;
 	else await place(channels.workCategory, workCategoryName(), undefined, false);
 	const fixed = fixedNames();
 	for (const [key, name] of Object.entries(fixed) as [keyof typeof fixed, string][]) {
