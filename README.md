@@ -440,7 +440,10 @@ Throwaway runs stay off the live gateway (`hub/live-guard.ts`): a gateway on a t
 connect to Discord, and an orchestrator or session process the live gateway did not start (its parent is not `hub.pid`), a runtime
 probe, or a `DOTZ_DRY_RUN=1` run writes its gateway calls to `$TMPDIR/dotz-dry-run.jsonl` instead of sending them and may not
 write into the live data dir. `DOTZ_ALLOW_LIVE=1` lets a deliberate end-to-end run through. The Claude account the orchestrator
-and sessions run on is kept by `hub/account-sticky.ts` (switches and their reasons: `account-switches.jsonl`, usage screen).
+and sessions run on is kept by `hub/account-sticky.ts` (switches and their reasons: `account-switches.jsonl`, usage screen). The owner
+chooses it with `<data dir>/accounts/rules.json` (manual pick, time-window and usage rules, an own script; see
+`hub/account-rules.ts`; decisions: `accounts/decisions.jsonl`). A switch needs no restart: the dotz extension asks
+`POST /api/accounts/check` at the start of every turn (workers included) and pins the answer in its own process.
 
 ## Updating a running gateway
 

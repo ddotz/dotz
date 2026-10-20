@@ -413,8 +413,45 @@ function compatHost(pi: any): any {
 	return Object.assign(Object.create(pi), { zod: jsonZod, registerTool: (tool: any) => register({ ...tool, parameters: params(tool.parameters) }) });
 }
 
+const PIN_ENV = "SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT";
+
+// The account to run the next turn on: the hub's decision (owner's rules and script, hub/account-rules.ts), waiting at most the
+// script's timeout + 1 s; <DATA>/account.json, the account the hub last settled on, when the hub does not answer.
+async function accountNow(): Promise<string | undefined> {
+	const script = (() => {
+		try {
+			return JSON.parse(readFileSync(join(DATA, "accounts", "rules.json"), "utf8")).script;
+		} catch {
+			return undefined;
+		}
+	})();
+	const wait = (script ? (typeof script.timeout_ms === "number" && script.timeout_ms > 0 ? script.timeout_ms : 5000) : 0) + 1000;
+	try {
+		const r = await call("/api/accounts/check", { method: "POST", body: "{}", signal: AbortSignal.timeout(wait) });
+		if (typeof r?.account === "string" && r.account) return r.account;
+	} catch {}
+	try {
+		const a = JSON.parse(readFileSync(join(DATA, "account.json"), "utf8")).account;
+		return typeof a === "string" && a ? a : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+// Every OmO process dotz started (orchestrator, lanes and their task workers, which inherit DOTZ_RUNTIME) re-pins its Claude
+// account at the start of each turn, so a switch reaches it without a restart: OmO's anthropic-subscription stream re-reads
+// the variable on every request. turn_start is awaited before the request is built, in the worker's own session too.
+function followAccount(pi: any): void {
+	if (process.env.DOTZ_RUNTIME !== "omo") return;
+	pi.on("turn_start", async () => {
+		const account = await accountNow();
+		if (account) process.env[PIN_ENV] = account;
+	});
+}
+
 export default function dotz(host: any) {
 	const pi = compatHost(host);
+	followAccount(pi);
 	// An OmO task worker of a lane or of the orchestrator (a child process with its parent's environment, hub/runtime/omo.ts
 	// WORKER_TASK; OmO sets OMO_SENPI_TASK_DEPTH): the owner's rules, the output caps and the 5-minute cache, none of the
 	// parent's tools or commands (as before, no prompt growth).

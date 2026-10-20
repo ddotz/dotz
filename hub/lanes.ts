@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, totalmem } from "node:os";
 import { basename, join, relative } from "node:path";
+import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { emitEventActivity, endSubagents, runningSubagents, statusActivity, workerCheck } from "./activity.ts";
 import { pendingAskFile } from "./asks.ts";
 import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, TZ, workerModel, writeAtomic } from "./config.ts";
@@ -789,6 +790,7 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 export type LaneDelivery = "steered" | "received" | "held" | "resumed";
 
 export function sendToLane(name: string, text: string, ref?: string): LaneDelivery {
+	checkAccountSoon();
 	const lane = lanes.get(name);
 	if (!lane) throw new Error(`lane ${name} does not exist`);
 	if (!lane.proc && lane.sessionFile) {
@@ -1035,12 +1037,6 @@ export function shutdownLanes(): void {
 	}
 }
 
-// dotz's Claude account changed (hub/account-sticky.ts): every running lane takes it by a restart on its session, at once
-// when idle, else at the first idle check after its turn and workers end (a restart would cut them off).
-export function applyAccountChange(): void {
-	for (const lane of lanes.values()) if (lane.proc) lane.accountStale = true;
-	restartStaleLanes();
-}
 // The lanes' fallback chain in config changed (hub/control.ts setFallback), as the orchestrator's (orchestrator.ts
 // applyChainChange): an OmO lane on its primary takes the new chain in place, a lane paused on a limit restarts now (held
 // messages go in with the resume note), and a lane on a fallback entry restarts on its session at its next idle moment.

@@ -5,6 +5,7 @@
 // an AgentProcess and its events.
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
 import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, writeAtomic } from "./config.ts";
@@ -598,6 +599,7 @@ setInterval(() => {
 
 // `owner` marks a prompt that carries an owner message (it gets the what-runs-now line); lane reports and gateway notes do not.
 export function deliver(text: string, owner = false): void {
+	checkAccountSoon();
 	// A prompt sent while a requested compaction runs is refused by OmO and was lost; it waits for the compaction's end.
 	if (rotating || restarting || orch.status === "rate-limited" || orch.ctx.compaction.state === "compacting") {
 		held.push({ text, header: owner });
@@ -677,9 +679,10 @@ function switchInPlace(): boolean {
 	return true;
 }
 
-// dotz's Claude account changed (hub/account-sticky.ts: a limit, or the owner pinned another): the process takes it at
-// its next start, now when idle, after the running turn otherwise. No keepalive pings until the next real turn: a ping
-// right after a switch would pay the whole prefix on the new account for nothing (2 of the 4 switches of 2026-10-20 did).
+// dotz's Claude account changed (hub/account-sticky.ts: a rule, the owner's script or pick, a limit): the running process
+// is not restarted, it pins the new account itself at the start of its next turn (extension/index.ts followAccount). No
+// keepalive pings until the next real turn: a ping right after a switch would pay the whole prefix on the new account for
+// nothing (2 of the 4 switches of 2026-10-20 did).
 // The orchestrator's fallback chain in config changed (hub/control.ts setFallback). A hub-driven chain is built at start,
 // so: on OmO, while the process runs its primary, the new chain replaces the old one in place (no restart; the next failure
 // walks it). A process paused on a limit restarts at once so held messages go to the new chain; the primary's usage limit
@@ -715,15 +718,8 @@ export function applyChainChange(): "updated" | "restarted" | "after-turn" | "ne
 	return "restarted";
 }
 
-export function applyAccountChange(): "restarted" | "after-turn" | "next-start" {
+export function applyAccountChange(): void {
 	keepalives = KEEPALIVE_MAX;
-	if (!proc) return "next-start";
-	if (orch.status !== "idle") {
-		pendingRestart = true;
-		return "after-turn";
-	}
-	restart();
-	return "restarted";
 }
 
 export function abort(): void {

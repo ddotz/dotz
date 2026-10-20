@@ -55,6 +55,13 @@ export function subscriptionAccount(file = authFile(), now = Date.now(), prefer?
 	return { name: chosen.name, pinned: Boolean(pinned), ...(sticky ? { sticky: true } : {}), token: chosen.access, expiresAt: typeof chosen.expires === "number" ? chosen.expires : null };
 }
 
+// Every subscription account OmO holds, for the per-account usage numbers the owner's rules read (hub/account-rules.ts).
+export function subscriptionAccounts(file = authFile()): SubscriptionAccount[] {
+	const sub = readJson(file)?.["anthropic-subscription"];
+	const accounts: Json[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: Json) => typeof a?.name === "string" && typeof a?.access === "string" && a.access) : [];
+	return accounts.map(a => ({ name: a.name, pinned: sub.pinned === a.name, token: a.access, expiresAt: typeof a.expires === "number" ? a.expires : null }));
+}
+
 const WINDOWS: [key: string, id: string, label: string, windowId: string, durationMs: number][] = [
 	["five_hour", "anthropic:5h", "Claude 5 Hour", "5h", 5 * 3600_000],
 	["seven_day", "anthropic:7d", "Claude 7 Day", "7d", 7 * 86400_000],
