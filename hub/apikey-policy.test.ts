@@ -1,8 +1,8 @@
 // The owner's rule: while 미설's subscription account (miseol-shared) is pinned in OmO, no API key may be used.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { apiKeyBan, withoutApiKeys } from "./apikey-policy.ts";
+import { allowFile, apiKeyBan, withoutApiKeys } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
 import { Chain, resetFallbackState } from "./fallback.ts";
 
@@ -36,4 +36,16 @@ test("miseol-shared pinned: API-key variables are stripped from a spawned proces
 	expect(env).toEqual({ PATH: "/bin" });
 	pin("default");
 	expect(withoutApiKeys({ ANTHROPIC_API_KEY: "sk" })).toEqual({ ANTHROPIC_API_KEY: "sk" });
+});
+
+test("the owner's lift file allows API keys under the pin until its expiry, then the ban is back by itself", () => {
+	pin("miseol-shared");
+	writeFileSync(allowFile(), `${Math.floor(Date.now() / 1000) + 3600}\n`);
+	expect(apiKeyBan()).toBeUndefined();
+	expect(withoutApiKeys({ ANTHROPIC_API_KEY: "sk" })).toEqual({ ANTHROPIC_API_KEY: "sk" });
+	writeFileSync(allowFile(), `${Math.floor(Date.now() / 1000) - 1}\n`);
+	expect(apiKeyBan()).toBe("miseol-shared");
+	rmSync(allowFile());
+	expect(apiKeyBan()).toBe("miseol-shared");
+	pin("default");
 });

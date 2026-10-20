@@ -304,6 +304,10 @@ All behind the same auth as the rest of `/api`.
   it is usable again), logs `모델 폴백: … → …` and, for the orchestrator, alerts the owner. API-key entries start on the entry's
   base model and switch to the key provider the dotz extension registers (`pi.registerProvider`; not yet
   exercised live on OmO). Probe: `fallback_chain`.
+- *API keys while 미설's account is pinned* (hub/apikey-policy.ts): while OmO's subscription pin names `miseol-shared`,
+  no API-key entry runs and key variables are stripped from spawns. The owner's temporary lift is
+  `~/.dotz/api-allow-while-pinned` holding an expiry in epoch seconds: before it keys are allowed under the pin, at it the
+  ban is back by itself. Remove the lift early with `rm ~/.dotz/api-allow-while-pinned` (read on every check, no restart).
 - *Worker patch review*: the guard runs on OmO task calls (`prompt` / `tasks[].prompt`): the brief rules apply, a writing worker
   in a git repo is made `isolated: true, apply: false, merge: "patch"` (read-only agents such as explore/librarian run in
   place), the completion's `isolation: retained via … -> <root.patch>` line is kept as `<id>.patch`, and `git apply` of a patch
