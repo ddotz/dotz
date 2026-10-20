@@ -541,7 +541,7 @@ const server = Bun.serve({
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/file") {
 			try {
 				const path = resolveAllowed(url.searchParams.get("path") ?? "", fileRoots());
-				const res = serveFile(path, req, url.searchParams.get("dl") === "1");
+				const res = serveFile(path, req, url.searchParams.get("dl") === "1" || url.searchParams.get("download") === "1");
 				return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
