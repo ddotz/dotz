@@ -9,6 +9,7 @@ import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { authRoute } from "./auth.ts";
+import { pushRoute, startPush } from "./push.ts";
 import { isNote, msg } from "./i18n.ts";
 import { activityItems, answeredIds, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
@@ -40,6 +41,15 @@ import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRunt
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 
 const WEB = join(import.meta.dir, "..", "web", "index.html");
+// Installable-app files next to index.html: manifest, service worker (never cached by HTTP, so an update is seen at once), icons.
+const APP_FILES: Record<string, [string, string]> = {
+	"/manifest.webmanifest": ["manifest.webmanifest", "application/manifest+json"],
+	"/sw.js": ["sw.js", "text/javascript; charset=utf-8"],
+	"/icons/icon-192.png": ["icons/icon-192.png", "image/png"],
+	"/icons/icon-512.png": ["icons/icon-512.png", "image/png"],
+	"/icons/maskable-512.png": ["icons/maskable-512.png", "image/png"],
+	"/icons/apple-touch-icon.png": ["icons/apple-touch-icon.png", "image/png"],
+};
 const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
 const terminals = new Map<string, { cwd?: string; at: string }>();
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
@@ -329,6 +339,8 @@ if (!webBase && cfg.web?.tailscale_https_port) {
 	})();
 }
 discord.setFileLink(p => (webBase ? `${webBase}/api/file?path=${encodeURIComponent(p)}&dl=1` : undefined));
+// Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
+startPush({ subject: () => webBase ?? "mailto:dotz@example.com" });
 
 discord.setChannelGoneHandler(id => {
 	if (clearChannel(id)) log(`work channel ${id} is gone; its logins and monitors were released`);
@@ -495,7 +507,11 @@ const server = Bun.serve({
 		const parts = url.pathname.split("/").filter(Boolean);
 		const authResponse = authRoute(req, url);
 		if (authResponse) return authResponse;
-		if (req.method === "GET" && url.pathname === "/") return new Response(Bun.file(WEB), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+		if (req.method === "GET" && url.pathname === "/") return new Response(Bun.file(WEB), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
+		const appFile = req.method === "GET" ? APP_FILES[url.pathname] : undefined;
+		if (appFile) return new Response(Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
+		const pushResponse = await pushRoute(req, url);
+		if (pushResponse) return pushResponse;
 		if (url.pathname === "/api/health") return json({ ok: true });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
