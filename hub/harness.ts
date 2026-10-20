@@ -7,7 +7,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { runningSubagents } from "./activity.ts";
-import { cfg, CONFIG_FILE, DATA_DIR, IDENTITY_FILE, NAME, orchestratorModel, lanesModel, parseSelector, paths, THINKING_LEVELS, uiOriginView, workerModel } from "./config.ts";
+import { cfg, CONFIG_FILE, DATA_DIR, IDENTITY_FILE, LANES_COMPACT_AT, NAME, orchestratorModel, lanesModel, parseSelector, paths, THINKING_LEVELS, uiOriginView, workerModel } from "./config.ts";
 import { kTokens, percentOf } from "./context.ts";
 import * as discord from "./discord.ts";
 import { modeFile, lang, msg } from "./i18n.ts";
@@ -345,7 +345,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 			id: "lanes", kind: "lanes", group: "flow", label: N.lanes.label, status: working ? "busy" : aliveLanes.length ? "ok" : "off",
 			summary: aliveLanes.length ? N.lanes.summary(aliveLanes.length, working, maxActive) : N.lanes.none(maxActive),
 			desc: N.lanes.desc,
-			facts: [{ label: N.lanes.lanes, value: N.lanes.lanesValue(aliveLanes.length, working) }, ...aliveLanes.slice(0, 8).map(l => ({ label: l.name, value: `${mName(l.model)} · ${T.status[l.status] ?? l.status}` })), { label: N.lanes.workDir, value: N.lanes.workDirValue }, { label: N.lanes.compaction, value: N.lanes.compactionValue((disk.lanes?.compact_at ?? 400_000).toLocaleString(T.locale)) }],
+			facts: [{ label: N.lanes.lanes, value: N.lanes.lanesValue(aliveLanes.length, working) }, ...aliveLanes.slice(0, 8).map(l => ({ label: l.name, value: `${mName(l.model)} · ${T.status[l.status] ?? l.status}` })), { label: N.lanes.workDir, value: N.lanes.workDirValue }, { label: N.lanes.compaction, value: N.lanes.compactionValue((disk.lanes?.compact_at ?? LANES_COMPACT_AT).toLocaleString(T.locale)) }],
 			settings: [S("lanes.model"), S("lanes.thinking"), S("lanes.max_active"), S("lanes.compact_at"), S("lanes.keep_recent")],
 		},
 		// ---- workers

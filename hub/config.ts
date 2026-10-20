@@ -156,7 +156,9 @@ export function updateModels(target: FallbackTarget, values: TargetModels): void
 // at `nightly_at` (local time, "off" disables) idle lanes past `rotate_mb` of session file start a fresh session with a
 // handover and idle lanes at `nightly_compact_at` tokens or more are compacted.
 const positive = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback);
-export const lanesCompactAt = () => positive(cfg.lanes?.compact_at, 300_000);
+// Owner value 2026-10-20 (was 400K); the 구성 page shows this default when config.json leaves it unset.
+export const LANES_COMPACT_AT = 300_000;
+export const lanesCompactAt = () => positive(cfg.lanes?.compact_at, LANES_COMPACT_AT);
 export const lanesNightlyCompactAt = () => positive(cfg.lanes?.nightly_compact_at, 300_000);
 export const lanesKeepRecent = () => positive(cfg.lanes?.keep_recent, 40_000);
 export const lanesRotateMb = () => positive(cfg.lanes?.rotate_mb, 50);
