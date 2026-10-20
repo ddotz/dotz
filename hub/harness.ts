@@ -11,7 +11,7 @@ import { cfg, CONFIG_FILE, DATA_DIR, IDENTITY_FILE, NAME, orchestratorModel, lan
 import { kTokens, percentOf } from "./context.ts";
 import * as discord from "./discord.ts";
 import { modeFile, lang, msg } from "./i18n.ts";
-import { lanes, WORKER_SLOTS } from "./lanes.ts";
+import { laneLive, lanes, WORKER_SLOTS } from "./lanes.ts";
 import { orch } from "./orchestrator.ts";
 import { availableModels, ControlError, type ModelInfo, quota } from "./providers.ts";
 import { listSchedules } from "./schedule.ts";
@@ -251,7 +251,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 	// -- live state
 	const dStat = discord.status;
 	const laneList = [...lanes.values()];
-	const aliveLanes = laneList.filter(l => l.status !== "exited");
+	const aliveLanes = laneList.filter(laneLive);
 	const working = laneList.filter(l => l.status === "working" || l.status === "starting").length;
 	const schedules = listSchedules();
 	const watches = allWatches();

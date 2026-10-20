@@ -5096,7 +5096,8 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
     else if (e.kind === "subagents") setSubs(e.source, e.items);
     else if (e.kind === "queue") { QUEUE = e.items || []; renderQueue(); }
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
-    else if (e.kind === "lanes") { if (e.was_live && !e.live) refreshState(); else scheduleState(); }
+    // 구성 (lanes node, 프로젝트) is drawn from /api/harness, not the state: reload it too when a lane starts or ends.
+    else if (e.kind === "lanes") { if (e.was_live && !e.live) refreshState(); else scheduleState(); if (e.was_live !== e.live && current === "harness") loadHarness(true); }
     else {
       ingestMsg(e); scheduleState();
       // Live notices only (not the replay after a reconnect): alert / worklog posts, the gateway's own notes (sent to the web

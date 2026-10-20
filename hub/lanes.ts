@@ -891,7 +891,8 @@ const TEMP_RE = /^\/(private\/)?(tmp|var\/folders)\//;
 export const isTempLane = (l: Pick<Lane, "cwd" | "worktree">): boolean => TEMP_RE.test(l.worktree?.repo ?? l.cwd) || TEMP_RE.test(l.cwd);
 // The one definition of a live lane every list uses (home, lane tab, target chips, sidebar, pickers, palette): not exited,
 // its process up (or being restarted in place), and not a temp test project. Ended lanes keep all their data.
-export const laneLive = (l: Lane): boolean => l.status !== "exited" && (Boolean(l.proc) || Boolean(l.quiet) || l.status === "starting") && !isTempLane(l);
+export const laneRunning = (l: Lane): boolean => l.status !== "exited" && (Boolean(l.proc) || Boolean(l.quiet) || l.status === "starting");
+export const laneLive = (l: Lane): boolean => laneRunning(l) && !isTempLane(l);
 export function liveLanes(): { live: string[]; ended: string[] } {
 	const all = [...lanes.values()];
 	return { live: all.filter(laneLive).map(l => l.name), ended: all.filter(l => !laneLive(l)).map(l => l.name) };

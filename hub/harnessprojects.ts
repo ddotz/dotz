@@ -9,7 +9,7 @@ import { chainOf, type FallbackEntry, parseSelector, splitThinking, THINKING_LEV
 import * as discord from "./discord.ts";
 import type { HarnessEdge, HarnessNode, Setting } from "./harness.ts";
 import { msg } from "./i18n.ts";
-import { type Lane, lanes } from "./lanes.ts";
+import { type Lane, laneRunning, lanes } from "./lanes.ts";
 import { allWatches } from "./watch.ts";
 import { listSetups, type Setup } from "./workchannels.ts";
 
@@ -187,12 +187,13 @@ function buildProject(lane: Lane, chans: Chan[], ctx: { disk: Record<string, any
 	};
 }
 
-// Lanes run from a scratch folder (/tmp test projects) are not the owner's projects.
+// Lanes run from a scratch folder (/tmp test projects) are not the owner's projects, and an ended lane (laneRunning, the
+// process half of the laneLive rule every lane list uses) leaves the band; its data stays on disk and in the lanes tab's '종료된 레인' fold.
 const scratch = (p: string | undefined) => !!p && /^\/(private\/)?tmp(\/|$)/.test(p);
 
 export function harnessProjects(ctx: { disk: Record<string, any>; mName: (s: string) => string; gateway: HarnessNode; orchestrator: HarnessNode }) {
 	const setups = listSetups();
-	return [...lanes.values()].filter(lane => !scratch(lane.cwd) && !scratch(lane.worktree?.repo)).flatMap(lane => {
+	return [...lanes.values()].filter(lane => laneRunning(lane) && !scratch(lane.cwd) && !scratch(lane.worktree?.repo)).flatMap(lane => {
 		const chans = channelsOf(lane);
 		return chans.length ? [buildProject(lane, chans, { ...ctx, setups })] : [];
 	}).sort((a, b) => a.name.localeCompare(b.name));
