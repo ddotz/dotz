@@ -51,53 +51,65 @@ a.cu-li:hover .cu-lt { color: var(--accent); }
 .pv-pts { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--fg-2); font-size: 13px; line-height: 18px; }
 .pv-path { max-width: 100%; color: var(--fg-3); font: 12px/16px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #v-project.pv { max-width: 1180px; }
-.pv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0 4px 16px; }
+.pv-top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.pv-ov { display: flex; flex-direction: column; gap: 16px; padding: 18px 20px; }
+.pv-last { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; line-height: 20px; }
+.pv-last > .pv-lx { flex: 1; min-width: 0; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-last > .cu-m { flex: none; }
+.pv-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; color: var(--fg-3); font-size: 13px; line-height: 18px; }
+.pv-facts .pv-path { font-size: 12.5px; }
+.pv-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.pv-tile { min-width: 0; }
+.pv-tile + .pv-tile { padding-left: 12px; border-left: 1px solid var(--line); }
+.pv-tv { display: flex; align-items: center; gap: 8px; font: 700 20px/28px var(--font); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pv-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 24px; align-items: start; }
 .pv-col { display: flex; flex-direction: column; min-width: 0; }
 .pv-sh { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .pv-sh .sec { margin: 28px 4px 10px; }
 .pv-sh > .cu-m { margin-right: 4px; }
-.pv-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 18px 20px; }
-.pv-tile + .pv-tile { padding-left: 12px; border-left: 1px solid var(--line); }
-.pv-tv { display: flex; align-items: center; gap: 8px; font: 700 20px/28px var(--font); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pv-lane { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; cursor: pointer; }
+.pv-lane { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "lt acts" "line line"; align-items: center; column-gap: 8px; row-gap: 2px; padding: 12px 16px; cursor: pointer; }
+.pv-lane > .pv-lt { grid-area: lt; }
+.pv-lane > .pv-acts { grid-area: acts; }
+.pv-lane > .pv-line { grid-area: line; }
 .pv-lane:hover { background: var(--card-hover); }
 .pv-lane:focus-visible, .pv-res:focus-visible, .pv-task:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.pv-lane + .pv-lane, .pv-res + .pv-res, .pv-task + .pv-task { border-top: 1px solid var(--line); }
+.pv-lane + .pv-lane, .pv-task + .pv-task, .pv-res + .pv-res { border-top: 1px solid var(--line); }
 .pv-lt { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 28px; }
-.pv-ln { min-width: 0; font: 600 15px/22px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pv-acts { display: flex; gap: 6px; margin-left: auto; }
+.pv-ln { flex: none; max-width: 50%; font: 600 15px/22px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-lt > .cu-m { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-acts { display: flex; gap: 6px; }
 .pv-acts .btn { height: 28px; padding: 0 10px; font-size: 13px; }
-.pv-line { color: var(--fg-2); font-size: 14px; line-height: 21px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.pv-line { padding-left: 16px; color: var(--fg-2); font-size: 14px; line-height: 21px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pv-line.none { color: var(--fg-3); }
-.pv-res { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 14px 16px; border: 0; border-radius: 0; background: transparent; color: var(--fg); text-align: left; font: inherit; }
+.pv-day { padding: 12px 16px 4px; color: var(--fg-3); font: 600 12px/16px var(--font); }
+.pv-day + .pv-res { border-top: 0; }
+.pv-res { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: baseline; column-gap: 10px; width: 100%; padding: 9px 16px; border: 0; border-radius: 0; background: transparent; color: var(--fg); text-align: left; font: inherit; }
 button.pv-res { cursor: pointer; }
 button.pv-res:hover { background: var(--card-hover); }
-.pv-rh { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pv-kind { flex: none; height: 20px; padding: 0 8px; border-radius: 10px; background: var(--layer); color: var(--fg-2); font-size: 11px; line-height: 20px; font-weight: 600; }
-.pv-rm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pv-rt { font: 500 14px/21px var(--font); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.pv-rt.mono, .pv-cs.mono { font: 12px/18px var(--mono); color: var(--fg-2); }
-.pv-rt.mono { -webkit-line-clamp: 2; }
-.pv-rb { color: var(--fg-3); font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.pv-repo { padding: 16px 20px; }
-.pv-sub { margin: 14px 0 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
-.pv-cm { display: flex; align-items: baseline; gap: 10px; min-width: 0; padding: 4px 0; font-size: 13px; line-height: 20px; }
-.pv-h { flex: none; color: var(--fg-3); font: 12px/20px var(--mono); }
-.pv-cs { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pv-cm > .cu-m { flex: none; }
-.pv-task { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 12px 16px; border: 0; border-radius: 0; background: transparent; color: var(--fg); text-align: left; font: inherit; cursor: pointer; }
+.pv-kind { justify-self: start; height: 20px; padding: 0 7px; border-radius: 10px; background: var(--layer); color: var(--fg-2); font-size: 11px; line-height: 20px; font-weight: 600; white-space: nowrap; }
+.pv-rt { min-width: 0; font-size: 14px; line-height: 21px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-res.report .pv-rt { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pv-rt.mono { font: 12px/21px var(--mono); color: var(--fg-2); }
+.pv-rt .pv-h { margin-right: 8px; color: var(--fg-3); font: 12px/21px var(--mono); }
+.pv-rr { display: flex; align-items: center; gap: 6px; color: var(--fg-3); font-size: 12px; line-height: 16px; white-space: nowrap; }
+.pv-rsub { grid-column: 2 / 4; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.pv-box2 { padding: 4px 0; }
+.pv-sub { padding: 12px 16px 4px; color: var(--fg-3); font: 600 12px/16px var(--font); }
+.pv-task { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 10px 16px; border: 0; border-radius: 0; background: transparent; color: var(--fg); text-align: left; font: inherit; cursor: pointer; }
 .pv-task:hover { background: var(--card-hover); }
-.pv-ring { flex: none; width: 18px; height: 18px; margin-top: 2px; border: 1.5px solid var(--line-2); border-radius: 50%; }
+.pv-ring { flex: none; width: 16px; height: 16px; margin-top: 3px; border: 1.5px solid var(--line-2); border-radius: 50%; }
 .pv-task:hover .pv-ring { border-color: var(--accent); }
-.pv-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.pv-tw { font-size: 14px; line-height: 21px; overflow-wrap: anywhere; }
-.pv-tx .cu-m { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.pv-rs { display: block; }
-.cu-rn > .pv-rs { margin-top: 1px; overflow: hidden; text-overflow: ellipsis; }
-.pv-req { padding: 16px; }
-.pv-to { margin-bottom: 6px; }
-.pv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pv-tw { min-width: 0; font-size: 14px; line-height: 21px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pv-links { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 16px 12px; }
+.pv-link { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 10px; border-radius: 15px; background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 18px; }
+.pv-link svg.ic { width: 14px; height: 14px; }
+.pv-link .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-link button { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: -4px; border: 0; border-radius: 10px; background: transparent; color: var(--fg-2); cursor: pointer; }
+.pv-link button:hover { background: var(--hover); }
+.pv-link button svg.ic { width: 12px; height: 12px; }
+.pv-req { display: flex; flex-direction: column; padding: 16px; }
+.pv-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pv-chips > .cu-m { margin-right: 2px; }
 .pv-chips .chip { background: var(--layer); }
 .pv-chips .chip.on { background: var(--fg); color: var(--bg); }
 .pv-box { display: flex; align-items: flex-end; gap: 8px; margin-top: 12px; padding: 6px 6px 6px 14px; border: 1px solid var(--line-2); border-radius: 22px; background: var(--card); }
@@ -110,13 +122,21 @@ button.pv-res:hover { background: var(--card-hover); }
 .pv-q { height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 14px; background: transparent; color: var(--fg-2); font: 500 12.5px/26px var(--font); cursor: pointer; }
 .pv-q:hover { background: var(--hover); color: var(--fg); }
 @media (pointer: coarse) { .pv-ta { font-size: 16px; line-height: 22px; } .pv-acts .btn { height: 36px; } .pv-q { height: 34px; line-height: 32px; } }
-@media (min-width: 1100px) { .pv-cols { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); } .pv-col > .pv-s:first-child .pv-sh .sec { margin-top: 0; } }
-@media (max-width: 1099px) {
-  .pv-cols { display: flex; flex-direction: column; align-items: stretch; }
-  .pv-col { display: contents; }
-  .o-sum { order: 1; } .o-req { order: 2; } .o-lanes { order: 3; } .o-res { order: 4; } .o-repo { order: 5; } .o-tasks { order: 6; } .o-linked { order: 7; }
+@media (min-width: 1100px) {
+  .pv-top { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+  .pv-cols { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
 }
-@media (max-width: 639px) { .pv-sum { padding: 14px 16px; gap: 8px; } .pv-tv { font-size: 17px; line-height: 24px; } .pv-tile + .pv-tile { padding-left: 8px; } }
+@media (max-width: 639px) {
+  .pv-ov { padding: 16px; gap: 14px; }
+  .pv-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 14px; }
+  .pv-tile:nth-child(3) { padding-left: 0; border-left: 0; }
+  .pv-tv { font-size: 18px; line-height: 26px; }
+  .pv-res { grid-template-columns: 40px minmax(0, 1fr); }
+  .pv-rr { grid-column: 2; }
+  .pv-lane { grid-template-columns: minmax(0, 1fr); grid-template-areas: "lt" "line" "acts"; }
+  .pv-lane > .pv-acts { margin: 6px 0 0 16px; }
+  .pv-lane > .pv-acts:empty { display: none; }
+}
 @media (max-width: 639px) {
   .pins { display: none; }
   .cu-pinhome { display: block; }
@@ -328,18 +348,32 @@ button.pv-res:hover { background: var(--card-hover); }
     return true;
   }
 
-  function summaryNode(D) {
-    const s = (D && D.summary) || {};
+  // One overview card (where, how it stands), the request box beside it, then lanes on the left and one day-grouped
+  // timeline on the right. Each fact shows once: a lane's report line sits on its row, an unmerged lane branch as a tag
+  // on that lane, commits only in the timeline.
+  function overviewNode(p, D) {
+    const s = (D && D.summary) || {}, g = D && D.repo, tasks = (D && D.tasks) || [];
+    const own = new Set(((D && D.lanes) || []).map(l => `lane/${l.name}`));
+    const loose = g ? g.unmerged.filter(u => !own.has(u.branch)) : [];
+    const fact = t => el("span", { text: t });
+    const facts = el("div", { class: "pv-facts" }, ...[p.path ? el("span", { class: "pv-path", text: p.path }) : null,
+      g ? fact(`${g.branch} 브랜치`) : null, g ? fact(g.dirty ? `커밋 안 한 파일 ${g.dirty}개` : "커밋 안 한 파일 없음") : null,
+      loose.length ? el("span", { text: `${g.base}에 안 들어간 브랜치 ${loose.length}개`, title: loose.map(u => `${u.branch} (커밋 ${u.ahead}개)`).join("\n") }) : null,
+      p.channel ? fact(`#${p.channel.name}`) : null, p.note ? fact(p.note) : null].filter(Boolean));
     const tile = (v, label, tone) => el("div", { class: "pv-tile" }, el("div", { class: "pv-tv" }, tone ? el("span", { class: `dot ${tone}` }) : null, el("span", { text: String(v) })), el("div", { class: "cu-m", text: label }));
-    return el("div", { class: "card pv-sum" },
+    // The newest report, else the newest result: what happened last, in one line.
+    const rs = (D && D.results) || [], last = rs.find(r => r.kind === "report") || rs[0];
+    const lastRow = last ? el("div", { class: "pv-last" }, el("span", { class: "cu-m", text: last.kind === "report" ? `${last.lane} 마지막 보고` : `마지막 ${KIND[last.kind] || ""}` }), el("span", { class: "pv-lx", text: last.title || "" }), el("span", { class: "cu-m", text: when(last.at) })) : null;
+    return el("div", { class: "card pv-ov" }, facts, el("div", { class: "pv-stats" },
       tile(s.running ?? 0, "돌고 있는 레인", s.running ? "pri" : ""),
       tile(s.waiting ?? 0, "답을 기다리는 레인", s.waiting ? "att" : ""),
-      tile(s.lastActivity ? ago(s.lastActivity) : "기록 없음", "마지막 활동"));
+      tile(D ? tasks.length : "…", "열린 할 일"),
+      tile(s.lastActivity ? ago(s.lastActivity) : D ? "기록 없음" : "…", "마지막 활동")), lastRow);
   }
 
   function laneNode(l) {
     const tone = l.live ? statusTone(l.status) : l.waiting ? "att" : l.tone === "fail" ? "warn" : "";
-    const state = l.waiting ? "답을 기다려요" : l.live ? statusKo(l.status) : "끝남";
+    const state = [l.waiting ? "답을 기다려요" : l.live ? statusKo(l.status) : "끝남", l.finishedAt ? when(l.finishedAt) : ""].filter(Boolean).join(" · ");
     const acts = el("div", { class: "pv-acts" });
     const stop = ev => ev.stopPropagation();
     if (l.resumable) {
@@ -358,12 +392,11 @@ button.pv-res:hover { background: var(--card-hover); }
       }); });
       acts.append(b);
     }
-    const meta = l.finishedAt ? `${when(l.finishedAt)} ${l.live ? "마지막 보고" : "끝남"}` : "";
-    const row = el("div", { class: "pv-lane", role: "button", tabindex: "0", title: `${l.name} 채팅 열기` },
+    const row = el("div", { class: "pv-lane", role: "button", tabindex: "0", title: l.line ? `${l.line}\n\n누르면 ${l.name} 채팅이 열려요` : `${l.name} 채팅 열기` },
       el("div", { class: "pv-lt" }, el("span", { class: `dot ${tone}` }), el("span", { class: "pv-ln", text: l.name }), el("span", { class: "cu-m", text: state }),
-        l.claim === "verified" ? el("span", { class: "tag ok", text: "확인됨" }) : l.claim === "reported" ? el("span", { class: "tag", text: "보고만 함" }) : null, acts),
-      l.line ? el("div", { class: "pv-line", text: l.line }) : el("div", { class: "pv-line none", text: "아직 보고가 없어요" }),
-      meta ? el("div", { class: "cu-m", text: meta }) : null);
+        l.claim === "verified" ? el("span", { class: "tag ok", text: "확인됨" }) : l.claim === "reported" ? el("span", { class: "tag", text: "보고만 함" }) : null,
+        l.unmerged ? el("span", { class: "tag", text: `안 합침 ${l.unmerged}`, title: `lane/${l.name} 브랜치에 main에 없는 커밋이 ${l.unmerged}개 있어요` }) : null),
+      acts, el("div", { class: `pv-line${l.line ? "" : " none"}`, text: l.line || "아직 보고가 없어요" }));
     const open = () => openTarget(`lane:${l.name}`, lastChatView());
     row.addEventListener("click", open);
     row.addEventListener("keydown", ev => { if (ev.target === row && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); open(); } });
@@ -371,33 +404,39 @@ button.pv-res:hover { background: var(--card-hover); }
   }
 
   const KIND = { report: "보고", verify: "확인", commit: "커밋" };
+  const hm = s => new Date(ts(s)).toLocaleTimeString("ko-KR", { ...KST, hour: "2-digit", minute: "2-digit", hour12: false });
+  function dayOf(s) {
+    const w = when(s);
+    return w.startsWith("오늘") ? "오늘" : w.startsWith("어제") ? "어제" : w.replace(/ \d\d:\d\d$/, "");
+  }
   function resultNode(r) {
-    const tags = [];
-    if (r.kind === "report") tags.push(r.verified ? el("span", { class: "tag ok", text: "확인됨" }) : el("span", { class: "tag", text: "보고만 함" }));
-    if (r.kind === "verify") tags.push(el("span", { class: `tag${r.ok ? " ok" : ""}`, text: r.ok ? "통과" : "안 됨" }));
-    const meta = [when(r.at), r.lane || "", r.hash || ""].filter(Boolean).join(" · ");
-    const tone = r.kind === "report" ? (r.tone === "fail" ? "안 됨 · " : "") : "";
-    const node = el(r.lane && r.kind === "report" ? "button" : "div", { class: `pv-res ${r.kind}`, type: r.lane && r.kind === "report" ? "button" : null },
-      el("div", { class: "pv-rh" }, el("span", { class: "pv-kind", text: KIND[r.kind] || r.kind }), el("span", { class: "cu-m pv-rm", text: tone + meta }), ...tags),
-      el("div", { class: `pv-rt${r.kind === "verify" ? " mono" : ""}`, text: r.title || "" }),
-      r.text ? el("div", { class: "pv-rb", text: r.text }) : null);
-    if (node.tagName === "BUTTON") node.addEventListener("click", () => openTarget(`lane:${r.lane}`, lastChatView()));
+    const report = r.kind === "report", tap = report && r.lane;
+    const right = el("span", { class: "pv-rr" },
+      report ? el("span", { class: `tag${r.verified ? " ok" : ""}`, text: r.tone === "fail" ? "안 됨" : r.verified ? "확인됨" : "보고만 함" }) : null,
+      r.kind === "verify" ? el("span", { class: `tag${r.ok ? " ok" : ""}`, text: r.ok ? "통과" : "안 됨" }) : null,
+      el("span", { text: hm(r.at) }));
+    const title = r.kind === "commit" ? el("span", { class: "pv-rt" }, el("span", { class: "pv-h", text: r.hash }), r.title)
+      : el("span", { class: `pv-rt${r.kind === "verify" ? " mono" : ""}`, text: r.title || "", title: r.title || "" });
+    const node = el(tap ? "button" : "div", { class: `pv-res ${r.kind}`, type: tap ? "button" : null },
+      el("span", { class: "pv-kind", text: KIND[r.kind] || r.kind }), title, right,
+      r.lane ? el("span", { class: "pv-rsub", text: `${r.lane} 레인` }) : null);
+    if (tap) node.addEventListener("click", () => openTarget(`lane:${r.lane}`, lastChatView()));
     return node;
   }
-
-  function repoNode(g) {
-    const kv = (k, v) => el("div", { class: "cu-kv" }, el("span", { text: k }), el("span", { text: v }));
-    return el("div", { class: "card pv-repo" },
-      kv("브랜치", g.branch), kv("커밋 안 한 파일", g.dirty ? `${g.dirty}개` : "없음"),
-      el("div", { class: "pv-sub", text: "최근 커밋" }),
-      ...(g.commits.length ? g.commits.map(c => el("div", { class: "pv-cm" }, el("span", { class: "pv-h", text: c.hash }), el("span", { class: "pv-cs", text: c.subject }), el("span", { class: "cu-m", text: when(c.at) }))) : [el("div", { class: "cu-m", text: "커밋이 없어요" })]),
-      el("div", { class: "pv-sub", text: `${g.base}에 안 들어간 레인 브랜치` }),
-      ...(g.unmerged.length ? g.unmerged.map(u => el("div", { class: "pv-cm" }, el("span", { class: "pv-cs mono", text: u.branch }), el("span", { class: "cu-m", text: `커밋 ${u.ahead}개 · ${when(u.at)}` }))) : [el("div", { class: "cu-m", text: "모두 들어갔어요" })]));
+  function resultsNode(results) {
+    const kids = [];
+    let day = "";
+    for (const r of results) {
+      const d = dayOf(r.at);
+      if (d !== day) { day = d; kids.push(el("div", { class: "pv-day", text: d })); }
+      kids.push(resultNode(r));
+    }
+    return el("div", { class: "list" }, ...kids);
   }
 
   function taskNode(t) {
-    const b = el("button", { class: "pv-task", type: "button", title: "이 할 일을 요청으로 보내기" },
-      el("span", { class: "pv-ring" }), el("span", { class: "pv-tx" }, el("span", { class: "pv-tw", text: t.what || t.id }), t.next ? el("span", { class: "cu-m", text: `다음: ${t.next}` }) : null));
+    const b = el("button", { class: "pv-task", type: "button", title: `${t.next ? `다음: ${t.next}\n\n` : ""}누르면 ${botName}에게 요청으로 보내요` },
+      el("span", { class: "pv-ring" }), el("span", { class: "pv-tw", text: t.what || t.id }));
     b.addEventListener("click", () => busy(b, async () => {
       if (!await ask("할 일 보내기", `${botName}에게 이어서 해 달라고 보내요: ${t.what}`, "보내기")) return;
       await sendReq(`할 일 ${t.id}: ${t.what} - 이어서 해 주세요.`, "main");
@@ -405,19 +444,26 @@ button.pv-res:hover { background: var(--card-hover); }
     return b;
   }
 
-  function linkedNode(L) {
-    const rows = [];
-    const row = (ic, name, sub, tail) => el("div", { class: "cu-r" }, icon(ic), el("span", { class: "cu-rn" }, el("span", { text: name }), sub ? el("span", { class: "cu-m pv-rs", text: sub }) : null), tail || null);
-    if (L.channel) rows.push(row("discord", `#${L.channel.name}`, `작업 채널${L.threads.length ? ` · 스레드 ${L.threads.length}개` : ""}`));
-    for (const c of L.laneChannels || []) rows.push(row("discord", `${c.lane} 레인 채널`, "레인 보고가 올라오는 곳"));
+  function linkChips(L) {
+    const chip = (ic, text, title, btn) => el("span", { class: "pv-link", title: title || text }, icon(ic), el("span", { class: "tx", text }), btn || null);
+    const out = [];
+    if (L.channel) out.push(chip("discord", `#${L.channel.name}`, `작업 채널${L.threads.length ? ` · 스레드 ${L.threads.length}개: ${L.threads.map(t => t.name).join(", ")}` : ""}`));
+    for (const c of L.laneChannels || []) out.push(chip("discord", `${c.lane} 레인 채널`));
     for (const r of L.routines || []) {
-      const b = el("button", { class: "ib", type: "button", "aria-label": `${r.name} 실행`, title: "지금 실행" }, icon("send"));
+      const b = el("button", { type: "button", "aria-label": `${r.name} 지금 실행`, title: "지금 실행" }, icon("send"));
       b.addEventListener("click", () => busy(b, async () => { await api("/api/custom/routine", "POST", { id: r.id }); toast("루틴을 보냈어요"); }));
-      rows.push(row("spark", r.name, `루틴${SCHED(r) ? ` · ${SCHED(r)}` : ""}`, b));
+      out.push(chip("spark", r.name, `루틴${SCHED(r) ? ` · ${SCHED(r)}` : ""}`, b));
     }
-    for (const s of L.schedules || []) rows.push(row("bell", s.text, `일정 · ${when(s.at)}${s.every_minutes ? ` · ${s.every_minutes}분마다` : ""}`));
-    for (const w of L.watches || []) rows.push(row("activity", w.name, `감시 · ${w.every_minutes}분마다${w.paused ? " · 쉬는 중" : ""}`));
-    return rows.length ? el("div", { class: "list" }, ...rows) : emptyCard("이 프로젝트에 묶인 루틴·일정·감시가 없어요");
+    for (const s of L.schedules || []) out.push(chip("bell", s.text, `일정 · ${when(s.at)}${s.every_minutes ? ` · ${s.every_minutes}분마다` : ""}`));
+    for (const w of L.watches || []) out.push(chip("activity", w.name, `감시 · ${w.every_minutes}분마다${w.paused ? " · 쉬는 중" : ""}`));
+    return out;
+  }
+  function moreNode(D) {
+    if (!D) return emptyCard("불러오는 중…");
+    const tasks = D.tasks || [], links = D.linked ? linkChips(D.linked) : [];
+    return el("div", { class: "list pv-box2" },
+      el("div", { class: "pv-sub", text: tasks.length ? `열린 할 일 ${tasks.length} · 누르면 요청으로 보내요` : "열린 할 일 없음" }), ...tasks.map(taskNode),
+      el("div", { class: "pv-sub", text: links.length ? "연결된 채널 · 루틴 · 일정" : "연결된 채널 · 루틴 · 일정 없음" }), links.length ? el("div", { class: "pv-links" }, ...links) : null);
   }
 
   function requestNode(p, D) {
@@ -432,7 +478,7 @@ button.pv-res:hover { background: var(--card-hover); }
     ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing && !matchMedia("(pointer: coarse)").matches) { ev.preventDefault(); if (ta.value.trim()) fire(); } });
     const targets = [["main", botName], ...live.map(n => [`lane:${n}`, n]), ["new", "새 레인"]];
     const chips = el("div", { class: "pv-chips", role: "radiogroup", "aria-label": "받는 곳" });
-    const paintChips = () => { clear(chips).append(...targets.map(([v, label]) => {
+    const paintChips = () => { clear(chips).append(el("span", { class: "cu-m", text: "받는 곳" }), ...targets.map(([v, label]) => {
       const c = el("button", { class: `chip${reqTarget === v ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(reqTarget === v) }, el("span", { class: "tx", text: label }));
       c.addEventListener("click", () => { reqTarget = v; paintChips(); ta.focus(); });
       return c;
@@ -440,7 +486,7 @@ button.pv-res:hover { background: var(--card-hover); }
     paintChips();
     const quick = ["지금 상태 알려줘", "남은 할 일 정리해줘", "테스트 돌려서 확인해줘", "끝난 작업 main에 반영해줘"];
     const qs = el("div", { class: "pv-quick" }, ...quick.map(q => el("button", { class: "pv-q", type: "button", text: q, onclick: () => { ta.value = q; grow(); ta.focus(); } })));
-    return el("div", { class: "card pv-req" }, el("div", { class: "cu-m pv-to", text: "받는 곳" }), chips, el("div", { class: "pv-box" }, ta, send), qs);
+    return el("div", { class: "card pv-req" }, chips, el("div", { class: "pv-box" }, ta, send), qs);
   }
 
   function paintProject() {
@@ -459,23 +505,17 @@ button.pv-res:hover { background: var(--card-hover); }
     // Keep what the owner was typing across a refresh.
     const old = $(".pv-ta", root), draft = old ? old.value : "", focused = old && document.activeElement === old;
     const ls = D && D.lanes ? D.lanes : (p.lanes || []).map(l => ({ ...l, line: "" }));
-    const head = el("div", { class: "pv-head" }, ...[p.path ? el("span", { class: "pv-path", text: p.path }) : null,
-      D && D.repo ? el("span", { class: "cu-m", text: `${D.repo.branch} 브랜치` }) : null,
-      p.channel ? el("span", { class: "cu-m", text: `#${p.channel.name}` }) : null, p.note ? el("span", { class: "cu-m", text: p.note }) : null].filter(Boolean));
     const sorted = ls.slice().sort((a, b) => (b.live - a.live) || (b.waiting - a.waiting) || ts(b.finishedAt || b.startedAt) - ts(a.finishedAt || a.startedAt));
     const results = D && D.results ? D.results : null;
-    const section = (cls, ...kids) => el("section", { class: `pv-s ${cls}` }, ...kids);
-    const left = el("div", { class: "pv-col" },
-      section("o-sum", summaryNode(D)),
-      section("o-lanes", sec(`레인 ${ls.length}`), ls.length ? el("div", { class: "list pv-lanes" }, ...sorted.map(laneNode)) : emptyCard("아직 레인이 없어요")),
-      D && D.repo ? section("o-repo", sec("저장소"), repoNode(D.repo)) : null,
-      section("o-tasks", sec("열린 할 일", D && D.tasks && D.tasks.length ? el("span", { class: "cu-m", text: "누르면 요청으로 보내요" }) : null),
-        !D ? emptyCard("불러오는 중…") : D.tasks && D.tasks.length ? el("div", { class: "list" }, ...D.tasks.map(taskNode)) : emptyCard("열린 할 일이 없어요")),
-      section("o-linked", sec("루틴 · 일정 · 채널"), D && D.linked ? linkedNode(D.linked) : emptyCard("불러오는 중…")));
-    const right = el("div", { class: "pv-col" },
-      section("o-req", sec("요청"), requestNode(p, D)),
-      section("o-res", sec("최근 결과"), !results ? emptyCard("불러오는 중…") : results.length ? el("div", { class: "list pv-results" }, ...results.map(resultNode)) : emptyCard("아직 결과가 없어요")));
-    clear(root).append(head, el("div", { class: "pv-cols" }, left, right));
+    clear(root).append(
+      el("div", { class: "pv-top" }, overviewNode(p, D), requestNode(p, D)),
+      el("div", { class: "pv-cols" },
+        el("div", { class: "pv-col" },
+          sec(`레인 ${ls.length}`), ls.length ? el("div", { class: "list" }, ...sorted.map(laneNode)) : emptyCard("아직 레인이 없어요"),
+          sec("할 일과 연결"), moreNode(D)),
+        el("div", { class: "pv-col" },
+          sec("최근 결과", el("span", { class: "cu-m", text: "보고 · 확인 · 커밋" })),
+          !results ? emptyCard("불러오는 중…") : results.length ? resultsNode(results) : emptyCard("아직 결과가 없어요"))));
     const ta = $(".pv-ta", root);
     if (draft) { ta.value = draft; ta.dispatchEvent(new Event("input")); }
     if (focused) ta.focus();
