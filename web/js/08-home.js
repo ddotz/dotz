@@ -1,0 +1,279 @@
+/* ---------- home: every status at a glance, each card navigates ---------- */
+let HQ = null, homeTimer;
+async function loadHomeData() {
+  clearTimeout(homeTimer);
+  await Promise.all([
+    api("/api/quota").then(q => { HQ = q; noteQuota(q); }, () => { HQ = { error: true }; }),
+    loadProviderData().catch(() => {}),
+  ]);
+  if (current === "home") { renderHome(); homeTimer = setTimeout(loadHomeData, 60000); }
+}
+function tapCard(to, ...kids) {
+  const open = () => typeof to === "function" ? to() : go(to);
+  const c = el("div", { class: "card tap", role: "link", tabindex: "0", onclick: open, onkeydown: ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === c) { ev.preventDefault(); open(); } } }, ...kids);
+  return c;
+}
+// tone: "" | "warn" | "err" colours the whole card the same way for every kind of item that needs the owner.
+const itemCard = (to, tone, ...kids) => { const c = tapCard(to, ...kids); if (tone) c.classList.add("att", ...(tone === "err" ? ["err"] : [])); return c; };
+const menuBtn = id => el("button", { class: "ib", type: "button", "aria-label": "설정", title: "설정", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => { ev.stopPropagation(); homeMenu(ev.currentTarget, id); } }, icon("more"));
+
+// The ⋯ menu of a home card: only what an existing endpoint already does for that item, built from the state at click time.
+function homeMenu(anchor, id) {
+  const acts = [];
+  const add = (label, run) => acts.push({ value: acts.length, label, run });
+  if (id.startsWith("group:")) {
+    const kind = id.slice(6);
+    add("카드로 나누기", () => setHomeGroup(kind, false));
+    add(`${HOME_KINDS[kind][0]} 열기`, () => go(HOME_KINDS[kind][1]));
+    return showMenu(anchor, acts, { onPick: i => acts[i].run() });
+  }
+  if (id === MAIN || isLaneT(id)) {
+    const key = id === MAIN ? "orchestrator" : id, name = targetName(id), restartNote = id === MAIN ? "어시스턴트가 다시 시작돼요." : "";
+    const cur = M && (id === MAIN ? M.orchestrator : (M.lanes || []).find(l => `lane:${l.name}` === id));
+    if (cur) {
+      add("모델 변경…", () => showMenu(anchor, modelItems(key, cur.model, ""), { value: cur.model, onPick: v => busy(null, () => putModel(key, name, { model: v }, restartNote, `${modelName(v)} · ${cur.thinking}`)) }));
+      add("추론 강도…", () => showMenu(anchor, (M.thinking_levels || []).map(v => ({ value: v, label: v })), { value: cur.thinking, onPick: v => busy(null, () => putModel(key, name, { thinking: v }, restartNote, `${modelName(cur.model)} · ${v}`)) }));
+      add("모델 · 폴백 설정", () => openModels(key));
+    }
+    if (id === MAIN) {
+      if (S && S.orchestrator && S.orchestrator.status === "working") add("중단", () => abortOrch(null));
+      add("재시작", () => restartOrch(null));
+    } else {
+      const n = laneOf(id);
+      add("중단", () => busy(null, async () => { await api(`/api/lanes/${enc(n)}/abort`, "POST", {}); toast("작업을 중단했어요"); refreshState(); }));
+      add("재시작", () => busy(null, async () => { if (!await ask(`${n} 재시작`, "이 세션을 다시 시작할까요?", "재시작", true)) return; await api(`/api/lanes/${enc(n)}/restart`, "POST", {}); toast("재시작했어요"); refreshState(); }));
+    }
+  } else if (id.startsWith("prov:")) {
+    const p = ((P && P.providers) || []).find(x => x.id === id.slice(5));
+    if (p && p.can_login) add(isConnected(p) ? "다시 로그인" : "로그인", () => startLogin(p));
+    if (p && (p.can_logout ?? p.removable)) add(p.auth === "api_key" ? "키 삭제" : "로그아웃", () => busy(null, () => logoutProvider(p)));
+    add("공급자 열기", () => go("providers"));
+  } else if (id.startsWith("ctx:")) {
+    const c = ((C && C.processes) || []).find(x => x.name === id.slice(4));
+    if (c && c.running && !(c.compaction && (c.compaction.state === "queued" || c.compaction.state === "compacting"))) add("압축", () => busy(null, async () => {
+      const r = await api("/api/compact", "POST", { target: c.name });
+      toast(r.state === "queued" ? `${c.name}: 작업 중이라 턴이 끝나면 압축해요` : `${c.name}: 압축을 시작했어요`);
+      loadContext(true);
+    }));
+    add("컨텍스트 열기", () => go("context"));
+  } else {
+    add("사용량 열기", () => go("usage"));
+    add("공급자 열기", () => go("providers"));
+  }
+  const kind = homeKind(id);
+  if (kind && !homeGroups.has(kind)) add(`${HOME_KINDS[kind][0]} 한 카드로 묶기`, () => setHomeGroup(kind, true));
+  showMenu(anchor, acts, { onPick: i => acts[i].run() });
+}
+
+// Last meaningful line of each running lane, kept from the live activity stream (fetched once per lane for the first sight).
+const LAST = {}, LAST_ASKED = new Set();
+let homeSoonT;
+const homeSoon = () => { clearTimeout(homeSoonT); homeSoonT = setTimeout(() => { if (current === "home") renderHome(); }, 500); };
+function actLine(a) {
+  switch (a.type) {
+    case "text": case "error": case "status": return oneLine(a.text ?? "");
+    case "tool_call": { const l = laneToolLabel(a); return `${capName(a.tool)}${l ? ` · ${l}` : ""}`; }
+    default: return "";
+  }
+}
+function laneLastFetch(name) {
+  if (LAST[name] !== undefined || LAST_ASKED.has(name)) return;
+  LAST_ASKED.add(name);
+  api(`/api/activity?source=${enc(`lane:${name}`)}&limit=30`).then(r => {
+    const items = (r && r.items) || [];
+    for (let i = items.length - 1; i >= 0 && LAST[name] === undefined; i--) { const s = actLine(items[i]); if (s) LAST[name] = s; }
+    if (LAST[name] === undefined) LAST[name] = "";
+    homeSoon();
+  }, () => {});
+}
+
+let homeBoard = null;
+const HOME_BIG = { min: { w: 3, h: 3 }, max: { w: 12, h: 10 } }, HOME_SMALL = { min: { w: 2, h: 2 }, max: { w: 12, h: 6 } }, HOME_GROUP = { min: { w: 3, h: 2 }, max: { w: 12, h: 14 } };
+// Kinds of home items that can be bundled into one card (title, view the card opens); the bundled kinds are kept per browser.
+const HOME_KINDS = { lane: ["세션", "lanes"], ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
+const HOME_GROUPS_KEY = "dotz-home-groups";
+const homeKind = id => { const k = id.split(":")[0]; return HOME_KINDS[k] ? k : null; };
+let homeGroups = (() => { try { const v = JSON.parse(localStorage.getItem(HOME_GROUPS_KEY) || "null"); if (Array.isArray(v)) return new Set(v); } catch {} return new Set(["ctx", "limit", "prov"]); })();
+function setHomeGroup(kind, on) {
+  if (on) homeGroups.add(kind); else homeGroups.delete(kind);
+  try { localStorage.setItem(HOME_GROUPS_KEY, JSON.stringify([...homeGroups])); } catch {}
+  setTimeout(renderHome, 0);
+}
+const toneCls = t => t ? ` att${t === "err" ? " err" : ""}` : "";
+// One item inside a bundle card: clicking it opens the item, its own ⋯ menu keeps the item's actions.
+function homeRow(e) {
+  const r = el("div", { class: `grow${toneCls(e.tone)}`, role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); e.open(); }, onkeydown: ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === r) { ev.preventDefault(); ev.stopPropagation(); e.open(); } } },
+    el("div", { class: "gm" }, ...e.row()), menuBtn(e.id));
+  return r;
+}
+// Every item is its own floating card (the assistant, each running lane, each context process, each usage limit, each provider),
+// except kinds the owner bundled: those share one card with a row per item.
+// The newest meaningful line of what a target is doing: its loaded activity, else the lane's last fetched line, else its last text.
+function nowLine(t) {
+  const acts = ts(t).acts;
+  for (let i = acts.length - 1; i >= 0 && i >= acts.length - 40; i--) { const s = actLine(acts[i]); if (s) return s; }
+  if (isLaneT(t) && LAST[laneOf(t)]) return LAST[laneOf(t)];
+  const l = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null, last = t === MAIN ? (S && S.orchestrator && S.orchestrator.lastText) : l && l.lastText;
+  return last ? oneLine(parseTone(noHandoff(String(last))).text) : "";
+}
+// Same rule as hub/tone.ts stripHandoff: the agent's leading "Ask: ... For you: ... Next: ..." block is not shown.
+function noHandoff(text) {
+  const m = /^\s*Ask:[^\n]*(?:\n(?!\s*\n)[^\n]*)*/.exec(text);
+  if (!m || !/\bFor you:/.test(m[0])) return text;
+  const rest = text.slice(m[0].length).replace(/^\s+/, "");
+  return rest || ((/\bFor you:\s*([\s\S]*?)(?:\s+Now:[\s\S]*)?$/.exec(m[0]) || [])[1] || "").trim() || text;
+}
+function askOf(t) {
+  if (!isLaneT(t) || !S) return false;
+  const l = S.lanes.find(x => x.name === laneOf(t));
+  return !!(l && l.lastText && parseTone(noHandoff(String(l.lastText))).tone === "ask" && l.status !== "working");
+}
+function homeNowRow(t, label, tone) {
+  const i = targetInfo(t), subs = SUBS[sourceOf(t)] || [], done = subs.filter(s => s.status !== "running").length;
+  const lane = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null;
+  const line = nowLine(t) || modelChipText(t === MAIN ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model) || (i.alive ? statusKo(i.status) : "종료됨");
+  return el("button", { class: "hr", type: "button", onclick: () => openTarget(t, lastChatView()), "aria-label": `${targetName(t)} · ${label}` },
+    el("span", { class: `dot ${tone === "att" ? "att" : statusTone(i.status)}` }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: targetName(t) })), el("span", { class: "ha", text: line })),
+    subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
+    el("span", { class: `hs ${tone === "att" ? "warn" : statusTone(i.status)}`, text: label }));
+}
+function renderHomeNow() {
+  const box = $("#home-now");
+  if (!box) return;
+  const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
+  const need = all.map(t => ({ t, k: askOf(t) ? "ask" : attnKind(t) })).filter(x => x.k);
+  const NEED = { ask: "답 필요", done: "결과 확인", limit: "한도 제한" };
+  const rank = t => ({ working: 0, starting: 1, "rate-limited": 2 })[targetInfo(t).status] ?? 3;
+  const run = [...all].sort((a, b) => rank(a) - rank(b));
+  const working = run.filter(t => rank(t) < 2).length;
+  clear(box).append(
+    el("div", { class: "hn-h" }, el("h2", { text: `${S && S.address ? `${S.address} ` : ""}답 필요` }), need.length ? el("span", { class: "sup", text: `${need.length}` }) : null),
+    el("div", { class: "hn" }, ...(need.length ? need.map(x => homeNowRow(x.t, NEED[x.k], "att")) : [el("div", { class: "empty", text: "기다리는 것 없어요" })])),
+    el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
+    el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", ""))),
+    endedGroup() || "");
+}
+function renderHome() {
+  const box = $("#home");
+  if (!box || current !== "home") return;
+  renderHomeNow();
+  if (openMenu && box.contains(openMenu.anchor)) return;   // a ⋯ menu is open: repaint after it closes
+  $("#title").textContent = botName;
+  if (!homeBoard) homeBoard = makeBoard(box, "home");
+  const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, items = [], seen = new Set();
+  const add = (id, node, def, size) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def, ...size }); } };
+
+  // assistant
+  const stText = o.status === "rate-limited" && o.rateLimitedUntil ? `${statusKo(o.status)} · ${kstTime(o.rateLimitedUntil)}까지` : statusKo(o.status);
+  const stop = o.status === "working" ? el("button", { class: "ib err", type: "button", "aria-label": "중단", title: "중단", onclick: ev => { ev.stopPropagation(); abortOrch(ev.currentTarget); } }, icon("stop")) : null;
+  const mainAttn = attnKind(MAIN);
+  add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), mainAttn || o.status === "rate-limited" ? "warn" : "",
+    el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), stop, menuBtn(MAIN)),
+    el("div", { class: "big", text: om ? modelName(om.model) : "…" }),
+    el("div", { class: "sup sub", text: om && om.thinking ? `thinking ${om.thinking}` : "\u00a0" }),
+    subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
+
+  // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}
+  const E = { lane: [], ctx: [], limit: [], prov: [] };
+  for (const l of (S ? S.lanes : []).filter(laneAlive)) {
+    const t = `lane:${l.name}`, k = attnKind(t), m = ((M && M.lanes) || []).find(x => x.name === l.name), model = (m && m.model) || l.model;
+    laneLastFetch(l.name);
+    E.lane.push({ id: t, tone: k || l.status === "rate-limited" ? "warn" : "", open: () => openTarget(t, lastChatView()), size: [{ w: 4, h: 4 }, HOME_BIG],
+      card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("h3", { text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(l.status)}`, text: statusKo(l.status) }), menuBtn(t)),
+        model ? el("div", { class: "sup", text: `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` }) : null,
+        subLine(t),
+        LAST[l.name] ? el("div", { class: "sup clamp", text: LAST[l.name] }) : null],
+      row: () => [el("div", { class: "row" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : el("span", { class: "sup", text: statusKo(l.status) }))] });
+  }
+  for (const p of ((C && C.processes) || []).filter(x => x.running)) {
+    const id = `ctx:${p.name}`, pct = p.percent, who = p.kind === "lane" ? p.name : botName, v = pct != null ? `${pct}%` : `${num(p.tokens)} 토큰`;
+    const bar = () => el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }));
+    E.ctx.push({ id, tone: pct >= 90 ? "err" : pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 2 }, HOME_SMALL],
+      card: () => [el("div", { class: "ch" }, el("h3", { text: `컨텍스트 · ${who}` }), el("span", { class: "sup", text: v }), menuBtn(id)), bar()],
+      row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: who }), el("span", { class: "v", text: v })), bar()] });
+  }
+  if (HQ && !HQ.error) {
+    const provs = (HQ.providers || []).filter(p => (p.limits || []).length), multi = provs.length > 1;
+    for (const pr of provs) for (const l of pr.limits) {
+      const id = `limit:${pr.provider}:${l.id}`, f = limitFrac(l), name = limitLabel(pr, l, multi);
+      E.limit.push({ id, tone: limitTone(l) === "err" ? "err" : f != null && f <= .2 ? "warn" : "", open: () => go("usage"), size: [{ w: 4, h: 2 }, HOME_SMALL],
+        card: () => [el("div", { class: "ch" }, el("h3", { text: name }), el("span", { class: "sup", text: pctText(l) }), menuBtn(id)), bar(l)],
+        row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: name }), el("span", { class: "v", text: pctText(l) })), bar(l)] });
+    }
+  }
+  for (const p of (P && P.providers) || []) {
+    if (!isConnected(p) && !needsAttention(p)) continue;
+    const id = `prov:${p.id}`, bad = needsAttention(p), st = bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨";
+    E.prov.push({ id, tone: bad ? "err" : "", open: () => go("providers"), size: [{ w: 4, h: 2 }, HOME_SMALL],
+      card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${bad ? "err" : "ok"}` }), el("h3", { text: p.name || p.id }), el("span", { class: `tag ${bad ? "err" : ""}`, text: st }), menuBtn(id)),
+        p.account ? el("div", { class: "sup", text: p.account }) : null],
+      row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "err" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });
+  }
+  const loaded = { lane: !!S, ctx: !!C, limit: !!HQ, prov: !!P };
+  for (const [kind, list] of Object.entries(E)) {
+    if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, e.tone, ...e.card()), ...e.size); continue; }
+    // never shorter than its rows: header ~52px, bar rows ~44px, plain rows ~30px
+    const need = Math.min(HOME_GROUP.max.h, Math.max(2, Math.ceil((52 + Math.max(1, list.length) * (kind === "limit" || kind === "ctx" ? 44 : 30) + BGAP) / BSTEP)));
+    const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length;
+    const tone = list.some(e => e.tone === "err") ? "err" : nAtt ? "warn" : "";
+    const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : kind === "lane" ? "작동 중인 세션 없음" : "없음";
+    add(`group:${kind}`, itemCard(view, tone,
+      el("div", { class: "ch" }, el("h3", { text: title }), nAtt ? el("span", { class: "tag warn", text: `확인 필요 ${nAtt}` }) : null, list.length ? el("span", { class: "tag", text: String(list.length) }) : null, menuBtn(`group:${kind}`)),
+      list.length ? el("div", { class: "glist" }, ...list.map(homeRow)) : el("div", { class: "sup", text: empty })), { w: 4, h: need }, { min: { w: 3, h: need }, max: HOME_GROUP.max });
+  }
+
+  // cards of data that has not arrived yet keep their saved place
+  homeBoard.set(items, id => id.startsWith("lane:") ? !S : id.startsWith("ctx:") ? !C : id.startsWith("limit:") ? !HQ || !!HQ.error : id.startsWith("prov:") ? !P : false);
+  window.dotzCustom && dotzCustom.home();
+}
+
+/* ---------- assistant actions ---------- */
+const restartOrch = btn => busy(btn, async () => {
+  if (!await ask("어시스턴트 재시작", "작업 중인 내용이 있으면 멈춰요.", "재시작")) return;
+  await api("/api/orchestrator/restart", "POST", {});
+  toast("재시작을 요청했어요");
+  refreshState();
+});
+const abortOrch = btn => busy(btn, async () => {
+  await api("/api/orchestrator/abort", "POST", {});
+  toast("작업을 중단했어요");
+  refreshState();
+});
+
+/* ---------- target: the one selection shared by 대화 (chat) and 터미널 (terminal) ---------- */
+const MAIN = "main", TARGET_KEY = "dotz-target";
+const isLaneT = t => t.startsWith("lane:");
+const laneOf = t => t.slice(5);
+// A project orchestrator (hub/projectchat.ts): the one orchestrator in a project's work channel, target ch:<id>. Its
+// conversation is the channel's messages; its process, model and log are the orchestrator's.
+const isProjT = t => /^ch:\d+$/.test(t);
+const projOf = t => t.slice(3);
+const projTargets = () => Object.keys((S && S.channels && S.channels.work) || {}).map(id => `ch:${id}`);
+const validTarget = t => t === MAIN || isProjT(t) || (isLaneT(t) && t.length > 5);
+const sourceOf = t => t === MAIN || isProjT(t) ? "orchestrator" : t;
+const targetOfSource = s => s === "orchestrator" ? MAIN : s;
+// Owner-facing names: a project by its title (else its channel name), a session by its title (else its key).
+const targetName = t => {
+  if (t === MAIN) return botName;
+  if (isProjT(t)) {
+    let list = [];
+    try { list = (PRJ && PRJ.projects) || []; } catch { /* PRJ (the project list, declared further down) is not set up yet */ }
+    const p = list.find(x => x.recordKey === t || x.key === t);
+    return (p && ((p.record && p.record.title) || p.name)) || ((S && S.channels && S.channels.work) || {})[projOf(t)] || "프로젝트";
+  }
+  const l = S && (S.lanes || []).find(x => x.name === laneOf(t));
+  return (l && l.title) || laneOf(t);
+};
+// Every target the switcher and the needs-you count list: the main assistant, the projects, the live lanes.
+const liveTargets = () => S ? [MAIN, ...projTargets(), ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)] : [MAIN];
+const modeOf = () => current === "activity" ? "term" : "chat";
+let target = MAIN;
+try { const v = localStorage.getItem(TARGET_KEY); if (v && validTarget(v)) target = v; } catch {}
+function targetInfo(t) {
+  if (t === MAIN) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
+  if (isProjT(t)) { const o = (S && S.orchestrator) || {}, known = projTargets().includes(t); return { status: o.status || "", alive: known || !S, known }; }
+  const l = S && S.lanes.find(x => x.name === laneOf(t));
+  return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable, ask: l.pendingAsk && l.pendingAsk.text ? l.pendingAsk : null } : { status: "", alive: true, known: false };
+}
+const isWorking = t => { const i = targetInfo(t); return i.alive && (i.status === "working" || i.status === "starting"); };

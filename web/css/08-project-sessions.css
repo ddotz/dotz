@@ -1,0 +1,65 @@
+/* ---- 프로젝트 · 세션 (docs/layers.md §5) ---- */
+.prj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.prj-card { display: flex; flex-direction: column; gap: 8px; width: 100%; color: inherit; font: inherit; text-align: left; }
+.prj-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.prj-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 16px/22px var(--font); }
+.prj-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--fg-2); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.prj-prog { display: flex; align-items: center; gap: 10px; }
+.prj-prog .bar { flex: 1; margin-top: 0; }
+.prj-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+#v-project { max-width: 1180px; }
+.pmv-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 16px; }
+.pmv-hmain { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.pmv-hact { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.pmv-edit { display: block; width: 100%; margin: 0 -8px; padding: 2px 8px; border: 0; border-radius: var(--r-ctl); background: transparent; color: inherit; font: inherit; text-align: left; cursor: text; overflow-wrap: anywhere; box-sizing: content-box; }
+.pmv-edit:hover { background: var(--hover); }
+.pmv-edit.empty { color: var(--fg-3); }
+.pmv-title { font: 700 20px/28px var(--font); }
+.pmv-purpose { color: var(--fg-2); font-size: 14px; line-height: 22px; }
+.pmv-form { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.pmv-form .fi { width: 100%; }
+.pmv-code { font-family: var(--mono); font-size: 12.5px; line-height: 18px; white-space: pre; overflow: auto; }
+.pmv-ta { height: auto; min-height: 72px; padding: 8px 12px; resize: vertical; line-height: 22px; }
+.pmv-acts { display: flex; justify-content: flex-end; gap: 8px; }
+.pmv-cols { display: flex; flex-direction: column; }
+.pmv-col { display: contents; }
+.pmv-sec { display: flex; flex-direction: column; min-width: 0; margin-top: 28px; }
+.pmv-sec > .sec { margin-top: 0; }
+@media (min-width: 640px) {
+  .pmv-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; align-items: start; }
+  .pmv-col { display: flex; flex-direction: column; min-width: 0; }
+}
+.pmv-goal { display: flex; flex-direction: column; gap: 12px; }
+.pmv-glance { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.pmv-gl { display: grid; grid-template-columns: auto 88px minmax(0, 1fr); align-items: baseline; gap: 8px; font-size: 14px; line-height: 22px; }
+.pmv-gl .dot { align-self: center; }
+.pmv-gl-k { color: var(--fg-3); font-size: 13px; }
+.pmv-gl-v { min-width: 0; overflow-wrap: anywhere; }
+.pmv-prog { display: flex; align-items: center; gap: 12px; }
+.pmv-prog .bar { flex: 1; margin-top: 0; height: 6px; border-radius: 3px; }
+.pmv-prog .bar i { border-radius: 3px; }
+.pmv-big { flex: none; font: 700 20px/28px var(--font); }
+.pmv-mlist { display: flex; flex-direction: column; }
+.pmv-ms { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 6px 0; }
+.pmv-ms + .pmv-ms { border-top: 1px solid var(--line); }
+.pmv-ms .pmv-edit { font-size: 15px; line-height: 22px; }
+.pmv-ms.done .pmv-edit { color: var(--fg-3); text-decoration: line-through; }
+.pmv-mtx { flex: 1; min-width: 0; padding-top: 1px; }
+.pmv-ck { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-top: 4px; padding: 0; border: 1.5px solid var(--line-2); border-radius: 50%; background: transparent; color: var(--bg); }
+.pmv-ck .ic { width: 14px; height: 14px; opacity: 0; }
+.pmv-ck[aria-checked="true"] { border-color: var(--fg); background: var(--fg); }
+.pmv-ck[aria-checked="true"] .ic { opacity: 1; }
+.pmv-add { display: flex; gap: 8px; }
+.pmv-add .fi { flex: 1; min-width: 0; }
+.pmv-rt { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; }
+.pmv-rt-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
+.pmv-rt-name { flex: 1 1 120px; min-width: 0; font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
+.pmv-rt-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--fg-3); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
+.pmv-rt-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.pmv-rt-form { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 12px; }
+.pmv-fld { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pmv-fld .fi { flex: 1; min-width: 0; }
+.pmv-day { margin: 14px 4px 6px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.pmv-day:first-child { margin-top: 0; }
+.pmv-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lproj { padding-left: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: 12px; line-height: 16px; }
