@@ -13,6 +13,7 @@ import { setAskAnswer } from "./askbuttons.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { notify as pushNotify, pushRoute, startPush } from "./push.ts";
 import { isNote, msg } from "./i18n.ts";
+import { conversationList } from "./conversations.ts";
 import { activityItems, answeredIds, broadcast, emit, emitDelivery, historyEvents, recentEvents, recentOwnerMessages, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
@@ -704,6 +705,7 @@ const server = Bun.serve({
 			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
+		if (req.method === "GET" && url.pathname === "/api/conversations") return json({ items: conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`)]) });
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main";

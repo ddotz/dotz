@@ -1,0 +1,36 @@
+/* conversations (web/js/31-conversations.js): messenger rows on 홈 and the left column of 채팅 */
+#home-convo { margin-bottom: 24px; }
+#home-convo:empty { display: none; }
+.cv-more { margin: 4px 0 0 4px; }
+
+.cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 64px; padding: 10px 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
+.cv-row:hover { background: var(--card-hover); }
+.cv-row.on { background: var(--layer); }
+.cv-av { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 700 16px/24px var(--font); }
+.cv-av .ic { width: 20px; height: 20px; }
+.cv-av.bot { background: var(--fg); color: var(--bg); }
+.cv-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cv-n, .cv-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-n { font: 500 15px/22px var(--font); }
+.cv-p { color: var(--fg-3); font: 400 14px/20px var(--font); }
+.cv-row.unread .cv-n { font-weight: 700; }
+.cv-row.unread .cv-p { color: var(--fg); }
+.cv-row.none .cv-p { color: var(--fg-3); }
+.cv-m { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 40px; }
+.cv-t { color: var(--fg-3); font: 400 12px/16px var(--font); }
+
+/* 채팅, wide: the list sits in the chat view's left column; below 1100px the header picker stays the only switcher */
+.cv-side { display: none; }
+@media (min-width: 1100px) {
+  :root { --cv-w: 264px; }
+  #v-chat { position: relative; max-width: calc(940px + var(--cv-w)); padding-left: calc(44px + var(--cv-w)); }
+  .cv-side { display: block; position: absolute; left: 24px; top: 8px; bottom: 16px; width: var(--cv-w); padding: 8px; overflow-y: auto; border-radius: var(--r-card); background: var(--card); }
+  .cv-side .cv-row { min-height: 56px; padding: 8px 10px; gap: 10px; border-radius: var(--r-ctl); }
+  .cv-side .cv-row + .cv-row { margin-top: 2px; }
+  .cv-side .cv-av { width: 32px; height: 32px; font-size: 14px; }
+  .cv-side .cv-av .ic { width: 16px; height: 16px; }
+  .cv-side .cv-n { font-size: 14px; line-height: 20px; }
+  .cv-side .cv-p { font-size: 12px; line-height: 16px; }
+  .cv-side .cv-m { min-width: 32px; }
+}
+@media (min-width: 1280px) { :root { --cv-w: 300px; } }
