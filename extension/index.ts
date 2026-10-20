@@ -1,6 +1,7 @@
 // Dotz mode extension; behaviour depends on which session loads it:
 // - gateway orchestrator (DOTZ_ORCHESTRATOR=1): dotz_send / dotz_lane / dotz_schedule / dotz_auth tools, recall after compaction.
 // - lane session (DOTZ_LANE set): dotz_auth tool; 5-minute prompt cache (1h is for the orchestrator only; idle warming covers waits).
+// - a lane's OmO task worker (DOTZ_LANE + OMO_SENPI_TASK_DEPTH): owner rules, output caps, 5-minute cache only.
 // - any other session: "<name>모드 켜" (dotz_mode tool, /dotz on) makes this terminal a thin client of the
 //   gateway: typed input is forwarded to the gateway orchestrator instead of the local model, replies addressed to
 //   the terminal are shown here. "<name>모드 꺼" or /dotz off stops forwarding. No terminal needs to stay open.
@@ -273,14 +274,19 @@ function orchestratorTools(pi: any): void {
 	});
 }
 
-function laneSession(pi: any): void {
-	verifyTool(pi);
-	authTool(pi, process.env.DOTZ_LANE);
+// Lanes and their workers write the 5-minute prompt cache (they inherit PI_CACHE_RETENTION=long from the gateway).
+function shortCache(pi: any): void {
 	pi.on("before_provider_request", (event: any, ctx: any) => {
 		if (ctx?.agent?.kind !== "main" || !event?.payload) return;
 		const payload = structuredClone(event.payload);
 		return dropLongTtl(payload) ? payload : undefined;
 	});
+}
+
+function laneSession(pi: any): void {
+	verifyTool(pi);
+	authTool(pi, process.env.DOTZ_LANE);
+	shortCache(pi);
 }
 
 function terminalClient(pi: any): void {
@@ -394,6 +400,13 @@ function compatHost(pi: any): any {
 
 export default function dotz(host: any) {
 	const pi = compatHost(host);
+	// A lane's OmO task worker (a child process with the lane's environment; OmO sets OMO_SENPI_TASK_DEPTH): the owner's
+	// rules, the output caps and the 5-minute cache, none of the lane's tools or commands (as before, no prompt growth).
+	if (process.env.DOTZ_LANE && process.env.OMO_SENPI_TASK_DEPTH) {
+		enforceRules(pi);
+		installOutputCap(pi);
+		return shortCache(pi);
+	}
 	keyProvider(pi);
 	// Worker guard and harness commands run in every session (interactive, orchestrator, lane), each skipping itself when the
 	// owner's original ~/.omp extension of the same name is installed (guard-config.ts installedOriginal).

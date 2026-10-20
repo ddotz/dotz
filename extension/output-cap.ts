@@ -1,5 +1,5 @@
-// Size caps on tool results in lane processes and their task workers (DOTZ_LANE set; OmO workers inherit the lane's
-// extensions and environment). Token analysis 2026-10-20: whole-file reads and unbounded grep / git diff / cat output were
+// Size caps on tool results in lane processes and their task workers (DOTZ_LANE set; OmO workers run as child processes
+// of the lane through its worker profile, hub/runtime/omo.ts WORKER_TASK, and inherit its extensions and environment). Token analysis 2026-10-20: whole-file reads and unbounded grep / git diff / cat output were
 // the largest share of what lanes and workers re-read on every later turn (read 23%, bash 16%, grep 7% of peak context).
 // The cap is sized above normal work (read p50 4.3K, p90 16K chars on the MacBook's OmO sessions), and every cut says how
 // to get the rest: a read without a range continues at the offset named, a ranged read (`limit` given) is never cut, and
