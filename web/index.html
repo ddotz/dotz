@@ -320,18 +320,27 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .snack.act { display: flex; align-items: center; gap: 12px; }
 .snack .sa { flex: none; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; }
 @media (max-width: 639px) { .snack { bottom: calc(68px + env(safe-area-inset-bottom)); } }
-/* floating notices (alert / worklog / lane report events) */
-.ntf-box { position: fixed; z-index: 1900; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 24px)); pointer-events: none; }
-.ntf { pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 10px 8px 10px 12px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--pop); color: var(--fg); box-shadow: 0 8px 24px rgb(0 0 0 / .14); cursor: pointer; animation: ntf-in .18s ease-out; }
-.ntf.alert { border-color: color-mix(in srgb, var(--err) 45%, var(--line-2)); background: color-mix(in srgb, var(--err) 7%, var(--pop)); }
-.ntf .ic { flex: none; width: 18px; height: 18px; margin-top: 1px; color: var(--fg-2); }
-.ntf.alert .ic { color: var(--err); }
+/* floating notices (alert / worklog / lane report events): compact cards top-right; each leaves ~4s after the owner
+   has actually seen it (tab visible and window focused), hover pauses, a dismissed one never comes back */
+.ntf-box { position: fixed; z-index: 1900; top: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; width: min(344px, calc(100vw - 32px)); pointer-events: none; }
+.ntf { pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 10px 6px 10px 12px; border-radius: 14px; background: var(--pop); color: var(--fg); box-shadow: 0 0 0 1px rgb(0 0 0 / .04), 0 1px 2px rgb(0 0 0 / .06), 0 8px 24px -4px rgb(0 0 0 / .12), 0 20px 40px -12px rgb(0 0 0 / .10); cursor: pointer; transform-origin: 100% 0; transition: transform .2s cubic-bezier(.2, .8, .2, 1), opacity .2s, background .15s; }
+:root[data-theme="dark"] .ntf { background: #2a2a30; box-shadow: inset 0 1px 0 rgb(255 255 255 / .07), 0 0 0 1px rgb(255 255 255 / .06), 0 2px 4px rgb(0 0 0 / .3), 0 12px 32px -4px rgb(0 0 0 / .55); }
+/* stacked cards step back a little, so the newest reads as the top layer */
+.ntf + .ntf { transform: scale(.985); opacity: .97; }
+.ntf + .ntf + .ntf { transform: scale(.97); opacity: .94; }
+.ntf.in { animation: ntf-in .22s cubic-bezier(.2, .8, .2, 1); }
+.ntf.out { opacity: 0; transform: translateX(12px) scale(.98); pointer-events: none; }
+.ntf:hover { background: var(--card-hover); }
+:root[data-theme="dark"] .ntf:hover { background: #303037; }
+.ntf > .dot { flex: none; margin-top: 7px; }
 .ntf .tx { flex: 1; min-width: 0; }
-.ntf .hd { font: 600 12.5px/18px var(--font); }
-.ntf .bd2 { color: var(--fg-2); font-size: 12.5px; line-height: 18px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; white-space: pre-line; }
-.ntf .x { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--fg-3); font-size: 16px; line-height: 24px; }
+.ntf .hd { display: flex; align-items: baseline; gap: 6px; min-width: 0; font: 600 13px/20px var(--font); }
+.ntf .hd .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ntf .hd .tm { flex: none; color: var(--fg-3); font-size: 11.5px; font-weight: 400; }
+.ntf .bd2 { color: var(--fg-2); font-size: 12.5px; line-height: 18px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.ntf .x { flex: none; width: 24px; height: 24px; margin-top: -2px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3); font-size: 16px; line-height: 24px; }
 .ntf .x:hover { background: var(--hover); color: var(--fg); }
-@keyframes ntf-in { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes ntf-in { from { opacity: 0; transform: translateX(16px) scale(.98); } }
 @media (max-width: 639px) { .ntf-box { top: calc(8px + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); } }
 
 /* target header: one switcher + 대화/터미널 toggle, shared by both views */
@@ -1194,28 +1203,59 @@ function toast(msg, bad, action) {
   toastTimer = setTimeout(() => n.remove(), bad || action ? 6000 : 3500);
 }
 
-/* ---------- floating notices: alerts stay until closed, worklog and lane reports fade after 8s ---------- */
-const NTF_MAX = 4, ntfSeen = new Set();
+/* ---------- floating notices: top-right cards that leave ~4s after the owner has seen them ---------- */
+// "Seen" = the tab is visible and the window focused: a notice that arrives while away waits, and its countdown starts
+// when the window becomes active again; hovering pauses it. A dismissed notice (closed, clicked or timed out) is kept in
+// localStorage so neither a reconnect replay nor a reload brings it back.
+const NTF_MAX = 3, NTF_MS = 4000, NTF_KEY = "dotz-ntf-done";
+const ntfDone = new Set((() => { try { const v = JSON.parse(localStorage.getItem(NTF_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })());
+const ntfShown = new Set(), ntfLive = new Set();
+const ntfActive = () => document.visibilityState === "visible" && document.hasFocus();
+const ntfSync = () => { for (const t of ntfLive) t.sync(); };
+addEventListener("focus", ntfSync); addEventListener("blur", ntfSync); document.addEventListener("visibilitychange", ntfSync);
 function notify(e) {
   const text = String(e.text || "").replace(/\s+\n/g, "\n").trim();
-  // A reconnect replays recent events: each notice shows once.
   const key = `${e.ts}|${e.kind}|${e.target || e.lane || ""}|${text.slice(0, 80)}`;
-  if (!text || ntfSeen.has(key)) return;
-  ntfSeen.add(key);
-  if (ntfSeen.size > 300) ntfSeen.delete(ntfSeen.values().next().value);
+  if (!text || ntfDone.has(key) || ntfShown.has(key)) return;
+  ntfShown.add(key);
   const alertish = e.kind === "out" && e.target === "alert";
   const box = document.querySelector(".ntf-box") || document.body.appendChild(el("div", { class: "ntf-box", "aria-live": "polite" }));
   const lane = e.kind === "lane_report" ? String(e.lane || "") : "";
   const title = lane ? `레인 ${lane}` : alertish ? "알림" : `${botName} 작업 기록`;
-  const n = el("div", { class: `ntf${alertish ? " alert" : ""}`, role: alertish ? "alert" : "status" },
-    icon(alertish ? "bell" : lane ? "lanes" : "chat"),
-    el("div", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "bd2", text: text.slice(0, 400) })));
-  const close = () => n.remove();
+  const at = e.ts ? new Date(e.ts) : null;
+  const tm = at && !isNaN(at) ? at.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }) : "";
+  const first = text.split("\n").find(l => l.trim()) || text;
+  const n = el("div", { class: "ntf in", role: alertish ? "alert" : "status" },
+    el("span", { class: `dot ${alertish ? "err" : lane ? "ok" : ""}` }),
+    el("div", { class: "tx" }, el("div", { class: "hd" }, el("span", { class: "nm", text: title }), tm ? el("span", { class: "tm", text: tm }) : null), el("div", { class: "bd2", text: first.slice(0, 240) })));
+  let left = NTF_MS, t0 = 0, timer = 0, hover = false, gone = false;
+  const t = {
+    sync() {
+      if (gone) return;
+      const run = ntfActive() && !hover;
+      if (run && !timer) { t0 = Date.now(); timer = setTimeout(() => close(), left); }
+      else if (!run && timer) { clearTimeout(timer); timer = 0; left = Math.max(800, left - (Date.now() - t0)); }
+    },
+  };
+  function close() {
+    if (gone) return;
+    gone = true; clearTimeout(timer); ntfLive.delete(t);
+    ntfDone.add(key);
+    try { localStorage.setItem(NTF_KEY, JSON.stringify([...ntfDone].slice(-300))); } catch {}
+    n.classList.add("out");
+    setTimeout(() => n.remove(), 220);
+  }
   n.append(el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
   n.addEventListener("click", () => { close(); openTarget(lane ? `lane:${lane}` : MAIN, lastChatView()); });
+  n.addEventListener("pointerenter", () => { hover = true; t.sync(); });
+  n.addEventListener("pointerleave", () => { hover = false; t.sync(); });
+  n.addEventListener("animationend", () => n.classList.remove("in"), { once: true });
   box.prepend(n);
-  while (box.children.length > NTF_MAX) box.lastChild.remove();
-  if (!alertish) setTimeout(close, 8000);
+  ntfLive.add(t);
+  // Over the cap the oldest card leaves; it was on screen, so it counts as dismissed.
+  const cards = [...box.querySelectorAll(".ntf:not(.out)")];
+  for (const c of cards.slice(NTF_MAX)) c.querySelector(".x").click();
+  t.sync();
 }
 
 /* ---------- dialog ---------- */
@@ -2245,14 +2285,15 @@ const BAN_KEY = "dotz-restart-seen";
 function paintRestartBanner() {
   const today = kstDay(Date.now()), list = ts(MAIN).msgs.filter(e => isRestart(e) && kstDay(e.ts) === today);
   const b = $("#gban"), last = list.length ? list[list.length - 1].ts : "";
-  let seen = ""; try { seen = localStorage.getItem(BAN_KEY) || ""; } catch {}
-  b.hidden = !last || last <= seen;
-  if (b.hidden) return;
+  // Closing it silences today's count; it comes back today only when a later restart cut work off.
   const cut = list.filter(e => !cleanRestart(e)).length;
+  let seen = null; try { seen = JSON.parse(localStorage.getItem(BAN_KEY) || "null"); } catch {}
+  b.hidden = !last || (!!seen && seen.day === today && cut <= (seen.cut || 0));
+  if (b.hidden) return;
   $("#gban-dot").className = `dot ${cut ? "warn" : ""}`;
   $("#gban-tx").innerHTML = `오늘 재시작 <b>${list.length}회</b> · 끊긴 작업 <b>${cut}</b>`;
   b.title = `오늘 게이트웨이 재시작 ${list.length}회, 끊긴 작업 ${cut}, 마지막 ${kstHM(last)}`;
-  $("#gban-x").onclick = () => { try { localStorage.setItem(BAN_KEY, last); } catch {} b.hidden = true; };
+  $("#gban-x").onclick = () => { try { localStorage.setItem(BAN_KEY, JSON.stringify({ day: today, cut })); } catch {} b.hidden = true; };
 }
 // Alerts: one plain Korean line; the raw text (provider error strings, report lines) folds under 자세히.
 function humanAlert(text) {
