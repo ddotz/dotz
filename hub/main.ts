@@ -2,7 +2,7 @@
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, OMP, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import { changeTarget, compactTarget, ControlError, contextView, targetView, ForceRequired, looksLikeCommand, modelsView, parseCommand, providersView, runCommand, setFallback, setGatewayRestart, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
@@ -21,7 +21,8 @@ import { createPrompts } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createRestartGate } from "./restart.ts";
 import { createLaneRelay } from "./lanerelay.ts";
-import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
+import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
+import { limitsText } from "./usage-account.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { parseTone } from "./tone.ts";
 import { lanePlace, replyRef } from "./threads.ts";
@@ -201,12 +202,12 @@ async function answerCommand(target: string, text: string, replyTo?: string): Pr
 	await out(target, output, replyTo, { source: "gateway" }).catch(e => log(`command reply to ${target} failed: ${e}`));
 }
 
-// "한도" is answered by the gateway from `omp usage` (as 오모냥's `limits --short`), without waking the orchestrator.
+// "한도" is answered by the gateway without waking the orchestrator, from the account the orchestrator really runs on
+// (hub/usage-account.ts: OmO's pinned/pool account under OmO, omp's login otherwise), named in the answer.
 const LIMITS_ASK = /^\s*(한도|사용량|limits?)\s*[?？]?\s*$/i;
 async function limitsAnswer(target: string, replyTo?: string): Promise<void> {
-	const r = await Bun.$`${OMP} usage -p anthropic`.nothrow().quiet();
-	const lines = r.stdout.toString().replace(/\x1b\[[0-9;]*m/g, "").split("\n").filter(l => /●\s+Claude/.test(l)).map(l => l.replace(/^\s*●\s*/, "").replace(/\s*[█░]+\s*/, "  "));
-	const text = r.exitCode === 0 && lines.length ? `\`\`\`\n${lines.join("\n")}\n\`\`\`` : `사용량을 읽지 못했어요 (omp usage exit ${r.exitCode}).`;
+	const r = await anthropicUsage("orchestrator").catch(() => undefined);
+	const text = r ? limitsText(r, Date.now()) : "사용량을 읽지 못했어요 (Anthropic 계정을 찾지 못함).";
 	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`limits reply failed: ${e}`));
 }
 
@@ -253,27 +254,14 @@ async function budgetProblem(name: string, est: number, force: boolean): Promise
 		log(budgetLine(name, est, undefined, undefined, "forced"));
 		return undefined;
 	}
-	const r = await Bun.$`${OMP} usage --json -p anthropic`.nothrow().quiet().catch(() => undefined);
-	if (!r || r.exitCode !== 0) {
-		log(budgetLine(name, est, undefined, undefined, "unknown"));
-		return undefined;
-	}
-	let five: number | undefined;
-	let week: number | undefined;
-	try {
-		type Limit = { id: string; amount?: { remaining?: number } };
-		const parsed = JSON.parse(r.stdout.toString()) as { reports?: { provider?: string; limits?: Limit[] }[] };
-		const limits = parsed.reports?.find(x => x.provider === "anthropic")?.limits ?? [];
-		five = limits.find(l => l.id === "anthropic:5h")?.amount?.remaining;
-		week = limits.find(l => l.id === "anthropic:7d")?.amount?.remaining;
-	} catch {
-		log(budgetLine(name, est, undefined, undefined, "unknown"));
-		return undefined;
-	}
+	// The account lanes really run on (OmO's pinned account may not be omp's login).
+	const r = await anthropicUsage("lane").catch(() => undefined);
+	const five = r?.limits.find(l => l.id === "anthropic:5h")?.amount.remaining;
+	const week = r?.limits.find(l => l.id === "anthropic:7d")?.amount.remaining;
 	// The 5h window gates (est % assumed use, default 15, and 10% kept); the week is shown, never gates.
 	const verdict = budgetVerdict(five, week, est);
-	log(budgetLine(name, est, five, week, verdict ? "blocked" : typeof five === "number" ? "go" : "unknown"));
-	return verdict;
+	log(`${budgetLine(name, est, five, week, verdict ? "blocked" : typeof five === "number" ? "go" : "unknown")} (account ${r?.account ?? "?"}${r?.problem ? `, ${r.problem}` : ""})`);
+	return verdict && r ? `${verdict} (account ${r.account})` : verdict;
 }
 
 const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });

@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 export const NO_API_KEY_ACCOUNTS = new Set(["miseol-shared"]);
 const KEY_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_API_KEY", "DOTZ_KEY_PROVIDER", "DOTZ_KEY_VALUE"];
-const authFile = () => join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "auth.json");
+export const authFile = () => join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "auth.json");
 
 let cache: { file: string; stamp: string; pinned?: string } | undefined;
 // The pinned subscription account, re-read when auth.json changes. A missing or unreadable file reads as no pin.

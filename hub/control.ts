@@ -401,7 +401,7 @@ export async function runCommand(text: string): Promise<string> {
 			return `${first} 로그아웃했어요. 이미 실행 중인 작업은 다시 시작할 때까지 이전 로그인을 쓸 수 있어요`;
 		case "quota": {
 			const q = await quota();
-			const lines = q.providers.flatMap(p => [p.provider, ...p.limits.map(l => `  ${l.label} [${l.window}]: ${l.used ?? "?"}/${l.limit ?? "?"} ${l.unit} used, ${l.remaining ?? "?"} left, resets ${when(l.resets_at)} (${l.status})`)]);
+			const lines = q.providers.flatMap(p => [p.account ? `${p.provider} (${p.account})` : p.provider, ...p.limits.map(l => `  ${l.label} [${l.window}]: ${l.used ?? "?"}/${l.limit ?? "?"} ${l.unit} used, ${l.remaining ?? "?"} left, resets ${when(l.resets_at)} (${l.status})`)]);
 			for (const u of q.unavailable) lines.push(`${u.provider}: ${u.reason}`);
 			return lines.join("\n") || "사용량 정보가 없어요";
 		}

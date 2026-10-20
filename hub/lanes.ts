@@ -235,7 +235,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	lane.pausing = true;
 	setStatus(lane, "rate-limited");
 	const owner = kind === "owner";
-	const { ms: wait, reset } = owner ? { ms: OWNER_RETRY_MS, reset: false } : await rateLimitDelay(err, lane.model);
+	const { ms: wait, reset } = owner ? { ms: OWNER_RETRY_MS, reset: false } : await rateLimitDelay(err, lane.model, "lane");
 	lane.pausing = false;
 	if (lane.status !== "rate-limited") return;
 	const at = new Date(Date.now() + wait).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
@@ -292,7 +292,7 @@ async function failOver(lane: Lane, e: AgentError): Promise<boolean> {
 	const active = lane.chain;
 	if (!active) return false;
 	const reason = failureReason({ kind: e.kind, text: e.text });
-	const until = reason === "quota" ? Date.now() + (await rateLimitDelay(e.text, active.selector(active.active))).ms : undefined;
+	const until = reason === "quota" ? Date.now() + (await rateLimitDelay(e.text, active.selector(active.active), "lane")).ms : undefined;
 	// The restart resumes the session, so it must be known; a first request that failed at once may not have reported it yet.
 	for (let i = 0; i < 20 && !lane.sessionFile && lane.proc; i++) {
 		if (i === 0) lane.proc.refreshSession();
