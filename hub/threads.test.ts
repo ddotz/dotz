@@ -1,11 +1,18 @@
 // Thread routing decisions (threads.ts) and the Discord-mobile layout of an answer (discord.ts readable).
 import { expect, test } from "bun:test";
 import { readable } from "./discord.ts";
-import { lanePlace, replyRef, threadForReply, THREAD_NAME_MAX, threadTitle } from "./threads.ts";
+import { answerMovesToLane, lanePlace, replyRef, threadForReply, THREAD_NAME_MAX, threadTitle } from "./threads.ts";
 
 const work = (id: string) => id === "500";
 const parents: Record<string, string> = { "700": "500" };
 const place = (a: { home?: string; asking?: string; askingMessage?: string }) => lanePlace({ ...a, isWork: work, threadParent: id => parents[id] });
+
+test("the launching turn's answer moves into the lane thread only for an ask from that Discord channel or thread", () => {
+	expect(answerMovesToLane(place({ asking: "ch:500", askingMessage: "m1" }), "ch:500")).toBe(true);
+	expect(answerMovesToLane(place({ asking: "th:700" }), "th:700")).toBe(true);
+	for (const asking of ["web", "terminal", "chat", "dm"]) expect(answerMovesToLane(place({ home: "ch:500", asking }), asking)).toBe(false);
+	expect(answerMovesToLane(place({ asking: "chat" }), "chat")).toBe(false);
+});
 
 test("lane place: from a work channel a thread on the owner's message, from a thread that thread, from chat a channel", () => {
 	expect(place({ asking: "ch:500", askingMessage: "m1" })).toEqual({ kind: "thread", parent: "500", fromMessage: "m1" });

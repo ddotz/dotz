@@ -30,7 +30,7 @@ import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider
 import { limitsText } from "./usage-account.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
-import { lanePlace, replyRef } from "./threads.ts";
+import { answerMovesToLane, lanePlace, replyRef } from "./threads.ts";
 import { startReflection } from "./reflect.ts";
 import { featureCatalog, syncFeatureWatches } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
@@ -949,7 +949,7 @@ const server = Bun.serve({
 						return undefined;
 					});
 					// Work started from a work channel or a thread is answered in the lane's thread, where its reports will come.
-					if (channel && place.kind !== "channel" && asking?.target) queue.retarget(asking.target, `lane:${lane.name}`);
+					if (channel && asking?.target && answerMovesToLane(place, asking.target)) queue.retarget(asking.target, `lane:${lane.name}`);
 					log(`lane ${lane.name} why (${b.owner_asked_for_lane ? "owner asked" : `${Number(b.hours)}h`}): ${String(b.why).trim().slice(0, 300)}`);
 					emit("outbox", { ts: now(), kind: "lane_start", source: "hub", lane: lane.name, text: `lane ${lane.name} started in ${lane.cwd}` });
 					return json({ ok: true, lane: lane.name, channel });
