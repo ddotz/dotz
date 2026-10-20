@@ -4,7 +4,7 @@
 // morning brief is one orchestrator turn in chat. First run only records what exists, so old mail is never replayed.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
 
 type Item = Record<string, string | number | undefined>;
 type Seen = { summary: string; start: string; end: string };
@@ -18,8 +18,12 @@ type Hooks = {
 
 const STATE = join(DATA_DIR, "zele-state.json");
 const zcfg = ((cfg as any).zele ?? {}) as { enabled?: boolean; poll_sec?: number; brief_hour?: number; mail_noise?: string[] };
-const POLL_MS = Math.max(60, Number(zcfg.poll_sec ?? 120)) * 1000;
-const BRIEF_HOUR = Number(zcfg.brief_hour ?? 8);
+export const POLL_MS = Math.max(60, Number(zcfg.poll_sec ?? DEFAULTS.zele_poll_sec)) * 1000;
+// With no account yet, look again after this long.
+export const NO_ACCOUNT_RETRY_MS = 600_000;
+export const BRIEF_HOUR = Number(zcfg.brief_hour ?? DEFAULTS.zele_brief_hour);
+// Whether mail and calendar run on this install: on in config and the zele CLI is here (mail may live on another machine).
+export const zeleState = (): "on" | "off" | "missing" => (zcfg.enabled === false ? "off" : Bun.which("zele") ? "on" : "missing");
 const MAIL_NOISE = [/coderabbitai\[bot\]/i, /^\s*[[(]광고[\])]/, /mkt@/i, /no-?reply@.*(newsletter|marketing)/i, ...(zcfg.mail_noise ?? []).map(s => new RegExp(s, "i"))];
 const isNoise = (m: Item) => MAIL_NOISE.some(r => r.test(String(m.from ?? "")) || r.test(String(m.subject ?? "")));
 const isHoliday = (ev: Item) => String(ev.calendar ?? "").endsWith("@virtual") || /holiday/i.test(String(ev.calendar ?? ""));
@@ -146,7 +150,7 @@ export async function startZele(h: Hooks): Promise<void> {
 	const accounts = await zeleAccounts();
 	if (!accounts.length) {
 		log("zele: no accounts (zele login), mail and calendar watching off; checking again in 10 min");
-		setTimeout(() => void startZele(h), 600_000);
+		setTimeout(() => void startZele(h), NO_ACCOUNT_RETRY_MS);
 		return;
 	}
 	log(`zele: watching ${accounts.join(", ")} every ${POLL_MS / 1000}s`);

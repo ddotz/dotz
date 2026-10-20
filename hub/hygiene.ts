@@ -106,7 +106,7 @@ export function startLaneHygiene(): void {
 // job uses it) and untouched for WORKTREE_MIN_AGE_MS is deleted. Retained worktrees hold read-only files that make
 // `omp worktree clear` fail with EACCES, so they are made writable first; only paths under the omp worktree root go.
 const WORKTREE_ROOT = join(homedir(), ".omp", "wt");
-const WORKTREE_EVERY_MS = 3600_000;
+export const WORKTREE_EVERY_MS = 3600_000;
 const WORKTREE_FIRST_MS = 2 * 60_000;
 const WORKTREE_MIN_AGE_MS = 3600_000;
 

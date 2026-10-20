@@ -44,7 +44,8 @@ export type Watch = {
 
 const RUN_TIMEOUT_MS = 120_000;
 const READ_GRACE_MS = 2_000;
-const FAIL_ALERT_EVERY_MS = 12 * 3600_000;
+export const FAIL_ALERT_EVERY_MS = 12 * 3600_000;
+export const FAIL_ALERT_AFTER = 2; // failures in a row before the first alert
 const loadItems = (): Watch[] => (existsSync(paths.watches) ? JSON.parse(readFileSync(paths.watches, "utf8")) : []);
 const items: Watch[] = loadItems();
 const SCRIPT_MAX_BYTES = 64 * 1024;
@@ -195,7 +196,7 @@ async function runOnce(w: Watch): Promise<void> {
 			}
 			if (wait) w.state.nextAt = Date.now() + wait[Math.min(wait.length, w.state.kindFails) - 1] * 60_000;
 			const due = !w.state.failAlertAt || Date.now() - w.state.failAlertAt > FAIL_ALERT_EVERY_MS;
-			if (w.state.fails >= 2 && due) {
+			if (w.state.fails >= FAIL_ALERT_AFTER && due) {
 				w.state.failAlertAt = Date.now();
 				notify(w, `failed ${w.state.fails} times in a row (exit ${code})`, output);
 			}

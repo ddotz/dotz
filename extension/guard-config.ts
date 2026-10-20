@@ -44,6 +44,10 @@ export interface GuardConfig {
 	harness_tools: boolean;
 }
 
+// A subagent's compactions: the first steers it to wrap up, the second disables its tools (guard.ts).
+export const SUB_COMPACT_WRAP_UP = 1;
+export const SUB_COMPACT_STOP = 2;
+
 export const GUARD_DEFAULTS: GuardConfig = {
 	enabled: true,
 	max_brief_chars: 8000,
