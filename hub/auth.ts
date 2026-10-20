@@ -8,6 +8,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { cfg, DATA_DIR, HUB_TOKEN, log, TZ, writeAtomic } from "./config.ts";
+import { ASK_PREFIX, askInteraction } from "./askbuttons.ts";
 import * as discord from "./discord.ts";
 import { msg } from "./i18n.ts";
 import { notify } from "./push.ts";
@@ -145,6 +146,7 @@ function store(r: AuthRequest, values: Record<string, string>): void {
 
 async function interaction(d: discord.Interaction): Promise<void> {
 	const cid = String(d?.data?.custom_id ?? "");
+	if (cid.startsWith(`${ASK_PREFIX}:`)) return askInteraction(d, { owner: OWNER, reply });
 	if (!cid.startsWith(`${PREFIX}:`)) return;
 	const m = msg().auth;
 	const [, id, action] = cid.split(":");

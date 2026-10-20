@@ -497,7 +497,7 @@ export function runtimeMismatch(lane: Pick<Lane, "name" | "runtime" | "sessionFi
 	return from && from !== to ? new LaneRuntimeMismatch(lane.name, from, to) : undefined;
 }
 // The owner's yes to a handover offer (a bare "인계" / "handover", as typed in the lane channel or the web lane view).
-const HANDOVER_RE = /^\s*(인계|인계해(줘|요)?|인계\s*ㄱ+|handover|hand\s*over|새\s*세션(으로)?(\s*이어가(기|줘)?)?)\s*[.!]*\s*$/i;
+const HANDOVER_RE = /^\s*(인계|인계해(줘|요)?|인계\s*ㄱ+|handover|hand\s*over|새\s*(세션|대화\s*기록)(으로)?(\s*이어가(기|줘)?)?)\s*[.!]*\s*$/i;
 const ownerWords = (text: string) => text.replace(/^\[owner via [^\]]+\]\s*/, "");
 
 // Starts the lane's process; false when a resume is refused because the session belongs to another runtime (the lane is
@@ -629,7 +629,7 @@ function recover(lane: Lane, why: string, wasWorking: boolean): void {
 	rmSync(pendingFile(lane), { force: true });
 	if (lane.lastText.startsWith("[lane error]")) lane.lastText = "";
 	log(`lane ${lane.name} recovering: ${why}`);
-	onReport(lane, `[lane recovery] ${why}. 진행 중이던 요청을 중단하고 같은 세션으로 다시 이어서 시작해요 (${lane.recoveries.length}/${RECOVERY_MAX}).`);
+	onReport(lane, `[lane recovery] ${why}. 진행 중이던 요청을 중단하고 같은 대화 기록으로 다시 이어서 시작해요 (${lane.recoveries.length}/${RECOVERY_MAX}).`);
 	lane.revive = { text: wasWorking ? msg().laneStopped : undefined };
 	lane.proc.kill(true);
 }
