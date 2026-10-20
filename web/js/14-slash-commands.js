@@ -230,7 +230,7 @@ function modelChipText(sel) {
   if (!base) return "";
   const a = [...((M && M.pickable) || []), ...((M && M.available) || [])].find(x => x.selector === base || x.selector === sel);
   const nm = a && a.name ? a.name.replace(/^Claude\s+/i, "") : base.split("/").pop().replace(/^claude-/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase());
-  return level ? `${nm} · ${level}` : nm;
+  return level ? `${nm} · ${thinkKo(level)}` : nm;
 }
 function renderCtxRing() {
   const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;

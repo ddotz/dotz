@@ -5,8 +5,13 @@ const fileUrl = (p, dl) => `/api/file?path=${enc(p)}${dl ? "&download=1" : ""}`;
 const fsize = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : n >= 1024 ? `${Math.round(n / 1024)}KB` : `${n}B`;
 const extOf = n => (String(n).match(/\.([A-Za-z0-9]{1,6})$/) || [0, ""])[1].toUpperCase();
 $("#c-attach").append(icon("add"));
-$("#c-attach").onclick = () => $("#c-file").click();
-$("#c-file").onchange = ev => { addFiles([...ev.target.files]); ev.target.value = ""; };
+// A touch device first asks 사진 (the photo library / gallery) or 파일; desktop opens the file picker directly.
+// A tap on 첨부 while its menu is open closes it (showMenu toggles on the same anchor).
+$("#c-attach").onclick = () => {
+  if (!matchMedia("(pointer: coarse)").matches) { $("#c-file").click(); return; }
+  showMenu($("#c-attach"), [{ value: "photo", label: "사진" }, { value: "file", label: "파일" }], { sheet: matchMedia("(max-width: 639px)").matches, onPick: v => $(v === "photo" ? "#c-photo" : "#c-file").click() });
+};
+for (const id of ["#c-file", "#c-photo"]) $(id).onchange = ev => { addFiles([...ev.target.files]); ev.target.value = ""; };
 async function addFiles(list) {
   if (!list.length) return;
   if (ATT.length + list.length > 10) { toast("한 번에 10개까지 보낼 수 있어요", true); list = list.slice(0, Math.max(0, 10 - ATT.length)); }
