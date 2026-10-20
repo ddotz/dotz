@@ -472,12 +472,15 @@ export function projectDetailView(d: DetailInput) {
 		const rep = d.reports[pl.name];
 		const head = reportHead(rep?.text || pl.lastText);
 		const claim = (raw.claim as { state?: string } | undefined)?.state;
+		const branch = d.git?.unmerged.find(u => u.branch === `lane/${pl.name}`);
 		return {
 			name: pl.name, status: pl.status, live: pl.live, waiting: Boolean(pl.waiting), resumable: Boolean(raw.resumable) && !pl.live,
 			...(pl.channel ? { channel: pl.channel } : {}),
 			...(pl.lastReportAt || rep?.at ? { finishedAt: pl.lastReportAt ?? rep!.at } : {}),
 			line: head.line, ...(head.tone ? { tone: head.tone } : {}), body: head.body,
 			...(claim === "verified" || claim === "reported" ? { claim } : {}),
+			// its lane/<name> branch has commits the base branch does not
+			...(branch ? { unmerged: branch.ahead } : {}),
 		};
 	});
 	const at = (x?: string) => Date.parse(x ?? "") || 0;
@@ -490,8 +493,7 @@ export function projectDetailView(d: DetailInput) {
 		const lane = rows.find(l => within(r.cwd, String(l.cwd ?? "")))?.name;
 		results.push({ kind: "verify", at: new Date(r.ranAt).toISOString(), title: r.command.slice(0, 160), ok: r.exitCode === 0, ...(lane ? { lane } : {}) });
 	}
-	// the repo card lists the last 5 commits; results keep the newest 3 so reports and checks stay in view
-	for (const c of (d.git?.commits ?? []).slice(0, 3)) results.push({ kind: "commit", at: c.at, title: c.subject, hash: c.hash });
+	for (const c of d.git?.commits ?? []) results.push({ kind: "commit", at: c.at, title: c.subject, hash: c.hash });
 	results.sort((a, b) => at(b.at) - at(a.at));
 
 	const lower = (s: string) => s.toLowerCase();
