@@ -79,17 +79,14 @@ function renderBars() {
     drop._pick = v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else pickTarget(v); };
     drop.onclick = () => showMenu(drop, drop._items(), { value: target, onPick: drop._pick });
     const ud = mode === "term" && ts(target).unread > 0;
-    // a session's raw log is one visible tap away (and back)
-    const lvt = isLaneT(target) ? el("button", { class: "btn text lvt", type: "button", onclick: () => go(mode === "chat" ? "activity" : "chat") }, mode === "chat" ? "로그 보기" : "대화 보기") : null;
-    clear(bar).append(sw, drop, ...(lvt ? [lvt] : []));
+    clear(bar).append(sw, drop);
     fitChips(sw);
-    // 대화/로그: one icon button next to the 돋보기; the icon is the view a tap switches to
-    const vt = $("#vtog"), to = mode === "chat" ? "term" : "chat";
-    clear(vt).append(...[icon(to), ud ? el("i", { class: "ud" }) : null].filter(Boolean));
-    vt.title = vt.ariaLabel = to === "chat" ? "대화 보기" : "로그 보기";
-    vt.onclick = () => go(to === "chat" ? "chat" : "activity");
-    // a session has its own 로그 보기 / 대화 보기 button in the header, so the icon would only repeat it
-    vt.hidden = isLaneT(target) || !$("#appbar").classList.contains("tv") || convListing();
+    // 대화 | 로그: the same segmented control for the main chat, a project and a session
+    const vt = $("#vtog");
+    clear(vt).append(
+      el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", text: "대화", onclick: () => mode === "chat" || go("chat") }),
+      el("button", { type: "button", class: mode === "chat" ? "" : "on", "aria-pressed": mode === "chat" ? "false" : "true", onclick: () => mode === "chat" && go("activity") }, "로그", ud ? el("i", { class: "ud", "aria-label": "읽지 않은 로그" }) : null));
+    vt.hidden = !$("#appbar").classList.contains("tv") || convListing();
   }
 }
 // Desktop: target chips that do not fit fold into one "더보기 n" chip at the end (the selected one always stays visible;

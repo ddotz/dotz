@@ -47,7 +47,7 @@
       <h1 id="title">dotz</h1>
       <div class="thead" id="thead" data-mode="chat" hidden></div>
       <span class="conn" id="conn" hidden>연결 끊김 · 다시 연결 중</span>
-      <button class="ib" id="vtog" type="button" hidden></button>
+      <div class="seg" id="vtog" role="group" aria-label="보기" hidden></div>
       <button class="ib only-phone" id="pal" type="button" aria-label="명령"></button>
       <button class="ustrip" id="ustrip" type="button" hidden></button>
       <button class="ib" id="bell" type="button" aria-label="알림" aria-haspopup="dialog" aria-expanded="false"><span class="bn" id="bell-n" hidden></span></button>
@@ -72,6 +72,7 @@
           <form class="sendrow" id="send">
             <div class="atray" id="atray" hidden></div>
             <input type="file" id="c-file" multiple hidden>
+            <input type="file" id="c-photo" accept="image/*,video/*" multiple hidden>
             <span class="prompt" aria-hidden="true">&gt;</span>
             <textarea id="text" rows="1" autocomplete="off" placeholder="메시지 또는 /명령" aria-label="메시지"></textarea>
             <div class="cbar" id="cbar">

@@ -70,10 +70,21 @@ function homeMenu(anchor, id) {
 const LAST = {}, LAST_ASKED = new Set();
 let homeSoonT;
 const homeSoon = () => { clearTimeout(homeSoonT); homeSoonT = setTimeout(() => { if (current === "home") renderHome(); }, 500); };
+// A tool call said in Korean: the kind verb, plus the file's base name for a read or an edit ("파일 수정 · conversations.ts").
+const TOOL_VERB = { 명령: "명령 실행", 수정: "파일 수정", 읽기: "읽기", 검색: "검색" };
+function toolLineKo(a) {
+  const k = kindOf(a.tool), verb = TOOL_VERB[k] || k;
+  if (k !== "수정" && k !== "읽기") return verb;
+  let p = "";
+  try { const o = JSON.parse(a.args); if (o && typeof o === "object") p = [o.path, o.file_path, o.filePath, o.file].find(v => typeof v === "string" && v) || ""; } catch { /* args may be cut off */ }
+  if (!p) { const l = laneToolLabel(a); if (/^[^\s]+$/.test(l) && /[./]/.test(l)) p = l; }
+  const base = p.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+  return base ? `${verb} · ${base}` : verb;
+}
 function actLine(a) {
   switch (a.type) {
     case "text": case "error": case "status": return oneLine(a.text ?? "");
-    case "tool_call": { const l = laneToolLabel(a); return `${capName(a.tool)}${l ? ` · ${l}` : ""}`; }
+    case "tool_call": return toolLineKo(a);
     default: return "";
   }
 }
@@ -205,7 +216,7 @@ function renderHome() {
   add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), mainAttn || o.status === "rate-limited" ? "warn" : "",
     el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), stop, menuBtn(MAIN)),
     el("div", { class: "big", text: om ? modelName(om.model) : "…" }),
-    el("div", { class: "sup sub", text: om && om.thinking ? `thinking ${om.thinking}` : "\u00a0" }),
+    el("div", { class: "sup sub", text: om && om.thinking ? `생각 수준 ${thinkKo(om.thinking)}` : "\u00a0" }),
     subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
   add("notices:alert", homeAlertCard(), { w: 4, h: 4 }, HOME_NOTICE);
   add("notices:worklog", homeWorklogCard(), { w: 4, h: 4 }, HOME_NOTICE);
@@ -217,14 +228,14 @@ function renderHome() {
     const t = `lane:${l.name}`, k = attnKind(t), m = ((M && M.lanes) || []).find(x => x.name === l.name), model = (m && m.model) || l.model;
     laneLastFetch(l.name);
     E.lane.push({ id: t, tone: k || l.status === "rate-limited" ? "warn" : "", open: () => openTarget(t, lastChatView()), size: [{ w: 4, h: 4 }, HOME_BIG],
-      card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("h3", { text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(l.status)}`, text: statusKo(l.status) }), menuBtn(t)),
-        model ? el("div", { class: "sup", text: `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` }) : null,
+      card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("h3", { text: targetName(t) }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(l.status)}`, text: statusKo(l.status) }), menuBtn(t)),
+        model ? el("div", { class: "sup", text: `${modelName(model)}${m && m.thinking ? ` · ${thinkKo(m.thinking)}` : ""}` }) : null,
         subLine(t),
         LAST[l.name] ? el("div", { class: "sup clamp", text: LAST[l.name] }) : null],
-      row: () => [el("div", { class: "row" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("span", { class: "nm", text: l.name }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : el("span", { class: "sup", text: statusKo(l.status) }))] });
+      row: () => [el("div", { class: "row" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("span", { class: "nm", text: targetName(t) }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : el("span", { class: "sup", text: statusKo(l.status) }))] });
   }
   for (const p of ((C && C.processes) || []).filter(x => x.running)) {
-    const id = `ctx:${p.name}`, pct = p.percent, who = p.kind === "lane" ? p.name : botName, v = pct != null ? `${pct}%` : `${num(p.tokens)} 토큰`;
+    const id = `ctx:${p.name}`, pct = p.percent, who = p.kind === "lane" ? targetName(`lane:${p.name}`) : botName, v = pct != null ? `${pct}%` : `${num(p.tokens)} 토큰`;
     const bar = () => el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }));
     E.ctx.push({ id, tone: pct >= 90 ? "err" : pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 2 }, HOME_SMALL],
       card: () => [el("div", { class: "ch" }, el("h3", { text: `컨텍스트 · ${who}` }), el("span", { class: "sup", text: v }), menuBtn(id)), bar()],

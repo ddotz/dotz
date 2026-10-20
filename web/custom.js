@@ -14,7 +14,6 @@
 .pins a.ni { text-decoration: none; }
 .pins .ni.on .ib:hover { background: var(--hover); }
 .cu-home .grid { align-items: start; }
-.cu-pinhome { display: none; }
 .cu-r { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 10px 16px; border: 0; border-radius: 0; background: var(--card); color: var(--fg); font: 500 15px/22px var(--font); text-align: left; text-decoration: none; }
 button.cu-r, a.cu-r { cursor: pointer; }
 button.cu-r:hover, a.cu-r:hover { background: var(--card-hover); }
@@ -44,11 +43,6 @@ a.cu-li:hover .cu-lt { color: var(--accent); }
 .cu-acts .btn:disabled, .pv-acts .btn:disabled { opacity: .4; cursor: default; }
 .pins .pv-cnt { margin-left: auto; }
 .pv-cnt { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12px; line-height: 16px; font-weight: 600; }
-.pv-ptiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.pv-ptile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; padding: 14px 16px; border: 0; border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; cursor: pointer; }
-.pv-ptile:hover { background: var(--card-hover); }
-.pv-ptn { max-width: 100%; font: 600 16px/22px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pv-pts { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--fg-2); font-size: 13px; line-height: 18px; }
 .pv-path { max-width: 100%; color: var(--fg-3); font: 13px/18px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.pv-path { padding: 0; border: 0; background: none; cursor: copy; }
 button.pv-path:hover { color: var(--fg-2); }
@@ -143,7 +137,6 @@ button.pv-res:hover { background: var(--card-hover); }
 }
 @media (max-width: 639px) {
   .pins { display: none; }
-  .cu-pinhome { display: block; }
 }`;
   document.head.append(el("style", { text: CSS }));
 
@@ -245,7 +238,7 @@ button.pv-res:hover { background: var(--card-hover); }
     }
   }
 
-  /* ---------- pinned rows (sidebar on desktop, 바로가기 on 홈 on phone) ---------- */
+  /* ---------- pinned rows (sidebar on desktop) ---------- */
   const SCHED = r => !r.schedule ? "" : r.schedule.at ? `매일 ${r.schedule.at}` : r.schedule.every_minutes ? `${r.schedule.every_minutes}분마다` : "";
   function groups(v) {
     const D = DATA || {}, side = v === "side", base = side ? "ni" : "cu-r", nm = side ? "nl" : "cu-rn", out = [];
@@ -253,13 +246,6 @@ button.pv-res:hover { background: var(--card-hover); }
     const projects = (D.projects || []).map(p => {
       const on = side && current === "project" && projKey === p.key, ls = p.lanes || [];
       const running = ls.filter(l => l.live && l.status !== "idle").length, waiting = ls.filter(l => l.waiting).length;
-      if (!side) {
-        // Phone 바로가기: one tile per project with what is going on there.
-        const state = waiting ? `답을 기다리는 세션 ${waiting}` : running ? `작업 중인 세션 ${running}` : ls.length ? `세션 ${ls.length}개 · 쉬는 중` : "세션 없음";
-        return el("button", { class: "pv-ptile", type: "button", onclick: () => go("project", p.key) },
-          el("span", { class: "pv-ptn", text: p.name }), p.path ? el("span", { class: "pv-path", text: shortPath(p.path), title: p.path }) : null,
-          el("span", { class: "pv-pts" }, el("span", { class: `dot ${waiting ? "att" : running ? "pri" : ""}` }), el("span", { text: state })));
-      }
       const badge = waiting ? el("span", { class: "dot att", title: `답을 기다리는 세션 ${waiting}` }) : running ? el("span", { class: "pv-cnt", title: `작업 중인 세션 ${running}`, text: String(running) }) : null;
       return el("button", { class: `${base}${on ? " on" : ""}`, type: "button", title: p.path || p.name, onclick: () => go("project", p.key) },
         icon("projects"), el("span", { class: nm, text: p.name }), badge);
@@ -289,16 +275,12 @@ button.pv-res:hover { background: var(--card-hover); }
   function paintHome() {
     const box = $("#home-custom");
     if (!box || !DATA) return;
-    const cards = (DATA.cards || []).slice(), g = groups("home");
-    if (same(box, JSON.stringify([cards, DATA.projects, DATA.routines, DATA.links]))) return;
+    const cards = (DATA.cards || []).slice();
+    if (same(box, JSON.stringify(cards))) return;
     clear(box);
-    if (!cards.length && !g.length) return;
+    if (!cards.length) return;
     box.classList.add("cu-home");
-    if (g.length) box.append(el("div", { class: "cu-pinhome" },
-      // The phone has no sidebar: its pinned projects, routines and links show here as shortcuts.
-      el("div", { class: "sec", text: "바로가기" }),
-      ...g.flatMap(([label, rows]) => [el("div", { class: "cu-gl", text: label }), el("div", { class: label === "프로젝트" ? "pv-ptiles" : "list" }, ...rows)])));
-    if (cards.length) box.append(el("div", { class: "sec", text: "내 카드" }), el("div", { class: "grid" }, ...cards.map(cardNode)));
+    box.append(el("div", { class: "sec", text: "내 카드" }), el("div", { class: "grid" }, ...cards.map(cardNode)));
   }
 
   /* ---------- project page ---------- */
