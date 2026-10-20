@@ -17,6 +17,7 @@ import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, esti
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { createPrompts } from "./prompts.ts";
+import { createSendLedger } from "./sendlog.ts";
 import { createLaneRelay } from "./lanerelay.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
@@ -45,6 +46,19 @@ let unanswered: { text: string; at?: number; target?: string; replyTo?: string }
 try {
 	if (existsSync(PENDING)) unanswered = JSON.parse(readFileSync(PENDING, "utf8"));
 } catch {}
+// Messages the owner must get go through the send ledger: kept on disk until Discord accepts them, retried through
+// network outages, sent again after a restart; an answer marks its message answered only once it was delivered.
+const UNSENT = join(DATA_DIR, "unsent.json");
+const sends = createSendLedger({
+	file: UNSENT,
+	send: (target, text, ref, opts) => discord.send(target, text, ref, opts),
+	retryable: discord.isRetryable,
+	onDelivered: item => queue.markAnswered(item.answers),
+	onGiveUp: (item, reason) => log(`send to ${item.target} dropped unsent: ${reason} (${item.text.slice(0, 80)})`),
+	persist: items => writeAtomic(UNSENT, `${JSON.stringify(items, null, 2)}\n`),
+	log,
+});
+const send = (target: string, text: string, ref?: string) => sends.submit(target, text, ref);
 const queue = createPrompts({
 	deliver: deliverToOrchestrator,
 	steer: steerOrchestrator,
@@ -56,6 +70,7 @@ const queue = createPrompts({
 	persist: open => writeAtomic(PENDING, `${JSON.stringify(open, null, 2)}\n`),
 	log,
 	answered: answeredIds(),
+	pending: sends.pending,
 });
 // `owner` marks the owner's own message (it leads with the what-runs-now line); schedules, watches and mail carry a target but are not.
 function deliver(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): void {
@@ -68,14 +83,17 @@ const isLocal = (target: string) => target === "web" || target === "terminal";
 const lastOwner = new Map<string, string>();
 async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
-	if (extra.source === undefined || extra.source === "orchestrator") queue.markAnswered(replyTo);
+	const answers = extra.source === undefined || extra.source === "orchestrator" ? replyTo : undefined;
 	const sent = await inOrder(target, async () => {
 		const t = await localize(text, target, typeof extra.source === "string" ? extra.source : "orchestrator");
 		emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text: t, reply_to: replyTo ?? null, ...extra });
 		return t;
 	});
-	if (isLocal(target)) return { delivered: true };
-	return discord.send(target, sent, replyRef(target, replyTo, lastOwner.get(target)));
+	if (isLocal(target)) {
+		queue.markAnswered(answers);
+		return { delivered: true };
+	}
+	return sends.submit(target, sent, replyRef(target, replyTo, lastOwner.get(target)), answers);
 }
 
 // While an owner message waits for its answer the owner sees 👀, typing and, for long work, one progress message edited in
@@ -163,7 +181,7 @@ function flush(target: string): void {
 
 function alert(text: string): void {
 	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text });
-	void discord.send("alert", text).catch(e => log(`alert send failed: ${e}`));
+	void send("alert", text).catch(e => log(`alert send failed: ${e}`));
 }
 setAlertHandler(alert);
 
@@ -270,8 +288,7 @@ setReportHandler((lane, text) => {
 	void inOrder(channel, () => localize(text.slice(0, 1800), channel, "lane"))
 		.then(async shown => {
 			if (running) return void (await discord.progress(channel, "progress", shown));
-			await discord.send(channel, shown);
-			await discord.clearProgress(channel);
+			if ((await send(channel, shown)).delivered) await discord.clearProgress(channel);
 		})
 		.catch(e => log(`lane report send failed: ${e}`));
 });
@@ -288,7 +305,7 @@ setProgressHandler((lane, text) => {
 		emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, ...(real ? {} : { update_key: "progress" }) });
 		return shown;
 	})
-		.then(shown => (real ? discord.send(channel, shown) : discord.progress(channel, "progress", shown)))
+		.then(shown => (real ? send(channel, shown) : discord.progress(channel, "progress", shown)))
 		.catch(e => log(`lane progress send failed: ${e}`));
 });
 
@@ -301,7 +318,7 @@ setLaneNoticeHandler((lane, text) => {
 		emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown });
 		return shown;
 	})
-		.then(shown => discord.send(channel, shown))
+		.then(shown => send(channel, shown))
 		.catch(e => log(`lane model fallback notice failed: ${e}`));
 });
 
@@ -341,7 +358,7 @@ discord.connect(m => {
 			sendToLane(lane, [`[owner via Discord] ${m.content}`, extra].filter(Boolean).join("\n"));
 			livestatus.begin(target, `lane:${lane}`);
 		} catch (error) {
-			void discord.send(target, `레인 ${lane}을(를) 이어갈 수 없어요 (${(error as Error).message}). 대화 채널에서 다시 맡겨 주세요.`, m.id);
+			void send(target, `레인 ${lane}을(를) 이어갈 수 없어요 (${(error as Error).message}). 대화 채널에서 다시 맡겨 주세요.`, m.id);
 		}
 		return;
 	}
@@ -814,8 +831,9 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 	startOrchestrator();
 	replayed = replayPending();
 }
+sends.resume();
 const resumedLanes = restoreLanes();
-for (const name of resumedLanes) void discord.send(`lane:${name}`, "게이트웨이가 재시작돼서 멈췄던 작업을 이어서 하고 있어요.").catch(e => log(`lane resume notice failed: ${e}`));
+for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 재시작돼서 멈췄던 작업을 이어서 하고 있어요.").catch(e => log(`lane resume notice failed: ${e}`));
 // Every start after the first one says so in worklog (a self-run system event, not a chat answer), with what it picked
 // back up, so a restart is never silent; failures to start go to alert elsewhere.
 if (restarted) {
@@ -827,7 +845,7 @@ startLaneHygiene();
 startWorktreeCleanup();
 startMemoryGuard((key, text) => {
 	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
-	void discord.send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
+	void send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 });
 startOrphanReaper();
 startHostSweep();
