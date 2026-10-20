@@ -102,7 +102,7 @@ that card turns into an error card.
 }
 ```
 
-- Project: `name` (max 40) is required, plus `path` and/or `channel`. `note` is optional.
+- Project: `name` (max 40) is required, plus `path` and/or `channel`. `note` is optional: one plain sentence the owner reads at the top of the project page, saying what the project is for in everyday words (e.g. "로직에서 만든 곡을 악보로 정리해요"). No file paths, rule files or internal terms; those belong in the project's own instructions.
 - Routine: `id` (the card id rule), `name` (max 40) and `prompt` (1-4000 characters) are required. `target` is `main`
   (the default) or `lane:<name>`. `schedule` is optional and takes either `{ "every_minutes": >= 5 }` or
   `{ "at": "HH:MM" }` (daily, in the owner's time zone), not both.
