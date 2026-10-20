@@ -242,12 +242,12 @@ function renderCtxRing() {
   const ob = $("#c-own"), wb = $("#c-worker"), wsel = lane && lane.worker_model;
   ob.hidden = !(sel && owner); ob.textContent = owner;
   wb.hidden = !wsel;
-  if (wsel) { const [wbase, wlevel] = String(wsel).split(":"); wb.textContent = `서브에이전트 ${modelChipText(wbase)}${wlevel ? ` · ${wlevel}` : ""}`; wb.title = `이 세션의 서브에이전트 모델`; }
+  if (wsel) { const [wbase, wlevel] = String(wsel).split(":"); wb.textContent = `서브에이전트 ${modelChipText(wbase)}${wlevel ? ` · ${thinkKo(wlevel)}` : ""}`; wb.title = `이 세션의 서브에이전트 모델`; }
   // model and effort are separate chips, each with its own popover
   const [base, level] = String(sel || "").split(":"), eb = $("#c-effort");
   mb.hidden = !sel; eb.hidden = !level;
   if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${owner} 모델 · ${t}`; }
-  if (level) { eb.textContent = level; eb.title = `${owner} 추론 강도 · ${level}`; }
+  if (level) { eb.textContent = thinkKo(level); eb.title = `${owner} 추론 강도 · ${thinkKo(level)}`; }
   const b = $("#ctx-ring"), p = ((C && C.processes) || []).find(x => x.name === (orchT ? "orchestrator" : laneOf(target)));
   b.hidden = !(p && p.running && p.tokens != null);
   if (b.hidden) return;
