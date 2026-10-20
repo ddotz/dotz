@@ -77,19 +77,19 @@ type Def = {
 const EFFORT_OPTIONS = THINKING_LEVELS.map(v => ({ value: v, label: v }));
 
 const DEFS = new Map<string, Def>([
-	["orchestrator.model", { type: "model", applies: "live", mirror: true }],
-	["orchestrator.thinking", { type: "effort", applies: "live", mirror: true }],
+	["orchestrator.model", { type: "model", applies: "live", mirror: true, source: "config.json:models.orchestrator.model" }],
+	["orchestrator.thinking", { type: "effort", applies: "live", mirror: true, source: "config.json:models.orchestrator.thinking" }],
 	// orchestrator.ts ROTATE_TOKENS
 	["orchestrator.rotate_tokens", { type: "number", applies: "restart", default: 150_000, min: 20_000, max: 1_000_000 }],
-	["lanes.model", { type: "model", applies: "next-turn", mirror: true }],
-	["lanes.thinking", { type: "effort", applies: "next-turn", mirror: true }],
+	["lanes.model", { type: "model", applies: "next-turn", mirror: true, source: "config.json:models.lanes.model" }],
+	["lanes.thinking", { type: "effort", applies: "next-turn", mirror: true, source: "config.json:models.lanes.thinking" }],
 	// lanes.ts MAX_ACTIVE
 	["lanes.max_active", { type: "number", applies: "restart", default: 4, min: 1, max: 16 }],
 	// config.ts lanesCompactAt / lanesKeepRecent (read when a lane process starts)
 	["lanes.compact_at", { type: "number", applies: "next-turn", mirror: true, default: 300_000, min: 50_000, max: 2_000_000 }],
 	["lanes.keep_recent", { type: "number", applies: "next-turn", mirror: true, default: 40_000, min: 5_000, max: 400_000 }],
-	["lanes.worker_model", { type: "model", applies: "next-turn", mirror: true }],
-	["lanes.worker_effort", { type: "effort", applies: "next-turn", mirror: true, source: "config.json:lanes.worker_model" }],
+	["lanes.worker_model", { type: "model", applies: "next-turn", mirror: true, source: "config.json:models.workers.model" }],
+	["lanes.worker_effort", { type: "effort", applies: "next-turn", mirror: true, source: "config.json:models.workers.thinking" }],
 	// config.ts lanesNightlyAt (hygiene.ts arms its timer at start)
 	["lanes.nightly_at", { type: "text", applies: "restart", default: "04:30" }],
 	["lanes.nightly_compact_at", { type: "number", applies: "live", mirror: true, default: 300_000, min: 50_000, max: 2_000_000 }],

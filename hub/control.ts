@@ -1,8 +1,8 @@
 // Owner controls shared by the web API, the web chat box and Discord: model/effort switching, provider and quota
 // views, and the slash/bang command parser that drives them.
-import { DEFAULT_WORKER_MODEL, entryId, entryOf, FALLBACK_MAX, type FallbackEntry, type FallbackTarget, fallbackChain, isPlain, lanesModel, log, orchestratorModel, parseSelector, selectorOf, setFallbackChain, splitThinking, THINKING_LEVELS, updateConfig, workerModel } from "./config.ts";
+import { DEFAULT_WORKER_MODEL, entryId, entryOf, FALLBACK_MAX, type FallbackEntry, type FallbackTarget, fallbackChain, isPlain, lanesModel, log, orchestratorModel, parseSelector, selectorOf, setFallbackChain, splitThinking, THINKING_LEVELS, updateModels, workerModel } from "./config.ts";
 import { entryView, hubChain, keyFileOk, keyProviderOk } from "./fallback.ts";
-import { runtimeFor } from "./runtime/index.ts";
+import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import { type Compaction, ctxView, describeCompaction, describeCtx } from "./context.ts";
 import * as discord from "./discord.ts";
 import { abortLane, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
@@ -13,7 +13,7 @@ export { ControlError };
 
 const ORCHESTRATOR_NOTE =
 	"모델이나 생각 수준을 바꾸면 오케스트레이터가 새 세션으로 다시 시작해요 (최근 대화는 이어받아요). 다음 응답은 평소보다 비용이 더 들 수 있어요.";
-const WORKERS_NOTE = `Model of the task workers each lane delegates implementation, tests, renders and grind work to (lanes.worker_model, default ${DEFAULT_WORKER_MODEL}). Applies to lanes launched or resumed from now on; a lane keeps the model of its running process until it restarts.`;
+const WORKERS_NOTE = `Model of the task workers each lane delegates implementation, tests, renders and grind work to (models.workers, default ${DEFAULT_WORKER_MODEL}). Applies to lanes launched or resumed from now on; a lane keeps the model of its running process until it restarts.`;
 const COMPACT_NOTE = "Compaction rewrites the conversation into a summary, so the prompt cache is re-written once on the next turn (about 2x the input cost for the new, shorter prefix).";
 
 const providerOf = (model: string) => model.split("/")[0];
@@ -25,14 +25,21 @@ const FALLBACK_NOTE = "폴백 순서는 프로세스가 다음에 시작될 때�
 
 // Each layer's fallback chain and the models its running processes answer on right now (model ids, thinking stripped),
 // so the settings tab can highlight the one in use.
+// Harness-aware: `harness` names the runtime that walks the chain; `conditions` says whether entries may carry conditions,
+// caps, revert or a key (the hub drives OmO and omp chains; Claude Code takes a plain --fallback-model list and the task
+// workers' chain is bare models only); `providers` limits the models that runtime can run (Claude Code: anthropic only).
 function fallbacksView() {
 	const running = laneModels().filter(l => l.running);
 	const ids = (list: Array<string | undefined>) => [...new Set(list.filter((s): s is string => Boolean(s)).map(s => parseSelector(s).model))];
+	const harness = (role: "orchestrator" | "lane", target: FallbackTarget) => {
+		const id = runtimeFor(role).id;
+		return { harness: { id, name: HARNESS_NAMES[id] ?? id }, conditions: target !== "workers" && id !== "claude", ...(id === "claude" ? { providers: ["anthropic"] } : {}) };
+	};
 	return {
 		max: FALLBACK_MAX,
-		orchestrator: { chain: fallbackChain("orchestrator").map(entryView), hub_driven: Boolean(hubChain(runtimeFor("orchestrator").id, fallbackChain("orchestrator"))), active: orch.status === "stopped" ? [] : ids([orch.activeModel]) },
-		lanes: { chain: fallbackChain("lanes").map(entryView), hub_driven: Boolean(hubChain(runtimeFor("lane").id, fallbackChain("lanes"))), active: ids(running.map(l => l.active_model)) },
-		workers: { chain: fallbackChain("workers").map(entryView), hub_driven: false, active: ids(running.map(l => l.active_worker_model)) },
+		orchestrator: { chain: fallbackChain("orchestrator").map(entryView), hub_driven: Boolean(hubChain(runtimeFor("orchestrator").id, fallbackChain("orchestrator"))), active: orch.status === "stopped" ? [] : ids([orch.activeModel]), ...harness("orchestrator", "orchestrator") },
+		lanes: { chain: fallbackChain("lanes").map(entryView), hub_driven: Boolean(hubChain(runtimeFor("lane").id, fallbackChain("lanes"))), active: ids(running.map(l => l.active_model)), ...harness("lane", "lanes") },
+		workers: { chain: fallbackChain("workers").map(entryView), hub_driven: false, active: ids(running.map(l => l.active_worker_model)), ...harness("lane", "workers") },
 	};
 }
 
@@ -195,17 +202,17 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	const done = (applied: ModelChange["applied"], note: string): ModelChange => ({ ok: true, target, ...next, applied, note });
 	if (next.model === current.model && next.thinking === current.thinking) return done("live", "unchanged");
 	if (target === "orchestrator") {
-		updateConfig("orchestrator", next);
+		updateModels("orchestrator", next);
 		const applied = applyModelChange();
 		return done(applied, applied === "restarted" ? `Orchestrator restarting on ${selectorOf(next)}. ${ORCHESTRATOR_NOTE}` : `Saved. The orchestrator switches to ${selectorOf(next)} when its current turn ends (or on its next start). ${ORCHESTRATOR_NOTE}`);
 	}
 	if (target === "lanes") {
-		updateConfig("lanes", next);
+		updateModels("lanes", next);
 		return done("next-start", "Saved. Lanes launched from now on use it; running lanes keep their model (change one with a lane target).");
 	}
 	if (target === "workers") {
-		updateConfig("lanes", { worker_model: selectorOf(next) });
-		return done("next-start", `Saved as lanes.worker_model. Lanes launched or resumed from now on run their task workers on ${selectorOf(next)}; a lane already running keeps its workers' model until it restarts.`);
+		updateModels("workers", next);
+		return done("next-start", `Saved as models.workers. Lanes launched or resumed from now on run their task workers on ${selectorOf(next)}; a lane already running keeps its workers' model until it restarts.`);
 	}
 	const name = target.slice(5);
 	if (lanes.get(name)!.proc && !force) throw laneCacheWarning(name);
@@ -223,6 +230,7 @@ export async function setFallback(target: string, chain: unknown[]) {
 	const primary = target === "orchestrator" ? orchestratorModel().model : target === "lanes" ? lanesModel().model : parseSelector(workerModel()).model;
 	const seen = new Set<string>();
 	const clean: FallbackEntry[] = [];
+	const claudeRuns = runtimeFor(target === "orchestrator" ? "orchestrator" : "lane").id === "claude";
 	for (const input of chain) {
 		const entry = entryOf(input);
 		if (!entry) throw new ControlError("each fallback entry needs a model");
@@ -231,6 +239,8 @@ export async function setFallback(target: string, chain: unknown[]) {
 		const model = resolveModel(split.model, available);
 		const next: FallbackEntry = { ...entry, model: split.thinking ? `${model}:${split.thinking}` : model };
 		if (target === "workers" && !isPlain(next)) throw new ControlError("the task workers' chain takes bare models only (conditions, caps, revert and API keys apply to the orchestrator and the lanes)");
+		if (claudeRuns && !isPlain(next)) throw new ControlError("Claude Code takes a plain fallback list: no conditions, caps, revert or API keys");
+		if (claudeRuns && !model.startsWith("anthropic/")) throw new ControlError(`Claude Code runs anthropic models only (got ${model})`);
 		if (next.key_file && !keyFileOk(next.key_file)) throw new ControlError(`key_file "${next.key_file}" must name an existing file in <data dir>/secrets/ whose name contains "api-key" or "api_key" (for example anthropic-api-key)`);
 		if (next.key_file && !keyProviderOk(next)) throw new ControlError("API-key entries support anthropic, openai and openrouter models, and the key goes over https only to the provider's own API host or a host listed in config.json key_hosts (set base_url and api on the entry for another provider)");
 		if (!next.key_file && next.model === primary) continue;

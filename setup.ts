@@ -54,6 +54,8 @@ type Answers = {
 };
 
 const prior = existsSync(join(DIR, "config.json")) ? JSON.parse(readFileSync(join(DIR, "config.json"), "utf8")) : {};
+// Model settings live in `models` (hub/config.ts); an older config.json still has them on orchestrator/lanes.
+const priorSelector = (t: "orchestrator" | "lanes") => `${prior.models?.[t]?.model ?? prior[t]?.model ?? "anthropic/claude-opus-5-5"}:${prior.models?.[t]?.thinking ?? prior[t]?.thinking ?? "medium"}`;
 const priorIdentity: Identity = { name: "", character: "", tone: "", ...prior.identity };
 
 const CHARACTERS = [
@@ -280,8 +282,8 @@ async function interactive(): Promise<Answers> {
 	const defaults = {
 		web_port: Number(prior.web?.port ?? 7420),
 		tailscale_https_port: Number(prior.web?.tailscale_https_port ?? 8443),
-		orchestrator_model: `${prior.orchestrator?.model ?? "anthropic/claude-opus-5-5"}:${prior.orchestrator?.thinking ?? "medium"}`,
-		lane_model: `${prior.lanes?.model ?? "anthropic/claude-opus-5-5"}:${prior.lanes?.thinking ?? "medium"}`,
+		orchestrator_model: priorSelector("orchestrator"),
+		lane_model: priorSelector("lanes"),
 	};
 	const port = (v: string) => Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) < 65536;
 	const advanced = /^y/i.test(ask("포트나 모델도 바꿀까요? y/N", "n"));
@@ -350,8 +352,8 @@ function validate(a: Partial<Answers>): Answers {
 		allow_logins: a.allow_logins ?? prior.web?.allow_logins ?? [],
 		web_port: Number(a.web_port ?? prior.web?.port ?? 7420),
 		tailscale_https_port: Number(a.tailscale_https_port ?? prior.web?.tailscale_https_port ?? 8443),
-		orchestrator_model: a.orchestrator_model ?? `${prior.orchestrator?.model ?? "anthropic/claude-opus-5-5"}:${prior.orchestrator?.thinking ?? "medium"}`,
-		lane_model: a.lane_model ?? `${prior.lanes?.model ?? "anthropic/claude-opus-5-5"}:${prior.lanes?.thinking ?? "medium"}`,
+		orchestrator_model: a.orchestrator_model ?? priorSelector("orchestrator"),
+		lane_model: a.lane_model ?? priorSelector("lanes"),
 		install_aside: a.install_aside === true,
 	};
 }
@@ -392,6 +394,7 @@ if (answersFile) {
 	if (MAC) await prepareAside(false, a.install_aside === true);
 	await prepareZele(false, a.install_aside === true);
 }
+const pick = (o: Record<string, unknown> | undefined, keys: string[]) => Object.fromEntries(keys.filter(k => o?.[k] != null).map(k => [k, o![k]]));
 const split = (sel: string) => {
 	const i = sel.lastIndexOf(":");
 	return i > 0 && !sel.slice(i + 1).includes("/") ? { model: sel.slice(0, i), thinking: sel.slice(i + 1) } : { model: sel, thinking: "medium" };
@@ -408,8 +411,10 @@ const config = {
 	identity: a.identity,
 	discord: { token_file: TOKEN_FILE.replace(HOME, "~"), owner_id: a.owner_id, guild: a.guild, ...(prior.discord?.app_id ? { app_id: prior.discord.app_id } : {}) },
 	web: { port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins },
-	orchestrator: { runtime: a.runtime, ...split(a.orchestrator_model), ...(prior.orchestrator?.rotate_tokens ? { rotate_tokens: prior.orchestrator.rotate_tokens } : {}) },
-	lanes: { runtime: a.runtime, ...split(a.lane_model), ...(prior.lanes?.max_active ? { max_active: prior.lanes.max_active } : {}) },
+	// An older file's fallback chains and task-worker model ride along; the hub moves them into `models` (hub/config.ts migrateModels).
+	orchestrator: { runtime: a.runtime, ...pick(prior.orchestrator, ["rotate_tokens", "fallback"]) },
+	lanes: { runtime: a.runtime, ...pick(prior.lanes, ["max_active", "worker_model", "fallback", "worker_fallback"]) },
+	models: { ...prior.models, orchestrator: { ...prior.models?.orchestrator, ...split(a.orchestrator_model) }, lanes: { ...prior.models?.lanes, ...split(a.lane_model) } },
 };
 writeFileSync(join(DIR, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 if (!existsSync(join(DIR, "state.json"))) writeFileSync(join(DIR, "state.json"), `${JSON.stringify({ open_tasks: [] }, null, 2)}\n`);

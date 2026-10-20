@@ -71,7 +71,7 @@ const count = (text: string, sub: string) => text.split(sub).length - 1;
 const savedCfg = { orchestrator: cfg.orchestrator, lanes: cfg.lanes };
 beforeAll(() => {
 	adapters.fake = fake;
-	cfg.orchestrator = { model: "anthropic/test-orch", thinking: "low", ...cfg.orchestrator, runtime: "fake" };
+	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake" };
 	cfg.lanes = { ...cfg.lanes, runtime: "fake" };
 });
 afterAll(() => {

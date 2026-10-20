@@ -18,22 +18,77 @@ export type Config = {
 	key_hosts?: string[];
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string };
 	web: { port: number; tailscale_https_port: number; allow_logins: string[] };
-	orchestrator?: { model: string; thinking: string; rotate_tokens?: number; runtime?: string; fallback?: Array<string | FallbackEntry> };
+	orchestrator?: { rotate_tokens?: number; runtime?: string };
 	ui?: { origin_view?: boolean };
-	lanes: { model: string; thinking: string; runtime?: string; max_active?: number; worker_model?: string; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; fallback?: Array<string | FallbackEntry>; worker_fallback?: Array<string | FallbackEntry> };
+	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number };
+	// Model choice and fallback order, one block per target (the web 모델 · 폴백 screen edits exactly this).
+	models?: ModelsConfig;
 };
+// One target's model, thinking level and ordered fallback chain: the orchestrator, the lanes (default of every lane) and the
+// lanes' task workers. Missing values take the defaults below.
+export type TargetModels = { model?: string; thinking?: string; fallback?: Array<string | FallbackEntry> };
+export type ModelsConfig = Partial<Record<FallbackTarget, TargetModels>>;
 
 export const CONFIG_FILE = join(DATA_DIR, "config.json");
-export const cfg: Config = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"] as const;
+// Before 2026-10-20 the model settings were spread over orchestrator.{model,thinking,fallback} and lanes.{model,thinking,
+// fallback,worker_model,worker_fallback}. Moves those keys into `models` (a value already in `models` wins) and reports
+// whether anything moved; every other key stays where it is.
+const LEGACY: Array<[FallbackTarget, "orchestrator" | "lanes", string, "model" | "thinking" | "fallback" | "selector"]> = [
+	["orchestrator", "orchestrator", "model", "model"],
+	["orchestrator", "orchestrator", "thinking", "thinking"],
+	["orchestrator", "orchestrator", "fallback", "fallback"],
+	["lanes", "lanes", "model", "model"],
+	["lanes", "lanes", "thinking", "thinking"],
+	["lanes", "lanes", "fallback", "fallback"],
+	["workers", "lanes", "worker_model", "selector"],
+	["workers", "lanes", "worker_fallback", "fallback"],
+];
+export function migrateModels(disk: Record<string, any>): boolean {
+	const models: ModelsConfig = disk.models && typeof disk.models === "object" && !Array.isArray(disk.models) ? disk.models : {};
+	let moved = false;
+	for (const [target, section, key, as] of LEGACY) {
+		const sec = disk[section];
+		if (!sec || typeof sec !== "object" || !(key in sec)) continue;
+		const v = sec[key];
+		delete sec[key];
+		moved = true;
+		if (v == null || v === "") continue;
+		const t = (models[target] ??= {});
+		if (as === "selector") {
+			const s = splitThinking(String(v));
+			t.model ??= s.model;
+			if (s.thinking) t.thinking ??= s.thinking;
+		} else if (t[as] === undefined) (t as Record<string, unknown>)[as] = v;
+	}
+	if (moved) disk.models = models;
+	return moved;
+}
+// Reads config.json, moving legacy model keys into `models` first; the file as it was is kept next to it
+// (config.json.bak-models-<time>) before the migrated one replaces it.
+function loadConfig(): Config {
+	const text = readFileSync(CONFIG_FILE, "utf8");
+	const disk = JSON.parse(text);
+	if (migrateModels(disk)) {
+		writeFileSync(`${CONFIG_FILE}.bak-models-${new Date().toISOString().replace(/[:.]/g, "-")}`, text, { mode: 0o600 });
+		writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
+	}
+	return disk;
+}
+export const cfg: Config = loadConfig();
 // Model + thinking level a section of config.json selects; omp takes them as one `--model <model>:<thinking>` selector.
 const DEFAULT_MODEL = { model: "anthropic/claude-opus-5-5", thinking: "medium" };
-export const orchestratorModel = () => ({ model: cfg.orchestrator?.model ?? DEFAULT_MODEL.model, thinking: cfg.orchestrator?.thinking ?? DEFAULT_MODEL.thinking });
-export const lanesModel = () => ({ model: cfg.lanes?.model ?? DEFAULT_MODEL.model, thinking: cfg.lanes?.thinking ?? DEFAULT_MODEL.thinking });
+const targetOf = (t: FallbackTarget): TargetModels => cfg.models?.[t] ?? {};
+export const orchestratorModel = () => ({ model: targetOf("orchestrator").model ?? DEFAULT_MODEL.model, thinking: targetOf("orchestrator").thinking ?? DEFAULT_MODEL.thinking });
+export const lanesModel = () => ({ model: targetOf("lanes").model ?? DEFAULT_MODEL.model, thinking: targetOf("lanes").thinking ?? DEFAULT_MODEL.thinking });
 export const selectorOf = (m: { model: string; thinking: string }) => `${m.model}:${m.thinking}`;
 // Model the lanes' task workers (implementation, tests, renders, grind) run on: a "<model>:<thinking>" selector, set per run through an omp overlay.
 export const DEFAULT_WORKER_MODEL = "anthropic/claude-sonnet-5-5:high";
-export const workerModel = () => cfg.lanes?.worker_model ?? DEFAULT_WORKER_MODEL;
+export function workerModel(): string {
+	const w = targetOf("workers"), d = splitThinking(DEFAULT_WORKER_MODEL);
+	const model = w.model ?? d.model, thinking = w.thinking ?? (w.model ? undefined : d.thinking);
+	return thinking ? `${model}:${thinking}` : model;
+}
 // Model fallback chains: entries tried in order after the primary fails at request time. One chain per layer: the
 // orchestrator, the lanes (every lane's own model) and the lanes' task workers. They apply the next time a process starts.
 // An entry is a model selector ("<provider>/<id>[:<thinking>]") or an object with conditions (hub/fallback.ts owns them):
@@ -78,7 +133,7 @@ export function chainOf(v: unknown): FallbackEntry[] {
 	}
 	return out.slice(0, FALLBACK_MAX);
 }
-export const fallbackChain = (target: FallbackTarget): FallbackEntry[] => chainOf(target === "orchestrator" ? cfg.orchestrator?.fallback : target === "lanes" ? cfg.lanes?.fallback : cfg.lanes?.worker_fallback);
+export const fallbackChain = (target: FallbackTarget): FallbackEntry[] => chainOf(targetOf(target).fallback);
 // An entry omp can walk by itself: a bare model, no condition, cap, key or revert.
 export const isPlain = (e: FallbackEntry) => !e.when && !e.cap && !e.revert && !e.key_file;
 // The entries a process starts with: the stored ones without the primary itself (an entry equal to the primary model would
@@ -87,9 +142,15 @@ export const chainAfter = (primary: string, chain: FallbackEntry[]): FallbackEnt
 // Stored form: bare selector strings for plain entries, objects for the rest.
 const storedOf = (e: FallbackEntry): string | FallbackEntry => (isPlain(e) && !e.base_url && !e.api ? e.model : e);
 export function setFallbackChain(target: FallbackTarget, chain: FallbackEntry[]): void {
-	const clean = chainOf(chain).map(storedOf);
-	if (target === "orchestrator") updateConfig("orchestrator", { fallback: clean });
-	else updateConfig("lanes", target === "lanes" ? { fallback: clean } : { worker_fallback: clean });
+	updateModels(target, { fallback: chainOf(chain).map(storedOf) });
+}
+// Edits one target's block of `models` in config.json (re-read from disk, legacy keys moved first) and mirrors it into `cfg`.
+export function updateModels(target: FallbackTarget, values: TargetModels): void {
+	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
+	migrateModels(disk);
+	disk.models = { ...disk.models, [target]: { ...disk.models?.[target], ...values } };
+	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
+	cfg.models = { ...cfg.models, [target]: { ...cfg.models?.[target], ...values } };
 }
 // Lane context management: omp compacts a lane's session at `compact_at` tokens keeping the last `keep_recent`; each night
 // at `nightly_at` (local time, "off" disables) idle lanes past `rotate_mb` of session file start a fresh session with a

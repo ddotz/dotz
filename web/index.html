@@ -235,42 +235,60 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .chip:hover { background: var(--hover); color: var(--fg); }
 .chip.on { background: var(--fg); color: var(--bg); }
 .chip .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* settings: model fallback chains. One color token per layer (orchestrator / lanes / task workers); the model in use is filled. */
-/* one neutral ink for every layer (blue is kept for the model in use) */
-:root { --fb-orch: var(--fg-2); --fb-lane: var(--fg-2); --fb-work: var(--fg-2); }
-.fb { margin-top: 24px; }
-.fb-note { margin: 4px 0 12px; color: var(--fb-fg, var(--fg-3)); font-size: 12px; line-height: 18px; }
-.fb-card { border: 0; border-radius: var(--r-card); background: var(--card); }
-.fb-row { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
-.fb-row + .fb-row { border-top: 1px solid var(--line); }
-.fb-head { display: flex; align-items: center; gap: 8px; color: var(--fb); font-weight: 600; }
-.fb-head .sup { color: var(--fg-3); font-weight: 400; }
-.fb-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; }
-.fb-arrow { align-self: center; color: var(--fg-3); }
-.fb-item { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 132px; max-width: 280px; padding: 6px 8px 6px 10px; border: 1px solid color-mix(in srgb, var(--fb) 34%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--fb) 9%, var(--card)); color: var(--fb); touch-action: none; user-select: none; }
+/* 모델 · 폴백: one card per target (model + effort, then the numbered fallback list). Neutral surfaces; the accent marks
+   only the model answering now. */
+.mt { max-width: 760px; }
+.mt-top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.mt-intro { flex: 1 1 320px; margin: 0 4px; color: var(--fg-2); font-size: 13px; line-height: 20px; }
+.mt-filter { flex: 0 1 220px; min-width: 160px; }
+.mt-card { display: flex; flex-direction: column; gap: 16px; scroll-margin-top: 12px; }
+.mt-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mt-head .t { min-width: 0; font: 700 17px/24px var(--font); overflow-wrap: anywhere; }
+.mt-head .sup { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-head .sp { flex: 1; }
+.mt-head .tag { flex: none; }
+.mt-pick { display: flex; flex-direction: column; gap: 12px; }
+.mt-model { max-width: 360px; }
+.mt-eff .lb, .mt-fb-h .lb { display: block; margin-bottom: 6px; font: 500 12px/16px var(--font); color: var(--fg-2); }
+.mt-fb-h .lb { margin: 0; }
+.mt-eff .seg { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); }
+.mt-eff .seg button { height: 30px; text-overflow: clip; }
+.mt-apply { justify-content: flex-end; margin-top: -4px; }
+.mt-fb { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+.mt-fb-h { display: flex; align-items: baseline; gap: 8px; }
+.mt-fb .note { margin-top: 2px; }
+.mt-foot { margin-top: -6px; }
+@media (max-width: 640px) { .mt-eff .seg { grid-template-columns: repeat(4, minmax(0, 1fr)); } .mt-model { max-width: none; } .mt-filter { flex-basis: 100%; } }
+.fb-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.fb-item { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 8px 10px 10px; border-radius: 12px; background: var(--layer); color: var(--fg); touch-action: none; user-select: none; }
 .fb-item[data-i] { cursor: grab; }
-.fb-item.in-use { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.fb-item.drag { z-index: 5; cursor: grabbing; box-shadow: var(--float); opacity: .92; }
-.fb-item.over { outline: 2px dashed var(--fb); outline-offset: 2px; }
+.fb-item.in-use { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.fb-item.drag { position: relative; z-index: 5; cursor: grabbing; box-shadow: var(--float); opacity: .94; }
+.fb-item.over { outline: 2px dashed var(--fg-3); outline-offset: 2px; }
+.fb-n { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 11px; background: var(--card); color: var(--fg-2); font: 600 12px/1 var(--font); }
+.fb-item.in-use .fb-n { background: var(--accent); color: var(--on-accent); }
+.fb-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .fb-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.fb-top .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.fb-use { flex: none; height: 16px; padding: 0 5px; border-radius: 8px; background: color-mix(in srgb, var(--bg) 24%, transparent); font-size: 10px; line-height: 16px; font-weight: 600; }
-.fb-base { flex: none; height: 16px; padding: 0 5px; border-radius: 8px; background: color-mix(in srgb, var(--fb) 14%, transparent); font-size: 10px; line-height: 16px; font-weight: 600; }
-.fb-item.in-use .fb-base { background: color-mix(in srgb, var(--bg) 24%, transparent); }
-.fb-tags { display: flex; flex-wrap: wrap; gap: 3px; }
-.fb-tags .tag { height: 18px; line-height: 14px; font-size: 10.5px; background: color-mix(in srgb, var(--fb) 14%, transparent); color: inherit; }
-.fb-item.in-use .fb-tags .tag { background: color-mix(in srgb, var(--bg) 22%, transparent); }
-.fb-tags .tag.warn { background: color-mix(in srgb, var(--warn) 18%, var(--card)); color: var(--warn); }
+.fb-top .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 14px/20px var(--font); }
+.fb-use, .fb-base { flex: none; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--card); color: var(--fg-2); font-size: 11px; line-height: 18px; font-weight: 600; }
+.fb-use { color: var(--accent); }
+.fb-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.fb-tags .tag { height: 20px; line-height: 16px; font-size: 11px; background: var(--card); color: var(--fg-2); }
+.fb-tags .tag.warn { background: color-mix(in srgb, var(--warn) 14%, var(--card)); color: var(--warn); }
+.fb-usage { color: var(--fg-2); }
 .fb-bar { height: 4px; border-radius: 2px; background: color-mix(in srgb, currentColor 18%, transparent); overflow: hidden; }
 .fb-bar i { display: block; height: 100%; border-radius: 2px; background: currentColor; }
-.fb-bar-l { font-size: 10.5px; line-height: 14px; opacity: .85; }
-.fb-acts { display: flex; align-items: center; gap: 0; margin-left: auto; flex: none; }
-.fb-acts button { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: inherit; opacity: .75; }
-.fb-acts button:hover, .fb-acts button:focus-visible { opacity: 1; background: color-mix(in srgb, currentColor 16%, transparent); }
-.fb-acts button:disabled { opacity: .25; }
-.fb-acts .ic { width: 13px; height: 13px; }
-.fb-add { align-self: center; display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 12px 0 8px; border: 1px dashed color-mix(in srgb, var(--fb) 55%, transparent); border-radius: 16px; background: transparent; color: var(--fb); font-size: 12px; font-weight: 500; }
-.fb-add:hover { background: color-mix(in srgb, var(--fb) 10%, transparent); }
+.fb-bar-l { font-size: 11px; line-height: 15px; }
+.fb-acts { display: flex; align-items: center; flex: none; gap: 2px; }
+.fb-acts button { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 14px; background: transparent; color: var(--fg-2); }
+.fb-acts button:hover, .fb-acts button:focus-visible { background: var(--hover); color: var(--fg); }
+.fb-acts button:disabled { opacity: .3; background: transparent; }
+.fb-acts .ic { width: 15px; height: 15px; }
+.fb-acts .up .ic { transform: rotate(180deg); }
+@media (pointer: coarse) { .fb-acts button { width: 34px; height: 34px; } }
+.fb-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px 0 10px; border: 1px dashed var(--line-2); border-radius: 18px; background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; }
+.fb-add:hover:not(:disabled) { background: var(--hover); color: var(--fg); }
+.fb-add:disabled { opacity: .5; }
 
 /* fields */
 .tf { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -1537,7 +1555,7 @@ const navView = v => v === "activity" ? "chat" : v;
 const lastChatView = () => { try { return localStorage.getItem(CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const SUB = new Set(["models", "providers", "usage", "context"]);
 const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인", harness: "구성", settings: "설정", models: "모델", providers: "공급자", usage: "사용량", context: "컨텍스트" };
+const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트" };
 // The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
 const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
 const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
@@ -2146,6 +2164,7 @@ function homeMenu(anchor, id) {
     if (cur) {
       add("모델 변경…", () => showMenu(anchor, modelItems(key, cur.model, ""), { value: cur.model, onPick: v => busy(null, () => putModel(key, name, { model: v }, restartNote, `${modelName(v)} · ${cur.thinking}`)) }));
       add("추론 강도…", () => showMenu(anchor, (M.thinking_levels || []).map(v => ({ value: v, label: v })), { value: cur.thinking, onPick: v => busy(null, () => putModel(key, name, { thinking: v }, restartNote, `${modelName(cur.model)} · ${v}`)) }));
+      add("모델 · 폴백 설정", () => openModels(key));
     }
     if (id === MAIN) {
       if (S && S.orchestrator && S.orchestrator.status === "working") add("중단", () => abortOrch(null));
@@ -3206,6 +3225,8 @@ function renderCtxRing() {
   b.classList.toggle("err", pct >= 80);
 }
 /* ---------- composer chips: model / effort / context of the current target (GET/PUT /api/target) ---------- */
+// The chips are quick switches; the last row of each opens the 모델 · 폴백 screen at this target (fallback order lives there).
+const MODELS_LINK = { value: "__models", label: "모델 · 폴백 설정", sub: "폴백 순서까지" };
 const targetParam = () => isLaneT(target) ? target : "main";
 async function targetChange(title, change, label) {
   const body = { target: targetParam(), ...change };
@@ -3221,15 +3242,15 @@ async function targetChange(title, change, label) {
 }
 $("#c-model").onclick = ev => busy(null, async () => {
   const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(targetParam())}`);
-  const name = targetName(target), items = modelPickItems(T.models, T.model);
-  showMenu(anchor, items, { value: T.model, onPick: v => busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
+  const name = targetName(target), items = [...modelPickItems(T.models, T.model), MODELS_LINK];
+  showMenu(anchor, items, { value: T.model, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
 });
 // Effort only: low / medium / high (plus the current level when it is another one); the model is never touched.
 $("#c-effort").onclick = ev => busy(null, async () => {
   const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(targetParam())}`), name = targetName(target);
   const levels = ["low", "medium", "high"].filter(v => T.thinking_levels.includes(v));
   if (T.thinking && !levels.includes(T.thinking)) levels.push(T.thinking);
-  showMenu(anchor, [{ header: "추론 강도" }, ...levels.map(v => ({ value: v, label: v }))], { value: T.thinking, onPick: v => busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${v}`)) });
+  showMenu(anchor, [{ header: "추론 강도" }, ...levels.map(v => ({ value: v, label: v })), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${v}`)) });
 });
 $("#ctx-ring").setAttribute("aria-haspopup", "listbox");
 $("#ctx-ring").onclick = ev => busy(null, async () => {
@@ -3872,7 +3893,11 @@ async function logoutProvider(p) {
   await loadProviders(); loadModels(true);
   if (current === "home") renderHome();
 }
-function targetCard(key, title, status, cur, confirmText) {
+// 모델 · 폴백: one card per target - its model and effort, then (orchestrator, lane default, workers) the ordered fallback
+// chain that target's harness walks. The composer chips, the home card menu, 구성 and 설정 all open this screen.
+let modelsFocus = "";
+const openModels = key => { modelsFocus = key || ""; if (current === "models") renderModels(); else go("models"); };
+function targetCard(key, title, status, cur, confirmText, extra = {}) {
   const p = pending[key] || {};
   const model = p.model ?? cur.model, thinking = p.thinking ?? cur.thinking;
   const dirty = (p.model != null && p.model !== cur.model) || (p.thinking != null && p.thinking !== cur.thinking);
@@ -3886,29 +3911,34 @@ function targetCard(key, title, status, cur, confirmText) {
     if (p.thinking != null && p.thinking !== cur.thinking) change.thinking = p.thinking;
     await putModel(key, title, change, confirmText, `${modelName(model)} · ${thinking}`);
   }) }, "적용");
-  return el("div", { class: "card" },
-    el("div", { class: "heads", style: "margin-bottom:12px" }, status ? el("span", { class: `dot ${statusTone(status)}` }) : null, el("span", { class: "t", text: title })),
-    modelField,
-    el("div", { class: "lbl" }, "thinking"), seg,
-    info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup mt8", text: "thinking 미지원" }) : null,
-    el("div", { class: "btns", style: "margin-top:16px;justify-content:flex-end" },
-      dirty ? el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기") : null, apply));
+  return el("section", { class: "card mt-card", "data-target": key, "aria-label": title },
+    el("div", { class: "mt-head" }, status ? el("span", { class: `dot ${statusTone(status)}` }) : null, el("span", { class: "t", text: title }), extra.sub ? el("span", { class: "sup", text: extra.sub }) : null, el("span", { class: "sp" }), ...(extra.tags || [])),
+    el("div", { class: "mt-pick" },
+      el("div", { class: "mt-model" }, modelField),
+      el("div", { class: "mt-eff" }, el("div", { class: "lb" }, "추론 강도"), seg)),
+    info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup mt8", text: "이 모델은 추론 강도를 쓰지 않아요" }) : null,
+    dirty ? el("div", { class: "btns mt-apply" }, el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기"), apply) : null,
+    ...(extra.body || []));
 }
 function renderModels() {
   const box = $("#models");
+  if (fbDragging) return;
   closeMenu(false);
   if (!M) { clear(box).append(emptyNode("불러오는 중…")); return; }
   const provs = [...new Set((M.available || []).map(a => a.provider))].sort((a, b) => providerName(a).localeCompare(providerName(b)));
   const filter = selectField("공급자", providerFilter ? providerName(providerFilter) : "전체", [{ value: "", label: "전체" }, ...provs.map(p => ({ value: p, label: providerName(p) }))], providerFilter, v => { providerFilter = v; renderModels(); });
   const lanes = (M.lanes || []).filter(laneAlive);
   clear(box).append(
-    el("div", { class: "col" },
-      el("div", { style: "max-width:280px" }, filter),
-      el("div", { class: "grid" },
-        targetCard("orchestrator", botName, "", M.orchestrator, "어시스턴트가 다시 시작돼요."),
-        targetCard("lanes", "새 레인 기본값", "", M.lanes_default),
-        targetCard("workers", "워커", "", M.workers),
-        ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l)))));
+    el("div", { class: "col mt" },
+      el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: "대상마다 모델과 추론 강도, 막혔을 때 넘어갈 순서를 정해요. 폴백은 다음 시작부터 적용돼요." }), el("div", { class: "mt-filter" }, filter)),
+      ...FB_LAYERS.map(L => targetCard(L.id, L.title(), "", L.cur(), L.confirm, fbParts(L))),
+      lanes.length ? el("div", { class: "sec", text: "실행 중 레인" }) : null,
+      ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l, "", { body: [el("div", { class: "note mt-foot", text: "폴백은 레인 기본값 순서를 따라요" })] }))));
+  if (modelsFocus) {
+    const n = box.querySelector(`[data-target="${CSS.escape(modelsFocus)}"]`);
+    modelsFocus = "";
+    if (n) requestAnimationFrame(() => n.scrollIntoView({ block: "start" }));
+  }
 }
 
 /* ---------- providers ---------- */
@@ -4079,9 +4109,9 @@ async function loadQuota() {
 
 /* ---------- settings: model fallback chains (orchestrator / lanes / task workers) ---------- */
 const FB_LAYERS = [
-  { id: "orchestrator", label: "오케스트레이터", ic: "harness", color: "--fb-orch", cur: () => M.orchestrator },
-  { id: "lanes", label: "레인", ic: "lanes", color: "--fb-lane", cur: () => M.lanes_default },
-  { id: "workers", label: "레인 작업자", ic: "model", color: "--fb-work", cur: () => M.workers },
+  { id: "orchestrator", title: () => botName, sub: "오케스트레이터", cur: () => M.orchestrator, confirm: "어시스턴트가 다시 시작돼요." },
+  { id: "lanes", title: () => "레인 기본값", sub: "새로 시작하는 레인", cur: () => M.lanes_default },
+  { id: "workers", title: () => "작업자", sub: "레인이 맡기는 구현·테스트", cur: () => M.workers },
 ];
 const FB_KEYS = ["model", "when", "cap", "revert", "key_file", "base_url", "api"];
 const FB_WHEN = { quota: "구독 소진 시", error: "오류 시" };
@@ -4183,45 +4213,47 @@ function fbDrag(item, layer, list, i) {
     item.addEventListener("pointermove", move); item.addEventListener("pointerup", end); item.addEventListener("pointercancel", end);
   });
 }
-function fbRow(L) {
+// The fallback part of a target's card: its harness, then the chain as a numbered list (1 = the target's own model).
+// Harness-aware: conditions only where the hub drives the chain, the add menu limited to what the harness can run.
+function fbParts(L) {
   const F = (M.fallbacks || {})[L.id] || { chain: [], active: [] };
-  const list = F.chain;
-  const cur = L.cur();
-  const row = el("div", { class: "fb-row", style: `--fb: var(${L.color})`, "data-layer": L.id });
-  const used = new Set(F.active || []);
-  const prim = fbBase(cur && cur.model);
-  const chain = el("div", { class: "fb-chain" });
+  const list = F.chain, cur = L.cur(), used = new Set(F.active || []), prim = fbBase(cur && cur.model);
+  const runs = e => !F.providers || F.providers.includes(fbBase(e.model).split("/")[0]);
+  const move = (i, to) => { const n = list.slice(); n.splice(to, 0, n.splice(i, 1)[0]); fbSave(L.id, n); };
+  const chain = el("ol", { class: "fb-list", "aria-label": `${L.title()} 폴백 순서` });
   const itemFor = (e, i) => {
-    const base = i < 0;
-    const model = base ? prim : e.model;
+    const base = i < 0, model = base ? prim : e.model, nm = modelName(fbBase(model));
     const inUse = base ? used.has(prim) : used.has(fbRunId(e));
     const acts = base ? null : el("div", { class: "fb-acts" },
-      el("button", { type: "button", title: "앞으로", "aria-label": `${modelName(fbBase(e.model))} 앞으로 옮기기`, disabled: i === 0, onclick: () => { const n = list.slice(); n.splice(i - 1, 0, n.splice(i, 1)[0]); fbSave(L.id, n); } }, icon("back")),
-      el("button", { type: "button", title: "뒤로", "aria-label": `${modelName(fbBase(e.model))} 뒤로 옮기기`, disabled: i === list.length - 1, onclick: () => { const n = list.slice(); n.splice(i + 1, 0, n.splice(i, 1)[0]); fbSave(L.id, n); } }, icon("chev")),
-      L.id === "workers" ? null : el("button", { type: "button", title: "조건 편집", "aria-label": `${modelName(fbBase(e.model))} 조건 편집`, "aria-haspopup": "listbox", onclick: ev => fbEditMenu(L.id, list, i, ev.currentTarget) }, icon("more")),
-      el("button", { type: "button", title: "빼기", "aria-label": `${modelName(fbBase(e.model))} 빼기`, onclick: () => fbSave(L.id, list.filter((_, j) => j !== i)) }, icon("close")));
-    const node = el("div", { class: `fb-item${inUse ? " in-use" : ""}`, ...(base ? {} : { "data-i": String(i) }), title: fbBase(model) },
-      el("div", { class: "fb-top" }, el("span", { class: "nm", text: modelName(fbBase(model)) }), base ? el("span", { class: "fb-base", text: "기본" }) : null, inUse ? el("span", { class: "fb-use", text: "사용 중" }) : null, acts),
-      base ? null : fbTags(e), base ? null : fbBar(e));
+      el("button", { type: "button", class: "up", title: "위로", "aria-label": `${nm} 위로`, disabled: i === 0, onclick: () => move(i, i - 1) }, icon("down")),
+      el("button", { type: "button", title: "아래로", "aria-label": `${nm} 아래로`, disabled: i === list.length - 1, onclick: () => move(i, i + 1) }, icon("down")),
+      F.conditions ? el("button", { type: "button", title: "조건", "aria-label": `${nm} 조건`, "aria-haspopup": "listbox", onclick: ev => fbEditMenu(L.id, list, i, ev.currentTarget) }, icon("more")) : null,
+      el("button", { type: "button", title: "빼기", "aria-label": `${nm} 빼기`, onclick: () => fbSave(L.id, list.filter((_, j) => j !== i)) }, icon("close")));
+    let tags = base ? null : fbTags(e);
+    if (!base && !runs(e)) (tags ||= el("div", { class: "fb-tags" })).append(el("span", { class: "tag warn", text: `${F.harness ? F.harness.name : "이 하네스"}에서 못 써요` }));
+    const node = el("li", { class: `fb-item${inUse ? " in-use" : ""}${base ? " base" : ""}`, ...(base ? {} : { "data-i": String(i) }), title: fbBase(model) },
+      el("span", { class: "fb-n", text: String(i + 2) }),
+      el("div", { class: "fb-body" },
+        el("div", { class: "fb-top" }, el("span", { class: "nm", text: nm }), base ? el("span", { class: "fb-base", text: "기본" }) : null, inUse ? el("span", { class: "fb-use", text: "사용 중" }) : null),
+        tags, base ? null : fbBar(e)),
+      acts);
     if (!base) fbDrag(node, L.id, list, i);
     return node;
   };
-  chain.append(itemFor(null, -1));
-  list.forEach((e, i) => chain.append(icon("chev", "fb-arrow"), itemFor(e, i)));
-  const add = el("button", { type: "button", class: "fb-add", "aria-haspopup": "listbox", disabled: list.length >= ((M.fallbacks || {}).max || 6), onclick: ev => {
-    const key = `fb:${L.id}`;
-    showMenu(ev.currentTarget, modelItems(key, "", ""), { value: "", onPick: v => { if (list.some(x => x.model === v && !x.key_file) || fbBase(v) === prim) toast("이미 있는 모델이에요", true); else fbSave(L.id, [...list, { model: v }]); } });
-  } }, icon("add"), "모델 추가");
-  chain.append(add);
-  row.append(el("div", { class: "fb-head" }, icon(L.ic), el("span", { text: L.label }), el("span", { class: "sup", text: list.length ? `${list.length}개 대기` : "폴백 없음" })), chain);
-  return row;
-}
-function fbBlock() {
-  if (!M || !M.fallbacks) return null;
-  return el("div", { class: "fb" },
-    el("div", { class: "sec", text: "모델 폴백" }),
-    el("div", { class: "fb-note", text: `${M.notes && M.notes.fallback ? M.notes.fallback : "폴백 순서는 다음에 시작될 때부터 적용돼요."} 항목을 끌어서 순서를 바꾸고, 화살표 버튼으로도 옮길 수 있어요.` }),
-    el("div", { class: "fb-card" }, ...FB_LAYERS.map(fbRow)));
+  chain.append(itemFor(null, -1), ...list.map(itemFor));
+  const full = list.length >= ((M.fallbacks || {}).max || 6);
+  const add = el("button", { type: "button", class: "fb-add", "aria-haspopup": "listbox", disabled: full, onclick: ev => {
+    const only = F.providers && F.providers.length === 1 ? F.providers[0] : "";
+    showMenu(ev.currentTarget, modelItems(`fb:${L.id}`, "", only), { value: "", onPick: v => { if (list.some(x => x.model === v && !x.key_file) || fbBase(v) === prim) toast("이미 있는 모델이에요", true); else fbSave(L.id, [...list, { model: v }]); } });
+  } }, icon("add"), full ? "더 넣을 수 없어요" : "폴백 모델 추가");
+  const how = L.id === "workers" ? "작업자 폴백은 순서만 정해요. 조건·상한·API 키는 쓰지 않아요."
+    : F.harness && F.harness.id === "claude" ? "Claude Code는 Anthropic 모델만, 조건 없이 순서대로 넘어가요."
+    : "끌거나 화살표로 순서를 바꿔요. ⋯ 에서 조건(한도 소진 시·오류 시), 상한, API 키를 정해요.";
+  return {
+    sub: L.sub,
+    tags: F.harness ? [el("span", { class: "tag", title: "이 대상을 돌리는 하네스", text: F.harness.name })] : [],
+    body: [el("div", { class: "mt-fb" }, el("div", { class: "mt-fb-h" }, el("span", { class: "lb", text: "폴백 순서" }), el("span", { class: "sup", text: list.length ? `${list.length}개` : "없음" })), chain, add, el("div", { class: "note", text: how }))],
+  };
 }
 /* ---------- settings ---------- */
 /* ---------- installable app + web push (web/sw.js, /api/push in hub/push.ts) ---------- */
@@ -4327,20 +4359,19 @@ function pushSection() {
 
 function renderSettings() {
   const box = $("#settings");
-  if (fbDragging) return;
   if (box.contains(document.activeElement) && openMenu) return;
   const om = M && M.orchestrator;
   const connected = P ? P.providers.filter(isConnected).length : null;
   const row = (ic, title, sub, onclick, trail) => el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), sub ? el("span", { class: "sup", text: sub }) : null, trail === undefined ? icon("chev", "lead") : trail);
   const d = S && S.discord;
   clear(box).append(el("div", { class: "list" },
-    row("model", "모델", om ? modelName(om.model) : "", () => go("models")),
+    row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${om.thinking}` : "", () => openModels("orchestrator")),
     row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
     row("usage", "사용량", "", () => go("usage")),
     row("context", "컨텍스트", "", () => go("context")),
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null),
-    ...pushSection(), fbBlock(), ...rtSection());
+    ...pushSection(), ...rtSection());
 }
 
 /* ---------- settings: 실행 하네스 (runtime menu + compatibility check; data from /api/runtimes) ---------- */
@@ -4987,6 +5018,8 @@ function hOriginLine(n) {
   const extra = !mine && n.custom && n.custom.length ? ` · 설정값 ${n.custom.length}개는 이 사용자가 바꿨어요 (${hData()}/config.json)` : !mine && n.settings.some(s => s.editable) ? ` · 설정값은 ${hData()}/config.json 에 저장돼요` : "";
   return el("div", { class: "hs-or" }, ...tags, el("span", { text: text + extra }));
 }
+// 구성's model and effort settings (config.json models.<target>) open the 모델 · 폴백 screen instead of a change request.
+const H_MODEL_TARGET = { "orchestrator.model": "orchestrator", "orchestrator.thinking": "orchestrator", "lanes.model": "lanes", "lanes.thinking": "lanes", "lanes.worker_model": "workers", "lanes.worker_effort": "workers" };
 const hVal = v => (typeof v === "string" ? JSON.stringify(v) : String(v));
 
 // One setting: an editor matching its type, an apply-timing tag and a request button (nothing is written here).
@@ -4996,6 +5029,12 @@ function hSetting(s, drafts) {
   const [applyText, applyTone] = H_APPLY[s.applies] || ["", ""];
   const tag = el("span", { class: `tag ${s.pending ? "warn" : applyTone}`, text: s.pending ? "재시작 대기 중" : applyText });
   const note = el("div", { class: "note", text: s.hint || "" });
+  const mkey = !pj && (s.type === "model" || s.type === "effort") && H_MODEL_TARGET[s.key];
+  if (mkey) {
+    box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), el("span", { class: `tag ${applyTone}`, text: applyText })),
+      el("div", { class: "ctl" }, el("span", { class: "hs-ro", text: s.type === "model" ? modelName(s.value) : String(s.value) }), el("button", { class: "btn tonal", type: "button", onclick: () => openModels(mkey) }, "모델 · 폴백에서 바꾸기")));
+    return box;
+  }
   if (!s.editable) {
     box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), el("span", { class: "tag", text: "읽기 전용" })), el("div", { class: "hs-ro", text: String(s.value) }), s.hint ? note : el("div", { class: "note", text: "보안·연결 정보라 화면에서 바꿀 수 없어요." }));
     return box;
