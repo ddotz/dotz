@@ -4425,7 +4425,7 @@ async function updWaitTick() {
   if (info && info.boot !== UPD.wait.boot) {
     UPD.wait = null;
     UPD.info = info;
-    toast(`새 버전 ${info.running && info.running.commit ? info.running.commit.short : ""}으로 다시 시작했어요`);
+    toast(`다시 시작했어요 · 지금 버전 ${info.running && info.running.commit ? info.running.commit.short : "?"}`);
     if (current === "settings") renderSettings();
     return;
   }
