@@ -45,6 +45,8 @@ let stopping = false;
 let rotating = false;
 let restarting = false;
 let pendingRestart = false;
+// A model/effort change made while a turn ran: switched in place at turn_end (applyModelChange).
+let pendingModel = false;
 let turnsSinceStart = 0;
 let lastTurnEnd = Date.now();
 let keepalives = 0;
@@ -243,6 +245,9 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					else if (pendingRestart) {
 						pendingRestart = false;
 						restart();
+					} else if (pendingModel) {
+						pendingModel = false;
+						if (!switchInPlace()) restart();
 					} else {
 						proc?.refreshUsage();
 						flushCompact(orch.ctx, port);
@@ -446,14 +451,15 @@ function rotate(): void {
 export function start(): void {
 	if (proc) return;
 	stopping = false;
-	const { sessionFile: prior, model: priorModel, runtime: priorRuntime } = saved();
+	const { sessionFile: prior, runtime: priorRuntime } = saved();
 	const model = selectorOf(orchestratorModel());
 	const runtime = runtimeFor("orchestrator");
-	// Resuming a session on another model or thinking level re-writes the whole context to cache, so a model change
-	// starts a fresh session with a handover instead (omonyang rule "model change = fresh session"); so does a change of
-	// runtime (a session written by omp is not resumed by OmO; a state saved before the runtime was recorded is omp's).
-	const rotate = prior && existsSync(prior) && (rotating || statSync(prior).size > ROTATE_BYTES || (priorModel !== undefined && priorModel !== model) || (priorRuntime ?? "omp") !== runtime.id);
+	// A change of runtime starts a fresh session with a handover (a session written by omp is not resumed by OmO; a state
+	// saved before the runtime was recorded is omp's). A model or effort change does not: the session is resumed on the
+	// new model, as OmO does on /model (owner 2026-10-21: a fresh session on every switch reloaded the whole context).
+	const rotate = prior && existsSync(prior) && (rotating || statSync(prior).size > ROTATE_BYTES || (priorRuntime ?? "omp") !== runtime.id);
 	rotating = false;
+	pendingModel = false;
 	orch.ctx = newCtx();
 	turnsSinceStart = 0;
 	const resume = prior && existsSync(prior) && !rotate;
@@ -622,16 +628,35 @@ export function restart(): void {
 	}, 10_000);
 }
 
-// The model/thinking in config just changed: restart now when idle, after the running turn otherwise (a restart
-// would cut it off), or simply on the next start when no process is running.
-export function applyModelChange(): "restarted" | "next-start" {
+// The model/thinking in config just changed. The running process switches in place on its session (set_model /
+// set_thinking_level, no restart): now when idle, at the end of the running turn otherwise. On OmO an effort change on a
+// model with per-message effort (Opus 5.5, Sonnet 5.5, ...) keeps the prompt cache; a model change re-writes it once.
+// A process that cannot switch in place (on a fallback entry, or a runtime-owned fallback list) restarts and resumes.
+export function applyModelChange(): "live" | "restarted" | "next-start" {
 	if (!proc) return "next-start";
 	if (orch.status === "working") {
-		pendingRestart = true;
+		pendingModel = true;
 		return "next-start";
 	}
+	if (switchInPlace()) return "live";
 	restart();
 	return "restarted";
+}
+function switchInPlace(): boolean {
+	if (!proc?.setModel || !adapter || chained || orch.status !== "idle" || (chain && chain.active !== 0)) return false;
+	const model = selectorOf(orchestratorModel());
+	const driven = hubChain(adapter.id, chainAfter(model, fallbackChain("orchestrator")));
+	const next = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
+	if (next && next.initial() !== 0) return false;
+	proc.setModel(model);
+	chain = next;
+	capped = undefined;
+	currentModel = startedModel = orch.activeModel = model;
+	reverter.reset();
+	if (orch.sessionFile) save({ sessionFile: orch.sessionFile, model, runtime: adapter.id });
+	log(`orchestrator switched in place to ${model}`);
+	statusActivity("orchestrator", `orchestrator switched to ${model} on its session`);
+	return true;
 }
 
 // dotz's Claude account changed (hub/account-sticky.ts: a limit, or the owner pinned another): the process takes it at

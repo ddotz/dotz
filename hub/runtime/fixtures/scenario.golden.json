@@ -654,66 +654,35 @@
    "done long job"
   ],
   [
-   "kill",
+   "stdin",
    1,
-   "TERM"
+   {
+    "type": "set_model",
+    "provider": "anthropic",
+    "modelId": "test-orch"
+   }
+  ],
+  [
+   "stdin",
+   1,
+   {
+    "type": "set_thinking_level",
+    "level": "low"
+   }
   ],
   [
    "idle"
   ],
   [
-   "kill",
-   1,
-   9
-  ],
-  [
-   "exit",
-   1,
-   0
-  ],
-  [
-   "spawn",
-   2,
-   [
-    "--mode",
-    "rpc",
-    "--model",
-    "anthropic/test-orch:low",
-    "--extension",
-    "<REPO>/extension/index.ts",
-    "--resume",
-    "<DATA>/orch-session.jsonl"
-   ],
-   "<DATA>",
-   {
-    "DOTZ_ORCHESTRATOR": "1"
-   }
-  ],
-  [
-   "stdin",
-   2,
-   {
-    "type": "set_subagent_subscription",
-    "level": "progress"
-   }
-  ],
-  [
-   "stdin",
-   2,
-   {
-    "type": "get_state"
-   }
-  ],
-  [
    "snap",
-   "after pending restart",
-   "starting",
+   "after model switch",
+   "idle",
    "owner",
    "<DATA>/orch-session.jsonl",
    "done long job",
    [
-    0,
-    0,
+    1120,
+    200000,
     null,
     null,
     null
@@ -725,20 +694,13 @@
    "one"
   ],
   [
-   "stdin",
-   2,
-   {
-    "type": "get_session_stats"
-   }
+   "kill",
+   1,
+   "TERM"
   ],
   [
    "answer",
    "two"
-  ],
-  [
-   "kill",
-   2,
-   "TERM"
   ],
   [
    "idle"
@@ -748,12 +710,12 @@
   ],
   [
    "exit",
-   2,
+   1,
    0
   ],
   [
    "spawn",
-   3,
+   2,
    [
     "--mode",
     "rpc",
@@ -769,7 +731,7 @@
   ],
   [
    "stdin",
-   3,
+   2,
    {
     "type": "prompt",
     "message": "#5ilqz2s7omu4 [dotz gateway] You are tester, the dotz orchestrator hosted …"
@@ -777,7 +739,7 @@
   ],
   [
    "stdin",
-   3,
+   2,
    {
     "type": "set_subagent_subscription",
     "level": "progress"
@@ -801,12 +763,12 @@
   ],
   [
    "kill",
-   3,
+   2,
    "TERM"
   ],
   [
    "exit",
-   3,
+   2,
    0
   ],
   [
@@ -1102,13 +1064,7 @@
      "kind": "activity",
      "source": "orchestrator",
      "type": "status",
-     "text": "orchestrator exited (code 0)"
-    },
-    {
-     "kind": "activity",
-     "source": "orchestrator",
-     "type": "status",
-     "text": "orchestrator resumed its session (anthropic/test-orch:low)"
+     "text": "orchestrator switched to anthropic/test-orch:low on its session"
     },
     {
      "kind": "activity",
