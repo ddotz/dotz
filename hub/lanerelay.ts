@@ -6,7 +6,8 @@
 // - an untagged reply in an exchange between the owner and the lane alone (the orchestrator sent nothing since its last
 //   relayed report) is not a turn either: the owner read it in the lane channel;
 // - a report repeating the lane's last relayed one is dropped;
-// - reports arriving while the orchestrator is in a turn are batched into one prompt for its next idle point.
+// - a report arriving while the orchestrator is in a turn is steered into that turn at once (2026-10-20: held reports
+//   reached it after p90 368 s); only when the turn cannot take it are reports batched into one prompt for idle.
 import { parseTone, type Tone } from "./tone.ts";
 
 export type Relay = { lane: string; tone?: Tone; text: string; file: string };
@@ -15,14 +16,15 @@ export function relayItem(r: Relay): string {
 	return `- lane ${r.lane} status=${r.tone ?? "report"} (full: ${r.file})\n${r.text.trim()}`;
 }
 
-export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: string) => void; lead: (n: number) => string }) {
+export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: string) => void; lead: (n: number) => string; steer?: (text: string) => boolean }) {
 	const last = new Map<string, string>();
 	const held: Relay[] = [];
 	const norm = (t: string) => t.replace(/\s+/g, " ").trim();
-	const send = (items: Relay[]) => deps.deliver(`${deps.lead(items.length)}\n${items.map(relayItem).join("\n\n")}`);
+	const body = (items: Relay[]) => `${deps.lead(items.length)}\n${items.map(relayItem).join("\n\n")}`;
+	const send = (items: Relay[]) => deps.deliver(body(items));
 
-	/** A lane's report: "relayed" (now), "held" (batched for idle), "disk" (routine), "owner" (owner-only exchange) or "duplicate". */
-	function report(lane: string, text: string, file: string, ownerOnly = false): "relayed" | "held" | "disk" | "owner" | "duplicate" {
+	/** A lane's report: "relayed" (now), "steered" (into the running turn), "held" (batched for idle), "disk" (routine), "owner" (owner-only exchange) or "duplicate". */
+	function report(lane: string, text: string, file: string, ownerOnly = false): "relayed" | "steered" | "held" | "disk" | "owner" | "duplicate" {
 		const { tone } = parseTone(text);
 		if (tone === "run") return "disk";
 		if (!tone && ownerOnly && !/^\[lane [a-z]+\]/.test(text)) return "owner";
@@ -31,6 +33,7 @@ export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: str
 		last.set(lane, key);
 		const item = { lane, tone, text, file };
 		if (deps.busy()) {
+			if (deps.steer?.(body([item]))) return "steered";
 			// A newer report of the same lane replaces the held one: only its latest state matters.
 			const i = held.findIndex(h => h.lane === lane && h.tone !== "ask");
 			if (i >= 0 && tone !== "ask") held.splice(i, 1, item);
