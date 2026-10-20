@@ -122,7 +122,7 @@ const ownerish = e => OWNER.has(e.kind) || e.kind === "_cmdout";
 const ownerAct = e => ({ type: e.kind === "_cmdout" ? "cmdout" : "owner", ts: e.ts, text: e.text, is_error: e.is_error });
 // Same rule as the hub's eventTarget (hub/events.ts): which conversation an event belongs to.
 function eventTarget(e) {
-  if (e.kind === "activity" || e.kind === "subagents") return null;
+  if (e.kind === "activity" || e.kind === "subagents" || e.kind === "notice" || e.kind === "notice_read") return null;
   let lane = typeof e.lane === "string" ? e.lane : "";
   if (!lane) for (const v of [e.source, e.target, e.channel]) if (typeof v === "string" && v.startsWith("lane:")) { lane = v.slice(5); break; }
   if (lane) return `lane:${lane}`;

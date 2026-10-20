@@ -229,6 +229,7 @@ export const paths = {
 	inbox: join(DATA_DIR, "inbox.jsonl"),
 	outbox: join(DATA_DIR, "outbox.jsonl"),
 	log: join(DATA_DIR, "hub.log"),
+	notices: join(DATA_DIR, "notices.json"),
 	channels: join(DATA_DIR, "channels.json"),
 	lanes: join(DATA_DIR, "lanes"),
 	hubToken: join(DATA_DIR, "secrets", "hub-token"),

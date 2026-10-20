@@ -33,6 +33,7 @@ import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { createLaneRelay } from "./lanerelay.ts";
 import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin, usageSnapshot } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
+import { laneVerified, listNotices, markNoticesRead, setLaneTitleResolver, unreadCount } from "./notices.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, replyRef } from "./threads.ts";
 import { startReflection } from "./reflect.ts";
@@ -300,6 +301,8 @@ function authorized(req: Request): boolean {
 	return false;
 }
 
+setLaneTitleResolver(name => lanes.get(name)?.title);
+
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const body = async (req: Request) => {
 	try {
@@ -326,6 +329,13 @@ async function budgetProblem(name: string, est: number, force: boolean): Promise
 	return verdict && r ? `${verdict} (account ${r.account})` : verdict;
 }
 
+const readLastReport = (name: string): string => {
+	try {
+		return stripHandoff(readFileSync(join(paths.lanes, name, "report.md"), "utf8"));
+	} catch {
+		return "";
+	}
+};
 const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });
 setReportHandler((lane, raw, answering) => {
 	const text = stripHandoff(raw);
@@ -691,7 +701,9 @@ const server = Bun.serve({
 		if (url.pathname === "/api/health") return json({ ok: true });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)) });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount() });
+		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
+		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main";
@@ -1111,6 +1123,7 @@ const server = Bun.serve({
 				}
 				if (req.method === "POST" && parts[3] === "verify") {
 					verifyLane(parts[2], String((await body(req)).text ?? ""));
+					laneVerified(parts[2], readLastReport(parts[2]));
 					return json({ ok: true });
 				}
 				if (req.method === "POST" && parts[3] === "abort") {

@@ -6,6 +6,7 @@ async function refreshState() {
   try {
     S = await api("/api/state?limit=0");
     setConn(true);
+    ntSync(S);
     if (S.name && S.name !== botName) { botName = S.name; setBrand(); if (current === "home") $("#title").textContent = botName; if (ts(target).hLoaded) renderAll(); }
     // A lane that exits disappears at once: the view falls back to the main assistant (it stays reachable from ⌘K).
     if (isLaneT(target) && (!S.lanes.some(l => `lane:${l.name}` === target) || (PREV[target] && PREV[target] !== "exited" && targetInfo(target).status === "exited"))) setTarget(MAIN);
