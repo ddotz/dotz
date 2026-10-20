@@ -209,6 +209,15 @@
    }
   ],
   [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#1dh6uu6eo5j9s during compaction\n\nBefore continuing, save any durable owner…",
+    "streamingBehavior": "followUp"
+   }
+  ],
+  [
    "snap",
    "compacted",
    "idle",
@@ -256,7 +265,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#2fdczo4y5flc8 before limit\n\nBefore continuing, save any durable owner, pro…",
+    "message": "before limit",
     "streamingBehavior": "followUp"
    }
   ],
@@ -611,6 +620,15 @@
    {
     "type": "set_subagent_subscription",
     "level": "progress"
+   }
+  ],
+  [
+   "stdin",
+   1,
+   {
+    "type": "prompt",
+    "message": "are you there",
+    "streamingBehavior": "followUp"
    }
   ],
   [
@@ -1330,6 +1348,14 @@
    }
   ],
   [
+   "stdin",
+   0,
+   {
+    "type": "prompt",
+    "message": "#37v4r014i05z7 during compaction\nBefore continuing, save any durable owner,…"
+   }
+  ],
+  [
    "snap",
    "compacted",
    "idle",
@@ -1368,7 +1394,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#2tj0g7td63f6k go on\nBefore continuing, save any durable owner, project or …"
+    "message": "go on\n(Answer the owner in English.)"
    }
   ],
   [

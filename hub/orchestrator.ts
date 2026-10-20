@@ -52,6 +52,10 @@ let lastTurnEnd = Date.now();
 let keepalives = 0;
 let inKeepalive = false;
 const held: { text: string; header: boolean }[] = [];
+// Owner prompts sent to the process while no turn has started since (cleared at turn_start). A process that exits or is
+// killed by the watchdog first would lose them (2026-10-21 01:02 KST: a web message sent during a compaction was never
+// answered), so they are held again and go to the next process.
+const unstarted: { text: string; header: boolean }[] = [];
 // A process started with a fallback chain: after a failed request the runtime may move to the next model by itself and
 // redo the turn, so the failure is acted on (pause, retry, alert) only when no such switch follows within a short grace.
 const FALLBACK_GRACE_MS = 3000;
@@ -82,6 +86,7 @@ function sendOwner(text: string, header = false): void {
 	retainNext = false;
 	asksNext = false;
 	const line = header ? turnHeader() : "";
+	if (proc) unstarted.push({ text, header });
 	proc?.send((line ? `${line}\n` : "") + text + nudge + (asks ? `\n\n${asks}` : ""), "followUp");
 }
 // Switches the process back to its configured model once that is due: before a prompt starts a turn (a refusal, a provider
@@ -226,6 +231,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 			case "turn_start":
 				clearTimeout(errorHold);
 				orch.status = "working";
+				unstarted.length = 0;
 				clearTimeout(watchdog);
 				clearTimeout(transientTimer);
 				transientTimer = undefined;
@@ -315,6 +321,13 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					log(`orchestrator compaction failed (${ev.error.slice(0, 160)}); moving to a fresh session with a handover`);
 					if (orch.status === "idle") rotate();
 					else rotateWhenIdle = true;
+				}
+				// Owner prompts that arrived during the compaction go in now (OmO refuses a prompt while a requested
+				// compaction runs).
+				if (!compacting() && !rotating && orch.status === "idle" && held.length) {
+					log(`orchestrator compaction over; delivering ${held.length} prompt(s) that arrived during it`);
+					for (const h of held.splice(0)) sendOwner(h.text, h.header);
+					armWatchdog();
 				}
 				break;
 			case "fallback": {
@@ -499,6 +512,8 @@ export function start(): void {
 		orch.status = "stopped";
 		clearTimeout(errorHold);
 		abandonCompact(orch.ctx, "the orchestrator process exited");
+		if (unstarted.length) log(`orchestrator exited with ${unstarted.length} prompt(s) it never started; holding them for the next process`);
+		held.unshift(...unstarted.splice(0));
 		log(`orchestrator exited (${code})`);
 		statusActivity("orchestrator", `orchestrator exited (code ${code})`);
 		if (stopping) return;
@@ -581,7 +596,8 @@ setInterval(() => {
 
 // `owner` marks a prompt that carries an owner message (it gets the what-runs-now line); lane reports and gateway notes do not.
 export function deliver(text: string, owner = false): void {
-	if (rotating || restarting || orch.status === "rate-limited") {
+	// A prompt sent while a requested compaction runs is refused by OmO and was lost; it waits for the compaction's end.
+	if (rotating || restarting || orch.status === "rate-limited" || orch.ctx.compaction.state === "compacting") {
 		held.push({ text, header: owner });
 		return;
 	}
