@@ -1636,7 +1636,8 @@ async function deleteEnded(names) {
   });
   if (!sure) return;
   try {
-    const r = await api("/api/lanes/delete", "POST", { names });
+    // 409 = nothing could be deleted; its body carries the same per-lane results, shown as the calm note below.
+    const r = await api("/api/lanes/delete", "POST", { names }).catch(e => { if (e.data && e.data.results) return e.data; throw e; });
     const ok = r.results.filter(x => x.ok), bad = r.results.filter(x => !x.ok);
     endedSel = null;
     if (S && S.lanes) S.lanes = S.lanes.filter(l => !ok.some(x => x.name === l.name));
@@ -1648,7 +1649,7 @@ async function deleteEnded(names) {
 }
 // Lanes the gateway refused to delete: a calm note with the reason in plain words, not an error (lanetrash.ts reasons).
 const keptWhy = err => /uncommitted/i.test(err) ? "아직 커밋하지 않은 변경이 있어요. 커밋하거나 정리하면 지울 수 있어요."
-  : /live|running|working|busy/i.test(err) ? "아직 돌고 있어요. 멈춘 뒤에 지울 수 있어요."
+  : /live|running|working|busy|실행 중|작업 중/i.test(err) ? "아직 돌고 있어요. 멈춘 뒤에 지울 수 있어요."
   : "작업 폴더를 정리하지 못했어요. 잠시 뒤에 다시 해 보세요.";
 function keptLanes(bad) {
   dialog({ title: bad.length === 1 ? `${bad[0].name} 레인은 그대로 뒀어요` : `레인 ${bad.length}개는 그대로 뒀어요`,
@@ -1658,7 +1659,7 @@ function keptLanes(bad) {
 }
 async function restoreEnded(ids) {
   try {
-    const r = await api("/api/lanes/restore", "POST", { ids });
+    const r = await api("/api/lanes/restore", "POST", { ids }).catch(e => { if (e.data && e.data.results) return e.data; throw e; });
     const bad = r.results.filter(x => !x.ok);
     toast(bad.length ? `${bad.length}개는 되돌리지 못했어요. 휴지통에 그대로 있어요` : "되돌렸어요", bad.length > 0);
     refreshState();
