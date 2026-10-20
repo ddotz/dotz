@@ -579,6 +579,9 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .pn .mt { flex: none; }
 .sn { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 10px 14px; border-radius: 12px; background: var(--layer); font-size: 14px; line-height: 22px; }
 .sn .st { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sn .ml-from { font-weight: 600; color: var(--fg); }
+.sn .ml-subj { color: var(--fg); }
+.sn .ml-snip { color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .md p { margin: 0 0 6px; } .md p:last-child { margin-bottom: 0; }
 .md ul, .md ol { margin: 0 0 6px; padding-left: 20px; }
 .md code { padding: 1px 4px; border-radius: 4px; background: var(--layer); font-size: .92em; }
@@ -2298,12 +2301,19 @@ function nowLine(t) {
   for (let i = acts.length - 1; i >= 0 && i >= acts.length - 40; i--) { const s = actLine(acts[i]); if (s) return s; }
   if (isLaneT(t) && LAST[laneOf(t)]) return LAST[laneOf(t)];
   const l = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null, last = t === MAIN ? (S && S.orchestrator && S.orchestrator.lastText) : l && l.lastText;
-  return last ? oneLine(parseTone(String(last)).text) : "";
+  return last ? oneLine(parseTone(noHandoff(String(last))).text) : "";
+}
+// Same rule as hub/tone.ts stripHandoff: the agent's leading "Ask: ... For you: ... Next: ..." block is not shown.
+function noHandoff(text) {
+  const m = /^\s*Ask:[^\n]*(?:\n(?!\s*\n)[^\n]*)*/.exec(text);
+  if (!m || !/\bFor you:/.test(m[0])) return text;
+  const rest = text.slice(m[0].length).replace(/^\s+/, "");
+  return rest || ((/\bFor you:\s*([\s\S]*?)(?:\s+Now:[\s\S]*)?$/.exec(m[0]) || [])[1] || "").trim() || text;
 }
 function askOf(t) {
   if (!isLaneT(t) || !S) return false;
   const l = S.lanes.find(x => x.name === laneOf(t));
-  return !!(l && l.lastText && parseTone(String(l.lastText)).tone === "ask" && l.status !== "working");
+  return !!(l && l.lastText && parseTone(noHandoff(String(l.lastText))).tone === "ask" && l.status !== "working");
 }
 function homeNowRow(t, label, tone) {
   const i = targetInfo(t), subs = SUBS[sourceOf(t)] || [], done = subs.filter(s => s.status !== "running").length;
@@ -2325,11 +2335,11 @@ function renderHomeNow() {
   const run = [...all].sort((a, b) => rank(a) - rank(b));
   const working = run.filter(t => rank(t) < 2).length;
   clear(box).append(
-    el("div", { class: "hn-h" }, el("h2", { text: "형 답 필요" }), need.length ? el("span", { class: "sup", text: `${need.length}` }) : null),
+    el("div", { class: "hn-h" }, el("h2", { text: `${S && S.address ? `${S.address} ` : ""}답 필요` }), need.length ? el("span", { class: "sup", text: `${need.length}` }) : null),
     el("div", { class: "hn" }, ...(need.length ? need.map(x => homeNowRow(x.t, NEED[x.k], "att")) : [el("div", { class: "empty", text: "기다리는 것 없어요" })])),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
     el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", ""))),
-    endedGroup());
+    endedGroup() || "");
 }
 function renderHome() {
   const box = $("#home");
@@ -2658,11 +2668,21 @@ function msgNode(e) {
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, el("pre", { text }), el("div", { class: "mt", text: hm }));
     case "lane_start": return el("div", { class: "a-div", text: `레인 시작 · ${hm}` });
-    case "schedule": case "watch": case "mail":
+    case "mail": {
+      const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
+      const subj = f("subject"), acct = (text.match(/^new mail \(([^)]*)\)/m) || [])[1] || "";
+      const snip = (text.match(/^snippet: ?([\s\S]*)$/m) || [])[1] || "";
+      const from = f("from").replace(/\s*<[^>]+>\s*$/, "").replace(/^"|"$/g, "") || f("from");
+      if (subj) return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL.mail }), el("div", { class: "st" },
+        el("div", { class: "ml-from", text: from }), el("div", { class: "ml-subj", text: subj }), snip ? el("div", { class: "ml-snip", text: snip.trim() }) : null,
+        el("div", { class: "mt", text: [hm, acct].filter(Boolean).join(" · ") })));
+    }
+    // falls through: a mail without a subject line shows as plain text
+    case "schedule": case "watch":
       return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL[e.kind] }), el("div", { class: "st" }, mdNode(text), el("div", { class: "mt", text: hm })));
     default: {
       const isNote = e.kind === "out" && ((typeof e.source === "string" && e.source.startsWith("lane:")) || (e.update_key && typeof e.target === "string" && e.target.startsWith("lane:")));
-      const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(text) : { tone: "", text };
+      const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text)) : { tone: "", text };
       const body = (tone ? `${TONE_EMOJI[tone]} ` : "") + parsed;
       if (isNote) {
         const n = el("div", { class: "pn", tabindex: "0", role: "button" }, el("span", { class: "mt", text: hm }), el("span", { class: "pt", text: body.replace(/^((?:✅|⏳|❓|❌) )?진행 중:\s*/, "$1") }));

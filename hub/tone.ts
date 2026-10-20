@@ -20,6 +20,17 @@ export function parseTone(text: string): { tone?: Tone; text: string } {
 	return m ? { tone: TAGS[m[1]!.toLowerCase()], text: text.slice(m[0].length) } : { text };
 }
 
+// OmO's harness opens a final answer with a handoff block ("Ask: ... - wanted: ... For you: ... Now: ... Next: ..."): agent
+// bookkeeping, not owner text. Shown messages drop that leading paragraph; a message that was only the block keeps its
+// "For you" part. Claim and report parsing read the raw text.
+export function stripHandoff(text: string): string {
+	const m = /^\s*Ask:[^\n]*(?:\n(?!\s*\n)[^\n]*)*/.exec(text);
+	if (!m || !/\bFor you:/.test(m[0])) return text;
+	const rest = text.slice(m[0].length).replace(/^\s+/, "");
+	if (rest) return rest;
+	return /\bFor you:\s*([\s\S]*?)(?:\s+Now:[\s\S]*)?$/.exec(m[0])?.[1]?.trim() || text;
+}
+
 // Rewrites (or drops, on undefined) meta lines outside ``` fences, in place.
 function mapMeta(text: string, fn: (line: string) => string | undefined): string {
 	let fence = false;
