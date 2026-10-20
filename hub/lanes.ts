@@ -84,7 +84,8 @@ export type Lane = Record_ & {
 	startedModel?: string;
 	// The owner message a cross-runtime resume refused; it goes along with the handover once the owner accepts it.
 	pendingHandover?: string;
-	// dotz's Claude account changed while this process ran: it is restarted on its session at the next idle moment.
+	// dotz's Claude account or the lanes' fallback chain changed while this process ran: it is restarted on its session at the
+	// next idle moment.
 	accountStale?: boolean;
 };
 
@@ -970,6 +971,32 @@ export function shutdownLanes(): void {
 export function applyAccountChange(): void {
 	for (const lane of lanes.values()) if (lane.proc) lane.accountStale = true;
 	restartStaleLanes();
+}
+// The lanes' fallback chain in config changed (hub/control.ts setFallback), as the orchestrator's (orchestrator.ts
+// applyChainChange): an OmO lane on its primary takes the new chain in place, a lane paused on a limit restarts now (held
+// messages go in with the resume note), and a lane on a fallback entry restarts on its session at its next idle moment.
+export function applyChainChange(): void {
+	for (const lane of lanes.values()) {
+		if (!lane.proc) continue;
+		if (lane.status === "rate-limited") {
+			if (!lane.pausing) void restartPaused(lane).catch(e => log(`lane ${lane.name} restart for the new fallback chain failed: ${(e as Error).message}`));
+		} else if (lane.runtime === "omo" && (!lane.chain || lane.chain.active === 0)) {
+			const driven = hubChain("omo", chainAfter(lane.model, fallbackChain("lanes")));
+			lane.chain = driven ? new Chain(lane.model, driven, parseSelector(lane.model).thinking) : undefined;
+			lane.capped = undefined;
+		} else lane.accountStale = true;
+	}
+	restartStaleLanes();
+}
+async function restartPaused(lane: Lane): Promise<void> {
+	clearTimeout(lane.resumeTimer);
+	lane.resumeTimer = undefined;
+	const old = lane.proc!;
+	lane.quiet = true;
+	old.kill();
+	await old.exited;
+	setStatus(lane, "idle");
+	resumeLane(lane, msg().laneRate);
 }
 function restartStaleLanes(): void {
 	for (const lane of lanes.values()) {
