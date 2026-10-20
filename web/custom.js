@@ -248,15 +248,15 @@ button.pv-res:hover { background: var(--card-hover); }
     const sub = t => !side && t ? el("span", { class: "cu-m", text: t }) : null;
     const projects = (D.projects || []).map(p => {
       const on = side && current === "project" && projKey === p.key, ls = p.lanes || [];
-      const running = ls.filter(l => l.live).length, waiting = ls.filter(l => l.waiting).length;
+      const running = ls.filter(l => l.live && l.status !== "idle").length, waiting = ls.filter(l => l.waiting).length;
       if (!side) {
         // Phone 바로가기: one tile per project with what is going on there.
-        const state = waiting ? `답을 기다리는 레인 ${waiting}` : running ? `도는 레인 ${running}` : ls.length ? `레인 ${ls.length}개 · 쉬는 중` : "레인 없음";
+        const state = waiting ? `답을 기다리는 레인 ${waiting}` : running ? `작업 중인 레인 ${running}` : ls.length ? `레인 ${ls.length}개 · 쉬는 중` : "레인 없음";
         return el("button", { class: "pv-ptile", type: "button", onclick: () => go("project", p.key) },
           el("span", { class: "pv-ptn", text: p.name }), p.path ? el("span", { class: "pv-path", text: p.path }) : null,
           el("span", { class: "pv-pts" }, el("span", { class: `dot ${waiting ? "att" : running ? "pri" : ""}` }), el("span", { text: state })));
       }
-      const badge = waiting ? el("span", { class: "dot att", title: `답을 기다리는 레인 ${waiting}` }) : running ? el("span", { class: "pv-cnt", title: `도는 레인 ${running}`, text: String(running) }) : null;
+      const badge = waiting ? el("span", { class: "dot att", title: `답을 기다리는 레인 ${waiting}` }) : running ? el("span", { class: "pv-cnt", title: `작업 중인 레인 ${running}`, text: String(running) }) : null;
       return el("button", { class: `${base}${on ? " on" : ""}`, type: "button", title: p.path || p.name, onclick: () => go("project", p.key) },
         icon("lanes"), el("span", { class: nm, text: p.name }), badge);
     });
@@ -365,7 +365,7 @@ button.pv-res:hover { background: var(--card-hover); }
     const rs = (D && D.results) || [], last = rs.find(r => r.kind === "report") || rs[0];
     const lastRow = last ? el("div", { class: "pv-last" }, el("span", { class: "cu-m", text: last.kind === "report" ? `${last.lane} 마지막 보고` : `마지막 ${KIND[last.kind] || ""}` }), el("span", { class: "pv-lx", text: last.title || "" }), el("span", { class: "cu-m", text: when(last.at) })) : null;
     return el("div", { class: "card pv-ov" }, facts, el("div", { class: "pv-stats" },
-      tile(s.running ?? 0, "돌고 있는 레인", s.running ? "pri" : ""),
+      tile(s.running ?? 0, "작업 중인 레인", s.running ? "pri" : ""),
       tile(s.waiting ?? 0, "답을 기다리는 레인", s.waiting ? "att" : ""),
       tile(D ? tasks.length : "…", "열린 할 일"),
       tile(s.lastActivity ? ago(s.lastActivity) : D ? "기록 없음" : "…", "마지막 활동")), lastRow);

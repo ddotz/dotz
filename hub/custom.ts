@@ -515,7 +515,7 @@ export function projectDetailView(d: DetailInput) {
 	const lastActivity = Math.max(0, ...lanes.map(l => at(l.finishedAt)), ...rows.map(l => (l.live ? at(String(l.startedAt ?? "")) : 0)), ...results.map(r => at(r.at)));
 	return {
 		key: p.key,
-		summary: { lanes: lanes.length, running: lanes.filter(l => l.live).length, waiting: lanes.filter(l => l.waiting).length, ...(lastActivity ? { lastActivity: new Date(lastActivity).toISOString() } : {}) },
+		summary: { lanes: lanes.length, running: lanes.filter(l => l.live && l.status !== "idle").length, waiting: lanes.filter(l => l.waiting).length, ...(lastActivity ? { lastActivity: new Date(lastActivity).toISOString() } : {}) },
 		lanes,
 		results: results.slice(0, 15),
 		...(d.git ? { repo: d.git } : {}),
