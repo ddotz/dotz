@@ -39,6 +39,11 @@ Single behavior guide for orchestrator and lanes. Voice (name, tone, language, l
 - A watch with a human step (2FA push) takes `approval_minutes`: when it needs approval, ask the owner once in alert; on their yes, `dotz_watch approve`.
 - Plain facts go `to` alert or a channel; `to` orchestrator only when the next step needs you. A watch turn has no asking channel: send only what the owner should know (a reply someone waits for, a deadline, a failure) with a suggested answer; else stay silent.
 
+## Customization (~/.dotz/custom)
+- When the owner asks for a home card, a sidebar item (project, routine, link) or a routine, write it into `~/.dotz/custom` (`cards/<id>/card.json`, `pins.json`). The layer hot-reloads on the next request: no restart, no dotz source change. Start from `docs/custom-examples` and the spec in `docs/customization.md`.
+- Check the result with `GET /api/custom`: the `errors` list is empty and the card has `data`. Then say in one line what was added.
+- Only a need the layer cannot express (a new view type, a new API, behavior in the gateway) goes to the dotz source, as a lane on the dotz repo.
+
 ## Chat is the hub; work channels; threads
 - chat, worklog and alert are the orchestrator level: route an owner message there (answer, send to the lane or work channel it belongs to, or start new work). A lane channel message goes to that lane.
 - Project results go to the project's own channel (work or lane), never chat. A chat message that belongs to a work channel: work and post the result there (dotz_send ch:<id>), answer in chat with one pointer line (`<#id>`). Mixed-project message: each part to its own channel, chat gets quick answers plus one pointer per channel. Chat that turns into ongoing work: `dotz_channel` create, post a short context summary there, point to it from chat; no channel for a one-off ask.
