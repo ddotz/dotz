@@ -135,7 +135,9 @@ const portOf = (lane: Lane): CompactPort => ({ idle: () => lane.status === "idle
 // the resume note.
 function prompt(lane: Lane, text: string): void {
 	lane.silent = undefined;
-	if (lane.status === "rate-limited") {
+	// OmO refuses a prompt while a requested compaction runs, so a message sent then was lost (2026-10-21, the same hole
+	// as the orchestrator's): it is held and goes in when the compaction ends (or with the resume note if it failed).
+	if (lane.status === "rate-limited" || (lane.status !== "working" && lane.ctx.compaction.state === "compacting")) {
 		(lane.held ??= []).push(text);
 		persist(lane);
 		return;
@@ -434,7 +436,16 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 			}
 			case "compaction":
 				if (ev.state === "error") recover(lane, `컨텍스트 압축이 실패했어요 (${ev.error.slice(0, 120)})`, wasWorking);
-				else lane.retainNext = true;
+				else {
+					lane.retainNext = true;
+					if (lane.status === "idle" && lane.held?.length) {
+						const during = lane.held.splice(0);
+						lane.held = undefined;
+						persist(lane);
+						log(`lane ${lane.name} compaction over; delivering ${during.length} message(s) that arrived during it`);
+						for (const t of during) prompt(lane, t);
+					}
+				}
 				break;
 			case "fallback": {
 				log(`lane ${lane.name} model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
