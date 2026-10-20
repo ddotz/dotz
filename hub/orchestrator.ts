@@ -637,6 +637,41 @@ export function applyModelChange(): "restarted" | "next-start" {
 // dotz's Claude account changed (hub/account-sticky.ts: a limit, or the owner pinned another): the process takes it at
 // its next start, now when idle, after the running turn otherwise. No keepalive pings until the next real turn: a ping
 // right after a switch would pay the whole prefix on the new account for nothing (2 of the 4 switches of 2026-10-20 did).
+// The orchestrator's fallback chain in config changed (hub/control.ts setFallback). A hub-driven chain is built at start,
+// so: on OmO, while the process runs its primary, the new chain replaces the old one in place (no restart; the next failure
+// walks it). A process paused on a limit restarts at once so held messages go to the new chain; the primary's usage limit
+// is recorded first, so it starts on the first usable entry and comes back by the revert rule once the limit resets. A
+// process on a fallback entry (or on omp, whose chain is its spawn list) restarts on its session when idle.
+export function applyChainChange(): "updated" | "restarted" | "after-turn" | "next-start" {
+	const paused = orch.status === "rate-limited";
+	if (!proc && !paused) return "next-start";
+	const model = currentModel || selectorOf(orchestratorModel());
+	const driven = adapter ? hubChain(adapter.id, chainAfter(model, fallbackChain("orchestrator"))) : undefined;
+	const fresh = () => (driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined);
+	if (paused) {
+		const until = Date.parse(orch.rateLimitedUntil ?? "");
+		const next = fresh();
+		if (next && orch.pauseKind === "rate" && until > Date.now() && !next.down(0)) next.fail("quota", until);
+		clearTimeout(resumeTimer);
+		resumeTimer = undefined;
+		pauseAlerted = false;
+		continueAfterSwitch = Boolean(proc);
+		restart();
+		return "restarted";
+	}
+	if (adapter?.id === "omo" && (!chain || chain.active === 0)) {
+		chain = fresh();
+		capped = undefined;
+		return "updated";
+	}
+	if (orch.status === "working") {
+		pendingRestart = true;
+		return "after-turn";
+	}
+	restart();
+	return "restarted";
+}
+
 export function applyAccountChange(): "restarted" | "after-turn" | "next-start" {
 	keepalives = KEEPALIVE_MAX;
 	if (!proc) return "next-start";

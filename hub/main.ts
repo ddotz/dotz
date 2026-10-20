@@ -35,6 +35,7 @@ import { featureCatalog, syncFeatureWatches } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
 import { customRoute, syncRoutineSchedules } from "./custom.ts";
+import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { startOmpUpdate } from "./update.ts";
 import { startSelfUpdate, updateRoute } from "./selfupdate.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
@@ -558,6 +559,20 @@ const server = Bun.serve({
 		if (updateResponse) return updateResponse;
 		const customResponse = await customRoute(req, url, { lanes: laneSummary, channels: () => discord.channels, send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }) });
 		if (customResponse) return customResponse;
+		// API keys for fallback entries (hub/apikey-store.ts): GET shows masks only; PUT {provider, key} or {from: "omo"}; DELETE /api/apikeys/<provider>.
+		if (parts[0] === "api" && parts[1] === "apikeys") {
+			try {
+				if (req.method === "GET" && parts.length === 2) return json(keysView());
+				if (req.method === "PUT" && parts.length === 2) {
+					const b = await body(req);
+					return json(b.from === "omo" ? await importOmoKey() : await saveKey(String(b.provider ?? ""), String(b.key ?? "")));
+				}
+				if (req.method === "DELETE" && parts.length === 3) return json(deleteKey(parts[2]));
+				return json({ error: "not found" }, 404);
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof ControlError ? error.status : 400);
+			}
+		}
 		if (url.pathname === "/api/health") return json({ ok: true });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
