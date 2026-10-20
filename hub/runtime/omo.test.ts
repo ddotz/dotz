@@ -6,7 +6,7 @@ import dotz, { shellText } from "../../extension/index.ts";
 import { jsonZod, params } from "../../extension/schema.ts";
 import { eventsFromFrame } from "./omp.ts";
 import { hostsOf, listHosts } from "./omo-hosts.ts";
-import { omoArgs, omoSelector, translateFrame, WORKER_CATEGORIES, WORKER_RULE, writeWorkerProfile } from "./omo.ts";
+import { ORCHESTRATOR_WORKERS, omoArgs, omoSelector, translateFrame, WORKER_CATEGORIES, WORKER_RULE, WORKER_TASK, writeOrchestratorProfile, writeWorkerProfile } from "./omo.ts";
 
 test("a lane's worker model becomes a dotz profile of omo.json: every category on it, then its fallbacks; other keys stay", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
@@ -105,14 +105,26 @@ test("on a host without zod (OmO) every orchestrator and lane tool registers: a 
 	expect(await load("DOTZ_LANE")).toContain("dotz_verify");
 });
 
-test("a lane's OmO task worker (lane environment + OMO_SENPI_TASK_DEPTH) gets the output caps, the owner's rules and the 5-minute cache, but no lane tools", async () => {
+test("the orchestrator's task workers get a dotz profile too: child processes (so dotz loads in them), memory off, the owner's categories untouched", () => {
+	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
+	writeFileSync(file, JSON.stringify({ categories: { quick: { model: "x/y" } }, profiles: { mine: { categories: {} } } }));
+	expect(writeOrchestratorProfile(file)).toBe(ORCHESTRATOR_WORKERS);
+	const doc = JSON.parse(readFileSync(file, "utf8"));
+	expect(doc.categories).toEqual({ quick: { model: "x/y" } });
+	expect(doc.profiles.mine).toEqual({ categories: {} });
+	// No categories key: OmO layers a profile over the base config, so the workers keep the owner's category models.
+	expect(doc.profiles[ORCHESTRATOR_WORKERS]).toEqual({ task: WORKER_TASK, memory: { enabled: false } });
+});
+
+for (const [role, value] of [["DOTZ_LANE", "probe"], ["DOTZ_ORCHESTRATOR", "1"]] as const)
+test(`an OmO task worker of ${role === "DOTZ_LANE" ? "a lane" : "the orchestrator"} (its environment + OMO_SENPI_TASK_DEPTH) gets the output caps, the owner's rules and the 5-minute cache, but none of its tools`, async () => {
 	const names: string[] = [];
 	const handlers: Record<string, (e: any, ctx?: any) => any> = {};
 	const host = new Proxy({ registerTool: (t: { name: string }) => names.push(t.name), on: (n: string, fn: (e: any) => any) => (handlers[n] = fn) } as Record<string, unknown>, {
 		get: (o, k) => (k in o ? o[k as string] : k === "then" || k === "zod" ? undefined : () => undefined),
 	});
 	const saved = { ...process.env };
-	process.env.DOTZ_LANE = "probe";
+	process.env[role] = value;
 	process.env.OMO_SENPI_TASK_DEPTH = "1";
 	try {
 		await dotz(host);

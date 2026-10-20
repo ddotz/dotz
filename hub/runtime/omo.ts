@@ -51,26 +51,36 @@ const categoryModel = (selector: string) => {
 };
 
 // Returns the profile name, or undefined when the file cannot be written (OmO reads omo.jsonc first, and dotz does not
-// rewrite a commented file; an unreadable omo.json is left alone): the lane then runs its workers on OmO's categories.
-export function writeWorkerProfile(lane: { workerModel: string; workerFallback?: string[] }, file = omoConfigFile()): string | undefined {
-	const name = workerProfileName(lane.workerModel);
+// rewrite a commented file; an unreadable omo.json is left alone): the process then runs its workers on OmO's defaults.
+function writeProfile(name: string, profile: Record<string, unknown>, file: string): string | undefined {
 	if (existsSync(file.replace(/\.json$/, ".jsonc"))) {
-		log(`omo: ${file}c exists; lane workers keep OmO's own category models`);
+		log(`omo: ${file}c exists; ${name} is not written, task workers keep OmO's defaults`);
 		return undefined;
 	}
 	let doc: Record<string, unknown> = {};
 	try {
 		if (existsSync(file)) doc = JSON.parse(readFileSync(file, "utf8"));
 	} catch (e) {
-		log(`omo: ${file} is not readable JSON (${(e as Error).message}); lane workers keep OmO's own category models`);
+		log(`omo: ${file} is not readable JSON (${(e as Error).message}); ${name} is not written, task workers keep OmO's defaults`);
 		return undefined;
 	}
-	const models = [lane.workerModel, ...(lane.workerFallback ?? [])].map(categoryModel);
-	const profiles = { ...(doc.profiles as Record<string, unknown> | undefined), [name]: { task: WORKER_TASK, memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) } };
+	const profiles = { ...(doc.profiles as Record<string, unknown> | undefined), [name]: profile };
 	mkdirSync(dirname(file), { recursive: true });
 	writeAtomic(file, `${JSON.stringify({ ...doc, profiles }, null, 2)}\n`);
 	return name;
 }
+
+export function writeWorkerProfile(lane: { workerModel: string; workerFallback?: string[] }, file = omoConfigFile()): string | undefined {
+	const models = [lane.workerModel, ...(lane.workerFallback ?? [])].map(categoryModel);
+	return writeProfile(workerProfileName(lane.workerModel), { task: WORKER_TASK, memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) }, file);
+}
+
+// The orchestrator's own task workers had the same gap: OmO's shared rpc host, no dotz, no output caps. Its profile only
+// moves them into child processes (WORKER_TASK) and turns OmO memory off as for lane workers; it has no categories, and OmO
+// layers a profile over the base config, so they keep the owner's category models and every tool (a child gets the
+// parent's extensions, not its --exclude-tools).
+export const ORCHESTRATOR_WORKERS = "dotz-orchestrator-workers";
+export const writeOrchestratorProfile = (file = omoConfigFile()) => writeProfile(ORCHESTRATOR_WORKERS, { task: WORKER_TASK, memory: { enabled: false } }, file);
 
 // OmO names its compaction frames compaction_start/compaction_end (omp: auto_compaction_*). A requested compaction is
 // answered by the `compact` response already, so its end frame is dropped instead of reporting it twice.
@@ -132,7 +142,7 @@ export const omo: RuntimeAdapter = {
 	// claude-sdk-oauth stream drops the cacheWrite1h field, so nothing here reads that field.
 	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact" },
 	start(o) {
-		const profile = o.lane ? writeWorkerProfile(o.lane) : undefined;
+		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? writeOrchestratorProfile() : undefined;
 		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...process.env, ...o.env, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
