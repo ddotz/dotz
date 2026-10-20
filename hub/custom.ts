@@ -11,6 +11,7 @@ import { loadProjects, type ProjectRecord } from "./projects.ts";
 import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
 import { parseTone } from "./tone.ts";
 import { exec, listWatches } from "./watch.ts";
+import { getSetup } from "./workchannels.ts";
 
 export const VIEWS = ["text", "stat", "list", "kv"] as const;
 export type View = (typeof VIEWS)[number];
@@ -23,7 +24,7 @@ export type Link = { name: string; url: string };
 export type Pins = { projects: PinProject[]; hide_projects: string[]; routines: Routine[]; links: Link[] };
 export type CustomError = { file: string; error: string };
 export type ProjectLane = { name: string; title?: string; status: string; live: boolean; startedAt?: string; lastReportAt?: string; waiting?: boolean; lastText: string; reports: number; channel?: string };
-export type Project = { key: string; name: string; path?: string; note?: string; pinned: boolean; channel?: { id: string; name: string }; record?: ProjectRecord; lanes: ProjectLane[] };
+export type Project = { key: string; name: string; path?: string; note?: string; pinned: boolean; channel?: { id: string; name: string }; record?: ProjectRecord; recordKey?: string; lanes: ProjectLane[] };
 export type ChannelsIn = { work?: Record<string, string>; homes?: Record<string, string>; lanes?: Record<string, string>; threads?: Record<string, { parent?: string; name?: string }> };
 export type CustomDeps = {
 	lanes: () => Array<Record<string, unknown>>;
@@ -423,7 +424,10 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 	}
 	for (const p of projects.values()) {
 		if (!p.pinned) p.name = (p.channel && work[p.channel.id]) || [...p.lanes].reverse().find(l => l.title)?.title || p.name;
-		const record = input.records?.[p.key];
+		// A project with a work channel keeps its record under the channel (ch:<id>), so it survives the sessions moving
+		// between folders; edits go there (recordKey). A record saved under the folder key is still read.
+		p.recordKey = p.channel ? `ch:${p.channel.id}` : p.key;
+		const record = input.records?.[p.recordKey] ?? input.records?.[p.key];
 		if (!record) continue;
 		p.record = record;
 		if (record.title) p.name = record.title;
@@ -616,12 +620,18 @@ const real = (p: string) => {
 	}
 };
 
+// What the project does, in one sentence: the owner's edit (record), else its work channel setup's purpose (docs/layers.md §4).
+const withPurpose = (p: Project): Project & { purpose?: string } => {
+	const purpose = p.record?.purpose || (p.channel ? getSetup(p.channel.id)?.purpose : undefined);
+	return purpose ? { ...p, purpose } : p;
+};
+
 async function projectDetail(key: string, deps: CustomDeps) {
 	const { pins } = readPins({ sync: false });
 	const lanes = deps.lanes();
 	const channels = deps.channels();
-	const all = projectsView({ lanes, channels, pins, records: loadProjects() });
-	const project = all.find(p => p.key === key);
+	const all = projectsView({ lanes, channels, pins, records: loadProjects() }).map(withPurpose);
+	const project = all.find(p => p.key === key) ?? all.find(p => p.recordKey === key);
 	if (!project) return undefined;
 	const dir = project.path ? project.path.replace(/^~(?=\/|$)/, HOME) : undefined;
 	const reports: Record<string, { text: string; at?: string }> = {};
@@ -651,7 +661,7 @@ async function listAll(deps: CustomDeps) {
 		const s = sched.find(x => x.text.startsWith(`[routine:${r.id}:`));
 		return { ...r, ...(s ? { next: s.at } : {}) };
 	});
-	return { dir: customDirLabel(), cards, projects: projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins, records: loadProjects() }), routines, links: pins.links, errors };
+	return { dir: customDirLabel(), cards, projects: projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins, records: loadProjects() }).map(withPurpose), routines, links: pins.links, errors };
 }
 
 export async function customRoute(req: Request, url: URL, deps: CustomDeps): Promise<Response | undefined> {
