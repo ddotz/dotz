@@ -4,7 +4,7 @@
 import type { Subprocess } from "bun";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Block, blocks, joined, summary } from "../activity.ts";
+import { type Block, blocks, failedCall, joined, summary } from "../activity.ts";
 import { DATA_DIR, OMP, parseSelector, splitThinking } from "../config.ts";
 import { isNote } from "../i18n.ts";
 import { classifyProviderError } from "../providers.ts";
@@ -70,7 +70,7 @@ function activityFromFrame(f: Frame): ActivityRow[] {
 		case "tool_execution_end": {
 			const r = f.result as { content?: Block[] | string } | string | undefined;
 			const text = typeof r === "string" ? r : joined(r?.content);
-			return [{ type: "tool_result", tool: f.toolName, call_id: f.toolCallId, text, is_error: Boolean(f.isError) }];
+			return [{ type: "tool_result", tool: f.toolName, call_id: f.toolCallId, text, is_error: failedCall(f.toolName, text, f.isError) }];
 		}
 		case "auto_retry_start":
 			return [{ type: "status", text: `retrying${f.attempt ? ` (attempt ${f.attempt}${f.maxAttempts ? `/${f.maxAttempts}` : ""})` : ""}${f.errorMessage ? `: ${f.errorMessage}` : ""}` }];

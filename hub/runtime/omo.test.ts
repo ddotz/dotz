@@ -6,7 +6,7 @@ import dotz, { shellText } from "../../extension/index.ts";
 import { jsonZod, params } from "../../extension/schema.ts";
 import { eventsFromFrame } from "./omp.ts";
 import { hostsOf, listHosts } from "./omo-hosts.ts";
-import { omoArgs, omoSelector, translateFrame, WORKER_CATEGORIES, writeWorkerProfile } from "./omo.ts";
+import { omoArgs, omoSelector, translateFrame, WORKER_CATEGORIES, WORKER_RULE, writeWorkerProfile } from "./omo.ts";
 
 test("a lane's worker model becomes a dotz profile of omo.json: every category on it, then its fallbacks; other keys stay", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
@@ -22,6 +22,9 @@ test("a lane's worker model becomes a dotz profile of omo.json: every category o
 		{ model: "anthropic-subscription/claude-opus-5-5", reasoning: "medium" },
 	]);
 	writeFileSync(`${file}c`, "// commented\n{}");
+	expect(doc.profiles[name!].task).toEqual({ max_depth: 2 });
+	for (const c of WORKER_CATEGORIES) expect(doc.profiles[name!].categories[c].prompt_append).toBe(WORKER_RULE);
+	expect(WORKER_RULE).toContain("[fail]");
 	expect(writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high" }, file)).toBeUndefined();
 });
 
