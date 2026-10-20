@@ -307,6 +307,8 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .menu { position: fixed; z-index: 1000; display: flex; flex-direction: column; padding: 6px; overflow-y: auto; border: 0; border-radius: 14px; background: var(--pop); box-shadow: 0 8px 24px rgb(0 0 0 / .14); outline: 0; }
 .menu .mh, .ph { z-index: 2; padding: 8px 8px 4px; color: var(--fg-3); font: 500 11px/16px var(--font); }
 .menu .mh { position: sticky; top: -4px; background: var(--pop); }
+.menu.msheet { border-radius: 18px; padding: 8px; box-shadow: 0 -4px 28px rgb(0 0 0 / .22); }
+.menu.msheet .mi { min-height: 48px; }
 .mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 5px; background: transparent; text-align: left; font-size: 13px; line-height: 20px; }
 .mi:hover, .mi:focus-visible { background: var(--hover); outline: 0; }
 .mi .ck { flex: none; width: 14px; height: 14px; color: var(--accent); }
@@ -1485,10 +1487,11 @@ function closeMenu(restore = true) {
   if (restore && m.anchor.isConnected) m.anchor.focus();
 }
 // items: [{value, label, sub?}] or [{header}]. onPick(value) runs after the menu closes.
-function showMenu(anchor, items, { value, onPick }) {
+// sheet: a bottom sheet across the screen above the anchor (the phone tab bar), instead of a dropdown at the anchor.
+function showMenu(anchor, items, { value, onPick, sheet }) {
   if (openMenu && openMenu.anchor === anchor) { closeMenu(); return; }
   closeMenu(false);
-  const node = el("div", { class: "menu", role: "listbox", tabindex: "-1" });
+  const node = el("div", { class: sheet ? "menu msheet" : "menu", role: "listbox", tabindex: "-1" });
   const opts = [];
   // An item with `fold` (a list of items) is a "더 보기" row that expands in place.
   const mk = it => {
@@ -1518,6 +1521,14 @@ function showMenu(anchor, items, { value, onPick }) {
   host.append(node);
   const place = () => {
     const r = anchor.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
+    if (sheet) {
+      node.style.left = "8px"; node.style.width = `${vw - 16}px`;
+      // an anchor with no box (the tab bar hides while typing) puts the sheet at the screen's bottom edge
+      const top = r.height ? r.top : vh;
+      node.style.bottom = `${vh - top + 8}px`;
+      node.style.maxHeight = `${Math.max(160, Math.min(vh * 0.6, top - 16))}px`;
+      return;
+    }
     node.style.minWidth = `${Math.max(112, r.width)}px`;
     node.style.maxWidth = `${vw - 16}px`;
     const below = vh - r.bottom - 12, above = r.top - 12;
@@ -1672,7 +1683,13 @@ const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) || []).find(x => x.selector === sel) || ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
 /* ---------- chrome: nav, theme, back ---------- */
-for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id === "chat" ? lastChatView() : id) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
+// Phone: tapping 채팅 again while in it opens the session list as a bottom sheet above the tab bar (owner 2026-10-20).
+const isPhone = () => matchMedia("(max-width: 639px)").matches;
+function sessionSheet(anchor) {
+  const d = $("#thead .tdrop");
+  if (d && d._items) showMenu(anchor, [{ header: "세션" }, ...d._items()], { value: target, onPick: d._pick, sheet: true });
+}
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: ev => id === "chat" && isPhone() && (current === "chat" || current === "activity") ? sessionSheet(ev.currentTarget) : go(id === "chat" ? lastChatView() : id) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
@@ -3507,10 +3524,12 @@ function renderBars() {
       othersAttn ? el("span", { class: "nb warn", title: `다른 세션 확인 필요 ${othersAttn}개`, text: String(othersAttn) })
         : others ? el("span", { class: "nb", title: "다른 대상의 새 메시지", text: others > 99 ? "99+" : String(others) }) : null,
       icon("drop"));
-    drop.onclick = () => showMenu(drop, [
+    drop._items = () => [
       ...A.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" })),
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
-      ...(D.length ? [{ value: "__ended", label: `종료된 레인 ${D.length}`, sub: "기록 보기 · 재개" }] : [])], { value: target, onPick: v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else setTarget(v); } });
+      ...(D.length ? [{ value: "__ended", label: `종료된 레인 ${D.length}`, sub: "기록 보기 · 재개" }] : [])];
+    drop._pick = v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else setTarget(v); };
+    drop.onclick = () => showMenu(drop, drop._items(), { value: target, onPick: drop._pick });
     const ud = mode === "term" && ts(target).unread > 0;
     clear(bar).append(sw, drop);
     fitChips(sw);
