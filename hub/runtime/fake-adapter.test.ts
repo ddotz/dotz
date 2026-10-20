@@ -79,7 +79,7 @@ const savedCfg = { orchestrator: cfg.orchestrator, lanes: cfg.lanes, runtime: cf
 
 beforeAll(() => {
 	adapters.fake = fake;
-	cfg.orchestrator = { model: "anthropic/test-orch", thinking: "low", ...cfg.orchestrator, runtime: "fake" };
+	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake" };
 	cfg.lanes = { ...cfg.lanes, runtime: "fake" };
 	patchable.spawn = (args: string[]) => {
 		if (args[1] === "usage") return { stdout: new Response('{"reports":[]}').body, exited: Promise.resolve(0), kill() {} };

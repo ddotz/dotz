@@ -64,7 +64,7 @@ test("fields say what overrides the global default and keep the global value", (
 	lanes.set("b", lane("b", dir));
 	discord.channels.lanes = { a: "1", b: "2" };
 	discord.channels.work = { "1": "one", "2": "two" };
-	const [a, b] = projects({ lanes: { fallback: ["x/y"], runtime: "omp" } });
+	const [a, b] = projects({ lanes: { runtime: "omp" }, models: { lanes: { fallback: ["x/y"] } } });
 	expect(a!.fields.model).toEqual({ value: g.model, source: "global" });
 	expect(a!.fields.effort).toEqual({ value: "xhigh", source: "project", global: g.thinking });
 	expect(a!.fields.worker_model.source).toBe("project");

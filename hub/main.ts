@@ -648,12 +648,18 @@ const server = Bun.serve({
 		if (req.method === "GET" && url.pathname === "/api/models") return json(await modelsView());
 		if (req.method === "PUT" && url.pathname === "/api/models") {
 			const b = await body(req);
+			// One body for the whole target: model and/or thinking, and/or its ordered fallback chain (`fallback`).
 			try {
-				return json(await setModel(String(b.target ?? ""), b.model ? String(b.model) : undefined, b.thinking ? String(b.thinking) : undefined, b.force === true));
+				const target = String(b.target ?? "");
+				const changed = b.model || b.thinking ? await setModel(target, b.model ? String(b.model) : undefined, b.thinking ? String(b.thinking) : undefined, b.force === true) : undefined;
+				const fb = Array.isArray(b.fallback) ? await setFallback(target, b.fallback) : undefined;
+				if (!changed && !fb) return fail(new ControlError("model, thinking or fallback required"));
+				return json({ ...(changed ?? { ok: true, target, applied: fb!.applied, note: fb!.note }), ...(fb ? { fallback: fb.chain } : {}) });
 			} catch (error) {
 				return fail(error);
 			}
 		}
+		// Older clients: the chain alone (same as PUT /api/models {target, fallback}).
 		if (req.method === "PUT" && url.pathname === "/api/fallbacks") {
 			const b = await body(req);
 			try {
