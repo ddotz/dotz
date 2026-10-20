@@ -338,11 +338,12 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .thead { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 12px; }
 .tsw { flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
 .tsw::-webkit-scrollbar { display: none; }
-.tchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; max-width: 220px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; }
+.tchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 32px; max-width: 220px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--layer); color: var(--fg-2); font-size: 14px; font-weight: 500; }
 .tchip:hover { background: var(--hover); color: var(--fg); }
 .dragging { opacity: .4; }
 .dropon { outline: 2px solid var(--accent); outline-offset: 2px; }
-.tchip.on { background: var(--active); border-color: var(--line-2); color: var(--fg); }
+.tchip.on { background: var(--fg); color: var(--bg); font-weight: 600; }
+.tchip.on .sb { background: color-mix(in srgb, var(--bg) 22%, transparent); color: inherit; }
 .tchip .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb { flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 10.5px/16px var(--font); text-align: center; }
 .sb { flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
@@ -351,10 +352,14 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .vseg { flex: none; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--layer); }
 .vseg button { position: relative; height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .vseg button:hover { color: var(--fg); }
-.vseg button.on { background: var(--card); color: var(--fg); box-shadow: 0 0 0 1px var(--line-2); }
+.vseg button.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / .1); }
+/* 채팅 and 터미널 sit on the card surface so the owner's light-gray bubble reads against it */
+.main:has(> .views > #v-chat:not([hidden])), .main:has(> .views > #v-activity:not([hidden])) { --bg: var(--card); }
+.main:has(> .views > #v-chat:not([hidden])) .vseg, .main:has(> .views > #v-activity:not([hidden])) .vseg { background: var(--layer); }
+.main:has(> .views > #v-chat:not([hidden])) .vseg button.on, .main:has(> .views > #v-activity:not([hidden])) .vseg button.on { background: var(--card); }
 .vseg .ud { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 @media (pointer: coarse) { .vseg button { height: 34px; } .tchip { height: 36px; } }
-@media (max-width: 639px) { .tsw { display: none; } .tdrop { display: flex; } .thead { flex-wrap: wrap; } }
+@media (max-width: 639px) { .thead { margin: 0 -12px 8px; padding: 0 12px; } .tsw { margin-right: -4px; } }
 
 /* chat: Material 3 type scale + tonal surfaces, one reading column.
    - message text = M3 body-large 16px (line-height 26px: 24px is tuned for Latin, Hangul needs a little more air); meta = label-medium 12/16; tool rows = body-medium 13/20
@@ -368,18 +373,24 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 720px; min-width: 0; margin: 0 auto; padding: 8px 0 32px; }
 .mt { font-size: 12px; line-height: 16px; color: var(--fg-2); }
 .mt .mn { font-weight: 600; }
-.um { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 85%; min-width: 0; margin-top: 16px; }
+.um { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 80%; min-width: 0; margin-top: 16px; }
 .um:first-child { margin-top: 0; }
-.ub { padding: 10px 16px; border-radius: 16px 16px 4px 16px; background: var(--active); font-size: 16px; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.um.cont { margin-top: -10px; }
+.ub { padding: 10px 16px; border-radius: 20px 20px 6px 20px; background: var(--layer); font-size: 15px; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cont > .mt { display: none; }
+.bm.cont { margin-top: -4px; }
 .bm { min-width: 0; overflow-wrap: anywhere; }
 .bm .mt { margin-bottom: 4px; }
 .bm.rep, .bm.alert { max-width: 672px; padding: 12px 16px 14px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--layer); }
-.bm .md { max-width: 40em; font-size: 16px; line-height: 26px; }
+.bm .md { max-width: 40em; font-size: 15px; line-height: 26px; }
+.bm > .mt { margin-bottom: 6px; } .bm > .mt .mn { color: var(--fg); }
 .bm .md p { margin: 0 0 12px; } .bm .md p:last-child { margin-bottom: 0; }
-.bm .md p.h { margin: 24px 0 8px; font-size: 17px; line-height: 26px; } .bm .md p.h b { font-weight: 600; } .bm .md p.h:first-child { margin-top: 0; }
+.bm .md p.h { margin: 24px 0 8px; font-size: 17px; line-height: 26px; } .bm .md p.h b { font-weight: 700; } .bm .md p.h:first-child { margin-top: 0; }
 .bm .md ul, .bm .md ol { margin: 0 0 12px; padding-left: 24px; }
 .bm .md li + li { margin-top: 4px; }
-.bm .md code { padding: 1px 5px; background: var(--active); font-size: .875em; }
+.bm .md code { padding: 2px 6px; border-radius: 6px; background: var(--layer); color: var(--fg); font-size: .84em; }
+.bm .md code.path { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.bm .md b { font-weight: 700; }
 .bm pre { margin: 12px 0 16px; padding: 12px 16px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--layer); color: var(--fg); font-size: 13px; line-height: 20px; white-space: pre; overflow-wrap: normal; overflow: auto; max-height: 360px; }
 .bm .md pre code { padding: 0; background: none; font-size: inherit; }
 .md .tbl { max-width: 100%; margin: 4px 0 12px; overflow-x: auto; border: 1px solid var(--line-2); border-radius: 12px; }
@@ -440,18 +451,19 @@ details.work.live .wdot { display: block; }
 .qitem .qa { display: flex; gap: 4px; flex: none; }
 .composer.tmode .qitem { background: var(--tb); border-color: var(--tl2); color: var(--tf); }
 .composer.tmode .qitem .qm { color: var(--td); }
-.ring { padding: 0; }
-.ring svg { width: 22px; height: 22px; display: block; transform: rotate(-90deg); }
-.ring .rt { fill: none; stroke: var(--line-2); stroke-width: 3; }
-.ring .rv { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; transition: stroke-dasharray .3s; }
-.ring.err .rv { stroke: var(--err); }
-.composer.tmode .ring .rt { stroke: var(--tl2); }
 .hintrow { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-bottom: 8px; }
 .hintrow::-webkit-scrollbar { display: none; }
 .hintchip { flex: none; height: 24px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--card); color: var(--fg-2); font: 500 12px/20px var(--mono); }
 .hintchip:hover { background: var(--hover); color: var(--fg); }
-.sendrow { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 16px; border: 1px solid var(--line-2); border-radius: 22px; background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .04); }
-.sendrow:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.sendrow { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 18px; border: 1px solid transparent; border-radius: 24px; background: var(--layer); }
+.sendrow:focus-within { border-color: var(--accent); }
+.cbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 28px; margin-top: 8px; padding: 0 4px; }
+.cchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 26px; max-width: 100%; padding: 0 10px; border: 0; border-radius: 13px; background: transparent; color: var(--fg-2); font-size: 12.5px; line-height: 16px; font-weight: 500; white-space: nowrap; }
+button.cchip:hover { background: var(--layer); color: var(--fg); }
+.cchip.warn { color: var(--warn); }
+.cchip.err { color: var(--err); }
+.cbar .working { margin: 0; min-height: 26px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; gap: 6px; }
+.cbar .working #working-tx { color: var(--fg-2); font-weight: 500; font-size: 12.5px; }
 .sendrow textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; padding: 4px 0; font-size: 14px; line-height: 22px; max-height: 140px; }
 .sendrow textarea::placeholder { color: var(--fg-3); }
 .prompt { display: none; }
@@ -865,14 +877,17 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
         </div>
         <div class="composer" id="composer">
           <div class="qlist" id="queue" hidden></div>
-          <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-queue" hidden>다음 턴에</button><button class="btn text" type="button" id="working-int" hidden>중단하고 보내기</button><button class="btn text" type="button" id="working-stop">중단</button></div>
           <div class="hintrow" id="hints" hidden></div>
           <form class="sendrow" id="send">
             <span class="prompt" aria-hidden="true">&gt;</span>
             <textarea id="text" rows="1" autocomplete="off" placeholder="메시지 또는 /명령" aria-label="메시지"></textarea>
-            <button class="ib ring" type="button" id="ctx-ring" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle class="rt" cx="12" cy="12" r="9"/><circle class="rv" cx="12" cy="12" r="9" pathLength="100" stroke-dasharray="0 100"/></svg></button>
             <button class="ib pri" type="submit" aria-label="보내기" id="send-btn"></button>
           </form>
+          <div class="cbar" id="cbar">
+            <button class="cchip" type="button" id="c-model" hidden></button>
+            <button class="cchip" type="button" id="ctx-ring" hidden></button>
+            <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-queue" hidden>다음 턴에</button><button class="btn text" type="button" id="working-int" hidden>중단하고 보내기</button><button class="btn text" type="button" id="working-stop">중단</button></div>
+          </div>
         </div>
       </section>
       <section class="view fill" id="v-activity" hidden>
@@ -986,7 +1001,7 @@ const num = n => Number(n || 0).toLocaleString("ko-KR");
 /* ---------- basic markdown (input is escaped before any markup is produced) ---------- */
 // Links only for http(s) targets; the text and URL are already escaped when the anchor is built.
 function inline(s) {
-  return String(s).split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code>${esc(p.slice(1, -1))}</code>` : esc(p).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')).join("");
+  return String(s).split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code${/^(~|\.{0,2}\/)[^\s]*$|^[\w.-]+\/[\w./-]+(:\d+(-\d+)?)?$/.test(p.slice(1, -1)) ? ' class="path"' : ""}>${esc(p.slice(1, -1))}</code>` : esc(p).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')).join("");
 }
 // "| a | b |" rows; the "|---|" separator row after the first one makes that row the header.
 const cells = line => line.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
@@ -2014,7 +2029,7 @@ function paintStrip() {
   b.className = `ustrip${pct <= 20 ? " err" : pct <= 40 ? " warn" : ""}`;
   b.style.setProperty("--p", pct);
   b.title = `사용량 · ${word} ${pct}% 남음`; b.setAttribute("aria-label", b.title);
-  clear(b).append(el("span", { class: "ulab", text: `${word} ${pct}%` }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${pct}%` }));
+  clear(b).append(el("span", { class: "ulab", text: `${word} ${pct}% 남음` }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${word} ${pct}%` }));
 }
 function noteQuota(q) { SQ = q; stripAt = Date.now(); paintStrip(); }
 // At most one fetch per 3 minutes, and only while the page is visible (the home and usage views feed it through noteQuota too).
@@ -2065,9 +2080,17 @@ function fmtDur(ms) {
   if (m < 60) return s % 60 ? `${m}분 ${s % 60}초` : `${m}분`;
   return m % 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${Math.floor(m / 60)}시간`;
 }
-let CS = { day: "", group: null, empty: null, prog: new Map() };
-function resetChat() { clear(tl); CS = { day: "", group: null, empty: null, prog: new Map() }; }
-function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
+let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 };
+function resetChat() { clear(tl); CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; }
+function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; CS.who = ""; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
+// Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
+function speakerOf(e) {
+  if (e.kind === "message" || e.kind === "lane_message" || e.kind === "_cmd") return `owner|${e.kind === "_cmd" ? "cmd" : e.source ?? ""}`;
+  if (e.kind === "lane_report") return `lane|${e.lane ?? ""}`;
+  if (e.kind === "out" && e.target === "alert") return "alert";
+  if (e.kind === "out") return "bot";
+  return "";
+}
 const SYS_LABEL = { schedule: "예약", watch: "감시", mail: "메일" };
 function msgNode(e) {
   const text = String(e.text ?? ""), hm = kstHM(e.ts);
@@ -2136,7 +2159,12 @@ function chatPush(en, bulk) {
       for (const [k, v] of CS.prog) if (v.target === t) dropProgress(k);
     }
     const n = msgNode(e);
-    if (n) { tl.append(n); if (pkey) CS.prog.set(pkey, { node: n, target: String(e.target ?? "") }); }
+    if (n) {
+      const who = n.matches(".um, .bm") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
+      if (who && who === CS.who && t - CS.whoT < 600000) n.classList.add("cont");
+      CS.who = who; CS.whoT = t;
+      tl.append(n); if (pkey) CS.prog.set(pkey, { node: n, target: String(e.target ?? "") });
+    }
   } else {
     if (!WORK.has(en.a.type)) return;
     if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
@@ -2395,7 +2423,8 @@ function renderWorking() {
   if (on) {
     const n = runningSubs(sourceOf(target)).length;
     $(".dot", box).className = `dot ${st === "rate-limited" ? "warn" : "pri"}`;
-    $("#working-tx").textContent = `${targetName(target)} · ${st === "rate-limited" ? "한도 제한, 잠시 쉬는 중" : "작업 중"}${n ? ` · 서브에이전트 ${n}개` : ""}`;
+    const g = CS.group, since = g && g.live ? Date.now() - g.t0 : 0;
+    $("#working-tx").textContent = `${st === "rate-limited" ? "한도 제한, 잠시 쉬는 중" : "작업 중"}${since >= 5000 ? ` ${fmtDur(since)}` : ""}${n ? ` · 워커 ${n}` : ""}`;
     $("#working-stop").hidden = st === "rate-limited";
     $("#working-int").hidden = st === "rate-limited" || !ta.value.trim();
     $("#working-queue").hidden = st === "rate-limited" || !ta.value.trim();
@@ -2428,17 +2457,30 @@ async function takeBack(i) {
   ta.value = r.text; autosize(); renderWorking(); ta.focus();
 }
 const kfmt = n => n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n);
+// "anthropic/claude-opus-5-5:medium" -> "Opus 5.5 · medium" (the models list name when it is loaded).
+function modelChipText(sel) {
+  const [base, level] = String(sel || "").split(":");
+  if (!base) return "";
+  const a = ((M && M.available) || []).find(x => x.selector === base || x.selector === sel);
+  const nm = a && a.name ? a.name.replace(/^Claude\s+/i, "") : base.split("/").pop().replace(/^claude-/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase());
+  return level ? `${nm} · ${level}` : nm;
+}
 function renderCtxRing() {
+  const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;
+  const sel = target === MAIN ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model;
+  mb.hidden = !sel;
+  if (sel) { const t = modelChipText(sel); mb.textContent = t; mb.title = `모델 · ${t}`; }
   const b = $("#ctx-ring"), p = ((C && C.processes) || []).find(x => x.name === (target === MAIN ? "orchestrator" : laneOf(target)));
   b.hidden = !(p && p.running && p.tokens != null);
   if (b.hidden) return;
   const pct = p.percent != null ? Math.min(100, Math.max(0, p.percent)) : 0;
   const label = `컨텍스트 ${p.percent != null ? `${Math.round(p.percent)}% · ${kfmt(p.tokens)}/${kfmt(p.window)}` : `${kfmt(p.tokens)} 토큰`}`;
   b.title = label; b.setAttribute("aria-label", label);
+  b.textContent = p.percent != null ? `컨텍스트 ${Math.round(p.percent)}%` : `컨텍스트 ${kfmt(p.tokens)}`;
   b.classList.toggle("err", pct >= 80);
-  $(".rv", b).setAttribute("stroke-dasharray", `${pct.toFixed(1)} 100`);
 }
 $("#ctx-ring").onclick = () => go("context");
+$("#c-model").onclick = () => go("models");
 setInterval(() => { if (current === "chat" || current === "activity") loadContext(true).then(renderCtxRing); }, 15000);
 
 /* ---------- target switcher + 대화/터미널 toggle (rendered into the header of both views) ---------- */
