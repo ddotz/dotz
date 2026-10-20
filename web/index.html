@@ -347,7 +347,8 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .pal-out { margin: 0; padding: 12px; max-height: 360px; overflow: auto; font: 12px/18px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .pal-out.err { color: var(--err); }
 .snack { position: fixed; z-index: 2000; left: 50%; bottom: 16px; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 24px); padding: 8px 12px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
-.snack.bad { background: var(--err); color: #fff; }
+/* a refusal or failure stays calm (owner 2026-10-20: "빨간색 글자 나오면 놀란다 사람들"): the usual snackbar with a small amber dot */
+.snack.bad::before { content: ""; display: inline-block; flex: none; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--warn); vertical-align: 1px; }
 .snack.act { display: flex; align-items: center; gap: 12px; }
 .snack .sa { flex: none; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; }
 @media (max-width: 639px) { .snack { bottom: calc(60px + max(2px, calc(env(safe-area-inset-bottom) - 16px))); } }
@@ -1641,15 +1642,25 @@ async function deleteEnded(names) {
     if (S && S.lanes) S.lanes = S.lanes.filter(l => !ok.some(x => x.name === l.name));
     refreshEnded();
     refreshState();
-    const why = bad.length ? ` · ${bad.length}개는 못 지웠어요: ${bad[0].error}` : "";
-    toast(`${ok.length === 1 ? ok[0].name : `${ok.length}개`} 삭제했어요${why}`, false, { label: "되돌리기", onclick: () => restoreEnded(ok.map(x => x.id)) }, UNDO_MS);
+    if (ok.length) toast(`${ok.length === 1 ? ok[0].name : `${ok.length}개`} 삭제했어요`, false, { label: "되돌리기", onclick: () => restoreEnded(ok.map(x => x.id)) }, UNDO_MS);
+    if (bad.length) keptLanes(bad);
   } catch (e) { toast(e.message, true); }
+}
+// Lanes the gateway refused to delete: a calm note with the reason in plain words, not an error (lanetrash.ts reasons).
+const keptWhy = err => /uncommitted/i.test(err) ? "아직 커밋하지 않은 변경이 있어요. 커밋하거나 정리하면 지울 수 있어요."
+  : /live|running|working|busy/i.test(err) ? "아직 돌고 있어요. 멈춘 뒤에 지울 수 있어요."
+  : "작업 폴더를 정리하지 못했어요. 잠시 뒤에 다시 해 보세요.";
+function keptLanes(bad) {
+  dialog({ title: bad.length === 1 ? `${bad[0].name} 레인은 그대로 뒀어요` : `레인 ${bad.length}개는 그대로 뒀어요`,
+    body: el("div", { class: "dl-body" }, el("p", { text: "아무것도 지우지 않았어요. 안전하게 남겨 두었어요." }),
+      el("ul", { class: "dl-list" }, ...bad.map(x => el("li", { text: `${x.name} · ${keptWhy(String(x.error || ""))}` })))),
+    actions: [{ label: "확인", kind: "fill", onclick: c => c() }] });
 }
 async function restoreEnded(ids) {
   try {
     const r = await api("/api/lanes/restore", "POST", { ids });
     const bad = r.results.filter(x => !x.ok);
-    toast(bad.length ? `${bad.length}개는 되돌리지 못했어요: ${bad[0].error}` : "되돌렸어요", bad.length > 0);
+    toast(bad.length ? `${bad.length}개는 되돌리지 못했어요. 휴지통에 그대로 있어요` : "되돌렸어요", bad.length > 0);
     refreshState();
   } catch (e) { toast(e.message, true); }
 }
@@ -3139,7 +3150,8 @@ async function sendChat(how) {
     const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) });
     scrollChat(true); scrollTerm(true);
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast("다음 턴에 전달할게요"); }
-    else if (mode && mode !== "queue") toast(mode === "steer" ? "작업 중에 끼워 넣었어요" : "중단하고 보냈어요");
+    // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.
+  else if (mode === "interrupt") toast("중단하고 보냈어요");
   }
   catch (e) { toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); }
 }
@@ -3216,7 +3228,7 @@ function renderQueue() {
   clear(box).append(...mine.map(i => el("div", { class: "qitem" },
     el("div", { class: "qb" }, el("div", { class: "qt", text: i.text }), el("div", { class: "qm", text: "다음 턴에 전달" })),
     el("div", { class: "qa" },
-      el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); toast("작업 중에 끼워 넣었어요"); scheduleState(); }) }, "지금 끼워넣기"),
+      el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"),
       el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, () => takeBack(i)) }, "취소")))));
 }
 // Taking a queued message back puts its text into the box; a box with a draft keeps it and the message stays queued.
