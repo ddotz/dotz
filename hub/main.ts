@@ -505,13 +505,16 @@ const server = Bun.serve({
 	idleTimeout: 0,
 	async fetch(req) {
 		const url = new URL(req.url);
+		// The install files (manifest, service worker, icons) are public and secret-free, like any app store listing: a browser
+		// or OS fetch that carries no tailnet identity (icon or manifest fetch, SW update check) must still get them, or the
+		// phone falls back to a plain shortcut. Everything else stays behind the identity check.
+		const appFile = req.method === "GET" || req.method === "HEAD" ? APP_FILES[url.pathname] : undefined;
+		if (appFile) return new Response(req.method === "HEAD" ? null : Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
 		if (!authorized(req)) return new Response("forbidden", { status: 403 });
 		const parts = url.pathname.split("/").filter(Boolean);
 		const authResponse = authRoute(req, url);
 		if (authResponse) return authResponse;
-		if (req.method === "GET" && url.pathname === "/") return new Response(Bun.file(WEB), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
-		const appFile = req.method === "GET" ? APP_FILES[url.pathname] : undefined;
-		if (appFile) return new Response(Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") return new Response(req.method === "HEAD" ? null : Bun.file(WEB), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
 		const pushResponse = await pushRoute(req, url);
 		if (pushResponse) return pushResponse;
 		if (url.pathname === "/api/health") return json({ ok: true });
