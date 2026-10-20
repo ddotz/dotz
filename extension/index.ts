@@ -17,6 +17,7 @@ import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { systemDeny } from "../hub/systemdeny.ts";
 import { dropLongTtl, installGuard } from "./guard.ts";
 import { installHarnessTools } from "./harness-tools.ts";
+import { installOutputCap } from "./output-cap.ts";
 import { jsonZod, params } from "./schema.ts";
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
@@ -400,6 +401,7 @@ export default function dotz(host: any) {
 	installHarnessTools(pi);
 	if (process.env.DOTZ_LANE) {
 		enforceRules(pi);
+		installOutputCap(pi);
 		return laneSession(pi);
 	}
 	// Action methods such as setLabel only work once the session is bound (OmO throws during extension loading).
