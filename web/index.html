@@ -451,6 +451,7 @@ details.work.bad:not(.live) .wdot { display: block; background: var(--err); anim
 .um.cont { margin-top: -10px; }
 .ub { padding: 10px 16px; border-radius: 20px; background: color-mix(in srgb, var(--fg) 7%, var(--bg)); font-size: 15px; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cont > .mt { display: none; }
+.cont > .mt.dv { display: block; } .mt.dv-fail { color: var(--err); }
 .bm.cont { margin-top: -4px; }
 .bm { min-width: 0; overflow-wrap: anywhere; }
 .bm .mt { margin-bottom: 4px; }
@@ -2742,7 +2743,7 @@ async function loadStrip() {
 const TS = {};
 const ts = t => TS[t] || (TS[t] = { msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", loading: null, ahist: false, amore: false, older: false, cap: 600 });
 const byTs = (a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0;
-const msgKey = e => `${e.ts}|${e.kind}|${e.lane ?? ""}|${String(e.text ?? "").slice(0, 60)}`;
+const msgKey = e => `${e.ts}|${e.kind}|${e.lane ?? ""}|${e.ref ?? ""}${e.state ?? ""}|${String(e.text ?? "").slice(0, 60)}`;
 const actKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
 const OWNER = new Set(["message", "lane_message", "_cmd"]);
 const ownerish = e => OWNER.has(e.kind) || e.kind === "_cmdout";
@@ -3010,6 +3011,25 @@ function streamIn(root, key, ts) {
   };
   requestAnimationFrame(step);
 }
+// Delivery state of an owner message (hub/events.ts emitDelivery), shown in its meta line: received (steered into the running step /
+// received by an idle session / waited in the queue / resumed a stopped session / held on a limit), answered, or not delivered.
+const DELIV = { nodes: new Map(), state: new Map() };
+const DELIV_RANK = { steered: 1, received: 1, queued: 1, held: 1, resumed: 1, answered: 2, failed: 2 };
+const DELIV_LABEL = { steered: "받음 · 지금 작업에 전달", received: "받음 · 바로 전달", queued: "받음 · 기다렸다 전달", held: "받음 · 한도가 풀리면 전달", resumed: "다시 시작해서 전달", answered: "답함" };
+const delivLabel = d => d.state === "failed" ? `전달 못 함${d.text ? ` · ${d.text}` : ""}` : DELIV_LABEL[d.state] || "";
+function paintDelivery(mid) {
+  const n = DELIV.nodes.get(mid), d = DELIV.state.get(mid);
+  if (!n || !d) return;
+  n.mt.textContent = [n.base, delivLabel(d)].filter(Boolean).join(" · ");
+  n.mt.classList.add("dv"); n.mt.classList.toggle("dv-fail", d.state === "failed");
+}
+function applyDelivery(e) {
+  const old = DELIV.state.get(e.ref);
+  if (old && DELIV_RANK[old.state] > DELIV_RANK[e.state]) return;
+  DELIV.state.set(e.ref, e);
+  if (DELIV.state.size > 600) DELIV.state.delete(DELIV.state.keys().next().value);
+  paintDelivery(e.ref);
+}
 function msgNode(e) {
   const text = String(e.text ?? ""), hm = kstHM(e.ts);
   switch (e.kind) {
@@ -3018,7 +3038,9 @@ function msgNode(e) {
       const ub = el("div", { class: "ub", text }), long = text.length > 420 || text.split("\n").length > 6;
       if (long) ub.classList.add("clamp");
       const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? "더 보기" : "접기"; } }, "더 보기") : null;
-      return el("div", { class: "um" }, filesNode(e.files), text ? ub : null, more, el("div", { class: "mt", text: [hm, via].filter(Boolean).join(" · ") }));
+      const base = [hm, via].filter(Boolean).join(" · "), mt = el("div", { class: "mt", text: base }), mid = e.mid || e.message_id || "";
+      if (mid) { DELIV.nodes.set(mid, { mt, base }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
+      return el("div", { class: "um" }, filesNode(e.files), text ? ub : null, more, mt);
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, el("pre", { text }), el("div", { class: "mt", text: hm }));
     case "lane_start": return el("div", { class: "a-div", text: `세션 시작 · ${hm}` });
@@ -3085,6 +3107,7 @@ function newGroup(a) {
 function dropProgress(key) { const p = CS.prog.get(key); if (p) { p.node.remove(); CS.prog.delete(key); } }
 // entry: {m: conversation event} or {a: activity item}. Work between messages folds into one collapsed group.
 function chatPush(en, bulk) {
+  if (en.m && en.m.kind === "delivery") { applyDelivery(en.m); return; }
   if (CS.empty) { CS.empty.remove(); CS.empty = null; }
   if (en.m) {
     if (cleanRestart(en.m)) return;
@@ -3331,7 +3354,7 @@ function ingestMsg(e) {
   s.mk.add(k); s.msgs.push(e);
   if (s.msgs.length > 400) s.mk.delete(msgKey(s.msgs.shift()));
   if (isRestart(e)) paintRestartBanner();
-  if (!ownerish(e) && !cleanRestart(e) && !(t === target && current === "chat")) { s.unread++; renderBars(); }
+  if (!ownerish(e) && e.kind !== "delivery" && !cleanRestart(e) && !(t === target && current === "chat")) { s.unread++; renderBars(); }
   if (t === target && s.hLoaded) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }
   if (t === target) paintDecision();
   if (projAnswer(t, e)) noteDone(t, e.ts, true);

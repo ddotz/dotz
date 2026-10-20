@@ -15,6 +15,7 @@ import type { AgentError, AgentProcess } from "./runtime/types.ts";
 import { atTime, Chain, failsOver, failureReason, hubChain, type Move, Reverter, revertWhy } from "./fallback.ts";
 import { parseTone } from "./tone.ts";
 import { broadcast } from "./events.ts";
+import { createOwnerNotes } from "./lanerelay.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 // A lane started with a fallback chain: after a failed request the runtime may move to the next model by itself and redo
@@ -90,9 +91,17 @@ export type Lane = Record_ & {
 };
 
 export const lanes = new Map<string, Lane>();
-type ReportFn = (lane: Lane, text: string) => void;
+type ReportFn = (lane: Lane, text: string, answeringOwner?: boolean) => void;
 let onReport: ReportFn = () => {};
 let onProgress: ReportFn = () => {};
+// Owner messages sent to a lane and not answered yet (lanerelay.ts createOwnerNotes): the lane's short answer note at its next
+// tool boundary reaches the owner at once, and the delivery state of each message follows (hub/events.ts emitDelivery).
+export type OwnerNoteHandlers = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; lost: (lane: string, refs: string[]) => void };
+let ownerHandlers: OwnerNoteHandlers = { note: () => {}, answered: () => {}, lost: () => {} };
+export function setOwnerNoteHandlers(h: OwnerNoteHandlers): void {
+	ownerHandlers = h;
+}
+export const ownerNotes = createOwnerNotes({ note: (l, t, r) => ownerHandlers.note(l, t, r), answered: (l, r) => ownerHandlers.answered(l, r), lost: (l, r) => ownerHandlers.lost(l, r) });
 export function setReportHandler(fn: ReportFn): void {
 	onReport = fn;
 }
@@ -145,7 +154,7 @@ function prompt(lane: Lane, text: string): void {
 	settleRevert(lane, false);
 	// Every lane turn ends with the reply-language line too: lane progress notes drifted into English ("Now a throwaway
 	// smoke script against a temp DOTZ_DIR.") because the language sat only in the launch footer.
-	const nudge = lane.retainNext ? `\n${msg().retainNudge}` : "";
+	const nudge = (lane.retainNext ? `\n${msg().retainNudge}` : "") + (/^\[owner via /.test(text) ? `\n${msg().ownerAnswerNudge}` : "");
 	lane.retainNext = undefined;
 	lane.proc?.send(`${text}${nudge}\n${msg().replyIn(languageName(lang()), false)}`, lane.status === "working" ? "steer" : "prompt");
 	if (lane.status === "working") return;
@@ -165,6 +174,8 @@ const pendingFile = (lane: Lane) => join(dir(lane.name), "pending-report.md");
 // leaves a pending ask alone.
 function report(lane: Lane, text: string, notice = false): void {
 	rmSync(pendingFile(lane), { force: true });
+	// The turn's final text answers every owner message still open (a gateway notice does not).
+	const answering = !notice && ownerNotes.reported(lane.name);
 	lane.reports++;
 	lane.lastReportAt = now();
 	const tone = parseTone(text).tone;
@@ -180,19 +191,19 @@ function report(lane: Lane, text: string, notice = false): void {
 	// A [done] is checked against the task metadata before it is relayed; what contradicts it goes along with it. So is a
 	// report without a leading marker that says [done] further down (an OmO lane can open with its handoff block, "Ask: ...").
 	const claimsDone = tone === "done" || (!tone && /\[(done|완료)\]/i.test(text));
-	if (notice || !claimsDone) return onReport(lane, text);
+	if (notice || !claimsDone) return onReport(lane, text, answering);
 	const what = tone === "done" ? "[done]" : "report";
 	const claim = lane.claim;
 	void workerCheck(`lane:${lane.name}`, lane.workingSince ?? 0, lane.sessionFile)
 		.catch(e => [`task metadata unreadable: ${e}`])
 		.then(problems => {
-			if (!problems.length) return onReport(lane, text);
+			if (!problems.length) return onReport(lane, text, answering);
 			if (lane.claim === claim && claim) {
 				claim.problems = problems.slice(0, 10);
 				persist(lane);
 			}
 			log(`lane ${lane.name} ${what} contradicted by task metadata: ${problems.join("; ")}`);
-			onReport(lane, `${text}\n\n[gateway check] task metadata contradicts this ${what}; do not take it as verified:\n- ${problems.slice(0, 10).join("\n- ")}`);
+			onReport(lane, `${text}\n\n[gateway check] task metadata contradicts this ${what}; do not take it as verified:\n- ${problems.slice(0, 10).join("\n- ")}`, answering);
 		});
 }
 // Drops the pending ask; the caller persists.
@@ -397,7 +408,11 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 				break;
 			case "assistant":
 				if (ev.stop !== "error") lane.transientTries = 0;
-				if (ev.text) lane.lastText = ev.text;
+				if (ev.text) {
+					lane.lastText = ev.text;
+					// A text that ends in a tool call, after an owner message, is the lane's short answer to it (the footer asks for one).
+					if (ev.stop !== "error") ownerNotes.text(lane.name, ev.text, ev.stop !== "other");
+				}
 				// A compaction error is recovered by recover() below (restart on the same session), not retried here.
 				else if (ev.stop === "error" && !ev.error.compaction) {
 					const failed = ev.error;
@@ -570,6 +585,7 @@ function spawn(lane: Lane, resume: boolean): boolean {
 		if (lane.quiet) return log(`lane ${lane.name} stopped for a gateway restart`);
 		setStatus(lane, "exited");
 		log(`lane ${lane.name} exited (${code})`);
+		if (!lane.revive) ownerNotes.lost(lane.name);
 		if (lane.revive && lane.sessionFile) {
 			const { text } = lane.revive;
 			if (text) resumeLane(lane, text);
@@ -766,12 +782,18 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	return lane;
 }
 
-export function sendToLane(name: string, text: string): void {
+/** How an owner message reached a lane: "steered" into its running step, "received" by an idle process, "held" (paused on a limit, goes in with the resume), "resumed" (stopped session started again). */
+export type LaneDelivery = "steered" | "received" | "held" | "resumed";
+
+export function sendToLane(name: string, text: string, ref?: string): LaneDelivery {
 	const lane = lanes.get(name);
 	if (!lane) throw new Error(`lane ${name} does not exist`);
 	if (!lane.proc && lane.sessionFile) {
 		const wrong = runtimeMismatch(lane);
-		if (wrong && HANDOVER_RE.test(ownerWords(text))) return handoverLane(name);
+		if (wrong && HANDOVER_RE.test(ownerWords(text))) {
+			handoverLane(name);
+			return "resumed";
+		}
 		if (wrong) {
 			if (!HANDOVER_RE.test(ownerWords(text)) && text !== "/budget-ok") lane.pendingHandover = text;
 			throw wrong;
@@ -786,8 +808,11 @@ export function sendToLane(name: string, text: string): void {
 		persist(lane);
 	}
 	if (!/^\[owner via /.test(text) && text !== "/budget-ok") lane.orchAsked = true;
-	if (lane.proc) return prompt(lane, text);
-	resumeLane(lane, text);
+	const how: LaneDelivery = !lane.proc ? "resumed" : lane.status === "working" ? "steered" : lane.status === "rate-limited" ? "held" : "received";
+	if (lane.proc) prompt(lane, text);
+	else resumeLane(lane, text);
+	ownerNotes.asked(name, ref);
+	return how;
 }
 
 function known(name: string): Lane {
