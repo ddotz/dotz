@@ -371,7 +371,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .timeline { height: 100%; overflow-y: auto; overflow-x: hidden; }
 .thead { position: sticky; top: 0; z-index: 2; }
 .thead .vseg { margin-left: auto; }
-.tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 760px; min-width: 0; margin: 0 auto; padding: 0 0 32px; }
+.tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 720px; min-width: 0; margin: 0 auto; padding: 8px 0 32px; }
 @media (max-width: 639px) { .tl-in { padding: 0 0 24px; } .tl-in > .bm { padding: 14px 16px; } }
 .ub.clamp { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .ubm { align-self: flex-end; height: 24px; padding: 0 4px; border: 0; background: none; color: var(--fg-2); font-size: 12.5px; font-weight: 500; }
@@ -390,19 +390,28 @@ details.work.bad:not(.live) .wdot { display: block; background: var(--err); anim
 .um { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 80%; min-width: 0; margin-top: 16px; }
 .um:first-child { margin-top: 0; }
 .um.cont { margin-top: -10px; }
-.ub { padding: 10px 16px; border-radius: 20px 20px 6px 20px; background: var(--card); font-size: 15px; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ub { padding: 10px 16px; border-radius: 20px; background: color-mix(in srgb, var(--fg) 7%, var(--bg)); font-size: 15px; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cont > .mt { display: none; }
 .bm.cont { margin-top: -4px; }
 .bm { min-width: 0; overflow-wrap: anywhere; }
 .bm .mt { margin-bottom: 4px; }
-/* chat uses the log's scheme: gray page, every reply on a white card */
-.tl-in > .bm { padding: 16px 18px; border-radius: var(--r-card); background: var(--card); }
-.tl-in > .bm.cont { margin-top: -8px; }
-.bm.rep, .bm.alert { max-width: none; }
+/* chat reads like Claude: one calm page (the log's gray), replies as plain text, owner bubbles a shade darker,
+   alerts and opened work folds on white cards, the composer a floating white card with its chips inside */
+.tl-in > .bm.rep, .tl-in > .bm.alert { max-width: none; padding: 14px 18px 16px; border-radius: var(--r-card); background: var(--card); }
 .bm .more pre { background: var(--layer) !important; }
 details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); background: var(--card); }
-details.work:not([open]) > summary { background: var(--card); }
-.sendrow { background: var(--card) !important; }
+.sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: 6px 8px; padding: 14px 12px 10px 18px !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; box-shadow: 0 6px 24px rgba(0, 0, 0, .06); }
+.sendrow:focus-within { border-color: var(--line-2) !important; }
+.sendrow textarea { grid-area: ta; }
+.sendrow > .ib { grid-area: send; }
+.sendrow > .cbar { grid-area: bar; margin: 0 0 0 -10px; padding: 0; min-height: 26px; }
+:root[data-theme="dark"] .sendrow { box-shadow: 0 6px 24px rgba(0, 0, 0, .35); }
+/* the transcript fades out under the header and above the composer only while there is more to scroll that way */
+.timeline { --ft: 0px; --fb: 0px; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%); }
+.timeline.st { --ft: 36px; } .timeline.sb { --fb: 28px; }
+#v-chat .thead { margin-bottom: 0; padding-bottom: 12px; background: var(--bg); transition: box-shadow .2s; }
+#v-chat:has(.timeline.st) .thead { box-shadow: 0 10px 14px -12px rgba(0, 0, 0, .16); }
+:root[data-theme="dark"] #v-chat:has(.timeline.st) .thead { box-shadow: 0 10px 14px -12px rgba(0, 0, 0, .6); }
 .bm.alert .mn::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: var(--err); vertical-align: middle; }
 .bm .more { margin-top: 8px; }
 .bm .more > summary { width: fit-content; color: var(--fg-2); font-size: 13px; line-height: 20px; cursor: pointer; list-style: none; text-decoration: underline; text-underline-offset: 3px; }
@@ -416,7 +425,7 @@ details.work:not([open]) > summary { background: var(--card); }
 .gban .x { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3); font-size: 18px; line-height: 28px; }
 .gban .x:hover { background: var(--hover); color: var(--fg); }
 @media (max-width: 639px) { .gban { width: calc(100% - 24px); } }
-.bm .md { max-width: 40em; font-size: 15px; line-height: 26px; }
+.bm .md { font-size: 15.5px; line-height: 28px; }
 .bm > .mt { margin-bottom: 6px; } .bm > .mt .mn { color: var(--fg); }
 .bm .md p { margin: 0 0 12px; } .bm .md p:last-child { margin-bottom: 0; }
 .bm .md p.h { margin: 24px 0 8px; font-size: 17px; line-height: 26px; } .bm .md p.h b { font-weight: 700; } .bm .md p.h:first-child { margin-top: 0; }
@@ -468,7 +477,7 @@ details.work.live .wdot { display: block; }
 .tl-in > .a-div:first-child { margin-top: 0; }
 .tl-in > details.work:not([open]) + .bm, .tl-in > details.work:not([open]) + .pn { margin-top: -6px; }
 @media (max-width: 639px) { .um { max-width: 90%; } .bm pre { padding: 10px 12px; } .bm.rep, .bm.alert { padding: 10px 12px 12px; } }
-.composer { flex: none; width: 100%; max-width: 760px; margin: 0 auto; padding: 0 0 max(16px, env(safe-area-inset-bottom)); }
+.composer { flex: none; width: 100%; max-width: 736px; margin: 0 auto; padding: 0 0 max(16px, env(safe-area-inset-bottom)); }
 .composer.tmode { max-width: none; }
 .working { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-bottom: 8px; color: var(--fg-3); font-size: 12.5px; line-height: 20px; }
 #working-tx { min-width: 0; overflow-wrap: anywhere; }
@@ -969,13 +978,13 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
           <form class="sendrow" id="send">
             <span class="prompt" aria-hidden="true">&gt;</span>
             <textarea id="text" rows="1" autocomplete="off" placeholder="메시지 또는 /명령" aria-label="메시지"></textarea>
+            <div class="cbar" id="cbar">
+              <button class="cchip" type="button" id="c-model" hidden></button>
+              <button class="cchip" type="button" id="ctx-ring" hidden></button>
+              <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-queue" hidden>다음 턴에</button><button class="btn text" type="button" id="working-int" hidden>중단하고 보내기</button><button class="btn text" type="button" id="working-stop">중단</button></div>
+            </div>
             <button class="ib pri" type="submit" aria-label="보내기" id="send-btn"></button>
           </form>
-          <div class="cbar" id="cbar">
-            <button class="cchip" type="button" id="c-model" hidden></button>
-            <button class="cchip" type="button" id="ctx-ring" hidden></button>
-            <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-queue" hidden>다음 턴에</button><button class="btn text" type="button" id="working-int" hidden>중단하고 보내기</button><button class="btn text" type="button" id="working-stop">중단</button></div>
-          </div>
         </div>
       </section>
       <section class="view fill" id="v-activity" hidden>
@@ -2187,6 +2196,7 @@ function eventTarget(e) {
 const timeline = $("#timeline"), tl = $("#tl"), term = $("#term");
 let chatStick = true, termStick = true;
 timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; });
+timeline.addEventListener("scroll", () => edgeFade(), { passive: true });
 term.addEventListener("scroll", () => { termStick = term.scrollTop + term.clientHeight >= term.scrollHeight - 40; $("#act-jump").hidden = termStick; if (term.scrollTop < 80) loadOlder(); });
 $("#chat-jump").prepend(icon("down")); $("#act-jump").prepend(icon("down"));
 $("#chat-jump").onclick = () => scrollChat(true);
@@ -2548,7 +2558,8 @@ async function loadOlder() {
   } catch { toast("이전 기록을 불러오지 못했어요", true); }
   finally { s.older = false; }
 }
-function renderAll(keepScroll) { renderAll0(keepScroll); paintWorkers(); }
+function renderAll(keepScroll) { renderAll0(keepScroll); paintWorkers(); edgeFade(); }
+function edgeFade() { const t = timeline; t.classList.toggle("st", t.scrollTop > 4); t.classList.toggle("sb", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
 function renderAll0(keepScroll) {
   const s = ts(target);
   resetChat(); resetTerm();
