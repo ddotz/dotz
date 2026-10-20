@@ -42,10 +42,34 @@ export type Activity = {
 const ACTIVITY_MAX = 300;
 const activity = new Map<string, Activity[]>();
 
+// Every frame carries an id "<boot>-<seq>"; the last REPLAY_MAX frames are kept so a client that reconnects with
+// Last-Event-ID gets only what it missed. A different boot (gateway restarted) or a gap older than the ring cannot be
+// replayed: the client is told to reload ("reset").
+const BOOT = Date.now().toString(36);
+const REPLAY_MAX = 2000;
+const frames: { seq: number; frame: string }[] = [];
+let seq = 0;
+
+export function replayAfter(lastId: string | null | undefined): string[] | null {
+	const m = /^([0-9a-z]+)-(\d+)$/.exec(lastId ?? "");
+	if (!m || m[1] !== BOOT) return null;
+	const n = Number(m[2]);
+	if (n > seq) return null;
+	if (n === seq) return [];
+	if (!frames.length || frames[0].seq > n + 1) return null;
+	return frames.filter(f => f.seq > n).map(f => f.frame);
+}
+
+export const lastEventId = (): string => `${BOOT}-${seq}`;
+
 export function broadcast(event: unknown): void {
+	seq++;
+	const frame = `id: ${BOOT}-${seq}\ndata: ${JSON.stringify(event)}\n\n`;
+	frames.push({ seq, frame });
+	if (frames.length > REPLAY_MAX) frames.shift();
 	for (const sub of subscribers) {
 		try {
-			sub.enqueue(`data: ${JSON.stringify(event)}\n\n`);
+			sub.enqueue(frame);
 		} catch {
 			subscribers.delete(sub);
 		}
@@ -114,13 +138,15 @@ export function historyEvents(target: string, limit: number): HubEvent[] {
 	return all.slice(-limit);
 }
 
-export function sseResponse(): Response {
+export function sseResponse(lastId?: string | null): Response {
 	let controller: ReadableStreamDefaultController<string>;
 	const stream = new ReadableStream<string>({
 		start(c) {
 			controller = c;
+			const missed = lastId ? replayAfter(lastId) : null;
+			if (missed) for (const f of missed) c.enqueue(f);
+			else c.enqueue(`id: ${lastEventId()}\nevent: reset\ndata: {}\n\n`);
 			subscribers.add(c);
-			c.enqueue(": connected\n\n");
 		},
 		cancel() {
 			subscribers.delete(controller);

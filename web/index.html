@@ -957,7 +957,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
     <header class="appbar" id="appbar">
       <button class="ib" id="back" type="button" aria-label="뒤로" hidden></button>
       <h1 id="title">dotz</h1>
-      <span class="conn" id="conn" hidden>연결 끊김</span>
+      <span class="conn" id="conn" hidden>연결 끊김 · 다시 연결 중</span>
       <button class="ib only-phone" id="pal" type="button" aria-label="명령"></button>
       <button class="ustrip" id="ustrip" type="button" hidden></button>
       <button class="ib" id="theme" type="button"></button>
@@ -2591,7 +2591,8 @@ function onActivity(a) {
 }
 
 /* ---------- switching the target ---------- */
-function saveDraft() { ts(target).draft = ta.value; }
+const DRAFT_KEY = t => `dotz-draft:${t}`;
+function saveDraft() { ts(target).draft = ta.value; try { if (ta.value) localStorage.setItem(DRAFT_KEY(target), ta.value); else localStorage.removeItem(DRAFT_KEY(target)); } catch {} }
 function setTarget(t) {
   if (!validTarget(t) || t === target) return;
   saveDraft();
@@ -2602,6 +2603,7 @@ function setTarget(t) {
   const s = ts(t);
   if (current === "chat") s.unread = 0;
   markSeen();
+  if (!s.draft) { try { s.draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {} }
   ta.value = s.draft; autosize(); updateHints();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
   renderAll();
@@ -2643,7 +2645,7 @@ function updateHints() {
 }
 const ta = $("#text");
 function autosize() { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`; }
-ta.addEventListener("input", () => { autosize(); if (ta.value.startsWith("/")) loadHelp(); updateHints(); });
+ta.addEventListener("input", () => { autosize(); saveDraft(); if (ta.value.startsWith("/")) loadHelp(); updateHints(); });
 // While the target works: Enter steers into the running turn, ⌘/Ctrl+Enter queues it for the next turn, ⌥/Alt+Enter stops it and sends, Esc stops it.
 ta.addEventListener("keydown", ev => {
   if (ev.key === "Escape" && isWorking(target) && !document.querySelector("dialog[open]") && !openMenu) { ev.preventDefault(); stopTarget(); return; }
@@ -2669,7 +2671,7 @@ async function sendChat(how) {
   if (!text || ta.disabled) return;
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   const mk = (kind, extra) => ({ ts: new Date().toISOString(), kind, source: "local", ...(lane ? { lane } : {}), ...extra });
-  ta.value = ""; ts(t).draft = ""; autosize(); updateHints(); renderWorking();
+  ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   chatStick = true; termStick = true;
   if (text.startsWith("/")) {
     ingestMsg(mk("_cmd", { text }));
@@ -2839,7 +2841,9 @@ function renderBars() {
 }
 
 /* ---------- state refresh ---------- */
-function setConn(ok) { $("#conn").hidden = ok; }
+// A short drop (the stream reconnects and replays what it missed) shows nothing; past 2s the header says it is reconnecting.
+let connTimer = 0;
+function setConn(ok) { clearTimeout(connTimer); if (ok) $("#conn").hidden = true; else connTimer = setTimeout(() => { $("#conn").hidden = false; }, 2000); }
 async function refreshState() {
   try {
     S = await api("/api/state?limit=0");
@@ -4617,11 +4621,13 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);
   let opened = false;
   const es = new EventSource("/api/events");
-  es.onopen = () => {
-    setConn(true);
+  // The browser resends the last frame id on reconnect and the gateway replays only what was missed. "reset" comes on
+  // the first connect and when the gap cannot be replayed (gateway restarted, or too long away): only then refetch.
+  es.onopen = () => setConn(true);
+  es.addEventListener("reset", () => {
     if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; renderAll(); loadTarget(target); loadSubs(); loadQueue(); laneTailsStale(); }
     opened = true;
-  };
+  });
   es.onerror = () => setConn(false);
   es.onmessage = m => {
     let e;
