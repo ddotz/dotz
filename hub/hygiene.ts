@@ -11,6 +11,7 @@ import { DATA_DIR, lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OM
 import { describeCtx } from "./context.ts";
 import { UPLOADS } from "./files.ts";
 import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
+import { purgeTrash } from "./lanetrash.ts";
 import { nightlyHandover, orchestratorPid } from "./orchestrator.ts";
 import { trackTimer } from "./shutdown.ts";
 
@@ -306,6 +307,7 @@ export function runDataCleanup(now = Date.now()): string[] {
 		const closed = closeDeadLaneTasks(join(DATA_DIR, "state.json"), join(DATA_DIR, "tasks-closed.jsonl"), name => laneEndedReason(name, now), now);
 		return closed.length ? `closed ${closed.length} open task(s) of ended lanes: ${closed.map(t => `${t.id} (${t.lane})`).join(", ")}` : undefined;
 	});
+	step("lane trash", () => purgeTrash(now));
 	for (const a of actions) log(`data cleanup: ${a}`);
 	if (actions.length) statusActivity("hub", `data cleanup: ${actions.join("; ")}`);
 	return actions;
