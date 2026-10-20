@@ -338,7 +338,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .thead { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 12px; }
 .tsw { flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
 .tsw::-webkit-scrollbar { display: none; }
-.tchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 32px; max-width: 220px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--layer); color: var(--fg-2); font-size: 14px; font-weight: 500; }
+.tchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 32px; max-width: 220px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--chip, var(--card)); color: var(--fg-2); font-size: 14px; font-weight: 500; }
 .tchip:hover { background: var(--hover); color: var(--fg); }
 .dragging { opacity: .4; }
 .dropon { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -354,9 +354,8 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .vseg button:hover { color: var(--fg); }
 .vseg button.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / .1); }
 /* 채팅 and 터미널 sit on the card surface so the owner's light-gray bubble reads against it */
-.main:has(> .views > #v-chat:not([hidden])), .main:has(> .views > #v-activity:not([hidden])) { --bg: var(--card); background: var(--bg); }
-.main:has(> .views > #v-chat:not([hidden])) .vseg, .main:has(> .views > #v-activity:not([hidden])) .vseg { background: var(--layer); }
-.main:has(> .views > #v-chat:not([hidden])) .vseg button.on, .main:has(> .views > #v-activity:not([hidden])) .vseg button.on { background: var(--card); }
+/* 로그 stays on the gray canvas: its turns are white cards */
+.vseg { background: var(--active); }
 .vseg .ud { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 @media (pointer: coarse) { .vseg button { height: 34px; } .tchip { height: 36px; } }
 @media (max-width: 639px) { .thead { margin: 0 -12px 8px; padding: 0 12px; } .tsw { margin-right: -4px; } }
@@ -369,8 +368,23 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
      lane reports and alerts = tonal card (--layer + hairline); work in between folds into one quiet summary row
    - secondary text uses --fg-2 (AA on both themes); --fg-3 stays for non-text only */
 .chatbox { position: relative; flex: 1; min-height: 0; }
-.timeline { height: 100%; overflow-y: auto; overflow-x: hidden; }
-.tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 720px; min-width: 0; margin: 0 auto; padding: 8px 0 32px; }
+.timeline { height: 100%; overflow-y: auto; overflow-x: hidden; border-radius: var(--r-card) var(--r-card) 0 0; background: var(--card); }
+.thead { position: sticky; top: 0; z-index: 2; }
+.thead .vseg { margin-left: auto; }
+.tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 760px; min-width: 0; margin: 0 auto; padding: 20px 24px 32px; }
+@media (max-width: 639px) { .timeline { margin: 0 -12px; border-radius: 0; } .tl-in { padding: 14px 16px 24px; } }
+.ub.clamp { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.ubm { align-self: flex-end; height: 24px; padding: 0 4px; border: 0; background: none; color: var(--fg-2); font-size: 12.5px; font-weight: 500; }
+.ubm:hover { color: var(--fg); }
+.lw-s { display: flex; flex-direction: column; padding: 0 8px 6px 52px; }
+.lw-s:empty { display: none; }
+.lw-r { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 8px; border-radius: 8px; box-shadow: inset 2px 0 0 var(--line); font-size: 13px; }
+.lw-r:hover { background: var(--layer); }
+.lw-r .dot { width: 6px; height: 6px; }
+.lw-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-st { flex: none; color: var(--fg-3); font-size: 12px; }
+@media (max-width: 639px) { .lw-s { padding-left: 16px; } }
+details.work.bad:not(.live) .wdot { display: block; background: var(--err); animation: none; }
 .mt { font-size: 12px; line-height: 16px; color: var(--fg-2); }
 .mt .mn { font-weight: 600; }
 .um { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 80%; min-width: 0; margin-top: 16px; }
@@ -389,7 +403,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .bm .more[open] > summary { margin-bottom: 4px; }
 .bm .more pre { margin: 0; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--card); color: var(--fg-2); font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; }
 .gban { flex: none; display: flex; align-items: center; gap: 10px; width: calc(100% - 48px); max-width: 872px; margin: 0 auto 4px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; }
-.main:has(> .views > #v-chat:not([hidden])) .gban, .main:has(> .views > #v-activity:not([hidden])) .gban { background: var(--layer); }
+
 .gban .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gban .tx b { color: var(--fg); font-weight: 600; }
 .gban .x { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3); font-size: 18px; line-height: 28px; }
@@ -481,24 +495,55 @@ button.cchip:hover { background: var(--layer); color: var(--fg); }
 .sendrow textarea::placeholder { color: var(--fg-3); }
 .prompt { display: none; }
 @media (pointer: coarse) { .sendrow textarea { font-size: 16px; line-height: 24px; } }
-.composer.tmode .sendrow { padding: 6px 6px 6px 12px; border-radius: 10px; background: var(--tb); border-color: var(--tl2); color: var(--tf); font-family: var(--mono); }
-.composer.tmode .prompt { display: block; flex: none; padding: 4px 0; color: var(--tac); font: 600 12.5px/20px var(--mono); }
-.composer.tmode textarea { font: 12.5px/20px var(--mono); }
-.composer.tmode textarea::placeholder { color: var(--td); }
-.composer.tmode .ib.pri { background: var(--tf); color: var(--tb); }
-.composer.tmode .working { font-family: var(--mono); }
-@media (pointer: coarse) { .composer.tmode textarea { font-size: 16px; line-height: 24px; } }
+.composer.tmode .sendrow { background: var(--card); }
+.composer.tmode .qitem { background: var(--card); border-color: transparent; }
 
 /* terminal: the same data as a terminal session */
 .termbox { position: relative; flex: 1; min-height: 0; margin-bottom: 12px; }
-.term { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 12px 14px; border: 1px solid var(--tl2); border-radius: 10px; background: var(--tb); color: var(--tf); font: 12.5px/20px var(--mono); scrollbar-color: var(--tl2) transparent; }
-.term .md p { margin: 0 0 8px; } .term .md p:last-child { margin: 0; }
-.term .md code { background: rgb(255 255 255 / .09); }
-.term .md pre { margin: 6px 0; padding: 8px 10px; border-radius: 6px; background: rgb(255 255 255 / .06); color: var(--tf); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow: auto; }
-.term .a-div, .term .tdv { color: var(--td); }
-.tg { flex: none; width: 14px; color: var(--td); text-align: center; }
-.term .tmore { display: flex; margin: 0 auto 8px; color: var(--td); }
-.term .tmore:hover { background: rgb(255 255 255 / .06); color: var(--tf); }
+.term { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 0 0 12px; font: 14px/22px var(--font); color: var(--fg); }
+.term > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+.term .tmore { display: flex; margin: 0 auto 12px; }
+.term .tdv, .term .lg-note { margin: 10px auto; color: var(--fg-3); font-size: 12.5px; line-height: 18px; text-align: center; }
+/* log: one card per turn - header (dot, what was asked, when, how long), answers as text, tool calls folded into one summary row */
+.lg { margin-bottom: 12px; padding: 16px 18px; border-radius: var(--r-card); background: var(--card); }
+.lg-h { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.lg-h .dot { width: 8px; height: 8px; }
+.lg-t { flex: 1; min-width: 0; font: 600 15px/22px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lg-m { flex: none; color: var(--fg-3); font-size: 12.5px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.lg-b { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding-left: 18px; }
+.lg-b:empty { display: none; }
+.lg-x .md { font-size: 14.5px; line-height: 24px; }
+.lg-x .md p { margin: 0 0 8px; } .lg-x .md p:last-child { margin: 0; }
+.lg-x .md code { padding: 1px 5px; border-radius: 5px; background: var(--layer); font-size: .86em; }
+.lg-x .md pre { margin: 6px 0; padding: 10px 12px; border-radius: 10px; background: var(--layer); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12.5px; line-height: 19px; }
+.lg-n { color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+.lg-q { padding: 8px 12px; border-radius: 10px; background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.lg.dim { padding: 8px 18px; background: transparent; }
+.lg.dim .lg-t { font-weight: 500; font-size: 13px; color: var(--fg-3); }
+.lg.dim .lg-b { display: none; }
+.lg-e { color: var(--fg); font-size: 14px; line-height: 22px; }
+.lg-e::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 8px 2px 0; border-radius: 50%; background: var(--err); vertical-align: middle; }
+.lg-e details > summary { display: inline; margin-left: 6px; color: var(--fg-2); font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; list-style: none; }
+.lg-e details > summary::-webkit-details-marker { display: none; }
+.lg-e pre, .lr-o pre { margin: 6px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--layer); color: var(--fg-2); font: 12px/18px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.lr-o pre.err { color: var(--err); }
+.ls > summary { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; min-height: 30px; padding: 0 10px; border-radius: 15px; background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; cursor: pointer; list-style: none; }
+.ls > summary::-webkit-details-marker { display: none; }
+.ls > summary::after { content: ""; flex: none; width: 5px; height: 5px; margin-left: 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .15s; }
+.ls[open] > summary::after { transform: rotate(-135deg) translateY(-1px); }
+.ls > summary:hover { color: var(--fg); }
+.ls-r { display: flex; flex-direction: column; margin-top: 6px; }
+.lr { border-radius: 10px; cursor: pointer; }
+.lr:hover { background: var(--card-hover); }
+.lr-h { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 0 8px; min-width: 0; }
+.lr-k { flex: none; min-width: 34px; color: var(--fg-3); font-size: 12px; font-weight: 600; }
+.lr-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12.5px/18px var(--mono); color: var(--fg); }
+.lr-d { flex: none; color: var(--fg-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.lr .dot { width: 7px; height: 7px; }
+.lr-o { display: none; padding: 0 8px 10px 52px; }
+.lr.open .lr-o { display: block; }
+.lr-sub { margin-top: 6px; color: var(--fg-2); font-size: 12.5px; }
+@media (max-width: 639px) { .lg { padding: 14px 14px; } .lg-b { padding-left: 0; } .lr-o { padding-left: 8px; } .lr-k { min-width: 28px; } }
 .tu, .th, .tt, .tk, .tr, .te { display: flex; gap: 8px; min-width: 0; }
 .tu { margin: 14px -8px 6px; padding: 4px 8px; border-radius: 4px; background: rgb(255 255 255 / .07); }
 .tu .tg { color: var(--tac); }
@@ -1445,7 +1490,7 @@ async function loadSubs() {
 }
 function subsChanged(source) {
   if (current === "home") renderHome();
-  renderSubs(); renderBars(); renderWorking();
+  renderSubs(); renderBars(); renderWorking(); paintWorkers();
   if (current === "lanes") renderLanes();
   if (SUBD && (!source || (SUBD.id ? SUBD.source === source : SUBD.sources.includes(source)))) renderSheet();
 }
@@ -2199,7 +2244,10 @@ function msgNode(e) {
   switch (e.kind) {
     case "message": case "lane_message": case "_cmd": {
       const via = e.kind === "_cmd" ? "명령" : e.source === "discord" ? "Discord" : e.source === "terminal" ? "터미널" : "";
-      return el("div", { class: "um" }, el("div", { class: "ub", text }), el("div", { class: "mt", text: [hm, via].filter(Boolean).join(" · ") }));
+      const ub = el("div", { class: "ub", text }), long = text.length > 420 || text.split("\n").length > 6;
+      if (long) ub.classList.add("clamp");
+      const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? "더 보기" : "접기"; } }, "더 보기") : null;
+      return el("div", { class: "um" }, ub, more, el("div", { class: "mt", text: [hm, via].filter(Boolean).join(" · ") }));
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, el("pre", { text }), el("div", { class: "mt", text: hm }));
     case "lane_start": return el("div", { class: "a-div", text: `레인 시작 · ${hm}` });
@@ -2229,11 +2277,11 @@ const WORK = new Set(["tool_call", "tool_result", "thinking", "text", "error"]);
 function newGroup(a) {
   const wsum = el("span", { class: "wsum" }), body = el("div", { class: "wbody" });
   const node = el("details", { class: "work" }, el("summary", {}, el("span", { class: "wdot" }), wsum), body);
-  const g = { node, body, ctx: { calls: new Map() }, tools: 0, think: 0, errs: 0, t0: Date.parse(a.ts), t1: Date.parse(a.ts), live: false };
+  const g = { node, body, ctx: { calls: new Map() }, kinds: new Map(), tools: 0, think: 0, errs: 0, t0: Date.parse(a.ts), t1: Date.parse(a.ts), live: false };
   g.update = () => {
-    const parts = [g.tools ? `도구 ${g.tools}개 사용` : g.think ? "생각" : "작업 내역"];
-    if (g.live) parts.unshift("작업 중");
-    if (g.t1 - g.t0 >= 1000) parts.push(fmtDur(g.t1 - g.t0));
+    const parts = [g.t1 - g.t0 >= 1000 ? `${fmtDur(g.t1 - g.t0)} 작업` : g.tools ? "작업" : g.think ? "생각" : "작업 내역"];
+    if (g.live) parts[0] = `작업 중${g.t1 - g.t0 >= 1000 ? ` ${fmtDur(g.t1 - g.t0)}` : ""}`;
+    for (const [k, v] of g.kinds) parts.push(`${k} ${v}`);
     if (g.errs) parts.push(`오류 ${g.errs}`);
     wsum.textContent = parts.join(" · ");
     node.classList.toggle("bad", g.errs > 0);
@@ -2241,7 +2289,7 @@ function newGroup(a) {
   g.add = a => {
     const n = actNode(a, g.ctx);
     if (n) g.body.append(n);
-    if (a.type === "tool_call") g.tools++;
+    if (a.type === "tool_call") { g.tools++; const k = kindOf(a.tool); g.kinds.set(k, (g.kinds.get(k) || 0) + 1); }
     else if (a.type === "thinking") g.think++;
     if (a.type === "error" || (a.type === "tool_result" && a.is_error)) g.errs++;
     const t = Date.parse(a.ts);
@@ -2290,8 +2338,8 @@ function markLive() {
 }
 
 /* ---------- terminal view (터미널): the same data as a session transcript ---------- */
-let termCtx = { calls: new Map() }, termEmpty = null;
-function resetTerm() { clear(term); termCtx = { calls: new Map() }; termEmpty = null; }
+let LG = { cur: null, steps: null, calls: new Map(), workers: [] }, termEmpty = null;
+function resetTerm() { clear(term); LG = { cur: null, steps: null, calls: new Map(), workers: [] }; termEmpty = null; }
 function toggleOpen(n) {
   if (getSelection().toString()) return;
   n.classList.toggle("open");
@@ -2299,55 +2347,142 @@ function toggleOpen(n) {
 }
 function clickable(n) {
   n.tabIndex = 0; n.setAttribute("role", "button"); n.setAttribute("aria-expanded", "false");
-  n.onclick = () => toggleOpen(n);
+  n.onclick = ev => { if (!ev.target.closest(".lr-o")) toggleOpen(n); };
   n.onkeydown = ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === n) { ev.preventDefault(); toggleOpen(n); } };
   return n;
 }
 const capName = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : "tool";
-function termTool(a, name, label) {
-  const rt = el("div", { class: "rt" }, el("span", { text: "실행 중…" }));
-  const node = clickable(el("div", { class: "tl", title: kstTime(a.ts) },
-    el("div", { class: "th" }, el("span", { class: "tg", text: "⏺" }), el("b", { text: capName(name) }), label ? el("span", { class: "ti", text: `(${label})` }) : null),
-    a.args ? el("pre", { class: "targs" }, el("code", { text: a.args })) : null,
-    el("div", { class: "tr" }, el("span", { class: "tg", text: "⎿" }), rt)));
-  return { node, rt };
+// Tool name -> the kind word used in summaries ("12초 작업 · 명령 3 · 읽기 2") and row labels.
+const KINDS = [[/^(bash|eval|shell|exec|run|python|js)/i, "명령"], [/^(read|view|cat|ls|open)/i, "읽기"], [/^(edit|write|multiedit|patch|apply|notebook)/i, "수정"], [/^(grep|glob|find|search|ast|lsp|symbols)/i, "검색"], [/^(task|agent|spawn|subagent)/i, "워커"], [/^(web|fetch|browser|http)/i, "웹"], [/^(todo|memory|goal)/i, "기록"]];
+const kindOf = tool => (KINDS.find(([r]) => r.test(String(tool || ""))) || [0, "도구"])[1];
+// Status lines from the runtime, said in Korean.
+function statusKoLine(text) {
+  const t = oneLine(text), m = t.match(/^(\S+) (?:resumed its session|started a new session) \(([^)]+)\)/);
+  if (m) return `${m[1] === "orchestrator" ? botName : m[1]} 세션 ${/resumed/.test(t) ? "이어서" : "새로"} 시작 · ${modelChipText(m[2])}`;
+  if (/^compacting context/.test(t)) return "컨텍스트 압축 중";
+  if (/^context compacted/.test(t)) return "컨텍스트 압축 완료";
+  if (/^retrying/.test(t)) return `다시 시도 중${(t.match(/attempt (\d+\/?\d*)/) || [])[1] ? ` (${t.match(/attempt (\d+\/?\d*)/)[1]})` : ""}`;
+  if (/^model fallback: /.test(t)) return `모델 전환 · ${t.replace(/^model fallback: /, "").replace(/\s*\(.*$/, "")}`;
+  return t;
 }
-function fillTermResult(rec, a) {
-  const text = String(a.text ?? "").replace(/\s+$/, ""), lines = text ? text.split("\n") : [];
-  const short = el("div", { class: "short" },
-    ...(lines.length ? lines.slice(0, 3).map(l => el("div", { class: "ln", text: l || "\u00a0" })) : [el("div", { class: "ln", text: "(출력 없음)" })]),
-    lines.length > 3 ? el("div", { class: "ln more", text: `… +${lines.length - 3}줄 (펼치기)` }) : null);
-  clear(rec.rt).append(short, el("pre", { class: "full", text: text || "(출력 없음)" }));
-  rec.node.classList.add(a.is_error ? "bad" : "ok");
+function logGroup(a, title) {
+  const dot = el("span", { class: "dot" }), meta = el("span", { class: "lg-m" }), body = el("div", { class: "lg-b" });
+  const node = el("section", { class: "lg" }, el("header", { class: "lg-h" }, dot, el("span", { class: "lg-t", text: title || "작업" }), meta), body);
+  const g = { node, body, t0: Date.parse(a.ts) || 0, t1: Date.parse(a.ts) || 0, errs: 0, ended: false, used: false };
+  g.paint = () => {
+    const live = !g.ended && LG.cur === g && isWorking(target);
+    meta.textContent = [kstHM(a.ts), g.t1 - g.t0 >= 1000 ? fmtDur(g.t1 - g.t0) : ""].filter(Boolean).join(" · ");
+    dot.className = `dot ${live ? "pri" : g.errs ? "err" : g.used ? "ok" : ""}`;
+  };
+  term.append(node); LG.cur = g; LG.steps = null; g.paint();
+  return g;
 }
-function termNode(a, ctx) {
-  const time = kstTime(a.ts);
+function logSteps(g, a) {
+  const sum = el("span", { class: "ls-s" }), rows = el("div", { class: "ls-r" });
+  const node = el("details", { class: "ls" }, el("summary", {}, sum), rows);
+  const st = { node, rows, n: new Map(), errs: 0, t0: Date.parse(a.ts) || 0, t1: Date.parse(a.ts) || 0 };
+  st.paint = () => {
+    const parts = [st.t1 - st.t0 >= 1000 ? `${fmtDur(st.t1 - st.t0)} 작업` : "작업"];
+    for (const [k, v] of st.n) parts.push(`${k} ${v}`);
+    if (st.errs) parts.push(`오류 ${st.errs}`);
+    sum.textContent = parts.join(" · ");
+  };
+  g.body.append(node); LG.steps = st;
+  return st;
+}
+function logRow(a, kind, label) {
+  const dot = el("span", { class: "dot pri" }), dur = el("span", { class: "lr-d" }), out = el("div", { class: "lr-o" });
+  const node = clickable(el("div", { class: "lr", title: kstTime(a.ts) }, el("div", { class: "lr-h" }, el("span", { class: "lr-k", text: kind }), el("span", { class: "lr-l", text: label }), dur, dot), out));
+  if (a.args) out.append(el("pre", { text: a.args }));
+  return { node, dot, dur, out, t: Date.parse(a.ts) || 0 };
+}
+function fillLogRow(rec, a) {
+  const t = Date.parse(a.ts) || 0, text = String(a.text ?? "").replace(/\s+$/, "");
+  rec.dot.className = `dot ${a.is_error ? "err" : "ok"}`;
+  if (t - rec.t >= 1000) rec.dur.textContent = fmtDur(t - rec.t);
+  rec.out.append(el("pre", { class: a.is_error ? "err" : "", text: text || "(출력 없음)" }));
+}
+// One activity item into the log: owner messages and turn starts open a turn card, turn ends close it; tool calls and
+// thinking fold into the turn's summary row; answers and errors stay visible in the card.
+// A prompt the session received ("> [dotz inbox] web from local …" from the saved transcript): who sent it and its text.
+function promptOf(text) {
+  const s = String(text).replace(/^>\s*/, ""), m = s.match(/^\[(dotz [\w-]+|keepalive)\]\s*/i), tag = m ? m[1].toLowerCase() : "";
+  const rest = s.slice(m ? m[0].length : 0).replace(/^web from \S+\s*/, "").trim();
+  if (tag === "keepalive") return { title: "캐시 유지 신호", body: "", dim: true };
+  const title = tag === "dotz gateway" ? `게이트웨이 · ${firstLine(rest)}` : firstLine(rest) || "메시지";
+  const body = rest.split("\n").slice(1).join("\n").trim();
+  return { title, body, dim: false };
+}
+function termNode(a) {
+  const t = Date.parse(a.ts) || 0;
+  if (a.type === "owner") { logGroup(a, firstLine(a.text ?? "")); return null; }
+  if (a.type === "status" && /^>\s/.test(a.text ?? "")) {
+    const p = promptOf(a.text), g = logGroup(a, p.title);
+    if (p.dim) g.node.classList.add("dim");
+    if (p.body) g.body.append(el("div", { class: "lg-q", text: p.body }));
+    return null;
+  }
+  if (a.type === "turn_start") { if (!LG.cur || LG.cur.used || LG.cur.ended) logGroup(a, ""); return null; }
+  if (a.type === "status" && (!LG.cur || LG.cur.ended)) return el("div", { class: "lg-note", text: `${statusKoLine(a.text ?? "")} · ${kstHM(a.ts)}` });
+  if (a.type === "turn_end") { if (LG.cur) { LG.cur.ended = true; if (t > LG.cur.t1) LG.cur.t1 = t; LG.cur.paint(); } LG.steps = null; return null; }
+  const g = LG.cur && !LG.cur.ended ? LG.cur : logGroup(a, "");
+  g.used = true; if (t > g.t1) g.t1 = t;
   switch (a.type) {
-    case "owner": return el("div", { class: "tu", title: time }, el("span", { class: "tg", text: ">" }), el("span", { class: "tx", text: String(a.text ?? "") }));
-    case "cmdout": return el("pre", { class: `tc${a.is_error ? " err" : ""}`, text: String(a.text ?? "") });
-    case "turn_start": case "turn_end": return null;   // turn boundaries are noise in a terminal; the working row shows it
-    case "status": return el("div", { class: "tdv", text: `${oneLine(a.text ?? "")} · ${time}` });
-    case "text": return el("div", { class: "tt", title: time }, el("span", { class: "tg", text: "⏺" }), mdNode(a.text));
-    case "thinking": return clickable(el("div", { class: "tk", title: time }, el("span", { class: "tg", text: "✻" }), el("span", { class: "tkt", text: `생각… ${oneLine(a.text ?? "").slice(0, 100)}` }), el("div", { class: "tkf" }, mdNode(a.text))));
-    case "error": return el("div", { class: "te", title: time }, el("span", { class: "tg", text: "✗" }), el("span", { text: String(a.text ?? "") }));
-    case "tool_call": {
-      const rec = termTool(a, a.tool, toolLabel(a));
-      if (a.call_id) ctx.calls.set(a.call_id, rec);
-      return rec.node;
+    case "tool_call": if (kindOf(a.tool) === "워커") {
+      // a worker run is its own row in the turn (not folded), with the subagents it started nested under it
+      LG.steps = null;
+      const rec = logRow(a, "워커", toolLabel(a) || capName(a.tool));
+      rec.node.classList.add("lw"); rec.subs = el("div", { class: "lw-s" }); rec.node.append(rec.subs);
+      LG.workers.push(rec);
+      if (a.call_id) LG.calls.set(a.call_id, { rec, st: { errs: 0, t1: 0, paint() {} } });
+      g.body.append(rec.node);
+      break;
+    }
+    // falls through
+    case "thinking": {
+      const st = LG.steps || logSteps(g, a), kind = a.type === "thinking" ? "생각" : kindOf(a.tool);
+      if (t > st.t1) st.t1 = t;
+      st.n.set(kind, (st.n.get(kind) || 0) + 1);
+      const rec = logRow(a, kind, a.type === "thinking" ? oneLine(a.text ?? "").slice(0, 120) : toolLabel(a) || capName(a.tool));
+      if (a.type === "thinking") { rec.dot.className = "dot"; rec.out.append(mdNode(a.text)); }
+      else if (a.call_id) LG.calls.set(a.call_id, { rec, st });
+      st.rows.append(rec.node); st.paint();
+      break;
     }
     case "tool_result": {
-      const rec = a.call_id && ctx.calls.get(a.call_id);
-      if (rec) { fillTermResult(rec, a); return null; }
-      const alone = termTool({ ...a, args: "" }, a.tool || "result", "");
-      fillTermResult(alone, a);
-      return alone.node;
+      const hit = a.call_id && LG.calls.get(a.call_id);
+      if (hit) { hit.rec.tEnd = t; fillLogRow(hit.rec, a); if (t > hit.st.t1) hit.st.t1 = t; if (a.is_error) { hit.st.errs++; g.errs++; } hit.st.paint(); }
+      else { const st = LG.steps || logSteps(g, a), rec = logRow(a, kindOf(a.tool), capName(a.tool || "result")); fillLogRow(rec, a); st.rows.append(rec.node); if (a.is_error) { st.errs++; g.errs++; } st.paint(); }
+      break;
     }
-    default: return a.text ? el("div", { class: "tdv", text: oneLine(a.text) }) : null;
+    case "text": LG.steps = null; g.body.append(el("div", { class: "lg-x" }, mdNode(a.text))); break;
+    case "error": {
+      LG.steps = null; g.errs++;
+      const raw = String(a.text ?? ""), line = humanAlert(raw);
+      g.body.append(el("div", { class: "lg-e" }, line, line.trim() === raw.trim() ? null : el("details", {}, el("summary", { text: "자세히" }), el("pre", { text: raw }))));
+      break;
+    }
+    case "cmdout": LG.steps = null; g.body.append(el("div", { class: "lg-x" }, el("div", { class: "md" }, el("pre", { text: String(a.text ?? "") })))); break;
+    case "status": g.body.append(el("div", { class: "lg-n", text: `${statusKoLine(a.text ?? "")} · ${kstHM(a.ts)}` })); break;
+    default: if (a.text) g.body.append(el("div", { class: "lg-n", text: oneLine(a.text) }));
+  }
+  g.paint();
+  return null;
+}
+// Subagents have no link to the call that started them: each goes under the worker row whose run window holds its start.
+function paintWorkers() {
+  if (!LG.workers.length) return;
+  const src = sourceOf(target), subs = SUBS[src] || [];
+  for (const w of LG.workers) {
+    const end = w.tEnd || Infinity;
+    const mine = subs.filter(x => x.started_at >= w.t - 2000 && x.started_at <= end + 1000);
+    clear(w.subs).append(...mine.map(x => el("div", { class: "lw-r", role: "button", tabindex: "0", title: "서브에이전트 기록 열기", onclick: ev => { ev.stopPropagation(); openSub(src, x.id, ev.currentTarget); } },
+      el("span", { class: `dot ${subTone(x.status)}` }), el("span", { class: "lw-n", text: x.description || x.agent || x.id }), el("span", { class: "lw-st", text: subKo[x.status] || x.status }))));
   }
 }
 function termPush(a, bulk) {
   if (termEmpty) { termEmpty.remove(); termEmpty = null; }
-  const n = termNode(a, termCtx);
+  const n = termNode(a);
   if (n) term.append(n);
   while (term.children.length > ts(target).cap) term.firstChild.remove();
   if (!bulk) scrollTerm();
@@ -2406,7 +2541,8 @@ async function loadOlder() {
   } catch { toast("이전 기록을 불러오지 못했어요", true); }
   finally { s.older = false; }
 }
-function renderAll(keepScroll) {
+function renderAll(keepScroll) { renderAll0(keepScroll); paintWorkers(); }
+function renderAll0(keepScroll) {
   const s = ts(target);
   resetChat(); resetTerm();
   if (!(s.hLoaded && s.aLoaded)) {
@@ -2679,7 +2815,7 @@ function renderBars() {
     const ud = mode === "term" && ts(target).unread > 0;
     const seg = el("div", { class: "vseg", role: "group", "aria-label": "보기 방식" },
       el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", onclick: () => go("chat") }, "대화", ud ? el("i", { class: "ud", title: "새 메시지" }) : null),
-      el("button", { type: "button", class: mode === "term" ? "on" : "", "aria-pressed": mode === "term" ? "true" : "false", onclick: () => go("activity") }, "터미널"));
+      el("button", { type: "button", class: mode === "term" ? "on" : "", "aria-pressed": mode === "term" ? "true" : "false", onclick: () => go("activity") }, "로그"));
     clear(bar).append(sw, drop, seg);
   }
 }
@@ -2745,18 +2881,17 @@ function actNode(a, ctx) {
     case "status": return el("div", { class: "a-div", text: `${oneLine(a.text ?? "")} · ${time}` });
     case "text": return el("div", { class: "a-text" }, el("span", { class: "a-time", text: time }), mdNode(a.text));
     case "thinking": return el("details", { class: "box think" }, el("summary", {}, el("span", { class: "tname", text: "생각" }), el("span", { class: "tsum", text: `· ${oneLine(a.text ?? "").slice(0, 80)}` }), el("span", { class: "sp" }), el("span", { class: "ttime", text: time })), mdNode(a.text));
-    case "error": return el("div", { class: "a-error" }, el("span", { class: "a-time", text: time }), String(a.text ?? ""));
+    case "error": { const raw = String(a.text ?? ""), line = humanAlert(raw); return el("div", { class: "lg-e" }, line, line.trim() === raw.trim() ? null : el("details", {}, el("summary", { text: "자세히" }), el("pre", { text: raw }))); }
     case "tool_call": {
-      const rec = toolBox(a, a.tool, true);
-      if (a.args) rec.body.append(el("div", { class: "cl", text: "인자" }), el("pre", {}, el("code", { text: a.args })));
+      const rec = logRow(a, kindOf(a.tool), toolLabel(a) || capName(a.tool));
       if (a.call_id) ctx.calls.set(a.call_id, rec);
       return rec.node;
     }
     case "tool_result": {
       const rec = a.call_id && ctx.calls.get(a.call_id);
-      if (rec) { fillResult(rec, a); return null; }
-      const alone = toolBox({ ...a, args: "" }, a.tool || "result", false);
-      fillResult(alone, a);
+      if (rec) { fillLogRow(rec, a); return null; }
+      const alone = logRow(a, kindOf(a.tool), capName(a.tool || "result"));
+      fillLogRow(alone, a);
       return alone.node;
     }
     default: return a.text ? el("div", { class: "a-div", text: oneLine(a.text) }) : null;
