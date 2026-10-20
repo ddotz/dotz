@@ -29,6 +29,15 @@ export function lanePlace(a: { home?: string; asking?: string; askingMessage?: s
 	return { kind: "channel" };
 }
 
+/**
+ * Whether the launching turn's answer moves into the new lane's thread: only when the owner asked in that Discord work
+ * channel or thread. An ask from chat, dm, the web or the terminal is answered where it was asked; with a `home` channel
+ * the lane still gets its thread, but the answer stays (2026-10-21: two web answers went only to Discord lane threads).
+ */
+export function answerMovesToLane(place: LanePlace, asking: string | undefined): boolean {
+	return place.kind !== "channel" && Boolean(asking && (asking.startsWith("ch:") || asking.startsWith("th:")));
+}
+
 const TOP_LEVEL = new Set(["chat", "dm", "worklog", "alert"]);
 /**
  * The Discord reply reference for an answer to owner message `replyTo` in `target`. A top-level channel always gets it (the
