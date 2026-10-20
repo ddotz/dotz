@@ -607,6 +607,8 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .md pre code { padding: 0; background: none; }
 .bm .md p.meta { margin: 4px 0 0; font-size: 13px; line-height: 20px; color: var(--fg-2); }
 .bm .md p.meta + p:not(.meta) { margin-top: 12px; }
+.md li.sub { margin-left: 20px; list-style-type: circle; }
+.md blockquote { margin: 0 0 8px; padding: 8px 12px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); }
 details.work > summary { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; min-height: 28px; margin-left: -4px; padding: 0 8px 0 4px; border-radius: 8px; color: var(--fg-2); font-size: 13px; line-height: 20px; cursor: pointer; list-style: none; }
 details.work > summary:hover { background: var(--hover); color: var(--fg); }
 details.work > summary::-webkit-details-marker { display: none; }
@@ -1322,7 +1324,9 @@ const num = n => Number(n || 0).toLocaleString("ko-KR");
 /* ---------- basic markdown (input is escaped before any markup is produced) ---------- */
 // Links only for http(s) targets; the text and URL are already escaped when the anchor is built.
 function inline(s) {
-  return String(s).split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code${/^(~|\.{0,2}\/)[^\s]*$|^[\w.-]+\/[\w./-]+(:\d+(-\d+)?)?$/.test(p.slice(1, -1)) ? ' class="path"' : ""}>${esc(p.slice(1, -1))}</code>` : esc(p).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')).join("");
+  return String(s).split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code${/^(~|\.{0,2}\/)[^\s]*$|^[\w.-]+\/[\w./-]+(:\d+(-\d+)?)?$/.test(p.slice(1, -1)) ? ' class="path"' : ""}>${esc(p.slice(1, -1))}</code>` : esc(p).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/(^|[^"'>=\w])(https?:\/\/[^\s<]*[^\s<.,;:!?)\]'"])/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>')
+    .replace(/~~([^~\n]+)~~/g, "<s>$1</s>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])/g, "$1<i>$2</i>")).join("");
 }
 // "| a | b |" rows; the "|---|" separator row after the first one makes that row the header.
 const cells = line => line.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
@@ -1345,9 +1349,10 @@ function unquoteChoices(lines) {
 }
 function blocks(text) {
   const html = [], meta = metaRe();
-  let list = null, para = [], table = null;
-  const flushP = () => { if (para.length) html.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; };
-  const flushL = () => { if (list) html.push(`<${list.t}>${list.items.map(i => `<li>${inline(i)}</li>`).join("")}</${list.t}>`); list = null; };
+  let list = null, para = [], table = null, quote = [];
+  const flushQ = () => { if (quote.length) html.push(`<blockquote>${quote.map(inline).join("<br>")}</blockquote>`); quote = []; };
+  const flushP = () => { flushQ(); if (para.length) html.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; };
+  const flushL = () => { if (list) html.push(`<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`); list = null; };
   const flushT = () => {
     if (!table) return;
     const [head, ...rest] = table.head ? table.rows : [null, ...table.rows];
@@ -1363,9 +1368,16 @@ function blocks(text) {
       continue;
     }
     flushT();
-    if (meta.test(line)) { flushP(); flushL(); html.push(`<p class="meta">${inline(line.replace(/^\s*-\s+/, ""))}</p>`); continue; }
-    if ((m = line.match(/^\s*[-*•]\s+(.*)/))) { flushP(); if (!list || list.t !== "ul") { flushL(); list = { t: "ul", items: [] }; } list.items.push(m[1]); }
-    else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) { flushP(); if (!list || list.t !== "ol") { flushL(); list = { t: "ol", items: [] }; } list.items.push(m[1]); }
+    // Discord's "-# " subtext line renders like the meta lines.
+    if (meta.test(line) || /^\s*-#\s/.test(line)) { flushP(); flushL(); html.push(`<p class="meta">${inline(line.replace(/^\s*-#?\s+/, ""))}</p>`); continue; }
+    // An indented item (2+ spaces) is a sub-item of the list it sits in, whatever its own marker.
+    if ((m = line.match(/^(\s*)(?:[-*•]|(\d+)[.)])\s+(.*)/))) {
+      flushP();
+      const t = m[2] ? "ol" : "ul", sub = m[1].length >= 2 && !!list;
+      if (!sub && (!list || list.t !== t)) { flushL(); list = { t, items: [] }; }
+      list.items.push({ text: m[3], sub });
+    }
+    else if ((m = line.match(/^\s*>\s?(.*)/))) { flushL(); if (para.length) { const q = quote; quote = []; flushP(); quote = q; } quote.push(m[1]); }
     else if ((m = line.match(/^#{1,6}\s+(.*)/))) { flushP(); flushL(); html.push(`<p class="h"><b>${inline(m[1])}</b></p>`); }
     else if (!line.trim()) { flushP(); flushL(); }
     else { flushL(); para.push(line); }
