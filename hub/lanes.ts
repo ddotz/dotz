@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { availableParallelism, totalmem } from "node:os";
 import { join, relative } from "node:path";
-import { emitEventActivity, endSubagents, runningSubagents, statusActivity } from "./activity.ts";
+import { emitEventActivity, endSubagents, runningSubagents, statusActivity, workerCheck } from "./activity.ts";
 import { pendingAskFile } from "./asks.ts";
 import { cfg, chainAfter, DATA_DIR, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, TZ, workerModel, writeAtomic } from "./config.ts";
 import { formatHeader, kstClock, workersOf } from "./lanevis.ts";
@@ -34,7 +34,7 @@ const DONE_RE = /(done[- ]?when|done\s*=|acceptance|완료\s*조건)/i;
 export type LaneStatus = "starting" | "working" | "idle" | "rate-limited" | "exited";
 // A lane in a git repo works in its own worktree (repo = the owner's checkout, base = the branch it lands on).
 type Worktree = { path: string; repo: string; branch: string; base: string };
-type Claim = { state: "reported" | "verified"; at: string; evidence?: string };
+type Claim = { state: "reported" | "verified"; at: string; evidence?: string; problems?: string[] };
 // A lane's own [ask] report stays a question for the owner until the owner answers (sendToLane) or the lane reports again.
 // The full text also sits in pending-ask.md (dir(name)) while pending, because report.md is overwritten by gateway notices.
 type Ask = { text: string; at: string };
@@ -163,7 +163,20 @@ function report(lane: Lane, text: string, notice = false): void {
 	} else if (!notice) clearAsk(lane);
 	persist(lane);
 	writeFileSync(join(dir(lane.name), "report.md"), `${text}\n`);
-	onReport(lane, text);
+	if (tone !== "done" || notice) return onReport(lane, text);
+	// A [done] is checked against the task metadata before it is relayed; what contradicts it goes along with it.
+	const claim = lane.claim;
+	void workerCheck(`lane:${lane.name}`, lane.workingSince ?? 0, lane.sessionFile)
+		.catch(e => [`task metadata unreadable: ${e}`])
+		.then(problems => {
+			if (!problems.length) return onReport(lane, text);
+			if (lane.claim === claim && claim) {
+				claim.problems = problems.slice(0, 10);
+				persist(lane);
+			}
+			log(`lane ${lane.name} [done] contradicted by task metadata: ${problems.join("; ")}`);
+			onReport(lane, `${text}\n\n[gateway check] task metadata contradicts this [done]; do not take it as verified:\n- ${problems.slice(0, 10).join("\n- ")}`);
+		});
 }
 // Drops the pending ask; the caller persists.
 function clearAsk(lane: Lane): void {
@@ -692,6 +705,7 @@ export function verifyLane(name: string, evidence: string): void {
 	if (lane.claim?.state !== "reported") throw new Error(`lane ${name} has no reported-done claim to verify${lane.claim ? " (already verified)" : ""}`);
 	const text = evidence.trim();
 	if (!text) throw new Error("verify needs evidence: what was run and its result");
+	if (lane.claim.problems?.length) throw new Error(`task metadata contradicts lane ${name}'s [done] (${lane.claim.problems.join("; ")}); have the lane redo or explain it, then verify its next [done]`);
 	lane.claim = { state: "verified", at: now(), evidence: text.slice(0, 1000) };
 	persist(lane);
 }
