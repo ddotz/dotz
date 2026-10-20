@@ -263,6 +263,8 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					transientTries = 0;
 					errorStreak.ok();
 					streakAlerted = false;
+				} else if (inKeepalive && keepaliveErrorDropped(ev.error.kind)) {
+					log(`keepalive failed (${ev.error.text.replace(/\s+/g, " ").slice(0, 120)}); not retried, the next message is the next try`);
 				} else if (ev.error.kind !== "rate" && ev.error.kind !== "owner" && errorStreak.fail() !== "go") {
 					// A run of failed turns: no more automatic retries, failovers or keepalives until a turn succeeds (the owner's
 					// next message is the next try); the owner hears it once.
@@ -548,6 +550,11 @@ export function lastAnswerAt(file: string, tailBytes = 512 * 1024): number | und
 	} catch {}
 	return undefined;
 }
+
+// A failed keepalive ping is not retried, failed over or alerted (2026-10-20 12:14 KST: one ping on a dead network ran four
+// 5-minute retries, twice, and told the owner the model had stopped): it only kept a cache warm, so the next real message is
+// the next try. Usage limits and owner-fixable errors still go through the normal path (they pause and hold messages).
+export const keepaliveErrorDropped = (kind: ProviderErrorKind): boolean => kind !== "rate" && kind !== "owner";
 
 // Keepalive (as on the macmini 오모냥): the 1h prompt cache would expire after an idle hour and the next message would
 // re-write the whole prefix at 2x. A ping at 50-58 min idle costs a 0.1x read, so pinging wins for any gap shorter than
