@@ -508,6 +508,17 @@ details.work.live .wdot { display: block; }
 .qitem .qa { display: flex; gap: 4px; flex: none; }
 .composer.tmode .qitem { background: var(--tb); border-color: var(--tl2); color: var(--tf); }
 .composer.tmode .qitem .qm { color: var(--td); }
+/* phone action chips: shown only on phones while the target works; the in-bar buttons step aside there */
+.achips { display: none; }
+@media (max-width: 639px) {
+  .achips:not([hidden]) { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 0 8px; padding: 0 2px; }
+  .achips::-webkit-scrollbar { display: none; }
+  .achip { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 34px; padding: 0 14px; border: 0; border-radius: 17px; background: var(--card); color: var(--fg); font: 500 13.5px/18px var(--font); box-shadow: 0 0 0 1px var(--line); }
+  .achip:active { background: var(--active); }
+  .achip.stop { color: var(--err); }
+  .achip .ic { width: 15px; height: 15px; color: var(--fg-3); }
+  .cbar .working .btn { display: none; }
+}
 /* slash menu: a floating card above the composer (Discord-style) */
 .composer { position: relative; }
 .hintrow { position: absolute; z-index: 30; left: 0; right: 0; display: flex; flex-direction: column; max-height: min(360px, 50vh); padding: 6px; border-radius: 16px; background: var(--pop); box-shadow: 0 0 0 1px rgb(0 0 0 / .05), 0 2px 6px rgb(0 0 0 / .06), 0 12px 32px -6px rgb(0 0 0 / .16); }
@@ -2864,8 +2875,28 @@ function renderWorking() {
     $("#working-int").hidden = st === "rate-limited" || !ta.value.trim();
     $("#working-queue").hidden = st === "rate-limited" || !ta.value.trim();
   }
-  renderQueue(); renderCtxRing();
+  renderQueue(); renderCtxRing(); renderActChips(on && st !== "rate-limited");
   markLive();
+}
+// Phone action chips (instead of a key bar): one row above the composer while the target works. They never take focus
+// from the textarea, so the keyboard stays up while you stop, queue, jump to the end or compact.
+function renderActChips(on) {
+  let row = $("#achips");
+  if (!row) { row = el("div", { class: "achips", id: "achips", role: "toolbar", "aria-label": "작업 중 동작", hidden: true }); $("#composer").insertBefore(row, $("#send")); }
+  row.hidden = !on;
+  if (!on) return;
+  const chip = (label, ic, fn, cls = "") => {
+    const b = el("button", { type: "button", class: `achip${cls}` }, ic ? icon(ic) : null, label);
+    b.addEventListener("pointerdown", ev => ev.preventDefault());
+    b.addEventListener("click", fn);
+    return b;
+  };
+  const term = modeOf() === "term", proc = target === MAIN ? "orchestrator" : laneOf(target);
+  clear(row).append(
+    chip("중단", null, () => stopTarget(), " stop"),
+    ta.value.trim() ? chip("다음 턴에", null, () => sendChat("queue")) : null,
+    chip("끝으로", "down", () => (term ? scrollTerm(true) : scrollChat(true))),
+    chip("압축", null, () => busy(null, async () => { const r = await api("/api/compact", "POST", { target: proc }); toast(r.state === "queued" ? "작업 중이라 턴이 끝나면 압축해요" : "압축을 시작했어요"); })));
 }
 
 /* ---------- queued messages (server queue, sent when the target's turn ends) + context ring ---------- */
