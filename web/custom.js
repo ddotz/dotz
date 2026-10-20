@@ -155,7 +155,7 @@ a.cu-li:hover .cu-lt { color: var(--accent); }
     }
   }
 
-  /* ---------- pinned rows (sidebar on desktop, 고정 on 홈 on phone) ---------- */
+  /* ---------- pinned rows (sidebar on desktop, 바로가기 on 홈 on phone) ---------- */
   const SCHED = r => !r.schedule ? "" : r.schedule.at ? `매일 ${r.schedule.at}` : r.schedule.every_minutes ? `${r.schedule.every_minutes}분마다` : "";
   function groups(v) {
     const D = DATA || {}, side = v === "side", base = side ? "ni" : "cu-r", nm = side ? "nl" : "cu-rn", out = [];
@@ -196,7 +196,8 @@ a.cu-li:hover .cu-lt { color: var(--accent); }
     if (!cards.length && !g.length) return;
     box.classList.add("cu-home");
     if (g.length) box.append(el("div", { class: "cu-pinhome" },
-      el("div", { class: "sec", text: "고정" }),
+      // The phone has no sidebar: its pinned projects, routines and links show here as shortcuts.
+      el("div", { class: "sec", text: "바로가기" }),
       ...g.flatMap(([label, rows]) => [el("div", { class: "cu-gl", text: label }), el("div", { class: "list" }, ...rows)])));
     if (cards.length) box.append(el("div", { class: "sec", text: "내 카드" }), el("div", { class: "grid" }, ...cards.map(cardNode)));
   }
