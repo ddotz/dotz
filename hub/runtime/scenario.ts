@@ -158,6 +158,8 @@ export async function orchestratorScenario(): Promise<Trace> {
 	await proc().push(asstEnd("", "aborted"));
 	await proc().push(agentEnd);
 	snap("after abort, compaction flushed");
+	// A prompt during the compaction waits for its end (OmO refuses it meanwhile), then goes in.
+	o.deliver("during compaction");
 	await proc().push(compactResp);
 	await proc().push(statsResp(1200));
 	snap("compacted");
@@ -223,7 +225,8 @@ export async function orchestratorScenario(): Promise<Trace> {
 	snap("keepalive done");
 	await advance(300);
 
-	// 8 a hung process: no turn after a delivery -> SIGTERM, SIGKILL 10s later, exit -> restart after 10s resuming the session.
+	// 8 a hung process: no turn after a delivery -> SIGTERM, SIGKILL 10s later, exit -> restart after 10s resuming the session;
+	// the prompt it never started goes to the new process.
 	o.deliver("are you there");
 	await advance(121_000);
 	await advance(10_000);
@@ -315,6 +318,7 @@ export async function laneScenario(): Promise<Trace> {
 	await proc().push(asstEnd("", "aborted"));
 	await proc().push(agentEnd);
 	snap("aborted, compaction flushed");
+	l.sendToLane("alpha", "during compaction");
 	await proc().push(compactResp);
 	await proc().push(statsResp(1800));
 	snap("compacted");
