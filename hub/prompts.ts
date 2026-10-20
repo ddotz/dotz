@@ -20,8 +20,12 @@
 // without one, is normal there: an unmatched user frame leaves the unanswered prompt in place, a prompt that finished is
 // released when the orchestrator goes idle (a later run is a new one), and an answer with no prompt goes to the owner's
 // newest message of the last 30 minutes (one still unanswered first), unless it repeats what was already sent there.
+//
+// A turn that hands code work to a background task worker ends with exactly `[later]` (MODE Routing; owner 2026-10-21:
+// a long inline turn kept every next message waiting a median 238 s): its prompt stays open (deferred) with nothing sent,
+// and the answer of the run the worker's result wakes (no prompt of ours) goes to the oldest open deferred prompt first.
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string };
@@ -58,6 +62,11 @@ const REPLAY_MAX_AGE_MS = 12 * 3600_000;
 // How old an owner message may be to receive an answer that has no prompt of its own.
 const ORPHAN_MAX_AGE_MS = 30 * 60_000;
 const MAX_RECENT = 20;
+// The marker a turn ends with when a background worker will produce its answer, and how long such a prompt stays open.
+export const LATER = "[later]";
+const DEFER_MAX_AGE_MS = 3 * 3600_000;
+// A restart waits for a deferred prompt this young (its worker dies with the orchestrator process); older ones do not block.
+const DEFER_BLOCKS_RESTART_MS = 60 * 60_000;
 
 export function createPrompts(deps: PromptDeps) {
 	const prompts: Prompt[] = [];
@@ -67,9 +76,12 @@ export function createPrompts(deps: PromptDeps) {
 	// Owner messages and dotz_send texts of the last half hour: who an answer without a prompt goes to, and what it may not repeat.
 	const owners: OwnerMessage[] = (deps.recent?.() ?? []).slice(-MAX_RECENT);
 	const recentSent: { target: string; text: string; at: number }[] = [];
+	// Prompts whose turn ended with LATER, oldest first, until a later run answers them.
+	const deferred: Prompt[] = [];
+	const openDeferred = () => deferred.filter(p => !p.done && !isAnswered(p.replyTo) && Date.now() - p.at <= DEFER_MAX_AGE_MS);
 
 	const save = () => {
-		const open = [...(current && !current.done ? [current] : []), ...prompts].map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
+		const open = [...openDeferred().filter(p => p !== current), ...(current && !current.done ? [current] : []), ...prompts].map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
 		deps.persist(open);
 	};
 	const isAnswered = (replyTo?: string) => replyTo !== undefined && (answered.has(replyTo) || deps.pending?.(replyTo) === true);
@@ -119,6 +131,15 @@ export function createPrompts(deps: PromptDeps) {
 		current?.sent.push({ target, text: text.trim() });
 		recentSent.push({ target, text: text.trim(), at: Date.now() });
 		if (recentSent.length > MAX_RECENT) recentSent.shift();
+		// A run with no prompt of ours (a worker's result woke it) answering with dotz_send settles the deferred prompt it
+		// answers: the one with this reply_to, else the oldest one in that channel.
+		if (!current || replyTo) {
+			const d = openDeferred().find(p => p.target === target && (replyTo ? p.replyTo === replyTo : true));
+			if (d) {
+				d.done = true;
+				save();
+			}
+		}
 		markAnswered(replyTo);
 		settleSteered(target, replyTo);
 	}
@@ -192,7 +213,7 @@ export function createPrompts(deps: PromptDeps) {
 		if (!p) return;
 		// The run is over: a run that starts next without a prompt of ours (OmO wakes the session when a task worker finishes,
 		// also right after a restart) is a new one and must not be taken for a continuation of this prompt (2026-10-20 12:51Z).
-		if (!p.done && p.target) {
+		if (!p.done && p.target && !p.deferred) {
 			deps.log(`turn ended without an answer to ${p.target}; ${p.last ? "sending its last text" : "it wrote no text"}`);
 			if (p.last) onAnswer(p.last);
 			else p.done = true;
@@ -203,6 +224,8 @@ export function createPrompts(deps: PromptDeps) {
 
 	/** Who an answer without a prompt goes to: the owner's newest message of the last 30 minutes, one still unanswered first. */
 	function orphanTarget(): OwnerMessage | undefined {
+		const d = openDeferred()[0];
+		if (d?.target) return { target: d.target, replyTo: d.replyTo, at: d.at, prompt: d };
 		const fresh = owners.filter(o => Date.now() - o.at <= ORPHAN_MAX_AGE_MS).sort((a, b) => a.at - b.at);
 		return fresh.findLast(o => !(o.prompt?.done || isAnswered(o.replyTo))) ?? fresh.at(-1);
 	}
@@ -212,6 +235,8 @@ export function createPrompts(deps: PromptDeps) {
 		const t = text.trim();
 		// Keepalive "ok" and "-" have no prompt by design.
 		if (t.length <= 3) return;
+		// Woken before the worker's result was in: the deferred prompt keeps waiting.
+		if (t === LATER) return void deps.log(`a run without a prompt said ${LATER}; ${openDeferred().length} deferred prompt(s) keep waiting`);
 		const to = orphanTarget();
 		if (!to) return void deps.log(`an answer had no prompt to go to (${t.length} chars): ${t.slice(0, 80)}`);
 		if (recentSent.some(s => s.target === to.target && Date.now() - s.at <= ORPHAN_MAX_AGE_MS && s.text.includes(t))) return;
@@ -230,9 +255,18 @@ export function createPrompts(deps: PromptDeps) {
 		// A turn omp continues (steered notes) stops again; the prompt it started with was answered at the first stop.
 		if (!p) return onOrphanAnswer(text);
 		if (p.done) return;
+		const t = text.trim();
+		if (t === LATER && p.target && !p.deferred) {
+			// Nothing goes out; the progress indicator stays until the worker's answer arrives.
+			p.deferred = true;
+			deferred.push(p);
+			deps.log(`the answer to ${p.target} is deferred to a background worker`);
+			save();
+			return;
+		}
+		if (t === LATER) return;
 		p.done = true;
 		save();
-		const t = text.trim();
 		if (!p.target) return;
 		const target = p.target;
 		// Parts sent early with dotz_send do not replace the answer; skip it only when it repeats something already sent.
@@ -259,5 +293,8 @@ export function createPrompts(deps: PromptDeps) {
 		return fresh.length;
 	}
 
-	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, queued: () => prompts.slice(), current: () => current };
+	/** Deferred prompts young enough that a restart should wait for their worker. */
+	const waitingOnWorkers = () => openDeferred().filter(p => Date.now() - p.at <= DEFER_BLOCKS_RESTART_MS).length;
+
+	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, waitingOnWorkers, queued: () => prompts.slice(), current: () => current };
 }
