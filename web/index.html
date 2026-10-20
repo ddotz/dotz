@@ -406,12 +406,15 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .sendrow > .ib { grid-area: send; }
 .sendrow > .cbar { grid-area: bar; margin: 0 0 0 -10px; padding: 0; min-height: 26px; }
 :root[data-theme="dark"] .sendrow { box-shadow: 0 6px 24px rgba(0, 0, 0, .35); }
-/* the transcript fades out under the header and above the composer only while there is more to scroll that way */
-.timeline { --ft: 0px; --fb: 0px; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%); }
-.timeline.st { --ft: 36px; } .timeline.sb { --fb: 28px; }
-#v-chat .thead { margin-bottom: 0; padding-bottom: 12px; background: var(--bg); transition: box-shadow .2s; }
-#v-chat:has(.timeline.st) .thead { box-shadow: 0 10px 14px -12px rgba(0, 0, 0, .16); }
-:root[data-theme="dark"] #v-chat:has(.timeline.st) .thead { box-shadow: 0 10px 14px -12px rgba(0, 0, 0, .6); }
+/* Claude-style edges: the transcript (chat and log) fades into the page under the header and above the composer while
+   there is more to scroll that way. Overlays only - no mask, shadow or layout change. */
+.chatbox, .termbox { position: relative; }
+.chatbox::before, .chatbox::after, .termbox::before, .termbox::after { content: ""; position: absolute; left: 0; right: 0; z-index: 1; pointer-events: none; opacity: 0; transition: opacity .15s; }
+.chatbox::before, .termbox::before { top: 0; height: 28px; background: linear-gradient(var(--bg), transparent); }
+.chatbox::after, .termbox::after { bottom: 0; height: 40px; background: linear-gradient(transparent, var(--bg)); }
+.chatbox.st::before, .termbox.st::before, .chatbox.sb::after, .termbox.sb::after { opacity: 1; }
+.chatbox > .jump, .termbox > .jump { position: absolute; left: 50%; right: auto; bottom: 14px; z-index: 2; transform: translateX(-50%); width: 36px; height: 36px; min-width: 0; padding: 0; border: 1px solid var(--line-2); border-radius: 50%; background: var(--card); color: transparent; font-size: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
+.chatbox > .jump::before, .termbox > .jump::before { content: "\2193"; color: var(--fg); font-size: 16px; line-height: 34px; }
 .bm.alert .mn::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: var(--err); vertical-align: middle; }
 .bm .more { margin-top: 8px; }
 .bm .more > summary { width: fit-content; color: var(--fg-2); font-size: 13px; line-height: 20px; cursor: pointer; list-style: none; text-decoration: underline; text-underline-offset: 3px; }
@@ -2196,7 +2199,8 @@ function eventTarget(e) {
 const timeline = $("#timeline"), tl = $("#tl"), term = $("#term");
 let chatStick = true, termStick = true;
 timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; });
-timeline.addEventListener("scroll", () => edgeFade(), { passive: true });
+timeline.addEventListener("scroll", () => edgeFade(timeline), { passive: true });
+term.addEventListener("scroll", () => edgeFade(term), { passive: true });
 term.addEventListener("scroll", () => { termStick = term.scrollTop + term.clientHeight >= term.scrollHeight - 40; $("#act-jump").hidden = termStick; if (term.scrollTop < 80) loadOlder(); });
 $("#chat-jump").prepend(icon("down")); $("#act-jump").prepend(icon("down"));
 $("#chat-jump").onclick = () => scrollChat(true);
@@ -2558,8 +2562,8 @@ async function loadOlder() {
   } catch { toast("이전 기록을 불러오지 못했어요", true); }
   finally { s.older = false; }
 }
-function renderAll(keepScroll) { renderAll0(keepScroll); paintWorkers(); edgeFade(); }
-function edgeFade() { const t = timeline; t.classList.toggle("st", t.scrollTop > 4); t.classList.toggle("sb", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
+function renderAll(keepScroll) { renderAll0(keepScroll); paintWorkers(); edgeFade(timeline); edgeFade(term); }
+function edgeFade(t) { const b = t.parentElement; b.classList.toggle("st", t.scrollTop > 4); b.classList.toggle("sb", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
 function renderAll0(keepScroll) {
   const s = ts(target);
   resetChat(); resetTerm();
