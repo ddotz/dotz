@@ -2,7 +2,9 @@
 // started and finished through the gateway), API keys (`omp auth import`), sign-out (`omp auth-broker logout`), plus
 // the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
 import { OMP } from "./config.ts";
-import { accountView, stickyAccount } from "./account-sticky.ts";
+import { label } from "./account-alias.ts";
+import { stickyAccount } from "./account-sticky.ts";
+import { labeledAccountView } from "./accounts-api.ts";
 import { type AccountReport, AccountUsage, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 
 // omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
@@ -346,13 +348,13 @@ export async function logoutProvider(provider: string): Promise<void> {
 export type QuotaLimit = { id: string; label: string; window: string; used: number | null; limit: number | null; remaining: number | null; unit: string; resets_at: number | null; status: string };
 // Pure: maps the usage reports to the API shape; providers holding credentials but absent from the reports
 // (or reporting no limits) are listed as unavailable with a plain reason.
-export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): { providers: { provider: string; account?: string; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {
+export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): { providers: { provider: string; account?: string; account_label?: string; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {
 	const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 	const providers = reports
 		.filter((r): r is OmpUsageReport & { limits: OmpLimit[] } => Array.isArray(r.limits) && r.limits.length > 0)
 		.map(r => ({
 			provider: r.provider,
-			...(r.account ?? r.metadata?.email ? { account: r.account ?? r.metadata?.email } : {}),
+			...(r.account ?? r.metadata?.email ? { account: r.account ?? r.metadata?.email, account_label: label((r.account ?? r.metadata?.email)!) } : {}),
 			limits: r.limits.map((l): QuotaLimit => ({
 				id: String(l.id), label: String(l.label ?? l.id), window: String(l.window?.id ?? l.window?.label ?? ""),
 				used: num(l.amount?.used), limit: num(l.amount?.limit), remaining: num(l.amount?.remaining), unit: String(l.amount?.unit ?? ""),
@@ -368,7 +370,7 @@ export async function quota() {
 	const rows = (await listProviders(new Set())).providers;
 	const anthropic = await anthropicUsage();
 	const reports = [...(anthropic ? [anthropic] : []), ...(await usageReports()).filter(r => r.provider !== "anthropic")];
-	return { fetched_at: Date.now(), ...buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)), ...(runtimeIdOf("orchestrator") === "omo" ? { account: accountView() } : {}) };
+	return { fetched_at: Date.now(), ...buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)), ...(runtimeIdOf("orchestrator") === "omo" ? { account: labeledAccountView() } : {}) };
 }
 
 // How long a 429 pause lasts. The provider's usage report names the window that ran out and when it resets, so the

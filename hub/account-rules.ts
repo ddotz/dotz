@@ -39,7 +39,7 @@ export type Evaluated = Decision & { change?: Omit<AccountSwitch, "at"> };
 export const rulesFile = () => join(accountsDir(), "rules.json");
 export const decisionsFile = () => join(accountsDir(), "decisions.jsonl");
 export const DEFAULT_SCRIPT_TIMEOUT_MS = 5000;
-const DEFAULT_EVERY_MINUTES = 5;
+export const DEFAULT_EVERY_MINUTES = 5;
 const SCRIPT_DEDUPE_MS = 30_000;
 
 const DAYS: Day[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -190,7 +190,7 @@ function inTimeWindow(w: When, now: number): boolean {
 	return inside && (!w.days || w.days.includes(DAYS[day]));
 }
 
-const blockedKind = (reason: string): string => (/auth/i.test(reason) ? "auth_error" : /rate|limit|429|quota/i.test(reason) ? "rate_limit" : reason);
+export const blockedKind = (reason: string): string => (/auth/i.test(reason) ? "auth_error" : /rate|limit|429|quota/i.test(reason) ? "rate_limit" : reason);
 
 type Ctx = { now: number; pool: Pool; current?: string; usage: Usage; resolve: (t: string) => string | undefined };
 
@@ -258,7 +258,7 @@ export function evaluate(i: EvaluateInput): Evaluated {
 }
 
 const KO_DAY: Record<Day, string> = { mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일" };
-const josa = (word: string, withFinal: string, without: string): string => {
+export const josa = (word: string, withFinal: string, without: string): string => {
 	const code = word.trim().charCodeAt(word.trim().length - 1) - 0xac00;
 	if (code < 0 || code > 11171) return without;
 	const final = code % 28;

@@ -147,9 +147,11 @@ const span = (ms: number): string => {
 const VIA: Record<AccountReport["via"], string> = { "omo-pinned": "OmO 고정 계정", "omo-sticky": "dotz가 유지하는 계정", "omo-pool": "OmO 계정 풀", omp: "omp 로그인" };
 const PROBLEM: Record<AccountProblem, string> = { expired: "토큰 만료 - OmO가 다음 요청 때 갱신해요", rate_limited: "사용량 조회가 429로 막힘", failed: "사용량 조회 실패" };
 
-// Pure: the "한도" answer, naming whose limits these are.
-export function limitsText(r: AccountReport, now: number): string {
-	const head = `계정: ${r.account} (${VIA[r.via]})`;
+// Pure: the "한도" answer, naming whose limits these are. `labelOf` maps the raw account id to the owner's alias; the raw id
+// then goes on a separate "-# " detail line (only when it differs from the label).
+export function limitsText(r: AccountReport, now: number, labelOf: (name: string) => string = n => n): string {
+	const name = labelOf(r.account);
+	const head = [`계정: ${name} (${VIA[r.via]})`, ...(name !== r.account ? [`-# 계정 id: ${r.account}`] : [])].join("\n");
 	const note = r.problem ? `${PROBLEM[r.problem]}${r.retryAt ? ` · ${span(r.retryAt - now)} 뒤 다시 조회` : ""}${r.limits.length && r.fetchedAt ? ` · 아래는 ${span(now - r.fetchedAt)} 전 값` : ""}` : undefined;
 	const lines = r.limits.map(l => `${l.label.padEnd(22)}${l.amount.used.toFixed(1)}% used${l.window.resetsAt ? ` · resets in ${span(l.window.resetsAt - now)}` : ""}`);
 	return [head, ...(note ? [note] : []), ...(lines.length ? ["```", ...lines, "```"] : r.problem ? [] : ["(한도 정보 없음)"])].join("\n");
