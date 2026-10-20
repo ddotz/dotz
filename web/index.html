@@ -369,9 +369,12 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .tchip.on { background: var(--fg); color: var(--bg); font-weight: 600; }
 .tchip.on .sb { background: color-mix(in srgb, var(--bg) 22%, transparent); color: inherit; }
 .tchip .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tchip[hidden] { display: none; }
+.tchip.tmore .ic { width: 14px; height: 14px; }
+.nb.warn { background: var(--warn); }
 .nb { flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 10.5px/16px var(--font); text-align: center; }
 .sb { flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
-.sb.att { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.sb.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
 .tdrop { display: none; flex: 1 1 120px; width: auto; min-width: 0; }
 .vseg { flex: none; display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--layer); }
 .vseg button { position: relative; height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
@@ -380,10 +383,12 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 /* 채팅 and 터미널 sit on the card surface so the owner's light-gray bubble reads against it */
 /* 로그 stays on the gray canvas: its turns are white cards */
 .vseg { background: var(--active); }
-.vseg .ud { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.vseg .ud, #vtog .ud { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+#vtog { display: none; position: relative; }
+#vtog .ud { top: 8px; right: 8px; }
 @media (pointer: coarse) { .vseg button { height: 34px; } .tchip { height: 36px; } }
-.vseg .ic { display: none; }
-/* phone: one ~44px row - the current target as one small chip (name + caret opens the picker), 대화/로그 as an icon toggle */
+/* phone: one ~44px row - the current target as one small chip (name + caret opens the picker) on the left, and 대화/로그 as
+   one icon button at the right edge, so the top-center camera cutout stays clear */
 @media (max-width: 639px) {
   .appbar.tv h1 { display: none; }
   .appbar.tv { height: calc(44px + env(safe-area-inset-top)); padding-left: 12px; }
@@ -393,9 +398,8 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
   .appbar .tdrop .val { flex: 0 1 auto; }
   .appbar.tv .tdrop.sel { flex: none; }
   .appbar.tv .conn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .vseg button { display: grid; place-items: center; width: 34px; height: 28px; padding: 0; }
-  .vseg .vl { display: none; }
-  .vseg .ic { display: block; width: 16px; height: 16px; }
+  .appbar .vseg { display: none; }
+  .appbar.tv #vtog:not([hidden]) { display: inline-grid; }
 }
 
 /* chat: Material 3 type scale + tonal surfaces, one reading column.
@@ -1124,7 +1128,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
       <span class="conn" id="conn" hidden>연결 끊김 · 다시 연결 중</span>
       <button class="ib only-phone" id="pal" type="button" aria-label="명령"></button>
       <button class="ustrip" id="ustrip" type="button" hidden></button>
-      <button class="ib" id="theme" type="button"></button>
+      <button class="ib" id="vtog" type="button" hidden></button>
     </header>
     <div class="gban" id="gban" role="status" hidden><span class="dot" id="gban-dot"></span><span class="tx" id="gban-tx"></span><button class="x" id="gban-x" type="button" aria-label="재시작 알림 닫기">×</button></div>
     <div class="views" id="views">
@@ -1374,12 +1378,12 @@ function notify(e) {
   const alertish = e.kind === "out" && e.target === "alert";
   const box = document.querySelector(".ntf-box") || document.body.appendChild(el("div", { class: "ntf-box", "aria-live": "polite" }));
   const lane = e.kind === "lane_report" ? String(e.lane || "") : "";
-  const title = lane ? `레인 ${lane}` : alertish ? "알림" : `${botName} 작업 기록`;
+  const title = e.title || (lane ? `레인 ${lane}` : alertish ? "알림" : `${botName} 작업 기록`);
   const at = e.ts ? new Date(e.ts) : null;
   const tm = at && !isNaN(at) ? at.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }) : "";
   const first = text.split("\n").find(l => l.trim()) || text;
   const n = el("div", { class: "ntf in", role: alertish ? "alert" : "status" },
-    el("span", { class: `dot ${alertish ? "err" : lane ? "ok" : ""}` }),
+    el("span", { class: `dot ${e.tone || (alertish ? "err" : lane ? "ok" : "")}` }),
     el("div", { class: "tx" }, el("div", { class: "hd" }, el("span", { class: "nm", text: title }), tm ? el("span", { class: "tm", text: tm }) : null), el("div", { class: "bd2", text: first.slice(0, 240) })));
   let left = NTF_MS, t0 = 0, timer = 0, hover = false, gone = false;
   const t = {
@@ -1399,7 +1403,7 @@ function notify(e) {
     setTimeout(() => n.remove(), 220);
   }
   n.append(el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
-  n.addEventListener("click", () => { close(); openTarget(lane ? `lane:${lane}` : MAIN, lastChatView()); });
+  n.addEventListener("click", () => { close(); openTarget(e.open || (lane ? `lane:${lane}` : MAIN), lastChatView()); });
   n.addEventListener("pointerenter", () => { hover = true; t.sync(); });
   n.addEventListener("pointerleave", () => { hover = false; t.sync(); });
   n.addEventListener("animationend", () => n.classList.remove("in"), { once: true });
@@ -1471,6 +1475,7 @@ function showMenu(anchor, items, { value, onPick }) {
       on ? icon("check", "ck") : el("span", { class: "ck" }),
       it.tone != null ? el("span", { class: `dot ${it.tone}` }) : null,
       el("span", { class: "ml" }, it.label, it.sub ? el("small", { text: it.sub }) : null),
+      it.flag ? el("span", { class: "sb warn", text: it.flag }) : null,
       it.badge ? el("span", { class: "nb", text: String(it.badge) }) : null);
     b._label = String(it.label).toLowerCase();
     return [b, b];
@@ -1624,18 +1629,12 @@ const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) 
 
 /* ---------- chrome: nav, theme, back ---------- */
 for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => go(id === "chat" ? lastChatView() : id) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
-// Light<->dark toggle: the icon shows the mode a click switches to.
+// Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
 const themeNext = () => themeIs() === "dark" ? "라이트" : "다크";
-function paintTheme() {
-  const b = $("#theme");
-  clear(b).append(icon(themeIc()));
-  b.title = b.ariaLabel = `${themeNext()} 모드로 전환`;
-}
-function toggleTheme() { dotzTheme.toggle(); paintTheme(); if (current === "settings") renderSettings(); }
-window.addEventListener("dotz-theme", () => { paintTheme(); if (current === "settings") renderSettings(); });
-paintTheme();
+function toggleTheme() { dotzTheme.toggle(); if (current === "settings") renderSettings(); }
+window.addEventListener("dotz-theme", () => { if (current === "settings") renderSettings(); });
 $("#pal").append(icon("search"));
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
@@ -1648,7 +1647,6 @@ function renderSideStatus() {
 }
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
-$("#theme").onclick = toggleTheme;
 const backTarget = () => SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : null;
 $("#back").onclick = () => go(backTarget() || "home");
 
@@ -1749,7 +1747,7 @@ function go(name, tgt) {
   $("#appbar").classList.toggle("back", !!back);
   $("#appbar").classList.toggle("tv", tv);
   const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
-  th.hidden = !tv;
+  th.hidden = !tv; $("#vtog").hidden = !tv;
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
   $("#title").textContent = name === "home" ? botName : titles[name];
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
@@ -2373,7 +2371,7 @@ try { const v = localStorage.getItem(TARGET_KEY); if (v && validTarget(v)) targe
 function targetInfo(t) {
   if (t === MAIN) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
   const l = S && S.lanes.find(x => x.name === laneOf(t));
-  return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable } : { status: "", alive: true, known: false };
+  return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable, ask: l.pendingAsk && l.pendingAsk.text ? l.pendingAsk : null } : { status: "", alive: true, known: false };
 }
 const isWorking = t => { const i = targetInfo(t); return i.alive && (i.status === "working" || i.status === "starting"); };
 
@@ -2415,12 +2413,15 @@ function noteStatus() {
   if (dirty) { saveMap(SEEN_KEY, SEEN); saveMap(DONE_KEY, DONE); }
 }
 // "limit": rate-limited; "done": finished while this browser was not looking; "": nothing. Looking at the target clears both.
-function attnKind(t) {
-  if (watching(t)) return "";
+// "ask" (checked first): a lane question waiting for the owner's answer (lane.json pendingAsk, cleared when answered).
+function attnRaw(t) {
   const i = targetInfo(t);
+  if (i.alive && i.ask) return "ask";
   if (i.alive && i.status === "rate-limited") return "limit";
   return msOf(DONE[t]) > msOf(SEEN[t]) ? "done" : "";
 }
+const attnKind = t => watching(t) ? "" : attnRaw(t);
+const attnLabel = k => ({ ask: "답변 필요", limit: "한도 대기" })[k] || "확인 필요";
 const attnCount = () => S ? [MAIN, ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)].filter(attnKind).length : 0;
 // Targets needing attention, not messages: the 채팅 nav badge and the page title. Unread message counts stay on the chips.
 function paintAttn() {
@@ -2428,6 +2429,24 @@ function paintAttn() {
   b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n); b.title = `확인 필요 ${n}개`;
   b.parentElement.setAttribute("aria-label", n ? `채팅, 확인 필요 ${n}개` : "채팅");
   document.title = n ? `(${n}) ${botName}` : botName;
+  toastAttn();
+}
+// A target that starts needing the owner pops one toast (tap = switch to it): a lane question, a rate limit, or the main chat
+// finishing unseen (a lane's finished turn already has its report toast). On page load only open questions pop.
+const ATTN_LAST = {};
+let attnPainted = false;
+function toastAttn() {
+  if (!S) return;
+  for (const t of [MAIN, ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)]) {
+    const k = attnRaw(t), was = ATTN_LAST[t] || "";
+    ATTN_LAST[t] = k;
+    if (!k || k === was || watching(t) || (k === "done" && t !== MAIN) || (!attnPainted && k !== "ask")) continue;
+    const ask = targetInfo(t).ask;
+    notify({ kind: "needs", target: t, open: t, tone: "warn", title: `${targetName(t)} · ${attnLabel(k)}`,
+      ts: k === "ask" ? ask.at : k === "done" ? DONE[t] : new Date().toISOString(),
+      text: k === "ask" ? ask.text : k === "limit" ? "한도에 걸려 기다리고 있어요" : "답을 마쳤어요. 확인해 주세요" });
+  }
+  attnPainted = true;
 }
 function attnChanged() {
   renderBars();
@@ -3402,14 +3421,15 @@ function renderBars() {
   const view = t => {
     const i = targetInfo(t);
     const k = attnKind(t);
-    return { t, name: targetName(t), tone: k ? "att" : i.alive ? statusTone(i.status) : "", attn: k, status: i.alive ? statusKo(i.status) : "종료됨", unread: ts(t).unread, subs: runningSubs(sourceOf(t)).length };
+    return { t, name: targetName(t), tone: k ? "warn" : i.alive ? statusTone(i.status) : "", attn: k, status: i.alive ? statusKo(i.status) : "종료됨", unread: ts(t).unread, subs: runningSubs(sourceOf(t)).length };
   };
   const A = alive.map(view), D = dead.map(view);
   const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
+  const othersAttn = [...A, ...D].filter(v => v.t !== target && v.attn).length;
   const sig = JSON.stringify([A, D, cur, others, target, ORDER]);
-  const chip = v => { const b = el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "aria-pressed": v.t === target ? "true" : "false", title: v.attn ? `확인 필요 · ${v.status}` : v.status, onclick: () => setTarget(v.t) },
+  const chip = v => { const b = el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "data-t": v.t, "aria-pressed": v.t === target ? "true" : "false", title: v.attn ? `${attnLabel(v.attn)} · ${v.status}` : v.status, onclick: () => setTarget(v.t) },
     el("span", { class: `dot ${v.tone}` }), el("span", { class: "tx", text: v.name }),
-    v.attn ? el("span", { class: "sb att", text: "확인 필요" }) : null,
+    v.attn ? el("span", { class: "sb warn", text: attnLabel(v.attn) }) : null,
     v.subs ? el("span", { class: "sb", title: "서브에이전트", text: `서브 ${v.subs}` }) : null,
     v.unread ? el("span", { class: "nb", text: v.unread > 99 ? "99+" : String(v.unread) }) : null);
     dragItem(b, v.t, () => (D.some(d => d.t === v.t) ? D : A).map(x => x.t), true);
@@ -3419,24 +3439,51 @@ function renderBars() {
     if (bar.dataset.sig === msig || (openMenu && bar.contains(openMenu.anchor))) continue;
     bar.dataset.sig = msig;
     // Exited lanes are not shown; one opened from the palette shows as a chip only while it is the selected target.
-    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, ...A.map(chip), ...D.filter(v => v.t === target).map(chip));
+    const shownV = [...A, ...D.filter(v => v.t === target)];
+    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, ...shownV.map(chip),
+      el("button", { type: "button", class: "tchip tmore", hidden: true, "aria-haspopup": "listbox", "aria-expanded": "false" }));
+    sw._views = shownV;
     const drop = el("button", { type: "button", class: "sel tdrop", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `대화 대상: ${cur.name}` },
       el("span", { class: `dot ${cur.tone}` }), el("span", { class: "val", text: cur.name }),
-      cur.attn ? el("span", { class: "sb att", text: "확인 필요" }) : null,
+      cur.attn ? el("span", { class: "sb warn", text: attnLabel(cur.attn) }) : null,
       cur.subs ? el("span", { class: "sb", text: `서브 ${cur.subs}` }) : null,
-      others ? el("span", { class: "nb", title: "다른 대상의 새 메시지", text: others > 99 ? "99+" : String(others) }) : null,
+      othersAttn ? el("span", { class: "nb warn", title: `다른 세션 확인 필요 ${othersAttn}개`, text: String(othersAttn) })
+        : others ? el("span", { class: "nb", title: "다른 대상의 새 메시지", text: others > 99 ? "99+" : String(others) }) : null,
       icon("drop"));
     drop.onclick = () => showMenu(drop, [
-      ...A.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.attn ? "확인 필요" : "", v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), badge: v.unread || "" })),
+      ...A.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" })),
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
       ...(D.length ? [{ value: "__ended", label: `종료된 레인 ${D.length}`, sub: "기록 보기 · 재개" }] : [])], { value: target, onPick: v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else setTarget(v); } });
     const ud = mode === "term" && ts(target).unread > 0;
     const seg = el("div", { class: "vseg", role: "group", "aria-label": "보기 방식" },
-      el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", "aria-label": "대화", onclick: () => go("chat") }, icon("chat"), el("span", { class: "vl", text: "대화" }), ud ? el("i", { class: "ud", title: "새 메시지" }) : null),
-      el("button", { type: "button", class: mode === "term" ? "on" : "", "aria-pressed": mode === "term" ? "true" : "false", "aria-label": "로그", onclick: () => go("activity") }, icon("term"), el("span", { class: "vl", text: "로그" })));
+      el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", onclick: () => go("chat") }, "대화", ud ? el("i", { class: "ud", title: "새 메시지" }) : null),
+      el("button", { type: "button", class: mode === "term" ? "on" : "", "aria-pressed": mode === "term" ? "true" : "false", onclick: () => go("activity") }, "로그"));
     clear(bar).append(sw, drop, seg);
+    fitChips(sw);
+    // phone: one icon button at the right edge of the bar; the icon is the view a tap switches to
+    const vt = $("#vtog"), to = mode === "chat" ? "term" : "chat";
+    clear(vt).append(...[icon(to), ud ? el("i", { class: "ud" }) : null].filter(Boolean));
+    vt.title = vt.ariaLabel = to === "chat" ? "대화 보기" : "로그 보기";
+    vt.onclick = () => go(to === "chat" ? "chat" : "activity");
   }
 }
+// Desktop: target chips that do not fit fold into one "더보기 n" chip at the end (the selected one always stays visible;
+// its badge counts the folded sessions that need the owner). Phones hide the chips and use the picker instead.
+function fitChips(sw) {
+  const more = sw.querySelector(".tmore"), chips = [...sw.querySelectorAll(".tchip[data-t]")];
+  for (const c of chips) c.hidden = false;
+  more.hidden = true;
+  if (!sw.clientWidth || sw.scrollWidth <= sw.clientWidth) return;
+  const label = vs => { const n = vs.filter(v => v.attn).length; clear(more).append(...[el("span", { class: "tx", text: `더보기 ${vs.length}` }), n ? el("span", { class: "nb warn", title: `확인 필요 ${n}개`, text: String(n) }) : null, icon("drop")].filter(Boolean)); };
+  more.hidden = false;
+  label(sw._views.filter(v => v.attn));   // widest likely label first, so the fold leaves it room
+  const hid = [];
+  for (let i = chips.length - 1; i >= 0 && sw.scrollWidth > sw.clientWidth; i--) if (!chips[i].classList.contains("on")) { chips[i].hidden = true; hid.unshift(chips[i].dataset.t); }
+  const vs = sw._views.filter(v => hid.includes(v.t));
+  label(vs);
+  more.onclick = () => showMenu(more, vs.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" })), { value: target, onPick: setTarget });
+}
+new ResizeObserver(() => { const sw = $("#thead .tsw"); if (sw) fitChips(sw); }).observe($("#thead"));
 
 /* ---------- state refresh ---------- */
 // A short drop (the stream reconnects and replays what it missed) shows nothing; past 2s the header says it is reconnecting.
