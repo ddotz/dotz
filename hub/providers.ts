@@ -2,6 +2,7 @@
 // started and finished through the gateway), API keys (`omp auth import`), sign-out (`omp auth-broker logout`), plus
 // the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
 import { OMP } from "./config.ts";
+import { accountView, stickyAccount } from "./account-sticky.ts";
 import { type AccountReport, AccountUsage, fromOmp, runtimeIdOf, subscriptionAccount } from "./usage-account.ts";
 
 // omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
@@ -111,7 +112,7 @@ export const usageReports = async (): Promise<OmpUsageReport[]> =>
 // under OmO, else omp's login. `force` asks again sooner (a 429 just happened). Undefined: nothing to read.
 const accountUsage = new AccountUsage();
 export async function anthropicUsage(role: "orchestrator" | "lane" = "orchestrator", force = false): Promise<AccountReport | undefined> {
-	const acct = runtimeIdOf(role) === "omo" ? subscriptionAccount() : undefined;
+	const acct = runtimeIdOf(role) === "omo" ? subscriptionAccount(undefined, undefined, stickyAccount()) : undefined;
 	if (acct) return accountUsage.report(acct, force);
 	if (force) invalidate();
 	const r = (await usageReports()).find(x => x.provider === "anthropic");
@@ -350,7 +351,7 @@ export async function quota() {
 	const rows = (await listProviders(new Set())).providers;
 	const anthropic = await anthropicUsage();
 	const reports = [...(anthropic ? [anthropic] : []), ...(await usageReports()).filter(r => r.provider !== "anthropic")];
-	return { fetched_at: Date.now(), ...buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)) };
+	return { fetched_at: Date.now(), ...buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)), ...(runtimeIdOf("orchestrator") === "omo" ? { account: accountView() } : {}) };
 }
 
 // How long a 429 pause lasts. The provider's usage report names the window that ran out and when it resets, so the
