@@ -345,8 +345,10 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 @keyframes ntf-in { from { opacity: 0; transform: translateX(16px) scale(.98); } }
 @media (max-width: 639px) { .ntf-box { top: calc(8px + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); } }
 
-/* target header: one switcher + 대화/터미널 toggle, shared by both views */
-.thead { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 12px; }
+/* target header: one switcher + 대화/로그 toggle in the app bar, after the title (shared by both views) */
+.thead { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 4px 0 0; }
+.appbar.tv h1 { flex: none; margin-right: 12px; }
+.view.fill { padding-top: 8px; }
 .tsw { flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
 .tsw::-webkit-scrollbar { display: none; }
 .tchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 32px; max-width: 220px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--chip, var(--card)); color: var(--fg-2); font-size: 14px; font-weight: 500; }
@@ -369,7 +371,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .vseg { background: var(--active); }
 .vseg .ud { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 @media (pointer: coarse) { .vseg button { height: 34px; } .tchip { height: 36px; } }
-@media (max-width: 639px) { .thead { margin: 0 -12px 8px; padding: 0 12px; } .tsw { margin-right: -4px; } }
+@media (max-width: 639px) { .appbar.tv h1 { display: none; } .appbar.tv { padding-left: 12px; } .view.fill { padding-top: 4px; } }
 
 /* chat: Material 3 type scale + tonal surfaces, one reading column.
    - message text = M3 body-large 16px (line-height 26px: 24px is tuned for Latin, Hangul needs a little more air); meta = label-medium 12/16; tool rows = body-medium 13/20
@@ -380,7 +382,6 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
    - secondary text uses --fg-2 (AA on both themes); --fg-3 stays for non-text only */
 .chatbox { position: relative; flex: 1; min-height: 0; }
 .timeline { height: 100%; overflow-y: auto; overflow-x: hidden; }
-.thead { position: sticky; top: 0; z-index: 2; }
 .thead .vseg { margin-left: auto; }
 .tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto; padding: 8px 0 32px; }
 @media (max-width: 639px) { .tl-in { padding: 0 0 24px; } .tl-in > .bm { padding: 14px 16px; } }
@@ -1065,6 +1066,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
     <header class="appbar" id="appbar">
       <button class="ib" id="back" type="button" aria-label="뒤로" hidden></button>
       <h1 id="title">dotz</h1>
+      <div class="thead" id="thead" data-mode="chat" hidden></div>
       <span class="conn" id="conn" hidden>연결 끊김 · 다시 연결 중</span>
       <button class="ib only-phone" id="pal" type="button" aria-label="명령"></button>
       <button class="ustrip" id="ustrip" type="button" hidden></button>
@@ -1074,7 +1076,6 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
     <div class="views" id="views">
       <section class="view" id="v-home" hidden><div id="home-now"></div><div class="sec" id="home-sec">상태</div><div id="home"></div></section>
       <section class="view fill" id="v-chat" hidden>
-        <div class="thead" data-mode="chat"></div>
         <div class="subs" hidden></div>
         <div class="chatbox">
           <div class="timeline" id="timeline"><div class="tl-in" id="tl"></div></div>
@@ -1101,7 +1102,6 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
         </div>
       </section>
       <section class="view fill" id="v-activity" hidden>
-        <div class="thead" data-mode="term"></div>
         <div class="subs" hidden></div>
         <div class="termbox">
           <div class="term" id="term"></div>
@@ -1634,6 +1634,10 @@ function go(name, tgt) {
   document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#back").hidden = !back;
   $("#appbar").classList.toggle("back", !!back);
+  $("#appbar").classList.toggle("tv", tv);
+  const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
+  th.hidden = !tv;
+  if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
   $("#title").textContent = name === "home" ? botName : titles[name];
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
   if (name === "harness") loadHarness(); else closeHSheet();
