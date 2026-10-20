@@ -18,11 +18,21 @@ for (const file of [paths.inbox, paths.outbox]) {
 }
 recent.sort((a, b) => a.ts.localeCompare(b.ts));
 
+const emitListeners = new Set<(event: HubEvent) => void>();
+export const onEmit = (fn: (event: HubEvent) => void) => void emitListeners.add(fn);
+
 export function emit(box: "inbox" | "outbox", event: HubEvent): void {
 	appendFileSync(box === "inbox" ? paths.inbox : paths.outbox, `${JSON.stringify(event)}\n`);
 	recent.push(event);
 	if (recent.length > 300) recent.shift();
 	broadcast(event);
+	for (const fn of emitListeners) {
+		try {
+			fn(event);
+		} catch (e) {
+			console.error(`emit listener failed: ${e}`);
+		}
+	}
 }
 
 // Live-only activity (what an omp process is doing): streamed over SSE and kept in a per-source ring buffer, never

@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f2f4f6">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="dotz">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>dotz</title>
 <script>
 // Theme is applied before first paint: the saved light/dark choice, else the system setting (read only until the first toggle).
@@ -109,13 +116,17 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 @media (max-width: 639px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .main { order: 1; }
-  .side { order: 2; flex-direction: row; padding: 0 0 env(safe-area-inset-bottom); border-right: 0; border-top: 1px solid var(--line); background: var(--card); }
+  /* compact tab bar: a 46px row; the home-indicator inset is trimmed (labels end ~18px above the screen edge, clear of the indicator) */
+  .side { order: 2; flex-direction: row; padding: 0 0 max(2px, calc(env(safe-area-inset-bottom) - 16px)); border-right: 0; border-top: 1px solid var(--line); background: var(--card); }
+  /* typing: the keyboard covers the bar's place, so the bar steps aside instead of floating above the keyboard */
+  .app:has(.composer textarea:focus) .side { display: none; }
   .appbar { height: calc(52px + env(safe-area-inset-top)); }
   .appbar h1 { font-size: 20px; line-height: 28px; }
   .brand, .cmdk, .sfoot { display: none; }
   .rail { flex: 1; min-width: 0; flex-direction: row; gap: 0; }
-  .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 2px; height: 52px; padding: 0 2px; border-radius: 0; background: transparent !important; font-size: 10.5px; line-height: 14px; text-align: center; }
-  .ni .ic { width: 18px; height: 18px; }
+  .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 1px; height: 46px; padding: 0 2px; border-radius: 0; background: transparent !important; font-size: 10px; line-height: 13px; text-align: center; }
+  .ni .ic { width: 20px; height: 20px; }
+  .main .composer { padding-bottom: 8px; }
   .ni .nnb { position: absolute; top: 3px; left: calc(50% + 4px); margin: 0; }
   .ustrip { gap: 4px; padding: 0 4px; font-size: 11px; }
   .ustrip .ulab, .ustrip .ubar { display: none; }
@@ -321,7 +332,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .snack.bad { background: var(--err); color: #fff; }
 .snack.act { display: flex; align-items: center; gap: 12px; }
 .snack .sa { flex: none; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; }
-@media (max-width: 639px) { .snack { bottom: calc(68px + env(safe-area-inset-bottom)); } }
+@media (max-width: 639px) { .snack { bottom: calc(60px + max(2px, calc(env(safe-area-inset-bottom) - 16px))); } }
 /* floating notices (alert / worklog / lane report events): compact cards top-right; each leaves ~4s after the owner
    has actually seen it (tab visible and window focused), hover pauses, a dismissed one never comes back */
 .ntf-box { position: fixed; z-index: 1900; top: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; width: min(344px, calc(100vw - 32px)); pointer-events: none; }
@@ -4058,6 +4069,85 @@ function fbBlock() {
     el("div", { class: "fb-card" }, ...FB_LAYERS.map(fbRow)));
 }
 /* ---------- settings ---------- */
+/* ---------- installable app + web push (web/sw.js, /api/push in hub/push.ts) ---------- */
+const PWA = { reg: null, sub: null, info: null };
+const PUSH_KINDS = [["answer", "웹에서 보낸 메시지의 답변"], ["ask", "나에게 묻는 질문"], ["lane", "레인 완료 · 실패"], ["usage", "사용량 · 한도 경고"]];
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const pushCapable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const b64uBytes = s => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0));
+async function pwaInit() {
+  if (!("serviceWorker" in navigator)) return;
+  try { PWA.reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" }); } catch (e) { console.warn("service worker", e); return; }
+  // a tapped notification asks an open window to show its conversation
+  navigator.serviceWorker.addEventListener("message", ev => { const h = ev.data && ev.data.open ? new URL(ev.data.open, location.href).hash : ""; if (h && location.hash !== h) location.hash = h; });
+  if (pushCapable()) PWA.sub = await PWA.reg.pushManager.getSubscription().catch(() => null);
+  await pushLoad();
+  presence();
+}
+async function pushLoad() {
+  try { PWA.info = await api(`/api/push${PWA.sub ? `?endpoint=${enc(PWA.sub.endpoint)}` : ""}`); } catch {}
+  if (current === "settings") renderSettings();
+}
+async function pushEnable(btn) {
+  await busy(btn, async () => {
+    if ((await Notification.requestPermission()) !== "granted") throw new Error("알림 권한이 꺼져 있어요. 기기 설정에서 dotz 알림을 허용해 주세요");
+    const reg = PWA.reg || await navigator.serviceWorker.ready;
+    const info = PWA.info || await api("/api/push");
+    PWA.sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(info.publicKey) });
+    await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON() });
+    toast("알림을 켰어요");
+  });
+  await pushLoad();
+  presence();
+}
+async function pushDisable(btn) {
+  await busy(btn, async () => {
+    const sub = PWA.sub;
+    PWA.sub = null;
+    if (sub) { await api("/api/push/unsubscribe", "POST", { endpoint: sub.endpoint }); await sub.unsubscribe().catch(() => {}); }
+    toast("알림을 껐어요");
+  });
+  await pushLoad();
+}
+async function pushPref(kind, on) {
+  try { PWA.info.prefs = (await api("/api/push/prefs", "PUT", { endpoint: PWA.sub.endpoint, prefs: { [kind]: on } })).prefs; } catch (e) { toast(e.message, true); }
+  renderSettings();
+}
+const pushTest = btn => busy(btn, async () => { await api("/api/push/test", "POST", { endpoint: PWA.sub.endpoint }); toast("테스트 알림을 보냈어요"); });
+// The gateway skips a push to this device while its page is visible and focused (heartbeat every 25s, stale after 60s).
+let presTimer = 0;
+function presence() {
+  clearTimeout(presTimer);
+  if (!PWA.sub) return;
+  const active = document.visibilityState === "visible" && document.hasFocus();
+  fetch("/api/push/presence", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: PWA.sub.endpoint, active }), keepalive: true }).catch(() => {});
+  if (active) presTimer = setTimeout(presence, 25000);
+}
+document.addEventListener("visibilitychange", presence);
+["focus", "blur", "pagehide"].forEach(t => window.addEventListener(t, presence));
+window.addEventListener("load", pwaInit);
+function pushSection() {
+  const li = (ic, title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), ...trail);
+  const ios = isIOS(), standalone = isStandalone();
+  const rows = [];
+  if (!standalone) rows.push(li("home", "홈 화면에 추가", ios ? "Safari 공유 버튼 → '홈 화면에 추가'. 주소창 없이 앱처럼 열려요" : "브라우저 메뉴 → '앱 설치' 또는 '홈 화면에 추가'"));
+  const subscribed = PWA.sub && PWA.info && PWA.info.subscribed;
+  if (!pushCapable()) rows.push(li("bell", "알림", ios && !standalone ? "iPhone은 홈 화면에 추가한 dotz 앱에서 켤 수 있어요 (iOS 16.4 이상)" : "이 브라우저는 푸시 알림을 지원하지 않아요"));
+  else if (Notification.permission === "denied") rows.push(li("bell", "알림", "알림 권한이 막혀 있어요. 기기 설정에서 dotz 알림을 허용해 주세요"));
+  else if (!subscribed) rows.push(li("bell", "알림", "답변 · 질문 · 레인 완료 · 경고를 폰으로 받아요", el("button", { class: "btn", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
+  else {
+    for (const [k, label] of PUSH_KINDS) {
+      const on = PWA.info.prefs[k] !== false;
+      rows.push(li("bell", label, "", el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": label, onclick: () => pushPref(k, !on) })));
+    }
+    rows.push(li("bell", "알림 확인", "이 기기로 알림 하나를 보내요", el("button", { class: "btn tonal", type: "button", onclick: ev => pushTest(ev.currentTarget) }, "테스트 알림 보내기"), el("button", { class: "btn text", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, "끄기")));
+  }
+  const out = [el("div", { class: "sec", text: "앱 · 알림" }), el("div", { class: "list" }, ...rows)];
+  if (subscribed) out.push(el("div", { class: "note", text: "이 화면을 보고 있는 동안에는 알림을 보내지 않아요." }));
+  return out;
+}
+
 function renderSettings() {
   const box = $("#settings");
   if (fbDragging) return;
@@ -4073,7 +4163,7 @@ function renderSettings() {
     row("context", "컨텍스트", "", () => go("context")),
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null),
-    fbBlock(), ...rtSection());
+    ...pushSection(), fbBlock(), ...rtSection());
 }
 
 /* ---------- settings: 실행 하네스 (runtime menu + compatibility check; data from /api/runtimes) ---------- */
