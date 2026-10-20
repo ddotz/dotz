@@ -752,7 +752,7 @@
    2,
    {
     "type": "prompt",
-    "message": "#5ilqz2s7omu4 [dotz gateway] You are tester, the dotz orchestrator hosted …"
+    "message": "#2hdqtcoiw1aud [dotz gateway] You are tester, the dotz orchestrator hosted …"
    }
   ],
   [
@@ -1171,7 +1171,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#1akdu7j487szf Build the thing.\nDone when: tests pass\n\n---\n[dotz lane alpha…"
+    "message": "#3xsykcr38mrl Build the thing.\nDone when: tests pass\n\n---\n[dotz lane alpha…"
    }
   ],
   [
@@ -1631,7 +1631,7 @@
   [
    "report",
    "alpha",
-   "[lane recovery] 컨텍스트 압축이 실패했어요 (auto compaction failed: provider error). 진행 중이던 요청을 중단하고 같은 세션으로 다시 이어서 시작해요 (#/#)."
+   "[lane recovery] 컨텍스트 압축이 실패했어요 (auto compaction failed: provider error). 진행 중이던 요청을 중단하고 같은 대화 기록으로 다시 이어서 시작해요 (#/#)."
   ],
   [
    "kill",
@@ -1741,7 +1741,7 @@
   [
    "report",
    "alpha",
-   "[lane recovery] #분 넘게 아무 응답이 없어요. 진행 중이던 요청을 중단하고 같은 세션으로 다시 이어서 시작해요 (#/#)."
+   "[lane recovery] #분 넘게 아무 응답이 없어요. 진행 중이던 요청을 중단하고 같은 대화 기록으로 다시 이어서 시작해요 (#/#)."
   ],
   [
    "kill",
@@ -1928,7 +1928,7 @@
    4,
    {
     "type": "prompt",
-    "message": "#14amc4se1bt22 [dotz gateway] Your session was rotated to a fresh one (nigh…"
+    "message": "#1ns7mwl3vq83z [dotz gateway] Your conversation was rotated to a fresh one …"
    }
   ],
   [
@@ -1988,7 +1988,7 @@
   [
    "report",
    "alpha",
-   "[lane recovery] 컨텍스트 압축이 실패했어요 (Compaction failed while summarising). 진행 중이던 요청을 중단하고 같은 세션으로 다시 이어서 시작해요 (#/#)."
+   "[lane recovery] 컨텍스트 압축이 실패했어요 (Compaction failed while summarising). 진행 중이던 요청을 중단하고 같은 대화 기록으로 다시 이어서 시작해요 (#/#)."
   ],
   [
    "kill",

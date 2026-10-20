@@ -214,7 +214,7 @@ async function prepareHarness(interactiveRun: boolean, pick?: string, autoInstal
 	const def = defaultHarness(pick ?? priorRuntime);
 	let id = def;
 	if (interactiveRun) {
-		console.log("  봇의 오케스트레이터와 레인(프로젝트 작업)이 돌아갈 코딩 에이전트예요. 기본은 OmO 예요.");
+		console.log("  봇의 오케스트레이터와 세션(프로젝트 작업)이 돌아갈 코딩 에이전트예요. 기본은 OmO 예요.");
 		found.forEach((d, i) => console.log(`    ${i + 1}) ${harnessLine(d, d.id === def)}`));
 		for (;;) {
 			const v = (prompt("  번호 (Enter = 기본):") ?? "").trim();
@@ -308,7 +308,7 @@ async function interactive(): Promise<Answers> {
 					web_port: Number(askValid("로컬 포트", String(defaults.web_port), port, "1~65535")),
 					tailscale_https_port: Number(askValid("테일넷 HTTPS 포트", String(defaults.tailscale_https_port), port, "1~65535")),
 					orchestrator_model: ask(`${name} 모델:thinking`, defaults.orchestrator_model),
-					lane_model: ask("레인(프로젝트 작업) 모델:thinking", defaults.lane_model),
+					lane_model: ask("세션(프로젝트 작업) 모델:thinking", defaults.lane_model),
 				}
 			: {}),
 	};

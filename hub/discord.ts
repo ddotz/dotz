@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
+import { askComponentsFor } from "./askbuttons.ts";
 import { msg } from "./i18n.ts";
 import { gatewayDryRun } from "./live-guard.ts";
 import { threadForReply, threadTitle } from "./threads.ts";
@@ -405,7 +406,7 @@ export function chunks(text: string, limit = LIMIT): string[] {
 }
 
 // `embeds: []` appears only on PATCH (see edit()), so it is optional.
-type Body = { content: string; embeds?: never[]; allowed_mentions?: { parse: never[] }; message_reference?: { message_id: string; fail_if_not_exists: boolean } };
+type Body = { content: string; components?: unknown[]; embeds?: never[]; allowed_mentions?: { parse: never[] }; message_reference?: { message_id: string; fail_if_not_exists: boolean } };
 const mentionsOff = { parse: [] as never[] };
 const reference = (replyTo?: string) => (replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {});
 
@@ -561,6 +562,7 @@ export type Interaction = {
 	type: number;
 	member?: { user?: { id?: string } };
 	user?: { id?: string };
+	message?: { content?: string };
 	data?: { custom_id?: string; components?: { components?: { custom_id?: string; value?: string }[] }[] };
 };
 let onInteraction: (d: Interaction) => void = () => {};
@@ -618,6 +620,11 @@ export async function send(
 	if (paths.length && !bodies.length) bodies.push({ content: "", allowed_mentions: mentionsOff, ...reference(replyTo) });
 	// The files go with the last part, planned only when that part is still to be sent (a retry may have sent it already).
 	const last = bodies.length - 1;
+	if (last >= 0) {
+		// An [ask] with a choice block carries one button per option on its last part (hub/askbuttons.ts).
+		const components = askComponentsFor(target, bare, bodies[last]!.content);
+		if (components.length) bodies[last] = { ...bodies[last]!, components };
+	}
 	const plan = paths.length && last >= (opts?.skip ?? 0) ? planFiles(paths) : undefined;
 	for (let i = opts?.skip ?? 0; i < bodies.length; i++) {
 		const body = opts ? ({ ...bodies[i]!, nonce: `${opts.nonce}${i}`, enforce_nonce: true } as Body) : bodies[i]!;

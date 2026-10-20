@@ -8,6 +8,7 @@ import { changeTarget, compactTarget, ControlError, contextView, targetView, For
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
+import { setAskAnswer } from "./askbuttons.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { notify as pushNotify, pushRoute, startPush } from "./push.ts";
 import { isNote, msg } from "./i18n.ts";
@@ -377,10 +378,10 @@ discord.setChannelGoneHandler(id => {
 	if (clearChannel(id)) log(`work channel ${id} is gone; its logins and monitors were released`);
 });
 
-discord.connect(m => {
-	discord.ack(m.ackChannelId, m.id);
+const onOwner = (m: discord.Incoming) => {
+	if (m.id) discord.ack(m.ackChannelId, m.id);
 	const target = typeof m.channel === "string" ? m.channel : "lane" in m.channel ? `lane:${m.channel.lane}` : "work" in m.channel ? `ch:${m.channel.work}` : `th:${m.channel.thread}`;
-	lastOwner.set(target, m.id);
+	if (m.id) lastOwner.set(target, m.id);
 	const event = { ts: now(), source: "discord", channel: target, message_id: m.id, author: m.author, text: m.content, attachments: m.attachments, reply: m.replyTo };
 	if (parseCommand(m.content)) {
 		emit("inbox", { ...event, kind: "message" });
@@ -417,12 +418,19 @@ discord.connect(m => {
 			if (error instanceof LaneRuntimeMismatch) {
 				log(`lane ${lane}: owner message refused, session of ${error.from}; handover offered`);
 				void send(target, error.message, m.id);
-			} else void send(target, `레인 ${lane}을(를) 이어갈 수 없어요 (${(error as Error).message}). 대화 채널에서 다시 맡겨 주세요.`, m.id);
+			} else void send(target, `세션 ${lane}을(를) 이어갈 수 없어요 (${(error as Error).message}). 대화 채널에서 다시 맡겨 주세요.`, m.id);
 		}
 		return;
 	}
 	emit("inbox", { ...event, kind: "message" });
 	intake({ ...event, kind: "message" }, target, m.id);
+};
+discord.connect(onOwner);
+// A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
+setAskAnswer((target, content) => {
+	const id = target.slice(target.indexOf(":") + 1);
+	const channel = target.startsWith("lane:") ? { lane: id } : target.startsWith("ch:") ? { work: id, name: discord.channels.work[id] ?? id, first: false } : target.startsWith("th:") ? { thread: id, name: discord.channels.threads[id]?.name ?? id } : (target as "chat");
+	onOwner({ id: "", channelId: "", ackChannelId: "", channel, author: "owner", content, attachments: [] });
 });
 await discord.ensureChannels().catch(e => {
 	discord.status.error = String(e);
@@ -505,7 +513,7 @@ function flushQueue(target: string): void {
 	const status = lane ? lanes.get(lane)?.status : orch.status;
 	if (lane && !lanes.has(lane)) {
 		const gone = drain(target);
-		void out("web", `레인 ${lane}이(가) 없어서 대기 중이던 메시지 ${gone.length}개를 전달하지 못했어요:\n${gone.map(i => i.text).join("\n---\n")}`, undefined, { source: "gateway" }).catch(() => undefined);
+		void out("web", `세션 ${lane}이(가) 없어서 대기 중이던 메시지 ${gone.length}개를 전달하지 못했어요:\n${gone.map(i => i.text).join("\n---\n")}`, undefined, { source: "gateway" }).catch(() => undefined);
 		return;
 	}
 	if (status !== "idle") return;
@@ -771,7 +779,7 @@ const server = Bun.serve({
 				try {
 					const done = await useRuntime(id, roles);
 					log(`runtime ${id} selected for ${done.join(", ")}`);
-					return json({ ok: true, runtime: id, roles: done, applies: "오케스트레이터와 레인을 다시 시작하면 적용돼요. 지금 돌고 있는 프로세스는 그대로예요." });
+					return json({ ok: true, runtime: id, roles: done, applies: "오케스트레이터와 세션을 다시 시작하면 적용돼요. 지금 돌고 있는 프로세스는 그대로예요." });
 				} catch (error) {
 					if (error instanceof UseRefused) return json({ error: error.message, runtime: id }, 409);
 					throw error;
@@ -1034,7 +1042,7 @@ for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 �
 // flooded worklog (owner 2026-10-20). Failures to start go to alert elsewhere.
 if (restarted) {
 	const at = new Date().toLocaleTimeString("ko-KR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
-	const picked = [replayed ? `답 못 한 메시지 ${replayed}개 다시 처리 중` : "", resumedLanes.length ? `이어서 하는 레인: ${resumedLanes.join(", ")}` : ""].filter(Boolean);
+	const picked = [replayed ? `답 못 한 메시지 ${replayed}개 다시 처리 중` : "", resumedLanes.length ? `이어서 하는 세션: ${resumedLanes.join(", ")}` : ""].filter(Boolean);
 	if (picked.length) void out(discord.status.enabled ? "worklog" : "web", `게이트웨이 재시작했어요 (${at} ${tzLabel()}).\n- ${picked.join("\n- ")}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
 	else log(`restart at ${at}: nothing interrupted, worklog notice skipped`);
 }

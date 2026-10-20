@@ -6,16 +6,16 @@ writing files in the data folder. The repo is never forked, and no gateway resta
 
 ## Why it looks like this: comparison with OmO
 
-- OmO splits work by project folder. Its sessions live in `~/.omo/agent/sessions/<cwd-encoded>/`, one folder per
+- OmO splits work by project folder. Its conversations live in `~/.omo/agent/sessions/<cwd-encoded>/`, one folder per
   working directory, and it keeps per-cwd state in `~/.omo/agent/projects/`.
-- OmO's gateway pins a chat to a session through bindings: `~/.omo/agent/gateway/gateway.sqlite`, table `bindings`
+- OmO's gateway pins a chat to a conversation through bindings: `~/.omo/agent/gateway/gateway.sqlite`, table `bindings`
   (`platform` discord, `chat_id`/`thread_id` -> `session_durable_id`). On Discord the owner sees one channel per
   project, fixed in the server sidebar (for example `#💬-tern` for the tern project).
-- dotz mirrors the parts that fit. A project is a folder: lanes are grouped by their `cwd`, and the work channel a lane
+- dotz mirrors the parts that fit. A project is a folder: sessions are grouped by their `cwd`, and the work channel a session
   lives in (`channels.json` `homes` / `work`) is pinned with it. The web sidebar plays the role of the Discord channel
-  list, and manual pins add projects that have no lane yet.
-- dotz does not copy OmO's long-lived session per project. dotz keeps one orchestrator and one lane per goal, so a
-  project page lists that folder's lanes and messages the orchestrator, tagged with the project.
+  list, and manual pins add projects that have no session yet.
+- dotz does not copy OmO's long-lived conversation per project. dotz keeps one orchestrator and one session per goal, so a
+  project page lists that folder's sessions and messages the orchestrator, tagged with the project.
 
 ## Folder layout
 
@@ -110,27 +110,27 @@ that card turns into an error card.
 
 ### Projects (auto plus manual)
 
-- Each lane belongs to the project `dir:<cwd>` (home shown as `~`), named after the folder. Lanes in temp folders are
+- Each session belongs to the project `dir:<cwd>` (home shown as `~`), named after the folder. Sessions in temp folders are
   skipped.
-- The work channel a lane lives in (`homes[lane]`) is that project's channel. A work channel no lane points to becomes
+- The work channel a session lives in (`homes[lane]`) is that project's channel. A work channel no session points to becomes
   its own project, `ch:<id>`.
 - A manual pin merges into the auto project with the same path or channel. Otherwise it creates a new project. The
-  pin's name wins, and pinned projects come first, in file order. Auto projects follow, newest lane first, at most 12.
+  pin's name wins, and pinned projects come first, in file order. Auto projects follow, newest session first, at most 12.
 - `hide_projects` hides auto projects by key. It never hides a manual pin.
 
-The project page (`#project/<key>`) reads `GET /api/custom/project?key=<key>`: a summary strip (running lanes, lanes
-waiting on the owner, last activity), the lanes with their last report line (from `lanes/<name>/report.md`, which
-outlives a gateway restart), finished time, verified or reported-only, resume and clean-up; the latest results (lane
+The project page (`#project/<key>`) reads `GET /api/custom/project?key=<key>`: a summary strip (running sessions, sessions
+waiting on the owner, last activity), the sessions with their last report line (from `lanes/<name>/report.md`, which
+outlives a gateway restart), finished time, verified or reported-only, resume and clean-up; the latest results (session
 `[done]`/`[fail]` reports, the folder's verification receipts, the newest commits, newest first); for a git folder the
 branch, uncommitted file count, last 5 commits and `lane/*` branches not merged into main; the open tasks of
 `state.json` that name the project (in the gateway's own checkout, also those that name no other project), a tap sends
-one as a request; and the work channel, threads, lane channels, routines, schedules and watches tied to it. Two
+one as a request; and the work channel, threads, session channels, routines, schedules and watches tied to it. Two
 columns from 1100px, one on a phone. The request box sends to the orchestrator (prefixed
-`[프로젝트 <name> · <path>]`), to a running lane of the project, or asks the orchestrator for a new lane.
+`[프로젝트 <name> · <path>]`), to a running session of the project, or asks the orchestrator for a new session.
 
 ### Routines
 
-One click on a routine sends `[루틴 <name>] <prompt>` as an owner web message, to the orchestrator or to the lane in
+One click on a routine sends `[루틴 <name>] <prompt>` as an owner web message, to the orchestrator or to the session in
 `target`. A routine with `schedule` keeps exactly one `dotz_schedule` entry whose text starts with
 `[routine:<id>:<hash6>] ` (`hash6` = sha1 of the routine's JSON). The gateway syncs these entries at start and whenever
 `pins.json` changes: it removes stale ones (the id is gone, the routine changed, or its schedule was removed) and adds
@@ -164,4 +164,4 @@ All routes sit behind the same auth as every other `/api` route.
 
 Anything this layer can express goes to `~/.dotz/custom`, and the bot checks it with `GET /api/custom` (`errors` is
 empty, the card has `data`). Only a need the layer cannot express (a new view type, a new API, gateway behavior) goes
-to the dotz source, as a lane on the dotz repo (MODE.md, Customization).
+to the dotz source, as a session on the dotz repo (MODE.md, Customization).
