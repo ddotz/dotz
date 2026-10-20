@@ -1,0 +1,18 @@
+{
+  "title": "디스크 남은 공간",
+  "note": "맥 내장 디스크",
+  "view": "stat",
+  "command": "df -h ~ | tail -1 | awk '{printf \"{\\\"value\\\":\\\"%s\\\",\\\"label\\\":\\\"남은 공간\\\",\\\"sub\\\":\\\"%s\\\"}\", $4, $9}'",
+  "every_minutes": 10,
+  "timeout_seconds": 10,
+  "actions": [
+    {
+      "label": "다운로드 크기",
+      "command": "du -sh ~/Downloads | cut -f1"
+    },
+    {
+      "label": "땃쥐에게 묻기",
+      "prompt": "디스크 공간을 많이 쓰는 폴더를 찾아서 정리할 만한 것만 알려줘"
+    }
+  ]
+}

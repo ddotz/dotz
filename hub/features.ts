@@ -10,13 +10,14 @@ import { cfg, DATA_DIR, HOME, IDENTITY_FILE, log, paths } from "./config.ts";
 import { loadFeatureDirs, TRIGGERS } from "./featuredirs.ts";
 import { harnessGraph, type HarnessNode } from "./harness.ts";
 import { lang } from "./i18n.ts";
+import { customDirLabel, readCards, readPins } from "./custom.ts";
 import { listSchedules } from "./schedule.ts";
 import { summarize } from "./summaries.ts";
 import { addWatch, allWatches, removeWatch } from "./watch.ts";
 import { listSetups } from "./workchannels.ts";
 import { activeHarness, EXTENSION_DIRS } from "./runtime/index.ts";
 
-export const FORMS = ["글 지시", "차단 명령", "기능 폴더", "스킬", "확장", "예약", "감시", "작업 채널 설정", "게이트웨이 기능", "외부 연동"] as const;
+export const FORMS = ["글 지시", "차단 명령", "기능 폴더", "스킬", "확장", "예약", "감시", "작업 채널 설정", "게이트웨이 기능", "외부 연동", "웹 맞춤"] as const;
 export { TRIGGERS };
 export type Form = (typeof FORMS)[number];
 export type Trigger = (typeof TRIGGERS)[number];
@@ -45,7 +46,7 @@ export type Feature = {
 // directory (skills, omp extensions) are personal, unless it is dotz's own checkout (its extension is linked from there);
 // dotz's own code, built-in denies and repo files ship with dotz.
 const originOf = (f: Feature): "shipped" | "personal" =>
-	f.form === "글 지시" || f.form === "예약" || f.form === "감시" || f.form === "작업 채널 설정" || f.id.startsWith("deny-") || (f.source.label.startsWith("~") && !inRepo(f.source.label)) ? "personal" : "shipped";
+	f.form === "글 지시" || f.form === "예약" || f.form === "감시" || f.form === "작업 채널 설정" || f.form === "웹 맞춤" || f.id.startsWith("deny-") || (f.source.label.startsWith("~") && !inRepo(f.source.label)) ? "personal" : "shipped";
 
 const REPO = join(import.meta.dir, "..");
 const short = (p: string) => (p.startsWith(`${HOME}/`) ? `~${p.slice(HOME.length)}` : p.startsWith(`${REPO}/`) ? p.slice(REPO.length + 1) : p);
@@ -351,6 +352,29 @@ function setupFeatures(): Feature[] {
 	}));
 }
 
+// ---- 웹 맞춤: the cards, routines and pins in <DATA_DIR>/custom (web home and sidebar; code runs them, so "enforced") ----
+function customFeatures(): Feature[] {
+	const base = { form: "웹 맞춤" as const, strength: "enforced" as const, stage: "web", enabled: true, toggleable: false };
+	const out: Feature[] = [];
+	for (const c of readCards()) {
+		const label = `${customDirLabel()}/${c.file}`;
+		if ("error" in c) {
+			out.push({ ...base, id: `custom-card-${c.id}`, name: c.id, what: c.error, trigger: "항상(프롬프트)", source: { label }, enabled: false });
+			continue;
+		}
+		const timed = Boolean(c.spec.command);
+		out.push({ ...base, id: `custom-card-${c.id}`, name: c.spec.title, what: timed ? `홈 카드 · 명령 ${c.spec.every_minutes}분마다` : "홈 카드 · 고정 글", trigger: timed ? "정해진 시각" : "항상(프롬프트)", source: { label } });
+	}
+	const { pins, errors } = readPins({ sync: false });
+	for (const r of pins.routines) {
+		const when = !r.schedule ? "직접 실행" : "at" in r.schedule ? `매일 ${r.schedule.at}` : `${r.schedule.every_minutes}분마다`;
+		out.push({ ...base, id: `custom-routine-${r.id}`, name: r.name, what: `루틴 · ${when}`, trigger: r.schedule ? "정해진 시각" : "메시지 도착", stage: r.schedule ? "schedule" : "web", source: { label: `${customDirLabel()}/pins.json` } });
+	}
+	const exists = existsSync(join(DATA_DIR, "custom", "pins.json"));
+	if (exists || errors.length) out.push({ ...base, id: "custom-pins", name: "고정 목록", what: errors.length ? `${errors[0].error}${errors.length > 1 ? ` (외 ${errors.length - 1}건)` : ""}` : `사이드바 고정 · 프로젝트 ${pins.projects.length}개 · 링크 ${pins.links.length}개`, trigger: "항상(프롬프트)", source: { label: `${customDirLabel()}/pins.json` }, enabled: !errors.length });
+	return out;
+}
+
 // ---- 게이트웨이 기능 · 외부 연동: the harness nodes themselves (no second copy of their text) ----------------------
 type NodeSpec = { form: Form; trigger: Trigger; file: string; toggle?: { path: string } };
 const NODE_SPECS: Record<string, NodeSpec> = {
@@ -501,6 +525,7 @@ export async function featureCatalog() {
 		...scheduleFeatures(),
 		...watchFeatures(),
 		...setupFeatures(),
+		...customFeatures(),
 		...nodeFeatures(graph.nodes),
 	];
 	markDuplicates(features);

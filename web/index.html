@@ -1146,6 +1146,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
     <button class="brand" id="brand" type="button" aria-label="홈으로"><span class="logo"></span><span id="brand-name">dotz</span></button>
     <button class="cmdk" id="cmdk" type="button" aria-label="명령"></button>
     <nav class="rail" id="nav" aria-label="메뉴"></nav>
+    <div class="pins" id="pins"></div>
     <div class="sfoot"><span class="dot" id="side-dot"></span><span id="side-st"></span></div>
   </aside>
   <div class="main">
@@ -1160,7 +1161,8 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
     </header>
     <div class="gban" id="gban" role="status" hidden><span class="dot" id="gban-dot"></span><span class="tx" id="gban-tx"></span><button class="x" id="gban-x" type="button" aria-label="재시작 알림 닫기">×</button></div>
     <div class="views" id="views">
-      <section class="view" id="v-home" hidden><div id="home-now"></div><div class="sec" id="home-sec">상태</div><div id="home"></div></section>
+      <section class="view" id="v-home" hidden><div id="home-now"></div><div class="sec" id="home-sec">상태</div><div id="home"></div><div id="home-custom"></div></section>
+      <section class="view" id="v-project" hidden></section>
       <section class="view fill" id="v-chat" hidden>
         <div class="subs" hidden></div>
         <div class="chatbox">
@@ -1578,8 +1580,8 @@ const CHAT_MODE_KEY = "dotz-chat-mode";
 const navView = v => v === "activity" ? "chat" : v;
 const lastChatView = () => { try { return localStorage.getItem(CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const SUB = new Set(["models", "providers", "usage", "context"]);
-const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트" };
+const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context", "project"];
+const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "레인", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", project: "프로젝트" };
 // The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
 const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
 const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
@@ -1677,7 +1679,7 @@ function renderSideStatus() {
 }
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
-const backTarget = () => SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : null;
+const backTarget = () => SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? "home" : null;
 $("#back").onclick = () => go(backTarget() || "home");
 
 /* ---------- command palette: jump to a view or run a /command ---------- */
@@ -1767,7 +1769,7 @@ function go(name, tgt) {
   current = name;
   const tv = name === "chat" || name === "activity";
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
-  const hash = tv ? `${name}/${target}` : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name;
+  const hash = tv ? `${name}/${target}` : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name;
   if (location.hash !== `#${hash}`) history.replaceState(null, "", `#${hash}`);
   for (const v of views) $(`#v-${v}`).hidden = v !== name;
   const back = backTarget();
@@ -1790,6 +1792,7 @@ function go(name, tgt) {
   if (name === "providers") loadProviders();
   if (name === "usage") loadQuota();
   if (name === "context") loadContext();
+  window.dotzCustom && dotzCustom.view(name, tgt);
 }
 window.addEventListener("hashchange", () => { const h = parseHash(); go(h.view, h.t); });
 
@@ -2373,6 +2376,7 @@ function renderHome() {
 
   // cards of data that has not arrived yet keep their saved place
   homeBoard.set(items, id => id.startsWith("lane:") ? !S : id.startsWith("ctx:") ? !C : id.startsWith("limit:") ? !HQ || !!HQ.error : id.startsWith("prov:") ? !P : false);
+  window.dotzCustom && dotzCustom.home();
 }
 
 /* ---------- assistant actions ---------- */
@@ -5345,6 +5349,7 @@ const FC_NOTE = {
   "작업 채널 설정": "작업 채널마다 묶어 둔 로그인 유지와 감시예요.",
   "게이트웨이 기능": "게이트웨이 코드에 들어 있는 기능이에요.",
   "외부 연동": "Discord·메일(zele)·브라우저(Aside) 같은 바깥 서비스와의 연결이에요.",
+  "웹 맞춤": "~/.dotz/custom 의 홈 카드·사이드바 고정·루틴이에요. 땃쥐가 파일로 만들고 재시작 없이 바로 보여요.",
 };
 const FC_STR = { enforced: "강제", advisory: "권고" };
 // Extensions installed for another harness are not loaded by the one running dotz: they leave every count and stage card
@@ -5584,5 +5589,6 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
   setInterval(() => loadModels(true), 60000);
 })();
 </script>
+<script src="/custom.js"></script>
 </body>
 </html>

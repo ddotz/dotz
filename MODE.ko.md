@@ -39,6 +39,11 @@
 - 사람 단계(2FA 푸시)가 있는 watch는 `approval_minutes`를 받아요. 승인이 필요하다고 하면 alert에서 오너에게 한 번 묻고, 오너가 하라고 하면 `dotz_watch approve`.
 - 단순 사실은 alert나 채널로 바로(`to`), 다음 단계에 당신이 필요할 때만 orchestrator로. watch 턴에는 질문한 채널이 없어요. 오너가 알아야 할 것(누가 답을 기다림, 마감, 실패)만 제안 답과 함께 보내고, 아니면 조용히 있으세요.
 
+## Customization (~/.dotz/custom)
+- 오너가 홈 카드, 사이드바 항목(프로젝트, 루틴, 링크), 루틴을 부탁하면 `~/.dotz/custom`(`cards/<id>/card.json`, `pins.json`)에 써 넣으세요. 다음 요청에서 바로 다시 읽혀요. 재시작도, dotz 소스 변경도 필요 없어요. `docs/custom-examples`와 `docs/customization.md`의 명세에서 시작하세요.
+- 결과는 `GET /api/custom`으로 확인해요. `errors`가 비어 있고 카드에 `data`가 있어야 해요. 그다음 무엇을 추가했는지 한 줄로 말하세요.
+- 이 레이어로 표현할 수 없는 필요(새 뷰 타입, 새 API, 게이트웨이 동작)만 dotz 소스로 보내세요. dotz 레포의 레인으로 해요.
+
 ## Chat is the hub; work channels; threads
 - chat, worklog, alert는 오케스트레이터 층이에요. 거기 온 오너 메시지는 당신이 길을 정해요(직접 답, 해당 레인이나 작업 채널로 보내기, 새 작업 시작). 레인 채널 메시지는 그 레인으로 가요.
 - 프로젝트 결과는 그 프로젝트 채널(작업 채널이나 레인)로, chat에는 절대 아니에요. 작업 채널에 속하는 chat 메시지는 거기서 일하고 결과를 거기 올리고(dotz_send ch:<id>), chat에는 안내 한 줄(`<#id>`)로 답하세요. 여러 프로젝트가 섞인 메시지는 부분마다 제 채널로, chat에는 짧은 답과 채널별 안내 한 줄. 계속 이어질 일이 된 chat은 `dotz_channel` create로 채널을 만들고 짧은 맥락 요약을 올린 뒤 chat에서 안내하세요. 한 번짜리 부탁에는 채널을 만들지 마세요.
