@@ -371,7 +371,21 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .vseg { background: var(--active); }
 .vseg .ud { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 @media (pointer: coarse) { .vseg button { height: 34px; } .tchip { height: 36px; } }
-@media (max-width: 639px) { .appbar.tv h1 { display: none; } .appbar.tv { padding-left: 12px; } .view.fill { padding-top: 4px; } }
+.vseg .ic { display: none; }
+/* phone: one ~44px row - the current target as one small chip (name + caret opens the picker), 대화/로그 as an icon toggle */
+@media (max-width: 639px) {
+  .appbar.tv h1 { display: none; }
+  .appbar.tv { height: calc(44px + env(safe-area-inset-top)); padding-left: 12px; }
+  .view.fill { padding-top: 4px; }
+  .appbar .tsw { display: none; }
+  .appbar .tdrop.sel { display: inline-flex; flex: 0 1 auto; width: auto; max-width: 168px; height: 32px; gap: 6px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg); font: 600 14px/18px var(--font); }
+  .appbar .tdrop .val { flex: 0 1 auto; }
+  .appbar.tv .tdrop.sel { flex: none; }
+  .appbar.tv .conn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .vseg button { display: grid; place-items: center; width: 34px; height: 28px; padding: 0; }
+  .vseg .vl { display: none; }
+  .vseg .ic { display: block; width: 16px; height: 16px; }
+}
 
 /* chat: Material 3 type scale + tonal surfaces, one reading column.
    - message text = M3 body-large 16px (line-height 26px: 24px is tuned for Latin, Hangul needs a little more air); meta = label-medium 12/16; tool rows = body-medium 13/20
@@ -569,16 +583,16 @@ details.work.live .wdot { display: block; }
 .qitem .qa { display: flex; gap: 4px; flex: none; }
 .composer.tmode .qitem { background: var(--tb); border-color: var(--tl2); color: var(--tf); }
 .composer.tmode .qitem .qm { color: var(--td); }
-/* phone action chips: shown only on phones while the target works; the in-bar buttons step aside there */
-.achips { display: none; }
+/* phone working actions: no row of their own - stop is the send button, the end is the floating jump button, and
+   다음 턴에 / 압축 sit in one ⋯ chip inside the composer bar (shown only on phones while the target works) */
+#c-more { display: none; }
 @media (max-width: 639px) {
-  .achips:not([hidden]) { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 0 8px; padding: 0 2px; }
-  .achips::-webkit-scrollbar { display: none; }
-  .achip { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 34px; padding: 0 14px; border: 0; border-radius: 17px; background: var(--card); color: var(--fg); font: 500 13.5px/18px var(--font); box-shadow: 0 0 0 1px var(--line); }
-  .achip:active { background: var(--active); }
-  .achip.stop { color: var(--err); }
-  .achip .ic { width: 15px; height: 15px; color: var(--fg-3); }
+  #c-more:not([hidden]) { display: inline-flex; padding: 0 8px; }
+  #c-more .ic { width: 18px; height: 18px; }
+  .sendrow > .cbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .sendrow > .cbar::-webkit-scrollbar { display: none; }
   .cbar .working .btn { display: none; }
+  .chatbox > .jump, .termbox > .jump { left: auto; right: 12px; bottom: 12px; transform: none; }
 }
 /* slash menu: a floating card above the composer (Discord-style) */
 .composer { position: relative; }
@@ -1092,6 +1106,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
             <textarea id="text" rows="1" autocomplete="off" placeholder="메시지 또는 /명령" aria-label="메시지"></textarea>
             <div class="cbar" id="cbar">
               <button class="cchip" type="button" id="c-attach" aria-label="파일 첨부" title="파일 첨부 · 끌어다 놓거나 붙여넣기도 돼요"></button>
+              <button class="cchip" type="button" id="c-more" aria-label="작업 중 동작" title="작업 중 동작" aria-haspopup="listbox" hidden></button>
               <button class="cchip" type="button" id="c-model" aria-haspopup="listbox" hidden></button>
               <button class="cchip" type="button" id="c-effort" aria-haspopup="listbox" hidden></button>
               <button class="cchip" type="button" id="ctx-ring" hidden></button>
@@ -2991,26 +3006,22 @@ function renderWorking() {
   renderQueue(); renderCtxRing(); renderActChips(on && st !== "rate-limited");
   markLive();
 }
-// Phone action chips (instead of a key bar): one row above the composer while the target works. They never take focus
-// from the textarea, so the keyboard stays up while you stop, queue, jump to the end or compact.
-function renderActChips(on) {
-  let row = $("#achips");
-  if (!row) { row = el("div", { class: "achips", id: "achips", role: "toolbar", "aria-label": "작업 중 동작", hidden: true }); $("#composer").insertBefore(row, $("#send")); }
-  row.hidden = !on;
-  if (!on) return;
-  const chip = (label, ic, fn, cls = "") => {
-    const b = el("button", { type: "button", class: `achip${cls}` }, ic ? icon(ic) : null, label);
-    b.addEventListener("pointerdown", ev => ev.preventDefault());
-    b.addEventListener("click", fn);
-    return b;
-  };
-  const term = modeOf() === "term", proc = target === MAIN ? "orchestrator" : laneOf(target);
-  clear(row).append(...[
-    chip("중단", null, () => stopTarget(), " stop"),
-    ta.value.trim() ? chip("다음 턴에", null, () => sendChat("queue")) : null,
-    chip("끝으로", "down", () => (term ? scrollTerm(true) : scrollChat(true))),
-    chip("압축", null, () => busy(null, async () => { const r = await api("/api/compact", "POST", { target: proc }); toast(r.state === "queued" ? "작업 중이라 턴이 끝나면 압축해요" : "압축을 시작했어요"); }))].filter(Boolean));
-}
+// Phone working actions without a row of their own: the send button stops, the floating jump button goes to the end,
+// and one ⋯ chip in the composer bar holds 다음 턴에 / 중단 / 압축 (CSS shows it on phones only).
+function renderActChips(on) { $("#c-more").hidden = !on; }
+$("#c-more").append(icon("more"));
+$("#c-more").addEventListener("pointerdown", ev => ev.preventDefault());
+$("#c-more").onclick = ev => {
+  const proc = target === MAIN ? "orchestrator" : laneOf(target);
+  showMenu(ev.currentTarget, [
+    ...(ta.value.trim() ? [{ value: "queue", label: "다음 턴에 보내기", sub: "지금 턴이 끝나면 보내요" }] : []),
+    { value: "stop", label: "중단", sub: "지금 턴을 멈춰요" },
+    { value: "compact", label: "압축", sub: "작업 중이면 턴이 끝난 뒤에" }], { onPick: v => {
+      if (v === "queue") sendChat("queue");
+      else if (v === "stop") stopTarget();
+      else if (v === "compact") busy(null, async () => { const r = await api("/api/compact", "POST", { target: proc }); toast(r.state === "queued" ? "작업 중이라 턴이 끝나면 압축해요" : "압축을 시작했어요"); });
+    } });
+};
 
 /* ---------- queued messages (server queue, sent when the target's turn ends) + context ring ---------- */
 let QUEUE = [];
@@ -3259,8 +3270,8 @@ function renderBars() {
       ...(D.length ? [{ value: "__ended", label: `종료된 레인 ${D.length}`, sub: "기록 보기 · 재개" }] : [])], { value: target, onPick: v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else setTarget(v); } });
     const ud = mode === "term" && ts(target).unread > 0;
     const seg = el("div", { class: "vseg", role: "group", "aria-label": "보기 방식" },
-      el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", onclick: () => go("chat") }, "대화", ud ? el("i", { class: "ud", title: "새 메시지" }) : null),
-      el("button", { type: "button", class: mode === "term" ? "on" : "", "aria-pressed": mode === "term" ? "true" : "false", onclick: () => go("activity") }, "로그"));
+      el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", "aria-label": "대화", onclick: () => go("chat") }, icon("chat"), el("span", { class: "vl", text: "대화" }), ud ? el("i", { class: "ud", title: "새 메시지" }) : null),
+      el("button", { type: "button", class: mode === "term" ? "on" : "", "aria-pressed": mode === "term" ? "true" : "false", "aria-label": "로그", onclick: () => go("activity") }, icon("term"), el("span", { class: "vl", text: "로그" })));
     clear(bar).append(sw, drop, seg);
   }
 }
