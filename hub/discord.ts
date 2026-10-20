@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { threadForReply, threadTitle } from "./threads.ts";
@@ -91,12 +91,20 @@ function startArchiveTimer(): void {
 }
 const isWorkParent = (parent?: string) => !!parent && (parent === channels.category || parent === channels.workCategory);
 
-async function rest(method: string, path: string, body?: unknown): Promise<any> {
+// With `files` the body goes as multipart (payload_json + files[i]), the way Discord takes message attachments.
+async function rest(method: string, path: string, body?: unknown, files?: Attach[]): Promise<any> {
 	for (let attempt = 0; ; attempt++) {
+		let payload: string | FormData | undefined = body === undefined ? undefined : JSON.stringify(body);
+		if (files?.length) {
+			const form = new FormData();
+			form.append("payload_json", JSON.stringify({ ...(body as object), attachments: files.map((f, i) => ({ id: i, filename: f.name })) }));
+			files.forEach((f, i) => form.append(`files[${i}]`, Bun.file(f.path), f.name));
+			payload = form;
+		}
 		const r = await fetch(`${process.env.DOTZ_DISCORD_API || "https://discord.com/api/v10"}${path}`, {
 			method,
-			headers: { Authorization: `Bot ${TOKEN}`, "Content-Type": "application/json" },
-			body: body === undefined ? undefined : JSON.stringify(body),
+			headers: { Authorization: `Bot ${TOKEN}`, ...(files?.length ? {} : { "Content-Type": "application/json" }) },
+			body: payload,
 		});
 		if (r.status === 429 && attempt < 3) {
 			const wait = Number(((await r.json().catch(() => ({}))) as { retry_after?: number }).retry_after ?? 1);
@@ -417,14 +425,89 @@ export function buildSingle(text: string): Body {
 }
 
 // `reopen` allows unarchiving a thread that Discord auto-archived (50083); lane threads and sub-topic threads qualify.
-async function post(id: string, body: Body, reopen = false): Promise<string> {
+async function post(id: string, body: Body, reopen = false, files?: Attach[]): Promise<string> {
 	try {
-		return (await rest("POST", `/channels/${id}/messages`, body)).id;
+		return (await rest("POST", `/channels/${id}/messages`, body, files)).id;
 	} catch (error) {
 		const laneThread = Object.keys(channels.homes).some(lane => channels.lanes[lane] === id);
 		if (!(reopen || laneThread || channels.threads[id]) || !/50083/.test(String(error))) throw error;
 		await rest("PATCH", `/channels/${id}`, { archived: false });
-		return (await rest("POST", `/channels/${id}/messages`, body)).id;
+		return (await rest("POST", `/channels/${id}/messages`, body, files)).id;
+	}
+}
+
+// ---- Result files: a `[file] /abs/path` line (outside a ``` block) in an outgoing message becomes an attachment of that
+// message, posted by the bot. main.ts installs the resolver (the /api/file roots and secret deny-list, so nothing goes out
+// that the file route would refuse) and the download link of the gateway, used for a file over the upload limit or one
+// Discord rejects as too large (413). The limit is the guild's (10MB unboosted); config discord.attach_max_mb raises it.
+
+type Attach = { path: string; name: string; size: number };
+export const attach = { maxBytes: Math.max(1, Number((cfg as any).discord?.attach_max_mb ?? 10)) * 1024 * 1024 };
+const MAX_FILES = 10;
+let resolveFile: (path: string) => string = () => {
+	throw new Error("file sending is not set up");
+};
+let fileLink: (path: string) => string | undefined = () => undefined;
+export function setFileResolver(fn: (path: string) => string): void {
+	resolveFile = fn;
+}
+export function setFileLink(fn: (path: string) => string | undefined): void {
+	fileLink = fn;
+}
+
+const FILE_LINE = /^\s*\[file\]\s+`?(.+?)`?\s*$/;
+export function fileLines(text: string): { text: string; files: string[] } {
+	const files: string[] = [];
+	const kept: string[] = [];
+	let fence = false;
+	for (const line of text.split("\n")) {
+		if (/^\s*```/.test(line)) fence = !fence;
+		const m = fence ? null : FILE_LINE.exec(line);
+		if (m) files.push(m[1]!);
+		else kept.push(line);
+	}
+	return { text: kept.join("\n"), files };
+}
+
+const mb = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(n / 1024))}KB`);
+const linkLine = (f: Attach) => {
+	const url = fileLink(f.path);
+	return url ? `-# ${f.name} (${mb(f.size)}, 첨부 한도 초과) 다운로드: ${url}` : `-# ${f.name} (${mb(f.size)}): 첨부 한도를 넘었어요, 파일은 \`${f.path}\``;
+};
+
+// Which files ride along as attachments (together within the upload limit, at most 10) and the note lines for the rest.
+function planFiles(paths: string[]): { files: Attach[]; notes: string[] } {
+	const files: Attach[] = [];
+	const notes: string[] = [];
+	let total = 0;
+	for (const input of paths) {
+		let f: Attach;
+		try {
+			const path = resolveFile(input);
+			f = { path, name: basename(path), size: statSync(path).size };
+		} catch (error) {
+			notes.push(`-# ${basename(input)}: ${(error as Error).message}`);
+			continue;
+		}
+		if (files.length < MAX_FILES && total + f.size <= attach.maxBytes) {
+			files.push(f);
+			total += f.size;
+		} else notes.push(linkLine(f));
+	}
+	return { files, notes };
+}
+
+const withNotes = (body: Body, notes: string[]): Body => (notes.length ? { ...body, content: [body.content, ...notes].filter(Boolean).join("\n").slice(0, 2000) } : body);
+
+// Posts the message part that carries the files; Discord's 413 (too large for this guild) re-posts it with download links.
+async function postWithFiles(id: string, body: Body, files: Attach[], notes: string[]): Promise<string> {
+	if (!files.length) return post(id, withNotes(body, notes));
+	try {
+		return await post(id, withNotes(body, notes), false, files);
+	} catch (error) {
+		if (!/: 413 /.test(String(error))) throw error;
+		log(`discord: ${files.length} attachment(s) too large for ${id}; sending download links`);
+		return post(id, withNotes(body, [...files.map(linkLine), ...notes]));
 	}
 }
 
@@ -490,10 +573,15 @@ export async function send(
 	if (!id) return { delivered: false, reason: `unknown target ${target}` };
 	const ids: string[] = [];
 	sentAt.set(target, Date.now());
-	const bodies = buildPayloads(text, replyTo, SOFT_LIMIT);
+	const { text: bare, files: paths } = fileLines(text);
+	const bodies = buildPayloads(bare, replyTo, SOFT_LIMIT);
+	if (paths.length && !bodies.length) bodies.push({ content: "", allowed_mentions: mentionsOff, ...reference(replyTo) });
+	// The files go with the last part, planned only when that part is still to be sent (a retry may have sent it already).
+	const last = bodies.length - 1;
+	const plan = paths.length && last >= (opts?.skip ?? 0) ? planFiles(paths) : undefined;
 	for (let i = opts?.skip ?? 0; i < bodies.length; i++) {
 		const body = opts ? ({ ...bodies[i]!, nonce: `${opts.nonce}${i}`, enforce_nonce: true } as Body) : bodies[i]!;
-		ids.push(await post(id, body));
+		ids.push(i === last && plan ? await postWithFiles(id, body, plan.files, plan.notes) : await post(id, body));
 		opts?.onPart(i);
 	}
 	return { delivered: true, ids };

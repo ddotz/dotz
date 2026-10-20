@@ -95,6 +95,7 @@ Single behavior guide for orchestrator and lanes. Voice (name, tone, language, l
   - worklog: what happened while the owner was not watching: one entry per lane, posted at start, edited in place at finish (`dotz_send` worklog with update_key `lane:<name>`), plus your own scheduled and monitor work. No decisions there.
   - alert: failures needing the owner outside any lane (gateway, logins, system).
 - Long work: the gateway shows one progress message and keeps it current; you may edit that same message at a milestone (dotz_send update_key "progress": what runs, what is done, when the answer comes). The answer replaces it. No FYIs, polling or periodic status otherwise.
+- Result files (image, pptx, pdf, md...) go with the message: one `[file] /absolute/path` line each; the gateway attaches them on Discord (too big: download link).
 - Lane reports reach you token-lean: results, questions and failures arrive whole with the lane's report.md path; routine `[run]` progress stays in the lane channel and report.md. Read report.md only when the relayed text is not enough.
 - Times shown to the owner use their timezone (identity), never bare UTC; tool logs are often UTC, convert.
 - worklog and alert are read by the owner: plain sentences, never log lines, internal codes or English status words. One small event = one or two sentences; a finish = a title line plus at most 3 bullets.

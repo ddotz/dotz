@@ -325,6 +325,23 @@ setLaneNoticeHandler((lane, text) => {
 		.catch(e => log(`lane model fallback notice failed: ${e}`));
 });
 
+// Result files ([file] lines, discord.ts) go out only when GET /api/file would serve them; a file too big to attach goes
+// out as that route's download link on the tailnet address (config web.public_url, else tailscale's name + HTTPS port).
+const fileRoots = () => allowedRoots([...lanes.values()].flatMap(l => [l.cwd, l.worktree?.path ?? ""]));
+discord.setFileResolver(p => resolveAllowed(p, fileRoots()));
+let webBase: string | undefined = (cfg.web as { public_url?: string } | undefined)?.public_url?.replace(/\/+$/, "");
+if (!webBase && cfg.web?.tailscale_https_port) {
+	const port = cfg.web.tailscale_https_port;
+	void (async () => {
+		for (const bin of ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]) {
+			const dns = await Bun.$`${bin} status --json`.quiet().json().then(s => String(s?.Self?.DNSName ?? "").replace(/\.$/, ""), () => "");
+			if (dns) return void (webBase = `https://${dns}${port === 443 ? "" : `:${port}`}`);
+		}
+		log("files: no tailnet address found (set web.public_url); files too big to attach are named, not linked");
+	})();
+}
+discord.setFileLink(p => (webBase ? `${webBase}/api/file?path=${encodeURIComponent(p)}&dl=1` : undefined));
+
 discord.setChannelGoneHandler(id => {
 	if (clearChannel(id)) log(`work channel ${id} is gone; its logins and monitors were released`);
 });
@@ -517,7 +534,7 @@ const server = Bun.serve({
 		}
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/file") {
 			try {
-				const path = resolveAllowed(url.searchParams.get("path") ?? "", allowedRoots([...lanes.values()].flatMap(l => [l.cwd, l.worktree?.path ?? ""])));
+				const path = resolveAllowed(url.searchParams.get("path") ?? "", fileRoots());
 				const res = serveFile(path, req, url.searchParams.get("dl") === "1");
 				return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
 			} catch (error) {
