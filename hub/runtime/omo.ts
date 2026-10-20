@@ -32,6 +32,13 @@ export const WORKER_CATEGORIES = ["quick", "unspecified-low", "unspecified-high"
 // OmO's task.max_depth defaults to 1: a lane's worker (depth 1) was refused every spawn of its own (depth 2), and the
 // refusal came back as plain text. The profile lets a worker delegate one level further; deeper spawns stay refused.
 export const WORKER_MAX_DEPTH = 2;
+// OmO runs task workers in a shared rpc host by default, which loads only OmO's own extensions and has none of the
+// lane's environment, so a worker got none of dotz (no output caps, no owner rules: a worker's unranged read stayed at
+// 51K chars, 2026-10-20). As child processes of the lane they inherit its extensions (dotz included) and environment
+// (DOTZ_LANE, OMO_PROFILE for nested workers); extension/index.ts gives a worker the caps, the rules and the 5-minute cache.
+// The execution mode is pinned too: with this runner OmO's "auto" picks in-process, where a worker loads no dotz either
+// (and its grep tool failed to load its native module, measured 2026-10-20).
+export const WORKER_TASK = { max_depth: WORKER_MAX_DEPTH, process_runner: "child-process", default_execution_mode: "process" };
 // Appended to every worker category's prompt: a blocked worker once wrote the expected answer itself and the lane
 // reported success (2026-10-19 lat-probe2).
 export const WORKER_RULE =
@@ -59,7 +66,7 @@ export function writeWorkerProfile(lane: { workerModel: string; workerFallback?:
 		return undefined;
 	}
 	const models = [lane.workerModel, ...(lane.workerFallback ?? [])].map(categoryModel);
-	const profiles = { ...(doc.profiles as Record<string, unknown> | undefined), [name]: { task: { max_depth: WORKER_MAX_DEPTH }, memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) } };
+	const profiles = { ...(doc.profiles as Record<string, unknown> | undefined), [name]: { task: WORKER_TASK, memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) } };
 	mkdirSync(dirname(file), { recursive: true });
 	writeAtomic(file, `${JSON.stringify({ ...doc, profiles }, null, 2)}\n`);
 	return name;
