@@ -1,5 +1,7 @@
 // Terminal-view activity: stamps and scrubs the rows a runtime adapter emits, keeps the task-worker lists, and maps saved
 // omp session transcripts to the same shape.
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { broadcast, emitActivity } from "./events.ts";
 import { mask, secretValues } from "./providers.ts";
 import { now } from "./config.ts";
@@ -149,13 +151,47 @@ export function taskProblems(subs: Subagent[], items: { id: string; items: Trans
 	return out;
 }
 
+// OmO sends no worker frames (caps.subagents "transcript-only"), so an OmO lane's workers, nested ones included, are read
+// from its task store: <agent dir>/projects/*/senpi-task/tasks/<id>.json whose root_session_id is the lane session's id
+// (the uuid ending its file name; the agent dir is three levels above it), each worker's transcript in
+// children/<id>/sessions/<id>/. A process without such records (omp, Claude Code) gets nothing from here.
+type OmoTaskRecord = { task_id?: string; status?: string; root_session_id?: string; category?: string; agent_type?: string; updated_at?: string };
+const OMO_STATUS: Record<string, Subagent["status"]> = { completed: "done", running: "running", queued: "running", pending: "running", failed: "failed", cancelled: "aborted", aborted: "aborted", killed: "aborted" };
+export async function omoTasks(sessionFile: string): Promise<{ subs: Subagent[]; items: { id: string; items: TranscriptItem[] }[] }> {
+	const root = /_([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/.exec(sessionFile)?.[1];
+	const projects = join(dirname(dirname(dirname(sessionFile))), "projects");
+	const subs: Subagent[] = [];
+	const items: { id: string; items: TranscriptItem[] }[] = [];
+	if (!root || !existsSync(projects)) return { subs, items };
+	for (const project of readdirSync(projects)) {
+		const store = join(projects, project, "senpi-task");
+		const tasks = join(store, "tasks");
+		if (!existsSync(tasks)) continue;
+		for (const f of readdirSync(tasks).filter(f => f.endsWith(".json"))) {
+			let r: OmoTaskRecord;
+			try {
+				r = JSON.parse(readFileSync(join(tasks, f), "utf8"));
+			} catch {
+				continue;
+			}
+			if (r.root_session_id !== root || !r.task_id) continue;
+			const at = Date.parse(r.updated_at ?? "") || 0;
+			subs.push({ id: r.task_id, agent: r.category ?? r.agent_type, status: OMO_STATUS[r.status ?? ""] ?? "failed", started_at: at, updated_at: at });
+			const dir = join(store, "children", r.task_id, "sessions", r.task_id);
+			for (const t of existsSync(dir) ? readdirSync(dir).filter(n => n.endsWith(".jsonl")) : []) items.push({ id: r.task_id, items: await transcriptItems(join(dir, t), 2000) });
+		}
+	}
+	return { subs, items };
+}
+
 export async function workerCheck(source: string, since: number, ownSession?: string): Promise<string[]> {
 	const subs = [...(subagents.get(source)?.values() ?? [])];
 	const items = await Promise.all([
 		...subs.map(async s => ({ id: s.id, items: await transcriptItems(transcripts.get(`${source}\n${s.id}`), 2000) })),
 		...(ownSession ? [transcriptItems(ownSession, 2000).then(items => ({ id: source, items }))] : []),
 	]);
-	return taskProblems(subs, items, since);
+	const omo = ownSession ? await omoTasks(ownSession) : { subs: [], items: [] };
+	return taskProblems([...subs, ...omo.subs], [...items, ...omo.items], since);
 }
 
 export function statusActivity(source: string, text: string): void {
