@@ -4928,11 +4928,11 @@ function fcCard(f) {
     el("div", { class: "top" }, el("span", { class: "nm", text: sh.name }), fcCanToggle(f) ? fcSwitch(f) : null),
     sh.what ? el("div", { class: "wh", text: sh.what }) : null,
     el("div", { class: "fc-tags" },
-      el("span", { class: `tag st ${f.strength}`, title: f.strength === "enforced" ? "코드·훅·차단 줄이 막거나 실행해요" : "모델에게 따르라고 부탁한 글이에요", text: FC_STR[f.strength] }),
+      f.inactive ? el("span", { class: "tag", title: `${fcHarness()} 는 이 확장을 불러오지 않아요`, text: "안 불러옴" }) : el("span", { class: `tag st ${f.strength}`, title: f.strength === "enforced" ? "코드·훅·차단 줄이 막거나 실행해요" : "모델에게 따르라고 부탁한 글이에요", text: FC_STR[f.strength] }),
       el("span", { class: "tag", text: f.trigger }),
       hOrigin() && f.origin ? el("span", { class: `tag${f.origin === "personal" ? " pri" : ""}`, title: f.origin === "personal" ? "이 사용자의 파일·설정에만 있는 기능이에요 (~/.dotz, 하네스 확장 폴더)" : "dotz 와 함께 배포되는 기능이에요", text: FC_ORIGIN[f.origin] }) : null,
       node ? el("span", { class: "tag", text: node.label.replace(/\s*\(.*\)$/, "") }) : null,
-      !f.enabled ? el("span", { class: "tag", text: "꺼짐" }) : null,
+      !f.enabled && !f.inactive ? el("span", { class: "tag", text: "꺼짐" }) : null,
       dup ? el("span", { class: "tag warn", title: dup, text: "중복" }) : null),
     dup ? el("div", { class: "dup", text: dup }) : null,
     el("div", { class: "src", text: [f.source.label, f.added ? `${f.added} 추가` : "", f.lastRun ? `마지막 ${kstStamp(f.lastRun)}` : ""].filter(Boolean).join(" · ") }));
