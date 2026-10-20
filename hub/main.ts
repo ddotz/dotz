@@ -11,7 +11,7 @@ import * as livestatus from "./livestatus.ts";
 import { authRoute } from "./auth.ts";
 import { isNote, msg } from "./i18n.ts";
 import { activityItems, answeredIds, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
-import { startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
+import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
 import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, turnHeader, verifyLane } from "./lanes.ts";
@@ -892,6 +892,7 @@ if (restarted) {
 }
 startLaneHygiene();
 startWorktreeCleanup();
+startDataCleanup();
 startMemoryGuard((key, text) => {
 	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
 	void send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));

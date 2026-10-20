@@ -5,6 +5,7 @@
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { removeSessionsFor } from "../cleanup.ts";
 import { cfg, DATA_DIR, log, now, orchestratorModel, selectorOf, setRuntime, writeAtomic } from "../config.ts";
 import { broadcast } from "../events.ts";
 import { codex } from "./detect.ts";
@@ -169,7 +170,12 @@ export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<
 		log(`runtime check ${id}: ${report.verdict}`);
 		return report;
 	} finally {
-		if (cwd) rmSync(cwd, { recursive: true, force: true });
+		// The probe sessions of this throwaway folder are not the owner's (eval 2026-10-20: 16 left in ~/.omo/agent/sessions).
+		if (cwd) {
+			rmSync(cwd, { recursive: true, force: true });
+			const gone = removeSessionsFor(cwd);
+			if (gone.length) note(`removed ${gone.length} probe session folder(s)`);
+		}
 		state.running = false;
 		state.current = undefined;
 		announce("check finished");
