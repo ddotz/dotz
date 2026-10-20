@@ -161,9 +161,11 @@ const positive = (v: unknown, fallback: number) => (typeof v === "number" && Num
 export const LANES_COMPACT_AT = 300_000;
 // Defaults of the config.json keys the 구성 view shows and edits: the module that reads each key and the view (hub/harness.ts)
 // take them from here, so the screen never shows a value the gateway does not use (owner 2026-10-21: per-install values).
+// coalesce_ms 2 s (was 4 s): over 48 h only 1 of 119 same-channel follow-ups came 2-4 s after the previous one, so the
+// longer merge window only delayed every message (~/.dotz/reports/speed-20261021.md).
 export const DEFAULTS = {
 	rotate_tokens: 150_000, max_active: 4, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8,
-	coalesce_ms: 4000, reflect_at: "04:40", token_audit_at: "04:30", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
+	coalesce_ms: 2000, reflect_at: "04:40", token_audit_at: "04:30", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
 } as const;
 // The web server listens only here; the tailnet reaches it through `tailscale serve` (web.tailscale_https_port).
 export const HOST = "127.0.0.1";
