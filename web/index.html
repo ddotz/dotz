@@ -2452,6 +2452,22 @@ function humanAlert(text) {
   }
   return text.split("\n")[0].replace(/\s*\([^()]*[A-Za-z]{4,}[^()]*\)/g, "").trim() || text;
 }
+// A reply that just arrived types itself out (the harness sends only finished messages, no token deltas): its text
+// nodes fill in order at a pace that ends within ~1.2 s. History, re-renders and reduced motion show it at once.
+const STREAMED = new Set();
+function streamIn(root, key, ts) {
+  if (STREAMED.has(key) || Date.now() - Date.parse(ts) > 15000 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  STREAMED.add(key);
+  const nodes = [], walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) { nodes.push([n, n.data]); n.data = ""; }
+  const total = nodes.reduce((s, [, t]) => s + t.length, 0), t0 = performance.now(), dur = Math.min(1200, 250 + total * 6);
+  const step = now => {
+    let left = Math.ceil(total * Math.min(1, (now - t0) / dur));
+    for (const [n, t] of nodes) { const k = Math.min(t.length, left); if (n.data.length !== k) n.data = t.slice(0, k); left -= k; }
+    if (now - t0 < dur) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
 function msgNode(e) {
   const text = String(e.text ?? ""), hm = kstHM(e.ts);
   switch (e.kind) {
@@ -2482,8 +2498,9 @@ function msgNode(e) {
         const line = humanAlert(body);
         return el("div", { class: `bm${card}` }, head, mdNode(line), line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
       }
-      const md = mdNode(body);
-      return el("div", { class: `bm${card}` }, head, md, pathFiles(md));
+      const md = mdNode(body), files = pathFiles(md);
+      if (e.kind === "out" && !isRestart(e)) streamIn(md, `${e.ts}|${text.length}`, e.ts);
+      return el("div", { class: `bm${card}` }, head, md, files);
     }
   }
 }
@@ -2494,7 +2511,7 @@ function newGroup(a) {
   const g = { node, body, ctx: { calls: new Map() }, kinds: new Map(), tools: 0, think: 0, errs: 0, t0: Date.parse(a.ts), t1: Date.parse(a.ts), live: false };
   g.update = () => {
     const parts = [g.t1 - g.t0 >= 1000 ? `${fmtDur(g.t1 - g.t0)} 작업` : g.tools ? "작업" : g.think ? "생각" : "작업 내역"];
-    if (g.live) parts[0] = `작업 중${g.t1 - g.t0 >= 1000 ? ` ${fmtDur(g.t1 - g.t0)}` : ""}`;
+    if (g.live) { const d = Math.max(g.t1, Date.now()) - g.t0; parts[0] = `작업 중${d >= 1000 ? ` ${fmtDur(d)}` : ""}`; }
     for (const [k, v] of g.kinds) parts.push(`${k} ${v}`);
     if (g.errs) parts.push(`오류 ${g.errs}`);
     wsum.textContent = parts.join(" · ");
@@ -2983,6 +3000,17 @@ function updateComposerMeta() {
   ta.placeholder = off ? "종료된 레인이에요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기 · ⌘Enter 다음 턴에 · ⌥Enter 중단하고 보내기 · Esc 중단" : isTerm ? "메시지 또는 /명령" : `${targetName(target)}에게 메시지 · /명령`;
   $("#composer").classList.toggle("tmode", isTerm);
 }
+// The elapsed time ticks every second on its own; events only arrive when a tool runs, so a time drawn only on events
+// froze (owner 2026-10-20: stuck at 18s until the answer came).
+let workingLabel = "", workingSubs = 0;
+function tickWorking() {
+  if ($("#working").hidden) return;
+  // The bottom line shows only the state (owner 2026-10-20); elapsed time lives on the work card.
+  const g = CS.group;
+  $("#working-tx").textContent = $("#runline-tx").textContent = `${workingLabel}${workingSubs ? ` · 워커 ${workingSubs}` : ""}`;
+  if (g && g.live) g.update();
+}
+setInterval(() => { if (!document.hidden) tickWorking(); }, 1000);
 function renderWorking() {
   const info = targetInfo(target), box = $("#working");
   const st = info.alive ? info.status : "";
@@ -2997,8 +3025,8 @@ function renderWorking() {
   if (on) {
     const n = runningSubs(sourceOf(target)).length;
     $(".dot", box).className = `dot ${st === "rate-limited" ? "warn" : "pri"}`;
-    const g = CS.group, since = g && g.live ? Date.now() - g.t0 : 0;
-    $("#working-tx").textContent = $("#runline-tx").textContent = `${st === "rate-limited" ? "한도 제한, 잠시 쉬는 중" : "작업 중..."}${since >= 5000 ? ` ${fmtDur(since)}` : ""}${n ? ` · 워커 ${n}` : ""}`;
+    workingLabel = `${st === "rate-limited" ? "한도 제한, 잠시 쉬는 중" : "작업 중..."}`; workingSubs = n;
+    tickWorking();
     $("#working-stop").hidden = st === "rate-limited";
     $("#working-int").hidden = st === "rate-limited" || !ta.value.trim();
     $("#working-queue").hidden = st === "rate-limited" || !ta.value.trim();

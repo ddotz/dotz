@@ -131,6 +131,10 @@ export function createPrompts(deps: PromptDeps) {
 	function onPrompt(text: string): void {
 		// Notes steered into a running turn are not new requests: the turn keeps answering the prompt it started with.
 		if (deps.isNote(text)) return;
+		// The harness's own mid-turn injections (OmO: `<system-reminder>` when a detached cell finishes, `<omo-senpi-task>`)
+		// are not prompts either; clearing `current` on them dropped the turn's final answer (owner 2026-10-20: "작업 끝나도
+		// 보고 안하는거", the 17:18 web turn).
+		if (text.trimStart().startsWith("<")) return;
 		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
 		current = i >= 0 ? prompts.splice(i, 1)[0] : undefined;
 		save();

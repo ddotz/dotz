@@ -111,6 +111,7 @@ const en = {
 	// Discord channel names the gateway creates, and the done marker of a lane thread.
 	channelNames: { chat: "chat", alert: "alerts", worklog: "worklog", mail: "mail", workCategory: (name: string) => `${name} work` },
 	threadDone: "Done. This thread is archived in an hour.",
+	laneParked: "Stopped. Write here to pick this lane back up from where it left off.",
 	replyIn: (language: string, drifted: boolean) => drifted ? `(Your last text for the owner was not in ${language}. Write everything for the owner in ${language} only.)` : `(Answer the owner in ${language}.)`,
 
 	reflect: (digest: string, lessons: string) => `[dotz reflect] Nightly self-review of the last 24h. Data from the gateway:\n${digest}\n
@@ -422,6 +423,7 @@ const ko: Catalog = {
 	workChannels: list => `(작업 채널: ${list.length ? list.join("; ") : "아직 없음"})`,
 	channelNames: { chat: "대화", alert: "알림", worklog: "작업로그", mail: "메일", workCategory: name => `${name} 작업` },
 	threadDone: "작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.",
+	laneParked: "멈췄어요. 여기에 쓰면 하던 데서부터 이어서 해요.",
 	replyIn: (_language, drifted) => (drifted ? "(직전에 오너에게 보낸 글이 한국어가 아니었어요. 오너에게 가는 글은 한국어로만 쓰세요.)" : "(오너에게는 한국어로 답하세요.)"),
 
 	reflect: (digest, lessons) => `[dotz reflect] 지난 24시간의 야간 자기 점검이에요. 게이트웨이가 모은 데이터:\n${digest}\n
