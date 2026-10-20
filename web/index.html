@@ -3626,7 +3626,7 @@ function modelPickItems(avail, val) {
     if (now.length) items.push({ header: g }, ...now.map(row));
     older.push(...list.filter(a => a.older && a.selector !== val));
   }
-  if (older.length) items.push({ fold: older.map(row), label: `이전 모델 ${older.length}개` });
+  if (older.length) items.push({ fold: [{ header: "이전 모델" }, ...older.map(row)], label: `이전 모델 ${older.length}개` });
   return items;
 }
 function modelItems(key, curModel, filter = providerFilter) {
