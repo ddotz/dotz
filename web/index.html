@@ -474,10 +474,23 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .composer.dropping .sendrow { background: color-mix(in srgb, var(--accent) 7%, var(--card)) !important; }
 .mfiles { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 100%; }
 .bm .mfiles { justify-content: flex-start; margin-top: 10px; }
+.lg-x .mfiles, .a-text .mfiles { justify-content: flex-start; margin-top: 8px; }
 .mfiles .thumb { display: block; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: var(--layer); cursor: zoom-in; }
 .mfiles .thumb img { display: block; max-width: min(240px, 60vw); max-height: 200px; object-fit: cover; }
 .mfiles .fatt { cursor: pointer; padding-right: 12px; text-decoration: none; }
 .mfiles .fatt:hover { background: var(--hover); }
+/* every file in a message carries its own download button (thumbnails: top-right corner, chips: right end) */
+.fitem { position: relative; flex: none; display: flex; max-width: 100%; }
+.fitem > .fatt { padding-right: 48px; max-width: 260px; }
+.fdl { position: absolute; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 16px; color: var(--fg-2); text-decoration: none; }
+.fdl svg { width: 18px; height: 18px; }
+.fitem > .fatt + .fdl { top: 12px; right: 8px; }
+.fitem > .fatt + .fdl:hover { background: var(--card); color: var(--fg); }
+.fitem > .thumb + .fdl { top: 6px; right: 6px; background: rgb(0 0 0 / .55); color: #fff; }
+.fitem > .thumb + .fdl:hover { background: rgb(0 0 0 / .72); }
+.mfiles .fatt.off { cursor: default; opacity: .55; padding-right: 12px; }
+.mfiles .fatt.off:hover { background: var(--layer); }
+@media (pointer: coarse) { .fdl { width: 36px; height: 36px; border-radius: 18px; } .fitem > .fatt + .fdl { top: 10px; } }
 .bm .md code.path.fp { cursor: pointer; }
 .bm .md code.path.fp:hover { text-decoration: underline; text-underline-offset: 3px; }
 dialog.lbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; color: #fff; }
@@ -1228,6 +1241,7 @@ const ICONS = {
   close: "M6 6l12 12M18 6L6 18",
   harness: "M4 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 5a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 19a2 2 0 1 0 4 0a2 2 0 1 0-4 0M8 11l8-5M8 13l8 5",
   file: "M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v5h5",
+  download: "M12 4v11M7 10l5 5 5-5M5 20h14",
   more: "M5 12h.01M12 12h.01M19 12h.01",
   term: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM7 10l3 2-3 2M12 15h4",
   spark: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 16l.7 1.8L20.5 18.5l-1.8.7L18 21l-.7-1.8-1.8-.7 1.8-.7z",
@@ -2582,9 +2596,9 @@ function msgNode(e) {
         const line = humanAlert(body);
         return el("div", { class: `bm${card}` }, head, mdNode(line), line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
       }
-      const md = mdNode(body), files = pathFiles(md);
+      const fl = fileLines(body), md = mdNode(fl.text), files = pathFiles(md);
       if (e.kind === "out" && !isRestart(e)) streamIn(md, `${e.ts}|${text.length}`, e.ts);
-      return el("div", { class: `bm${card}` }, head, md, files);
+      return el("div", { class: `bm${card}` }, head, md, filesNode(fl.files), files);
     }
   }
 }
@@ -2770,7 +2784,7 @@ function termNode(a) {
       else { const st = LG.steps || logSteps(g, a), rec = logRow(a, kindOf(a.tool), capName(a.tool || "result")); fillLogRow(rec, a); st.rows.append(rec.node); if (a.is_error) { st.errs++; g.errs++; } st.paint(); }
       break;
     }
-    case "text": LG.steps = null; g.body.append(el("div", { class: "lg-x" }, mdNode(a.text))); break;
+    case "text": LG.steps = null; g.body.append(el("div", { class: "lg-x" }, ...mdFiles(a.text))); break;
     case "error": {
       LG.steps = null; g.errs++;
       const raw = String(a.text ?? ""), line = humanAlert(raw);
@@ -3224,7 +3238,7 @@ $("#ctx-ring").onclick = ev => busy(null, async () => {
 /* ---------- attachments: + button, drag-drop, paste -> POST /api/upload; sent as `files` with the message ---------- */
 let ATT = [];   // [{id, name, type, size, url (local preview), file (server record once uploaded)}]
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
-const fileUrl = (p, dl) => `/api/file?path=${enc(p)}${dl ? "&dl=1" : ""}`;
+const fileUrl = (p, dl) => `/api/file?path=${enc(p)}${dl ? "&download=1" : ""}`;
 const fsize = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : n >= 1024 ? `${Math.round(n / 1024)}KB` : `${n}B`;
 const extOf = n => (String(n).match(/\.([A-Za-z0-9]{1,6})$/) || [0, ""])[1].toUpperCase();
 $("#c-attach").append(icon("add"));
@@ -3277,12 +3291,48 @@ ta.addEventListener("paste", ev => {
   zone.addEventListener("dragleave", ev => { if (hasFiles(ev) && --depth <= 0) { depth = 0; comp.classList.remove("dropping"); } });
   zone.addEventListener("drop", ev => { if (!hasFiles(ev)) return; ev.preventDefault(); depth = 0; comp.classList.remove("dropping"); if (!ta.disabled) addFiles([...ev.dataTransfer.files]); });
 }
-// Files in a message: image thumbnails open the lightbox, other files open the read-only preview in a new tab.
+// Files in a message: image thumbnails open the lightbox, other files open the read-only preview in a new tab; each has a
+// one-click download (Content-Disposition: attachment, so iOS Safari saves it too). `check` files (an agent's [file] line)
+// are asked with HEAD first: the size fills in, and one /api/file refuses (outside the roots, secret, missing) turns into a
+// disabled chip.
+const fileMeta = (name, size) => [extOf(name), size ? fsize(size) : ""].filter(Boolean).join(" · ");
+const offChip = (f, why) => fileChip(f.name, why, { cls: "off" });
+function fileItem(f) {
+  const img = IMG_RE.test(f.name || f.path);
+  const main = img
+    ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name) }, el("img", { src: fileUrl(f.path), alt: f.name, loading: "lazy" }))
+    : fileChip(f.name, fileMeta(f.name, f.size), { href: fileUrl(f.path) });
+  const item = el("div", { class: "fitem" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download")));
+  if (!f.check) return item;
+  const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };
+  if (img) main.querySelector("img").onerror = () => off("열 수 없는 파일이에요");
+  fetch(fileUrl(f.path), { method: "HEAD" }).then(r => {
+    if (!r.ok) return off(r.status === 404 ? "파일이 없어요" : "열 수 없는 위치예요");
+    const n = Number(r.headers.get("content-length") || 0), m = !img && main.querySelector(".fi-m");
+    if (m && n) m.textContent = fileMeta(f.name, n);
+  }, () => off("확인하지 못했어요"));
+  return item;
+}
 function filesNode(files) {
   if (!files || !files.length) return null;
-  return el("div", { class: "mfiles" }, ...files.map(f => IMG_RE.test(f.name || f.path)
-    ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name) }, el("img", { src: fileUrl(f.path), alt: f.name, loading: "lazy" }))
-    : fileChip(f.name, [extOf(f.name), f.size ? fsize(f.size) : ""].filter(Boolean).join(" · "), { href: fileUrl(f.path) })));
+  return el("div", { class: "mfiles" }, ...files.map(fileItem));
+}
+// `[file] /abs/path` lines (outside a ``` block) leave the text and show as file chips, as they become attachments on
+// Discord (hub/discord.ts fileLines).
+function fileLines(text) {
+  const files = [], kept = [];
+  let fence = false;
+  for (const line of String(text ?? "").split("\n")) {
+    if (/^\s*```/.test(line)) fence = !fence;
+    const m = fence ? null : /^\s*\[file\]\s+`?(.+?)`?\s*$/.exec(line);
+    if (m) files.push(m[1]); else kept.push(line);
+  }
+  return { text: kept.join("\n"), files: files.slice(0, 10).map(p => ({ path: p, name: p.split("/").pop() || p, check: true })) };
+}
+// Markdown plus the file chips of its [file] lines (log rows).
+function mdFiles(src) {
+  const { text, files } = fileLines(src);
+  return [text.trim() ? mdNode(text) : null, filesNode(files)].filter(Boolean);
 }
 function lightbox(path, name) {
   const d = el("dialog", { class: "lbox", "aria-label": name },
@@ -3310,7 +3360,7 @@ function pathFiles(md) {
     if (IMG_RE.test(p) && imgs.length < 4 && !imgs.some(f => f.path === p)) imgs.push({ path: p, name: p.split("/").pop() });
   }
   const n = imgs.length ? filesNode(imgs) : null;
-  if (n) for (const img of n.querySelectorAll("img")) img.onerror = () => img.closest(".thumb").remove();
+  if (n) for (const img of n.querySelectorAll("img")) img.onerror = () => img.closest(".fitem").remove();
   return n;
 }
 setInterval(() => { if (current === "chat" || current === "activity") loadContext(true).then(renderCtxRing); }, 15000);
@@ -3449,7 +3499,7 @@ function actNode(a, ctx) {
   switch (a.type) {
     case "turn_start": case "turn_end": return null;
     case "status": return el("div", { class: "a-div", text: `${oneLine(a.text ?? "")} · ${time}` });
-    case "text": return el("div", { class: "a-text" }, el("span", { class: "a-time", text: time }), mdNode(a.text));
+    case "text": return el("div", { class: "a-text" }, el("span", { class: "a-time", text: time }), ...mdFiles(a.text));
     case "thinking": return el("details", { class: "box think" }, el("summary", {}, el("span", { class: "tname", text: "생각" }), el("span", { class: "tsum", text: `· ${oneLine(a.text ?? "").slice(0, 80)}` }), el("span", { class: "sp" }), el("span", { class: "ttime", text: time })), mdNode(a.text));
     case "error": { const raw = String(a.text ?? ""), line = humanAlert(raw); return el("div", { class: "lg-e" }, line, line.trim() === raw.trim() ? null : el("details", {}, el("summary", { text: "자세히" }), el("pre", { text: raw }))); }
     case "tool_call": {
