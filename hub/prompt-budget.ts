@@ -6,8 +6,10 @@
 // +200 / +281 for the watch approval gate (ask once, approve on the owner's yes, never trigger a 2FA step without it).
 // 2026-10-20: MODE rewritten to judgment rules only (gateway-enforced rules, owner facts and duplicates of the lane footer
 // moved out): 27177 -> 19781 / 32913 -> 23349 bytes; caps lowered to match.
-export const MODE_MD_MAX_BYTES = 21760; // measured 19781
-export const MODE_KO_MD_MAX_BYTES = 25690; // measured 23349
+// 2026-10-20: +281 / +323 bytes for the split-independent-tracks rule (owner: split parallel tracks into their own
+// workers/lanes and worktrees yourself, never pile them on one worker or ask first).
+export const MODE_MD_MAX_BYTES = 22070; // measured 20062
+export const MODE_KO_MD_MAX_BYTES = 26040; // measured 23672
 export const RULES_TEMPLATE_MAX_BYTES = 780; // measured 703
 export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 // The owner card and boundaries go into the orchestrator's start prompt (observations.md does not).
