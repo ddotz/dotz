@@ -12,6 +12,7 @@ import { authRoute } from "./auth.ts";
 import { notify as pushNotify, pushRoute, startPush } from "./push.ts";
 import { isNote, msg } from "./i18n.ts";
 import { activityItems, answeredIds, broadcast, emit, historyEvents, recentEvents, sseResponse } from "./events.ts";
+import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
@@ -463,7 +464,8 @@ if (!restarted) {
 // Sends one web message the way the composer's modes mean it. "default" (no mode): the main assistant takes it as the next
 // message, a working lane gets it steered in; "steer": into the running turn now; "interrupt": abort, then new prompt.
 // `files` are uploads (files.ts): the chat shows them as chips, the agent gets one [attachment] line per file with its path.
-type WebSend = { lane?: string; channel: "web" | "terminal"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[] };
+// `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
+type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[] };
 async function sendWeb(s: WebSend): Promise<void> {
 	const extra = { ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}) };
 	if (s.lane) {
@@ -478,17 +480,18 @@ async function sendWeb(s: WebSend): Promise<void> {
 		sendToLane(name, [`[owner via web] ${s.text}`, s.files?.length ? attachmentLines(s.files) : ""].filter(Boolean).join("\n"));
 		return;
 	}
-	const event = { ts: now(), kind: "message", source: s.channel, channel: s.channel, author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
+	const to = s.project?.target ?? s.channel;
+	const event = { ts: now(), kind: "message", source: s.channel, channel: to, ...(s.project ? { channel_name: s.project.name } : {}), author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
 	emit("inbox", event);
-	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(s.channel, event.text);
+	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(to, event.text);
 	else if (s.mode === "steer" && orch.status === "working") {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
-		deliver(inboxText(event), { target: s.channel, owner: true });
-		expectReply(s.channel);
+		deliver(inboxText(event), { target: to, owner: true });
+		expectReply(to);
 	} else {
 		if (s.mode === "interrupt" && orch.status === "working") abortOrchestrator();
-		intake(event, s.channel);
+		intake(event, to);
 	}
 }
 
@@ -580,7 +583,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main";
-			if (target !== "main" && !target.startsWith("lane:")) return json({ error: "target must be main or lane:<name>" }, 400);
+			if (target !== "main" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, lane:<name> or ch:<id>" }, 400);
 			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
 			return json({ target, events: historyEvents(target, limit) });
 		}
@@ -631,12 +634,22 @@ const server = Bun.serve({
 			const mode = b.mode === "steer" || b.mode === "interrupt" || b.mode === "queue" ? b.mode : "default";
 			const lane = b.lane ? String(b.lane) : undefined;
 			const channel = b.channel === "terminal" ? "terminal" : "web";
-			if (mode === "queue" && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
+			let project: { target: string; name: string } | undefined;
+			if (b.project) {
+				if (lane) return json({ error: "lane and project are exclusive" }, 400);
+				try {
+					project = projectTarget(String(b.project), discord.channels.work);
+				} catch (error) {
+					return json({ error: (error as Error).message }, 404);
+				}
+			}
+			// The queue sends to the main conversation when the turn ends; a project message goes in now (intake merges a burst).
+			if (mode === "queue" && !project && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
 				const item = enqueue(lane ? `lane:${lane}` : "main", [text, files.length ? attachmentLines(files) : ""].filter(Boolean).join("\n"), login);
 				return json({ ok: true, queued: item });
 			}
 			try {
-				await sendWeb({ lane, channel, text, mode: mode === "queue" ? "default" : mode, login, files });
+				await sendWeb({ lane, project, channel, text, mode: mode === "queue" ? "default" : mode, login, files });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}

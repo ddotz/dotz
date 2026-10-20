@@ -107,7 +107,9 @@ export function recentEvents(limit = 150): HubEvent[] {
 export function eventTarget(e: HubEvent): string | undefined {
 	if (e.kind === "activity" || e.kind === "subagents") return undefined;
 	const lane = typeof e.lane === "string" ? e.lane : [e.source, e.target, e.channel].find(v => typeof v === "string" && v.startsWith("lane:"))?.slice(5);
-	return lane ? `lane:${lane}` : "main";
+	if (lane) return `lane:${lane}`;
+	// A project's work channel is its own conversation (hub/projectchat.ts): the owner's message there and the answers to it.
+	return [e.channel, e.target].find((v): v is string => typeof v === "string" && /^ch:\d+$/.test(v)) ?? "main";
 }
 
 // Last HISTORY_TAIL bytes of a jsonl file, parsed; a cut first line is dropped.
