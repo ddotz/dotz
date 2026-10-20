@@ -551,9 +551,26 @@ if (flag("--load") && provisioned) {
 	else await Bun.$`systemctl --user restart ${UNIT}`.nothrow().quiet();
 }
 
-const webUrl = await tailnetUrl(a.tailscale_https_port);
-if (webUrl && a.allow_logins.length) console.log(`web: ${webUrl}${wantServe ? "" : " (bun setup.ts --tailscale 로 테일넷에 열어요)"}`);
+const webUrl = a.allow_logins.length ? await tailnetUrl(a.tailscale_https_port) : "";
 if (!flag("--load")) console.log(`게이트웨이 시작: bun ${join(PKG, "setup.ts")} --load (또는 지금 창에서 ${DIR === join(HOME, ".dotz") ? "" : `DOTZ_DIR=${DIR} `}bun ${join(PKG, "hub", "main.ts")})`);
-if (flag("--open") && webUrl && a.allow_logins.length && (tsNow?.running ?? true)) await Bun.$`${MAC ? "open" : "xdg-open"} ${webUrl}`.nothrow().quiet();
 const runtimeLabel = harness(a.runtime)?.label ?? a.runtime;
 console.log(`\n끝! ${a.identity.name}는 ${runtimeLabel}로 돌아가요.${a.guild ? ` 디스코드에서는 ${a.identity.name} 카테고리의 대화 채널에 말을 걸면 돼요.` : ""}${ompInstalled ? ` omp 터미널에서도 "${a.identity.name}모드 켜"라고 하면 그 터미널이 ${a.identity.name}와(과) 연결돼요.` : ""}`);
+// The web address goes last, once the gateway and the tailnet proxy answer: a freshly loaded service needs a few
+// seconds, and opening the browser before that showed an error page instead of the app.
+if (webUrl) {
+	const answers = async (url: string, seconds: number) => {
+		for (let i = 0; i < seconds; i++) {
+			const r = await fetch(url, { signal: AbortSignal.timeout(2000) }).catch(() => undefined);
+			if (r && r.status < 500) return true;
+			await Bun.sleep(1000);
+		}
+		return false;
+	};
+	const served = Boolean(tsNow?.running);
+	if (served && flag("--load")) console.log("\n웹 앱이 뜨길 기다리는 중...");
+	const up = served && flag("--load") && (await answers(`http://127.0.0.1:${a.web_port}/`, 40)) && (await answers(webUrl, 15));
+	const why = !served ? (wantServe ? "Tailscale 을 켜고 bun setup.ts --tailscale 을 실행하면 열려요" : "bun setup.ts --tailscale 로 테일넷에 열어요") : !flag("--load") ? "게이트웨이를 시작하면 열려요" : up ? "" : "게이트웨이가 아직 뜨는 중이에요. 1분쯤 뒤에 열어 보세요";
+	console.log(`\n웹 앱 주소: ${webUrl}${why ? `  (${why})` : ""}`);
+	console.log(`  휴대폰이나 다른 컴퓨터에서는 같은 Tailscale 계정(${a.allow_logins[0]})으로 로그인한 뒤 이 주소를 열면 돼요.`);
+	if (flag("--open") && up) await Bun.$`${MAC ? "open" : "xdg-open"} ${webUrl}`.nothrow().quiet();
+}
