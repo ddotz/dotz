@@ -13,7 +13,7 @@ import { setAskAnswer } from "./askbuttons.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { notify as pushNotify, pushRoute, startPush } from "./push.ts";
 import { isNote, msg } from "./i18n.ts";
-import { activityItems, answeredIds, broadcast, emit, emitDelivery, historyEvents, recentEvents, sseResponse } from "./events.ts";
+import { activityItems, answeredIds, broadcast, emit, emitDelivery, historyEvents, recentEvents, recentOwnerMessages, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
@@ -95,6 +95,7 @@ const queue = createPrompts({
 	log,
 	answered: answeredIds(),
 	pending: sends.pending,
+	recent: recentOwnerMessages,
 });
 // `owner` marks the owner's own message (it leads with the what-runs-now line); schedules, watches and mail carry a target but are not.
 function deliver(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): void {

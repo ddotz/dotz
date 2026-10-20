@@ -153,6 +153,16 @@ export function answeredIds(): string[] {
 	return tailEvents(paths.outbox).flatMap(e => (e.kind === "out" && e.source === "orchestrator" && typeof e.reply_to === "string" && e.reply_to ? [e.reply_to] : []));
 }
 
+// The owner's messages in the inbox log tail (oldest first), for an answer that has no prompt after a restart (prompts.ts).
+// A slash/bang command is answered by the gateway itself and is no work for the orchestrator.
+export function recentOwnerMessages(): { target: string; replyTo?: string; at: number }[] {
+	return tailEvents(paths.inbox).flatMap(e => {
+		const at = Date.parse(String(e.ts));
+		if (e.kind !== "message" || typeof e.channel !== "string" || Number.isNaN(at) || /^\s*[/!]/.test(String(e.text ?? ""))) return [];
+		return [{ target: e.channel, replyTo: typeof e.message_id === "string" ? e.message_id : undefined, at }];
+	});
+}
+
 export function historyEvents(target: string, limit: number): HubEvent[] {
 	const all = [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)].filter(e => typeof e.ts === "string" && eventTarget(e) === target);
 	all.sort((a, b) => a.ts.localeCompare(b.ts));

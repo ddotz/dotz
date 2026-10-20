@@ -13,8 +13,17 @@
 // channel the running turn answers, sent before that turn's final answer, is held (holdEarly) and posted together with
 // the final answer, ahead of it. Only a full answer to a message steered in mid-turn goes out at once; progress is the one
 // edited progress message (update_key), never a new text.
+//
+// An answer is never dropped for want of a pairing (owner 2026-10-20: three finished answers to web messages never arrived).
+// OmO consumes a queued message inside the running agent run and starts runs of its own (a finished task worker wakes the
+// session, also right after a gateway restart), so a user frame that matches no delivered prompt, or a run that started
+// without one, is normal there: an unmatched user frame leaves the unanswered prompt in place, a prompt that finished is
+// released when the orchestrator goes idle (a later run is a new one), and an answer with no prompt goes to the owner's
+// newest message of the last 30 minutes (one still unanswered first), unless it repeats what was already sent there.
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean };
+/** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
+export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string };
 export type Reply = { target: string; replyTo?: string; owner?: boolean };
 
@@ -39,17 +48,25 @@ export type PromptDeps = {
 	answered?: Iterable<string>;
 	/** An answer to this message is on its way (sendlog.ts) and counts as answered. */
 	pending?: (replyTo: string) => boolean;
+	/** Owner messages from before this process started (the inbox tail), for an answer that has no prompt. */
+	recent?: () => OwnerMessage[];
 };
 
 const MAX_PROMPTS = 200;
 const MAX_ANSWERED = 5000;
 const REPLAY_MAX_AGE_MS = 12 * 3600_000;
+// How old an owner message may be to receive an answer that has no prompt of its own.
+const ORPHAN_MAX_AGE_MS = 30 * 60_000;
+const MAX_RECENT = 20;
 
 export function createPrompts(deps: PromptDeps) {
 	const prompts: Prompt[] = [];
 	let current: Prompt | undefined;
 	// Insertion order doubles as age: the oldest id goes first when the set is full.
 	const answered = new Set<string>(deps.answered ?? []);
+	// Owner messages and dotz_send texts of the last half hour: who an answer without a prompt goes to, and what it may not repeat.
+	const owners: OwnerMessage[] = (deps.recent?.() ?? []).slice(-MAX_RECENT);
+	const recentSent: { target: string; text: string; at: number }[] = [];
 
 	const save = () => {
 		const open = [...(current && !current.done ? [current] : []), ...prompts].map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
@@ -67,8 +84,13 @@ export function createPrompts(deps: PromptDeps) {
 
 	function deliver(text: string, reply?: Reply): void {
 		const steered = Boolean(reply) && deps.working();
-		prompts.push({ key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered });
+		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered };
+		prompts.push(prompt);
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
+		if (reply?.owner) {
+			owners.push({ target: reply.target, replyTo: reply.replyTo, at: prompt.at, prompt });
+			if (owners.length > MAX_RECENT) owners.splice(0, owners.length - MAX_RECENT);
+		}
 		save();
 		if (!steered) {
 			// A turn still owes an answer, yet the orchestrator does not look busy: logged to find why (10-20 17:19).
@@ -95,6 +117,8 @@ export function createPrompts(deps: PromptDeps) {
 	/** Records a dotz_send: the turn's current prompt has now sent this part, and a steered prompt it answers is settled. */
 	function sent(target: string, text: string, replyTo?: string): void {
 		current?.sent.push({ target, text: text.trim() });
+		recentSent.push({ target, text: text.trim(), at: Date.now() });
+		if (recentSent.length > MAX_RECENT) recentSent.shift();
 		markAnswered(replyTo);
 		settleSteered(target, replyTo);
 	}
@@ -143,6 +167,13 @@ export function createPrompts(deps: PromptDeps) {
 		// 보고 안하는거", the 17:18 web turn).
 		if (text.trimStart().startsWith("<")) return;
 		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
+		if (i < 0 && current && !current.done) {
+			// A user frame the gateway did not deliver (raw text admitted into the run, a runtime's own message): the turn is
+			// still answering the prompt it started with, so its answer must not lose its prompt (2026-10-20 10:43Z, 10:52Z).
+			if (!current.unmatched) deps.log(`a user prompt matched nothing delivered; the running turn keeps its prompt for ${current.target ?? "-"}: ${text.trim().slice(0, 80)}`);
+			current.unmatched = true;
+			return;
+		}
 		current = i >= 0 ? prompts.splice(i, 1)[0] : undefined;
 		save();
 	}
@@ -158,19 +189,46 @@ export function createPrompts(deps: PromptDeps) {
 	 */
 	function settleTurn(): void {
 		const p = current;
-		if (!p || p.done || !p.target) return;
-		deps.log(`turn ended without an answer to ${p.target}; ${p.last ? "sending its last text" : "it wrote no text"}`);
-		if (p.last) return onAnswer(p.last);
-		p.done = true;
+		if (!p) return;
+		// The run is over: a run that starts next without a prompt of ours (OmO wakes the session when a task worker finishes,
+		// also right after a restart) is a new one and must not be taken for a continuation of this prompt (2026-10-20 12:51Z).
+		if (!p.done && p.target) {
+			deps.log(`turn ended without an answer to ${p.target}; ${p.last ? "sending its last text" : "it wrote no text"}`);
+			if (p.last) onAnswer(p.last);
+			else p.done = true;
+		}
+		current = undefined;
 		save();
+	}
+
+	/** Who an answer without a prompt goes to: the owner's newest message of the last 30 minutes, one still unanswered first. */
+	function orphanTarget(): OwnerMessage | undefined {
+		const fresh = owners.filter(o => Date.now() - o.at <= ORPHAN_MAX_AGE_MS).sort((a, b) => a.at - b.at);
+		return fresh.findLast(o => !(o.prompt?.done || isAnswered(o.replyTo))) ?? fresh.at(-1);
+	}
+
+	/** An answer that came without a prompt: the 30-minute rule above, never a repeat of what was already sent there. */
+	function onOrphanAnswer(text: string): void {
+		const t = text.trim();
+		// Keepalive "ok" and "-" have no prompt by design.
+		if (t.length <= 3) return;
+		const to = orphanTarget();
+		if (!to) return void deps.log(`an answer had no prompt to go to (${t.length} chars): ${t.slice(0, 80)}`);
+		if (recentSent.some(s => s.target === to.target && Date.now() - s.at <= ORPHAN_MAX_AGE_MS && s.text.includes(t))) return;
+		deps.log(`an answer had no prompt; sent to the owner's newest message in ${to.target} (${t.length} chars): ${t.slice(0, 80)}`);
+		recentSent.push({ target: to.target, text: t, at: Date.now() });
+		if (to.prompt) to.prompt.done = true;
+		void deps
+			.post(to.target, t, to.replyTo)
+			.then(r => (r.delivered ? deps.clearProgress(to.target) : undefined))
+			.catch(e => deps.log(`reply to ${to.target} failed: ${e}`));
 	}
 
 	/** An assistant stop: the turn's final answer goes to the channel that asked, once. */
 	function onAnswer(text: string): void {
 		const p = current;
 		// A turn omp continues (steered notes) stops again; the prompt it started with was answered at the first stop.
-		// Keepalive "ok" and "-" have no prompt by design; anything longer was an answer that went nowhere.
-		if (!p) return void (text.trim().length > 3 && deps.log(`an answer had no prompt to go to (${text.trim().length} chars): ${text.trim().slice(0, 80)}`));
+		if (!p) return onOrphanAnswer(text);
 		if (p.done) return;
 		p.done = true;
 		save();
