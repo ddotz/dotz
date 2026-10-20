@@ -113,7 +113,7 @@ export function entryOf(x: unknown): FallbackEntry | undefined {
 		model,
 		...(o.when === "quota" || o.when === "error" ? { when: o.when } : {}),
 		...(cap && (usd || tokens) ? { cap: { period: cap.period === "day" ? ("day" as const) : ("month" as const), ...(usd ? { usd } : {}), ...(tokens ? { tokens } : {}) } } : {}),
-		...(o.revert === true ? { revert: true } : {}),
+		...(o.revert === true || o.revert === false ? { revert: o.revert } : {}),
 		...(str(o.key_file) ? { key_file: str(o.key_file) } : {}),
 		...(str(o.base_url) ? { base_url: str(o.base_url) } : {}),
 		...(str(o.api) ? { api: str(o.api) } : {}),
@@ -135,7 +135,8 @@ export function chainOf(v: unknown): FallbackEntry[] {
 }
 export const fallbackChain = (target: FallbackTarget): FallbackEntry[] => chainOf(targetOf(target).fallback);
 // An entry omp can walk by itself: a bare model, no condition, cap, key or revert.
-export const isPlain = (e: FallbackEntry) => !e.when && !e.cap && !e.revert && !e.key_file;
+// `revert: false` (stay on this entry once used) is a setting too, so such an entry is not plain.
+export const isPlain = (e: FallbackEntry) => !e.when && !e.cap && e.revert === undefined && !e.key_file;
 // The entries a process starts with: the stored ones without the primary itself (an entry equal to the primary model would
 // only retry the model that just failed, unless it is that model through its own key).
 export const chainAfter = (primary: string, chain: FallbackEntry[]): FallbackEntry[] => chain.filter(e => e.key_file || (e.model !== primary && parseSelector(e.model).model !== parseSelector(primary).model));

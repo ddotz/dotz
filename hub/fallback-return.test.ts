@@ -2,7 +2,8 @@
 // because only a bare entry was marked to revert), probing a limited primary at a bounded interval, and stopping after a run
 // of failed turns. Tests the chain logic itself.
 import { afterEach, expect, test } from "bun:test";
-import { Chain, clock, ErrorStreak, ERROR_STREAK_STOP, resetFallbackState, REVERT_PROBE_MS } from "./fallback.ts";
+import { chainOf, isPlain } from "./config.ts";
+import { Chain, clock, ErrorStreak, ERROR_STREAK_STOP, hubChain, resetFallbackState, REVERT_PROBE_MS } from "./fallback.ts";
 
 const T0 = Date.parse("2026-10-20T03:00:00Z");
 const realNow = clock.now;
@@ -53,4 +54,17 @@ test("consecutive failed turns: the Nth stops automatic retries and alerts once;
 	s.ok();
 	expect(s.stopped).toBe(false);
 	expect(s.fail()).toBe("go");
+});
+
+test("'계속 이 모델' (revert: false) set in the settings editor survives storage and the OmO chain, so the entry stays", () => {
+	const [kept] = chainOf([{ model: "anthropic/claude-sonnet-5-5", revert: false }]);
+	expect(kept).toEqual({ model: "anthropic/claude-sonnet-5-5", revert: false });
+	expect(isPlain(kept)).toBe(false);
+	const [driven] = hubChain("omo", [kept])!;
+	expect(driven.revert).toBe(false);
+	const c = new Chain("anthropic/claude-opus-5-5", [driven], "medium");
+	c.active = 1;
+	expect(c.revertTarget(T0)).toBeUndefined();
+	// A bare entry still goes back by default.
+	expect(hubChain("omo", chainOf(["anthropic/claude-sonnet-5-5"]))![0].revert).toBe(true);
 });
