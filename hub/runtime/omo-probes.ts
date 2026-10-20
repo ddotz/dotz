@@ -162,22 +162,33 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 		steer_abort: probe(async (_ctx, start, ms) => {
 			const run = start();
 			const from = run.events.length;
-			run.proc.send("Run this bash command: sleep 8; echo slept. Then reply with the single word done.", "prompt");
+			run.proc.send("Run this bash command: sleep 8; echo slept. Then reply with the word done.", "prompt");
 			if (!(await run.waitFor(e => e.type === "activity" && e.row.type === "tool_call" && isShell(e.row.tool), 60_000, from))) return fail("the model never started the command");
+			const steerAt = run.events.length;
 			run.proc.send("Also: end your final answer with the word STEERED.", "steer");
-			if (!(await run.waitFor(e => e.type === "assistant" && e.stop === "stop" && /STEERED/i.test(e.text), ms, from))) return fail("a message sent mid-turn was not honored");
-			await Bun.sleep(1500);
+			// The runtime's part is that the message enters the running turn. Whether the model follows it is model behavior:
+			// OmO's model often reads a message that lands after a tool result as tool output and ignores it (2026-10-20).
+			const steered = await run.waitFor(e => e.type === "user" && /STEERED/.test(e.text), 30_000, steerAt);
+			if (!steered) return fail("a message sent mid-turn never entered the session");
+			if (run.events.slice(steerAt, run.events.indexOf(steered)).some(e => e.type === "turn_end")) return fail("the steer arrived only after the turn ended");
+			if (!(await run.waitFor(e => e.type === "turn_end", ms, run.events.indexOf(steered)))) return fail("the steered turn did not end");
+			// The abort waits for the shell call that runs \`sleep 60\` itself; before (2026-10-20) it could hit a continuation
+			// turn instead and the next prompt then ran the whole sleep, past the 90 s limit.
 			const at = run.events.length;
-			run.proc.send("Run this bash command: sleep 60. Then say done.", "prompt");
-			if (!(await run.waitFor(e => e.type === "activity" && e.row.type === "tool_call", 60_000, at))) return fail("the model never started the long command");
-			await Bun.sleep(2000);
+			run.proc.send("Run this bash command: sleep 60. Then say done.", "followUp");
+			const long = await run.waitFor(e => e.type === "activity" && e.row.type === "tool_call" && isShell(e.row.tool) && /sleep 60/.test(e.row.args ?? ""), 60_000, at);
+			if (!long) return fail("the model never started the long command");
+			const t = Date.now();
+			const aborted = run.events.indexOf(long);
 			run.proc.abort();
-			// OmO ends an aborted turn with the tool result "Tool execution aborted" and a plain turn_end (no aborted message).
-			if (!(await run.waitFor(e => (e.type === "assistant" && e.stop === "aborted") || e.type === "turn_end", 20_000, at))) return fail("abort() did not end the turn");
-			await Bun.sleep(1500);
-			// OmO may add a continuation turn for open todo items after the answer, so any PONG answer counts.
-			const after = await run.turn(PONG, ms);
-			return after.some(e => e.type === "assistant" && e.stop === "stop" && /PONG/i.test(e.text)) ? ok("steer injected mid-turn; abort ends the turn (tool result aborted, turn_end), session usable afterwards") : fail("the session did not answer after abort()");
+			// OmO ends an aborted run with the tool result "Operation aborted" and agent_end (turn_end); nothing is queued
+			// behind it, so the session is idle there.
+			if (!(await run.waitFor(e => e.type === "turn_end", 20_000, aborted))) return fail("abort() did not end the turn");
+			const abortMs = Date.now() - t;
+			// A prompt sent into the aborted run's tail reads to the model like tool output; sent once idle it is a new turn.
+			const pong = run.events.length;
+			run.proc.send(PONG, "prompt");
+			return (await run.waitFor(e => e.type === "assistant" && e.stop === "stop", ms, pong)) ? ok(`steer entered the running turn; abort ended it in ${abortMs} ms; the session answered afterwards`) : fail("the session did not answer after abort()");
 		}),
 
 		workers_spawn: probe(async (_ctx, start, ms) => {
