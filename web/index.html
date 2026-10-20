@@ -674,6 +674,10 @@ details.work.live .wdot { display: block; }
 button.cchip:hover { background: var(--layer); color: var(--fg); }
 .cchip.warn { color: var(--warn); }
 .cchip.err { color: var(--err); }
+/* whose model and context the chips show (뙃쥐 or a lane), and a lane's worker model: labels, not buttons */
+.cchip.cown { padding: 0 4px; opacity: .65; font-weight: 600; }
+/* the phone app bar already names the session, and the row has no room for the labels */
+@media (max-width: 600px) { .cchip.cown { display: none; } }
 .cbar .working { margin: 0; min-height: 26px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; gap: 6px; }
 .cbar .working #working-tx { color: var(--fg-2); font-weight: 500; font-size: 12.5px; }
 .sendrow textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; padding: 4px 0; font-size: 14px; line-height: 22px; max-height: 140px; }
@@ -1175,8 +1179,10 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
             <div class="cbar" id="cbar">
               <button class="cchip" type="button" id="c-attach" aria-label="파일 첨부" title="파일 첨부 · 끌어다 놓거나 붙여넣기도 돼요"></button>
               <button class="cchip" type="button" id="c-more" aria-label="작업 중 동작" title="작업 중 동작" aria-haspopup="listbox" hidden></button>
+              <span class="cchip cown" id="c-own" hidden></span>
               <button class="cchip" type="button" id="c-model" aria-haspopup="listbox" hidden></button>
               <button class="cchip" type="button" id="c-effort" aria-haspopup="listbox" hidden></button>
+              <span class="cchip cown" id="c-worker" hidden></span>
               <button class="cchip" type="button" id="ctx-ring" hidden></button>
               <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-queue" hidden>다음 턴에</button><button class="btn text" type="button" id="working-int" hidden>중단하고 보내기</button><button class="btn text" type="button" id="working-stop">중단</button></div>
             </div>
@@ -3228,16 +3234,23 @@ function modelChipText(sel) {
 function renderCtxRing() {
   const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;
   const sel = target === MAIN ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model;
+  // The chips say whose they are: the orchestrator and a lane often run the same model with a similar context, and
+  // unlabeled they read as one (owner 2026-10-20: "오케스트레이터와 레인별로 구분 안되는거 같은데").
+  const owner = target === MAIN ? botName : lane ? `레인 ${lane.name}` : "";
+  const ob = $("#c-own"), wb = $("#c-worker"), wsel = lane && lane.worker_model;
+  ob.hidden = !(sel && owner); ob.textContent = owner;
+  wb.hidden = !wsel;
+  if (wsel) { const [wbase, wlevel] = String(wsel).split(":"); wb.textContent = `워커 ${modelChipText(wbase)}${wlevel ? ` · ${wlevel}` : ""}`; wb.title = `이 레인의 작업자(워커) 모델`; }
   // model and effort are separate chips, each with its own popover
   const [base, level] = String(sel || "").split(":"), eb = $("#c-effort");
   mb.hidden = !sel; eb.hidden = !level;
-  if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `모델 · ${t}`; }
-  if (level) { eb.textContent = level; eb.title = `추론 강도 · ${level}`; }
+  if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${owner} 모델 · ${t}`; }
+  if (level) { eb.textContent = level; eb.title = `${owner} 추론 강도 · ${level}`; }
   const b = $("#ctx-ring"), p = ((C && C.processes) || []).find(x => x.name === (target === MAIN ? "orchestrator" : laneOf(target)));
   b.hidden = !(p && p.running && p.tokens != null);
   if (b.hidden) return;
   const pct = p.percent != null ? Math.min(100, Math.max(0, p.percent)) : 0;
-  const label = `컨텍스트 ${p.percent != null ? `${Math.round(p.percent)}% · ${kfmt(p.tokens)}/${kfmt(p.window)}` : `${kfmt(p.tokens)} 토큰`}`;
+  const label = `${owner} 컨텍스트 ${p.percent != null ? `${Math.round(p.percent)}% · ${kfmt(p.tokens)}/${kfmt(p.window)}` : `${kfmt(p.tokens)} 토큰`}`;
   b.title = label; b.setAttribute("aria-label", label);
   b.textContent = p.percent != null ? `컨텍스트 ${Math.round(p.percent)}%` : `컨텍스트 ${kfmt(p.tokens)}`;
   b.classList.toggle("err", pct >= 80);
