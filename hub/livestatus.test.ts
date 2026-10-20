@@ -128,3 +128,20 @@ test("the turn's end stops the reports even when no answer reached the channel",
 	expect(visible()).toEqual([]);
 	expect(requests.length - ended).toBeLessThanOrEqual(1); // at most the typing tick already due
 });
+
+test("web: the progress line is one note per conversation through the web hook, nothing goes to Discord, and the turn's end stops it", async () => {
+	requests.length = 0;
+	const posts: { target: string; text: string }[] = [];
+	livestatus.setWebProgress((target, text) => void posts.push({ target, text }));
+	livestatus.begin("lane:live-test", "lane:live-test", true);
+	await run(6, m => {
+		if (m === 1) toolCall("웹에서 보낸 일 하는 중");
+	});
+	expect(posts).toHaveLength(1);
+	expect(posts[0]!.target).toBe("lane:live-test");
+	expect(posts[0]!.text).toContain("웹에서 보낸 일 하는 중");
+	expect(requests).toEqual([]);
+	emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "lane:live-test", type: "turn_end", text: "" });
+	await run(12);
+	expect(posts).toHaveLength(1);
+});

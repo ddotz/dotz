@@ -16,6 +16,50 @@ export function relayItem(r: Relay): string {
 	return `- lane ${r.lane} status=${r.tone ?? "report"} (full: ${r.file})\n${r.text.trim()}`;
 }
 
+// Owner messages a lane has not answered yet (2026-10-21: "내가 직접 레인에 보내는건 피드백이 안와서"). The lane's first text that ends
+// in a tool call after such a message is its short answer note (the footer asks for one): it is shown to the owner where he wrote
+// at once, and is never routine progress ("disk") or an owner-only exchange kept off the surface. A text that ends the turn is
+// the final report, which answers them when it is reported.
+export type OwnerNotesDeps = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; lost?: (lane: string, refs: string[]) => void };
+
+export function createOwnerNotes(deps: OwnerNotesDeps) {
+	const open = new Map<string, string[]>();
+	return {
+		/** The owner message `ref` was sent to `lane`. */
+		asked(lane: string, ref: string | undefined): void {
+			if (ref) open.set(lane, [...(open.get(lane) ?? []), ref]);
+		},
+		/** An assistant text of the lane; `endsTurn` is false when it ended in a tool call. "note" = shown now as the answer. */
+		text(lane: string, text: string, endsTurn: boolean): "note" | "final" | "none" {
+			const refs = open.get(lane);
+			if (!refs?.length || !text.trim()) return "none";
+			if (endsTurn) return "final";
+			open.delete(lane);
+			deps.note(lane, text.trim(), refs);
+			deps.answered(lane, refs);
+			return "note";
+		},
+		/** The lane reported (its turn's final text): everything still open is answered by it; true when something was open (the report is an answer to the owner, whatever its tone). */
+		reported(lane: string): boolean {
+			const refs = open.get(lane);
+			if (!refs?.length) return false;
+			open.delete(lane);
+			deps.answered(lane, refs);
+			return true;
+		},
+		/** The lane has owner messages waiting for an answer. */
+		waiting: (lane: string): boolean => (open.get(lane)?.length ?? 0) > 0,
+		/** The lane's process ended: nothing more will answer them. */
+		lost(lane: string): void {
+			const refs = open.get(lane);
+			open.delete(lane);
+			if (refs?.length) deps.lost?.(lane, refs);
+		},
+		/** The message could not be delivered after all. */
+		drop: (lane: string): void => void open.delete(lane),
+	};
+}
+
 export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: string) => void; lead: (n: number) => string; steer?: (text: string) => boolean }) {
 	const last = new Map<string, string>();
 	const held: Relay[] = [];
