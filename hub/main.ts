@@ -16,7 +16,7 @@ import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCle
 import { startMemoryGuard } from "./memguard.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
 import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
-import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, isExpensive, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, turnHeader, verifyLane } from "./lanes.ts";
+import { abortLane, approvesBudget, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setProgressHandler, setReportHandler, shutdownLanes, stopLane, turnHeader, verifyLane } from "./lanes.ts";
 import { abort as abortOrchestrator, deliver as deliverToOrchestrator, orch, orchBusy, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { createPrompts } from "./prompts.ts";
@@ -387,7 +387,11 @@ discord.connect(m => {
 			// in the lane's one progress message (no answer is sent before it is ready).
 			if (busy) void discord.progress(target, "progress", "📨 받았어요. 하던 작업에 바로 넣었고, 답이 준비되면 여기로 올게요.").catch(e => log(`lane receipt note failed: ${e}`));
 		} catch (error) {
-			void send(target, `레인 ${lane}을(를) 이어갈 수 없어요 (${(error as Error).message}). 대화 채널에서 다시 맡겨 주세요.`, m.id);
+			// A session of another runtime: the refusal itself offers the handover (answer "인계" here).
+			if (error instanceof LaneRuntimeMismatch) {
+				log(`lane ${lane}: owner message refused, session of ${error.from}; handover offered`);
+				void send(target, error.message, m.id);
+			} else void send(target, `레인 ${lane}을(를) 이어갈 수 없어요 (${(error as Error).message}). 대화 채널에서 다시 맡겨 주세요.`, m.id);
 		}
 		return;
 	}
@@ -908,6 +912,11 @@ const server = Bun.serve({
 				if (req.method === "POST" && parts[3] === "resume") {
 					const text = String((await body(req)).text ?? "").trim();
 					resumeByName(parts[2], text || undefined);
+					return json({ ok: true });
+				}
+				if (req.method === "POST" && parts[3] === "handover") {
+					const text = String((await body(req)).text ?? "").trim();
+					handoverLane(parts[2], text || undefined);
 					return json({ ok: true });
 				}
 				if (req.method === "POST" && parts[3] === "verify") {

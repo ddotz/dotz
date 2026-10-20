@@ -10,7 +10,7 @@ import { featurePrompt } from "./featuredirs.ts";
 import { languageName, baseLanguage } from "./language.ts";
 import { abandonCompact, type CompactPort, type Compaction, compactDue, type Ctx, ctxView, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
-import { runtimeFor } from "./runtime/index.ts";
+import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import type { AgentError, AgentProcess } from "./runtime/types.ts";
 import { atTime, Chain, failsOver, failureReason, hubChain, type Move, Reverter, revertWhy } from "./fallback.ts";
 import { parseTone } from "./tone.ts";
@@ -39,7 +39,8 @@ type Claim = { state: "reported" | "verified"; at: string; evidence?: string; pr
 // A lane's own [ask] report stays a question for the owner until the owner answers (sendToLane) or the lane reports again.
 // The full text also sits in pending-ask.md (dir(name)) while pending, because report.md is overwritten by gateway notices.
 type Ask = { text: string; at: string };
-type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; reports: number; lastReportAt?: string; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask };
+// `runtime`: the runtime that wrote sessionFile (omo, omp, claude); a session is only ever resumed by that runtime.
+type Record_ = { name: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	// The orchestrator sent work (launch, dotz_lane send) that no relayed report answered yet; an owner-only exchange in
@@ -81,6 +82,8 @@ export type Lane = Record_ & {
 	// Going back to the configured model after the runtime moved the process to a fallback by itself (not when the hub drives a chain).
 	reverter?: Reverter;
 	startedModel?: string;
+	// The owner message a cross-runtime resume refused; it goes along with the handover once the owner accepts it.
+	pendingHandover?: string;
 };
 
 export const lanes = new Map<string, Lane>();
@@ -108,9 +111,9 @@ export function setIdleHandler(fn: (name: string) => void): void {
 
 const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
-	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, reports, lastReportAt, held, worktree, claim, pendingAsk } = lane;
+	const { name, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, runtime, reports, lastReportAt, held, worktree, claim, pendingAsk } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, reports, ...(lastReportAt ? { lastReportAt } : {}), ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}) }, null, 2)}\n`);
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -453,7 +456,48 @@ async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 
 export const laneWorkerModel = (lane: Pick<Lane, "workerModel">) => lane.workerModel ?? workerModel();
 
-function spawn(lane: Lane, resume: boolean): void {
+// The runtime whose session file a lane holds: recorded at spawn, else (a lane saved before it was recorded) read from the
+// session's place: omp keeps sessions under ~/.omp, OmO under ~/.omo (or its agent dir), Claude Code names a bare id.
+export function sessionRuntime(l: Pick<Lane, "runtime" | "sessionFile">): string | undefined {
+	if (l.runtime) return l.runtime;
+	const f = l.sessionFile;
+	if (!f) return undefined;
+	if (/\/\.omp\//.test(f)) return "omp";
+	const omoDir = process.env.OMO_CODING_AGENT_DIR;
+	if (/\/\.omo\//.test(f) || (omoDir && f.startsWith(`${omoDir}/`))) return "omo";
+	return f.includes("/") ? undefined : "claude";
+}
+const harnessName = (id: string) => HARNESS_NAMES[id] ?? id;
+
+// A session is never resumed by another runtime than the one that wrote it: an omp session handed to OmO killed the lane
+// at once (gateway-ui, 2026-10-20 17:16), and a resumed foreign session would also lose its prompt cache. The owner is
+// offered a handover instead (handoverLane): the same lane in a fresh session on the current runtime.
+export class LaneRuntimeMismatch extends Error {
+	constructor(readonly lane: string, readonly from: string, readonly to: string) {
+		super(msg().laneRuntimeRefused(lane, harnessName(from), harnessName(to)));
+	}
+}
+export function runtimeMismatch(lane: Pick<Lane, "name" | "runtime" | "sessionFile">): LaneRuntimeMismatch | undefined {
+	const from = sessionRuntime(lane);
+	const to = runtimeFor("lane").id;
+	return from && from !== to ? new LaneRuntimeMismatch(lane.name, from, to) : undefined;
+}
+// The owner's yes to a handover offer (a bare "인계" / "handover", as typed in the lane channel or the web lane view).
+const HANDOVER_RE = /^\s*(인계|인계해(줘|요)?|인계\s*ㄱ+|handover|hand\s*over|새\s*세션(으로)?(\s*이어가(기|줘)?)?)\s*[.!]*\s*$/i;
+const ownerWords = (text: string) => text.replace(/^\[owner via [^\]]+\]\s*/, "");
+
+// Starts the lane's process; false when a resume is refused because the session belongs to another runtime (the lane is
+// then left exited, untouched).
+function spawn(lane: Lane, resume: boolean): boolean {
+	if (resume) {
+		const wrong = runtimeMismatch(lane);
+		if (wrong) {
+			log(`lane ${lane.name} not resumed: its session was written by ${wrong.from}, lanes run on ${wrong.to}`);
+			setStatus(lane, "exited");
+			return false;
+		}
+	}
+	lane.runtime = runtimeFor("lane").id;
 	const entries = chainAfter(lane.model, fallbackChain("lanes"));
 	// The hub switches the chain itself on OmO, and on omp when an entry is conditional (fallback.ts hubChain); otherwise the
 	// runtime gets the models as its own plain fallback list.
@@ -464,7 +508,10 @@ function spawn(lane: Lane, resume: boolean): void {
 	const env: Record<string, string> = { DOTZ_LANE: lane.name, ...(lane.fableOk ? { DOTZ_OWNER_ASKED_FABLE: "1" } : {}) };
 	if (lane.chain) {
 		const until = lane.chain.exhaustedUntil();
-		if (until !== undefined) return pauseExhausted(lane, lane.chain, until);
+		if (until !== undefined) {
+			pauseExhausted(lane, lane.chain, until);
+			return true;
+		}
 		lane.chain.active = lane.chain.initial();
 		spawnModel = lane.chain.selector(lane.chain.active);
 		Object.assign(env, lane.chain.env(lane.chain.active));
@@ -512,16 +559,14 @@ function spawn(lane: Lane, resume: boolean): void {
 		if (lane.revive && lane.sessionFile) {
 			const { text } = lane.revive;
 			if (text) resumeLane(lane, text);
-			else {
-				spawn(lane, true);
-				setStatus(lane, "idle");
-			}
+			else if (spawn(lane, true)) setStatus(lane, "idle");
 			return;
 		}
 		if (code !== 0 && code !== 143) report(lane, `[lane exited] 프로세스가 종료됐습니다 (code ${code}). 마지막 상태: ${lane.lastText.slice(0, 300) || "없음"}`, true);
 	});
 	proc.watchSubagents();
 	setTimeout(() => lane.proc?.refreshSession(), 3000);
+	return true;
 }
 
 // A lane stopped after its merge lost its worktree (dropWorktree moved cwd back to the owner's checkout); resuming it
@@ -529,18 +574,25 @@ function spawn(lane: Lane, resume: boolean): void {
 function resumeLane(lane: Lane, text: string): void {
 	clearTimeout(lane.resumeTimer);
 	lane.resumeTimer = undefined;
-	if (!lane.worktree) {
-		const place = laneWorktree(lane.name, lane.cwd);
-		if (place.worktree) {
-			lane.cwd = place.cwd;
-			lane.worktree = place.worktree;
-			persist(lane);
-			text = `${worktreeNote(place.worktree)}\n\n${text}`;
-		}
+	if (runtimeMismatch(lane)) {
+		spawn(lane, true);
+		return;
 	}
+	text = withWorktree(lane, text);
 	spawn(lane, true);
 	prompt(lane, withHeld(lane, text));
 	log(`lane ${lane.name} resumed ${lane.sessionFile}`);
+}
+
+// Gives a lane whose worktree went with its merge a fresh one; the text gets the new path in front.
+function withWorktree(lane: Lane, text: string): string {
+	if (lane.worktree) return text;
+	const place = laneWorktree(lane.name, lane.cwd);
+	if (!place.worktree) return text;
+	lane.cwd = place.cwd;
+	lane.worktree = place.worktree;
+	persist(lane);
+	return `${worktreeNote(place.worktree)}\n\n${text}`;
 }
 
 // Aborts a lane that cannot go on (a turn with no frames for STALL_MS, or a failed compaction) by killing its process,
@@ -690,6 +742,14 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 export function sendToLane(name: string, text: string): void {
 	const lane = lanes.get(name);
 	if (!lane) throw new Error(`lane ${name} does not exist`);
+	if (!lane.proc && lane.sessionFile) {
+		const wrong = runtimeMismatch(lane);
+		if (wrong && HANDOVER_RE.test(ownerWords(text))) return handoverLane(name);
+		if (wrong) {
+			if (!HANDOVER_RE.test(ownerWords(text)) && text !== "/budget-ok") lane.pendingHandover = text;
+			throw wrong;
+		}
+	}
 	if (!lane.proc && (!lane.sessionFile || !existsSync(lane.sessionFile))) throw new Error(`lane ${name} is not running and has no session to resume`);
 	// New work makes an unchecked [done] claim stale; a verified one stays until the lane's next report replaces it.
 	// Any message to the lane is the owner's answer to a pending [ask].
@@ -757,6 +817,11 @@ export function resumeByName(name: string, text?: string): void {
 		}
 		return prompt(lane, text);
 	}
+	const wrong = runtimeMismatch(lane);
+	if (wrong) {
+		if (text) lane.pendingHandover = text;
+		throw wrong;
+	}
 	if (!lane.sessionFile || !existsSync(lane.sessionFile)) throw new Error(`lane ${name} has no session to resume`);
 	resumeLane(lane, text || msg().laneOwnerResumed);
 }
@@ -767,16 +832,16 @@ export async function restartLane(name: string, note = msg().laneOwnerRestarted)
 	const lane = known(name);
 	if (!lane.proc) return resumeByName(name);
 	if (!lane.sessionFile || !existsSync(lane.sessionFile)) throw new Error(`lane ${name} has no session yet; try again in a few seconds`);
+	// The process runs on the runtime it started on; a runtime switched in config since then cannot take its session over.
+	const wrong = runtimeMismatch(lane);
+	if (wrong) throw wrong;
 	const wasWorking = lane.status === "working" || lane.status === "starting";
 	const old = lane.proc;
 	lane.quiet = true;
 	old.kill();
 	await old.exited;
 	if (wasWorking) resumeLane(lane, note);
-	else {
-		spawn(lane, true);
-		setStatus(lane, "idle");
-	}
+	else if (spawn(lane, true)) setStatus(lane, "idle");
 }
 
 // Persists a new model selector on the lane record and, when it is running, restarts it on that model.
@@ -823,6 +888,34 @@ export async function rotateLane(name: string, why: string): Promise<void> {
 	lane.silent = { lastText: lane.lastText };
 }
 
+// The same lane in a fresh session on the current runtime, for a session another runtime wrote (runtimeMismatch): the
+// lane keeps its name, channel, folder, model, brief and goal and gets the previous session's recent exchanges (OmO and omp
+// write the same session format), its brief and its last report. The owner message the refused resume carried, or `text`,
+// goes in the same prompt; without one the reload turn is silent, as after a rotation.
+export function handoverLane(name: string, text?: string): void {
+	const lane = known(name);
+	if (lane.proc) throw new Error(`lane ${name} is running; it needs no handover`);
+	const previous = lane.sessionFile;
+	const from = harnessName(sessionRuntime(lane) ?? "?");
+	const to = harnessName(runtimeFor("lane").id);
+	const owner = text?.trim() || lane.pendingHandover;
+	lane.pendingHandover = undefined;
+	lane.ctx = newCtx();
+	lane.retainNext = undefined;
+	lane.sessionFile = undefined;
+	const tail = previous && existsSync(previous) ? runtimeFor("lane").recentExchanges(previous) : undefined;
+	const brief = join(dir(name), "brief.md");
+	const lastReport = join(dir(name), "report.md");
+	const prior = previous ? `\n\n${msg().laneHandover(previous, tail)}` : "";
+	const lead = owner ? msg().laneRuntimeHandover(from, to, lane.cwd, brief, lastReport) : msg().laneRotated(`${from} -> ${to}`, lane.cwd, brief, lastReport);
+	const body = withWorktree(lane, `${lead}${prior}`);
+	spawn(lane, false);
+	log(`lane ${name} handed over to a fresh ${to} session (previous ${from} session ${previous ?? "none"})`);
+	if (owner) return prompt(lane, withHeld(lane, `${body}\n\n${owner}`));
+	prompt(lane, withReplyLine(body));
+	lane.silent = { lastText: lane.lastText };
+}
+
 // Brings back every lane that was alive when the gateway stopped: working ones resume their turn, idle ones (waiting on
 // the owner) are respawned idle so they keep answering in their channel. Lanes already stopped stay stopped.
 // Returns the lanes that were resumed mid-work.
@@ -839,13 +932,14 @@ export function restoreLanes(): string[] {
 			lane.lastText = readFileSync(pendingFile(lane), "utf8");
 			report(lane, lane.lastText, lane.lastText.startsWith("[lane error]"));
 		}
-		const session = Boolean(rec.sessionFile && existsSync(rec.sessionFile));
+		const wrong = runtimeMismatch(lane);
+		if (wrong && rec.status !== "exited") log(`lane ${name} not restored: its session was written by ${wrong.from}, lanes run on ${wrong.to} (a message to it offers a handover)`);
+		const session = !wrong && Boolean(rec.sessionFile && existsSync(rec.sessionFile));
 		if (session && (rec.status === "working" || rec.status === "starting" || rec.status === "rate-limited")) {
 			resumeLane(lane, msg().laneGatewayRestarted);
 			resumed.push(name);
 		} else if (session && rec.status === "idle") {
-			spawn(lane, true);
-			setStatus(lane, "idle");
+			if (spawn(lane, true)) setStatus(lane, "idle");
 			log(`lane ${name} respawned idle ${rec.sessionFile}`);
 		} else if (rec.status !== "exited") setStatus(lane, "exited");
 	}

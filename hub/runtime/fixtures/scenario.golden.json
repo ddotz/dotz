@@ -1249,7 +1249,7 @@
   ],
   [
    "persisted",
-   "{\n  \"name\": \"alpha\",\n  \"cwd\": \"<DATA>/work\",\n  \"model\": \"anthropic/test-lane:medium\",\n  \"fableOk\": true,\n  \"status\": \"starting\",\n  \"startedAt\": \"<t>\",\n  \"sessionFile\": \"<DATA>/lane-session.jsonl\",\n  \"reports\": 0\n}\n"
+   "{\n  \"name\": \"alpha\",\n  \"cwd\": \"<DATA>/work\",\n  \"model\": \"anthropic/test-lane:medium\",\n  \"fableOk\": true,\n  \"status\": \"starting\",\n  \"startedAt\": \"<t>\",\n  \"sessionFile\": \"<DATA>/lane-session.jsonl\",\n  \"runtime\": \"omp\",\n  \"reports\": 0\n}\n"
   ],
   [
    "busy while worker runs",
