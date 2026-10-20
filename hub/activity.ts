@@ -138,6 +138,26 @@ export async function subagentDetail(source: string, id: string): Promise<(Subag
 	return sub && { ...sub, items: await transcriptItems(transcripts.get(`${source}\n${id}`)) };
 }
 
+// What the task metadata says against a [done] claim (2026-10-19 lat-probe: a worker blocked by the nesting limit wrote
+// the expected answer itself and the lane reported success): workers that failed or were aborted, and `task` spawns that
+// returned an error, in worker transcripts or the lane's own session, since `since`. The reply text is not consulted.
+export function taskProblems(subs: Subagent[], items: { id: string; items: TranscriptItem[] }[], since: number): string[] {
+	const out = subs.filter(s => s.updated_at >= since && (s.status === "failed" || s.status === "aborted")).map(s => `worker ${s.id}${s.agent ? ` (${s.agent})` : ""} ${s.status}`);
+	for (const t of items)
+		for (const i of t.items)
+			if (i.type === "tool_result" && i.is_error && i.tool === "task" && Date.parse(i.ts) >= since) out.push(`${t.id}: task spawn failed: ${i.text.slice(0, 160)}`);
+	return out;
+}
+
+export async function workerCheck(source: string, since: number, ownSession?: string): Promise<string[]> {
+	const subs = [...(subagents.get(source)?.values() ?? [])];
+	const items = await Promise.all([
+		...subs.map(async s => ({ id: s.id, items: await transcriptItems(transcripts.get(`${source}\n${s.id}`), 2000) })),
+		...(ownSession ? [transcriptItems(ownSession, 2000).then(items => ({ id: source, items }))] : []),
+	]);
+	return taskProblems(subs, items, since);
+}
+
 export function statusActivity(source: string, text: string): void {
 	emitActivity({ ts: now(), kind: "activity", source, type: "status", text });
 }
