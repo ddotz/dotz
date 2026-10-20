@@ -105,15 +105,22 @@ test("on a host without zod (OmO) every orchestrator and lane tool registers: a 
 	expect(await load("DOTZ_LANE")).toContain("dotz_verify");
 });
 
-test("the orchestrator's task workers get a dotz profile too: child processes (so dotz loads in them), memory off, the owner's categories untouched", () => {
+test("the orchestrator's task workers get a dotz profile too: child processes, memory off, every category on the subscription (never the API key), the owner's own config untouched", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
 	writeFileSync(file, JSON.stringify({ categories: { quick: { model: "x/y" } }, profiles: { mine: { categories: {} } } }));
-	expect(writeOrchestratorProfile(file)).toBe(ORCHESTRATOR_WORKERS);
+	const chain = [{ model: "anthropic/claude-opus-5-5:high", key_file: "fake-key" }, { model: "anthropic/claude-opus-5-5:medium", when: "quota" as const }];
+	expect(writeOrchestratorProfile(file, "anthropic/claude-sonnet-5-5:high", chain)).toBe(ORCHESTRATOR_WORKERS);
 	const doc = JSON.parse(readFileSync(file, "utf8"));
 	expect(doc.categories).toEqual({ quick: { model: "x/y" } });
 	expect(doc.profiles.mine).toEqual({ categories: {} });
-	// No categories key: OmO layers a profile over the base config, so the workers keep the owner's category models.
-	expect(doc.profiles[ORCHESTRATOR_WORKERS]).toEqual({ task: WORKER_TASK, memory: { enabled: false } });
+	const p = doc.profiles[ORCHESTRATOR_WORKERS];
+	expect(p.task).toEqual(WORKER_TASK);
+	expect(p.memory).toEqual({ enabled: false });
+	expect(Object.keys(p.categories).sort()).toEqual([...WORKER_CATEGORIES].sort());
+	for (const c of WORKER_CATEGORIES) {
+		expect(p.categories[c].models).toEqual([{ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "high" }, { model: "anthropic-subscription/claude-opus-5-5", reasoning: "medium" }]);
+		expect(p.categories[c].models.some((m: { model: string }) => m.model.startsWith("anthropic/"))).toBe(false);
+	}
 });
 
 for (const [role, value] of [["DOTZ_LANE", "probe"], ["DOTZ_ORCHESTRATOR", "1"]] as const)
