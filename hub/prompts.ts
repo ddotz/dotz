@@ -37,6 +37,8 @@ export type PromptDeps = {
 	log: (message: string) => void;
 	/** reply_to ids of messages answered before this process started (the outbox tail). */
 	answered?: Iterable<string>;
+	/** An answer to this message is on its way (sendlog.ts) and counts as answered. */
+	pending?: (replyTo: string) => boolean;
 };
 
 const MAX_PROMPTS = 200;
@@ -53,7 +55,7 @@ export function createPrompts(deps: PromptDeps) {
 		const open = [...(current && !current.done ? [current] : []), ...prompts].map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
 		deps.persist(open);
 	};
-	const isAnswered = (replyTo?: string) => replyTo !== undefined && answered.has(replyTo);
+	const isAnswered = (replyTo?: string) => replyTo !== undefined && (answered.has(replyTo) || deps.pending?.(replyTo) === true);
 
 	/** Records that the owner message `replyTo` got an answer. */
 	function markAnswered(replyTo: string | undefined | null): void {
