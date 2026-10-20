@@ -4083,7 +4083,7 @@ let HGB = null, hProjId = "";   // HGB = /api/harness as served; HG = what the m
 let hFeat = (() => { try { return localStorage.getItem("dotz-hfeat") === "1"; } catch { return false; } })();
 let hDetail = (() => { try { return localStorage.getItem("dotz-hdetail") === "1"; } catch { return false; } })();
 let hOv = null, hGeo = new Map();
-const fcFilter = { q: "", form: "", trigger: "", strength: "", origin: "" }, fcCollapsed = new Set(["스킬"]);
+const fcFilter = { q: "", form: "", trigger: "", strength: "", origin: "" }, fcCollapsed = new Set(["스킬", "__off"]);
 const FC_ORIGIN = { shipped: "배포용", personal: "개인용" };
 // 구성 커스텀 표시: HG.origin_view (config.json ui.origin_view) 가 켜졌을 때만 쓰여요. 꺼져 있으면 아래 함수는 모두 null/빈 문자열을 돌려줘요.
 let hOnly = (() => { try { return localStorage.getItem("dotz-honly") === "1"; } catch { return false; } })();
@@ -4126,7 +4126,7 @@ const hSvg = (tag, attrs) => { const n = document.createElementNS("http://www.w3
 async function loadHarness(quiet) {
   if (hLoading) return;
   hLoading = true;
-  try { if (!M) await loadModels(true); [HGB, FC] = await Promise.all([api("/api/harness"), api("/api/features").catch(() => FC)]); }
+  try { if (!M) await loadModels(true); [HGB, FC] = await Promise.all([api("/api/harness"), api("/api/features").then(fcSplit).catch(() => FC)]); }
   catch (e) { hLoading = false; if (!quiet && current === "harness") clear($("#harness")).append(emptyNode("구성을 불러오지 못했어요")); return; }
   hLoading = false;
   if (current === "harness") { renderHarness(); hHead(); }
@@ -4638,7 +4638,7 @@ async function hRequest(text, scope) {
 // Which side a node is on, shown at the top of its sheet (only with ui.origin_view).
 function hOriginLine(n) {
   const mine = n.origin === "personal";
-  const where = n.file ? `${hData()}/${n.file}` : mine ? "~/.omp/agent/extensions" : "";
+  const where = n.file ? `${hData()}/${n.file}` : mine && FC && FC.harness ? FC.harness.dirs.join(", ") : "";
   const tags = [el("span", { class: `tag${mine ? " m" : ""}`, text: mine ? "개인" : "배포" })];
   const text = mine ? `이 사용자의 ${n.file ? "파일" : "확장"}이에요${where ? ` (${where})` : ""}` : `dotz 와 함께 오는 기본이에요${n.file ? " (저장소 파일 · 읽기 전용)" : ""}`;
   const extra = !mine && n.custom && n.custom.length ? ` · 설정값 ${n.custom.length}개는 이 사용자가 바꿨어요 (${hData()}/config.json)` : !mine && n.settings.some(s => s.editable) ? ` · 설정값은 ${hData()}/config.json 에 저장돼요` : "";
@@ -4837,7 +4837,7 @@ const FC_NOTE = {
   "차단 명령": "RULES 의 deny 줄이에요. 실행 직전에 코드가 막아요 (강제).",
   "기능 폴더": "features/<id>/ 폴더 하나가 기능 하나예요. 글은 권고, deny 줄·감시 파일이 있으면 코드가 강제해요. 스위치로 켜고 꺼요.",
   "스킬": "SKILL.md 절차서예요. 모델이 필요할 때 읽고 따라요 (권고).",
-  "omp 확장": "omp 에 설치된 코드예요. 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).",
+  "확장": "하네스가 불러오는 코드예요. 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).",
   "예약": "정해진 시각에 문장을 오케스트레이터에게 보내는 타이머예요.",
   "감시": "모델을 깨우지 않고 주기적으로 명령을 돌려 변화만 알리는 점검이에요.",
   "작업 채널 설정": "작업 채널마다 묶어 둔 로그인 유지와 감시예요.",
@@ -4845,6 +4845,12 @@ const FC_NOTE = {
   "외부 연동": "Discord·메일(zele)·브라우저(Aside) 같은 바깥 서비스와의 연결이에요.",
 };
 const FC_STR = { enforced: "강제", advisory: "권고" };
+// Extensions installed for another harness are not loaded by the one running dotz: they leave every count and stage card
+// and sit in one folded "이 하네스에선 꺼짐" group at the end of the list.
+function fcSplit(c) { if (c && !c.off) { c.off = c.features.filter(f => f.inactive); c.features = c.features.filter(f => !f.inactive); } return c; }
+const fcHarness = () => (FC && FC.harness ? FC.harness.name : "하네스");
+const fcFormLabel = form => (form === "확장" ? `${fcHarness()} 확장` : form);
+const fcNote = form => (form === "확장" && FC && FC.harness ? `${fcHarness()} 가 실제로 불러오는 코드예요 (${["dotz/extension", ...FC.harness.dirs].join(", ")}). 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).` : FC_NOTE[form] || "");
 const FC_FILE_NODE = { "RULES.md": "rules", "LESSONS.md": "lessons", "identity/IDENTITY.md": "identity" };
 const fcOf = id => (FC ? FC.features.filter(f => f.stage === id) : []);
 const fcDupText = f => (f.dup && f.dup.length ? `같은 일을 ${f.strength === "advisory" ? "코드(강제)" : "글(권고)"}로도 적어 뒀어요: ${f.dup.map(d => d.name).join(", ")}` : "");
@@ -4923,7 +4929,7 @@ function fcCard(f) {
     el("div", { class: "fc-tags" },
       el("span", { class: `tag st ${f.strength}`, title: f.strength === "enforced" ? "코드·훅·차단 줄이 막거나 실행해요" : "모델에게 따르라고 부탁한 글이에요", text: FC_STR[f.strength] }),
       el("span", { class: "tag", text: f.trigger }),
-      hOrigin() && f.origin ? el("span", { class: `tag${f.origin === "personal" ? " pri" : ""}`, title: f.origin === "personal" ? "이 사용자의 파일·설정에만 있는 기능이에요 (~/.dotz, ~/.omp)" : "dotz 와 함께 배포되는 기능이에요", text: FC_ORIGIN[f.origin] }) : null,
+      hOrigin() && f.origin ? el("span", { class: `tag${f.origin === "personal" ? " pri" : ""}`, title: f.origin === "personal" ? "이 사용자의 파일·설정에만 있는 기능이에요 (~/.dotz, 하네스 확장 폴더)" : "dotz 와 함께 배포되는 기능이에요", text: FC_ORIGIN[f.origin] }) : null,
       node ? el("span", { class: "tag", text: node.label.replace(/\s*\(.*\)$/, "") }) : null,
       !f.enabled ? el("span", { class: "tag", text: "꺼짐" }) : null,
       dup ? el("span", { class: "tag warn", title: dup, text: "중복" }) : null),
@@ -4950,11 +4956,20 @@ function fcPaintList() {
     const items = hit.filter(f => f.form === form);
     if (!items.length) continue;
     const fe = items.filter(f => f.strength === "enforced").length, shut = !filtering && fcCollapsed.has(form);
-    const head = el("button", { type: "button", class: "fc-gh", "aria-expanded": String(!shut) }, icon("drop"), el("span", { text: form }), el("span", { class: "tag", text: `${items.length}개` }),
-      el("span", { class: "sup", text: `강제 ${fe} · 권고 ${items.length - fe}` }), el("div", { class: "note", text: FC_NOTE[form] || "" }));
+    const head = el("button", { type: "button", class: "fc-gh", "aria-expanded": String(!shut) }, icon("drop"), el("span", { text: fcFormLabel(form) }), el("span", { class: "tag", text: `${items.length}개` }),
+      el("span", { class: "sup", text: `강제 ${fe} · 권고 ${items.length - fe}` }), el("div", { class: "note", text: fcNote(form) }));
     head.addEventListener("click", () => { if (filtering) return; if (fcCollapsed.has(form)) fcCollapsed.delete(form); else fcCollapsed.add(form); fcPaintList(); });
     fcList.append(head);
     if (!shut) fcList.append(el("div", { class: "fc-grid" }, ...items.map(fcCard)));
+  }
+  const off = (FC.off || []).filter(fcMatch);
+  if (off.length) {
+    const shut = fcCollapsed.has("__off");
+    const head = el("button", { type: "button", class: "fc-gh", "aria-expanded": String(!shut) }, icon("drop"), el("span", { text: "이 하네스에선 꺼짐" }), el("span", { class: "tag", text: `${off.length}개` }),
+      el("div", { class: "note", text: `다른 하네스 폴더에 설치돼 있지만 ${fcHarness()} 는 불러오지 않는 확장이에요. 지금은 아무것도 강제하지 않아요.` }));
+    head.addEventListener("click", () => { if (fcCollapsed.has("__off")) fcCollapsed.delete("__off"); else fcCollapsed.add("__off"); fcPaintList(); });
+    fcList.append(head);
+    if (!shut) fcList.append(el("div", { class: "fc-grid" }, ...off.map(fcCard)));
   }
 }
 
