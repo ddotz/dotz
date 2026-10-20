@@ -21,7 +21,9 @@ import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, tra
 import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
 import { abortLane, approvesBudget, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, type LaneDelivery, ownerNotes, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane } from "./lanes.ts";
 import { checkNow as checkAccountNow, setUsageSource, tick as accountTick } from "./account-rules.ts";
-import { accountView, onSwitch as onAccountSwitch } from "./account-sticky.ts";
+import { accountView, onSwitch as onAccountSwitch, readPool } from "./account-sticky.ts";
+import { readAliases } from "./account-alias.ts";
+import { accountAnswer, accountAsk, accountsRoute, switchNotice } from "./accounts-api.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { abort as abortOrchestrator, applyAccountChange as holdOrchestratorKeepalive, deliver as deliverToOrchestrator, orch, orchBusy, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
@@ -30,7 +32,6 @@ import { createSendLedger } from "./sendlog.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { createLaneRelay } from "./lanerelay.ts";
 import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin, usageSnapshot } from "./providers.ts";
-import { limitsText } from "./usage-account.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, replyRef } from "./threads.ts";
@@ -219,6 +220,8 @@ function flush(target: string): void {
 	bursts.delete(target);
 	const head = b.events[0];
 	if (b.events.length === 1 && LIMITS_ASK.test(String(head.text)) && !head.attachments?.length) return void limitsAnswer(target, b.replyTo);
+	const ask = b.events.length === 1 && !head.attachments?.length ? accountAsk(String(head.text ?? ""), readPool()?.names ?? [], readAliases()) : undefined;
+	if (ask) return void accountChatAnswer(target, ask, b.replyTo);
 	rateLimitNotice(target, b.replyTo);
 	const merged = b.events.length > 1 ? { ...head, message_id: b.events.at(-1)!.message_id, parts: b.events } : head;
 	const how = orch.status === "working" ? "steered" : orch.status === "rate-limited" ? "held" : "received";
@@ -261,6 +264,12 @@ async function limitsAnswer(target: string, replyTo?: string): Promise<void> {
 	const last = accountView(1).switches[0];
 	const card = limitsCard(r, last);
 	await out(target, card.text, replyTo, { source: "gateway", card }).catch(e => log(`limits reply failed: ${e}`));
+}
+
+// "계정 바꿔줘", "회사 계정으로", "지금 무슨 계정이야?": answered here too (hub/accounts-api.ts accountAsk), never by the orchestrator.
+async function accountChatAnswer(target: string, ask: Parameters<typeof accountAnswer>[0], replyTo?: string): Promise<void> {
+	const text = await accountAnswer(ask).catch(e => (e as Error).message);
+	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`account reply failed: ${e}`));
 }
 
 async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
@@ -870,6 +879,8 @@ const server = Bun.serve({
 			}
 		}
 		// The dotz extension asks at the start of every turn which account to pin in its own process (extension/index.ts followAccount).
+		const accountsResponse = await accountsRoute(req, url);
+		if (accountsResponse) return accountsResponse;
 		if (req.method === "POST" && url.pathname === "/api/accounts/check") {
 			try {
 				return json({ ok: true, ...(await checkAccountNow()) });
@@ -1137,8 +1148,9 @@ if (restarted) {
 // A switch needs no restart: every running OmO process (workers included) asks POST /api/accounts/check at the start of its
 // next turn and pins the answer in its own environment. Checked each minute, so a limit or a rule's time window is followed
 // without waiting for a turn.
-onAccountSwitch(() => {
+onAccountSwitch(s => {
 	if (runtimeFor("orchestrator").id === "omo") holdOrchestratorKeepalive();
+	void out(discord.status.enabled ? "worklog" : "web", switchNotice(s), undefined, { source: "gateway" }).catch(e => log(`account switch notice failed: ${e}`));
 });
 setUsageSource(usageSnapshot);
 void accountTick().catch(e => log(`account check failed: ${(e as Error).message}`));
