@@ -159,6 +159,8 @@ function msgNode(e) {
     case "schedule": case "watch":
       return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL[e.kind] }), el("div", { class: "st" }, mdNode(text), el("div", { class: "mt", text: hm })));
     default: {
+      // Worklog posts are kept in the bell (30-notices.js), not in the chat: a finished session shows as its result card.
+      if (e.kind === "out" && e.target === "worklog") return null;
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
       // A session's report or answer is a full message; only the gateway's progress line (update_key) stays one compact note.
       const laneMsg = e.kind === "lane_report" || (e.kind === "out" && fromLane);

@@ -6,7 +6,7 @@
 const CONV_KINDS = new Set(["message", "lane_message", "out", "lane_report", "result", "mail", "schedule", "watch"]);
 
 // A message the conversation shows (same rule as hub/conversations.ts isRealMessage), and one that can be unread: not the owner's own, no restart note.
-const convReal = e => CONV_KINDS.has(e.kind) && !(e.kind === "out" && e.update_key);
+const convReal = e => CONV_KINDS.has(e.kind) && !(e.kind === "out" && (e.update_key || e.target === "worklog"));
 const convIncoming = e => convReal(e) && !OWNER.has(e.kind) && !cleanRestart(e);
 
 // Same rule as hub/conversations.ts previewOf: first meaningful line, plain text, 120 chars.
