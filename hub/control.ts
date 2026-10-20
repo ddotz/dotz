@@ -1,9 +1,14 @@
 // Owner controls shared by the web API, the web chat box and Discord: model/effort switching, provider and quota
 // views, and the slash/bang command parser that drives them.
-import { DEFAULT_WORKER_MODEL, entryId, entryOf, FALLBACK_MAX, type FallbackEntry, type FallbackTarget, fallbackChain, isPlain, lanesModel, log, orchestratorModel, parseSelector, selectorOf, setFallbackChain, splitThinking, THINKING_LEVELS, updateModels, workerModel } from "./config.ts";
+import { DEFAULT_WORKER_MODEL, entryId, NAME, entryOf, FALLBACK_MAX, type FallbackEntry, type FallbackTarget, fallbackChain, isPlain, lanesModel, log, orchestratorModel, parseSelector, selectorOf, setFallbackChain, splitThinking, THINKING_LEVELS, TZ, updateModels, workerModel } from "./config.ts";
 import { entryView, hubChain, keyFileOk, keyProviderOk } from "./fallback.ts";
 import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
-import { type Compaction, ctxView, describeCompaction, describeCtx } from "./context.ts";
+import { homedir } from "node:os";
+import { type Compaction, ctxView, describeCompaction, describeCtx, kTokens } from "./context.ts";
+import { msg } from "./i18n.ts";
+import { RESTART_NOTICE_MS } from "./restart.ts";
+import type { AccountSwitch } from "./account-sticky.ts";
+import type { AccountReport } from "./usage-account.ts";
 import * as discord from "./discord.ts";
 import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
@@ -149,11 +154,6 @@ export async function changeTarget(target: string, change: { model?: string; thi
 	return setModel(key, change.model, change.thinking, change.force === true);
 }
 
-const ctxLine = (p: { status: string; running: boolean; tokens: number; window: number; percent: number | null; compaction: Compaction }) => {
-	const state = describeCompaction(p.compaction);
-	return `${p.status} · context ${p.running ? describeCtx(p) : "n/a (not running)"}${state ? ` · ${state}` : ""}`;
-};
-
 export const providersView = async () => listProviders(providersInUse());
 
 // Exact selector first; otherwise one unique substring match on selector or display name ("opus", "gpt-5").
@@ -274,37 +274,72 @@ export function parseCommand(text: string): { name: string; args: string[]; rest
 // A web message shaped like a slash command ("/word" alone or followed by arguments), known or not; file paths do not match.
 export const looksLikeCommand = (text: string) => /^\/[a-z]+(\s|$)/i.test(text.trim());
 
-const HELP = `/status                          orchestrator, lanes and Discord state, with context usage
-/context                         context tokens / window / % and compaction state per process
-/compact <orchestrator|<lane>>   compact that process's context (queued after its current turn if it is working)
-/lanes                           each lane: status, model, folder
-/model                           models of the orchestrator, lane default, task workers and every lane
-/model <target> [<model>] [<thinking>]   show or set; target = orchestrator | lanes | workers | <lane>
-/effort <target> <level>         thinking level (${THINKING_LEVELS.join(", ")})
-(a running lane's model or effort change is refused without --force: it re-writes that lane's whole prompt cache)
-/restart orchestrator|<lane>     restart the agent process, resuming its session
-/restart gateway                 restart the whole gateway once the orchestrator and lanes are idle (max 20 min)
-/stop <lane>                     stop a lane (resume later)
-/resume <lane> [text]            resume a stopped lane, or send text to a running one
-/abort [orchestrator|<lane>]     cancel the current turn (default: orchestrator)
-/providers                       logins and API keys (masked), models per provider
-/login [<provider>]              sign in to a provider (opens a link); /login <provider> <code> finishes it, /login cancel aborts
-/logout <provider>               sign out and remove the stored key or login
-/quota                           usage limits per provider and model window
-Discord also accepts the "!" prefix. A model can be a unique part of its name ("opus").`;
+// What a command answers: a compact card for the web chat (title, tone dot, label/value rows, a note, buttons that send a
+// command) and `text`, the same answer as plain markdown for Discord and the terminal. Texts live in the i18n catalog.
+export type CardTone = "ok" | "busy" | "warn" | "err";
+export type CommandCard = { title: string; tone?: CardTone; facts: { label: string; value: string }[]; note?: string; actions?: { label: string; send: string }[]; text: string };
+// At most this many model choices are offered as buttons.
+export const CARD_CHOICES_MAX = 5;
+
+const T = () => msg().cmd;
+function card(title: string, facts: CommandCard["facts"] = [], rest: Pick<CommandCard, "tone" | "note" | "actions"> = {}): CommandCard {
+	const text = [
+		`**${title}**`,
+		...facts.map(f => (f.value.includes("\n") ? `${f.label}\n${f.value}` : `${f.label}: ${f.value}`)),
+		...(rest.note ? [rest.note] : []),
+		...(rest.actions?.length ? [rest.actions.map(a => `\`${a.send}\``).join("  ")] : []),
+	].join("\n");
+	return { title, ...rest, facts, text };
+}
+
+type Proc = ReturnType<typeof contextView>["processes"][number];
+const clock = (ms: number) => new Date(ms).toLocaleString(msg().harness.locale, { timeZone: TZ, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const word = (status: string) => msg().harness.status[status] ?? status;
+const toneOf = (status: string): CardTone | undefined => (status === "working" || status === "starting" ? "busy" : status === "rate-limited" ? "warn" : status === "idle" ? "ok" : undefined);
+const laneLabel = (name: string) => lanes.get(name)?.title || name;
+// "Opus 5.5", not "anthropic/claude-opus-5-5": the family and version the pickers show, else the id's last part.
+const modelName = (selector: string) => { const m = parseSelector(selector).model, id = modelIdentity(m); return id ? `${id.family} ${id.version}` : (m.split("/").pop() ?? m); };
+const whoIs = (target: string) => (target === "orchestrator" ? NAME : target === "lanes" ? T().newSessions : target === "workers" ? T().subagents : laneLabel(target.replace(/^lane:/, "")));
+function ctxValue(p: Proc): string {
+	const t = T();
+	if (!p.running) return t.notRunning;
+	const figure = p.window ? t.usage(`${Math.round(p.percent ?? 0)}%`, kTokens(p.tokens), kTokens(p.window)) : kTokens(p.tokens);
+	return [figure, p.compaction.state ? t.compaction[p.compaction.state] : ""].filter(Boolean).join(" · ");
+}
+
+// A failed command is an err card: the first line of the reason, with the home folder shortened.
+function errorCard(e: unknown, text: string): CommandCard {
+	const t = T();
+	if (e instanceof ForceRequired) return card(t.failed, [], { tone: "err", note: t.forceNote, actions: [{ label: t.applyAnyway, send: `${text.trim()} --force` }] });
+	if (!(e instanceof ControlError)) log(`command ${text.trim().split(/\s+/)[0]} failed: ${e}`);
+	const reason = String((e as Error)?.message ?? e).split("\n")[0]!.replaceAll(homedir(), "~");
+	return card(t.failed, [], { tone: "err", note: reason });
+}
+
+// The "한도" answer: each window's remaining share and reset time, and the last account switch.
+export function limitsCard(r: AccountReport | undefined, last: AccountSwitch | undefined): CommandCard {
+	const t = T();
+	if (!r) return card(t.quotaTitle, [], { tone: "warn", note: t.readFailed });
+	const facts = r.limits.map(l => ({ label: t.windows[l.id] ?? l.label, value: [t.left(`${Math.round(l.amount.remaining)}%`), l.window.resetsAt ? t.resets(clock(l.window.resetsAt)) : ""].filter(Boolean).join(" · ") }));
+	facts.push({ label: t.account, value: r.account });
+	if (last && last.kind !== "start") facts.push({ label: t.lastSwitch, value: `${clock(Date.parse(last.at))} · ${last.from ?? t.none} → ${last.to}` });
+	return card(t.quotaTitle, facts, { tone: r.problem ? "warn" : undefined, note: r.problem ? t.problem[r.problem] : r.limits.length ? undefined : t.noLimits });
+}
 
 // The gateway restart lives in main.ts (it owns the message ledger and shutdown); main registers it here.
-let gatewayRestart: () => string = () => "gateway restart is not available in this process";
+let gatewayRestart: () => string = () => {
+	throw new ControlError("gateway restart is not available in this process");
+};
 export function setGatewayRestart(fn: () => string): void {
 	gatewayRestart = fn;
 }
 
 const normalizeTarget = (arg: string) => (arg === "orchestrator" || arg === "lanes" || arg === "workers" ? arg : `lane:${arg.replace(/^lane:/, "")}`);
 
-function describe(target: string): string {
+function currentOf(target: string): { model: string; thinking: string } {
 	const cur = target === "orchestrator" ? orchestratorModel() : target === "lanes" ? lanesModel() : target === "workers" ? parseSelector(workerModel()) : lanes.has(target.slice(5)) ? parseSelector(lanes.get(target.slice(5))!.model) : undefined;
 	if (!cur) throw new ControlError(`unknown target "${target.replace(/^lane:/, "")}" (orchestrator, lanes, workers, or a lane name; /lanes lists them)`);
-	return `${target === "lanes" ? "lanes (default)" : target === "workers" ? "workers (task workers of every lane)" : target}: ${cur.model} (thinking ${cur.thinking})`;
+	return cur;
 }
 
 // Compacts one process: "orchestrator" or a lane name. A working process queues it until its turn ends.
@@ -316,113 +351,162 @@ export function compactTarget(arg: string): { target: string; compaction: Compac
 	return { target, compaction, message: `${orchestrator ? "orchestrator" : `lane ${target}`} ${what}. ${COMPACT_NOTE}` };
 }
 
-const when = (ms: number | null) => (ms ? new Date(ms).toLocaleString() : "-");
+// One button per pickable model (the list the model picker shows, newest first), each sending the command that switches `arg`.
+async function modelActions(arg: string, current: string): Promise<CommandCard["actions"]> {
+	try {
+		return modelChoices(await availableModels(), current).filter(m => !m.older && m.selector !== current).slice(0, CARD_CHOICES_MAX).map(m => ({ label: m.name, send: `/model ${arg} ${m.selector}` }));
+	} catch (e) {
+		log(`model choices unavailable: ${e}`);
+		return [];
+	}
+}
 
-export async function runCommand(text: string): Promise<string> {
+async function targetCard(arg: string, kind: "model" | "effort"): Promise<CommandCard> {
+	const t = T(), target = normalizeTarget(arg), cur = currentOf(target);
+	const actions = kind === "model" ? await modelActions(arg, cur.model) : THINKING_LEVELS.filter(l => l !== cur.thinking).map(l => ({ label: l, send: `/effort ${arg} ${l}` }));
+	return card((kind === "model" ? t.modelTitle : t.effortTitle)(whoIs(target)), [{ label: t.model, value: modelName(cur.model) }, { label: t.effort, value: cur.thinking }], { actions });
+}
+
+function changedCard(r: ModelChange): CommandCard {
+	const t = T(), unchanged = r.note === "unchanged";
+	return card((unchanged ? t.unchanged : t.updated)(whoIs(r.target)), [{ label: t.model, value: modelName(r.model) }, { label: t.effort, value: r.thinking }], { tone: "ok", note: unchanged ? undefined : [t.applied[r.applied] ?? r.applied, r.target === "orchestrator" ? ORCHESTRATOR_NOTE : ""].filter(Boolean).join(". ") });
+}
+
+export async function runCommand(text: string): Promise<CommandCard> {
+	try {
+		return await execute(text);
+	} catch (e) {
+		return errorCard(e, text);
+	}
+}
+
+async function execute(text: string): Promise<CommandCard> {
 	const cmd = parseCommand(text);
 	if (!cmd) throw new ControlError(`unknown command "${text.trim().split(/\s+/)[0]}"; /help lists them`);
+	const t = T();
 	const isForce = (a: string) => a === "--force" || a === "force";
 	const force = cmd.args.some(isForce);
 	const [first, second, third] = cmd.args.filter(a => !isForce(a));
 	switch (cmd.name) {
-		case "help":
-			return HELP;
+		case "help": {
+			const h = t.help(THINKING_LEVELS.join(", "), RESTART_NOTICE_MS / 60_000);
+			return card(h.title, h.groups.map(g => ({ label: g.label, value: g.items.map(([c, d]) => `${c}  ${d}`).join("\n") })), { note: h.note });
+		}
 		case "status": {
 			const all = [...lanes.values()];
 			const o = orchestratorModel();
 			const view = contextView().processes;
-			return [
-				`orchestrator: ${o.model} (thinking ${o.thinking}) · ${ctxLine(view[0])}${orch.status === "rate-limited" ? ` · until ${orch.rateLimitedUntil}` : ""}`,
-				`lanes: ${all.length} (${all.filter(l => l.status === "working").length} working) · task workers ${workerModel()}`,
-				...view.slice(1).filter(p => p.running).map(p => `  ${p.name}: ${ctxLine(p)}`),
-				`discord: ${discord.status.enabled ? (discord.status.connected ? "connected" : "disconnected") : "off"}`,
-			].join("\n");
+			const until = orch.status === "rate-limited" && !Number.isNaN(new Date(orch.rateLimitedUntil).getTime()) ? t.until(clock(new Date(orch.rateLimitedUntil).getTime())) : "";
+			const discordState = discord.status.enabled ? (discord.status.connected ? t.discord.connected : t.discord.disconnected) : t.discord.off;
+			return card(
+				t.statusTitle,
+				[
+					{ label: NAME, value: [word(orch.status), until, ctxValue(view[0])].filter(Boolean).join(" · ") },
+					{ label: t.model, value: `${modelName(o.model)} · ${o.thinking}` },
+					{ label: t.sessions, value: t.sessionsValue(all.length, word("working"), all.filter(l => l.status === "working").length) },
+					...view.slice(1).filter(p => p.running).map(p => ({ label: laneLabel(p.name), value: `${word(p.status)} · ${ctxValue(p)}` })),
+					{ label: t.subagents, value: `${modelName(workerModel())} · ${parseSelector(workerModel()).thinking}` },
+					{ label: "Discord", value: discordState },
+				],
+				{ tone: toneOf(orch.status) },
+			);
 		}
 		case "context":
-			return [...contextView().processes.map(p => `${p.name.padEnd(14)} ${ctxLine(p)}`), COMPACT_NOTE].join("\n");
-		case "compact":
+			return card(t.contextTitle, contextView().processes.filter(p => p.kind === "orchestrator" || p.running).map(p => ({ label: p.kind === "orchestrator" ? NAME : laneLabel(p.name), value: ctxValue(p) })), { note: t.compactNote });
+		case "compact": {
 			if (!first) throw new ControlError("usage: /compact <orchestrator|lane>");
-			return compactTarget(first).message;
-		case "lanes":
-			return lanes.size ? [...lanes.values()].map(l => `${l.name}  ${l.status}  ${l.model}  ${l.cwd}`).join("\n") : "no lanes";
+			const r = compactTarget(first);
+			const state = r.compaction.state ?? "compacting";
+			const who = r.target === "orchestrator" ? NAME : laneLabel(r.target);
+			return card(t.compactTitle[state](who), [], { tone: state === "done" ? "ok" : state === "error" ? "err" : "busy", note: state === "error" ? r.compaction.error : t.compactNote });
+		}
+		case "lanes": {
+			const all = [...lanes.values()];
+			return card(t.sessionsTitle, all.map(l => ({ label: laneLabel(l.name), value: `${word(l.status)} · ${modelName(l.model)}` })), { note: all.length ? undefined : t.noSessions });
+		}
 		case "model": {
-			if (!first) return ["orchestrator", "lanes", "workers", ...lanes.keys()].map(t => describe(normalizeTarget(t))).join("\n");
-			const target = normalizeTarget(first);
-			if (!second) return describe(target);
-			const levelOnly = !third && (THINKING_LEVELS as readonly string[]).includes(second);
-			const r = await setModel(target, levelOnly ? undefined : second, levelOnly ? second : third, force);
-			return `${r.target}: ${r.model} (thinking ${r.thinking}) - ${r.applied}. ${r.note}`;
+			if (first && second) {
+				const target = normalizeTarget(first);
+				const levelOnly = !third && (THINKING_LEVELS as readonly string[]).includes(second);
+				return changedCard(await setModel(target, levelOnly ? undefined : second, levelOnly ? second : third, force));
+			}
+			if (first) return targetCard(first, "model");
+			const targets = ["orchestrator", "lanes", "workers", ...lanes.keys()].map(normalizeTarget);
+			return card(t.modelsTitle, targets.map(tg => ({ label: whoIs(tg), value: `${currentOf(tg).model} · ${currentOf(tg).thinking}` })), { actions: await modelActions("orchestrator", orchestratorModel().model), note: t.modelsNote });
 		}
 		case "effort": {
-			if (!first || !second) throw new ControlError("usage: /effort <orchestrator|lanes|lane> <level>");
-			const r = await setModel(normalizeTarget(first), undefined, second, force);
-			return `${r.target}: ${r.model} (thinking ${r.thinking}) - ${r.applied}. ${r.note}`;
+			if (first && second) return changedCard(await setModel(normalizeTarget(first), undefined, second, force));
+			return targetCard(first ?? "orchestrator", "effort");
 		}
 		case "restart":
-			if (first === "gateway") return gatewayRestart();
+			if (first === "gateway") {
+				gatewayRestart();
+				return card(t.restartGateway, [], { tone: "busy", note: t.restartGatewayNote(RESTART_NOTICE_MS / 60_000) });
+			}
 			if (first === "orchestrator") {
 				restartOrchestrator();
-				return "orchestrator restarting";
+				return card(t.restartMain(NAME), [], { tone: "busy" });
 			}
 			if (!first) throw new ControlError("usage: /restart gateway|orchestrator|<lane>");
 			await restartLane(first);
-			return `lane ${first} restarted`;
+			return card(t.restartSession(laneLabel(first)), [], { tone: "ok" });
 		case "stop":
 			if (!first) throw new ControlError("usage: /stop <lane>");
 			stopLane(first);
 			void discord.releaseLane(first, lanes.get(first)).catch(e => log(`lane ${first} thread release failed: ${e}`));
-			return `lane ${first} stopping`;
+			return card(t.stopping(laneLabel(first)), [], { tone: "busy" });
 		case "resume":
 			if (!first) throw new ControlError("usage: /resume <lane> [text]");
 			resumeByName(first, cmd.rest.slice(first.length).trim() || undefined);
-			return `lane ${first} resumed`;
+			return card(t.resumed(laneLabel(first)), [], { tone: "ok" });
 		case "abort":
 			if (!first || first === "orchestrator") {
 				abortOrchestrator();
-				return "orchestrator turn aborted";
+				return card(t.aborted(NAME), [], { tone: "ok" });
 			}
 			abortLane(first);
-			return `lane ${first} turn aborted`;
+			return card(t.aborted(laneLabel(first)), [], { tone: "ok" });
 		case "providers": {
 			const { providers: rows, addable } = await providersView();
-			const lines = rows.map(p => `${p.id}  ${p.auth === "oauth" ? `로그인${p.account ? ` ${p.account}` : ""}` : p.auth === "api_key" ? `API 키${p.masked ? ` ${p.masked}` : ""}` : "연결 안 됨"}  모델 ${p.models}개${p.in_use ? "  사용 중" : ""}`);
-			if (addable.length) lines.push("", `추가할 수 있는 공급자: ${addable.map(a => a.id).join(", ")}`);
-			return lines.join("\n") || "공급자가 없어요";
+			const facts = rows.map(p => ({ label: p.name, value: [p.auth === "oauth" ? t.signedIn(p.account) : p.auth === "api_key" ? t.apiKey : t.disconnected, t.models(p.models), p.in_use ? t.inUse : ""].filter(Boolean).join(" · ") }));
+			return card(t.providersTitle, facts, {
+				note: facts.length ? (addable.length ? t.addable(addable.map(a => a.name).join(", ")) : undefined) : t.noProviders,
+				actions: addable.filter(a => a.kind === "oauth").slice(0, CARD_CHOICES_MAX).map(a => ({ label: a.name, send: `/login ${a.id}` })),
+			});
 		}
 		case "login": {
 			const code = cmd.rest.slice(first?.length ?? 0).trim();
 			const pending = pendingLogin();
-			if (!first) {
-				const names = await loginProviders();
-				return `사용법: /login <공급자> (진행 중인 로그인 취소: /login cancel)\n${names.map(p => `${p.id}  ${p.name}`).join("\n")}`;
-			}
+			if (!first) return card(t.loginPick, [], { actions: (await loginProviders()).map(p => ({ label: p.name, send: `/login ${p.id}` })) });
 			if (first === "cancel") {
-				if (!pending) return "진행 중인 로그인이 없어요";
+				if (!pending) return card(t.loginNone);
 				await cancelLogin(pending.provider);
-				return `${pending.provider} 로그인을 취소했어요`;
+				return card(t.loginCancelled(pending.provider), [], { tone: "ok" });
 			}
 			if (pending && pending.provider === first && code) {
 				const r = await completeLogin(first, pending.id, code);
-				return r.status === "done" ? `${first} 로그인이 끝났어요` : `${r.url ? `${r.url}\n` : ""}${r.instructions ? `${r.instructions}\n` : ""}${r.prompt ?? "다음 값이 더 필요해요"}\n/login ${first} <값> 으로 보내 주세요`;
+				if (r.status === "done") return card(t.loginDone(first), [], { tone: "ok" });
+				return card(t.loginOpen, r.url ? [{ label: t.link, value: r.url }] : [], { tone: "busy", note: [r.instructions, r.prompt, t.loginMore(first)].filter(Boolean).join("\n") });
 			}
-			if (pending) throw new ControlError(pending.provider === first ? `${first} 로그인이 진행 중이에요. 브라우저에서 승인을 마치거나 코드를 /login ${first} <코드> 로 보내 주세요` : `${pending.provider} 로그인이 진행 중이에요. /login cancel 로 취소해 주세요`, 409);
+			if (pending) throw new ControlError(pending.provider === first ? `${first} login is in progress; finish the approval in the browser or send the code with /login ${first} <code>` : `${pending.provider} login is in progress; /login cancel stops it`, 409);
 			const r = await startLogin(first);
-			return [
-				r.url ? `아래 주소를 열어 로그인해 주세요 (10분 안에):\n${r.url}` : "",
-				r.instructions ?? "",
-				r.needs_code ? `이 기기에서 열었다면 자동으로 끝나요. 다른 기기라면 이동한 주소창의 전체 주소(또는 코드)를 /login ${first} <주소 또는 코드> 로 보내 주세요.${r.prompt ? `\n(${r.prompt})` : ""}` : "승인이 끝나면 /providers 에 나타나요.",
-				"취소: /login cancel",
-			].filter(Boolean).join("\n");
+			return card(t.loginOpen, r.url ? [{ label: t.link, value: r.url }] : [], {
+				tone: "busy",
+				note: [r.instructions, r.needs_code ? t.loginCode(first) : t.loginAfter, r.needs_code ? r.prompt : ""].filter(Boolean).join("\n"),
+				actions: [{ label: t.cancel, send: "/login cancel" }],
+			});
 		}
 		case "logout":
-			if (!first) throw new ControlError("사용법: /logout <공급자>");
+			if (!first) throw new ControlError("usage: /logout <provider>");
 			await logoutProvider(first);
-			return `${first} 로그아웃했어요. 이미 실행 중인 작업은 다시 시작할 때까지 이전 로그인을 쓸 수 있어요`;
+			return card(t.logoutDone(first), [], { tone: "ok", note: t.logoutNote });
 		case "quota": {
 			const q = await quota();
-			const lines = q.providers.flatMap(p => [p.account ? `${p.provider} (${p.account})` : p.provider, ...p.limits.map(l => `  ${l.label} [${l.window}]: ${l.used ?? "?"}/${l.limit ?? "?"} ${l.unit} used, ${l.remaining ?? "?"} left, resets ${when(l.resets_at)} (${l.status})`)]);
-			for (const u of q.unavailable) lines.push(`${u.provider}: ${u.reason}`);
-			return lines.join("\n") || "사용량 정보가 없어요";
+			const facts = [
+				...q.providers.flatMap(p => p.limits.map(l => ({ label: `${p.provider}${p.account ? ` (${p.account})` : ""} · ${l.label}`, value: [l.remaining === null ? t.none : t.left(l.unit === "percent" || l.limit === 100 ? `${Math.round(l.remaining)}%` : kTokens(l.remaining)), l.resets_at ? t.resets(clock(l.resets_at)) : ""].filter(Boolean).join(" · ") }))),
+				...q.unavailable.map(u => ({ label: u.provider, value: u.reason })),
+			];
+			return card(t.quotaTitle, facts, { note: facts.length ? undefined : t.noQuota });
 		}
 		default:
 			throw new ControlError(`unknown command "${cmd.name}"`);
