@@ -36,7 +36,7 @@ import { createLaneRelay } from "./lanerelay.ts";
 import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin, usageSnapshot } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { listMonitors } from "./monitors.ts";
-import { laneVerified, listNotices, markNoticesRead, setLaneTitleResolver, unreadCount } from "./notices.ts";
+import { dismissNotice, laneVerified, listNotices, markNoticesRead, setLaneTitleResolver, unreadCount } from "./notices.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, replyRef } from "./threads.ts";
 import { startReflection } from "./reflect.ts";
@@ -708,6 +708,11 @@ const server = Bun.serve({
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
+		const dismiss = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/dismiss$/.exec(url.pathname) : null;
+		if (dismiss) {
+			const r = dismissNotice(decodeURIComponent(dismiss[1]!));
+			return json(r, r.ok ? 200 : 404);
+		}
 		if (req.method === "POST" && url.pathname === "/api/read") {
 			const r = markRead(await body(req));
 			return json(r, r.ok ? 200 : 400);
@@ -718,7 +723,7 @@ const server = Bun.serve({
 			const target = url.searchParams.get("target") ?? "main";
 			if (target !== "main" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, lane:<name> or ch:<id>" }, 400);
 			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
-			return json({ target, events: historyEvents(target, limit) });
+			return json({ target, events: historyEvents(target, limit, url.searchParams.get("before") ?? undefined) });
 		}
 		if (req.method === "POST" && url.pathname === "/api/attach") {
 			const b = await body(req);

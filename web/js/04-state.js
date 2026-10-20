@@ -110,8 +110,8 @@ const thinkKo = v => THINK_KO[String(v || "").toLowerCase()] || String(v || "");
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) || []).find(x => x.selector === sel) || ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
 /* ---------- chrome: nav, theme, back ---------- */
-// Phone: tapping 채팅 again while in it opens the session list as a bottom sheet above the tab bar (owner 2026-10-20).
-for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => (id === "chat" && narrowChat() ? go("chat", "list") : go(id === "chat" ? lastChatView() : id)) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
+// Narrow screens: tapping 채팅 again while a conversation is open opens the chat list (whose first row is 알림 모아보기); the first tap from elsewhere returns to the last conversation.
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => (id === "chat" && narrowChat() && (current === "chat" || current === "activity") ? go("chat", "list") : go(id === "chat" ? lastChatView() : id)) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
