@@ -2,9 +2,10 @@
 // delivered again as a turn, a reply_to settles the prompt it names, and a finished prompt is answered once.
 import { expect, test } from "bun:test";
 import { emit, answeredIds } from "./events.ts";
-import { createPrompts, type Pending } from "./prompts.ts";
+import { createPrompts, type OwnerMessage, type Pending } from "./prompts.ts";
+import { eventsFromFrame } from "./runtime/omp.ts";
 
-function setup(answered: string[] = []) {
+function setup(answered: string[] = [], recent: OwnerMessage[] = []) {
 	const state = { working: false, steerFails: false, delivered: [] as string[], steered: [] as string[], posts: [] as { target: string; text: string; replyTo?: string }[], saved: [] as Pending[][] };
 	const q = createPrompts({
 		deliver: text => state.delivered.push(text),
@@ -17,6 +18,7 @@ function setup(answered: string[] = []) {
 		persist: open => state.saved.push(open),
 		log: () => {},
 		answered,
+		recent: () => recent,
 	});
 	const open = () => state.saved.at(-1) ?? [];
 	// omp starts a turn with prompt X, then a message arrives while it works.
@@ -188,11 +190,83 @@ test("a web message steered mid-turn through the queue keeps the running turn's 
 	await Promise.resolve();
 	expect(state.posts).toEqual([{ target: "web", text: "both fixed", replyTo: undefined }]);
 
-	// The old web steer path sent the raw text past the queue: admitted mid-turn, it unpaired the turn and the answer was lost.
-	const raw = setup();
-	raw.startTurn("[inbox] first", { target: "web" });
-	raw.q.onPrompt("[inbox] steered raw");
-	raw.q.onAnswer("lost");
+});
+
+// 2026-10-20 10:43Z and 10:52Z: the old web steer path sent raw inbox text past the queue; admitted mid-turn it was a user frame
+// that matched nothing, it replaced the running turn's prompt with nothing, and the finished answer had no prompt to go to.
+test("a user frame that matches nothing delivered leaves the running turn's prompt in place", async () => {
+	const { q, state, startTurn } = setup();
+	startTurn("[inbox] first", { target: "web" });
+	q.onPrompt("[inbox] steered raw");
+	q.onPrompt("[inbox] and another raw one");
+	q.onAnswer("both fixed");
 	await Promise.resolve();
-	expect(raw.state.posts).toEqual([]);
+	expect(state.posts).toEqual([{ target: "web", text: "both fixed", replyTo: undefined }]);
+});
+
+// The OmO session of 2026-10-20 12:49Z: the gateway restarted mid-delegation, the resumed session was woken by the dead task
+// worker's completion, and its report (a run no delivered prompt started) was dropped.
+test("an answer to a run no prompt started goes to the owner's newest message of the last 30 minutes", async () => {
+	const now = Date.now();
+	// A new process: the prompts are gone, the inbox log tail names the owner's messages.
+	const { q, state } = setup([], [{ target: "web", at: now - 3 * 60_000 }]);
+	q.onAnswer("README is updated and pushed: 2359b25");
+	await Promise.resolve();
+	expect(state.posts).toEqual([{ target: "web", text: "README is updated and pushed: 2359b25", replyTo: undefined }]);
+
+	// The same process: the owner's message was answered ("a worker is on it"), the turn went idle, a wake starts a new run.
+	const live = setup();
+	live.q.deliver("[inbox] update the README", { target: "web", owner: true });
+	live.q.onPrompt("[inbox] update the README");
+	live.q.onAnswer("a worker is on it");
+	live.q.settleTurn();
+	live.q.onAnswer("The README is done and pushed.");
+	await Promise.resolve();
+	expect(live.state.posts.map(p => p.text)).toEqual(["a worker is on it", "The README is done and pushed."]);
+});
+
+test("an answer without a prompt prefers an unanswered owner message, and stops at 30 minutes", async () => {
+	const now = Date.now();
+	const { q, state } = setup(["b"], [
+		{ target: "ch:1", replyTo: "a", at: now - 10 * 60_000 },
+		{ target: "web", replyTo: "b", at: now - 5 * 60_000 },
+	]);
+	q.onAnswer("for the unanswered one");
+	await Promise.resolve();
+	expect(state.posts).toEqual([{ target: "ch:1", text: "for the unanswered one", replyTo: "a" }]);
+
+	const old = setup([], [{ target: "web", at: now - 31 * 60_000 }]);
+	old.q.onAnswer("too late for anyone");
+	await Promise.resolve();
+	expect(old.state.posts).toEqual([]);
+});
+
+test("keepalive replies and very short texts go nowhere, and an answer already sent with dotz_send is not sent again", async () => {
+	const { q, state } = setup([], [{ target: "web", at: Date.now() }]);
+	for (const t of ["ok", "-", "abc", "  "]) q.onAnswer(t);
+	q.sent("web", "the report is ready");
+	q.onAnswer("the report is ready");
+	await Promise.resolve();
+	expect(state.posts).toEqual([]);
+});
+
+// The same cases through OmO's frames: agent_start, a delivered prompt, a message admitted into the run, the answer, agent_end.
+test("OmO frames of a run with a raw mid-run message still deliver the answer", async () => {
+	const { q, state } = setup();
+	q.deliver("[dotz inbox] web\nfirst", { target: "web", owner: true });
+	const frames = [
+		{ type: "agent_start" },
+		{ type: "message_end", message: { role: "user", content: "[dotz inbox] web\nfirst" } },
+		{ type: "message_end", message: { role: "user", content: [{ type: "text", text: "[dotz inbox] web\nsecond, admitted mid-run" }] } },
+		{ type: "message_end", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "both are done" }] } },
+		{ type: "agent_end" },
+	];
+	for (const f of frames)
+		for (const ev of eventsFromFrame(f, new Map())) {
+			if (ev.type === "user") q.onPrompt(ev.text);
+			else if (ev.type === "assistant" && ev.text && ev.stop === "stop") q.onAnswer(ev.text);
+			else if (ev.type === "turn_end") q.settleTurn();
+		}
+	await Promise.resolve();
+	expect(state.posts).toEqual([{ target: "web", text: "both are done", replyTo: undefined }]);
 });
