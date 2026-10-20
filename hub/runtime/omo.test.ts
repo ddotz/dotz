@@ -22,7 +22,8 @@ test("a lane's worker model becomes a dotz profile of omo.json: every category o
 		{ model: "anthropic-subscription/claude-opus-5-5", reasoning: "medium" },
 	]);
 	writeFileSync(`${file}c`, "// commented\n{}");
-	expect(doc.profiles[name!].task).toEqual({ max_depth: 2 });
+	// Workers run as child processes of the lane: they inherit its environment and extensions (dotz output caps and rules).
+	expect(doc.profiles[name!].task).toEqual({ max_depth: 2, process_runner: "child-process", default_execution_mode: "process" });
 	for (const c of WORKER_CATEGORIES) expect(doc.profiles[name!].categories[c].prompt_append).toBe(WORKER_RULE);
 	expect(WORKER_RULE).toContain("[fail]");
 	// OmO memory is off for the workers too (the lane runs with --omo-senpi-memory-disabled, which workers do not inherit).
@@ -102,6 +103,29 @@ test("on a host without zod (OmO) every orchestrator and lane tool registers: a 
 	};
 	expect(await load("DOTZ_ORCHESTRATOR")).toEqual(expect.arrayContaining(["dotz_send", "dotz_lane", "dotz_schedule", "dotz_watch", "dotz_verify"]));
 	expect(await load("DOTZ_LANE")).toContain("dotz_verify");
+});
+
+test("a lane's OmO task worker (lane environment + OMO_SENPI_TASK_DEPTH) gets the output caps, the owner's rules and the 5-minute cache, but no lane tools", async () => {
+	const names: string[] = [];
+	const handlers: Record<string, (e: any, ctx?: any) => any> = {};
+	const host = new Proxy({ registerTool: (t: { name: string }) => names.push(t.name), on: (n: string, fn: (e: any) => any) => (handlers[n] = fn) } as Record<string, unknown>, {
+		get: (o, k) => (k in o ? o[k as string] : k === "then" || k === "zod" ? undefined : () => undefined),
+	});
+	const saved = { ...process.env };
+	process.env.DOTZ_LANE = "probe";
+	process.env.OMO_SENPI_TASK_DEPTH = "1";
+	try {
+		await dotz(host);
+	} finally {
+		process.env = saved;
+	}
+	expect(names).toEqual([]);
+	const big = Array.from({ length: 1000 }, (_, i) => `${i} ${"x".repeat(95)}`).join("\n");
+	const capped = handlers.tool_result!({ toolName: "read", input: { path: "/x" }, content: [{ type: "text", text: big }] });
+	expect(capped.content[0].text.length).toBeLessThan(21_000);
+	expect(handlers.tool_call!({ toolName: "bash", input: { command: "echo ok" } })).toBeUndefined();
+	const payload = handlers.before_provider_request!({ payload: { system: [{ type: "text", text: "s", cache_control: { type: "ephemeral", ttl: "1h" } }] } }, { agent: { kind: "main" } });
+	expect(payload.system[0].cache_control).toEqual({ type: "ephemeral" });
 });
 
 test("light profile: tools dotz never uses are left out (goal loop, html viewer; the orchestrator also lsp, workpool, pty resize); every tool dotz relies on stays", () => {
