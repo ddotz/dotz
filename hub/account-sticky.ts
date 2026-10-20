@@ -1,22 +1,27 @@
 // One Claude subscription account for the orchestrator and its lanes (audit 2026-10-20: the orchestrator re-wrote its
 // whole prompt cache 4 times in a day because the account under it changed; OmO keys its cache and session continuity to
-// the account). dotz keeps the account it runs on and switches only when that account is blocked (a usage limit or 429,
-// as OmO records it in credential-pool-state.json), when it left the pool, or when the owner pins another one
-// (auth.json "anthropic-subscription".pinned). Unpinning keeps the current account. Every switch is logged with its reason
-// (hub.log and <DATA_DIR>/account-switches.jsonl) and shown on the usage screen.
+// the account). dotz keeps the account it runs on and switches only when the owner's rules say so (hub/account-rules.ts:
+// a manual pick, the owner's script, time and usage rules) or, when none of them decides, when that account is blocked
+// (a usage limit or 429, as OmO records it in credential-pool-state.json), when it left the pool, or when the owner pins
+// another one (auth.json "anthropic-subscription".pinned). Unpinning keeps the current account. Every switch is logged
+// with its reason (hub.log and <DATA_DIR>/account-switches.jsonl) and shown on the usage screen.
 //
-// The account reaches OmO as SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT in each process dotz spawns: a soft pin. OmO still
-// moves a request to another account when this one is blocked (account fallback stays on), so a limit never strands a
-// turn; dotz then follows on its next check and restarts its idle processes on the new account (onSwitch), so they do not
-// drift back when the old account's limit resets. Nothing here writes auth.json or touches a token.
+// The account reaches OmO as SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT, a soft pin: OmO still moves a request to another account
+// when this one is blocked (account fallback stays on), so a limit never strands a turn. A process dotz spawns starts with
+// it (stickyEnv), and a running one follows a switch without a restart: the dotz extension asks the hub
+// (POST /api/accounts/check) at the start of every turn and sets the variable in its own process, which OmO's
+// anthropic-subscription stream re-reads on each request. The decision is also kept in <DATA_DIR>/account.json, which the
+// extension reads when the hub does not answer. Nothing here writes auth.json or touches a token.
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { evaluate, getScriptOpinion, getUsage, readRules, record, resetRulesForTest, stateStamp } from "./account-rules.ts";
+import { readAliases } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 
 export const PIN_ENV = "SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT";
-export type SwitchKind = "start" | "limit" | "owner" | "gone";
-export type AccountSwitch = { at: string; from?: string; to: string; kind: SwitchKind; reason: string };
+export type SwitchKind = "start" | "limit" | "owner" | "gone" | "rule" | "script" | "manual";
+export type AccountSwitch = { at: string; from?: string; to: string; kind: SwitchKind; reason: string; rule?: string };
 export type Pool = { names: string[]; pinned?: string; blocked: Record<string, { until?: number; reason: string }>; lastSuccess: Record<string, number> };
 type Saved = { account?: string; since?: string; reason?: string };
 
@@ -78,7 +83,8 @@ export function decide(current: string | undefined, p: Pool | undefined, now = D
 let saved: Saved | undefined;
 let checkedStamp = "";
 const listeners: ((s: AccountSwitch) => void)[] = [];
-// Called after a switch other than the first pick; main.ts restarts idle processes there so they take the new account.
+// Called after a switch other than the first automatic pick (main.ts keeps the orchestrator's idle keepalive from paying the
+// new account's cache for nothing; running processes pick the account up by themselves).
 export function onSwitch(fn: (s: AccountSwitch) => void): void {
 	listeners.push(fn);
 }
@@ -95,14 +101,23 @@ const stamp = (...files: string[]) =>
 		})
 		.join("|");
 
-// The account dotz runs on now (re-checked when auth.json or the pool state changed, or once a minute for block expiry).
+export function currentAccount(): string | undefined {
+	saved ??= readJson(stateFile()) ?? {};
+	return saved?.account;
+}
+
+// The account dotz runs on now: the owner's rules, then the automatic pick. Re-checked when auth.json, the pool state, the
+// rules file, the usage numbers or the script's opinion changed, or once a minute (block expiry, time windows).
 export function stickyAccount(now = Date.now()): string | undefined {
 	saved ??= readJson(stateFile()) ?? {};
 	const file = authFile();
-	const key = `${file}|${stamp(file, join(dirname(file), "credential-pool-state.json"))}|${Math.floor(now / 60_000)}`;
+	const key = `${file}|${stamp(file, join(dirname(file), "credential-pool-state.json"))}|${stateStamp()}|${Math.floor(now / 60_000)}`;
 	if (key === checkedStamp) return saved?.account;
 	checkedStamp = key;
-	const { account, change } = decide(saved?.account, readPool(file, now), now);
+	const pool = readPool(file, now);
+	const { change, ...decision } = evaluate({ now, pool, current: saved?.account, usage: getUsage(), rules: readRules(), script: getScriptOpinion(), aliases: readAliases() });
+	const account = decision.account;
+	if (pool) record(decision);
 	if (!change) return account;
 	const s: AccountSwitch = { at: new Date(now).toISOString(), ...change };
 	saved = { account, since: s.at, reason: s.reason };
@@ -138,4 +153,5 @@ export function resetStickyForTest(): void {
 	saved = undefined;
 	checkedStamp = "";
 	listeners.length = 0;
+	resetRulesForTest();
 }

@@ -19,16 +19,18 @@ import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCle
 import { startMemoryGuard } from "./memguard.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
 import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
-import { abortLane, applyAccountChange as applyLaneAccount, approvesBudget, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, type LaneDelivery, ownerNotes, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane } from "./lanes.ts";
-import { accountView, onSwitch as onAccountSwitch, stickyAccount } from "./account-sticky.ts";
+import { abortLane, approvesBudget, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, type LaneDelivery, ownerNotes, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane } from "./lanes.ts";
+import { checkNow as checkAccountNow, setUsageSource, tick as accountTick } from "./account-rules.ts";
+import { accountView, onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { abort as abortOrchestrator, applyAccountChange as applyOrchestratorAccount, deliver as deliverToOrchestrator, orch, orchBusy, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
+import { abort as abortOrchestrator, applyAccountChange as holdOrchestratorKeepalive, deliver as deliverToOrchestrator, orch, orchBusy, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
 import { createPrompts } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { createLaneRelay } from "./lanerelay.ts";
-import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
+import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin, usageSnapshot } from "./providers.ts";
+import { limitsText } from "./usage-account.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, replyRef } from "./threads.ts";
@@ -867,6 +869,14 @@ const server = Bun.serve({
 				return fail(error);
 			}
 		}
+		// The dotz extension asks at the start of every turn which account to pin in its own process (extension/index.ts followAccount).
+		if (req.method === "POST" && url.pathname === "/api/accounts/check") {
+			try {
+				return json({ ok: true, ...(await checkAccountNow()) });
+			} catch (error) {
+				return fail(error);
+			}
+		}
 		if (req.method === "GET" && url.pathname === "/api/subagents") return json({ sources: subagentLists() });
 		if (req.method === "GET" && parts[0] === "api" && parts[1] === "subagents" && parts.length === 3) {
 			const detail = await subagentDetail(url.searchParams.get("source") ?? "orchestrator", decodeURIComponent(parts[2]));
@@ -1123,15 +1133,16 @@ if (restarted) {
 	if (picked.length) void out(discord.status.enabled ? "worklog" : "web", `게이트웨이 재시작했어요 (${at} ${tzLabel()}).\n- ${picked.join("\n- ")}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
 	else log(`restart at ${at}: nothing interrupted, worklog notice skipped`);
 }
-// One Claude account for the orchestrator and its lanes (hub/account-sticky.ts). A switch (a limit, the owner pinning
-// another account) moves each running OmO process to it at its next idle moment; checked each minute, so a limit is
-// followed without waiting for the next spawn.
+// One Claude account for the orchestrator and its lanes (hub/account-sticky.ts, the owner's rules in hub/account-rules.ts).
+// A switch needs no restart: every running OmO process (workers included) asks POST /api/accounts/check at the start of its
+// next turn and pins the answer in its own environment. Checked each minute, so a limit or a rule's time window is followed
+// without waiting for a turn.
 onAccountSwitch(() => {
-	if (runtimeFor("orchestrator").id === "omo") log(`orchestrator account change: ${applyOrchestratorAccount()}`);
-	if (runtimeFor("lane").id === "omo") applyLaneAccount();
+	if (runtimeFor("orchestrator").id === "omo") holdOrchestratorKeepalive();
 });
-stickyAccount();
-setInterval(() => stickyAccount(), 60_000);
+setUsageSource(usageSnapshot);
+void accountTick().catch(e => log(`account check failed: ${(e as Error).message}`));
+setInterval(() => void accountTick().catch(e => log(`account check failed: ${(e as Error).message}`)), 60_000);
 startLaneHygiene();
 startWorktreeCleanup();
 startDataCleanup();
