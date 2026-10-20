@@ -234,19 +234,16 @@ export async function orchestratorScenario(): Promise<Trace> {
 	await advance(4000);
 	await proc().push(stateResp(session, 2000));
 
-	// 9 model change mid-turn waits for the turn, then restarts (a changed model starts a fresh session with a handover).
+	// 9 model change mid-turn waits for the turn, then switches in place on the same process and session (no restart).
 	o.deliver("long job");
 	await proc().push(agentStart);
 	T("applyModelChange", o.applyModelChange());
 	await proc().push(asstEnd("done long job"));
 	await proc().push(agentEnd);
-	await advance(10_000);
-	await proc().exit(0);
 	await advance(1000);
-	await advance(4000);
-	snap("after pending restart");
+	snap("after model switch");
 
-	// 10 rotation: past ROTATE_TOKENS at the second idle turn the process is replaced by a fresh session with a handover.
+	// 10 rotation: past ROTATE_TOKENS at an idle turn (the second or later since start) the process is replaced by a fresh session with a handover.
 	await proc().push(stateResp(session, 2000));
 	await proc().push(agentStart);
 	await proc().push(asstEnd("one", "stop", { usage: { input: 10, cacheRead: 300_000, cacheWrite: 0, output: 20 } }));

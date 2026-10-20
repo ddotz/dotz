@@ -12,7 +12,7 @@ import { availableModels, cancelLogin, completeLogin, ControlError, listProvider
 export { ControlError };
 
 const ORCHESTRATOR_NOTE =
-	"모델이나 생각 수준을 바꾸면 오케스트레이터가 새 세션으로 다시 시작해요 (최근 대화는 이어받아요). 다음 응답은 평소보다 비용이 더 들 수 있어요.";
+	"모델이나 생각 수준을 바꿔도 같은 세션에서 바로 이어가요. 생각 수준만 바꾸면 캐시가 그대로고, 모델을 바꾸면 다음 응답 한 번은 캐시를 새로 써서 비용이 더 들어요.";
 const WORKERS_NOTE = `Model of the task workers each lane delegates implementation, tests, renders and grind work to (models.workers, default ${DEFAULT_WORKER_MODEL}). Applies to lanes launched or resumed from now on; a lane keeps the model of its running process until it restarts.`;
 const COMPACT_NOTE = "Compaction rewrites the conversation into a summary, so the prompt cache is re-written once on the next turn (about 2x the input cost for the new, shorter prefix).";
 
@@ -185,6 +185,11 @@ function laneCacheWarning(name: string): ForceRequired {
 	);
 }
 
+// OmO sends an effort change as a per-message effort marker on these models (senpi anthropic-messages, compat
+// supportsMidConvoEffort; Anthropic docs "Change effort mid-conversation"), so the prompt cache survives it.
+const MID_CONVO_EFFORT = /claude-(opus-5|opus-5-5|sonnet-5-5|haiku-5-5|fable-5-1|mythos-5-1)$/;
+const keepsCacheOnEffort = (runtime: string, model: string) => runtime === "omo" && MID_CONVO_EFFORT.test(model);
+
 // `modelInput` may carry the thinking level as "<model>:<level>"; an explicit `thinkingInput` wins.
 export async function setModel(target: string, modelInput?: string, thinkingInput?: string, force = false): Promise<ModelChange> {
 	const split = modelInput ? splitThinking(modelInput) : undefined;
@@ -204,7 +209,7 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	if (target === "orchestrator") {
 		updateModels("orchestrator", next);
 		const applied = applyModelChange();
-		return done(applied, applied === "restarted" ? `Orchestrator restarting on ${selectorOf(next)}. ${ORCHESTRATOR_NOTE}` : `Saved. The orchestrator switches to ${selectorOf(next)} when its current turn ends (or on its next start). ${ORCHESTRATOR_NOTE}`);
+		return done(applied, applied === "live" ? `Orchestrator switched to ${selectorOf(next)} on its session. ${ORCHESTRATOR_NOTE}` : applied === "restarted" ? `Orchestrator restarting on ${selectorOf(next)}. ${ORCHESTRATOR_NOTE}` : `Saved. The orchestrator switches to ${selectorOf(next)} when its current turn ends (or on its next start). ${ORCHESTRATOR_NOTE}`);
 	}
 	if (target === "lanes") {
 		updateModels("lanes", next);
@@ -215,9 +220,10 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 		return done("next-start", `Saved as models.workers. Lanes launched or resumed from now on run their task workers on ${selectorOf(next)}; a lane already running keeps its workers' model until it restarts.`);
 	}
 	const name = target.slice(5);
-	if (lanes.get(name)!.proc && !force) throw laneCacheWarning(name);
+	const cacheKept = next.model === current.model && keepsCacheOnEffort(runtimeFor("lane").id, next.model);
+	if (lanes.get(name)!.proc && !force && !cacheKept) throw laneCacheWarning(name);
 	const applied = await setLaneModel(name, selectorOf(next));
-	return done(applied, applied === "restarted" ? `Lane ${name} restarted on ${selectorOf(next)}, resuming its session.` : `Saved. Lane ${name} uses it when it is next resumed.`);
+	return done(applied, applied === "live" ? `Lane ${name} switched to ${selectorOf(next)} on its session.` : applied === "restarted" ? `Lane ${name} restarted on ${selectorOf(next)}, resuming its session.` : `Saved. Lane ${name} uses it when it is next resumed.`);
 }
 
 // Replaces one layer's fallback chain (applies the next time a process of that layer starts). Entries are checked against

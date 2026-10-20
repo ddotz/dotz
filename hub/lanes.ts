@@ -847,14 +847,31 @@ export async function restartLane(name: string, note = msg().laneOwnerRestarted)
 	else if (spawn(lane, true)) setStatus(lane, "idle");
 }
 
-// Persists a new model selector on the lane record and, when it is running, restarts it on that model.
-export async function setLaneModel(name: string, selector: string): Promise<"restarted" | "next-start"> {
+// Persists a new model selector on the lane record. A running idle lane switches in place on its session (set_model /
+// set_thinking_level, no restart); a working one, or one on a fallback entry or a runtime-owned fallback list, restarts
+// and resumes its session.
+export async function setLaneModel(name: string, selector: string): Promise<"live" | "restarted" | "next-start"> {
 	const lane = known(name);
 	lane.model = selector;
 	persist(lane);
 	if (!lane.proc) return "next-start";
+	if (switchLaneInPlace(lane)) return "live";
 	await restartLane(name);
 	return "restarted";
+}
+function switchLaneInPlace(lane: Lane): boolean {
+	if (!lane.proc?.setModel || lane.chained || lane.status !== "idle" || (lane.chain && lane.chain.active !== 0)) return false;
+	const driven = hubChain(runtimeFor("lane").id, chainAfter(lane.model, fallbackChain("lanes")));
+	const next = driven ? new Chain(lane.model, driven, parseSelector(lane.model).thinking) : undefined;
+	if (next && next.initial() !== 0) return false;
+	lane.proc.setModel(lane.model);
+	lane.chain = next;
+	lane.capped = undefined;
+	lane.activeModel = lane.startedModel = lane.model;
+	lane.reverter = new Reverter();
+	log(`lane ${lane.name} switched in place to ${lane.model}`);
+	statusActivity(`lane:${lane.name}`, `lane switched to ${lane.model} on its session`);
+	return true;
 }
 
 // Compacts a running lane's context: now when idle, after the running turn otherwise. Rewrites the prompt cache once.

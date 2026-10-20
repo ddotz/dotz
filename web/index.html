@@ -655,12 +655,9 @@ details.work.live .wdot { display: block; }
 .qitem .qa { display: flex; gap: 4px; flex: none; }
 .composer.tmode .qitem { background: var(--tb); border-color: var(--tl2); color: var(--tf); }
 .composer.tmode .qitem .qm { color: var(--td); }
-/* phone working actions: no row of their own - stop is the send button, the end is the floating jump button, and
-   다음 턴에 / 압축 sit in one ⋯ chip inside the composer bar (shown only on phones while the target works) */
-#c-more { display: none; }
+/* phone working actions: no row of their own - stop is the send button (with text typed it sends into the running turn)
+   and the end is the floating jump button; no extra chip in the composer bar (owner 2026-10-21: a ⋯ there breaks the bar) */
 @media (max-width: 639px) {
-  #c-more:not([hidden]) { display: inline-flex; padding: 0 8px; }
-  #c-more .ic { width: 18px; height: 18px; }
   .sendrow > .cbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .sendrow > .cbar::-webkit-scrollbar { display: none; }
   .cbar .working .btn { display: none; }
@@ -1202,7 +1199,6 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
             <textarea id="text" rows="1" autocomplete="off" placeholder="메시지 또는 /명령" aria-label="메시지"></textarea>
             <div class="cbar" id="cbar">
               <button class="cchip" type="button" id="c-attach" aria-label="파일 첨부" title="파일 첨부 · 끌어다 놓거나 붙여넣기도 돼요"></button>
-              <button class="cchip" type="button" id="c-more" aria-label="작업 중 동작" title="작업 중 동작" aria-haspopup="listbox" hidden></button>
               <span class="cchip cown" id="c-own" hidden></span>
               <button class="cchip" type="button" id="c-model" aria-haspopup="listbox" hidden></button>
               <button class="cchip" type="button" id="c-effort" aria-haspopup="listbox" hidden></button>
@@ -3267,25 +3263,9 @@ function renderWorking() {
     $("#working-int").hidden = st === "rate-limited" || !ta.value.trim();
     $("#working-queue").hidden = st === "rate-limited" || !ta.value.trim();
   }
-  renderQueue(); renderCtxRing(); renderActChips(on && st !== "rate-limited");
+  renderQueue(); renderCtxRing();
   markLive();
 }
-// Phone working actions without a row of their own: the send button stops, the floating jump button goes to the end,
-// and one ⋯ chip in the composer bar holds 다음 턴에 / 중단 / 압축 (CSS shows it on phones only).
-function renderActChips(on) { $("#c-more").hidden = !on; }
-$("#c-more").append(icon("more"));
-$("#c-more").addEventListener("pointerdown", ev => ev.preventDefault());
-$("#c-more").onclick = ev => {
-  const proc = isLaneT(target) ? laneOf(target) : "orchestrator";
-  showMenu(ev.currentTarget, [
-    ...(ta.value.trim() ? [{ value: "queue", label: "다음 턴에 보내기", sub: "지금 턴이 끝나면 보내요" }] : []),
-    { value: "stop", label: "중단", sub: "지금 턴을 멈춰요" },
-    { value: "compact", label: "압축", sub: "작업 중이면 턴이 끝난 뒤에" }], { onPick: v => {
-      if (v === "queue") sendChat("queue");
-      else if (v === "stop") stopTarget();
-      else if (v === "compact") busy(null, async () => { const r = await api("/api/compact", "POST", { target: proc }); toast(r.state === "queued" ? "작업 중이라 턴이 끝나면 압축해요" : "압축을 시작했어요"); });
-    } });
-};
 
 /* ---------- queued messages (server queue, sent when the target's turn ends) + context ring ---------- */
 let QUEUE = [];
