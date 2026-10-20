@@ -97,12 +97,21 @@ const NO_ASK = "--no-ask-user";
 // provider's copy before the first prompt (RPC commands run in order), as on omp.
 const keyProviderOf = (o: SpawnOpts) => (o.env.DOTZ_KEY_PROVIDER && !apiKeyBan() ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined);
 
+// Light profile (measured 2026-10-20 over RPC, first-turn prompt on Sonnet 5.5: orchestrator 39.7K -> 35.9K, lane 35.8K ->
+// 34.5K): tools no dotz process uses are left out. The goal loop (dotz drives turns and checks [done] itself) and the
+// HTML viewer (nothing renders it) go everywhere; the orchestrator, which edits no code and delegates through lanes and
+// task, also drops the LSP tools, workpool and PTY resize. Skills, context files, rules, memory and task stay: lanes and
+// the orchestrator use them (the retain nudge names the memory tool).
+const EXCLUDED_TOOLS = ["create_goal", "get_goal", "update_goal", "show_html_page"];
+const ORCHESTRATOR_EXCLUDED = ["lsp_diagnostics", "lsp_find_references", "lsp_goto_definition", "lsp_prepare_rename", "lsp_rename", "lsp_symbols", "workpool", "bash_resize"];
+const excludedTools = (role: SpawnOpts["role"]) => [...EXCLUDED_TOOLS, ...(role === "orchestrator" ? ORCHESTRATOR_EXCLUDED : [])].join(",");
+
 // --no-model-fallback: OmO's own chain would follow the owner's global settings; the hub drives every chain of an OmO
 // process itself (hub/fallback.ts hubChain), restarting it on the same session with the next model.
 export function omoArgs(o: SpawnOpts): string[] {
 	const key = keyProviderOf(o);
 	const model = key ? `${key.baseModel}:${parseSelector(o.model).thinking}` : o.model;
-	return [OMO, "--mode", "rpc", "--model", omoSelector(model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, NO_ASK, ...(o.resume ? ["--session", o.resume] : [])];
+	return [OMO, "--mode", "rpc", "--model", omoSelector(model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, NO_ASK, "--exclude-tools", excludedTools(o.role), ...(o.resume ? ["--session", o.resume] : [])];
 }
 
 export const omo: RuntimeAdapter = {
