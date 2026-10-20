@@ -1,0 +1,78 @@
+/* cards, lists, tags, bars */
+.col { display: flex; flex-direction: column; gap: 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; }
+.card { position: relative; min-width: 0; border: 0; border-radius: var(--r-card); background: var(--card); padding: 20px; }
+.card.tap { cursor: pointer; transition: background .15s; }
+.card.tap:hover { background: var(--card-hover); }
+.card.tap:focus-visible { outline-offset: 0; }
+.ch { display: flex; align-items: center; gap: 8px; min-height: 20px; margin-bottom: 12px; }
+.ch h3 { flex: 1; min-width: 0; margin: 0; font: 600 16px/22px var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch .chev { width: 14px; height: 14px; color: var(--fg-3); }
+.card.tap:hover .chev { color: var(--fg); }
+.big { font: 700 20px/28px var(--font); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.sup { color: var(--fg-2); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
+.err-t { color: var(--err); }
+.muted { color: var(--fg-2); }
+.empty { padding: 32px 16px; text-align: center; color: var(--fg-3); font-size: 12px; }
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+.dot.pri { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.dot.att { background: var(--warn); }
+@keyframes pulse { 50% { opacity: .35; } }
+.tag { display: inline-flex; align-items: center; flex: none; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--layer); color: var(--fg-2); font-size: 11px; line-height: 16px; font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.tag.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.tag.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.tag.err { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); }
+.tag.pri { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.row + .row { margin-top: 8px; }
+.row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.kv .k { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv .v { flex: none; color: var(--fg-2); font-size: 12px; }
+.bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; margin-top: 8px; }
+.bar i { display: block; height: 100%; border-radius: 2px; background: var(--bar, var(--accent)); transition: width .3s; }
+.bar.warn { --bar: var(--warn); } .bar.err { --bar: var(--err); }
+.lim + .lim { margin-top: 12px; }
+.more { margin-top: 12px; color: var(--fg-3); font-size: 12px; }
+.sec { margin: 28px 4px 10px; color: var(--fg-2); font: 600 14px/20px var(--font); }
+.sec:first-child { margin-top: 0; }
+.list { border: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.list > * + * { border-top: 1px solid var(--line); }
+.li { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 48px; padding: 10px 16px; color: inherit; text-align: left; width: 100%; border: 0; background: transparent; }
+button.li:hover, .li.tap:hover { background: var(--card-hover); }
+.li .lead { flex: none; display: inline-flex; color: var(--fg-3); }
+.li .tx { flex: 1; min-width: 0; }
+.li .hd { font-size: 15px; line-height: 22px; font-weight: 500; overflow-wrap: anywhere; }
+.li.prow { flex-wrap: wrap; }
+.li.prow .tx { flex: 1 1 140px; }
+.avatar { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--layer); border: 1px solid var(--line); color: var(--fg-2); font: 600 11px/16px var(--font); text-transform: uppercase; }
+.heads { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.heads .t { min-width: 0; font: 600 13px/20px var(--font); overflow-wrap: anywhere; }
+.sp { flex: 1; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pickbox { display: flex; flex-direction: column; gap: 16px; max-height: min(46dvh, 340px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
+.kb:empty { display: none; }
+.li.on { background: var(--active); }
+.li.off, .li.off:hover { background: transparent; cursor: default; }
+.li.off .hd, .li.off .lead { color: var(--fg-3); }
+.rt-roles { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rt-roles .seg { flex: none; flex-wrap: nowrap; }
+.rt-roles .seg button { flex: none; padding: 0 10px; }
+.rt-rows { max-height: min(48dvh, 400px); overflow-y: auto; }
+.rt-row { padding: 8px 12px; min-width: 0; }
+.rt-row .top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rt-row .nm { min-width: 0; color: var(--fg); font-size: 13px; line-height: 20px; font-weight: 500; overflow-wrap: anywhere; }
+.rt-row .sup { margin-top: 2px; }
+.tools-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.tools-bar .sec { margin: 0; }
+.sub { margin-top: 4px; }
+.mt8 { margin-top: 8px; } .mt12 { margin-top: 12px; }
+
+/* tabs */
+.chips { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding: 0 0 12px; min-width: 0; flex: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg-2); font-size: 13px; font-weight: 500; max-width: 100%; }
+.chip:hover { background: var(--hover); color: var(--fg); }
+.chip.on { background: var(--fg); color: var(--bg); }
+.chip .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { bundle, webSource } from "./webapp.ts";
 
 // The web app marks state with short tone classes added next to a component class ("card tap att", "dot err", "grow att err").
 // A stylesheet rule keyed on a tone class alone styles every component that carries the tone: the file-attachment chip once used
@@ -20,7 +21,8 @@ function compoundsOf(css: string): string[] {
 
 describe("web stylesheet tone classes", () => {
 	const html = readFileSync(join(import.meta.dir, "..", "web", "index.html"), "utf8");
-	const css = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1]).join("\n");
+	// web/css/*.css (served as /app.css) plus any <style> left in the page
+	const css = [bundle("css").text, ...[...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1])].join("\n");
 	const compounds = compoundsOf(css);
 
 	test("the stylesheet was found", () => {
@@ -37,6 +39,6 @@ describe("web stylesheet tone classes", () => {
 
 	test("the attachment chip has its own class", () => {
 		expect(compounds).toContain(".fatt");
-		expect(html).toContain("class: `fatt${");
+		expect(webSource()).toContain("class: `fatt${");
 	});
 });

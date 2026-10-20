@@ -52,6 +52,7 @@ import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
+import { appAsset } from "./webapp.ts";
 
 const WEB = join(import.meta.dir, "..", "web", "index.html");
 const BOOT_ID = Date.now().toString(36);
@@ -645,6 +646,8 @@ const server = Bun.serve({
 		const authResponse = authRoute(req, url);
 		if (authResponse) return authResponse;
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") return new Response(req.method === "HEAD" ? null : Bun.file(WEB), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
+		const asset = appAsset(req, url.pathname);
+		if (asset) return asset;
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/custom.js") {
 			const file = Bun.file(join(import.meta.dir, "..", "web", "custom.js"));
 			return (await file.exists()) ? new Response(req.method === "HEAD" ? null : file, { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" } }) : new Response("not found", { status: 404 });

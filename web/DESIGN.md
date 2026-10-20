@@ -1,6 +1,6 @@
 # dotz web UI - design tokens
 
-One file (`web/index.html`), tokens in `:root` / `:root[data-theme="dark"]`. Tone: Toss Securities - gray page,
+`web/index.html` + modules in `web/css/*.css` and `web/js/*.js` (served joined as `/app.css`, `/app.js`), tokens in `:root` / `:root[data-theme="dark"]`. Tone: Toss Securities - gray page,
 borderless white cards, one sparing blue accent, big bold titles, short copy. Light and dark keep the same hierarchy.
 
 ## Color
