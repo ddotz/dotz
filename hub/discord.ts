@@ -471,13 +471,31 @@ const sentAt = new Map<string, number>();
 // whether an answer already reached the channel.
 export const lastSendAt = (target: string): number => sentAt.get(target) ?? 0;
 
-export async function send(target: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+// A REST failure worth retrying: no HTTP answer at all (network down, DNS, reset) or a Discord 5xx. A 4xx is final.
+export function isRetryable(error: unknown): boolean {
+	const m = /^Error: discord \S+ \S+: (\d{3})/.exec(String(error));
+	return !m || Number(m[1]) >= 500;
+}
+
+// `opts` (sendlog.ts): parts below `skip` were already accepted, and each part carries nonce+index with enforce_nonce, so
+// Discord returns the earlier message instead of posting a part twice.
+export async function send(
+	target: string,
+	text: string,
+	replyTo?: string,
+	opts?: { nonce: string; skip: number; onPart: (index: number) => void },
+): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
 	const id = resolve(target);
 	if (!id) return { delivered: false, reason: `unknown target ${target}` };
 	const ids: string[] = [];
 	sentAt.set(target, Date.now());
-	for (const body of buildPayloads(text, replyTo, SOFT_LIMIT)) ids.push(await post(id, body));
+	const bodies = buildPayloads(text, replyTo, SOFT_LIMIT);
+	for (let i = opts?.skip ?? 0; i < bodies.length; i++) {
+		const body = opts ? ({ ...bodies[i]!, nonce: `${opts.nonce}${i}`, enforce_nonce: true } as Body) : bodies[i]!;
+		ids.push(await post(id, body));
+		opts?.onPart(i);
+	}
 	return { delivered: true, ids };
 }
 
