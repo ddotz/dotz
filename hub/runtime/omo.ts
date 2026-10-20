@@ -35,7 +35,7 @@ export const WORKER_MAX_DEPTH = 2;
 // Appended to every worker category's prompt: a blocked worker once wrote the expected answer itself and the lane
 // reported success (2026-10-19 lat-probe2).
 export const WORKER_RULE =
-	"dotz worker rule: if a step you need is refused or fails (a tool error, a denied or refused task spawn, a missing permission) and you cannot do it another real way, stop and report [fail] with what was blocked and the exact reason. Never write the expected output, a guessed result or a placeholder in its place.";
+	"dotz worker rule: if a step you need is refused or fails (a tool error, a denied or refused task spawn, a missing permission) and you cannot do it another real way, stop and report [fail] with what was blocked and the exact reason. Never write the expected output, a guessed result or a placeholder in its place. Keep tool output small: read big files in ranges (offset/limit) and bound searches and diffs (grep -m, head, git diff --stat or one path), since every result stays in your context and is re-read on each later turn.";
 export const omoConfigFile = () => process.env.OMO_USER_CONFIG ?? join(process.env.HOME ?? homedir(), ".omo", "omo.json");
 export const workerProfileName = (workerModel: string) => `dotz-workers-${workerModel.replace(/[^A-Za-z0-9.-]+/g, "-")}`;
 const categoryModel = (selector: string) => {
