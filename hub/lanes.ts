@@ -14,6 +14,7 @@ import { runtimeFor } from "./runtime/index.ts";
 import type { AgentError, AgentProcess } from "./runtime/types.ts";
 import { atTime, Chain, failsOver, failureReason, hubChain, type Move, Reverter, revertWhy } from "./fallback.ts";
 import { parseTone } from "./tone.ts";
+import { broadcast } from "./events.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 // A lane started with a fallback chain: after a failed request the runtime may move to the next model by itself and redo
@@ -113,9 +114,12 @@ function persist(lane: Lane): void {
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
+	const wasLive = laneLive(lane);
 	lane.status = status;
 	if (status === "working") lane.workingSince = Date.now();
 	persist(lane);
+	// Every lane list in the web app re-reads the state on this frame, so an ended lane leaves them at once.
+	broadcast({ kind: "lanes", lane: lane.name, status, live: laneLive(lane), was_live: wasLive });
 }
 
 // Compaction needs an idle process: a runtime may abort a running turn to compact, so a busy lane queues it until turn_end.
@@ -882,7 +886,18 @@ setInterval(() => {
 	}
 }, Math.min(60_000, Math.max(250, STALL_MS / 2)));
 
-export const laneModels = () => [...lanes.values()].map(l => ({ name: l.name, ...parseSelector(l.model), status: l.status, running: Boolean(l.proc), worker_model: laneWorkerModel(l), worker_model_override: l.workerModel, ...(l.proc ? { active_model: l.activeModel, active_worker_model: l.activeWorkerModel } : {}) }));
+// Throwaway projects (lanes run in a temp folder, e.g. gateway tests) are never shown as live lanes.
+const TEMP_RE = /^\/(private\/)?(tmp|var\/folders)\//;
+export const isTempLane = (l: Pick<Lane, "cwd" | "worktree">): boolean => TEMP_RE.test(l.worktree?.repo ?? l.cwd) || TEMP_RE.test(l.cwd);
+// The one definition of a live lane every list uses (home, lane tab, target chips, sidebar, pickers, palette): not exited,
+// its process up (or being restarted in place), and not a temp test project. Ended lanes keep all their data.
+export const laneLive = (l: Lane): boolean => l.status !== "exited" && (Boolean(l.proc) || Boolean(l.quiet) || l.status === "starting") && !isTempLane(l);
+export function liveLanes(): { live: string[]; ended: string[] } {
+	const all = [...lanes.values()];
+	return { live: all.filter(laneLive).map(l => l.name), ended: all.filter(l => !laneLive(l)).map(l => l.name) };
+}
+
+export const laneModels = () => [...lanes.values()].map(l => ({ name: l.name, ...parseSelector(l.model), status: l.status, live: laneLive(l), running: Boolean(l.proc), worker_model: laneWorkerModel(l), worker_model_override: l.workerModel, ...(l.proc ? { active_model: l.activeModel, active_worker_model: l.activeWorkerModel } : {}) }));
 
 export function laneSummary(): Array<Record<string, unknown>> {
 	return [...lanes.values()].map(l => ({
@@ -891,6 +906,7 @@ export function laneSummary(): Array<Record<string, unknown>> {
 		model: l.model,
 		worker_model: laneWorkerModel(l),
 		status: l.status,
+		live: laneLive(l),
 		startedAt: l.startedAt,
 		reports: l.reports,
 		claim: l.claim,
