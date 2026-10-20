@@ -107,7 +107,7 @@ const en = {
 	inboxFirst: (channel: string) => `(new work channel #${channel}: the owner hands out work by channel. Keep this channel's work and reports here. If its work needs a login kept alive or something checked over time, set that up for this channel with dotz_channel setup yourself.)`,
 	inboxBurst: (n: number) => `(sent as ${n} messages in a row; read them together as one request)`,
 	replyingTo: (author: string, content: string) => `(replying to ${author}: "${content}")`,
-	workChannels: (list: string[]) => `(work channels: ${list.length ? list.join("; ") : "none yet"})`,
+	workChannels: (list: string[]) => `(work channel list, not this message's channel: ${list.length ? list.join("; ") : "none yet"})`,
 	// Discord channel names the gateway creates, and the done marker of a lane thread.
 	channelNames: { chat: "chat", alert: "alerts", worklog: "worklog", mail: "mail", workCategory: (name: string) => `${name} work` },
 	threadDone: "Done. This thread is archived in an hour.",
@@ -420,7 +420,7 @@ const ko: Catalog = {
 	inboxFirst: channel => `(새 작업 채널 #${channel}: 오너는 채널 단위로 일을 맡겨요. 이 채널의 작업과 보고는 여기에 두세요. 이 채널의 일에 로그인 유지나 시간이 지나며 확인할 것이 필요하면 직접 dotz_channel setup으로 이 채널에 설정하세요.)`,
 	inboxBurst: n => `(sent as ${n} messages in a row; 하나의 요청으로 함께 읽으세요)`,
 	replyingTo: (author, content) => `(${author}의 메시지에 대한 답장: "${content}")`,
-	workChannels: list => `(작업 채널: ${list.length ? list.join("; ") : "아직 없음"})`,
+	workChannels: list => `(작업 채널 목록, 이 메시지의 채널은 아님: ${list.length ? list.join("; ") : "아직 없음"})`,
 	channelNames: { chat: "대화", alert: "알림", worklog: "작업로그", mail: "메일", workCategory: name => `${name} 작업` },
 	threadDone: "작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.",
 	laneParked: "멈췄어요. 여기에 쓰면 하던 데서부터 이어서 해요.",

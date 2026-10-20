@@ -14,15 +14,15 @@
 // the final answer, ahead of it. Only a full answer to a message steered in mid-turn goes out at once; progress is the one
 // edited progress message (update_key), never a new text.
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[] };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string };
 export type Reply = { target: string; replyTo?: string; owner?: boolean };
 
 export type PromptDeps = {
 	/** Starts a normal orchestrator turn with this prompt. */
 	deliver: (text: string, owner?: boolean) => void;
-	/** Steers a note into the running turn. */
-	steer: (text: string) => void;
+	/** Steers a note into the running turn; false when no turn was running to take it. */
+	steer: (text: string) => boolean | void;
 	/** Is the orchestrator mid-turn (so a new message is steered)? */
 	working: () => boolean;
 	/** The steered note for a new message. */
@@ -70,8 +70,15 @@ export function createPrompts(deps: PromptDeps) {
 		prompts.push({ key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered });
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
 		save();
-		if (!steered) return deps.deliver(text, Boolean(reply?.owner));
-		deps.steer(deps.note(reply!.target, reply!.replyTo, text));
+		if (!steered) {
+			// A turn still owes an answer, yet the orchestrator does not look busy: logged to find why (10-20 17:19).
+			if (reply && current && !current.done) deps.log(`message for ${reply.target} delivered as a new prompt while the turn for ${current.target ?? "-"} is unanswered`);
+			return deps.deliver(text, Boolean(reply?.owner));
+		}
+		if (deps.steer(deps.note(reply!.target, reply!.replyTo, text)) !== false) return;
+		// The turn ended between the check and the steer: the message goes in as a normal prompt instead of waiting.
+		prompts.at(-1)!.steered = false;
+		deps.deliver(text, Boolean(reply?.owner));
 	}
 
 	/**
@@ -140,11 +147,31 @@ export function createPrompts(deps: PromptDeps) {
 		save();
 	}
 
+	/** Any assistant text of the running turn: the safety net's answer when the turn ends without a stop. */
+	function onText(text: string): void {
+		if (current && !current.done && text.trim()) current.last = text;
+	}
+
+	/**
+	 * The orchestrator went idle: a prompt the turn never answered (no stop with text: aborted, cut off, a lost pairing)
+	 * gets the turn's last text, so an answer is never dropped without a trace (owner 2026-10-20: "작업 끝나도 보고 안하는거").
+	 */
+	function settleTurn(): void {
+		const p = current;
+		if (!p || p.done || !p.target) return;
+		deps.log(`turn ended without an answer to ${p.target}; ${p.last ? "sending its last text" : "it wrote no text"}`);
+		if (p.last) return onAnswer(p.last);
+		p.done = true;
+		save();
+	}
+
 	/** An assistant stop: the turn's final answer goes to the channel that asked, once. */
 	function onAnswer(text: string): void {
 		const p = current;
 		// A turn omp continues (steered notes) stops again; the prompt it started with was answered at the first stop.
-		if (!p || p.done) return;
+		// Keepalive "ok" and "-" have no prompt by design; anything longer was an answer that went nowhere.
+		if (!p) return void (text.trim().length > 3 && deps.log(`an answer had no prompt to go to (${text.trim().length} chars): ${text.trim().slice(0, 80)}`));
+		if (p.done) return;
 		p.done = true;
 		save();
 		const t = text.trim();
@@ -174,5 +201,5 @@ export function createPrompts(deps: PromptDeps) {
 		return fresh.length;
 	}
 
-	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onAnswer, replay, queued: () => prompts.slice(), current: () => current };
+	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, queued: () => prompts.slice(), current: () => current };
 }

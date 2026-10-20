@@ -115,7 +115,9 @@ export function setIdleHandler(fn: () => void): void {
 // channel that asked it instead of posting only the run's last text.
 let onPrompt: (text: string) => void = () => {};
 let onAnswer: (text: string) => void = () => {};
-export function setAnswerHandlers(prompt: (text: string) => void, answer: (text: string) => void): void {
+let onText: (text: string) => void = () => {};
+export function setAnswerHandlers(prompt: (text: string) => void, answer: (text: string) => void, text: (text: string) => void = () => {}): void {
+	onText = text;
 	onPrompt = prompt;
 	onAnswer = answer;
 }
@@ -252,7 +254,10 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				if (!isResumeNote(ev.text)) onPrompt(ev.text);
 				break;
 			case "assistant":
-				if (ev.text) orch.lastText = ev.text;
+				if (ev.text) {
+					orch.lastText = ev.text;
+					onText(ev.text);
+				}
 				if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);
 				if (ev.stop !== "error") {
 					transientTries = 0;
