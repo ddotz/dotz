@@ -187,9 +187,12 @@ function buildProject(lane: Lane, chans: Chan[], ctx: { disk: Record<string, any
 	};
 }
 
+// Lanes run from a scratch folder (/tmp test projects) are not the owner's projects.
+const scratch = (p: string | undefined) => !!p && /^\/(private\/)?tmp(\/|$)/.test(p);
+
 export function harnessProjects(ctx: { disk: Record<string, any>; mName: (s: string) => string; gateway: HarnessNode; orchestrator: HarnessNode }) {
 	const setups = listSetups();
-	return [...lanes.values()].flatMap(lane => {
+	return [...lanes.values()].filter(lane => !scratch(lane.cwd) && !scratch(lane.worktree?.repo)).flatMap(lane => {
 		const chans = channelsOf(lane);
 		return chans.length ? [buildProject(lane, chans, { ...ctx, setups })] : [];
 	}).sort((a, b) => a.name.localeCompare(b.name));

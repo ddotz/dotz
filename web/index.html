@@ -936,9 +936,13 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .hm-mine .mt { color: var(--mine); font: 500 11px/16px var(--font); }
 .hm-chip.mine { border-color: color-mix(in srgb, var(--mine) 55%, var(--line-2)); }
 .hm-row .bd { flex: none; }
-.hm-cv { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
-.hm-cv .hm-st { max-width: none; min-width: 0; }
-.hm-cv .cv-sum { grid-column: 1 / -1; }
+.hm-simple.only { align-items: flex-start; }
+@media (max-width: 639px) { .hm-simple.only { align-items: stretch; } }
+.hm-simple.only .hm-ar { align-self: flex-start; margin-top: 12px; }
+.hm-st.none { background: transparent; }
+.hm-none { color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+.hm-cs .hm-more { align-self: flex-start; height: 28px; margin-top: 2px; padding: 0 8px; font-size: 12px; }
+.hm-cr .m2 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hm-cs { display: flex; flex-direction: column; gap: 2px; }
 .hm-cs .cl { margin: 6px 0 2px; color: var(--fg-3); font: 500 11px/16px var(--font); }
 .hm-cr { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 6px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--fg); text-align: left; font: 500 12.5px/18px var(--font); }
@@ -3843,7 +3847,7 @@ function renderHarness() {
   hNodeEls = new Map(); hEdgeRefs = []; hGeo = new Map(); hOv = null;
   if (!HG) { clear(box).append(emptyNode("불러오는 중…")); return; }
   const mobile = H_MQ.matches, pj = hPj();
-  const onlySeg = hOrigin() ? el("div", { class: "seg", role: "group", "aria-label": "보기 범위" }, ...[[false, "전체", "기본과 내가 바꾼 것을 모두 보여줘요"], [true, "커스텀만", "내가 바꾼 것만 단계별로 모아 보여줘요"]].map(([v, t, tip]) => {
+  const onlySeg = hOrigin() ? el("div", { class: "seg", role: "group", "aria-label": "보기 범위" }, ...[[false, "전체", "기본과 내가 바꾼 것을 모두 보여줘요"], [true, `커스텀 ${hCustomCount()}`, "같은 단계 그대로, 내가 바꾼 것만 걸러 보여줘요"]].map(([v, t, tip]) => {
     const b = el("button", { type: "button", class: hOnly === v ? "on" : "", "aria-pressed": String(hOnly === v), title: tip, text: t });
     b.addEventListener("click", () => { hOnly = v; try { localStorage.setItem("dotz-honly", v ? "1" : "0"); } catch {} renderHarness(); });
     return b;
@@ -4068,58 +4072,64 @@ function hSimple() {
   return el("div", { class: "hm-scroll" }, wrap);
 }
 
-// 커스텀만: only what this user changed, grouped by stage: personal files/extensions, settings that differ from their
-// default, and personal features (skills, omp extensions, schedules, watches, feature folders …). Rows open the same sheet.
-const H_CV_CAP = 8;
-function hCustomView() {
-  const stages = hStages(), where = new Map();
+// 커스텀: the same stage cards, order and arrows as 전체, each card filtered to what this user changed (personal
+// files/extensions, settings that differ from their default, personal features) with its count; untouched stages say so.
+const H_CV_CAP = 4;
+function hCustomParts(stages) {
+  const where = new Map();
   stages.forEach((s, i) => { for (const n of [...s.main, ...s.chips]) where.set(n.id, i); });
   const feats = FC ? FC.features.filter(f => hOwn(f) && where.has(f.stage)) : [];
   const lines = FC ? FC.features.filter(f => f.origin === "personal" && FC_LINES[f.form]) : [];
-  const box = el("div", { class: "hm-cv" });
-  let nSet = 0, nFile = 0, nFeat = 0;
+  return { lines, at: stages.map((s, i) => {
+    const nodes = [...s.main, ...s.chips];
+    const mine = nodes.filter(n => n.origin === "personal"), sets = nodes.flatMap(n => (n.custom || []).map(c => ({ n, c }))), fl = feats.filter(f => where.get(f.stage) === i);
+    return { mine, sets, fl, n: mine.length + sets.length + fl.length };
+  }) };
+}
+const hCustomCount = () => { if (!HG || !hOrigin()) return 0; return hCustomParts(hStages()).at.reduce((a, x) => a + x.n, 0); };
+function hCustomCard(s, i, cv) {
+  const { mine, sets, fl, n } = cv.at[i], one = s.main.length === 1 ? s.main[0] : null;
+  const card = el("div", { class: `hm-st${n ? " mine" : " none"}` },
+    el("div", { class: "hm-sh" }, el("span", { class: "t" }, el("span", { class: "l", text: one ? one.label : s.label }), n ? el("span", { class: "bd m", title: "이 단계에서 바꾼 것", text: String(n) }) : null)));
+  if (!n) { card.append(el("div", { class: "hm-none", text: "기본 그대로" })); return card; }
   const row = (onclick, top, sub, mono) => {
-    const b = el("button", { type: "button", class: "hm-cr" }, el("span", { class: "m1" }, ...top), sub ? el("span", { class: `m2${mono ? " mono" : ""}`, text: sub }) : null);
+    const b = el("button", { type: "button", class: "hm-cr" }, el("span", { class: "m1" }, ...top), sub ? el("span", { class: `m2${mono ? " mono" : ""}`, text: sub, title: sub }) : null);
     b.addEventListener("click", onclick);
     return b;
   };
+  const sec = el("div", { class: "hm-cs" });
+  if (mine.length) {
+    sec.append(el("div", { class: "cl", text: `내 파일·확장 · ${mine.length}` }));
+    for (const m of mine) {
+      const own = cv.lines.filter(f => f.stage === m.id), rules = own.filter(f => f.form === "글 지시").length, deny = own.filter(f => f.form === "차단 명령").length;
+      const meta = m.file ? [m.fileMeta ? `${num(m.fileMeta.bytes)}자 · ${kstStamp(m.fileMeta.modified)} 수정` : "아직 없는 파일", rules ? `글 ${rules}줄` : "", deny ? `차단 ${deny}줄` : ""].filter(Boolean).join(" · ") : m.summary;
+      sec.append(row(() => openHSheet(m.id), [hShort(m)], meta));
+    }
+  }
+  if (sets.length) {
+    sec.append(el("div", { class: "cl", text: `바꾼 설정 · ${sets.length}` }));
+    for (const { n: m, c } of sets) sec.append(row(() => openHSheet(m.id), [`${c.label}: ${hFmt(c.value, c.unit)}`], `기본 ${hFmt(c.default, c.unit)} · ${hShort(m)}`));
+  }
+  if (fl.length) {
+    const all = hCvOpen.has(i), shown = all ? fl : fl.slice(0, H_CV_CAP);
+    sec.append(el("div", { class: "cl", text: `내 기능 · ${fl.length}` }));
+    for (const f of shown) sec.append(row(() => fcOpenFeature(f), [f.name, el("span", { class: "tag", text: f.form }), f.enabled ? null : el("span", { class: "tag", text: "꺼짐" })], f.source.label, true));
+    if (fl.length > H_CV_CAP) {
+      const more = el("button", { type: "button", class: "btn text hm-more", text: all ? "접기" : `${fl.length - H_CV_CAP}개 더 보기` });
+      more.addEventListener("click", () => { if (all) hCvOpen.delete(i); else hCvOpen.add(i); renderHarness(); });
+      sec.append(more);
+    }
+  }
+  card.append(sec);
+  return card;
+}
+function hCustomView() {
+  const stages = hStages(), cv = hCustomParts(stages), wrap = el("div", { class: "hm-simple only" });
   stages.forEach((s, i) => {
-    const nodes = [...s.main, ...s.chips];
-    const mine = nodes.filter(n => n.origin === "personal");
-    const sets = nodes.flatMap(n => (n.custom || []).map(c => ({ n, c })));
-    const fl = feats.filter(f => where.get(f.stage) === i);
-    if (!mine.length && !sets.length && !fl.length) return;
-    nFile += mine.length; nSet += sets.length; nFeat += fl.length;
-    const card = el("div", { class: "hm-st mine" }, el("div", { class: "hm-sh" }, el("span", { class: "t" }, el("span", { class: "l", text: s.label || `${i + 1}단계` }))));
-    const sec = el("div", { class: "hm-cs" });
-    if (mine.length) {
-      sec.append(el("div", { class: "cl", text: "내 파일·확장" }));
-      for (const n of mine) {
-        const own = lines.filter(f => f.stage === n.id), rules = own.filter(f => f.form === "글 지시").length, deny = own.filter(f => f.form === "차단 명령").length;
-        const meta = n.file ? [n.fileMeta ? `${num(n.fileMeta.bytes)}자 · ${kstStamp(n.fileMeta.modified)} 수정` : "아직 없는 파일", rules ? `글 ${rules}줄` : "", deny ? `차단 ${deny}줄` : ""].filter(Boolean).join(" · ") : n.summary;
-        sec.append(row(() => openHSheet(n.id), [el("span", { class: "bd m", text: n.file ? "파일" : "확장" }), n.label], meta));
-      }
-    }
-    if (sets.length) {
-      sec.append(el("div", { class: "cl", text: "바꾼 설정" }));
-      for (const { n, c } of sets) sec.append(row(() => openHSheet(n.id), [`${c.label}: ${hFmt(c.value, c.unit)} (기본 ${hFmt(c.default, c.unit)})`], `${hShort(n)} · config.json:${c.key}`));
-    }
-    if (fl.length) {
-      const all = hCvOpen.has(i), shown = all ? fl : fl.slice(0, H_CV_CAP);
-      sec.append(el("div", { class: "cl", text: `내 기능 · ${fl.length}` }));
-      for (const f of shown) sec.append(row(() => fcOpenFeature(f), [f.name, el("span", { class: "tag", text: f.form }), el("span", { class: `tag st ${f.strength}`, text: FC_STR[f.strength] }), f.enabled ? null : el("span", { class: "tag", text: "꺼짐" })], f.source.label, true));
-      if (fl.length > H_CV_CAP) {
-        const more = el("button", { type: "button", class: "btn text", text: all ? "접기" : `${fl.length - H_CV_CAP}개 더 보기` });
-        more.addEventListener("click", () => { if (all) hCvOpen.delete(i); else hCvOpen.add(i); renderHarness(); });
-        sec.append(more);
-      }
-    }
-    card.append(sec);
-    box.append(card);
+    if (i) wrap.append(el("div", { class: "hm-ar" }, el("span", { class: "lb", text: hStageLabel(stages[i - 1], s) }), el("span", { class: "ln" })));
+    wrap.append(hCustomCard(s, i, cv));
   });
-  if (!box.firstChild) return emptyNode("아직 바꾼 게 없어요. 지금은 모두 dotz 기본 그대로예요.");
-  box.prepend(el("div", { class: "sup cv-sum", text: `바꾼 설정 ${nSet} · 내 파일·확장 ${nFile} · 내 기능 ${nFeat} · 기본 그대로인 것은 숨겼어요` }));
-  return box;
+  return el("div", { class: "hm-scroll" }, wrap);
 }
 
 // Lights up what a node connects to: the other ends get an outline, and (pointer devices) its edges are drawn over the
