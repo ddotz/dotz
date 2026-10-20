@@ -2,14 +2,14 @@
 // Dotz onboarding wizard (Korean, step by step), modeled on the omonyang ~/.ddotz/setup.ts and the dori-kit setup.ts.
 // 1) harness: the coding-agent CLI the orchestrator and lanes run on (onboard/harness.ts; OmO by default, installed with
 //    bun when missing; omp and Claude Code selectable; Codex listed, no adapter yet) and its login state
-// 2) tools: Aside and zele. 3) bot identity: name, character, tone, notices, how to address the owner, optional avatar
+// 2) tools: Aside, Tailscale (onboard/tailscale.ts) and zele. 3) bot identity: name, character, tone, notices, how to address the owner, optional avatar
 //    -> ~/.dotz/identity/IDENTITY.md (the orchestrator talks this way)
 // 4) Discord: owner id, server id; the bot itself is provisioned through the Aside browser (onboard/discord.ts) unless a
 //    token is pasted; the owner only approves Discord's 2FA prompt. 5) web app access (Tailscale, optional). Advanced: ports and models.
 // Writes ~/.dotz/config.json (no secrets), secrets/ (0600), links the plugin into omp only when omp is installed (OmO gets
 // the extension from the gateway with --extension), writes the service file (launchd plist on macOS, systemd user unit on
 // Linux; onboard/service.ts); starts it only with --load, runs tailscale serve only with --tailscale, opens the web app
-// only with --open. Re-running keeps every answer as the default.
+// only with --open. An interactive run with web logins also runs tailscale serve. Re-running keeps every answer as the default.
 //   bun setup.ts [--answers answers.json] [--load] [--tailscale] [--open] [--no-discord-auto] [--dir ~/.dotz]
 // Onboarding ends with the macOS permissions step (onboard/permissions.ts): bun is what launchd runs, so the prompts and
 // the Settings entries are for bun. Interactive runs ask for them; --answers runs only print their state. Standalone, safe to rerun:
@@ -21,6 +21,7 @@ import { asideState, installApp, installCli, loginCli, openApp } from "./onboard
 import { AsideRepl, createApp, ensureBrowser, invite, isAdmin, PERMISSIONS, resetToken } from "./onboard/discord.ts";
 import { defaultHarness, detectHarnesses, type Detected, harness, harnessLine, HARNESSES, loginState } from "./onboard/harness.ts";
 import { checkPermissions, printPermissions, requestPermissions } from "./onboard/permissions.ts";
+import { installTailscale, serveWeb, startTailscale, tailscaleState } from "./onboard/tailscale.ts";
 import { LABEL, serviceFile, servicePath, UNIT } from "./onboard/service.ts";
 import { detectLanguage, languageName } from "./hub/language.ts";
 
@@ -63,18 +64,18 @@ const CHARACTERS = [
 	"장난기 있지만 일은 확실한 친구 같은 조수. 가볍게 말하되 사실은 정확하게.",
 	"꼼꼼한 엔지니어. 근거와 검증을 먼저 챙기고 불확실하면 그렇다고 말한다.",
 ];
-// The first entry of each list is the default (Enter). The default tone is the one the macmini secretary (오모냥) uses.
+// The first entry of each list is the default (Enter). Examples are everyday errands, not the author's own projects.
 const TONES = [
-	"편한 해요체로 이어지는 대화. 상대 말에 바로 이어서 자연스러운 문장으로 답하고, 정해진 시작말이나 '한 줄 결론 + 불릿' 틀을 매번 쓰지 않음. 목록은 보고와 선택지에만. 근거와 숫자는 구체적으로. 이모지 없음 (예: \"원인 찾았어요. 04:30 업데이트 때 세션이 잘못 복원돼서 생긴 거라, 재시작할 때 먼저 종료하게 고쳐 뒀어요.\")",
-	"반말, 친근하고 짧게 (예: \"응, 끝났어. 테스트도 통과\")",
-	"존댓말, 간결하게 (예: \"네, 끝났어요. 테스트도 통과했어요\")",
-	"존댓말, 정중하게 (예: \"완료했습니다. 테스트도 통과했습니다\")",
+	"편한 해요체로 이어지는 대화. 상대 말에 바로 이어서 자연스러운 문장으로 답하고, 정해진 시작말이나 '한 줄 결론 + 불릿' 틀을 매번 쓰지 않음. 목록은 보고와 선택지에만. 근거와 숫자는 구체적으로. 이모지 없음 (예: \"확인해 봤어요. 내일 회의가 10시에서 11시로 바뀌어서 일정도 같이 옮겨 뒀어요.\")",
+	"반말, 친근하고 짧게 (예: \"응, 끝났어. 메일도 보냈어\")",
+	"존댓말, 간결하게 (예: \"네, 끝났어요. 메일도 보냈어요\")",
+	"존댓말, 정중하게 (예: \"완료했습니다. 메일도 발송했습니다\")",
 ];
 // Style of notices (작업로그, 알림), from everyday speech to ASD-STE100; MODE.md defines each level.
 const NOTICES = [
-	"일상: 평소 말투 그대로, 관련 내용을 짧게 (예: \"hbtest 레인 끝났어요. 응답 확인했고 남은 일 없어요.\")",
-	"간결: 해요체 평서문, 한 문장에 사실 하나, 군말 없이 (예: \"hbtest 레인을 마쳤어요. 응답은 정상이에요. 남은 일은 없어요.\")",
-	"STE 80%: ASD-STE100 규칙(짧은 문장, 능동태, 정해진 용어, 절차는 번호 단계)을 80% 강도로, 합니다체. 강도는 'STE 100%'처럼 바꿀 수 있음 (예: \"hbtest 레인을 완료했습니다. 응답이 정상입니다. 남은 작업은 없습니다.\")",
+	"일상: 평소 말투 그대로, 관련 내용을 짧게 (예: \"자료 정리 끝났어요. 빠진 파일 없고 남은 일 없어요.\")",
+	"간결: 해요체 평서문, 한 문장에 사실 하나, 군말 없이 (예: \"자료 정리를 마쳤어요. 빠진 파일은 없어요. 남은 일은 없어요.\")",
+	"STE 80%: ASD-STE100 규칙(짧은 문장, 능동태, 정해진 용어, 절차는 번호 단계)을 80% 강도로, 합니다체. 강도는 'STE 100%'처럼 바꿀 수 있음 (예: \"자료 정리를 완료했습니다. 빠진 파일이 없습니다. 남은 작업은 없습니다.\")",
 ];
 
 function ask(q: string, def = "", required = true): string {
@@ -125,24 +126,29 @@ function secret(q: string): string {
 }
 
 async function tailnetUrl(port: number): Promise<string> {
-	if (!Bun.which("tailscale")) return "";
-	const r = await Bun.$`tailscale status --json`.nothrow().quiet();
-	try {
-		const host = String(JSON.parse(r.stdout.toString()).Self?.DNSName ?? "").replace(/\.$/, "");
-		return host ? `https://${host}${port === 443 ? "" : `:${port}`}/` : "";
-	} catch {
-		return "";
-	}
+	const { host } = await tailscaleState();
+	return host ? `https://${host}${port === 443 ? "" : `:${port}`}/` : "";
 }
 
-async function tailscaleLogin(): Promise<string> {
-	const r = await Bun.$`tailscale status --json`.nothrow().quiet();
-	try {
-		const d = JSON.parse(r.stdout.toString());
-		return String(d.User?.[String(d.Self?.UserID)]?.LoginName ?? "");
-	} catch {
-		return "";
+// Step 2 with Aside: install Tailscale when missing and get it signed in, so step 5 finds the login and the web app opens.
+async function prepareTailscale(interactiveRun: boolean): Promise<void> {
+	let s = await tailscaleState();
+	if (!s.bin) {
+		console.log("  Tailscale 이 없어요. 휴대폰이나 다른 컴퓨터에서 웹 앱을 열 때 Tailscale 을 써요.");
+		if (interactiveRun && !/^n/i.test(ask(`  지금 설치할까요? (${MAC ? "Homebrew: brew install --cask tailscale-app" : "tailscale.com/install.sh"}) Y/n`, "y"))) {
+			if (!(await installTailscale())) ask("  브라우저에서 tailscale.com/download 를 열었어요. 설치를 마치면 Enter", "", false);
+			s = await tailscaleState();
+		}
 	}
+	while (interactiveRun && s.bin && !s.running) {
+		console.log("  Tailscale 에 로그인이 안 돼 있어요. Tailscale 을 열 테니 로그인해 주세요 (휴대폰에서도 같은 계정으로 로그인하면 웹 앱을 열 수 있어요).");
+		await startTailscale(s.bin);
+		if (ask("  로그인을 마치면 Enter, 나중에 하려면 s", "", false).toLowerCase() === "s") break;
+		s = await tailscaleState();
+	}
+	if (s.running) console.log(`  Tailscale 준비 완료: ${s.login} (${s.host})`);
+	else if (s.bin) console.log(`  Tailscale 이 아직 로그인 전이에요${s.error ? ` (${s.error})` : ""}. 로그인 후 setup 을 다시 실행하면 웹 앱이 켜져요.`);
+	else console.log("  Tailscale 없이 진행해요. 웹 앱은 이 컴퓨터(127.0.0.1)에서만 열려요.");
 }
 
 // Step 1 of the wizard: the Aside app, its CLI and the CLI sign-in. Interactive runs ask before installing; --answers
@@ -250,14 +256,15 @@ async function interactive(): Promise<Answers> {
 	console.log("\n봇 온보딩을 시작합니다. 대괄호 [ ] 안의 값은 Enter로 그대로 쓸 수 있어요.\n");
 	console.log("1/5 하네스");
 	const runtime = await prepareHarness(true);
-	console.log("\n2/5 도구 준비: 봇이 쓰는 Aside 브라우저와 메일·일정 도구(zele)를 확인하고, 없으면 설치해요.");
+	console.log("\n2/5 도구 준비: 봇이 쓰는 Aside 브라우저, 웹 앱 접속용 Tailscale, 메일·일정 도구(zele)를 확인하고, 없으면 설치해요.");
 	if (MAC) await prepareAside(true);
 	else console.log("  Aside 는 macOS 앱이라 건너뛰어요. 봇 자동 생성 대신 디스코드 봇 토큰을 붙여넣어 주세요.");
+	await prepareTailscale(true);
 	await prepareZele(true);
 
 	console.log("\n3/5 봇 정체성: 이름, 성격, 말투, 호칭. 봇은 디스코드, 웹, 터미널 어디서나 이 성격과 말투로 대답해요.");
 	if (!priorIdentity.name) console.log("  먼저 봇의 이름을 지어 주세요. 디스코드 봇 이름, 카테고리, '<이름>모드 켜' 문구가 모두 이 이름을 써요.");
-	const name = askValid("봇 이름 (2~32자, 예: 땃쥐, 오모냥)", priorIdentity.name, v => v.length >= 2 && v.length <= 32, "2~32자로 적어 주세요");
+	const name = askValid("봇 이름 (2~32자, 예: 루미, 모모, 비서)", priorIdentity.name, v => v.length >= 2 && v.length <= 32, "2~32자로 적어 주세요");
 	const character = choose("성격을 골라 주세요", CHARACTERS, priorIdentity.character);
 	const tone = choose("말투를 골라 주세요", TONES, priorIdentity.tone);
 	const notices = choose("작업로그·알림 문체를 골라 주세요 (나중에 대화에서 '알림 문체 STE로'처럼 바꿀 수 있어요)", NOTICES, priorIdentity.notices ?? "");
@@ -274,10 +281,11 @@ async function interactive(): Promise<Answers> {
 	} else if (guild) console.log("  저장된 봇 토큰을 그대로 써요.");
 
 	console.log("\n5/5 웹 앱 (테일넷 안에서만 열려요).");
-	const hasTailscale = Boolean(Bun.which("tailscale"));
-	const login = (prior.web?.allow_logins ?? [])[0] ?? (hasTailscale ? await tailscaleLogin() : "");
-	if (!hasTailscale && !login) console.log("  Tailscale 이 없어서 웹 앱은 꺼 둬요. 디스코드와 터미널로 쓸 수 있고, Tailscale 을 설치한 뒤 setup 을 다시 실행하면 켜져요.");
-	const allow_logins = (hasTailscale || login ? ask("웹 앱에 들어올 수 있는 Tailscale 로그인 (쉼표로 여러 개, 없으면 Enter)", login, false) : "").split(",").map(s => s.trim()).filter(Boolean);
+	const ts = await tailscaleState();
+	const login = (prior.web?.allow_logins ?? [])[0] ?? ts.login;
+	if (!ts.bin && !login) console.log("  Tailscale 이 없어서 웹 앱은 이 컴퓨터에서만 열려요. Tailscale 을 설치한 뒤 setup 을 다시 실행하면 다른 기기에서도 열려요.");
+	else if (login) console.log("  아래 로그인으로 들어오면 웹 앱이 열려요. 설정이 끝나면 테일넷에 바로 열어 둘게요.");
+	const allow_logins = (ts.bin || login ? ask("웹 앱에 들어올 수 있는 Tailscale 로그인 (쉼표로 여러 개, 없으면 Enter)", login, false) : "").split(",").map(s => s.trim()).filter(Boolean);
 
 	const defaults = {
 		web_port: Number(prior.web?.port ?? 7420),
@@ -464,9 +472,17 @@ if (flag("--load") && MAC) {
 	console.log(r.exitCode === 0 ? "launchd: gateway loaded" : `launchd: bootstrap failed: ${r.stderr.toString().trim()}`);
 }
 
-if (flag("--tailscale")) {
-	const r = await Bun.$`tailscale serve --bg --https=${a.tailscale_https_port} http://127.0.0.1:${a.web_port}`.nothrow().quiet();
-	console.log(r.exitCode === 0 ? `tailscale: web app on port ${a.tailscale_https_port} (tailnet only)` : `tailscale serve failed: ${r.stderr.toString().trim()}`);
+// Interactive runs open the web app on the tailnet as soon as logins are set; --answers runs (tests, scripted installs)
+// only with --tailscale, so they never change a live machine's serve config by accident.
+const wantServe = flag("--tailscale") || (!answersFile && a.allow_logins.length > 0);
+const tsNow = wantServe ? await tailscaleState() : undefined;
+if (wantServe && !tsNow?.running) console.log(`tailscale: ${tsNow?.bin ? "로그인 전이라" : "설치돼 있지 않아서"} 웹 앱을 테일넷에 아직 못 열었어요. 준비되면 bun setup.ts --tailscale 을 실행하세요.`);
+if (tsNow?.running) {
+	const r = await serveWeb(tsNow.bin, a.tailscale_https_port, a.web_port);
+	const enable = r.out.match(/https:\/\/login\.tailscale\.com\/\S+/)?.[0];
+	if (r.ok) console.log(`tailscale: 웹 앱을 테일넷에 열었어요 (포트 ${a.tailscale_https_port}, 테일넷 안에서만)`);
+	else if (enable) console.log(`tailscale: 이 테일넷에서 HTTPS 공유(serve)가 꺼져 있어요. 이 주소에서 한 번 켜 주고 bun setup.ts --tailscale 을 다시 실행하세요: ${enable}`);
+	else console.log(`tailscale serve 실패: ${r.out}`);
 }
 
 if (MAC && answersFile) {
@@ -536,8 +552,8 @@ if (flag("--load") && provisioned) {
 }
 
 const webUrl = await tailnetUrl(a.tailscale_https_port);
-if (webUrl && a.allow_logins.length) console.log(`web: ${webUrl}${flag("--tailscale") ? "" : " (bun setup.ts --tailscale 로 테일넷에 열어요)"}`);
+if (webUrl && a.allow_logins.length) console.log(`web: ${webUrl}${wantServe ? "" : " (bun setup.ts --tailscale 로 테일넷에 열어요)"}`);
 if (!flag("--load")) console.log(`게이트웨이 시작: bun ${join(PKG, "setup.ts")} --load (또는 지금 창에서 ${DIR === join(HOME, ".dotz") ? "" : `DOTZ_DIR=${DIR} `}bun ${join(PKG, "hub", "main.ts")})`);
-if (flag("--open") && webUrl && a.allow_logins.length) await Bun.$`${MAC ? "open" : "xdg-open"} ${webUrl}`.nothrow().quiet();
+if (flag("--open") && webUrl && a.allow_logins.length && (tsNow?.running ?? true)) await Bun.$`${MAC ? "open" : "xdg-open"} ${webUrl}`.nothrow().quiet();
 const runtimeLabel = harness(a.runtime)?.label ?? a.runtime;
 console.log(`\n끝! ${a.identity.name}는 ${runtimeLabel}로 돌아가요.${a.guild ? ` 디스코드에서는 ${a.identity.name} 카테고리의 대화 채널에 말을 걸면 돼요.` : ""}${ompInstalled ? ` omp 터미널에서도 "${a.identity.name}모드 켜"라고 하면 그 터미널이 ${a.identity.name}와(과) 연결돼요.` : ""}`);

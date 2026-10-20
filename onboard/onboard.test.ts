@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultHarness, harness, harnessLine, HARNESSES, parseClaudeAuth, parseOmoAuth } from "./harness.ts";
 import { launchdPlist, servicePATH, systemdUnit } from "./service.ts";
+import { parseStatus } from "./tailscale.ts";
 
 const SETUP = join(import.meta.dir, "..", "setup.ts");
 
@@ -37,6 +38,13 @@ test("login parsers: an account pool counts as signed in, garbage is unchecked",
 	expect(parseOmoAuth("Error: unknown command").checked).toBe(false);
 	expect(parseClaudeAuth('{\n  "loggedIn": false,\n  "authMethod": "none"\n}')).toEqual({ checked: true, ready: false, accounts: 0 });
 	expect(parseClaudeAuth('{"loggedIn": true}').ready).toBe(true);
+});
+
+test("tailscale status: a signed-in node gives its login and host, a stopped one is not running, garbage keeps its first line", () => {
+	const json = (state: string) => JSON.stringify({ BackendState: state, Self: { UserID: 7, DNSName: "mac.tail1.ts.net." }, User: { "7": { LoginName: "me@github" } } });
+	expect(parseStatus(json("Running"))).toEqual({ running: true, login: "me@github", host: "mac.tail1.ts.net" });
+	expect(parseStatus(json("NeedsLogin")).running).toBe(false);
+	expect(parseStatus("failed to connect to local Tailscale service\nmore")).toEqual({ running: false, login: "", host: "", error: "failed to connect to local Tailscale service" });
 });
 
 test("service files: launchd plist and systemd unit carry DOTZ_DIR and a PATH with the harness dirs first", () => {

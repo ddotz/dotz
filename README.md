@@ -41,7 +41,7 @@ Discord and terminals work. On Linux setup writes a systemd user unit (`~/.confi
 instead of the launchd plist and skips the Aside and macOS-permission steps.
 
 The wizard (Korean) then asks for the bot's name, character and tone (presets or your own line; Enter takes the default,
-the short casual-polite tone of the 오모냥 secretary), the notice style, what the bot calls you (optional; empty = no
+a short casual-polite tone), the notice style, what the bot calls you (optional; empty = no
 title at all) and an optional avatar, then Discord and web access. The identity
 lands in `~/.dotz/identity/IDENTITY.md` and drives everything: how the bot talks, its Discord username/avatar, the
 category names (`<name>`, `<name> 작업`), and the terminal phrase
@@ -50,7 +50,9 @@ category names (`<name>`, `<name> 작업`), and the terminal phrase
 Setup writes `~/.dotz/config.json` (no secrets, `runtime: "omo"` for the orchestrator and lanes), keeps the bot token in
 `~/.dotz/secrets/` (0600), links the plugin into omp (`~/.omp/agent/extensions/dotz`) only when omp is installed (OmO
 processes get the extension from the gateway with `--extension`; nothing is installed into OmO's own agent directory), generates and (with `--load`) starts the launchd gateway,
-and (with `--tailscale`) serves the web app on the tailnet only. It prints the bot invite link.
+and serves the web app on the tailnet only (interactive runs with web logins do it on their own; `--answers` runs only
+with `--tailscale`). The tools step installs and signs in Tailscale when missing; on macOS it uses the app's bundled CLI
+(`/Applications/Tailscale.app/Contents/MacOS/Tailscale`) when `tailscale` is not on PATH. It prints the bot invite link.
 
 **Language.** `identity.language` in `config.json` (a code such as `ko`, `en`, `ja`) is the identity's main language.
 Setup writes it automatically, detected from the script of the identity answers (Hangul `ko`, kana `ja`, Han only `zh`),

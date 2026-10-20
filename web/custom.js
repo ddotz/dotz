@@ -116,7 +116,7 @@ a.cu-li:hover .cu-lt { color: var(--accent); }
       busy(b, async () => {
         if (a.confirm && !await ask(a.label, "실행할까요?", "실행", true)) return;
         const r = await api("/api/custom/action", "POST", { id: c.id, index: i });
-        if (a.kind === "prompt") { toast("땃쥐에게 보냈어요"); return; }
+        if (a.kind === "prompt") { toast(`${botName}에게 보냈어요`); return; }
         const line = firstLine(r.output);
         toast(r.ok ? line || "끝냈어요" : `실패했어요${line ? ` · ${line}` : ""}`, !r.ok);
         if (r.card) {
@@ -210,14 +210,14 @@ a.cu-li:hover .cu-lt { color: var(--accent); }
       root.dataset.key = projKey; root.dataset.sig = "";
       clear(root);
       const ta = el("textarea", { class: "cu-ta", rows: 3, placeholder: "이 프로젝트에 전할 말", "aria-label": "메시지" });
-      const send = el("button", { class: "btn", type: "button", text: "땃쥐에게 보내기", disabled: true });
+      const send = el("button", { class: "btn", type: "button", text: `${botName}에게 보내기`, disabled: true });
       ta.addEventListener("input", () => { send.disabled = !ta.value.trim(); });
       send.addEventListener("click", () => busy(send, async () => {
         const p = ((DATA && DATA.projects) || []).find(x => x.key === projKey), text = ta.value.trim();
         if (!p || !text) return;
         await api("/api/message", "POST", { text: `[프로젝트 ${p.name}${p.path ? ` · ${p.path}` : ""}] ${text}` });
         ta.value = ""; send.disabled = true;
-        toast("땃쥐에게 보냈어요");
+        toast(`${botName}에게 보냈어요`);
       }));
       root.append(el("div", { class: "cu-ph" }), el("div", { class: "sec", text: "레인" }), el("div", { class: "cu-lanes" }),
         el("div", { class: "sec", text: "최근 결과" }), el("div", { class: "cu-results" }),
