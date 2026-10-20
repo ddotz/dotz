@@ -371,7 +371,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .timeline { height: 100%; overflow-y: auto; overflow-x: hidden; }
 .thead { position: sticky; top: 0; z-index: 2; }
 .thead .vseg { margin-left: auto; }
-.tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 720px; min-width: 0; margin: 0 auto; padding: 8px 0 32px; }
+.tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto; padding: 8px 0 32px; }
 @media (max-width: 639px) { .tl-in { padding: 0 0 24px; } .tl-in > .bm { padding: 14px 16px; } }
 .ub.clamp { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 .ubm { align-self: flex-end; height: 24px; padding: 0 4px; border: 0; background: none; color: var(--fg-2); font-size: 12.5px; font-weight: 500; }
@@ -413,8 +413,8 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .chatbox::before, .termbox::before { top: 0; height: 28px; background: linear-gradient(var(--bg), transparent); }
 .chatbox::after, .termbox::after { bottom: 0; height: 40px; background: linear-gradient(transparent, var(--bg)); }
 .chatbox.fade-t::before, .termbox.fade-t::before, .chatbox.fade-b::after, .termbox.fade-b::after { opacity: 1; }
-.chatbox > .jump, .termbox > .jump { position: absolute; left: 50%; right: auto; bottom: 14px; z-index: 2; transform: translateX(-50%); width: 36px; height: 36px; min-width: 0; padding: 0; border: 1px solid var(--line-2); border-radius: 50%; background: var(--card); color: transparent; font-size: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
-.chatbox > .jump::before, .termbox > .jump::before { content: "\2193"; color: var(--fg); font-size: 16px; line-height: 34px; }
+.chatbox > .jump, .termbox > .jump { position: absolute; left: 50%; right: auto; bottom: 14px; z-index: 2; transform: translateX(-50%); display: grid; place-items: center; width: 36px; height: 36px; min-width: 0; padding: 0; border: 1px solid var(--line-2); border-radius: 50%; background: var(--card); color: transparent; font-size: 0; line-height: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
+.chatbox > .jump::before, .termbox > .jump::before { content: ""; display: block; width: 16px; height: 16px; background: var(--fg); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2.5v11M3.5 9 8 13.5 12.5 9'/%3E%3C/svg%3E") center / 16px 16px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2.5v11M3.5 9 8 13.5 12.5 9'/%3E%3C/svg%3E") center / 16px 16px no-repeat; }
 .bm.alert .mn::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: var(--err); vertical-align: middle; }
 .bm .more { margin-top: 8px; }
 .bm .more > summary { width: fit-content; color: var(--fg-2); font-size: 13px; line-height: 20px; cursor: pointer; list-style: none; text-decoration: underline; text-underline-offset: 3px; }
@@ -480,8 +480,9 @@ details.work.live .wdot { display: block; }
 .tl-in > .a-div:first-child { margin-top: 0; }
 .tl-in > details.work:not([open]) + .bm, .tl-in > details.work:not([open]) + .pn { margin-top: -6px; }
 @media (max-width: 639px) { .um { max-width: 90%; } .bm pre { padding: 10px 12px; } .bm.rep, .bm.alert { padding: 10px 12px 12px; } }
-.composer { flex: none; width: 100%; max-width: 736px; margin: 0 auto; padding: 0 0 max(16px, env(safe-area-inset-bottom)); }
-.composer.tmode { max-width: none; }
+:root { --col: 736px; }
+.composer { flex: none; width: 100%; max-width: var(--col); margin: 0 auto; padding: 0 0 max(16px, env(safe-area-inset-bottom)); }
+.composer.tmode { max-width: var(--col); }
 .working { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-bottom: 8px; color: var(--fg-3); font-size: 12.5px; line-height: 20px; }
 #working-tx { min-width: 0; overflow-wrap: anywhere; }
 .working .btn { flex: none; height: 24px; padding: 0 8px; font-size: 12px; }
@@ -520,7 +521,7 @@ button.cchip:hover { background: var(--layer); color: var(--fg); }
 /* terminal: the same data as a terminal session */
 .termbox { position: relative; flex: 1; min-height: 0; margin-bottom: 12px; }
 .term { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 0 0 12px; font: 14px/22px var(--font); color: var(--fg); }
-.term > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+.term > * { max-width: var(--col); margin-left: auto; margin-right: auto; }
 .term .tmore { display: flex; margin: 0 auto 12px; }
 .term .tdv, .term .lg-note { margin: 10px auto; color: var(--fg-3); font-size: 12.5px; line-height: 18px; text-align: center; }
 /* log: one card per turn - header (dot, what was asked, when, how long), answers as text, tool calls folded into one summary row */
