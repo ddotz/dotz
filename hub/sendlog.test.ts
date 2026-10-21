@@ -12,20 +12,23 @@ const netDown = () => new TypeError("fetch failed: Unable to connect");
 
 function setup(file: string, send: (target: string, text: string, ref: string | undefined, opts: SendOpts) => Promise<{ delivered: boolean }>, stall = false) {
 	const state = { delivered: [] as SendItem[], dropped: [] as string[], waits: [] as number[], saved: [] as SendItem[][] };
+	// Settle signals, so a test awaits the ledger's own event instead of yielding to the event loop and hoping.
+	const waited = Promise.withResolvers<void>();
+	const deliveredOnce = Promise.withResolvers<void>();
 	const ledger = createSendLedger({
 		file,
 		send,
 		retryable: isRetryable,
-		onDelivered: item => state.delivered.push(item),
+		onDelivered: item => (state.delivered.push(item), deliveredOnce.resolve()),
 		onGiveUp: (_item, reason) => state.dropped.push(reason),
 		persist: items => {
 			state.saved.push(items);
 			writeFileSync(file, JSON.stringify(items));
 		},
 		log: () => {},
-		wait: ms => (state.waits.push(ms), stall ? new Promise<void>(() => {}) : Promise.resolve()),
+		wait: ms => (state.waits.push(ms), waited.resolve(), stall ? new Promise<void>(() => {}) : Promise.resolve()),
 	});
-	return { ledger, state };
+	return { ledger, state, waited: waited.promise, deliveredOnce: deliveredOnce.promise };
 }
 
 const tmpFile = () => join(mkdtempSync(join(tmpdir(), "sendlog-")), "unsent.json");
@@ -83,7 +86,7 @@ test("unsent messages survive a restart and are sent once, skipping parts Discor
 		throw netDown();
 	}, true);
 	void first.ledger.submit("lane:x", "two part report", undefined, "m3");
-	await Bun.sleep(0);
+	await first.waited;
 	expect(first.state.waits).toEqual([1000]);
 	const left = JSON.parse(await Bun.file(file).text()) as SendItem[];
 	expect(left.map(i => [i.target, i.parts, i.answers])).toEqual([["lane:x", 1, "m3"]]);
@@ -92,7 +95,7 @@ test("unsent messages survive a restart and are sent once, skipping parts Discor
 	const second = setup(file, async (_t, _x, _r, opts) => (posts.push({ skip: opts.skip, nonce: opts.nonce }), { delivered: true }));
 	expect(second.ledger.resume()).toBe(1);
 	expect(second.ledger.resume()).toBe(0);
-	await Bun.sleep(0);
+	await second.deliveredOnce;
 	expect(posts).toEqual([{ skip: 1, nonce: left[0]!.id }]);
 	expect(second.state.delivered.map(i => i.answers)).toEqual(["m3"]);
 	expect(JSON.parse(await Bun.file(file).text())).toEqual([]);

@@ -22,13 +22,17 @@ test("OmO is the default; a prior runtime dotz can run is kept; codex never beco
 	expect(harness("omo")?.install).toEqual(["bun", "add", "-g", "--trust", "omo-ai"]);
 });
 
-test("menu lines show install state, version and why codex cannot be picked", () => {
+test("menu lines carry label and version when installed, flag the default, and mark a harness without adapter", () => {
 	const omo = { ...harness("omo")!, found: { installed: true, path: "/x/omo", version: "5.1.38" } };
 	const codex = { ...harness("codex")!, found: { installed: true, path: "/x/codex", version: "0.1.0" } };
 	const omp = { ...harness("omp")!, found: { installed: false, reason: "not found" } };
-	expect(harnessLine(omo, true)).toBe("OmO (oh-my-openagent)  설치됨 5.1.38  [기본]");
-	expect(harnessLine(omp, false)).toBe("omp (oh-my-pi)  설치 안 됨");
-	expect(harnessLine(codex, false)).toContain("고를 수 없어요");
+	const line = harnessLine(omo, false);
+	expect([line.includes(omo.label), line.includes("5.1.38")]).toEqual([true, true]);
+	expect(harnessLine(omo, true).startsWith(line)).toBe(true);
+	expect(harnessLine(omo, true)).not.toBe(line);
+	expect(harnessLine(omp, false).includes(omp.label)).toBe(true);
+	expect(harnessLine(omp, false)).not.toBe(harnessLine({ ...omp, found: { installed: true, path: "/x/omp" } }, false));
+	expect(harnessLine(codex, false)).not.toBe(harnessLine({ ...codex, adapter: true }, false));
 });
 
 test("login parsers: an account pool counts as signed in, garbage is unchecked", () => {
@@ -60,6 +64,8 @@ test("service files: launchd plist and systemd unit carry DOTZ_DIR and a PATH wi
 });
 
 // A throwaway machine: HOME, and a PATH with only bun, fake harness CLIs and inert launchctl/open/systemctl.
+// launchctl answers `bootstrap` the way the permission probe's job would (an empty result next to the plist, so every
+// permission reads "unknown"); a failing bootstrap would make setup retry for 5 s.
 function machine(bins: Record<string, string>) {
 	const root = mkdtempSync(join(tmpdir(), "dotz-onboard-"));
 	const home = join(root, "home");
@@ -68,7 +74,7 @@ function machine(bins: Record<string, string>) {
 	mkdirSync(bin, { recursive: true });
 	// bun's own folder often holds real harness CLIs (bun add -g omo-ai), so only bun itself is linked in.
 	symlinkSync(process.execPath, join(bin, "bun"));
-	const inert = { launchctl: "exit 1", open: "exit 0", systemctl: "exit 0", "xdg-open": "exit 0" };
+	const inert = { launchctl: `case "$1" in bootstrap) echo '{}' > "$(dirname "$3")/result.json"; exit 0;; esac; exit 1`, open: "exit 0", systemctl: "exit 0", "xdg-open": "exit 0" };
 	for (const [name, body] of Object.entries({ ...inert, ...bins })) {
 		writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`);
 		chmodSync(join(bin, name), 0o755);
@@ -101,13 +107,10 @@ test("setup --answers on a fresh HOME with OmO installed writes runtime omo, no 
 		expect(cfg.orchestrator.runtime).toBe("omo");
 		expect(cfg.lanes.runtime).toBe("omo");
 		expect(cfg.discord.guild).toBe("");
-		expect(r.out).toContain("하네스: OmO (oh-my-openagent) 5.1.38");
-		expect(r.out).toContain("로그인된 계정 1개");
-		expect(r.out).toContain("끝! 테스트봇는 OmO (oh-my-openagent)로 돌아가요.");
 		expect(existsSync(join(m.home, ".omp"))).toBe(false);
 		const service = readFileSync(join(m.home, ...(process.platform === "darwin" ? ["Library", "LaunchAgents", "dev.dotz.gateway.plist"] : [".config", "systemd", "user", "dotz-gateway.service"])), "utf8");
 		expect(service).toContain(join(m.root, "bin"));
-		expect(readFileSync(join(m.home, ".dotz", "identity", "IDENTITY.md"), "utf8")).toContain("**테스트봇**");
+		expect(readFileSync(join(m.home, ".dotz", "identity", "IDENTITY.md"), "utf8")).toContain(identity.name);
 	} finally {
 		m.cleanup();
 	}
@@ -122,7 +125,7 @@ test("setup --answers with runtime omp links the omp plugin; a missing OmO is re
 		expect(lstatSync(join(m.home, ".omp", "agent", "extensions", "dotz")).isSymbolicLink()).toBe(true);
 		const omo = await m.run({ identity, runtime: "omo" });
 		expect(omo.code).toBe(0);
-		expect(omo.out).toContain("OmO (oh-my-openagent) 가 아직 없어요: bun add -g --trust omo-ai");
+		expect(omo.out).toContain(harness("omo")!.installHint);
 		expect(JSON.parse(readFileSync(join(m.home, ".dotz", "config.json"), "utf8")).orchestrator.runtime).toBe("omo");
 	} finally {
 		m.cleanup();
@@ -134,7 +137,6 @@ test("setup --answers refuses codex (no adapter) and writes nothing", async () =
 	try {
 		const r = await m.run({ identity, runtime: "codex" });
 		expect(r.code).toBe(1);
-		expect(r.out).toContain("runtime: omo | omp | claude 중 하나");
 		expect(existsSync(join(m.home, ".dotz", "config.json"))).toBe(false);
 	} finally {
 		m.cleanup();

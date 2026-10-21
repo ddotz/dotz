@@ -8,15 +8,23 @@ import { clock } from "./runtime/test-clock.ts";
 let root = "";
 let repo = "";
 let dir = "";
+let realHome = process.env.HOME;
 const sh = (cmd: string) => Bun.spawnSync(["bash", "-c", cmd], { cwd: repo });
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "dotz-receipts-"));
+	// The receipt runs its command in `bash -lc`, which sources the login profile of $HOME (0.5 s on a dev machine);
+	// a throwaway HOME keeps the run about the command only.
+	realHome = process.env.HOME;
+	process.env.HOME = root;
 	repo = join(root, "repo");
 	dir = join(root, "store");
 	mkdirSync(repo);
 	sh("git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init");
 });
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => {
+	process.env.HOME = realHome;
+	rmSync(root, { recursive: true, force: true });
+});
 
 // The command appends a line per real execution, so the counter file shows how often it actually ran.
 const counted = (exit = 0) => `echo x >> ${join(root, "count")}; echo out; exit ${exit}`;
