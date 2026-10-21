@@ -9,7 +9,7 @@ const ntTabOf = n => n.kind === "worklog" ? "worklog" : n.kind === "watch" ? "wa
 const NT = { items: [], unread: 0, loaded: false, failed: false, open: false, tab: (() => { try { const v = localStorage.getItem(NT_TAB_KEY); if (NT_TABS.some(t => t[0] === v)) return v; } catch {} return "all"; })() };
 // The monitor list under the 모니터링 tab and in the home card.
 const NM = { items: [], loaded: false, failed: false };
-const NT_GROUPS = [["decision", "답변이 필요해요"], ["result", "결과 보고"], ["alert", "알림"], ["worklog", "작업 기록"], ["watch", "감시·예약"]];
+const NT_GROUPS = [["decision", "답변이 필요해요"], ["message", "새 답변"], ["result", "결과 보고"], ["alert", "알림"], ["worklog", "작업 기록"], ["watch", "감시·예약"]];
 const NT_RESULT = { ok: ["정상", "done"], changed: ["바뀜", "ask"], fail: ["실패", "fail"] };
 const ntUnreadIn = tab => NT.items.reduce((c, n) => c + (!n.read && (tab === "all" || ntTabOf(n) === tab) ? 1 : 0), 0);
 const NT_READ_MAX = 30;

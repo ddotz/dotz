@@ -32,13 +32,23 @@ function page(opts: { current?: string } = {}) {
 	let api: any;
 	// renderBars repaints the badge, and paintAttn's toastAttn runs with it (as in the page).
 	env.renderBars = () => api.toastAttn();
-	api = new Function(...Object.keys(env), `${needs}\n${intake}\nreturn { noteStatus, toastAttn, onActivity, ingestMsg };`)(...Object.values(env));
+	api = new Function(...Object.keys(env), `${needs}\n${intake}\nreturn { noteStatus, toastAttn, onActivity, ingestMsg, chatUnreadCount };`)(...Object.values(env));
 	api.noteStatus(); api.toastAttn();   // page load
 	return { api, S, notes };
 }
 const T0 = Date.now();
 const at = (s: number) => new Date(T0 + s * 1000).toISOString();
 const answer = (s: number, extra: Record<string, unknown> = {}) => ({ ts: at(s), kind: "out", source: "orchestrator", target: "web", text: `답 ${s}`, ...extra });
+
+describe("채팅 nav badge", () => {
+	test("counts the listed conversations with unread messages; a finished or asking session never holds it", () => {
+		const { api } = page();
+		const unread: Record<string, number> = { web: 0, "ch:1": 2, "ch:2": 0, "lane:a": 1 };
+		expect(api.chatUnreadCount(["web", "ch:1", "ch:2"], (t: string) => unread[t] ?? 0)).toBe(1);
+		unread["ch:1"] = 0;
+		expect(api.chatUnreadCount(["web", "ch:1", "ch:2"], (t: string) => unread[t] ?? 0)).toBe(0);
+	});
+});
 
 describe("main chat 확인 필요 toast", () => {
 	test("a finished turn without a delivered answer (deferred to a worker, keepalive) pops nothing; the answer landing pops it once", () => {

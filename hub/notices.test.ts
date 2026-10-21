@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CONFIG_FILE, paths } from "./config.ts";
 import { emit, eventTarget, lastEventId, recentEvents, replayAfter } from "./events.ts";
-import { answerDecision, authRequested, authSettled, type DecisionSend, dismissNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, setLaneTitleResolver, UPDATE_NOTICE_KEY, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, authRequested, authSettled, type DecisionSend, dismissNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -433,4 +433,76 @@ test("an open decision survives the store's cap and a reload from disk", () => {
 	expect(stored().length).toBeLessThanOrEqual(NOTICE_CAP);
 	expect(stored().find(n => n.id === id)!.decision!.state).toBe("open");
 	owner("1");
+});
+
+const CHOICE = "결정: 정리 세션 시작 전 쌓인 변경 처리\n**1) 먼저 커밋** ← 추천\n지금 상태를 저장해요\n**2) 그대로 진행**\n설명 줄";
+
+test("a choice block without [ask] is a decision: notice, push hook and the answer path work as for [ask]", async () => {
+	const fresh: Notice[] = [];
+	onDecision(n => fresh.push(n));
+	const at = ts();
+	post("web", `${CHOICE}\n번호로 답해 주세요`, { ts: at });
+	const [d] = decisions("main").filter(n => n.decision!.reply_to === at);
+	expect(d).toMatchObject({ kind: "decision", read: false, title: "정리 세션 시작 전 쌓인 변경 처리", decision: { state: "open", group: 1 } });
+	expect(d!.decision!.options.map(o => [o.n, o.label, o.rec])).toEqual([[1, "먼저 커밋", true], [2, "그대로 진행", false]]);
+	expect(fresh.filter(n => n.id === d!.id)).toHaveLength(1);
+	// a decision message makes only the decision item, no message item
+	expect(stored().filter(n => n.kind === "message" && n.text.includes("먼저 커밋"))).toHaveLength(0);
+	const sent: Parameters<DecisionSend>[0][] = [];
+	const r = await answerDecision(d!.id, { n: 1 }, async x => void sent.push(x));
+	expect(r.status).toBe(200);
+	expect(sent).toEqual([{ to: "main", text: "1) 먼저 커밋", replyTo: at, notice: d!.id }]);
+	// a session's message with a block is the same, addressed to that session; a one-option list is not a decision
+	const lat = ts();
+	emit("outbox", { ts: lat, kind: "out", source: "lane:x", target: "lane:x", text: "[done] 끝났어요\n**1) 병합**\n**2) 보류**" });
+	expect(decisions("lane:x").filter(n => n.decision!.reply_to === lat)).toHaveLength(1);
+	const before = stored().filter(n => n.kind === "decision").length;
+	post("web", "순서예요\n**1) 하나뿐인 항목**");
+	expect(stored().filter(n => n.kind === "decision").length).toBe(before);
+});
+
+test("an answer to a conversation nobody views is one message item, updated in place by the next answer", () => {
+	setConvNameResolver(conv => (conv === "ch:77" ? "프로젝트 엑스" : undefined));
+	const items = () => stored().filter(n => n.key === "msg:ch:77");
+	post("ch:77", "[done] ".concat("가".repeat(300)));
+	const [first] = items();
+	expect(first).toMatchObject({ kind: "message", title: "프로젝트 엑스", open: "ch:77", src: "ch:77", read: false });
+	expect(first!.text.length).toBeLessThanOrEqual(120);
+	markNoticesRead({ ids: [first!.id] });
+	const at = ts();
+	post("ch:77", "두 번째 답이에요", { ts: at });
+	expect(items()).toHaveLength(1);
+	expect(items()[0]).toMatchObject({ id: first!.id, text: "두 번째 답이에요", at, read: false });
+	// keepalive "ok", "-", progress and the session's own [done] (it has a result item) add nothing
+	for (const t of ["ok", "-"]) post("ch:77", t);
+	post("ch:77", "진행 중", { update_key: "progress" });
+	emit("outbox", { ts: ts(), kind: "out", source: "lane:m1", target: "lane:m1", text: "[done] 세션 끝" });
+	expect(items()[0]!.text).toBe("두 번째 답이에요");
+	expect(stored().filter(n => n.key === "msg:lane:m1")).toHaveLength(0);
+	// a session's plain message is its own conversation's item, titled by the session
+	emit("outbox", { ts: ts(), kind: "out", source: "lane:x", target: "lane:x", text: "중간 답이에요" });
+	expect(stored().find(n => n.key === "msg:lane:x")).toMatchObject({ title: "로그인 고치기", open: "lane:x", read: false });
+});
+
+test("a viewed conversation makes no message item; looking at one reads its item; a stale or hidden report no longer counts", () => {
+	const items = () => stored().filter(n => n.key === "msg:ch:78");
+	const t0 = Date.now();
+	expect(setViewing("tab-a", "ch:78", t0)).toMatchObject({ ok: true });
+	post("ch:78", "보고 있는 대화의 답이에요");
+	expect(items()).toHaveLength(0);
+	// hidden page: the answer is an unread item; the page coming back to that conversation reads it
+	setViewing("tab-a", "", Date.now());
+	post("ch:78", "숨겨졌을 때 온 답이에요");
+	expect(items()[0]).toMatchObject({ kind: "message", read: false });
+	setViewing("tab-a", "ch:78", Date.now());
+	expect(items()[0]!.read).toBe(true);
+	// a report older than 60 s counts as gone
+	setViewing("tab-a", "ch:78", Date.now() - 61_000);
+	post("ch:78", "오래된 신호 뒤의 답이에요");
+	expect(items()[0]).toMatchObject({ text: "오래된 신호 뒤의 답이에요", read: false });
+	// another conversation, and a bad report
+	setViewing("tab-b", "main", Date.now());
+	post("ch:78", "다른 대화를 보는 중이에요");
+	expect(items()[0]).toMatchObject({ text: "다른 대화를 보는 중이에요", read: false });
+	expect(setViewing("tab-b", "nope")).toEqual({ ok: false });
 });

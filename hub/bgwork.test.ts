@@ -85,3 +85,16 @@ test("no session yet, an unreadable record and a missing store give an empty lis
 	writeFileSync(join(tasks, "broken.json"), "{not json");
 	expect(make(() => T0).list()).toEqual([]);
 });
+
+test("a worker is tied to the folder its brief names (not its isolated copy) and keeps its conversation after it ends", () => {
+	record("st_1", { started_at: iso(T0 + 100_000), spawn_spec: { cwd: "/h/.omo/wt/x/m", isolation: { backend: "rcopy" }, prompt: "Repo: /h/Code/proj (main; work in this checkout)\nDo it." } });
+	record("st_2", { started_at: iso(T0 + 101_000), spawn_spec: { cwd: "/h/Code/other", prompt: "no repo line" } });
+	record("st_3", { started_at: iso(T0 + 102_000), spawn_spec: { cwd: "/h/.omo/wt/y/m", isolation: {}, prompt: "no repo line" } });
+	const open: OpenDeferred[] = [{ target: "ch:9", replyTo: "m-9", at: T0 + 60_000 }];
+	const work = make(() => T0 + 120_000, open);
+	expect(work.list().map(w => [w.id, w.folder])).toEqual([["st_1", "/h/Code/proj"], ["st_2", "/h/Code/other"], ["st_3", undefined]]);
+	open.length = 0;
+	record("st_1", { status: "completed", terminal_at: iso(T0 + 150_000), started_at: iso(T0 + 100_000), spawn_spec: { cwd: "/h/Code/other", prompt: "x" } });
+	const ended = work.list();
+	expect(ended.find(w => w.id === "st_1")).toMatchObject({ status: "done", target: "ch:9", reply_to: "m-9" });
+});
