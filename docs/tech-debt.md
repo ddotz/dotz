@@ -106,4 +106,30 @@ Test hooks (`resetStickyForTest`, `resetFallbackState`, `settleRefreshes`, `inst
 
 ## Outcome
 
-(filled in after the cleanup)
+Tests: 508 in 81 files, 32.2 s -> 504 in 81 files, about 7 s, 0 fail. Rebased on ad81231 (main's notices, memory caps,
+limits.ts, laneidle.ts, runtime/senpi-bin.ts): 534 in 85 files, 31.9 s -> 530 in 85 files, 7.7 s, 0 fail.
+Largest hub file: 1319 lines -> 795.
+
+- Split (no behavior change; an old-vs-new sandbox boot answered 22 GET routes identically): hub/main.ts 1319 -> 327
+  (+ routes.ts, routes-settings.ts, routes-lanes.ts, routes-util.ts, outbound.ts, intake.ts, lanewire.ts);
+  hub/lanes.ts 1144 -> 40-line facade (+ lanestate, laneops, lanerun, laneevents, lanefailover, lanereport, laneprompt,
+  lanetree, lanegates, laneviews); hub/discord.ts 908 -> 795 (+ discord-format.ts); hub/i18n.ts 894 -> 64
+  (+ i18n-en.ts, i18n-ko.ts). Main's dynamic-limit code from ad81231 went into lanelimits.ts (laneLimits, launchWait,
+  laneCapacity), laneops.ts (queue, begin, parkLane), lanerun.ts (worker slots at spawn) and lanestate.ts (parked,
+  waiting); limits.ts, laneidle.ts and runtime/senpi-bin.ts are unchanged. The `lanes.ts?tag` test imports no longer isolate state, so lanestate.ts has
+  `resetLaneStateForTest()`, called by the nine lane test files.
+- Removed: the six unreferenced exports, the 2026-10-20 model-key migration (config.ts LEGACY/migrateModels, setup.ts
+  legacy reads, 3 migration tests), `export` on about 180 module-private symbols, two copies of the temp-path regex,
+  five hand-rolled localStorage JSON readers in web/js (now `lsJson` in 01-core.js).
+- Tests: onboard 15.9 s -> under 1 s (the launchctl stub now answers the permission probe, so setup no longer retries
+  for 5 s), receipts 9.3 s -> 1.3 s (throwaway HOME, no login profile per run); sendlog waits on the ledger's own
+  signals, account-rules uses a never-ending child instead of a 20 s sleep; wording-only assertions in accounts-api,
+  onboard, claude, pool-blocked, fallback-revert and guard now check fields or the catalog's own copy; one duplicate
+  pool-blocked test merged into hub/runtime/pool-blocked.test.ts.
+- Kept on purpose: receipts.ts' own atomic write (the extension imports it, and config.ts has load-time side effects);
+  tmp-only regexes in discord.ts/harnessprojects.ts (different behavior); the deferred items above.
+- Follow-ups: conversations.ts `incoming` growth; `bun test --randomize` fails 3-6 order-dependent tests inside single
+  files (same on the base commit); notices backfill once the notices work lands.
+- Found, not fixed in this lane (owner-visible, a behavior change): the project screen (web/js/19-project-main.js
+  pmLanes/pmSessionRow) titles a lane with its key (account-switch, speed-analysis) when the lane has no `title`, and
+  its second line is the lane's raw `lastText`, which is the agent's English progress text.
