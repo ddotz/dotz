@@ -2,7 +2,7 @@
 // Discovery: `tailscale status --json`, online nodes of this node's own login, each probed at https://<DNSName>:<port>/ and kept
 // only when it answers as dotz (its manifest says so). The requests go through the other node's `tailscale serve`, which
 // takes this node's tailnet identity as the login, so the allow-list check passes. Config: web.peers (extra URLs),
-// web.peer_discovery (default true), web.peer_ports (extra ports to try on every node; default 8445 and 8444).
+// web.peer_discovery (default true), web.peer_ports (extra ports to try on every node; default 8443, 8445 and 8444).
 // Pure parts (names, filtering, counting, cache) are exported for tests; only listPeers() touches the network.
 import { cfg, log } from "./config.ts";
 
@@ -15,7 +15,7 @@ const PROBE_PARALLEL = 4;
 const MAX_PEERS = 16;
 const DISCOVERY_TTL_MS = 60_000;
 const COUNTS_TTL_MS = 15_000;
-const DEFAULT_PORTS = [8445, 8444];
+const DEFAULT_PORTS = [8443, 8445, 8444]; // 8443 is setup's default, so a node on another port still finds one on 8443
 
 const label = (dns: string) => dns.replace(/\.$/, "").split(".")[0] ?? "";
 
