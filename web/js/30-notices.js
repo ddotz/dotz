@@ -45,6 +45,7 @@ async function loadNotices() {
   paintBell();
   if (NT.open) renderNotices();
   homeSoon();
+  syncInlineChoices();
 }
 
 async function loadMonitors() {
@@ -85,6 +86,7 @@ function noticeLive(e) {
   if (NT.open) renderNotices();
   ntSheetPaint();
   homeSoon();
+  syncInlineChoices();
 }
 
 async function ntMarkRead(body) {
@@ -456,6 +458,7 @@ function ntApply(item, unread) {
   if (NT.open) renderNotices();
   ntSheetPaint();
   homeSoon();
+  syncInlineChoices();
 }
 // Throws with the hub's reason when the answer could not be delivered.
 async function ntPost(n, num) {

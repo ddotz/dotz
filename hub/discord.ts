@@ -22,7 +22,7 @@ const OWNER = String(cfg.discord?.owner_id ?? "");
 const AVATAR_MARK = join(DATA_DIR, "identity", ".avatar-applied");
 
 export type Thread = { parent: string; name: string };
-// `adopted`: ids of existing channels and categories taken over from another bot (오모냥's #대화 #알림 #작업로그 ...), which
+// `adopted`: ids of existing channels and categories taken over from another bot, which
 // that bot may still post in: they keep their name, category, position and permission overwrites (ensureChannels).
 // `brief`: the morning brief's channel; without it the brief goes to chat.
 export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; brief?: string; adopted?: string[]; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; threads: Record<string, Thread>; archiveAt: Record<string, number> };
@@ -613,8 +613,8 @@ function editedText(m: { id: string; content?: unknown; edited_timestamp?: unkno
 	return `[edited message: the owner changed an earlier message, treat this as a correction, do not answer the original again; previous text: ${JSON.stringify(previous ?? "(unknown)")}]\n${m.content}`;
 }
 
-// Channels outside this bot's categories that a gateway feature owns (hub/kdb.ts): `raw` gets the owner's messages there
-// as they are (not the orchestrator); `thread` is that feature's thread, delivered as a sub-topic thread of `parent`.
+// Channels outside this bot's categories that a custom plugin claims (hub/plugins.ts): `raw` gets the owner's messages there
+// as they are (not the orchestrator); `thread` is delivered as a sub-topic thread of `parent` under that name.
 export type Claim = { raw: (m: Incoming) => void } | { thread: string; parent: string };
 let claimOf: (channelId: string) => Claim | undefined = () => undefined;
 export function setClaimHandler(fn: (channelId: string) => Claim | undefined): void {

@@ -160,7 +160,13 @@ function dialog({ title, body, actions = [], onclose, wide }) {
   const d = el("dialog", { class: wide ? "dlg wide" : "dlg" });
   const bodyBox = el("div", { class: "dbody" }, body);
   const actBox = el("div", { class: "dact" });
-  d.append(el("h2", { class: "dtitle", text: title }), bodyBox, actBox);
+  // The ✕ and a tap outside the box both close it and drop the edit, like Esc and the Android back gesture (dialogHist) already do.
+  const x = el("button", { type: "button", class: "ib dx", "aria-label": "닫기", onclick: () => d.close() }, icon("close"));
+  d.append(el("div", { class: "dhd" }, el("h2", { class: "dtitle", text: title }), x), bodyBox, actBox);
+  let downOutside = false;
+  const outside = ev => { const r = d.getBoundingClientRect(); return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom; };
+  d.addEventListener("pointerdown", ev => { downOutside = outside(ev); });
+  d.addEventListener("click", ev => { if (downOutside && outside(ev) && !openMenu) d.close(); downOutside = false; });
   const h = { node: d, body: bodyBox, close: () => d.close(), setActions };
   function setActions(list) {
     clear(actBox).append(...list.map(a => el("button", { type: "button", class: `btn ${a.kind || "text"}`, disabled: a.disabled, onclick: ev => a.onclick && a.onclick(h.close, ev.currentTarget) }, a.label)));

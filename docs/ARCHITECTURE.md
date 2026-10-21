@@ -27,6 +27,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 - Discord: `hub/discord.ts`, `hub/discord-format.ts`, `hub/threads.ts`, `hub/workchannels.ts`, `hub/livestatus.ts`, `hub/askbuttons.ts`, `hub/choices.ts`
 - web state: `hub/notices.ts`, `hub/conversations.ts`, `hub/reads.ts`, `hub/projectchat.ts`, `hub/projects.ts`, `hub/todo.ts`, `hub/activity.ts`, `hub/custom.ts`
 - push: `hub/push.ts`, `hub/webpush.ts`
+- per-install custom code (not part of the product): `hub/custom.ts` (cards, pins, routines), `hub/plugins.ts` (plugin hooks, see `docs/custom-plugins.md`; loaded from `<DATA_DIR>/custom/plugins/`)
 
 ## Accounts, providers, runtimes
 

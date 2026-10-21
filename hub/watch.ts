@@ -1,7 +1,7 @@
 // Monitoring without waking the model (as 오모냥's watchers and session-keeper): the gateway runs a check command on an
 // interval and only reports when something happened. Failure policy from session-keeper: 2 consecutive failures -> one
 // alert per watch per 12h, and one recovery note when it passes again.
-// From 오모냥's launchd watchers (the KDB login watcher): every check runs in its own process group under a hard SIGKILL
+// From 오모냥's launchd watchers (a login watcher): every check runs in its own process group under a hard SIGKILL
 // deadline; a failing check may name its kind on a line `DOTZ_FAIL <kind>` and `retry` gives each kind its own wait in
 // minutes (one per consecutive failure, the last repeats; an empty list stops the watch until the owner approves); and a
 // watch with `approval_minutes` gates its human step (a 2FA push) on an owner-approval file that expires after that time:

@@ -17,7 +17,7 @@ export type Config = {
 	// Extra hosts an API-key fallback entry's base_url may point at (https only); the providers' own API hosts are always allowed.
 	key_hosts?: string[];
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string };
-	web: { port: number; tailscale_https_port: number; allow_logins: string[]; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[] };
+	web: { port: number; tailscale_https_port: number; allow_logins: string[]; machine_name?: string; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[] };
 	orchestrator?: { rotate_tokens?: number; runtime?: string };
 	ui?: { origin_view?: boolean };
 	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number };
@@ -175,6 +175,16 @@ export function setRuntime(roles: ("orchestrator" | "lanes")[], runtime: string)
 		(cfg as any)[role] = { ...(cfg as any)[role], runtime };
 	}
 	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
+}
+// Sets this computer's name (web.machine_name; "" clears it back to the hostname-derived default), keeping every other key of config.json.
+export function setMachineName(name: string): void {
+	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
+	disk.web = { ...disk.web };
+	if (name) disk.web.machine_name = name;
+	else delete disk.web.machine_name;
+	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
+	if (name) cfg.web.machine_name = name;
+	else delete cfg.web.machine_name;
 }
 // The bot's name (onboarding asks for it); every user-facing string and Discord name derives from it.
 export const NAME = cfg.identity?.name?.trim() || "dotz";

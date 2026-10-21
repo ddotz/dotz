@@ -3,8 +3,12 @@
 // only when it answers as dotz (its manifest says so). The requests go through the other node's `tailscale serve`, which
 // takes this node's tailnet identity as the login, so the allow-list check passes. Config: web.peers (extra URLs),
 // web.peer_discovery (default true), web.peer_ports (extra ports to try on every node; default 8443, 8445 and 8444).
-// Pure parts (names, filtering, counting, cache) are exported for tests; only listPeers() touches the network.
+// Each gateway names itself (web.machine_name, hub/machine-name.ts) and tells its peers through the public GET /api/peer-info; an older
+// peer without it keeps the hostname-derived name. Pure parts (names, filtering, counting, cache) are exported for tests; only listPeers() touches the network.
 import { cfg, log } from "./config.ts";
+import { friendlyName, label, peerInfoName, resolveName } from "./machine-name.ts";
+
+export { friendlyName };
 
 export type Peer = { name: string; url: string; self: boolean; online: boolean; unread?: number; need?: number };
 export type TsNode = { DNSName?: string; HostName?: string; UserID?: number; Online?: boolean };
@@ -16,18 +20,6 @@ const MAX_PEERS = 16;
 const DISCOVERY_TTL_MS = 60_000;
 const COUNTS_TTL_MS = 15_000;
 const DEFAULT_PORTS = [8443, 8445, 8444]; // 8443 is setup's default, so a node on another port still finds one on 8443
-
-const label = (dns: string) => dns.replace(/\.$/, "").split(".")[0] ?? "";
-
-// "hyuns-macbookpro" -> 맥북, "hyuns-mac-mini" -> 맥미니; any other host keeps its hostname.
-export function friendlyName(host: string): string {
-	const h = label(host).toLowerCase();
-	if (/mac[\s-]?mini/.test(h)) return "맥미니";
-	if (/mac[\s-]?studio/.test(h)) return "맥 스튜디오";
-	if (/mac[\s-]?book/.test(h)) return "맥북";
-	if (/imac/.test(h)) return "아이맥";
-	return label(host) || host;
-}
 
 // Two computers that map to the same friendly name keep their hostnames instead, so the list never shows two identical rows.
 export function uniqueNames<T extends { name: string; host: string }>(items: T[]): T[] {
@@ -114,6 +106,15 @@ export async function isDotz(url: string, get: Fetcher = getJson): Promise<boole
 	}
 }
 
+// The name another gateway chose for itself (public GET /api/peer-info), if it answers with one.
+export async function peerName(url: string, get: Fetcher = getJson): Promise<string | undefined> {
+	try {
+		return peerInfoName(await get(`${url}/api/peer-info`));
+	} catch {
+		return undefined;
+	}
+}
+
 async function counts(url: string, get: Fetcher = getJson): Promise<{ unread: number; need: number } | undefined> {
 	try {
 		return countsFrom(await get(`${url}/api/notices?limit=100`));
@@ -134,17 +135,17 @@ type Found = { name: string; host: string; url: string; self: boolean };
 
 // Which gateways exist (slow part: tailscale status and the probes). Self comes first.
 export async function discover(): Promise<Found[]> {
-	const w = cfg.web as { tailscale_https_port?: number; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[] } | undefined;
+	const w = cfg.web as { machine_name?: string; tailscale_https_port?: number; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[] } | undefined;
 	const found: Found[] = [];
 	const urls = new Set<string>();
-	const add = (host: string, url: string, self: boolean) => {
+	const add = (host: string, url: string, self: boolean, name?: string) => {
 		if (urls.has(url) || found.length >= MAX_PEERS) return;
 		urls.add(url);
-		found.push({ name: friendlyName(host), host, url, self });
+		found.push({ name: name ?? friendlyName(host), host, url, self });
 	};
 	const own = w?.tailscale_https_port ?? 0;
 	const st = w?.peer_discovery === false && !w?.peers?.length ? undefined : await tailscaleStatus();
-	if (st?.Self?.DNSName && own) add(st.Self.DNSName, baseUrl(st.Self.DNSName, own), true);
+	if (st?.Self?.DNSName && own) add(st.Self.DNSName, baseUrl(st.Self.DNSName, own), true, resolveName(w?.machine_name, st.Self.DNSName));
 	if (st && own && w?.peer_discovery !== false) {
 		const ports = candidatePorts(own, w?.peer_ports);
 		const nodes = sameUserNodes(st);
@@ -152,13 +153,15 @@ export async function discover(): Promise<Found[]> {
 			const base = n.DNSName!;
 			const ok = await Promise.all(ports.map(p => isDotz(baseUrl(base, p))));
 			const i = ok.indexOf(true);
-			return i < 0 ? undefined : { host: base, url: baseUrl(base, ports[i]!) };
+			if (i < 0) return undefined;
+			const url = baseUrl(base, ports[i]!);
+			return { host: base, url, name: await peerName(url) };
 		});
-		for (const h of hits) if (h) add(h.host, h.url, false);
+		for (const h of hits) if (h) add(h.host, h.url, false, h.name);
 	}
 	const manual = extraUrls(w?.peers).filter(u => !urls.has(u));
-	const okManual = await pool(manual, PROBE_PARALLEL, async u => ((await isDotz(u)) ? u : undefined));
-	for (const u of okManual) if (u) add(new URL(u).hostname, u, false);
+	const okManual = await pool(manual, PROBE_PARALLEL, async u => ((await isDotz(u)) ? { u, name: await peerName(u) } : undefined));
+	for (const m of okManual) if (m) add(new URL(m.u).hostname, m.u, false, m.name);
 	return uniqueNames(found);
 }
 

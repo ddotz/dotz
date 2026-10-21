@@ -19,7 +19,7 @@ import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { systemDeny } from "../hub/systemdeny.ts";
-import { kdbActBlock } from "../hub/kdb.ts";
+import { loadPlugins, pluginDeny } from "../hub/plugins.ts";
 import { installCompactKept } from "./compact-kept.ts";
 import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason } from "../hub/live-guard.ts";
 import { dropLongTtl, installGuard } from "./guard.ts";
@@ -64,7 +64,9 @@ export function shellText(event: any): string | undefined {
 const throwaway = () => throwawayReason({ hubPid: hubPid(DATA) });
 
 function enforceRules(pi: any): void {
-	pi.on("tool_call", (event: any) => {
+	let ready = false;
+	const loading = loadPlugins(DATA).then(() => void (ready = true));
+	const check = (event: any) => {
 		const copy = throwaway();
 		const live = copy ? liveWrite(event, [...new Set([liveDataDir(DATA), defaultDataDir()].filter((d): d is string => Boolean(d)))]) : undefined;
 		if (live) return { block: true, reason: `Blocked by dotz: this session is a throwaway (${copy}) and may not change the owner's live state: ${live}. Set DOTZ_ALLOW_LIVE=1 for a deliberate live run.` };
@@ -72,14 +74,15 @@ function enforceRules(pi: any): void {
 		if (command === undefined) return;
 		const system = systemDeny(command);
 		if (system) return { block: true, reason: `Blocked by dotz: ${system}.` };
-		const kdb = kdbActBlock(command, DATA);
-		if (kdb) return { block: true, reason: `Blocked by dotz (company mail leaves only on the owner's OK): ${kdb}.` };
+		const plugin = pluginDeny(command, DATA);
+		if (plugin) return { block: true, reason: plugin };
 		const file = join(DATA, "RULES.md");
 		const reason = existsSync(file) ? blockedBy(command, readFileSync(file, "utf8")) : undefined;
 		if (reason) return { block: true, reason: `Blocked by the owner's rule (${file}): ${reason}. Do not work around it; report it if the task needs it.` };
 		const feature = blockedByFeatures(DATA, command);
 		if (feature) return { block: true, reason: `Blocked by the owner's feature (${join(DATA, "features", feature.id, "feature.md")}): ${feature.reason}. Do not work around it; report it if the task needs it.` };
-	});
+	};
+	pi.on("tool_call", (event: any) => (ready ? check(event) : loading.then(() => check(event))));
 }
 
 function hub(): { url: string; token: string } | undefined {
