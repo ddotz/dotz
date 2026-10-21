@@ -3,6 +3,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setMachineProbe } from "../limits.ts";
 import { installClock } from "./test-clock.ts";
 
 // Tuning knobs and lane/hub markers of whatever shell runs the tests must not leak into the code under test.
@@ -36,3 +37,4 @@ writeFileSync(
 	}),
 );
 installClock();
+setMachineProbe(() => ({ totalGb: 64, availableGb: 56, cpus: 16 }));

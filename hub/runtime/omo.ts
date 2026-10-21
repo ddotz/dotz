@@ -8,11 +8,12 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { stickyEnv } from "../account-sticky.ts";
 import { apiKeyBan, withoutApiKeys } from "../apikey-policy.ts";
-import { chainAfter, fallbackChain, log, parseSelector, workerModel, writeAtomic } from "../config.ts";
+import { chainAfter, fallbackChain, lanesMaxWorkers, log, parseSelector, workerIdleMin, workerModel, writeAtomic } from "../config.ts";
 import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
 import { closeHostsOf, OMO, recordStarted } from "./omo-hosts.ts";
 import { makeOmoProbes } from "./omo-probes.ts";
+import { senpiLauncher } from "./senpi-bin.ts";
 import { EXTENSION, type Frame, OmpProcess, recentExchanges } from "./omp.ts";
 import type { RuntimeAdapter, SpawnOpts } from "./types.ts";
 
@@ -40,6 +41,12 @@ export const WORKER_MAX_DEPTH = 2;
 // The execution mode is pinned too: with this runner OmO's "auto" picks in-process, where a worker loads no dotz either
 // (and its grep tool failed to load its native module, measured 2026-10-20).
 export const WORKER_TASK = { max_depth: WORKER_MAX_DEPTH, process_runner: "child-process", default_execution_mode: "process" };
+// Memory (each worker is a bun senpi ~600 MB plus its claude child ~400 MB, measured 2026-10-21): a lane runs at most
+// `limit` workers at once (OmO queues the rest; its defaults were 5 per group and 8 in all), and a finished worker
+// is released after lanes.worker_idle_min minutes instead of OmO's 15. A released worker still resumes from its session file.
+// `limit` is hub/limits.ts for this machine when the lane process is spawned (lanes.max_workers caps it); the profile is
+// written just before the spawn, so the number applies at spawn and is not re-checked per worker.
+export const workerTask = (limit?: number) => ({ ...WORKER_TASK, resident_idle_timeout_ms: workerIdleMin() * 60_000, ...(limit ? { default_concurrency: limit, global_concurrency: limit } : {}) });
 // Appended to every worker category's prompt: a blocked worker once wrote the expected answer itself and the lane
 // reported success (2026-10-19 lat-probe2).
 export const WORKER_RULE =
@@ -71,9 +78,9 @@ function writeProfile(name: string, profile: Record<string, unknown>, file: stri
 	return name;
 }
 
-export function writeWorkerProfile(lane: { workerModel: string; workerFallback?: string[] }, file = omoConfigFile()): string | undefined {
+export function writeWorkerProfile(lane: { workerModel: string; workerFallback?: string[]; workerSlots?: number }, file = omoConfigFile()): string | undefined {
 	const models = [lane.workerModel, ...(lane.workerFallback ?? [])].map(categoryModel);
-	return writeProfile(workerProfileName(lane.workerModel), { task: WORKER_TASK, memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) }, file);
+	return writeProfile(workerProfileName(lane.workerModel), { task: workerTask(lane.workerSlots ?? lanesMaxWorkers()), memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) }, file);
 }
 
 // The orchestrator's own task workers had the same gap: OmO's shared rpc host, no dotz, no output caps. Its profile
@@ -86,7 +93,7 @@ export function writeWorkerProfile(lane: { workerModel: string; workerFallback?:
 export const ORCHESTRATOR_WORKERS = "dotz-orchestrator-workers";
 export function writeOrchestratorProfile(file = omoConfigFile(), worker = workerModel(), chain = fallbackChain("workers")): string | undefined {
 	const models = [worker, ...chainAfter(worker, chain).filter(e => !e.key_file).map(e => e.model)].map(categoryModel);
-	return writeProfile(ORCHESTRATOR_WORKERS, { task: WORKER_TASK, memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) }, file);
+	return writeProfile(ORCHESTRATOR_WORKERS, { task: workerTask(), memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) }, file);
 }
 
 // OmO names its compaction frames compaction_start/compaction_end (omp: auto_compaction_*). A requested compaction is
@@ -150,8 +157,9 @@ export const omo: RuntimeAdapter = {
 	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact" },
 	start(o) {
 		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? writeOrchestratorProfile() : undefined;
+		const launcher = senpiLauncher();
 		// stickyEnv() is the account at spawn; a running process follows later switches by itself (the dotz extension re-pins it at each turn).
-		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...process.env, ...stickyEnv(), ...o.env, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
+		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
 		const agent = new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);

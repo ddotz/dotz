@@ -20,6 +20,8 @@ export type BgWork = {
 	/** The channel of the open owner message this work serves, when known. */
 	target?: string;
 	reply_to?: string;
+	/** The project folder the worker was briefed for ("Repo: <path>" in its brief, else its working folder), when known. */
+	folder?: string;
 };
 
 /** An owner message whose turn ended with `[later]` and is still waiting for its answer. */
@@ -38,6 +40,7 @@ type Rec = {
 	category?: string;
 	pid?: number;
 	recovery_deadline_at?: string;
+	spawn_spec?: { cwd?: string; prompt?: string; isolation?: unknown };
 };
 
 // Finished work stays listed this long.
@@ -48,6 +51,12 @@ const RUNNING = new Set(["running", "queued", "pending"]);
 const DONE = new Set(["completed", "done", "succeeded"]);
 
 const stamp = (s?: string) => (s ? Date.parse(s) || 0 : 0);
+// The folder a worker works for: orchestrator briefs open with "Repo: <absolute path>"; an isolated copy's own cwd says nothing.
+function folderOf(r: Rec): string | undefined {
+	const s = r.spawn_spec;
+	const repo = /^\s*Repo:\s*(\/[^\s;,()]+)/m.exec((s?.prompt ?? "").slice(0, 600))?.[1];
+	return repo ?? (s?.cwd && !s.isolation ? s.cwd : undefined);
+}
 const pidAlive = (pid: number) => {
 	try {
 		process.kill(pid, 0);
@@ -71,6 +80,8 @@ export function createBgWork(deps: BgWorkDeps) {
 	const alive = deps.alive ?? pidAlive;
 	// A record is parsed again only when its file changed; the store keeps every task ever run.
 	const cache = new Map<string, { stamp: string; rec?: Rec }>();
+	// The conversation a worker was waiting for, kept after it ends (the open message is gone then).
+	const served = new Map<string, { target: string; reply_to?: string }>();
 
 	function records(sessionFile: string): Rec[] {
 		const root = /_([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/.exec(sessionFile)?.[1];
@@ -116,7 +127,8 @@ export function createBgWork(deps: BgWorkDeps) {
 			ended = stamp(r.updated_at) || started;
 		}
 		const description = scrub(String(r.description || r.task_summary || r.category || r.task_id)).replace(/\s+/g, " ").trim().slice(0, 120);
-		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }) };
+		const folder = folderOf(r);
+		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}) };
 	}
 
 	/** Running work (oldest first), then what finished within the last hour (newest first). */
@@ -127,11 +139,14 @@ export function createBgWork(deps: BgWorkDeps) {
 		const open = deps.deferred().sort((a, b) => a.at - b.at);
 		const works = records(file).map(toWork).filter(w => w.status === "running" || t - (w.ended_at ?? 0) <= FINISHED_KEEP_MS);
 		for (const w of works) {
-			if (w.status !== "running") continue;
-			const p = open.filter(d => d.at <= w.started_at + SPAWN_SLACK_MS).at(-1);
+			const p = w.status === "running" ? open.filter(d => d.at <= w.started_at + SPAWN_SLACK_MS).at(-1) : undefined;
 			if (p) {
 				w.target = p.target;
 				if (p.replyTo) w.reply_to = p.replyTo;
+				served.set(w.id, { target: p.target, ...(p.replyTo ? { reply_to: p.replyTo } : {}) });
+			} else {
+				const k = served.get(w.id);
+				if (k) Object.assign(w, k);
 			}
 		}
 		const running = works.filter(w => w.status === "running").sort((a, b) => a.started_at - b.started_at);

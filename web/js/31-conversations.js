@@ -95,7 +95,7 @@ function convCapture() {
   CV.div = at;
   return true;
 }
-const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "새 메시지" }));
+const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "여기까지 읽음" }));
 /* ---- where the timeline sits while an opening settles ---- */
 // The first paint of an opening needs three answers: the history, the read position (/api/conversations, which decides the divider)
 // and the todo plan (its strip pushes the timeline down). Until then "불러오는 중…" stays, so nothing is drawn at the wrong place
@@ -184,6 +184,20 @@ function convFlush() {
   convPend.clear();
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { if (CV.pin) convDwell(); convMaybeRead(); convLoad(); } });
+
+// Which conversation this page shows ("" = hidden or not a chat), so the hub keeps that conversation's answers out of the bell (POST /api/viewing).
+// Sent when it changes and every 20 s while it stays (the hub counts a report older than 60 s as gone).
+const VIEW = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), sent: "", at: 0 };
+function viewReport(unload) {
+  const conv = !unload && document.visibilityState === "visible" && current === "chat" ? target : "";
+  if (conv === VIEW.sent && (!conv || Date.now() - VIEW.at < 20000)) return;
+  VIEW.sent = conv; VIEW.at = Date.now();
+  if (unload) fetch("/api/viewing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: VIEW.id, conv }), keepalive: true }).catch(() => {});
+  else api("/api/viewing", "POST", { id: VIEW.id, conv }).catch(() => { VIEW.sent = "?"; });
+}
+document.addEventListener("visibilitychange", () => viewReport());
+addEventListener("pagehide", () => viewReport(true));
+setInterval(viewReport, 2000);
 
 /* ---- the list ---- */
 // KST HH:MM for today, M/D for earlier days.
