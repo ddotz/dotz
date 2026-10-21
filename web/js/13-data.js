@@ -8,7 +8,7 @@ function ingestMsg(e) {
   if (s.msgs.length > 400) s.mk.delete(msgKey(s.msgs.shift()));
   if (isRestart(e)) paintRestartBanner();
   convNote(e, t);
-  if (t === target && s.hLoaded) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }
+  if (t === target && s.hLoaded && CV.full) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }   // CV.full: drawn (until then the draw takes it from msgs)
   if (t === target) paintDecision();
   if (isLaneT(t) && isLaneReport(e) && LP[t.slice(5)]) laneRefresh(LP[t.slice(5)]);
   if (projAnswer(t, e)) noteDone(t, e.ts, true);
@@ -24,7 +24,7 @@ function ingestAct(a) {
     if (s.ak.has(k)) continue;
     s.ak.add(k); s.acts.push(a);
     if (s.acts.length > s.cap) s.ak.delete(actKey(s.acts.shift()));
-    if (t === target && s.aLoaded) { if (!isProjT(t)) chatPush({ a }); termPush(a); }
+    if (t === target && s.aLoaded && CV.full) { if (!isProjT(t)) chatPush({ a }); termPush(a); }
   }
 }
 async function loadTarget(t) {
@@ -64,8 +64,9 @@ function renderAll(keepScroll) { renderAll0(keepScroll); paintDecision(); paintT
 function edgeFade(t) { const b = t.parentElement; b.classList.toggle("fade-t", t.scrollTop > 4); b.classList.toggle("fade-b", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
 function renderAll0(keepScroll) {
   const s = ts(target);
+  if (CV.full) { CV.snap = { top: timeline.scrollTop, stick: chatStick }; CV.full = false; }   // a redraw keeps the owner's place (chatOpen)
   resetChat(); resetTerm();
-  if (!(s.hLoaded && s.aLoaded)) {
+  if (!(s.hLoaded && s.aLoaded) || !chatReady()) {
     CS.empty = tl.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
     termEmpty = term.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
     return;
@@ -83,7 +84,7 @@ function renderAll0(keepScroll) {
   }
   if (!tl.children.length) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));
   if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동 없음" }));
-  if (!keepScroll) { if (!convLand()) scrollChat(true); scrollTerm(true); }
+  if (!keepScroll) { chatOpen(); scrollTerm(true); } else { CV.snap = null; CV.full = true; }
   markLive();
 }
 function onActivity(a) {
@@ -116,7 +117,7 @@ function enterTarget() {
   $(current === "activity" ? "#v-activity" : "#v-chat").append($("#composer"));
   markSeen();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking(); paintDecision();
-  if (current === "chat") { if (!CV.landed) scrollChat(true); } else scrollTerm(true);
+  if (current === "chat") { if (!CV.placed) scrollChat(true); } else scrollTerm(true);
   if (SUBD) renderSheet();
   autosize();
   if (!matchMedia("(pointer: coarse)").matches && !document.querySelector("dialog[open]")) ta.focus({ preventScroll: true });

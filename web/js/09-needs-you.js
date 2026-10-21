@@ -139,8 +139,21 @@ term.addEventListener("scroll", () => { termStick = term.scrollTop + term.client
 $("#chat-jump").prepend(icon("down")); $("#act-jump").prepend(icon("down"));
 $("#chat-jump").onclick = () => scrollChat(true);
 $("#act-jump").onclick = () => scrollTerm(true);
-function scrollChat(force) {
-  if (force || chatStick) requestAnimationFrame(() => { timeline.scrollTop = timeline.scrollHeight; chatStick = true; $("#chat-jump").hidden = true; convMaybeRead(); });
+// Messages read top-down: `top` = a message that just arrived while the owner sits at the bottom. When it is taller than the visible area
+// its TOP goes to the top of the view (leaving the bottom, so the "new message" jump button shows); a short one keeps sticking to the bottom.
+function scrollChat(force, top) {
+  if (!force && !chatStick) return;
+  if (force) chatUnpin();   // an explicit jump to the bottom ends the opening's anchor (31-conversations.js)
+  requestAnimationFrame(() => {
+    if (!force && !chatStick) return;   // an earlier message of this frame already put the view at its top
+    if (!force && top && top.isConnected && fullHeight(top) > timeline.clientHeight - 24) {
+      chatUnpin();
+      timeline.scrollTop += top.getBoundingClientRect().top - timeline.getBoundingClientRect().top - 12;
+      chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+      $("#chat-jump").hidden = chatStick;
+    } else { timeline.scrollTop = timeline.scrollHeight; chatStick = true; $("#chat-jump").hidden = true; }
+    convMaybeRead();
+  });
 }
 function scrollTerm(force) {
   if (force || termStick) requestAnimationFrame(() => { term.scrollTop = term.scrollHeight; termStick = true; $("#act-jump").hidden = true; });
@@ -158,7 +171,9 @@ function fmtDur(ms) {
 let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 };
 // The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
-const CV = { key: "", div: "", divNode: null, landed: false, loaded: false, captured: false };
+// pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),
+// "bottom", or "" once the owner took over; placed = the opening has been positioned; seen = the pin held still long enough to count as read.
+const CV = { key: "", div: "", divNode: null, landed: false, loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", seen: false, openAt: 0, dwellT: 0, gateT: 0 };
 // 31-conversations.js state; declared here because the boot code calls go() before that file has run.
 const CONV = new Map(), READ = {}, convPend = new Map();
 let convRaf = 0, convSig = "", convHeadSig = "", convRetry = 0, convReadT = 0, convPendT = 0;

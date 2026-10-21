@@ -2,9 +2,9 @@
 const TD = { by: {}, open: {}, timer: 0, calls: new Set() };
 async function loadTodo(t = target) {
   let r;
-  try { r = await api(`/api/todo?target=${enc(t)}`); } catch { return; }
-  TD.by[t] = r && Array.isArray(r.phases) ? r.phases : [];
-  if (t === target) paintTodo();
+  try { r = await api(`/api/todo?target=${enc(t)}`); } catch { TD.by[t] = TD.by[t] || []; r = null; }
+  if (r) TD.by[t] = Array.isArray(r.phases) ? r.phases : [];
+  if (t === target) { paintTodo(); if (CV.key && !CV.placed) renderAll(); }   // the first paint of an opening waits for the plan (chatReady)
 }
 const todoState = x => x.status === "in_progress" ? "act" : x.status === "completed" ? "done" : x.status === "abandoned" ? "drop" : "pend";
 function paintTodo() {
@@ -77,17 +77,28 @@ function humanAlert(text) {
 }
 // A reply that just arrived types itself out (the harness sends only finished messages, no token deltas): its text
 // nodes fill in order at a pace that ends within ~1.2 s. History, re-renders and reduced motion show it at once.
-const STREAMED = new Set();
+const STREAMED = new Set(), STREAMING = new Map();   // STREAMING: text root -> its [text node, full text] pairs while it types out
+// A message's height with its text fully in, measured in one synchronous step (no paint between): scrollChat judges "taller than the view"
+// by it. While the text is still typing out the message is held at that height (min-height, released when typed) so the room to scroll is there.
+function fullHeight(node) {
+  const blank = [];
+  for (const [root, nodes] of STREAMING) if (node.contains(root)) for (const [n, t] of nodes) { blank.push([n, n.data]); n.data = t; }
+  const h = node.offsetHeight;
+  for (const [n, d] of blank) n.data = d;
+  if (blank.length) node.style.minHeight = `${h}px`;
+  return h;
+}
 function streamIn(root, key, ts) {
   if (STREAMED.has(key) || Date.now() - Date.parse(ts) > 15000 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   STREAMED.add(key);
   const nodes = [], walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   for (let n = walk.nextNode(); n; n = walk.nextNode()) { nodes.push([n, n.data]); n.data = ""; }
+  STREAMING.set(root, nodes);
   const total = nodes.reduce((s, [, t]) => s + t.length, 0), t0 = performance.now(), dur = Math.min(1200, 250 + total * 6);
   const step = now => {
     let left = Math.ceil(total * Math.min(1, (now - t0) / dur));
     for (const [n, t] of nodes) { const k = Math.min(t.length, left); if (n.data.length !== k) n.data = t.slice(0, k); left -= k; }
-    if (now - t0 < dur) requestAnimationFrame(step);
+    if (now - t0 < dur) requestAnimationFrame(step); else { STREAMING.delete(root); const bm = root.closest(".bm"); if (bm) bm.style.minHeight = ""; }
   };
   requestAnimationFrame(step);
 }
@@ -217,6 +228,7 @@ function newGroup(a) {
 function dropProgress(key) { const p = CS.prog.get(key); if (p) { p.node.remove(); CS.prog.delete(key); } }
 // entry: {m: conversation event} or {a: activity item}. Work between messages folds into one collapsed group.
 function chatPush(en, bulk) {
+  let fresh = null;   // an incoming message node: a tall one is scrolled to by its top (scrollChat)
   if (en.m && en.m.kind === "delivery") { applyDelivery(en.m); return; }
   if (CS.empty) { CS.empty.remove(); CS.empty = null; }
   if (en.m) {
@@ -240,6 +252,7 @@ function chatPush(en, bulk) {
       const who = n.matches(".um, .bm") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000) n.classList.add("cont");
       CS.who = who; CS.whoT = t;
+      if (convIncoming(e)) fresh = n;
       tl.append(n); if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
@@ -249,7 +262,7 @@ function chatPush(en, bulk) {
   }
   while (tl.children.length > ts(target).cap) tl.firstChild.remove();
   markLive();
-  if (!bulk) scrollChat();
+  if (!bulk) scrollChat(false, fresh);
 }
 function markLive() {
   const g = CS.group;

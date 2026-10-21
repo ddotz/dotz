@@ -81,11 +81,11 @@ function renderBars() {
     const ud = mode === "term" && ts(target).unread > 0;
     clear(bar).append(sw, drop);
     fitChips(sw);
-    // 대화 | 로그: the same segmented control for the main chat, a project and a session
-    const vt = $("#vtog");
-    clear(vt).append(
-      el("button", { type: "button", class: mode === "chat" ? "on" : "", "aria-pressed": mode === "chat" ? "true" : "false", text: "대화", onclick: () => mode === "chat" || go("chat") }),
-      el("button", { type: "button", class: mode === "chat" ? "" : "on", "aria-pressed": mode === "chat" ? "false" : "true", onclick: () => mode === "chat" && go("activity") }, "로그", ud ? el("i", { class: "ud", "aria-label": "읽지 않은 로그" }) : null));
+    // 대화/로그: one icon button for the main chat, a project and a session (phone and desktop); the icon is the view a tap switches to
+    const vt = $("#vtog"), to = mode === "chat" ? "term" : "chat";
+    clear(vt).append(...[icon(to), ud ? el("i", { class: "ud" }) : null].filter(Boolean));
+    vt.title = vt.ariaLabel = to === "chat" ? "대화 보기" : "로그 보기";
+    vt.onclick = () => go(to === "chat" ? "chat" : "activity");
     vt.hidden = !$("#appbar").classList.contains("tv") || convListing();
   }
 }

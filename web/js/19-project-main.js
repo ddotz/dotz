@@ -104,16 +104,17 @@ function pmHead(q) {
     el("div", { class: "pmv-hmain" },
       pmEditable({ value: prjTitle(q), label: "프로젝트 이름", required: true, cls: "pmv-title", save: v => pmWrite({ title: v }) }),
       pmEditable({ value: prjPurpose(q), label: "프로젝트 설명", placeholder: "무엇을 하는 프로젝트인지 적어 주세요", multiline: true, cls: "pmv-purpose", save: v => pmWrite({ purpose: v }) })),
-    el("div", { class: "pmv-hact" },
-      el("button", { class: "btn", type: "button", disabled: !can, title: can ? "이 프로젝트의 오케스트레이터와 대화해요" : "작업 채널이 없는 프로젝트예요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }),
-      can ? null : el("div", { class: "note", text: "작업 채널이 생기면 채팅할 수 있어요" })));
+    // No work channel, nothing to chat with: the button is left out instead of showing a dead one.
+    can ? el("div", { class: "pmv-hact" },
+      el("button", { class: "btn", type: "button", title: "이 프로젝트의 오케스트레이터와 대화해요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" })) : null);
 }
 
 // At a glance, in plain words (owner 2026-10-21: the old '열린 할 일' list of internal open tasks was not readable): what runs
 // now, what waits on the owner, and the next milestone. No ids, paths or English status words.
+const pmNow = rows => rows.filter(r => r.live && r.status === "working"), pmWait = rows => rows.filter(r => r.waiting);
 function pmGlance(ms, rows) {
   const who = (S && S.address) || "형";
-  const now = rows.filter(r => r.live && r.status === "working"), wait = rows.filter(r => r.waiting), next = ms.find(m => !m.done);
+  const now = pmNow(rows), wait = pmWait(rows), next = ms.find(m => !m.done);
   const line = (label, text, tone) => el("div", { class: "pmv-gl" }, el("span", { class: `dot ${tone}` }), el("span", { class: "pmv-gl-k", text: label }), el("span", { class: "pmv-gl-v", text }));
   return el("div", { class: "pmv-glance" },
     line("지금 하는 일", now.length ? now.map(r => r.title).join(", ") : "지금 돌고 있는 세션은 없어요", now.length ? "pri" : ""),
@@ -141,9 +142,11 @@ function pmGoal(q, sessions = []) {
   };
   addBtn.onclick = doAdd;
   addIn.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); doAdd(); } });
+  // Nothing yet (no goal, milestones or sessions): one empty line instead of three empty status rows.
+  const bare = !rec.goal && !ms.length && !pmNow(sessions).length && !pmWait(sessions).length;
   return el("div", { class: "card pmv-goal" },
-    pmGlance(ms, sessions),
-    pmEditable({ value: rec.goal || "", label: "목표", placeholder: "목표를 적어 주세요", multiline: true, save: v => pmWrite({ goal: v }) }),
+    bare ? null : pmGlance(ms, sessions),
+    pmEditable({ value: rec.goal || "", label: "목표", placeholder: bare ? "아직 목표가 없어요 · 눌러서 적어 주세요" : "목표를 적어 주세요", multiline: true, save: v => pmWrite({ goal: v }) }),
     ms.length ? el("div", { class: "pmv-prog" }, el("span", { class: "pmv-big", text: `${done}/${ms.length}` }), el("div", { class: "bar", role: "progressbar", "aria-label": "마일스톤 진행", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` }))) : null,
     ms.length ? el("div", { class: "pmv-mlist" }, ...rows) : null,
     el("div", { class: "pmv-add" }, addIn, addBtn), note);
