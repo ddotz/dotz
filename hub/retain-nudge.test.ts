@@ -17,7 +17,8 @@ const DATA = process.env.DOTZ_DIR!;
 // Own copies of the stateful modules (the query makes a new instance): a static import cannot, and the scenario test
 // drives the originals in this same process.
 const o: typeof Orchestrator = await import("./orchestrator.ts?retain-nudge");
-const l: typeof Lanes = await import("./lanes.ts?retain-nudge");
+const l: typeof Lanes = await import("./lanes.ts");
+(await import("./lanestate.ts")).resetLaneStateForTest();
 
 // Keeps whole prompts (the fake in fake-adapter.test.ts cuts them to 40 characters).
 class FakeAgent implements AgentProcess {

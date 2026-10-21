@@ -11,9 +11,9 @@ import { advance, flush } from "./runtime/test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 
 const DATA = process.env.DOTZ_DIR!;
-// A separate lanes.ts instance (the query makes a new module): the scenario test drives the original in this same process
-// and must not inherit its state; a static import cannot do that.
-const l: typeof Lanes = await import("./lanes.ts?claim");
+// The lane state is one shared module (lanestate.ts): reset it so the scenario test driving it in this same process does not leak in.
+const l: typeof Lanes = await import("./lanes.ts");
+(await import("./lanestate.ts")).resetLaneStateForTest();
 
 class FakeAgent implements AgentProcess {
 	pid = 7100;

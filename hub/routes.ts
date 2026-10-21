@@ -1,0 +1,264 @@
+// HTTP routing of the hub: the install files, the identity check and the first part of the route chain; the rest is routes-settings.ts and routes-lanes.ts.
+// Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
+import { join } from "node:path";
+import { ADDRESS, cfg, HUB_TOKEN, log, NAME, now } from "./config.ts";
+import { changeTarget, ControlError, targetView, ForceRequired, looksLikeCommand, parseCommand } from "./control.ts";
+import * as discord from "./discord.ts";
+import { authRoute, pendingAuth } from "./auth.ts";
+import { pushRoute } from "./push.ts";
+import { conversationList } from "./conversations.ts";
+import { markRead } from "./reads.ts";
+import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { isProjectTarget, projectTarget } from "./projectchat.ts";
+import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
+import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
+import { orch } from "./orchestrator.ts";
+import { enqueue, queueItems, restore, take } from "./queue.ts";
+import { listMonitors } from "./monitors.ts";
+import { answerDecision, dismissNotice, listNotices, markNoticesRead, setViewing, unreadCount } from "./notices.ts";
+import { loadProjects, saveProject } from "./projects.ts";
+import { listSchedules } from "./schedule.ts";
+import { readTodo } from "./todo.ts";
+import { customRoute } from "./custom.ts";
+import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
+import { updateRoute } from "./selfupdate.ts";
+import { appAsset, indexPage } from "./webapp.ts";
+import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
+import { sendWeb } from "./intake.ts";
+import { json, body, terminals } from "./routes-util.ts";
+import { routeLanes } from "./routes-lanes.ts";
+import { routeSettings } from "./routes-settings.ts";
+
+const BOOT_ID = Date.now().toString(36);
+// Installable-app files next to index.html: manifest, service worker (never cached by HTTP, so an update is seen at once), icons.
+const APP_FILES: Record<string, [string, string]> = {
+	"/manifest.webmanifest": ["manifest.webmanifest", "application/manifest+json"],
+	"/sw.js": ["sw.js", "text/javascript; charset=utf-8"],
+	"/icons/icon-192.png": ["icons/icon-192.png", "image/png"],
+	"/icons/icon-512.png": ["icons/icon-512.png", "image/png"],
+	"/icons/maskable-512.png": ["icons/maskable-512.png", "image/png"],
+	"/icons/apple-touch-icon.png": ["icons/apple-touch-icon.png", "image/png"],
+};
+const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
+
+function authorized(req: Request): boolean {
+	if (req.headers.get("x-dotz-token") === HUB_TOKEN) return true;
+	const login = (req.headers.get("tailscale-user-login") ?? "").toLowerCase();
+	if (login && ALLOW.has(login)) return true;
+	const seen = [...req.headers.keys()].filter(k => k.startsWith("tailscale-")).map(k => `${k}=${req.headers.get(k)}`).join(" ");
+	log(`denied ${new URL(req.url).pathname} ${seen || "(no tailscale identity headers)"}`);
+	return false;
+}
+
+type RestartHooks = { busyNow: () => string[]; restartGateway: () => string; restartGatewayNow: () => string };
+export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: RestartHooks): (req: Request) => Promise<Response> {
+	return async (req: Request): Promise<Response> => {
+		const url = new URL(req.url);
+		// The install files (manifest, service worker, icons) are public and secret-free, like any app store listing: a browser
+		// or OS fetch that carries no tailnet identity (icon or manifest fetch, SW update check) must still get them, or the
+		// phone falls back to a plain shortcut. Everything else stays behind the identity check.
+		const appFile = req.method === "GET" || req.method === "HEAD" ? APP_FILES[url.pathname] : undefined;
+		if (appFile) return new Response(req.method === "HEAD" ? null : Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
+		if (!authorized(req)) return new Response("forbidden", { status: 403 });
+		const parts = url.pathname.split("/").filter(Boolean);
+		const authResponse = authRoute(req, url);
+		if (authResponse) return authResponse;
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") return indexPage(req);
+		const asset = appAsset(req, url.pathname);
+		if (asset) return asset;
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/custom.js") {
+			const file = Bun.file(join(import.meta.dir, "..", "web", "custom.js"));
+			return (await file.exists()) ? new Response(req.method === "HEAD" ? null : file, { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" } }) : new Response("not found", { status: 404 });
+		}
+		const pushResponse = await pushRoute(req, url);
+		if (pushResponse) return pushResponse;
+		const updateResponse = await updateRoute(req, url, { boot: BOOT_ID, busy: busyNow, restartIdle: restartGateway, restartNow: restartGatewayNow });
+		if (updateResponse) return updateResponse;
+		const customResponse = await customRoute(req, url, { lanes: laneSummary, channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }) });
+		if (customResponse) return customResponse;
+		// Project records (hub/projects.ts) and the todo strip (hub/todo.ts), docs/layers.md §4.
+		if (url.pathname === "/api/projects" && req.method === "PUT") {
+			try {
+				return json(saveProject(await body(req)).record);
+			} catch (error) {
+				return json({ error: (error as Error).message }, 400);
+			}
+		}
+		if (url.pathname === "/api/projects" && req.method === "GET") return json({ projects: loadProjects() });
+		if (url.pathname === "/api/todo" && req.method === "GET") {
+			const target = url.searchParams.get("target") ?? "main";
+			if (target !== "main" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, lane:<name> or ch:<id>" }, 400);
+			const lane = target.startsWith("lane:") ? lanes.get(target.slice(5)) : undefined;
+			if (target.startsWith("lane:") && !lane) return json({ error: `no lane ${target.slice(5)}` }, 404);
+			return json(readTodo(lane ? lane.sessionFile : orch.sessionFile));
+		}
+		// API keys for fallback entries (hub/apikey-store.ts): GET shows masks only; PUT {provider, key} or {from: "omo"}; DELETE /api/apikeys/<provider>.
+		if (parts[0] === "api" && parts[1] === "apikeys") {
+			try {
+				if (req.method === "GET" && parts.length === 2) return json(keysView());
+				if (req.method === "PUT" && parts.length === 2) {
+					const b = await body(req);
+					return json(b.from === "omo" ? await importOmoKey() : await saveKey(String(b.provider ?? ""), String(b.key ?? "")));
+				}
+				if (req.method === "DELETE" && parts.length === 3) return json(deleteKey(parts[2]));
+				return json({ error: "not found" }, 404);
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof ControlError ? error.status : 400);
+			}
+		}
+		if (url.pathname === "/api/health") return json({ ok: true });
+		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
+		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
+		if (url.pathname === "/api/state")
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now() });
+		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
+		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
+		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
+		// The page reports the conversation it shows ("" = hidden): answers there make no unread message item (hub/notices.ts).
+		if (req.method === "POST" && url.pathname === "/api/viewing") {
+			const b = await body(req);
+			const r = setViewing(b.id, b.conv);
+			return json(r, r.ok ? 200 : 400);
+		}
+		const dismiss = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/dismiss$/.exec(url.pathname) : null;
+		if (dismiss) {
+			const r = dismissNotice(decodeURIComponent(dismiss[1]!));
+			return json(r, r.ok ? 200 : r.held ? 409 : 404);
+		}
+		// A button of a decision notice: the answer goes where the question came from (chat, session, project chat or login request).
+		const decide = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/answer$/.exec(url.pathname) : null;
+		if (decide) {
+			const login = req.headers.get("tailscale-user-login") ?? "local";
+			const r = await answerDecision(decodeURIComponent(decide[1]!), await body(req), async a => {
+				if (a.to.startsWith("auth:")) {
+					const path = `/api/auth/${a.to.slice(5)}`;
+					const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));
+					if (!res?.ok) throw new Error("로그인 요청을 처리하지 못했어요");
+					return;
+				}
+				const lane = a.to.startsWith("lane:") ? a.to.slice(5) : undefined;
+				const project = a.to.startsWith("ch:") ? projectTarget(a.to, discord.channels.work) : undefined;
+				await sendWeb({ lane, project, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice });
+			});
+			return json(r.body, r.status);
+		}
+		if (req.method === "POST" && url.pathname === "/api/read") {
+			const r = markRead(await body(req));
+			return json(r, r.ok ? 200 : 400);
+		}
+		if (req.method === "GET" && url.pathname === "/api/conversations") return json({ items: conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`)]) });
+		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+		if (req.method === "GET" && url.pathname === "/api/history") {
+			const target = url.searchParams.get("target") ?? "main";
+			if (target !== "main" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, lane:<name> or ch:<id>" }, 400);
+			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
+			return json({ target, events: historyEvents(target, limit, url.searchParams.get("before") ?? undefined) });
+		}
+		if (req.method === "POST" && url.pathname === "/api/attach") {
+			const b = await body(req);
+			if (b.detach) terminals.delete(String(b.session));
+			else terminals.set(String(b.session), { cwd: b.cwd, at: now() });
+			return json({ ok: true });
+		}
+		if (req.method === "POST" && url.pathname === "/api/upload") {
+			try {
+				return json({ ok: true, files: await uploadsFrom(req) });
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
+			}
+		}
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/file") {
+			return fileRoute(req, url, fileRoots(), sentFiles());
+		}
+		if (req.method === "GET" && url.pathname === "/api/lanes/live") return json(liveLanes());
+		if (url.pathname === "/api/target") {
+			const fail = (error: unknown) => json({ error: (error as Error).message, ...(error instanceof ForceRequired ? { requires_force: true, context_tokens: error.contextTokens } : {}) }, error instanceof ControlError ? error.status : 400);
+			try {
+				if (req.method === "GET") return json(await targetView(url.searchParams.get("target") ?? "main"));
+				if (req.method === "PUT") {
+					const b = await body(req);
+					return json(await changeTarget(String(b.target ?? "main"), { model: b.model ? String(b.model) : undefined, thinking: b.thinking ? String(b.thinking) : undefined, compact: b.compact === true, force: b.force === true }));
+				}
+			} catch (error) {
+				return fail(error);
+			}
+		}
+		if (req.method === "POST" && url.pathname === "/api/message") {
+			const b = await body(req);
+			const files = messageFiles(b.files);
+			if (!b.text && !files.length) return json({ error: "text required" }, 400);
+			const text = String(b.text ?? "");
+			const login = req.headers.get("tailscale-user-login") ?? "local";
+			// mode: none (main takes it as the next message, a working lane is steered), "steer" (into the running turn
+			// now), "interrupt" (abort the running turn, then send as a new prompt), "queue" (a working target gets it
+			// when its turn ends, see queue.ts; an idle target gets it now).
+			const mode = b.mode === "steer" || b.mode === "interrupt" || b.mode === "queue" ? b.mode : "default";
+			const lane = b.lane ? String(b.lane) : undefined;
+			const channel = b.channel === "terminal" ? "terminal" : "web";
+			let project: { target: string; name: string } | undefined;
+			if (b.project) {
+				if (lane) return json({ error: "lane and project are exclusive" }, 400);
+				try {
+					project = projectTarget(String(b.project), discord.channels.work);
+				} catch (error) {
+					return json({ error: (error as Error).message }, 404);
+				}
+			}
+			// The queue sends to the main conversation when the turn ends; a project message goes in now (intake merges a burst).
+			if (mode === "queue" && !project && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
+				const item = enqueue(lane ? `lane:${lane}` : "main", [text, files.length ? attachmentLines(files) : ""].filter(Boolean).join("\n"), login);
+				return json({ ok: true, queued: item });
+			}
+			try {
+				await sendWeb({ lane, project, channel, text, mode: mode === "queue" ? "default" : mode, login, files });
+			} catch (error) {
+				return json({ error: (error as Error).message }, 409);
+			}
+			return json({ ok: true });
+		}
+		if (url.pathname === "/api/queue" && req.method === "GET") return json({ items: queueItems() });
+		if (parts[0] === "api" && parts[1] === "queue" && parts.length >= 3) {
+			const id = decodeURIComponent(parts[2]);
+			if (req.method === "DELETE" && parts.length === 3) {
+				const item = take(id);
+				return item ? json({ text: item.text }) : json({ error: "not queued (already sent)" }, 404);
+			}
+			if (req.method === "POST" && parts[3] === "send" && parts.length === 4) {
+				const item = take(id);
+				if (!item) return json({ error: "not queued (already sent)" }, 404);
+				try {
+					await sendWeb({ lane: item.target.startsWith("lane:") ? item.target.slice(5) : undefined, channel: "web", text: item.text, mode: "steer", login: item.author ?? "local" });
+				} catch (error) {
+					restore([item]);
+					return json({ error: (error as Error).message }, 409);
+				}
+				return json({ ok: true });
+			}
+		}
+		if (req.method === "POST" && url.pathname === "/api/send") {
+			const b = await body(req);
+			const target = String(b.target ?? "chat");
+			if (b.update_key) {
+				try {
+					return json(await progress(target, String(b.update_key), String(b.text ?? ""), b.reply_to));
+				} catch (error) {
+					return json({ delivered: false, reason: (error as Error).message }, 502);
+				}
+			}
+			// Answer only when it is ready: an early text to the asking channel waits for the turn's final answer.
+			if (queue.holdEarly(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined))
+				return json({ delivered: true, held: true, note: "held: it goes out together with your final answer for this request; do not send it again" });
+			queue.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
+			try {
+				return json(await out(target, String(b.text ?? ""), b.reply_to));
+			} catch (error) {
+				return json({ delivered: false, reason: (error as Error).message }, 502);
+			}
+		}
+		const settingsResponse = await routeSettings(req, url, parts);
+		if (settingsResponse) return settingsResponse;
+		const laneResponse = await routeLanes(req, url, parts);
+		if (laneResponse) return laneResponse;
+		return new Response("not found", { status: 404 });
+	};
+}

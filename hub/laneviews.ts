@@ -1,0 +1,46 @@
+import { laneLive, laneWorkerModel, lanes } from "./lanestate.ts";
+import { ctxView } from "./context.ts";
+import { workersOf, kstClock, formatHeader } from "./lanevis.ts";
+
+export function liveLanes(): { live: string[]; ended: string[] } {
+	const all = [...lanes.values()];
+	return { live: all.filter(laneLive).map(l => l.name), ended: all.filter(l => !laneLive(l)).map(l => l.name) };
+}
+
+export const laneModels = () => [...lanes.values()].map(l => ({ name: l.name, ...parseSelector(l.model), status: l.status, live: laneLive(l), running: Boolean(l.proc), worker_model: laneWorkerModel(l), worker_model_override: l.workerModel, ...(l.proc ? { active_model: l.activeModel, active_worker_model: l.activeWorkerModel } : {}) }));
+
+export function laneSummary(): Array<Record<string, unknown>> {
+	return [...lanes.values()].map(l => ({
+		name: l.name,
+		...(l.title ? { title: l.title } : {}),
+		cwd: l.cwd,
+		// the checkout a worktree lane works for (its cwd is ~/.dotz/lanes/<name>/worktree)
+		...(l.worktree ? { repo: l.worktree.repo } : {}),
+		model: l.model,
+		worker_model: laneWorkerModel(l),
+		status: l.status,
+		...(l.waiting ? { waiting: l.waiting } : {}),
+		live: laneLive(l),
+		startedAt: l.startedAt,
+		reports: l.reports,
+		claim: l.claim,
+		pendingAsk: l.pendingAsk,
+		sessionFile: l.sessionFile,
+		resumable: !l.proc && Boolean(l.sessionFile),
+		lastText: l.lastText.slice(0, 600),
+		context: ctxView(l.ctx),
+	}));
+}
+
+// The `dotz_lane list` view: the lane summary plus what each lane is doing right now (running task workers with their last
+// tool intent, from the hub's own state) and when its last report went out. The new keys come first because the tool
+// output is cut at a fixed length, and a long lastText must not push the workers out of it.
+export function laneList(): Array<Record<string, unknown>> {
+	return laneSummary().map(s => {
+		const lane = lanes.get(String(s.name))!;
+		return { name: s.name, status: s.status, workers: workersOf(`lane:${lane.name}`), last_report_at: lane.lastReportAt ?? null, last_report_kst: lane.lastReportAt ? kstClock(lane.lastReportAt) : null, ...s };
+	});
+}
+
+// The leading line of an owner prompt (see formatHeader); empty when nothing runs.
+export const turnHeader = (): string => formatHeader([...lanes.values()].map(l => ({ name: l.name, status: l.status, workers: workersOf(`lane:${l.name}`).map(w => w.name) })), workersOf("orchestrator").map(w => w.name));
