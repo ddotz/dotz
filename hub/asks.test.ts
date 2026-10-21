@@ -15,7 +15,8 @@ import type { AgentEvent, AgentProcess, RuntimeAdapter, SendMode } from "./runti
 
 const DATA = process.env.DOTZ_DIR!;
 // Own copies of the stateful modules (the query makes a new instance): the scenario test drives the originals in this process.
-const l: typeof Lanes = await import("./lanes.ts?asks");
+const l: typeof Lanes = await import("./lanes.ts");
+(await import("./lanestate.ts")).resetLaneStateForTest();
 const o: typeof Orchestrator = await import("./orchestrator.ts?asks");
 
 class FakeAgent implements AgentProcess {

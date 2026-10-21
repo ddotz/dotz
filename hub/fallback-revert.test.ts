@@ -17,7 +17,8 @@ import type { AgentEvent, AgentProcess, RuntimeAdapter, SpawnOpts } from "./runt
 const DATA = process.env.DOTZ_DIR!;
 // Separate copies of the modules (a query string makes a new instance): a static import would share timers and state with the other test files.
 const o: typeof Orchestrator = await import("./orchestrator.ts?fallback-revert");
-const l: typeof Lanes = await import("./lanes.ts?fallback-revert");
+const l: typeof Lanes = await import("./lanes.ts");
+(await import("./lanestate.ts")).resetLaneStateForTest();
 
 type Frame = Record<string, unknown> & { type: string };
 class FakeProc {

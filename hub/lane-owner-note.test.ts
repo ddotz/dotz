@@ -13,7 +13,8 @@ import { advance, flush } from "./runtime/test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter, SpawnOpts } from "./runtime/types.ts";
 
 const DATA = process.env.DOTZ_DIR!;
-const l: typeof Lanes = await import("./lanes.ts?ownernote");
+const l: typeof Lanes = await import("./lanes.ts");
+(await import("./lanestate.ts")).resetLaneStateForTest();
 
 class FakeAgent implements AgentProcess {
 	pid = 7400;

@@ -18,7 +18,8 @@ const DATA = process.env.DOTZ_DIR!;
 // Separate copies of the two stateful modules (the query makes a new instance): the scenario test drives the originals in
 // this same process and must not inherit status, timers or held messages from this file. Static import cannot do that.
 const o: typeof Orchestrator = await import("../orchestrator.ts?fake-adapter");
-const l: typeof Lanes = await import("../lanes.ts?fake-adapter");
+const l: typeof Lanes = await import("../lanes.ts");
+(await import("../lanestate.ts")).resetLaneStateForTest();
 
 class FakeAgent implements AgentProcess {
 	pid = 7000;

@@ -204,8 +204,9 @@ test("quota -> API-key entry -> reset returns to the subscription -> monthly cap
 	await advance(300);
 }, 60_000);
 
-// A separate copy of lanes.ts for the same reason (static import would share one set of timers and lane state).
-const l: typeof Lanes = await import("../lanes.ts?fallback-chain");
+// The lane state is one shared module (lanestate.ts): reset it so no lane or handler leaks in from another test file.
+const l: typeof Lanes = await import("../lanes.ts");
+(await import("../lanestate.ts")).resetLaneStateForTest();
 
 test("lane: a usage limit moves it to its API-key entry on the same session", async () => {
 	resetFallbackState();
