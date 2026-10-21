@@ -596,7 +596,7 @@ function spawn(lane: Lane, resume: boolean): boolean {
 			else if (spawn(lane, true)) setStatus(lane, "idle");
 			return;
 		}
-		if (code !== 0 && code !== 143) report(lane, `[lane exited] 프로세스가 종료됐습니다 (code ${code}). 마지막 상태: ${lane.lastText.slice(0, 300) || "없음"}`, true);
+		if (code !== 0 && code !== 143) report(lane, `[lane exited] 프로세스가 종료됐어요 (code ${code}). 마지막 상태: ${lane.lastText.slice(0, 300) || "없음"}`, true);
 	});
 	proc.watchSubagents();
 	setTimeout(() => lane.proc?.refreshSession(), 3000);

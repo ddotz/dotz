@@ -15,12 +15,12 @@ import { notify as pushNotify, pushRoute, startPush } from "./push.ts";
 import { isNote, msg } from "./i18n.ts";
 import { conversationList } from "./conversations.ts";
 import { markRead } from "./reads.ts";
-import { activityItems, answeredIds, broadcast, emit, emitDelivery, historyEvents, recentEvents, recentOwnerMessages, sseResponse } from "./events.ts";
-import { isProjectTarget, projectTarget } from "./projectchat.ts";
+import { activityItems, answeredIds, answeredSince, broadcast, emit, emitDelivery, historyEvents, recentEvents, recentOwnerMessages, sentFiles, sseResponse } from "./events.ts";
+import { isProjectTarget, outEvent, projectTarget } from "./projectchat.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
-import { attachmentLines, allowedRoots, FileError, messageFiles, resolveAllowed, serveFile, type Upload, uploadsFrom } from "./files.ts";
+import { attachmentLines, allowedRoots, fileRoute, FileError, messageFiles, resolveAllowed, type Upload, uploadsFrom } from "./files.ts";
 import { abortLane, approvesBudget, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, type LaneDelivery, ownerNotes, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane } from "./lanes.ts";
 import { checkNow as checkAccountNow, setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { accountView, onSwitch as onAccountSwitch, readPool } from "./account-sticky.ts";
@@ -29,6 +29,7 @@ import { accountAnswer, accountAsk, accountsRoute, switchNotice } from "./accoun
 import { runtimeFor } from "./runtime/index.ts";
 import { abort as abortOrchestrator, applyAccountChange as holdOrchestratorKeepalive, deliver as deliverToOrchestrator, orch, orchBusy, restart as restartOrchestrator, setAlertHandler, setAnswerHandlers, setIdleHandler as setOrchIdleHandler, setNoticeHandler as setOrchNoticeHandler, setTurnHeader, start as startOrchestrator, steer as steerOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { drain, enqueue, queueItems, queuedTargets, restore, take } from "./queue.ts";
+import { createBgWork } from "./bgwork.ts";
 import { createPrompts } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
@@ -36,7 +37,7 @@ import { createLaneRelay } from "./lanerelay.ts";
 import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin, usageSnapshot } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { listMonitors } from "./monitors.ts";
-import { dismissNotice, laneVerified, listNotices, markNoticesRead, setLaneTitleResolver, unreadCount } from "./notices.ts";
+import { answerDecision, backfillNotices, dismissNotice, laneVerified, listNotices, markNoticesRead, setLaneTitleResolver, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, replyRef } from "./threads.ts";
 import { startReflection } from "./reflect.ts";
@@ -48,7 +49,7 @@ import { readTodo } from "./todo.ts";
 import { customRoute, syncRoutineSchedules } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { startOmpUpdate } from "./update.ts";
-import { startSelfUpdate, updateRoute } from "./selfupdate.ts";
+import { onUpdateResolved, startSelfUpdate, updateRoute } from "./selfupdate.ts";
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
 import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, startWatches, stopWatches, watchScript } from "./watch.ts";
@@ -56,9 +57,9 @@ import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
-import { appAsset } from "./webapp.ts";
+import { compressResponse } from "./compress.ts";
+import { appAsset, indexPage } from "./webapp.ts";
 
-const WEB = join(import.meta.dir, "..", "web", "index.html");
 const BOOT_ID = Date.now().toString(36);
 // Installable-app files next to index.html: manifest, service worker (never cached by HTTP, so an update is seen at once), icons.
 const APP_FILES: Record<string, [string, string]> = {
@@ -104,7 +105,11 @@ const queue = createPrompts({
 	answered: answeredIds(),
 	pending: sends.pending,
 	recent: recentOwnerMessages,
+	answeredSince,
+	covers: target => isLocal(target),
 });
+// The orchestrator's background task workers (what a `[later]` turn waits for), read from OmO's task store: /api/workers, /api/state `work`.
+const bgWork = createBgWork({ sessionFile: () => orch.sessionFile, deferred: queue.deferredOpen });
 // `owner` marks the owner's own message (it leads with the what-runs-now line); schedules, watches and mail carry a target but are not.
 function deliver(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): void {
 	if (reply) discord.typing(reply.target);
@@ -112,6 +117,11 @@ function deliver(text: string, reply?: { target: string; replyTo?: string; owner
 }
 
 const isLocal = (target: string) => target === "web" || target === "terminal";
+// The work channel a Discord thread hangs from: its sends show in that project's web chat (projectchat.ts outEvent).
+const threadHome = (thread: string): string | undefined => {
+	const parent = discord.channels.threads[thread]?.parent;
+	return parent && discord.channels.work[parent] ? parent : undefined;
+};
 // The newest owner message per target (threads.ts replyRef: a thread answer carries a reply reference only when it is not to that one).
 const lastOwner = new Map<string, string>();
 // Delivery state of owner messages (hub/events.ts emitDelivery): the owner events' ids per orchestrator target, until its answer.
@@ -137,7 +147,7 @@ async function out(target: string, text: string, replyTo?: string, extra: Record
 	const answers = extra.source === undefined || extra.source === "orchestrator" ? replyTo : undefined;
 	const sent = await inOrder(target, async () => {
 		const t = await localize(stripHandoff(text), target, typeof extra.source === "string" ? extra.source : "orchestrator");
-		emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text: t, reply_to: replyTo ?? null, ...extra });
+		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, reply_to: replyTo ?? null, ...extra }, threadHome));
 		return t;
 	});
 	// An answer (not a progress note, not a gateway notice) settles the owner messages waiting in this conversation.
@@ -184,7 +194,7 @@ function inboxBody(e: Record<string, any>): string {
 	if (e.kind === "mail") return `${m.inboxMail(e.channel_id)}\n${e.text}\n${channelContext(e.channel_id)}`;
 	if (e.kind === "schedule") return `${m.inboxSchedule(e.id, e.every, e.channel)}\n${e.text}`;
 	const where = e.thread_name ? m.inboxThread(e.thread_name, e.parent_name) : e.channel_name ? ` #${e.channel_name}` : "";
-	const lines = [`[dotz inbox] ${e.channel}${where}${e.message_id ? ` msg=${e.message_id}` : ""} from ${e.author ?? "owner"}`];
+	const lines = [`[dotz inbox] ${e.channel}${where}${e.message_id ?? e.mid ? ` msg=${e.message_id ?? e.mid}` : ""} from ${e.author ?? "owner"}`];
 	if (e.first) lines.push(m.inboxFirst(e.channel_name));
 	const parts: Record<string, any>[] = e.parts ?? [e];
 	if (parts.length > 1) lines.push(m.inboxBurst(parts.length));
@@ -228,7 +238,7 @@ function flush(target: string): void {
 	const ask = b.events.length === 1 && !head.attachments?.length ? accountAsk(String(head.text ?? ""), readPool()?.names ?? [], readAliases()) : undefined;
 	if (ask) return void accountChatAnswer(target, ask, b.replyTo);
 	rateLimitNotice(target, b.replyTo);
-	const merged = b.events.length > 1 ? { ...head, message_id: b.events.at(-1)!.message_id, parts: b.events } : head;
+	const merged = b.events.length > 1 ? { ...head, message_id: refOf(b.events.at(-1)!), parts: b.events } : head;
 	const how = orch.status === "working" ? "steered" : orch.status === "rate-limited" ? "held" : "received";
 	deliver(inboxText(merged), { target, replyTo: b.replyTo, owner: true });
 	expectReply(target);
@@ -286,7 +296,7 @@ async function progress(target: string, key: string, text: string, replyTo?: str
 			const rest = parseTone(t).text;
 			if (prefix) t = `${t.slice(0, t.length - rest.length)}${prefix}${rest}`;
 		}
-		emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key });
+		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key }, threadHome));
 		return t;
 	});
 	if (isLocal(target)) return { delivered: true };
@@ -305,6 +315,8 @@ function authorized(req: Request): boolean {
 }
 
 setLaneTitleResolver(name => lanes.get(name)?.title);
+// An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
+backfillNotices();
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const body = async (req: Request) => {
@@ -408,10 +420,10 @@ setLaneNoticeHandler((lane, text) => {
 		.catch(e => log(`lane model fallback notice failed: ${e}`));
 });
 
-// Result files ([file] lines, discord.ts) go out only when GET /api/file would serve them; a file too big to attach goes
+// Result files ([file] lines, discord.ts) go out only when GET /api/file would serve them (inside the roots, or named in a [file] line of a sent message); a file too big to attach goes
 // out as that route's download link on the tailnet address (config web.public_url, else tailscale's name + HTTPS port).
 const fileRoots = () => allowedRoots([...lanes.values()].flatMap(l => [l.cwd, l.worktree?.path ?? ""]));
-discord.setFileResolver(p => resolveAllowed(p, fileRoots()));
+discord.setFileResolver(p => resolveAllowed(p, fileRoots(), sentFiles()));
 let webBase: string | undefined = (cfg.web as { public_url?: string } | undefined)?.public_url?.replace(/\/+$/, "");
 if (!webBase && cfg.web?.tailscale_https_port) {
 	const port = cfg.web.tailscale_https_port;
@@ -527,7 +539,7 @@ void startZele({
 		const mailName = msg().channelNames.mail;
 		const found = Object.entries(discord.channels.work).find(([, n]) => n === mailName)?.[0];
 		const id = found ?? (await discord.createWorkChannel(mailName)).id;
-		if (!found) setupChannel({ channel: id, purpose: "메일 수신함 (zele): 새 메일은 메일마다 스레드로 요약, 답장은 주인 OK 후" }, mailName, "");
+		if (!found) setupChannel({ channel: id, purpose: "메일 수신함 (zele): 새 메일은 메일마다 스레드로 요약, 답장은 확인받은 뒤에만" }, mailName, "");
 		return id;
 	},
 });
@@ -545,10 +557,11 @@ if (!restarted) {
 // message, a working lane gets it steered in; "steer": into the running turn now; "interrupt": abort, then new prompt.
 // `files` are uploads (files.ts): the chat shows them as chips, the agent gets one [attachment] line per file with its path.
 // `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
-type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[] };
+type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; decision?: string };
 async function sendWeb(s: WebSend): Promise<void> {
 	const mid = newMid();
-	const extra = { mid, ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}) };
+	// replyTo: the asking message of a decision answer; decision: its notice, which that answer settles alone (notices.ts ownerReplied).
+	const extra = { mid, ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}), ...(s.replyTo ? { reply_to: s.replyTo } : {}), ...(s.decision ? { decision: s.decision } : {}) };
 	if (s.lane) {
 		const name = s.lane;
 		const channel = `lane:${name}`;
@@ -579,13 +592,13 @@ async function sendWeb(s: WebSend): Promise<void> {
 	else if (s.mode === "steer" && orch.status === "working") {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
-		deliver(inboxText(event), { target: to, owner: true });
+		deliver(inboxText(event), { target: to, replyTo: mid, owner: true });
 		expectReply(to);
 		emitDelivery(to, mid, "steered");
 		awaiting.set(to, [...(awaiting.get(to) ?? []), mid]);
 	} else {
 		if (s.mode === "interrupt" && orch.status === "working") abortOrchestrator();
-		intake(event, to);
+		intake(event, to, mid);
 	}
 }
 
@@ -620,7 +633,7 @@ function flushQueue(target: string): void {
 			for (const i of items) {
 				const event = { ts: now(), kind: "message", source: "web", channel: "web", author: i.author ?? "local", text: i.text, mid: i.id };
 				emit("inbox", event);
-				intake(event, "web");
+				intake(event, "web", i.id);
 			}
 		}
 	} catch (error) {
@@ -643,11 +656,7 @@ setLaneIdleHandler(name => flushQueue(`lane:${name}`));
 // Safety net for what the idle hooks miss: items kept over a gateway restart, a lane that went idle without a turn end.
 setInterval(() => queuedTargets().forEach(flushQueue), QUEUE_SWEEP_MS);
 
-const server = Bun.serve({
-	hostname: HOST,
-	port: PORT,
-	idleTimeout: 0,
-	async fetch(req) {
+const route = async (req: Request): Promise<Response> => {
 		const url = new URL(req.url);
 		// The install files (manifest, service worker, icons) are public and secret-free, like any app store listing: a browser
 		// or OS fetch that carries no tailnet identity (icon or manifest fetch, SW update check) must still get them, or the
@@ -658,7 +667,7 @@ const server = Bun.serve({
 		const parts = url.pathname.split("/").filter(Boolean);
 		const authResponse = authRoute(req, url);
 		if (authResponse) return authResponse;
-		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") return new Response(req.method === "HEAD" ? null : Bun.file(WEB), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" } });
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") return indexPage(req);
 		const asset = appAsset(req, url.pathname);
 		if (asset) return asset;
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/custom.js") {
@@ -702,16 +711,34 @@ const server = Bun.serve({
 			}
 		}
 		if (url.pathname === "/api/health") return json({ ok: true });
+		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount() });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
 		const dismiss = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/dismiss$/.exec(url.pathname) : null;
 		if (dismiss) {
 			const r = dismissNotice(decodeURIComponent(dismiss[1]!));
-			return json(r, r.ok ? 200 : 404);
+			return json(r, r.ok ? 200 : r.held ? 409 : 404);
+		}
+		// A button of a decision notice: the answer goes where the question came from (chat, session, project chat or login request).
+		const decide = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/answer$/.exec(url.pathname) : null;
+		if (decide) {
+			const login = req.headers.get("tailscale-user-login") ?? "local";
+			const r = await answerDecision(decodeURIComponent(decide[1]!), await body(req), async a => {
+				if (a.to.startsWith("auth:")) {
+					const path = `/api/auth/${a.to.slice(5)}`;
+					const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));
+					if (!res?.ok) throw new Error("로그인 요청을 처리하지 못했어요");
+					return;
+				}
+				const lane = a.to.startsWith("lane:") ? a.to.slice(5) : undefined;
+				const project = a.to.startsWith("ch:") ? projectTarget(a.to, discord.channels.work) : undefined;
+				await sendWeb({ lane, project, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice });
+			});
+			return json(r.body, r.status);
 		}
 		if (req.method === "POST" && url.pathname === "/api/read") {
 			const r = markRead(await body(req));
@@ -739,13 +766,7 @@ const server = Bun.serve({
 			}
 		}
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/file") {
-			try {
-				const path = resolveAllowed(url.searchParams.get("path") ?? "", fileRoots());
-				const res = serveFile(path, req, url.searchParams.get("dl") === "1" || url.searchParams.get("download") === "1");
-				return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
-			} catch (error) {
-				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
-			}
+			return fileRoute(req, url, fileRoots(), sentFiles());
 		}
 		if (req.method === "GET" && url.pathname === "/api/lanes/live") return json(liveLanes());
 		if (url.pathname === "/api/target") {
@@ -891,7 +912,7 @@ const server = Bun.serve({
 				try {
 					const done = await useRuntime(id, roles);
 					log(`runtime ${id} selected for ${done.join(", ")}`);
-					return json({ ok: true, runtime: id, roles: done, applies: "오케스트레이터와 세션을 다시 시작하면 적용돼요. 지금 돌고 있는 프로세스는 그대로예요." });
+					return json({ ok: true, runtime: id, roles: done, applies: "어시스턴트와 세션을 다시 시작하면 적용돼요. 지금 돌고 있는 프로세스는 그대로예요." });
 				} catch (error) {
 					if (error instanceof UseRefused) return json({ error: error.message, runtime: id }, 409);
 					throw error;
@@ -1114,7 +1135,7 @@ const server = Bun.serve({
 					// Work started from a work channel or a thread is answered in the lane's thread, where its reports will come.
 					if (channel && asking?.target && answerMovesToLane(place, asking.target)) queue.retarget(asking.target, `lane:${lane.name}`);
 					log(`lane ${lane.name} why (${b.owner_asked_for_lane ? "owner asked" : `${Number(b.hours)}h`}): ${String(b.why).trim().slice(0, 300)}`);
-					emit("outbox", { ts: now(), kind: "lane_start", source: "hub", lane: lane.name, text: `lane ${lane.name} started in ${lane.cwd}` });
+					emit("outbox", { ts: now(), kind: "lane_start", source: "hub", lane: lane.name, ...(lane.title ? { title: lane.title } : {}), text: `lane ${lane.name} started in ${lane.cwd}` });
 					return json({ ok: true, lane: lane.name, channel });
 				}
 				if (req.method === "POST" && parts[3] === "send") {
@@ -1154,6 +1175,15 @@ const server = Bun.serve({
 			}
 		}
 		return new Response("not found", { status: 404 });
+};
+// Page, script, styles and JSON answers go out gzipped (hub/compress.ts); /api/file keeps its exact bytes and Content-Length.
+const server = Bun.serve({
+	hostname: HOST,
+	port: PORT,
+	idleTimeout: 0,
+	async fetch(req) {
+		const res = await route(req);
+		return new URL(req.url).pathname === "/api/file" ? res : compressResponse(req, res);
 	},
 });
 
@@ -1170,8 +1200,8 @@ for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 �
 // flooded worklog (owner 2026-10-20). Failures to start go to alert elsewhere.
 if (restarted) {
 	const at = new Date().toLocaleTimeString("ko-KR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
-	const picked = [replayed ? `답 못 한 메시지 ${replayed}개 다시 처리 중` : "", resumedLanes.length ? `이어서 하는 세션: ${resumedLanes.join(", ")}` : ""].filter(Boolean);
-	if (picked.length) void out(discord.status.enabled ? "worklog" : "web", `게이트웨이 재시작했어요 (${at} ${tzLabel()}).\n- ${picked.join("\n- ")}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
+	const picked = [replayed ? `답하지 못한 메시지 ${replayed}개를 다시 처리하고 있어요` : "", resumedLanes.length ? `이어서 하는 세션: ${resumedLanes.join(", ")}` : ""].filter(Boolean);
+	if (picked.length) void out(discord.status.enabled ? "worklog" : "web", `게이트웨이를 다시 시작했어요 (${at} ${tzLabel()}).\n- ${picked.join("\n- ")}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
 	else log(`restart at ${at}: nothing interrupted, worklog notice skipped`);
 }
 // One Claude account for the orchestrator and its lanes (hub/account-sticky.ts, the owner's rules in hub/account-rules.ts).
@@ -1204,8 +1234,10 @@ syncRoutineSchedules();
 startReflection(text => deliver(text), () => orch.sessionFile);
 startOmpUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`omp update post failed: ${e}`)), restartGateway);
 startTokenAudit(alert);
-// Settings → 업데이트: the daily check only announces a new dotz version (push + a toast on open pages), never applies it.
+// Settings → 업데이트: the daily check only announces a new dotz version (push + a toast on open pages + one bell item), never applies it.
+onUpdateResolved(updateResolved);
 void startSelfUpdate(text => {
+	updateAvailable(text);
 	pushNotify({ kind: "update", title: "dotz 업데이트", body: text, url: "/#settings", tag: "update" });
 	broadcast({ ts: now(), kind: "update_available", source: "gateway", text });
 }).catch(e => log(`self-update start failed: ${e}`));
@@ -1215,7 +1247,7 @@ startWatches((w, reason, output) => {
 		emit("inbox", event);
 		if (!w.channels?.length) return deliver(inboxText(event));
 		const [first, ...others] = w.channels;
-		for (const c of others) void out(`ch:${c}`, `[${w.name}] ${reason} (처리는 #${discord.channels.work[first] ?? first} 에서)\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(() => undefined);
+		for (const c of others) void out(`ch:${c}`, `[${w.name}] ${reason} (처리는 #${discord.channels.work[first] ?? first}에서)\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(() => undefined);
 		return deliver(inboxText(event), { target: `ch:${first}` });
 	}
 	void out(w.to, `[${w.name}] ${reason}\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));

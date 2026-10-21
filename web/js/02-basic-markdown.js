@@ -169,7 +169,7 @@ function dialog({ title, body, actions = [], onclose, wide }) {
   d.addEventListener("close", () => { closeMenu(false); d.remove(); if (onclose) onclose(); });
   d.addEventListener("cancel", ev => { if (openMenu) ev.preventDefault(); });
   document.body.append(d);
-  d.showModal();
+  d.showModal(); dialogHist(d);
   return h;
 }
 function ask(title, text, ok = "확인", danger = false) {

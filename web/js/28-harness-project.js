@@ -54,7 +54,7 @@ async function hOpenProject(id) {
   if (hDirty && hDirty() && !await ask("저장하지 않은 변경", "열려 있는 항목에 저장하지 않은 변경이 있어요. 버리고 넘어갈까요?", "버리기", true)) return;
   closeHSheet(); hSel = "";
   hProjId = id;
-  history.replaceState(null, "", id ? `#harness/project/${enc(id)}` : "#harness");
+  routeReplace(id ? `harness/project/${enc(id)}` : "harness");
   renderHarness();
   $("#views").scrollTop = 0;
 }
@@ -304,9 +304,11 @@ function hReveal(id) {
   else if (r.right + 16 > s.right) sc.scrollLeft += r.right + 16 - s.right;
 }
 
+let hSheetOv = null;
 function closeHSheet() {
   const s = $("#hsheet");
   if (!s || s.hidden) return;
+  const ov = hSheetOv; hSheetOv = null; ovDone(ov);
   s.hidden = true; hSel = ""; hDirty = null; hGoto = null; $("#harness").classList.remove("hs-open"); paintHSel();
 }
 
@@ -326,6 +328,7 @@ async function openHSheet(id, focus = {}) {
   const drafts = [];
   hDirty = () => drafts.some(f => f());
   $("#hsheet").hidden = false;
+  if (!hSheetOv) hSheetOv = ovOpen(closeHSheet);
   $("#harness").classList.add("hs-open");
   hReveal(id);
   hHead();
@@ -365,8 +368,8 @@ function hOriginLine(n) {
   const mine = n.origin === "personal";
   const where = n.file ? `${hData()}/${n.file}` : mine && FC && FC.harness ? FC.harness.dirs.join(", ") : "";
   const tags = [el("span", { class: `tag${mine ? " m" : ""}`, text: mine ? "개인" : "배포" })];
-  const text = mine ? `이 사용자의 ${n.file ? "파일" : "확장"}이에요${where ? ` (${where})` : ""}` : `dotz 와 함께 오는 기본이에요${n.file ? " (저장소 파일 · 읽기 전용)" : ""}`;
-  const extra = !mine && n.custom && n.custom.length ? ` · 설정값 ${n.custom.length}개는 이 사용자가 바꿨어요 (${hData()}/config.json)` : !mine && n.settings.some(s => s.editable) ? ` · 설정값은 ${hData()}/config.json 에 저장돼요` : "";
+  const text = mine ? `내 ${n.file ? "파일" : "확장"}이에요${where ? ` (${where})` : ""}` : `dotz와 함께 오는 기본이에요${n.file ? " (저장소 파일 · 읽기 전용)" : ""}`;
+  const extra = !mine && n.custom && n.custom.length ? ` · 설정값 ${n.custom.length}개는 내가 바꿨어요 (${hData()}/config.json)` : !mine && n.settings.some(s => s.editable) ? ` · 설정값은 ${hData()}/config.json에 저장돼요` : "";
   return el("div", { class: "hs-or" }, ...tags, el("span", { text: text + extra }));
 }
 // 구성's model and effort settings (config.json models.<target>) open the 모델 · 폴백 screen instead of a change request.
@@ -557,7 +560,7 @@ function hFileEditor(n, drafts, line) {
   hGoto = gotoLine;
   api(url).then(r => {
     file = r; orig = r.text; ta.value = r.text;
-    info.textContent = `${num(r.text.length)}자${r.cap ? ` (시작 프롬프트에는 앞 ${num(r.cap)}자까지)` : ""} · ${r.modified ? `${kstStamp(r.modified)} 수정` : "아직 없는 파일"} · ${r.note}`;
+    info.textContent = `${num(r.text.length)}자${r.cap ? ` (시작 지침에는 앞 ${num(r.cap)}자까지)` : ""} · ${r.modified ? `${kstStamp(r.modified)} 수정` : "아직 없는 파일"} · ${r.note}`;
     mark();
     if (line) gotoLine(line);
   }, e => { info.className = "note err"; info.textContent = e.message; });

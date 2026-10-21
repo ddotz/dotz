@@ -37,7 +37,7 @@ const DENY_ITEM = /^(.+)\s+\|\s+(.+?)$/;
 
 function parse(text: string): { meta: Record<string, string>; deny: { pattern: string; reason: string; line: number }[]; body: string; badDeny: number } | string {
 	const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
-	if (!m) return "frontmatter (--- … ---) 가 없어요";
+	if (!m) return "frontmatter(--- … ---)가 없어요";
 	const meta: Record<string, string> = {};
 	const deny: { pattern: string; reason: string; line: number }[] = [];
 	let badDeny = 0;
@@ -73,24 +73,24 @@ function readJson(file: string, what: string): Record<string, any> | undefined {
 	try {
 		v = JSON.parse(readFileSync(file, "utf8"));
 	} catch (e) {
-		throw new Error(`${what} 이(가) 올바른 JSON 이 아니에요`);
+		throw new Error(`${what}이(가) 올바른 JSON이 아니에요`);
 	}
-	if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(`${what} 은(는) JSON 객체 하나여야 해요`);
+	if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(`${what}은(는) JSON 객체 하나여야 해요`);
 	return v as Record<string, any>;
 }
 
 function loadOne(dir: string, id: string, origin: FeatureDir["origin"]): FeatureDir | string {
-	if (!ID.test(id)) return "폴더 이름은 [a-z0-9-] (최대 40자) 여야 해요";
+	if (!ID.test(id)) return "폴더 이름은 [a-z0-9-] (최대 40자)여야 해요";
 	const file = join(dir, id, "feature.md");
-	if (!existsSync(file)) return "feature.md 가 없어요";
+	if (!existsSync(file)) return "feature.md가 없어요";
 	const p = parse(readFileSync(file, "utf8"));
 	if (typeof p === "string") return p;
 	const { meta } = p;
-	for (const k of ["name", "what", "trigger", "stage"]) if (!meta[k]) return `${k} 가 비어 있어요`;
-	if (!(TRIGGERS as readonly string[]).includes(meta.trigger)) return `trigger "${meta.trigger}" 은(는) 목록에 없어요 (${TRIGGERS.join(" | ")})`;
+	for (const k of ["name", "what", "trigger", "stage"]) if (!meta[k]) return `${k}가 비어 있어요`;
+	if (!(TRIGGERS as readonly string[]).includes(meta.trigger)) return `trigger "${meta.trigger}"은(는) 목록에 없어요 (${TRIGGERS.join(" | ")})`;
 	const applies = (meta.applies_to || "all") as Applies;
-	if (!APPLIES.includes(applies)) return `applies_to "${meta.applies_to}" 은(는) ${APPLIES.join(" | ")} 중 하나여야 해요`;
-	if (meta.enabled !== undefined && !/^(true|false)$/.test(meta.enabled)) return `enabled 는 true 또는 false 여야 해요 (지금 "${meta.enabled}")`;
+	if (!APPLIES.includes(applies)) return `applies_to "${meta.applies_to}"은(는) ${APPLIES.join(" | ")} 중 하나여야 해요`;
+	if (meta.enabled !== undefined && !/^(true|false)$/.test(meta.enabled)) return `enabled는 true 또는 false여야 해요 (지금 "${meta.enabled}")`;
 	const deny = p.deny.filter(d => {
 		try {
 			new RegExp(d.pattern, "i");

@@ -27,3 +27,9 @@ test("a delivery state is one event in the conversation of its target, and a mes
 	const states = historyEvents("lane:deliv-a", 10).filter(e => e.kind === "delivery");
 	expect(states.map(e => [e.ref, e.state])).toEqual([["r1", "steered"], ["r1", "answered"]]);
 });
+
+test("recentEvents(0) is empty (the page asks /api/state for limit=0), not the whole list", () => {
+	broadcast({ kind: "out", n: 3 });
+	expect(recentEvents(0)).toEqual([]);
+	expect(recentEvents(1)).toHaveLength(1);
+});

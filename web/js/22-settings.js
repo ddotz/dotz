@@ -1,6 +1,6 @@
 /* ---------- settings: model fallback chains (orchestrator / lanes / task workers) ---------- */
 const FB_LAYERS = [
-  { id: "orchestrator", title: () => botName, sub: "오케스트레이터", cur: () => M.orchestrator, confirm: "어시스턴트가 다시 시작돼요." },
+  { id: "orchestrator", title: () => botName, sub: "메인 어시스턴트", cur: () => M.orchestrator, confirm: "어시스턴트가 다시 시작돼요." },
   { id: "lanes", title: () => "세션 기본값", sub: "새로 시작하는 세션", cur: () => M.lanes_default },
   { id: "workers", title: () => "서브에이전트", sub: "세션이 맡기는 구현·테스트", cur: () => M.workers },
 ];

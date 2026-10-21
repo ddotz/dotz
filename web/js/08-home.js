@@ -53,7 +53,7 @@ function homeMenu(anchor, id) {
     const c = ((C && C.processes) || []).find(x => x.name === id.slice(4));
     if (c && c.running && !(c.compaction && (c.compaction.state === "queued" || c.compaction.state === "compacting"))) add("압축", () => busy(null, async () => {
       const r = await api("/api/compact", "POST", { target: c.name });
-      toast(r.state === "queued" ? `${c.name}: 작업 중이라 턴이 끝나면 압축해요` : `${c.name}: 압축을 시작했어요`);
+      toast(r.state === "queued" ? `${c.name}: 작업 중이라 끝나면 압축해요` : `${c.name}: 압축을 시작했어요`);
       loadContext(true);
     }));
     add("컨텍스트 열기", () => go("context"));
@@ -86,7 +86,7 @@ function toolLineKo(a) {
 function statusLineKo(t) {
   const s = String(t ?? "");
   if (s.startsWith("> ")) return oneLine(s.slice(2));
-  const k = [[/^compacting context/, "컨텍스트 정리 중"], [/^context compacted/, "컨텍스트 정리됨"], [/^retrying/, "다시 시도 중"], [/^aborted/, "중단됨"], [/^model fallback/, "다른 모델로 전환"]].find(([re]) => re.test(s));
+  const k = [[/^compacting context/, "컨텍스트 압축 중"], [/^context compacted/, "컨텍스트 압축 완료"], [/^retrying/, "다시 시도 중"], [/^aborted/, "중단됨"], [/^model fallback/, "다른 모델로 전환"]].find(([re]) => re.test(s));
   return k ? k[1] : /[가-힣]/.test(s) ? oneLine(s) : "";
 }
 function actLine(a) {
@@ -117,7 +117,7 @@ const hcDot = tone => el("span", { class: `nt-dot tone-${tone || "none"}`, "aria
 const hcLine = n => { const t = ntPlain(n.title); return !t || t === "작업 기록" || t === "알림" ? ntPlain(String(n.text || "").split("\n")[0]) || t || "알림" : t; };
 const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row" }, hcDot(n.tone), el("span", { class: "t", text: hcLine(n) }), el("span", { class: "m", text: ntWhen(n) }))));
 // Gateway restarts are kept in the store (born read) but never shown on 홈 (owner 2026-10-19: restarts are not his news).
-const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이 재시작/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
+const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
 function homeAlertCard() {
   const unread = ntUnreadIn("alert"), fresh = hcRecent(n => !n.read && ntTabOf(n) === "alert"), state = hcState();
   return hcCard("alert", el("div", { class: "ch" }, el("h3", { text: "알림" })),
@@ -126,13 +126,13 @@ function homeAlertCard() {
 }
 function homeWorklogCard() {
   const recent = hcRecent(n => n.kind === "worklog" || n.kind === "result"), state = hcState();
-  return hcCard("worklog", el("div", { class: "ch" }, el("h3", { text: "작업내역" })),
-    state || !recent.length ? el("div", { class: "hc-none", text: state || "아직 작업내역이 없어요" }) : hcNotices(recent));
+  return hcCard("worklog", el("div", { class: "ch" }, el("h3", { text: "작업 기록" })),
+    state || !recent.length ? el("div", { class: "hc-none", text: state || "아직 작업 기록이 없어요" }) : hcNotices(recent));
 }
 function homeMonitorCard() {
   const list = ntMons(), shown = list.slice(0, 4), bad = list.filter(m => m.last_result === "fail").length;
   const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…";
-  return hcCard("watch", el("div", { class: "ch" }, el("h3", { text: "모니터링" }), bad ? el("span", { class: "tag err", text: `실패 ${bad}` }) : null),
+  return hcCard("watch", el("div", { class: "ch" }, el("h3", { text: "감시" }), bad ? el("span", { class: "tag err", text: `실패 ${bad}` }) : null),
     state || !list.length ? el("div", { class: "hc-none", text: state || "감시 중인 것이 없어요" }) : el("div", { class: "hc-list" }, ...shown.map(m => {
       const r = m.last_result ? NT_RESULT[m.last_result] : null;
       return el("div", { class: "hc-mon" }, hcDot(r && r[1]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "감시" }),
@@ -196,16 +196,17 @@ function renderHomeNow() {
   const box = $("#home-now");
   if (!box) return;
   const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
-  const need = all.map(t => ({ t, k: askOf(t) ? "ask" : attnKind(t) })).filter(x => x.k);
-  const NEED = { ask: "답 필요", done: "결과 확인", limit: "한도 제한" };
+  const dec = ntDecisions();   // 30-notices.js: open decisions, each its own row; a session question already among them is not listed twice
+  const need = all.map(t => ({ t, k: askOf(t) ? "ask" : attnKind(t) })).filter(x => x.k && !(x.k === "ask" && ntHasDecision(x.t)));
+  const NEED = { ask: "답변 필요", done: "결과 확인", limit: "한도 걸림" };
   const rank = t => ({ working: 0, starting: 1, "rate-limited": 2 })[targetInfo(t).status] ?? 3;
   const run = [...all].sort((a, b) => rank(a) - rank(b));
-  const working = run.filter(t => rank(t) < 2).length;
+  const bg = workRunning(), working = run.filter(t => rank(t) < 2).length + bg.length;
   clear(box).append(
-    el("div", { class: "hn-h" }, el("h2", { text: `${S && S.address ? `${S.address} ` : ""}답 필요` }), need.length ? el("span", { class: "sup", text: `${need.length}` }) : null),
-    el("div", { class: "hn" }, ...(need.length ? need.map(x => homeNowRow(x.t, NEED[x.k], "att")) : [el("div", { class: "empty", text: "기다리는 것 없어요" })])),
+    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), need.length + dec.length ? el("span", { class: "sup", text: `${need.length + dec.length}` }) : null),
+    el("div", { class: "hn" }, ...dec.map(ntHomeRow), ...(need.length ? need.map(x => homeNowRow(x.t, NEED[x.k], "att")) : dec.length ? [] : [el("div", { class: "empty", text: "기다리는 게 없어요" })])),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
-    el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", ""))),
+    el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", "")), ...bg.map(workRow)),
     endedGroup() || "");
 }
 function renderHome() {
@@ -220,12 +221,11 @@ function renderHome() {
 
   // assistant
   const stText = o.status === "rate-limited" && o.rateLimitedUntil ? `${statusKo(o.status)} · ${kstTime(o.rateLimitedUntil)}까지` : statusKo(o.status);
-  const stop = o.status === "working" ? el("button", { class: "ib err", type: "button", "aria-label": "중단", title: "중단", onclick: ev => { ev.stopPropagation(); abortOrch(ev.currentTarget); } }, icon("stop")) : null;
   const mainAttn = attnKind(MAIN);
   add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), mainAttn || o.status === "rate-limited" ? "warn" : "",
-    el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), stop, menuBtn(MAIN)),
+    el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), menuBtn(MAIN)),
     el("div", { class: "big", text: om ? (modelName(om.model).includes("-") ? modelChipText(om.model) : modelName(om.model)) : "…" }),
-    el("div", { class: "sup sub", text: om && om.thinking ? `생각 수준 ${thinkKo(om.thinking)}` : "\u00a0" }),
+    el("div", { class: "sup sub", text: om && om.thinking ? `추론 강도 ${thinkKo(om.thinking)}` : "\u00a0" }),
     subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
   add("notices:alert", homeAlertCard(), { w: 4, h: 4 }, HOME_NOTICE);
   add("notices:worklog", homeWorklogCard(), { w: 4, h: 4 }, HOME_NOTICE);
@@ -274,7 +274,7 @@ function renderHome() {
     const need = Math.min(HOME_GROUP.max.h, Math.max(2, Math.ceil((52 + Math.max(1, list.length) * (kind === "limit" || kind === "ctx" ? 44 : 30) + BGAP) / BSTEP)));
     const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length;
     const tone = list.some(e => e.tone === "err") ? "err" : nAtt ? "warn" : "";
-    const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : kind === "lane" ? "작동 중인 세션 없음" : "없음";
+    const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : kind === "lane" ? "작동 중인 세션이 없어요" : "없어요";
     add(`group:${kind}`, itemCard(view, tone,
       el("div", { class: "ch" }, el("h3", { text: title }), nAtt ? el("span", { class: "tag warn", text: `확인 필요 ${nAtt}` }) : null, list.length ? el("span", { class: "tag", text: String(list.length) }) : null, menuBtn(`group:${kind}`)),
       list.length ? el("div", { class: "glist" }, ...list.map(homeRow)) : el("div", { class: "sup", text: empty })), { w: 4, h: need }, { min: { w: 3, h: need }, max: HOME_GROUP.max });

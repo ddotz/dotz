@@ -141,7 +141,7 @@ function laneUpdate(p, l, m) {
   p.tag.className = `tag ${tone}`; p.tag.textContent = statusKo(l.status);
   // "reported" is the lane's own done claim; "verified" only after the orchestrator checked it (dotz_lane verify).
   const claim = l.claim && l.claim.state;
-  p.claim.hidden = !claim; p.claim.className = `tag ${claim === "verified" ? "ok" : "pri"}`; p.claim.textContent = claim === "verified" ? "확인됨" : "보고됨"; p.claim.title = claim === "verified" ? `오케스트레이터가 확인했어요${l.claim.evidence ? `: ${l.claim.evidence}` : ""}` : "세션이 완료라고 보고했어요 (아직 확인 전)";
+  p.claim.hidden = !claim; p.claim.className = `tag ${claim === "verified" ? "ok" : "pri"}`; p.claim.textContent = claim === "verified" ? "확인됨" : "보고됨"; p.claim.title = claim === "verified" ? `${botName}가 확인했어요${l.claim.evidence ? `: ${l.claim.evidence}` : ""}` : "세션이 완료라고 보고했어요 (아직 확인 전)";
   // A lane's [ask] report waits for the owner's answer until the owner (or the orchestrator) writes to the lane.
   const pa = l.pendingAsk;
   p.ask.hidden = !pa; p.ask.title = pa ? `답을 기다리는 질문 (${kstStamp(pa.at)}): ${String(pa.text).slice(0, 500)}` : "";
@@ -164,15 +164,36 @@ function laneUpdate(p, l, m) {
 }
 function laneBoardInit() {
   const grid = el("div", {});
-  laneBoard = { grid, none: emptyNode("작동 중인 세션 없음") };
+  laneBoard = { grid, none: emptyNode("작동 중인 세션이 없어요") };
   laneBoard.node = el("div", { class: "lboard" }, laneBoard.none, grid);
   $("#lanes").append(laneBoard.node);
   // The tail of a pane follows the card height; a resize or move only re-sticks the tails.
   laneBoard.board = makeBoard(grid, "lanes");
 }
 // Running lanes only: an exited lane leaves the board at once (its history and resume stay reachable from ⌘K).
+// The main assistant's background work (S.work): running first, then what ended in the last hour.
+function workRow(w) {
+  const run = w.status === "running", done = w.status === "done";
+  return el("div", { class: "hr st" },
+    el("span", { class: `dot ${run ? "pri" : done ? "ok" : "err"}` }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: run ? workElapsed(w) : `${done ? "끝남" : "실패"} · ${workAgo(w)}` })),
+    el("span", { class: `hs ${run ? "pri" : done ? "" : "err"}`, text: run ? "작업 중" : done ? "완료" : "실패" }));
+}
+function renderWorkGroup() {
+  const box = $("#lanes-work");
+  if (!box) return;
+  const all = (S && S.work) || [], run = all.filter(w => w.status === "running").length;
+  box.hidden = !all.length;
+  const sig = JSON.stringify(all.map(w => [w.id, w.status, w.description, workElapsed(w), workAgo(w)]));
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  clear(box).append(
+    el("div", { class: "hn-h" }, el("h2", { text: "진행 중인 작업" }), el("span", { class: "sup", text: run ? `${run}개 작업 중` : "모두 끝남" })),
+    el("div", { class: "hn" }, ...all.map(workRow)));
+}
 function renderLanes() {
   if (!S) return;
+  renderWorkGroup();
   if (!laneBoard) laneBoardInit();
   const lanes = S.lanes.filter(laneAlive);
   const modelOf = n => (M && M.lanes || []).find(l => l.name === n);
@@ -238,7 +259,7 @@ function prjStatus(p) {
 function prjCard(p) {
   const [tone, word] = prjStatus(p), ms = prjMiles(p), done = ms.filter(m => m.done).length, ls = p.lanes || [], mon = prjMonitors(p);
   const pct = ms.length ? Math.round(done / ms.length * 100) : 0;
-  const meta = [ls.length ? `세션 ${ls.filter(l => l.live).length}/${ls.length}` : "세션 없음", mon != null ? `모니터 ${mon}` : ""].filter(Boolean);
+  const meta = [ls.length ? `세션 ${ls.filter(l => l.live).length}/${ls.length}` : "세션 없음", mon != null ? `감시 ${mon}` : ""].filter(Boolean);
   return el("button", { class: "card tap prj-card", type: "button", onclick: () => go("project", p.key) },
     el("div", { class: "prj-top" }, el("span", { class: `dot ${tone}` }), el("span", { class: "prj-title", text: prjTitle(p) }),
       word ? el("span", { class: `tag ${tone === "att" ? "warn" : tone}`, text: word }) : null, icon("chev", "chev")),

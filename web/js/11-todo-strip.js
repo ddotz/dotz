@@ -48,7 +48,7 @@ function speakerOf(e) {
 }
 const SYS_LABEL = { schedule: "예약", watch: "감시", mail: "메일" };
 // Gateway restart notices: a clean one (nothing was cut off) leaves the chat and only counts toward the top banner.
-const isRestart = e => e.kind === "out" && e.source === "gateway" && /^게이트웨이 재시작했어요/.test(String(e.text ?? ""));
+const isRestart = e => e.kind === "out" && e.source === "gateway" && /^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(e.text ?? ""));
 const cleanRestart = e => isRestart(e) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
 const BAN_KEY = "dotz-restart-seen";
 function paintRestartBanner() {
@@ -66,12 +66,12 @@ function paintRestartBanner() {
 }
 // Alerts: one plain Korean line; the raw text (provider error strings, report lines) folds under 자세히.
 function humanAlert(text) {
-  const m = text.match(/^(.+?): 모델 제공자 오류\(([\s\S]*)\)가 (\d+)번 재시도해도 계속돼서 멈췄습니다/);
+  const m = text.match(/^(.+?): 모델 제공자 오류\(([\s\S]*)\)가 (\d+)번 재시도해도 계속돼서 멈췄(?:습니다|어요)/);
   if (m) {
     const c = m[2];
     const why = /timed out|timeout/i.test(c) ? "모델 응답이 너무 오래 없어서" : /ENOTFOUND|reach|network|ECONN|fetch failed/i.test(c) ? "모델 서버에 연결되지 않아서" : /rate|limit|429/i.test(c) ? "사용 한도에 걸려서" : /overload|529|50\d/i.test(c) ? "모델 서버가 바빠서" : "모델 오류가 계속돼서";
     const last = m[1].charCodeAt(m[1].length - 1) - 0xac00, josa = last >= 0 && last < 11172 && last % 28 ? "이" : "가";
-    return `${m[1]}${josa} ${why} ${m[3]}번 다시 해보고 멈췄어요. 다음 메시지부터 다시 해요.`;
+    return `${m[1]}${josa} ${why} ${m[3]}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.`;
   }
   return text.split("\n")[0].replace(/\s*\([^()]*[A-Za-z]{4,}[^()]*\)/g, "").trim() || text;
 }
@@ -107,7 +107,7 @@ function streamIn(root, key, ts) {
 const DELIV = { nodes: new Map(), state: new Map() };
 const DELIV_RANK = { steered: 1, received: 1, queued: 1, held: 1, resumed: 1, answered: 2, failed: 2 };
 const DELIV_LABEL = { steered: "받음 · 지금 작업에 전달", received: "받음 · 바로 전달", queued: "받음 · 기다렸다 전달", held: "받음 · 한도가 풀리면 전달", resumed: "다시 시작해서 전달", answered: "답함" };
-const delivLabel = d => d.state === "failed" ? `전달 못 함${d.text ? ` · ${d.text}` : ""}` : DELIV_LABEL[d.state] || "";
+const delivLabel = d => d.state === "failed" ? `전달하지 못했어요${d.text ? ` · ${d.text}` : ""}` : DELIV_LABEL[d.state] || "";
 function paintDelivery(mid) {
   const n = DELIV.nodes.get(mid), d = DELIV.state.get(mid);
   if (!n || !d) return;
@@ -206,7 +206,7 @@ function newGroup(a) {
   const node = el("details", { class: "work" }, el("summary", {}, el("span", { class: "wdot" }), wsum), body);
   const g = { node, body, ctx: { calls: new Map() }, kinds: new Map(), tools: 0, think: 0, errs: 0, t0: Date.parse(a.ts), t1: Date.parse(a.ts), live: false };
   g.update = () => {
-    const parts = [g.t1 - g.t0 >= 1000 ? `${fmtDur(g.t1 - g.t0)} 작업` : g.tools ? "작업" : g.think ? "생각" : "작업 내역"];
+    const parts = [g.t1 - g.t0 >= 1000 ? `${fmtDur(g.t1 - g.t0)} 작업` : g.tools ? "작업" : g.think ? "생각" : "작업"];
     if (g.live) { const d = Math.max(g.t1, Date.now()) - g.t0; parts[0] = `작업 중${d >= 1000 ? ` ${fmtDur(d)}` : ""}`; }
     for (const [k, v] of g.kinds) parts.push(`${k} ${v}`);
     if (g.errs) parts.push(`오류 ${g.errs}`);

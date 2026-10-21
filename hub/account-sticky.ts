@@ -12,7 +12,7 @@
 // (POST /api/accounts/check) at the start of every turn and sets the variable in its own process, which OmO's
 // anthropic-subscription stream re-reads on each request. The decision is also kept in <DATA_DIR>/account.json, which the
 // extension reads when the hub does not answer. Nothing here writes auth.json or touches a token.
-import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { evaluate, getScriptOpinion, getUsage, readRules, record, resetRulesForTest, stateStamp } from "./account-rules.ts";
 import { readAliases } from "./account-alias.ts";
@@ -25,8 +25,41 @@ export type AccountSwitch = { at: string; from?: string; to: string; kind: Switc
 export type Pool = { names: string[]; pinned?: string; blocked: Record<string, { until?: number; reason: string }>; lastSuccess: Record<string, number> };
 type Saved = { account?: string; since?: string; reason?: string };
 
+// Both account logs (this file and <DATA_DIR>/accounts/decisions.jsonl) keep their last MAX_LOG_LINES lines, trimmed on write.
+export const MAX_LOG_LINES = 20;
 const stateFile = () => join(DATA_DIR, "account.json");
 export const switchesFile = () => join(DATA_DIR, "account-switches.jsonl");
+
+// Pure: oldest first. A switch that lands on the account dotz already ran on (a "start" or a rule pick that equals the
+// previous record's account) changed nothing and is dropped; older logs may hold some.
+export function dropNoops(list: AccountSwitch[]): AccountSwitch[] {
+	const out: AccountSwitch[] = [];
+	let prev: string | undefined;
+	for (const s of list) {
+		if (s.to === (s.from ?? prev)) continue;
+		out.push(s);
+		prev = s.to;
+	}
+	return out;
+}
+
+function readSwitches(): AccountSwitch[] {
+	let text: string;
+	try {
+		text = readFileSync(switchesFile(), "utf8");
+	} catch {
+		return [];
+	}
+	return dropNoops(
+		text.split("\n").flatMap(l => {
+			try {
+				return l.trim() ? [JSON.parse(l) as AccountSwitch] : [];
+			} catch {
+				return [];
+			}
+		}),
+	);
+}
 
 const readJson = (file: string): any => {
 	try {
@@ -118,11 +151,12 @@ export function stickyAccount(now = Date.now()): string | undefined {
 	const { change, ...decision } = evaluate({ now, pool, current: saved?.account, usage: getUsage(), rules: readRules(), script: getScriptOpinion(), aliases: readAliases() });
 	const account = decision.account;
 	if (pool) record(decision);
-	if (!change) return account;
+	// Landing on the account it already runs on is no switch: nothing is recorded and `since` stays.
+	if (!change || change.to === saved?.account) return account;
 	const s: AccountSwitch = { at: new Date(now).toISOString(), ...change };
 	saved = { account, since: s.at, reason: s.reason };
 	writeAtomic(stateFile(), `${JSON.stringify(saved, null, 2)}\n`);
-	appendFileSync(switchesFile(), `${JSON.stringify(s)}\n`);
+	writeAtomic(switchesFile(), `${dropNoops([...readSwitches(), s]).slice(-MAX_LOG_LINES).map(x => JSON.stringify(x)).join("\n")}\n`);
 	log(`account ${s.kind}: ${s.from ? `${s.from} -> ` : ""}${s.to} (${s.reason})`);
 	if (s.kind !== "start") for (const fn of listeners) fn(s);
 	return account;
@@ -135,16 +169,9 @@ export function stickyEnv(now = Date.now()): Record<string, string> {
 }
 
 // The usage screen: the account, since when and why, and the latest switches (newest first).
-export function accountView(limit = 10): { account?: string; since?: string; reason?: string; switches: AccountSwitch[] } {
+export function accountView(limit = MAX_LOG_LINES): { account?: string; since?: string; reason?: string; switches: AccountSwitch[] } {
 	const account = stickyAccount();
-	const lines = existsSync(switchesFile()) ? readFileSync(switchesFile(), "utf8").trim().split("\n").filter(Boolean) : [];
-	const switches = lines.slice(-limit).reverse().flatMap(l => {
-		try {
-			return [JSON.parse(l) as AccountSwitch];
-		} catch {
-			return [];
-		}
-	});
+	const switches = readSwitches().slice(-limit).reverse();
 	return { ...(account ? { account } : {}), ...(saved?.since ? { since: saved.since } : {}), ...(saved?.reason ? { reason: saved.reason } : {}), switches };
 }
 

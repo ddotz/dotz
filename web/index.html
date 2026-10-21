@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f2f4f6">
-<link rel="manifest" href="/manifest.webmanifest?v=2">
+<link rel="manifest" href="/manifest.webmanifest?v=3">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -72,7 +72,7 @@
           <form class="sendrow" id="send">
             <div class="atray" id="atray" hidden></div>
             <input type="file" id="c-file" multiple hidden>
-            <input type="file" id="c-photo" accept="image/*,video/*" multiple hidden>
+            <input type="file" id="c-photo" accept="image/*" multiple hidden>
             <span class="prompt" aria-hidden="true">&gt;</span>
             <textarea id="text" rows="1" autocomplete="off" placeholder="메시지 또는 /명령" aria-label="메시지"></textarea>
             <div class="cbar" id="cbar">
@@ -95,7 +95,7 @@
           <button class="btn tonal jump" id="act-jump" type="button" aria-label="맨 아래로" title="맨 아래로" hidden></button>
         </div>
       </section>
-      <section class="view" id="v-lanes" hidden><div id="lanes"></div><div id="lanes-ended"></div></section>
+      <section class="view" id="v-lanes" hidden><div id="lanes-work" hidden></div><div id="lanes"></div><div id="lanes-ended"></div></section>
       <section class="view" id="v-harness" hidden><div id="harness"></div></section>
       <section class="view" id="v-settings" hidden><div id="settings"></div></section>
       <section class="view" id="v-models" hidden><div id="models"></div></section>

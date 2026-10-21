@@ -39,7 +39,7 @@ function accountSection() {
   const run = sc && [sc.timeout_ms ? `${Math.round(sc.timeout_ms / 1000)}초 안에 끝나요` : "", sc.every_minutes ? `${sc.every_minutes}분마다` : ""].filter(Boolean).join(" · ");
   rows.push(sc && sc.path
     ? el("button", { class: "li tap", type: "button", onclick: () => accCopy(sc.path) }, tx("스크립트", el("code", { text: sc.path }), run ? ` · ${run}` : ""))
-    : el("button", { class: "li tap", type: "button", onclick: () => accCopy(ACC.files.rules) }, tx("스크립트 없음", "쓰려면 ", el("code", { text: ACC.files.rules }), "에 script를 넣어요")));
+    : el("button", { class: "li tap", type: "button", onclick: () => accCopy(ACC.files.rules) }, tx("스크립트 없음", "쓰려면 ", el("code", { text: ACC.files.rules }), "에 스크립트를 넣어요")));
   const last = sc && sc.last;
   if (last) rows.push(el("div", { class: "li" }, tx(last.error || last.error_text ? "마지막 실행이 실패했어요" : `마지막 결과 · ${last.label || (last.account ? accLabel(last.account) : "고르지 않음")}`, [last.error_text || last.reason, last.at ? kstStamp(Date.parse(last.at)) : ""].filter(Boolean).join(" · "))));
   return [el("div", { class: "sec", text: "계정" }), el("div", { class: "list" }, ...rows)];

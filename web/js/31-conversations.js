@@ -118,6 +118,9 @@ function chatOpen() {
     CV.placed = true;
     if (CV.landed) { chatUnpin(); scrollChat(true); return; }   // the notice jump lands on its own message
     CV.landed = true;
+    // reloaded onto a new shell (23-installable-app-web.js): the place the owner was at, unless they were at the bottom
+    const r = SHELL_RESTORE;
+    if (r && r.key === CV.key && !r.stick && r.anchor) { SHELL_RESTORE = null; CV.pinTs = r.anchor.ts; CV.pinOff = r.anchor.off; chatPin("at"); return; }
     chatPin(CV.divNode ? "div" : "bottom");
     return;
   }
@@ -135,6 +138,9 @@ function chatPlace() {
   if (CV.pin === "div") {
     if (!CV.divNode || !CV.divNode.isConnected) return;
     want = timeline.scrollTop + CV.divNode.getBoundingClientRect().top - timeline.getBoundingClientRect().top - 12;
+  } else if (CV.pin === "at") {   // a message found again by its ts (the timeline is redrawn, so no node is held), at its old distance from the top
+    const n = [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === CV.pinTs);
+    if (n) want = timeline.scrollTop + n.getBoundingClientRect().top - timeline.getBoundingClientRect().top - CV.pinOff;   // gone from the history: the bottom
   }
   if (Math.abs(timeline.scrollTop - want) > 1) timeline.scrollTop = want;
   chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
@@ -148,6 +154,14 @@ function convDwell() {
   CV.dwellT = setTimeout(() => { CV.seen = true; convMaybeRead(); }, 700);
 }
 new ResizeObserver(chatPlace).observe(timeline);
+// The timeline's own box changes when the composer grows a line, the todo strip or the keyboard resizes the page. A view that sat at the
+// bottom stays there (one write, before paint); any other view keeps its scrollTop, so what the owner reads never moves while typing.
+let followH = 0;
+new ResizeObserver(() => {
+  const h = timeline.clientHeight, grew = followH && h !== followH;
+  followH = h;
+  if (grew && !CV.pin && chatStick && timeline.scrollHeight - timeline.scrollTop - h > 1) timeline.scrollTop = timeline.scrollHeight;
+}).observe(timeline);
 new ResizeObserver(chatPlace).observe(tl);
 // The owner takes over by touching the timeline: the anchor lets go, the normal stick-to-bottom rules apply from there.
 for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) timeline.addEventListener(ev, chatUnpin, { passive: true });

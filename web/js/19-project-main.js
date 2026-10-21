@@ -61,7 +61,7 @@ function pmPaint() {
   clear(root).append(pmHead(q),
     el("div", { class: "pmv-cols" },
       el("div", { class: "pmv-col" }, sec(1, "목표와 진행", pmGoal(q, rows)), sec(3, rows.length ? `세션 ${rows.length}` : "세션", pmSessions(rows))),
-      el("div", { class: "pmv-col" }, sec(2, "루틴과 모니터링", pmRoutines(D)), sec(4, "최근 결과", pmResults(D)))));
+      el("div", { class: "pmv-col" }, sec(2, "루틴과 감시", pmRoutines(D)), sec(4, "최근 결과", pmResults(D)))));
   const add = $(".pmv-add input", root);
   if (add && PM.draft) { add.value = PM.draft; add.dispatchEvent(new Event("input")); if (focused) add.focus(); }
 }
@@ -106,19 +106,18 @@ function pmHead(q) {
       pmEditable({ value: prjPurpose(q), label: "프로젝트 설명", placeholder: "무엇을 하는 프로젝트인지 적어 주세요", multiline: true, cls: "pmv-purpose", save: v => pmWrite({ purpose: v }) })),
     // No work channel, nothing to chat with: the button is left out instead of showing a dead one.
     can ? el("div", { class: "pmv-hact" },
-      el("button", { class: "btn", type: "button", title: "이 프로젝트의 오케스트레이터와 대화해요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" })) : null);
+      el("button", { class: "btn", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" })) : null);
 }
 
 // At a glance, in plain words (owner 2026-10-21: the old '열린 할 일' list of internal open tasks was not readable): what runs
 // now, what waits on the owner, and the next milestone. No ids, paths or English status words.
 const pmNow = rows => rows.filter(r => r.live && r.status === "working"), pmWait = rows => rows.filter(r => r.waiting);
 function pmGlance(ms, rows) {
-  const who = (S && S.address) || "형";
-  const now = pmNow(rows), wait = pmWait(rows), next = ms.find(m => !m.done);
+    const now = pmNow(rows), wait = pmWait(rows), next = ms.find(m => !m.done);
   const line = (label, text, tone) => el("div", { class: "pmv-gl" }, el("span", { class: `dot ${tone}` }), el("span", { class: "pmv-gl-k", text: label }), el("span", { class: "pmv-gl-v", text }));
   return el("div", { class: "pmv-glance" },
     line("지금 하는 일", now.length ? now.map(r => r.title).join(", ") : "지금 돌고 있는 세션은 없어요", now.length ? "pri" : ""),
-    line("기다리는 것", wait.length ? `${wait.map(r => r.title).join(", ")} · ${who} 답이 필요해요` : "없어요", wait.length ? "att" : ""),
+    line("기다리는 것", wait.length ? `${wait.map(r => r.title).join(", ")} · 답이 필요해요` : "없어요", wait.length ? "att" : ""),
     line("다음에 할 일", next ? next.text : ms.length ? "목표를 모두 끝냈어요" : "아직 정한 단계가 없어요", ""));
 }
 function pmGoal(q, sessions = []) {
@@ -152,7 +151,7 @@ function pmGoal(q, sessions = []) {
     el("div", { class: "pmv-add" }, addIn, addBtn), note);
 }
 
-const PM_KIND = { monitor: "모니터", routine: "루틴", schedule: "일정" };
+const PM_KIND = { monitor: "감시", routine: "루틴", schedule: "예약" };
 const pmEvery = n => !(n > 0) ? "" : n % 60 === 0 ? `매 ${n / 60}시간` : `매 ${n}분`;
 // Health dot: ok after a clean run, warn after a failed one, err after three in a row; a paused item has none.
 function pmHealth(x) {
@@ -166,7 +165,7 @@ function pmRoutines(D) {
   if (!D) return emptyNode(PM.fail ? "불러오지 못했어요" : "불러오는 중…");
   const L = D.linked || {};
   const items = [...(D.monitors || L.watches || []).map(x => ({ ...x, kind: "monitor" })), ...(D.routines || L.routines || []).map(x => ({ ...x, kind: "routine" })), ...(D.schedules || L.schedules || []).map(x => ({ ...x, kind: "schedule" }))];
-  return items.length ? el("div", { class: "list" }, ...items.map(pmRoutine)) : emptyNode("아직 루틴이나 모니터가 없어요");
+  return items.length ? el("div", { class: "list" }, ...items.map(pmRoutine)) : emptyNode("아직 루틴이나 감시가 없어요");
 }
 function pmRoutine(x) {
   const mins = x.every_minutes ?? (x.schedule && x.schedule.every_minutes) ?? 0;
@@ -313,13 +312,13 @@ function renderContext() {
     const inFlight = p.compaction && (p.compaction.state === "queued" || p.compaction.state === "compacting");
     const btn = el("button", { class: "btn tonal", type: "button", disabled: !p.running || inFlight, onclick: ev => busy(ev.currentTarget, async () => {
       const r = await api("/api/compact", "POST", { target: p.name });
-      toast(r.state === "queued" ? `${p.name}: 작업 중이라 턴이 끝나면 압축해요` : `${p.name}: 압축을 시작했어요`);
+      toast(r.state === "queued" ? `${p.name}: 작업 중이라 끝나면 압축해요` : `${p.name}: 압축을 시작했어요`);
       loadContext(true);
     }) }, "압축");
     list.append(el("div", { class: "card" },
       el("div", { class: "heads" }, el("span", { class: `dot ${statusTone(p.status)}` }), el("span", { class: "t", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "sp" }), el("span", { class: `tag ${statusTone(p.status)}`, text: statusKo(p.status) })),
       p.model ? el("div", { class: "sup sub", text: selLabel(p.model) }) : null,
-      p.running ? el("div", { class: "mt8" }, ctxBar(p)) : el("div", { class: "sup mt8", text: "실행 안 함" }),
+      p.running ? el("div", { class: "mt8" }, ctxBar(p)) : el("div", { class: "sup mt8", text: "실행 중이 아니에요" }),
       el("div", { class: "row mt12", style: "justify-content:space-between" }, cs ? el("span", { class: `tag ${cs.tone}`, text: cs.text }) : el("span"), btn)));
   }
   clear(box).append(list);

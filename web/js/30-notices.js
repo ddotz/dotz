@@ -3,13 +3,13 @@
 // (routed here by 29-harness-features.js, never into the chat timeline or the corner toasts).
 // Panel: a popover under the bell from 700px up, a full-height sheet below it (same breakpoint as 09-notices.css).
 // Tabs: 알림 = alert + result, 작업내역 = worklog, 모니터링 = watch (watch and schedule runs); 전체 = everything, grouped by kind.
-const NT_TABS = [["all", "전체"], ["alert", "알림"], ["worklog", "작업내역"], ["watch", "모니터링"]];
+const NT_TABS = [["all", "전체"], ["alert", "알림"], ["worklog", "작업 기록"], ["watch", "감시"]];
 const NT_TAB_KEY = "dotz-notice-tab";
 const ntTabOf = n => n.kind === "worklog" ? "worklog" : n.kind === "watch" ? "watch" : "alert";
 const NT = { items: [], unread: 0, loaded: false, failed: false, open: false, tab: (() => { try { const v = localStorage.getItem(NT_TAB_KEY); if (NT_TABS.some(t => t[0] === v)) return v; } catch {} return "all"; })() };
 // The monitor list under the 모니터링 tab and in the home card.
 const NM = { items: [], loaded: false, failed: false };
-const NT_GROUPS = [["result", "결과 보고"], ["alert", "알림"], ["worklog", "작업로그"], ["watch", "감시·예약"]];
+const NT_GROUPS = [["decision", "답변이 필요해요"], ["result", "결과 보고"], ["alert", "알림"], ["worklog", "작업 기록"], ["watch", "감시·예약"]];
 const NT_RESULT = { ok: ["정상", "done"], changed: ["바뀜", "ask"], fail: ["실패", "fail"] };
 const ntUnreadIn = tab => NT.items.reduce((c, n) => c + (!n.read && (tab === "all" || ntTabOf(n) === tab) ? 1 : 0), 0);
 const NT_READ_MAX = 30;
@@ -21,6 +21,7 @@ const ntTime = t => kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)
 const ntWhen = n => ntTime(n.updated || n.ts);
 // Row text is plain: markdown marks (links, headings, bullets, emphasis, code) are dropped.
 const ntPlain = s => String(s ?? "")
+  .replace(/^[ \t]*\[file\][ \t].*$/gm, "")
   .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
   .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
   .replace(/\*+|~~|`+/g, "")
@@ -71,6 +72,7 @@ function noticeLive(e) {
     const i = NT.items.findIndex(x => x.id === e.item.id);
     if (e.item.dismissed) { if (i >= 0) NT.items.splice(i, 1); }
     else if (i < 0) NT.items.push(e.item); else NT.items[i] = e.item;
+    if (i < 0 && ntOpenDec(e.item) && NT.loaded) toast("답변이 필요해요", false, { label: "열기", onclick: () => noticeSheetOpen(e.item.id) }, 8000);
     if (e.item.kind === "watch") loadMonitors();
   } else if (e.kind === "notice_dismiss") {
     NT.items = NT.items.filter(x => x.id !== e.id);
@@ -81,6 +83,7 @@ function noticeLive(e) {
   if (typeof e.unread === "number") NT.unread = e.unread;
   paintBell();
   if (NT.open) renderNotices();
+  ntSheetPaint();
   homeSoon();
 }
 
@@ -112,6 +115,7 @@ function ntNavigate(open) {
 const ntRaf = () => new Promise(r => requestAnimationFrame(() => r()));
 const ntWait = ms => new Promise(r => setTimeout(r, ms));
 function ntGo(t) {
+  if (t === "settings") { go("settings"); return ""; }   // the 새 버전 notice: 설정 → 업데이트
   if (isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // the session is gone: its result card is in the main chat
   if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast("이 프로젝트를 찾을 수 없어요"); go("projects"); return ""; }
   if (!validTarget(t)) { go("home"); return ""; }
@@ -163,12 +167,20 @@ async function ntJump(n) {
   chatUnpin();
   try {
     if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t);
+    await ensureMsg(t, at);   // a stale stream may not have the message yet: fetch it before jumping
     await ntReach(t, at);
     await ntRaf(); await ntRaf();   // after the renders' own scroll-to-bottom
     if (seq !== ntJumpSeq || target !== t || current !== "chat") return;
     const m = ntFind(at);
     if (m) { ntCenter(m); ntFlash(m); }
   } catch {}
+}
+
+// A tapped push: open its conversation and land on the message it is about (loaded first when the stream missed it).
+function pushOpen(hash, at) {
+  const p = parseHash(hash);
+  if (at && p.view === "chat") ntJump({ src: p.t || MAIN, at });
+  else go(p.view, p.t);
 }
 
 function openNotice(n) {
@@ -252,7 +264,8 @@ function ntSwipe(item, row, n) {
 }
 
 function ntRow(n) {
-  const un = !n.read, text = ntPlain(n.text);
+  if (ntIsDec(n)) return ntDecRow(n);
+  const un = !n.read, fl = fileLines(n.text), text = ntPlain(fl.text);
   const row = el("button", { type: "button", class: `nt-row${un ? " un" : ""}`, "data-id": String(n.id), onclick: () => { if (!ntSwiped) openNotice(n); }, onkeydown: ev => { if (ev.key === "Delete") { ev.preventDefault(); ntVanish(item, n, 1); } } },
     el("span", { class: `nt-dot tone-${n.tone || "none"}`, "aria-hidden": "true" }),
     el("span", { class: "nt-b" },
@@ -262,7 +275,7 @@ function ntRow(n) {
     un ? el("span", { class: "nt-un", role: "img", "aria-label": "안 읽음" }) : null);
   const del = el("button", { type: "button", class: "nt-del", "aria-label": "알림 지우기", onclick: () => ntVanish(item, n, 1) });
   del.append(icon("close"));
-  const item = el("div", { class: "nt-item" }, row, del);
+  const item = el("div", { class: "nt-item" }, row, fl.files.length ? filesNode(fl.files.slice(0, 3)) : null, del);
   ntSwipe(item, row, n);
   return item;
 }
@@ -310,26 +323,26 @@ function ntSetTab(id) {
 // "모두 읽음" applies to the tab you are on: the other tabs keep their unread items.
 function ntReadAll() {
   if (NT.tab === "all") {
-    for (const n of NT.items) n.read = true;
-    NT.unread = 0; paintBell(); renderNotices(); ntMarkRead({ all: true });
+    for (const n of NT.items) if (!ntOpenDec(n)) n.read = true;   // a question that waits on the owner stays unread until it is answered
+    NT.unread = NT.items.filter(ntOpenDec).length; paintBell(); renderNotices(); ntMarkRead({ all: true });
     return;
   }
-  const hit = NT.items.filter(n => !n.read && ntTabOf(n) === NT.tab);
+  const hit = NT.items.filter(n => !n.read && !ntOpenDec(n) && ntTabOf(n) === NT.tab);
   if (!hit.length) return;
   for (const n of hit) n.read = true;
   NT.unread = Math.max(0, NT.unread - hit.length); paintBell(); renderNotices(); ntMarkRead({ ids: hit.map(n => n.id) });
 }
 
-const NT_EMPTY = { all: "새 알림이 없어요", alert: "새 알림이 없어요", worklog: "새 작업내역이 없어요", watch: "새 모니터링 소식이 없어요" };
-const NT_SEEN = { all: "읽은 알림", alert: "읽은 알림", worklog: "읽은 작업내역", watch: "읽은 소식" };
+const NT_EMPTY = { all: "새 알림이 없어요", alert: "새 알림이 없어요", worklog: "새 작업 기록이 없어요", watch: "새 감시 소식이 없어요" };
+const NT_SEEN = { all: "읽은 알림", alert: "읽은 알림", worklog: "읽은 작업 기록", watch: "읽은 소식" };
 
 function renderNotices() {
   if (!ntPanel) return;
   const body = $(".nt-body", ntPanel), all = $(".nt-all", ntPanel), tab = NT.tab;
   const keepTop = body.scrollTop, focusId = ntPanel.contains(document.activeElement) ? document.activeElement.dataset.id : null;
-  const sorted = NT.items.filter(n => tab === "all" || ntTabOf(n) === tab).sort((a, b) => ntAt(b) - ntAt(a));
+  const sorted = NT.items.filter(n => tab === "all" || ntTabOf(n) === tab).sort((a, b) => Number(ntOpenDec(b)) - Number(ntOpenDec(a)) || ntAt(b) - ntAt(a));
   const fresh = sorted.filter(n => !n.read), seen = sorted.filter(n => n.read).slice(0, NT_READ_MAX);
-  all.hidden = (tab === "all" ? NT.unread : fresh.length) <= 0;
+  all.hidden = (tab === "all" ? NT.unread - NT.items.filter(ntOpenDec).length : fresh.filter(n => !ntOpenDec(n)).length) <= 0;
   ntPaintTabs();
   clear(body);
   if (tab === "watch") body.append(ntMonSection());
@@ -397,6 +410,7 @@ function openNotices(tab) {
     tabs,
     el("div", { class: "nt-body" }));
   document.body.append(ntPanel);
+  ntOv = ovOpen(() => closeNotices(false));
   $("#bell").setAttribute("aria-expanded", "true");
   ntPlace(); renderNotices();
   document.addEventListener("pointerdown", ntOutside, true);
@@ -407,9 +421,11 @@ function openNotices(tab) {
   loadMonitors();
 }
 
+let ntOv = null;
 function closeNotices(restore = true) {
   if (!NT.open) return;
   NT.open = false;
+  ovDone(ntOv); ntOv = null;
   document.removeEventListener("pointerdown", ntOutside, true);
   document.removeEventListener("keydown", ntKey, true);
   removeEventListener("resize", ntPlace);
@@ -417,6 +433,152 @@ function closeNotices(restore = true) {
   ntPanel = null;
   $("#bell").setAttribute("aria-expanded", "false");
   if (restore) $("#bell").focus({ preventScroll: true });
+}
+
+/* ---------- decisions: a question that waits on the owner ---------- */
+// Hub: kind "decision" notices (hub/notices.ts) carry decision = { options, to, reply_to, group, state, answer }. An open one stays unread and
+// pinned at the top of the bell and cannot be swiped away; tapping it opens a sheet with the whole text and one button per option. A
+// button posts /api/notices/:id/answer: the hub sends the answer to the chat, session or login request the question came from.
+const ntIsDec = n => n.kind === "decision" && !!n.decision;
+const ntOpenDec = n => ntIsDec(n) && n.decision.state === "open";
+const ntById = id => NT.items.find(x => String(x.id) === String(id));
+const ntDecisions = () => NT.items.filter(ntOpenDec).sort((a, b) => ntAt(b) - ntAt(a));
+const ntHasDecision = t => NT.items.some(n => ntOpenDec(n) && n.decision.to === t);
+const ntDecWhere = d => d.to.startsWith("auth:") ? "로그인 요청" : targetName(d.to);
+const ntOptsOrdered = opts => [...opts].sort((a, b) => Number(b.rec) - Number(a.rec) || a.n - b.n);
+function ntApply(item, unread) {
+  if (item) { const i = NT.items.findIndex(x => x.id === item.id); if (i >= 0) NT.items[i] = item; else NT.items.push(item); }
+  if (typeof unread === "number") NT.unread = unread;
+  paintBell();
+  if (NT.open) renderNotices();
+  ntSheetPaint();
+  homeSoon();
+}
+// Throws with the hub's reason when the answer could not be delivered.
+async function ntPost(n, num) {
+  const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num });
+  ntApply(r.item, r.unread);
+}
+// The open decision that is this chat card's question (a card with one block), so the card and the bell answer through the same path.
+function ntFor(t, at, opt) {
+  return NT.items.find(n => ntOpenDec(n) && n.decision.to === t && n.decision.group === 1 && n.decision.reply_to === at && n.decision.options.some(o => o.n === opt.n && o.label === opt.label)) || null;
+}
+
+// One row of the home card 답변 필요 (same markup as 08-home.js homeNowRow): tap = the detail sheet.
+function ntHomeRow(n) {
+  return el("button", { class: "hr", type: "button", onclick: () => noticeSheetOpen(n.id), "aria-label": `${ntPlain(n.title)} · 답변 필요` },
+    el("span", { class: "dot att" }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: ntPlain(n.title) })), el("span", { class: "ha", text: ntDecWhere(n.decision) })),
+    el("span", { class: "hs warn", text: "답변 필요" }));
+}
+
+function ntDecRow(n) {
+  // The preview names the options (what the question is about), else the message text unless it only repeats the title.
+  const open = ntOpenDec(n), d = n.decision, title = ntPlain(n.title), plain = ntPlain(fileLines(n.text).text), text = d.options.length ? d.options.map(o => o.label).join(" · ") : plain === title ? "" : plain;
+  const row = el("button", { type: "button", class: `nt-row dec${open ? " un" : ""}`, "data-id": String(n.id), onclick: () => noticeSheetOpen(n.id) },
+    el("span", { class: `nt-dot tone-${open ? "ask" : "none"}`, "aria-hidden": "true" }),
+    el("span", { class: "nt-b" },
+      el("span", { class: "nt-t", text: ntPlain(n.title) || "답변이 필요해요" }),
+      open ? (text ? el("span", { class: "nt-x", text }) : null) : el("span", { class: "nt-x", text: `답했어요 · ${ntPlain(d.answer || "")}` }),
+      el("span", { class: "nt-m", text: `${ntDecWhere(d)} · ${ntWhen(n)}` })),
+    open ? el("span", { class: "nt-need", text: "답변 필요" }) : null);
+  return el("div", { class: "nt-item dec" }, row);
+}
+
+/* ---- detail sheet ---- */
+const NS = { id: "", node: null, ov: null, busy: false, opener: null };
+function ntSheetClose(restore = true) {
+  if (!NS.node) return;
+  NS.node.remove(); NS.node = null; NS.id = "";
+  ovDone(NS.ov); NS.ov = null;
+  document.removeEventListener("keydown", ntSheetKey, true);
+  if (restore && NS.opener && NS.opener.isConnected) NS.opener.focus({ preventScroll: true });
+  NS.opener = null;
+}
+function ntSheetKey(ev) {
+  if (!NS.node) return;
+  if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); ntSheetClose(); return; }
+  if (ev.key !== "Tab") return;
+  const f = [...NS.node.querySelectorAll("button:not([disabled])")];
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1], at = document.activeElement;
+  if (!NS.node.contains(at)) { ev.preventDefault(); first.focus(); }
+  else if (ev.shiftKey && at === first) { ev.preventDefault(); last.focus(); }
+  else if (!ev.shiftKey && at === last) { ev.preventDefault(); first.focus(); }
+}
+// "직접 답하기": to the asking message in its chat (a login request: its own form).
+function ntDirect(n) {
+  ntSheetClose(false);
+  if (n.decision.to.startsWith("auth:")) { const f = document.querySelector("#authbox input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast("입력 창이 이미 닫혔어요"); return; }
+  ntJump(n);
+}
+async function ntAnswer(n, opt) {
+  if (opt.action === "form") { ntDirect(n); return; }
+  NS.busy = true; ntSheetPaint();
+  try { await ntPost(n, opt.n); }
+  catch (err) { toast(err.message, true); }
+  NS.busy = false; ntSheetPaint();
+}
+function ntSheetPaint() {
+  if (!NS.node) return;
+  const n = ntById(NS.id);
+  if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
+  const d = n.decision, open = d.state === "open", keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
+  const x = el("button", { type: "button", class: "ib", "aria-label": "닫기", onclick: () => ntSheetClose() });
+  x.append(icon("close"));
+  const kids = [
+    el("div", { class: "ds-hd" }, el("span", { class: `ds-ey${open ? "" : " done"}`, text: open ? "답변이 필요해요" : "답변했어요" }), x),
+    el("div", { class: "ds-body" },
+      el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "답변이 필요해요" }),
+      el("div", { class: "ds-m", text: `${ntDecWhere(d)} · ${ntWhen(n)}` }),
+      mdNode(fileLines(n.text).text, "md ds-md"))];
+  const foot = el("div", { class: "ds-foot" });
+  if (open) {
+    for (const o of ntOptsOrdered(d.options)) foot.append(el("button", { type: "button", class: `ds-opt${o.rec ? " rec" : ""}`, "data-k": `o${o.n}`, disabled: NS.busy, onclick: () => ntAnswer(n, o) },
+      el("span", { class: "ds-lb" }, o.label, o.rec ? el("span", { class: "ds-tag", text: "추천" }) : null),
+      o.desc ? el("span", { class: "ds-ds", text: o.desc }) : null));
+    foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? "입력 창으로 가기" : "직접 답하기" }));
+    if (NS.busy) foot.append(el("div", { class: "ds-st", role: "status", text: "보내는 중…" }));
+  } else {
+    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: "이렇게 답했어요" }), el("span", { class: "ds-ra", text: ntPlain(d.answer || "") || "답했어요" })));
+    if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }));
+    foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" }));
+  }
+  kids.push(foot);
+  const sheet = $(".ds-sheet", NS.node), top = $(".ds-body", sheet) ? $(".ds-body", sheet).scrollTop : 0;
+  clear(sheet).append(...kids);
+  $(".ds-body", sheet).scrollTop = top;
+  const again = keep ? sheet.querySelector(`[data-k="${keep}"]`) : null;
+  if (again) again.focus({ preventScroll: true });
+}
+async function noticeSheetOpen(id) {
+  let n = ntById(id);
+  if (!n) { await loadNotices(); n = ntById(id); }
+  if (!n || !ntIsDec(n)) { toast("이 알림은 이미 처리됐어요"); return; }
+  if (NS.node && NS.id === String(n.id)) return;
+  ntSheetClose(false);
+  closeNotices(false);
+  NS.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  NS.id = String(n.id); NS.busy = false;
+  NS.node = el("div", { class: "ds-bd", onpointerdown: ev => { if (ev.target === NS.node) ntSheetClose(); } }, el("div", { class: "ds-sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "ds-t" }));
+  document.body.append(NS.node);
+  NS.ov = ovOpen(() => ntSheetClose(false));
+  document.addEventListener("keydown", ntSheetKey, true);
+  ntSheetPaint();
+  const first = NS.node.querySelector(".ds-opt, .ds-direct");
+  if (first) first.focus({ preventScroll: true });
+}
+
+// A tapped notification (or an option button on it) asks an open window to show the decision; a cold start carries it as ?n=<id>.
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) noticeSheetOpen(d.notice); });
+{
+  const want = new URLSearchParams(location.search).get("n") || "";
+  if (want) {
+    const u = new URL(location.href);
+    u.searchParams.delete("n");
+    history.replaceState(history.state, "", u.pathname + u.search + u.hash);
+    setTimeout(() => noticeSheetOpen(want), 500);
+  }
 }
 
 $("#bell").append(icon("bell"));

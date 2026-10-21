@@ -99,7 +99,7 @@ function fitChips(sw) {
   const seps = () => { for (const s of sw.querySelectorAll(".tsep")) { let n = s.nextElementSibling, vis = false; for (; n && !n.matches(".tsep, .tmore"); n = n.nextElementSibling) if (!n.hidden) { vis = true; break; } s.hidden = !vis; } };
   seps();
   if (!sw.clientWidth || sw.scrollWidth <= sw.clientWidth) return;
-  const label = vs => { const n = vs.filter(v => v.attn).length; clear(more).append(...[el("span", { class: "tx", text: `더보기 ${vs.length}` }), n ? el("span", { class: "nb warn", title: `확인 필요 ${n}개`, text: String(n) }) : null, icon("drop")].filter(Boolean)); };
+  const label = vs => { const n = vs.filter(v => v.attn).length; clear(more).append(...[el("span", { class: "tx", text: `더 보기 ${vs.length}` }), n ? el("span", { class: "nb warn", title: `확인 필요 ${n}개`, text: String(n) }) : null, icon("drop")].filter(Boolean)); };
   more.hidden = false;
   label(sw._views.filter(v => v.attn));   // widest likely label first, so the fold leaves it room
   const hid = [];
@@ -131,7 +131,7 @@ function paintAuth() {
       AUTH_DONE.add(a.id); card.remove(); if (!box.children.length) box.remove();
       toast(action === "cancel" ? "요청을 취소했어요" : "전달했어요");
     };
-    const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? "승인했어요" : "보내기" });
+    const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? "승인" : "보내기" });
     const no = el("button", { class: "btn tonal", type: "button", text: "취소", onclick: () => done("cancel") });
     const card = el("form", { class: "au", "data-id": a.id }, el("h3", { text: a.title }), el("p", { text: a.purpose }), ...inputs,
       a.kind === "approve" ? null : el("div", { class: "note", text: "입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요." }),

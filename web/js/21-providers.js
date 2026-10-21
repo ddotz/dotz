@@ -17,7 +17,7 @@ function renderProviders() {
   const wrap = el("div", {});
   wrap.append(el("div", { class: "tools-bar" }, el("span", { class: "sec", text: `${list.filter(isConnected).length}개 연결` }),
     el("button", { class: "btn tonal", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
-  if (!list.length) wrap.append(emptyNode("공급자 없음"));
+  if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
   const row = p => {
     const name = p.name || p.id;
     const canLogout = p.can_logout ?? p.removable;
@@ -53,7 +53,7 @@ function addProviderDialog() {
     const actions = [{ label: "취소", onclick: c => c() }];
     if (pick && pick.kind === "api_key") actions.push({ label: "저장", kind: "pri", onclick: (c, btn) => busy(btn, async () => {
       const provider = free ? free.value.trim() : pick.id, key = keyIn.value;
-      if (!provider || !key.trim()) { toast("공급자와 API 키를 입력하세요", true); return; }
+      if (!provider || !key.trim()) { toast("공급자와 API 키를 입력해 주세요", true); return; }
       try { await api("/api/providers", "POST", { provider, key }); } finally { keyIn.value = ""; }
       c(); toast("저장했어요"); loadProviders(); loadModels(true);
     }) });
@@ -115,7 +115,7 @@ async function startLogin(p) {
   };
   const submit = btn => busy(btn, async () => {
     const v = code.value.trim();
-    if (!v) { fail("코드나 주소를 붙여넣으세요"); return; }
+    if (!v) { fail("코드나 주소를 붙여 넣어 주세요"); return; }
     msg.hidden = true;
     stop();
     try { await api(`/api/providers/${enc(p.id)}/login/complete`, "POST", { login_id: r.login_id, code: v }); await success(); }
@@ -153,7 +153,7 @@ async function loadQuota() {
         bar(l),
         l.resets_at || l.window ? el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: l.window || "" }), el("span", { class: "v", text: l.resets_at ? rel(l.resets_at) : "" })) : null));
     }
-    if (!(p.limits || []).length) card.append(el("div", { class: "sup", text: "없음" }));
+    if (!(p.limits || []).length) card.append(el("div", { class: "sup", text: "없어요" }));
     grid.append(card);
   }
   if (grid.children.length) box.append(grid);
@@ -161,15 +161,26 @@ async function loadQuota() {
   if (q.account && q.account.account) {
     const A = q.account, KIND = { start: "처음 선택", limit: "한도", owner: "직접 변경", gone: "계정 사라짐" };
     box.append(el("div", { class: "sec", text: "사용 계정" }));
+    // The latest 5 switches (newest first); the older ones (the hub keeps 20) fold behind a toggle.
+    const SHOWN = 5, all = A.switches || [];
+    const row = s => el("div", { class: "li", style: "display:block" },
+      el("div", { class: "hd", text: `${s.from ? `${s.from_label || s.from} → ` : ""}${s.to_label || s.to} · ${s.kind_text || KIND[s.kind] || s.kind}` }),
+      el("div", { class: "sup", text: `${kstStamp(Date.parse(s.at))} · ${s.reason}` }));
+    const older = all.slice(SHOWN).map(row);
+    older.forEach(n => { n.hidden = true; });
+    const more = older.length ? el("button", { class: "btn text", type: "button", text: `이전 기록 ${older.length}개 더 보기`, onclick: ev => {
+      const open = older[0].hidden;
+      older.forEach(n => { n.hidden = !open; });
+      ev.currentTarget.textContent = open ? "이전 기록 접기" : `이전 기록 ${older.length}개 더 보기`;
+    } }) : null;
     box.append(el("div", { class: "list" },
       el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: A.account_label || A.account }), el("div", { class: "sup", text: `${A.since ? `${kstStamp(Date.parse(A.since))}부터 · ` : ""}규칙이나 한도로 바뀌기 전까지 이 계정을 계속 써요` })),
-      ...(A.switches || []).map(s => el("div", { class: "li", style: "display:block" },
-        el("div", { class: "hd", text: `${s.from ? `${s.from_label || s.from} → ` : ""}${s.to_label || s.to} · ${s.kind_text || KIND[s.kind] || s.kind}` }),
-        el("div", { class: "sup", text: `${kstStamp(Date.parse(s.at))} · ${s.reason}` })))));
+      ...all.slice(0, SHOWN).map(row), ...older));
+    if (more) box.append(more);
   }
   if ((q.unavailable || []).length) {
-    box.append(el("div", { class: "sec", text: "정보 없음" }));
+    box.append(el("div", { class: "sec", text: "정보가 없어요" }));
     box.append(el("div", { class: "list" }, ...q.unavailable.map(u => el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: providerName(u.provider) }), el("div", { class: "sup", text: u.reason })))));
   }
-  if (!(q.providers || []).length && !(q.unavailable || []).length) box.append(emptyNode("사용량 정보 없음"));
+  if (!(q.providers || []).length && !(q.unavailable || []).length) box.append(emptyNode("사용량 정보가 없어요"));
 }
