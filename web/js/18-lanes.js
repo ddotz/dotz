@@ -172,9 +172,16 @@ function laneBoardInit() {
 }
 // Running lanes only: an exited lane leaves the board at once (its history and resume stay reachable from ⌘K).
 // The main assistant's background work (S.work): running first, then what ended in the last hour.
+// Tap: the conversation that asked for the work (its waiting message, flashed). Unknown, or gone: the main chat at the time it started.
+async function workGo(w) {
+  const t = w.target && validTarget(w.target) ? w.target : MAIN;
+  if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t).catch(() => {});
+  const asked = w.reply_to ? ts(t).msgs.find(e => e.mid === w.reply_to) : null;
+  ntJump({ src: t, at: asked ? asked.ts : new Date(w.started_at).toISOString() });
+}
 function workRow(w) {
   const run = w.status === "running", done = w.status === "done";
-  return el("div", { class: "hr st" },
+  return el("button", { class: "hr", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${run ? "작업 중" : done ? "완료" : "실패"} · 대화로 가기` },
     el("span", { class: `dot ${run ? "pri" : done ? "ok" : "err"}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: run ? workElapsed(w) : `${done ? "끝남" : "실패"} · ${workAgo(w)}` })),
     el("span", { class: `hs ${run ? "pri" : done ? "" : "err"}`, text: run ? "작업 중" : done ? "완료" : "실패" }));
@@ -184,7 +191,7 @@ function renderWorkGroup() {
   if (!box) return;
   const all = (S && S.work) || [], run = all.filter(w => w.status === "running").length;
   box.hidden = !all.length;
-  const sig = JSON.stringify(all.map(w => [w.id, w.status, w.description, workElapsed(w), workAgo(w)]));
+  const sig = JSON.stringify(all.map(w => [w.id, w.status, w.description, w.target, w.reply_to, workElapsed(w), workAgo(w)]));
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   clear(box).append(
@@ -239,13 +246,15 @@ function prjLoad() {
   });
   return prjFlight;
 }
+// The work channel a session was started in (ch:<id>): the hub's lane list carries no home, the gateway's channel map does.
+const laneHome = l => l.home || (S && S.channels && S.channels.homes && S.channels.homes[l.name] ? `ch:${S.channels.homes[l.name]}` : "");
 // The project a session belongs to, by name: its home channel (ch:<id>), else the folder project that lists it.
 function laneProject(l) {
-  const list = (PRJ && PRJ.projects) || [];
-  const p = (l.home && list.find(x => x.key === l.home || (x.channel && `ch:${x.channel.id}` === l.home))) || list.find(x => (x.lanes || []).some(z => z.name === l.name));
+  const list = (PRJ && PRJ.projects) || [], home = laneHome(l);
+  const p = (home && list.find(x => x.key === home || x.recordKey === home || (x.channel && `ch:${x.channel.id}` === home))) || list.find(x => (x.lanes || []).some(z => z.name === l.name));
   if (p) return prjTitle(p);
   const work = (S && S.channels && S.channels.work) || {};
-  return l.home && l.home.startsWith("ch:") ? work[l.home.slice(3)] || "" : "";
+  return home.startsWith("ch:") ? work[home.slice(3)] || "" : "";
 }
 
 // Status dot and word of a project: waiting on the owner > working > a live session or channel > nothing running.

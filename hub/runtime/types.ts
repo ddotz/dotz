@@ -97,7 +97,7 @@ export interface SpawnOpts {
 	// The hub switches models itself (conditional entries, spend caps): the runtime must not walk a fallback chain of its own for this process.
 	hubSwitches?: boolean;
 	// Lane-only: where the runtime may keep per-run files, and the lane's worker/compaction settings.
-	lane?: { name: string; dir: string; workerModel: string; workerFallback?: string[]; compactAt: number; keepRecent: number };
+	lane?: { name: string; dir: string; workerModel: string; workerFallback?: string[]; compactAt: number; keepRecent: number; workerSlots?: number };
 }
 
 // What a runtime's `detect()` finds on this machine; `reason` says why it is not installed.
