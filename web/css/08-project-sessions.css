@@ -52,8 +52,10 @@
 .pmv-ck .ic { width: 14px; height: 14px; opacity: 0; }
 .pmv-ck[aria-checked="true"] { border-color: var(--fg); background: var(--fg); }
 .pmv-ck[aria-checked="true"] .ic { opacity: 1; }
-.pmv-add { display: flex; gap: 8px; }
+.pmv-add { display: flex; align-items: stretch; gap: 8px; }
 .pmv-add .fi { flex: 1; min-width: 0; }
+.pmv-add .btn { flex: none; height: auto; }
+.pmv-add .btn:disabled { opacity: 1; background: var(--card); border-color: var(--line-2); color: var(--fg-3); }
 .pmv-rt { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; }
 .pmv-rt-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
 .pmv-rt-name { flex: 1 1 120px; min-width: 0; font: 500 15px/22px var(--font); overflow-wrap: anywhere; }

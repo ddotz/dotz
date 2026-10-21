@@ -55,11 +55,15 @@ async function convLoad() {
       else READ[t] = it.read || null;
       ts(t).unread = unread;
     }
-    CV.loaded = true;
+    CV.loaded = true; CV.failed = false;
     renderBars();
-    if (convCapture()) renderAll();
+    if (convCapture() || (CV.key && !CV.placed)) renderAll();   // the first paint of an opening waits for this (chatReady)
     convMaybeRead();
-  } catch { convRetry = setTimeout(convLoad, 5000); }
+  } catch {
+    convRetry = setTimeout(convLoad, 5000);
+    CV.failed = true;
+    if (CV.key && !CV.placed) renderAll();
+  }
   convSchedule();
 }
 // Another device (or this one) moved a read position.
@@ -78,8 +82,10 @@ function convOnRead(e) {
 function convSync() {
   const key = current === "chat" && !convListing() ? target : "";
   if (key === CV.key) return false;
-  Object.assign(CV, { key, div: "", divNode: null, landed: false, captured: false });
-  return convCapture();
+  chatUnpin(); clearTimeout(CV.gateT);
+  Object.assign(CV, { key, div: "", divNode: null, landed: false, captured: false, failed: false, placed: false, full: false, snap: null, openAt: performance.now() });
+  convCapture();
+  return !!key;   // the caller draws the conversation: the divider is in it from the first paint
 }
 function convCapture() {
   if (!CV.key || CV.captured || !CV.loaded) return false;
@@ -90,23 +96,66 @@ function convCapture() {
   return true;
 }
 const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "새 메시지" }));
-// After the timeline is drawn: land on the divider (once per opening). Returns false when there is none, so the caller scrolls to the bottom.
-function convLand() {
-  if (!CV.div || CV.landed || !CV.divNode || !CV.divNode.isConnected) return false;
-  CV.landed = true;
-  requestAnimationFrame(() => {
-    if (!CV.divNode || !CV.divNode.isConnected) return;
-    timeline.scrollTop += CV.divNode.getBoundingClientRect().top - timeline.getBoundingClientRect().top - 12;
-    chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
-    $("#chat-jump").hidden = chatStick;
-    convMaybeRead();
-  });
-  return true;
+/* ---- where the timeline sits while an opening settles ---- */
+// The first paint of an opening needs three answers: the history, the read position (/api/conversations, which decides the divider)
+// and the todo plan (its strip pushes the timeline down). Until then "불러오는 중…" stays, so nothing is drawn at the wrong place
+// first. A slow answer cannot hold it forever: the plan gives up after 0.7 s, the read position after 3 s (no divider then).
+function chatReady() {
+  if (!CV.key) return true;
+  const age = performance.now() - CV.openAt, convOk = CV.loaded || CV.failed || age > 3000, todoOk = TD.by[target] !== undefined || age > 700;
+  if (convOk && todoOk) return true;
+  clearTimeout(CV.gateT);
+  CV.gateT = setTimeout(() => { if (CV.key && !CV.placed) renderAll(); }, Math.max(30, (todoOk ? 3000 : 700) - age));
+  return false;
 }
+// After the timeline is drawn (renderAll0): the first drawing of an opening anchors the view to the divider (or the bottom when nothing is
+// unread) in the same task, before any paint; later drawings keep the owner's place.
+function chatOpen() {
+  const snap = CV.snap; CV.snap = null;
+  CV.full = true;
+  if (!CV.key) { scrollChat(true); return; }
+  if (!CV.placed) {
+    CV.placed = true;
+    if (CV.landed) { chatUnpin(); scrollChat(true); return; }   // the notice jump lands on its own message
+    CV.landed = true;
+    chatPin(CV.divNode ? "div" : "bottom");
+    return;
+  }
+  if (CV.pin) chatPlace();
+  else if (snap && !snap.stick) { timeline.scrollTop = snap.top; chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; }
+  else scrollChat(true);
+}
+function chatPin(kind) { CV.pin = kind; chatPlace(); }
+function chatUnpin() { CV.pin = ""; clearTimeout(CV.dwellT); }
+// Put the view where the pin says. Runs right after the draw and again whenever the timeline or its content changes size (images,
+// code blocks, the todo strip, the composer growing) - a ResizeObserver runs after layout and before paint, so no shift is ever shown.
+function chatPlace() {
+  if (!CV.pin || !timeline.clientHeight) return;   // the view is hidden: the observer places it once it shows
+  let want = timeline.scrollHeight;
+  if (CV.pin === "div") {
+    if (!CV.divNode || !CV.divNode.isConnected) return;
+    want = timeline.scrollTop + CV.divNode.getBoundingClientRect().top - timeline.getBoundingClientRect().top - 12;
+  }
+  if (Math.abs(timeline.scrollTop - want) > 1) timeline.scrollTop = want;
+  chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+  $("#chat-jump").hidden = chatStick;
+  convDwell();
+}
+// Anchored views count as read only after they held still for a moment (the owner can see them), never on the draw itself.
+function convDwell() {
+  clearTimeout(CV.dwellT);
+  CV.seen = false;
+  CV.dwellT = setTimeout(() => { CV.seen = true; convMaybeRead(); }, 700);
+}
+new ResizeObserver(chatPlace).observe(timeline);
+new ResizeObserver(chatPlace).observe(tl);
+// The owner takes over by touching the timeline: the anchor lets go, the normal stick-to-bottom rules apply from there.
+for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) timeline.addEventListener(ev, chatUnpin, { passive: true });
+
 // The owner is at the bottom of the open conversation (page visible): everything in it counts as read.
 function convMaybeRead() {
   const t = CV.key;
-  if (!t || t !== target || !chatStick || document.visibilityState !== "visible") return;
+  if (!t || t !== target || !CV.captured || !CV.placed || !chatStick || (CV.pin && !CV.seen) || document.visibilityState !== "visible") return;
   const s = ts(t), last = s.hLoaded && s.msgs.findLast(convReal);
   if (!last) return;
   if (READ[t] && READ[t] >= last.ts) { if (s.unread) { s.unread = 0; renderBars(); } return; }
@@ -120,7 +169,7 @@ function convFlush() {
   for (const [t, at] of convPend) api("/api/read", "POST", { target: t, ts: at }).catch(() => { if (READ[t] === at) READ[t] = null; convLoad(); });
   convPend.clear();
 }
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { convMaybeRead(); convLoad(); } });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { if (CV.pin) convDwell(); convMaybeRead(); convLoad(); } });
 
 /* ---- the list ---- */
 // KST HH:MM for today, M/D for earlier days.

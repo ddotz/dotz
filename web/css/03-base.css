@@ -173,8 +173,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .sb.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
 .tdrop { display: none; flex: 1 1 120px; width: auto; min-width: 0; }
 @media (max-width: 639px) { .thead.lanev .tdrop.sel { max-width: 112px; } }
-#vtog { flex: none; flex-wrap: nowrap; }
-#vtog button { position: relative; flex: none; padding: 0 12px; }
+#vtog { position: relative; }
 #vtog .ud { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 @media (pointer: coarse) { .tchip { height: 36px; } }
 /* phone: the switcher is one small chip after the title (name + caret opens the session list) */
