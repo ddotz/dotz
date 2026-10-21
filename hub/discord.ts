@@ -19,7 +19,10 @@ const OWNER = String(cfg.discord?.owner_id ?? "");
 const AVATAR_MARK = join(DATA_DIR, "identity", ".avatar-applied");
 
 export type Thread = { parent: string; name: string };
-export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; threads: Record<string, Thread>; archiveAt: Record<string, number> };
+// `adopted`: ids of existing channels and categories taken over from another bot (오모냥's #대화 #알림 #작업로그 ...), which
+// that bot may still post in: they keep their name, category, position and permission overwrites (ensureChannels).
+// `brief`: the morning brief's channel; without it the brief goes to chat.
+export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; brief?: string; adopted?: string[]; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; threads: Record<string, Thread>; archiveAt: Record<string, number> };
 export const channels: Channels = existsSync(paths.channels) ? JSON.parse(readFileSync(paths.channels, "utf8")) : { lanes: {} };
 channels.lanes ??= {};
 // A home lane lives in a thread of an existing work channel: lanes[name] is the thread id, homes[name] the parent channel id.
@@ -125,7 +128,9 @@ export async function ensureChannels(): Promise<void> {
 	const all = (await rest("GET", `/guilds/${GUILD}/channels`)) as any[];
 	const existing = new Map(all.map(c => [String(c.id), String(c.name)]));
 	const parentOf = new Map(all.map(c => [String(c.id), c.parent_id ? String(c.parent_id) : ""]));
+	const adopted = new Set(channels.adopted ?? []);
 	const place = async (id: string, want: string, parent?: string, text = true) => {
+		if (adopted.has(id)) return;
 		const patch: Record<string, string> = {};
 		if (existing.get(id) !== (text ? textName(want) : want)) patch.name = want;
 		if (parent && parentOf.get(id) !== parent) patch.parent_id = parent;
@@ -147,6 +152,10 @@ export async function ensureChannels(): Promise<void> {
 		else await place(id, existing.get(id)!, channels.workCategory);
 	}
 	for (const lane of Object.keys(channels.homes)) if (!channels.lanes[lane]) delete channels.homes[lane];
+	if (channels.brief && !existing.has(channels.brief)) {
+		log(`discord: brief channel ${channels.brief} is gone; the morning brief goes to chat`);
+		delete channels.brief;
+	}
 	for (const id of Object.keys(channels.work)) {
 		if (!existing.has(id)) {
 			delete channels.work[id];
@@ -156,19 +165,24 @@ export async function ensureChannels(): Promise<void> {
 	for (const [id, t] of Object.entries(channels.threads)) if (!existing.has(t.parent)) delete channels.threads[id];
 	save();
 	startArchiveTimer();
-	await keepPrivate(all).catch(e => log(`discord: could not hide channels from other bots (needs administrator): ${e}`));
+	await keepPrivate(all, adopted).catch(e => log(`discord: could not hide channels from other bots (needs administrator): ${e}`));
 }
 
 // The bot's categories belong to it alone: other bots in the server (each has a managed role tagged with its bot id)
-// get View Channel denied on both categories and every channel in them, so they neither read nor answer there.
-async function keepPrivate(all: any[]): Promise<void> {
+// get View Channel denied on both categories and every channel in them, so they neither read nor answer there. An adopted
+// category or channel is not the bot's alone: it is left as it is, and of the channels in an adopted category only the
+// lane channels dotz made are hidden.
+async function keepPrivate(all: any[], adopted: Set<string>): Promise<void> {
 	const VIEW = 1n << 10n;
 	const me = (await rest("GET", "/users/@me")) as { id: string };
 	const others = ((await rest("GET", `/guilds/${GUILD}/roles`)) as any[]).filter(r => r.tags?.bot_id && r.tags.bot_id !== me.id);
 	if (!others.length) return;
 	const cats = [channels.category, channels.workCategory].filter(Boolean) as string[];
 	const byId = new Map(all.map(c => [String(c.id), c]));
-	const targets = new Set([...cats, ...all.filter(c => cats.includes(String(c.parent_id))).map(c => String(c.id))]);
+	const own = cats.filter(id => !adopted.has(id));
+	const laneIds = new Set(Object.values(channels.lanes));
+	const inside = all.filter(c => own.includes(String(c.parent_id)) || (cats.includes(String(c.parent_id)) && laneIds.has(String(c.id)))).map(c => String(c.id));
+	const targets = new Set([...own, ...inside].filter(id => !adopted.has(id)));
 	let changed = 0;
 	for (const id of targets)
 		for (const role of others) {
@@ -219,7 +233,7 @@ async function classify(id: string): Promise<{ work: string } | { thread: string
 			return { thread: String(c.name) };
 		}
 	}
-	if (!c || c.type !== 0 || !isWorkParent(c.parent_id) || [channels.chat, channels.worklog, channels.alert, ...Object.values(channels.lanes)].includes(id)) {
+	if (!c || c.type !== 0 || !isWorkParent(c.parent_id) || [channels.chat, channels.worklog, channels.alert, channels.brief, ...Object.values(channels.lanes)].includes(id)) {
 		notWork.add(id);
 		return undefined;
 	}
@@ -336,7 +350,7 @@ export function putLaneChannel(lane: string, ch: { id: string; home?: string }):
 	save();
 }
 export async function deleteChannel(id: string): Promise<void> {
-	if ([channels.category, channels.workCategory, channels.chat, channels.worklog, channels.alert, channels.dm, ...Object.values(channels.lanes), ...Object.values(channels.homes)].includes(id) || channels.work[id]) throw new Error(`channel ${id} is still in use`);
+	if ([channels.category, channels.workCategory, channels.chat, channels.worklog, channels.alert, channels.brief, channels.dm, ...Object.values(channels.lanes), ...Object.values(channels.homes)].includes(id) || channels.work[id]) throw new Error(`channel ${id} is still in use`);
 	if (!status.enabled) throw new Error("discord not configured");
 	await rest("DELETE", `/channels/${id}`).catch(e => {
 		// Already gone (deleted by hand): nothing left to do.
@@ -348,7 +362,7 @@ function resolve(target: string): string | undefined {
 	if (target.startsWith("lane:")) return channels.lanes[target.slice(5)];
 	if (target.startsWith("ch:")) return channels.work[target.slice(3)] ? target.slice(3) : undefined;
 	if (target.startsWith("th:")) return channels.threads[target.slice(3)] ? target.slice(3) : undefined;
-	if (target === "chat" || target === "worklog" || target === "alert" || target === "dm") return channels[target];
+	if (target === "chat" || target === "worklog" || target === "alert" || target === "brief" || target === "dm") return channels[target];
 	return undefined;
 }
 
@@ -710,7 +724,7 @@ export type Incoming = {
 	channelId: string;
 	// Where the owner wrote it (the 👀 goes there); differs from channelId when a reply to a thread's starter is routed into the thread.
 	ackChannelId: string;
-	channel: "chat" | "dm" | "worklog" | "alert" | { lane: string } | { work: string; name: string; first: boolean } | { thread: string; name: string };
+	channel: "chat" | "dm" | "worklog" | "alert" | "brief" | { lane: string } | { work: string; name: string; first: boolean } | { thread: string; name: string };
 	author: string;
 	content: string;
 	attachments: { name: string; url: string; type?: string }[];
@@ -884,7 +898,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 	const catchUp = async () => {
 		if (!lastSeen) return;
 		const floor = Date.now() - CATCHUP_MS;
-		const ids = [channels.chat, channels.dm, channels.worklog, channels.alert, ...Object.values(channels.lanes), ...Object.keys(channels.work), ...Object.keys(channels.threads)].filter((x): x is string => !!x);
+		const ids = [channels.chat, channels.dm, channels.worklog, channels.alert, channels.brief, ...Object.values(channels.lanes), ...Object.keys(channels.work), ...Object.keys(channels.threads)].filter((x): x is string => !!x);
 		const missed: any[] = [];
 		for (const id of new Set(ids)) {
 			const list = await rest("GET", `/channels/${id}/messages?after=${lastSeen}&limit=50`).catch(() => []);
@@ -913,7 +927,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 		}
 		const lane = Object.entries(channels.lanes).find(([, id]) => id === m.channel_id)?.[0];
 		// chat, worklog and alert are the orchestrator level: owner messages there reach the orchestrator, which routes them.
-		const fixed = lane ? { lane } : m.channel_id === channels.chat ? "chat" : m.channel_id === channels.worklog ? "worklog" : m.channel_id === channels.alert ? "alert" : !m.guild_id ? "dm" : undefined;
+		const fixed = lane ? { lane } : m.channel_id === channels.chat ? "chat" : m.channel_id === channels.worklog ? "worklog" : m.channel_id === channels.alert ? "alert" : m.channel_id === channels.brief ? "brief" : !m.guild_id ? "dm" : undefined;
 		if (!fixed && m.guild_id === GUILD) {
 			const first = edited === undefined && !channels.work[m.channel_id] && !channels.threads[m.channel_id];
 			void classify(m.channel_id).then(c => {
