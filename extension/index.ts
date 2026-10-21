@@ -19,6 +19,7 @@ import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { systemDeny } from "../hub/systemdeny.ts";
+import { kdbActBlock } from "../hub/kdb.ts";
 import { installCompactKept } from "./compact-kept.ts";
 import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason } from "../hub/live-guard.ts";
 import { dropLongTtl, installGuard } from "./guard.ts";
@@ -71,6 +72,8 @@ function enforceRules(pi: any): void {
 		if (command === undefined) return;
 		const system = systemDeny(command);
 		if (system) return { block: true, reason: `Blocked by dotz: ${system}.` };
+		const kdb = kdbActBlock(command, DATA);
+		if (kdb) return { block: true, reason: `Blocked by dotz (company mail leaves only on the owner's OK): ${kdb}.` };
 		const file = join(DATA, "RULES.md");
 		const reason = existsSync(file) ? blockedBy(command, readFileSync(file, "utf8")) : undefined;
 		if (reason) return { block: true, reason: `Blocked by the owner's rule (${file}): ${reason}. Do not work around it; report it if the task needs it.` };

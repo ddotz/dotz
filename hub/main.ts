@@ -53,6 +53,7 @@ import { onUpdateResolved, startSelfUpdate, updateRoute } from "./selfupdate.ts"
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
 import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, startWatches, stopWatches, watchScript } from "./watch.ts";
+import { isConfirm, isFidoGo, KDB_WATCH, kdbConfig, mailIdOf, mailThreadNote, recordOk, waitingApproval } from "./kdb.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
@@ -74,6 +75,7 @@ const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
 const terminals = new Map<string, { cwd?: string; at: string }>();
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
 const PENDING = join(DATA_DIR, "pending.json");
+const kdb = kdbConfig((cfg as any).kdb);
 // Read before anything in this process delivers (and rewrites the file); replayed once the orchestrator starts.
 let unanswered: { text: string; at?: number; target?: string; replyTo?: string }[] = [];
 try {
@@ -203,6 +205,7 @@ function inboxBody(e: Record<string, any>): string {
 		for (const a of p.attachments ?? []) lines.push(`[attachment] ${a.name}${a.type ? ` (${a.type})` : ""} ${a.url}`);
 		lines.push(p.text);
 	}
+	if (kdb && e.kdb_mail !== undefined) lines.push(mailThreadNote(kdb, e.kdb_mail));
 	const home = e.parent?.startsWith("ch:") ? e.parent : e.channel;
 	const ctx = home?.startsWith("ch:") ? channelContext(home.slice(3)) : "";
 	if (ctx) lines.push(ctx);
@@ -473,7 +476,9 @@ const onOwner = (m: discord.Incoming) => {
 	}
 	if (typeof m.channel === "object" && "thread" in m.channel) {
 		const info = discord.threadInfo(m.channel.thread);
-		const threadEvent = { ...event, channel: `th:${m.channel.thread}`, kind: "message", thread_name: m.channel.name, parent: info?.parentTarget, parent_name: info?.parentName };
+		const mail = kdb ? mailIdOf(kdb, m.channel.thread) : undefined;
+		if (mail !== undefined && isConfirm(m.content)) recordOk(DATA_DIR, mail);
+		const threadEvent = { ...event, channel: `th:${m.channel.thread}`, kind: "message", thread_name: m.channel.name, parent: info?.parentTarget, parent_name: mail !== undefined ? "회사메일" : info?.parentName, ...(mail !== undefined ? { kdb_mail: mail } : {}) };
 		emit("inbox", threadEvent);
 		intake(threadEvent, threadEvent.channel, m.id);
 		return;
@@ -507,6 +512,24 @@ const onOwner = (m: discord.Incoming) => {
 	emit("inbox", { ...event, kind: "message" });
 	intake({ ...event, kind: "message" }, target, m.id);
 };
+// KDB company mail (hub/kdb.ts): its mail threads come in as threads, and in its alert channel only a yes to a waiting
+// FIDO question is taken (approves the kdb-login watch); everything else there stays with whoever else reads it.
+function kdbAlert(m: discord.Incoming): void {
+	if (!kdb || !isFidoGo(m.content) || !waitingApproval(kdb)) return;
+	if (m.id) discord.ack(m.ackChannelId, m.id);
+	try {
+		approveWatch(KDB_WATCH);
+		log(`kdb: owner approved the FIDO login (${m.id})`);
+		void discord.postTo(kdb.alert_channel, "🔐 승인 받았어요. 회사메일 다시 로그인할게요. 폰 OnePass에 FIDO 오면 눌러줘요.").catch(e => log(`kdb approval note failed: ${e}`));
+	} catch (error) {
+		log(`kdb: approval failed: ${error}`);
+	}
+}
+if (kdb) discord.setClaimHandler(id => {
+	if (id === kdb.alert_channel) return { raw: kdbAlert };
+	const mail = id === kdb.mail_channel ? undefined : mailIdOf(kdb, id);
+	return mail === undefined ? undefined : { thread: `회사메일 ${mail}`, parent: kdb.mail_channel };
+});
 discord.connect(onOwner);
 // A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
 setAskAnswer((target, content) => {
@@ -1253,6 +1276,13 @@ startWatches((w, reason, output) => {
 	void out(w.to, `[${w.name}] ${reason}\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 syncFeatureWatches();
+if (kdb && !allWatches().some(w => w.name === KDB_WATCH)) {
+	try {
+		addWatch({ name: KDB_WATCH, command: `bun '${join(import.meta.dir, "kdb-approve.ts")}' '${kdb.dir}'`, every_minutes: 10, on: "fail", to: "alert", approval_minutes: 30 }, existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "");
+	} catch (error) {
+		log(`kdb: login watch not added: ${error}`);
+	}
+}
 writeAtomic(paths.pid, String(process.pid));
 log(`hub listening on 127.0.0.1:${server.port} as ${NAME} (discord ${discord.status.enabled ? "on" : discord.dryRunReason ? `off, dry run: ${discord.dryRunReason}; DOTZ_ALLOW_LIVE=1 connects` : "off"})`);
 for (const sig of ["SIGTERM", "SIGINT"] as const)

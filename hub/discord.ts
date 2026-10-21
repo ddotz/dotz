@@ -768,9 +768,23 @@ export function editedText(m: { id: string; content?: unknown; edited_timestamp?
 	return `[edited message: the owner changed an earlier message, treat this as a correction, do not answer the original again; previous text: ${JSON.stringify(previous ?? "(unknown)")}]\n${m.content}`;
 }
 
+// Channels outside this bot's categories that a gateway feature owns (hub/kdb.ts): `raw` gets the owner's messages there
+// as they are (not the orchestrator); `thread` is that feature's thread, delivered as a sub-topic thread of `parent`.
+export type Claim = { raw: (m: Incoming) => void } | { thread: string; parent: string };
+let claimOf: (channelId: string) => Claim | undefined = () => undefined;
+export function setClaimHandler(fn: (channelId: string) => Claim | undefined): void {
+	claimOf = fn;
+}
+
+// A plain message to a channel by id (a claimed channel has no target name).
+export async function postTo(channelId: string, text: string): Promise<void> {
+	if (!status.enabled) return;
+	await post(channelId, { ...buildSingle(text), allowed_mentions: mentionsOff });
+}
+
 export function connect(onMessage: (m: Incoming) => void): void {
 	if (!status.enabled) return;
-	const deliverIncoming = (m: any, channel: Incoming["channel"], edited?: string) => {
+	const deliverIncoming = (m: any, channel: Incoming["channel"], edited?: string, sink = onMessage) => {
 		if (!intakeOpen) return;
 		if (edited === undefined) {
 			if (handled.has(m.id)) return;
@@ -783,7 +797,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 			writeAtomic(SEEN_FILE, `${JSON.stringify({ last: lastSeen })}\n`);
 		}
 		const ref = m.referenced_message;
-		onMessage({
+		sink({
 			id: m.id,
 			channelId: m.channel_id,
 			ackChannelId: m.ack_channel_id ?? m.channel_id,
@@ -885,6 +899,18 @@ export function connect(onMessage: (m: Incoming) => void): void {
 		if (m.author?.bot || String(m.author?.id) !== OWNER) return;
 		const into = threadForReply(m.message_reference?.message_id, m.channel_id, starterThreads());
 		if (into) m = { ...m, channel_id: into, ack_channel_id: m.channel_id };
+		const claim = claimOf(m.channel_id);
+		if (claim && "raw" in claim) {
+			if (edited === undefined) deliverIncoming(m, "alert", undefined, claim.raw);
+			return;
+		}
+		if (claim) {
+			if (!channels.threads[m.channel_id]) {
+				channels.threads[m.channel_id] = { parent: claim.parent, name: claim.thread };
+				save();
+			}
+			return deliverIncoming(m, { thread: m.channel_id, name: channels.threads[m.channel_id]!.name }, edited);
+		}
 		const lane = Object.entries(channels.lanes).find(([, id]) => id === m.channel_id)?.[0];
 		// chat, worklog and alert are the orchestrator level: owner messages there reach the orchestrator, which routes them.
 		const fixed = lane ? { lane } : m.channel_id === channels.chat ? "chat" : m.channel_id === channels.worklog ? "worklog" : m.channel_id === channels.alert ? "alert" : !m.guild_id ? "dm" : undefined;

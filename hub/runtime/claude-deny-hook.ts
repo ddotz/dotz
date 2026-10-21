@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { blockedByFeatures } from "../featuredirs.ts";
 import { systemDeny } from "../systemdeny.ts";
+import { kdbActBlock } from "../kdb.ts";
 
 export const BLOCK_EXIT_CODE = 2;
 // Claude Code is told to wait 10 s (claude.ts writeSettings); the hook gives up and blocks before that.
@@ -21,6 +22,8 @@ export const HOOK_DEADLINE_MS = 8000;
 export function denyReason(command: string, dataDir: string): string | undefined {
 	const system = systemDeny(command);
 	if (system) return `Blocked by dotz: ${system}.`;
+	const kdb = kdbActBlock(command, dataDir);
+	if (kdb) return `Blocked by dotz (company mail leaves only on the owner's OK): ${kdb}.`;
 	const rules = join(dataDir, "RULES.md");
 	if (existsSync(rules)) {
 		const section = readFileSync(rules, "utf8").split(/^## Blocked commands\s*$/m)[1]?.split(/^## /m)[0] ?? "";
