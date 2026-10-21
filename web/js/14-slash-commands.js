@@ -8,16 +8,16 @@ const slModelTargets = () => [["orchestrator", botName], ["lanes", "세션 기�
 const slModels = () => ((M && M.available) || []).filter(m => !/haiku|fable/i.test(`${m.selector} ${m.name || ""}`) && !/-\d{8}$/.test(m.selector)).sort((a, b) => b.selector.localeCompare(a.selector, "en", { numeric: true })).map(m => [m.selector, m.name || ""]);
 const slProviders = () => ((P && P.providers) || []).map(p => [p.id, p.name || ""]);
 const CMDS = [
-  { c: "/status", d: "봇·세션·디스코드 상태와 컨텍스트" },
+  { c: "/status", d: "봇·세션·Discord 상태와 컨텍스트" },
   { c: "/context", d: "프로세스별 컨텍스트 사용량과 압축 상태" },
-  { c: "/compact", d: "컨텍스트 압축 (작업 중이면 턴이 끝난 뒤)", args: [{ n: "대상", opts: slProcs }] },
+  { c: "/compact", d: "컨텍스트 압축 (작업 중이면 끝난 뒤)", args: [{ n: "대상", opts: slProcs }] },
   { c: "/lanes", d: "세션마다 상태·모델·폴더" },
   { c: "/model", d: "모델 보기, 또는 대상의 모델 바꾸기", args: [{ n: "대상", opts: slModelTargets, opt: true }, { n: "모델", opts: slModels, opt: true }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]), opt: true }] },
-  { c: "/effort", d: "생각 강도 바꾸기", args: [{ n: "대상", opts: slModelTargets }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]) }] },
-  { c: "/restart", d: "에이전트 재시작, gateway는 전체 재시작", args: [{ n: "대상", opts: () => [["orchestrator", botName], ["gateway", "게이트웨이 전체 (한가할 때)"], ...slLanes()] }] },
-  { c: "/stop", d: "세션 멈추기 (나중에 재개)", args: [{ n: "세션", opts: slLanes }] },
+  { c: "/effort", d: "추론 강도 바꾸기", args: [{ n: "대상", opts: slModelTargets }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]) }] },
+  { c: "/restart", d: "에이전트 재시작 · 게이트웨이는 전체 재시작", args: [{ n: "대상", opts: () => [["orchestrator", botName], ["gateway", "게이트웨이 전체 (한가할 때)"], ...slLanes()] }] },
+  { c: "/stop", d: "세션 멈추기 (나중에 다시 시작할 수 있어요)", args: [{ n: "세션", opts: slLanes }] },
   { c: "/resume", d: "멈춘 세션 재개, 또는 도는 세션에 글 보내기", args: [{ n: "세션", opts: slLanes }, { n: "글", free: true, opt: true }] },
-  { c: "/abort", d: "지금 턴 취소 (비우면 봇)", args: [{ n: "대상", opts: slProcs, opt: true }] },
+  { c: "/abort", d: "지금 하는 일 취소 (비우면 봇)", args: [{ n: "대상", opts: slProcs, opt: true }] },
   { c: "/providers", d: "로그인·API 키·공급자별 모델" },
   { c: "/login", d: "공급자 로그인 (링크가 열려요)", args: [{ n: "공급자", opts: slProviders, opt: true }] },
   { c: "/logout", d: "공급자 로그아웃", args: [{ n: "공급자", opts: slProviders }] },
@@ -93,7 +93,27 @@ function slPick(i) {
 }
 const ta = $("#text");
 ta.setAttribute("aria-controls", "sl-list");
-function autosize() { ta.style.height = "auto"; ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`; }
+// The box itself is measured (the same "auto" then scrollHeight as ever, so the default height and the 140px cap are the original ones), but the
+// composer row is pinned to its current height for that instant: collapsing it used to shrink the composer, the timeline grew for a moment,
+// the browser clamped its scrollTop and the view slid on every keystroke. Pinned, nothing around the box moves and no frame sees the dip.
+const sendRow = $("#send");
+// The height never goes below one full line of the box's own computed font plus its vertical padding (CSS min-height says the same; this keeps
+// a JS-set px height from ever sitting under it, e.g. after the text scale changed). "normal" line-height resolves from the font size.
+function taFloor() {
+  const cs = getComputedStyle(ta);
+  const fs = parseFloat(cs.fontSize) || 16;
+  const lh = parseFloat(cs.lineHeight) || fs * 1.5;
+  const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  const border = cs.boxSizing === "border-box" ? (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0) : 0;
+  return Math.ceil(Math.max(lh + pad + border, parseFloat(cs.minHeight) || 0));
+}
+function autosize() {
+  const keep = sendRow.offsetHeight;
+  sendRow.style.height = `${keep}px`;
+  ta.style.height = "auto";
+  ta.style.height = `${Math.max(taFloor(), Math.min(ta.scrollHeight, 140))}px`;
+  sendRow.style.height = "";
+}
 ta.addEventListener("input", () => { autosize(); saveDraft(); updateHints(); });
 ta.addEventListener("focus", () => updateHints());
 ta.addEventListener("blur", () => { const box = $("#hints"); box.hidden = true; });
@@ -115,7 +135,11 @@ ta.addEventListener("keydown", ev => {
   ev.preventDefault();
   sendChat(ev.altKey ? "interrupt" : ev.metaKey || ev.ctrlKey ? "queue" : undefined);
 });
-$("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length) stopTarget(); else sendChat(); };
+// A tap on send must not take focus from the textarea: otherwise the phone keyboard closes on pointerdown, the composer re-lays out
+// and the click never lands (owner 2026-10-21: the first tap only hid the keyboard). The click then submits once; sendChat clears the box,
+// so a repeat is a no-op, and the box is refocused so the keyboard stays up like a messenger.
+$("#send-btn").addEventListener("pointerdown", ev => ev.preventDefault());
+$("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length) stopTarget(); else sendChat(); if (!ta.disabled) ta.focus({ preventScroll: true }); };
 $("#working-stop").onclick = () => stopTarget();
 ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
 async function stopTarget() {
@@ -152,7 +176,7 @@ async function sendChat(how) {
   try {
     const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) });
     scrollChat(true); scrollTerm(true);
-    if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast("다음 턴에 전달할게요"); }
+    if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast("작업이 끝나면 전달할게요"); }
     // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.
   else if (mode === "interrupt") toast("중단하고 보냈어요");
   }
@@ -164,17 +188,17 @@ function updateComposerMeta() {
   const gone = isLaneT(target) && info.known && !info.alive;
   const off = gone && !info.resumable;
   ta.disabled = off; $("#send-btn").disabled = off;
-  ta.placeholder = off ? "종료된 세션이에요" : DC.cur ? "번호를 누르거나 직접 입력하세요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기" : isTerm ? "메시지 또는 /명령" : isProjT(target) ? `${targetName(target)} 프로젝트의 ${botName}에게 메시지 · /명령` : `${targetName(target)}에게 메시지 · /명령`;
+  ta.placeholder = off ? "종료된 세션이에요" : DC.cur ? "번호를 누르거나 직접 입력해 주세요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기" : isTerm ? "메시지 또는 /명령" : isProjT(target) ? `${targetName(target)} 프로젝트의 ${botName}에게 메시지 · /명령` : `${targetName(target)}에게 메시지 · /명령`;
   $("#composer").classList.toggle("tmode", isTerm);
 }
 // The elapsed time ticks every second on its own; events only arrive when a tool runs, so a time drawn only on events
 // froze (owner 2026-10-20: stuck at 18s until the answer came).
-let workingLabel = "", workingSubs = 0;
+let workingLabel = "", workingSubs = 0, workingBg = [];
 function tickWorking() {
   if ($("#working").hidden) return;
   // The bottom line shows only the state (owner 2026-10-20); elapsed time lives on the work card.
   const g = CS.group;
-  $("#working-tx").textContent = $("#runline-tx").textContent = `${workingLabel}${workingSubs ? ` · 서브에이전트 ${workingSubs}` : ""}`;
+  $("#working-tx").textContent = $("#runline-tx").textContent = workingBg.length ? workLine(workingBg) : `${workingLabel}${workingSubs ? ` · 서브에이전트 ${workingSubs}` : ""}`;
   if (g && g.live) g.update();
 }
 setInterval(() => { if (!document.hidden) tickWorking(); }, 1000);
@@ -182,19 +206,26 @@ function renderWorking() {
   const info = targetInfo(target), box = $("#working");
   const st = info.alive ? info.status : "";
   const on = st === "working" || st === "starting" || st === "rate-limited";
-  box.hidden = !on;
+  // A request answered with [later] has no running turn, but its background work is still going: the line stays with that work.
+  const bg = on ? [] : workOfTarget(target), show = on || bg.length > 0;
+  workingBg = bg;
+  box.hidden = !show;
   // Only while the gateway reports this target running: status line, model-chip spinner, and stop in place of send
   // (with text typed the button sends it into the running turn instead).
   const line = $("#runline"), stopMode = on && st !== "rate-limited" && !ta.value.trim() && !ATT.length;
-  line.hidden = !on; line.classList.toggle("warn", st === "rate-limited");
+  line.hidden = !show; line.classList.toggle("warn", st === "rate-limited");
   $("#c-model").classList.toggle("run", on && st !== "rate-limited");
-  const sb = $("#send-btn"); sb.classList.toggle("stop", stopMode); sb.setAttribute("aria-label", stopMode ? "중단" : "보내기"); sb.title = stopMode ? "지금 턴 중단" : "";
+  const sb = $("#send-btn"); sb.classList.toggle("stop", stopMode); sb.setAttribute("aria-label", stopMode ? "중단" : "보내기"); sb.title = stopMode ? "지금 하는 일 중단" : "";
   if (on) {
     const n = runningSubs(sourceOf(target)).length;
     $(".dot", box).className = `dot ${st === "rate-limited" ? "warn" : "pri"}`;
-    workingLabel = `${st === "rate-limited" ? "한도 제한, 잠시 쉬는 중" : "작업 중..."}`; workingSubs = n;
+    workingLabel = `${st === "rate-limited" ? "한도에 걸려 잠시 쉬는 중" : "작업 중…"}`; workingSubs = n;
     tickWorking();
     $("#working-stop").hidden = st === "rate-limited";
+  } else if (bg.length) {
+    $(".dot", box).className = "dot pri";
+    $("#working-stop").hidden = true;
+    tickWorking();
   }
   renderQueue(); renderCtxRing();
   markLive();
@@ -211,7 +242,7 @@ function renderQueue() {
   box.hidden = !mine.length;
   if (!mine.length) { clear(box); return; }
   clear(box).append(...mine.map(i => el("div", { class: "qitem" },
-    el("div", { class: "qb" }, el("div", { class: "qt", text: i.text }), el("div", { class: "qm", text: "다음 턴에 전달" })),
+    el("div", { class: "qb" }, el("div", { class: "qt", text: i.text }), el("div", { class: "qm", text: "작업이 끝나면 전달" })),
     el("div", { class: "qa" },
       el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"),
       el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, () => takeBack(i)) }, "취소")))));

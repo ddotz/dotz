@@ -46,7 +46,7 @@ function attnRaw(t) {
   return msOf(DONE[t]) > msOf(SEEN[t]) ? "done" : "";
 }
 const attnKind = t => watching(t) ? "" : attnRaw(t);
-const attnLabel = k => ({ ask: "답변 필요", limit: "한도 대기" })[k] || "확인 필요";
+const attnLabel = k => ({ ask: "답변 필요", limit: "한도 걸림" })[k] || "확인 필요";
 const attnCount = () => S ? liveTargets().filter(attnKind).length : 0;
 // Targets needing attention, not messages: the 채팅 nav badge and the page title. Unread message counts stay on the chips.
 function paintAttn() {

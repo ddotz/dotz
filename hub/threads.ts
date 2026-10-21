@@ -38,6 +38,9 @@ export function answerMovesToLane(place: LanePlace, asking: string | undefined):
 	return place.kind !== "channel" && Boolean(asking && (asking.startsWith("ch:") || asking.startsWith("th:")));
 }
 
+/** A Discord message id. A web message id (8 hex chars) is not one: Discord rejects it as a message_reference. */
+export const isSnowflake = (id: string): boolean => /^\d{15,22}$/.test(id);
+
 const TOP_LEVEL = new Set(["chat", "dm", "worklog", "alert"]);
 /**
  * The Discord reply reference for an answer to owner message `replyTo` in `target`. A top-level channel always gets it (the
@@ -45,7 +48,7 @@ const TOP_LEVEL = new Set(["chat", "dm", "worklog", "alert"]);
  * noise on a phone; it is kept only when the owner wrote something newer there meanwhile (`lastOwner`), so the pairing is clear.
  */
 export function replyRef(target: string, replyTo: string | undefined, lastOwner: string | undefined): string | undefined {
-	if (!replyTo) return undefined;
+	if (!replyTo || !isSnowflake(replyTo)) return undefined;
 	if (TOP_LEVEL.has(target) || target.startsWith("ch:")) return replyTo;
 	return lastOwner && lastOwner !== replyTo ? replyTo : undefined;
 }

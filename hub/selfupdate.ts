@@ -78,15 +78,15 @@ const lastLine = (s: string) => scrub(s.split("\n").map(l => l.trim()).filter(Bo
 export function fetchError(out: string, remote: string): CheckError {
 	const detail = lastLine(out);
 	if (/could not read Username|terminal prompts disabled|Authentication failed|Invalid username or password|Repository not found|returned error: 40[13]|Write access to repository not granted/i.test(out))
-		return { reason: "GitHub 인증이 없어 비공개 저장소를 받을 수 없어요.", fix: "이 Mac의 터미널에서 `gh auth login` 으로 로그인한 뒤 `gh auth setup-git` 을 실행해 주세요. (토큰을 쓰는 git 자격 증명도 돼요)", detail };
+		return { reason: "GitHub 인증이 없어 비공개 저장소를 받을 수 없어요.", fix: "이 Mac의 터미널에서 `gh auth login`으로 로그인한 뒤 `gh auth setup-git`을 실행해 주세요. (토큰을 쓰는 git 자격 증명도 돼요)", detail };
 	if (/Permission denied \(publickey\)|Host key verification failed/i.test(out))
-		return { reason: "SSH 키로 GitHub에 접속하지 못했어요.", fix: "`ssh -T git@github.com` 으로 확인하고, 키가 없으면 `gh ssh-key add ~/.ssh/id_ed25519.pub` 로 등록해 주세요.", detail };
+		return { reason: "SSH 키로 GitHub에 접속하지 못했어요.", fix: "`ssh -T git@github.com`으로 확인하고, 키가 없으면 `gh ssh-key add ~/.ssh/id_ed25519.pub`로 등록해 주세요.", detail };
 	if (/Could not resolve host|Failed to connect|Connection (refused|timed out)|Network is unreachable|Operation timed out|timed out|SIGTERM/i.test(out))
 		return { reason: "원격 저장소에 연결하지 못했어요 (네트워크).", fix: "인터넷 연결을 확인하고 잠시 뒤 다시 확인해 주세요.", detail };
 	if (/does not appear to be a git repository|No such remote/i.test(out))
-		return { reason: `원격 '${remote}' 이 없어요.`, fix: `\`git remote add ${remote} https://github.com/ddotz/dotz.git\` 로 원격을 등록해 주세요.`, detail };
-	if (/couldn't find remote ref/i.test(out)) return { reason: "원격에 추적하는 브랜치가 없어요.", fix: "config.json 의 self_update.branch 를 확인해 주세요.", detail };
-	return { reason: "원격 저장소를 받지 못했어요.", fix: "터미널에서 `git fetch` 를 실행해 원인을 확인해 주세요.", detail };
+		return { reason: `원격 '${remote}'이 없어요.`, fix: `\`git remote add ${remote} https://github.com/ddotz/dotz.git\`로 원격을 등록해 주세요.`, detail };
+	if (/couldn't find remote ref/i.test(out)) return { reason: "원격에 추적하는 브랜치가 없어요.", fix: "config.json의 self_update.branch를 확인해 주세요.", detail };
+	return { reason: "원격 저장소를 받지 못했어요.", fix: "터미널에서 `git fetch`를 실행해 원인을 확인해 주세요.", detail };
 }
 
 function settings() {
@@ -152,7 +152,7 @@ export async function check(o: Options): Promise<CheckResult> {
 		const r = {
 			...base,
 			error: {
-				reason: v.kind === "install" ? "install.sh 로 설치한 사본이라 git 으로 확인할 수 없어요." : "업데이트할 수 있는 dotz 사본이 아니에요.",
+				reason: v.kind === "install" ? "install.sh로 설치한 사본이라 git으로 확인할 수 없어요." : "업데이트할 수 있는 dotz 사본이 아니에요.",
 				fix: "설치 스크립트를 다시 실행하면 최신으로 바뀌어요: `curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh` (비공개 저장소면 먼저 `gh auth login`)",
 				detail: v.kind === "install" ? `source=${v.source} installed=${v.installed}` : v.detail,
 			},
@@ -182,9 +182,9 @@ export async function check(o: Options): Promise<CheckResult> {
 		ahead: parseCommits(ahead.out),
 		dirty: dirty.out.split("\n").filter(Boolean).slice(0, 40),
 	};
-	if (v.branch !== branch) r.blocked.push(`지금 브랜치가 ${v.branch} 이에요. ${branch} 에서만 업데이트해요.`);
+	if (v.branch !== branch) r.blocked.push(`지금 브랜치가 ${v.branch}이에요. ${branch}에서만 업데이트해요.`);
 	if (r.dirty.length) r.blocked.push(`커밋하지 않은 변경 ${r.dirty.length}개가 있어요. 커밋하거나 치운 뒤 업데이트해요 (지우지 않아요).`);
-	if (r.ahead.length) r.blocked.push(`${upstream} 에 없는 로컬 커밋 ${r.ahead.length}개가 있어요. 먼저 push 하거나 정리해 주세요 (지우지 않아요).`);
+	if (r.ahead.length) r.blocked.push(`${upstream}에 없는 로컬 커밋 ${r.ahead.length}개가 있어요. 먼저 push하거나 정리해 주세요 (지우지 않아요).`);
 	record(logDir, `check: ${v.commit.short} vs ${upstream} ${r.remoteHead?.slice(0, 7)}: ${r.incomingTotal} incoming, ${r.ahead.length} local-only, ${r.dirty.length} dirty`);
 	return r;
 }
@@ -209,6 +209,7 @@ export async function apply(o: Options): Promise<Job> {
 		step(status === "updated" ? "완료" : status === "running" ? j.phase : "끝", text);
 		j.status = status;
 		j.endedAt = new Date().toISOString();
+		if (status === "updated" || status === "current") resolvedFn?.();
 		log(`self-update #${j.id}: ${status}: ${text}`);
 		return j;
 	};
@@ -228,13 +229,13 @@ export async function apply(o: Options): Promise<Job> {
 
 	step("병합", `${c.version.commit.short} → ${to.slice(0, 7)} fast-forward (${c.incomingTotal}개 커밋)`);
 	const m = await exec(["git", "merge", "--ff-only", to], dir, 60_000);
-	if (m.code !== 0) return end("failed", `fast-forward 할 수 없어요: ${lastLine(m.out)}`);
+	if (m.code !== 0) return end("failed", `fast-forward로 합칠 수 없어요: ${lastLine(m.out)}`);
 
 	const back = async (why: string, deps: boolean) => {
-		step("되돌리기", `${why} → ${c.version.commit.short} 로 되돌려요`);
+		step("되돌리기", `${why} → ${c.version.commit.short}로 되돌려요`);
 		// --keep moves HEAD and the files the merge changed only; it refuses rather than overwrite anything else.
 		const r = await exec(["git", "reset", "--keep", from], dir, 60_000);
-		if (r.code !== 0) return end("failed", `${why}. 되돌리기도 실패했어요(지금 ${to.slice(0, 7)}): ${lastLine(r.out)} — 터미널에서 \`git reset --keep ${from.slice(0, 12)}\` 로 되돌려 주세요.`);
+		if (r.code !== 0) return end("failed", `${why}. 되돌리기도 실패했어요(지금 ${to.slice(0, 7)}): ${lastLine(r.out)} — 터미널에서 \`git reset --keep ${from.slice(0, 12)}\`로 되돌려 주세요.`);
 		if (deps) {
 			const i = await exec(["bun", "install"], dir, 10 * 60_000);
 			if (i.code !== 0) step("되돌리기", `이전 의존성 bun install 실패: ${lastLine(i.out)}`);
@@ -245,7 +246,7 @@ export async function apply(o: Options): Promise<Job> {
 	const changed = await exec(["git", "diff", "--name-only", from, to], dir, 15_000);
 	const deps = changed.out.split("\n").some(f => LOCK_FILES.includes(f.trim()));
 	if (deps) {
-		step("의존성", "package.json/lockfile 이 바뀌어 bun install 을 실행해요");
+		step("의존성", "package.json/lockfile이 바뀌어 bun install을 실행해요");
 		const i = await exec(["bun", "install"], dir, 10 * 60_000);
 		if (i.code !== 0) return back(`bun install 실패: ${lastLine(i.out)}`, true);
 	}
@@ -274,11 +275,18 @@ const saveState = (s: State) => writeAtomic(STATE_FILE, `${JSON.stringify(s)}\n`
 let running: Version | undefined;
 let autoTimer: Timer | undefined;
 let notifyFn: ((text: string, count: number) => void) | undefined;
+let resolvedFn: (() => void) | undefined;
+// Called when a check finds the checkout current or an update was applied: the "new version" notice is no longer true.
+export const onUpdateResolved = (fn: () => void) => void (resolvedFn = fn);
+const settled = (c: CheckResult) => {
+	if (c.ok && c.incomingTotal === 0) resolvedFn?.();
+};
 
 async function autoCheck(o: Options): Promise<void> {
 	const c = await check(o);
 	const s = readState();
 	s.lastCheck = c;
+	settled(c);
 	if (c.ok && c.incomingTotal > 0 && c.remoteHead && s.notified !== c.remoteHead) {
 		s.notified = c.remoteHead;
 		const text = `dotz 새 버전이 있어요: 커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.`;
@@ -314,7 +322,7 @@ export function setSettings(values: { auto_check?: unknown; at?: unknown }, o: O
 	const next: Record<string, unknown> = {};
 	if (typeof values.auto_check === "boolean") next.auto_check = values.auto_check;
 	if (values.at !== undefined) {
-		if (typeof values.at !== "string" || !/^([01]?\d|2[0-3]):[0-5]\d$/.test(values.at)) throw new Error("시간은 HH:MM 으로 적어 주세요");
+		if (typeof values.at !== "string" || !/^([01]?\d|2[0-3]):[0-5]\d$/.test(values.at)) throw new Error("시간은 HH:MM으로 적어 주세요");
 		next.at = values.at;
 	}
 	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
@@ -341,6 +349,7 @@ export async function updateRoute(req: Request, url: URL, deps: RouteDeps): Prom
 	if (req.method === "POST" && p === "/api/update/check") {
 		const c = await check(o);
 		saveState({ ...readState(), lastCheck: c });
+		settled(c);
 		return json(c);
 	}
 	if (req.method === "POST" && p === "/api/update/apply") {

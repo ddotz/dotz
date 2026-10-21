@@ -88,7 +88,7 @@ const keptWhy = err => /uncommitted/i.test(err) ? "아직 커밋하지 않은 �
   : "작업 폴더를 정리하지 못했어요. 잠시 뒤에 다시 해 보세요.";
 function keptLanes(bad) {
   dialog({ title: bad.length === 1 ? `${bad[0].name} 세션은 그대로 뒀어요` : `세션 ${bad.length}개는 그대로 뒀어요`,
-    body: el("div", { class: "dl-body" }, el("p", { text: "아무것도 지우지 않았어요. 안전하게 남겨 두었어요." }),
+    body: el("div", { class: "dl-body" }, el("p", { text: "아무것도 지우지 않고 그대로 뒀어요." }),
       el("ul", { class: "dl-list" }, ...bad.map(x => el("li", { text: `${x.name} · ${keptWhy(String(x.error || ""))}` })))),
     actions: [{ label: "확인", kind: "fill", onclick: c => c() }] });
 }
@@ -102,7 +102,7 @@ async function restoreEnded(ids) {
 }
 // An exited or stopped lane is a normal end, so it gets the neutral dot; red is kept for real failures.
 const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
-const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 제한", exited: "종료됨" })[s] || s || "알 수 없음";
+const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 걸림", exited: "종료됨" })[s] || s || "알 수 없음";
 const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
 // Thinking levels said in Korean (the stored value stays the API id).
 const THINK_KO = { off: "끔", minimal: "최소", low: "낮음", medium: "보통", high: "높음", xhigh: "최고", max: "최고", auto: "자동" };
@@ -110,8 +110,29 @@ const thinkKo = v => THINK_KO[String(v || "").toLowerCase()] || String(v || "");
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) || []).find(x => x.selector === sel) || ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
 /* ---------- chrome: nav, theme, back ---------- */
-// Narrow screens: tapping 채팅 again while a conversation is open opens the chat list (whose first row is 알림 모아보기); the first tap from elsewhere returns to the last conversation.
-for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => (id === "chat" && narrowChat() && (current === "chat" || current === "activity") ? go("chat", "list") : go(id === "chat" ? lastChatView() : id)) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : null));
+// Narrow screens: tapping 채팅 again while a conversation is open opens the chat list (whose first row is 알림 모아보기); tapping it once more closes the list
+// and returns to that conversation where it was scrolled (the list sits below it in the history stack, so the conversation is pushed back like a pick); the first tap from elsewhere returns to the last conversation.
+let chatListSnap = null;
+// The place is kept as the first message in view and its distance from the top: the conversation is drawn again on return and its height
+// still settles for a moment after, so a plain scrollTop lands elsewhere (live hub 2026-10-21: 571px off). The pin (31-conversations.js) holds that message there.
+function chatAnchor() {
+  const top = timeline.getBoundingClientRect().top;
+  for (const m of tl.querySelectorAll("[data-ts]")) { const r = m.getBoundingClientRect(); if (r.bottom > top + 1) return { ts: m.dataset.ts, off: r.top - top }; }
+  return null;
+}
+function openChatList() { chatListSnap = current === "chat" ? { key: target, top: timeline.scrollTop, stick: chatStick, at: chatAnchor() } : null; go("chat", "list"); }
+function closeChatList() {
+  const snap = chatListSnap; chatListSnap = null;
+  go(lastChatView());
+  if (snap && snap.key === target && current === "chat" && !snap.stick) {
+    chatUnpin();
+    if (snap.at) { CV.pinTs = snap.at.ts; CV.pinOff = snap.at.off; chatPin("at"); }
+    else timeline.scrollTop = snap.top;
+    chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick;
+  }
+}
+const chatTabTap = () => (convListing() ? closeChatList() : narrowChat() && (current === "chat" || current === "activity") ? openChatList() : go(lastChatView()));
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => (id === "chat" ? chatTabTap() : go(id)) }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
@@ -131,4 +152,4 @@ function renderSideStatus() {
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
 const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? "projects" : null;
-$("#back").onclick = () => (convOnPhone() ? go("chat", "list") : go(backTarget() || "home"));
+$("#back").onclick = () => (convOnPhone() ? openChatList() : go(backTarget() || "home"));

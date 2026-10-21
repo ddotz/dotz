@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { aliasesFile, setAlias } from "./account-alias.ts";
 import { checkNow, decisionsFile, describeRule, evaluate, lastDecision, readRules, rulesFile, runScript, type Rules, type ScriptInput, setManual, setUsage, writeRules } from "./account-rules.ts";
-import { type AccountSwitch, onSwitch, type Pool, resetStickyForTest, stickyAccount, switchesFile } from "./account-sticky.ts";
+import { type AccountSwitch, MAX_LOG_LINES, onSwitch, type Pool, resetStickyForTest, stickyAccount, switchesFile } from "./account-sticky.ts";
 import { authFile } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
 
@@ -169,6 +169,34 @@ test("checkNow: the script's pick is applied, the script runs at most once per 3
 	await checkNow(WED_10 + 81_000);
 	expect(decisionLines().map(l => [l.account, l.source])).toEqual([["work", "script"], ["personal", "manual"]]);
 	expect(seen.map(s => s.kind)).toEqual(["script", "manual"]);
+});
+
+test("checkNow: a restart with the same decision adds no decisions.jsonl line", async () => {
+	writeAuth(["personal", "work"]);
+	writeSlots({ personal: { lastSuccessAt: 2 }, work: { lastSuccessAt: 1 } });
+	await checkNow(WED_10);
+	expect(decisionLines().map(l => [l.account, l.source])).toEqual([["personal", "auto"]]);
+	for (let i = 1; i <= 3; i++) {
+		resetStickyForTest(); // a gateway restart: memory gone, the files stay
+		await checkNow(WED_10 + i * 5 * MIN);
+	}
+	expect(decisionLines()).toHaveLength(1);
+	expect(lastDecision()).toMatchObject({ account: "personal", source: "auto" });
+	expect(existsSync(switchesFile()) ? readFileSync(switchesFile(), "utf8").trim().split("\n") : []).toHaveLength(1);
+});
+
+test("decisions.jsonl keeps its last 20 lines and drops repeated ones when it is trimmed", async () => {
+	writeAuth(["personal", "work"]);
+	writeSlots({ personal: { lastSuccessAt: 2 }, work: { lastSuccessAt: 1 } });
+	const row = (i: number) => ({ account: i % 2 ? "x" : "y", source: "auto", reason: "r", at: new Date(WED_10 + i * MIN).toISOString() });
+	const seed = [...Array.from({ length: 24 }, (_, i) => row(i)), row(23)]; // ends with a repeat
+	mkdirSync(dirname(decisionsFile()), { recursive: true });
+	writeFileSync(decisionsFile(), `${seed.map(r => JSON.stringify(r)).join("\n")}\n`);
+	await checkNow(WED_10 + 30 * MIN);
+	const lines = decisionLines();
+	expect(lines).toHaveLength(MAX_LOG_LINES);
+	expect(lines.at(-1)).toMatchObject({ account: "personal", source: "auto" });
+	expect(lines.every((l, i) => i === 0 || l.account !== lines[i - 1].account)).toBe(true);
 });
 
 test("checkNow: a script timeout is logged once with its error kind, and the rules decide meanwhile", async () => {

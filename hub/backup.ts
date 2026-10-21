@@ -93,8 +93,8 @@ export async function pushBackup(dir: string, remote: string, flagged: string[])
 		log(`backup: ${why}`);
 		return alertOnce(dir, `[backup] ${alert}`);
 	};
-	if (/\/\/[^@/\s]+:[^@/\s]+@/.test(remote)) return fail("backup.remote embeds credentials; push refused", "backup.remote URL에 비밀번호/토큰이 들어 있어서 push를 막았어요. 자격증명은 git credential helper나 ssh 키로 빼주세요.");
-	if (flagged.length) return fail(`push blocked, secret-like content in: ${flagged.join(", ")}`, `비밀값처럼 보이는 내용이 있어서 백업 push를 막았어요 (파일: ${flagged.join(", ")}). 값을 지우면 다음 스냅샷부터 다시 올라가요.`);
+	if (/\/\/[^@/\s]+:[^@/\s]+@/.test(remote)) return fail("backup.remote embeds credentials; push refused", "backup.remote URL에 비밀번호/토큰이 들어 있어서 올리기를 막았어요. 자격증명은 git credential helper나 ssh 키로 빼 주세요.");
+	if (flagged.length) return fail(`push blocked, secret-like content in: ${flagged.join(", ")}`, `비밀값처럼 보이는 내용이 있어서 백업 올리기를 막았어요 (파일: ${flagged.join(", ")}). 값을 지우면 다음 스냅샷부터 다시 올라가요.`);
 	const head = (await git(dir, ["rev-parse", "-q", "--verify", "HEAD"])).out.trim();
 	if (!head) return undefined;
 	const ref = `refs/backup/${createHash("sha1").update(remote).digest("hex").slice(0, 8)}`;
@@ -105,11 +105,11 @@ export async function pushBackup(dir: string, remote: string, flagged: string[])
 	for (const c of commits) {
 		const changed = lines((await git(dir, ["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "--diff-filter=AM", c])).out);
 		const bad = await scan(dir, f => `${c}:${f}`, changed);
-		if (bad.length) return fail(`push blocked, secret-like content in history ${c.slice(0, 8)}: ${bad.join(", ")}`, `백업 히스토리(${c.slice(0, 8)})에 비밀값처럼 보이는 내용이 있어서 push를 막았어요 (파일: ${bad.join(", ")}). 히스토리 정리가 필요해요.`);
+		if (bad.length) return fail(`push blocked, secret-like content in history ${c.slice(0, 8)}: ${bad.join(", ")}`, `백업 기록(${c.slice(0, 8)})에 비밀값처럼 보이는 내용이 있어서 올리기를 막았어요 (파일: ${bad.join(", ")}). 기록 정리가 필요해요.`);
 	}
 	const branch = (await git(dir, ["symbolic-ref", "--short", "-q", "HEAD"])).out.trim() || "main";
 	const r = await git(dir, ["push", "-q", remote, `HEAD:refs/heads/${branch}`], 120_000);
-	if (r.code !== 0) return fail(`push failed: ${scrub(r.out).trim().slice(-300)}`, "백업 push가 실패했어요. hub.log의 'backup:' 줄을 확인해 주세요.");
+	if (r.code !== 0) return fail(`push failed: ${scrub(r.out).trim().slice(-300)}`, "백업을 올리지 못했어요. hub.log의 'backup:' 줄을 확인해 주세요.");
 	await git(dir, ["update-ref", ref, head]);
 	log(`backup: pushed ${commits.length} commit(s)`);
 	return undefined;

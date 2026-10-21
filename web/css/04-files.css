@@ -208,10 +208,13 @@ button.cchip:hover { background: var(--layer); color: var(--fg); }
 @media (max-width: 600px) { .cchip.cown { display: none; } }
 .cbar .working { margin: 0; min-height: 26px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; gap: 6px; }
 .cbar .working #working-tx { color: var(--fg-2); font-weight: 500; font-size: 12.5px; }
-.sendrow textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; padding: 4px 0; font-size: 14px; line-height: 22px; max-height: 140px; }
+/* Unitless line-height (22/14, 24/16 as before) so the line grows with the font under text zoom; a px line-height stayed put and clipped the glyphs.
+   The floor is one full line plus the padding, never below it whatever height autosize or an old px style says: em fallback first (same value,
+   the line-height is explicit), 1lh where supported. */
+.sendrow textarea { --ta-pad: 4px; flex: 1; min-width: 0; resize: none; border: 0; outline: 0; background: transparent; box-sizing: border-box; padding: var(--ta-pad) 0; font-size: 14px; line-height: 1.5714; min-height: calc(1.5714em + 2 * var(--ta-pad)); min-height: calc(1lh + 2 * var(--ta-pad)); max-height: 140px; }
 .sendrow textarea::placeholder { color: var(--fg-3); }
 .prompt { display: none; }
-@media (pointer: coarse) { .sendrow textarea { font-size: 16px; line-height: 24px; } }
+@media (pointer: coarse) { .sendrow textarea { font-size: 16px; line-height: 1.5; min-height: calc(1.5em + 2 * var(--ta-pad)); min-height: calc(1lh + 2 * var(--ta-pad)); } }
 .composer.tmode .sendrow { background: var(--card); }
 .composer.tmode .qitem { background: var(--card); border-color: transparent; }
 
@@ -220,4 +223,26 @@ button.cchip:hover { background: var(--layer); color: var(--fg); }
 .term { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 0 0 12px; font: 14px/22px var(--font); color: var(--fg); }
 .term > * { max-width: var(--col); margin-left: auto; margin-right: auto; }
 .term .tmore { display: flex; margin: 0 auto 12px; }
-.term .tdv, .term .lg-note { margin: 10px auto; color: var(--fg-3); font-size: 12.5px; line-height: 18px; text-align: center; }
+.term .tdv, .term .lg-note { margin: 10px auto; color: var(--fg-3); font-size: 12.5px; line-height: 18px; text-align: center; }/* attachment chips as buttons (md and text open in the reader) and the reader sheet */
+button.fatt { border: 0; font: inherit; text-align: left; cursor: pointer; }
+.nt-item .mfiles { justify-content: flex-start; padding: 0 12px 10px 32px; }
+.nt-item .mfiles .thumb img { max-width: 200px; max-height: 140px; }
+.nt-item .mfiles .fatt { background: var(--active); }
+.nt-item .mfiles .fatt:hover { background: var(--line); }
+.nt-item .mfiles .fatt.off:hover { background: var(--active); }
+dialog.tbox { width: min(760px, 100vw); height: min(80dvh, 100dvh); max-width: none; max-height: none; margin: auto; padding: 0; border: 0; border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: 0 12px 40px rgb(0 0 0 / .22); overflow: hidden; }
+dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
+.tbox .tv-in { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+.tbox .tv-bar { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.tbox .tv-n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.tbox .tv-bar a, .tbox .tv-bar button { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; text-decoration: none; }
+.tbox .tv-bar button.x { width: 32px; padding: 0; }
+.tbox .tv-body { min-height: 0; overflow: auto; padding: 16px 20px 28px; font-size: 15px; line-height: 26px; overflow-wrap: anywhere; }
+.tbox .tv-body:focus { outline: 0; }
+.tbox .tv-body p { margin: 0 0 12px; }
+.tbox .tv-body p.h { margin: 20px 0 8px; font-size: 17px; line-height: 26px; } .tbox .tv-body p.h:first-child { margin-top: 0; }
+.tbox .tv-body ul, .tbox .tv-body ol { margin: 0 0 12px; padding-left: 24px; }
+.tbox .tv-body pre { margin: 0; font: 13px/20px var(--mono); white-space: pre-wrap; }
+.tbox .tv-body .md pre, .tbox .tv-body > .md pre { margin: 8px 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--layer); }
+.tbox .tv-st { color: var(--fg-3); font-size: 13px; line-height: 20px; }
+@media (max-width: 639px) { dialog.tbox { width: 100vw; height: 100dvh; border-radius: 0; } .nt-item .mfiles { padding-left: 28px; } }

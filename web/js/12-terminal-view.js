@@ -70,7 +70,7 @@ function fillLogRow(rec, a) {
 // recall block after a compaction) is for the model, not the owner: the log shows a short label and the message itself.
 const GW_LEADS = [
   [/^(작업 중에 새 메시지가 도착했어요|A new message arrived while you are working)/, "작업 중에 온 메시지"],
-  [/^(작업 중에 레인 보고가 도착했어요|A lane report arrived while you are working)/, "작업 중에 온 레인 보고"],
+  [/^(작업 중에 레인 보고가 도착했어요|A lane report arrived while you are working)/, "작업 중에 온 세션 보고"],
   [/^(게이트웨이가 다시 시작돼서 이 요청에|The gateway restarted before you answered)/, "재시작 뒤 다시 처리"],
   [/^(오너가 기다리는 중이에요|The owner has waited)/, "답을 기다리는 중"],
   [/^(사용량 한도가 풀렸어요|The rate limit has passed)/, "사용량 한도 풀림"],
@@ -83,8 +83,8 @@ const GW_LEADS = [
 const GW_NOISE = /^\s*\((작업 채널 목록|직전에 오너에게|오너에게는 .*로 답하세요|work channels|reply to the owner in|your last message to the owner)/i;
 function inboxTitle(head) {
   let m;
-  if ((m = head.match(/^(?:레인 (\S+)의 보고|lane report from (\S+))/))) return `레인 보고 · ${m[1] || m[2]}`.replace(/:$/, "");
-  if (/^(레인 보고 \d+건|\d+ lane reports|lane report \()/.test(head)) return "레인 보고";
+  if ((m = head.match(/^(?:레인 (\S+)의 보고|lane report from (\S+))/))) return `세션 보고 · ${m[1] || m[2]}`.replace(/:$/, "");
+  if (/^(레인 보고 \d+건|\d+ lane reports|lane report \()/.test(head)) return "세션 보고";
   if ((m = head.match(/^watch (\S+)/))) return `감시 · ${m[1]}`;
   if (/새 메일|new mail/.test(head)) return "새 메일";
   if (/^(예약 항목|scheduled)/.test(head)) return "예약 작업";

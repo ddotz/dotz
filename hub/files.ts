@@ -57,7 +57,7 @@ export async function uploadsFrom(req: Request, dir = UPLOADS, max = UPLOAD_MAX_
 }
 
 // Names that never leave the machine through this route, even inside an allowed root.
-const DENY = /(^|\/)(secrets?|\.ssh|\.gnupg|\.aws|\.git)(\/|$)|(^|\/)\.env(\.|$)|api[-_]?key|token|password|credential|id_(rsa|ed25519|ecdsa)|\.(pem|key|p12|keychain|db|sqlite)$/i;
+const DENY = /(^|\/)(secrets?|\.ssh|\.gnupg|\.aws|\.git)(\/|$)|(^|\/)\.env(\.|$)|api[-_]?key|token|password|credential|id_(rsa|ed25519|ecdsa)|\.(pem|key|p12|keychain|db|sqlite)$|(^|\/)\.(netrc|npmrc|zsh_history|bash_history)$/i;
 
 const real = (p: string): string | undefined => {
 	try {
@@ -81,20 +81,48 @@ export function allowedRoots(laneCwds: string[] = []): string[] {
 	return [...roots];
 }
 
-// The real path of `input` when it is a regular file inside one of `roots`; otherwise a FileError (403/404).
-export function resolveAllowed(input: string, roots: string[]): string {
+// The `[file]` lines of a message (outside a ``` block), as written. Shared by the Discord sender, the history scan and the web.
+export function fileLinePaths(text: string): string[] {
+	const out: string[] = [];
+	let fence = false;
+	for (const line of text.split("\n")) {
+		if (/^\s*```/.test(line)) fence = !fence;
+		const m = fence ? null : /^\s*\[file\]\s+`?(.+?)`?\s*$/.exec(line);
+		if (m) out.push(m[1]!);
+	}
+	return out;
+}
+
+// Inside the data dir only uploads, the lanes' report folders and qa/ (QA shots and findings) may leave through a listed file.
+const listedDataDirs = () => [UPLOADS, join(DATA_DIR, "lanes"), join(DATA_DIR, "qa")].map(d => real(d) ?? d);
+
+// The real path of `input` when it is a regular file inside one of `roots`, or when it is `listed`: written, exactly like
+// this, in a [file] line of a message the gateway sent (events.ts sentFiles). A listed file still has to be a regular file,
+// off the secret deny-list and outside the data dir (except uploads, lanes and qa/); a listed relative path is looked up
+// under the data dir and the roots. Otherwise a FileError (400/403/404).
+export function resolveAllowed(input: string, roots: string[], listed: ReadonlySet<string> = new Set()): string {
 	if (!input || input.includes("\0")) throw new FileError("path required", 400);
-	const p = input.startsWith("~/") ? join(HOME, input.slice(2)) : input;
-	if (!p.startsWith("/")) throw new FileError("absolute path required", 400);
+	const isListed = listed.has(input);
+	let p = input.startsWith("~/") ? join(HOME, input.slice(2)) : input;
+	if (!p.startsWith("/")) {
+		if (!isListed || p.split("/").includes("..")) throw new FileError("absolute path required", 400);
+		const rel = p;
+		p = [DATA_DIR, ...roots].map(base => join(base, rel)).find(c => existsSync(c)) ?? join(DATA_DIR, rel);
+	}
 	if (!existsSync(p)) throw new FileError("파일이 없어요", 404);
 	const r = real(p);
 	if (!r) throw new FileError("파일이 없어요", 404);
-	if (!roots.some(root => r === root || r.startsWith(root + sep))) throw new FileError("열 수 없는 위치예요", 403);
+	if (!roots.some(root => r === root || r.startsWith(root + sep))) {
+		const data = real(DATA_DIR) ?? DATA_DIR;
+		if (!isListed || ((r === data || r.startsWith(data + sep)) && !listedDataDirs().some(d => r.startsWith(d + sep)))) throw new FileError("열 수 없는 위치예요", 403);
+	}
 	if (DENY.test(r)) throw new FileError("열 수 없는 파일이에요", 403);
 	if (!statSync(r).isFile()) throw new FileError("파일이 아니에요", 400);
 	return r;
 }
 
+// Shown in the browser (images, pdf, text); every other type is offered as a download.
+const INLINE = /\.(png|jpe?g|gif|webp|avif|heic|svg|pdf|md|markdown|txt|log|json|jsonl|ya?ml|toml|csv|tsv|ts|tsx|js|jsx|mjs|py|rs|go|sh|css|html?|xml|diff|patch)$/i;
 const TEXTISH = /\.(md|txt|log|json|jsonl|ya?ml|toml|csv|tsv|ts|tsx|js|jsx|mjs|py|rs|go|sh|css|html?|xml|svg|diff|patch)$/i;
 
 // GET /api/file?path=...&download=1 (or dl=1). Inline for preview unless asked to download; Range for media and big files. The CSP sandbox keeps an
@@ -107,7 +135,7 @@ export function serveFile(path: string, req: Request, dl = false): Response {
 	const name = basename(path);
 	const headers: Record<string, string> = {
 		"Content-Type": type,
-		"Content-Disposition": `${dl ? "attachment" : "inline"}; filename="${name.replace(/[^\x20-\x7e]|"/g, "_")}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+		"Content-Disposition": `${dl || !INLINE.test(path) ? "attachment" : "inline"}; filename="${name.replace(/[^\x20-\x7e]|"/g, "_")}"; filename*=UTF-8''${encodeURIComponent(name)}`,
 		"Accept-Ranges": "bytes",
 		"X-Content-Type-Options": "nosniff",
 		"Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'",
@@ -127,6 +155,16 @@ export function serveFile(path: string, req: Request, dl = false): Response {
 		return new Response(f.slice(start, end + 1), { status: 206, headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": String(end - start + 1) } });
 	}
 	return new Response(f, { headers: { ...headers, "Content-Length": String(size) } });
+}
+
+// GET/HEAD /api/file?path=...[&download=1]: the whole route (main.ts adds the web auth in front). `listed` = events.ts sentFiles.
+export function fileRoute(req: Request, url: URL, roots: string[], listed: ReadonlySet<string>): Response {
+	try {
+		const res = serveFile(resolveAllowed(url.searchParams.get("path") ?? "", roots, listed), req, url.searchParams.get("dl") === "1" || url.searchParams.get("download") === "1");
+		return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
+	} catch (error) {
+		return Response.json({ error: (error as Error).message }, { status: error instanceof FileError ? error.status : 400 });
+	}
 }
 
 // The lines appended to a message for the agent: one per file, with its absolute path.

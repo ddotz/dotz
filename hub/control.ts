@@ -19,7 +19,7 @@ import { availableModels, cancelLogin, completeLogin, ControlError, listProvider
 export { ControlError };
 
 const ORCHESTRATOR_NOTE =
-	"모델이나 생각 수준을 바꿔도 같은 세션에서 바로 이어가요. 생각 수준만 바꾸면 캐시가 그대로고, 모델을 바꾸면 다음 응답 한 번은 캐시를 새로 써서 비용이 더 들어요.";
+	"모델이나 추론 강도를 바꿔도 같은 세션에서 바로 이어가요. 추론 강도만 바꾸면 캐시가 그대로고, 모델을 바꾸면 다음 응답 한 번은 캐시를 새로 써서 비용이 더 들어요.";
 const WORKERS_NOTE = `Model of the task workers each lane delegates implementation, tests, renders and grind work to (models.workers, default ${DEFAULT_WORKER_MODEL}). Applies to lanes launched or resumed from now on; a lane keeps the model of its running process until it restarts.`;
 const COMPACT_NOTE = "Compaction rewrites the conversation into a summary, so the prompt cache is re-written once on the next turn (about 2x the input cost for the new, shorter prefix).";
 
@@ -28,7 +28,7 @@ function providersInUse(): Set<string> {
 	return new Set([orchestratorModel().model, lanesModel().model, parseSelector(workerModel()).model, ...laneModels().map(l => l.model), ...(["orchestrator", "lanes", "workers"] as const).flatMap(t => fallbackChain(t).map(e => parseSelector(e.model).model))].map(providerOf));
 }
 
-const FALLBACK_NOTE = "오케스트레이터와 레인의 폴백 순서는 저장하면 바로 적용돼요: 기본 모델로 도는 중이면 그대로 바뀌고, 폴백 모델로 돌거나 한도로 멈춰 있으면 같은 세션으로 다시 시작해요(일하는 중이면 끝난 뒤). 작업자 폴백은 다음 시작부터예요. 첫 번째 모델이 요청 단계에서 실패하면(사용량 한도, 장애) 순서대로 다음 모델로 넘어가요.";
+const FALLBACK_NOTE = "어시스턴트와 세션의 폴백 순서는 저장하면 바로 적용돼요: 기본 모델로 도는 중이면 그대로 바뀌고, 폴백 모델로 돌거나 한도로 멈춰 있으면 같은 세션으로 다시 시작해요(일하는 중이면 끝난 뒤). 서브에이전트 폴백은 다음 시작부터예요. 첫 번째 모델이 요청 단계에서 실패하면(사용량 한도, 장애) 순서대로 다음 모델로 넘어가요.";
 
 // Each layer's fallback chain and the models its running processes answer on right now (model ids, thinking stripped),
 // so the settings tab can highlight the one in use.

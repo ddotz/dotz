@@ -452,7 +452,7 @@ export function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditRes
 		`기간: ${kst(since)} ~ ${kst(now)} KST (${hours}h) · 세션 ${results.length}개 (OmO ${omo}, omp ${results.length - omo}) · 합계 ${M(total)} tok · ${usd(totalCost)} · 캐시 쓰기 ${M(totalCw)} · 분석 ${((Date.now() - t0) / 1000).toFixed(1)}s${opts.dry ? " · dry(기록 안 함)" : ""}`,
 		`7일 중앙값: ${prior.length ? `${M(medTok)} tok / ${usd(medCost)} (${prior.length}일)` : "기록 없음"}`,
 		"",
-		"모든 항목은 보고만 합니다. 자동 적용 없음. \"제안\"은 성능 트레이드오프가 없는 것만, 트레이드오프가 있는 후보는 \"보류\"로 따로 표시합니다.",
+		"모든 항목은 보고만 해요. 자동 적용은 없어요. \"제안\"은 성능 트레이드오프가 없는 것만, 트레이드오프가 있는 후보는 \"보류\"로 따로 표시해요.",
 		"",
 		`## 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건`,
 		...ordered.flatMap(f => [

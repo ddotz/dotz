@@ -108,7 +108,7 @@ function makeBoard(container, key, opts = {}) {
       let w = wraps.get(it.id);
       if (!w) { w = el("div", { class: "bi", "data-id": it.id }, ...["e", "s", "se"].map(d => el("div", { class: `brz ${d}`, "data-dir": d }))); wraps.set(it.id, w); container.append(w); }
       const h0 = it.node.querySelector(it.head);
-      if (h0) { h0.classList.add("bhead"); h0.tabIndex = 0; h0.title = "끌어서 이동 · 방향키로 이동, Shift+방향키로 크기"; }
+      if (h0) { h0.classList.add("bhead"); h0.tabIndex = 0; h0.title = "끌거나 방향키로 옮기고, Shift+방향키로 크기를 바꿔요"; }
       const first = w.firstElementChild, old = first && !first.classList.contains("brz") ? first : null;
       // A card whose markup did not change keeps its node, so scroll positions and hover survive a re-render.
       if (old !== it.node && !(old && old.outerHTML === it.node.outerHTML)) {

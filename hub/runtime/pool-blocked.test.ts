@@ -116,7 +116,7 @@ test("orchestrator: pauses until the named retry with one alert; a gateway resta
 	expect(o.orch.pauseKind).toBe("rate");
 	expect(Date.parse(o.orch.rateLimitedUntil)).toBe(retryAt + 60_000);
 	expect(alerts).toHaveLength(1);
-	expect(alerts[0]).toContain("사용량 한도(429)로 멈춤. 한도 리셋 직후인");
+	expect(alerts[0]).toContain("사용량 한도에 걸려서 멈췄어요. 한도 리셋 직후인");
 
 	// the gateway restarts 10 minutes later: a fresh module copy is a fresh process
 	o.stop();

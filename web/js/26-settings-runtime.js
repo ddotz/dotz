@@ -1,7 +1,7 @@
 /* ---------- settings: 실행 하네스 (runtime menu + compatibility check; data from /api/runtimes) ---------- */
 let RT = null, rtLive = null;
 const RT_ICON = { omp: "term", claude: "spark", codex: "code", omo: "braces" };
-const RT_ROLE = { orchestrator: "오케스트레이터", lanes: "세션" };
+const RT_ROLE = { orchestrator: "어시스턴트", lanes: "세션" };
 const RT_RESULT = { ok: ["통과", "ok"], adapted: ["대체", "pri"], disabled: ["끔", ""], unsupported: ["미지원", "warn"], fail: ["실패", "err"] };
 async function loadRuntimes(refresh) {
   try { RT = await api(`/api/runtimes${refresh ? "?refresh=1" : ""}`); } catch { return; }
@@ -17,7 +17,7 @@ function rtSection() {
     if (!r.installed) return el("div", { class: "li off", "aria-disabled": "true", title: r.reason || "" }, ...kids);
     return el("button", { class: "li tap", type: "button", "data-runtime": r.id, onclick: () => (cur && r.roles.length === 2 ? toast(`${r.label}를 쓰고 있어요`) : rtFlow(r)) }, ...kids);
   });
-  return [el("div", { class: "sec", text: "실행 하네스" }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: "바꾼 뒤에는 오케스트레이터와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요." })];
+  return [el("div", { class: "sec", text: "실행 하네스" }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: "바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요." })];
 }
 function rtBadge(it) {
   const [label, tone] = RT_RESULT[it.result] || [it.result, ""];
@@ -30,7 +30,7 @@ function rtReportView(r, report) {
   const sum = !r.hasAdapter ? "dotz 어댑터가 없어서 바꿀 수 없어요."
     : report.verdict === "blocked" ? `핵심 항목이 통과하지 못해서 바꿀 수 없어요: ${core.map(i => i.label).join(", ")}`
     : stale ? `검사한 뒤 버전이 바뀌었어요 (v${report.version || "?"} → v${r.version}). 다시 검사해 주세요.`
-    : report.verdict === "adjusted" ? `핵심 항목은 모두 통과했어요. ${changed}개 기능은 허브가 대신 처리하거나 꺼요.` : "모든 항목이 통과했어요.";
+    : report.verdict === "adjusted" ? `핵심 항목은 모두 통과했어요. ${changed}개 기능은 dotz가 대신 처리하거나 꺼요.` : "모든 항목이 통과했어요.";
   const meta = `${new Date(report.at).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" })}${report.version ? ` · v${report.version}` : ""}`;
   return el("div", { class: "rt-rep", style: "display:flex;flex-direction:column;gap:8px" },
     el("p", { text: sum }), el("div", { class: "note", text: `검사 ${meta}` }),

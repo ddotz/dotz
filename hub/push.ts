@@ -4,7 +4,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
-import { type HubEvent, onEmit } from "./events.ts";
+import { eventTarget, type HubEvent, onEmit } from "./events.ts";
+import { decisionsOf, type Notice, onDecision } from "./notices.ts";
 import { parseTone } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
 
@@ -12,7 +13,12 @@ export const PUSH_KINDS = ["answer", "ask", "lane", "usage", "update"] as const;
 export type PushKind = (typeof PUSH_KINDS)[number];
 type Prefs = Record<PushKind, boolean>;
 type Stored = Subscription & { prefs: Prefs; ua?: string; at: string };
-export type PushMessage = { kind: PushKind | "test"; title: string; body: string; url: string; tag?: string };
+// `ts` is the id of the hub event the notification is about (its timestamp, the same key the web keeps its messages under): a tap
+// makes sure that message is loaded before it jumps to it.
+// `id` + `actions` (a decision notice): the page opens its detail sheet, and the service worker offers the first options as buttons that
+// answer through POST /api/notices/<id>/answer.
+export type PushAction = { action: string; title: string };
+export type PushMessage = { kind: PushKind | "test"; title: string; body: string; url: string; tag?: string; ts?: string; id?: string; actions?: PushAction[] };
 
 const KEY_FILE = join(DATA_DIR, "secrets", "vapid.json");
 const SUBS_FILE = join(DATA_DIR, "push.json");
@@ -68,6 +74,10 @@ export const LONG_TURN_MS = 2 * 60_000;
 const CRITICAL = /멈췄|멈춤|막혔|실패|오류|끊겼|한도|위험|소진|확인이 필요|failed|error|stopped|limit/i;
 const ROUTINE_ALERT = /^토큰 누수 점검/;
 export function classify(e: HubEvent, sinceOwner?: number): PushMessage | undefined {
+	const m = classifyEvent(e, sinceOwner);
+	return m ? { ...m, ts: e.ts } : undefined;
+}
+function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefined {
 	const text = typeof e.text === "string" ? e.text : "";
 	if (!text) return undefined;
 	const src = String(e.source ?? "");
@@ -80,7 +90,7 @@ export function classify(e: HubEvent, sinceOwner?: number): PushMessage | undefi
 	}
 	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
 	if (e.kind === "out" && e.target === "alert") {
-		if (tone === "ask") return { kind: "ask", title: "dotz · 개입 필요", body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
+		if (tone === "ask") return { kind: "ask", title: "dotz · 확인 필요", body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
 		if (e.reply_to || tone === "done" || tone === "run" || ROUTINE_ALERT.test(rest)) return undefined;
 		if (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest)) return undefined;
 		return { kind: "usage", title: "dotz · 경고", body: plain(rest), url: "/#chat/main", tag: "alert" };
@@ -91,13 +101,26 @@ export function classify(e: HubEvent, sinceOwner?: number): PushMessage | undefi
 		if (tone === "done" || tone === "fail") return { kind: "lane", title: `${lane} · ${tone === "done" ? "완료" : "실패"}`, body: plain(rest), url, tag: `lane:${lane}` };
 		return undefined;
 	}
-	if (e.kind === "out" && e.source === "orchestrator" && e.target === "web") {
-		if (tone === "ask") return { kind: "ask", title: "dotz · 개입 필요", body: plain(rest), url: "/#chat/main", tag: "ask:main" };
-		if (tone === "fail") return { kind: "answer", title: "dotz · 실패", body: plain(rest), url: "/#chat/main", tag: "answer" };
-		if (tone === "done" || (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: "dotz · 완료", body: plain(rest), url: "/#chat/main", tag: "answer" };
+	// The main chat's answers and a project's (work channel or one of its threads) are the same kind of message: one rule, each opening its own chat.
+	const chat = e.kind === "out" && e.source === "orchestrator" ? (e.target === "web" ? "main" : eventTarget(e)?.startsWith("ch:") ? eventTarget(e) : undefined) : undefined;
+	if (chat) {
+		const url = `/#chat/${chat}`, sfx = chat === "main" ? "" : `:${chat}`;
+		if (tone === "ask") return { kind: "ask", title: "dotz · 확인 필요", body: plain(rest), url, tag: `ask:${chat}` };
+		if (tone === "fail") return { kind: "answer", title: "dotz · 실패", body: plain(rest), url, tag: `answer${sfx}` };
+		if (tone === "done" || (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: "dotz · 완료", body: plain(rest), url, tag: `answer${sfx}` };
 		return undefined;
 	}
 	return undefined;
+}
+
+export const DECISION_PUSH_TITLE = "답변이 필요해요";
+export const DECISION_ACTIONS = 2;
+// A decision notice as a notification: the decision line as the body, at most two option buttons (never the login form's own input).
+export function decisionPush(n: Notice): PushMessage {
+	const d = n.decision!;
+	const url = d.to.startsWith("lane:") ? `/#chat/lane:${encodeURIComponent(d.to.slice(5))}` : d.to.startsWith("ch:") ? `/#chat/${d.to}` : "/#chat/main";
+	const actions = d.options.filter(o => o.action !== "form").slice(0, DECISION_ACTIONS).map(o => ({ action: `opt:${o.n}`, title: plain(`${o.n}) ${o.label}`, 40) }));
+	return { kind: "ask", title: DECISION_PUSH_TITLE, body: plain(n.title), url, tag: `decision:${n.id}`, ts: n.at, id: n.id, ...(actions.length ? { actions } : {}) };
 }
 
 async function deliver(sub: Stored, m: PushMessage): Promise<number> {
@@ -133,11 +156,15 @@ export function startPush(opts: { subject: () => string }): void {
 	subject = opts.subject;
 	// When the owner's last web message arrived: an answer long after it is a finished piece of work.
 	let ownerAt = 0;
+	// emit() has appended the event to its jsonl and broadcast it to the open pages before any listener runs, so a push (and the
+	// bell notice, fed the same way) never reaches a device ahead of the message it is about.
 	onEmit(e => {
 		if (e.kind === "message" && e.source === "web") ownerAt = Date.parse(String(e.ts)) || Date.now();
 		const m = classify(e, ownerAt ? Date.now() - ownerAt : undefined);
-		if (m) notify(m);
+		// An [ask] that becomes a decision notice is pushed by onDecision below (one push, with the options), not twice.
+		if (m && !(m.kind === "ask" && decisionsOf(e).length)) notify(m);
 	});
+	onDecision(n => notify(decisionPush(n)));
 }
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });

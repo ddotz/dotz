@@ -104,8 +104,8 @@ function dropWorktree(lane: Lane): Meta["worktree"] {
 
 export function deleteLane(name: string, now = Date.now()): DeleteResult {
 	const lane = lanes.get(name);
-	if (!lane) return { name, ok: false, error: `레인 ${name}이(가) 없어요` };
-	if (lane.proc || laneRunning(lane)) return { name, ok: false, error: `레인 ${name}은(는) 아직 실행 중이에요. 종료된 레인만 지울 수 있어요` };
+	if (!lane) return { name, ok: false, error: `세션 ${name}이(가) 없어요` };
+	if (lane.proc || laneRunning(lane)) return { name, ok: false, error: `세션 ${name}은(는) 아직 실행 중이에요. 종료된 세션만 지울 수 있어요` };
 	const id = `${stamp(now)}-${name}`;
 	const root = join(TRASH_DIR, id);
 	if (existsSync(root)) return { name, ok: false, error: `휴지통에 ${id}이(가) 이미 있어요` };
@@ -171,7 +171,7 @@ function restoreOne(id: string): RestoreResult {
 	const m = basename(id) === id ? readMeta(id) : undefined;
 	if (!m) return { id, ok: false, error: `휴지통에 ${id}이(가) 없어요` };
 	const root = join(TRASH_DIR, id);
-	if (lanes.has(m.name) || existsSync(m.laneDir)) return { id, name: m.name, ok: false, error: `레인 ${m.name}이(가) 이미 있어서 되돌릴 수 없어요` };
+	if (lanes.has(m.name) || existsSync(m.laneDir)) return { id, name: m.name, ok: false, error: `세션 ${m.name}이(가) 이미 있어서 되돌릴 수 없어요` };
 	const notes: string[] = [];
 	clearTimeout(timers.get(id));
 	timers.delete(id);

@@ -3,6 +3,23 @@ let SUBS = {};
 const subKo = { running: "진행 중", done: "완료", failed: "실패", aborted: "중단됨" };
 const subTone = s => ({ running: "pri", done: "ok", failed: "err", aborted: "warn" })[s] || "";
 const runningSubs = src => (SUBS[src] || []).filter(s => s.status === "running");
+
+/* ---------- 뒤에서 하는 작업: S.work from /api/state (hub/bgwork.ts). A request answered with [later] keeps working after its turn ended. ---------- */
+const workRunning = () => ((S && S.work) || []).filter(w => w.status === "running");
+// A chat's own work: what was started for its open message; work no message claimed belongs to the main chat.
+const workOfTarget = t => workRunning().filter(w => (w.target ? (t === MAIN ? w.target === "web" : w.target === t) : t === MAIN));
+// The gateway's clock, not this device's, measures how long work has run (S.work_skew is set on every state refresh).
+const workNow = () => Date.now() + ((S && S.work_skew) || 0);
+const workMin = ms => Math.max(0, Math.floor(ms / 60000));
+const workElapsed = w => (workNow() - w.started_at < 60000 ? "방금 시작" : `${workMin(workNow() - w.started_at)}분째`);
+function workAgo(w) {
+  const m = workMin(workNow() - (w.ended_at || w.started_at));
+  return m < 1 ? "방금" : m < 60 ? `${m}분 전` : `${Math.floor(m / 60)}시간 전`;
+}
+const workLine = ws => `뒤에서 작업 중 · ${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · 외 ${ws.length - 1}개` : ""}`;
+// Re-read the state while work runs, so a finished or failed one leaves the line without waiting for another event.
+setInterval(() => { if (!document.hidden && workRunning().length) refreshState(); }, 15000);
+setInterval(() => { if (document.hidden) return; if (current === "lanes") renderWorkGroup(); }, 20000);
 function setSubs(source, items) {
   if (!source) return;
   SUBS[source] = Array.isArray(items) ? items : [];
@@ -54,7 +71,8 @@ const sheet = $("#sheet"), shBody = $("#sh-body");
 // opened from a list).
 function showSheet(d) {
   if (SUBD) clearTimeout(SUBD.timer);
-  SUBD = { data: null, err: "", timer: 0, opener: SUBD ? SUBD.opener : document.activeElement, ...d };
+  SUBD = { data: null, err: "", timer: 0, opener: SUBD ? SUBD.opener : document.activeElement, ov: SUBD ? SUBD.ov : null, ...d };
+  if (!SUBD.ov) SUBD.ov = ovOpen(closeSheet);
   shBody.dataset.init = "";
   sheet.hidden = false;
   renderSheet();
@@ -66,8 +84,9 @@ function openSub(source, id, from) { showSheet({ source, id, from }); }
 function closeSheet() {
   if (!SUBD) return;
   clearTimeout(SUBD.timer);
-  const o = SUBD.opener;
+  const o = SUBD.opener, ov = SUBD.ov;
   SUBD = null; sheet.hidden = true; clear(shBody);
+  ovDone(ov);
   if (o && o.isConnected && o.focus) o.focus();
 }
 const subNow = d => (SUBS[d.source] || []).find(s => s.id === d.id) || {};
@@ -93,7 +112,7 @@ function renderSheet() {
     $("#sh-tag").hidden = true;
     shBody.className = "sh-body";
     clear(shBody);
-    if (!rows.length) shBody.append(el("div", { class: "a-div", text: "진행 중인 서브에이전트 없음" }));
+    if (!rows.length) shBody.append(el("div", { class: "a-div", text: "진행 중인 서브에이전트가 없어요" }));
     for (const [s, x] of rows) shBody.append(el("button", { class: "subrow", type: "button", onclick: () => openSub(s, x.id, d.sources) },
       el("span", { class: "dot pri" }),
       el("span", { class: "nm" }, el("b", { text: x.description || x.agent || "서브에이전트" }), x.intent || x.tool ? el("span", { class: "muted", text: ` · ${firstLine(x.intent || x.tool)}` }) : null),
@@ -115,7 +134,7 @@ function renderSheet() {
   shBody.className = `sh-body${m === "term" ? " term" : ""}`;
   clear(shBody);
   if (!d.data && !d.err) shBody.append(el("div", { class: "a-div", text: "불러오는 중…" }));
-  else if (!items.length) shBody.append(el("div", { class: d.err ? "a-error" : "a-div", text: d.err ? "기록을 불러오지 못했어요" : "기록 없음" }));
+  else if (!items.length) shBody.append(el("div", { class: d.err ? "a-error" : "a-div", text: d.err ? "기록을 불러오지 못했어요" : "기록이 없어요" }));
   else {
     const ctx = { calls: new Map() };
     for (const a of items) { const n = m === "term" ? termNode(a, ctx) : actNode(a, ctx); if (n) shBody.append(n); }

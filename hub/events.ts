@@ -1,5 +1,6 @@
 import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { paths } from "./config.ts";
+import { fileLinePaths } from "./files.ts";
 
 export type HubEvent = { ts: string; kind: string; source: string; text: string; [key: string]: unknown };
 
@@ -108,7 +109,7 @@ export function activityItems(source: string, limit = ACTIVITY_MAX): Activity[] 
 }
 
 export function recentEvents(limit = 150): HubEvent[] {
-	return recent.slice(-limit);
+	return limit > 0 ? recent.slice(-limit) : []; // slice(-0) is the whole list, and the page asks /api/state for limit=0 meaning none
 }
 
 // Which conversation an event belongs to: "main" (owner <-> the assistant) or "lane:<name>". The web app mirrors this rule
@@ -153,14 +154,31 @@ export function answeredIds(): string[] {
 	return tailEvents(paths.outbox).flatMap(e => (e.kind === "out" && e.source === "orchestrator" && typeof e.reply_to === "string" && e.reply_to ? [e.reply_to] : []));
 }
 
+// Did the orchestrator answer in `target` after `at` (ms)? A stored prompt without a message id counts as answered then.
+export function answeredSince(target: string, at: number): boolean {
+	return tailEvents(paths.outbox).some(e => e.kind === "out" && e.source === "orchestrator" && e.target === target && !e.update_key && Date.parse(String(e.ts)) > at);
+}
+
 // The owner's messages in the inbox log tail (oldest first), for an answer that has no prompt after a restart (prompts.ts).
 // A slash/bang command is answered by the gateway itself and is no work for the orchestrator.
 export function recentOwnerMessages(): { target: string; replyTo?: string; at: number }[] {
 	return tailEvents(paths.inbox).flatMap(e => {
 		const at = Date.parse(String(e.ts));
 		if (e.kind !== "message" || typeof e.channel !== "string" || Number.isNaN(at) || /^\s*[/!]/.test(String(e.text ?? ""))) return [];
-		return [{ target: e.channel, replyTo: typeof e.message_id === "string" ? e.message_id : undefined, at }];
+		return [{ target: e.channel, replyTo: typeof (e.message_id ?? e.mid) === "string" ? (e.message_id ?? e.mid) : undefined, at }];
 	});
+}
+
+// The paths written in [file] lines of the messages the gateway sent (the outbox log tail, the window history shows; newer
+// than the cached size is rescanned). The file route serves these to the web even outside the lanes' folders (files.ts).
+let sentCache: { size: number; paths: Set<string> } | undefined;
+export function sentFiles(): ReadonlySet<string> {
+	const size = existsSync(paths.outbox) ? statSync(paths.outbox).size : 0;
+	if (sentCache?.size === size) return sentCache.paths;
+	const found = new Set<string>();
+	for (const e of tailEvents(paths.outbox)) if (typeof e.text === "string" && e.text.includes("[file]")) for (const p of fileLinePaths(e.text)) found.add(p);
+	sentCache = { size, paths: found };
+	return found;
 }
 
 // `before` (an ISO ts) pages backwards: the newest `limit` events older than it.
