@@ -35,7 +35,7 @@ import { onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
 import { clearChannel, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
 import { addWatch, allWatches, approveWatch, startWatches, stopWatches } from "./watch.ts";
-import { isConfirm, isFidoGo, company_WATCH, kdbConfig, mailIdOf, recordOk, waitingApproval } from "./company.ts";
+import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
@@ -92,7 +92,7 @@ discord.setChannelGoneHandler(id => {
 	if (clearChannel(id)) log(`work channel ${id} is gone; its logins and monitors were released`);
 });
 
-const company = kdbConfig((cfg as any).company);
+await loadPlugins(DATA_DIR, log);
 const onOwner = (m: discord.Incoming) => {
 	if (m.id) discord.ack(m.ackChannelId, m.id);
 	const target = typeof m.channel === "string" ? m.channel : "lane" in m.channel ? `lane:${m.channel.lane}` : "work" in m.channel ? `ch:${m.channel.work}` : `th:${m.channel.thread}`;
@@ -105,11 +105,10 @@ const onOwner = (m: discord.Incoming) => {
 	}
 	if (typeof m.channel === "object" && "thread" in m.channel) {
 		const info = discord.threadInfo(m.channel.thread);
-		const mail = company ? mailIdOf(company, m.channel.thread) : undefined;
-		if (mail !== undefined && isConfirm(m.content)) recordOk(DATA_DIR, mail);
-		const threadEvent = { ...event, channel: `th:${m.channel.thread}`, kind: "message", thread_name: m.channel.name, parent: info?.parentTarget, parent_name: mail !== undefined ? "company" : info?.parentName, ...(mail !== undefined ? { company_mail: mail } : {}) };
+		const extra = pluginThread({ thread: m.channel.thread, text: m.content });
+		const threadEvent = { ...event, channel: `th:${m.channel.thread}`, kind: "message", thread_name: m.channel.name, parent: info?.parentTarget, parent_name: extra?.parentName ?? info?.parentName };
 		emit("inbox", threadEvent);
-		intake(threadEvent, threadEvent.channel, m.id);
+		intake(extra?.note ? { ...threadEvent, plugin_note: extra.note } : threadEvent, threadEvent.channel, m.id);
 		return;
 	}
 	if (typeof m.channel === "object" && "work" in m.channel) {
@@ -141,24 +140,7 @@ const onOwner = (m: discord.Incoming) => {
 	emit("inbox", { ...event, kind: "message" });
 	intake({ ...event, kind: "message" }, target, m.id);
 };
-// company company mail (hub/company.ts): its mail threads come in as threads, and in its alert channel only a yes to a waiting
-// FIDO question is taken (approves the company-login watch); everything else there stays with whoever else reads it.
-function kdbAlert(m: discord.Incoming): void {
-	if (!company || !isFidoGo(m.content) || !waitingApproval(company)) return;
-	if (m.id) discord.ack(m.ackChannelId, m.id);
-	try {
-		approveWatch(company_WATCH);
-		log(`company: owner approved the FIDO login (${m.id})`);
-		void discord.postTo(company.alert_channel, "🔐 승인 받았어요. company 다시 로그인할게요. 폰 OnePass에 FIDO 오면 눌러줘요.").catch(e => log(`company approval note failed: ${e}`));
-	} catch (error) {
-		log(`company: approval failed: ${error}`);
-	}
-}
-if (company) discord.setClaimHandler(id => {
-	if (id === company.alert_channel) return { raw: kdbAlert };
-	const mail = id === company.mail_channel ? undefined : mailIdOf(company, id);
-	return mail === undefined ? undefined : { thread: `company ${mail}`, parent: company.mail_channel };
-});
+discord.setClaimHandler(pluginClaim);
 discord.connect(onOwner);
 // A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
 setAskAnswer((target, content) => {
@@ -295,13 +277,16 @@ startWatches((w, reason, output) => {
 	void out(w.to, `[${w.name}] ${reason}\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 syncFeatureWatches();
-if (company && !allWatches().some(w => w.name === company_WATCH)) {
-	try {
-		addWatch({ name: company_WATCH, command: `bun '${join(import.meta.dir, "company-approve.ts")}' '${company.dir}'`, every_minutes: 10, on: "fail", to: "alert", approval_minutes: 30 }, existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "");
-	} catch (error) {
-		log(`company: login watch not added: ${error}`);
-	}
-}
+startPlugins({
+	dataDir: DATA_DIR,
+	log,
+	postTo: discord.postTo,
+	ack: discord.ack,
+	ensureWatch: spec => {
+		if (allWatches().find(w => w.name === spec.name)?.command !== String(spec.command ?? "").trim()) addWatch(spec, existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "");
+	},
+	approveWatch: name => void approveWatch(name),
+});
 writeAtomic(paths.pid, String(process.pid));
 log(`hub listening on 127.0.0.1:${server.port} as ${NAME} (discord ${discord.status.enabled ? "on" : discord.dryRunReason ? `off, dry run: ${discord.dryRunReason}; DOTZ_ALLOW_LIVE=1 connects` : "off"})`);
 for (const sig of ["SIGTERM", "SIGINT"] as const)

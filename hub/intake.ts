@@ -1,6 +1,5 @@
 // Inbound path of the hub: inbox text, burst coalescing (intake/flush), web sends and the queued-message sweep. Split out of main.ts.
 import { cfg, COALESCE_MAX_MS, DEFAULTS, log, now } from "./config.ts";
-import { kdbConfig, mailThreadNote } from "./company.ts";
 import { limitsCard, looksLikeCommand, parseCommand, runCommand } from "./control.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
@@ -30,8 +29,6 @@ export function inboxText(e: Record<string, any>): string {
 	return withTurnLanguage(inboxBody(e));
 }
 
-const company = kdbConfig((cfg as any).company);
-
 function inboxBody(e: Record<string, any>): string {
 	const m = msg();
 	if (e.kind === "lane_report") return `${m.inboxLaneReport(e.lane)}\n${e.text}`;
@@ -52,7 +49,7 @@ function inboxBody(e: Record<string, any>): string {
 		for (const a of p.attachments ?? []) lines.push(`[attachment] ${a.name}${a.type ? ` (${a.type})` : ""} ${a.url}`);
 		lines.push(p.text);
 	}
-	if (company && e.company_mail !== undefined) lines.push(mailThreadNote(company, e.company_mail));
+	if (e.plugin_note) lines.push(e.plugin_note);
 	const home = e.parent?.startsWith("ch:") ? e.parent : e.channel;
 	const ctx = home?.startsWith("ch:") ? channelContext(home.slice(3)) : "";
 	if (ctx) lines.push(ctx);

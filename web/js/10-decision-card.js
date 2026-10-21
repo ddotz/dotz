@@ -1,10 +1,21 @@
 /* ---------- decision card: a question that waits on the owner, docked above the composer ---------- */
 // Choice block (MODE.md "Message layout"): `**1) name** ← 추천`, then one description line; a `결정:` line titles a block.
 // Several blocks = several decisions: the card walks them one at a time and sends the numbers as "1-2".
+const CH_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
+const CH_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
+const CH_CLOSE = /번호(?:로|를).*(?:답|알려)/;
+const isDescLine = nx => nx !== undefined && !!nx.trim() && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx);
+// The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
+function stripChoices(text) {
+  const lines = String(text ?? "").split("\n"), out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!CH_OPT.test(lines[i])) { out.push(lines[i]); continue; }
+    if (isDescLine(lines[i + 1])) i++;
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n");
+}
 function parseChoices(text) {
-  const OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
-  const HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
-  const CLOSE = /번호(?:로|를).*(?:답|알려)/;
+  const OPT = CH_OPT, HEAD = CH_HEAD;
   const lines = String(text ?? "").replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
   let i = 0, question = "", cur = null;
   while (i < lines.length && !lines[i].trim()) i++;
@@ -19,7 +30,7 @@ function parseChoices(text) {
     if (!cur || (cur.options.length && n <= cur.options[cur.options.length - 1].n)) { cur = { title: "", options: [] }; blocks.push(cur); }
     let desc = "";
     const nx = lines[i + 1];
-    if (nx !== undefined && nx.trim() && !OPT.test(nx) && !HEAD.test(nx) && !CLOSE.test(nx)) { desc = nx.trim(); i++; }
+    if (isDescLine(nx)) { desc = nx.trim(); i++; }
     cur.options.push({ n, label: m[2].replace(/^\*+|\*+$/g, "").trim(), desc, rec: !!m[3] });
   }
   return { question, blocks: blocks.filter(b => b.options.length) };
@@ -40,7 +51,9 @@ function decisionOf(t) {
     for (let k = s.msgs.length - 1; k >= 0; k--) {
       const e = s.msgs[k];
       if (OWNER.has(e.kind)) return null;
-      if ((e.kind !== "out" && e.kind !== "lane_report") || e.update_key) continue;
+      // An alert or worklog post is not part of the conversation: it never cancels a question that still waits (the real case: a token-audit
+      // alert and the night worklog landed after a decision, the card went away and the buttons greyed while the bell still held it open).
+      if ((e.kind !== "out" && e.kind !== "lane_report") || e.update_key || e.target === "worklog" || e.target === "alert") continue;
       const p = parseTone(noHandoff(String(e.text ?? ""))), choice = isChoiceMsg(parseChoices(p.text));
       // A session's own message in its chat counts only as a choice block; its [ask] is the session's pendingAsk (above).
       if (typeof e.source === "string" && e.source.startsWith("lane:") && !(isLaneT(t) && p.tone !== "ask" && choice)) continue;
@@ -103,21 +116,33 @@ function renderDecision(box, dc, picks, step) {
   const nb = $(".dc-body", box); if (nb) nb.scrollTop = top;
 }
 // In-message rows follow the same state: tappable only while their question is the pending one.
+// Otherwise they follow the message's own decision notice in the bell (hub/notices.ts keeps it open until answered, however much was posted
+// after the message): open = tappable, answered = greyed with the chosen row marked.
+const dcNoticeAt = at => (at ? NT.items.find(n => ntIsDec(n) && n.decision.to === target && n.decision.group === 1 && n.decision.reply_to === at) || null : null);
+const dcSending = new Set();
 function syncInlineChoices() {
   const dc = DC.cur;
   for (const n of document.querySelectorAll(".dcm")) {
-    const live = !!dc && dc.sig === n.dataset.sig && !DC.st[dc.key], p = live || (dc && dc.sig === n.dataset.sig) ? DC.picks[dc.key] || [] : [];
+    const mine = !!dc && dc.sig === n.dataset.sig, nt = mine ? null : dcNoticeAt(n.dataset.at);
+    const live = mine ? !DC.st[dc.key] : !!nt && nt.decision.state === "open" && !dcSending.has(nt.id), p = mine ? DC.picks[dc.key] || [] : [];
+    const said = nt && nt.decision.state === "answered" ? String(nt.decision.answer || "") : "";
     for (const b of n.querySelectorAll(".dcm-row")) {
       b.disabled = !live;
-      b.classList.toggle("on", !!p[b.dataset.b] && p[b.dataset.b].n === Number(b.dataset.n));
+      b.classList.toggle("on", mine ? !!p[b.dataset.b] && p[b.dataset.b].n === Number(b.dataset.n) : !!said && said.startsWith(`${b.dataset.n})`));
     }
   }
 }
-function choicesNode(sig, pc) {
-  const box = el("div", { class: "dcm", "data-sig": sig });
+// A tap on a message that is no longer the pending card: answered through the bell's path, so the notice and the buttons settle together.
+async function answerInline(nd, opt) {
+  dcSending.add(nd.id); syncInlineChoices();
+  try { await ntPost(nd, opt.n); } catch (e) { toast(e.message, true); }
+  dcSending.delete(nd.id); syncInlineChoices();
+}
+function choicesNode(sig, pc, at) {
+  const box = el("div", { class: "dcm", "data-sig": sig, "data-at": at || null });
   pc.blocks.forEach((b, bi) => {
     if (b.title && pc.blocks.length > 1) box.append(el("div", { class: "dcm-sub", text: b.title }));
-    for (const o of b.options) box.append(el("button", { class: `dcm-row${o.rec ? " rec" : ""}`, type: "button", disabled: true, "data-b": bi, "data-n": o.n, onclick: () => { const dc = DC.cur; if (dc && dc.sig === sig) pickOption(dc, bi, o); } },
+    for (const o of b.options) box.append(el("button", { class: `dcm-row${o.rec ? " rec" : ""}`, type: "button", disabled: true, "data-b": bi, "data-n": o.n, onclick: () => { const dc = DC.cur; if (dc && dc.sig === sig) pickOption(dc, bi, o); else { const nd = pc.blocks.length === 1 ? dcNoticeAt(at) : null; if (nd && nd.decision.state === "open" && !dcSending.has(nd.id)) answerInline(nd, o); } } },
       el("span", { class: "dc-key", text: String(o.n) }),
       el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
   });

@@ -19,7 +19,8 @@ function prPaint() {
   chip.hidden = !on;
   if (!on) { prClose(false); return; }
   const more = prOthers().reduce((c, p) => c + (p.unread | 0), 0);
-  clear(chip).append(el("span", { class: "pc-n", text: me.name }), more > 0 ? el("span", { class: "pc-b", text: more > 99 ? "99+" : String(more) }) : null, icon("chev", "pc-i"));
+  // el() skips a null child; Node.append() would write it as the text "null" (the chip once read "맥북 null"), so the chip is built with el().
+  clear(chip).append(el("span", { class: "pc-n", text: me.name }), ...(more > 0 ? [el("span", { class: "pc-b", text: more > 99 ? "99+" : String(more) })] : []), icon("chev", "pc-i"));
   chip.setAttribute("aria-label", `컴퓨터 바꾸기, 지금은 ${me.name}${more > 0 ? `, 다른 컴퓨터에 새 알림 ${more}개` : ""}`);
   if (PR.node) prSheet();
 }
@@ -69,6 +70,9 @@ function prOpen() {
   PR.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   PR.node = el("div", { class: "ds-bd", onpointerdown: ev => { if (ev.target === PR.node) prClose(); } }, el("div", { class: "ds-sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "pr-t" }));
   document.body.append(PR.node);
+  // On the phone the tab bar stays free below the sheet, so tapping 홈 again (homeTabTap) can close it, as the 채팅 tab does with its list.
+  const nr = $("#nav").getBoundingClientRect();
+  if (nr.top > innerHeight / 2 && nr.height < innerHeight / 4) PR.node.style.bottom = `${Math.max(0, innerHeight - nr.top)}px`;
   PR.ov = ovOpen(() => prClose(false));
   document.addEventListener("keydown", prKey, true);
   prSheet();
@@ -97,7 +101,30 @@ function prBellLines() {
       icon("chev", "chev"))));
 }
 
+// This computer's own name (settings -> 이 컴퓨터 이름): GET/PUT /api/machine -> {name, custom, default}; empty = the hostname-derived default.
+// The other computers read it from this gateway's public /api/peer-info, so a rename shows up on their switcher within a minute.
+const MN = { info: null };
+async function mnLoad() {
+  try { MN.info = await api("/api/machine"); } catch { return; }
+  if (current === "settings") renderSettings();
+}
+function mnDialog() {
+  const i = MN.info;
+  const inp = el("input", { class: "fi", type: "text", value: i.custom || "", maxlength: "24", autocomplete: "off", placeholder: i.default, "aria-label": "컴퓨터 이름" });
+  const save = (v, msg) => (btn, close) => busy(btn, async () => { MN.info = await api("/api/machine", "PUT", { name: v }); close(); toast(msg); prLoad(); renderSettings(); });
+  const d = dialog({ title: "이 컴퓨터 이름", body: el("div", { class: "col" }, el("div", { class: "sup", text: "다른 컴퓨터의 컴퓨터 목록에도 이 이름으로 보여요. 비우면 기본 이름(" + i.default + ")을 써요." }), inp), actions: [
+    i.custom ? { label: "기본 이름으로", kind: "text", onclick: (c, b) => save("", "기본 이름으로 돌렸어요")(b, c) } : null,
+    { label: "저장", kind: "pri", onclick: (c, b) => save(inp.value.trim(), "이름을 저장했어요")(b, c) }].filter(Boolean) });
+  inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
+  inp.focus();
+}
+const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", onclick: mnDialog },
+  el("span", { class: "lead" }, icon("term")), el("span", { class: "tx" }, el("div", { class: "hd", text: "이 컴퓨터 이름" })), el("span", { class: "sup", text: MN.info.name }), icon("chev", "lead"));
+mnLoad();
+
 $("#pchip").onclick = prOpen;
+// Tapping 홈 again while on 홈 opens the computer sheet (like the 채팅 tab's re-tap, 04-state.js chatTabTap) and the next tap closes it; with one gateway the tab behaves as before.
+const homeTabTap = () => { if (PR.node) prClose(); else if (current === "home" && PR.list.length >= 2) prOpen(); else go("home"); };
 prLoad();
 setInterval(() => { if (!document.hidden) prLoad(); }, 60_000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) prLoad(); });

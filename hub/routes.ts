@@ -1,7 +1,7 @@
 // HTTP routing of the hub: the install files, the identity check and the first part of the route chain; the rest is routes-settings.ts and routes-lanes.ts.
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
 import { join } from "node:path";
-import { ADDRESS, cfg, HUB_TOKEN, log, NAME, now } from "./config.ts";
+import { ADDRESS, cfg, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
 import { changeTarget, ControlError, targetView, ForceRequired, looksLikeCommand, parseCommand } from "./control.ts";
 import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
@@ -24,6 +24,8 @@ import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 import { listPeers } from "./peers.ts";
+import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
+import { hostname } from "node:os";
 import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
 import { sendWeb } from "./intake.ts";
 import { json, body, terminals } from "./routes-util.ts";
@@ -60,6 +62,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		// phone falls back to a plain shortcut. Everything else stays behind the identity check.
 		const appFile = req.method === "GET" || req.method === "HEAD" ? APP_FILES[url.pathname] : undefined;
 		if (appFile) return new Response(req.method === "HEAD" ? null : Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
+		// The other gateways read this computer's chosen name here (hub/peers.ts); it is a display name, no secret, so it is public like the manifest.
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer-info") return json({ name: resolveName(cfg.web?.machine_name, hostname()) });
 		if (!authorized(req)) return new Response("forbidden", { status: 403 });
 		const parts = url.pathname.split("/").filter(Boolean);
 		const authResponse = authRoute(req, url);
@@ -109,6 +113,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		}
 		if (url.pathname === "/api/health") return json({ ok: true });
 		if (req.method === "GET" && url.pathname === "/api/peers") return json(await listPeers());
+		// This computer's name for the settings screen: the one in use, the one the owner set (empty = none), and the hostname default.
+		if (url.pathname === "/api/machine" && req.method === "GET") return json({ name: resolveName(cfg.web?.machine_name, hostname()), custom: cleanName(cfg.web?.machine_name), default: friendlyName(hostname()) });
+		if (url.pathname === "/api/machine" && req.method === "PUT") {
+			const name = cleanName((await body(req)).name);
+			setMachineName(name);
+			return json({ name: resolveName(name, hostname()), custom: name, default: friendlyName(hostname()) });
+		}
 		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
