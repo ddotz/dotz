@@ -136,7 +136,7 @@ export async function tick(h: Hooks, now = new Date()): Promise<void> {
 	const today = now.toLocaleDateString("sv-SE");
 	if (s.seeded && now.getHours() >= BRIEF_HOUR && s.briefDate !== today) {
 		s.briefDate = today;
-		h.brief(`morning brief for ${today}: summarize today's calendar (zele cal events --today --all) and the unread mail that matters (zele mail list --filter "is:unread newer_than:1d"), short, in chat. Skip if there is nothing.`);
+		h.brief(`morning brief for ${today}: summarize today's calendar (zele cal events --today --all) and the unread mail that matters (zele mail list --filter "is:unread newer_than:1d"), short. Skip if there is nothing.`);
 	}
 	if (!s.seeded) log(`zele: first run recorded ${mail.length} mails, ${upcoming.length} events (no notices)`);
 	s.seeded = true;
