@@ -6,7 +6,7 @@ import { basename, extname, join, sep } from "node:path";
 import { cfg, DATA_DIR, HOME } from "./config.ts";
 
 export const UPLOADS = join(DATA_DIR, "uploads");
-export const UPLOAD_MAX_BYTES = Math.max(1, Number((cfg as any).web?.upload_max_mb ?? 50)) * 1024 * 1024;
+const UPLOAD_MAX_BYTES = Math.max(1, Number((cfg as any).web?.upload_max_mb ?? 50)) * 1024 * 1024;
 
 export class FileError extends Error {
 	constructor(message: string, readonly status: number) {

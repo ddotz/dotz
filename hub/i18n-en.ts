@@ -4,7 +4,7 @@ import { IDENTITY_FILE, NAME, paths, tzLabel } from "./config.ts";
 import type { FileText, HelpText, LaneFooterArgs, RecallArgs, SettingText, WorktreeArgs } from "./i18n.ts";
 
 // Prefixes (leads) of notes that are matched later; every note that has a lead starts with it.
-export const enLeads = {
+const enLeads = {
 	youAre: "[dotz gateway] You are",
 	replayLead: "[dotz gateway] The gateway restarted before you answered this",
 	newMessageLead: "[dotz gateway] A new message arrived while you are working",
@@ -18,7 +18,7 @@ export type Leads = typeof enLeads;
 
 // One sentence reused by every handover and, once after a compaction, by the next prompt: a fresh or compacted session
 // loses what the old context held, so facts worth keeping are saved to memory before the work goes on.
-export const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not in memory yet with the memory tool if this runtime has one (omp: `retain`), else in the dotz data directory (owner facts in memory/owner.md, the owner's verbatim don'ts in memory/boundaries.md, rules in RULES.md, lessons in LESSONS.md, open work in state.json); skip this if there is none.";
+const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not in memory yet with the memory tool if this runtime has one (omp: `retain`), else in the dotz data directory (owner facts in memory/owner.md, the owner's verbatim don'ts in memory/boundaries.md, rules in RULES.md, lessons in LESSONS.md, open work in state.json); skip this if there is none.";
 
 export const en = {
 	...enLeads,

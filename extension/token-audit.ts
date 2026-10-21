@@ -244,7 +244,7 @@ const LANG = {
 };
 type Messages = typeof LANG.en;
 
-export function auditLanguage(): "ko" | "en" {
+function auditLanguage(): "ko" | "en" {
 	try {
 		const code = JSON.parse(readFileSync(join(dataDir(), "config.json"), "utf8")).identity?.language;
 		if (typeof code === "string" && code.trim()) return baseLanguage(code) === "ko" ? "ko" : "en";
@@ -490,7 +490,7 @@ export function findingsOf(results: Stats[], t: Messages, spike?: Finding): Find
 	return findings;
 }
 
-export interface AuditOptions {
+interface AuditOptions {
 	hours?: number;
 	// Session trees to read (default ~/.omo/agent/sessions and ~/.omp/agent/sessions plus OmO's task stores); given
 	// roots skip the task stores. sessionsDir is one omp tree.

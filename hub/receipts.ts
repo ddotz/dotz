@@ -15,9 +15,9 @@ const REUSE_MS = 6 * 3600_000;
 const KEEP_MS = 24 * 3600_000;
 const RUN_TIMEOUT_MS = 15 * 60_000;
 
-export type Receipt = { key: string; command: string; cwd: string; head: string; exitCode: number; stdout: string; stderr: string; ranAt: number; durationMs: number };
-export type ReceiptResult = Receipt & { reused: boolean };
-export type ReceiptRequest = { command: string; cwd: string; env?: string[]; dir?: string };
+type Receipt = { key: string; command: string; cwd: string; head: string; exitCode: number; stdout: string; stderr: string; ranAt: number; durationMs: number };
+type ReceiptResult = Receipt & { reused: boolean };
+type ReceiptRequest = { command: string; cwd: string; env?: string[]; dir?: string };
 
 const sha256 = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
 
@@ -40,7 +40,7 @@ function worktreeState(cwd: string): { head: string; tree: string; cacheable: bo
 	return { head, tree: sha256(parts.join("\0")), cacheable: untracked !== undefined && parts.every(p => p !== undefined) };
 }
 
-export function receiptKey(command: string, cwd: string, env: string[] = []): { key: string; cwd: string; head: string; cacheable: boolean } {
+function receiptKey(command: string, cwd: string, env: string[] = []): { key: string; cwd: string; head: string; cacheable: boolean } {
 	const real = realpathSync(resolve(cwd));
 	const { head, tree, cacheable } = worktreeState(real);
 	const vars = Object.fromEntries([...env].sort().map(name => [name, process.env[name] ?? null]));

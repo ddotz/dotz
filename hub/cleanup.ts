@@ -12,9 +12,9 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { writeAtomic } from "./config.ts";
+import { TEMP_PATH } from "./live-guard.ts";
 
 const DAY = 86_400_000;
-const TEMP_CWD = /^\/(private\/)?(tmp|var\/folders)\//;
 const MKDTEMP_CWD = /^\/(private\/)?var\/folders\//;
 // A mkdtemp folder's sessions are a script's or a probe's, never resumed: gone after an idle hour, not a day.
 export const MKDTEMP_IDLE_MS = 3600_000;
@@ -100,7 +100,7 @@ export function pruneTempSessions(sessionsDir: string, minIdleMs: number, now = 
 		const dir = join(sessionsDir, name);
 		if (!statSync(dir).isDirectory()) continue;
 		const cwd = sessionCwd(dir);
-		if (!cwd || !TEMP_CWD.test(cwd) || (!MKDTEMP_CWD.test(cwd) && existsSync(cwd))) continue;
+		if (!cwd || !TEMP_PATH.test(cwd) || (!MKDTEMP_CWD.test(cwd) && existsSync(cwd))) continue;
 		if (now - newestMtime(dir) < (MKDTEMP_CWD.test(cwd) ? Math.min(minIdleMs, MKDTEMP_IDLE_MS) : minIdleMs)) continue;
 		const size = sizeKb(dir);
 		rmSync(dir, { recursive: true, force: true });
@@ -126,7 +126,7 @@ export function removeSessionsFor(cwd: string, dirs = sessionDirs()): string[] {
 	return removed;
 }
 
-export type OpenTask = { id?: string; lane?: unknown; [key: string]: unknown };
+type OpenTask = { id?: string; lane?: unknown; [key: string]: unknown };
 
 // A task that waits for the owner (an answer, a choice, an approval, a needs-you question) stays open when its lane ends:
 // only the owner closes it (2026-10-20 18:57: the hourly cleanup closed gateway-ui-m3, whose next step was the owner's

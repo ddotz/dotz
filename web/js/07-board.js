@@ -30,10 +30,8 @@ function bFit(r, it) {
 }
 function bLoad(store) {
   const out = {};
-  try {
-    const o = JSON.parse(localStorage.getItem(store) || "null");
-    if (o && typeof o === "object" && !Array.isArray(o)) for (const [id, r] of Object.entries(o)) if (r && ["x", "y", "w", "h"].every(k => Number.isInteger(r[k]) && r[k] >= 0) && r.w > 0 && r.h > 0) out[id] = { x: r.x, y: r.y, w: r.w, h: r.h };
-  } catch { /* unreadable layout: start from defaults */ }
+  const o = lsJson(store, null); // unreadable layout: start from defaults
+  if (o && typeof o === "object" && !Array.isArray(o)) for (const [id, r] of Object.entries(o)) if (r && ["x", "y", "w", "h"].every(k => Number.isInteger(r[k]) && r[k] >= 0) && r.w > 0 && r.h > 0) out[id] = { x: r.x, y: r.y, w: r.w, h: r.h };
   return out;
 }
 const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .lrep, [data-nodrag]";

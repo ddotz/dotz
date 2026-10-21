@@ -10,7 +10,7 @@ const LOCAL_BIN = join(HOME, ".local", "bin");
 // The CLI installer puts `aside` in ~/.local/bin, which a default macOS login PATH does not include.
 if (!(process.env.PATH ?? "").split(":").includes(LOCAL_BIN)) process.env.PATH = `${LOCAL_BIN}:${process.env.PATH ?? ""}`;
 
-export type AsideState = { app: boolean; cli: string; signedIn: boolean; account: string };
+type AsideState = { app: boolean; cli: string; signedIn: boolean; account: string };
 
 export async function asideState(): Promise<AsideState> {
 	const app = ["/Applications/Aside.app", join(HOME, "Applications", "Aside.app")].some(existsSync);

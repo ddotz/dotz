@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 
-export const ASIDE = Bun.which("aside") ?? "aside";
+const ASIDE = Bun.which("aside") ?? "aside";
 const START_WAIT_MS = 20_000;
 
 // Spawn with a hard kill: a hung `aside repl` must never stall the gateway.
@@ -51,7 +51,7 @@ export async function ensureAside(): Promise<void> {
 }
 
 // A secret file under <data dir>/secrets, read at run time. The value is never logged and never placed in argv.
-export function readSecret(name: string): string {
+function readSecret(name: string): string {
 	if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error("secret name must be [A-Za-z0-9._-]");
 	const file = join(DATA_DIR, "secrets", name);
 	if (!existsSync(file)) throw new Error(`secret ${name} not found in ${join(DATA_DIR, "secrets")}`);
@@ -59,7 +59,7 @@ export function readSecret(name: string): string {
 }
 
 // Serves `value` once from a random-token localhost URL so a secret never appears in repl code or argv. stop() when done.
-export function oneShotSecret(value: string): { url: string; stop: () => void } {
+function oneShotSecret(value: string): { url: string; stop: () => void } {
 	const token = crypto.randomUUID();
 	let served = false;
 	const srv = Bun.serve({
@@ -74,7 +74,7 @@ export function oneShotSecret(value: string): { url: string; stop: () => void } 
 	return { url: `http://127.0.0.1:${srv.port}/${token}`, stop: () => void srv.stop(true) };
 }
 
-export type ReplOpts = { timeoutMs?: number; secret?: string };
+type ReplOpts = { timeoutMs?: number; secret?: string };
 // Runs `body` (an async function body; `return` gives the result) in `aside repl`, starting Aside in the background
 // first if needed. With `url`, the body sees `pg`: a background tab opened with `openTab()` and closed in the same run
 // whatever happens. With `secret` (a file name under <data dir>/secrets), the body sees `const secret`, fetched once from a

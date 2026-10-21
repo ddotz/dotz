@@ -38,7 +38,7 @@ function channelsOf(lane: Lane): Chan[] {
 // ---- project folder facts ------------------------------------------------------------------------------------------
 const INSTRUCTIONS = ["AGENTS.md", "CLAUDE.md", "GEMINI.md", ".cursorrules", "CONVENTIONS.md", ".github/copilot-instructions.md"];
 const FILE_CAP = 12;
-export type ProjectFile = { name: string; bytes?: number; modified?: string; heading?: string; dir?: boolean };
+type ProjectFile = { name: string; bytes?: number; modified?: string; heading?: string; dir?: boolean };
 const stat = (p: string) => { try { return statSync(p); } catch { return undefined; } };
 const firstHeading = (p: string): string | undefined => {
 	try { return /^#{1,3}\s+(.+?)\s*#*\s*$/m.exec(readFileSync(p, "utf8").slice(0, 4096))?.[1]?.slice(0, 80); } catch { return undefined; }

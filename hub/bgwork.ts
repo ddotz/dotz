@@ -10,7 +10,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { scrub } from "./activity.ts";
 
-export type BgWork = {
+type BgWork = {
 	id: string;
 	/** The short description written at the spawn (Korean, as the orchestrator wrote it). */
 	description: string;
@@ -66,7 +66,7 @@ const pidAlive = (pid: number) => {
 	}
 };
 
-export type BgWorkDeps = {
+type BgWorkDeps = {
 	/** The orchestrator's session file (empty before its first run). */
 	sessionFile: () => string | undefined;
 	deferred: () => OpenDeferred[];

@@ -12,7 +12,7 @@ const clip = (s: string | undefined, n: number): string => {
 // "HH:MM" in KST (the owner's clock), from an epoch ms or an ISO string.
 export const kstClock = (at: number | string): string => new Date((typeof at === "string" ? Date.parse(at) : at) + KST_MS).toISOString().slice(11, 16);
 
-export type WorkerView = { name: string; description: string; started_at: string; started_kst: string; last_intent: string; updated_at: string };
+type WorkerView = { name: string; description: string; started_at: string; started_kst: string; last_intent: string; updated_at: string };
 
 // The running task workers of one agent process (source = "orchestrator" or "lane:<name>"). The name is the worker's agent
 // type when it has a specific one (scout), else its task id: the generic "task" agent would make every worker look alike.

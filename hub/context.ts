@@ -5,7 +5,7 @@
 import { log, now } from "./config.ts";
 import type { AgentEvent } from "./runtime/types.ts";
 
-export type CompactState = "queued" | "compacting" | "done" | "error";
+type CompactState = "queued" | "compacting" | "done" | "error";
 export type Compaction = { state?: CompactState; at?: string; tokensBefore?: number; error?: string };
 export type Ctx = { tokens: number; window: number; compaction: Compaction };
 

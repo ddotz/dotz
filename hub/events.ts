@@ -40,7 +40,7 @@ export function emit(box: "inbox" | "outbox", event: HubEvent): void {
 // step / received by an idle session / queued until it is idle / resumed a stopped session) -> answered; or failed. One
 // "delivery" event per change, in the conversation of `target` ("lane:<name>", "ch:<id>", "web"), `ref` = the owner event's
 // `mid` (or a Discord message id). The web shows the latest state in that message's meta line.
-export type DeliveryState = "steered" | "received" | "queued" | "held" | "resumed" | "answered" | "failed";
+type DeliveryState = "steered" | "received" | "queued" | "held" | "resumed" | "answered" | "failed";
 export function emitDelivery(target: string, ref: string | undefined, state: DeliveryState, text = ""): void {
 	if (ref) emit("outbox", { ts: new Date().toISOString(), kind: "delivery", source: "gateway", target, ref, state, text });
 }

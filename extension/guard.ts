@@ -152,7 +152,7 @@ export function checkTaskInput(input: any, isolate = true, roots: string[] = [],
 // ("patch"). The same brief rules apply; writing workers are isolated with apply:false, so their change comes back as
 // `isolation: retained via <backend> -> <dir>/root.patch` in the task completion. Read-only agents run in place.
 const OMO_READ_ONLY = /^(explore|librarian|oracle|plan-|.*review|.*qa-)/;
-export const isOmoTaskInput = (input: any) => typeof input?.prompt === "string" || (Array.isArray(input?.tasks) && input.tasks.some((t: any) => typeof t?.prompt === "string"));
+const isOmoTaskInput = (input: any) => typeof input?.prompt === "string" || (Array.isArray(input?.tasks) && input.tasks.some((t: any) => typeof t?.prompt === "string"));
 // senpi applies a tool_call handler's changes only when `event.input` is mutated in place, so the items are edited where they are.
 export function checkOmoTaskInput(input: any, isolate = true, roots: string[] = [], g: GuardConfig = G): { reason: string } | { input: any } {
 	const items: any[] = Array.isArray(input?.tasks) ? input.tasks : [input];
@@ -313,7 +313,7 @@ function saveState(state: ProjectState): void {
 	writeFileSync(statePath(state.cwd, state.lane), `${JSON.stringify(state, null, 2)}\n`);
 }
 
-export function stateSummary(state: ProjectState, previousSession: boolean): string | undefined {
+function stateSummary(state: ProjectState, previousSession: boolean): string | undefined {
 	const lines = Object.entries(state.workers).map(([id, w]) => {
 		if (w.status === "running")
 			return `- ${id}: ${previousSession ? "was running when the previous omp session ended (gone unless resumed with omp --restore)" : "still running"} - ${w.brief}`;
@@ -327,7 +327,7 @@ export function stateSummary(state: ProjectState, previousSession: boolean): str
 // The shell text of a call: a bash command, or the code of an OmO `eval` cell (which runs shell through tool.bash / Bun.$).
 export const shellText = (input: any): string => String(input?.command ?? input?.code ?? "");
 
-export function expandShellVars(command: string): string {
+function expandShellVars(command: string): string {
 	const vars = new Map<string, string>();
 	for (const m of command.matchAll(/(?:^|[;&|\s])(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=("[^"]*"|'[^']*'|[^\s;&|]+)/g)) vars.set(m[1], m[2].replace(/^['"]|['"]$/g, ""));
 	return command.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (whole, name: string) => vars.get(name) ?? whole);
@@ -467,7 +467,7 @@ function recursiveSearch(words: ShellWord[]): { name: string; args: ShellWord[] 
 	return undefined;
 }
 
-export function broadSearchProblem(toolName: string, input: unknown): string | undefined {
+function broadSearchProblem(toolName: string, input: unknown): string | undefined {
 	const how = "Quote the path (a path with a space splits into several arguments) or name a specific subfolder.";
 	const record = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
 	const tool = toolName.toLowerCase();
@@ -525,7 +525,7 @@ function worktreesOf(dir: string, cache: Map<string, string[]>): string[] {
 }
 
 // Directories a shell command ran `git apply` in: the tool cwd, then each `cd <dir>` / `git -C <dir>` it names, resolved in order.
-export function applyDirsOf(command: string, toolCwd: string): string[] {
+function applyDirsOf(command: string, toolCwd: string): string[] {
 	const dirs = [toolCwd];
 	let at = toolCwd;
 	const unquote = (raw: string) => raw.replace(/^['"]|['"]$/g, "");
@@ -543,7 +543,7 @@ export function applyDirsOf(command: string, toolCwd: string): string[] {
 
 // A patch counts as applied when it reverses cleanly in any of `dirs` or any worktree of their repos
 // (a lane worktree or another cwd is where it may actually have gone in).
-export function patchIsApplied(dirs: string[], patch: string, cache: Map<string, string[]> = new Map()): boolean {
+function patchIsApplied(dirs: string[], patch: string, cache: Map<string, string[]> = new Map()): boolean {
 	const tried = new Set<string>();
 	const attempt = (dir: string) => {
 		const key = resolve(dir);
@@ -581,7 +581,7 @@ function changedLines(diff: string): Map<string, Set<string>> {
 	return byFile;
 }
 
-export function patchLanded(dirs: string[], patch: string): boolean {
+function patchLanded(dirs: string[], patch: string): boolean {
 	let wanted: Map<string, Set<string>>;
 	try {
 		wanted = changedLines(readFileSync(patch, "utf8"));
@@ -634,7 +634,7 @@ function keepPatch(cwd: string, id: string, captured: string): string {
 	}
 }
 
-export function briefLabel(task: unknown): string {
+function briefLabel(task: unknown): string {
 	return String(task ?? "")
 		.split("\n")
 		.filter(line => line.trim() && !/^\s*#/.test(line) && !line.includes(BUDGET_MARKER))

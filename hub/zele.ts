@@ -18,10 +18,10 @@ type Hooks = {
 
 const STATE = join(DATA_DIR, "zele-state.json");
 const zcfg = ((cfg as any).zele ?? {}) as { enabled?: boolean; poll_sec?: number; brief_hour?: number; mail_noise?: string[] };
-export const POLL_MS = Math.max(60, Number(zcfg.poll_sec ?? DEFAULTS.zele_poll_sec)) * 1000;
+const POLL_MS = Math.max(60, Number(zcfg.poll_sec ?? DEFAULTS.zele_poll_sec)) * 1000;
 // With no account yet, look again after this long.
 export const NO_ACCOUNT_RETRY_MS = 600_000;
-export const BRIEF_HOUR = Number(zcfg.brief_hour ?? DEFAULTS.zele_brief_hour);
+const BRIEF_HOUR = Number(zcfg.brief_hour ?? DEFAULTS.zele_brief_hour);
 // Whether mail and calendar run on this install: on in config and the zele CLI is here (mail may live on another machine).
 export const zeleState = (): "on" | "off" | "missing" => (zcfg.enabled === false ? "off" : Bun.which("zele") ? "on" : "missing");
 const MAIL_NOISE = [/coderabbitai\[bot\]/i, /^\s*[[(]광고[\])]/, /mkt@/i, /no-?reply@.*(newsletter|marketing)/i, ...(zcfg.mail_noise ?? []).map(s => new RegExp(s, "i"))];
