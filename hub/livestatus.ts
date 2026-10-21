@@ -61,7 +61,7 @@ function list(items: string[], max: number): string {
 // What a report says, and whether it says anything new: a tool call since the last report, or a changed current intent,
 // lane or worker list (`state`, compared with the last report's). "Now" is the turn's latest intent; "since the last
 // report" lists the ones made after the previous report, before it.
-export function liveReport(live: { source: string; since: number; lastAt: number }): { state: string; running: string; moved: boolean; text: string } {
+function liveReport(live: { source: string; since: number; lastAt: number }): { state: string; running: string; moved: boolean; text: string } {
 	const intents = turnIntents(live.source, live.since);
 	const now = intents.pop()?.t ?? "";
 	const between = intents.filter(i => i.at >= live.lastAt).map(i => i.t);

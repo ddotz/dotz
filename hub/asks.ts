@@ -11,7 +11,7 @@ const ASK_MAX = 1500;
 // The file that holds a lane's pending question in full for as long as it is pending (report.md is overwritten by gateway notices).
 export const pendingAskFile = (lane: string) => join(paths.lanes, lane, "pending-ask.md");
 
-export type PendingAsk = { lane: string; text: string; at: string };
+type PendingAsk = { lane: string; text: string; at: string };
 
 export function pendingAsks(): PendingAsk[] {
 	if (!existsSync(paths.lanes)) return [];

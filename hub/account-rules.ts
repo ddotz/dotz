@@ -25,13 +25,13 @@ import { log, TZ, writeAtomic } from "./config.ts";
 export type Day = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 export type When = { days?: Day[]; from?: string; to?: string; five_hour_left_below?: number; seven_day_left_below?: number; rate_limited?: true; auth_error?: true; unavailable?: string };
 export type Action = { pin: string } | { prefer: string[] } | { auto: true };
-export type Rule = { name?: string; when?: When; do: Action };
+type Rule = { name?: string; when?: When; do: Action };
 export type Manual = { account: string; until?: string; reason?: string };
-export type ScriptConfig = { path: string; timeout_ms?: number; every_minutes?: number };
+type ScriptConfig = { path: string; timeout_ms?: number; every_minutes?: number };
 export type Rules = { manual?: Manual; rules?: Rule[]; script?: ScriptConfig };
 export type Usage = Record<string, { five_hour_left?: number; seven_day_left?: number }>;
 export type ScriptErrorKind = "timeout" | "exit" | "spawn" | "unknown_account";
-export type ScriptOpinion = { account?: string; reason?: string; error?: ScriptErrorKind; at: string };
+type ScriptOpinion = { account?: string; reason?: string; error?: ScriptErrorKind; at: string };
 export type ScriptInput = { now: string; current: string | null; accounts: { name: string; alias: string | null; blocked: null | "rate_limit" | "auth_error" | string; blocked_until: string | null; five_hour_left: number | null; seven_day_left: number | null }[] };
 export type Decision = { account?: string; source: "manual" | "script" | "rule" | "auto"; rule?: string; reason: string; at: string };
 export type Evaluated = Decision & { change?: Omit<AccountSwitch, "at"> };
@@ -215,7 +215,7 @@ const underThreshold = (a: string, w: When | undefined, usage: Usage): boolean =
 	return Boolean((w?.five_hour_left_below !== undefined && u?.five_hour_left !== undefined && u.five_hour_left < w.five_hour_left_below) || (w?.seven_day_left_below !== undefined && u?.seven_day_left !== undefined && u.seven_day_left < w.seven_day_left_below));
 };
 
-export type EvaluateInput = { now: number; pool: Pool | undefined; current?: string; usage: Usage; rules: Rules; script?: ScriptOpinion; aliases?: Record<string, string> };
+type EvaluateInput = { now: number; pool: Pool | undefined; current?: string; usage: Usage; rules: Rules; script?: ScriptOpinion; aliases?: Record<string, string> };
 
 // Pure: the account to run on now, which layer chose it, and the switch when it differs from `current`.
 export function evaluate(i: EvaluateInput): Evaluated {

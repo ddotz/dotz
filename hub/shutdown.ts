@@ -1,6 +1,6 @@
 import { log } from "./config.ts";
 
-export type Stage = { name: string; run: () => void | Promise<void> };
+type Stage = { name: string; run: () => void | Promise<void> };
 
 let running = false;
 let ignoredLogged = false;

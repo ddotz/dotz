@@ -1,7 +1,7 @@
 /* ---------- target switcher + 대화/터미널 toggle (rendered into the header of both views) ---------- */
 // Manual order from dragging the chips; 레인 panes and 홈 cards have their own free layout (makeBoard) and do not use it. Never-dragged targets keep spawn order after the ordered ones.
 const ORDER_KEY = "dotz-order";
-let ORDER = (() => { try { const v = JSON.parse(localStorage.getItem(ORDER_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })();
+let ORDER = (() => { const v = lsJson(ORDER_KEY, []); return Array.isArray(v) ? v : []; })();
 const byOrder = list => list.map((t, i) => [t, ORDER.indexOf(t), i]).sort((a, b) => (a[1] < 0 ? 1e9 + a[2] : a[1]) - (b[1] < 0 ? 1e9 + b[2] : b[1])).map(x => x[0]);
 // Move `from` to just before `to` (or after it when `after`), given the list as currently shown.
 function moveInOrder(shown, from, to, after) {

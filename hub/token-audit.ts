@@ -384,7 +384,7 @@ function readHistory(): Day[] {
 
 export type AuditResult = { flags: number; notes: number; sessions: number; tokens: number; cost: number; report: string; alert?: string; summary: string };
 
-export function auditEnabled(): boolean {
+function auditEnabled(): boolean {
 	return String((cfg as { token_audit_at?: string }).token_audit_at ?? DEFAULTS.token_audit_at) !== "off";
 }
 
@@ -396,7 +396,7 @@ export function auditSummaryLine(now = Date.now()): string | undefined {
 	return `token audit ${last.date}: ${last.flags} warning(s)${last.kinds?.length ? ` (${last.kinds.join(", ")})` : ""}, ${last.sessions} sessions, ${M(last.tokens)} tokens ${usd(last.cost)}, report ${tilde(last.report)}`;
 }
 
-export function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditResult {
+function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditResult {
 	const t0 = Date.now();
 	const now = Date.now();
 	const hours = opts.hours && opts.hours > 0 ? opts.hours : 24;

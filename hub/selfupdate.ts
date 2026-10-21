@@ -17,7 +17,7 @@ export type Version =
 	| { kind: "git"; commit: Commit; branch: string }
 	| { kind: "install"; source: string; installed: string }
 	| { kind: "unknown"; detail: string };
-export type CheckError = { reason: string; fix: string; detail: string };
+type CheckError = { reason: string; fix: string; detail: string };
 export type CheckResult = {
 	at: string;
 	version: Version;
@@ -31,7 +31,7 @@ export type CheckResult = {
 	dirty: string[];
 	blocked: string[];
 };
-export type Job = {
+type Job = {
 	id: number;
 	startedAt: string;
 	endedAt?: string;
@@ -52,7 +52,7 @@ export type Options = {
 	logDir?: string;
 };
 
-export const REPO_DIR = join(import.meta.dir, "..");
+const REPO_DIR = join(import.meta.dir, "..");
 const STATE_FILE = join(DATA_DIR, "self-update.json");
 const LOCK_FILES = ["package.json", "bun.lock", "bun.lockb"];
 const LIST_MAX = 30;
@@ -100,7 +100,6 @@ function settings() {
 		branch: typeof o.branch === "string" && o.branch ? o.branch : "main",
 	};
 }
-export const updateSettings = settings;
 
 const today = () => new Date().toISOString().slice(0, 10).replace(/-/g, "");
 function record(logDir: string, text: string): void {
@@ -191,7 +190,6 @@ export async function check(o: Options): Promise<CheckResult> {
 
 let jobSeq = 0;
 let job: Job | undefined;
-export const currentJob = () => job;
 
 export async function apply(o: Options): Promise<Job> {
 	if (job?.status === "running") return job;
@@ -318,7 +316,7 @@ export async function startSelfUpdate(notify: (text: string, count: number) => v
 	schedule(o);
 }
 
-export function setSettings(values: { auto_check?: unknown; at?: unknown }, o: Options = { dir: REPO_DIR }): ReturnType<typeof settings> {
+function setSettings(values: { auto_check?: unknown; at?: unknown }, o: Options = { dir: REPO_DIR }): ReturnType<typeof settings> {
 	const next: Record<string, unknown> = {};
 	if (typeof values.auto_check === "boolean") next.auto_check = values.auto_check;
 	if (values.at !== undefined) {
@@ -333,7 +331,7 @@ export function setSettings(values: { auto_check?: unknown; at?: unknown }, o: O
 	return settings();
 }
 
-export type RouteDeps = { boot: string; busy: () => string[]; restartIdle: () => string; restartNow: () => string; options?: Options };
+type RouteDeps = { boot: string; busy: () => string[]; restartIdle: () => string; restartNow: () => string; options?: Options };
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 
 // /api/update*: settings → 업데이트. Same tailnet auth as every other /api route (checked by main.ts).

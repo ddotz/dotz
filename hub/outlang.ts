@@ -57,7 +57,7 @@ function prose(text: string): string {
 const latinWords = (s: string): number => (s.match(/(?<![\w-])[A-Za-z][A-Za-z'’]+(?![\w-])/g) ?? []).length;
 
 // True when `text` should be in `language` but is mostly Latin-script prose.
-export function languageMismatch(text: string, language: string): boolean {
+function languageMismatch(text: string, language: string): boolean {
 	const script = SCRIPTS[baseLanguage(language)];
 	if (!script) return false;
 	const body = prose(text);
@@ -70,7 +70,7 @@ export function languageMismatch(text: string, language: string): boolean {
 }
 
 // Owner-facing text is only mismatched when the identity language has its own script and text was not made by a template.
-export function needsRewrite(text: string, source?: string): boolean {
+function needsRewrite(text: string, source?: string): boolean {
 	if (setting().mode === "off" || source === "gateway" || source === "hub") return false;
 	return languageMismatch(text, lang());
 }

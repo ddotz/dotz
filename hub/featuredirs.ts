@@ -9,9 +9,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 export const TRIGGERS = ["메시지 도착", "정해진 시각", "변화 감지", "도구 실행 직전", "워커 생성 시", "턴 끝", "답장 전송 전", "항상(프롬프트)"] as const;
-export const APPLIES = ["orchestrator", "lanes", "workers", "all"] as const;
+const APPLIES = ["orchestrator", "lanes", "workers", "all"] as const;
 export type Applies = (typeof APPLIES)[number];
-export type FeatureDir = {
+type FeatureDir = {
 	id: string;
 	name: string;
 	what: string;
@@ -26,12 +26,12 @@ export type FeatureDir = {
 	watch?: Record<string, any>;
 	schedule?: Record<string, any>;
 };
-export type Loaded = { features: FeatureDir[]; skipped: { id: string; reason: string }[] };
+type Loaded = { features: FeatureDir[]; skipped: { id: string; reason: string }[] };
 
 // Two roots: `features/` in this repo ships with dotz for every user ("shipped"); <DATA_DIR>/features is this owner's own
 // ("personal": machine/person-specific rules such as which machine handles mail). Owner-specific content never goes in the repo root.
-export const SHIPPED_ROOT = join(import.meta.dir, "..", "features");
-export const featuresRoot = (dataDir: string) => join(dataDir, "features");
+const SHIPPED_ROOT = join(import.meta.dir, "..", "features");
+const featuresRoot = (dataDir: string) => join(dataDir, "features");
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const DENY_ITEM = /^(.+)\s+\|\s+(.+?)$/;
 

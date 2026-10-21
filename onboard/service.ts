@@ -5,7 +5,7 @@ import { join } from "node:path";
 export const LABEL = "dev.dotz.gateway";
 export const UNIT = "dotz-gateway.service";
 
-export type ServiceSpec = { home: string; bun: string; pkg: string; dir: string; pathDirs: string[] };
+type ServiceSpec = { home: string; bun: string; pkg: string; dir: string; pathDirs: string[] };
 
 export const servicePath = (s: Pick<ServiceSpec, "home">, platform = process.platform) =>
 	platform === "darwin" ? join(s.home, "Library", "LaunchAgents", `${LABEL}.plist`) : join(s.home, ".config", "systemd", "user", UNIT);

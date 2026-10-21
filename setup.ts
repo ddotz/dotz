@@ -55,8 +55,8 @@ type Answers = {
 };
 
 const prior = existsSync(join(DIR, "config.json")) ? JSON.parse(readFileSync(join(DIR, "config.json"), "utf8")) : {};
-// Model settings live in `models` (hub/config.ts); an older config.json still has them on orchestrator/lanes.
-const priorSelector = (t: "orchestrator" | "lanes") => `${prior.models?.[t]?.model ?? prior[t]?.model ?? "anthropic/claude-opus-5-5"}:${prior.models?.[t]?.thinking ?? prior[t]?.thinking ?? "medium"}`;
+// Model settings live in `models` (hub/config.ts).
+const priorSelector = (t: "orchestrator" | "lanes") => `${prior.models?.[t]?.model ?? "anthropic/claude-opus-5-5"}:${prior.models?.[t]?.thinking ?? "medium"}`;
 const priorIdentity: Identity = { name: "", character: "", tone: "", ...prior.identity };
 
 const CHARACTERS = [
@@ -419,9 +419,8 @@ const config = {
 	identity: a.identity,
 	discord: { token_file: TOKEN_FILE.replace(HOME, "~"), owner_id: a.owner_id, guild: a.guild, ...(prior.discord?.app_id ? { app_id: prior.discord.app_id } : {}) },
 	web: { port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins },
-	// An older file's fallback chains and task-worker model ride along; the hub moves them into `models` (hub/config.ts migrateModels).
-	orchestrator: { runtime: a.runtime, ...pick(prior.orchestrator, ["rotate_tokens", "fallback"]) },
-	lanes: { runtime: a.runtime, ...pick(prior.lanes, ["max_active", "worker_model", "fallback", "worker_fallback"]) },
+	orchestrator: { runtime: a.runtime, ...pick(prior.orchestrator, ["rotate_tokens"]) },
+	lanes: { runtime: a.runtime, ...pick(prior.lanes, ["max_active"]) },
 	models: { ...prior.models, orchestrator: { ...prior.models?.orchestrator, ...split(a.orchestrator_model) }, lanes: { ...prior.models?.lanes, ...split(a.lane_model) } },
 };
 writeFileSync(join(DIR, "config.json"), `${JSON.stringify(config, null, 2)}\n`);

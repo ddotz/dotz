@@ -32,7 +32,7 @@ function lastRunDate(): string | undefined {
 }
 
 // Looks at every idle lane once; returns one line per action taken.
-export async function runLaneHygiene(): Promise<string[]> {
+async function runLaneHygiene(): Promise<string[]> {
 	const idle = [...lanes.values()].filter(l => l.proc && l.status === "idle");
 	const skipped = [...lanes.values()].filter(l => l.status === "working" || l.status === "starting" || l.status === "rate-limited").map(l => `${l.name} (${l.status})`);
 	for (const lane of idle) refreshLaneStats(lane.name);
@@ -110,7 +110,7 @@ export const WORKTREE_EVERY_MS = 3600_000;
 const WORKTREE_FIRST_MS = 2 * 60_000;
 const WORKTREE_MIN_AGE_MS = 3600_000;
 
-export type WorktreeEntry = { path: string; orphanReason?: string };
+type WorktreeEntry = { path: string; orphanReason?: string };
 
 async function listWorktrees(): Promise<WorktreeEntry[]> {
 	const proc = Bun.spawn([OMP, "worktree", "list", "--json"], { stdout: "pipe", stderr: "ignore" });
@@ -135,7 +135,7 @@ function sizeKb(path: string): number {
 }
 
 // Deletes orphaned, stale worktrees; returns how many went and how much space they held.
-export async function cleanWorktrees(entries?: WorktreeEntry[], root = WORKTREE_ROOT): Promise<{ removed: number; kb: number }> {
+async function cleanWorktrees(entries?: WorktreeEntry[], root = WORKTREE_ROOT): Promise<{ removed: number; kb: number }> {
 	let removed = 0;
 	let kb = 0;
 	for (const entry of entries ?? (await listWorktrees())) {
@@ -207,7 +207,7 @@ const alive = (pid: number): boolean => {
 
 // Kills provable orphaned omp rpc hosts; `only` narrows the candidates to command lines it matches and `minAgeMin` is the
 // least age, both for smoke tests.
-export async function reapOrphanHosts(only?: RegExp, minAgeMin = ORPHAN_MIN_AGE_MIN): Promise<number[]> {
+async function reapOrphanHosts(only?: RegExp, minAgeMin = ORPHAN_MIN_AGE_MIN): Promise<number[]> {
 	const rows = psRows();
 	const parentOf = new Map(rows.map(r => [r.pid, r.ppid]));
 	const tracked = new Set<number>([process.pid, orchestratorPid() ?? 0, ...[...lanes.values()].map(l => l.proc?.pid ?? 0)]);
@@ -261,7 +261,7 @@ const LANE_DEAD_MS = 3600_000;
 // Why a lane counts as ended for its open tasks, or undefined while it is live or restarting. A lane must be seen ended
 // by two sweeps at least LANE_DEAD_MS apart (lane.json's mtime moves on every persist, so it cannot date the exit).
 const endedSeen = new Map<string, number>();
-export function laneEndedReason(name: string, now = Date.now()): string | undefined {
+function laneEndedReason(name: string, now = Date.now()): string | undefined {
 	const lane = lanes.get(name);
 	const ended = lane ? lane.status === "exited" && !lane.proc && !lane.quiet : !existsSync(join(paths.lanes, name, "lane.json"));
 	if (!ended) {

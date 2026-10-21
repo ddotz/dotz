@@ -12,13 +12,13 @@ import { ControlError } from "./providers.ts";
 
 type Check = { url: string; headers: (key: string) => Record<string, string> };
 const bearer = (key: string) => ({ authorization: `Bearer ${key}` });
-export const KEY_PROVIDERS: Record<string, { format: RegExp; check: Check }> = {
+const KEY_PROVIDERS: Record<string, { format: RegExp; check: Check }> = {
 	anthropic: { format: /^sk-ant-[\w-]{20,}$/, check: { url: "https://api.anthropic.com/v1/models?limit=1", headers: key => ({ "x-api-key": key, "anthropic-version": "2023-06-01" }) } },
 	openai: { format: /^sk-[\w-]{20,}$/, check: { url: "https://api.openai.com/v1/models", headers: bearer } },
 	openrouter: { format: /^sk-or-[\w-]{20,}$/, check: { url: "https://openrouter.ai/api/v1/key", headers: bearer } },
 };
-export const keyFileFor = (provider: string) => `${provider}-api-key`;
-export const maskKey = (key: string) => `${key.match(/^sk-(?:ant-|or-)?/)?.[0] ?? ""}…${key.slice(-4)}`;
+const keyFileFor = (provider: string) => `${provider}-api-key`;
+const maskKey = (key: string) => `${key.match(/^sk-(?:ant-|or-)?/)?.[0] ?? ""}…${key.slice(-4)}`;
 
 function providerOf(provider: string) {
 	const p = KEY_PROVIDERS[provider];

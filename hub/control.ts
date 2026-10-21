@@ -76,17 +76,17 @@ export function contextView() {
 }
 
 // Model pickers never offer Haiku (owner: never) or Fable (only on the owner's explicit ask; still settable by name).
-export const HIDDEN_MODEL = /haiku|fable/i;
+const HIDDEN_MODEL = /haiku|fable/i;
 export const pickable = (list: ModelInfo[]): ModelInfo[] => list.filter(m => !HIDDEN_MODEL.test(m.selector) && !HIDDEN_MODEL.test(m.name ?? ""));
 // Pickers show one entry per model as "<Family> <version>" taken from the id, not the provider's free-text name
 // ("claude-sonnet-4-20250514" and "claude-sonnet-4-0" are both "Sonnet 4"; "claude-3-5-sonnet-20241022" is "Sonnet 3.5").
 // Per family+version the undated alias wins, else the newest snapshot (`keep` wins over both). Opus, Sonnet, then other
 // families, newest version first; all but the latest two of a family are marked `older` (folded under '이전 모델').
-export type ModelChoice = ModelInfo & { family?: string; version?: string; older: boolean };
+type ModelChoice = ModelInfo & { family?: string; version?: string; older: boolean };
 const DATED = /-(\d{8})$/;
 const cap = (w: string): string => w.charAt(0).toUpperCase() + w.slice(1);
 const ver = (major: string, minor?: string): string => (minor && minor !== "0" ? `${major}.${minor}` : major);
-export function modelIdentity(selector: string): { family: string; version: string } | undefined {
+function modelIdentity(selector: string): { family: string; version: string } | undefined {
 	const id = (selector.split("/").pop() ?? "").replace(DATED, "");
 	let m = id.match(/^claude-(\d+)(?:-(\d))?-([a-z]+)$/);
 	if (m) return { family: cap(m[3]!), version: ver(m[1]!, m[2]) };
@@ -170,7 +170,7 @@ function resolveModel(input: string, available: ModelInfo[]): string {
 	throw new ControlError(`"${input}" matches ${hits.length} models: ${hits.slice(0, 8).map(m => m.selector).join(", ")}${hits.length > 8 ? ", ..." : ""}`);
 }
 
-export type ModelChange = { ok: true; target: string; model: string; thinking: string; applied: "live" | "restarted" | "next-start"; note: string };
+type ModelChange = { ok: true; target: string; model: string; thinking: string; applied: "live" | "restarted" | "next-start"; note: string };
 
 // A running lane's model or effort change is refused without force: it invalidates that lane's whole message cache.
 export class ForceRequired extends ControlError {
@@ -278,10 +278,10 @@ export const looksLikeCommand = (text: string) => /^\/[a-z]+(\s|$)/i.test(text.t
 
 // What a command answers: a compact card for the web chat (title, tone dot, label/value rows, a note, buttons that send a
 // command) and `text`, the same answer as plain markdown for Discord and the terminal. Texts live in the i18n catalog.
-export type CardTone = "ok" | "busy" | "warn" | "err";
-export type CommandCard = { title: string; tone?: CardTone; facts: { label: string; value: string }[]; note?: string; actions?: { label: string; send: string }[]; text: string };
+type CardTone = "ok" | "busy" | "warn" | "err";
+type CommandCard = { title: string; tone?: CardTone; facts: { label: string; value: string }[]; note?: string; actions?: { label: string; send: string }[]; text: string };
 // At most this many model choices are offered as buttons.
-export const CARD_CHOICES_MAX = 5;
+const CARD_CHOICES_MAX = 5;
 
 const T = () => msg().cmd;
 function card(title: string, facts: CommandCard["facts"] = [], rest: Pick<CommandCard, "tone" | "note" | "actions"> = {}): CommandCard {

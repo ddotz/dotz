@@ -361,7 +361,7 @@ export function putWatchScript(idOrName: string, text: unknown): { path: string;
 
 export const allWatches = () => [...items];
 
-export const MAX_EVERY_MINUTES = 7 * 24 * 60;
+const MAX_EVERY_MINUTES = 7 * 24 * 60;
 export const everyMinutes = (v: unknown): number => {
 	if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > MAX_EVERY_MINUTES) throw new Error(`every_minutes must be an integer from 1 to ${MAX_EVERY_MINUTES}`);
 	return v;

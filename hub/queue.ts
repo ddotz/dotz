@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { DATA_DIR, log, now, writeAtomic } from "./config.ts";
 import { broadcast } from "./events.ts";
 
-export type QueueItem = { id: string; target: string; text: string; ts: string; author?: string };
+type QueueItem = { id: string; target: string; text: string; ts: string; author?: string };
 
 const FILE = join(DATA_DIR, "web-queue.json");
 const MAX_ITEMS = 100;
@@ -27,7 +27,6 @@ function changed(): void {
 }
 
 export const queueItems = (): QueueItem[] => items;
-export const hasQueued = (target: string): boolean => items.some(i => i.target === target);
 export const queuedTargets = (): string[] => [...new Set(items.map(i => i.target))];
 
 export function enqueue(target: string, text: string, author?: string): QueueItem {

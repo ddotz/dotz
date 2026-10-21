@@ -71,3 +71,5 @@ function rel(ms) {
 }
 const oneLine = s => String(s).replace(/\s+/g, " ").trim().slice(0, 160);
 const num = n => Number(n || 0).toLocaleString("ko-KR");
+// JSON kept in localStorage, or `fallback` when the key is missing, unparsable or storage is blocked.
+const lsJson = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; } };

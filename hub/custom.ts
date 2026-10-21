@@ -14,19 +14,19 @@ import { parseTone } from "./tone.ts";
 import { exec, listWatches } from "./watch.ts";
 import { getSetup } from "./workchannels.ts";
 
-export const VIEWS = ["text", "stat", "list", "kv"] as const;
+const VIEWS = ["text", "stat", "list", "kv"] as const;
 export type View = (typeof VIEWS)[number];
-export type CardAction = { label: string; command?: string; prompt?: string; confirm?: boolean };
-export type CardSpec = { title: string; note?: string; view: View; text?: string; command?: string; cwd?: string; every_minutes: number; timeout_seconds: number; link?: string; order: number; actions: CardAction[] };
-export type CardEntry = { id: string; file: string; error: string } | { id: string; file: string; spec: CardSpec; renderFile?: string; rev: string };
-export type PinProject = { name: string; path?: string; channel?: string; note?: string };
-export type Routine = { id: string; name: string; prompt: string; target: string; schedule?: { every_minutes: number } | { at: string } };
+type CardAction = { label: string; command?: string; prompt?: string; confirm?: boolean };
+type CardSpec = { title: string; note?: string; view: View; text?: string; command?: string; cwd?: string; every_minutes: number; timeout_seconds: number; link?: string; order: number; actions: CardAction[] };
+type CardEntry = { id: string; file: string; error: string } | { id: string; file: string; spec: CardSpec; renderFile?: string; rev: string };
+type PinProject = { name: string; path?: string; channel?: string; note?: string };
+type Routine = { id: string; name: string; prompt: string; target: string; schedule?: { every_minutes: number } | { at: string } };
 export type Link = { name: string; url: string };
-export type Pins = { projects: PinProject[]; hide_projects: string[]; routines: Routine[]; links: Link[] };
-export type CustomError = { file: string; error: string };
-export type ProjectLane = { name: string; title?: string; status: string; live: boolean; startedAt?: string; lastReportAt?: string; waiting?: boolean; lastText: string; reports: number; channel?: string };
+type Pins = { projects: PinProject[]; hide_projects: string[]; routines: Routine[]; links: Link[] };
+type CustomError = { file: string; error: string };
+type ProjectLane = { name: string; title?: string; status: string; live: boolean; startedAt?: string; lastReportAt?: string; waiting?: boolean; lastText: string; reports: number; channel?: string };
 export type Project = { key: string; name: string; path?: string; note?: string; pinned: boolean; channel?: { id: string; name: string }; record?: ProjectRecord; recordKey?: string; lanes: ProjectLane[] };
-export type ChannelsIn = { work?: Record<string, string>; homes?: Record<string, string>; lanes?: Record<string, string>; threads?: Record<string, { parent?: string; name?: string }> };
+type ChannelsIn = { work?: Record<string, string>; homes?: Record<string, string>; lanes?: Record<string, string>; threads?: Record<string, { parent?: string; name?: string }> };
 export type CustomDeps = {
 	lanes: () => Array<Record<string, unknown>>;
 	channels: () => ChannelsIn;
@@ -451,8 +451,8 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 // What one project's page shows beyond the sidebar list: each lane's last report (report.md, which survives a gateway
 // restart; a restored lane's lastText is empty, so the old page showed "결과 없음" for lanes that all reported), the
 // verification receipts and commits of its folder, the repo state, the open tasks naming it, and what is tied to it.
-export type GitState = { branch: string; base: string; dirty: number; commits: Array<{ hash: string; at: string; subject: string }>; unmerged: Array<{ branch: string; at: string; ahead: number }> };
-export type ReceiptIn = { command: string; cwd: string; exitCode: number; ranAt: number };
+type GitState = { branch: string; base: string; dirty: number; commits: Array<{ hash: string; at: string; subject: string }>; unmerged: Array<{ branch: string; at: string; ahead: number }> };
+type ReceiptIn = { command: string; cwd: string; exitCode: number; ranAt: number };
 export type DetailInput = {
 	project: Project;
 	others: Project[];

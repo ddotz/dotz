@@ -9,7 +9,7 @@
 //   long work (a lane) from a thread         -> that thread becomes the lane's thread
 //   long work (a lane) from chat             -> a new work channel (chat gets one pointer line)
 
-export type LanePlace = { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
+type LanePlace = { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
 
 /**
  * Where a new lane works. `home` is the orchestrator's explicit ch:<id>; `asking` / `askingMessage` are the channel and

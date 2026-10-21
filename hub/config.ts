@@ -26,54 +26,13 @@ export type Config = {
 };
 // One target's model, thinking level and ordered fallback chain: the orchestrator, the lanes (default of every lane) and the
 // lanes' task workers. Missing values take the defaults below.
-export type TargetModels = { model?: string; thinking?: string; fallback?: Array<string | FallbackEntry> };
-export type ModelsConfig = Partial<Record<FallbackTarget, TargetModels>>;
+type TargetModels = { model?: string; thinking?: string; fallback?: Array<string | FallbackEntry> };
+type ModelsConfig = Partial<Record<FallbackTarget, TargetModels>>;
 
 export const CONFIG_FILE = join(DATA_DIR, "config.json");
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"] as const;
-// Before 2026-10-20 the model settings were spread over orchestrator.{model,thinking,fallback} and lanes.{model,thinking,
-// fallback,worker_model,worker_fallback}. Moves those keys into `models` (a value already in `models` wins) and reports
-// whether anything moved; every other key stays where it is.
-const LEGACY: Array<[FallbackTarget, "orchestrator" | "lanes", string, "model" | "thinking" | "fallback" | "selector"]> = [
-	["orchestrator", "orchestrator", "model", "model"],
-	["orchestrator", "orchestrator", "thinking", "thinking"],
-	["orchestrator", "orchestrator", "fallback", "fallback"],
-	["lanes", "lanes", "model", "model"],
-	["lanes", "lanes", "thinking", "thinking"],
-	["lanes", "lanes", "fallback", "fallback"],
-	["workers", "lanes", "worker_model", "selector"],
-	["workers", "lanes", "worker_fallback", "fallback"],
-];
-export function migrateModels(disk: Record<string, any>): boolean {
-	const models: ModelsConfig = disk.models && typeof disk.models === "object" && !Array.isArray(disk.models) ? disk.models : {};
-	let moved = false;
-	for (const [target, section, key, as] of LEGACY) {
-		const sec = disk[section];
-		if (!sec || typeof sec !== "object" || !(key in sec)) continue;
-		const v = sec[key];
-		delete sec[key];
-		moved = true;
-		if (v == null || v === "") continue;
-		const t = (models[target] ??= {});
-		if (as === "selector") {
-			const s = splitThinking(String(v));
-			t.model ??= s.model;
-			if (s.thinking) t.thinking ??= s.thinking;
-		} else if (t[as] === undefined) (t as Record<string, unknown>)[as] = v;
-	}
-	if (moved) disk.models = models;
-	return moved;
-}
-// Reads config.json, moving legacy model keys into `models` first; the file as it was is kept next to it
-// (config.json.bak-models-<time>) before the migrated one replaces it.
 function loadConfig(): Config {
-	const text = readFileSync(CONFIG_FILE, "utf8");
-	const disk = JSON.parse(text);
-	if (migrateModels(disk)) {
-		writeFileSync(`${CONFIG_FILE}.bak-models-${new Date().toISOString().replace(/[:.]/g, "-")}`, text, { mode: 0o600 });
-		writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
-	}
-	return disk;
+	return JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
 }
 export const cfg: Config = loadConfig();
 // Model + thinking level a section of config.json selects; omp takes them as one `--model <model>:<thinking>` selector.
@@ -145,10 +104,9 @@ const storedOf = (e: FallbackEntry): string | FallbackEntry => (isPlain(e) && !e
 export function setFallbackChain(target: FallbackTarget, chain: FallbackEntry[]): void {
 	updateModels(target, { fallback: chainOf(chain).map(storedOf) });
 }
-// Edits one target's block of `models` in config.json (re-read from disk, legacy keys moved first) and mirrors it into `cfg`.
+// Edits one target's block of `models` in config.json (re-read from disk) and mirrors it into `cfg`.
 export function updateModels(target: FallbackTarget, values: TargetModels): void {
 	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
-	migrateModels(disk);
 	disk.models = { ...disk.models, [target]: { ...disk.models?.[target], ...values } };
 	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
 	cfg.models = { ...cfg.models, [target]: { ...cfg.models?.[target], ...values } };
@@ -208,13 +166,6 @@ export function writeAtomic(file: string, text: string, mode?: number): void {
 	const tmp = `${file}.${process.pid}.tmp`;
 	writeFileSync(tmp, text, mode === undefined ? undefined : { mode });
 	renameSync(tmp, file);
-}
-// Edits config.json (re-read from disk so keys this process never parsed survive) and mirrors the change into `cfg`.
-export function updateConfig(section: "orchestrator" | "lanes", values: Record<string, unknown>): void {
-	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
-	disk[section] = { ...disk[section], ...values };
-	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
-	(cfg as any)[section] = { ...(cfg as any)[section], ...values };
 }
 // Selects the agent runtime for the given roles (`orchestrator.runtime` / `lanes.runtime`), keeping every other key of config.json.
 export function setRuntime(roles: ("orchestrator" | "lanes")[], runtime: string): void {

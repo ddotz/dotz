@@ -67,7 +67,7 @@ const REPLAY_MAX_AGE_MS = 12 * 3600_000;
 const ORPHAN_MAX_AGE_MS = 30 * 60_000;
 const MAX_RECENT = 20;
 // The marker a turn ends with when a background worker will produce its answer, and how long such a prompt stays open.
-export const LATER = "[later]";
+const LATER = "[later]";
 const DEFER_MAX_AGE_MS = 3 * 3600_000;
 // A restart waits for a deferred prompt this young (its worker dies with the orchestrator process); older ones do not block.
 const DEFER_BLOCKS_RESTART_MS = 60 * 60_000;

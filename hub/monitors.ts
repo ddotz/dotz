@@ -12,7 +12,7 @@ export type Monitor = {
 	every?: string;
 };
 
-export const everyKo = (m: number): string => (m % 1440 === 0 ? `${m / 1440}일마다` : m % 60 === 0 ? `${m / 60}시간마다` : `${m}분마다`);
+const everyKo = (m: number): string => (m % 1440 === 0 ? `${m / 1440}일마다` : m % 60 === 0 ? `${m / 60}시간마다` : `${m}분마다`);
 const iso = (ms: number) => new Date(ms).toISOString();
 
 export function listMonitors(): Monitor[] {

@@ -3,9 +3,9 @@
 // not seen yet are decoded; a file without a todo result is read once, never twice.
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 
-export type TodoTask = { content: string; status: string };
-export type TodoPhase = { name: string; tasks: TodoTask[] };
-export type Todo = { phases: TodoPhase[]; at?: string };
+type TodoTask = { content: string; status: string };
+type TodoPhase = { name: string; tasks: TodoTask[] };
+type Todo = { phases: TodoPhase[]; at?: string };
 
 const FIRST_CHUNK = 256 * 1024;
 const MAX_CHUNK = 8 * 1024 * 1024;

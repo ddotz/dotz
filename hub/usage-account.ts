@@ -12,14 +12,14 @@ import { dirname, join } from "node:path";
 import { authFile } from "./apikey-policy.ts";
 import { cfg } from "./config.ts";
 
-export const FRESH_MS = 2 * 60_000;
+const FRESH_MS = 2 * 60_000;
 export const MIN_REFRESH_MS = 30_000;
-export const RETRY_MS = 60_000;
+const RETRY_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 
-export type SubscriptionAccount = { name: string; pinned: boolean; sticky?: boolean; token: string; expiresAt: number | null };
-export type AccountProblem = "expired" | "rate_limited" | "failed";
+type SubscriptionAccount = { name: string; pinned: boolean; sticky?: boolean; token: string; expiresAt: number | null };
+type AccountProblem = "expired" | "rate_limited" | "failed";
 type Limit = { id: string; label: string; window: { id: string; label: string; durationMs: number; resetsAt?: number }; amount: { used: number; limit: number; remaining: number; usedFraction: number; remainingFraction: number; unit: "percent" }; status: string };
 // Shaped like one `omp usage --json` report, plus whose numbers they are.
 export type AccountReport = { provider: "anthropic"; account: string; via: "omo-pinned" | "omo-sticky" | "omo-pool" | "omp"; limits: Limit[]; fetchedAt?: number; problem?: AccountProblem; retryAt?: number };

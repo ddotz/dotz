@@ -7,9 +7,9 @@ import { existsSync, readFileSync } from "node:fs";
 
 export type SendItem = { id: string; target: string; text: string; replyRef?: string; answers?: string; parts: number; at: number };
 export type SendOpts = { nonce: string; skip: number; onPart: (index: number) => void };
-export type SendResult = { delivered: boolean; reason?: string };
+type SendResult = { delivered: boolean; reason?: string };
 
-export type SendLedgerDeps = {
+type SendLedgerDeps = {
 	file: string;
 	send: (target: string, text: string, replyRef: string | undefined, opts: SendOpts) => Promise<SendResult>;
 	/** True for errors worth retrying (network failures, 5xx); a 4xx is final. */

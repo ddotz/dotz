@@ -42,7 +42,7 @@ export const lang = (): string => cfg.identity?.language?.trim() || detectedLang
 export const msg = (): Catalog => CATALOGS[baseLanguage(lang())] ?? en;
 
 // The reply-language line for a prompt that carries instructions; empty when the instructions are already in that language.
-export function replyLine(): string {
+function replyLine(): string {
 	const code = lang();
 	return baseLanguage(code) in CATALOGS ? "" : `Reply to the owner in ${languageName(code)} (${code}).`;
 }

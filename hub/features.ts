@@ -17,11 +17,11 @@ import { addWatch, allWatches, removeWatch } from "./watch.ts";
 import { listSetups } from "./workchannels.ts";
 import { activeHarness, EXTENSION_DIRS } from "./runtime/index.ts";
 
-export const FORMS = ["글 지시", "차단 명령", "기능 폴더", "스킬", "확장", "예약", "감시", "작업 채널 설정", "게이트웨이 기능", "외부 연동", "웹 맞춤"] as const;
+const FORMS = ["글 지시", "차단 명령", "기능 폴더", "스킬", "확장", "예약", "감시", "작업 채널 설정", "게이트웨이 기능", "외부 연동", "웹 맞춤"] as const;
 export { TRIGGERS };
-export type Form = (typeof FORMS)[number];
-export type Trigger = (typeof TRIGGERS)[number];
-export type Strength = "enforced" | "advisory";
+type Form = (typeof FORMS)[number];
+type Trigger = (typeof TRIGGERS)[number];
+type Strength = "enforced" | "advisory";
 export type Feature = {
 	id: string;
 	form: Form;
@@ -258,7 +258,7 @@ const hookTrigger = (src: string): Trigger =>
 // Only what the running harness loads is live. Extensions sitting in another harness's folder are listed as inactive (the
 // UI folds them under "이 하네스에선 꺼짐"), so a guard that is installed but not loaded is never shown as enforcing.
 const DOTZ_EXTENSION = join(REPO, "extension", "index.ts");
-export const extensionDirs = (ids: string[]) => ids.filter(i => Object.hasOwn(EXTENSION_DIRS, i)).map(i => short(EXTENSION_DIRS[i]()));
+const extensionDirs = (ids: string[]) => ids.filter(i => Object.hasOwn(EXTENSION_DIRS, i)).map(i => short(EXTENSION_DIRS[i]()));
 
 export function extensionFeatures(ids: string[]): Feature[] {
 	const out: Feature[] = [];

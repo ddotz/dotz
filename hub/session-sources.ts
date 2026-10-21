@@ -7,7 +7,7 @@ import { join, relative } from "node:path";
 export type Runtime = "omp" | "omo";
 export type Src = { file: string; label: string; child: boolean; runtime: Runtime; requested?: string };
 export type Words = { orchestrator: string; lane: string; worker: string };
-export type SourceOptions = { home: string; dataDir: string; roots?: { dir: string; runtime: Runtime }[]; omoStores?: string | false; words?: Words };
+type SourceOptions = { home: string; dataDir: string; roots?: { dir: string; runtime: Runtime }[]; omoStores?: string | false; words?: Words };
 
 const KO: Words = { orchestrator: "오케스트레이터", lane: "레인", worker: "워커" };
 const SKIP_DIRS = ["resident-blobs", "extensions", "session-holders"];
@@ -16,7 +16,7 @@ const SKIP_DIRS = ["resident-blobs", "extensions", "session-holders"];
 export const OMO_WAKE = new Set(["goal-continuation", "omo-senpi:wake", "senpi-monitor:notification", "senpi-codemode:notification", "senpi-terminal:notification"]);
 
 // OmO keeps task workers outside the session tree, in the task stores this file lists (<store>/children/<id>/sessions/<id>/).
-export const defaultRoots = (home: string): { dir: string; runtime: Runtime }[] => [
+const defaultRoots = (home: string): { dir: string; runtime: Runtime }[] => [
 	{ dir: join(home, ".omo", "agent", "sessions"), runtime: "omo" },
 	{ dir: join(home, ".omp", "agent", "sessions"), runtime: "omp" },
 ];

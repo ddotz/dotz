@@ -8,7 +8,7 @@
 // - "← 추천" / "← recommended" anywhere on the option line marks the recommended one.
 // - `question` is the last non-empty line before the first option, without a leading status marker.
 export type ChoiceOption = { n: number; label: string; recommended: boolean };
-export type Choices = { question?: string; options: ChoiceOption[] };
+type Choices = { question?: string; options: ChoiceOption[] };
 
 const FENCE = /^\s*```/;
 const OPTION = /^\s*>?\s*(?:\*\*)?\s*(\d{1,2})\)\s*(.*)$/;
@@ -52,7 +52,7 @@ export function parseChoices(text: string): Choices {
 // description line under it. A number that restarts at 1 opens the next block. Mirrors the web card (web/js/10-decision-card.js)
 // so the bell and the chat card agree on what is being asked. Blocks with fewer than two options are not decisions.
 export type DecisionOption = { n: number; label: string; desc: string; rec: boolean };
-export type DecisionBlock = { title: string; options: DecisionOption[] };
+type DecisionBlock = { title: string; options: DecisionOption[] };
 const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
 const D_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;

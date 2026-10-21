@@ -4,7 +4,7 @@ import { broadcast } from "./events.ts";
 
 // Where the owner has read up to in each conversation (Discord-style), kept in reads.json {target: lastReadTs} so every
 // device agrees. A position only moves forward. The unread count itself is derived in hub/conversations.ts.
-export const READ_TARGET = /^(?:main|ch:\d+|lane:\S+)$/;
+const READ_TARGET = /^(?:main|ch:\d+|lane:\S+)$/;
 
 const load = (): Record<string, string> => {
 	if (!existsSync(paths.reads)) return {};
@@ -32,7 +32,7 @@ export const readOf = (target: string): string | null => (target === SINCE ? nul
 // The position unread counts start from: the conversation's own, else the first-run baseline.
 export const unreadFrom = (target: string): string | null => readOf(target) ?? reads[SINCE] ?? null;
 
-export type ReadResult = { ok: true; target: string; ts: string; moved: boolean } | { ok: false; error: string };
+type ReadResult = { ok: true; target: string; ts: string; moved: boolean } | { ok: false; error: string };
 
 // POST /api/read {target, ts}: moves the position forward (an older or equal ts changes nothing) and tells every device.
 export function markRead(input: { target?: unknown; ts?: unknown }): ReadResult {

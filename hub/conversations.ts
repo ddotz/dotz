@@ -6,7 +6,7 @@ import { parseTone, stripHandoff } from "./tone.ts";
 // The messenger overview: one row per conversation (the main chat, each project channel, each session) with its newest real
 // message. Built once from the inbox/outbox tail, then kept current by onEmit; a request never rescans the files.
 // The web mirrors the "real message" rule (web/js/31-conversations.js), so keep the two in step.
-export type ConversationLast = { ts: string; text: string; from: "owner" | "bot" | "session" };
+type ConversationLast = { ts: string; text: string; from: "owner" | "bot" | "session" };
 // `read`: where the owner has read up to (hub/reads.ts), `unread`: real messages after it that are not the owner's own.
 export type Conversation = { target: string; last: ConversationLast | null; read: string | null; unread: number };
 

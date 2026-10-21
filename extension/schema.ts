@@ -29,7 +29,5 @@ export const jsonZod = {
 	},
 };
 
-// The zod omp provides, else the JSON Schema builder; an object schema from the builder is unwrapped to plain JSON Schema
-// where a tool is registered (see params()).
-export const schemaOf = (pi: any) => (pi?.zod ?? jsonZod) as any;
+// An object schema from the JSON Schema builder is unwrapped to plain JSON Schema where a tool is registered.
 export const params = (schema: any) => (schema && typeof schema === "object" && "json" in schema && typeof schema.optional === "function" ? schema.json : schema);

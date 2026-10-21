@@ -3,7 +3,7 @@
 import { isSnowflake } from "./threads.ts";
 import { metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
-export const LIMIT = 1900;
+const LIMIT = 1900;
 export const noEmoji = (s: string) => s.replace(/ ?[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]+/gu, "");
 
 function split(text: string, limit = LIMIT): string[] {

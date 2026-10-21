@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DATA_DIR, now, writeAtomic } from "./config.ts";
 import { setSetupPurpose } from "./workchannels.ts";
 
-export type Milestone = { text: string; done: boolean };
+type Milestone = { text: string; done: boolean };
 export type ProjectRecord = { title?: string; purpose?: string; goal?: string; milestones?: Milestone[]; paused?: boolean; updated: string };
 
 export const MAX_TITLE = 40;

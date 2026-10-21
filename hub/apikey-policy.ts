@@ -7,13 +7,13 @@ import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const NO_API_KEY_ACCOUNTS = new Set(["miseol-shared"]);
+const NO_API_KEY_ACCOUNTS = new Set(["miseol-shared"]);
 const KEY_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_API_KEY", "DOTZ_KEY_PROVIDER", "DOTZ_KEY_VALUE"];
 export const authFile = () => join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "auth.json");
 
 let cache: { file: string; stamp: string; pinned?: string } | undefined;
 // The pinned subscription account, re-read when auth.json changes. A missing or unreadable file reads as no pin.
-export function pinnedAccount(): string | undefined {
+function pinnedAccount(): string | undefined {
 	const file = authFile();
 	let stamp: string;
 	try {
@@ -36,7 +36,7 @@ export function pinnedAccount(): string | undefined {
 // holds an expiry in epoch seconds. Before it a pinned account does not ban API keys; at it the ban applies again by
 // itself. Removing the file ends the lift at once.
 export const allowFile = () => join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "api-allow-while-pinned");
-export function liftedUntil(): number | undefined {
+function liftedUntil(): number | undefined {
 	try {
 		const ms = Number(readFileSync(allowFile(), "utf8").trim()) * 1000;
 		return ms > Date.now() ? ms : undefined;

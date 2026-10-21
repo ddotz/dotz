@@ -7,6 +7,7 @@ import { createOwnerNotes } from "./lanerelay.ts";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { broadcast } from "./events.ts";
+import { TEMP_PATH } from "./live-guard.ts";
 
 export type LaneStatus = "starting" | "working" | "idle" | "rate-limited" | "exited";
 // A lane in a git repo works in its own worktree (repo = the owner's checkout, base = the branch it lands on).
@@ -136,8 +137,7 @@ export const pendingFile = (lane: Lane) => join(dir(lane.name), "pending-report.
 export const laneWorkerModel = (lane: Pick<Lane, "workerModel">) => lane.workerModel ?? workerModel();
 
 // Throwaway projects (lanes run in a temp folder, e.g. gateway tests) are never shown as live lanes.
-const TEMP_RE = /^\/(private\/)?(tmp|var\/folders)\//;
-export const isTempLane = (l: Pick<Lane, "cwd" | "worktree">): boolean => TEMP_RE.test(l.worktree?.repo ?? l.cwd) || TEMP_RE.test(l.cwd);
+export const isTempLane = (l: Pick<Lane, "cwd" | "worktree">): boolean => TEMP_PATH.test(l.worktree?.repo ?? l.cwd) || TEMP_PATH.test(l.cwd);
 // The one definition of a live lane every list uses (home, lane tab, target chips, sidebar, pickers, palette): not exited,
 // its process up (or being restarted in place), and not a temp test project. Ended lanes keep all their data.
 export const laneRunning = (l: Lane): boolean => l.status !== "exited" && (Boolean(l.proc) || Boolean(l.quiet) || l.status === "starting");

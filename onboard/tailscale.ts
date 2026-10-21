@@ -8,9 +8,9 @@ import { join } from "node:path";
 const MAC = process.platform === "darwin";
 const APP_BINS = ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", join(homedir(), "Applications", "Tailscale.app", "Contents", "MacOS", "Tailscale")];
 
-export type TailscaleState = { bin: string; running: boolean; login: string; host: string; error?: string };
+type TailscaleState = { bin: string; running: boolean; login: string; host: string; error?: string };
 
-export function tailscaleBin(): string {
+function tailscaleBin(): string {
 	return Bun.which("tailscale", { PATH: process.env.PATH }) ?? (MAC ? (APP_BINS.find(existsSync) ?? "") : "");
 }
 

@@ -8,9 +8,9 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 export const TEMP_PATH = /^\/(private\/)?(tmp|var\/folders)\//;
-export const isTempPath = (p: string): boolean => TEMP_PATH.test(resolve(p) + "/") || resolve(p).startsWith(resolve(tmpdir()) + "/");
-export const allowLive = (env: Record<string, string | undefined> = process.env): boolean => env.DOTZ_ALLOW_LIVE === "1";
-export const dryRunFile = (): string => join(tmpdir(), "dotz-dry-run.jsonl");
+const isTempPath = (p: string): boolean => TEMP_PATH.test(resolve(p) + "/") || resolve(p).startsWith(resolve(tmpdir()) + "/");
+const allowLive = (env: Record<string, string | undefined> = process.env): boolean => env.DOTZ_ALLOW_LIVE === "1";
+const dryRunFile = (): string => join(tmpdir(), "dotz-dry-run.jsonl");
 
 // Why a gateway on this data dir runs without Discord, or undefined for a live one.
 export function gatewayDryRun(dataDir: string, env: Record<string, string | undefined> = process.env): string | undefined {

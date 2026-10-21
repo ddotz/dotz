@@ -11,7 +11,7 @@ import { type Body, buildPayloads, buildSingle, mentionsOff, noEmoji, reference 
 export { buildPayloads, buildSingle, chunks, noEmoji, readable } from "./discord-format.ts";
 
 // An answer longer than this goes out as a few messages cut at paragraph breaks: a wall of text reads badly on a phone.
-export const SOFT_LIMIT = 1200;
+const SOFT_LIMIT = 1200;
 const INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
 const tokenPath = expand(String(cfg.discord?.token_file ?? ""));
 const TOKEN = tokenPath && existsSync(tokenPath) ? readFileSync(tokenPath, "utf8").trim() : "";
@@ -20,7 +20,7 @@ const OWNER = String(cfg.discord?.owner_id ?? "");
 const AVATAR_MARK = join(DATA_DIR, "identity", ".avatar-applied");
 
 export type Thread = { parent: string; name: string };
-export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; threads: Record<string, Thread>; archiveAt: Record<string, number> };
+type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; threads: Record<string, Thread>; archiveAt: Record<string, number> };
 export const channels: Channels = existsSync(paths.channels) ? JSON.parse(readFileSync(paths.channels, "utf8")) : { lanes: {} };
 channels.lanes ??= {};
 // A home lane lives in a thread of an existing work channel: lanes[name] is the thread id, homes[name] the parent channel id.
@@ -50,7 +50,7 @@ const workCategoryName = () => msg().channelNames.workCategory(NAME);
 const scrub = (s: string) => noEmoji(s).replace(/[┃|]/g, " ").replace(/\s+/g, " ").trim();
 const cleanName = (s: string) => scrub(s).slice(0, 90) || "work";
 // Thread names are plain words of what the work is (threads.ts threadTitle); the old "[kind]" prefix is gone.
-export const threadName = (title: string, fallback?: string): string => threadTitle(title, fallback);
+const threadName = (title: string, fallback?: string): string => threadTitle(title, fallback);
 // A thread starts from a real message in its parent channel (as 오모냥 does), so it shows under that message with its
 // content instead of appearing empty with a "you were added" notice. Falls back to a bare thread if the post fails.
 // With `fromMessage` (the owner's own message in that channel) the thread hangs from it and nothing new is posted.
@@ -67,7 +67,7 @@ async function threadFromMessage(parentId: string, starter: string, name: string
 // option 3): working 🟡, waiting 🔴 (needs the owner or someone else), done 🟢. Names are never changed for status:
 // every rename posts a "changed the channel name" system message that cannot be deleted (50021), and a channel allows
 // only 2 renames per 10 minutes. A thread started from a message has that message's id; a bare thread gets no light.
-export type ThreadState = "working" | "waiting" | "done";
+type ThreadState = "working" | "waiting" | "done";
 const LIGHT: Record<ThreadState, string> = { working: "🟡", waiting: "🔴", done: "🟢" };
 async function setLight(id: string, parentId: string, state: ThreadState): Promise<void> {
 	const base = `/channels/${parentId}/messages/${id}/reactions`;
@@ -263,7 +263,7 @@ export async function syncProfile(): Promise<void> {
 // `title` is the owner-facing channel name (their language, plain words); the lane name stays the internal key. `place`
 // (threads.ts lanePlace) says where it works: a new channel, a thread in a work channel (hanging from the owner's own
 // message when it came from there), or an existing sub-topic thread the lane takes over.
-export type LaneSpot = { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
+type LaneSpot = { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
 export async function laneChannel(lane: string, title: string | undefined, place: LaneSpot, starter?: string, goal?: string): Promise<string | undefined> {
 	if (!status.enabled || !channels.category) return undefined;
 	if (!channels.lanes[lane]) {
@@ -441,7 +441,7 @@ async function postWithFiles(id: string, body: Body, files: Attach[], notes: str
 
 // ---- Interactive messages (hub/auth.ts): content + components, edits, interaction callbacks ----
 
-export type RichBody = { content: string; components: unknown[] };
+type RichBody = { content: string; components: unknown[] };
 /** The part of an INTERACTION_CREATE payload the hub reads. Its values are never logged. */
 export type Interaction = {
 	id: string;
@@ -530,7 +530,7 @@ export async function edit(target: string, messageId: string, text: string): Pro
 }
 
 // A message that is already gone (404 / Unknown Message) is the state the caller wanted.
-export async function deleteMessage(target: string, messageId: string): Promise<void> {
+async function deleteMessage(target: string, messageId: string): Promise<void> {
 	const id = resolve(target);
 	if (!status.enabled || !id) return;
 	await rest("DELETE", `/channels/${id}/messages/${messageId}`).catch(e => {
@@ -646,7 +646,7 @@ const remember = (id: string, text: string) => {
 };
 
 // Returns the text to deliver for a MESSAGE_UPDATE, or undefined when it is not a fresh owner edit (embed unfurl, same text, too old).
-export function editedText(m: { id: string; content?: unknown; edited_timestamp?: unknown; author?: { id?: unknown; bot?: boolean } }, now = Date.now()): string | undefined {
+function editedText(m: { id: string; content?: unknown; edited_timestamp?: unknown; author?: { id?: unknown; bot?: boolean } }, now = Date.now()): string | undefined {
 	if (m.author?.bot || String(m.author?.id) !== OWNER || !m.edited_timestamp || typeof m.content !== "string") return undefined;
 	if (now - snowflakeMs(m.id) > EDIT_WINDOW_MS) return undefined;
 	const previous = recentTexts.get(m.id);

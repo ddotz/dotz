@@ -19,7 +19,7 @@ export type Run = (args: string[], timeoutMs: number) => Promise<{ code: number;
 const STATE = join(DATA_DIR, "omp-update.json");
 const ANSI = /\x1b\[[0-9;]*m/g;
 
-export const defaultRun: Run = async (args, timeoutMs) => {
+const defaultRun: Run = async (args, timeoutMs) => {
 	const p = Bun.spawn(["omp", ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore", timeout: timeoutMs });
 	const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
 	return { code, out: `${out}\n${err}`.replace(ANSI, "").trim() };
@@ -33,7 +33,7 @@ async function currentVersion(run: Run): Promise<string> {
 
 // Output shapes (omp 18.12): "Current version: X" then "New version available: Y" or "<mark> Already up to date";
 // "<name> is installed and kept up to date by <manager>; update it from <manager>." when another program owns the install.
-export async function checkOmp(run: Run = defaultRun): Promise<Check> {
+async function checkOmp(run: Run = defaultRun): Promise<Check> {
 	const r = await run(["update", "--check"], 120_000).catch(e => ({ code: -1, out: String(e) }));
 	const current = r.out.match(/Current version:\s*(\S+)/)?.[1] ?? (await currentVersion(run));
 	const by = r.out.match(/kept up to date by (\S+?);/)?.[1];
@@ -59,10 +59,10 @@ const readState = (file: string): State => {
 	}
 };
 
-export type Deps = { mode: Mode; post: (text: string) => void; restart: () => string; run?: Run; stateFile?: string };
+type Deps = { mode: Mode; post: (text: string) => void; restart: () => string; run?: Run; stateFile?: string };
 
 // One pass of the nightly job. Returns the worklog line it posted, if any.
-export async function runOmpUpdate({ mode, post, restart, run = defaultRun, stateFile = STATE }: Deps): Promise<string | undefined> {
+async function runOmpUpdate({ mode, post, restart, run = defaultRun, stateFile = STATE }: Deps): Promise<string | undefined> {
 	if (mode === "off") return undefined;
 	const c = await checkOmp(run);
 	if (c.status === "error") log(`omp update: ${describe(c)}`);

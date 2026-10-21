@@ -6,7 +6,7 @@ const KANA = /[\u3040-\u30FF\u31F0-\u31FF]/;
 const HAN = /[\u3400-\u4DBF\u4E00-\u9FFF]/;
 
 // Language implied by the script of a text: Hangul -> ko, kana -> ja, Han only -> zh; undefined for anything else.
-export function scriptLanguage(text: string): string | undefined {
+function scriptLanguage(text: string): string | undefined {
 	if (HANGUL.test(text)) return "ko";
 	if (KANA.test(text)) return "ja";
 	if (HAN.test(text)) return "zh";

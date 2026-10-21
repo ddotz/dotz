@@ -13,9 +13,9 @@ import { DATA_DIR, log } from "./config.ts";
 import { languageName } from "./language.ts";
 import { callModel, tone } from "./outlang.ts";
 
-export type SummaryText = { key: string; text: string };
+type SummaryText = { key: string; text: string };
 
-export const BATCH_SIZE = 40;
+const BATCH_SIZE = 40;
 const BACKOFF_FIRST_MS = 30_000;
 const BACKOFF_MAX_MS = 30 * 60_000;
 const CALL_TIMEOUT_MS = 90_000;
@@ -57,7 +57,7 @@ export function parseBatch(reply: string, count: number): (string | undefined)[]
 
 export type ModelCall = (system: string, text: string, opts: { timeoutMs: number }) => Promise<{ text: string }>;
 
-export type SummarizerDeps = {
+type SummarizerDeps = {
 	call: ModelCall;
 	file: string;
 	now: () => number;
@@ -186,4 +186,3 @@ const shared = createSummarizer({
 });
 
 export const summarize = shared.summarize;
-export const summariesIdle = shared.idle;
