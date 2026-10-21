@@ -1,6 +1,6 @@
 /* ---------- needs-you: a target whose last finished turn this browser has not looked at yet ---------- */
 // SEEN: when this browser last had the target open in 채팅 (대화 or 터미널) while the page was visible. DONE: the newest finished turn
-// of the target (activity turn_end, a lane's working->idle change, or the last turn_end of loaded history). Both are ISO strings kept in localStorage.
+// of the target: for a lane its turn_end or working->idle change; for the main chat and a project the orchestrator's answer stored in it (ingestMsg). Both are ISO strings kept in localStorage.
 const SEEN_KEY = "dotz-seen", DONE_KEY = "dotz-done";
 const readMap = k => { try { const o = JSON.parse(localStorage.getItem(k) || "null"); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } };
 const SEEN = readMap(SEEN_KEY), DONE = readMap(DONE_KEY), PREV = {};
@@ -25,14 +25,14 @@ function noteDone(t, at, live) {
 // From /api/state: first sight of a target starts as seen; a working->idle change is a finished turn; gone lanes are forgotten.
 function noteStatus() {
   if (!S) return;
-  // A project shares the orchestrator's status, so its working->idle is not its turn: its answers count (ingestMsg).
+  // Only a lane's working->idle is a finished turn: the main chat's and a project's turns count when their answer lands (ingestMsg).
   const now = new Date().toISOString(), all = [[MAIN, (S.orchestrator || {}).status], ...S.lanes.map(l => [`lane:${l.name}`, l.status])], names = new Set([...all.map(x => x[0]), ...projTargets()]);
   let dirty = false;
   for (const t of projTargets()) if (SEEN[t] === undefined) { SEEN[t] = now; dirty = true; }
   for (const k of [...Object.keys(SEEN), ...Object.keys(DONE)]) if (!names.has(k)) { delete SEEN[k]; delete DONE[k]; delete PREV[k]; dirty = true; }
   for (const [t, st] of all) {
     if (SEEN[t] === undefined) { SEEN[t] = now; dirty = true; }
-    if (PREV[t] === "working" && st === "idle") noteDone(t, now, true);
+    if (PREV[t] === "working" && st === "idle" && isLaneT(t)) noteDone(t, now, true);
     PREV[t] = st;
   }
   if (dirty) { saveMap(SEEN_KEY, SEEN); saveMap(DONE_KEY, DONE); }

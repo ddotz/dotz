@@ -11,10 +11,12 @@ function ingestMsg(e) {
   if (t === target && s.hLoaded && CV.full) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }   // CV.full: drawn (until then the draw takes it from msgs)
   if (t === target) paintDecision();
   if (isLaneT(t) && isLaneReport(e) && LP[t.slice(5)]) laneRefresh(LP[t.slice(5)]);
-  if (projAnswer(t, e)) noteDone(t, e.ts, true);
+  if (chatAnswer(t, e)) noteDone(t, e.ts, true);
 }
-// A project's finished turn is the orchestrator's answer posted to its channel (not a progress note).
-const projAnswer = (t, e) => isProjT(t) && e.kind === "out" && e.source === "orchestrator" && !e.update_key;
+// The main chat's and a project's finished turn is the orchestrator's answer stored in that chat (not a progress note), never the
+// turn's end: a turn can end with nothing sent yet (answer deferred to a background worker, keepalive, a worker's wake-up run;
+// owner 2026-10-21: the toast came before any message). A lane's finished turn stays its turn_end (its report has its own toast).
+const chatAnswer = (t, e) => !isLaneT(t) && e.kind === "out" && e.source === "orchestrator" && !e.update_key;
 // The orchestrator's activity is also the log of every loaded project target; a project's 대화 shows only its messages,
 // since the same process also works for the main chat and other channels.
 function ingestAct(a) {
@@ -37,7 +39,7 @@ async function loadTarget(t) {
     ]);
     s.hLoaded = s.aLoaded = true;
     if (t === MAIN) paintRestartBanner();
-    { const te = isProjT(t) ? s.msgs.findLast(e => projAnswer(t, e)) : s.acts.findLast(a => a.type === "turn_end"); if (te) noteDone(t, te.ts, false); }
+    { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e)); if (te) noteDone(t, te.ts, false); }
   })().finally(() => { s.loading = null; });
   await s.loading;
   if (t === target) renderAll();
@@ -90,7 +92,7 @@ function renderAll0(keepScroll) {
 function onActivity(a) {
   if (a.source === "orchestrator" || a.type === "turn_start" || a.type === "turn_end" || a.type === "status") scheduleState();
   ingestAct(a); todoActivity(a);
-  if (a.type === "turn_end") noteDone(targetOfSource(a.source), a.ts, true);
+  if (a.type === "turn_end" && isLaneT(targetOfSource(a.source))) noteDone(targetOfSource(a.source), a.ts, true);
 }
 
 /* ---------- switching the target ---------- */
