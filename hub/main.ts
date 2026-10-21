@@ -53,6 +53,7 @@ import { onUpdateResolved, startSelfUpdate, updateRoute } from "./selfupdate.ts"
 import { channelContext, clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
 import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, startWatches, stopWatches, watchScript } from "./watch.ts";
+import { isConfirm, isFidoGo, company_WATCH, acmeConfig, mailIdOf, mailThreadNote, recordOk, waitingApproval } from "./company.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
@@ -74,6 +75,7 @@ const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
 const terminals = new Map<string, { cwd?: string; at: string }>();
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
 const PENDING = join(DATA_DIR, "pending.json");
+const company = acmeConfig((cfg as any).company);
 // Read before anything in this process delivers (and rewrites the file); replayed once the orchestrator starts.
 let unanswered: { text: string; at?: number; target?: string; replyTo?: string }[] = [];
 try {
@@ -203,6 +205,7 @@ function inboxBody(e: Record<string, any>): string {
 		for (const a of p.attachments ?? []) lines.push(`[attachment] ${a.name}${a.type ? ` (${a.type})` : ""} ${a.url}`);
 		lines.push(p.text);
 	}
+	if (company && e.company_mail !== undefined) lines.push(mailThreadNote(company, e.company_mail));
 	const home = e.parent?.startsWith("ch:") ? e.parent : e.channel;
 	const ctx = home?.startsWith("ch:") ? channelContext(home.slice(3)) : "";
 	if (ctx) lines.push(ctx);
@@ -473,7 +476,9 @@ const onOwner = (m: discord.Incoming) => {
 	}
 	if (typeof m.channel === "object" && "thread" in m.channel) {
 		const info = discord.threadInfo(m.channel.thread);
-		const threadEvent = { ...event, channel: `th:${m.channel.thread}`, kind: "message", thread_name: m.channel.name, parent: info?.parentTarget, parent_name: info?.parentName };
+		const mail = company ? mailIdOf(company, m.channel.thread) : undefined;
+		if (mail !== undefined && isConfirm(m.content)) recordOk(DATA_DIR, mail);
+		const threadEvent = { ...event, channel: `th:${m.channel.thread}`, kind: "message", thread_name: m.channel.name, parent: info?.parentTarget, parent_name: mail !== undefined ? "company" : info?.parentName, ...(mail !== undefined ? { company_mail: mail } : {}) };
 		emit("inbox", threadEvent);
 		intake(threadEvent, threadEvent.channel, m.id);
 		return;
@@ -507,6 +512,24 @@ const onOwner = (m: discord.Incoming) => {
 	emit("inbox", { ...event, kind: "message" });
 	intake({ ...event, kind: "message" }, target, m.id);
 };
+// company company mail (hub/company.ts): its mail threads come in as threads, and in its alert channel only a yes to a waiting
+// FIDO question is taken (approves the company-login watch); everything else there stays with whoever else reads it.
+function acmeAlert(m: discord.Incoming): void {
+	if (!company || !isFidoGo(m.content) || !waitingApproval(company)) return;
+	if (m.id) discord.ack(m.ackChannelId, m.id);
+	try {
+		approveWatch(company_WATCH);
+		log(`company: owner approved the FIDO login (${m.id})`);
+		void discord.postTo(company.alert_channel, "🔐 승인 받았어요. company 다시 로그인할게요. 폰 OnePass에 FIDO 오면 눌러줘요.").catch(e => log(`company approval note failed: ${e}`));
+	} catch (error) {
+		log(`company: approval failed: ${error}`);
+	}
+}
+if (company) discord.setClaimHandler(id => {
+	if (id === company.alert_channel) return { raw: acmeAlert };
+	const mail = id === company.mail_channel ? undefined : mailIdOf(company, id);
+	return mail === undefined ? undefined : { thread: `company ${mail}`, parent: company.mail_channel };
+});
 discord.connect(onOwner);
 // A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
 setAskAnswer((target, content) => {
@@ -1253,6 +1276,13 @@ startWatches((w, reason, output) => {
 	void out(w.to, `[${w.name}] ${reason}\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 syncFeatureWatches();
+if (company && !allWatches().some(w => w.name === company_WATCH)) {
+	try {
+		addWatch({ name: company_WATCH, command: `bun '${join(import.meta.dir, "company-approve.ts")}' '${company.dir}'`, every_minutes: 10, on: "fail", to: "alert", approval_minutes: 30 }, existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "");
+	} catch (error) {
+		log(`company: login watch not added: ${error}`);
+	}
+}
 writeAtomic(paths.pid, String(process.pid));
 log(`hub listening on 127.0.0.1:${server.port} as ${NAME} (discord ${discord.status.enabled ? "on" : discord.dryRunReason ? `off, dry run: ${discord.dryRunReason}; DOTZ_ALLOW_LIVE=1 connects` : "off"})`);
 for (const sig of ["SIGTERM", "SIGINT"] as const)
