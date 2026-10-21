@@ -209,7 +209,7 @@ function inboxBody(e: Record<string, any>): string {
 	const home = e.parent?.startsWith("ch:") ? e.parent : e.channel;
 	const ctx = home?.startsWith("ch:") ? channelContext(home.slice(3)) : "";
 	if (ctx) lines.push(ctx);
-	if (["chat", "dm", "web", "worklog", "alert"].includes(e.channel)) lines.push(workDirectory());
+	if (["chat", "dm", "web", "worklog", "alert", "brief"].includes(e.channel)) lines.push(workDirectory());
 	return lines.join("\n");
 }
 
@@ -551,7 +551,7 @@ void startZele({
 		deliver(inboxText(event), { target: `ch:${channel}` });
 	},
 	brief: text => {
-		const target = discord.status.enabled ? "chat" : "web";
+		const target = !discord.status.enabled ? "web" : discord.channels.brief ? "brief" : "chat";
 		const event = { ts: now(), kind: "schedule", source: "zele", id: "zele", channel: target, text };
 		// Without a mail channel (no Discord) a new mail comes through here too: shown as mail, not as a schedule.
 		emit("inbox", text.startsWith("[mail") ? { ...event, kind: "mail", text: text.replace(/^\[mail[^\]]*\]\s*/, "") } : event);
