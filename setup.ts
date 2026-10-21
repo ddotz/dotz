@@ -15,7 +15,7 @@
 // the Settings entries are for bun. Interactive runs ask for them; --answers runs only print their state. Standalone, safe to rerun:
 //   bun setup.ts permissions [--check]     (--check only prints the state, never raises a dialog)
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { asideState, installApp, installCli, loginCli, openApp } from "./onboard/aside.ts";
 import { AsideRepl, createApp, ensureBrowser, invite, isAdmin, PERMISSIONS, resetToken } from "./onboard/discord.ts";
@@ -24,6 +24,7 @@ import { checkPermissions, printPermissions, requestPermissions } from "./onboar
 import { installTailscale, serveWeb, startTailscale, tailscaleState } from "./onboard/tailscale.ts";
 import { LABEL, serviceFile, servicePath, UNIT } from "./onboard/service.ts";
 import { detectLanguage, languageName } from "./hub/language.ts";
+import { cleanName, friendlyName, MAX_NAME } from "./hub/machine-name.ts";
 
 const HOME = homedir();
 const PKG = import.meta.dir;
@@ -45,6 +46,7 @@ type Answers = {
 	guild: string;
 	bot_token?: string;
 	allow_logins: string[];
+	machine_name: string;
 	web_port: number;
 	tailscale_https_port: number;
 	orchestrator_model: string;
@@ -57,6 +59,9 @@ type Answers = {
 const prior = existsSync(join(DIR, "config.json")) ? JSON.parse(readFileSync(join(DIR, "config.json"), "utf8")) : {};
 // Model settings live in `models` (hub/config.ts).
 const priorSelector = (t: "orchestrator" | "lanes") => `${prior.models?.[t]?.model ?? "anthropic/claude-opus-5-5"}:${prior.models?.[t]?.thinking ?? "medium"}`;
+// This computer's name in the web app's computer list: the saved one, else the hostname-derived default (hub/machine-name.ts).
+const defaultMachineName = friendlyName(hostname());
+const priorMachineName = cleanName(prior.web?.machine_name);
 const priorIdentity: Identity = { name: "", character: "", tone: "", ...prior.identity };
 
 const CHARACTERS = [
@@ -285,6 +290,7 @@ async function interactive(): Promise<Answers> {
 	const login = (prior.web?.allow_logins ?? [])[0] ?? ts.login;
 	if (!ts.bin && !login) console.log("  Tailscale 이 없어서 웹 앱은 이 컴퓨터에서만 열려요. Tailscale 을 설치한 뒤 setup 을 다시 실행하면 다른 기기에서도 열려요.");
 	else if (login) console.log("  아래 로그인으로 들어오면 웹 앱이 열려요. 설정이 끝나면 테일넷에 바로 열어 둘게요.");
+	const machine_name = askValid(`이 컴퓨터 이름 (웹 앱의 컴퓨터 목록에 이 이름으로 보여요, ${MAX_NAME}자까지)`, priorMachineName || defaultMachineName, v => cleanName(v).length > 0, "이름을 적어 주세요");
 	const allow_logins = (ts.bin || login ? ask("웹 앱에 들어올 수 있는 Tailscale 로그인 (쉼표로 여러 개, 없으면 Enter)", login, false) : "").split(",").map(s => s.trim()).filter(Boolean);
 
 	const defaults = {
@@ -302,6 +308,7 @@ async function interactive(): Promise<Answers> {
 		guild,
 		bot_token,
 		allow_logins,
+		machine_name: cleanName(machine_name),
 		...defaults,
 		...(advanced
 			? {
@@ -320,6 +327,7 @@ async function interactive(): Promise<Answers> {
   알림 문체 ${notices}
   호칭 ${address || "(없음)"}${avatar ? `\n  프로필 이미지 ${avatar}` : ""}
   디스코드 ${guild ? `서버 ${guild}, 주인 ${owner_id}, 봇 ${existsSync(TOKEN_FILE) ? "저장된 토큰" : bot_token ? "붙여넣은 토큰" : "자동 생성"}` : "사용 안 함"}
+  이 컴퓨터 이름 ${machine_name}
   웹 ${allow_logins.length ? `${allow_logins.join(", ")}, 포트 ${a.web_port} -> ${a.tailscale_https_port}` : "사용 안 함 (Tailscale 로그인 없음)"}`);
 	if (/^n/i.test(ask("이대로 진행할까요? Y/n", "y"))) {
 		console.log("취소했어요. 다시 실행하면 방금 값은 저장되지 않은 상태로 시작해요.");
@@ -358,6 +366,7 @@ function validate(a: Partial<Answers>): Answers {
 		guild,
 		bot_token: a.bot_token,
 		allow_logins: a.allow_logins ?? prior.web?.allow_logins ?? [],
+		machine_name: cleanName(a.machine_name) || priorMachineName || defaultMachineName,
 		web_port: Number(a.web_port ?? prior.web?.port ?? 7420),
 		tailscale_https_port: Number(a.tailscale_https_port ?? prior.web?.tailscale_https_port ?? 8443),
 		orchestrator_model: a.orchestrator_model ?? priorSelector("orchestrator"),
@@ -418,7 +427,8 @@ const config = {
 	_comment: "Written by dotz setup.ts. Secrets live in secrets/ (0600), never here.",
 	identity: a.identity,
 	discord: { token_file: TOKEN_FILE.replace(HOME, "~"), owner_id: a.owner_id, guild: a.guild, ...(prior.discord?.app_id ? { app_id: prior.discord.app_id } : {}) },
-	web: { port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins },
+	// The default name is not saved: an empty web.machine_name keeps following the hostname.
+	web: { port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins, ...(a.machine_name !== defaultMachineName || priorMachineName ? { machine_name: a.machine_name } : {}) },
 	orchestrator: { runtime: a.runtime, ...pick(prior.orchestrator, ["rotate_tokens"]) },
 	lanes: { runtime: a.runtime, ...pick(prior.lanes, ["max_active"]) },
 	models: { ...prior.models, orchestrator: { ...prior.models?.orchestrator, ...split(a.orchestrator_model) }, lanes: { ...prior.models?.lanes, ...split(a.lane_model) } },

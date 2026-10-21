@@ -117,6 +117,7 @@ function renderSettings() {
     row("usage", "사용량", "", () => go("usage")),
     row("context", "컨텍스트", "", () => go("context")),
     row("harness", "구성", "시스템 지도", () => go("harness")),
+    mnRow(),
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null),
     ...pushSection(), ...updateSection(), ...accountSection(), ...rtSection());
