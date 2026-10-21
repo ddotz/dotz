@@ -51,10 +51,14 @@ const attnLabel = k => ({ ask: "답변 필요", limit: "한도 걸림" })[k] || 
 // chat and the projects) that have unread messages, by the hub's read position (synced across devices). A session lives under 세션; its
 // question, rate limit and finished turn keep their own marks (home, 세션, toasts, the bell) and never hold this badge.
 const chatUnreadCount = (targets, unreadOf) => targets.filter(t => unreadOf(t) > 0).length;
+// On a phone the bell is hidden and 알림 모아보기 lives in the chat list, so the chat tab badge also counts unread notices.
+const bellInChat = () => matchMedia("(max-width: 639px)").matches;
 function paintAttn() {
-  const n = S ? chatUnreadCount([MAIN, ...projTargets()], t => ts(t).unread) : 0, b = $("#nav-att");
-  b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n); b.title = `읽지 않은 대화 ${n}개`;
-  b.parentElement.setAttribute("aria-label", n ? `채팅, 읽지 않은 대화 ${n}개` : "채팅");
+  const c = S ? chatUnreadCount([MAIN, ...projTargets()], t => ts(t).unread) : 0, nt = bellInChat() && typeof NT !== "undefined" ? Math.max(0, NT.unread | 0) : 0;
+  const n = c + nt, b = $("#nav-att");
+  const say = [c ? `읽지 않은 대화 ${c}개` : "", nt ? `안 읽은 알림 ${nt}개` : ""].filter(Boolean).join(", ");
+  b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n); b.title = say;
+  b.parentElement.setAttribute("aria-label", n ? `채팅, ${say}` : "채팅");
   document.title = n ? `(${n}) ${botName}` : botName;
   toastAttn();
 }

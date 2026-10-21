@@ -6,7 +6,7 @@ import { join } from "node:path";
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
 const cut = (src: string, from: string, to: string) => src.slice(src.indexOf(from), src.indexOf(to));
 
-function page(opts: { current?: string } = {}) {
+function page(opts: { current?: string; phone?: boolean; notices?: number; badge?: unknown } = {}) {
 	const needs = cut(web("09-needs-you.js"), "const SEEN_KEY", "/* ---------- usage strip");
 	const data = web("13-data.js");
 	const intake = cut(data, "function ingestMsg", "async function loadTarget") + cut(data, "function onActivity", "/* ---------- switching");
@@ -20,19 +20,20 @@ function page(opts: { current?: string } = {}) {
 		S: { orchestrator: { status: "working" }, lanes: [] as { name: string; status: string }[] },
 		convListing: () => false, projTargets: () => [], liveTargets: () => [MAIN],
 		isProjT: (t: string) => /^ch:\d+$/.test(t), isLaneT: (t: string) => t.startsWith("lane:"),
-		targetName: () => "dotz", notify: (e: any) => notes.push(e), renderHome: () => {}, renderLanes: () => {}, $: () => null,
+		targetName: () => "dotz", notify: (e: any) => notes.push(e), renderHome: () => {}, renderLanes: () => {}, $: (s: string) => (s === "#nav-att" ? opts.badge ?? null : null),
 		ts: (t: string) => TS[t] || (TS[t] = { msgs: [], mk: new Set(), acts: [], ak: new Set(), cap: 600, hLoaded: false, aLoaded: false }),
 		TS, msgKey: (e: any) => `${e.ts}|${e.kind}|${e.text}`, actKey: (a: any) => `${a.ts}|${a.type}`,
 		eventTarget: () => MAIN, targetOfSource: () => MAIN, isRestart: () => false, paintRestartBanner: () => {}, convNote: () => {},
 		CV: { full: false }, chatPush: () => {}, termPush: () => {}, ownerish: () => false, ownerAct: () => ({}), paintDecision: () => {},
 		isLaneReport: () => false, LP: {}, laneRefresh: () => {}, scheduleState: () => {}, todoActivity: () => {},
+		matchMedia: () => ({ matches: !!opts.phone }), NT: { unread: opts.notices ?? 0 }, botName: "dotz",
 	};
 	const S = env.S as { orchestrator: { status: string } };
 	(env as any).targetInfo = () => ({ alive: true, status: S.orchestrator.status });
 	let api: any;
 	// renderBars repaints the badge, and paintAttn's toastAttn runs with it (as in the page).
 	env.renderBars = () => api.toastAttn();
-	api = new Function(...Object.keys(env), `${needs}\n${intake}\nreturn { noteStatus, toastAttn, onActivity, ingestMsg, chatUnreadCount };`)(...Object.values(env));
+	api = new Function(...Object.keys(env), `${needs}\n${intake}\nreturn { noteStatus, toastAttn, onActivity, ingestMsg, chatUnreadCount, paintAttn };`)(...Object.values(env));
 	api.noteStatus(); api.toastAttn();   // page load
 	return { api, S, notes };
 }
@@ -47,6 +48,16 @@ describe("채팅 nav badge", () => {
 		expect(api.chatUnreadCount(["web", "ch:1", "ch:2"], (t: string) => unread[t] ?? 0)).toBe(1);
 		unread["ch:1"] = 0;
 		expect(api.chatUnreadCount(["web", "ch:1", "ch:2"], (t: string) => unread[t] ?? 0)).toBe(0);
+	});
+
+	test("on a phone the unread notices (알림 모아보기 lives in the chat list) are part of the badge; on a wide screen the bell keeps them", () => {
+		const badge = (phone: boolean) => {
+			const b = { hidden: true, textContent: "", title: "", parentElement: { setAttribute: () => {} } };
+			page({ phone, notices: 2, badge: b }).api.paintAttn();
+			return b;
+		};
+		expect(badge(true)).toMatchObject({ hidden: false, textContent: "2", title: "안 읽은 알림 2개" });
+		expect(badge(false).hidden).toBe(true);
 	});
 });
 
