@@ -1,6 +1,6 @@
 // Dotz hub entry: bun hub/main.ts. Owns Discord, lanes and the event bus; serves the web app + API on
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, HOST, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
@@ -34,7 +34,8 @@ import { startOmpUpdate } from "./update.ts";
 import { onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
 import { clearChannel, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
-import { startWatches, stopWatches } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, startWatches, stopWatches } from "./watch.ts";
+import { isConfirm, isFidoGo, company_WATCH, acmeConfig, mailIdOf, recordOk, waitingApproval } from "./company.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
@@ -91,6 +92,7 @@ discord.setChannelGoneHandler(id => {
 	if (clearChannel(id)) log(`work channel ${id} is gone; its logins and monitors were released`);
 });
 
+const company = acmeConfig((cfg as any).company);
 const onOwner = (m: discord.Incoming) => {
 	if (m.id) discord.ack(m.ackChannelId, m.id);
 	const target = typeof m.channel === "string" ? m.channel : "lane" in m.channel ? `lane:${m.channel.lane}` : "work" in m.channel ? `ch:${m.channel.work}` : `th:${m.channel.thread}`;
@@ -103,7 +105,9 @@ const onOwner = (m: discord.Incoming) => {
 	}
 	if (typeof m.channel === "object" && "thread" in m.channel) {
 		const info = discord.threadInfo(m.channel.thread);
-		const threadEvent = { ...event, channel: `th:${m.channel.thread}`, kind: "message", thread_name: m.channel.name, parent: info?.parentTarget, parent_name: info?.parentName };
+		const mail = company ? mailIdOf(company, m.channel.thread) : undefined;
+		if (mail !== undefined && isConfirm(m.content)) recordOk(DATA_DIR, mail);
+		const threadEvent = { ...event, channel: `th:${m.channel.thread}`, kind: "message", thread_name: m.channel.name, parent: info?.parentTarget, parent_name: mail !== undefined ? "company" : info?.parentName, ...(mail !== undefined ? { company_mail: mail } : {}) };
 		emit("inbox", threadEvent);
 		intake(threadEvent, threadEvent.channel, m.id);
 		return;
@@ -137,6 +141,24 @@ const onOwner = (m: discord.Incoming) => {
 	emit("inbox", { ...event, kind: "message" });
 	intake({ ...event, kind: "message" }, target, m.id);
 };
+// company company mail (hub/company.ts): its mail threads come in as threads, and in its alert channel only a yes to a waiting
+// FIDO question is taken (approves the company-login watch); everything else there stays with whoever else reads it.
+function acmeAlert(m: discord.Incoming): void {
+	if (!company || !isFidoGo(m.content) || !waitingApproval(company)) return;
+	if (m.id) discord.ack(m.ackChannelId, m.id);
+	try {
+		approveWatch(company_WATCH);
+		log(`company: owner approved the FIDO login (${m.id})`);
+		void discord.postTo(company.alert_channel, "🔐 승인 받았어요. company 다시 로그인할게요. 폰 OnePass에 FIDO 오면 눌러줘요.").catch(e => log(`company approval note failed: ${e}`));
+	} catch (error) {
+		log(`company: approval failed: ${error}`);
+	}
+}
+if (company) discord.setClaimHandler(id => {
+	if (id === company.alert_channel) return { raw: acmeAlert };
+	const mail = id === company.mail_channel ? undefined : mailIdOf(company, id);
+	return mail === undefined ? undefined : { thread: `company ${mail}`, parent: company.mail_channel };
+});
 discord.connect(onOwner);
 // A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
 setAskAnswer((target, content) => {
@@ -158,7 +180,7 @@ void startZele({
 		deliver(inboxText(event), { target: `ch:${channel}` });
 	},
 	brief: text => {
-		const target = discord.status.enabled ? "chat" : "web";
+		const target = !discord.status.enabled ? "web" : discord.channels.brief ? "brief" : "chat";
 		const event = { ts: now(), kind: "schedule", source: "zele", id: "zele", channel: target, text };
 		// Without a mail channel (no Discord) a new mail comes through here too: shown as mail, not as a schedule.
 		emit("inbox", text.startsWith("[mail") ? { ...event, kind: "mail", text: text.replace(/^\[mail[^\]]*\]\s*/, "") } : event);
@@ -273,6 +295,13 @@ startWatches((w, reason, output) => {
 	void out(w.to, `[${w.name}] ${reason}\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 syncFeatureWatches();
+if (company && !allWatches().some(w => w.name === company_WATCH)) {
+	try {
+		addWatch({ name: company_WATCH, command: `bun '${join(import.meta.dir, "company-approve.ts")}' '${company.dir}'`, every_minutes: 10, on: "fail", to: "alert", approval_minutes: 30 }, existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "");
+	} catch (error) {
+		log(`company: login watch not added: ${error}`);
+	}
+}
 writeAtomic(paths.pid, String(process.pid));
 log(`hub listening on 127.0.0.1:${server.port} as ${NAME} (discord ${discord.status.enabled ? "on" : discord.dryRunReason ? `off, dry run: ${discord.dryRunReason}; DOTZ_ALLOW_LIVE=1 connects` : "off"})`);
 for (const sig of ["SIGTERM", "SIGINT"] as const)

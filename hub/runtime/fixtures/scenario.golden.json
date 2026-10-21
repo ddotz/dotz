@@ -76,7 +76,8 @@
    {
     "sessionFile": "<DATA>/orch-session.jsonl",
     "model": "anthropic/test-orch:low",
-    "runtime": "omp"
+    "runtime": "omp",
+    "activeModel": "anthropic/test-orch:low"
    },
    true
   ],

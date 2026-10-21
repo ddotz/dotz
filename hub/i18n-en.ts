@@ -133,6 +133,9 @@ export const en = {
 	fallbackExhausted: (model: string, until: string) => `Model fallback: ${model} reached its spend cap and no fallback model is left. Paused until ${until}.`,
 	// The runtime's own fallback walk is undone: the process goes back to its configured model (or this runtime cannot).
 	modelReverted: (model: string) => `Back on the original model (${model})`,
+	fallbackFresh: (to: string, keyed: boolean, again: boolean) => `\n\n[dotz gateway] You now run on ${to} in a fresh conversation (a model switch never continues the old conversation: its whole prompt cache would be written again).${keyed ? " This is the API-key fallback: the subscription hit its usage limit. Answer and do light work yourself; task subagents and sessions do not run on the API key, so put heavier work in state.json open_tasks and tell the owner it starts after the reset. dotz moves you back to the subscription in a fresh conversation as soon as the limit lifts." : " The subscription is usable again: pick up the work deferred in state.json open_tasks."}${again ? " The owner's last request above failed on the limit and was not answered: answer it now." : ""}`,
+	apiStart: (model: string) => `API key in use: the subscription hit its usage limit, so the orchestrator answers on ${model}; no sessions or subagents until the reset.`,
+	apiEnd: (model: string) => `API key no longer in use: the orchestrator is back on ${model} (subscription).`,
 	modelNoRevert: "This runtime cannot switch models, so it stays on the fallback until restarted.",
 	ownerAnswerNudge: "(Owner message: answer it at your next tool boundary with one short note before that tool call, what you will do and when; the final report is not the first answer.)",
 	laneOwnerResumed: "[dotz gateway] The owner resumed you. Continue the work you were doing.",
