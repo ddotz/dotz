@@ -34,6 +34,7 @@ function paintBell() {
   n.textContent = c > 99 ? "99+" : String(c);
   b.setAttribute("aria-label", c ? `알림, 안 읽은 알림 ${c > 99 ? "99개 이상" : `${c}개`}` : "알림");
   convSchedule();   // phone: the same count is the badge of the chat list's 알림 모아보기 row
+  paintAttn();      // phone: and part of the chat tab badge
 }
 
 async function loadNotices() {
