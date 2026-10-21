@@ -1,8 +1,9 @@
 // Conditional model fallback chains that the hub drives itself (the orchestrator and every lane): an entry can be used only
 // after a usage limit or after a provider error, stop at a spend cap, come back when an earlier entry's limit resets, and
 // run through its own API key. omp's native chain (retry.fallbackChains) cannot express any of that, so a layer whose chain
-// has such an entry is switched by restarting the process on the same session with the next model; a chain of bare
-// models stays with omp (hub/runtime/omp.ts). Usage and limit state persists in <data dir>/fallback-usage.json.
+// has such an entry is switched by restarting the process with the next model in a fresh session with a handover (owner
+// 2026-10-21: a model switch never continues the same session, it would write the whole prompt cache again; see
+// hub/orchestrator.ts switchTo); a chain of bare models stays with omp (hub/runtime/omp.ts). Usage and limit state persists in <data dir>/fallback-usage.json.
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { cfg, DATA_DIR, entryId, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
@@ -229,13 +230,14 @@ export class Chain {
 	// Every fallback entry goes back (a keyed or conditional one too, 2026-10-20: an API-key fallback stayed ~30 min after the
 	// subscription's limit reset because only bare entries were marked); `revert: false` keeps an entry. An earlier entry out
 	// on a usage limit is tried again REVERT_PROBE_MS after the limit was written (the reset time is an estimate); a failed try
-	// writes the limit again, so tries stay that far apart.
-	revertTarget(at = clock.now()): Move | undefined {
+	// writes the limit again, so tries stay that far apart. `lifted`: the provider's usage report says the limit is over, so
+	// an earlier entry out on a usage limit is usable now.
+	revertTarget(at = clock.now(), lifted = false): Move | undefined {
 		if (this.active === 0 || this.list[this.active].revert === false) return undefined;
 		for (let j = 0; j < this.active; j++) {
 			const d = this.down(j, at);
 			if (!d) return { from: this.active, to: j, why: "revert" };
-			if (d.why === "quota" && at - (d.since ?? 0) >= REVERT_PROBE_MS) {
+			if (d.why === "quota" && (lifted || at - (d.since ?? 0) >= REVERT_PROBE_MS)) {
 				// The restart picks its entry from the recorded limits (initial()), so the try lifts this one.
 				delete load().blocked[poolOf(this.list[j])];
 				save();

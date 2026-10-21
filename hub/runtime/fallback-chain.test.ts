@@ -20,6 +20,7 @@ const o: typeof Orchestrator = await import("../orchestrator.ts?fallback-chain")
 class FakeAgent implements AgentProcess {
 	pid = 7100;
 	calls: string[] = [];
+	texts: string[] = [];
 	private queue: AgentEvent[] = [];
 	private wake = Promise.withResolvers<void>();
 	private exit = Promise.withResolvers<number>();
@@ -39,6 +40,7 @@ class FakeAgent implements AgentProcess {
 	}
 	send(text: string, mode: SendMode): void {
 		this.calls.push(`send:${mode}:${text.slice(0, 60)}`);
+		this.texts.push(text);
 	}
 	abort = () => void this.calls.push("abort");
 	compact = () => void this.calls.push("compact");
@@ -119,7 +121,8 @@ test("quota -> API-key entry -> reset returns to the subscription -> monthly cap
 	expect(o.orch.status).toBe("idle");
 	log(`step 0  start on ${current().opts.model}; the chain is hub-driven`);
 
-	// Step 1: the subscription hits its usage limit -> restart on the same session as the API-key entry, redoing the request.
+	// Step 1: the subscription hits its usage limit -> the API-key entry in a fresh session (never the same session on another
+	// model), told to answer the request that failed.
 	const first = current();
 	o.deliver("hello");
 	await first.agent.push(...turn(quota));
@@ -130,10 +133,11 @@ test("quota -> API-key entry -> reset returns to the subscription -> monthly cap
 	const spec = JSON.parse(current().opts.env.DOTZ_KEY_PROVIDER);
 	expect(spec).toMatchObject({ id: "anthropic-apikey", baseUrl: "https://keys.test.invalid/v1", api: "openai-completions" });
 	expect(JSON.stringify(spec)).not.toContain(KEY);
-	expect(current().opts.resume).toBe(join(DATA, "fake-session.jsonl"));
-	expect(current().agent.calls.some(c => c.startsWith("send:followUp:[dotz gateway]"))).toBe(true);
+	expect(current().opts.resume).toBeUndefined();
+	expect(current().agent.texts[0]).toContain("This is the API-key fallback");
+	expect(current().agent.texts[0]).toContain("answer it now");
 	expect(notices.at(-1)).toBe("Model fallback: anthropic/test-orch → anthropic/test-orch (API key) (usage limit reached)");
-	log(`step 1  fake quota exhaustion -> ${current().opts.model} (key from secrets/test-api-key, resume same session)\n        worklog: ${notices.at(-1)}`);
+	log(`step 1  fake quota exhaustion -> ${current().opts.model} (key from secrets/test-api-key, fresh session)\n        worklog: ${notices.at(-1)}`);
 	// The key reaches the process only through its environment: never the overlay, the notices, the alerts or the usage file.
 	expect(JSON.stringify([notices, alerts, readFileSync(join(DATA, "fallback-usage.json"), "utf8")])).not.toContain(KEY);
 
