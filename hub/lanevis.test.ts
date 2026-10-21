@@ -13,8 +13,9 @@ import type { AgentEvent, AgentProcess, RuntimeAdapter, SubagentUpdate } from ".
 import type * as Lanes from "./lanes.ts";
 
 const DATA = process.env.DOTZ_DIR!;
-// A separate lanes.ts instance, so no state is shared with the scenario test that drives the original in this process.
-const l: typeof Lanes = await import("./lanes.ts?lanevis");
+// The lane state is one shared module (lanestate.ts): reset it so the scenario test driving it in this process does not leak in.
+const l: typeof Lanes = await import("./lanes.ts");
+(await import("./lanestate.ts")).resetLaneStateForTest();
 
 class FakeAgent implements AgentProcess {
 	pid = 7300;
