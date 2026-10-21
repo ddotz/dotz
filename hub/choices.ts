@@ -47,3 +47,51 @@ export function parseChoices(text: string): Choices {
 	if (options.length < 2 || options.length > MAX_OPTIONS) return { options: [] };
 	return { ...(question ? { question } : {}), options };
 }
+
+// Several decisions in one message: a "결정: <title>" line opens a block, `**1) name** ← 추천` lines are its options, each with one
+// description line under it. A number that restarts at 1 opens the next block. Mirrors the web card (web/js/10-decision-card.js)
+// so the bell and the chat card agree on what is being asked. Blocks with fewer than two options are not decisions.
+export type DecisionOption = { n: number; label: string; desc: string; rec: boolean };
+export type DecisionBlock = { title: string; options: DecisionOption[] };
+const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
+const D_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
+const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
+export function parseDecisions(text: string): { question: string; blocks: DecisionBlock[] } {
+	const lines = text.replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
+	const blocks: DecisionBlock[] = [];
+	let i = 0;
+	let question = "";
+	let cur: DecisionBlock | undefined;
+	let fence = false;
+	while (i < lines.length && !lines[i]!.trim()) i++;
+	if (i < lines.length && !D_OPT.test(lines[i]!) && !D_HEAD.test(lines[i]!)) question = lines[i++]!.trim();
+	for (; i < lines.length; i++) {
+		const line = lines[i]!;
+		if (FENCE.test(line)) {
+			fence = !fence;
+			continue;
+		}
+		if (fence) continue;
+		const h = D_HEAD.exec(line);
+		if (h) {
+			cur = { title: h[1]!.trim(), options: [] };
+			blocks.push(cur);
+			continue;
+		}
+		const m = D_OPT.exec(line);
+		if (!m) continue;
+		const n = Number(m[1]);
+		if (!cur || (cur.options.length && n <= cur.options[cur.options.length - 1]!.n)) {
+			cur = { title: "", options: [] };
+			blocks.push(cur);
+		}
+		let desc = "";
+		const next = lines[i + 1];
+		if (next !== undefined && next.trim() && !D_OPT.test(next) && !D_HEAD.test(next) && !D_CLOSE.test(next) && !FENCE.test(next)) {
+			desc = next.trim();
+			i++;
+		}
+		cur.options.push({ n, label: m[2]!.replace(/^\*+|\*+$/g, "").trim(), desc, rec: Boolean(m[3]) });
+	}
+	return { question, blocks: blocks.filter(b => b.options.length >= 2) };
+}

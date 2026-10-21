@@ -285,7 +285,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					if (errorStreak.stopped && !streakAlerted) {
 						streakAlerted = true;
 						log(`orchestrator ${ERROR_STREAK_STOP} failed turns in a row; automatic retries stop until a turn succeeds`);
-						onAlert(`${NAME}: 모델 오류가 ${ERROR_STREAK_STOP}턴 연속이라 자동 재시도·전환을 멈췄습니다(${ev.error.text.replace(/\s+/g, " ").slice(0, 160)}). 다음 메시지부터 다시 시도합니다.`);
+						onAlert(`${NAME}: 모델 오류가 ${ERROR_STREAK_STOP}번 연속이라 자동 재시도·전환을 멈췄어요(${ev.error.text.replace(/\s+/g, " ").slice(0, 160)}). 다음 메시지부터 다시 시도해요.`);
 					}
 				} else if (chained) {
 					const failed = ev.error;
@@ -392,8 +392,8 @@ async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<voi
 	orch.pauseKind = owner ? "owner" : "rate";
 	if (!owner) save({ pausedUntil: orch.rateLimitedUntil });
 	if ((!pauseAlerted || changed) && (owner || firstAlertForReset("orchestrator", until.getTime()))) {
-		if (owner) onAlert(`${NAME}: 모델 제공자 결제/인증 문제로 멈춤 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요합니다. 그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리하고, ${Math.round(retry / 60_000)}분마다 다시 시도합니다.`);
-		else onAlert(`${NAME}: 사용량 한도(429)로 멈춤. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리합니다.`);
+		if (owner) onAlert(`${NAME}: 모델 제공자 결제/인증 문제로 멈췄어요 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요해요. 그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리하고, ${Math.round(retry / 60_000)}분마다 다시 시도해요.`);
+		else onAlert(`${NAME}: 사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`);
 	}
 	pauseAlerted = true;
 	armResume(retry, owner);
@@ -422,7 +422,7 @@ function retryTransient(err: string): void {
 	if (transientTimer) return;
 	if (transientTries >= TRANSIENT_RETRIES) {
 		transientTries = 0;
-		onAlert(`${NAME}: 모델 제공자 오류(${err.replace(/\s+/g, " ").slice(0, 160)})가 ${TRANSIENT_RETRIES}번 재시도해도 계속돼서 멈췄습니다. 다음 메시지부터 다시 시도합니다.`);
+		onAlert(`${NAME}: 모델 제공자 오류(${err.replace(/\s+/g, " ").slice(0, 160)})가 ${TRANSIENT_RETRIES}번 재시도해도 계속돼서 멈췄어요. 다음 메시지부터 다시 시도해요.`);
 		return;
 	}
 	const wait = transientBackoff(transientTries++);
@@ -541,7 +541,7 @@ export function start(): void {
 		}
 		if (rotating) return start();
 		orch.restarts = orch.restarts.filter(t => Date.now() - t < RESTART_WINDOW_MS);
-		if (orch.restarts.length >= MAX_RESTARTS) return onAlert(`${NAME}: 오케스트레이터가 10분 안에 ${MAX_RESTARTS}번 죽어서 재시작을 멈췄습니다. hub.log 확인이 필요합니다.`);
+		if (orch.restarts.length >= MAX_RESTARTS) return onAlert(`${NAME}: 어시스턴트가 10분 안에 ${MAX_RESTARTS}번 죽어서 재시작을 멈췄어요. hub.log를 확인해 주세요.`);
 		orch.restarts.push(Date.now());
 		setTimeout(start, 10_000);
 	});

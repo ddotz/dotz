@@ -4,7 +4,7 @@
 // the raw id appears only in API fields named `name`/`key` and on "-# " detail lines.
 import { aliasesFile, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
 import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, validateRules, writeRules } from "./account-rules.ts";
-import { type AccountSwitch, accountView, readPool, stickyAccount, type SwitchKind } from "./account-sticky.ts";
+import { type AccountSwitch, accountView, MAX_LOG_LINES, readPool, stickyAccount, type SwitchKind } from "./account-sticky.ts";
 import { TZ } from "./config.ts";
 import { type AccountReport, limitsText } from "./usage-account.ts";
 
@@ -88,7 +88,7 @@ export const labeledSwitch = (s: AccountSwitch, aliases = readAliases()): Labele
 });
 
 // accountView() (the usage screen's account block) plus the owner's names.
-export function labeledAccountView(limit = 10) {
+export function labeledAccountView(limit = MAX_LOG_LINES) {
 	const v = accountView(limit);
 	const aliases = readAliases();
 	return { ...v, ...(v.account ? { account_label: label(v.account, undefined, aliases) } : {}), switches: v.switches.map(s => labeledSwitch(s, aliases)) };
@@ -155,7 +155,7 @@ export function accountsBody(now = Date.now()) {
 				: null,
 		},
 		files: { rules: rulesFile(), aliases: aliasesFile(), decisions: decisionsFile() },
-		switches: accountView(10).switches.map(s => labeledSwitch(s, aliases)),
+		switches: accountView(MAX_LOG_LINES).switches.map(s => labeledSwitch(s, aliases)),
 	};
 }
 export type AccountsBody = ReturnType<typeof accountsBody>;

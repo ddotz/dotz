@@ -64,7 +64,7 @@ let sorted: { target: string; last: ConversationLast | null }[] | undefined;
 // same message meet here, so the key keeps it counted once.
 const UNREAD_KEEP = 500;
 const incoming = new Map<string, Map<string, string>>();
-const cleanRestart = (e: HubEvent) => e.kind === "out" && e.source === "gateway" && /^게이트웨이 재시작했어요/.test(String(e.text ?? "")) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
+const cleanRestart = (e: HubEvent) => e.kind === "out" && e.source === "gateway" && /^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(e.text ?? "")) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
 
 function countIncoming(target: string, e: HubEvent, last: ConversationLast): void {
 	if (last.from === "owner" || cleanRestart(e)) return;

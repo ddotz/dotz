@@ -122,6 +122,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .pal-out.err { color: var(--err); }
 .snack { position: fixed; z-index: 2000; left: 50%; bottom: 16px; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 24px); padding: 8px 12px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
 /* a refusal or failure stays calm (owner 2026-10-20: "빨간색 글자 나오면 놀란다 사람들"): the usual snackbar with a small amber dot */
+.shell-chip { position: fixed; z-index: 1999; top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 24px); padding: 6px 14px; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 13px; line-height: 18px; font-weight: 600; box-shadow: 0 2px 10px rgba(0, 0, 0, .25); }
 .snack.bad::before { content: ""; display: inline-block; flex: none; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--warn); vertical-align: 1px; }
 .snack.act { display: flex; align-items: center; gap: 12px; }
 .snack .sa { flex: none; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; }

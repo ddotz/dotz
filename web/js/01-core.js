@@ -30,7 +30,6 @@ const ICONS = {
   back: "M15 5l-7 7 7 7",
   send: "M12 19V5M5 12l7-7 7 7",
   refresh: "M20 11a8 8 0 1 0-2.3 6.3M20 4v7h-7",
-  stop: "M7 7h10v10H7z",
   check: "M5 12.5l4.5 4.5L19 7",
   drop: "M6 9l6 6 6-6",
   chev: "M9 6l6 6-6 6",

@@ -44,6 +44,18 @@ async function loadTarget(t) {
   await s.loading;
   if (t === target) renderAll();
 }
+// A tapped push or bell notice names a message the stream may not have delivered (it stalls while the phone sleeps): fetch the
+// history until that message is in. loadTarget joins a fetch already in flight, so the second round covers one that began before the message existed.
+async function ensureMsg(t, at) {
+  const s = ts(t);
+  for (let i = 0; i < 2 && at && !s.msgs.some(e => e.ts >= at); i++) await loadTarget(t);
+}
+// The page is back after being away: whatever the stream missed is fetched now, before anyone taps a notification for it.
+function resync() {
+  refreshState();
+  for (const k of Object.keys(TS)) if (k !== target) TS[k].hLoaded = TS[k].aLoaded = false;
+  loadTarget(target); loadSubs(); loadQueue(); convLoad();
+}
 // Older activity from the saved session transcript, 300 at a time, prepended while the scroll position stays put.
 async function loadOlder() {
   const t = target, s = ts(t);
@@ -85,7 +97,7 @@ function renderAll0(keepScroll) {
     } else { const a = A[i++]; if (!isProjT(target)) chatPush({ a }, true); termPush(a, true); }
   }
   if (!tl.children.length) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));
-  if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동 없음" }));
+  if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동이 없어요" }));
   if (!keepScroll) { chatOpen(); scrollTerm(true); } else { CV.snap = null; CV.full = true; }
   markLive();
 }
@@ -104,7 +116,7 @@ function setTarget(t) {
   closeSheet();
   target = t;
   try { localStorage.setItem(TARGET_KEY, t); } catch {}
-  if (current === "chat" || current === "activity") history.replaceState(null, "", `#${current}/${t}`);
+  if (current === "chat" || current === "activity") routeReplace(`${current}/${t}`);
   const s = ts(t);
   convSync();
   markSeen();

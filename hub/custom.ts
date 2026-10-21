@@ -56,47 +56,47 @@ function parseCard(raw: string): CardSpec | string {
 	}
 	if (!isObj(j)) return "카드는 JSON 객체여야 해요";
 	const title = str(j.title, 1, 40);
-	if (!title) return "title 은 1~40자여야 해요";
+	if (!title) return "title은 1~40자여야 해요";
 	const spec: CardSpec = { title, view: "text", every_minutes: 10, timeout_seconds: 10, order: 0, actions: [] };
 	if (j.note !== undefined) {
-		if (typeof j.note !== "string" || j.note.length > 120) return "note 는 120자 이하 글이어야 해요";
+		if (typeof j.note !== "string" || j.note.length > 120) return "note는 120자 이하 글이어야 해요";
 		spec.note = j.note;
 	}
 	if (j.view !== undefined) {
-		if (!(VIEWS as readonly unknown[]).includes(j.view)) return `view 는 ${VIEWS.join(" | ")} 중 하나여야 해요`;
+		if (!(VIEWS as readonly unknown[]).includes(j.view)) return `view는 ${VIEWS.join(" | ")} 중 하나여야 해요`;
 		spec.view = j.view as View;
 	}
 	for (const k of ["text", "command", "cwd"] as const) {
 		if (j[k] === undefined) continue;
-		if (typeof j[k] !== "string") return `${k} 는 글이어야 해요`;
-		if (k !== "text" && !(j[k] as string).trim()) return `${k} 가 비어 있어요`;
+		if (typeof j[k] !== "string") return `${k}는 글이어야 해요`;
+		if (k !== "text" && !(j[k] as string).trim()) return `${k}가 비어 있어요`;
 		spec[k] = j[k] as string;
 	}
 	if (j.every_minutes !== undefined) {
-		if (typeof j.every_minutes !== "number" || !(j.every_minutes >= 1)) return "every_minutes 는 1 이상 숫자여야 해요";
+		if (typeof j.every_minutes !== "number" || !(j.every_minutes >= 1)) return "every_minutes는 1 이상 숫자여야 해요";
 		spec.every_minutes = j.every_minutes;
 	}
 	if (j.timeout_seconds !== undefined) {
-		if (typeof j.timeout_seconds !== "number" || !(j.timeout_seconds >= 1 && j.timeout_seconds <= 60)) return "timeout_seconds 는 1~60 사이 숫자여야 해요";
+		if (typeof j.timeout_seconds !== "number" || !(j.timeout_seconds >= 1 && j.timeout_seconds <= 60)) return "timeout_seconds는 1~60 사이 숫자여야 해요";
 		spec.timeout_seconds = j.timeout_seconds;
 	}
 	if (j.link !== undefined) {
-		if (typeof j.link !== "string" || !/^(https?:\/\/\S+|#\S+)$/.test(j.link)) return "link 는 http(s) 주소나 #화면 이어야 해요";
+		if (typeof j.link !== "string" || !/^(https?:\/\/\S+|#\S+)$/.test(j.link)) return "link는 http(s) 주소나 #화면 이어야 해요";
 		spec.link = j.link;
 	}
 	if (j.order !== undefined) {
-		if (typeof j.order !== "number" || !Number.isFinite(j.order)) return "order 는 숫자여야 해요";
+		if (typeof j.order !== "number" || !Number.isFinite(j.order)) return "order는 숫자여야 해요";
 		spec.order = j.order;
 	}
 	if (j.actions !== undefined) {
-		if (!Array.isArray(j.actions) || j.actions.length > MAX_ACTIONS) return `actions 는 ${MAX_ACTIONS}개까지 배열이어야 해요`;
+		if (!Array.isArray(j.actions) || j.actions.length > MAX_ACTIONS) return `actions는 ${MAX_ACTIONS}개까지 배열이어야 해요`;
 		for (const [i, a] of j.actions.entries()) {
 			const label = isObj(a) ? str(a.label, 1, 20) : undefined;
-			if (!isObj(a) || !label) return `actions[${i}]: label 은 1~20자여야 해요`;
-			if ((a.command === undefined) === (a.prompt === undefined)) return `actions[${i}]: command 나 prompt 중 하나만 써요`;
-			if (a.command !== undefined && (typeof a.command !== "string" || !a.command.trim())) return `actions[${i}]: command 가 비어 있어요`;
-			if (a.prompt !== undefined && (typeof a.prompt !== "string" || !a.prompt.trim() || a.prompt.length > 4000)) return `actions[${i}]: prompt 는 1~4000자여야 해요`;
-			if (a.confirm !== undefined && typeof a.confirm !== "boolean") return `actions[${i}]: confirm 은 true/false 여야 해요`;
+			if (!isObj(a) || !label) return `actions[${i}]: label은 1~20자여야 해요`;
+			if ((a.command === undefined) === (a.prompt === undefined)) return `actions[${i}]: command나 prompt 중 하나만 써요`;
+			if (a.command !== undefined && (typeof a.command !== "string" || !a.command.trim())) return `actions[${i}]: command가 비어 있어요`;
+			if (a.prompt !== undefined && (typeof a.prompt !== "string" || !a.prompt.trim() || a.prompt.length > 4000)) return `actions[${i}]: prompt는 1~4000자여야 해요`;
+			if (a.confirm !== undefined && typeof a.confirm !== "boolean") return `actions[${i}]: confirm은 true/false여야 해요`;
 			spec.actions.push({ label, ...(a.command !== undefined ? { command: a.command as string } : { prompt: a.prompt as string }), ...(a.confirm ? { confirm: true } : {}) });
 		}
 	}
@@ -122,11 +122,11 @@ export function readCards(errors: CustomError[] = []): CardEntry[] {
 			continue;
 		}
 		if (!ID.test(id)) {
-			out.push({ id, file: rel, error: "id 는 영문 소문자·숫자·하이픈 40자 이하여야 해요" });
+			out.push({ id, file: rel, error: "id는 영문 소문자·숫자·하이픈 40자 이하여야 해요" });
 			continue;
 		}
 		if (seen.has(id)) {
-			out.push({ id, file: rel, error: `id ${id} 가 겹쳐요 (파일과 폴더 중 하나만 두세요)` });
+			out.push({ id, file: rel, error: `id ${id}가 겹쳐요 (파일과 폴더 중 하나만 두세요)` });
 			continue;
 		}
 		seen.add(id);
@@ -134,12 +134,12 @@ export function readCards(errors: CustomError[] = []): CardEntry[] {
 		let raw: string;
 		try {
 			if (statSync(file).size > MAX_CARD_BYTES) {
-				out.push({ id, file: rel, error: "카드 파일이 16KB 를 넘어요" });
+				out.push({ id, file: rel, error: "카드 파일이 16KB를 넘어요" });
 				continue;
 			}
 			raw = readFileSync(file, "utf8");
 		} catch (e) {
-			out.push({ id, file: rel, error: n.dir ? "card.json 을 읽을 수 없어요" : msg(e) });
+			out.push({ id, file: rel, error: n.dir ? "card.json을 읽을 수 없어요" : msg(e) });
 			continue;
 		}
 		const spec = parseCard(raw);
@@ -225,21 +225,21 @@ const nonEmpty = (v: unknown, max: number) => str(v, 1, max);
 
 function parseRoutine(v: unknown): Routine | string {
 	if (!isObj(v)) return "루틴은 객체여야 해요";
-	if (typeof v.id !== "string" || !ID.test(v.id)) return "id 는 영문 소문자·숫자·하이픈 40자 이하여야 해요";
+	if (typeof v.id !== "string" || !ID.test(v.id)) return "id는 영문 소문자·숫자·하이픈 40자 이하여야 해요";
 	const name = nonEmpty(v.name, 40);
-	if (!name) return `루틴 ${v.id}: name 은 1~40자여야 해요`;
-	if (typeof v.prompt !== "string" || !v.prompt.trim() || v.prompt.length > 4000) return `루틴 ${v.id}: prompt 는 1~4000자여야 해요`;
+	if (!name) return `루틴 ${v.id}: name은 1~40자여야 해요`;
+	if (typeof v.prompt !== "string" || !v.prompt.trim() || v.prompt.length > 4000) return `루틴 ${v.id}: prompt는 1~4000자여야 해요`;
 	const target = v.target === undefined ? "main" : v.target;
-	if (typeof target !== "string" || !(target === "main" || /^lane:\S+$/.test(target))) return `루틴 ${v.id}: target 은 main 또는 lane:<이름> 이어야 해요`;
+	if (typeof target !== "string" || !(target === "main" || /^lane:\S+$/.test(target))) return `루틴 ${v.id}: target은 main 또는 lane:<이름>이어야 해요`;
 	const r: Routine = { id: v.id, name, prompt: v.prompt, target };
 	if (v.schedule !== undefined) {
 		const s = v.schedule;
-		if (!isObj(s) || (s.every_minutes === undefined) === (s.at === undefined)) return `루틴 ${v.id}: schedule 에는 every_minutes 나 at 중 하나만 써요`;
+		if (!isObj(s) || (s.every_minutes === undefined) === (s.at === undefined)) return `루틴 ${v.id}: schedule 에는 every_minutes나 at 중 하나만 써요`;
 		if (s.at !== undefined) {
-			if (typeof s.at !== "string" || !HHMM.test(s.at)) return `루틴 ${v.id}: at 은 HH:MM 이어야 해요`;
+			if (typeof s.at !== "string" || !HHMM.test(s.at)) return `루틴 ${v.id}: at은 HH:MM이어야 해요`;
 			r.schedule = { at: s.at };
 		} else {
-			if (typeof s.every_minutes !== "number" || !(s.every_minutes >= 5)) return `루틴 ${v.id}: every_minutes 는 5 이상 숫자여야 해요`;
+			if (typeof s.every_minutes !== "number" || !(s.every_minutes >= 5)) return `루틴 ${v.id}: every_minutes는 5 이상 숫자여야 해요`;
 			r.schedule = { every_minutes: s.every_minutes };
 		}
 	}
@@ -270,36 +270,36 @@ function parsePins(): { pins: Pins; errors: CustomError[] } {
 		return { pins, errors };
 	}
 	if (!isObj(j)) {
-		bad("pins.json 은 JSON 객체여야 해요");
+		bad("pins.json은 JSON 객체여야 해요");
 		return { pins, errors };
 	}
 	const list = (k: string): unknown[] => {
 		if (j[k] === undefined) return [];
 		if (Array.isArray(j[k])) return j[k] as unknown[];
-		bad(`${k} 는 배열이어야 해요`);
+		bad(`${k}는 배열이어야 해요`);
 		return [];
 	};
 	list("projects").forEach((p, i) => {
 		const name = isObj(p) ? nonEmpty(p.name, 40) : undefined;
-		if (!isObj(p) || !name) return bad(`projects[${i}]: name 은 1~40자여야 해요`);
+		if (!isObj(p) || !name) return bad(`projects[${i}]: name은 1~40자여야 해요`);
 		const path = p.path === undefined ? undefined : nonEmpty(p.path, 300);
-		if (p.path !== undefined && !path) return bad(`projects[${i}]: path 는 글이어야 해요`);
-		if (p.channel !== undefined && (typeof p.channel !== "string" || !/^\d+$/.test(p.channel))) return bad(`projects[${i}]: channel 은 디스코드 채널 id 문자열이어야 해요`);
-		if (p.note !== undefined && typeof p.note !== "string") return bad(`projects[${i}]: note 는 글이어야 해요`);
-		if (!path && p.channel === undefined) return bad(`projects[${i}]: path 나 channel 이 필요해요`);
+		if (p.path !== undefined && !path) return bad(`projects[${i}]: path는 글이어야 해요`);
+		if (p.channel !== undefined && (typeof p.channel !== "string" || !/^\d+$/.test(p.channel))) return bad(`projects[${i}]: channel은 디스코드 채널 id 문자열이어야 해요`);
+		if (p.note !== undefined && typeof p.note !== "string") return bad(`projects[${i}]: note는 글이어야 해요`);
+		if (!path && p.channel === undefined) return bad(`projects[${i}]: path나 channel이 필요해요`);
 		pins.projects.push({ name, ...(path ? { path } : {}), ...(p.channel !== undefined ? { channel: p.channel as string } : {}), ...(p.note ? { note: String(p.note) } : {}) });
 	});
 	list("hide_projects").forEach((h, i) => (typeof h === "string" && h.trim() ? pins.hide_projects.push(h.trim()) : bad(`hide_projects[${i}]: 글이어야 해요`)));
 	list("routines").forEach((r, i) => {
 		const parsed = parseRoutine(r);
 		if (typeof parsed === "string") return bad(`routines[${i}]: ${parsed}`);
-		if (pins.routines.some(x => x.id === parsed.id)) return bad(`routines[${i}]: id ${parsed.id} 가 겹쳐요`);
+		if (pins.routines.some(x => x.id === parsed.id)) return bad(`routines[${i}]: id ${parsed.id}가 겹쳐요`);
 		pins.routines.push(parsed);
 	});
 	list("links").forEach((l, i) => {
 		const name = isObj(l) ? nonEmpty(l.name, 40) : undefined;
-		if (!isObj(l) || !name) return bad(`links[${i}]: name 은 1~40자여야 해요`);
-		if (typeof l.url !== "string" || !/^https?:\/\/\S+$/.test(l.url)) return bad(`links[${i}]: url 은 http(s) 주소여야 해요`);
+		if (!isObj(l) || !name) return bad(`links[${i}]: name은 1~40자여야 해요`);
+		if (typeof l.url !== "string" || !/^https?:\/\/\S+$/.test(l.url)) return bad(`links[${i}]: url은 http(s) 주소여야 해요`);
 		pins.links.push({ name, url: l.url });
 	});
 	return { pins, errors };

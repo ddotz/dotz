@@ -4,8 +4,12 @@
 (async () => {
   const h = parseHash();
   go(h.view || "home", h.t);
-  await refreshState();
+  // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
+  // is the biggest answer and nothing the conversation draws waits for it; a lane that is gone is switched away from inside refreshState).
+  const state = refreshState();
   loadTarget(target); loadTodo(target); prjLoad().then(() => renderBars(), () => {});
+  await state;
+  if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushOpen(location.hash, at); }   // the app was started by a tap on a push
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);
@@ -28,7 +32,7 @@
     else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") noticeLive(e);
     else if (e.kind === "read") convOnRead(e);
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
-    else if (e.kind === "update_available") { if (!e.ts || Date.now() - Date.parse(e.ts) < 60_000) toast(e.text, false, { label: "보기", onclick: () => go("settings") }, 10000); if (current === "settings") loadUpdate(); }
+    else if (e.kind === "update_available") { if (!e.ts || Date.now() - Date.parse(e.ts) < 60_000) toast(e.text, false, { label: "보기", onclick: () => go("settings") }, 10000); loadUpdate(); }
     // 구성 (lanes node, 프로젝트) is drawn from /api/harness, not the state: reload it too when a lane starts or ends.
     else if (e.kind === "lanes") { if (e.was_live && !e.live) refreshState(); else scheduleState(); if (e.was_live !== e.live && current === "harness") loadHarness(true); }
     else {
@@ -41,10 +45,16 @@
     }
   };
   setInterval(refreshState, 15000);
+  // The 새 버전 badge comes from /api/update: read it on open and again every few minutes.
+  loadUpdate(); setInterval(loadUpdate, 5 * 60000);
   // The plan normally refetches when a todo tool call ends; this is the fallback while the open target works.
   setInterval(() => { if (current === "chat" && !document.hidden && isWorking(target)) loadTodo(target); }, 20000);
   $("#ustrip").onclick = () => go("usage");
   loadStrip(); setInterval(loadStrip, 60000);
-  document.addEventListener("visibilitychange", () => { markSeen(); attnChanged(); loadStrip(); });
+  // The stream stalls while the phone sleeps (a push can land before the message does): coming back after a few seconds away, refetch.
+  let hiddenAt = 0;
+  const wake = () => { const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (away > 5000) resync(); };
+  document.addEventListener("visibilitychange", () => { markSeen(); attnChanged(); loadStrip(); if (document.hidden) hiddenAt = Date.now(); else wake(); });
+  addEventListener("focus", wake);
   setInterval(() => loadModels(true), 60000);
 })();

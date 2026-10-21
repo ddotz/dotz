@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type AccountSwitch, accountView, decide, onSwitch, PIN_ENV, readPool, resetStickyForTest, stickyAccount, stickyEnv, switchesFile } from "./account-sticky.ts";
+import { type AccountSwitch, accountView, decide, dropNoops, MAX_LOG_LINES, onSwitch, PIN_ENV, readPool, resetStickyForTest, stickyAccount, stickyEnv, switchesFile } from "./account-sticky.ts";
 import { authFile } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
 
@@ -74,6 +74,52 @@ test("the owner pinning another account switches; unpinning keeps it", () => {
 
 test("an account that left the pool is replaced", () => {
 	expect(decide("old", { names: ["default"], blocked: {}, lastSuccess: {} })).toMatchObject({ account: "default", change: { kind: "gone", from: "old" } });
+});
+
+const sw = (to: string, from?: string, kind: AccountSwitch["kind"] = from ? "limit" : "start", n = 0): AccountSwitch => ({ at: new Date(T0 + n * MIN).toISOString(), ...(from ? { from } : {}), to, kind, reason: "r" });
+const switchLines = () => (existsSync(switchesFile()) ? readFileSync(switchesFile(), "utf8").trim().split("\n").map(l => JSON.parse(l) as AccountSwitch) : []);
+
+test("a restart on the same account adds no entry and keeps the account's since time", () => {
+	auth(["default", "second"]);
+	slots({ default: { lastSuccessAt: T0 } });
+	expect(stickyAccount(T0)).toBe("default");
+	const since = accountView().since;
+	expect(switchLines()).toHaveLength(1);
+	// restart with account.json: nothing changes
+	resetStickyForTest();
+	expect(stickyAccount(T0 + 5 * MIN)).toBe("default");
+	expect(switchLines()).toHaveLength(1);
+	// restart that lost account.json: the "start" lands on the account the last record already names
+	rmSync(join(DATA_DIR, "account.json"), { force: true });
+	resetStickyForTest();
+	expect(stickyAccount(T0 + 10 * MIN)).toBe("default");
+	expect(switchLines()).toHaveLength(1);
+	expect(accountView().switches).toHaveLength(1);
+	expect(accountView().since).toBeDefined();
+	expect(since).toBe(new Date(T0).toISOString());
+});
+
+test("dropNoops removes switches that land on the account already in use; the view and the API never show them", () => {
+	const list = [sw("default"), sw("default", undefined, "start", 1), sw("second", "default", "limit", 2), sw("second", "second", "owner", 3), sw("second", undefined, "start", 4), sw("default", "second", "owner", 5)];
+	expect(dropNoops(list).map(s => [s.from, s.to])).toEqual([[undefined, "default"], ["default", "second"], ["second", "default"]]);
+	auth(["default", "second"]);
+	slots({ default: { lastSuccessAt: T0 } });
+	writeFileSync(switchesFile(), `${list.map(s => JSON.stringify(s)).join("\n")}\n`);
+	writeFileSync(join(DATA_DIR, "account.json"), JSON.stringify({ account: "default", since: sw("default").at }));
+	expect(accountView().switches.map(s => s.to)).toEqual(["default", "second", "default"]);
+});
+
+test("the switch log keeps its last 20 lines, trimmed on write", () => {
+	const seed = Array.from({ length: 30 }, (_, i) => sw(i % 2 ? "b" : "a", i ? (i % 2 ? "a" : "b") : undefined, i ? "owner" : "start", i));
+	writeFileSync(switchesFile(), `${seed.map(s => JSON.stringify(s)).join("\n")}\n`);
+	writeFileSync(join(DATA_DIR, "account.json"), JSON.stringify({ account: "b", since: seed[29].at }));
+	auth(["a", "b"]);
+	slots({ a: { lastSuccessAt: T0 }, b: { blockReason: "rate_limit", blockedUntil: T0 + 60 * MIN } });
+	expect(stickyAccount(T0 + 40 * MIN)).toBe("a");
+	const lines = switchLines();
+	expect(lines).toHaveLength(MAX_LOG_LINES);
+	expect(lines.at(-1)).toMatchObject({ from: "b", to: "a", kind: "limit" });
+	expect(lines[0].at).toBe(seed[11].at);
 });
 
 test("no subscription accounts: no pin in the spawn env, nothing written", () => {

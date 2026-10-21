@@ -1,7 +1,11 @@
 // Which hub events become a phone notification, and where a tap on it leads.
 import { expect, test } from "bun:test";
 import { createECDH } from "node:crypto";
-import { classify, LONG_TURN_MS, pushRoute } from "./push.ts";
+import { readFileSync } from "node:fs";
+import { paths } from "./config.ts";
+import { emit, lastEventId, recentEvents, replayAfter } from "./events.ts";
+import { type Notice, onDecision } from "./notices.ts";
+import { classify, decisionPush, LONG_TURN_MS, pushRoute, startPush } from "./push.ts";
 import { b64u } from "./webpush.ts";
 
 const ev = (e: Record<string, unknown>) => ({ ts: "2026-10-20T00:00:00Z", kind: "out", source: "orchestrator", text: "", ...e });
@@ -11,6 +15,16 @@ test("a web answer notifies only when it finishes work or needs the owner; a qui
 	expect(classify(ev({ target: "web", text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: "dotz · 완료", url: "/#chat/main", body: "다 했어요" });
 	expect(classify(ev({ target: "web", text: "[done] 배포 끝" }), 5_000)).toMatchObject({ title: "dotz · 완료" });
 	expect(classify(ev({ target: "web", text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", body: "어느 쪽?" });
+});
+
+test("a project's answers notify like the main chat's and open that project's chat; a thread of it does too", () => {
+	const CH = "ch:1561565203714408448";
+	expect(classify(ev({ target: CH, text: "네, 맞아요" }), 5_000)).toBeUndefined();
+	expect(classify(ev({ target: CH, text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: "dotz · 완료", url: `/#chat/${CH}`, tag: `answer:${CH}` });
+	expect(classify(ev({ target: CH, text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", url: `/#chat/${CH}` });
+	expect(classify(ev({ target: "th:42", channel: CH, text: "[done] 끝" }))).toMatchObject({ title: "dotz · 완료", url: `/#chat/${CH}` });
+	expect(classify(ev({ target: CH, source: "gateway", text: "[done] 끝" }))).toBeUndefined();
+	expect(classify(ev({ target: "th:42", text: "[done] 끝" }))).toBeUndefined(); // a thread of no known project stays on Discord
 });
 
 test("a lane's worklog entry notifies once as a start; its later edits do not", () => {
@@ -55,8 +69,55 @@ test("a subscription the push service reports gone (410) is dropped", async () =
 	expect(await (await call(q, "GET"))!.json()).toMatchObject({ subscribed: false });
 });
 
+test("a notification carries the id (ts) of the event it is about", () => {
+	expect(classify(ev({ ts: "2026-10-21T04:16:20.125Z", target: "web", text: "[done] 끝" }))).toMatchObject({ ts: "2026-10-21T04:16:20.125Z" });
+	expect(classify(ev({ ts: "2026-10-21T04:16:21.000Z", source: "lane:x", target: "lane:x", text: "[ask] 머지할까?" }))).toMatchObject({ ts: "2026-10-21T04:16:21.000Z" });
+});
+
+test("the push for an out message leaves only after the message is persisted and broadcast, and carries its id", async () => {
+	const ua = createECDH("prime256v1");
+	ua.generateKeys();
+	const endpoint = "https://push.example.net/order";
+	await pushRoute(new Request("http://x/api/push/subscribe", { method: "POST", body: JSON.stringify({ subscription: { endpoint, keys: { p256dh: b64u(ua.getPublicKey()), auth: b64u(Buffer.alloc(16, 5)) } } }) }), new URL("http://x/api/push/subscribe"));
+	startPush({ subject: () => "mailto:t@example.com" });
+	const ts = "2026-10-21T04:16:20.125Z", before = lastEventId();
+	let seen: { persisted: boolean; recent: boolean; replayable: boolean } | undefined;
+	const real = globalThis.fetch;
+	const sent = new Promise<void>(done => {
+		globalThis.fetch = (async () => {
+			seen = { persisted: readFileSync(paths.outbox, "utf8").includes(ts), recent: recentEvents().some(e => e.ts === ts), replayable: (replayAfter(before) ?? []).some(f => f.includes(ts)) };
+			done();
+			return new Response(null, { status: 201 });
+		}) as unknown as typeof fetch;
+	});
+	try {
+		emit("outbox", { ts, kind: "out", source: "orchestrator", target: "web", text: "[done] 배포 끝났어요" });
+		await sent;
+	} finally {
+		globalThis.fetch = real;
+	}
+	expect(seen).toEqual({ persisted: true, recent: true, replayable: true });
+});
+
 test("gateway alerts notify as usage; Discord-bound answers and inbox messages do not", () => {
 	expect(classify(ev({ source: "gateway", target: "alert", text: "5h 한도 90%" }))).toMatchObject({ kind: "usage" });
 	expect(classify(ev({ target: "chat", text: "디코 답변" }))).toBeUndefined();
 	expect(classify(ev({ kind: "message", source: "web", text: "안녕" }))).toBeUndefined();
+});
+
+test("a decision notice pushes as 답변이 필요해요 with its id, the decision line and at most two option buttons", () => {
+	const fresh: Notice[] = [];
+	onDecision(n => fresh.push(n));
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "web", text: "[ask] 어떻게 할까요?\n결정: 배포 방식\n**1) 지금 바로** ← 추천\n**2) 밤에**\n**3) 하지 않기**" });
+	const n = fresh.find(x => x.title === "배포 방식")!;
+	expect(n).toBeDefined();
+	expect(decisionPush(n)).toEqual({ kind: "ask", title: "답변이 필요해요", body: "배포 방식", url: "/#chat/main", tag: `decision:${n.id}`, ts: n.at, id: n.id, actions: [{ action: "opt:1", title: "1) 지금 바로" }, { action: "opt:2", title: "2) 밤에" }] });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "lane:fix-ui", target: "lane:fix-ui", text: "[ask] 이대로 이어갈까요?" });
+	const lane = fresh.find(x => x.title === "이대로 이어갈까요?")!;
+	const m = decisionPush(lane);
+	expect(m).toMatchObject({ title: "답변이 필요해요", url: "/#chat/lane:fix-ui", id: lane.id });
+	expect(m.actions).toBeUndefined();   // no options: a tap opens the detail
+	// the store is shared with other test files: answer both so no pinned decision is left behind
+	emit("inbox", { ts: new Date().toISOString(), kind: "message", source: "web", channel: "web", text: "1" });
+	emit("inbox", { ts: new Date().toISOString(), kind: "lane_message", source: "web", lane: "fix-ui", text: "네" });
 });

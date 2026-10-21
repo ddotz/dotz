@@ -45,10 +45,10 @@ export async function checkOmp(run: Run = defaultRun): Promise<Check> {
 }
 
 export const describe = (c: Check): string =>
-	c.status === "new" ? `omp 새 버전 ${c.latest} 있어요(지금 ${c.current}).`
-		: c.status === "current" ? `omp ${c.current} 최신이에요.`
+	c.status === "new" ? `omp 새 버전이 있어요 (${c.current} → ${c.latest}).`
+		: c.status === "current" ? `omp는 최신이에요 (${c.current}).`
 		: c.status === "managed" ? `omp ${c.current}는 ${c.by}가 관리해서 omp update로는 새 버전을 알 수 없어요.`
-		: `omp 업데이트 확인 실패(지금 ${c.current}): ${c.detail}`;
+		: `omp 업데이트를 확인하지 못했어요 (지금 ${c.current}): ${c.detail}`;
 
 type State = { notified?: string };
 const readState = (file: string): State => {
@@ -69,7 +69,7 @@ export async function runOmpUpdate({ mode, post, restart, run = defaultRun, stat
 	if (c.status !== "new") return undefined;
 	if (mode === "check") {
 		if (readState(stateFile).notified === c.latest) return undefined;
-		const line = `${describe(c)} 설치는 오너 확인 후.`;
+		const line = `${describe(c)} 설치는 확인한 뒤에 해요.`;
 		writeAtomic(stateFile, JSON.stringify({ notified: c.latest }));
 		post(line);
 		return line;
@@ -77,7 +77,7 @@ export async function runOmpUpdate({ mode, post, restart, run = defaultRun, stat
 	const u = await run(["update"], 15 * 60_000).catch(e => ({ code: -1, out: String(e) }));
 	const now = await currentVersion(run);
 	if (u.code !== 0 || now !== c.latest) {
-		const line = `omp ${c.current} → ${c.latest} 설치 실패했어요(지금 ${now}): ${u.out.split("\n").pop()?.slice(0, 160) || `exit ${u.code}`}`;
+		const line = `omp ${c.current} → ${c.latest} 설치하지 못했어요(지금 ${now}): ${u.out.split("\n").pop()?.slice(0, 160) || `exit ${u.code}`}`;
 		log(`omp update: ${line}`);
 		post(line);
 		return line;

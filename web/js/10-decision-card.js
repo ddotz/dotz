@@ -48,13 +48,16 @@ function decisionOf(t) {
   if (!info.ask && !pc.blocks.length) return null;
   if (at && s.msgs.some(e => OWNER.has(e.kind) && msOf(e.ts) > msOf(at))) return null;
   const sig = hashOf(body.trim());
-  return { key: `${t}|${sig}`, sig, question: pc.question, blocks: pc.blocks };
+  return { key: `${t}|${sig}`, sig, at, question: pc.question, blocks: pc.blocks };
 }
-async function answerDecision(dc, text) {
+async function answerDecision(dc, text, opt) {
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   DC.st[dc.key] = "sending"; paintDecision();
   try {
-    const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
+    // A card with one block whose question is a decision notice answers through the bell's path (30-notices.js), so both stay in step.
+    const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
+    if (nd) await ntPost(nd, opt.n);
+    const r = nd ? null : await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
     DC.st[dc.key] = "sent"; chatStick = true; scrollChat(true);
   } catch (e) { delete DC.st[dc.key]; delete DC.picks[dc.key]; toast(e.message, true); }
@@ -67,7 +70,7 @@ function pickOption(dc, bi, opt) {
   p[bi] = opt;
   const next = dc.blocks.findIndex((_, i) => !p[i]);
   if (next >= 0) { DC.step[dc.key] = next; paintDecision(); return; }
-  answerDecision(dc, dc.blocks.length === 1 ? `${opt.n}) ${opt.label}` : dc.blocks.map((_, i) => p[i].n).join("-"));
+  answerDecision(dc, dc.blocks.length === 1 ? `${opt.n}) ${opt.label}` : dc.blocks.map((_, i) => p[i].n).join("-"), dc.blocks.length === 1 ? opt : undefined);
 }
 function renderDecision(box, dc, picks, step) {
   const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;

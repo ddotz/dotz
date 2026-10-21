@@ -162,7 +162,7 @@ export async function startZele(h: Hooks): Promise<void> {
 		} catch (error) {
 			fails++;
 			log(`zele: ${(error as Error).message}`);
-			if (fails === 3) h.alert(`메일·일정 확인이 3번 연속 실패했어요: ${(error as Error).message.slice(0, 200)}. zele whoami / zele login 으로 계정을 확인해 주세요.`);
+			if (fails === 3) h.alert(`메일·일정 확인이 3번 연속 실패했어요: ${(error as Error).message.slice(0, 200)}. zele whoami / zele login으로 계정을 확인해 주세요.`);
 		}
 		setTimeout(loop, POLL_MS);
 	};

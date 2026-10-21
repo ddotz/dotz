@@ -1,11 +1,12 @@
 // The prompt queue: a steered owner message that was answered (dotz_send reply_to, or the turn's own answer) is never
 // delivered again as a turn, a reply_to settles the prompt it names, and a finished prompt is answered once.
 import { expect, test } from "bun:test";
-import { emit, answeredIds } from "./events.ts";
-import { createPrompts, type OwnerMessage, type Pending } from "./prompts.ts";
+import { emit, answeredIds, historyEvents } from "./events.ts";
+import { outEvent } from "./projectchat.ts";
+import { createPrompts, type OwnerMessage, type Pending, type PromptDeps } from "./prompts.ts";
 import { eventsFromFrame } from "./runtime/omp.ts";
 
-function setup(answered: string[] = [], recent: OwnerMessage[] = []) {
+function setup(answered: string[] = [], recent: OwnerMessage[] = [], extra: Partial<PromptDeps> = {}) {
 	const state = { working: false, steerFails: false, delivered: [] as string[], steered: [] as string[], posts: [] as { target: string; text: string; replyTo?: string }[], saved: [] as Pending[][] };
 	const q = createPrompts({
 		deliver: text => state.delivered.push(text),
@@ -19,6 +20,7 @@ function setup(answered: string[] = [], recent: OwnerMessage[] = []) {
 		log: () => {},
 		answered,
 		recent: () => recent,
+		...extra,
 	});
 	const open = () => state.saved.at(-1) ?? [];
 	// omp starts a turn with prompt X, then a message arrives while it works.
@@ -164,6 +166,16 @@ test("answer only when ready: an early send to the asking channel is held and go
 	expect(state.posts).toEqual([{ target: "chat", text: "몇 분 안에 끝내고 알려 드릴게요\n\n고쳤어요. 테스트 통과.", replyTo: "m1" }]);
 });
 
+test("the final answer of a turn started from a work channel lands in that project's web chat once", () => {
+	const CH = "ch:1561565203714408448";
+	const post: PromptDeps["post"] = async (target, text, replyTo) => (emit("outbox", outEvent({ ts: new Date().toISOString(), kind: "out", source: "orchestrator", target, text, reply_to: replyTo ?? null }, () => undefined)), { delivered: true });
+	const { q, startTurn } = setup([], [], { post });
+	startTurn("web msg in the project", { target: CH, replyTo: "5eeba27e" });
+	q.onAnswer("프로젝트 최종 답");
+	q.onAnswer("프로젝트 최종 답"); // a later stop of the same turn adds nothing
+	expect(historyEvents(CH, 50).filter(e => e.text === "프로젝트 최종 답")).toHaveLength(1);
+});
+
 test("a full answer to a message steered in mid-turn is not held", () => {
 	const { q, startTurn } = setup();
 	startTurn("long work", chat("m1"));
@@ -280,6 +292,7 @@ test("a turn that defers to a background worker sends nothing; the run the worke
 	expect(state.posts).toEqual([]);
 	expect(open().map(p => p.text)).toEqual(["fix the sidebar"]);
 	expect(q.waitingOnWorkers()).toBe(1);
+	expect(q.deferredOpen().map(d => d.target)).toEqual(["web"]);
 	// A wake before the result is in: still waiting, nothing sent.
 	q.onAnswer("[later]");
 	expect(state.posts).toEqual([]);
@@ -287,6 +300,7 @@ test("a turn that defers to a background worker sends nothing; the run the worke
 	q.onAnswer("sidebar fixed, tests pass");
 	expect(state.posts).toEqual([{ target: "web", text: "sidebar fixed, tests pass", replyTo: undefined }]);
 	expect(q.waitingOnWorkers()).toBe(0);
+	expect(q.deferredOpen()).toEqual([]);
 	// A later promptless answer does not go to the settled request again.
 	q.onAnswer("another unrelated note");
 	expect(state.posts.length).toBe(1);
@@ -303,4 +317,68 @@ test("a deferred request answered with dotz_send reply_to from another turn is s
 	q.onAnswer("it is noon");
 	expect(state.posts).toEqual([{ target: "chat", text: "it is noon", replyTo: "m2" }]);
 	expect(q.waitingOnWorkers()).toBe(0);
+});
+
+const web = (replyTo?: string) => ({ target: "web", replyTo });
+
+test("an answered web prompt is not replayed after a restart, an unanswered one is replayed exactly once", async () => {
+	const before = setup();
+	before.startTurn("hello", web("wq-1"));
+	before.q.deliver("still open", web("wq-2"));
+	before.q.onAnswer("hi");
+	await Promise.resolve();
+	expect(before.state.posts).toEqual([{ target: "web", text: "hi", replyTo: "wq-1" }]);
+	expect(before.q.isAnswered("wq-1")).toBe(true);
+	// pending.json as the gateway left it: the answered message was still listed when the process died.
+	const pending = [
+		{ text: "hello", at: Date.now(), target: "web", replyTo: "wq-1" },
+		{ text: "still open", at: Date.now(), target: "web", replyTo: "wq-2" },
+	];
+	// The restart reads the answers back from the outbox log, as main.ts does (answeredIds).
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "web", text: "hi", reply_to: "wq-1" });
+	const after = setup(answeredIds());
+	expect(after.q.replay(pending, t => `replay ${t}`)).toBe(1);
+	expect(after.state.delivered).toEqual(["replay still open"]);
+	expect(after.open()).toEqual([{ text: "replay still open", at: expect.any(Number), target: "web", replyTo: "wq-2" }]);
+});
+
+test("a steered web prompt covered by the turn's final answer is not delivered again", async () => {
+	const { q, state, open, startTurn } = setup([], [], { covers: target => target === "web" });
+	startTurn("first", web("wc-1"));
+	q.deliver("second", web("wc-2"));
+	q.deliver("other channel", chat("wc-3"));
+	expect(state.steered).toHaveLength(2);
+	q.onAnswer("answers both");
+	await Promise.resolve();
+	expect(q.isAnswered("wc-2")).toBe(true);
+	state.working = false;
+	q.redeliverSteered();
+	// Only the Discord message, which the final answer does not cover, comes back.
+	expect(state.delivered).toEqual(["first", "other channel"]);
+	expect(open().map(p => p.replyTo)).toEqual(["wc-3"]);
+});
+
+test("a steered web prompt the final answer did not cover is delivered again at idle", () => {
+	const { q, state, startTurn } = setup([], [], { covers: target => target === "web" });
+	startTurn("first", web("wu-1"));
+	q.deliver("second", web("wu-2"));
+	q.onAnswer("-");
+	state.working = false;
+	q.redeliverSteered();
+	expect(state.delivered).toEqual(["first", "second"]);
+});
+
+test("stored web prompts without an id count as answered when an answer to their target came after them", () => {
+	const now = Date.now();
+	const { q, state } = setup([], [], { answeredSince: (target, at) => target === "web" && at < now - 1000 });
+	const n = q.replay(
+		[
+			{ text: "old web, answered since", at: now - 5000, target: "web" },
+			{ text: "new web, no answer yet", at: now, target: "web" },
+			{ text: "old chat, no answer", at: now - 5000, target: "chat" },
+		],
+		t => t,
+	);
+	expect(n).toBe(2);
+	expect(state.delivered).toEqual(["new web, no answer yet", "old chat, no answer"]);
 });

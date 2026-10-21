@@ -5,6 +5,7 @@ function setConn(ok) { clearTimeout(connTimer); if (ok) $("#conn").hidden = true
 async function refreshState() {
   try {
     S = await api("/api/state?limit=0");
+    S.work_skew = (S.work_now || Date.now()) - Date.now();
     setConn(true);
     ntSync(S);
     if (S.name && S.name !== botName) { botName = S.name; setBrand(); if (current === "home") $("#title").textContent = botName; if (ts(target).hLoaded) renderAll(); }

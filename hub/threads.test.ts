@@ -1,6 +1,7 @@
 // Thread routing decisions (threads.ts) and the Discord-mobile layout of an answer (discord.ts readable).
 import { expect, test } from "bun:test";
 import { readable } from "./discord.ts";
+import { buildPayloads } from "./discord.ts";
 import { answerMovesToLane, lanePlace, replyRef, threadForReply, THREAD_NAME_MAX, threadTitle } from "./threads.ts";
 
 const work = (id: string) => id === "500";
@@ -27,11 +28,19 @@ test("lane place: an explicit home wins; it hangs from the owner's message only 
 });
 
 test("reply reference: always at top level, in a thread only when the owner wrote something newer", () => {
-	expect(replyRef("chat", "m1", "m1")).toBe("m1");
-	expect(replyRef("ch:500", "m1", undefined)).toBe("m1");
-	expect(replyRef("th:700", "m1", "m1")).toBeUndefined();
-	expect(replyRef("lane:x", "m1", "m2")).toBe("m1");
-	expect(replyRef("chat", undefined, "m1")).toBeUndefined();
+	expect(replyRef("chat", "111111111111111111", "111111111111111111")).toBe("111111111111111111");
+	expect(replyRef("ch:500", "111111111111111111", undefined)).toBe("111111111111111111");
+	expect(replyRef("th:700", "111111111111111111", "111111111111111111")).toBeUndefined();
+	expect(replyRef("lane:x", "111111111111111111", "222222222222222222")).toBe("111111111111111111");
+	expect(replyRef("chat", undefined, "111111111111111111")).toBeUndefined();
+});
+
+test("a web message id (hex) as reply_to is never a Discord message_reference", () => {
+	expect(replyRef("ch:1561565203714408448", "5eeba27e", undefined)).toBeUndefined();
+	expect(replyRef("chat", "5eeba27e", undefined)).toBeUndefined();
+	expect(replyRef("ch:500", "1561565203714408448", undefined)).toBe("1561565203714408448");
+	expect(JSON.stringify(buildPayloads("hi", "5eeba27e"))).not.toContain("message_reference");
+	expect(JSON.stringify(buildPayloads("hi", "1561565203714408448"))).toContain("message_reference");
 });
 
 test("a reply to a thread's starter message goes into that thread, other replies stay", () => {

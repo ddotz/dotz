@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { eventTarget } from "./events.ts";
-import { isProjectTarget, projectTarget } from "./projectchat.ts";
+import { emit, eventTarget, historyEvents } from "./events.ts";
+import { isProjectTarget, outEvent, projectTarget } from "./projectchat.ts";
 import { webSource } from "./webapp.ts";
 
 const WORK = { "1561565203714408448": "dotz-개선" };
@@ -25,6 +25,27 @@ const EVENTS: Array<[string, Record<string, unknown>, string]> = [
 	["session answer note (source and target are the session)", { kind: "out", source: "lane:a", target: "lane:a", text: "10분 안에 알려요.", answers: ["a1"] }, "lane:a"],
 	["lane answer posted to the work channel", { kind: "out", source: "lane:a", target: CH, text: "x" }, "lane:a"],
 ];
+
+describe("what the orchestrator sends to Discord also shows in the web project chat", () => {
+	const parentOf = (t: string) => (t === "42" ? "1561565203714408448" : undefined);
+	const sendOnce = (target: string, text: string, ts: string) => emit("outbox", outEvent({ ts, kind: "out", source: "orchestrator", target, text, reply_to: "5eeba27e" }, parentOf));
+
+	test("a dotz_send to a work channel is one event in that channel's conversation, with its reply link and files, not in the main chat", () => {
+		const text = "답이에요\n[file] /tmp/a.png";
+		sendOnce(CH, text, "2026-10-21T07:12:00.000Z");
+		const got = historyEvents(CH, 50).filter(e => e.text === text);
+		expect(got).toHaveLength(1);
+		expect(got[0]).toMatchObject({ reply_to: "5eeba27e", source: "orchestrator" });
+		expect(historyEvents("main", 50).some(e => e.text === text)).toBe(false);
+	});
+
+	test("a send to a thread of a work channel lands in that channel's conversation; a thread of no work channel does not", () => {
+		sendOnce("th:42", "스레드 답", "2026-10-21T07:13:00.000Z");
+		sendOnce("th:99", "모르는 스레드 답", "2026-10-21T07:14:00.000Z");
+		expect(historyEvents(CH, 50).filter(e => e.text === "스레드 답")).toHaveLength(1);
+		expect(historyEvents(CH, 50).some(e => e.text === "모르는 스레드 답")).toBe(false);
+	});
+});
 
 describe("project orchestrator target", () => {
 	test("a known work channel is a project target, by id or ch:<id>", () => {

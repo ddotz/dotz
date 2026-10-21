@@ -145,7 +145,7 @@ function denyFeatures(): Feature[] {
 				bad = true;
 			}
 			out.push({
-				id: `deny-${i + 1}`, form: "차단 명령", name: clip(m[2], 40), what: bad ? `정규식이 잘못돼서 무시돼요 · ${clip(m[2], 100)}` : `실행 전에 막아요 (오케스트레이터·레인·작업자) · ${clip(m[2], 110)}`,
+				id: `deny-${i + 1}`, form: "차단 명령", name: clip(m[2], 40), what: bad ? `정규식이 잘못돼서 무시돼요 · ${clip(m[2], 100)}` : `실행 전에 막아요 (어시스턴트·세션·서브에이전트) · ${clip(m[2], 110)}`,
 				trigger: "도구 실행 직전", stage: "guard", strength: "enforced", source: { label: `RULES.md:${i + 1}`, file: "RULES.md", line: i + 1 }, extra: m[1], enabled: !bad, toggleable: false,
 			});
 		});

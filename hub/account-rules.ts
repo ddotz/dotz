@@ -15,11 +15,11 @@
 // (setUsage, fed by the usage source main.ts registers) and the script's last opinion is cached too. checkNow() refreshes both,
 // then lets account-sticky.ts apply the decision. After a rule window ends dotz stays on its account (sticky, as always) until
 // another rule or a limit moves it.
-import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { accountsDir, aliasesFile, aliasOf, readAliases, resolveAccount } from "./account-alias.ts";
-import { type AccountSwitch, currentAccount, decide, type Pool, readPool, stickyAccount } from "./account-sticky.ts";
+import { type AccountSwitch, currentAccount, decide, MAX_LOG_LINES, type Pool, readPool, stickyAccount } from "./account-sticky.ts";
 import { log, TZ, writeAtomic } from "./config.ts";
 
 export type Day = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
@@ -357,17 +357,39 @@ const setOpinion = (next: ScriptOpinion | undefined): void => {
 	opinion = next;
 };
 
+type Row = Decision & { script_error?: string };
+const rowKey = (r: Row) => `${r.account ?? ""}|${r.source}|${r.script_error ?? ""}`;
+function decisionRows(): Row[] {
+	try {
+		return readFileSync(decisionsFile(), "utf8").split("\n").flatMap(l => {
+			try {
+				return l.trim() ? [JSON.parse(l) as Row] : [];
+			} catch {
+				return [];
+			}
+		});
+	} catch {
+		return [];
+	}
+}
+// Oldest first; a line that repeats the previous line's decision changed nothing and is dropped.
+const dropRepeats = (rows: Row[]): Row[] => rows.filter((r, i) => i === 0 || rowKey(r) !== rowKey(rows[i - 1]));
+
 // Called by account-sticky.ts on every evaluation: remembers it, and logs a decisions.jsonl line only when the decision
-// (account + source) or the script's error kind changed since the last line.
+// (account + source) or the script's error kind changed since the last line, which after a restart is the last line on disk.
+// The file keeps its last MAX_LOG_LINES lines.
 export function record(d: Decision): void {
 	last = { ...(d.account ? { account: d.account } : {}), source: d.source, ...(d.rule ? { rule: d.rule } : {}), reason: d.reason, at: d.at };
 	const err = opinion?.error ?? "";
-	const key = `${d.account ?? ""}|${d.source}|${err}`;
+	const row: Row = { ...last, ...(err ? { script_error: err } : {}) };
+	const key = rowKey(row);
+	const rows = loggedKey === undefined ? decisionRows() : undefined;
+	if (rows) loggedKey = rows.length ? rowKey(rows[rows.length - 1]) : "";
 	if (key === loggedKey) return;
 	loggedKey = key;
 	try {
 		mkdirSync(accountsDir(), { recursive: true });
-		appendFileSync(decisionsFile(), `${JSON.stringify({ ...last, ...(err ? { script_error: err } : {}) })}\n`);
+		writeAtomic(decisionsFile(), `${dropRepeats([...(rows ?? decisionRows()), row]).slice(-MAX_LOG_LINES).map(r => JSON.stringify(r)).join("\n")}\n`);
 	} catch (e) {
 		log(`account decision log failed: ${(e as Error).message}`);
 	}

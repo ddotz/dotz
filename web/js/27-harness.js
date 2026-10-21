@@ -33,15 +33,15 @@ function hMark(ids, full) {
   const m = hMine(ids);
   if (!m.any) return null;
   const parts = [m.custom ? `바꾼 값 ${m.custom}` : "", m.feats ? `내 기능 ${m.feats}` : "", m.files ? `내 파일 ${m.files}` : ""].filter(Boolean);
-  const title = `이 사용자가 바꾼 것: ${parts.join(" · ") || "내 확장"}`;
+  const title = `내가 바꾼 것: ${parts.join(" · ") || "내 확장"}`;
   if (!full) return el("span", { class: "bd m", title, text: "내 설정" });
   return el("span", { class: "hm-mine", title }, el("span", { class: "bd m", text: "내 설정" }), parts.length ? el("span", { class: "mt", text: parts.join(" · ") }) : null);
 }
 const H_MQ = matchMedia("(max-width: 639px)");
-const H_COLS = ["들어오는 곳", "게이트웨이", "오케스트레이터", "세션", "서브에이전트"];
+const H_COLS = ["들어오는 곳", "게이트웨이", "어시스턴트", "세션", "서브에이전트"];
 const H_TONE = { ok: "ok", busy: "pri", warn: "warn", err: "err", off: "" };
 const H_STATE = { ok: "정상", busy: "작업 중", warn: "주의", err: "멈춤", off: "꺼짐" };
-const H_APPLY = { live: ["바로 적용", ""], "next-turn": ["다음 턴부터", ""], restart: ["재시작 후 적용", "warn"] };
+const H_APPLY = { live: ["바로 적용", ""], "next-turn": ["다음 메시지부터", ""], restart: ["재시작 후 적용", "warn"] };
 const hNode = id => HG && HG.nodes.find(n => n.id === id);
 const hSvg = (tag, attrs) => { const n = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v); return n; };
 
@@ -155,7 +155,7 @@ function hHot(id) {
 
 function hUse() {
   const p = hPj();
-  if (hProjId && HGB && !p) { hProjId = ""; if (current === "harness") history.replaceState(null, "", "#harness"); }
+  if (hProjId && HGB && !p) { hProjId = ""; if (current === "harness") routeReplace("harness"); }
   HG = p ? { ...HGB, origin_view: false, nodes: p.map.nodes, edges: p.map.edges } : HGB;
   if (hSel && !hNode(hSel)) { closeHSheet(); hSel = ""; }
 }
@@ -178,7 +178,7 @@ function renderHarness() {
     FC && !pj ? el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
     el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hDetail), title: "모든 시스템과 연결선을 한 화면에 그려요", onclick: () => { hDetail = !hDetail; try { localStorage.setItem("dotz-hdetail", hDetail ? "1" : "0"); } catch {} renderHarness(); } }, "자세히"),
     el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); toast("새로 불러왔어요"); }) }, icon("refresh"), "새로고침"),
-    hOrigin() ? el("div", { class: "sup hm-legend" }, el("span", { class: "bd m", text: "내 설정" }), `이 사용자가 바꾼 값·파일·기능이에요. 표시가 없는 것은 dotz 기본이에요 (${hData()}).`) : null);
+    hOrigin() ? el("div", { class: "sup hm-legend" }, el("span", { class: "bd m", text: "내 설정" }), `내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 dotz 기본이에요 (${hData()}).`) : null);
   const parts = [bar];
   const keep = box.querySelector(".hm-scroll");
   const left = keep ? keep.scrollLeft : 0;

@@ -5,6 +5,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isRetryable } from "./discord.ts";
+import { replyRef } from "./threads.ts";
 import { createSendLedger, type SendItem, type SendOpts } from "./sendlog.ts";
 
 const netDown = () => new TypeError("fetch failed: Unable to connect");
@@ -28,6 +29,16 @@ function setup(file: string, send: (target: string, text: string, ref: string | 
 }
 
 const tmpFile = () => join(mkdtempSync(join(tmpdir(), "sendlog-")), "unsent.json");
+
+test("a web reply_to (hex) goes out without a reference and still marks the prompt answered", async () => {
+	const refs: (string | undefined)[] = [];
+	const { ledger, state } = setup(tmpFile(), async (_t, _x, ref) => (refs.push(ref), { delivered: true }));
+	const target = "ch:1561565203714408448";
+	const r = await ledger.submit(target, "answer", replyRef(target, "5eeba27e", undefined), "5eeba27e");
+	expect(r.delivered).toBe(true);
+	expect(refs).toEqual([undefined]);
+	expect(state.delivered.map(i => i.answers)).toEqual(["5eeba27e"]);
+});
 
 test("a network error is retried with backoff and the answer is marked answered only after the send succeeded", async () => {
 	let calls = 0;

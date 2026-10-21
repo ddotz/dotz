@@ -43,7 +43,7 @@ function openPalette() {
       list.append(el("button", { type: "button", role: "option", tabindex: "-1", class: `pal-i${it.kind === "cmd" ? " cmd" : ""}`, onmouseenter: () => { idx = i; mark(); }, onclick: () => exec(it) },
         icon(it.ic), el("span", { class: "nm", text: it.label }), it.desc ? el("span", { class: "pd", text: it.desc }) : null));
     });
-    if (!items.length) list.append(el("div", { class: "a-div", text: "결과 없음" }));
+    if (!items.length) list.append(el("div", { class: "a-div", text: "결과가 없어요" }));
     mark();
   };
   inp.addEventListener("input", () => { out.hidden = true; list.hidden = false; build(); });
@@ -62,7 +62,7 @@ function openPalette() {
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
   d.addEventListener("close", () => d.remove());
   document.body.append(d);
-  d.showModal();
+  d.showModal(); dialogHist(d);
   build();
   inp.focus();
 }
@@ -71,8 +71,8 @@ $("#pal").onclick = openPalette;
 document.addEventListener("keydown", ev => { if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === "k") { ev.preventDefault(); openPalette(); } });
 
 
-function parseHash() {
-  const h = location.hash.slice(1), i = h.indexOf("/");
+function parseHash(hash = location.hash) {
+  const h = hash.slice(1), i = h.indexOf("/");
   let t = i < 0 ? "" : h.slice(i + 1);
   try { t = decodeURIComponent(t); } catch {}
   return { view: i < 0 ? h : h.slice(0, i), t };
@@ -91,9 +91,9 @@ function go(name, tgt) {
   const tv = name === "chat" || name === "activity";
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
   const hash = tv ? (chatList ? "chat/list" : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name;
-  if (location.hash !== `#${hash}`) history.replaceState(null, "", `#${hash}`);
+  navSync(name, hash);
   for (const v of views) $(`#v-${v}`).hidden = v !== name;
-  if (name === "chat" || name === "activity") try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
+  if ((name === "chat" || name === "activity") && !chatList) try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
   document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#appbar").classList.toggle("tv", tv);
   const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
@@ -115,7 +115,8 @@ function go(name, tgt) {
   if (name === "context") loadContext();
   window.dotzCustom && dotzCustom.view(name, tgt);
 }
-window.addEventListener("hashchange", () => { const h = parseHash(); go(h.view, h.t); });
+// Entries the app made are handled by popstate; this is for a hash typed into the address bar or an old foreign entry.
+window.addEventListener("hashchange", () => { if (history.state && history.state.dz) return; const h = parseHash(); go(h.view, h.t); });
 
 /* ---------- shared bits ---------- */
 const limitFrac = l => l.limit ? Math.max(0, Math.min(1, l.remaining != null ? l.remaining / l.limit : 1 - (l.used || 0) / l.limit)) : null;

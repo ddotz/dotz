@@ -5,7 +5,7 @@ import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.t
 import { askComponentsFor } from "./askbuttons.ts";
 import { msg } from "./i18n.ts";
 import { gatewayDryRun } from "./live-guard.ts";
-import { threadForReply, threadTitle } from "./threads.ts";
+import { isSnowflake, threadForReply, threadTitle } from "./threads.ts";
 import { metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
 const LIMIT = 1900;
@@ -408,7 +408,7 @@ export function chunks(text: string, limit = LIMIT): string[] {
 // `embeds: []` appears only on PATCH (see edit()), so it is optional.
 type Body = { content: string; components?: unknown[]; embeds?: never[]; allowed_mentions?: { parse: never[] }; message_reference?: { message_id: string; fail_if_not_exists: boolean } };
 const mentionsOff = { parse: [] as never[] };
-const reference = (replyTo?: string) => (replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {});
+const reference = (replyTo?: string) => (replyTo && isSnowflake(replyTo) ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {});
 
 // Plain message text: the explicit marker becomes the one status emoji, the model's own emoji are stripped (before the
 // status emoji is added), choice blocks lose their quote prefixes and meta lines become subtext.

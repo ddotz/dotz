@@ -11,7 +11,7 @@ import { cfg, DATA_DIR, HUB_TOKEN, log, TZ, writeAtomic } from "./config.ts";
 import { ASK_PREFIX, askInteraction } from "./askbuttons.ts";
 import * as discord from "./discord.ts";
 import { msg } from "./i18n.ts";
-import { notify } from "./push.ts";
+import { authRequested, authSettled } from "./notices.ts";
 
 type Kind = "secret" | "otp" | "approve";
 type Field = "username" | "password" | "code";
@@ -79,6 +79,7 @@ function settle(r: AuthRequest, status: Status): void {
 	r.status = status;
 	clearTimeout(r.timer);
 	log(`auth ${r.id} ${r.site} ${r.kind} ${status}`);
+	authSettled(r.id, status);
 	for (const wake of [...r.waiters]) wake();
 	setTimeout(() => reqs.delete(r.id), KEEP_MS).unref();
 }
@@ -222,7 +223,7 @@ async function create(req: Request): Promise<Response> {
 		}
 	}
 	reqs.set(r.id, r);
-	notify({ kind: "ask", title: msg().auth.titles[kind], body: purpose.slice(0, 160), url: "/", tag: `auth-${r.id}` });
+	authRequested({ id: r.id, kind, title: msg().auth.titles[kind], site, purpose });
 	r.timer = setTimeout(() => {
 		settle(r, "timeout");
 		refresh(r);

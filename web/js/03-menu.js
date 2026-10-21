@@ -3,6 +3,7 @@ let openMenu = null;
 function closeMenu(restore = true) {
   if (!openMenu) return;
   const m = openMenu; openMenu = null;
+  ovDone(m.ov);
   m.node.remove();
   for (const [t, f, o] of m.listeners) t.removeEventListener(f.type, f.fn, o);
   m.anchor.setAttribute("aria-expanded", "false");
@@ -89,6 +90,7 @@ function showMenu(anchor, items, { value, onPick, sheet }) {
   const L = [[document, { type: "keydown", fn: keydown }, true], [document, { type: "pointerdown", fn: outside }, true], [window, { type: "scroll", fn: onScroll }, true], [window, { type: "resize", fn: onResize }, false]];
   for (const [t, f, o] of L) t.addEventListener(f.type, f.fn, o);
   openMenu = { node, anchor, listeners: L };
+  openMenu.ov = ovOpen(() => closeMenu(false));
 }
 function selectField(label, text, items, value, onPick) {
   const b = el("button", { type: "button", class: "sel", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `${label}: ${text}` },

@@ -6,9 +6,26 @@ const updWhen = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLoc
 const updVer = v => !v ? "알 수 없음" : v.kind === "git" ? `${v.commit.short} · ${updWhen(v.commit.date)}${v.branch !== "main" ? ` · ${v.branch}` : ""}` : v.kind === "install" ? `설치본 · ${updWhen(v.installed)}` : "알 수 없음";
 // `cmd` spans in server hints become <code>.
 const updCode = s => String(s || "").split("`").map((p, i) => i % 2 ? el("code", { text: p }) : p);
+// A pulled-but-not-restarted update (running != disk), and the last check when it still describes the checkout. A check made
+// before the checkout moved (an update just landed) no longer describes it.
+function updState(i) {
+  const { running: run, disk } = i || {};
+  const pending = !!(run && disk && run.kind === "git" && disk.kind === "git" && run.commit.sha !== disk.commit.sha);
+  const c = i && i.lastCheck && !(disk && disk.kind === "git" && i.lastCheck.version.kind === "git" && i.lastCheck.version.commit.sha !== disk.commit.sha) ? i.lastCheck : null;
+  return { pending, c };
+}
+// A new version is waiting to be applied (from /api/update, not the toast).
+function updAvailable() {
+  const i = UPD.info;
+  if (!i || i.error) return false;
+  const { pending, c } = updState(i);
+  return !!(c && c.ok && c.incomingTotal > 0 && !pending);
+}
+function paintUpdBadge() { const b = $("#nav-upd"); if (b) b.hidden = !updAvailable(); }
 async function loadUpdate() {
   clearTimeout(UPD.timer);
   try { UPD.info = await api("/api/update"); } catch (e) { UPD.info = { error: e.message }; }
+  paintUpdBadge();
   if (UPD.info.job && UPD.info.job.status === "running") UPD.timer = setTimeout(loadUpdate, 1500);
   if (current === "settings") renderSettings();
 }
@@ -16,6 +33,7 @@ async function updCheck(btn) {
   await busy(btn, async () => {
     const c = await api("/api/update/check", "POST");
     UPD.info = { ...UPD.info, lastCheck: c };
+    paintUpdBadge();
     if (c.ok) toast(c.incomingTotal ? `새 커밋 ${c.incomingTotal}개가 있어요` : "최신 버전이에요");
   });
   renderSettings();
@@ -39,7 +57,7 @@ function updRestart() {
   };
   if (!working.length) return fire("idle");
   dialog({ title: "재시작", body: el("div", { class: "col" }, el("p", { class: "sup", text: `지금 일하는 중: ${working.join(", ")}` }), el("p", { class: "sup", text: "작업이 끝난 뒤 재시작하거나, 지금 끊고 재시작할 수 있어요. 끊긴 요청은 다시 켜질 때 이어서 보내요." })), actions: [
-    { label: "작업 끝나면", onclick: c => { c(); fire("idle"); } },
+    { label: "작업이 끝나면", onclick: c => { c(); fire("idle"); } },
     { label: "지금 재시작", kind: "pri", onclick: c => { c(); fire("now"); } }] });
 }
 async function updWaitTick() {
@@ -48,27 +66,26 @@ async function updWaitTick() {
   if (info && info.boot !== UPD.wait.boot) {
     UPD.wait = null;
     UPD.info = info;
+    paintUpdBadge();
     toast(`다시 시작했어요 · 지금 버전 ${info.running && info.running.commit ? info.running.commit.short : "?"}`);
     if (current === "settings") renderSettings();
     return;
   }
-  if (info) { UPD.info = info; if (current === "settings") renderSettings(); }
+  if (info) { UPD.info = info; paintUpdBadge(); if (current === "settings") renderSettings(); }
   setTimeout(updWaitTick, 2000);
 }
 function updateSection() {
   const i = UPD.info;
   const li = (title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), ...trail);
-  const head = el("div", { class: "sec", text: "업데이트" });
+  const head = el("div", { class: "sec" }, "업데이트", updAvailable() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null);
   if (!i || i.error) return [head, el("div", { class: "list" }, li("dotz 버전", i ? i.error : "불러오는 중…"))];
   const { running: run, disk, job, settings: s } = i;
   const jobRunning = job && job.status === "running";
-  const pending = run && disk && run.kind === "git" && disk.kind === "git" && run.commit.sha !== disk.commit.sha;
-  // A check made before the checkout moved (an update just landed) no longer describes it.
-  const c = i.lastCheck && !(disk && disk.kind === "git" && i.lastCheck.version.kind === "git" && i.lastCheck.version.commit.sha !== disk.commit.sha) ? i.lastCheck : null;
+  const { pending, c } = updState(i);
   const off = jobRunning || UPD.wait ? { disabled: true } : {};
   const rows = [li("dotz 버전", `실행 중 ${updVer(run)}`, el("button", { class: "btn tonal", type: "button", ...off, onclick: ev => updCheck(ev.currentTarget) }, "확인"))];
   if (c && !c.ok) rows.push(el("div", { class: "upd-box err" }, el("div", { class: "hd", text: c.error.reason }), el("div", { class: "sup" }, ...updCode(c.error.fix)), c.error.detail ? el("div", { class: "upd-detail", text: c.error.detail }) : null));
-  else if (c && !c.incomingTotal) rows.push(li("최신 버전이에요", `${c.upstream} · 확인 ${updWhen(c.at)}${c.ahead.length ? ` · ${c.upstream}에 없는 로컬 커밋 ${c.ahead.length}개 (push 전)` : ""}${c.dirty.length ? ` · 커밋 안 한 변경 ${c.dirty.length}개` : ""}`));
+  else if (c && !c.incomingTotal) rows.push(li("최신 버전이에요", `${c.upstream} · 확인 ${updWhen(c.at)}${c.ahead.length ? ` · ${c.upstream}에 없는 로컬 커밋 ${c.ahead.length}개 (아직 올리지 않음)` : ""}${c.dirty.length ? ` · 커밋 안 한 변경 ${c.dirty.length}개` : ""}`));
   else if (c) {
     const more = c.incomingTotal - c.incoming.slice(0, 8).length;
     rows.push(el("div", { class: "upd-box" },

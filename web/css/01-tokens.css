@@ -58,6 +58,8 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .ni.on { background: var(--card); color: var(--fg); font-weight: 600; }
 .ni .nl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ni .nnb { margin-left: auto; background: var(--warn); }
+.ni .nub { margin-left: auto; min-width: 0; height: 16px; font-size: 10px; }
+.ni .nub[hidden] { display: none; }
 .sfoot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 8px; color: var(--fg-2); font-size: 12px; }
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .appbar { flex: none; display: flex; align-items: center; gap: 4px; height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0 24px; border-bottom: 0; background: var(--bg); }
@@ -92,6 +94,7 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
   .ni .ic { width: 20px; height: 20px; }
   .main .composer { padding-bottom: 8px; }
   .ni .nnb { position: absolute; top: 3px; left: calc(50% + 4px); margin: 0; }
+  .ni .nub { position: absolute; top: 5px; left: calc(50% + 6px); margin: 0; width: 8px; min-width: 8px; height: 8px; padding: 0; font-size: 0; line-height: 0; }
   .ustrip { gap: 4px; padding: 0 4px; font-size: 11px; }
   .ustrip .ulab, .ustrip .ubar { display: none; }
   .ustrip .uring, .ustrip .upct { display: inline-block; }
@@ -109,7 +112,6 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .ib.pri:hover { background: var(--accent); opacity: .88; }
 .menu .mi.more { color: var(--fg-2); }
 .menu .mi.more svg { margin-left: auto; width: 14px; height: 14px; }
-.ib.err { color: var(--err); }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 14px; border: 1px solid var(--accent); border-radius: var(--r-ctl); background: var(--accent); color: var(--on-accent); font-size: 14px; line-height: 20px; font-weight: 600; text-decoration: none; white-space: nowrap; max-width: 100%; }
 .btn:hover { opacity: .85; }
 .btn.tonal, .btn.outlined { background: var(--layer); color: var(--fg); border-color: transparent; }

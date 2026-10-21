@@ -54,6 +54,10 @@ export type PromptDeps = {
 	pending?: (replyTo: string) => boolean;
 	/** Owner messages from before this process started (the inbox tail), for an answer that has no prompt. */
 	recent?: () => OwnerMessage[];
+	/** Did the orchestrator answer in `target` after `at`? Settles stored prompts that carry no message id (written before web messages had one). */
+	answeredSince?: (target: string, at: number) => boolean;
+	/** Does a final answer to `target` also cover the messages steered into its turn (the web has no per-message answers)? */
+	covers?: (target: string) => boolean;
 };
 
 const MAX_PROMPTS = 200;
@@ -81,7 +85,7 @@ export function createPrompts(deps: PromptDeps) {
 	const openDeferred = () => deferred.filter(p => !p.done && !isAnswered(p.replyTo) && Date.now() - p.at <= DEFER_MAX_AGE_MS);
 
 	const save = () => {
-		const open = [...openDeferred().filter(p => p !== current), ...(current && !current.done ? [current] : []), ...prompts].map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
+		const open = [...openDeferred().filter(p => p !== current), ...(current && !current.done ? [current] : []), ...prompts].filter(p => !isAnswered(p.replyTo)).map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
 		deps.persist(open);
 	};
 	const isAnswered = (replyTo?: string) => replyTo !== undefined && (answered.has(replyTo) || deps.pending?.(replyTo) === true);
@@ -249,6 +253,14 @@ export function createPrompts(deps: PromptDeps) {
 			.catch(e => deps.log(`reply to ${to.target} failed: ${e}`));
 	}
 
+	/** The turn's final answer to `target` also answers what was steered into the turn there: those are not delivered again. */
+	function coverSteered(target: string): void {
+		for (const q of prompts.filter(x => x.steered && x.target === target)) {
+			prompts.splice(prompts.indexOf(q), 1);
+			markAnswered(q.replyTo);
+		}
+	}
+
 	/** An assistant stop: the turn's final answer goes to the channel that asked, once. */
 	function onAnswer(text: string): void {
 		const p = current;
@@ -266,6 +278,7 @@ export function createPrompts(deps: PromptDeps) {
 		}
 		if (t === LATER) return;
 		p.done = true;
+		if (p.target && t !== "-" && deps.covers?.(p.target)) coverSteered(p.target);
 		save();
 		if (!p.target) return;
 		const target = p.target;
@@ -281,13 +294,18 @@ export function createPrompts(deps: PromptDeps) {
 		p.sent.push({ target, text: body });
 		void deps
 			.post(target, body, p.replyTo)
-			.then(r => (r.delivered ? deps.clearProgress(target) : undefined))
+			.then(r => {
+				if (!r.delivered) return;
+				markAnswered(p.replyTo);
+				deps.clearProgress(target);
+			})
 			.catch(e => deps.log(`reply to ${target} failed: ${e}`));
 	}
 
 	/** Delivers prompts that were never answered (the gateway stopped mid-turn) again; returns how many were replayed. */
 	function replay(unanswered: Pending[], wrap: (text: string) => string): number {
-		const fresh = unanswered.filter(p => p.text && Date.now() - (p.at ?? 0) < REPLAY_MAX_AGE_MS && !isAnswered(p.replyTo));
+		// A stored prompt without a message id (web messages had none) counts as answered when an answer to its target came after it.
+		const fresh = unanswered.filter(p => p.text && Date.now() - (p.at ?? 0) < REPLAY_MAX_AGE_MS && !isAnswered(p.replyTo) && !(!p.replyTo && p.target && p.at && deps.answeredSince?.(p.target, p.at)));
 		if (fresh.length) deps.log(`replaying ${fresh.length} unanswered prompt(s) from before the restart`);
 		for (const p of fresh) deliver(wrap(p.text), p.target ? { target: p.target, replyTo: p.replyTo } : undefined);
 		return fresh.length;
@@ -296,5 +314,8 @@ export function createPrompts(deps: PromptDeps) {
 	/** Deferred prompts young enough that a restart should wait for their worker. */
 	const waitingOnWorkers = () => openDeferred().filter(p => Date.now() - p.at <= DEFER_BLOCKS_RESTART_MS).length;
 
-	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, waitingOnWorkers, queued: () => prompts.slice(), current: () => current };
+	/** The deferred prompts still waiting for their worker's answer (bgwork.ts ties a worker to one of them). */
+	const deferredOpen = () => openDeferred().flatMap(p => (p.target ? [{ target: p.target, replyTo: p.replyTo, at: p.at }] : []));
+
+	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, waitingOnWorkers, deferredOpen, queued: () => prompts.slice(), current: () => current };
 }
