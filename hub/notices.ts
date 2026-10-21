@@ -8,7 +8,7 @@ import { parseTone, stripHandoff } from "./tone.ts";
 
 // The web notification store: every worklog / alert / session result / watch / schedule post, kept in notices.json so the
 // bell survives a restart. Fed by what the hub already emits (onEmit), so main.ts only wires the API and the resolver.
-export type NoticeKind = "result" | "alert" | "worklog" | "watch" | "decision";
+export type NoticeKind = "result" | "alert" | "worklog" | "watch" | "decision" | "message";
 export type NoticeTone = "done" | "run" | "ask" | "fail" | "";
 export type Notice = {
 	id: string;
@@ -223,7 +223,10 @@ function feed(e: HubEvent): void {
 		if (e.kind === "lane_start") noteLaunch(e);
 		else if (e.kind === "out") {
 			fromOutbox(e);
-			for (const d of decisionsOf(e)) putDecision(d, e.ts);
+			const ds = decisionsOf(e);
+			for (const d of ds) putDecision(d, e.ts);
+			// A decision message makes only its decision item; any other answer may become the conversation's unread message item.
+			if (!ds.length) fromAnswer(e);
 		} else if (e.kind === "message" || e.kind === "lane_message") ownerReplied(e);
 		else {
 			fromInbox(e);
@@ -232,6 +235,46 @@ function feed(e: HubEvent): void {
 	} catch (err) {
 		log(`notice feed failed: ${err}`);
 	}
+}
+
+/* ---------- unread answers: one bell item per conversation the owner is not looking at ---------- */
+const VIEW_MS = 60_000;
+const MESSAGE_PREVIEW = 120;
+const CONV_RE = /^(?:main|lane:[\w.-]+|ch:\d+)$/;
+// What each open web page reports it is showing (id -> conversation, "" = hidden / not a chat). A report older than VIEW_MS no longer counts.
+const viewers = new Map<string, { conv: string; at: number }>();
+let convNameOf: (conv: string) => string | undefined = () => undefined;
+export const setConvNameResolver = (fn: (conv: string) => string | undefined) => void (convNameOf = fn);
+export function isViewing(conv: string, nowMs = Date.now()): boolean {
+	for (const [id, v] of viewers) {
+		if (nowMs - v.at >= VIEW_MS) viewers.delete(id);
+		else if (v.conv === conv) return true;
+	}
+	return false;
+}
+// POST /api/viewing: the page says which conversation is on screen ("" when hidden). Looking at a conversation reads its message item.
+export function setViewing(id: unknown, conv: unknown, nowMs = Date.now()): { ok: boolean; unread?: number } {
+	const who = typeof id === "string" ? id.slice(0, 64) : "";
+	if (!who || typeof conv !== "string" || (conv !== "" && !CONV_RE.test(conv))) return { ok: false };
+	viewers.set(who, { conv, at: nowMs });
+	const item = conv ? items.find(n => n.key === `msg:${conv}`) : undefined;
+	return { ok: true, unread: item && !item.read ? markNoticesRead({ ids: [item.id] }).unread : unreadCount() };
+}
+
+// An answer of the assistant or a session (not progress, not a keepalive "ok" / "-") in a conversation nobody is viewing: that
+// conversation's one "message" item, rewritten by each later answer. A session's [done] / [fail] already has its result item.
+function fromAnswer(e: HubEvent): void {
+	if (replaying) return;
+	const src = String(e.source ?? "");
+	const lane = src.startsWith("lane:");
+	if (e.update_key || e.target === "worklog" || e.target === "alert" || (src !== "orchestrator" && !lane)) return;
+	const { tone, text } = clean(e.text);
+	if (!text || /^(?:ok|-)$/i.test(text) || (lane && LOUD.has(tone))) return;
+	const conv = eventTarget(e) ?? "main";
+	if (isViewing(conv)) return;
+	const preview = text.replace(/\s+/g, " ");
+	const title = conv.startsWith("lane:") ? laneTitle(conv.slice(5)) : convNameOf(conv) || (conv === "main" ? "대화" : conv);
+	upsert({ kind: "message", tone: "", title, text: preview.length > MESSAGE_PREVIEW ? `${preview.slice(0, MESSAGE_PREVIEW - 1)}…` : preview, open: conv, key: `msg:${conv}`, unread: true, src: conv, at: e.ts });
 }
 
 /* ---------- decisions: every question that waits on the owner is its own pinned notice ---------- */
@@ -259,7 +302,8 @@ const firstLine = (text: string) => {
 
 type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string };
 
-// The decisions an event asks of the owner: an [ask] from the assistant or a session, split by its decision blocks.
+// The decisions an event asks of the owner: an [ask] from the assistant or a session, or any message holding a choice block
+// (2+ options), split by its decision blocks.
 export function decisionsOf(e: HubEvent): Draft[] {
 	if (e.kind === "out") {
 		const src = String(e.source ?? "");
@@ -267,10 +311,10 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	} else if (e.kind !== "lane_report") return [];
 	const p = parseTone(stripHandoff(String(e.text ?? "")));
 	const body = p.text.trim();
-	if (p.tone !== "ask" || !body) return [];
+	const pc = parseDecisions(body);
+	if (!body || (p.tone !== "ask" && !pc.blocks.length)) return [];
 	const to = eventTarget(e) ?? "main";
 	const detail = body.slice(0, TEXT_MAX);
-	const pc = parseDecisions(body);
 	const line = firstLine(body);
 	const draft = (title: string, options: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail, options, to, replyTo: e.ts, group, key: `dec:${to}:${hashOf(`${idx}|${title}|${options.map(o => o.label).join("/")}`)}` });
 	if (!pc.blocks.length) return [draft(line || "답변이 필요해요", to.startsWith("lane:") && /\/budget-ok/.test(body) ? BUDGET_OPTIONS : [], 1, 0)];

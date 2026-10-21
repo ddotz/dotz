@@ -11,7 +11,7 @@ import { cfg, COALESCE_MAX_MS, CONFIG_FILE, DATA_DIR, DEFAULTS, HOST, IDENTITY_F
 import { kTokens, percentOf } from "./context.ts";
 import * as discord from "./discord.ts";
 import { modeFile, lang, msg } from "./i18n.ts";
-import { BUDGET_MARGIN, BUDGET_WINDOW_HOURS, DEFAULT_EST, laneLive, lanes, RECOVERY_MAX, RECOVERY_WINDOW_MS, WORKER_SLOTS } from "./lanes.ts";
+import { BUDGET_MARGIN, BUDGET_WINDOW_HOURS, DEFAULT_EST, laneLive, lanes, RECOVERY_MAX, RECOVERY_WINDOW_MS, laneSlotsNow, workerSlotsNow } from "./lanes.ts";
 import { KEEPALIVE_FROM_MS, KEEPALIVE_MAX, KEEPALIVE_TO_MS, keepaliveSupported, MAX_RESTARTS as ORCH_RESTARTS, orch, RESTART_WINDOW_MS } from "./orchestrator.ts";
 import { availableModels, ControlError, type ModelInfo, quota, TRANSIENT_RETRIES } from "./providers.ts";
 import { listSchedules, MIN_EVERY_MINUTES } from "./schedule.ts";
@@ -89,8 +89,8 @@ const DEFS = new Map<string, Def>([
 	["orchestrator.rotate_tokens", { type: "number", applies: "restart", default: DEFAULTS.rotate_tokens, min: 20_000, max: 1_000_000 }],
 	["lanes.model", { type: "model", applies: "next-turn", mirror: true, source: "config.json:models.lanes.model" }],
 	["lanes.thinking", { type: "effort", applies: "next-turn", mirror: true, source: "config.json:models.lanes.thinking" }],
-	// lanes.ts MAX_ACTIVE
-	["lanes.max_active", { type: "number", applies: "restart", default: DEFAULTS.max_active, min: 1, max: 16 }],
+	// lanes.ts launchWait: a hard cap on top of hub/limits.ts; unset = computed from the machine
+	["lanes.max_active", { type: "number", applies: "restart", min: 1, max: 16 }],
 	// config.ts lanesCompactAt / lanesKeepRecent (read when a lane process starts)
 	["lanes.compact_at", { type: "number", applies: "next-turn", mirror: true, default: LANES_COMPACT_AT, min: 50_000, max: 2_000_000 }],
 	["lanes.keep_recent", { type: "number", applies: "next-turn", mirror: true, default: DEFAULTS.keep_recent, min: 5_000, max: 400_000 }],
@@ -265,7 +265,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 	const watches = allWatches();
 	const failing = watches.filter(w => w.state.fails >= 2).length;
 	const setups = listSetups();
-	const maxActive = typeof disk.lanes?.max_active === "number" ? disk.lanes.max_active : DEFAULTS.max_active;
+	const maxActive = typeof disk.lanes?.max_active === "number" ? disk.lanes.max_active : laneSlotsNow();
 	// The worker guard of the harness that runs dotz: the owner's original orchestrator-guard.ts in that harness's extension
 	// folder wins (dotz's port then steps aside); otherwise dotz's port (extension/guard.ts) rides on every OmO and omp process.
 	const hx = activeHarness();
@@ -366,7 +366,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{
 			id: "workers", kind: "workers", group: "flow", label: N.workers.label, status: subagents ? "busy" : "ok", summary: `${mName(workerModel().replace(/:[a-z]+$/, ""))} · ${wm.thinking}${subagents ? N.workers.running(subagents) : ""}`,
 			desc: N.workers.desc,
-			facts: [{ label: N.workers.kinds, value: N.workers.kindsValue(laneOmo) }, { label: N.workers.limit, value: N.workers.limitValue(WORKER_SLOTS) }, { label: N.workers.runningFact, value: c.count(subagents) }, { label: N.workers.isolation, value: N.workers.isolationValue(guardOn && g.enabled) }, { label: N.workers.expensive, value: expensiveOn ? N.workers.expensiveValue(expensiveModels) : N.guard.expensiveOff }],
+			facts: [{ label: N.workers.kinds, value: N.workers.kindsValue(laneOmo) }, { label: N.workers.limit, value: N.workers.limitValue(workerSlotsNow()) }, { label: N.workers.runningFact, value: c.count(subagents) }, { label: N.workers.isolation, value: N.workers.isolationValue(guardOn && g.enabled) }, { label: N.workers.expensive, value: expensiveOn ? N.workers.expensiveValue(expensiveModels) : N.guard.expensiveOff }],
 			settings: [S("lanes.worker_model"), S("lanes.worker_effort")],
 		},
 		// ---- support: around the gateway

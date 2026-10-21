@@ -24,6 +24,8 @@ function parseChoices(text) {
   }
   return { question, blocks: blocks.filter(b => b.options.length) };
 }
+// A message with a choice block is a decision even without [ask] (same rule as hub/notices.ts decisionsOf): a block of 2+ options.
+const isChoiceMsg = pc => pc.blocks.some(b => b.options.length > 1);
 const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {} };
 const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36); };
 // What the target waits on: a session's pendingAsk, else its last bot message when that is an [ask] with a choice block and no
@@ -38,8 +40,11 @@ function decisionOf(t) {
     for (let k = s.msgs.length - 1; k >= 0; k--) {
       const e = s.msgs[k];
       if (OWNER.has(e.kind)) return null;
-      if ((e.kind !== "out" && e.kind !== "lane_report") || e.update_key || (typeof e.source === "string" && e.source.startsWith("lane:"))) continue;
-      if (parseTone(noHandoff(String(e.text ?? ""))).tone !== "ask") return null;
+      if ((e.kind !== "out" && e.kind !== "lane_report") || e.update_key) continue;
+      const p = parseTone(noHandoff(String(e.text ?? ""))), choice = isChoiceMsg(parseChoices(p.text));
+      // A session's own message in its chat counts only as a choice block; its [ask] is the session's pendingAsk (above).
+      if (typeof e.source === "string" && e.source.startsWith("lane:") && !(isLaneT(t) && p.tone !== "ask" && choice)) continue;
+      if (p.tone !== "ask" && !choice) return null;
       raw = String(e.text ?? ""); at = e.ts; break;
     }
     if (!raw) return null;

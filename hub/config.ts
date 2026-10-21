@@ -20,7 +20,7 @@ export type Config = {
 	web: { port: number; tailscale_https_port: number; allow_logins: string[] };
 	orchestrator?: { rotate_tokens?: number; runtime?: string };
 	ui?: { origin_view?: boolean };
-	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number };
+	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number };
 	// Model choice and fallback order, one block per target (the web 모델 · 폴백 screen edits exactly this).
 	models?: ModelsConfig;
 };
@@ -164,7 +164,7 @@ export const LANES_COMPACT_AT = 300_000;
 // coalesce_ms 2 s (was 4 s): over 48 h only 1 of 119 same-channel follow-ups came 2-4 s after the previous one, so the
 // longer merge window only delayed every message (~/.dotz/reports/speed-20261021.md).
 export const DEFAULTS = {
-	rotate_tokens: 150_000, max_active: 4, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8,
+	rotate_tokens: 150_000, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8, idle_stop_min: 20, worker_idle_min: 5,
 	coalesce_ms: 2000, reflect_at: "04:40", token_audit_at: "04:30", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
 } as const;
 // The web server listens only here; the tailnet reaches it through `tailscale serve` (web.tailscale_https_port).
@@ -178,6 +178,16 @@ export const lanesRotateMb = () => positive(cfg.lanes?.rotate_mb, DEFAULTS.rotat
 export const lanesNightlyAt = () => String(cfg.lanes?.nightly_at ?? DEFAULTS.nightly_at);
 // RSS limit of one agent process (orchestrator or lane, task workers included) before the memory guard restarts it; 0 turns the guard off.
 export const lanesMaxRssGb = () => (typeof cfg.lanes?.max_rss_gb === "number" && cfg.lanes.max_rss_gb >= 0 ? cfg.lanes.max_rss_gb : DEFAULTS.max_rss_gb);
+// Memory (owner 2026-10-21: one agent costs ~1 GB, senpi ~600 MB + its claude child ~400 MB). Task workers one lane runs at once
+// (each is a full agent process); minutes a lane with no turn and no worker waits before its process is stopped (the session
+// stays, the next message resumes it; 0 = never); minutes a finished task worker stays resident for follow-ups (OmO's default is 15).
+const count = (v: unknown, d: number, min: number) => (typeof v === "number" && Number.isFinite(v) && v >= min ? Math.floor(v) : d);
+// lanes.max_active and lanes.max_workers are hard caps when set; unset, hub/limits.ts computes both from this machine's memory and cores.
+const cap = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 1 ? Math.floor(v) : undefined);
+export const lanesMaxActive = () => cap(cfg.lanes?.max_active);
+export const lanesMaxWorkers = () => cap(cfg.lanes?.max_workers);
+export const lanesIdleStopMin = () => count(cfg.lanes?.idle_stop_min, DEFAULTS.idle_stop_min, 0);
+export const workerIdleMin = () => count(cfg.lanes?.worker_idle_min, DEFAULTS.worker_idle_min, 1);
 // `ui.origin_view` (default false): the 구성 view marks what the owner changed against what ships with dotz, and its requests carry a
 // 범위 (개인/배포) line. Off, the view shows no such distinction. Read once at start like the other cfg flags.
 export const uiOriginView = () => cfg.ui?.origin_view === true;

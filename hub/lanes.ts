@@ -1,11 +1,10 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { availableParallelism, totalmem } from "node:os";
 import { basename, join, relative } from "node:path";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { firstAlertForReset } from "./rate-alert.ts";
 import { emitEventActivity, endSubagents, runningSubagents, statusActivity, workerCheck } from "./activity.ts";
 import { pendingAskFile } from "./asks.ts";
-import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, TZ, workerModel, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, DATA_DIR, fallbackChain, lanesCompactAt, lanesKeepRecent, lanesMaxActive, lanesMaxWorkers, lanesModel, log, now, parseSelector, paths, selectorOf, splitThinking, TZ, workerModel, writeAtomic } from "./config.ts";
 import { formatHeader, kstClock, workersOf } from "./lanevis.ts";
 import { lang, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
@@ -18,6 +17,8 @@ import { atTime, Chain, failsOver, failureReason, hubChain, type Move, Reverter,
 import { parseTone } from "./tone.ts";
 import { broadcast } from "./events.ts";
 import { createOwnerNotes } from "./lanerelay.ts";
+import { limitsNow, type Running, waitText } from "./limits.ts";
+import { trackTimer } from "./shutdown.ts";
 
 const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 // A lane started with a fallback chain: after a failed request the runtime may move to the next model by itself and redo
@@ -30,7 +31,6 @@ const WATCHDOG_MS = 120_000;
 const STALL_MS = Number(process.env.DOTZ_STALL_MS ?? 20 * 60_000);
 export const RECOVERY_MAX = 3;
 export const RECOVERY_WINDOW_MS = 60 * 60_000;
-const MAX_ACTIVE = cfg.lanes?.max_active ?? DEFAULTS.max_active;
 const BRIEF_MAX = 8000;
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const DONE_RE = /(done[- ]?when|done\s*=|acceptance|완료\s*조건)/i;
@@ -43,7 +43,7 @@ type Claim = { state: "reported" | "verified"; at: string; evidence?: string; pr
 // The full text also sits in pending-ask.md (dir(name)) while pending, because report.md is overwritten by gateway notices.
 type Ask = { text: string; at: string };
 // `runtime`: the runtime that wrote sessionFile (omo, omp, claude); a session is only ever resumed by that runtime.
-type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask };
+type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; waiting?: string };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	// The orchestrator sent work (launch, dotz_lane send) that no relayed report answered yet; an owner-only exchange in
@@ -90,6 +90,9 @@ export type Lane = Record_ & {
 	// dotz's Claude account or the lanes' fallback chain changed while this process ran: it is restarted on its session at the
 	// next idle moment.
 	accountStale?: boolean;
+	// Task workers this lane's process was started with (hub/limits.ts, computed at spawn) and when it started.
+	workerSlots?: number;
+	spawnedAt?: number;
 };
 
 export const lanes = new Map<string, Lane>();
@@ -125,9 +128,9 @@ export function setIdleHandler(fn: (name: string) => void): void {
 
 const dir = (name: string) => join(paths.lanes, name);
 function persist(lane: Lane): void {
-	const { name, title, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, runtime, reports, lastReportAt, held, worktree, claim, pendingAsk } = lane;
+	const { name, title, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, runtime, reports, lastReportAt, parked, held, worktree, claim, pendingAsk, waiting } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(parked ? { parked } : {}), ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}), ...(waiting ? { waiting } : {}) }, null, 2)}\n`);
 }
 function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
@@ -549,6 +552,7 @@ function spawn(lane: Lane, resume: boolean): boolean {
 		spawnModel = lane.chain.selector(lane.chain.active);
 		Object.assign(env, lane.chain.env(lane.chain.active));
 	}
+	lane.workerSlots = laneLimits(0, lane).workers;
 	const proc = runtimeFor("lane").start({
 		role: "lane",
 		cwd: lane.cwd,
@@ -560,7 +564,7 @@ function spawn(lane: Lane, resume: boolean): boolean {
 		// The omp-side orchestrator-guard blocks Fable / max-effort worker spawns unless the owner asked for them.
 		env,
 		// Rewritten at every spawn so changed lanes.* settings apply the next time the lane starts or resumes.
-		lane: { name: lane.name, dir: dir(lane.name), workerModel: laneWorkerModel(lane), workerFallback: chainAfter(laneWorkerModel(lane), fallbackChain("workers")).map(e => e.model), compactAt: lanesCompactAt(), keepRecent: lanesKeepRecent() },
+		lane: { name: lane.name, dir: dir(lane.name), workerModel: laneWorkerModel(lane), workerFallback: chainAfter(laneWorkerModel(lane), fallbackChain("workers")).map(e => e.model), compactAt: lanesCompactAt(), keepRecent: lanesKeepRecent(), workerSlots: lane.workerSlots },
 	});
 	lane.activeModel = spawnModel;
 	lane.startedModel = spawnModel;
@@ -569,6 +573,8 @@ function spawn(lane: Lane, resume: boolean): boolean {
 	lane.activeWorkerModel = laneWorkerModel(lane);
 	lane.proc = proc;
 	lane.quiet = false;
+	lane.spawnedAt = Date.now();
+	lane.parked = undefined;
 	lane.revive = undefined;
 	lane.lastFrameAt = Date.now();
 	setStatus(lane, "starting");
@@ -654,17 +660,63 @@ function recover(lane: Lane, why: string, wasWorking: boolean): void {
 	lane.proc.kill(true);
 }
 
-const activeCount = () => [...lanes.values()].filter(l => l.status === "working" || l.status === "starting").length;
-// Concurrent task workers a lane may run, from this machine's cores and memory (an omp worker is a process of a few
-// hundred MB, mostly waiting on the model), capped by omp's task.maxConcurrency default of 8.
-export const WORKER_SLOTS = Math.max(2, Math.min(8, Math.floor(availableParallelism() / 2), Math.floor(totalmem() / 2 ** 32)));
+const waitingLanes = () => [...lanes.values()].filter(l => l.waiting).sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+const isActive = (l: Lane) => !l.waiting && (l.status === "working" || l.status === "starting");
+const activeCount = () => [...lanes.values()].filter(isActive).length;
+// Dynamic limits (hub/limits.ts): how many lanes may work at once and how many task workers one lane may run follow this
+// machine's free memory and cores at the moment of asking; lanes.max_active / lanes.max_workers, when set, only cap them.
+// A process started in the last minute has not reached its ~1 GB yet, so each counts as taken.
+const RAMP_MS = 60_000;
+// `except`: the lane being spawned, which the answer is for and which must not count against itself.
+const runningNow = (except?: Lane): Running => ({
+	lanes: [...lanes.values()].filter(l => l !== except && isActive(l)).length,
+	workers: [...lanes.values()].reduce((n, l) => n + runningSubagents(`lane:${l.name}`), 0),
+	ramping: [...lanes.values()].filter(l => l !== except && l.proc && Date.now() - (l.spawnedAt ?? 0) < RAMP_MS).length,
+});
+const caps = () => ({ lanes: lanesMaxActive(), workers: lanesMaxWorkers() });
+const laneLimits = (maxAgeMs = 0, except?: Lane) => limitsNow(runningNow(except), caps(), maxAgeMs);
+// Why a lane launched now has to wait (undefined = it may start). Lanes already waiting go first.
+function launchWait(maxAgeMs = 0): string | undefined {
+	const l = laneLimits(maxAgeMs);
+	return activeCount() < l.lanes ? undefined : waitText(l.reason ?? "memory", caps());
+}
+export const laneSlotsNow = (): number => laneLimits(5000).lanes;
+export const workerSlotsNow = (): number => laneLimits(5000).workers;
+/** What /api/state shows: the limits right now and, when launches wait, why. */
+export function laneCapacity(): Record<string, unknown> {
+	const l = laneLimits(5000);
+	return { lanes: l.lanes, workers: l.workers, spare_agents: l.spare, reserve_gb: Math.round(l.reserveGb), active: activeCount(), waiting: waitingLanes().length, wait_reason: waitingLanes()[0]?.waiting ?? launchWait(5000) ?? null, caps: caps() };
+}
+// Queued launches start, oldest first, as soon as the limits allow; checked every few seconds.
+export function startQueuedLanes(): string[] {
+	const started: string[] = [];
+	for (const lane of waitingLanes()) {
+		const why = launchWait();
+		if (why) {
+			if (lane.waiting !== why) {
+				lane.waiting = why;
+				persist(lane);
+			}
+			break;
+		}
+		lane.waiting = undefined;
+		begin(lane, readFileSync(join(dir(lane.name), "brief.md"), "utf8").trim());
+		started.push(lane.name);
+	}
+	return started;
+}
+export function startLaneQueue(): void {
+	const timer = setInterval(() => startQueuedLanes(), 5000);
+	timer.unref();
+	trackTimer("lane queue", timer);
+}
 
 function footer(lane: Lane): string {
 	const features = featurePrompt(DATA_DIR, "lanes", log);
 	// The owner's verbatim don'ts (memory/boundaries.md) bind a lane too; the empty template adds nothing.
 	const boundaries = existsSync(paths.boundaries) ? readFileSync(paths.boundaries, "utf8").trim() : "";
 	const donts = boundaries.includes("\n- [") ? `\n\n${boundaries.slice(0, 2000)}` : "";
-	return withReplyLine(msg().footer({ lane: lane.name, mode: modeFile(), workerModel: laneWorkerModel(lane), slots: WORKER_SLOTS, worktree: worktreeNote(lane.worktree) })) + donts + (features ? `\n\n${features}` : "");
+	return withReplyLine(msg().footer({ lane: lane.name, mode: modeFile(), workerModel: laneWorkerModel(lane), slots: lane.workerSlots ?? laneLimits(0, lane).workers, worktree: worktreeNote(lane.worktree) })) + donts + (features ? `\n\n${features}` : "");
 }
 
 function worktreeNote(w: Worktree | undefined): string {
@@ -775,18 +827,23 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	if (prior?.proc) throw new Error(`lane ${name} is already running; use send`);
 	const problem = checkBrief(brief);
 	if (problem) throw new Error(problem);
-	if (activeCount() >= MAX_ACTIVE) throw new Error(`${activeCount()} lanes are already working (max ${MAX_ACTIVE}); queue this one or send it to an idle lane`);
+	const why = launchWait() ?? waitingLanes()[0]?.waiting;
 	const selector = model ?? selectorOf(lanesModel());
 	mkdirSync(dir(name), { recursive: true });
 	const place = laneWorktree(name, cwd);
-	const lane: Lane = { name, ...(title ? { title } : {}), cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, ctx: newCtx(), orchAsked: true };
+	const lane: Lane = { name, ...(title ? { title } : {}), cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, ctx: newCtx(), orchAsked: true, ...(why ? { waiting: why } : {}) };
 	lanes.set(name, lane);
 	persist(lane);
 	writeFileSync(join(dir(name), "brief.md"), `${brief}\n`);
+	if (why) log(`lane ${name} queued, ${why} (starts when the limits allow)`);
+	else begin(lane, brief);
+	return lane;
+}
+
+function begin(lane: Lane, brief: string): void {
 	spawn(lane, false);
 	prompt(lane, brief + footer(lane));
-	log(`lane ${name} launched in ${lane.cwd} (${selector}, workers ${laneWorkerModel(lane)})`);
-	return lane;
+	log(`lane ${lane.name} launched in ${lane.cwd} (${lane.model}, workers ${laneWorkerModel(lane)}, up to ${lane.workerSlots})`);
 }
 
 /** How an owner message reached a lane: "steered" into its running step, "received" by an idle process, "held" (paused on a limit, goes in with the resume), "resumed" (stopped session started again). */
@@ -807,6 +864,7 @@ export function sendToLane(name: string, text: string, ref?: string): LaneDelive
 			throw wrong;
 		}
 	}
+	if (lane.waiting) throw new Error(`lane ${name} is queued (${lane.waiting}); it starts by itself when the limits allow`);
 	if (!lane.proc && (!lane.sessionFile || !existsSync(lane.sessionFile))) throw new Error(`lane ${name} is not running and has no session to resume`);
 	// New work makes an unchecked [done] claim stale; a verified one stays until the lane's next report replaces it.
 	// Any message to the lane is the owner's answer to a pending [ask].
@@ -853,6 +911,10 @@ export function claimPrefix(name: string): string {
 export function stopLane(name: string): void {
 	const lane = known(name);
 	const proc = lane.proc;
+	if (lane.waiting) {
+		lane.waiting = undefined;
+		setStatus(lane, "exited");
+	}
 	proc?.kill();
 	void (proc?.exited ?? Promise.resolve()).then(() => {
 		const note = dropWorktree(lane);
@@ -1015,16 +1077,31 @@ export function restoreLanes(): string[] {
 		if (session && (rec.status === "working" || rec.status === "starting" || rec.status === "rate-limited")) {
 			resumeLane(lane, msg().laneGatewayRestarted);
 			resumed.push(name);
+		} else if (session && rec.status === "idle" && rec.parked) {
+			lane.quiet = true;
+			log(`lane ${name} stays parked (idle, no process; a message resumes it)`);
 		} else if (session && rec.status === "idle") {
 			if (spawn(lane, true)) setStatus(lane, "idle");
 			log(`lane ${name} respawned idle ${rec.sessionFile}`);
-		} else if (rec.status !== "exited") setStatus(lane, "exited");
+		} else if (rec.waiting && rec.status === "starting") log(`lane ${name} still queued (${rec.waiting}), it starts when the limits allow`);
+		else if (rec.status !== "exited") setStatus(lane, "exited");
 	}
 	return resumed;
 }
 
 // A lane is busy while its turn runs or any of its task workers still runs (a turn often ends while workers go on).
 export const laneBusy = (lane: Lane): boolean => lane.status === "working" || lane.status === "starting" || runningSubagents(`lane:${lane.name}`) > 0;
+
+// Memory: stops an idle lane's process (~1 GB with its claude child) and keeps the lane idle on the same session file; the
+// next message resumes it there (sendToLane), and a gateway restart leaves it stopped (restoreLanes). Never a busy lane.
+export function parkLane(lane: Lane): boolean {
+	if (!lane.proc || lane.status !== "idle" || laneBusy(lane) || lane.revive || !lane.sessionFile) return false;
+	lane.quiet = true;
+	lane.parked = true;
+	persist(lane);
+	lane.proc.kill();
+	return true;
+}
 
 export function shutdownLanes(): void {
 	for (const lane of lanes.values()) {
@@ -1118,6 +1195,7 @@ export function laneSummary(): Array<Record<string, unknown>> {
 		model: l.model,
 		worker_model: laneWorkerModel(l),
 		status: l.status,
+		...(l.waiting ? { waiting: l.waiting } : {}),
 		live: laneLive(l),
 		startedAt: l.startedAt,
 		reports: l.reports,

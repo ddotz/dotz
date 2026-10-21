@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import dotz, { shellText } from "../../extension/index.ts";
+import { cfg } from "../config.ts";
 import { jsonZod, params } from "../../extension/schema.ts";
 import { eventsFromFrame } from "./omp.ts";
 import { hostsOf, listHosts } from "./omo-hosts.ts";
@@ -11,7 +12,7 @@ import { ORCHESTRATOR_WORKERS, omoArgs, omoSelector, translateFrame, WORKER_CATE
 test("a lane's worker model becomes a dotz profile of omo.json: every category on it, then its fallbacks; other keys stay", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
 	writeFileSync(file, JSON.stringify({ categories: { quick: { model: "x/y" } }, profiles: { mine: { categories: {} } } }));
-	const name = writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high", workerFallback: ["anthropic/claude-opus-5-5:medium"] }, file);
+	const name = writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high", workerFallback: ["anthropic/claude-opus-5-5:medium"], workerSlots: 2 }, file);
 	expect(name).toBe("dotz-workers-anthropic-claude-sonnet-5-5-high");
 	const doc = JSON.parse(readFileSync(file, "utf8"));
 	expect(doc.categories).toEqual({ quick: { model: "x/y" } });
@@ -23,12 +24,35 @@ test("a lane's worker model becomes a dotz profile of omo.json: every category o
 	]);
 	writeFileSync(`${file}c`, "// commented\n{}");
 	// Workers run as child processes of the lane: they inherit its environment and extensions (dotz output caps and rules).
-	expect(doc.profiles[name!].task).toEqual({ max_depth: 2, process_runner: "child-process", default_execution_mode: "process" });
+	expect(doc.profiles[name!].task).toEqual({ max_depth: 2, process_runner: "child-process", default_execution_mode: "process", resident_idle_timeout_ms: 300_000, default_concurrency: 2, global_concurrency: 2 });
 	for (const c of WORKER_CATEGORIES) expect(doc.profiles[name!].categories[c].prompt_append).toBe(WORKER_RULE);
 	expect(WORKER_RULE).toContain("[fail]");
 	// OmO memory is off for the workers too (the lane runs with --omo-senpi-memory-disabled, which workers do not inherit).
 	expect(doc.profiles[name!].memory).toEqual({ enabled: false });
 	expect(writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high" }, file)).toBeUndefined();
+});
+
+test("lanes.max_workers and lanes.worker_idle_min set the lane profile's worker cap and release time; the orchestrator's workers are not capped", () => {
+	const saved = cfg.lanes;
+	try {
+		cfg.lanes = { ...cfg.lanes, max_workers: 3, worker_idle_min: 2 };
+		const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
+		const name = writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high" }, file)!;
+		expect(JSON.parse(readFileSync(file, "utf8")).profiles[name].task).toMatchObject({ default_concurrency: 3, global_concurrency: 3, resident_idle_timeout_ms: 120_000 });
+		cfg.lanes = { ...cfg.lanes, max_workers: 0, worker_idle_min: -1 };
+		const bad = JSON.parse(readFileSync(file, "utf8"));
+		writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high" }, file);
+		const task = JSON.parse(readFileSync(file, "utf8")).profiles[name].task;
+		expect(bad.profiles[name].task.global_concurrency).toBe(3);
+		expect(task.global_concurrency).toBeUndefined();
+		expect(task.resident_idle_timeout_ms).toBe(300_000);
+		writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high", workerSlots: 4 }, file);
+		expect(JSON.parse(readFileSync(file, "utf8")).profiles[name].task).toMatchObject({ default_concurrency: 4, global_concurrency: 4 });
+		writeOrchestratorProfile(file, "anthropic/claude-sonnet-5-5:high", []);
+		expect(JSON.parse(readFileSync(file, "utf8")).profiles[ORCHESTRATOR_WORKERS].task.global_concurrency).toBeUndefined();
+	} finally {
+		cfg.lanes = saved;
+	}
 });
 
 test("omp's anthropic provider maps to OmO's subscription provider; others and the thinking level pass through", () => {
@@ -114,7 +138,7 @@ test("the orchestrator's task workers get a dotz profile too: child processes, m
 	expect(doc.categories).toEqual({ quick: { model: "x/y" } });
 	expect(doc.profiles.mine).toEqual({ categories: {} });
 	const p = doc.profiles[ORCHESTRATOR_WORKERS];
-	expect(p.task).toEqual(WORKER_TASK);
+	expect(p.task).toEqual({ ...WORKER_TASK, resident_idle_timeout_ms: 300_000 });
 	expect(p.memory).toEqual({ enabled: false });
 	expect(Object.keys(p.categories).sort()).toEqual([...WORKER_CATEGORIES].sort());
 	for (const c of WORKER_CATEGORIES) {

@@ -32,17 +32,18 @@ async function pmDo(note, fn) {
   return true;
 }
 function pmProject() {
-  const found = ((PRJ && PRJ.projects) || []).find(x => x.key === PM.key);
+  const found = ((PRJ && PRJ.projects) || []).find(x => x.key === PM.key || x.recordKey === PM.key);
   if (found) return found;
   const D = PM.D;
   return D ? { key: PM.key, name: (D.record && D.record.title) || PM.key, lanes: D.lanes || [], record: D.record } : null;
 }
 function pmSessionRows(p, D) {
   const dl = (D && D.lanes) || [], all = (S && S.lanes) || [], names = new Set([...dl.map(l => l.name), ...(p.lanes || []).map(l => l.name)]);
-  if (p.key.startsWith("ch:")) for (const l of all) if (l.home === p.key) names.add(l.name);
+  const chat = prjChat(p);
+  if (chat) for (const l of all) if (laneHome(l) === chat) names.add(l.name);
   return [...names].map(n => {
     const s = all.find(l => l.name === n), d = dl.find(l => l.name === n) || (p.lanes || []).find(l => l.name === n) || {};
-    return { name: n, title: (s && s.title) || d.title || n, live: s ? laneAlive(s) : !!d.live, status: s ? s.status : d.status, waiting: s ? !!s.pendingAsk : !!d.waiting, line: String(d.line || d.lastText || "").slice(0, 140) };
+    return { at: Date.parse(d.finishedAt || d.lastReportAt || d.startedAt || (s && s.startedAt) || "") || 0, name: n, title: (s && s.title) || d.title || n, live: s ? laneAlive(s) : !!d.live, status: s ? s.status : d.status, waiting: s ? !!s.pendingAsk : !!d.waiting, line: String(d.line || d.lastText || "").slice(0, 140) };
   }).sort((a, b) => (b.live - a.live) || (b.waiting - a.waiting) || a.title.localeCompare(b.title));
 }
 function pmPaint() {
@@ -50,6 +51,7 @@ function pmPaint() {
   const root = $("#v-project"), D = PM.D, p = pmProject();
   if (!p) { delete root.dataset.sig; clear(root).append(emptyNode(PM.fail || PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
   const q = { ...p, record: (D && D.record) || p.record }, rows = pmSessionRows(p, D);
+  const live = rows.filter(r => r.live), past = rows.filter(r => !r.live), work = (D && D.work) || [];
   const sig = JSON.stringify([q, D, rows, botName]);
   if (root.dataset.sig === sig) return;
   root.dataset.sig = sig;
@@ -60,8 +62,8 @@ function pmPaint() {
   const sec = (order, label, node) => el("section", { class: "pmv-sec", style: `order:${order}` }, el("div", { class: "sec", text: label }), node);
   clear(root).append(pmHead(q),
     el("div", { class: "pmv-cols" },
-      el("div", { class: "pmv-col" }, sec(1, "목표와 진행", pmGoal(q, rows)), sec(3, rows.length ? `세션 ${rows.length}` : "세션", pmSessions(rows))),
-      el("div", { class: "pmv-col" }, sec(2, "루틴과 감시", pmRoutines(D)), sec(4, "최근 결과", pmResults(D)))));
+      el("div", { class: "pmv-col" }, sec(1, "목표와 진행", pmGoal(q, rows)), sec(2, "진행 중", pmDoing(live, work.filter(w => w.status === "running"))), sec(3, "최근 세션", pmRecent(past, work.filter(w => w.status !== "running")))),
+      el("div", { class: "pmv-col" }, sec(4, "최근 결과", pmResults(D)), sec(5, "루틴과 감시", pmRoutines(D)))));
   const add = $(".pmv-add input", root);
   if (add && PM.draft) { add.value = PM.draft; add.dispatchEvent(new Event("input")); if (focused) add.focus(); }
 }
@@ -238,12 +240,26 @@ function pmRoutine(x) {
   return box;
 }
 
-function pmSessions(rows) {
-  if (!rows.length) return emptyNode("이 프로젝트의 세션이 없어요");
-  return el("div", { class: "list" }, ...rows.map(r => el("button", { class: "li tap", type: "button", onclick: () => openTarget(`lane:${r.name}`, lastChatView()) },
-    el("span", { class: `dot ${r.waiting ? "att" : r.live ? statusTone(r.status) : ""}` }),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), el("div", { class: "sup", text: [r.live ? statusKo(r.status) : "끝남", r.line].filter(Boolean).join(" · ") })),
-    r.waiting ? el("span", { class: "tag warn", text: "질문 대기" }) : null, icon("chev", "lead"))));
+const pmSessionRow = r => el("button", { class: "li tap", type: "button", onclick: () => openTarget(`lane:${r.name}`, lastChatView()) },
+  el("span", { class: `dot ${r.waiting ? "att" : r.live ? statusTone(r.status) : ""}` }),
+  el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), el("div", { class: "sup", text: [r.live ? statusKo(r.status) : "끝남", r.line].filter(Boolean).join(" · ") })),
+  r.waiting ? el("span", { class: "tag warn", text: "질문 대기" }) : null, icon("chev", "lead"));
+// A background job of the main assistant that belongs to the project (asked in its chat, or briefed for its folder): tap lands on the asking message.
+const pmWorkRow = w => {
+  const run = w.status === "running";
+  return el("button", { class: "li tap", type: "button", onclick: () => workGo(w) },
+    el("span", { class: `dot ${run ? "pri" : w.status === "done" ? "ok" : "err"}` }),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${w.status === "done" ? "끝남" : "실패"} · ${workAgo(w)}` })),
+    icon("chev", "lead"));
+};
+// 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.
+function pmDoing(live, running) {
+  if (!live.length && !running.length) return emptyNode("지금 돌고 있는 일이 없어요");
+  return el("div", { class: "list" }, ...live.map(pmSessionRow), ...running.map(pmWorkRow));
+}
+function pmRecent(past, done) {
+  const items = [...past.map(r => ({ at: r.at, node: pmSessionRow(r) })), ...done.map(w => ({ at: w.ended_at || w.started_at, node: pmWorkRow(w) }))].sort((a, b) => b.at - a.at).slice(0, 10);
+  return items.length ? el("div", { class: "list" }, ...items.map(x => x.node)) : emptyNode("아직 끝난 세션이 없어요");
 }
 
 const PM_RES = { report: "보고", verify: "확인", commit: "커밋" };

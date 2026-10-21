@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import type { BgWork } from "./bgwork.ts";
 import { DATA_DIR, expand, HOME, log, TZ } from "./config.ts";
 import { loadProjects, type ProjectRecord } from "./projects.ts";
 import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
@@ -29,6 +30,8 @@ export type ChannelsIn = { work?: Record<string, string>; homes?: Record<string,
 export type CustomDeps = {
 	lanes: () => Array<Record<string, unknown>>;
 	channels: () => ChannelsIn;
+	/** The main assistant's background work (hub/bgwork.ts); a project page lists what is tied to it. */
+	work?: () => BgWork[];
 	send: (target: "main" | `lane:${string}`, text: string, login: string) => Promise<void>;
 };
 
@@ -402,7 +405,14 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 		p.newest = Math.max(p.newest, at);
 		if (homes[name] && !p.channel) p.channel = chan(homes[name]);
 	}
-	for (const [id, name] of Object.entries(work)) if (![...projects.values()].some(p => p.channel?.id === id)) make(`ch:${id}`, name).channel = chan(id);
+	// A work channel no session is homed in belongs to the folder project named like it ("dotz-개선" -> ~/Code/dotz), else it stands alone.
+	for (const [id, name] of Object.entries(work)) {
+		if ([...projects.values()].some(p => p.channel?.id === id)) continue;
+		const word = name.toLowerCase().split(/[\s\-_.·]+/)[0] ?? "";
+		const folders = [...projects.values()].filter(p => p.key.startsWith("dir:") && !p.channel && word.length >= 3 && basename(p.path ?? "").toLowerCase() === word);
+		if (folders.length === 1) folders[0]!.channel = chan(id);
+		else make(`ch:${id}`, name).channel = chan(id);
+	}
 
 	const pinned: Auto[] = [];
 	for (const pin of input.pins.projects) {
@@ -453,6 +463,7 @@ export type DetailInput = {
 	routines: Routine[];
 	schedules: Schedule[];
 	watches: Array<Record<string, unknown>>;
+	work?: BgWork[];
 	record?: ProjectRecord;
 	channels: ChannelsIn;
 	git?: GitState;
@@ -537,6 +548,8 @@ export function projectDetailView(d: DetailInput) {
 	}));
 	const watches = d.watches.filter(w => (typeof w.cwd === "string" && roots.some(r => within(full(w.cwd as string), r))) || names(`${w.name ?? ""} ${w.command ?? ""}`, mine)).map(w => ({ id: String(w.id), name: String(w.name ?? w.id), every_minutes: Number(w.every_minutes) || 0, ...(w.paused ? { paused: true } : {}) }));
 
+	// Background work tied to the project: asked in its channel, or briefed for its folder.
+	const work = (d.work ?? []).filter(w => (chTarget && w.target === chTarget) || (w.folder && roots.some(r => within(full(w.folder!), r)))).slice(0, 20);
 	const lastActivity = Math.max(0, ...lanes.map(l => at(l.finishedAt)), ...rows.map(l => (l.live ? at(String(l.startedAt ?? "")) : 0)), ...results.map(r => at(r.at)));
 	return {
 		key: p.key,
@@ -546,6 +559,7 @@ export function projectDetailView(d: DetailInput) {
 		schedules: [...plainSchedules, ...routineSchedules],
 		summary: { lanes: lanes.length, running: lanes.filter(l => l.live && l.status !== "idle").length, waiting: lanes.filter(l => l.waiting).length, ...(lastActivity ? { lastActivity: new Date(lastActivity).toISOString() } : {}) },
 		lanes,
+		work,
 		results: results.slice(0, 15),
 		...(d.git ? { repo: d.git } : {}),
 		tasks,
@@ -640,7 +654,7 @@ async function projectDetail(key: string, deps: CustomDeps) {
 		if (r) reports[l.name] = r;
 	}
 	return projectDetailView({
-		project, record: project.record, others: all, lanes, reports, receipts: readReceipts(), tasks: openTasks(), routines: pins.routines, schedules: listSchedules(), watches: listWatches(), channels,
+		project, record: project.record, others: all, lanes, reports, receipts: readReceipts(), tasks: openTasks(), routines: pins.routines, schedules: listSchedules(), watches: listWatches(), channels, work: deps.work?.() ?? [],
 		...(dir ? { git: await gitState(dir), self: real(dir) === real(join(import.meta.dir, "..")) } : {}),
 	});
 }

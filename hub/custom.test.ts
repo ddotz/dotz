@@ -452,3 +452,14 @@ test("project detail of a fresh project (no sessions, no record) keeps every lis
 test("GET /api/custom/project answers 404 for an unknown key", async () => {
 	expect((await call("GET", "/api/custom/project?key=dir:~/nope"))!.status).toBe(404);
 });
+
+test("a work channel named like a session folder joins that folder's project, and the project page lists its background work", () => {
+	const lanes = [{ name: "a", cwd: "/h/Code/dotz", status: "exited", live: false, startedAt: "2026-10-01T00:00:00Z", reports: 0, lastText: "" }];
+	const channels = { work: { "9": "dotz-개선", "8": "다른 일" } };
+	const all = projectsView({ lanes, channels, pins: noPins, home: "/h", tmpDirs: [] });
+	expect(all.map(p => [p.key, p.name, p.channel?.id, p.lanes.length])).toEqual([["dir:~/Code/dotz", "dotz-개선", "9", 1], ["ch:8", "다른 일", "8", 0]]);
+	const work = (id: string, over: Record<string, unknown>) => ({ id, description: id, status: "running" as const, started_at: 1, ...over });
+	const d = projectDetailView({ project: all[0]!, others: all, lanes, reports: {}, receipts: [], tasks: [], home: "/h", channels, watches: [], routines: [], schedules: [],
+		work: [work("by-folder", { folder: "/h/Code/dotz" }), work("by-channel", { target: "ch:9" }), work("elsewhere", { folder: "/h/Code/other", target: "ch:8" }), work("main", { target: "web" })] });
+	expect(d.work.map(w => w.id)).toEqual(["by-folder", "by-channel"]);
+});
