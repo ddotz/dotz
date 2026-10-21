@@ -17,7 +17,7 @@ export type Config = {
 	// Extra hosts an API-key fallback entry's base_url may point at (https only); the providers' own API hosts are always allowed.
 	key_hosts?: string[];
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string };
-	web: { port: number; tailscale_https_port: number; allow_logins: string[] };
+	web: { port: number; tailscale_https_port: number; allow_logins: string[]; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[] };
 	orchestrator?: { rotate_tokens?: number; runtime?: string };
 	ui?: { origin_view?: boolean };
 	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number };

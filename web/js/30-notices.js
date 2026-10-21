@@ -345,6 +345,8 @@ function renderNotices() {
   all.hidden = (tab === "all" ? NT.unread - NT.items.filter(ntOpenDec).length : fresh.filter(n => !ntOpenDec(n)).length) <= 0;
   ntPaintTabs();
   clear(body);
+  const others = tab === "all" ? prBellLines() : null;
+  if (others) body.append(others);
   if (tab === "watch") body.append(ntMonSection());
   if (!NT.loaded && NT.failed) body.append(el("div", { class: "nt-empty", text: "알림을 불러오지 못했어요" }));
   else if (!NT.loaded) body.append(el("div", { class: "nt-empty", text: "불러오는 중…" }));
@@ -419,6 +421,7 @@ function openNotices(tab) {
   ntPanel.focus({ preventScroll: true });
   loadNotices();
   loadMonitors();
+  prLoad();
 }
 
 let ntOv = null;
