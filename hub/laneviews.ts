@@ -1,3 +1,4 @@
+import { parseSelector } from "./config.ts";
 import { laneLive, laneWorkerModel, lanes } from "./lanestate.ts";
 import { ctxView } from "./context.ts";
 import { workersOf, kstClock, formatHeader } from "./lanevis.ts";

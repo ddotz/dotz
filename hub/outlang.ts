@@ -22,6 +22,9 @@ function setting(): Setting {
 	return { mode: typeof o.mode === "string" ? o.mode : undefined, model: typeof o.model === "string" ? o.model : undefined, timeout_s: typeof o.timeout_s === "number" ? o.timeout_s : undefined };
 }
 
+// How long one rewrite may take at most (the shutdown waits this long for a post still in its rewrite).
+export const timeoutMs = (): number => (setting().timeout_s ?? DEFAULTS.outlang_timeout_s) * 1000;
+
 // Letters of the identity's own script; languages written in the Latin script are never checked.
 const SCRIPTS: Record<string, RegExp> = {
 	ko: /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/g,
@@ -116,7 +119,7 @@ export async function callModel(system: string, text: string, opts: { model?: st
 	const started = Date.now();
 	const proc = Bun.spawn(
 		modelArgv(system, text, opts.model ?? setting().model),
-		{ cwd: DATA_DIR, env: withoutApiKeys({ ...process.env }), stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: opts.timeoutMs ?? (setting().timeout_s ?? DEFAULTS.outlang_timeout_s) * 1000 },
+		{ cwd: DATA_DIR, env: withoutApiKeys({ ...process.env }), stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: opts.timeoutMs ?? timeoutMs() },
 	);
 	const raw = await new Response(proc.stdout).text();
 	const code = await proc.exited;
