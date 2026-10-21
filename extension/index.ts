@@ -19,6 +19,7 @@ import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { systemDeny } from "../hub/systemdeny.ts";
+import { kdbActBlock } from "../hub/kdb.ts";
 import { installCompactKept } from "./compact-kept.ts";
 import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason } from "../hub/live-guard.ts";
 import { dropLongTtl, installGuard } from "./guard.ts";
@@ -71,6 +72,8 @@ function enforceRules(pi: any): void {
 		if (command === undefined) return;
 		const system = systemDeny(command);
 		if (system) return { block: true, reason: `Blocked by dotz: ${system}.` };
+		const kdb = kdbActBlock(command, DATA);
+		if (kdb) return { block: true, reason: `Blocked by dotz (company mail leaves only on the owner's OK): ${kdb}.` };
 		const file = join(DATA, "RULES.md");
 		const reason = existsSync(file) ? blockedBy(command, readFileSync(file, "utf8")) : undefined;
 		if (reason) return { block: true, reason: `Blocked by the owner's rule (${file}): ${reason}. Do not work around it; report it if the task needs it.` };
@@ -233,6 +236,8 @@ function orchestratorTools(pi: any): void {
 		description: "Sessions (dotz_lane): one headless omp orchestrator per project folder, each with its own Discord channel; its reports come back as inbox turns. A stopped session whose conversation another runtime wrote cannot be resumed (send refuses it); continue it with action=handover {name, text?}: a fresh conversation of the same session, handed the previous conversation's recent exchanges, its brief and last report. A session is only for multi-hour, multi-step project work: anything under an hour you do yourself or with task subagents (their results come back into your own conversation), never a session for a 10-20 minute job. A session plans and reviews on its own model and runs implementation, tests, renders and grind work as task subagents on a cheaper subagent model. action=launch {why (why this needs a session rather than you or a task subagent: the hours and steps involved), hours (expected duration; under 1 is refused), owner_asked_for_lane? (true only when the owner asked for a session; skips the hours check), name [a-z0-9-] (internal key), title (REQUIRED for launch: the session's Discord channel name, or its thread name when home is given, read by the owner: 2-4 plain words in the owner's main language saying what the work is, e.g. 디스코드 설정; the gateway refuses the key, a folder or repo name, or anything codename-shaped like [a-z0-9._-] only), cwd absolute, brief (must contain a 'Done when:' line, <= 8000 chars, paths not contents), model? (Fable or max/xhigh effort only with owner_asked_for_fable=true, when the owner explicitly asked for it; the same applies to worker_model), home? (ch:<id> of a work channel. Default: a session launched for a request from a work channel works in a thread on the owner's message there, one launched from a thread takes that thread over, one from chat gets a new channel; stop archives a thread and never deletes the channel), worker_model? (provider/model[:thinking] for this session's task subagents; default is lanes.worker_model from the config), est? (percent of the 5h usage window this job is expected to use, 0-100; default 15; the gate refuses when under 10% would remain, so give a realistic number: small fix ~5, big build ~30), force? (only after the owner OKs a budget-gate warning)}; list; send {name, text} (also resumes a stopped session's conversation); stop {name}; verify {name, text: evidence} (after you checked the session's Done-when yourself: what you ran and the result; works only while the session's last report was [done], i.e. its claim is reported, and marks it verified, which the worklog entry then shows).",
 		parameters: z.object({ action: z.enum(["launch", "list", "send", "handover", "stop", "verify"]), why: z.string().optional(), hours: z.number().optional(), owner_asked_for_lane: z.boolean().optional(), name: z.string().optional(), title: z.string().optional(), kind: z.string().optional(), home: z.string().optional(), cwd: z.string().optional(), brief: z.string().optional(), text: z.string().optional(), model: z.string().optional(), worker_model: z.string().optional(), est: z.number().min(0).max(100).optional(), force: z.boolean().optional(), owner_asked_for_fable: z.boolean().optional() }),
 		async execute(_id: string, p: any) {
+			const held = laneHeld(p.action);
+			if (held) return { content: [{ type: "text", text: held }] };
 			if (p.action === "launch" && !String(p.title ?? "").trim()) return { content: [{ type: "text", text: "title required: use 2-4 plain words of the work in the owner's language (e.g. 디스코드 설정)" }] };
 			const out =
 				p.action === "launch" ? await call("/api/lanes", { method: "POST", body: JSON.stringify({ why: p.why, hours: p.hours, owner_asked_for_lane: p.owner_asked_for_lane, name: p.name, title: p.title, kind: p.kind, home: p.home, cwd: p.cwd, brief: p.brief, model: p.model, worker_model: p.worker_model, est: p.est, force: p.force, owner_asked_for_fable: p.owner_asked_for_fable }) })
@@ -391,7 +396,7 @@ function terminalClient(pi: any): void {
 // A fallback entry that bills through its own API key runs as a provider of its own (hub/fallback.ts keyEnv): the gateway
 // describes it in DOTZ_KEY_PROVIDER (no secret) and hands the key over in DOTZ_KEY_VALUE. The key is registered as a literal
 // and both variables leave the environment at once, so no tool command or task worker this process starts can read it.
-function keyProvider(pi: any): void {
+export function keyProvider(pi: any): void {
 	const raw = process.env.DOTZ_KEY_PROVIDER;
 	const key = process.env.DOTZ_KEY_VALUE;
 	delete process.env.DOTZ_KEY_PROVIDER;
@@ -399,9 +404,11 @@ function keyProvider(pi: any): void {
 	if (!raw || !key) return;
 	const { id, baseUrl, api, models } = JSON.parse(raw);
 	pi.registerProvider(id, { baseUrl, api, apiKey: key, models });
+	holdWorkOnApiKey(pi);
 }
 
 import { isMain } from "./guard-config.ts";
+import { holdWorkOnApiKey, laneHeld } from "./apikey-hold.ts";
 
 export { isMain };
 
