@@ -137,8 +137,12 @@ test("script hook: empty output, a non-zero exit, an unknown account and a missi
 	expect(ev({ rules: officeRule, script: { account: "spare", at: "" } })).toMatchObject({ account: "spare", source: "script" });
 });
 
+// A child that never finishes: a promise nothing resolves, held open by a timer that never fires. The test waits on the
+// kill result of runScript's timeout, not on this script.
+const NEVER_EXITS = "await new Promise(() => setInterval(() => {}, 2 ** 30))";
+
 test("script hook: a script that outlives its timeout is killed and reported as a timeout", async () => {
-	const file = script("slow", `await Bun.sleep(20000); console.log("work");`);
+	const file = script("slow", `${NEVER_EXITS}; console.log("work");`);
 	const opinion = await runScript(file, input(), 300);
 	expect(opinion).toMatchObject({ error: "timeout" });
 	expect(opinion.account).toBeUndefined();
@@ -202,7 +206,7 @@ test("decisions.jsonl keeps its last 20 lines and drops repeated ones when it is
 test("checkNow: a script timeout is logged once with its error kind, and the rules decide meanwhile", async () => {
 	writeAuth(["personal", "work"]);
 	writeSlots({ personal: { lastSuccessAt: 2 }, work: { lastSuccessAt: 1 } });
-	const file = script("hang", `await Bun.sleep(20000);`);
+	const file = script("hang", NEVER_EXITS);
 	writeRules({ ...officeRule, script: { path: file, timeout_ms: 300 } });
 	const d = await checkNow(WED_10);
 	expect(d).toMatchObject({ account: "work", source: "rule", rule: "office" });

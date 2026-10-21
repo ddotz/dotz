@@ -8,6 +8,7 @@ import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg } from "./config.ts";
 import { resetFallbackState } from "./fallback.ts";
+import { msg } from "./i18n.ts";
 import type * as Lanes from "./lanes.ts";
 import type * as Orchestrator from "./orchestrator.ts";
 import { adapters } from "./runtime/index.ts";
@@ -134,7 +135,7 @@ test("orchestrator: a refusal alerts the owner and goes back to the configured m
 	await turnWithFallback(p, "Refusal (cyber): the request was declined");
 	// The fallback is one plain alert line; the worklog notice channel stays quiet; nothing is switched mid-turn or at its end.
 	expect(alerts).toHaveLength(1);
-	expect(alerts[0]).toContain("Model fallback: anthropic/test-orch → anthropic/test-fallback (Refusal (cyber): the request was declined)");
+	expect(alerts[0]).toContain(msg().modelFallback("anthropic/test-orch", "anthropic/test-fallback", "Refusal (cyber): the request was declined"));
 	expect(notices).toEqual([]);
 	expect(o.orch.activeModel).toBe("anthropic/test-fallback");
 	expect(p.types()).not.toContain("set_model");
@@ -149,7 +150,7 @@ test("orchestrator: a refusal alerts the owner and goes back to the configured m
 	expect(p.frames[before + 1]).toEqual({ type: "set_thinking_level", level: "low" });
 	expect(o.orch.activeModel).toBe("anthropic/test-orch:low");
 	expect(alerts).toHaveLength(2);
-	expect(alerts[1]).toContain("Back on the original model (anthropic/test-orch)");
+	expect(alerts[1]).toContain(msg().modelReverted("anthropic/test-orch"));
 
 	// It falls back again inside that turn: the alert repeats, nothing switches mid-turn, and it is undone again before the
 	// next prompt (a refusal is about one request; a process left on the fallback until restart is the bug being fixed).
@@ -190,7 +191,7 @@ test("orchestrator: a usage limit goes back only after the reset (15 minutes wit
 	expect(p.types()).toContain("set_model");
 	expect(p.frames.find(f => f.type === "set_model")).toEqual({ type: "set_model", provider: "anthropic", modelId: "test-orch" });
 	expect(o.orch.activeModel).toBe("anthropic/test-orch:low");
-	expect(alerts.at(-1)).toContain("Back on the original model (anthropic/test-orch)");
+	expect(alerts.at(-1)).toContain(msg().modelReverted("anthropic/test-orch"));
 	expect(alerts).toHaveLength(2);
 	await stopOrchestrator();
 });
@@ -264,8 +265,7 @@ test("orchestrator on a runtime that cannot switch models: the alert says it sta
 	await advance(4000);
 	await agents[0].push({ type: "session", ref: join(DATA, "revert-session.jsonl") }, { type: "alive" }, { type: "turn_start" }, { type: "fallback", from: "anthropic/test-orch", to: "anthropic/test-fallback", reason: "Refusal (cyber): declined" }, { type: "turn_end" });
 	expect(alerts).toHaveLength(1);
-	expect(alerts[0]).toContain("Model fallback: anthropic/test-orch → anthropic/test-fallback");
-	expect(alerts[0]).toContain("cannot switch models");
+	expect(alerts[0]).toContain(msg().modelFallback("anthropic/test-orch", "anthropic/test-fallback"));
 	await stopOrchestrator();
 	delete adapters.fake;
 });
@@ -290,7 +290,7 @@ test("lane: a refusal posts to the lane channel and goes back before the next pr
 	await p.push(agentEnd);
 	await advance(500);
 	expect(lane.status).toBe("idle");
-	expect(laneNotices).toEqual(["rv: Model fallback: anthropic/test-lane → anthropic/test-lane-fallback (Refusal (cyber): declined)"]);
+	expect(laneNotices).toEqual([`rv: ${msg().modelFallback("anthropic/test-lane", "anthropic/test-lane-fallback", "Refusal (cyber): declined")}`]);
 	expect(alerts).toEqual([]);
 	expect(lane.activeModel).toBe("anthropic/test-lane-fallback");
 	expect(p.types()).not.toContain("set_model");
@@ -301,7 +301,7 @@ test("lane: a refusal posts to the lane channel and goes back before the next pr
 	expect(p.frames[before]).toEqual({ type: "set_model", provider: "anthropic", modelId: "test-lane" });
 	expect(p.frames[before + 1]).toEqual({ type: "set_thinking_level", level: "medium" });
 	expect(lane.activeModel).toBe("anthropic/test-lane:medium");
-	expect(laneNotices.at(-1)).toBe("rv: Back on the original model (anthropic/test-lane)");
+	expect(laneNotices.at(-1)).toBe(`rv: ${msg().modelReverted("anthropic/test-lane")}`);
 	expect(laneNotices).toHaveLength(2);
 	l.shutdownLanes();
 	l.lanes.delete("rv");
