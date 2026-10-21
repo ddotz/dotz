@@ -1,0 +1,25 @@
+/* Computers (33-peers.js): the chip next to the title, the switch sheet (uses the .ds-* sheet of 09-notices.css) and the bell's other-computer lines. */
+.pchip { display: none; flex: none; align-items: center; gap: 6px; height: 32px; max-width: 168px; margin: 0 auto 0 8px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg); font: 600 14px/18px var(--font); }
+.pchip:hover { background: var(--card-hover); }
+.pchip:active { background: var(--active); }
+.appbar.hasp .pchip { display: inline-flex; }
+.appbar.hasp h1 { flex: 0 1 auto; }
+.pchip[hidden] { display: none; }
+.pc-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-b { flex: none; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--fg); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
+.pc-i { flex: none; width: 14px; height: 14px; transform: rotate(90deg); color: var(--fg-3); }
+.pr-ey { color: var(--fg-2); }
+.pr-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
+.pr-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 10px 16px; border: 0; border-radius: var(--r-ctl); background: var(--bg); color: var(--fg); font: inherit; text-align: left; }
+.pr-row:hover { background: var(--hover); }
+.pr-row:active { background: var(--active); }
+.pr-row.on .pr-s { color: var(--fg-2); }
+.pr-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pr-t { font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
+.pr-s { color: var(--fg-3); font: 400 12px/16px var(--font); }
+.pr-bd { flex: none; padding: 0 8px; border-radius: 12px; background: var(--card); color: var(--fg-2); font: 600 12px/22px var(--font); white-space: nowrap; }
+.pr-bd.need { color: var(--warn); }
+.pr-line .chev { flex: none; align-self: center; color: var(--fg-3); }
+@media (max-width: 699px) {
+  .pchip { max-width: 132px; margin-left: 6px; }
+}

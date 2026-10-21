@@ -23,6 +23,7 @@ import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
 import { appAsset, indexPage } from "./webapp.ts";
+import { listPeers } from "./peers.ts";
 import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
 import { sendWeb } from "./intake.ts";
 import { json, body, terminals } from "./routes-util.ts";
@@ -107,6 +108,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 			}
 		}
 		if (url.pathname === "/api/health") return json({ ok: true });
+		if (req.method === "GET" && url.pathname === "/api/peers") return json(await listPeers());
 		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
