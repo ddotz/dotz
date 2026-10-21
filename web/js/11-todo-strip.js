@@ -195,7 +195,7 @@ function msgNode(e) {
       }
       const fl = fileLines(body), md = mdNode(fl.text), files = pathFiles(md);
       if (e.kind === "out" && !isRestart(e)) streamIn(md, `${e.ts}|${text.length}`, e.ts);
-      const pc = tone === "ask" && (e.kind === "out" || e.kind === "lane_report") ? parseChoices(parsed) : null;
+      const pc0 = e.kind === "out" || e.kind === "lane_report" ? parseChoices(parsed) : null, pc = pc0 && (tone === "ask" || isChoiceMsg(pc0)) ? pc0 : null;
       return el("div", { class: `bm${card}` }, head, md, filesNode(fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc) : null);
     }
   }

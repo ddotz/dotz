@@ -161,8 +161,8 @@ export function startPush(opts: { subject: () => string }): void {
 	onEmit(e => {
 		if (e.kind === "message" && e.source === "web") ownerAt = Date.parse(String(e.ts)) || Date.now();
 		const m = classify(e, ownerAt ? Date.now() - ownerAt : undefined);
-		// An [ask] that becomes a decision notice is pushed by onDecision below (one push, with the options), not twice.
-		if (m && !(m.kind === "ask" && decisionsOf(e).length)) notify(m);
+		// A message that becomes a decision notice (an [ask] or a choice block) is pushed by onDecision below (one push, with the options), not twice.
+		if (m && !decisionsOf(e).length) notify(m);
 	});
 	onDecision(n => notify(decisionPush(n)));
 }
