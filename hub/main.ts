@@ -18,10 +18,11 @@ import { markRead } from "./reads.ts";
 import { activityItems, answeredIds, answeredSince, broadcast, emit, emitDelivery, historyEvents, recentEvents, recentOwnerMessages, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, outEvent, projectTarget } from "./projectchat.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
+import { startLaneIdleStop } from "./laneidle.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, setTrashChannels, trashList } from "./lanetrash.ts";
 import { attachmentLines, allowedRoots, fileRoute, FileError, messageFiles, resolveAllowed, type Upload, uploadsFrom } from "./files.ts";
-import { abortLane, approvesBudget, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, type LaneDelivery, ownerNotes, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane } from "./lanes.ts";
+import { abortLane, approvesBudget, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, claimPrefix, estimateOf, handoverLane, isExpensive, LaneRuntimeMismatch, laneBusy, laneJustification, lanes, laneList, liveLanes, laneSummary, launch, type LaneDelivery, ownerNotes, restartLane, restoreLanes, resumeByName, sendToLane, setIdleHandler as setLaneIdleHandler, setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, shutdownLanes, stopLane, titleProblem, turnHeader, verifyLane, laneCapacity, startLaneQueue } from "./lanes.ts";
 import { checkNow as checkAccountNow, setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { accountView, onSwitch as onAccountSwitch, readPool } from "./account-sticky.ts";
 import { readAliases } from "./account-alias.ts";
@@ -37,7 +38,7 @@ import { createLaneRelay } from "./lanerelay.ts";
 import { anthropicUsage, cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin, usageSnapshot } from "./providers.ts";
 import { inOrder, localize, withTurnLanguage } from "./outlang.ts";
 import { listMonitors } from "./monitors.ts";
-import { answerDecision, backfillNotices, dismissNotice, laneVerified, listNotices, markNoticesRead, setLaneTitleResolver, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, backfillNotices, dismissNotice, laneVerified, listNotices, markNoticesRead, setConvNameResolver, setLaneTitleResolver, setViewing, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, replyRef } from "./threads.ts";
 import { startReflection } from "./reflect.ts";
@@ -318,6 +319,7 @@ function authorized(req: Request): boolean {
 }
 
 setLaneTitleResolver(name => lanes.get(name)?.title);
+setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
 backfillNotices();
 
@@ -701,7 +703,7 @@ const route = async (req: Request): Promise<Response> => {
 		if (pushResponse) return pushResponse;
 		const updateResponse = await updateRoute(req, url, { boot: BOOT_ID, busy: busyNow, restartIdle: restartGateway, restartNow: restartGatewayNow });
 		if (updateResponse) return updateResponse;
-		const customResponse = await customRoute(req, url, { lanes: laneSummary, channels: () => discord.channels, send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }) });
+		const customResponse = await customRoute(req, url, { lanes: laneSummary, channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }) });
 		if (customResponse) return customResponse;
 		// Project records (hub/projects.ts) and the todo strip (hub/todo.ts), docs/layers.md §4.
 		if (url.pathname === "/api/projects" && req.method === "PUT") {
@@ -737,10 +739,16 @@ const route = async (req: Request): Promise<Response> => {
 		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now() });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600) }, terminals: Object.fromEntries(terminals), lanes: laneSummary(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
+		// The page reports the conversation it shows ("" = hidden): answers there make no unread message item (hub/notices.ts).
+		if (req.method === "POST" && url.pathname === "/api/viewing") {
+			const b = await body(req);
+			const r = setViewing(b.id, b.conv);
+			return json(r, r.ok ? 200 : 400);
+		}
 		const dismiss = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/dismiss$/.exec(url.pathname) : null;
 		if (dismiss) {
 			const r = dismissNotice(decodeURIComponent(dismiss[1]!));
@@ -1159,7 +1167,7 @@ const route = async (req: Request): Promise<Response> => {
 					if (channel && asking?.target && answerMovesToLane(place, asking.target)) queue.retarget(asking.target, `lane:${lane.name}`);
 					log(`lane ${lane.name} why (${b.owner_asked_for_lane ? "owner asked" : `${Number(b.hours)}h`}): ${String(b.why).trim().slice(0, 300)}`);
 					emit("outbox", { ts: now(), kind: "lane_start", source: "hub", lane: lane.name, ...(lane.title ? { title: lane.title } : {}), text: `lane ${lane.name} started in ${lane.cwd}` });
-					return json({ ok: true, lane: lane.name, channel });
+					return json({ ok: true, lane: lane.name, channel, ...(lane.waiting ? { waiting: lane.waiting } : {}) });
 				}
 				if (req.method === "POST" && parts[3] === "send") {
 					sendToLane(parts[2], String((await body(req)).text ?? ""));
@@ -1245,6 +1253,8 @@ startMemoryGuard((key, text) => {
 	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
 	void send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 });
+startLaneIdleStop();
+startLaneQueue();
 startOrphanReaper();
 startHostSweep();
 startSchedules(s => {
