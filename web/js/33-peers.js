@@ -1,6 +1,6 @@
 /* ---------- computers: switch between this owner's gateways (맥북, 맥미니) ---------- */
 // Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?}]. The chip next to the title shows this computer
-// and appears only with 2 or more; the sheet lists them; choosing one opens that computer's own address (its own PWA, login and push).
+// and appears only with 2 or more, with a dot on its chevron while another computer has something unread (the counts live in the sheet rows); the sheet lists them; choosing one opens that computer's own address (its own PWA, login and push).
 // The bell lists the other computers' unread counts at its top (renderNotices in 30-notices.js calls prBellLines).
 const PR = { list: [], node: null, ov: null, opener: null };
 const prSelf = () => PR.list.find(p => p.self);
@@ -18,10 +18,10 @@ function prPaint() {
   $("#appbar").classList.toggle("hasp", on);
   chip.hidden = !on;
   if (!on) { prClose(false); return; }
-  const more = prOthers().reduce((c, p) => c + (p.unread | 0), 0);
+  const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
   // el() skips a null child; Node.append() would write it as the text "null" (the chip once read "맥북 null"), so the chip is built with el().
-  clear(chip).append(el("span", { class: "pc-n", text: me.name }), ...(more > 0 ? [el("span", { class: "pc-b", text: more > 99 ? "99+" : String(more) })] : []), icon("chev", "pc-i"));
-  chip.setAttribute("aria-label", `컴퓨터 바꾸기, 지금은 ${me.name}${more > 0 ? `, 다른 컴퓨터에 새 알림 ${more}개` : ""}`);
+  clear(chip).append(el("span", { class: "pc-n", text: me.name }), el("span", { class: "pc-c" }, icon("chev", "pc-i"), more ? el("span", { class: `pc-d${need ? " need" : ""}`, role: "img", "aria-label": "다른 컴퓨터에 새 알림" }) : null));
+  chip.setAttribute("aria-label", `컴퓨터 바꾸기, 지금은 ${me.name}`);
   if (PR.node) prSheet();
 }
 

@@ -6,7 +6,9 @@
 .appbar.hasp h1 { flex: 0 1 auto; }
 .pchip[hidden] { display: none; }
 .pc-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pc-b { flex: none; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--fg); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
+.pc-c { position: relative; flex: none; display: inline-flex; }
+.pc-d { position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); border: 2px solid var(--card); box-sizing: content-box; }
+.pc-d.need { background: var(--warn); }
 .pc-i { flex: none; width: 14px; height: 14px; transform: rotate(90deg); color: var(--fg-3); }
 .pr-ey { color: var(--fg-2); }
 .pr-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }

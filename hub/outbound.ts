@@ -15,6 +15,7 @@ import { deliver as deliverToOrchestrator, orch, setAlertHandler, setAnswerHandl
 import { createBgWork } from "./bgwork.ts";
 import { createPrompts } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
+import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { replyRef } from "./threads.ts";
@@ -88,21 +89,44 @@ export function laneFailed(target: string, lane: string, ref: string | undefined
 	const text = error instanceof LaneRuntimeMismatch ? error.message : `세션 ${lane}을(를) 이어갈 수 없어요 (${reason}). 대화 채널에서 다시 맡겨 주세요. 이전 보고는 ${join(paths.lanes, lane, "report.md")}에 있어요.`;
 	void out(target, text, replyTo, { source: "gateway" }).catch(e => log(`lane failure notice failed: ${e}`));
 }
+type OutJob = { target: string; text: string; replyTo?: string; extra: Record<string, unknown> };
+const jobAnswers = (j: OutJob) => (j.extra.source === undefined || j.extra.source === "orchestrator" ? j.replyTo : undefined);
+const emitOut = (j: OutJob, t: string) => emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target: j.target, text: t, reply_to: j.replyTo ?? null, ...j.extra }, threadHome));
+// Everything after the text is final: the delivery states, then the web is done or the send ledger (kept on disk) takes over.
+function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason?: string }> {
+	// An answer (not a progress note, not a gateway notice) settles the owner messages waiting in this conversation.
+	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key) for (const ref of awaiting.get(j.target)?.splice(0) ?? []) emitDelivery(j.target, ref, "answered");
+	if (isLocal(j.target)) {
+		queue.markAnswered(jobAnswers(j));
+		return Promise.resolve({ delivered: true });
+	}
+	return sends.submit(j.target, sent, replyRef(j.target, j.replyTo, lastOwner.get(j.target)), jobAnswers(j));
+}
+// Posts still in the output-language rewrite: the restart gate waits for them, shutdown lands what is left with the original text.
+export const replies = createInflight<OutJob>(j => {
+	emitOut(j, j.text);
+	void handOver(j, j.text).catch(e => log(`reply to ${j.target} failed at shutdown: ${e}`));
+	log(`reply to ${j.target} landed untranslated at shutdown (${j.text.length} chars)`);
+});
 export async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
-	const answers = extra.source === undefined || extra.source === "orchestrator" ? replyTo : undefined;
-	const sent = await inOrder(target, async () => {
-		const t = await localize(stripHandoff(text), target, typeof extra.source === "string" ? extra.source : "orchestrator");
-		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, reply_to: replyTo ?? null, ...extra }, threadHome));
-		return t;
-	});
-	// An answer (not a progress note, not a gateway notice) settles the owner messages waiting in this conversation.
-	if ((extra.source === undefined || extra.source === "orchestrator") && !extra.update_key) for (const ref of awaiting.get(target)?.splice(0) ?? []) emitDelivery(target, ref, "answered");
-	if (isLocal(target)) {
-		queue.markAnswered(answers);
-		return { delivered: true };
+	const job: OutJob = { target, text: stripHandoff(text), replyTo, extra };
+	let landed = false;
+	replies.begin(job);
+	let sent: string;
+	try {
+		sent = await inOrder(target, async () => {
+			const t = await localize(job.text, target, typeof extra.source === "string" ? extra.source : "orchestrator");
+			// False: shutdown already landed this post with the original text.
+			landed = replies.end(job);
+			if (landed) emitOut(job, t);
+			return t;
+		});
+	} finally {
+		replies.end(job);
 	}
-	return sends.submit(target, sent, replyRef(target, replyTo, lastOwner.get(target)), answers);
+	if (!landed) return { delivered: true };
+	return handOver(job, sent);
 }
 
 // While an owner message waits for its answer the owner sees 👀, typing and, for long work, one progress message edited in

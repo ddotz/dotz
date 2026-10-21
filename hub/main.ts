@@ -40,7 +40,8 @@ import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
-import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, installDelivery } from "./outbound.ts";
+import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, installDelivery, replies } from "./outbound.ts";
+import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { makeRoute } from "./routes.ts";
@@ -295,8 +296,8 @@ for (const sig of ["SIGTERM", "SIGINT"] as const)
 		void shutdown();
 	});
 
-// Fixed order, one overall 10 s deadline (see shutdown.ts). Messages still coalescing go into the ledger before exit, so
-// the next start replays them; the orchestrator's session file is saved as it runs, stop() only keeps it from respawning.
+// Fixed order, one overall 10 s deadline (see shutdown.ts), longer by one output-language timeout while a reply is still in its
+// rewrite. Messages still coalescing go into the ledger before exit, so the next start replays them; the orchestrator's session file is saved as it runs, stop() only keeps it from respawning.
 function shutdown(): Promise<never> {
 	return runShutdown([
 		{ name: "block new input", run: () => (server.stop(), discord.stopIntake()) },
@@ -308,10 +309,12 @@ function shutdown(): Promise<never> {
 				stopOrchestrator();
 			},
 		},
+		// A reply still in its rewrite is waited for, then lands with the original text in the outbox or the unsent ledger.
+		{ name: "pending replies", run: async () => void (await replies.flush(outlangTimeoutMs() + 1000)) },
 		{ name: "discord connection", run: () => discord.disconnect() },
 		{ name: "watch and schedule timers", run: () => (stopWatches(), stopSchedules(), clearTrackedTimers()) },
 		{ name: "others", run: () => void 0 },
-	]);
+	], 10_000 + (replies.size() ? outlangTimeoutMs() + 2000 : 0));
 }
 
 // Restart the gateway the way 오모냥's herdr-restart does: wait until the orchestrator and every lane are idle, task
@@ -320,7 +323,7 @@ function shutdown(): Promise<never> {
 function busyNow(): string[] {
 	// The orchestrator's background task workers die with its process: a request deferred to one ([later]) holds the restart.
 	const workers = queue.waitingOnWorkers() ? "orchestrator background workers" : "";
-	return [orchBusy() ?? "", workers, ...[...lanes.values()].filter(laneBusy).map(l => `lane ${l.name}`)].filter(Boolean);
+	return [orchBusy() ?? "", workers, replies.size() ? "reply" : "", ...[...lanes.values()].filter(laneBusy).map(l => `lane ${l.name}`)].filter(Boolean);
 }
 const restartGate = createRestartGate({
 	busy: busyNow,
