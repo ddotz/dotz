@@ -79,8 +79,8 @@ export function switchNotice(s: AccountSwitch, aliases = readAliases()): string 
 	return `${head} ${because[s.kind]}`;
 }
 
-export type LabeledSwitch = AccountSwitch & { from_label?: string; to_label: string; kind_text: string };
-export const labeledSwitch = (s: AccountSwitch, aliases = readAliases()): LabeledSwitch => ({
+type LabeledSwitch = AccountSwitch & { from_label?: string; to_label: string; kind_text: string };
+const labeledSwitch = (s: AccountSwitch, aliases = readAliases()): LabeledSwitch => ({
 	...s,
 	...(s.from ? { from_label: label(s.from, undefined, aliases) } : {}),
 	to_label: label(s.to, undefined, aliases),
@@ -158,12 +158,12 @@ export function accountsBody(now = Date.now()) {
 		switches: accountView(MAX_LOG_LINES).switches.map(s => labeledSwitch(s, aliases)),
 	};
 }
-export type AccountsBody = ReturnType<typeof accountsBody>;
+type AccountsBody = ReturnType<typeof accountsBody>;
 
 // ---- changes ----
 
 // A manual pick by id or alias; "auto" (or "자동") clears it. Re-evaluates right away.
-export async function useAccount(text: string, until?: string): Promise<{ auto: true } | { auto?: false; id: string; label: string; applied: boolean }> {
+async function useAccount(text: string, until?: string): Promise<{ auto: true } | { auto?: false; id: string; label: string; applied: boolean }> {
 	const t = text.trim();
 	if (!t) throw new AccountsError("어느 계정인지 알려 주세요", 400);
 	if (/^(auto|자동)$/i.test(t)) {
@@ -283,7 +283,7 @@ export async function accountCommand(rest: string): Promise<string> {
 
 // ---- chat requests answered by the gateway itself ----
 
-export type AccountAsk = { kind: "show" } | { kind: "auto" } | { kind: "use"; account: string } | { kind: "other" };
+type AccountAsk = { kind: "show" } | { kind: "auto" } | { kind: "use"; account: string } | { kind: "other" };
 
 const TAIL = /\s*(?:해\s*줘|해\s*주세요|해\s*줄래요?|해\s*봐|해요|해라|해|줘|주세요|줄래요?|봐|부탁(?:해요|해|드려요)?|할래요?|하자)$/;
 const VERB = "(?:바꿔|바꾸자?|바꿀래|전환|변경|갈아타|옮겨|돌려|써|쓰자|쓸래|사용|고정|선택|골라)";

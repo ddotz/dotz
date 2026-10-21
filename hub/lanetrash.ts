@@ -23,7 +23,7 @@ export const CHANNEL_DELAY_MS = 60_000;
 
 export type LaneChannel = { id: string; home?: string };
 // discord.ts behind a port, so tests (and a gateway without Discord) run without the bot.
-export type ChannelPort = { take(lane: string): LaneChannel | undefined; put(lane: string, ch: LaneChannel): void; remove(id: string): Promise<void> };
+type ChannelPort = { take(lane: string): LaneChannel | undefined; put(lane: string, ch: LaneChannel): void; remove(id: string): Promise<void> };
 let port: ChannelPort = { take: () => undefined, put: () => {}, remove: async () => {} };
 export function setTrashChannels(p: ChannelPort): void {
 	port = p;
@@ -38,10 +38,10 @@ type Meta = {
 	worktree?: { path: string; repo: string; branch: string; base: string; branchKept: boolean; note: string };
 	channel?: LaneChannel & { deleteAt: number; deleted?: boolean };
 };
-export type DeleteResult = { name: string; ok: true; id: string; notes: string[] } | { name: string; ok: false; error: string };
-export type RestoreResult = { id: string; name?: string; ok: true; notes: string[] } | { id: string; name?: string; ok: false; error: string };
+type DeleteResult = { name: string; ok: true; id: string; notes: string[] } | { name: string; ok: false; error: string };
+type RestoreResult = { id: string; name?: string; ok: true; notes: string[] } | { id: string; name?: string; ok: false; error: string };
 
-export class LaneDeleteRefused extends Error {}
+class LaneDeleteRefused extends Error {}
 
 const git = (cwd: string, ...args: string[]) => {
 	const r = Bun.spawnSync(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "pipe" });
@@ -102,7 +102,7 @@ function dropWorktree(lane: Lane): Meta["worktree"] {
 	return { ...w, branchKept: !del.ok, note: del.ok ? `worktree and branch ${w.branch} removed (no commits outside ${w.base})` : `worktree removed; branch ${w.branch} kept: ${del.err}` };
 }
 
-export function deleteLane(name: string, now = Date.now()): DeleteResult {
+function deleteLane(name: string, now = Date.now()): DeleteResult {
 	const lane = lanes.get(name);
 	if (!lane) return { name, ok: false, error: `세션 ${name}이(가) 없어요` };
 	if (lane.proc || laneRunning(lane)) return { name, ok: false, error: `세션 ${name}은(는) 아직 실행 중이에요. 종료된 세션만 지울 수 있어요` };

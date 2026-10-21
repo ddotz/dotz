@@ -5,7 +5,7 @@
 // A restart waiting on busy work posts one notice after this long (hub/main.ts).
 export const RESTART_NOTICE_MS = 20 * 60_000;
 
-export type RestartGateDeps = {
+type RestartGateDeps = {
 	busy: () => string[];
 	/** Owner messages still being collected; they go into the ledger at shutdown, but waiting for them is cheaper. */
 	collecting: () => boolean;

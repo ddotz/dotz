@@ -15,11 +15,11 @@ export const CHECK_MS = 30_000;
 export const WINDOW_MS = 60 * 60_000;
 export const MAX_RESTARTS = 3;
 
-export type GuardVerdict = "ok" | "restart" | "give-up" | "gave-up";
+type GuardVerdict = "ok" | "restart" | "give-up" | "gave-up";
 
 // Pure decision for one agent: `restarts` are the times this agent was restarted by the guard, `gaveUp` whether the
 // owner was already told the guard stopped for it.
-export function guardVerdict(rssKb: number, limitKb: number, restarts: number[], gaveUp: boolean, now: number): GuardVerdict {
+function guardVerdict(rssKb: number, limitKb: number, restarts: number[], gaveUp: boolean, now: number): GuardVerdict {
 	if (rssKb <= limitKb) return "ok";
 	if (gaveUp) return "gave-up";
 	return restarts.filter(t => now - t < WINDOW_MS).length >= MAX_RESTARTS ? "give-up" : "restart";

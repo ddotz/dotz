@@ -56,7 +56,7 @@ function paintRestartBanner() {
   const b = $("#gban"), last = list.length ? list[list.length - 1].ts : "";
   // Closing it silences today's count; it comes back today only when a later restart cut work off.
   const cut = list.filter(e => !cleanRestart(e)).length;
-  let seen = null; try { seen = JSON.parse(localStorage.getItem(BAN_KEY) || "null"); } catch {}
+  const seen = lsJson(BAN_KEY, null);
   b.hidden = !last || (!!seen && seen.day === today && cut <= (seen.cut || 0));
   if (b.hidden) return;
   $("#gban-dot").className = `dot ${cut ? "warn" : ""}`;

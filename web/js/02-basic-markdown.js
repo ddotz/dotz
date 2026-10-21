@@ -105,7 +105,7 @@ function toast(msg, bad, action, ms) {
 // when the window becomes active again; hovering pauses it. A dismissed notice (closed, clicked or timed out) is kept in
 // localStorage so neither a reconnect replay nor a reload brings it back.
 const NTF_MAX = 3, NTF_MS = 4000, NTF_KEY = "dotz-ntf-done";
-const ntfDone = new Set((() => { try { const v = JSON.parse(localStorage.getItem(NTF_KEY) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } })());
+const ntfDone = new Set((() => { const v = lsJson(NTF_KEY, []); return Array.isArray(v) ? v : []; })());
 const ntfShown = new Set(), ntfLive = new Set();
 const ntfActive = () => document.visibilityState === "visible" && document.hasFocus();
 const ntfSync = () => { for (const t of ntfLive) t.sync(); };

@@ -10,7 +10,7 @@ import { apiKeyBan } from "./apikey-policy.ts";
 import { rateLimitDelay } from "./providers.ts";
 
 // A chain the hub switches itself: any entry omp cannot walk.
-export const hubOwned = (entries: FallbackEntry[]) => entries.some(e => !isPlain(e));
+const hubOwned = (entries: FallbackEntry[]) => entries.some(e => !isPlain(e));
 
 export const clock = { now: () => Date.now() };
 const FILE = join(DATA_DIR, "fallback-usage.json");
@@ -18,8 +18,8 @@ const FILE = join(DATA_DIR, "fallback-usage.json");
 // ---- periods (KST month / day) --------------------------------------------------------------------------------------
 const KST_MS = 9 * 3600e3;
 export type Period = "month" | "day";
-export const periodKey = (period: Period, at: number) => new Date(at + KST_MS).toISOString().slice(0, period === "month" ? 7 : 10);
-export function periodEnd(period: Period, at: number): number {
+const periodKey = (period: Period, at: number) => new Date(at + KST_MS).toISOString().slice(0, period === "month" ? 7 : 10);
+function periodEnd(period: Period, at: number): number {
 	const d = new Date(at + KST_MS);
 	const [y, m, day] = [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()];
 	return (period === "month" ? Date.UTC(y, m + 1, 1) : Date.UTC(y, m, day + 1)) - KST_MS;
@@ -50,7 +50,7 @@ export function resetFallbackState(): void {
 // What an entry spends from: its API key when it has one (every entry using that key shares it), else its model (a thinking
 // suffix does not make another pool).
 const poolOf = (e: FallbackEntry) => (e.key_file ? `key:${e.key_file}` : parseSelector(e.model).model);
-export function usageOf(e: FallbackEntry, period: Period, at = clock.now()): { key: string; tokens: number; usd: number } {
+function usageOf(e: FallbackEntry, period: Period, at = clock.now()): { key: string; tokens: number; usd: number } {
 	const c = load().pools[poolOf(e)]?.[period];
 	const key = periodKey(period, at);
 	return c && c.key === key ? c : { key, tokens: 0, usd: 0 };
@@ -71,14 +71,14 @@ export const keyFileOk = (file: string) => KEY_FILE_NAME.test(file) && existsSyn
 const readKey = (file: string) => (keyFileOk(file) ? readFileSync(keyPath(file), "utf8").trim() : "");
 
 // Provider ids omp has no key-only endpoint for need `base_url` and `api` on the entry.
-export const KEY_APIS: Record<string, { api: string; baseUrl: string }> = {
+const KEY_APIS: Record<string, { api: string; baseUrl: string }> = {
 	anthropic: { api: "anthropic-messages", baseUrl: "https://api.anthropic.com" },
 	openai: { api: "openai-responses", baseUrl: "https://api.openai.com/v1" },
 	openrouter: { api: "openai-completions", baseUrl: "https://openrouter.ai/api/v1" },
 };
 // Where an API key may be sent: https only, to a provider's official API host or a host the owner listed in config.json
 // `key_hosts`. Checked when a chain is saved and again before a process gets the key.
-export const keyBaseUrl = (e: FallbackEntry) => e.base_url ?? KEY_APIS[e.model.split("/")[0]]?.baseUrl;
+const keyBaseUrl = (e: FallbackEntry) => e.base_url ?? KEY_APIS[e.model.split("/")[0]]?.baseUrl;
 export function keyHostOk(url: string | undefined): boolean {
 	let u: URL;
 	try {
@@ -308,7 +308,7 @@ export function atTime(until: number, keep: (t: Timer) => void, fn: () => void):
 // about one request, and a limit that had not reset yet just re-arms the wait). A process whose chain the hub drives
 // itself does not use one (the hub restarts it on the entry it wants).
 const QUOTA_REVERT_MS = 15 * 60_000;
-export type RevertWhy = "refusal" | "quota" | "error";
+type RevertWhy = "refusal" | "quota" | "error";
 export const revertWhy = (reason: string, kind?: string): RevertWhy => (/refusal/i.test(reason) ? "refusal" : failureReason({ kind, text: reason }));
 export class Reverter {
 	private plan?: { to: string; due: number };

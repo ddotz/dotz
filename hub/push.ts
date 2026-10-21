@@ -10,15 +10,15 @@ import { parseTone } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
 
 export const PUSH_KINDS = ["answer", "ask", "lane", "usage", "update"] as const;
-export type PushKind = (typeof PUSH_KINDS)[number];
+type PushKind = (typeof PUSH_KINDS)[number];
 type Prefs = Record<PushKind, boolean>;
 type Stored = Subscription & { prefs: Prefs; ua?: string; at: string };
 // `ts` is the id of the hub event the notification is about (its timestamp, the same key the web keeps its messages under): a tap
 // makes sure that message is loaded before it jumps to it.
 // `id` + `actions` (a decision notice): the page opens its detail sheet, and the service worker offers the first options as buttons that
 // answer through POST /api/notices/<id>/answer.
-export type PushAction = { action: string; title: string };
-export type PushMessage = { kind: PushKind | "test"; title: string; body: string; url: string; tag?: string; ts?: string; id?: string; actions?: PushAction[] };
+type PushAction = { action: string; title: string };
+type PushMessage = { kind: PushKind | "test"; title: string; body: string; url: string; tag?: string; ts?: string; id?: string; actions?: PushAction[] };
 
 const KEY_FILE = join(DATA_DIR, "secrets", "vapid.json");
 const SUBS_FILE = join(DATA_DIR, "push.json");
@@ -113,8 +113,8 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 	return undefined;
 }
 
-export const DECISION_PUSH_TITLE = "답변이 필요해요";
-export const DECISION_ACTIONS = 2;
+const DECISION_PUSH_TITLE = "답변이 필요해요";
+const DECISION_ACTIONS = 2;
 // A decision notice as a notification: the decision line as the body, at most two option buttons (never the login form's own input).
 export function decisionPush(n: Notice): PushMessage {
 	const d = n.decision!;

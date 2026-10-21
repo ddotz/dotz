@@ -41,7 +41,7 @@ export function setAskAnswer(fn: Answer): void {
 	answer = fn;
 }
 
-export type AskDeps = {
+type AskDeps = {
 	owner: string;
 	reply: (d: Interaction, type: number, data?: unknown) => Promise<void>;
 	answer?: Answer;

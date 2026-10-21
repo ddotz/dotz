@@ -12,7 +12,7 @@ import { parseTone, type Tone } from "./tone.ts";
 
 export type Relay = { lane: string; tone?: Tone; text: string; file: string };
 
-export function relayItem(r: Relay): string {
+function relayItem(r: Relay): string {
 	return `- lane ${r.lane} status=${r.tone ?? "report"} (full: ${r.file})\n${r.text.trim()}`;
 }
 
@@ -20,7 +20,7 @@ export function relayItem(r: Relay): string {
 // in a tool call after such a message is its short answer note (the footer asks for one): it is shown to the owner where he wrote
 // at once, and is never routine progress ("disk") or an owner-only exchange kept off the surface. A text that ends the turn is
 // the final report, which answers them when it is reported.
-export type OwnerNotesDeps = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; lost?: (lane: string, refs: string[]) => void };
+type OwnerNotesDeps = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; lost?: (lane: string, refs: string[]) => void };
 
 export function createOwnerNotes(deps: OwnerNotesDeps) {
 	const open = new Map<string, string[]>();

@@ -8,7 +8,7 @@ import { labeledAccountView } from "./accounts-api.ts";
 import { type AccountReport, AccountUsage, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 
 // omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
-export const PROVIDER_ENV: Record<string, string> = {
+const PROVIDER_ENV: Record<string, string> = {
 	anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", google: "GEMINI_API_KEY", "google-vertex": "GOOGLE_CLOUD_API_KEY",
 	groq: "GROQ_API_KEY", openrouter: "OPENROUTER_API_KEY", mistral: "MISTRAL_API_KEY", xai: "XAI_API_KEY", azure: "AZURE_OPENAI_API_KEY",
 	abliteration: "ABLITERATION_API_KEY", aiand: "AIAND_API_KEY", cerebras: "CEREBRAS_API_KEY", "alibaba-token-plan": "ALIBABA_TOKEN_PLAN_API_KEY",
@@ -59,7 +59,7 @@ export function secretValues(): string[] {
 type OmpModel = { kind?: string; selector: string; id?: string; name?: string; provider: string; reasoning?: boolean };
 type OmpCredential = { provider: string; credential?: Record<string, unknown> };
 type OmpLimit = { id: string; label?: string; window?: { id?: string; label?: string; resetsAt?: number }; amount?: { used?: number; limit?: number; remaining?: number; unit?: string }; status?: string };
-export type OmpUsageReport = { provider: string; limits?: OmpLimit[]; metadata?: { email?: string }; account?: string };
+type OmpUsageReport = { provider: string; limits?: OmpLimit[]; metadata?: { email?: string }; account?: string };
 
 async function ompJson<T>(args: string[], timeoutMs = 30_000): Promise<T | undefined> {
 	try {
@@ -76,7 +76,7 @@ async function ompJson<T>(args: string[], timeoutMs = 30_000): Promise<T | undef
 type Cached<T> = { at: number; value: T };
 const TTL_MS = 20_000;
 let cache: { models?: Cached<ModelInfo[]>; auth?: Cached<AuthInfo[]>; usage?: Cached<OmpUsageReport[]> } = {};
-export function invalidate(): void {
+function invalidate(): void {
 	cache = {};
 }
 async function cached<K extends keyof typeof cache>(key: K, load: () => Promise<NonNullable<(typeof cache)[K]>["value"] | undefined>): Promise<NonNullable<(typeof cache)[K]>["value"] | undefined> {
@@ -95,7 +95,7 @@ export const availableModels = async (): Promise<ModelInfo[]> =>
 	})) ?? [];
 
 // What omp itself has stored (`omp auth export`): only provider ids, credential types and masked key tails are kept.
-export type AuthInfo = { provider: string; type: string; label?: string; masked?: string };
+type AuthInfo = { provider: string; type: string; label?: string; masked?: string };
 const authInfos = async (): Promise<AuthInfo[]> =>
 	(await cached("auth", async () => {
 		const j = await ompJson<{ credentials?: OmpCredential[] }>(["auth", "export"]);
@@ -107,7 +107,7 @@ const authInfos = async (): Promise<AuthInfo[]> =>
 		});
 	})) ?? [];
 
-export const usageReports = async (): Promise<OmpUsageReport[]> =>
+const usageReports = async (): Promise<OmpUsageReport[]> =>
 	(await cached("usage", async () => (await ompJson<{ reports?: OmpUsageReport[] }>(["usage", "--json"], 45_000))?.reports)) ?? [];
 
 // The Anthropic limits of the account the role really runs on (hub/usage-account.ts): OmO's own subscription account
@@ -139,7 +139,7 @@ export async function usageSnapshot(): Promise<Record<string, { five_hour_left?:
 }
 
 // Every provider the runtime can log into (`auth-broker list`) with its human label; fixed for the runtime's lifetime.
-export type LoginProvider = { id: string; name: string };
+type LoginProvider = { id: string; name: string };
 let loginCatalog: LoginProvider[] | undefined;
 export async function loginProviders(): Promise<LoginProvider[]> {
 	if (loginCatalog) return loginCatalog;
@@ -149,15 +149,15 @@ export async function loginProviders(): Promise<LoginProvider[]> {
 	return loginCatalog;
 }
 
-export type ProviderRow = { id: string; name: string; auth: "oauth" | "api_key" | "none"; account?: string; masked?: string; models: number; in_use: boolean; can_login: boolean; can_logout: boolean };
-export type AddableProvider = { id: string; name: string; kind: "oauth" | "api_key" };
+type ProviderRow = { id: string; name: string; auth: "oauth" | "api_key" | "none"; account?: string; masked?: string; models: number; in_use: boolean; can_login: boolean; can_logout: boolean };
+type AddableProvider = { id: string; name: string; kind: "oauth" | "api_key" };
 
 // Providers that have an API-key env var but whose primary sign-in is the subscription (OAuth) login.
 const OAUTH_FIRST = new Set(["anthropic"]);
 
 // Pure: merges the runtime's stored credentials, env vars, the login catalog and the model catalog into the configured
 // rows and the not-yet-configured (addable) providers.
-export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string> }): { providers: ProviderRow[]; addable: AddableProvider[] } {
+function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string> }): { providers: ProviderRow[]; addable: AddableProvider[] } {
 	const names = new Map(input.catalog.map(p => [p.id, p.name]));
 	const nameOf = (id: string) => names.get(id) ?? id;
 	const ids = new Set<string>([...input.auth.map(a => a.provider), ...input.models.map(m => m.provider)]);
@@ -207,10 +207,10 @@ type Login = {
 };
 let login: Login | undefined;
 
-export type LoginView = { url: string; needs_code: boolean; prompt?: string; instructions?: string };
+type LoginView = { url: string; needs_code: boolean; prompt?: string; instructions?: string };
 
 // Pure: what the owner has to do next, read off the login process output (an unterminated last line is a pending prompt).
-export function parseLoginOutput(out: string): LoginView {
+function parseLoginOutput(out: string): LoginView {
 	const lines = out.replace(/\r/g, "").split("\n");
 	const prompt = out.length > 0 && !out.endsWith("\n") ? lines[lines.length - 1].trim() || undefined : undefined;
 	const finished = prompt === undefined ? lines : lines.slice(0, -1);
@@ -345,7 +345,7 @@ export async function logoutProvider(provider: string): Promise<void> {
 	invalidate();
 }
 
-export type QuotaLimit = { id: string; label: string; window: string; used: number | null; limit: number | null; remaining: number | null; unit: string; resets_at: number | null; status: string };
+type QuotaLimit = { id: string; label: string; window: string; used: number | null; limit: number | null; remaining: number | null; unit: string; resets_at: number | null; status: string };
 // Pure: maps the usage reports to the API shape; providers holding credentials but absent from the reports
 // (or reporting no limits) are listed as unavailable with a plain reason.
 export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): { providers: { provider: string; account?: string; account_label?: string; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {

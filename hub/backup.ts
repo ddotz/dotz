@@ -43,7 +43,7 @@ function jsonSecret(text: string): boolean {
 	return false;
 }
 
-export const hasSecret = (text: string): boolean => SECRET.test(text) || SECRET_ASSIGN.test(text) || jsonSecret(text);
+const hasSecret = (text: string): boolean => SECRET.test(text) || SECRET_ASSIGN.test(text) || jsonSecret(text);
 
 type Run = { code: number; out: string };
 async function git(dir: string, args: string[], timeout = 60_000): Promise<Run> {

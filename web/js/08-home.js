@@ -147,7 +147,7 @@ const HOME_BIG = { min: { w: 3, h: 3 }, max: { w: 12, h: 10 } }, HOME_SMALL = { 
 const HOME_KINDS = { lane: ["세션", "lanes"], ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
 const HOME_GROUPS_KEY = "dotz-home-groups";
 const homeKind = id => { const k = id.split(":")[0]; return HOME_KINDS[k] ? k : null; };
-let homeGroups = (() => { try { const v = JSON.parse(localStorage.getItem(HOME_GROUPS_KEY) || "null"); if (Array.isArray(v)) return new Set(v); } catch {} return new Set(["ctx", "limit", "prov"]); })();
+let homeGroups = (() => { const v = lsJson(HOME_GROUPS_KEY, null); return new Set(Array.isArray(v) ? v : ["ctx", "limit", "prov"]); })();
 function setHomeGroup(kind, on) {
   if (on) homeGroups.add(kind); else homeGroups.delete(kind);
   try { localStorage.setItem(HOME_GROUPS_KEY, JSON.stringify([...homeGroups])); } catch {}

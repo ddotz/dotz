@@ -5,7 +5,7 @@
 import { detectBinary } from "../hub/runtime/detect.ts";
 import type { DetectResult } from "../hub/runtime/types.ts";
 
-export type HarnessId = "omo" | "omp" | "claude" | "codex";
+type HarnessId = "omo" | "omp" | "claude" | "codex";
 export type Harness = {
 	id: HarnessId;
 	label: string;
@@ -33,7 +33,7 @@ export const HARNESSES: Harness[] = [
 ];
 
 export const harness = (id: string) => HARNESSES.find(h => h.id === id);
-export const DEFAULT_HARNESS: HarnessId = "omo";
+const DEFAULT_HARNESS: HarnessId = "omo";
 
 export type Detected = Harness & { found: DetectResult };
 
@@ -53,7 +53,7 @@ export function harnessLine(d: Detected, isDefault: boolean): string {
 	return `${d.label}  ${state}${note}${isDefault ? "  [기본]" : ""}`;
 }
 
-export type LoginState = { checked: boolean; ready: boolean; accounts: number };
+type LoginState = { checked: boolean; ready: boolean; accounts: number };
 
 /** Parses `omo auth check --json`: an account pool with at least one account counts as signed in. */
 export function parseOmoAuth(out: string): LoginState {
