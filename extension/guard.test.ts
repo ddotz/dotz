@@ -132,7 +132,7 @@ test("hooks: a brief without a done-condition is blocked, one with it passes and
 	expect(blocked.block).toBe(true);
 	expect(blocked.reason).toContain("done-condition");
 	const passed = await toolCall({ toolName: "task", input: brief("do it\nDone when: file exists") }, ctx);
-	expect(passed.input.tasks[0].task).toContain("Final answer: at most 800 characters");
+	expect(passed.input.tasks[0].task).toContain(budgetLine(noGate));
 });
 
 test("hooks: the owner rule registers /fable-ok and blocks an expensive task model; DOTZ_OWNER_ASKED_FABLE lifts it", async () => {

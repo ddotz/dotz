@@ -117,6 +117,9 @@ test("on a host without zod (OmO) every orchestrator and lane tool registers: a 
 			get: (o, k) => (k in o ? o[k as string] : k === "then" || k === "zod" ? undefined : () => undefined),
 		});
 		const saved = { ...process.env };
+		// Exactly one role in a top-level session, whatever the runner's own environment holds (a lane worker's shell has
+		// DOTZ_LANE and OMO_SENPI_TASK_DEPTH set, which would select the task-worker profile instead).
+		for (const k of ["DOTZ_ORCHESTRATOR", "DOTZ_LANE", "OMO_SENPI_TASK_DEPTH"]) delete process.env[k];
 		process.env[role] = role === "DOTZ_LANE" ? "probe" : "1";
 		try {
 			await dotz(host);

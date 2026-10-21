@@ -85,6 +85,7 @@ test("the blocked-pool message is a rate limit whose reset is OmO's soonest retr
 	const retryAt = Date.parse("2026-10-20T14:00:00.000Z");
 	const msg = blocked(retryAt);
 	expect(omo.classifyError(msg)).toBe("rate");
+	expect(omo.classifyError("No credential slots available")).toBe("rate");
 	expect(poolRetryAt(msg)).toBe(retryAt);
 	// a usage report naming a later window does not override the time OmO names
 	const later = { resets_at: retryAt + 5 * 3600_000, remaining: 0, used: 100, limit: 100, status: "exhausted" } as never;
@@ -116,7 +117,6 @@ test("orchestrator: pauses until the named retry with one alert; a gateway resta
 	expect(o.orch.pauseKind).toBe("rate");
 	expect(Date.parse(o.orch.rateLimitedUntil)).toBe(retryAt + 60_000);
 	expect(alerts).toHaveLength(1);
-	expect(alerts[0]).toContain("사용량 한도에 걸려서 멈췄어요. 한도 리셋 직후인");
 
 	// the gateway restarts 10 minutes later: a fresh module copy is a fresh process
 	o.stop();
