@@ -12,7 +12,7 @@ import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log,
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
-import { OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
+import { anthropicUsage, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { firstAlertForReset } from "./rate-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, type Move, Reverter, revertWhy } from "./fallback.ts";
@@ -25,7 +25,10 @@ const ROTATE_TOKENS = cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens;
 export const MAX_RESTARTS = 3;
 export const RESTART_WINDOW_MS = 10 * 60_000;
 // pausedUntil: a usage-limit pause, so a gateway restart inside it holds messages instead of replaying them into the limit.
-type Saved = { sessionFile?: string; model?: string; runtime?: string; pausedUntil?: string };
+// activeModel: the selector the session's process ran (a fallback entry's too); apiSince: an API-key episode is on (its
+// start was announced, its end is announced once a turn succeeds on a non-key entry).
+type Saved = { sessionFile?: string; model?: string; runtime?: string; pausedUntil?: string; activeModel?: string; apiSince?: string };
+const keyedSelector = (s: string | undefined) => Boolean(s && /^[^/]+-apikey\//.test(s));
 
 export const orch = {
 	status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
@@ -68,6 +71,17 @@ let errorHold: Timer | undefined;
 let chain: Chain | undefined;
 let capped: { move?: Move } | undefined;
 let continueAfterSwitch = false;
+// A chain switch in progress: the next start() begins a fresh session with a handover and a note on the new entry.
+let freshSwitch: { again: boolean } | undefined;
+// Whether the subscription's usage report says it can take requests (undefined: unknown), read once a minute while on an API key.
+let usable: boolean | undefined;
+export const subscriptionCheck = {
+	usable: async (): Promise<boolean | undefined> => {
+		const r = await anthropicUsage("orchestrator").catch(() => undefined);
+		if (!r || r.problem || !r.limits.length) return undefined;
+		return r.limits.every(l => l.amount.remaining >= 1);
+	},
+};
 // Going back to the configured model after the runtime moved the process to a fallback by itself (not when the hub drives a chain).
 const reverter = new Reverter();
 let startedModel = "";
@@ -178,15 +192,22 @@ async function failOver(e: AgentError): Promise<boolean> {
 	if (!move) return false;
 	return switchTo(move, true);
 }
-// Restarts on the same session with another entry of the chain (start() picks it from the persisted limit and spend state);
-// `again` tells the session to redo the request that just failed. One switch at a time: a revert racing a failover is dropped.
+// Restarts with another entry of the chain (start() picks it from the persisted limit and spend state) in a fresh session
+// with a handover, never on the same session (owner 2026-10-21: "쿐시 깨지는거 곤란하다"; a model switch on a session
+// writes its whole prompt cache again, a handover is small). `again` tells it to answer the request that just failed. One
+// switch at a time: a revert racing a failover is dropped. The alert channel hears an API-key episode once at its start
+// and once at its end (the first turn that succeeds off the key), not at every hop or probe.
 function switchTo(move: Move, again: boolean): boolean {
 	if (!chain || restarting) return false;
 	const line = msg().fallbackMove(chain.label(move.from), chain.label(move.to), move.why);
 	log(`orchestrator ${line}`);
 	onNotice(line);
-	// A switch away from the configured model after a failure is the owner's to hear, like a runtime's own fallback.
-	if (move.why === "quota" || move.why === "error") onAlert(`${NAME}: ${line}`);
+	const keyed = Boolean(chain.list[move.to].key_file);
+	if (keyed && !saved().apiSince) {
+		save({ apiSince: now() });
+		onAlert(`${NAME}: ${msg().apiStart(chain.label(move.to))}`);
+	} else if (!keyed && !saved().apiSince && (move.why === "quota" || move.why === "error")) onAlert(`${NAME}: ${line}`);
+	freshSwitch = { again };
 	continueAfterSwitch = again;
 	restart();
 	return true;
@@ -201,7 +222,9 @@ function settleChain(): boolean {
 		else pauseExhausted(chain, chain.exhaustedUntil() ?? chain.down(chain.active)?.until ?? Date.now() + 3_600_000);
 		return true;
 	}
-	const back = chain.revertTarget();
+	const onKey = Boolean(chain.list[chain.active].key_file);
+	if (onKey && usable === false) return false;
+	const back = chain.revertTarget(undefined, onKey && usable === true);
 	if (!back) return false;
 	switchTo(back, false);
 	return true;
@@ -273,6 +296,10 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					onText(ev.text);
 				}
 				if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);
+				if (ev.stop !== "error" && ev.text && chain && !chain.list[chain.active].key_file && saved().apiSince) {
+					save({ apiSince: undefined });
+					onAlert(`${NAME}: ${msg().apiEnd(chain.label(chain.active))}`);
+				}
 				if (ev.stop !== "error") {
 					transientTries = 0;
 					errorStreak.ok();
@@ -295,7 +322,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				break;
 			case "session":
 				orch.sessionFile = ev.ref;
-				save({ sessionFile: orch.sessionFile, model: currentModel, runtime: adapter?.id });
+				save({ sessionFile: orch.sessionFile, model: currentModel, runtime: adapter?.id, activeModel: orch.activeModel });
 				if (orch.status === "starting") {
 					orch.status = "idle";
 					flushCompact(orch.ctx, port);
@@ -472,13 +499,35 @@ function rotate(): void {
 export function start(): void {
 	if (proc) return;
 	stopping = false;
-	const { sessionFile: prior, runtime: priorRuntime } = saved();
+	const { sessionFile: prior, runtime: priorRuntime, activeModel: priorActive } = saved();
 	const model = selectorOf(orchestratorModel());
 	const runtime = runtimeFor("orchestrator");
+	const entries = chainAfter(model, fallbackChain("orchestrator"));
+	// The hub switches the chain itself on OmO, and on omp when an entry is conditional (fallback.ts hubChain); otherwise the
+	// runtime gets the models as its own plain fallback list.
+	const driven = hubChain(runtime.id, entries);
+	const nextChain = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
+	let spawnModel = model;
+	if (nextChain) {
+		const until = nextChain.exhaustedUntil();
+		if (until !== undefined) {
+			adapter = runtime;
+			currentModel = model;
+			chain = nextChain;
+			return pauseExhausted(nextChain, until);
+		}
+		nextChain.active = nextChain.initial();
+		spawnModel = nextChain.selector(nextChain.active);
+	}
 	// A change of runtime starts a fresh session with a handover (a session written by omp is not resumed by OmO; a state
-	// saved before the runtime was recorded is omp's). A model or effort change does not: the session is resumed on the
-	// new model, as OmO does on /model (owner 2026-10-21: a fresh session on every switch reloaded the whole context).
-	const rotate = prior && existsSync(prior) && (rotating || statSync(prior).size > ROTATE_BYTES || (priorRuntime ?? "omp") !== runtime.id);
+	// saved before the runtime was recorded is omp's). So does a chain switch (switchTo), and a start whose entry moves onto
+	// or off an API key since the session last ran (a gateway restart after the limit lifted). A model or effort change in
+	// config does not: the session is resumed on the new model, as OmO does on /model (owner 2026-10-21: a fresh session on
+	// every switch reloaded the whole context).
+	const keyMove = Boolean(priorActive) && priorActive !== spawnModel && (keyedSelector(priorActive) || keyedSelector(spawnModel));
+	const rotate = prior && existsSync(prior) && (rotating || Boolean(freshSwitch) || keyMove || statSync(prior).size > ROTATE_BYTES || (priorRuntime ?? "omp") !== runtime.id);
+	const switched = freshSwitch ?? (keyMove ? { again: false } : undefined);
+	freshSwitch = undefined;
 	rotating = false;
 	pendingModel = false;
 	orch.ctx = newCtx();
@@ -490,21 +539,12 @@ export function start(): void {
 	currentModel = model;
 	clearTimeout(errorHold);
 	adapter = runtime;
-	const entries = chainAfter(model, fallbackChain("orchestrator"));
-	// The hub switches the chain itself on OmO, and on omp when an entry is conditional (fallback.ts hubChain); otherwise the
-	// runtime gets the models as its own plain fallback list.
-	const driven = hubChain(runtime.id, entries);
-	chain = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
+	chain = nextChain;
 	capped = undefined;
-	let spawnModel = model;
+	usable = undefined;
 	const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1" };
-	if (chain) {
-		const until = chain.exhaustedUntil();
-		if (until !== undefined) return pauseExhausted(chain, until);
-		chain.active = chain.initial();
-		spawnModel = chain.selector(chain.active);
-		Object.assign(env, chain.env(chain.active));
-	}
+	if (chain) Object.assign(env, chain.env(chain.active));
+	const switchNote = switched && chain ? msg().fallbackFresh(chain.label(chain.active), Boolean(chain.list[chain.active].key_file), switched.again) : "";
 	startedModel = spawnModel;
 	reverter.reset();
 	orch.activeModel = spawnModel;
@@ -549,7 +589,7 @@ export function start(): void {
 		retainNext = false; // a fresh session's start prompt (and handover) already carries it
 		asksNext = false;
 		const asks = pendingAsksBlock();
-		proc.send(recall() + (rotate ? handover(runtime, prior!) : "") + (asks ? `\n\n${asks}` : ""), "prompt");
+		proc.send(recall() + (rotate ? handover(runtime, prior!) : "") + switchNote + (asks ? `\n\n${asks}` : ""), "prompt");
 	} else asksNext = true;
 	proc.watchSubagents();
 	if (continueAfterSwitch && resume) {
@@ -754,5 +794,12 @@ export function compact(): Compaction {
 // A hub-driven chain may owe a return to an earlier entry (its limit reset) or a spend-cap decision; checked once a minute while idle.
 setInterval(() => {
 	settleRevert(true);
-	void settleChain();
+	// On an API key the subscription's usage report decides the return: back as soon as it is usable, never while it is still
+	// out (unknown: the probe rule of Chain.revertTarget).
+	if (chain && chain.list[chain.active].key_file && chain.list[0].model.startsWith("anthropic/") && orch.status === "idle")
+		void subscriptionCheck.usable().then(v => {
+			usable = v;
+			settleChain();
+		});
+	else void settleChain();
 }, 60_000);
