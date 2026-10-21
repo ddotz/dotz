@@ -143,6 +143,7 @@ async function ntReach(t, at) {
   }
 }
 function ntCenter(node) {
+  chatUnpin();
   const a = timeline.getBoundingClientRect(), b = node.getBoundingClientRect();
   timeline.scrollTop += b.top - a.top - (b.height >= a.height - 24 ? 12 : (a.height - b.height) / 2);
 }
@@ -159,6 +160,7 @@ async function ntJump(n) {
   const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, t = ntGo(n.src || n.open || "main");
   if (!t) return;
   CV.landed = true;   // no jump to the "새 메시지" divider: this opening lands on the message
+  chatUnpin();
   try {
     if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t);
     await ntReach(t, at);
