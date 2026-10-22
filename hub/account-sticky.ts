@@ -14,17 +14,19 @@
 // extension reads when the hub does not answer. Nothing here writes auth.json or touches a token.
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { evaluate, getScriptOpinion, getUsage, readRules, record, resetRulesForTest, stateStamp } from "./account-rules.ts";
+import { blockedKind, evaluate, getScriptOpinion, getUsage, readRules, record, resetRulesForTest, stateStamp } from "./account-rules.ts";
 import { readAliases } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
 import { accountHistoryDays, DATA_DIR, log, writeAtomic } from "./config.ts";
-import { blockOf } from "./usage-account.ts";
+import { blockOf, usedAccount } from "./usage-account.ts";
 
 export const PIN_ENV = "SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT";
 export type SwitchKind = "start" | "limit" | "owner" | "gone" | "rule" | "script" | "manual";
 export type AccountSwitch = { at: string; from?: string; to: string; kind: SwitchKind; reason: string; rule?: string };
 export type Pool = { names: string[]; pinned?: string; blocked: Record<string, { until?: number; reason: string }>; lastSuccess: Record<string, number> };
-type Saved = { account?: string; since?: string; reason?: string };
+type Saved = { account?: string; since?: string; reason?: string; used?: string };
+// The account requests really go to changed (usedAccount): `cause` says why, in machine terms (hub/accounts-api.ts words it).
+export type UsedChange = { at: string; from: string; to: string; cause: "limit" | "auth_error" | "gone" | "switch" | "restored"; switchKind?: SwitchKind; rule?: string; until?: number };
 
 // Both account logs (this file and <DATA_DIR>/accounts/decisions.jsonl) keep their last MAX_LOG_LINES lines, trimmed on write.
 export const MAX_LOG_LINES = 20;
@@ -148,6 +150,23 @@ export function onSwitch(fn: (s: AccountSwitch) => void): void {
 	listeners.push(fn);
 }
 
+const usedListeners: ((c: UsedChange) => void)[] = [];
+// Called once per change of the account requests really use, unless the owner made it in the web (quietly).
+export function onUsedChange(fn: (c: UsedChange) => void): void {
+	usedListeners.push(fn);
+}
+let quiet = 0;
+// The owner's own pick in the web: the change it causes is not announced.
+export async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+	quiet++;
+	try {
+		return await fn();
+	} finally {
+		stickyAccount();
+		quiet--;
+	}
+}
+
 const stamp = (...files: string[]) =>
 	files
 		.map(f => {
@@ -178,10 +197,22 @@ export function stickyAccount(now = Date.now()): string | undefined {
 	const { change, ...decision } = evaluate({ now, pool, current: saved?.account, usage: getUsage(), rules: readRules(), script: getScriptOpinion(), aliases: readAliases() });
 	const account = decision.account;
 	if (pool) record(decision);
+	const used = pool ? usedAccount(account, pool.names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0) : undefined;
+	if (pool && used && saved?.used !== used) {
+		const from = saved?.used;
+		saved = { ...saved, used };
+		writeAtomic(stateFile(), `${JSON.stringify(saved, null, 2)}\n`);
+		if (from && !quiet) {
+			const b = pool.blocked[from];
+			const c: UsedChange = { at: new Date(now).toISOString(), from, to: used, cause: !pool.names.includes(from) ? "gone" : b ? (blockedKind(b.reason) === "auth_error" ? "auth_error" : "limit") : change?.to === used ? "switch" : "restored", ...(b?.until ? { until: b.until } : {}), ...(change?.to === used ? { switchKind: change.kind, ...(change.rule ? { rule: change.rule } : {}) } : {}) };
+			log(`account used: ${from} -> ${used} (${c.cause})`);
+			for (const fn of usedListeners) fn(c);
+		}
+	}
 	// Landing on the account it already runs on is no switch: nothing is recorded and `since` stays.
 	if (!change || change.to === saved?.account) return account;
 	const s: AccountSwitch = { at: new Date(now).toISOString(), ...change };
-	saved = { account, since: s.at, reason: s.reason };
+	saved = { account, since: s.at, reason: s.reason, ...(saved?.used ? { used: saved.used } : {}) };
 	writeAtomic(stateFile(), `${JSON.stringify(saved, null, 2)}\n`);
 	writeAtomic(switchesFile(), `${dropNoops([...readSwitches(now), s]).slice(-MAX_LOG_LINES).map(x => JSON.stringify(x)).join("\n")}\n`);
 	log(`account ${s.kind}: ${s.from ? `${s.from} -> ` : ""}${s.to} (${s.reason})`);
@@ -207,5 +238,7 @@ export function resetStickyForTest(): void {
 	saved = undefined;
 	checkedStamp = "";
 	listeners.length = 0;
+	usedListeners.length = 0;
+	quiet = 0;
 	resetRulesForTest();
 }

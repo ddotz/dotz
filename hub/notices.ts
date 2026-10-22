@@ -803,6 +803,11 @@ export function updateAvailable(text: string): void {
 	upsert({ kind: "alert", tone: "", title: "dotz 새 버전", text: clean(text).text, open: "settings", key: UPDATE_NOTICE_KEY, unread: true });
 }
 
+// The Claude account requests really use changed without the owner's pick in the web: one alert per change (its own key), opening 설정.
+export function accountUsedChanged(text: string, key: string): void {
+	upsert({ kind: "alert", tone: "", title: "요청 계정이 바뀌었어요", text: clean(text).text, open: "settings", key, unread: true });
+}
+
 // The update was applied or the checkout is current again: the item stays in the list but is read.
 export function updateResolved(): void {
 	const item = items.find(n => n.key === UPDATE_NOTICE_KEY);
