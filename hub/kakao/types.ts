@@ -79,6 +79,12 @@ export type Hub = {
 	get: (path: string) => Promise<{ status: number; json: any }>;
 };
 
+// Hub plus the two verbs setup and off need (watch pause / removal, closing an ask). Added by hub/kakao/hub.ts; `Hub` itself is unchanged.
+export type HubFull = Hub & {
+	patch: (path: string, body: unknown) => Promise<{ status: number; json: any }>;
+	del: (path: string) => Promise<{ status: number; json: any }>;
+};
+
 // A room as the reader returns it. `kind` is the classification the draft filter uses.
 export type Room = { chatId: string; name: string; type: number; kind: "direct" | "group" | "self" | "channel" | "open" | "other"; unread: number; lastAt: number };
 export type Msg = { logId: string; chatId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean };
