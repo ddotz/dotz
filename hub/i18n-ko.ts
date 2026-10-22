@@ -195,14 +195,14 @@ export const ko: Catalog = {
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,
 
 	auth: {
-		titles: { secret: "로그인 정보가 필요해요", otp: "인증 코드가 필요해요", approve: "로그인 승인이 필요해요", form: "개인정보가 필요해요" },
+		titles: { secret: "로그인 정보가 필요해요", otp: "인증 코드가 필요해요", approve: "로그인 승인이 필요해요", form: "개인 정보 입력" },
 		site: "사이트",
 		expires: time => `${time} ${tzLabel()}까지`,
 		input: "입력하기",
 		approve: "승인",
 		cancel: "취소",
 		labels: { username: "아이디", password: "비밀번호", code: "인증 코드" },
-		formLabels: { name: "이름", phone: "전화번호", email: "이메일", postal_code: "우편번호", address1: "주소", address2: "상세 주소", card_holder: "카드 소유자 이름", card_number: "카드 번호", card_expiry: "유효기간 (MM/YY)", card_cvc: "CVC", birth_date: "생년월일", id_number: "신분증 번호", account_number: "계좌 번호", other: "기타" } as Record<string, string>,
+		formLabels: { name: "이름", phone: "전화번호", email: "이메일", postal_code: "우편번호", address1: "주소", address2: "상세 주소", card_holder: "카드 소유자 이름", card_number: "카드 번호", card_expiry: "유효기간(MM/YY)", card_cvc: "CVC", birth_date: "생년월일", id_number: "신분증 번호", account_number: "계좌 번호", other: "기타" } as Record<string, string>,
 		openForm: "앱에서 입력하기",
 		formHint: "값은 채팅이 아니라 앱의 입력 창에서만 받아요. 아래 버튼으로 앱을 열어 주세요.",
 		formHintNoLink: "값은 채팅이 아니라 앱의 입력 창에서만 받아요. 앱을 열어 주세요.",

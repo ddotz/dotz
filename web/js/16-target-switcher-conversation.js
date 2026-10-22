@@ -137,7 +137,7 @@ function paintAuth() {
       const err = el("div", { class: "ferr", role: "alert" });
       const eye = f.mask ? el("button", { class: "eye", type: "button", "aria-label": `${f.label} 보기`, text: "보기", onclick: () => { const hidden = inp.type === "password"; inp.type = hidden ? "text" : "password"; eye.textContent = hidden ? "숨기기" : "보기"; } }) : null;
       inp.addEventListener("input", () => { inp.classList.remove("bad"); err.textContent = ""; });
-      return el("div", { class: "fld" }, el("label", { for: inp.id, text: f.label + (f.optional ? " (선택)" : "") }), el("div", { class: "ctl" }, inp, eye), err);
+      return el("div", { class: "fld" }, el("label", { for: inp.id, text: f.label + (f.optional ? "(선택)" : "") }), el("div", { class: "ctl" }, inp, eye), err);
     };
     const rem = isForm ? el("input", { type: "checkbox", id: `au-${a.id}-remember` }) : null;
     if (rem) rem.checked = !!a.remember;
@@ -153,9 +153,9 @@ function paintAuth() {
     };
     const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? "승인" : "보내기" });
     const no = el("button", { class: "btn tonal", type: "button", text: "취소", onclick: () => done("cancel") });
-    const card = el("form", { class: "au", "data-id": a.id }, el("h3", { text: a.title }), el("p", { text: a.purpose }), ...(isForm ? a.fields.map((f, k) => wrap(f, inputs[k])) : inputs),
+    const card = el("form", { class: "au", "data-id": a.id }, el("div", { class: "abd" }, el("h3", { text: a.title }), el("p", { text: a.purpose }), ...(isForm ? a.fields.map((f, k) => wrap(f, inputs[k])) : inputs),
       rem ? el("label", { class: "rem", for: rem.id }, rem, el("span", { text: "다음에도 쓰게 저장해 두기 (끄면 한 번 쓰고 지워요)" })) : null,
-      a.kind === "approve" ? null : el("div", { class: "note", text: "입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요." }),
+      a.kind === "approve" ? null : el("div", { class: "note", text: "입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요." })),
       el("div", { class: "row" }, no, ok));
     card.addEventListener("submit", ev => {
       ev.preventDefault();
