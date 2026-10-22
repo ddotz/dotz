@@ -6,7 +6,26 @@
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f2f4f6">
 <link rel="manifest" href="/manifest.webmanifest?v=3">
-<script>{ const p = fetch("/api/state?limit=0", { cache: "no-store" }); p.catch(() => {}); window.__early = { "/api/state?limit=0": p }; }</script>
+<script>
+// The first answers are asked for here, before the script is downloaded and parsed: api() (02-basic-markdown.js) takes over the request with the same path.
+// The conversation that boot opens is worked out like 08-home.js / 05-command-palette.js do (saved target, or the one in the address); a path nobody asks for is dropped.
+{
+  const early = {};
+  window.__early = early;
+  const ask = p => { const r = fetch(p, { cache: "no-store" }); r.catch(() => {}); early[p] = r; };
+  const ok = x => x === "main" || x === "alert" || x === "worklog" || /^ch:\d+$/.test(x) || (x.startsWith("lane:") && x.length > 5);
+  let t = "main";
+  try { const v = localStorage.getItem("dotz-target"); if (v && ok(v)) t = v; } catch {}
+  const h = location.hash.slice(1), i = h.indexOf("/");
+  try { const a = i < 0 ? "" : decodeURIComponent(h.slice(i + 1)); if (a && ok(a) && h.slice(0, i) !== "project") t = a; } catch {}
+  const q = encodeURIComponent(t);
+  ask("/api/state?limit=0");
+  ask(`/api/history?target=${q}&limit=150`);
+  ask(`/api/todo?target=${q}`);
+  ask("/api/conversations");
+  if (t !== "alert" && t !== "worklog") ask(`/api/activity?source=${encodeURIComponent(t.startsWith("lane:") ? t : "orchestrator")}&limit=300`);
+}
+</script>
 <link rel="icon" type="image/svg+xml" href="/icons/dotz.svg">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">

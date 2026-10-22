@@ -19,6 +19,7 @@ const PROBE_PARALLEL = 4;
 const MAX_PEERS = 16;
 const DISCOVERY_TTL_MS = 60_000;
 const COUNTS_TTL_MS = 15_000;
+const STALE_OK_MS = 5 * 60_000; // a discovered list this much older than its limit is still answered while the new one loads
 const DEFAULT_PORTS = [8443, 8445, 8444]; // 8443 is setup's default, so a node on another port still finds one on 8443
 
 // Two computers that map to the same friendly name keep their hostnames instead, so the list never shows two identical rows.
@@ -67,12 +68,15 @@ export function countsFrom(body: unknown): { unread: number; need: number } | un
 }
 
 // One-slot cache with a time limit; concurrent callers share the load in flight. A failed load is not kept.
-export function cached<T>(ttlMs: number, load: () => Promise<T>, clock: () => number = Date.now): () => Promise<T> {
+// With `staleMs`, an answer up to that old is handed out at once while a new one loads behind it, so the page's request never waits on the probes.
+export function cached<T>(ttlMs: number, load: () => Promise<T>, clock: () => number = Date.now, staleMs = 0): () => Promise<T> {
 	let value: { at: number; v: T } | undefined;
 	let inflight: Promise<T> | undefined;
 	return () => {
-		if (value && clock() - value.at < ttlMs) return Promise.resolve(value.v);
+		const age = value ? clock() - value.at : Infinity;
+		if (value && age < ttlMs) return Promise.resolve(value.v);
 		inflight ??= load().then(v => { value = { at: clock(), v }; return v; }).finally(() => { inflight = undefined; });
+		if (value && age < ttlMs + staleMs) { inflight.catch(() => {}); return Promise.resolve(value.v); }
 		return inflight;
 	};
 }
@@ -165,10 +169,12 @@ export async function discover(): Promise<Found[]> {
 	return uniqueNames(found);
 }
 
-const discovered = cached(DISCOVERY_TTL_MS, () => discover().catch(error => { log(`peers: discovery failed: ${(error as Error).message}`); return [] as Found[]; }));
+const discovered = cached(DISCOVERY_TTL_MS, () => discover().catch(error => { log(`peers: discovery failed: ${(error as Error).message}`); return [] as Found[]; }), Date.now, STALE_OK_MS);
 // The discovered computers (self first), from the same cache as the switcher. hub/push.ts relays notices to them and accepts relays only from them.
 export const knownComputers = (): Promise<Found[]> => discovered();
 const countsCache = new Map<string, { at: number; v: { unread: number; need: number } | undefined }>();
+const STALE_COUNTS_MS = 45_000;
+const recounting = new Set<string>();
 
 // Reads one computer's counts now and keeps them for listPeers. hub/peer-stream.ts calls it when that computer's notices change.
 export async function refreshCounts(url: string, get: Fetcher = getJson): Promise<{ unread: number; need: number } | undefined> {
@@ -184,9 +190,13 @@ export async function listPeers(): Promise<Peer[]> {
 	return pool(list, PROBE_PARALLEL, async f => {
 		if (f.self) return { name: f.name, url: f.url, self: true, online: true } as Peer;
 		let c = countsCache.get(f.url);
-		if (!c || t - c.at >= COUNTS_TTL_MS) {
+		if (!c || t - c.at >= COUNTS_TTL_MS + STALE_COUNTS_MS) {
 			c = { at: t, v: await counts(f.url) };
 			countsCache.set(f.url, c);
+		} else if (t - c.at >= COUNTS_TTL_MS && !recounting.has(f.url)) {
+			// Stale by less than a minute: answer with it now and read the new one behind the request (a slow or offline peer costs the page nothing).
+			recounting.add(f.url);
+			void refreshCounts(f.url, undefined).finally(() => recounting.delete(f.url));
 		}
 		const p: Peer = { name: f.name, url: f.url, self: false, online: c.v !== undefined };
 		if (c.v) { p.unread = c.v.unread; p.need = c.v.need; }
