@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cfg, DATA_DIR } from "./config.ts";
-import { type AutoHooks, apply, autoCheck, check, defaultExec, type Exec, fetchError, scrub } from "./selfupdate.ts";
+import { type AutoHooks, apply, autoCheck, check, defaultExec, type Exec, failureBlocks, fetchError, scrub } from "./selfupdate.ts";
 
 let root: string, origin: string, work: string, pusher: string, logDir: string;
 const sh = (cwd: string, ...args: string[]) => {
@@ -122,6 +122,60 @@ test("failing tests put the checkout back on the old commit", async () => {
 	expect(head(work)).toBe(before);
 	expect(existsSync(join(work, "FAIL"))).toBe(false);
 	expect(sh(work, "status", "--porcelain")).toBe("");
+});
+
+test("failureBlocks keeps the error block bun prints before each (fail) line, and nothing from passing tests", () => {
+	const out = [
+		"bun test v1.4.2",
+		"",
+		"hub/a.test.ts:",
+		"(pass) a > fine [0.10ms]",
+		"12 |   const id = await ask({ site: \"shop-once\" });",
+		"13 |   expect(leaks).not.toContain(bit);",
+		"                       ^",
+		"error: expect(received).not.toContain(expected)",
+		"",
+		"Expected to not contain: \"7391\"",
+		"Received: \"...7391...\"",
+		"",
+		"      at <anonymous> (hub/auth.test.ts:94:30)",
+		"(fail) one-time form [2.40ms]",
+		"(pass) a > also fine [0.20ms]",
+		"",
+		"hub/b.test.ts:",
+		"error: boom",
+		"      at <anonymous> (hub/b.test.ts:5:9)",
+		"(fail) b > broken [1.00ms]",
+		"",
+		" 1142 pass",
+		" 2 fail",
+	].join("\n");
+	const kept = failureBlocks(out);
+	expect(kept).toContain("error: expect(received).not.toContain(expected)");
+	expect(kept).toContain("Expected to not contain: \"7391\"");
+	expect(kept).toContain("(fail) one-time form [2.40ms]");
+	expect(kept).toContain("error: boom\n      at <anonymous> (hub/b.test.ts:5:9)\n(fail) b > broken [1.00ms]");
+	expect(kept).not.toContain("(pass)");
+	expect(kept).not.toContain("a.test.ts:\n");
+	expect(failureBlocks("(pass) x [1ms]\n 3 pass\n 0 fail")).toBe("");
+	// capped: many failures keep a bounded number of blocks and say how many were dropped
+	const many = Array.from({ length: 40 }, (_, i) => `error: e${i}\n(fail) t${i} [1ms]`).join("\n");
+	const capped = failureBlocks(many);
+	expect(capped).toContain("error: e0");
+	expect(capped).not.toContain("error: e39");
+	expect(capped).toContain("25 more failure(s) not kept");
+});
+
+test("a failing apply logs the failing test block, not only the tail", async () => {
+	commit(pusher, "FAIL", "boom\n", "breaks the tests");
+	sh(pusher, "push", "-q", "origin", "HEAD:main");
+	const exec: Exec = async (cmd, cwd, ms) =>
+		cmd.join(" ") === testCmd.join(" ") ? { code: 1, out: `${"noise\n".repeat(100)}error: expect(received).toBe(expected)\n(fail) the broken one [1ms]\n 1 fail\n` } : defaultExec(cmd, cwd, ms);
+	const j = await apply(opts(exec));
+	expect(j.status).toBe("failed");
+	const logged = readdirSync(logDir).map(f => readFileSync(join(logDir, f), "utf8")).join("\n");
+	expect(logged).toContain("failed tests\nnoise");
+	expect(logged).toContain("error: expect(received).toBe(expected)\n(fail) the broken one [1ms]");
 });
 
 test("nothing new is reported as current and does not run the tests", async () => {
