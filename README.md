@@ -543,7 +543,7 @@ short "received, answering when the current step ends" notice from the gateway.
 ## Layout
 
 - `hub/` gateway: `main.ts` (API, auth, routing, auto-reply, budget gate on session launch), `orchestrator.ts` (headless
-  conversation; 429 resume, crash restart, rotation past 50MB or 150K context), `lanes.ts` (brief contract, worktrees,
+  conversation; 429 resume, crash restart, rotation past 50MB or 300K context), `lanes.ts` (brief contract, worktrees,
   persistence and resume across restarts, exit/429 handling, 15-minute progress posts), `context.ts`
   (context usage and compaction state shared by orchestrator and sessions), `hygiene.ts` (nightly session compaction and
   rotation, orphaned worktree cleanup), `schedule.ts` (reminders), `discord.ts`

@@ -133,7 +133,7 @@ export const LANES_COMPACT_AT = 300_000;
 // coalesce_ms 2 s (was 4 s): over 48 h only 1 of 119 same-channel follow-ups came 2-4 s after the previous one, so the
 // longer merge window only delayed every message (~/.dotz/reports/speed-20261021.md).
 export const DEFAULTS = {
-	rotate_tokens: 150_000, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8, idle_stop_min: 20, worker_idle_min: 5,
+	rotate_tokens: 300_000, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8, idle_stop_min: 20, worker_idle_min: 5,
 	coalesce_ms: 2000, reflect_at: "04:40", token_audit_at: "04:30", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
 } as const;
 // The web server listens only here; the tailnet reaches it through `tailscale serve` (web.tailscale_https_port).
