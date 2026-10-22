@@ -76,6 +76,24 @@ export function parseDraftApproval(text: string): DraftApproval | undefined {
 	return { toLabel, to, ...(subject ? { subject } : {}), body: body.slice(0, DRAFT_BODY_MAX), ...(ref ? { ref } : {}) };
 }
 
+// The quoted draft of a message (recipient line first, as draftApprovalBlock writes it), as standard "> " lines; undefined when the message
+// quotes no draft (a quote that does not start with the recipient line is something else, e.g. the mail being answered).
+export function quotedDraft(text: string): string | undefined {
+	let fence = false;
+	let out: string[] | undefined;
+	for (const line of text.split("\n")) {
+		if (/^\s*```/.test(line)) fence = !fence;
+		const m = fence ? null : /^\s*>\s?(.*)$/.exec(line);
+		if (!m) {
+			if (out) break;
+			continue;
+		}
+		if (!out && !HEADER.test(m[1]!)) continue;
+		(out ??= []).push(m[1]! ? `> ${m[1]}` : ">");
+	}
+	return out?.join("\n").replace(/(?:\n>)+$/, "");
+}
+
 // What a picked label means; anything else (a label outside the three) is not a draft answer.
 export function draftActionOf(label: string): DraftAction | undefined {
 	return label === DRAFT_SEND ? "send" : label === DRAFT_EDIT ? "edit" : label === DRAFT_DROP ? "drop" : undefined;
