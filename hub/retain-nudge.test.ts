@@ -95,9 +95,15 @@ test("orchestrator: a rotated start carries the nudge in its handover, a compact
 	writeFileSync(join(DATA, "orchestrator.json"), JSON.stringify({ sessionFile: session, runtime: "other-runtime" }));
 	o.start();
 	const { agent } = started.at(-1)!;
-	expect(agent.sent).toHaveLength(1);
-	expect(agent.sent[0]!.text).toContain("[handover]");
-	expect(count(agent.sent[0]!.text, msg().retainNudge)).toBe(1);
+	// The pinned first prompt stays free of the handover; a second message queued into the same run carries it (and the nudge).
+	expect(agent.sent).toHaveLength(2);
+	expect(agent.sent[0]!.mode).toBe("prompt");
+	expect(agent.sent[0]!.text).not.toContain("[handover]");
+	expect(agent.sent[0]!.text).not.toContain("earlier answer");
+	expect(agent.sent[1]!.mode).toBe("steer");
+	expect(agent.sent[1]!.text).toContain("[handover]");
+	expect(agent.sent[1]!.text).toContain("earlier answer");
+	expect(count(agent.sent.map(s => s.text).join("\n"), msg().retainNudge)).toBe(1);
 
 	await advance(4000);
 	await agent.push({ type: "session", ref: session });
@@ -105,7 +111,7 @@ test("orchestrator: a rotated start carries the nudge in its handover, a compact
 	expect(agent.sent.at(-1)!.text).toBe("before compaction");
 
 	await agent.push(compacted);
-	expect(agent.sent).toHaveLength(2); // the compaction itself sends nothing
+	expect(agent.sent).toHaveLength(3); // the compaction itself sends nothing
 	o.deliver("after compaction");
 	expect(agent.sent.at(-1)).toEqual({ text: `after compaction\n\n${msg().retainNudge}`, mode: "followUp" });
 	o.deliver("later");

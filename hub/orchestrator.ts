@@ -10,6 +10,7 @@ import { emitEventActivity, runningSubagents, statusActivity } from "./activity.
 import { pendingAsksBlock } from "./asks.ts";
 import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, workerModel, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
+import { dropSection, renderState } from "./recall-parts.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { anthropicUsage, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
@@ -154,8 +155,12 @@ const save = (s: Saved) => writeAtomic(STATE, `${JSON.stringify({ ...saved(), ..
 const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(), refreshUsage: () => proc?.refreshUsage() };
 
 function recall(): string {
-	const mode = readFileSync(modeFile(), "utf8");
-	const state = existsSync(join(DATA_DIR, "state.json")) ? readFileSync(join(DATA_DIR, "state.json"), "utf8").slice(0, 4000) : "{}";
+	// The mail and calendar section is only useful while zele runs (zele.enabled defaults to on, as in zele.ts).
+	const zeleOn = (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false;
+	const modeText = readFileSync(modeFile(), "utf8");
+	const mode = zeleOn ? modeText : dropSection(modeText, "## Mail and calendar");
+	const stateFile = join(DATA_DIR, "state.json");
+	const state = existsSync(stateFile) ? renderState(readFileSync(stateFile, "utf8"), stateFile) : "{}";
 	const id = cfg.identity;
 	const identity = existsSync(IDENTITY_FILE) ? readFileSync(IDENTITY_FILE, "utf8").slice(0, 3000) : msg().identityFallback(id?.character ?? "", id?.tone ?? "");
 	// A cut file says so: RULES.md outgrew the old 6000-character cap and silently lost its last lines (blocked commands).
@@ -598,7 +603,14 @@ export function start(): void {
 		retainNext = false; // a fresh session's start prompt (and handover) already carries it
 		asksNext = false;
 		const asks = pendingAsksBlock();
-		proc.send(recall() + (rotate ? handover(runtime, prior!) : "") + switchNote + (asks ? `\n\n${asks}` : ""), "prompt");
+		// The runtime keeps this first message through every compaction, so it carries only what must stay: the handover tail
+		// and the pending asks would be re-sent on every request after each compaction. They go in a second message, as "steer":
+		// a steer queued before the turn starts is drained at the start of the agent loop, so it joins the first model call
+		// (a "followUp" would wait until the first answer is done and start an extra paid turn; a "prompt" would start one too),
+		// and a queued steer is not dropped when it arrives before the turn has begun.
+		proc.send(recall() + switchNote, "prompt");
+		const later = (rotate ? handover(runtime, prior!) : "") + (asks ? `${rotate ? "\n\n" : ""}${asks}` : "");
+		if (later) proc.send(later, "steer");
 	} else asksNext = true;
 	proc.watchSubagents();
 	if (continueAfterSwitch && resume) {
