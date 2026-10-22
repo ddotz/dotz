@@ -51,6 +51,7 @@ function pmPaint() {
   if (current !== "project" || PM.open > 0) return;
   const root = $("#v-project"), D = PM.D, p = pmProject();
   if (!p) { delete root.dataset.sig; clear(root).append(emptyNode(PM.fail || PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
+  if (p.builtin) { cmPaint(root, p, D); return; }
   const q = { ...p, record: (D && D.record) || p.record }, rows = pmSessionRows(p, D);
   const live = rows.filter(r => r.live), past = rows.filter(r => !r.live), work = (D && D.work) || [];
   const sig = JSON.stringify([q, D, rows, botName]);
@@ -281,6 +282,32 @@ function pmResults(D) {
       tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
   }))]));
 }
+// The built-in 커스텀 project (hub/custom.ts builtinDetail): what the owner has customized, each item with a plain line and a
+// way to ask for a change. Asking opens the main chat with a draft tagged [프로젝트 커스텀 ...]; the orchestrator keeps those
+// personal (MODE.md, Customization). No edit-in-place, no project chat: there is no channel behind it.
+const CM_TAG = "[프로젝트 커스텀 · 개인 설정]";
+function cmAsk(text) {
+  openTarget(MAIN, lastChatView());
+  ta.value = text; autosize(); saveDraft(); updateHints(); ta.focus();
+}
+function cmPaint(root, p, D) {
+  const sig = JSON.stringify([p, D]);
+  if (root.dataset.sig === sig) return;
+  root.dataset.sig = sig;
+  $("#title").textContent = "프로젝트";
+  const ask = (label, text) => el("button", { class: "btn tonal", type: "button", "aria-label": `${label} 바꿔 달라고 하기`, onclick: () => cmAsk(text), text: "바꿔 달라고 하기" });
+  const group = g => el("section", { class: "pmv-sec" },
+    el("div", { class: "pv-sh" }, el("div", { class: "sec", text: g.label }), el("button", { class: "btn text", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: g.items.length ? "더 부탁하기" : "만들어 달라고 하기" })),
+    g.items.length ? el("div", { class: "list" }, ...g.items.map(i => el("div", { class: "li" },
+      el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: i.title }), el("div", { class: "sup", text: i.line })),
+      i.bad ? el("span", { class: "tag warn", text: "확인 필요" }) : null,
+      ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `))),
+      g.more ? el("div", { class: "sup", style: "padding:10px 16px", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
+  clear(root).append(
+    el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" }, el("div", { class: "pmv-title", text: p.name }), el("div", { class: "pmv-purpose", text: p.note || "" }))),
+    D && D.groups ? el("div", { class: "pmv-cols" }, el("div", { class: "pmv-col" }, ...D.groups.slice(0, 3).map(group)), el("div", { class: "pmv-col" }, ...D.groups.slice(3).map(group))) : emptyNode(PM.fail ? "불러오지 못했어요" : "불러오는 중…"));
+}
+
 setInterval(() => {
   if (document.hidden) return;
   if (current === "projects") prjLoad();

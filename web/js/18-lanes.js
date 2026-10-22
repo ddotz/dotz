@@ -220,6 +220,9 @@ function prjStatus(p) {
   return [ls.some(l => l.live) || p.channel ? "ok" : "", ""];
 }
 function prjCard(p) {
+  if (p.builtin) return el("button", { class: "card tap prj-card", type: "button", onclick: () => go("project", p.key) },
+    el("div", { class: "prj-top" }, el("span", { class: "dot ok" }), el("span", { class: "prj-title", text: p.name }), el("span", { class: "tag", text: "고정" }), icon("chev", "chev")),
+    el("div", { class: "prj-note", text: p.note }), el("div", { class: "prj-meta" }, el("span", { text: "홈 카드 · 루틴 · 규칙 · 말투" })));
   const [tone, word] = prjStatus(p), ms = prjMiles(p), done = ms.filter(m => m.done).length, ls = p.lanes || [], mon = prjMonitors(p);
   const pct = ms.length ? Math.round(done / ms.length * 100) : 0;
   const meta = [ls.length ? `세션 ${ls.filter(l => l.live).length}/${ls.length}` : "세션 없음", mon != null ? `감시 ${mon}` : ""].filter(Boolean);
