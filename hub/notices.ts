@@ -193,9 +193,9 @@ function fromOutbox(e: HubEvent): void {
 			const name = key.slice(5);
 			return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: key, key, at: e.ts });
 		}
-		return void upsert({ kind: "worklog", tone, title: systemTitle(text, "작업 기록"), text, open: "main", key, read: restart, at: e.ts });
+		return void upsert({ kind: "worklog", tone, title: systemTitle(text, "작업 기록"), text, open: target === "worklog" ? "worklog" : "main", key, read: restart, at: e.ts });
 	}
-	if (target === "alert") return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "main", key, at: e.ts });
+	if (target === "alert") return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key, at: e.ts });
 	const watch = /^ch:\d+$/.test(target) && e.source === "gateway" ? /^\[([^\]\n]+)\]\s*/.exec(text) : null;
 	if (watch) upsert({ kind: "watch", tone, title: watch[1]!, text: text.slice(watch[0].length) || text, open: target, key, at: e.ts });
 }
@@ -208,9 +208,9 @@ function fromInbox(e: HubEvent): void {
 		return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: `lane:${name}`, key: `lane:${name}`, at: e.ts });
 	}
 	if (e.kind === "watch") {
-		const ch = Array.isArray(e.channels) ? e.channels[0] : undefined;
+		// The wake event itself is a message of the 알림 conversation (hub/events.ts eventTarget).
 		const body = [e.reason, e.text].filter(v => typeof v === "string" && v.trim()).join("\n");
-		return void upsert({ kind: "watch", tone: "", title: String(e.watch ?? "감시"), text: clean(body).text || "알림이 왔어요", open: ch ? `ch:${ch}` : "main", at: e.ts });
+		return void upsert({ kind: "watch", tone: "", title: String(e.watch ?? "감시"), text: clean(body).text || "알림이 왔어요", open: "alert", at: e.ts });
 	}
 	if (e.kind === "schedule") {
 		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
@@ -240,7 +240,7 @@ function feed(e: HubEvent): void {
 /* ---------- unread answers: one bell item per conversation the owner is not looking at ---------- */
 const VIEW_MS = 60_000;
 const MESSAGE_PREVIEW = 120;
-const CONV_RE = /^(?:main|lane:[\w.-]+|ch:\d+)$/;
+const CONV_RE = /^(?:main|alert|worklog|lane:[\w.-]+|ch:\d+)$/;
 // What each open web page reports it is showing (id -> conversation, "" = hidden / not a chat). A report older than VIEW_MS no longer counts.
 const viewers = new Map<string, { conv: string; at: number }>();
 let convNameOf: (conv: string) => string | undefined = () => undefined;
@@ -273,7 +273,7 @@ function fromAnswer(e: HubEvent): void {
 	const conv = eventTarget(e) ?? "main";
 	if (isViewing(conv)) return;
 	const preview = text.replace(/\s+/g, " ");
-	const title = conv.startsWith("lane:") ? laneTitle(conv.slice(5)) : convNameOf(conv) || (conv === "main" ? "대화" : conv);
+	const title = conv.startsWith("lane:") ? laneTitle(conv.slice(5)) : conv === "alert" ? "알림" : conv === "worklog" ? "작업 기록" : convNameOf(conv) || (conv === "main" ? "대화" : conv);
 	upsert({ kind: "message", tone: "", title, text: preview.length > MESSAGE_PREVIEW ? `${preview.slice(0, MESSAGE_PREVIEW - 1)}…` : preview, open: conv, key: `msg:${conv}`, unread: true, src: conv, at: e.ts });
 }
 
@@ -307,7 +307,8 @@ type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string
 export function decisionsOf(e: HubEvent): Draft[] {
 	if (e.kind === "out") {
 		const src = String(e.source ?? "");
-		if (e.update_key || e.target === "worklog" || (src !== "orchestrator" && !src.startsWith("lane:"))) return [];
+		// The gateway's own alert (a token audit, a failed update) may ask a question too; its other posts never do.
+		if (e.update_key || e.target === "worklog" || (src !== "orchestrator" && !src.startsWith("lane:") && !(src === "gateway" && e.target === "alert"))) return [];
 	} else if (e.kind !== "lane_report") return [];
 	const p = parseTone(stripHandoff(String(e.text ?? "")));
 	const body = p.text.trim();
@@ -504,6 +505,12 @@ export function dismissNotice(id: unknown): { ok: boolean; held?: boolean; unrea
 		broadcast({ ts: now(), kind: "notice_dismiss", source: "gateway", id: item.id, unread: unreadCount() });
 	}
 	return { ok: true, unread: unreadCount() };
+}
+
+// The owner read the 알림 / 작업 기록 conversation up to `upTo`: its bell items up to there are read too (an open decision stays open).
+export function readConversationNotices(conv: "alert" | "worklog", upTo: string): void {
+	const ids = items.filter(i => i.kind === conv && !i.read && (i.at ?? i.ts) <= upTo).map(i => i.id);
+	if (ids.length) markNoticesRead({ ids });
 }
 
 export function markNoticesRead(sel: { ids?: unknown; all?: unknown }): { unread: number } {

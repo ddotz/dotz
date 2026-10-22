@@ -15,7 +15,7 @@ import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { answerDecision, dismissNotice, listNotices, markNoticesRead, setViewing, unreadCount } from "./notices.ts";
+import { answerDecision, dismissNotice, listNotices, markNoticesRead, readConversationNotices, setViewing, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { listSchedules } from "./schedule.ts";
 import { readTodo } from "./todo.ts";
@@ -151,19 +151,22 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 				}
 				const lane = a.to.startsWith("lane:") ? a.to.slice(5) : undefined;
 				const project = a.to.startsWith("ch:") ? projectTarget(a.to, discord.channels.work) : undefined;
-				await sendWeb({ lane, project, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice });
+				const conv = a.to === "alert" || a.to === "worklog" ? a.to : undefined;
+				await sendWeb({ lane, project, conv, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice });
 			});
 			return json(r.body, r.status);
 		}
 		if (req.method === "POST" && url.pathname === "/api/read") {
 			const r = markRead(await body(req));
+			// Reading the 알림 / 작업 기록 conversation also reads its bell items up to there, so the two never disagree.
+			if (r.ok && r.moved && (r.target === "alert" || r.target === "worklog")) readConversationNotices(r.target, r.ts);
 			return json(r, r.ok ? 200 : 400);
 		}
 		if (req.method === "GET" && url.pathname === "/api/conversations") return json({ items: conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`)]) });
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main";
-			if (target !== "main" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, lane:<name> or ch:<id>" }, 400);
+			if (target !== "main" && target !== "alert" && target !== "worklog" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, alert, worklog, lane:<name> or ch:<id>" }, 400);
 			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
 			return json({ target, events: historyEvents(target, limit, url.searchParams.get("before") ?? undefined) });
 		}
@@ -207,6 +210,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 			// when its turn ends, see queue.ts; an idle target gets it now).
 			const mode = b.mode === "steer" || b.mode === "interrupt" || b.mode === "queue" ? b.mode : "default";
 			const lane = b.lane ? String(b.lane) : undefined;
+			const conv = b.conv === "alert" || b.conv === "worklog" ? b.conv : undefined;
 			const channel = b.channel === "terminal" ? "terminal" : "web";
 			let project: { target: string; name: string } | undefined;
 			if (b.project) {
@@ -218,12 +222,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 				}
 			}
 			// The queue sends to the main conversation when the turn ends; a project message goes in now (intake merges a burst).
-			if (mode === "queue" && !project && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
+			if (mode === "queue" && !project && !conv && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
 				const item = enqueue(lane ? `lane:${lane}` : "main", [text, files.length ? attachmentLines(files) : ""].filter(Boolean).join("\n"), login);
 				return json({ ok: true, queued: item });
 			}
 			try {
-				await sendWeb({ lane, project, channel, text, mode: mode === "queue" ? "default" : mode, login, files });
+				await sendWeb({ lane, project, conv: lane || project ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}

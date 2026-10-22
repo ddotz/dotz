@@ -143,7 +143,9 @@ function notify(e) {
     setTimeout(() => n.remove(), 220);
   }
   n.append(el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
-  n.addEventListener("click", () => { close(); openTarget(e.open || (lane ? `lane:${lane}` : MAIN), lastChatView()); });
+  // An alert / worklog post opens its conversation and lands on the message (the bell's jump, 30-notices.js).
+  const own = e.kind === "out" && (e.target === "alert" || e.target === "worklog") ? e.target : "";
+  n.addEventListener("click", () => { close(); if (own && !e.open) ntJump({ src: own, at: e.ts }); else openTarget(e.open || (lane ? `lane:${lane}` : MAIN), lastChatView()); });
   n.addEventListener("pointerenter", () => { hover = true; t.sync(); });
   n.addEventListener("pointerleave", () => { hover = false; t.sync(); });
   n.addEventListener("animationend", () => n.classList.remove("in"), { once: true });

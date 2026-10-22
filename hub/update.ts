@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
+import { issueBlock } from "./choices.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export type Mode = "check" | "install" | "off";
@@ -59,10 +60,11 @@ const readState = (file: string): State => {
 	}
 };
 
-type Deps = { mode: Mode; post: (text: string) => void; restart: () => string; run?: Run; stateFile?: string };
+// `post`: the one-line worklog entry; `alert`: an issue (a failed install) with its choice block, which goes to the alert conversation.
+type Deps = { mode: Mode; post: (text: string) => void; alert?: (text: string) => void; restart: () => string; run?: Run; stateFile?: string };
 
 // One pass of the nightly job. Returns the worklog line it posted, if any.
-async function runOmpUpdate({ mode, post, restart, run = defaultRun, stateFile = STATE }: Deps): Promise<string | undefined> {
+async function runOmpUpdate({ mode, post, alert = post, restart, run = defaultRun, stateFile = STATE }: Deps): Promise<string | undefined> {
 	if (mode === "off") return undefined;
 	const c = await checkOmp(run);
 	if (c.status === "error") log(`omp update: ${describe(c)}`);
@@ -79,7 +81,7 @@ async function runOmpUpdate({ mode, post, restart, run = defaultRun, stateFile =
 	if (u.code !== 0 || now !== c.latest) {
 		const line = `omp ${c.current} → ${c.latest} 설치하지 못했어요(지금 ${now}): ${u.out.split("\n").pop()?.slice(0, 160) || `exit ${u.code}`}`;
 		log(`omp update: ${line}`);
-		post(line);
+		alert(`${line}\n${issueBlock("업데이트를 어떻게 할까요?", [{ name: "다시 설치해 봐요", result: "지금 한 번 더 설치하고 결과를 알려드려요." }, { name: "다음 점검까지 둬요", result: "내일 새벽 점검 때 다시 시도해요." }])}`);
 		return line;
 	}
 	const line = `omp ${c.current} → ${now} 설치했어요. 게이트웨이는 하던 일이 끝나면 다시 켤게요.`;
@@ -89,7 +91,7 @@ async function runOmpUpdate({ mode, post, restart, run = defaultRun, stateFile =
 	return line;
 }
 
-export function startOmpUpdate(post: (text: string) => void, restart: () => string): void {
+export function startOmpUpdate(post: (text: string) => void, restart: () => string, alert: (text: string) => void = post): void {
 	const raw: unknown = "omp_update" in cfg ? cfg.omp_update : undefined;
 	const o = raw && typeof raw === "object" ? raw : {};
 	const mode: Mode = "mode" in o && (o.mode === "install" || o.mode === "off") ? o.mode : "check";
@@ -103,7 +105,7 @@ export function startOmpUpdate(post: (text: string) => void, restart: () => stri
 		return d.getTime() - Date.now();
 	};
 	const run = async () => {
-		await runOmpUpdate({ mode, post, restart }).catch(e => log(`omp update failed: ${e}`));
+		await runOmpUpdate({ mode, post, alert, restart }).catch(e => log(`omp update failed: ${e}`));
 		trackTimer("omp update", setTimeout(run, next()));
 	};
 	trackTimer("omp update", setTimeout(run, next()));

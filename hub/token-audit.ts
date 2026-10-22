@@ -9,6 +9,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, HOME, log, writeAtomic } from "./config.ts";
+import { issueBlock } from "./choices.ts";
 import { collectSessions, OMO_WAKE, projectLabel as labelOf, type Src } from "./session-sources.ts";
 import { trackTimer } from "./shutdown.ts";
 
@@ -487,7 +488,7 @@ function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditResult {
 			...(recurring.length ? [`며칠째 반복되는 경고: ${recurring.join(", ")}`] : []),
 			...Object.values(Object.groupBy([...flags].sort((a, b) => b.save - a.save), f => f.kind)).slice(0, 4).map(g => (g!.length === 1 ? brief(g![0]) : `${brief(g![0])} 외 ${g!.length - 1}건`)),
 			`전체 보고서: ${tilde(reportPath)} (자동으로 고치지는 않아요)`,
-		].slice(0, 7).join("\n")
+		].slice(0, 7).join("\n") + `\n${issueBlock("이 경고를 어떻게 할까요?", [{ name: "원인 확인", result: "세션별 원인을 살펴보고 고칠 방법을 제안해요." }, { name: "이번엔 넘어가요", result: "보고서만 남기고 다음 점검 때 다시 봐요." }])}`
 		: undefined;
 	const summary = `토큰 점검: 세션 ${results.length}개, ${M(total)} tok ${usd(totalCost)}, 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건, 보고서 ${tilde(reportPath)}`;
 	return { flags: flags.length, notes: findings.length - flags.length, sessions: results.length, tokens: total, cost: Number(totalCost.toFixed(2)), report: reportPath, alert, summary };

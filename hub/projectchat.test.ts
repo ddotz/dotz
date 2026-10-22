@@ -17,7 +17,7 @@ const EVENTS: Array<[string, Record<string, unknown>, string]> = [
 	["web message to the main assistant", { kind: "message", source: "web", channel: "web", text: "hi" }, "main"],
 	["discord chat channel", { kind: "message", source: "discord", channel: "chat", text: "hi" }, "main"],
 	["thread of a work channel", { kind: "message", source: "discord", channel: "th:42", parent: CH, text: "hi" }, "main"],
-	["alert", { kind: "out", source: "gateway", target: "alert", text: "x" }, "main"],
+	["alert", { kind: "out", source: "gateway", target: "alert", text: "x" }, "alert"],
 	["lane report", { kind: "lane_report", lane: "a", text: "done" }, "lane:a"],
 	["delivery state of a message to a project", { kind: "delivery", source: "gateway", target: CH, ref: "a1", state: "steered" }, CH],
 	["delivery state of a message to a session", { kind: "delivery", source: "gateway", target: "lane:a", ref: "a1", state: "answered" }, "lane:a"],

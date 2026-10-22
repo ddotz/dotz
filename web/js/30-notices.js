@@ -100,6 +100,7 @@ async function ntMarkRead(body) {
 function ntNavigate(open) {
   const t = String(open || "main");
   if (t === "main") { openTarget(MAIN, "chat"); return; }
+  if (isFixedT(t)) { openTarget(t, "chat"); return; }
   if (isLaneT(t)) {
     if (S && !S.lanes.some(l => `lane:${l.name}` === t)) { toast("이 세션은 이미 끝났어요"); go("lanes"); return; }
     openTarget(t, "chat"); return;
@@ -114,7 +115,7 @@ function ntNavigate(open) {
 /* ---- tap: go to the source message ---- */
 // The conversation holding the notice's message (n.src; older items fall back to n.open) is opened on its chat view, older history
 // is fetched until the message's time is covered, the message is scrolled to the middle and flashed. A message the chat does not
-// show (worklog posts live only in the bell) lands on the nearest one in time. Nothing here ever reports an error.
+// show lands on the nearest one in time. Alert and worklog posts are messages of the 알림 / 작업 기록 conversations. Nothing here ever reports an error.
 const ntRaf = () => new Promise(r => requestAnimationFrame(() => r()));
 const ntWait = ms => new Promise(r => setTimeout(r, ms));
 function ntGo(t) {
@@ -146,6 +147,7 @@ async function ntReach(t, at) {
     if (!add.length) return;
     for (const e of add) { s.mk.add(msgKey(e)); s.msgs.push(e); }
     s.msgs.sort(byTs); s.cap += add.length;
+    if (isFixedT(t)) dedupKeyed(s);
     if (t === target) renderAll(true);
   }
 }

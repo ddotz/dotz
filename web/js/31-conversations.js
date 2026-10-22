@@ -6,7 +6,9 @@
 const CONV_KINDS = new Set(["message", "lane_message", "out", "lane_report", "result", "mail", "schedule", "watch"]);
 
 // A message the conversation shows (same rule as hub/conversations.ts isRealMessage), and one that can be unread: not the owner's own, no restart note.
-const convReal = e => CONV_KINDS.has(e.kind) && !(e.kind === "out" && (e.update_key || e.target === "worklog"));
+// A post edited in place (update_key) is a message only in 알림 / 작업 기록; elsewhere it is a progress note.
+const convKeyedOk = e => e.update_key !== "progress" && isFixedT(eventTarget(e) || "");
+const convReal = e => CONV_KINDS.has(e.kind) && !(e.kind === "out" && e.update_key && !convKeyedOk(e));
 const convIncoming = e => convReal(e) && !OWNER.has(e.kind) && !cleanRestart(e);
 
 // Same rule as hub/conversations.ts previewOf: first meaningful line, plain text, 120 chars.
@@ -32,12 +34,14 @@ function convLastOf(e) {
 
 // A live message (called by ingestMsg once per new event): moves the row's preview and, unless the owner is looking at that
 // conversation's bottom right now, adds to its unread count (server rule: hub/conversations.ts).
-function convNote(e, t) {
+function convNote(e, t, was) {
   const last = convLastOf(e);
   if (!last) return;
   const prev = CONV.get(t);
   if (!prev || prev.ts <= last.ts) CONV.set(t, last);
-  if (convIncoming(e) && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
+  // `was`: the older version of an edited post, still unread = this one is the same unread message (counted once, like the hub does)
+  const again = !!was && !(READ[t] && READ[t] >= was.ts);
+  if (convIncoming(e) && !again && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
   convSchedule();
 }
 async function convLoad() {
@@ -212,10 +216,12 @@ function convTime(iso) {
 function convRows() {
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
-  return [MAIN, ...projects].map(t => ({ t, last: CONV.get(t) || null, name: targetName(t), unread: ts(t).unread }));
+  return [MAIN, "alert", "worklog", ...projects].map(t => ({ t, last: CONV.get(t) || null, name: targetName(t), unread: ts(t).unread }));
 }
+const FIXED_DESC = { alert: "경고와 감시 소식, 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
 function convAvatar(t) {
   const name = targetName(t);
+  if (isFixedT(t)) return el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon(t === "alert" ? "bell" : "list"));
   return el("span", { class: `cv-av${t === MAIN ? " bot" : ""}`, "aria-hidden": "true" }, isLaneT(t) ? icon("lanes") : Array.from(name || "d")[0].toUpperCase());
 }
 function convRow(r) {
@@ -247,7 +253,7 @@ const convHead = el("div", { id: "cv-head", class: "cv-head" });
 $("#v-chat").prepend(convSide, convHead);
 
 function convPaintHead() {
-  const i = targetInfo(target), state = i.alive ? statusKo(i.status) : "종료됨", sig = `${target}|${targetName(target)}|${state}`;
+  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : i.alive ? statusKo(i.status) : "종료됨", sig = `${target}|${targetName(target)}|${state}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   clear(convHead).append(convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: targetName(target) }), el("span", { class: "cv-p", text: state })));

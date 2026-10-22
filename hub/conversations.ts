@@ -18,8 +18,11 @@ const MESSAGE_KINDS = new Set([...OWNER_KINDS, "out", "lane_report", "result", "
 
 export function isRealMessage(e: HubEvent): boolean {
 	if (!MESSAGE_KINDS.has(e.kind)) return false;
-	// Worklog posts live in the bell (hub/notices.ts); the chat shows a verified session as its compact result card instead.
-	return !(e.kind === "out" && (e.update_key || e.target === "worklog"));
+	if (e.kind !== "out" || !e.update_key) return true;
+	// A post edited in place is a message only in the two fixed conversations (a lane's worklog line, an alert's update_key); in the
+	// main chat, a project or a session it is a progress note.
+	const t = eventTarget(e);
+	return e.update_key !== "progress" && (t === "alert" || t === "worklog");
 }
 
 // First meaningful line of a message as plain text: the handoff block, the [done]-style marker, code fences and markdown
@@ -56,7 +59,7 @@ function lastOf(e: HubEvent): ConversationLast | undefined {
 	return { ts: e.ts, text, from };
 }
 
-const known = new Map<string, ConversationLast | null>([["main", null]]);
+const known = new Map<string, ConversationLast | null>([["main", null], ["alert", null], ["worklog", null]]);
 let loaded = false;
 let sorted: { target: string; last: ConversationLast | null }[] | undefined;
 
@@ -70,7 +73,9 @@ function countIncoming(target: string, e: HubEvent, last: ConversationLast): voi
 	if (last.from === "owner" || cleanRestart(e)) return;
 	let bucket = incoming.get(target);
 	if (!bucket) incoming.set(target, (bucket = new Map()));
-	bucket.set(`${e.ts}|${e.kind}|${String(e.text ?? "").slice(0, 60)}`, e.ts);
+	// An edited post counts once, at its newest version.
+	const key = e.kind === "out" && typeof e.update_key === "string" && e.update_key ? `key|${e.update_key}` : `${e.ts}|${e.kind}|${String(e.text ?? "").slice(0, 60)}`;
+	bucket.set(key, e.ts);
 	if (bucket.size > UNREAD_KEEP) bucket.delete(bucket.keys().next().value as string);
 }
 

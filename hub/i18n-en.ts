@@ -20,6 +20,14 @@ export type Leads = typeof enLeads;
 // loses what the old context held, so facts worth keeping are saved to memory before the work goes on.
 const enRetainNudge = "Before continuing, save any durable owner, project or preference fact from the conversation so far that is not in memory yet with the memory tool if this runtime has one (omp: `retain`), else in the dotz data directory (owner facts in memory/owner.md, the owner's verbatim don'ts in memory/boundaries.md, rules in RULES.md, lessons in LESSONS.md, open work in state.json); skip this if there is none.";
 
+// How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
+// decision buttons and decision notices read (web/js/10-decision-card.js, hub/choices.ts).
+const enIssue = `report it with dotz_send alert: one line for the issue, then a choice block of 2-4 options in this shape:
+Decision: <question>
+**1) <name>** ← recommended
+<one-line consequence>
+**2) <name>**
+<one-line consequence>`;
 export const en = {
 	...enLeads,
 
@@ -167,8 +175,8 @@ export const en = {
 	// A progress report of a running turn every 5 minutes (hub/livestatus.ts); never rewritten by a model.
 	liveStatus: (minutes: number, since: string, now: string, lanes: string, workers: string) => `[run] Still working, ${minutes} min so far.${since ? `\nSince the last report: ${since}` : ""}${now ? `\nNow: ${now}` : ""}${lanes ? `\nSessions: ${lanes}` : ""}${workers ? `\nSubagents: ${workers}` : ""}`,
 	liveMore: (n: number) => `+${n} more`,
-	inboxWatchNoChannel: (watch: string, reason: string) => `[dotz inbox] watch ${watch} ${reason} (no one is waiting for this turn; tell the owner with dotz_send only if it matters):`,
-	inboxWatch: (watch: string, reason: string, ch: string) => `[dotz inbox] watch ${watch} ${reason} for work channel ch:${ch} (your final answer goes there; reply "-" alone to post nothing):`,
+	inboxWatchNoChannel: (watch: string, reason: string) => `[dotz inbox] watch ${watch} ${reason} (no one is waiting for this turn). If it is a failure, an anomaly or flapping, ${enIssue}\nIf it is not an issue, post nothing to alert; one dotz_send worklog line only:`,
+	inboxWatch: (watch: string, reason: string, ch: string) => `[dotz inbox] watch ${watch} ${reason} for work channel ch:${ch} (your final answer goes there; reply "-" alone to post nothing). If it is a failure, an anomaly or flapping, ${enIssue}\nIf it is not an issue, post nothing to alert; one dotz_send worklog line only:`,
 	inboxMail: (ch: string) => `[dotz inbox] new mail for work channel ch:${ch} (your final answer goes there; open one thread per mail with dotz_channel thread, kind = the sender, name = the subject, and put the summary there; if a person wants something from the owner, brief them with a suggested reply; read or act with zele, sending only after the owner's OK; reply "-" alone to post nothing):`,
 	inboxSchedule: (id: string, every: number | undefined, channel: string) => `[dotz inbox] scheduled (${id}${every ? `, every ${every} min` : ""}) - do it now; your final answer goes to ${channel}:`,
 	inboxThread: (thread: string, parent: string) => ` (thread "${thread}" in #${parent}; your answer goes into the thread)`,
@@ -186,9 +194,9 @@ export const en = {
 Do this, briefly:
 1. Find what went wrong or cost too much: owner corrections or repeated asks, failed or stuck lanes, alerts, cache rewrites.
 2. For each real lesson add or update one dated line in ${lessons} (keep it under ~30 lines; delete lessons that no longer apply or that a rule already covers). For each owner correction or reaction above, add one sourced line to ${paths.observations}; move a durable owner preference or context (stated plainly, or seen twice there) to ${paths.owner}, and a "don't" in the owner's own words to ${paths.boundaries}, verbatim with its source. Only what the owner said or did; never write about other people there.
-3. If something recurred although RULES.md or LESSONS.md already covers it, more text will not help: send the owner (dotz_send alert) a concrete fix for the carrier (which file, hook, brief footer or check to change).
-4. Never edit RULES.md here; propose rule changes to the owner in alert and wait for their answer.
-5. Finish with one dotz_send worklog post in the identity's language and Notices style: a first line "Nightly review", then "- " bullets in plain words for what you did (e.g. "- 1 lesson noted in LESSONS.md", "- 1 proposed fix posted to alert"), at most 4 bullets. Nothing else is sent.`,
+3. If there is an issue (a failure, an anomaly, a repeated mistake, a token leak, something that recurred although RULES.md or LESSONS.md already covers it), once, ${enIssue}
+4. Never edit RULES.md here; offer a rule change as an option and wait for the owner's answer.
+5. Finish with one dotz_send worklog line in the identity's language and Notices style, starting "Nightly review: ...". If nothing was wrong, that one line is all you send: nothing to alert.`,
 
 	// Appended to `reflect` only when LESSONS.md has stale or near-duplicate lines or is over its byte cap (hub/reflect.ts lessonCandidates).
 	// Appended to `reflect` when observations.md has lines older than 90 days (hub/reflect.ts).

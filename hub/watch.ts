@@ -16,6 +16,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import { dirname, join } from "node:path";
 import { blockedBy } from "../extension/index.ts";
 import { ensureAside, replInTab } from "./aside.ts";
+import { issueBlock } from "./choices.ts";
 import { DATA_DIR, log, now, paths, writeAtomic } from "./config.ts";
 import { blockedByFeatures } from "./featuredirs.ts";
 
@@ -46,6 +47,11 @@ const RUN_TIMEOUT_MS = 120_000;
 const READ_GRACE_MS = 2_000;
 export const FAIL_ALERT_EVERY_MS = 12 * 3600_000;
 export const FAIL_ALERT_AFTER = 2; // failures in a row before the first alert
+// A notify reason that is an issue the owner decides on: repeated failures, a stopped watch, one waiting for approval. Output changes,
+// matches and "recovered" are not.
+export const isWatchIssue = (reason: string): boolean => /^(?:failed \d+ times|stopped after|needs the owner)/.test(reason);
+export const watchChoice = (name: string): string =>
+	issueBlock(`감시 ${name}을(를) 어떻게 할까요?`, [{ name: "원인 확인", result: "출력을 보고 원인과 고칠 방법을 알려드려요." }, { name: "감시 끄기", result: "고칠 때까지 이 감시를 멈춰 둬요." }]);
 const loadItems = (): Watch[] => (existsSync(paths.watches) ? JSON.parse(readFileSync(paths.watches, "utf8")) : []);
 const items: Watch[] = loadItems();
 const SCRIPT_MAX_BYTES = 64 * 1024;
