@@ -16,7 +16,7 @@
 .pr-row:hover { background: var(--hover); }
 .pr-row:active { background: var(--active); }
 .pr-row.on .pr-s { color: var(--fg-2); }
-/* the computer being viewed: a small accent dot in a left slot every row reserves (14px extra padding), clear of the online dot */
+/* the computer being viewed: a small accent dot in a left slot every row reserves (14px extra padding); connection state is the pill on the right, never a second dot */
 .pr-row { position: relative; padding-left: 30px; }
 .pr-row.on::before { content: ""; position: absolute; top: 50%; left: 14px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); }
 .pr-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -24,6 +24,8 @@
 .pr-s { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .pr-bd { flex: none; padding: 0 8px; border-radius: 12px; background: var(--card); color: var(--fg-2); font: 600 12px/22px var(--font); white-space: nowrap; }
 .pr-bd.need { color: var(--warn); }
+.pr-st { flex: none; padding: 0 8px; border-radius: 12px; background: var(--card); color: var(--fg-3); font: 600 12px/22px var(--font); white-space: nowrap; }
+.pr-st.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
 .pr-line .chev { flex: none; align-self: center; color: var(--fg-3); }
 @media (max-width: 699px) {
   .pchip { max-width: 132px; margin-left: 6px; }
