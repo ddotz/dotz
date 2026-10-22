@@ -331,6 +331,8 @@ const ntLinkedDec = n => {
 };
 const ntById = id => NT.items.find(x => String(x.id) === String(id));
 const ntDecisions = () => NT.items.filter(ntOpenDec).sort((a, b) => ntAt(b) - ntAt(a));
+// Loose [ask] notices: waiting on the owner, but not carrying (or linked to) an open decision, so ntDecisions() never lists them.
+const ntLooseAsks = () => NT.items.filter(n => ntNeeds(n) && !ntOpenDec(n) && !ntLinkedDec(n)).sort((a, b) => ntAt(b) - ntAt(a));
 const ntHasDecision = t => NT.items.some(n => ntOpenDec(n) && n.decision.to === t);
 const ntDecWhere = d => d.to.startsWith("auth:") ? "로그인 요청" : targetName(d.to);
 const ntOptsOrdered = opts => [...opts].sort((a, b) => Number(b.rec) - Number(a.rec) || a.n - b.n);
@@ -382,10 +384,11 @@ function ntIgnoreBtn(n) {
 
 // One row of the home card 답변 필요 (same markup as 08-home.js homeNowRow): tap = the detail sheet, x = ignore.
 function ntHomeRow(n) {
+  const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open;   // a loose [ask] notice has no decision: its conversation names where it waits
   return el("div", { class: "hr hrx" },
-    el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": `${ntPlain(n.title)} · 답변 필요` },
+    el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": `${title} · 답변 필요` },
       el("span", { class: "dot att" }),
-      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: ntPlain(n.title) })), el("span", { class: "ha", text: ntDecWhere(n.decision) })),
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: n.decision ? ntDecWhere(n.decision) : ntLaneNote(n) || (src ? targetName(src) : "알림") })),
       el("span", { class: "hs warn", text: "답변 필요" })),
     ntIgnoreBtn(n));
 }

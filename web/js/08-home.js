@@ -200,13 +200,15 @@ function renderHomeNow() {
   const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
   const dec = ntDecisions();   // 30-notices.js: open decisions, each its own row; a session question already among them is not listed twice
   const need = all.map(t => ({ t, k: askOf(t) ? "ask" : attnKind(t) })).filter(x => x.k && !(x.k === "ask" && ntHasDecision(x.t)));
+  const loose = ntLooseAsks().filter(n => !need.some(x => x.k === "ask" && x.t === (n.src || n.open)));   // [ask] notices without a decision wait here too, not only in the 알림 card
+  const waiting = dec.length + loose.length + need.length;
   const NEED = { ask: "답변 필요", done: "결과 확인", limit: "한도 걸림" };
   const rank = t => ({ working: 0, starting: 1, "rate-limited": 2 })[targetInfo(t).status] ?? 3;
   const run = [...all].sort((a, b) => rank(a) - rank(b));
   const bg = workRunning(), working = run.filter(t => rank(t) < 2).length + bg.length;
   clear(box).append(
-    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), need.length + dec.length ? el("span", { class: "sup", text: `${need.length + dec.length}` }) : null),
-    el("div", { class: "hn" }, ...dec.map(ntHomeRow), ...(need.length ? need.map(x => homeNowRow(x.t, NEED[x.k], "att")) : dec.length ? [] : [el("div", { class: "empty", text: "기다리는 게 없어요" })])),
+    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
+    el("div", { class: "hn" }, ...dec.map(ntHomeRow), ...loose.map(ntHomeRow), ...need.map(x => homeNowRow(x.t, NEED[x.k], "att")), ...(waiting ? [] : [el("div", { class: "empty", text: "기다리는 게 없어요" })])),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
     el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", "")), ...bg.map(workRow)),
     endedGroup() || "");
