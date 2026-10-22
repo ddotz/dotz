@@ -30,7 +30,7 @@ function accountSection() {
   // one row for the pick: who, and what really happens (the pick may be blocked and requests go to another account)
   const ch = ACC.chosen;
   rows.push(el("div", { class: "li" }, tx(ch ? `고른 계정: ${ch.label}` : "고른 계정이 없어요", ch ? ch.text : ""),
-    ch && ch.source === "manual" ? el("button", { class: "btn text", type: "button", onclick: ev => accMut(ev.currentTarget, () => api("/api/accounts/use", "POST", { account: "auto" }), "자동으로 돌렸어요") }, "자동으로 돌리기") : null));
+    ch && ch.source === "manual" ? el("button", { class: "btn text", type: "button", onclick: ev => accMut(ev.currentTarget, () => api("/api/accounts/use", "POST", { account: "auto" }), "고정을 풀었어요") }, "고정 풀기") : null));
   rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), el("button", { class: "btn tonal", type: "button", onclick: () => rulesDialog() }, "편집")));
   for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));
   const run = sc && [sc.timeout_ms ? `${Math.round(sc.timeout_ms / 1000)}초 안에 끝나요` : "", sc.every_minutes ? `${sc.every_minutes}분마다` : ""].filter(Boolean).join(" · ");

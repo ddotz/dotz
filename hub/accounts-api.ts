@@ -6,6 +6,7 @@ import { aliasesFile, label, readAliases, resolveAccount, setAlias } from "./acc
 import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, validateRules, writeRules } from "./account-rules.ts";
 import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
 import { TZ } from "./config.ts";
+import { writeOmoPin } from "./omo-pin.ts";
 import { accountUsedChanged } from "./notices.ts";
 import { type AccountReport, limitsText, usedAccount } from "./usage-account.ts";
 
@@ -222,12 +223,22 @@ type AccountsBody = ReturnType<typeof accountsBody>;
 
 // ---- changes ----
 
+// OmO's own pin follows the pick, so settings and OmO agree. A write that fails stops the change before dotz's own state moves.
+function syncOmoPin(account: string | undefined): void {
+	try {
+		writeOmoPin(account);
+	} catch (e) {
+		throw new AccountsError(`OmO의 고정 계정을 바꾸지 못했어요: ${(e as Error).message}`, 500);
+	}
+}
+
 // A manual pick by id or alias; "auto" (or "자동") clears it. Re-evaluates right away.
 async function useAccount(text: string, until?: string): Promise<{ auto: true } | { auto?: false; id: string; label: string; applied: boolean }> {
 	const t = text.trim();
 	if (!t) throw new AccountsError("어느 계정인지 알려 주세요", 400);
 	if (/^(auto|자동)$/i.test(t)) {
 		await quietly(async () => {
+			syncOmoPin(undefined);
 			setManual(undefined);
 			await checkNow();
 		});
@@ -237,6 +248,7 @@ async function useAccount(text: string, until?: string): Promise<{ auto: true } 
 	if (!id) throw new AccountsError(`그런 계정이 없어요: ${t}`, 400);
 	if (until !== undefined && (typeof until !== "string" || Number.isNaN(Date.parse(until)))) throw new AccountsError("until은 ISO 시각이어야 해요 (예: 2026-10-21T18:00:00+09:00)", 400);
 	const d = await quietly(async () => {
+		syncOmoPin(id);
 		setManual(id, undefined, until || undefined);
 		return checkNow();
 	});
@@ -317,7 +329,7 @@ export function accountText(now = Date.now()): string {
 	if (!b.accounts.length) return "OmO에 Claude 구독 계정이 없어요.";
 	const cur = b.accounts.find(a => a.current);
 	const lines = [`지금 계정: ${cur ? cur.label : "아직 안 골랐어요"}`, `이유: ${whyText(b.decision)}`];
-	if (b.manual_text) lines.push(`직접 고정: ${b.manual_text} (자동으로 돌리려면 /account auto)`);
+	if (b.manual_text) lines.push(`직접 고정: ${b.manual_text} (고정을 풀려면 /account auto)`);
 	if (b.chosen && b.chosen.used_instead) lines.push(`고른 계정: ${b.chosen.label} · ${b.chosen.text}`);
 	lines.push("계정:", ...b.accounts.map(a => `- ${a.label}${a.current ? " (지금)" : ""} · ${stateText(a, now)} · ${leftText(a)}`));
 	lines.push(b.rules_text.length ? "규칙:" : "규칙: 없음", ...b.rules_text.map(r => `${r.index + 1}. ${r.text}`));
@@ -328,9 +340,9 @@ export function accountText(now = Date.now()): string {
 }
 
 const pickedText = (r: Awaited<ReturnType<typeof useAccount>>): string => {
-	if (r.auto) return "자동으로 돌렸어요. 이제 규칙과 한도에 따라 계정을 골라요.";
+	if (r.auto) return "고정을 풀었어요. 이제 규칙과 한도에 따라 계정을 골라요.";
 	const josaTo = josa(r.label, "으로", "로");
-	if (r.applied) return `${r.label}${josaTo} 바꿨어요. 자동으로 돌리려면 "계정 자동으로"라고 해 주세요.`;
+	if (r.applied) return `${r.label}${josaTo} 바꿨어요. 고정을 풀려면 "계정 자동으로"라고 해 주세요.`;
 	const cur = accountsBody().accounts.find(a => a.current);
 	return `${r.label}${josaTo} 고정해 뒀지만 지금은 쓸 수 없어서(한도 등) ${cur ? cur.label : "다른 계정"}을 쓰고 있어요.`;
 };
