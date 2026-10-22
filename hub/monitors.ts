@@ -1,5 +1,6 @@
 import { listSchedules } from "./schedule.ts";
 import { allWatches } from "./watch.ts";
+import { watchLabel } from "./workchannels.ts";
 
 // The read-only monitor list for the web (GET /api/monitors): every watch and schedule with the words the owner reads.
 export type Monitor = {
@@ -21,7 +22,7 @@ export function listMonitors(): Monitor[] {
 		const result = !last ? undefined : w.state.fails > 0 ? "fail" : w.state.lastChanged ? "changed" : "ok";
 		const next = w.paused || w.state.paused ? undefined : w.state.nextAt ?? Date.parse(last ?? w.created) + w.every_minutes * 60_000;
 		return {
-			name: w.name,
+			name: watchLabel(w.name),
 			kind: "watch",
 			// watch channels are bare Discord ids; the web opens conversations by ch:<id>
 			...(w.channels?.[0] ? { channel: /^\d+$/.test(w.channels[0]) ? `ch:${w.channels[0]}` : w.channels[0] } : {}),

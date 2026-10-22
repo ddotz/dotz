@@ -64,7 +64,7 @@ test("a done lane report upserts the session result; a watch post for a channel 
 	post("ch:123", "[주간 점검] 새 글이 올라왔어요", { source: "gateway" });
 	expect(byText("새 글이 올라왔어요")[0]).toMatchObject({ kind: "watch", title: "주간 점검", open: "ch:123" });
 	emit("inbox", { ts: ts(), kind: "watch", source: "watch:뉴스", watch: "뉴스", channels: [], reason: "바뀌었어요", text: "내용" });
-	expect(byText("바뀌었어요\n내용")[0]).toMatchObject({ kind: "watch", title: "뉴스", open: "alert" });
+	expect(byText("뉴스: 바뀌었어요\n내용")[0]).toMatchObject({ kind: "watch", title: "뉴스", open: "alert" });
 });
 
 test("mark read by id and mark all persist, and the list shows unread first", () => {

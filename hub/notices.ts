@@ -7,6 +7,7 @@ import { type DraftApproval, draftActionOf, parseDraftApproval } from "./draft-a
 import { broadcast, emit, eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
+import { watchLine, watchReasonKo } from "./watchtext.ts";
 
 // The web notification store: every worklog / alert / session result / watch / schedule post, kept in notices.json so the
 // bell survives a restart. Fed by what the hub already emits (onEmit), so main.ts only wires the API and the resolver.
@@ -89,6 +90,13 @@ export const unreadCount = () => items.reduce((n, i) => n + (i.read || i.dismiss
 // The Korean title of a session (never its code name); main.ts passes lanes.get(name)?.title.
 let laneTitleOf: (name: string) => string | undefined = () => undefined;
 export const setLaneTitleResolver = (fn: (name: string) => string | undefined) => void (laneTitleOf = fn);
+
+// Watch names are keys ([a-z0-9-]); the owner reads the label. And a watch event routed to the orchestrator makes no notice while the
+// orchestrator can take it (the orchestrator reports in that channel itself); main.ts wires both.
+let watchLabelOf: (name: string) => string = name => name;
+let orchestratorUp: () => boolean = () => true;
+export const setWatchLabelResolver = (fn: (name: string) => string) => void (watchLabelOf = fn);
+export const setOrchestratorAvailable = (fn: () => boolean) => void (orchestratorUp = fn);
 // A stopped lane is no longer in the live map: its title lives in the lane record the hub keeps (lanes/<name>/lane.json) and
 // in the title its lane_start event carries.
 function recordedTitle(name: string): string | undefined {
@@ -212,7 +220,7 @@ function fromOutbox(e: HubEvent): void {
 	if (!text) return;
 	const restart = RESTART_PREFIX.test(text);
 	const by = authorOf(e);
-	const recovered = e.source === "gateway" ? /^\[([^\]\n]+)\]\s*recovered\b/.exec(text)?.[1] : undefined;
+	const recovered = e.source === "gateway" ? /^\[([^\]\n]+)\]\s*(?:recovered\b|다시 정상이에요)/.exec(text)?.[1] : undefined;
 	if (recovered) watchRecovered(recovered, e.ts);
 	if (target === "worklog" || (restart && target === "web" && e.source === "gateway")) {
 		if (key?.startsWith("lane:")) {
@@ -235,10 +243,14 @@ function fromInbox(e: HubEvent): void {
 	}
 	if (e.kind === "watch") {
 		const recovered = /^recovered\b/.test(String(e.reason ?? ""));
-		if (recovered) watchRecovered(String(e.watch ?? ""), e.ts);
-		// The wake event itself is a message of the 알림 conversation (hub/events.ts eventTarget).
-		const body = [e.reason, e.text].filter(v => typeof v === "string" && v.trim()).join("\n");
-		return void upsert({ kind: "watch", tone: "", title: String(e.watch ?? "모니터링"), text: clean(body).text || "알림이 왔어요", open: "alert", read: recovered, at: e.ts });
+		const name = String(e.watch ?? "");
+		const label = typeof e.label === "string" && e.label.trim() ? e.label.trim() : name;
+		if (recovered) watchRecovered(name, e.ts, label);
+		// The wake event itself is a message of the 알림 conversation (hub/events.ts eventTarget); the bell gets nothing extra when the
+		// orchestrator, which reports in the channel, is up.
+		if (e.to === "orchestrator" && Array.isArray(e.channels) && e.channels.length && orchestratorUp()) return;
+		const text = clean(watchLine(label || "모니터링", String(e.reason ?? ""), String(e.text ?? ""))).text;
+		return void upsert({ kind: "watch", tone: "", title: label || "모니터링", text: text || "알림이 왔어요", open: "alert", read: recovered, at: e.ts });
 	}
 	if (e.kind === "schedule") {
 		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
@@ -570,11 +582,12 @@ export function orchestratorAnswered(text: string, ref?: string, at = now()): nu
 }
 
 // Signal 3: a watch that failed passes again. Its failure alert (and the choice it carried) is over; the recovery note itself is born read.
-function watchRecovered(name: string, at: string): void {
+function watchRecovered(name: string, at: string, label = name): void {
 	if (!name) return;
+	const isTitle = (t: string) => t === name || t === label;
 	// Only the gateway's own failure alert for that watch (it may carry a cause-check choice that a pass makes moot), never another author's question.
-	resolveAsks(i => (i.by === "gateway" && i.text.startsWith(`[${name}]`)) || (i.kind === "watch" && i.title === name), at, true);
-	readIds(items.filter(i => !i.read && !i.dismissed && i.ts < at && ((i.kind === "watch" && i.title === name) || (i.kind === "alert" && i.tone !== "ask" && i.text.startsWith(`[${name}]`)))).map(i => i.id));
+	resolveAsks(i => (i.by === "gateway" && i.text.startsWith(`[${name}]`)) || (i.kind === "watch" && isTitle(i.title)), at, true);
+	readIds(items.filter(i => !i.read && !i.dismissed && i.ts < at && ((i.kind === "watch" && isTitle(i.title)) || (i.kind === "alert" && i.tone !== "ask" && i.text.startsWith(`[${name}]`)))).map(i => i.id));
 }
 
 // Signal 4: the bot resolves notices itself. `ids` picks exact notices, `match` every asking notice whose title or text holds that text, `conv` every
@@ -665,13 +678,22 @@ export function summary(text: string): string {
 		.join("\n");
 }
 
+// A watch notice stored before labels and Korean reasons: its title is the watch name and its text starts with the raw reason.
+function readable(n: Notice): Notice {
+	if (n.kind !== "watch") return n;
+	const title = watchLabelOf(n.title);
+	const [first = "", ...rest] = n.text.split("\n");
+	const text = watchReasonKo(first) !== first ? watchLine(title, first, rest.join("\n")) : n.text;
+	return title === n.title && text === n.text ? n : { ...n, title, text };
+}
+
 // Unread first, then the most recently updated.
 export function listNotices(limit = 100): { items: Notice[]; unread: number } {
 	const n = Math.max(1, Math.min(Math.floor(limit) || 100, NOTICE_CAP));
 	const shown = items.filter(i => !i.dismissed);
 	const order = new Map(shown.map((i, idx) => [i, idx]));
 	const sorted = [...shown].sort((a, b) => Number(isOpenDecision(b)) - Number(isOpenDecision(a)) || Number(a.read) - Number(b.read) || b.updated.localeCompare(a.updated) || order.get(b)! - order.get(a)!);
-	return { items: sorted.slice(0, n), unread: unreadCount() };
+	return { items: sorted.slice(0, n).map(readable), unread: unreadCount() };
 }
 
 // Swipe / x in the bell: read and gone from every list and count, on every open tab (a notice_dismiss frame).
