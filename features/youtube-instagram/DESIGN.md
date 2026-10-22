@@ -208,3 +208,72 @@ Only the watches for the connected platforms are added. Commands use `command` (
   `posted`/`failed`/`aside-needed` -> report in the project channel (aside-needed: do the upload with `aside exec`).
 - Only after the owner picks OK: `sns.ts approve <id>` (next posting time unless the owner said now). Nothing public
   before that, ever. Commands are `bun <dotz checkout>/features/youtube-instagram/bin/<script>.ts`.
+
+## Round 2 (owner 2026-10-22): reliability fixes and one-sentence onboarding
+
+Owner rules: integrations ship off and turn on through their setup; onboarding optimization and automation are the core
+("켜 달라는 한마디로 설치·권한·로그인·시험·감시·카드까지", owner touches minimal and asked once, batched); known follow-ups
+are fixed now, not later; use iMessage to receive verification codes; Aside automation first, ask only what cannot be
+automated.
+
+### R1. Idempotent YouTube upload (no duplicate after a network drop)
+- Before `insertVideo`, due.ts writes the upload intent into the job: `upload_intent: { fingerprint, started }`.
+  fingerprint = `dz-` + first 12 hex of sha256(job id + file size + file mtime). The upload sends it as a tag
+  (`snippet.tags` gets the fingerprint appended) so the API can find it again.
+- On the next attempt with an intent present and no youtube result, first look it up: `recentUploads` (1 unit) and
+  `videos.list part=snippet` on those ids (1 unit per 50); a video whose tags contain the fingerprint is the result
+  (record it, no new upload). Only when none matches, upload again. The intent stays until done.
+### R2. Quota exhausted is its own state
+- `lib/youtube.ts`: 403 with reason `quotaExceeded` or `dailyLimitExceeded` -> `QuotaError` (not TransientError).
+- `lib/quota.ts`: `markExhausted(ctx)` stores `exhausted_until` = next midnight America/Los_Angeles in the ledger
+  (and fills units to the budget); `can()` is false until then. Ledger writes take a lock file
+  (`cache/quota.lock`, O_EXCL create, stale after 10 s) around read-modify-write.
+- watchkit: a QuotaError marks the ledger and prints, once per Pacific day (state in the ledger `reported_day`),
+  `yt-quota-exhausted until=<HH:MM in the owner time zone>` with exit 0; later runs that day stay silent. The
+  orchestrator reports it in plain Korean ("유튜브 하루 쿼터를 다 써서 <시각>에 다시 이어서 해요"), no choice block.
+### R3. Other follow-ups (gate review)
+- A job stuck in `posting` (process killed mid-publish) is released back to `scheduled` when `posting_since` is
+  older than 30 min (dueJobs does this; publishJob sets posting_since). The upload intent (R1) prevents a duplicate.
+- yt-comments: when 3 pages are read without reaching the baseline, print one extra line
+  `yt-comment-overflow more than <n> new comments; older ones not listed` so nothing is dropped silently.
+- `sns.ts restore` is an owner-requested revert only (playbook says so); it keeps working without a job.
+
+### R4. One-sentence onboarding (`bin/onboard.ts`)
+"유튜브·인스타 연결해줘" -> the orchestrator runs `bun <feature>/bin/onboard.ts run [--youtube] [--instagram]` and, for
+an unavoidable owner step, asks once and re-runs it. A resumable state machine, state in `SNS_DIR/onboard.json`
+(`{ steps: { <id>: { status: pending|done|needs-owner|failed, at, note } }, platforms, asks }`); `run` continues at the
+first step that is not done; `status` prints one Korean line per step; `reset [<step>]` re-opens steps.
+Steps, in order (each skips itself when already satisfied, e.g. a valid secret file exists):
+1. `deps`: bun, aside CLI answering, ffprobe, cloudflared (Instagram only), Messages database readable (for codes).
+   Missing brew packages are installed with `brew install ffmpeg cloudflared` (no prompt). Messages unreadable ->
+   needs-owner (Full Disk Access for bun), codes fall back to asking.
+2. `youtube-client`: Google Cloud through `aside exec` (background tab): create or reuse project "dotz-youtube", enable
+   YouTube Data API v3, OAuth consent screen External + app name + owner email, publish the app to Production (Testing
+   would expire refresh tokens after 7 days), create an OAuth client of type Desktop. client_id/secret are read from the
+   page with `aside repl` and POSTed to a one-shot localhost receiver (`lib/receiver.ts`) that writes
+   `secrets/youtube-client.json` 0600; no secret passes through a model or argv.
+3. `youtube-auth`: the loopback flow of setup.ts; the consent URL opens in an Aside background tab and `aside exec`
+   picks the account, accepts the unverified-app screen ("고급 -> 이동") and allows; the redirect completes on its own.
+4. `instagram-account`: `aside exec` checks the account is professional (creator/business); if not, switches it to
+   creator (owner default) on instagram.com settings.
+5. `instagram-token`: Meta for Developers through `aside exec`: register as developer if needed, create app (use case
+   Instagram API with Instagram Login), add the account, generate the long-lived token; the token is read with
+   `aside repl` and POSTed to the receiver -> `secrets/instagram-token-new.json`, then `setup.ts instagram-token`.
+6. `detect`: myChannel / me() fill channel and account (no questions).
+7. `apply`: `setup.ts apply` with defaults, no questions: posting 18:00, approval each, quiet 00:00-08:00, privacy
+   private for API uploads, `upload_via aside` until the Google project passes the audit (public uploads), languages off.
+8. `test-read`: one cheap read per platform (channelStats 1 unit, me 1 call) + card command runs; failure -> failed.
+9. `done`: progress shows the result.
+- Verification codes: when a step hits a code prompt, `lib/otp.ts` reads the newest code from the macOS Messages
+  database (`~/Library/Messages/chat.db`, read-only; text or attributedBody) that arrived after the step started,
+  matching the service (Google "G-123456", Instagram/Facebook/Meta 6-8 digits), waits inside up to 120 s, and hands it
+  to `aside repl` through the one-shot localhost URL (`const secret`), never printing it. Owner basis: owner
+  2026-10-22 "아이메시지도 적극적으로 활용해서 인증 코드 받아야함".
+- Owner touches are batched: steps that need the owner (password not saved in Aside, a phone push, Full Disk Access)
+  are marked needs-owner and `run` continues with every independent step; at the end it prints ONE
+  `ask` block (Korean, numbered, each one line saying exactly what to tap) and exits 3. The orchestrator posts it once
+  (dotz_auth approve/secret where a value is needed) and re-runs `run` after the owner answers.
+- Progress: `run` updates one evolving message through the gateway (`POST /api/send` with
+  `update_key: "sns-onboarding"`, target = `--target` or `chat`): a checklist line per step (✅ ⏳ ❓ ❌).
+- Every external effect (aside exec, aside repl, brew, gateway, API) goes through injected runners; `--dry-run` uses a
+  scripted runner set, and the test drives the whole flow, an interruption, and the resume.
