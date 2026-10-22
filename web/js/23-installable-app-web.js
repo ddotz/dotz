@@ -65,6 +65,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") { shellHiddenAt = Date.now(); if (shellPending && shellIdle()) shellApply(); return; }
   const away = shellHiddenAt ? Date.now() - shellHiddenAt : 0;
   shellHiddenAt = 0;
+  homeTop();
   const sw = away > SHELL_AWAY_MS && "serviceWorker" in navigator && (navigator.serviceWorker.controller || (PWA.reg && PWA.reg.active));
   if (sw) sw.postMessage({ type: "refresh-shell" });
 });
@@ -79,7 +80,7 @@ async function webBuildCheck(b) {
   shellUpdated();
 }
 // Views other than a conversation have no anchor: put their scroll back once they are drawn.
-if (SHELL_RESTORE && !SHELL_RESTORE.key && SHELL_RESTORE.views) for (const ms of [300, 1200]) setTimeout(() => { const v = $("#views"); if (SHELL_RESTORE && !v.scrollTop) v.scrollTop = SHELL_RESTORE.views; }, ms);
+if (SHELL_RESTORE && !SHELL_RESTORE.key && SHELL_RESTORE.views) for (const ms of [300, 1200]) setTimeout(() => { const v = $("#views"); if (SHELL_RESTORE && current !== "home" && !v.scrollTop) v.scrollTop = SHELL_RESTORE.views; }, ms);
 // A tap that had to start the app carries the message as ?m=<ts>: 99-boot.js opens it once the state is in. A decision carries ?n=<id> (its sheet,
 // 30-notices.js): it stays in the address and never also jumps to a conversation.
 const pushQ = new URLSearchParams(location.search);

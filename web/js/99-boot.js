@@ -53,7 +53,7 @@
   // Leaving for the other computer (33-peers.js) and coming back with the back button restores this page frozen from the bfcache: its stream is
   // dead and nothing booted again. pagehide closes the stream on purpose; pageshow(persisted) opens a new one (its first frame is a "reset", which refetches everything).
   addEventListener("pagehide", () => { if (es) es.close(); });
-  addEventListener("pageshow", ev => { if (ev.persisted) { openStream(); resync(); prLoad(); loadStrip(); loadUpdate(); } });
+  addEventListener("pageshow", ev => { if (ev.persisted) { homeTop(); openStream(); resync(); prLoad(); loadStrip(); loadUpdate(); } });
   setInterval(refreshState, 15000);
   // The 새 버전 badge comes from /api/update: read it on open and again every few minutes.
   loadUpdate(); setInterval(loadUpdate, 5 * 60000);
