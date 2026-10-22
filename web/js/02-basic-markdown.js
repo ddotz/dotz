@@ -78,8 +78,12 @@ function parseTone(text) {
 }
 
 /* ---------- api ---------- */
+// index.html starts the first /api/state fetch in <head>, before this 480KB script is downloaded and parsed; the first api() of that path takes it over.
 async function api(path, method = "GET", body) {
-  const r = await fetch(path, { method, headers: body !== undefined ? { "Content-Type": "application/json" } : undefined, body: body !== undefined ? JSON.stringify(body) : undefined });
+  const go = () => fetch(path, { method, cache: "no-store", headers: body !== undefined ? { "Content-Type": "application/json" } : undefined, body: body !== undefined ? JSON.stringify(body) : undefined });
+  const early = method === "GET" && window.__early && window.__early[path];
+  if (early) delete window.__early[path];
+  const r = await (early ? early.catch(go) : go());
   let data = null;
   try { data = await r.json(); } catch {}
   if (!r.ok) throw Object.assign(new Error((data && data.error) || `HTTP ${r.status}`), { data });

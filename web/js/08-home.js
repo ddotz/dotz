@@ -339,3 +339,17 @@ function targetInfo(t) {
   return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable, ask: l.pendingAsk && l.pendingAsk.text ? l.pendingAsk : null } : { status: "", alive: true, known: false };
 }
 const isWorking = t => { const i = targetInfo(t); return i.alive && (i.status === "working" || i.status === "starting"); };
+// The main assistant's background work (S.work) as a row on Home: tap goes to the conversation that asked for it, flashed.
+async function workGo(w) {
+  const t = w.target && validTarget(w.target) ? w.target : MAIN;
+  if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t).catch(() => {});
+  const asked = w.reply_to ? ts(t).msgs.find(e => e.mid === w.reply_to) : null;
+  ntJump({ src: t, at: asked ? asked.ts : new Date(w.started_at).toISOString() });
+}
+function workRow(w) {
+  const run = w.status === "running", done = w.status === "done";
+  return el("button", { class: "hr", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${run ? "작업 중" : done ? "완료" : "실패"} · 대화로 가기` },
+    el("span", { class: `dot ${run ? "pri" : done ? "ok" : "err"}` }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: run ? workElapsed(w) : `${done ? "끝남" : "실패"} · ${workAgo(w)}` })),
+    el("span", { class: `hs ${run ? "pri" : done ? "" : "err"}`, text: run ? "작업 중" : done ? "완료" : "실패" }));
+}

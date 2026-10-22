@@ -13,8 +13,11 @@
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);
-  let opened = false;
-  const es = new EventSource("/api/events");
+  let opened = false, es;
+  // The stream is a function so a page that comes back from the back/forward cache (the browser closes the stream when it freezes the page) can open a new one.
+  const openStream = () => {
+  if (es) es.close();
+  es = new EventSource("/api/events");
   // The browser resends the last frame id on reconnect and the gateway replays only what was missed. "reset" comes on
   // the first connect and when the gap cannot be replayed (gateway restarted, or too long away): only then refetch.
   es.onopen = () => setConn(true);
@@ -44,6 +47,12 @@
       if (fresh && (notice || e.kind === "lane_report")) notify(e);
     }
   };
+  };
+  openStream();
+  // Leaving for the other computer (33-peers.js) and coming back with the back button restores this page frozen from the bfcache: its stream is
+  // dead and nothing booted again. pagehide closes the stream on purpose; pageshow(persisted) opens a new one (its first frame is a "reset", which refetches everything).
+  addEventListener("pagehide", () => { if (es) es.close(); });
+  addEventListener("pageshow", ev => { if (ev.persisted) { openStream(); resync(); prLoad(); loadStrip(); loadUpdate(); } });
   setInterval(refreshState, 15000);
   // The 새 버전 badge comes from /api/update: read it on open and again every few minutes.
   loadUpdate(); setInterval(loadUpdate, 5 * 60000);
@@ -53,7 +62,7 @@
   loadStrip(); setInterval(loadStrip, 60000);
   // The stream stalls while the phone sleeps (a push can land before the message does): coming back after a few seconds away, refetch.
   let hiddenAt = 0;
-  const wake = () => { const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (away > 5000) resync(); };
+  const wake = () => { const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) openStream(); if (away > 5000) resync(); };
   document.addEventListener("visibilitychange", () => { markSeen(); attnChanged(); loadStrip(); if (document.hidden) hiddenAt = Date.now(); else wake(); });
   addEventListener("focus", wake);
   setInterval(() => loadModels(true), 60000);
