@@ -11,6 +11,7 @@
   --r-card: 18px; --r-ctl: 10px; --edge: 28px;
   --scrim: rgb(0 0 0 / .4);
   --float: 0 8px 24px rgb(0 0 0 / .10), 0 1px 3px rgb(0 0 0 / .06);
+  --shadow-panel: 0 6px 24px rgba(0, 0, 0, .06);
   /* terminal panel: dark in both themes */
   --tb: #101012; --tf: #e6e6ea; --td: #8d8d96; --tl2: #2b2b30; --tok: #4ade80; --terr: #ff7b7b; --tac: #a9a9ff;
   --font: Pretendard, "Pretendard Variable", -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
@@ -27,6 +28,7 @@
   --ok: #3ecf8e; --warn: #f5a524; --err: #ff6369;
   --scrim: rgb(0 0 0 / .6);
   --float: 0 8px 24px rgb(0 0 0 / .5), 0 1px 3px rgb(0 0 0 / .4);
+  --shadow-panel: 0 6px 24px rgba(0, 0, 0, .35);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 [hidden] { display: none !important; }
