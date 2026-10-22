@@ -98,11 +98,19 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .pn .mt { flex: none; }
 .sn { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 10px 14px; border-radius: 12px; background: var(--layer); font-size: 14px; line-height: 22px; }
 .sn .st { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-#authbox { position: fixed; z-index: 60; right: 16px; bottom: 16px; width: min(380px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; }
+#authbox { position: fixed; z-index: 60; right: 16px; bottom: 16px; width: min(380px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; }
 #authbox .au { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: 0 8px 28px rgba(0,0,0,.12); display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 20px; }
+#authbox .au { flex: none; }
 #authbox .au h3 { margin: 0; font-size: 15px; }
 #authbox .au p { margin: 0; color: var(--fg-2); }
-#authbox .au input { height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--layer); color: var(--fg); font: 15px var(--font); }
+#authbox .au input:not([type=checkbox]) { height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--layer); color: var(--fg); font: 16px var(--font); min-width: 0; width: 100%; box-sizing: border-box; }
+#authbox .au .fld { display: flex; flex-direction: column; gap: 4px; }
+#authbox .au .fld label { color: var(--fg-2); font-size: 12px; }
+#authbox .au .ctl { display: flex; gap: 6px; align-items: center; }
+#authbox .au .eye { flex: none; height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--layer); color: var(--fg-2); font: 13px var(--font); }
+#authbox .au input.bad { border-color: var(--danger, #d93025); }
+#authbox .au .ferr { color: var(--danger, #d93025); font-size: 12px; min-height: 0; }
+#authbox .au .rem { display: flex; gap: 8px; align-items: center; color: var(--fg-2); font-size: 13px; }
 #authbox .au .row { display: flex; gap: 8px; justify-content: flex-end; }
 #authbox .au .note { color: var(--fg-3); font-size: 12px; }
 .sn .ml-from { font-weight: 600; color: var(--fg); }

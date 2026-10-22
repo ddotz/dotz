@@ -46,6 +46,7 @@ import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { makeRoute } from "./routes.ts";
+import { setFormLink } from "./auth.ts";
 
 installDelivery();
 setLaneTitleResolver(name => lanes.get(name)?.title);
@@ -85,6 +86,7 @@ async function ensureServe(bin: string, httpsPort: number, localPort: number): P
 	const r = await Bun.$`${bin} serve --bg --https=${httpsPort} http://127.0.0.1:${localPort}`.nothrow().quiet();
 	log(r.exitCode === 0 ? `web: tailscale serve was missing; opened port ${httpsPort} -> ${localPort}` : `web: tailscale serve failed: ${`${r.stdout}${r.stderr}`.trim().slice(0, 300)}`);
 }
+setFormLink(() => webBase);
 discord.setFileLink(p => (webBase ? `${webBase}/api/file?path=${encodeURIComponent(p)}&dl=1` : undefined));
 // Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
 startPush({ subject: () => webBase ?? "mailto:dotz@example.com" });

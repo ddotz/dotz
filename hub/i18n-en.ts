@@ -122,6 +122,7 @@ export const en = {
 	handover: (previous: string, tail: string) => `\n\n[handover] The previous conversation (${previous}) was rotated to keep the context small. Its most recent exchanges, oldest first; continue any open thread from here:\n${tail}\n\n${enRetainNudge}`,
 	laneHandover: (previous: string, tail: string | undefined) => `[handover] The previous conversation (${previous}) was rotated.${tail ? ` Its most recent exchanges, oldest first:\n${tail}\n\n${enRetainNudge}` : ""}`,
 	retainNudge: enRetainNudge,
+	personalAskNote: "[dotz gateway] Your last message looks like it asks for personal or security data (card, address, phone, ID number, password and the like) in chat. Ask for such values only through dotz_auth kind=form (or secret), never in chat. Correct the message you sent and ask again through the form.",
 	pendingAsksHead: "Session questions waiting for the owner's answer",
 	pendingAskEntry: (lane: string, at: string, text: string, cutFile?: string) => `- session ${lane} (asked ${at}):\n${text}${cutFile ? `\n... (cut; the full question is in ${cutFile})` : ""}`,
 	keepalive: "[keepalive] Cache keepalive from the gateway. Reply only: ok. No tools, no sends, no state edits.",
@@ -208,13 +209,18 @@ Do this, briefly:
 
 	// Owner-facing strings of the Discord login-auth prompts (hub/auth.ts).
 	auth: {
-		titles: { secret: "Login details needed", otp: "Verification code needed", approve: "Login approval needed" },
+		titles: { secret: "Login details needed", otp: "Verification code needed", approve: "Login approval needed", form: "Personal details needed" },
 		site: "Site",
 		expires: (time: string) => `Until ${time} ${tzLabel()}`,
 		input: "Enter",
 		approve: "I approved",
 		cancel: "Cancel",
 		labels: { username: "Username", password: "Password", code: "Verification code" },
+		formLabels: { name: "Name", phone: "Phone number", email: "Email", postal_code: "Postal code", address1: "Address", address2: "Address line 2", card_holder: "Name on card", card_number: "Card number", card_expiry: "Expiry (MM/YY)", card_cvc: "CVC", birth_date: "Date of birth", id_number: "ID number", account_number: "Account number", other: "Other" } as Record<string, string>,
+		openForm: "Open the form in the app",
+		formHint: "Values are taken only in the app's form, never in chat. Open the app with the button below.",
+		formHintNoLink: "Values are taken only in the app's form, never in chat. Open the app.",
+		formWebOnly: "This value is taken only in the app's form.",
 		modalTitle: (site: string) => `${site} login`,
 		statuses: { entered: "Received.", approved: "Approved.", cancelled: "Cancelled.", timeout: "Expired without an answer." },
 		notOwner: "Only the owner can answer this.",

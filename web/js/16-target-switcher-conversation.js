@@ -128,23 +128,41 @@ function paintAuth() {
   for (const n of [...box.children]) if (!list.some(a => a.id === n.dataset.id)) n.remove();
   for (const a of list) {
     if (have.has(a.id)) continue;
-    const inputs = (a.fields || []).map(f => el("input", { type: f.name === "username" ? "text" : "password", name: f.name, placeholder: f.label, "aria-label": f.label, autocomplete: f.name === "username" ? "username" : f.name === "code" ? "one-time-code" : "current-password" }));
+    const isForm = a.kind === "form";
+    const mkInput = f => isForm
+      ? el("input", { type: f.mask ? "password" : f.type, id: `au-${a.id}-${f.name}`, name: f.name, inputmode: f.inputmode, autocomplete: f.autocomplete, maxlength: f.maxlength, placeholder: f.placeholder || "", autocapitalize: "off", autocorrect: "off", spellcheck: "false" })
+      : el("input", { type: f.name === "username" ? "text" : "password", name: f.name, placeholder: f.label, "aria-label": f.label, autocomplete: f.name === "username" ? "username" : f.name === "code" ? "one-time-code" : "current-password" });
+    const inputs = (a.fields || []).map(mkInput);
+    const wrap = (f, inp) => {
+      const err = el("div", { class: "ferr", role: "alert" });
+      const eye = f.mask ? el("button", { class: "eye", type: "button", "aria-label": `${f.label} 보기`, text: "보기", onclick: () => { const hidden = inp.type === "password"; inp.type = hidden ? "text" : "password"; eye.textContent = hidden ? "숨기기" : "보기"; } }) : null;
+      inp.addEventListener("input", () => { inp.classList.remove("bad"); err.textContent = ""; });
+      return el("div", { class: "fld" }, el("label", { for: inp.id, text: f.label + (f.optional ? " (선택)" : "") }), el("div", { class: "ctl" }, inp, eye), err);
+    };
+    const rem = isForm ? el("input", { type: "checkbox", id: `au-${a.id}-remember` }) : null;
+    if (rem) rem.checked = !!a.remember;
     const done = async (action, values) => {
-      try { await api(`/api/auth/${encodeURIComponent(a.id)}`, "POST", { action, ...(values ? { values } : {}) }); }
-      catch { toast("전달하지 못했어요. 다시 시도해 주세요"); return; }
+      try { await api(`/api/auth/${encodeURIComponent(a.id)}`, "POST", { action, ...(values ? { values } : {}), ...(rem && action === "submit" ? { remember: rem.checked } : {}) }); }
+      catch (e) {
+        const bad = e && e.data && inputs.find(i => i.name === e.data.field);
+        if (bad) { bad.classList.add("bad"); bad.closest(".fld").querySelector(".ferr").textContent = e.data.error === "required" ? "비워 둘 수 없어요" : "형식을 확인해 주세요"; bad.focus(); return; }
+        toast("전달하지 못했어요. 다시 시도해 주세요"); return;
+      }
       AUTH_DONE.add(a.id); card.remove(); if (!box.children.length) box.remove();
       toast(action === "cancel" ? "요청을 취소했어요" : "전달했어요");
     };
     const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? "승인" : "보내기" });
     const no = el("button", { class: "btn tonal", type: "button", text: "취소", onclick: () => done("cancel") });
-    const card = el("form", { class: "au", "data-id": a.id }, el("h3", { text: a.title }), el("p", { text: a.purpose }), ...inputs,
+    const card = el("form", { class: "au", "data-id": a.id }, el("h3", { text: a.title }), el("p", { text: a.purpose }), ...(isForm ? a.fields.map((f, k) => wrap(f, inputs[k])) : inputs),
+      rem ? el("label", { class: "rem", for: rem.id }, rem, el("span", { text: "다음에도 쓰게 저장해 두기 (끄면 한 번 쓰고 지워요)" })) : null,
       a.kind === "approve" ? null : el("div", { class: "note", text: "입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요." }),
       el("div", { class: "row" }, no, ok));
     card.addEventListener("submit", ev => {
       ev.preventDefault();
       if (a.kind === "approve") return done("approve");
       const values = Object.fromEntries(inputs.map(i => [i.name, i.value]));
-      if (inputs.some(i => !i.value)) { (inputs.find(i => !i.value) || inputs[0]).focus(); return; }
+      const miss = inputs.find((i, k) => !i.value.trim() && !(a.fields[k] && a.fields[k].optional));
+      if (miss) { miss.focus(); return; }
       done("submit", values);
     });
     box.append(card);
