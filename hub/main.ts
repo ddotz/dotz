@@ -30,7 +30,7 @@ import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
 import { syncRoutineSchedules } from "./custom.ts";
-import { startOmpUpdate } from "./update.ts";
+import { startHarnessUpdate } from "./update.ts";
 import { onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
 import { clearChannel, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
@@ -257,7 +257,7 @@ startSchedules(s => {
 });
 syncRoutineSchedules();
 startReflection(text => deliver(text), () => orch.sessionFile);
-startOmpUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`omp update post failed: ${e}`)), restartGateway, alert);
+startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
 startTokenAudit(alert);
 // Settings → 업데이트: the daily check only announces a new dotz version (push + a toast on open pages + one bell item), never applies it.
 onUpdateResolved(updateResolved);
