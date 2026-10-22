@@ -47,6 +47,7 @@ async function loadNotices() {
   if (NT.open) renderNotices();
   homeSoon();
   syncInlineChoices();
+  ntSeenSoon();
 }
 
 async function loadMonitors() {
@@ -88,6 +89,7 @@ function noticeLive(e) {
   ntSheetPaint();
   homeSoon();
   syncInlineChoices();
+  ntSeenSoon();
 }
 
 async function ntMarkRead(body) {
@@ -114,7 +116,7 @@ function ntNavigate(open) {
 
 /* ---- tap: go to the source message ---- */
 // The conversation holding the notice's message (n.src; older items fall back to n.open) is opened on its chat view, older history
-// is fetched until the message's time is covered, the message is scrolled to the middle and flashed. A message the chat does not
+// is fetched until the message's time is covered, the message is scrolled to the top of the timeline and flashed. A message the chat does not
 // show lands on the nearest one in time. Alert and worklog posts are messages of the 알림 / 작업 기록 conversations. Nothing here ever reports an error.
 const ntRaf = () => new Promise(r => requestAnimationFrame(() => r()));
 const ntWait = ms => new Promise(r => setTimeout(r, ms));
@@ -151,12 +153,35 @@ async function ntReach(t, at) {
     if (t === target) renderAll(true);
   }
 }
-function ntCenter(node) {
+// Top of the message to the top of the visible timeline, just under the app bar (a message taller than the view is aligned the same way).
+function ntAlignTop(node) {
   chatUnpin();
-  const a = timeline.getBoundingClientRect(), b = node.getBoundingClientRect();
-  const top = timeline.scrollTop + b.top - a.top - (b.height >= a.height - 24 ? 12 : (a.height - b.height) / 2);
+  const a = timeline.getBoundingClientRect(), b = node.getBoundingClientRect(), bar = $("#appbar").getBoundingClientRect();
+  const inset = Math.max(0, bar.bottom - a.top) + 6;
+  const top = Math.max(0, timeline.scrollTop + b.top - a.top - inset);
   timeline.scrollTo({ top, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
+// A notice whose source message is on screen in the open chat counts as seen: read here and on the hub (so the other devices agree).
+// An open decision stays until it is answered.
+let ntSeenT = 0;
+function ntSeenSoon() { clearTimeout(ntSeenT); ntSeenT = setTimeout(ntSeen, 500); }
+function ntSeen() {
+  if (current !== "chat" || document.visibilityState !== "visible" || !NT.loaded || !timeline.clientHeight) return;
+  const pending = NT.items.filter(n => !n.read && !ntOpenDec(n) && (n.src || n.open) === target && n.at);
+  if (!pending.length) return;
+  const a = timeline.getBoundingClientRect(), shown = new Set();
+  for (const m of tl.querySelectorAll("[data-ts]")) {
+    const r = m.getBoundingClientRect();
+    if (r.bottom > a.top && r.top < a.bottom) shown.add(m.dataset.ts);
+  }
+  const hit = pending.filter(n => shown.has(n.at));
+  if (!hit.length) return;
+  for (const n of hit) n.read = true;
+  NT.unread = Math.max(0, NT.unread - hit.length); paintBell(); if (NT.open) renderNotices();
+  ntMarkRead({ ids: hit.map(n => n.id) });
+}
+timeline.addEventListener("scroll", ntSeenSoon, { passive: true });
+document.addEventListener("visibilitychange", ntSeenSoon);
 // The element that carries the highlight: the card or bubble inside the message when there is one (so the glow follows its own rounded shape),
 // else the message itself, drawn as a bar + tint ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
 function ntHlHost(node) {
@@ -186,7 +211,7 @@ async function ntJump(n) {
     await ntRaf(); await ntRaf();   // after the renders' own scroll-to-bottom
     if (seq !== ntJumpSeq || target !== t || current !== "chat") return;
     const m = ntFind(at);
-    if (m) { ntCenter(m); ntFlash(m); }
+    if (m) { ntAlignTop(m); ntFlash(m); }
   } catch {}
 }
 
