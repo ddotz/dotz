@@ -93,12 +93,12 @@ export function fileLinePaths(text: string): string[] {
 	return out;
 }
 
-// Inside the data dir only uploads, the lanes' report folders and qa/ (QA shots and findings) may leave through a listed file.
-const listedDataDirs = () => [UPLOADS, join(DATA_DIR, "lanes"), join(DATA_DIR, "qa")].map(d => real(d) ?? d);
+// Inside the data dir only uploads, the lanes' report folders, qa/ (QA shots and findings) and projects/ (work-channel result files) may leave through a listed file.
+const listedDataDirs = () => [UPLOADS, join(DATA_DIR, "lanes"), join(DATA_DIR, "qa"), join(DATA_DIR, "projects")].map(d => real(d) ?? d);
 
 // The real path of `input` when it is a regular file inside one of `roots`, or when it is `listed`: written, exactly like
 // this, in a [file] line of a message the gateway sent (events.ts sentFiles). A listed file still has to be a regular file,
-// off the secret deny-list and outside the data dir (except uploads, lanes and qa/); a listed relative path is looked up
+// off the secret deny-list and outside the data dir (except uploads, lanes, qa/ and projects/); a listed relative path is looked up
 // under the data dir and the roots. Otherwise a FileError (400/403/404).
 export function resolveAllowed(input: string, roots: string[], listed: ReadonlySet<string> = new Set()): string {
 	if (!input || input.includes("\0")) throw new FileError("path required", 400);
