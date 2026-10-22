@@ -1,13 +1,14 @@
 /* Computers (33-peers.js): the chip next to the title, the switch sheet (uses the .ds-* sheet of 09-notices.css) and the bell's other-computer lines. */
-.pchip { display: none; flex: none; align-items: center; gap: 6px; height: 32px; max-width: 168px; margin: 0 auto 0 8px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg); font: 600 14px/18px var(--font); }
+.pchip { position: relative; display: none; flex: none; align-items: center; gap: 6px; height: 32px; max-width: 168px; margin: 0 auto 0 8px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg); font: 600 14px/18px var(--font); }
 .pchip:hover { background: var(--card-hover); }
 .pchip:active { background: var(--active); }
 .appbar.hasp .pchip { display: inline-flex; }
 .appbar.hasp h1 { flex: 0 1 auto; }
 .pchip[hidden] { display: none; }
 .pc-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pc-c { position: relative; flex: none; display: inline-flex; }
-.pc-d { position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); border: 2px solid var(--card); box-sizing: content-box; }
+.pc-c { flex: none; display: inline-flex; }
+/* the unread dot sits on the chip's top-right corner, outside the chevron */
+.pc-d { position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); border: 2px solid var(--card); box-sizing: content-box; }
 .pc-d.need { background: var(--warn); }
 .pc-i { flex: none; width: 14px; height: 14px; transform: rotate(90deg); color: var(--fg-3); }
 .pr-ey { color: var(--fg-2); }
