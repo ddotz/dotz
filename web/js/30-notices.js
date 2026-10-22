@@ -470,7 +470,7 @@ function ntSheetPaint() {
   const x = el("button", { type: "button", class: "ib", "aria-label": "닫기", onclick: () => ntSheetClose() });
   x.append(icon("close"));
   const kids = [
-    el("div", { class: "ds-hd" }, el("span", { class: `ds-ey${open ? "" : ignd ? " ign" : " done"}`, text: open ? "답변이 필요해요" : ignd ? "무시했어요" : "답변했어요" }),
+    el("div", { class: "ds-hd" }, el("span", { class: `ds-ey${open ? "" : ignd ? " ign" : " done"}`, text: open ? "답변이 필요해요" : ignd ? "무시했어요" : d.resolved ? "해결됐어요" : "답변했어요" }),
       open ? el("button", { type: "button", class: "ds-ign", "data-k": "ignore", disabled: NS.busy, onclick: () => ntIgnore(n) }, icon("close"), el("span", { text: "무시" })) : null, x),
     el("div", { class: "ds-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "답변이 필요해요" }),
@@ -489,7 +489,7 @@ function ntSheetPaint() {
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" }));
   } else {
-    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: "이렇게 답했어요" }), el("span", { class: "ds-ra", text: ntPlain(d.answer || "") || "답했어요" })));
+    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: d.resolved ? "답 없이 끝났어요" : "이렇게 답했어요" }), el("span", { class: "ds-ra", text: d.resolved ? "일이 끝나서 닫혔어요" : ntPlain(d.answer || "") || "답했어요" })));
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" }));
   }

@@ -49,7 +49,8 @@ afterAll(() => { for (const v of views) v.close(); server.stop(true); });
 
 describe("the x (무시) in a headless browser", () => {
 	test("at 390px the x sits on the 답변 필요 row, the 알림 card row and the sheet header, thumb-sized and inside the screen; ignoring syncs live and undo brings the question back", async () => {
-		resolveNotices({ all: true });
+		// leftovers of other test files: decisions with options are closed only by naming them
+		resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });
 		markNoticesRead({ all: true });
 		ask("엑스 확인용 질문이에요");
 		const item = () => stored().find(n => n.kind === "decision" && n.title === "엑스 확인용 질문이에요")! as Notice;

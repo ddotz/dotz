@@ -17,7 +17,7 @@ import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { answerDecision, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
+import { answerDecision, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { listSchedules } from "./schedule.ts";
 import { readTodo } from "./todo.ts";
@@ -134,6 +134,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
 		// The bot closes the questions whose matter is over (ids, match text, conv or all): they are answered, read and off 답변 필요.
 		if (req.method === "POST" && url.pathname === "/api/notices/resolve") return json(resolveNotices(await body(req)));
+		if (req.method === "POST" && url.pathname === "/api/notices/reopen") return json(reopenNotices((await body(req)).ids));
 		// The page reports the conversation it shows ("" = hidden): answers there make no unread message item (hub/notices.ts).
 		if (req.method === "POST" && url.pathname === "/api/viewing") {
 			const b = await body(req);

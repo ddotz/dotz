@@ -6,7 +6,7 @@ import { CONFIG_FILE, paths } from "./config.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
-import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -207,31 +207,77 @@ test("a session [fail] resolves too; an [ask] of another session stays open", ()
 	expect(open(decision("두 번째 질문이에요"))).toBe(true);
 });
 
-test("an orchestrator ask made mid-turn is resolved by that turn's [done] answer, not by a plain answer or by an earlier turn", () => {
+const orchAskRef = (text: string, ref?: string) => emit("outbox", { ts: rts(), kind: "out", source: "orchestrator", target: "alert", text, ...(ref ? { reply_to: ref } : {}) });
+const PHONE = "[ask] 폰에서 확인해 주세요\n결정: 폰 확인\n**1) 확인했어요**\n**2) 아직이에요**";
+
+test("a turn's [done] never resolves an ask posted in that same turn, even for the same request", () => {
 	orchestratorTurnStarted(rts());
-	orchAsk("[ask] 맥미니에서 sudo 인증을 해 주세요");
-	const d = () => decision("맥미니에서 sudo 인증을 해 주세요");
-	expect(open(d())).toBe(true);
-	// a final answer without a result marker does not prove the matter is over
-	orchestratorAnswered("아직 인증을 기다리고 있어요", rts());
-	expect(open(d())).toBe(true);
-	// the next turn did not ask it, so its [done] leaves it alone
+	orchAskRef("[ask] 같은 턴에서 물어요", "req-same");
+	orchAskRef(PHONE, "req-same");
+	orchestratorAnswered("[done] 코드 작업을 마쳤어요", "req-same", rts());
+	expect(open(decision("같은 턴에서 물어요"))).toBe(true);
+	expect(open(decision("폰 확인"))).toBe(true);
+	// the ask's alert twin keeps waiting too
+	expect(stored().some(n => n.kind === "alert" && n.tone === "ask" && !n.read && n.text.includes("같은 턴에서 물어요"))).toBe(true);
+});
+
+test("an orchestrator [done] resolves an earlier turn's ask only for the same request, and not an unrelated one", () => {
 	orchestratorTurnStarted(rts());
-	orchestratorAnswered("[done] 다른 일이에요", rts());
-	expect(open(d())).toBe(true);
-	// the turn that asked it ends with a result
+	orchAskRef("[ask] 이전 턴 질문 하나", "req-a");
+	orchAskRef("[ask] 이전 턴 질문 둘", "req-b");
+	orchAskRef("[ask] 이전 턴 요청 없는 질문");
+	orchestratorAnswered("아직이에요", "req-a", rts());   // no result marker
 	orchestratorTurnStarted(rts());
-	orchAsk("[ask] 두 번째 단계를 해 주세요");
-	orchestratorAnswered("[done] 인증 뒤 끝까지 했어요", rts());
-	expect(decision("두 번째 단계를 해 주세요")).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
-	expect(open(d())).toBe(true);   // the earlier turn's question is still waiting
+	orchestratorAnswered("[done] 전혀 다른 일이에요", "req-other", rts());
+	orchestratorAnswered("[done] 요청 모름", undefined, rts());
+	expect(open(decision("이전 턴 질문 하나")) && open(decision("이전 턴 질문 둘")) && open(decision("이전 턴 요청 없는 질문"))).toBe(true);
+	orchestratorAnswered("[done] req-a 를 마쳤어요", "req-a", rts());
+	const d = decision("이전 턴 질문 하나");
+	expect(d).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
+	expect(d.decision!.answer).toBeUndefined();   // marked resolved, no made-up answer text
+	expect(open(decision("이전 턴 질문 둘"))).toBe(true);
+	expect(open(decision("이전 턴 요청 없는 질문"))).toBe(true);
+	orchestratorAnswered("[fail] req-b 가 실패했어요", "req-b", rts());
+	expect(decision("이전 턴 질문 둘").decision!.state).toBe("answered");
+});
+
+test("a decision with options is the owner's: no [done] or sweep closes it, only the bot naming it", () => {
+	orchestratorTurnStarted(rts());
+	orchAskRef(PHONE.replace("폰 확인", "폰 확인 둘"), "req-c");
+	laneAsk("phone1", "[ask] 세션이 묻는 선택\n결정: 세션 선택\n**1) 가**\n**2) 나**");
+	orchestratorTurnStarted(rts());
+	orchestratorAnswered("[done] 같은 요청을 마쳤어요", "req-c", rts());
+	laneReport("phone1", "[done] 세션 일을 마쳤어요");
+	resolveNotices({ all: true });
+	resolveNotices({ conv: "lane:phone1" });
+	expect(open(decision("폰 확인 둘"))).toBe(true);
+	expect(open(decision("세션 선택"))).toBe(true);
+	expect(resolveNotices({ match: "폰 확인 둘" }).resolved).toBeGreaterThanOrEqual(1);
+	expect(decision("폰 확인 둘")).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
+	expect(decision("폰 확인 둘").decision!.answer).toBeUndefined();
+	expect(resolveNotices({ ids: [decision("세션 선택").id] }).resolved).toBe(1);
 });
 
 test("an ask that is the turn's own final answer stays open", () => {
 	orchestratorTurnStarted(rts());
-	orchestratorAnswered("[ask] 어느 쪽으로 할까요?", rts());   // answer ends the turn ...
-	orchAsk("[ask] 어느 쪽으로 할까요?");   // ... and is delivered after it
+	orchestratorAnswered("[ask] 어느 쪽으로 할까요?", "req-d", rts());   // answer ends the turn ...
+	orchAskRef("[ask] 어느 쪽으로 할까요?", "req-d");   // ... and is delivered after it
 	expect(open(decision("어느 쪽으로 할까요?"))).toBe(true);
+});
+
+test("reopenNotices puts a wrongly closed question and its twin back: open, unread, no resolved flag or answer", () => {
+	orchAskRef(PHONE.replace("폰 확인", "폰 확인 셋"), "req-e");
+	const d = decision("폰 확인 셋");
+	const twin = stored().find(n => n.kind === "alert" && n.tone === "ask" && n.at === d.decision!.reply_to)!;
+	resolveNotices({ ids: [d.id] });
+	expect(stored().find(n => n.id === d.id)!.decision!.state).toBe("answered");
+	const r = reopenNotices([d.id, twin.id, "nope"]);
+	expect(r.reopened.sort()).toEqual([d.id, twin.id].sort());
+	const back = stored().find(n => n.id === d.id)!;
+	expect(back).toMatchObject({ read: false, decision: { state: "open" } });
+	expect(back.decision!.resolved).toBeUndefined();
+	expect(back.decision!.answer).toBeUndefined();
+	expect(stored().find(n => n.id === twin.id)!.read).toBe(false);
 });
 
 test("a monitor passing again resolves its failure alert and is itself born read", () => {
@@ -384,7 +430,7 @@ test("ignoring the alert twin ignores its decision too", () => {
 });
 
 test("the store keeps at most 300 items, dropping read ones first and then the oldest", () => {
-	resolveNotices({ all: true });   // questions that wait are never read away: close them first so every item can be read
+	resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });   // questions that wait are never read away: close them first so every item can be read
 	markNoticesRead({ all: true });
 	post("worklog", "읽지 않은 오래된 글");
 	for (let i = 0; i < NOTICE_CAP - 1; i++) post("worklog", `채우기 ${i}`);
