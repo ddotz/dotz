@@ -127,7 +127,7 @@ button.pv-res:hover { background: var(--card-hover); }
     if (dd === 1) return `어제 ${clock(d)}`;
     return `${d.getFullYear() === now.getFullYear() ? "" : `${d.getFullYear()}년 `}${d.getMonth() + 1}월 ${d.getDate()}일 ${clock(d)}`;
   }
-  const show = v => { const s = str(v).trim(); return !s || /^[-–—]$/.test(s) ? "없음" : s.replace(ISO, m => localTime(m)).replace(/([:：])\s*[-–—]$/, "$1 없음"); };
+  const show = (v, now) => { const s = str(v).trim(); return !s || /^[-–—]$/.test(s) ? "없음" : s.replace(ISO, m => localTime(m, now)).replace(/([:：])\s*[-–—]$/, "$1 없음"); };
   const openLink = l => { if (isHttp(l)) window.open(l, "_blank", "noopener,noreferrer"); else if (typeof l === "string" && l[0] === "#") location.hash = l; };
   const same = (box, sig) => { if (box.dataset.sig === sig) return true; box.dataset.sig = sig; return false; };
 
