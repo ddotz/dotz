@@ -19,6 +19,7 @@ import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { replyRef } from "./threads.ts";
+import { orchestratorAnswered } from "./notices.ts";
 
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
 const PENDING = join(DATA_DIR, "pending.json");
@@ -183,7 +184,15 @@ export function replayPending(): number {
 export function installDelivery(): void {
 	livestatus.setWebProgress(webNote);
 	// The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
-	setAnswerHandlers(queue.onPrompt, queue.onAnswer, queue.onText);
+	setAnswerHandlers(
+		queue.onPrompt,
+		text => {
+			// The request this answer is for: only a [done] / [fail] to the same request can close an earlier question about it (notices.ts).
+			orchestratorAnswered(text, queue.current()?.replyTo);
+			queue.onAnswer(text);
+		},
+		queue.onText,
+	);
 	setTurnHeader(turnHeader);
 	setAlertHandler(alert);
 }
