@@ -394,7 +394,7 @@ function ntHomeRow(n) {
 }
 
 /* ---- detail sheet ---- */
-const NS = { id: "", det: null, h: null, node: null, busy: false };   // det: a notice shown read-only (a failure alert), not looked up by id
+const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null };   // edit: { id, opt, text, fresh } while the owner writes the detail an option asks for   // det: a notice shown read-only (a failure alert), not looked up by id
 function ntSheetClose(restore = true) { if (NS.h) NS.h.close(restore); }
 // "직접 답하기": to the asking message in its chat (a login request: its own form).
 function ntDirect(n) {
@@ -402,12 +402,22 @@ function ntDirect(n) {
   if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast("입력 창이 이미 닫혔어요"); return; }
   ntJump(n);
 }
-async function ntAnswer(n, opt) {
+// Same rule as the hub (hub/notices.ts answerDecision): an option that needs detail is answered only with the owner's text.
+const ntNeedsNote = (n, o) => !o.say && !o.action && (n.decision.draft ? o.label === DRAFT_EDIT : detailOf(o));
+async function ntAnswer(n, opt, note) {
   if (opt.action === "form") { ntDirect(n); return; }
+  if (!note && ntNeedsNote(n, opt)) { NS.edit = { id: String(n.id), opt, text: "", fresh: true }; ntSheetPaint(); return; }
   NS.busy = true; ntSheetPaint();
-  try { await ntPost(n, opt.n); }
+  try { await ntPost(n, opt.n, note); NS.edit = null; }
   catch (err) { toast(err.message, true); }
   NS.busy = false; ntSheetPaint();
+}
+function ntEditNode(n, ed) {
+  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: "이유나 내용을 적어 주세요", "aria-label": "자세한 내용", disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
+  ta.value = ed.text;
+  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, "내용 보내기");
+  const back = el("button", { class: "dc-back", type: "button", "data-k": "back", disabled: NS.busy, onclick: () => { NS.edit = null; ntSheetPaint(); } }, "돌아가기");
+  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A failure alert: its whole text in the same sheet over the current screen, with the way into the conversation.
 function ntDetailOpen(n) {
@@ -438,8 +448,10 @@ function ntSheetPaint() {
       el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "답변이 필요해요" }),
       el("div", { class: "ds-m", text: `${ntDecWhere(d)} · ${ntWhen(n)}` }),
       mdNode(fileLines(n.text).text, "md ds-md"))];
-  const foot = el("div", { class: "fs-ft" });
-  if (open) {
+  const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
+  const hadNote = !!NS.node.querySelector(".dc-note:focus");
+  if (ed) foot.append(ntEditNode(n, ed));
+  else if (open) {
     for (const o of ntOptsOrdered(d.options)) foot.append(el("button", { type: "button", class: `ds-opt${o.rec ? " rec" : ""}`, "data-k": `o${o.n}`, disabled: NS.busy, onclick: () => ntAnswer(n, o) },
       el("span", { class: "ds-lb" }, o.label, o.rec ? el("span", { class: "ds-tag", text: "추천" }) : null),
       o.desc ? el("span", { class: "ds-ds", text: o.desc }) : null));
@@ -461,6 +473,8 @@ function ntSheetPaint() {
   $(".fs-body", box).scrollTop = top;
   const again = keep ? box.querySelector(`[data-k="${keep}"]`) : null;
   if (again) again.focus({ preventScroll: true });
+  const ta = ed ? box.querySelector(".dc-note") : null;
+  if (ta && (ed.fresh || hadNote)) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); ed.fresh = false; }
 }
 async function noticeSheetOpen(id) {
   let n = ntById(id);
@@ -473,10 +487,10 @@ async function noticeSheetOpen(id) {
 }
 function ntSheetShow(id, det) {
   NS.id = id; NS.det = det; NS.busy = false;
-  const h = fsOpen({ labelledby: "ds-t", onClose: () => { if (NS.h === h) { NS.h = NS.node = null; NS.id = ""; NS.det = null; } } });
+  const h = fsOpen({ labelledby: "ds-t", onClose: () => { if (NS.h === h) { NS.h = NS.node = null; NS.id = ""; NS.det = null; NS.edit = null; } } });
   NS.h = h; NS.node = h.node;
   ntSheetPaint();
-  const first = NS.node.querySelector(".ds-opt, .ds-direct");
+  const first = NS.edit ? null : NS.node.querySelector(".ds-opt, .ds-direct");
   if (first) first.focus({ preventScroll: true });
 }
 

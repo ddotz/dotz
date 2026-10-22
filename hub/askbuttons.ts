@@ -33,6 +33,11 @@ export function parseAskId(customId: string): { target: string; n: number } | un
 	return m ? { target: m[1]!, n: Number(m[2]) } : undefined;
 }
 
+const noteOf = (d: Interaction): string => {
+	for (const row of d.data?.components ?? []) for (const c of row.components ?? []) if (c.custom_id === NOTE_FIELD && typeof c.value === "string") return c.value.replace(/\s+/g, " ").trim().slice(0, 500);
+	return "";
+};
+
 type Answer = (target: string, text: string) => void;
 let answer: Answer = () => {
 	throw new Error("no answer handler");
@@ -47,13 +52,23 @@ type AskDeps = {
 	answer?: Answer;
 };
 
+const NOTE_FIELD = "note";
+// An option that needs detail (choices.ts detailOf) opens this modal instead of answering; its submit comes back with the same custom_id.
+function noteModal(target: string, o: ChoiceOption) {
+	return {
+		custom_id: `${ASK_PREFIX}:${target}:${o.n}`,
+		title: `${o.n}) ${o.label}`.slice(0, 45),
+		components: [{ type: 1, components: [{ type: 4, custom_id: NOTE_FIELD, label: msg().auth.noteLabel, style: 2, required: true, min_length: 1, max_length: 500 }] }],
+	};
+}
+
 const ephemeral = (content: string) => ({ content, flags: 64, allowed_mentions: { parse: [] } });
 
 /** Handles one click on an ask button: the owner only; acknowledges by updating the message with every button disabled. */
 export async function askInteraction(d: Interaction, deps: AskDeps): Promise<void> {
 	const m = msg().auth;
 	const parsed = parseAskId(String(d.data?.custom_id ?? ""));
-	if (!parsed || d.type !== 3) return deps.reply(d, 4, ephemeral(m.finished));
+	if (!parsed || (d.type !== 3 && d.type !== 5)) return deps.reply(d, 4, ephemeral(m.finished));
 	const user = String(d.member?.user?.id ?? d.user?.id ?? "");
 	if (!deps.owner || user !== deps.owner) {
 		log(`ask ${parsed.target} refused user ${user}`);
@@ -62,8 +77,15 @@ export async function askInteraction(d: Interaction, deps: AskDeps): Promise<voi
 	const options = parseChoices(String(d.message?.content ?? "")).options;
 	const picked = options.find(o => o.n === parsed.n);
 	if (!picked) return deps.reply(d, 4, ephemeral(m.finished));
+	let text = `${picked.n}) ${picked.label}`;
+	if (picked.detail) {
+		if (d.type === 3) return deps.reply(d, 9, noteModal(parsed.target, picked));   // nothing is sent until the modal is submitted
+		const note = noteOf(d);
+		if (!note) return deps.reply(d, 4, ephemeral(m.noteMissing));
+		text += ` - ${note}`;
+	} else if (d.type === 5) return deps.reply(d, 4, ephemeral(m.finished));
 	try {
-		(deps.answer ?? answer)(parsed.target, `${picked.n}) ${picked.label}`);
+		(deps.answer ?? answer)(parsed.target, text);
 	} catch (e) {
 		log(`ask ${parsed.target} answer failed: ${e}`);
 		return deps.reply(d, 4, ephemeral(m.answerFailed));

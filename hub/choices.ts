@@ -13,7 +13,7 @@ export function issueBlock(question: string, options: { name: string; result: st
 	return [`결정: ${question}`, ...options.flatMap((o, i) => [`**${i + 1}) ${o.name}**${i === 0 ? " ← 추천" : ""}`, o.result])].join("\n");
 }
 
-export type ChoiceOption = { n: number; label: string; recommended: boolean };
+export type ChoiceOption = { n: number; label: string; recommended: boolean; detail?: true };
 type Choices = { question?: string; options: ChoiceOption[] };
 
 const FENCE = /^\s*```/;
@@ -41,10 +41,11 @@ export function parseChoices(text: string): Choices {
 				continue;
 			}
 			const recommended = RECOMMENDED.test(m[2]!);
-			const label = m[2]!.replace(/←.*$/, "").replace(/\*\*/g, "").trim();
+			const raw = m[2]!.replace(/←.*$/, "").replace(/\*\*/g, "").trim();
+			const label = raw.replace(DETAIL_MARK, "").trim();
 			if (!label) return { options: [] };
 			if (!options.length) question = before;
-			options.push({ n, label, recommended });
+			options.push({ n, label, recommended, ...(detailOf({ label, detail: DETAIL_MARK.test(raw) }) ? { detail: true as const } : {}) });
 			continue;
 		}
 		const plain = line.replace(/^\s*>\s?/, "").replace(/\*\*/g, "").trim();
@@ -57,7 +58,14 @@ export function parseChoices(text: string): Choices {
 // Several decisions in one message: a "결정: <title>" line opens a block, `**1) name** ← 추천` lines are its options, each with one
 // description line under it. A number that restarts at 1 opens the next block. Mirrors the web card (web/js/10-decision-card.js)
 // so the bell and the chat card agree on what is being asked. Blocks with fewer than two options are not decisions.
-export type DecisionOption = { n: number; label: string; desc: string; rec: boolean };
+// `detail`: tapping this option asks the owner for a written reason / change first, and the answer goes out as `n) label - <text>`.
+// The bot marks it with a trailing ` …` on the option name (`**2) 안 됨 …**`, MODE.md); without the mark, detailOf guesses from the label and the description.
+export type DecisionOption = { n: number; label: string; desc: string; rec: boolean; detail?: true };
+export const DETAIL_MARK = /\s*…\s*$/;
+const DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|아니|아냐|고치기|수정|다른)/;
+const DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
+// Mirrors detailOf in web/js/10-decision-card.js. A marked option (`detail`) always asks; otherwise a negative / edit label or a description that asks for text does.
+export const detailOf = (o: { label: string; desc?: string; detail?: boolean }): boolean => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc ?? "");
 // `headed`: the block was opened by a "결정:" line. Any bot message (not only an [ask]) holding a headed block with 2+ options is a decision;
 // a bare numbered list without the "결정:" line is not.
 type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true };
@@ -100,7 +108,9 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 			desc = next.trim();
 			i++;
 		}
-		cur.options.push({ n, label: m[2]!.replace(/^\*+|\*+$/g, "").trim(), desc, rec: Boolean(m[3]) });
+		const raw = m[2]!.replace(/^\*+|\*+$/g, "").trim();
+		const marked = DETAIL_MARK.test(raw);
+		cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, rec: Boolean(m[3]), ...(marked ? { detail: true as const } : {}) });
 	}
 	return { question, blocks: blocks.filter(b => b.options.length >= 2) };
 }

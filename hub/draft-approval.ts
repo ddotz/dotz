@@ -11,6 +11,8 @@
 //   <what happens>
 //   **2) 고치기** ...   **3) 보내지 않기** ...
 //
+// 2) 고치기 is an option that needs detail (hub/choices.ts detailOf; the bot's own mark is a trailing " …" on the name): the web sheet and the
+// Discord modal ask for the change first, and the answer is "2) 고치기 - <change>".
 // The answer comes back as the owner's own inbox message with picks [{q: "<question> (<ref>)", n, label}] (hub/notices.ts answerDecision),
 // which is what the per-feature approval checks read (hub/kakao/send.ts verdict, orchestrator turn "결정 답: ... → 1) 보내기").
 import { issueBlock, parseDecisions } from "./choices.ts";
