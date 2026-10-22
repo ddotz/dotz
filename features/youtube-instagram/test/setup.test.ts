@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { beforeEach, expect, test } from "bun:test";
+import { DATA_DIR as HUB_DATA_DIR } from "../../../hub/config.ts";
 import { readCards, readPins } from "../../../hub/custom.ts";
 import { run, type Loopback } from "../bin/setup.ts";
 import { dataDir, paths, readJson, secretsDir, snsDir, validateConfig, writeJson } from "../lib/config.ts";
@@ -16,9 +17,9 @@ const DRY_BOTH = ["apply", "--dry-run", "--yt-channel", YT_ID, "--yt-title", "My
 
 const resetCustom = () => rmSync(join(dataDir(), "custom"), { recursive: true, force: true });
 
-// The preload's data dir (its config.json sets web.port to GATEWAY's port), which hub/custom.ts also reads; pinned so a
+// The data dir hub/custom.ts reads (the preload's, whose config.json sets web.port to GATEWAY's port); pinned so a
 // DOTZ_DIR another test file left behind cannot move the card away from the reader.
-const OWN_DIR = process.env.DOTZ_DIR!;
+const OWN_DIR = HUB_DATA_DIR;
 
 beforeEach(() => {
 	process.env.DOTZ_DIR = OWN_DIR;
