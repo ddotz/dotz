@@ -31,6 +31,17 @@ export function stripHandoff(text: string): string {
 	return /\bFor you:\s*([\s\S]*?)(?:\s+Now:[\s\S]*)?$/.exec(m[0])?.[1]?.trim() || text;
 }
 
+// `[later]` ends a turn whose answer a background worker will bring: a sentinel for the gateway, never text for the owner.
+// Where a preview must show something, it reads LATER_LINE.
+export const LATER_LINE = "뒤에서 작업 중이에요";
+export const isLater = (text: string): boolean => /^\s*\[later\]\s*$/i.test(text);
+
+// A one-line preview's source text: the handoff block and an "Ask: " label are dropped, a lone `[later]` becomes LATER_LINE.
+export function previewSource(raw: string): string {
+	const text = stripHandoff(raw).replace(/^\s*Ask:[ \t]*/i, "");
+	return isLater(text) ? LATER_LINE : text;
+}
+
 // Rewrites (or drops, on undefined) meta lines outside ``` fences, in place.
 function mapMeta(text: string, fn: (line: string) => string | undefined): string {
 	let fence = false;

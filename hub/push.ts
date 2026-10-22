@@ -8,7 +8,7 @@ import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { answerReply, decisionsOf, type Notice, onDecision } from "./notices.ts";
 import { type Found, knownComputers } from "./peers.ts";
-import { parseTone } from "./tone.ts";
+import { isLater, parseTone, previewSource } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
 
 export const PUSH_KINDS = ["answer", "ask", "lane", "usage", "update"] as const;
@@ -62,7 +62,7 @@ const origin = (endpoint: string) => {
 let subject = () => "mailto:dotz@example.com";
 
 const plain = (t: string, max = 180) => {
-	const s = t.replace(/```[\s\S]*?```/g, " ").replace(/[*_`#>|]/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();
+	const s = previewSource(t).replace(/```[\s\S]*?```/g, " ").replace(/[*_`#>|]/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();
 	return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 };
 
@@ -84,7 +84,7 @@ export function classify(e: HubEvent, sinceOwner?: number): PushMessage | undefi
 }
 function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefined {
 	const text = typeof e.text === "string" ? e.text : "";
-	if (!text) return undefined;
+	if (!text || isLater(text)) return undefined;
 	const src = String(e.source ?? "");
 	const { tone, text: rest } = parseTone(text);
 	const key = typeof e.update_key === "string" ? e.update_key : "";
