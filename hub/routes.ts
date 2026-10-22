@@ -159,8 +159,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		}
 		if (req.method === "POST" && url.pathname === "/api/read") {
 			const r = markRead(await body(req));
-			// Reading the 알림 / 작업 기록 conversation also reads its bell items up to there, so the two never disagree.
-			if (r.ok && r.moved && (r.target === "alert" || r.target === "worklog")) readConversationNotices(r.target, r.ts);
+			// Reading a conversation also reads its bell items up to there (whether or not the position moved), so the two never disagree.
+			if (r.ok) readConversationNotices(r.target, r.ts);
 			return json(r, r.ok ? 200 : 400);
 		}
 		if (req.method === "GET" && url.pathname === "/api/conversations") return json({ items: conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`)]) });
