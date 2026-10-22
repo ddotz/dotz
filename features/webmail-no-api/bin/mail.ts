@@ -57,7 +57,7 @@ export async function runSend(ctx: Ctx, spec: SiteSpec, site: string, draftId: s
 	const f = draftPath(site, draftId);
 	if (!existsSync(f)) return { lines: [`초안 ${draftId}을(를) 찾지 못했어요`], code: 1 };
 	if (!spec.send) return { lines: ["이 사이트 스펙에는 전송 엔드포인트가 없어요. 초안만 만들 수 있어요"], code: 1 };
-	if (!sendApproved(site, now)) return { lines: [`전송은 메일 스레드에서 형이 OK(ㅇㅇ/보내)해야 돼요. 초안 ${draftId}을(를) 보여주고 승인을 기다려 주세요`], code: 2 };
+	if (!sendApproved(site, now)) return { lines: [`전송은 메일 스레드에서 오너가 OK(ㅇㅇ/보내)해야 돼요. 초안 ${draftId}을(를) 보여주고 승인을 기다려 주세요`], code: 2 };
 	const draft = JSON.parse(readFileSync(f, "utf8")) as Draft;
 	const cookie = await ctx.cookieHeader(spec);
 	const url = endpointUrl(spec.origin, spec.send, {});
@@ -79,7 +79,7 @@ async function main(argv: string[]): Promise<number> {
 	const spec = loadSpec(site ?? "");
 	const config: SiteConfig | undefined = loadConfig(site ?? "");
 	if (!spec || !config) {
-		console.log(`webmail site "${site}" is not set up`);
+		console.log(`"${site}" 메일은 아직 연결 전이에요. onboard.ts로 연결하면 쓸 수 있어요`);
 		return 1;
 	}
 	const ctx = liveCtx(cookieHeaderFromAside);
@@ -111,7 +111,7 @@ async function main(argv: string[]): Promise<number> {
 			out = await runSend(ctx, spec, site, rest[0], now);
 			break;
 		default:
-			out = { lines: ["commands: list | read <id> | search <q> | draft <to> <subject> <body...> | approve | send <draftId>"], code: 1 };
+			out = { lines: ["사용법: list | read <id> | search <말> | draft <받는이> <제목> <본문...> | approve | send <초안id>"], code: 1 };
 	}
 	for (const l of out.lines) console.log(l);
 	return out.code;

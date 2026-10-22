@@ -24,6 +24,9 @@ export const initialState = (): WatchState => ({ seeded: false, seen: [], logged
 
 const SEEN_CAP = 2000;
 const FAIL_BEFORE_ALERT = 3;
+// After an outage the backlog can be large; one thread per mail would flood the channel, so only the newest few get a line
+// each and the rest is one summary line (they stay readable through `mail.ts list`).
+export const MAX_MAIL_LINES = 10;
 
 const oneLine = (s: string, max = 200): string => s.replace(/\s+/g, " ").trim().slice(0, max);
 const mailLine = (m: Mail): string => `mail ${m.id} from=${oneLine(m.from, 80) || "?"}: ${oneLine(m.subject) || "(제목 없음)"}`;
@@ -77,5 +80,8 @@ export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, sta
 	const alive = onAlive(state, ctx.now(), ka.etag, ka.lastModified);
 	const mails = mapMails(spec, ka.body);
 	const { fresh, state: next } = diffNew(alive, mails);
-	return { lines: fresh.map(mailLine), note: `ok ${mails.length} new ${fresh.length}`, state: next };
+	const shown = fresh.slice(-MAX_MAIL_LINES);
+	const more = fresh.length - shown.length;
+	const lines = [...(more > 0 ? [`mail-backlog ${more}: 이전 새 메일 ${more}통은 목록으로만 볼 수 있어요 (mail.ts list)`] : []), ...shown.map(mailLine)];
+	return { lines, note: `ok ${mails.length} new ${fresh.length}`, state: next };
 }
