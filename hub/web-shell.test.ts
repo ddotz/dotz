@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { PtyHost, ptyRoute } from "./pty.ts";
+import { advance } from "./runtime/test-clock.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
 // A stand-in for the owner's shell: a prompt, an echo for plain commands, and a sudo that asks for a password with echo off.
@@ -35,6 +36,17 @@ const open = async (width: number, height: number): Promise<View> => {
 // Resolves once the page-side condition holds (checked on every DOM change); rejects after `ms`.
 const waitFor = (v: View, expr: string, ms = 30_000) =>
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }); done(); })`);
+// Terminal output can sit undelivered in the headless page until the stream's next write (seen under load: the hub's ring had
+// the sudo prompt, the page had only the command's echo, and the next write brought it). In the app that next write is the
+// stream's 15 s ping at the latest, so a wait that runs out moves the test clock past one ping and waits again.
+const waitOut = async (v: View, expr: string) => {
+	try {
+		await waitFor(v, expr, 8_000);
+	} catch {
+		await advance(15_000);
+		await waitFor(v, expr);
+	}
+};
 const SAMPLE = "1번으로 갈게요. 터미널에서 아래 한 줄만 실행해 주세요.\n\n```\nsudo killall trustd\n```\n\n```json\n{\"a\": 1}\n```\n\n```bash\nls -la ~/Library && echo 'a very long line that has to scroll sideways inside the block and never widen the page'\n```";
 // Draws the sample in a fixed layer, so the app's own boot re-rendering cannot take it away mid-test.
 const showSample = (v: View) =>
@@ -73,7 +85,7 @@ describe("code block buttons and the terminal, in a headless browser", () => {
 		const v = await open(390, 844);
 		await showSample(v);
 		await v.click("#t-host .cb .cb-btn.run");
-		await waitFor(v, `SH.alive && document.querySelector(".sh-out").textContent.startsWith("$")`);
+		await waitOut(v, `SH.alive && document.querySelector(".sh-out").textContent.startsWith("$")`);
 		const before = JSON.parse(await v.evaluate(`JSON.stringify({ cmd: document.querySelector(".sh-cmd").value, out: document.querySelector(".sh-out").textContent, pwHidden: document.querySelector(".sh-pw").hidden, title: document.querySelector(".dtitle").textContent })`) as string);
 		expect(before.cmd).toBe("sudo killall trustd");
 		expect(before.out.trim()).toBe("$");
@@ -81,7 +93,7 @@ describe("code block buttons and the terminal, in a headless browser", () => {
 		await Bun.write(`${SNAP}/shell-pasted-390.png`, await v.screenshot());
 
 		await v.click(".sh-run");
-		await waitFor(v, `document.querySelector(".sh-out").textContent.includes("password for test:") && !document.querySelector(".sh-pw").hidden`);
+		await waitOut(v, `document.querySelector(".sh-out").textContent.includes("password for test:") && !document.querySelector(".sh-pw").hidden`);
 		const asked = JSON.parse(await v.evaluate(`JSON.stringify({ cmd: document.querySelector(".sh-cmd").value, type: document.querySelector(".sh-pw-in").type, ac: document.querySelector(".sh-pw-in").autocomplete, focused: document.activeElement === document.querySelector(".sh-pw-in"), inForm: !!document.querySelector(".sh-pw-in").closest("form"), sw: document.documentElement.scrollWidth, dlgW: Math.round(document.querySelector("dialog.shell").getBoundingClientRect().width) })`) as string);
 		expect(asked).toMatchObject({ cmd: "", type: "password", ac: "off", focused: true, inForm: false, dlgW: 390 });
 		expect(asked.sw).toBeLessThanOrEqual(390);
@@ -89,7 +101,7 @@ describe("code block buttons and the terminal, in a headless browser", () => {
 
 		await v.evaluate(`document.querySelector(".sh-pw-in").value = ${JSON.stringify(SECRET)}`);
 		await v.click(".sh-pw-send");
-		await waitFor(v, `document.querySelector(".sh-out").textContent.includes("PW:")`);
+		await waitOut(v, `document.querySelector(".sh-out").textContent.includes("PW:")`);
 		const after = JSON.parse(await v.evaluate(`JSON.stringify({ out: document.querySelector(".sh-out").textContent, field: document.querySelector(".sh-pw-in").value, hidden: document.querySelector(".sh-pw").hidden, inDom: document.documentElement.outerHTML.includes(${JSON.stringify(SECRET)}), inStorage: JSON.stringify([localStorage, sessionStorage]).includes(${JSON.stringify(SECRET)}) })`) as string);
 		expect(after.out).toContain(`PW:${cksum(SECRET)}`);
 		expect(after).toMatchObject({ field: "", hidden: true, inDom: false, inStorage: false });
