@@ -419,6 +419,11 @@ function ntEditNode(n, ed) {
   const back = el("button", { class: "dc-back", type: "button", "data-k": "back", disabled: NS.busy, onclick: () => { NS.edit = null; ntSheetPaint(); } }, "돌아가기");
   return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
+// A notice sheet's body: the text without its `[file]` lines, then those files as the same image / file chips a chat message shows (15-attachments.js).
+function ntBody(n) {
+  const fl = fileLines(n.text);
+  return [mdNode(fl.text, "md ds-md"), filesNode(fl.files)];
+}
 // A failure alert: its whole text in the same sheet over the current screen, with the way into the conversation.
 function ntDetailOpen(n) {
   ntSheetClose(false);
@@ -430,7 +435,7 @@ function ntDetailPaint(n) {
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "알림" }),
       el("div", { class: "ds-m", text: ntWhen(n) }),
-      mdNode(fileLines(n.text).text, "md ds-md")),
+      ...ntBody(n)),
     el("div", { class: "fs-ft" },
       el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }),
       el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" })));
@@ -447,7 +452,7 @@ function ntSheetPaint() {
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "답변이 필요해요" }),
       el("div", { class: "ds-m", text: `${ntDecWhere(d)} · ${ntWhen(n)}` }),
-      mdNode(fileLines(n.text).text, "md ds-md"))];
+      ...ntBody(n))];
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   const hadNote = !!NS.node.querySelector(".dc-note:focus");
   if (ed) foot.append(ntEditNode(n, ed));
