@@ -14,19 +14,24 @@ const mode = (p: string) => statSync(p).mode & 0o777;
 const FORM = [{ type: "name" }, { type: "phone" }, { type: "email" }, { type: "postal_code" }, { type: "address1" }, { type: "address2", optional: true }, { type: "card_holder" }, { type: "card_number" }, { type: "card_expiry" }, { type: "card_cvc" }, { type: "birth_date" }, { type: "id_number" }, { type: "other", label: "Gift code" }];
 const VALUES: Record<string, string> = {
 	name: "Kim Minsu",
-	phone: "010-9876-5432",
-	email: "minsu@example.com",
+	phone: "010-6183-4720-5519",
+	email: "minsu.p7k2w9x4q8@example.com",
 	postal_code: "06236",
-	address1: "Zebra Unique Street 77",
+	address1: "Zebra Unique Street 77 q8w3e6r1t5y0",
 	card_holder: "KIM MINSU",
-	card_number: "4242 4242 4242 4242",
+	card_number: "4539 7712 0384 6918",
 	card_expiry: "12/30",
-	card_cvc: "7391",
+	card_cvc: "6047",
 	birth_date: "1990-04-05",
-	id_number: "QX-55512-ZZ",
-	other_gift_code: "GIFT-8472-PLUM",
+	id_number: "QX-55512-ZZ-j3h8d2s6a1",
+	other_gift_code: "GIFT-8472-PLUM-m4n9b7v2c5",
 };
-const SECRET_BITS = ["4242424242424242", "4242 4242 4242 4242", "9876-5432", "Zebra Unique", "7391", "QX-55512", "GIFT-8472", "minsu@example.com"];
+// Long values that cannot occur by chance (the CVC is 4 digits by definition, so it is matched as a standalone number).
+const SECRET_BITS = ["4539771203846918", "4539 7712 0384 6918", "010-6183-4720-5519", "Zebra Unique Street 77 q8w3e6r1t5y0", "QX-55512-ZZ-j3h8d2s6a1", "GIFT-8472-PLUM-m4n9b7v2c5", "minsu.p7k2w9x4q8@example.com"];
+const SECRET_CVC = /(?<!\d)6047(?!\d)/;
+// The bytes an append-only file gained since `from` (missing file: empty).
+const sizeOf = (p: string) => (existsSync(p) ? statSync(p).size : 0);
+const gained = (p: string, from: number) => (existsSync(p) ? readFileSync(p).subarray(from).toString("utf8") : "");
 
 async function ask(body: Record<string, unknown>): Promise<string> {
 	const r = await call("/api/auth", "POST", { site: "shop", kind: "form", purpose: "배송 정보", target: "chat", form: FORM, ...body });
@@ -74,6 +79,8 @@ test("light validation: Luhn card number, expiry format, phone, date", async () 
 });
 
 test("one-time form: 0600 file under secrets/once, path and field names only, no value anywhere", async () => {
+	// Cause of the old flake: it searched short values ("7391", "9876-5432") in hub.log/notices/outbox that other test files had filled with random ids and numbers.
+	const before = [paths.log, paths.outbox].map(sizeOf);
 	const id = await ask({ site: "shop-once" });
 	const r = await call(`/api/auth/${id}`, "POST", { action: "submit", values: VALUES });
 	expect(r.status).toBe(200);
@@ -87,11 +94,15 @@ test("one-time form: 0600 file under secrets/once, path and field names only, no
 	expect(mode(parsed.path)).toBe(0o600);
 	expect(mode(join(DATA_DIR, "secrets"))).toBe(0o700);
 	const stored = JSON.parse(readFileSync(parsed.path, "utf8")) as Record<string, string>;
-	expect(stored.card_number).toBe("4242424242424242");
+	expect(stored.card_number).toBe("4539771203846918");
 	expect(stored.card_expiry).toBe("12/30");
 	expect(stored.address2).toBeUndefined();
-	const leaks = [answered, view, JSON.stringify(pendingAuth()), existsSync(paths.log) ? readFileSync(paths.log, "utf8") : "", existsSync(paths.notices) ? readFileSync(paths.notices, "utf8") : "", existsSync(paths.outbox) ? readFileSync(paths.outbox, "utf8") : ""].join("\n");
+	const leaks = [answered, view, JSON.stringify(pendingAuth()), gained(paths.log, before[0]!), gained(paths.outbox, before[1]!)].join("\n");
 	for (const bit of SECRET_BITS) expect(leaks).not.toContain(bit);
+	expect(SECRET_CVC.test(leaks)).toBe(false);
+	// notices.json is rewritten whole (not appended), so it is read whole; the long values still cannot match by chance.
+	const notices = existsSync(paths.notices) ? readFileSync(paths.notices, "utf8") : "";
+	for (const bit of SECRET_BITS) expect(notices).not.toContain(bit);
 });
 
 test("remember keeps the file as secrets/<site>; the owner's choice in the form wins", async () => {
