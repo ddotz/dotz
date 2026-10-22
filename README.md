@@ -13,15 +13,15 @@ too. omp (oh-my-pi) and Claude Code are explicit opt-ins; what changes then is i
 ## Install and onboard
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh                 # install, then the wizard
-curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh -s -- --service  # also start the gateway service
+curl -fsSL https://raw.githubusercontent.com/<owner>/dotz/main/install.sh | sh                 # install, then the wizard
+curl -fsSL https://raw.githubusercontent.com/<owner>/dotz/main/install.sh | sh -s -- --service  # also start the gateway service
 ```
 
 `install.sh` (POSIX sh, macOS and Linux) installs bun when missing (bun.sh installer), installs OmO (`bun add -g --trust
 omo-ai`) unless `DOTZ_HARNESS` says otherwise or another harness is already there, downloads the code to
 `~/.local/share/dotz` (`DOTZ_HOME`), creates the data dir `~/.dotz` (`DOTZ_DIR`, nothing in it but what the wizard writes)
 and runs the wizard on the terminal (`/dev/tty`, so it works under `curl | sh`). Source: the GitHub tarball of
-`DOTZ_REPO` (default `ddotz/dotz`) at `DOTZ_REF` (default `main`); while the repo is private it uses `GITHUB_TOKEN` /
+`DOTZ_REPO` (default: the repo `install.sh` was published from) at `DOTZ_REF` (default `main`); while the repo is private it uses `GITHUB_TOKEN` /
 `GH_TOKEN` or an existing `gh` login; `DOTZ_TARBALL` (https URL, `file://` or a path) replaces GitHub. Running it again
 is the upgrade: the code is replaced, the data dir kept, the wizard skipped (`--setup` runs it) and the gateway
 restarted when its service runs this copy. `--uninstall` removes the code and the service (only a service file that runs
@@ -182,6 +182,15 @@ built in, other providers need `base_url` and `api` on the entry. The key goes o
 `api.openai.com`, `openrouter.ai` or a host listed in the top-level `key_hosts` array of `config.json`; an entry pointing
 anywhere else is refused when saved and never started. The key file's name must contain `api-key` or `api_key`.
 
+**API-key fallback in the web UI.** On the 모델 · 폴백 screen a step is edited in place: model, effort, subscription or API
+key, when it takes over (always / usage limit / provider error), back to the primary or stay, and a spend cap. "구독 소진 시
+API 키로 계속" takes the key itself (pasted, format-checked, tried once against the provider, stored as
+`secrets/<provider>-api-key` with mode 600; only a mask is shown). Each entry has a 켜기/끄기 switch (`enabled`; an API-key
+entry added from the settings starts off, an entry without the field counts as on). A process on an API-key entry starts no task
+subagents and no sessions (heavy work waits in `open_tasks` until the subscription resets) unless the entry's `workers` switch
+is on: then its subagents and sessions bill the same key, and their spend counts against the key's cap. Every hub-driven switch
+to or from a key starts a fresh conversation with a handover, so the cache of the old one is not resumed on another model.
+
 **Session context management.** Five `lanes.*` keys in `config.json` (all optional): `compact_at` (default `400000`
 tokens; the hub compacts an idle OmO session at that value, on omp it goes into the session's overlay) and `keep_recent`
 (default `40000`, omp only); `nightly_at` (default `"04:30"`, gateway-local time, `"off"` disables),
@@ -263,8 +272,51 @@ against the `omo-ai` version npm calls latest (the senpi engine moves with it). 
 (the key keeps its old name) is `"install"` by default: `bun add -g omo-ai@latest` (omp: `omp update`), a check that the
 harness reports the new version, one worklog line, then one gateway restart once everything is idle. A failed install keeps
 the old version and posts an issue with a choice block to the alert conversation. `"check"` only posts one worklog line per
-new version; `"off"` disables the job. Installs managed by another program (Tern) are skipped. `bun hub/update.ts --check-now`
+new version; `"off"` disables the job. Installs managed by another program are skipped. `bun hub/update.ts --check-now`
 prints what is pending without installing.
+
+## Web app screens
+
+The web app (tailnet only) is a phone-first messenger plus status screens.
+
+- *Chat*: a chat list (the orchestrator first, then projects by latest message). Read positions live on the server, unread
+  counts and a "새 메시지" divider come from them. A setting picks what the chat tab opens on return (last conversation,
+  default, or the main chat). Sessions open as a conversation (대화) with a 로그 보기 switch; session cards show the last report.
+- *알림 / 작업내역 / 모니터링*: the bell panel and the 홈 cards group every worklog, alert, session result, watch and
+  schedule post (`notices.json`, 300 cap) under 전체 / 알림 / 작업내역 / 모니터링 tabs with their own unread counts. A notice
+  links to its source message; swipe it away to dismiss. The 모니터링 screen lists each watch and schedule with last run, result
+  and next run (`GET /api/monitors`), and watches and schedules can be paused. Nightly and watch issues report with a choice block.
+- *Decisions*: choice buttons appear only on messages marked `[ask]`; answering by button gets a short quiet reply. A pending
+  decision (toast, push or notice) opens only the bottom decision sheet over the current screen.
+- *Send approval*: every outgoing message (mail, SNS comment, reply or post, chat message) asks through one shared `[ask]`
+  format (`hub/draft-approval.ts`). The web opens a bottom sheet with the draft and 보내기 / 고치기 / 보내지 않기; nothing
+  is sent before 보내기.
+- *Usage screen*: per-provider limits and windows, the Claude account in use with aliases (`/account`, `GET/PUT /api/accounts`),
+  and Anthropic's limits for the whole organization behind an API key (requests and tokens per minute, read from the
+  `anthropic-ratelimit-*` headers, cached 10 minutes). Usage and cost need an admin key stored as
+  `secrets/anthropic-admin-key`; without it the card says so.
+
+**Several gateways on one tailnet.** With two or more dotz gateways of the same Tailscale login, the top bar shows a computer
+chip; its sheet lists them with a connection pill and each one's unread and open-decision counts, and choosing one opens
+that gateway (the same screen where it exists). `hub/peers.ts` finds them through `tailscale status --json`, probing each
+online node of your own login on the gateway's own port and `web.peer_ports` (default 8443, 8445, 8444) for a dotz manifest,
+cached 60 s. `web.peers` adds URLs by hand, `web.peer_discovery: false` turns discovery off, and `web.machine_name` names the
+computer (default derived from its hostname; peers learn it from `GET /api/peer-info`). The other gateway checks your tailnet
+identity against its own allow-list, so each machine must allow your login.
+
+## Integrations (off until you ask)
+
+Shipped integrations are off after install. Ask the orchestrator ("카톡 연결해줘", "유튜브·인스타 연결해줘") and it runs the
+feature's setup, keeps one progress message updated, asks you only for what you must do (logins, permissions, device codes)
+and resumes where it stopped if run again. Nothing is posted or sent without your approval.
+
+- *KakaoTalk* (`hub/kakao/`, `docs/kakao.md`): drafts replies in your tone for new messages. Reads the app's database
+  read-only; sends only a draft you approved, through the app's UI automation. Credentials stay in the Keychain. Needs Full Disk
+  Access and Accessibility for the gateway's `bun`. Turn off with "카톡 연동 꺼 줘" (`bun hub/kakao/cli.ts off`).
+- *YouTube / Instagram* (`features/youtube-instagram/`): upload, scheduled posts, comment replies and channel stats. Setup
+  runs through a background browser (Aside) and reads verification codes from Messages. Uploads are idempotent, a YouTube quota
+  stop waits until the quota resets, and nothing is published, replied or edited before you pick it in an `[ask]`.
+- *Webmail without an API* (`features/webmail-no-api/`): a generic watch for webmail that has no API, also set up on request.
 
 ## Feature folders (shipped and personal)
 
@@ -339,8 +391,9 @@ when omp is selected.
   it is usable again), logs `모델 폴백: … → …` and, for the orchestrator, alerts the owner. API-key entries start on the entry's
   base model and switch to the key provider the dotz extension registers (`pi.registerProvider`; not yet
   exercised live on OmO). Probe: `fallback_chain`.
-- *API keys while 미설's account is pinned* (hub/apikey-policy.ts): while OmO's subscription pin names `miseol-shared`,
-  no API-key entry runs and key variables are stripped from spawns. The owner's temporary lift is
+- *API keys while a shared account is pinned* (hub/apikey-policy.ts): while OmO's subscription pin names an account that
+  is on the no-API-key list (an account whose tokens are not the owner's own), no API-key entry runs and key variables are
+  stripped from spawns. The owner's temporary lift is
   `~/.dotz/api-allow-while-pinned` holding an expiry in epoch seconds: before it keys are allowed under the pin, at it the
   ban is back by itself. Remove the lift early with `rm ~/.dotz/api-allow-while-pinned` (read on every check, no restart).
 - *Subagent patch review*: the guard runs on OmO task calls (`prompt` / `tasks[].prompt`): the brief rules apply, a writing subagent
@@ -450,6 +503,12 @@ chooses it with `<data dir>/accounts/rules.json` (manual pick, time-window and u
 
 ## Updating a running gateway
 
+**dotz self-update** (settings → 업데이트, `hub/selfupdate.ts`). A daily check (`self_update.auto_check`, `self_update.at`)
+fetches the tracked branch and announces a new version. It refuses a checkout with uncommitted changes or local commits
+not on origin; an update is fast-forward only, runs `bun install` when needed and the tests, and returns to the old commit if
+they fail. With `self_update.auto_apply: true` (default off) the daily check applies a clean, not-ahead checkout itself and
+restarts through the idle gate; a refusal or failure alerts with a choice block. A tarball install updates by re-running `install.sh`.
+
 The launchd job keeps the old code until it is restarted. Restart it from the gateway (`/restart gateway` or
 `POST /api/gateway/restart`): it waits until the orchestrator and every session are idle (at most 20 min), then exits and
 launchd starts the new code. `launchctl kickstart -k gui/$(id -u)/dev.dotz.gateway` restarts at once and cuts running
@@ -480,7 +539,7 @@ short "received, answering when the current step ends" notice from the gateway.
   default `omo`, an unknown name is logged and falls back to OmO). The orchestrator and sessions hold the policy and only
   see events. `verify.ts` detects the installed harnesses and runs the compatibility check before a switch (see API additions). `bun test` replays recorded omp frames and two state-machine scenarios against goldens captured before the
   adapter existed (`hub/runtime/fixtures`).
-- Audit against Dori / dori-kit / 오모냥: `docs/audit-2026-10-16.md`.
+- Audit against earlier setups: `docs/audit-2026-10-16.md`.
 - `hub/kakao/` KakaoTalk integration, off by default (one-sentence onboarding and the CLI in `cli.ts`): `docs/kakao.md`.
 - `extension/index.ts` dotz extension (loaded by OmO and omp processes): orchestrator tools, terminal thin client (omp), the subagent guard and harness commands (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `token-audit.ts`).
 - `web/index.html` web app shell; its script and styles are modules in `web/js/*.js` and `web/css/*.css` (one topic per file, served joined in file-name order as `/app.js` and `/app.css` by `hub/webapp.ts`). `MODE.md` the behaviour contract (`MODE.ko.md` the same in Korean). `hub/threads.ts` the Discord thread rules (table in MODE "Threads"). `setup.ts` onboarding.
