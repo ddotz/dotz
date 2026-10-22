@@ -35,6 +35,7 @@ function monRow(m) {
 function renderMonitoring() {
   const box = $("#v-monitoring"), list = ntMons(), bad = list.filter(m => m.last_result === "fail").length;
   clear(box);
+  if (INTG.view && INTG.items.some(i => i.key === INTG.view)) return renderIntegration(box);
   if (!NM.loaded) { box.append(emptyNode(NM.failed ? "불러오지 못했어요" : "불러오는 중…")); return; }
   if (!list.length) { box.append(emptyNode("모니터링 중인 것이 없어요")); return; }
   box.append(el("div", { class: "mon-sum", text: `모니터링 ${list.length}개${bad ? ` · 실패 ${bad}개` : ""}` }), el("div", { class: "card mon-list" }, ...list.map(monRow)));
