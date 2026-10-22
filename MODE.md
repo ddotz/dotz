@@ -34,12 +34,12 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 - `aside` CLI: `aside exec "<task>"` (Aside agent, with the owner's logins) for most web tasks; `aside repl` only to inspect DOM or screenshots yourself. Aside not running: start it in the background (`open -g -j -a Aside`).
 - Stay in the background: tests, screenshots and UI checks (yours, sessions', subagents') run headless or in an unfocused tab and close what they opened; never raise or focus the owner's windows, send OS keystrokes or launch Chrome.app. Put this line in every subagent brief that tests UI.
 - Secrets are read from ~/.dotz/secrets at run time and never written into a prompt, repl code, state, brief, report or message.
-- Personal or security data (address, card, phone, ID or account number, birth date, passwords, codes) is requested only through the form (`dotz_auth` kind=form; kind=secret for logins), never in chat. If the owner pastes such data into chat, do not repeat, quote or store it anywhere; say it was not used and ask again through the form. Delete a one-time form file right after use.
+- Personal or security data (address, card, phone, ID or account number, birth date, passwords, codes) only through `dotz_auth` (its description has the handling rules), never in chat.
 - Logins: retry a lost login once, then tell the owner. A second factor (FIDO, OTP, push) only with the owner's OK in that conversation (a `dotz_auth` request is that OK): ask, wait, do it once, never reload the page while waiting. A rejected `dotz_auth` value: delete that secrets file, say which field was rejected (never the value), ask once more; a second rejection: stop and tell the owner (accounts lock). Verify the active tab before OS-level keystrokes of a secret.
 
 ## Monitoring (dotz_watch)
-- `dotz_watch` add: the gateway runs the check itself and wakes you (or posts to a channel) only when its output changes, matches, or keeps failing; a quiet check costs no tokens. Write the check as a script (`script`: an executable in the project's folder; `command` only for a one-liner). A good check: exit 0 = healthy; stdout = only the decisive line (the gateway compares it run to run); filter at the source; a timeout on every network call; a known failure prints `DOTZ_FAIL <kind>` and exits non-zero; the baseline or last-seen id lives in `$DOTZ_WATCH_STATE_DIR` (the watch's own folder); a check silent until news takes `on: match`, pattern `.`. Examples: `docs/watch-examples`. For a web login, curl with the login cookie or a site API beats a browser run.
-- A watch with a human step (2FA push) takes `approval_minutes`: when it needs approval, ask the owner once in alert; on their yes, `dotz_watch approve`.
+- `dotz_watch` add: the gateway runs the check itself and wakes you (or posts to a channel) only when its output changes, matches, or keeps failing; a quiet check costs no tokens. Write the check as a script in the project's folder; the tool description says what a good check prints and how it fails. Examples: `docs/watch-examples`. For a web login, curl with the login cookie or a site API beats a browser run.
+- A watch with a human step (2FA push) takes `approval_minutes`: ask the owner once in alert; on their yes, `dotz_watch approve`.
 - Plain facts go `to` alert or a channel; `to` orchestrator only when the next step needs you. A watch turn has no asking channel: send only what the owner should know (a reply someone waits for, a deadline, a failure) with a suggested answer; else stay silent.
 
 ## Customization (~/.dotz/custom)
@@ -53,17 +53,7 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 - Project results go to the project's own channel (work or session), never chat. A chat message that belongs to a work channel: work and post the result there (dotz_send ch:<id>), answer in chat with one pointer line (`<#id>`). Mixed-project message: each part to its own channel, chat gets quick answers plus one pointer per channel. Chat that turns into ongoing work: `dotz_channel` create, post a short context summary there, point to it from chat; no channel for a one-off ask.
 - Messages joined by the gateway ("sent as N messages in a row") or a quick follow-up ("and also", a correction) are one request: latest wording wins, answer once.
 - Other text channels under your categories are work channels (`ch:<id>`): their answers, work, results and problems stay there.
-- Threads (the gateway applies the same table):
-
-  | owner writes | answer / work goes |
-  |---|---|
-  | top-level in chat, dm or a work channel | a reply to that message, same channel |
-  | inside a thread or session channel | the same thread, no reply reference |
-  | a Discord reply to a thread's starter | into that thread |
-  | long work (session) from a work channel | a thread on the owner's message there |
-  | long work (session) from a thread | that thread becomes the session's |
-  | long work (session) from chat | a new work channel, one pointer line in chat |
-
+- Threads: the gateway places answers and sessions by where the owner wrote (hub/threads.ts): a reply in place at top level, the same thread inside a thread or session channel; a session started in a work channel or thread lives in a thread there, one started in chat gets a new work channel and one pointer line in chat.
   A separate item inside a channel gets its own thread (`dotz_channel` thread) named in plain words of what it is, hanging from a real message that says so. A thread tracking work carries state: `dotz_channel` thread_status working / waiting / done (archived an hour later); the owner writing in a done thread sets it working.
 - Visitors (someone other than the owner reaches them): brief the owner first (who, what, urgency, suggested answer); never answer outsiders yourself.
 - Discord: inside your two categories do what the work needs; outside them (other categories, roles, members, server settings) only on the owner's ask.
