@@ -1,18 +1,21 @@
 // YouTube Data API v3 client over the injected ctx.fetch: refresh-token grant with a cached access token, channel stats,
 // comment threads (one call for the whole channel), recent uploads, metadata update with a one-time backup, resumable
-// upload and comment replies. Every call is booked in the quota ledger first; 5xx/429/network are TransientError, a
-// rejected login is AuthError. Secrets only travel in request bodies and Authorization headers.
+// upload (with a lookup by fingerprint tag so a lost response never means a second upload) and comment replies. Every call
+// is booked in the quota ledger first; 5xx/429/network are TransientError, a rejected login is AuthError, a 403
+// quotaExceeded / dailyLimitExceeded is QuotaError (the ledger is marked exhausted). Secrets only travel in request bodies
+// and Authorization headers.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { type Ctx, type Lang, paths, readJson, SetupError, writeJson, type YoutubeAccess, type YoutubeOauth } from "./config.ts";
-import { COSTS, spend } from "./quota.ts";
-import { AuthError, TransientError } from "./watchkit.ts";
+import { COSTS, markExhausted, spend } from "./quota.ts";
+import { AuthError, QuotaError, TransientError } from "./watchkit.ts";
 
 const API = "https://www.googleapis.com/youtube/v3";
 const UPLOAD_API = "https://www.googleapis.com/upload/youtube/v3/videos";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const EXPIRY_MARGIN_MS = 60_000;
 const UPLOAD_TIMEOUT_MS = 30 * 60_000;
+const QUOTA_REASONS = new Set(["quotaExceeded", "dailyLimitExceeded"]);
 
 export class YoutubeError extends Error {
 	readonly status: number;
@@ -48,17 +51,22 @@ async function send(ctx: Ctx, url: string, init: RequestInit): Promise<Response>
 	return res;
 }
 
-async function reject(res: Response): Promise<never> {
+async function reject(ctx: Ctx, res: Response): Promise<never> {
 	const body = (await res.json().catch(() => ({}))) as { error?: { errors?: { reason?: string }[]; status?: string } };
-	throw new YoutubeError(res.status, String(body.error?.errors?.[0]?.reason ?? body.error?.status ?? "error"));
+	const reason = String(body.error?.errors?.[0]?.reason ?? body.error?.status ?? "error");
+	if (res.status === 403 && QUOTA_REASONS.has(reason)) {
+		await markExhausted(ctx);
+		throw new QuotaError(reason);
+	}
+	throw new YoutubeError(res.status, reason);
 }
 
 async function api<T>(ctx: Ctx, token: string, method: string, path: string, params: Record<string, string>, cost: number, body?: unknown): Promise<T> {
-	spend(ctx, cost);
+	await spend(ctx, cost);
 	const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
 	if (body !== undefined) headers["Content-Type"] = "application/json";
 	const res = await send(ctx, `${API}/${path}?${new URLSearchParams(params)}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-	if (!res.ok) await reject(res);
+	if (!res.ok) await reject(ctx, res);
 	return (await res.json()) as T;
 }
 
@@ -116,32 +124,35 @@ type Thread = {
 };
 type ThreadPage = { items?: Thread[]; nextPageToken?: string };
 
-async function* threadPages(ctx: Ctx, token: string, channelId: string, maxPages: number): AsyncGenerator<Thread[]> {
+async function* threadPages(ctx: Ctx, token: string, channelId: string, maxPages: number): AsyncGenerator<{ items: Thread[]; more: boolean }> {
 	let pageToken: string | undefined;
 	for (let i = 0; i < maxPages; i++) {
 		const params: Record<string, string> = { part: "snippet,replies", allThreadsRelatedToChannelId: channelId, order: "time", maxResults: "100", textFormat: "plainText" };
 		if (pageToken) params.pageToken = pageToken;
 		const d = await api<ThreadPage>(ctx, token, "GET", "commentThreads", params, COSTS.list);
-		yield d.items ?? [];
+		yield { items: d.items ?? [], more: Boolean(d.nextPageToken) };
 		pageToken = d.nextPageToken;
 		if (!pageToken) return;
 	}
 }
 
 // New = top-level comment newer than `since`, not by the channel, with no reply by the channel. Without `since` (first run)
-// it reads one page only to learn `newest`, the value the baseline moves to.
-export async function commentThreadsSince(ctx: Ctx, channelId: string, since: string | undefined, maxPages = 3): Promise<{ comments: YtComment[]; newest?: string }> {
+// it reads one page only to learn `newest`, the value the baseline moves to. `overflow` = the page cap was hit with the
+// baseline still ahead, so older new comments exist that are not listed.
+export async function commentThreadsSince(ctx: Ctx, channelId: string, since: string | undefined, maxPages = 3): Promise<{ comments: YtComment[]; newest?: string; overflow: boolean }> {
 	const token = await accessToken(ctx);
 	const sinceMs = since === undefined ? undefined : Date.parse(since);
 	const comments: YtComment[] = [];
 	let newest: string | undefined;
+	let overflow = false;
 	for await (const page of threadPages(ctx, token, channelId, sinceMs === undefined ? 1 : maxPages)) {
 		let reachedBaseline = false;
-		for (const t of page) {
+		overflow = page.more;
+		for (const t of page.items) {
 			const top = t.snippet.topLevelComment;
 			const at = top.snippet.publishedAt;
 			if (!newest || Date.parse(at) > Date.parse(newest)) newest = at;
-			if (sinceMs === undefined) return { comments, newest };
+			if (sinceMs === undefined) return { comments, newest, overflow: false };
 			if (Date.parse(at) <= sinceMs) {
 				reachedBaseline = true;
 				break;
@@ -151,9 +162,12 @@ export async function commentThreadsSince(ctx: Ctx, channelId: string, since: st
 			if (authorId === channelId || replied) continue;
 			comments.push({ id: top.id, videoId: t.snippet.videoId ?? "", author: top.snippet.authorDisplayName, authorChannelId: authorId, text: top.snippet.textDisplay ?? top.snippet.textOriginal ?? "", publishedAt: at, replied });
 		}
-		if (reachedBaseline) break;
+		if (reachedBaseline) {
+			overflow = false;
+			break;
+		}
 	}
-	return { comments, newest };
+	return { comments, newest, overflow };
 }
 
 // The channel's own replies (texts only) from the newest threads, for tone-sample.
@@ -161,7 +175,7 @@ export async function ownReplies(ctx: Ctx, channelId: string, limit: number, max
 	const token = await accessToken(ctx);
 	const out: string[] = [];
 	for await (const page of threadPages(ctx, token, channelId, maxPages)) {
-		for (const t of page) for (const r of t.replies?.comments ?? []) if (r.snippet.authorChannelId?.value === channelId) out.push(r.snippet.textDisplay ?? r.snippet.textOriginal ?? "");
+		for (const t of page.items) for (const r of t.replies?.comments ?? []) if (r.snippet.authorChannelId?.value === channelId) out.push(r.snippet.textDisplay ?? r.snippet.textOriginal ?? "");
 		if (out.length >= limit) break;
 	}
 	return out.slice(0, limit);
@@ -172,6 +186,20 @@ export async function recentUploads(ctx: Ctx, channelId: string, max = 10): Prom
 	const uploads = `UU${channelId.slice(2)}`;
 	const d = await api<{ items?: { snippet: { title: string; publishedAt: string; resourceId: { videoId: string } } }[] }>(ctx, t, "GET", "playlistItems", { part: "snippet", playlistId: uploads, maxResults: String(max) }, COSTS.list);
 	return (d.items ?? []).map(i => ({ id: i.snippet.resourceId.videoId, title: i.snippet.title, publishedAt: i.snippet.publishedAt }));
+}
+
+// The video the channel uploaded with `tag` among its recent uploads (2 list calls), or undefined. A resumable upload whose
+// response was lost still shows up here, which is how a retry avoids uploading the same file twice. A channel without any
+// video has no uploads playlist yet (404), which simply means nothing was found.
+export async function findUploadByTag(ctx: Ctx, channelId: string, tag: string): Promise<string | undefined> {
+	const uploads = await recentUploads(ctx, channelId).catch(e => {
+		if (e instanceof YoutubeError && e.status === 404) return [];
+		throw e;
+	});
+	if (!uploads.length) return undefined;
+	const t = await accessToken(ctx);
+	const d = await api<{ items?: { id: string; snippet: { tags?: string[] } }[] }>(ctx, t, "GET", "videos", { part: "snippet", id: uploads.map(u => u.id).join(",") }, COSTS.list);
+	return d.items?.find(v => v.snippet.tags?.includes(tag))?.id;
 }
 
 type RawVideo = { id: string; snippet: { title: string; description?: string; categoryId: string; tags?: string[]; defaultLanguage?: string; publishedAt?: string }; localizations?: Record<Lang, YtLoc> };
@@ -218,17 +246,17 @@ export async function insertVideo(ctx: Ctx, v: NewVideo, reader: VideoReader = b
 		status: { privacyStatus: v.privacy, selfDeclaredMadeForKids: false },
 		...(localized ? { localizations: v.localizations } : {}),
 	};
-	spend(ctx, COSTS.videoInsert);
+	await spend(ctx, COSTS.videoInsert);
 	const start = await send(ctx, `${UPLOAD_API}?${new URLSearchParams({ uploadType: "resumable", part: parts })}`, {
 		method: "POST",
 		headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Length": String(src.size), "X-Upload-Content-Type": "video/*" },
 		body: JSON.stringify(meta),
 	});
-	if (!start.ok) await reject(start);
+	if (!start.ok) await reject(ctx, start);
 	const session = start.headers.get("location");
 	if (!session) throw new YoutubeError(502, "noUploadSession");
 	const done = await send(ctx, session, { method: "PUT", headers: { "Content-Length": String(src.size), "Content-Type": "video/*" }, body: src.body(), signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) });
-	if (!done.ok) await reject(done);
+	if (!done.ok) await reject(ctx, done);
 	const id = ((await done.json()) as { id?: string }).id;
 	if (!id) throw new YoutubeError(502, "noVideoId");
 	return id;

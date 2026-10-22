@@ -1,7 +1,7 @@
 // jobs lib: validation at creation, the status flow, next posting time in the owner's zone, the publish gate and due selection.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { loadConfig } from "../lib/config.ts";
-import { approve, dueJobs, getJob, listJobs, markDone, markFailed, markPosting, newJob, nextPostingTime, reject } from "../lib/jobs.ts";
+import { approve, dueJobs, getJob, listJobs, markDone, markFailed, markPosting, newJob, nextPostingTime, reject, release } from "../lib/jobs.ts";
 import { fakeCtx, setupEnv, type TestEnv } from "./helpers.ts";
 
 let env: TestEnv;
@@ -78,6 +78,27 @@ test("dueJobs returns only approved/scheduled jobs whose time came, oldest first
 	expect(dueJobs(ctx.now()).map(j => j.id)).toEqual([a.id, b.id]);
 	expect(dueJobs(ctx.now()).map(j => j.id)).not.toContain(draft.id);
 	expect(dueJobs(new Date("2030-07-02T00:00:00Z")).map(j => j.id)).toContain(later.id);
+});
+
+test("markPosting stamps posting_since and release clears it", () => {
+	const ctx = fakeCtx(env);
+	const job = approve(ctx, upload(ctx).id, { publish_at: "now" });
+	expect(markPosting(job.id, ctx.now()).posting_since).toBe("2030-06-15T12:00:00.000Z");
+	expect(release(job.id)).toMatchObject({ status: "scheduled" });
+	expect(getJob(job.id)?.posting_since).toBeUndefined();
+});
+
+test("dueJobs releases a job stuck in posting for more than 30 minutes and leaves a recent one alone", () => {
+	const ctx = fakeCtx(env);
+	const stuck = approve(ctx, upload(ctx).id, { publish_at: "2030-06-15T10:00:00Z" });
+	const busy = approve(ctx, upload(ctx).id, { publish_at: "2030-06-15T10:00:00Z" });
+	markPosting(stuck.id, new Date("2030-06-15T11:29:00Z"));
+	markPosting(busy.id, new Date("2030-06-15T11:31:00Z"));
+	expect(dueJobs(ctx.now()).map(j => j.id)).toEqual([stuck.id]);
+	expect(getJob(stuck.id)).toMatchObject({ status: "scheduled" });
+	expect(getJob(stuck.id)?.posting_since).toBeUndefined();
+	expect(getJob(busy.id)?.status).toBe("posting");
+	expect(dueJobs(new Date("2030-06-15T12:02:00Z")).map(j => j.id).sort()).toEqual([busy.id, stuck.id].sort());
 });
 
 test("ids that are not job ids never touch the disk", () => {

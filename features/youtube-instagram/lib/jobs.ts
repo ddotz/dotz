@@ -1,7 +1,9 @@
 // Approval jobs (DESIGN.md "Jobs and approval"): one JSON file per job in jobs/. Status flow draft -> approved |
 // scheduled -> posting -> done | failed, or rejected. Nothing is published from a job that is not approved/scheduled;
-// markPosting is the single gate every publish path goes through.
-import { mkdirSync, readdirSync } from "node:fs";
+// markPosting is the single gate every publish path goes through. A job left in `posting` by a killed process is released
+// by dueJobs after STALE_POSTING_MS; its upload_intent (fingerprint of the YouTube upload) keeps the retry from duplicating it.
+import { createHash } from "node:crypto";
+import { mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { type Config, type Ctx, type Lang, loadConfig, paths, readJson, writeJson } from "./config.ts";
 import { type Platform, zonedParts, zonedToDate } from "./watchkit.ts";
@@ -19,6 +21,8 @@ export type Job = {
 	created: string;
 	targets: Platform[];
 	publish_at?: string;
+	posting_since?: string;
+	upload_intent?: UploadIntent;
 	upload?: UploadSpec;
 	reply?: ReplySpec;
 	metadata?: MetadataSpec;
@@ -28,12 +32,14 @@ export type Job = {
 	notified?: Platform[];
 	error?: string;
 };
+export type UploadIntent = { fingerprint: string; started: string };
 export type NewJobInput = { kind: JobKind; targets?: Platform[]; upload?: Partial<UploadSpec>; reply?: Partial<ReplySpec>; metadata?: Partial<MetadataSpec> };
 
 const ID = /^j-\d{12}-[0-9a-f]{4}$/;
 const PLATFORMS: Platform[] = ["youtube", "instagram"];
 export const PUBLISHABLE: JobStatus[] = ["approved", "scheduled"];
 export const OPEN: JobStatus[] = ["draft", "approved", "scheduled", "posting"];
+const STALE_POSTING_MS = 30 * 60_000;
 
 const file = (id: string) => join(paths.jobs(), `${id}.json`);
 const save = (j: Job) => writeJson(file(j.id), j);
@@ -147,10 +153,11 @@ export function reject(id: string): Job {
 	return j;
 }
 
-export function markPosting(id: string): Job {
+export function markPosting(id: string, now: Date = new Date()): Job {
 	const j = need(id);
 	if (!PUBLISHABLE.includes(j.status)) throw new Error(`job ${id} is ${j.status}; only an approved or scheduled job can be published`);
 	j.status = "posting";
+	j.posting_since = now.toISOString();
 	save(j);
 	return j;
 }
@@ -159,9 +166,21 @@ export function release(id: string): Job {
 	const j = need(id);
 	if (j.status === "posting") {
 		j.status = "scheduled";
+		delete j.posting_since;
 		save(j);
 	}
 	return j;
+}
+
+// Written before the first insertVideo: fingerprint = dz- + 12 hex of sha256(job id + file size + file mtime). It rides on the
+// upload as a tag, so a later attempt can tell whether that upload already reached YouTube.
+export function saveUploadIntent(ctx: Ctx, id: string): UploadIntent {
+	const j = need(id);
+	const st = statSync((j.upload as UploadSpec).file);
+	const hex = createHash("sha256").update(`${j.id}${st.size}${st.mtimeMs}`).digest("hex").slice(0, 12);
+	j.upload_intent = { fingerprint: `dz-${hex}`, started: ctx.now().toISOString() };
+	save(j);
+	return j.upload_intent;
 }
 
 export function recordResult(id: string, platform: Platform, ref: string): Job {
@@ -206,6 +225,7 @@ export function setError(id: string, error: string | undefined): Job {
 
 export function dueJobs(now: Date): Job[] {
 	return listJobs()
+		.map(j => (j.status === "posting" && j.posting_since && now.getTime() - Date.parse(j.posting_since) > STALE_POSTING_MS ? release(j.id) : j))
 		.filter(j => PUBLISHABLE.includes(j.status) && (!j.publish_at || Date.parse(j.publish_at) <= now.getTime()))
 		.sort((a, b) => (a.publish_at ?? a.created).localeCompare(b.publish_at ?? b.created));
 }
