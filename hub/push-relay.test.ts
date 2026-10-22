@@ -1,5 +1,6 @@
 // One notice, each device once: three gateways (alpha, beta, gamma; each its own push.ts instance with its own subscriptions) and two devices.
-// The phone has the installed app on one gateway and a browser subscription on another (same device id); the laptop has a browser only.
+// The phone has the installed app on one gateway (and, before the app existed, a browser subscription on another: the app removes it); the laptop has a browser only.
+// A device's per-gateway switch (PUT /api/push/gateways) lives on the sending gateway and decides whether that gateway's notices reach the device.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createDecipheriv, createECDH, createHmac } from "node:crypto";
 import { b64u } from "./webpush.ts";
@@ -49,6 +50,11 @@ beforeEach(() => {
 			relays.push({ to, from: idOfHost(new URL(body.from).host), via: body.via });
 			return (await inst[to].pushRoute(new Request(url, { method: "POST", body: init!.body as string }), url))!;
 		}
+		if (url.pathname.startsWith("/api/push/") && url.pathname !== "/api/push/presence" && ids.some(i => new URL(GW[i].url).host === url.host)) {
+			const to = idOfHost(url.host);
+			if (down.has(to)) throw new Error("unreachable");
+			return (await inst[to].pushRoute(new Request(url, { method: init?.method ?? "GET", ...(init?.body ? { body: init.body as string } : {}) }), url))!;
+		}
 		if (url.pathname === "/api/push/presence") return (await inst[idOfHost(url.host)].pushRoute(new Request(url, { method: "POST", body: init!.body as string }), url))!;
 		pushes.push({ endpoint: String(input), body: init!.body as Uint8Array });
 		return new Response(null, { status: 201 });
@@ -64,14 +70,20 @@ async function sub(gw: Id, did: string | undefined, app: boolean, prefs?: Record
 	const auth = Buffer.alloc(16, ++n);
 	const endpoint = `https://push.example/${gw}/${n}`;
 	const url = new URL("http://x/api/push/subscribe");
-	await inst[gw].pushRoute(new Request(url, { method: "POST", body: JSON.stringify({ subscription: { endpoint, keys: { p256dh: b64u(ua.getPublicKey()), auth: b64u(auth) } }, ...(did ? { did } : {}), ...(app ? { app: true } : {}), ...(prefs ? { prefs } : {}) }) }), url);
+	const res = (await inst[gw].pushRoute(new Request(url, { method: "POST", body: JSON.stringify({ subscription: { endpoint, keys: { p256dh: b64u(ua.getPublicKey()), auth: b64u(auth) } }, ...(did ? { did } : {}), ...(app ? { app: true } : {}), ...(prefs ? { prefs } : {}) }) }), url))!;
 	made.push([gw, endpoint]);
-	return { endpoint, got: () => pushes.filter(p => p.endpoint === endpoint).map(p => decrypt(Buffer.from(p.body), ua.getPrivateKey(), ua.getPublicKey(), auth)) };
+	return { endpoint, status: res.status, got: () => pushes.filter(p => p.endpoint === endpoint).map(p => decrypt(Buffer.from(p.body), ua.getPrivateKey(), ua.getPublicKey(), auth)) };
 }
 afterEach(async () => {
-	globalThis.fetch = real;
+	down.clear();
 	const url = new URL("http://x/api/push/unsubscribe");
 	for (const [gw, endpoint] of made.splice(0)) await inst[gw].pushRoute(new Request(url, { method: "POST", body: JSON.stringify({ endpoint }) }), url);
+	for (const id of ids) {
+		const dev = new URL("http://x/api/push/device");
+		const from = GW[id === "alpha" ? "beta" : "alpha"].url;
+		for (const did of [PHONE, LAPTOP]) await inst[id].pushRoute(new Request(dev, { method: "POST", body: JSON.stringify({ from, did, on: true, app: false }) }), dev);
+	}
+	globalThis.fetch = real;
 });
 
 const PHONE = "phone-device-0001", LAPTOP = "laptop-device-0001";
@@ -103,20 +115,14 @@ test("a relayed notice is titled with the gateway it came from and a tap opens t
 	expect(d.laptop.got()[0]).toMatchObject({ title: "알파 · custom-ui · 완료", pc: GW.alpha.url });
 });
 
-test("the app's gateway being unreachable: the phone's browser subscription takes the notice, once, and the laptop is unaffected", async () => {
+test("the app's gateway being unreachable: the phone stays quiet (its browser is no second channel), the laptop is unaffected", async () => {
 	const d = await devices();
+	expect(d.phoneBrowser.status).toBe(409);   // refused: the phone has the app
 	down.add("alpha");
 	await send("gamma");
 	expect(d.phoneApp.got()).toHaveLength(0);
-	expect(d.phoneBrowser.got()).toHaveLength(1);
-	expect(d.phoneBrowser.got()[0]).toMatchObject({ title: "감마 · custom-ui · 완료" });
-	expect(d.laptop.got()).toHaveLength(1);
-	// the origin's own subscription of the phone is the fallback when the origin has one
-	const own = await sub("gamma", PHONE, false);
-	pushes.length = 0;
-	await send("gamma");
-	expect(own.got()).toHaveLength(1);
 	expect(d.phoneBrowser.got()).toHaveLength(0);
+	expect(d.laptop.got()).toHaveLength(1);
 });
 
 test("an unreachable gateway is dropped from the rest of that notice, a reachable one is asked for apps first, then for everything", async () => {
@@ -152,8 +158,9 @@ test("a subscription without a device id is a device of its own and is never sil
 	expect(loose.got()).toHaveLength(1);
 });
 
-test("a device that switched the kind off in its app is not woken by its browser either", async () => {
+test("a device that switched the kind off in its app is not woken by a browser either", async () => {
 	const app = await sub("alpha", PHONE, true, { lane: false }), browser = await sub("beta", PHONE, false);
+	expect(browser.status).toBe(409);
 	await send("gamma");
 	expect(app.got()).toHaveLength(0);
 	expect(browser.got()).toHaveLength(0);
@@ -218,16 +225,97 @@ test("the relayed message names the gateway, tags per gateway, opens with ?pc= a
 });
 
 test("a page open on one gateway quiets its device's subscriptions on the others (it toasts their notices itself), and only that device", async () => {
-	const app = await sub("alpha", PHONE, true), browser = await sub("gamma", PHONE, false), laptop = await sub("beta", LAPTOP, false);
+	const app = await sub("alpha", PHONE, true), browser = await sub("gamma", LAPTOP, false), laptop = await sub("beta", LAPTOP, false);
 	const url = new URL("http://x/api/push/presence");
-	const page = (active: boolean) => inst.gamma.pushRoute(new Request(url, { method: "POST", body: JSON.stringify({ endpoint: browser.endpoint, active }) }), url);
+	const page = (active: boolean) => inst.gamma.pushRoute(new Request(url, { method: "POST", body: JSON.stringify({ did: PHONE, active }) }), url);
 	await page(true);
 	await Bun.sleep(10);
 	await send("beta");
-	expect([app.got().length, browser.got().length, laptop.got().length]).toEqual([0, 0, 1]);
+	expect([app.got().length, laptop.got().length]).toEqual([0, 1]);
 	await page(false);
 	await Bun.sleep(10);
 	await send("beta");
-	expect([app.got().length, browser.got().length]).toEqual([1, 0]);
+	expect(app.got().length).toBe(1);
+	expect(browser.got().length).toBe(0);   // the laptop's gamma browser: the laptop's other subscription (beta) took it
 	expect(relays.length).toBeGreaterThan(0);
+});
+
+// ---- per-gateway switches: one device (the phone, app on alpha), the notices of beta switched off and on ----
+const gwCall = (at: Id, method: "GET" | "PUT", body?: object) => {
+	const url = new URL(`http://x/api/push/gateways${method === "GET" ? `?did=${PHONE}` : ""}`);
+	return inst[at].pushRoute(new Request(url, { method, ...(body ? { body: JSON.stringify({ did: PHONE, ...body }) } : {}) }), url)!;
+};
+const view = async (at: Id) => (await (await gwCall(at, "GET")).json()) as { app: boolean; gateways: Array<{ name: string; url: string; self: boolean; on: boolean; online: boolean }> };
+
+test("the app's tells every gateway: a browser subscription the phone left on beta is removed, a new one is refused, and beta's notices reach the phone once, through the app", async () => {
+	const early = await sub("beta", PHONE, false);   // made before the app existed
+	expect(early.status).toBe(200);
+	const app = await sub("alpha", PHONE, true);
+	const late = await sub("beta", PHONE, false);
+	expect(late.status).toBe(409);
+	await send("beta");
+	expect([app.got().length, early.got().length, late.got().length]).toEqual([1, 0, 0]);
+	expect((await view("beta")).app).toBe(true);   // beta learned it from the claim
+	// the app ends: beta no longer treats the phone as an app device
+	const url = new URL("http://x/api/push/unsubscribe");
+	await inst.alpha.pushRoute(new Request(url, { method: "POST", body: JSON.stringify({ endpoint: app.endpoint }) }), url);
+	expect((await view("beta")).app).toBe(false);
+});
+
+test("beta off stops beta's notices on the phone (and no browser fires), beta on delivers exactly once through the app; the other gateways are untouched", async () => {
+	const app = await sub("alpha", PHONE, true), laptop = await sub("beta", LAPTOP, false);
+	await send("beta");
+	expect(app.got()).toHaveLength(1);
+	pushes.length = 0;
+	// from the app's own gateway (the page on alpha)
+	expect((await gwCall("alpha", "PUT", { url: GW.beta.url, on: false })).status).toBe(200);
+	expect((await view("alpha")).gateways.map(g => [g.name, g.on])).toEqual([["알파", true], ["베타", false], ["감마", true]]);
+	await send("beta");
+	expect(app.got()).toHaveLength(0);
+	expect(laptop.got()).toHaveLength(1);   // another device is not affected
+	await send("gamma");
+	expect(app.got()).toHaveLength(1);       // gamma's notices still arrive
+	pushes.length = 0;
+	expect((await gwCall("alpha", "PUT", { url: GW.beta.url, on: true })).status).toBe(200);
+	await send("beta");
+	expect(app.got()).toHaveLength(1);
+	expect(pushes.filter(p => p.endpoint === app.endpoint)).toHaveLength(1);
+});
+
+test("the page on a peer origin (beta, inside the same device id) shows and edits the same list: alpha off from beta stops alpha's notices", async () => {
+	const app = await sub("alpha", PHONE, true);
+	const onBeta = await view("beta");
+	expect(onBeta.app).toBe(true);
+	expect(onBeta.gateways.map(g => [g.name, g.self, g.on])).toEqual([["알파", false, true], ["베타", true, true], ["감마", false, true]]);
+	expect((await gwCall("beta", "PUT", { url: GW.alpha.url, on: false })).status).toBe(200);
+	expect((await view("alpha")).gateways.find(g => g.self)!.on).toBe(false);   // the same record, read where it is kept
+	await send("alpha");
+	expect(app.got()).toHaveLength(0);
+	await send("beta");
+	expect(app.got()).toHaveLength(1);
+	await gwCall("gamma", "PUT", { url: GW.alpha.url, on: true });
+	await send("alpha");
+	expect(app.got()).toHaveLength(2);
+});
+
+test("a gateway that does not answer shows as offline and cannot be switched; an unknown address is refused", async () => {
+	await sub("alpha", PHONE, true);
+	down.add("beta");
+	expect((await view("alpha")).gateways.find(g => g.url === GW.beta.url)).toMatchObject({ online: false });
+	expect((await gwCall("alpha", "PUT", { url: GW.beta.url, on: false })).status).toBe(502);
+	down.clear();
+	expect((await gwCall("alpha", "PUT", { url: "https://evil.ts.net:8445", on: false })).status).toBe(404);
+	expect((await gwCall("alpha", "PUT", { url: GW.beta.url })).status).toBe(400);
+});
+
+test("only a discovered peer may read or set a device's record on a gateway", async () => {
+	const dev = (method: string, qs: string, body?: object) => {
+		const url = new URL(`http://x/api/push/device${qs}`);
+		return inst.alpha.pushRoute(new Request(url, { method, ...(body ? { body: JSON.stringify(body) } : {}) }), url)!;
+	};
+	expect((await dev("GET", `?did=${PHONE}&from=https://evil.ts.net:8445`)).status).toBe(403);
+	expect((await dev("POST", "", { from: GW.alpha.url, did: PHONE, on: false })).status).toBe(403);
+	expect((await dev("POST", "", { did: PHONE, on: false })).status).toBe(403);
+	expect((await view("alpha")).gateways.find(g => g.self)!.on).toBe(true);
+	expect(await (await dev("GET", `?did=${PHONE}&from=${GW.beta.url}`)).json()).toEqual({ on: true, app: false });
 });

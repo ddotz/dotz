@@ -160,6 +160,39 @@ const sameOrigin = (a: string, b: string) => {
 };
 const DID = /^[\w-]{8,64}$/;
 const device = (s: Stored) => s.did ?? `e:${s.endpoint}`;
+
+// What this gateway knows about a device (by `did`), in ~/.dotz/push-devices.json. `app`: the device has the installed app (on this or another gateway; the
+// app tells every gateway, see tellPeers). `off`: THIS gateway's notices do not reach the device. The setting lives where the decision is made: the gateway
+// that makes a notice picks the device's channel (fanOut), so a toggle edits that gateway's own record, from any page of the device (gatewayView/setGateway).
+// A device with the app has exactly one channel, the app: its browser subscriptions are removed (dropBrowsers), refused (subscribe) and never used (cover).
+type Device = { app?: true; off?: true };
+const DEVICES_FILE = join(DATA_DIR, "push-devices.json");
+const devices: Record<string, Device> = {};
+try {
+	if (existsSync(DEVICES_FILE)) for (const [k, v] of Object.entries(JSON.parse(readFileSync(DEVICES_FILE, "utf8")) as Record<string, Device>)) if (DID.test(k)) devices[k] = { ...(v?.app === true ? { app: true } : {}), ...(v?.off === true ? { off: true } : {}) };
+} catch (e) {
+	log(`push: ${DEVICES_FILE} unreadable, starting empty (${e})`);
+}
+const saveDevices = () => writeAtomic(DEVICES_FILE, `${JSON.stringify(devices, null, 2)}\n`, 0o600);
+const hasApp = (did?: string) => !!did && (devices[did]?.app === true || subs.some(s => s.did === did && s.app === true));
+const isOff = (did: string) => devices[did]?.off === true;
+function dropBrowsers(did: string): void {
+	const rest = subs.filter(s => s.did !== did || s.app === true);
+	if (rest.length === subs.length) return;
+	log(`push: ${subs.length - rest.length} browser subscription(s) of a device with the app removed`);
+	subs = rest;
+	save();
+}
+function patchDevice(did: string, patch: Device & { app?: true | undefined; off?: true | undefined }): void {
+	const d = { ...devices[did], ...patch };
+	if (!d.app) delete d.app;
+	if (!d.off) delete d.off;
+	if (d.app || d.off) devices[did] = d;
+	else delete devices[did];
+	saveDevices();
+	if (hasApp(did)) dropBrowsers(did);
+}
+for (const did of new Set([...Object.keys(devices), ...subs.flatMap(s => (s.app && s.did ? [s.did] : []))])) if (hasApp(did)) dropBrowsers(did);
 const wants = (s: Stored, m: PushMessage, t: number) => (m.kind === "test" || s.prefs[m.kind] !== false) && (presence.get(s.endpoint) ?? 0) <= t - PRESENCE_MS;
 
 // Deliver through one subscription for each device not in `done` (an app's before a browser's) and mark the device done. A device whose chosen
@@ -169,6 +202,7 @@ function cover(list: Stored[], m: PushMessage, done: Set<string>): void {
 	for (const s of [...list].sort((x, y) => Number(y.app === true) - Number(x.app === true))) {
 		if (done.has(device(s))) continue;
 		done.add(device(s));
+		if (!s.app && hasApp(s.did)) continue;   // a browser of a device that has the app is never a channel
 		if (wants(s, m, now)) void deliver(s, m);
 	}
 }
@@ -186,7 +220,8 @@ async function relayTo(peerUrl: string, body: string): Promise<string[] | undefi
 }
 
 async function fanOut(m: PushMessage): Promise<void> {
-	const done = new Set<string>();
+	// A device this gateway is switched off for counts as covered: no subscription of it fires here, and the peers are told to skip it too.
+	const done = new Set<string>(Object.keys(devices).filter(isOff));
 	cover(subs.filter(s => s.app === true), m, done);
 	let list: Awaited<ReturnType<typeof relayPeers>> = [];
 	try {
@@ -206,6 +241,37 @@ async function fanOut(m: PushMessage): Promise<void> {
 	await ask("app");
 	cover(subs, m, done);
 	await ask("all");
+}
+
+async function peerJson(peerUrl: string, path: string, body?: object): Promise<Record<string, any> | undefined> {
+	try {
+		const r = await fetch(`${peerUrl}${path}`, { method: body ? "POST" : "GET", ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" });
+		return r.ok ? ((await r.json()) as Record<string, any>) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+async function ownAndPeers(): Promise<{ me?: Awaited<ReturnType<typeof relayPeers>>[number]; peers: Awaited<ReturnType<typeof relayPeers>> }> {
+	const list = await relayPeers().catch(() => []);
+	const me = list.find(f => f.self);
+	return { me, peers: me ? list.filter(f => !f.self) : [] };
+}
+// The app (or its removal) is told to every other gateway, so each one drops the device's browser subscriptions and answers the settings screen alike.
+async function tellPeers(body: object): Promise<void> {
+	const { me, peers } = await ownAndPeers();
+	if (me) await Promise.all(peers.map(p => peerJson(p.url, "/api/push/device", { from: me.url, ...body })));
+}
+// The settings screen's list: one row per discovered gateway (this one first), `on` = that gateway's notices reach the device. A gateway that does not answer is `online: false`.
+async function gatewayView(did: string): Promise<{ app: boolean; gateways: Array<{ name: string; url: string; self: boolean; on: boolean; online: boolean }> }> {
+	const { me, peers } = await ownAndPeers();
+	if (!me) return { app: hasApp(did), gateways: [{ name: "", url: "", self: true, on: !isOff(did), online: true }] };
+	const rows = await Promise.all([me, ...peers].map(async f => {
+		if (f.self) return { name: f.name, url: f.url, self: true, on: !isOff(did), online: true, app: hasApp(did) };
+		const r = await peerJson(f.url, `/api/push/device?did=${did}&from=${encodeURIComponent(me.url)}`);
+		return { name: f.name, url: f.url, self: false, on: r ? r.on !== false : true, online: Boolean(r), app: r?.app === true };
+	}));
+	// Same order on every gateway's page (by address), so the list does not shuffle when the app switches computers.
+	return { app: rows.some(r => r.app), gateways: rows.sort((p, q) => (p.url < q.url ? -1 : 1)).map(({ app: _app, ...g }) => g) };
 }
 
 async function forwardPresence(did: string, active: boolean): Promise<void> {
@@ -282,10 +348,50 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 		const old = findSub(sub.endpoint);
 		const prefs = { ...defaults(), ...(old?.prefs ?? {}), ...(b.prefs ?? {}) };
 		const did = typeof b.did === "string" && DID.test(b.did) ? b.did : old?.did;
+		const app = b.app === true || old?.app === true;
+		if (!app && hasApp(did)) return json({ error: "this device gets its notifications through its app" }, 409);
 		subs = [...subs.filter(s => s.endpoint !== sub.endpoint), { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, prefs, ...(b.app === true || old?.app === true ? { app: true } : {}), ...(did ? { did } : {}), ua: String(req.headers.get("user-agent") ?? "").slice(0, 160), at: new Date().toISOString() }];
 		save();
 		log(`push: subscribed at ${origin(sub.endpoint)} (${subs.length} total)`);
+		if (app && did) {
+			patchDevice(did, { app: true });
+			await tellPeers({ did, app: true });
+		}
 		return json({ ok: true, prefs });
+	}
+	// The installed app says again that it is the device's channel (each time it opens), for gateways that were down when it subscribed.
+	if (req.method === "POST" && p === "/api/push/claim") {
+		if (typeof b.did !== "string" || !DID.test(b.did) || !subs.some(s => s.did === b.did && s.app === true)) return json({ error: "no app subscription for this device here" }, 404);
+		patchDevice(b.did, { app: true });
+		await tellPeers({ did: b.did, app: true });
+		return json({ ok: true });
+	}
+	// The settings screen (any page of the device, on any gateway): GET lists the gateways with their switch, PUT flips one. Another gateway's switch is set
+	// on that gateway through the peer route below, since its record is the one its deliveries read.
+	if (p === "/api/push/gateways" && (req.method === "GET" || req.method === "PUT")) {
+		const did = req.method === "GET" ? url.searchParams.get("did") : b.did;
+		if (typeof did !== "string" || !DID.test(did)) return json({ error: "did required" }, 400);
+		if (req.method === "GET") return json(await gatewayView(did));
+		if (typeof b.on !== "boolean" || typeof b.url !== "string") return json({ error: "url and on required" }, 400);
+		const { me, peers } = await ownAndPeers();
+		if (!me || sameOrigin(me.url, b.url)) patchDevice(did, { off: b.on ? undefined : true });
+		else {
+			const peer = peers.find(f => sameOrigin(f.url, b.url));
+			if (!peer) return json({ error: "not a known computer" }, 404);
+			if (!(await peerJson(peer.url, "/api/push/device", { from: me.url, did, on: b.on }))) return json({ error: `${peer.name}에 연결할 수 없어요` }, 502);
+		}
+		return json({ ok: true });
+	}
+	// Between gateways only (a computer this one discovered, named by the discovery as in /api/push/relay): this gateway's record of a device.
+	if (p === "/api/push/device" && (req.method === "GET" || req.method === "POST")) {
+		const from = req.method === "GET" ? (url.searchParams.get("from") ?? "") : typeof b.from === "string" ? b.from : "";
+		if (!(await relayPeers().catch(() => [])).some(f => !f.self && sameOrigin(f.url, from))) return json({ error: "not a known computer" }, 403);
+		const did = req.method === "GET" ? url.searchParams.get("did") : b.did;
+		if (typeof did !== "string" || !DID.test(did)) return json({ error: "did required" }, 400);
+		if (req.method === "GET") return json({ on: !isOff(did), app: hasApp(did) });
+		if (typeof b.on === "boolean") patchDevice(did, { off: b.on ? undefined : true });
+		if (typeof b.app === "boolean") patchDevice(did, { app: b.app ? true : undefined });
+		return json({ ok: true });
 	}
 	// Another computer's notice for this computer's subscriptions: `via` app = only the apps', skip = the devices already covered. Only a computer this one
 	// discovered as its peer (hub/peers.ts) may send one, named by the discovery, never by the body; the caller already passed the gateway's owner check
@@ -302,8 +408,14 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 		return json({ ok: true, served: [...done].filter(k => !skip.has(k)) });
 	}
 	if (req.method === "POST" && p === "/api/push/unsubscribe") {
+		const gone = findSub(b.endpoint);
 		subs = subs.filter(s => s.endpoint !== b.endpoint);
 		save();
+		// The app turning its notifications off ends its role as the device's channel (a second app subscription elsewhere keeps it).
+		if (gone?.app && gone.did && !subs.some(s => s.did === gone.did && s.app === true)) {
+			patchDevice(gone.did, { app: undefined });
+			await tellPeers({ did: gone.did, app: false });
+		}
 		return json({ ok: true });
 	}
 	if (req.method === "PUT" && p === "/api/push/prefs") {

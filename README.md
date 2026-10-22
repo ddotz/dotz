@@ -312,8 +312,11 @@ made it. The web app gives its device an id and hands it on when you open anothe
 subscriptions on every gateway count as one (`hub/push.ts`). The gateway that made the notice picks one subscription per device: the
 installed app's, on any gateway, else a browser's; the other gateways deliver it through `POST /api/push/relay` (discovered peers only,
 behind the same tailnet check), titled "<computer> · ...", and tapping it opens the app on that computer's view. A gateway that does not
-answer is skipped and the device's next subscription fires instead; a relayed notice is never relayed again. To merge a phone's browser
-subscription on one gateway with its app on another, open that gateway once from the app's computer chip; install the app from one gateway only.
+answer is skipped; a relayed notice is never relayed again. The installed app is a device's only channel: when it subscribes it tells every
+gateway, which remove that device's browser subscriptions (and refuse new ones), so a device never gets both. Settings -> 앱 · 알림 then lists
+one switch per gateway (`GET/PUT /api/push/gateways`, the same list on any gateway's page of the device): the switch is kept by the gateway that
+makes the notices (`push-devices.json` in its data dir, per device id, set on that gateway through the peer route `/api/push/device`), so off means
+that gateway's notices do not reach the device at all. Install the app from one gateway only.
 
 *Toasts across gateways.* While you look at computer B's web, a new notice on computer A still toasts there, labeled "<A> · ..."; the
 tap opens A's item (a question opens its sheet). B's hub follows each peer's `GET /api/events` and forwards `peer_notice` / `peer_counts`
