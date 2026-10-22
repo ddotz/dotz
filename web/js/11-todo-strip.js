@@ -159,6 +159,10 @@ function msgNode(e) {
     }
     case "lane_start": return el("div", { class: "a-div", text: `세션 시작 · ${hm}` });
     case "mail": {
+      // A mail conversation's first message (hub/mail.ts postMail): sender, subject, then the summary and the body (원문).
+      if (e.subject) return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL.mail }), el("div", { class: "st" },
+        el("div", { class: "ml-from", text: mailSender(e.from) }), el("div", { class: "ml-subj", text: e.subject }), mdNode(text.split("\n").slice(1).join("\n").trim()),
+        el("div", { class: "mt", text: hm })));
       const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
       const subj = f("subject"), acct = (text.match(/^new mail \(([^)]*)\)/m) || [])[1] || "";
       const snip = (text.match(/^snippet: ?([\s\S]*)$/m) || [])[1] || "";
