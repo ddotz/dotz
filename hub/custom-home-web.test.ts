@@ -10,6 +10,7 @@ const longAgo = new Date(Date.now() - 30 * 3600_000).toISOString();
 const cards = [
 	{ id: "kakao", title: "카톡", view: "kv", data: { 연결: "켜짐", 설정: "진행 중: -", "마지막 확인": longAgo, "답장 대기": "-" }, actions: [{ label: "지금 확인" }], rev: "1" },
 	{ id: "todo", title: "오늘 할 일", view: "stat", data: { value: "7", label: "남은 일", sub: longAgo }, actions: [], rev: "1" },
+	{ id: "multi", title: "여러 동작", view: "kv", data: { a: "1", b: "2", c: "3", d: "4", e: "5", f: "6", g: "7" }, actions: [{ label: "하나" }, { label: "둘, 이름이 아주 긴 동작" }, { label: "셋" }, { label: "넷" }], rev: "1" },
 ];
 
 const live = process.env.DOTZ_WEB_LIVE;
@@ -46,7 +47,7 @@ const waitFor = (expr: string, ms = 10_000) =>
 const frames = (n = 12) => view.evaluate(`new Promise(r => { let i = 0; const f = () => ++i >= ${n} ? r(1) : requestAnimationFrame(f); f(); })`);
 const boot = async (card = "kakao") => {
 	await view.navigate(`http://127.0.0.1:${server.port}/`);
-	await waitFor(`current === "home" && S && document.querySelector('.bi[data-id="custom:${card}"] .cu-card')`);
+	await waitFor(`current === "home" && S && document.querySelector('.bi[data-id="custom:${card}"] .card')`);
 	await frames();
 };
 const saved = () => view.evaluate(`JSON.parse(localStorage.getItem("dotz-board-home") || "{}")["custom:kakao"] || null`) as Promise<{ x: number; y: number; w: number; h: number } | null>;
@@ -85,7 +86,7 @@ describe("custom cards on 홈", () => {
 
 	test("the card is a board item with a grip, a drag handle and a ⋯ menu", async () => {
 		await boot();
-		expect(await view.evaluate(`!!document.querySelector('.bi[data-id="custom:kakao"] .brz.se') && !!document.querySelector('.bi[data-id="custom:kakao"] .cu-th.bhead') && !!document.querySelector('.bi[data-id="custom:kakao"] .cu-th .ib')`)).toBe(true);
+		expect(await view.evaluate(`!!document.querySelector('.bi[data-id="custom:kakao"] .brz.se') && !!document.querySelector('.bi[data-id="custom:kakao"] .ch.bhead') && !!document.querySelector('.bi[data-id="custom:kakao"] .ch .ib')`)).toBe(true);
 		const w = await width(), main = (await view.evaluate(`document.querySelector('.bi[data-id="main"]').getBoundingClientRect().width`)) as number;
 		expect(w).toBeLessThan(500);
 		expect(Math.abs(w - main)).toBeLessThan(2);
@@ -95,8 +96,8 @@ describe("custom cards on 홈", () => {
 		await view.evaluate(`localStorage.removeItem("dotz-board-home")`);
 		await boot();
 		const before = (await saved())!;
-		const left = (await view.evaluate(`(() => { const w = document.querySelector('.bi[data-id="custom:kakao"]'), t = w.querySelector(".cu-t").getBoundingClientRect(), wr = w.getBoundingClientRect(), cr = document.querySelector("#home-cards").getBoundingClientRect(); return [cr.left + (t.left + t.width / 2 - wr.left) + 4, t.top + t.height / 2]; })()`)) as [number, number];
-		await drag('.bi[data-id="custom:kakao"] .cu-th .cu-t', [[left[0] + 30, left[1] + 20], left]);
+		const left = (await view.evaluate(`(() => { const w = document.querySelector('.bi[data-id="custom:kakao"]'), t = w.querySelector(".ch h3").getBoundingClientRect(), wr = w.getBoundingClientRect(), cr = document.querySelector("#home-cards").getBoundingClientRect(); return [cr.left + (t.left + t.width / 2 - wr.left) + 4, t.top + t.height / 2]; })()`)) as [number, number];
+		await drag('.bi[data-id="custom:kakao"] .ch h3', [[left[0] + 30, left[1] + 20], left]);
 		await frames();
 		expect((await saved())!.x).toBe(0);
 		const w0 = await width();
@@ -105,8 +106,8 @@ describe("custom cards on 홈", () => {
 		const resized = (await saved())!;
 		expect(resized.w).toBeGreaterThan(before.w);
 		expect(await width()).toBeGreaterThan(w0 + 50);
-		const title = (await view.evaluate(`(() => { const t = document.querySelector('.bi[data-id="custom:kakao"] .cu-t').getBoundingClientRect(); return [t.left + t.width / 2, t.top + t.height / 2]; })()`)) as [number, number];
-		await drag('.bi[data-id="custom:kakao"] .cu-th .cu-t', [[title[0] + 5, title[1] - 120], [title[0] + 5, title[1] - 300]]);
+		const title = (await view.evaluate(`(() => { const t = document.querySelector('.bi[data-id="custom:kakao"] .ch h3').getBoundingClientRect(); return [t.left + t.width / 2, t.top + t.height / 2]; })()`)) as [number, number];
+		await drag('.bi[data-id="custom:kakao"] .ch h3', [[title[0] + 5, title[1] - 120], [title[0] + 5, title[1] - 300]]);
 		await frames();
 		const moved = (await saved())!;
 		expect(moved.w).toBe(resized.w);
@@ -115,6 +116,22 @@ describe("custom cards on 홈", () => {
 		await boot();
 		expect(await saved()).toEqual(moved);
 		expect(Math.abs((await width()) - w1)).toBeLessThan(2);
+	});
+
+	test("a card shows at most 2 action buttons in one row and moves the next 2 into the ⋯ menu", async () => {
+		await boot("multi");
+		const foot = JSON.parse((await view.evaluate(`JSON.stringify((() => {
+			const card = document.querySelector('.bi[data-id="custom:multi"] .card'), btns = [...card.querySelectorAll(".cf .btn")], row = card.querySelector(".cf").getBoundingClientRect();
+			return { labels: btns.map(b => b.textContent), oneRow: btns.every(b => Math.abs(b.getBoundingClientRect().top - row.top - 12) < 2), inside: btns.every(b => b.getBoundingClientRect().right <= row.right + 1), rows: card.querySelectorAll(".kv").length, more: (card.querySelector(".more") || {}).textContent, clipped: card.scrollHeight > card.clientHeight + 1 };
+		})())`)) as string);
+		expect(foot.labels).toEqual(["하나", "둘, 이름이 아주 긴 동작"]);
+		expect(foot.oneRow).toBe(true);
+		expect(foot.inside).toBe(true);
+		expect(foot.rows).toBe(6);
+		expect(foot.more).toBe("더 보기 · 1개");
+		expect(foot.clipped).toBe(false);
+		expect(((await view.evaluate(`dotzCustom.menuActs("multi").map(a => a.label)`)) as string[]).slice(0, 3)).toEqual(["새로고침", "셋", "넷"]);
+		expect(await view.evaluate(`JSON.stringify(dotzCustom.split([1, 2, 3, 4, 5, 6]))`)).toBe(JSON.stringify({ shown: [1, 2], rest: [3, 4] }));
 	});
 
 	test("the ⋯ menu lists size presets and hide, and 배치 초기화 brings a hidden card back", async () => {

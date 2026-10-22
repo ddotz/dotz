@@ -5,7 +5,6 @@
   "use strict";
 
   const CSS = `
-.board .cu-th .ib { flex: none; width: 24px; height: 24px; align-self: center; }
 .cu-r { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 10px 16px; border: 0; border-radius: 0; background: var(--card); color: var(--fg); font: 500 15px/22px var(--font); text-align: left; text-decoration: none; }
 button.cu-r, a.cu-r { cursor: pointer; }
 button.cu-r:hover, a.cu-r:hover { background: var(--card-hover); }
@@ -13,26 +12,8 @@ button.cu-r:hover, a.cu-r:hover { background: var(--card-hover); }
 .cu-rn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cu-r > .dot { margin-left: auto; }
 .cu-r > .ib { margin-left: auto; }
-.cu-card.tap { cursor: pointer; }
-.cu-th { display: flex; align-items: baseline; gap: 8px; }
-.cu-t { flex: 1; min-width: 0; margin: 0; font: 600 16px/22px var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cu-m { color: var(--fg-3); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
-.cu-th > .cu-m { flex: none; }
-.cu-th > .cu-err { flex: none; color: var(--err); font-size: 12px; line-height: 16px; font-weight: 600; }
-.cu-card > .cu-m { margin-top: 2px; }
-.cu-body { margin-top: 12px; }
-.cu-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-.cu-body:empty { display: none; }
-.cu-text { font-size: 14px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.cu-big { font: 700 20px/28px var(--font); letter-spacing: -.01em; overflow-wrap: anywhere; }
-.cu-li { display: flex; flex-direction: column; min-width: 0; padding: 6px 0; color: var(--fg); font-size: 14px; line-height: 22px; text-decoration: none; }
-a.cu-li:hover .cu-lt { color: var(--accent); }
-.cu-li + .cu-li { border-top: 1px solid var(--line); }
-.cu-lt { overflow-wrap: anywhere; }
-.cu-kv { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 14px; line-height: 22px; }
-.cu-kv > :first-child { min-width: 0; overflow-wrap: anywhere; }
-.cu-kv > :last-child { flex: none; max-width: 60%; color: var(--fg-2); text-align: right; overflow-wrap: anywhere; }
-.cu-acts .btn:disabled, .pv-acts .btn:disabled { opacity: .4; cursor: default; }
+.cf .btn:disabled, .pv-acts .btn:disabled { opacity: .4; cursor: default; }
 .pv-cnt { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12px; line-height: 16px; font-weight: 600; }
 .pv-path { max-width: 100%; color: var(--fg-3); font: 13px/18px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.pv-path { padding: 0; border: 0; background: none; cursor: copy; }
@@ -162,74 +143,73 @@ button.pv-res:hover { background: var(--card-hover); }
   }
 
   /* ---------- cards ---------- */
-  const errorCard = c => el("div", { class: "card cu-card" },
-    el("div", { class: "cu-th" }, el("h3", { class: "cu-t", text: c.id || c.file || "카드" }), el("span", { class: "cu-err", text: "오류" })),
-    el("div", { class: "cu-m", text: str(c.error) || "카드를 그리지 못했어요" }));
+  // One standard for every generated card (docs/customization.md "Card design"): only the classes the built-in home cards use
+  // (.card .ch h3 .tag .big .sup .kv .row .more .cf .btn), at most 2 buttons in the footer, the rest in the card's ⋯ menu.
+  const KV_MAX = 6, LIST_MAX = 5, ACT_MAX = 4, ACT_SHOWN = 2;
+  const splitActions = list => ({ shown: list.slice(0, ACT_SHOWN), rest: list.slice(ACT_SHOWN, ACT_MAX) });
+  const moreRow = n => n > 0 ? el("div", { class: "more", text: `더 보기 · ${n}개` }) : null;
+  const errorCard = c => el("div", { class: "card" },
+    el("div", { class: "ch" }, el("h3", { text: c.id || c.file || "카드" }), el("span", { class: "tag err", text: "오류" })),
+    el("div", { class: "sup", text: str(c.error) || "카드를 그리지 못했어요" }));
 
   function viewBody(c) {
     const d = c.data, v = c.view || "text";
-    if (d === undefined || d === null) return el("div", { class: "cu-m", text: "값 없음" });
+    if (d === undefined || d === null) return el("div", { class: "sup", text: "값 없음" });
     if (v === "stat") {
       const o = typeof d === "object" && !Array.isArray(d) ? d : { value: d };
-      return el("div", null, el("div", { class: "cu-big", text: show(o.value) }),
-        o.label != null ? el("div", { class: "cu-m", text: show(o.label) }) : null,
-        o.sub != null ? el("div", { class: "cu-m", text: show(o.sub) }) : null);
+      return el("div", null, el("div", { class: "big", text: show(o.value) }),
+        o.label != null ? el("div", { class: "sup", text: show(o.label) }) : null,
+        o.sub != null ? el("div", { class: "sup", text: show(o.sub) }) : null);
     }
     if (v === "list") {
-      const items = (Array.isArray(d) ? d : []).slice(0, 50);
-      if (!items.length) return el("div", { class: "cu-m", text: "비어 있어요" });
-      return el("div", null, ...items.map(it => {
+      const all = Array.isArray(d) ? d : [];
+      if (!all.length) return el("div", { class: "sup", text: "비어 있어요" });
+      return el("div", null, ...all.slice(0, LIST_MAX).map(it => {
         const o = it && typeof it === "object" ? it : { title: it };
-        const kids = [el("span", { class: "cu-lt", text: show(o.title) }), o.sub != null ? el("span", { class: "cu-m", text: show(o.sub) }) : null];
+        const kids = [el("span", { class: "nm", text: show(o.title) }), o.sub != null ? el("span", { class: "sup", text: show(o.sub) }) : null];
         return isHttp(o.url)
-          ? el("a", { class: "cu-li", href: o.url, target: "_blank", rel: "noopener noreferrer", onclick: ev => ev.stopPropagation() }, ...kids)
-          : el("div", { class: "cu-li" }, ...kids);
-      }));
+          ? el("div", { class: "row tap", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); openLink(o.url); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openLink(o.url); } } }, ...kids)
+          : el("div", { class: "row" }, ...kids);
+      }), moreRow(all.length - LIST_MAX));
     }
     if (v === "kv") {
       const pairs = Array.isArray(d) ? d.filter(Array.isArray).map(p => [p[0], p[1]]) : d && typeof d === "object" ? Object.entries(d) : [];
-      if (!pairs.length) return el("div", { class: "cu-m", text: "비어 있어요" });
-      return el("div", null, ...pairs.map(([k, val]) => el("div", { class: "cu-kv" }, el("span", { text: str(k) }), el("span", { text: show(val) }))));
+      if (!pairs.length) return el("div", { class: "sup", text: "비어 있어요" });
+      return el("div", null, ...pairs.slice(0, KV_MAX).map(([k, val]) => el("div", { class: "kv" }, el("span", { class: "k", text: str(k) }), el("span", { class: "v", text: show(val) }))), moreRow(pairs.length - KV_MAX));
     }
-    return el("div", { class: "cu-text", text: show(typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d) });
+    return el("div", { class: "clamp c4", text: show(typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d) });
   }
 
   const firstLine = s => (String(s || "").split("\n").map(x => x.trim()).find(Boolean) || "").slice(0, 80);
+  const runAction = (c, i, a) => async () => {
+    if (a.confirm && !await ask(a.label, "실행할까요?", "실행", true)) return;
+    const r = await api("/api/custom/action", "POST", { id: c.id, index: i });
+    if (a.kind === "prompt") { toast(`${botName}에게 보냈어요`); return; }
+    const line = firstLine(r.output);
+    toast(r.ok ? line || "끝냈어요" : `실패했어요${line ? ` · ${line}` : ""}`, !r.ok);
+    if (r.card) applyCard(r.card);
+  };
   function actionButton(c, i, a) {
-    const b = el("button", { class: "btn tonal", type: "button", text: a.label });
-    b.addEventListener("click", ev => {
-      ev.stopPropagation();
-      busy(b, async () => {
-        if (a.confirm && !await ask(a.label, "실행할까요?", "실행", true)) return;
-        const r = await api("/api/custom/action", "POST", { id: c.id, index: i });
-        if (a.kind === "prompt") { toast(`${botName}에게 보냈어요`); return; }
-        const line = firstLine(r.output);
-        toast(r.ok ? line || "끝냈어요" : `실패했어요${line ? ` · ${line}` : ""}`, !r.ok);
-        if (r.card) applyCard(r.card);
-      });
-    });
+    const b = el("button", { class: "btn tonal", type: "button", title: a.label, text: a.label });
+    b.addEventListener("click", ev => { ev.stopPropagation(); busy(b, runAction(c, i, a)); });
     return b;
   }
 
   function cardNode(c) {
     try {
       if (c.error && c.data === undefined) return errorCard(c);
-      const tap = !!c.link;
-      const body = el("div", { class: "cu-body" });
-      const card = el("div", { class: `card cu-card${tap ? " tap" : ""}`, "data-card": c.id },
-        el("div", { class: "cu-th" }, el("h3", { class: "cu-t", text: c.title || c.id }), c.stale ? el("span", { class: "cu-m", text: "오래된 값" }) : null, menuBtn(`custom:${c.id}`)),
-        c.note ? el("div", { class: "cu-m", text: show(c.note) }) : null, body);
-      if (tap) {
-        card.setAttribute("role", "button"); card.tabIndex = 0;
-        card.addEventListener("click", () => openLink(c.link));
-        card.addEventListener("keydown", ev => { if (ev.target === card && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openLink(c.link); } });
-      }
-      const acts = (c.actions || []).slice(0, 4);
-      if (acts.length) card.append(el("div", { class: "cu-acts" }, ...acts.map((a, i) => actionButton(c, i, a))));
+      const body = el("div", { class: c.note ? "mt8" : "" });
+      const kids = [el("div", { class: "ch" }, el("h3", { text: c.title || c.id }), c.stale ? el("span", { class: "tag warn", text: "오래된 값" }) : null, menuBtn(`custom:${c.id}`)),
+        c.note ? el("div", { class: "sup", text: show(c.note) }) : null, body];
+      const { shown } = splitActions(c.actions || []);
+      if (shown.length) kids.push(el("div", { class: "cf" }, ...shown.map((a, i) => actionButton(c, i, a))));
+      const card = c.link ? tapCard(() => openLink(c.link), ...kids) : el("div", { class: "card" }, ...kids);
+      card.dataset.card = c.id;
+      if (shown.length) card.classList.add("foot");
       if (c.render) {
         import(`/api/custom/render?id=${enc(c.id)}&v=${enc(c.rev || "")}`)
           .then(m => m.default(c.data, { el, card: c }))
-          .then(out => { if (out && out.nodeType) body.append(out); else if (out != null) body.append(el("div", { class: "cu-text", text: str(out) })); })
+          .then(out => { if (out && out.nodeType) body.append(out); else if (out != null) body.append(el("div", { class: "clamp c4", text: str(out) })); })
           .catch(e => card.replaceWith(errorCard({ id: c.id, error: e && e.message ? e.message : "render.js 오류" })));
       } else body.append(viewBody(c));
       return card;
@@ -256,13 +236,14 @@ button.pv-res:hover { background: var(--card-hover); }
   function homeSize(c) {
     const d = c.data, v = c.view || "text", n = Array.isArray(d) ? d.length : d && typeof d === "object" ? Object.keys(d).length : 1;
     const text = str(d && typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d);
-    const body = c.render ? 140 : v === "kv" ? n * 30 : v === "list" ? Math.min(8, n) * 40 : v === "stat" ? 64 : Math.min(12, Math.ceil(text.length / 36)) * 22;
-    const px = 24 + 22 + 12 + (c.note ? 18 : 0) + body + ((c.actions || []).length ? 50 : 0);
+    const rows = Math.min(n, v === "kv" ? KV_MAX : LIST_MAX), more = (v === "kv" || v === "list") && n > rows ? 28 : 0;
+    const body = c.render ? 140 : v === "kv" || v === "list" ? rows * 30 + more : v === "stat" ? 60 : Math.min(4, Math.ceil(text.length / 40)) * 22;
+    const px = 24 + 30 + (c.note ? 24 : 0) + body + ((c.actions || []).length ? 40 : 0) + 4;
     return { w: !c.render && v === "text" && text.length > 160 ? 6 : 4, h: Math.min(10, Math.max(3, Math.ceil((px + BGAP) / BSTEP))) };
   }
   function homeItems() {
     if (!DATA) return [];
-    return (DATA.cards || []).filter(c => !hidden.has(c.id)).map(c => ({ id: `custom:${c.id}`, node: homeNode(c), head: ".cu-th", def: homeSize(c), min: { w: 3, h: 2 }, max: { w: 12, h: 14 } }));
+    return (DATA.cards || []).filter(c => !hidden.has(c.id)).map(c => ({ id: `custom:${c.id}`, node: homeNode(c), head: ".ch", def: homeSize(c), min: { w: 3, h: 2 }, max: { w: 12, h: 14 } }));
   }
   // Saved places of cards stay while the list has not loaded or the card is only hidden.
   const keepPlace = id => !DATA || hidden.has(id.slice(7));
@@ -276,6 +257,7 @@ button.pv-res:hover { background: var(--card-hover); }
     const key = `custom:${id}`, def = homeSize(c);
     const acts = [{ label: "새로고침", run: () => busy(null, async () => { applyCard(await api("/api/custom/refresh", "POST", { id })); }) }];
     if (c.link) acts.push({ label: "열기", run: () => openLink(c.link) });
+    splitActions(c.actions || []).rest.forEach((a, j) => acts.push({ label: a.label, run: () => busy(null, runAction(c, ACT_SHOWN + j, a)) }));
     acts.push({ label: "작게", run: () => homeBoard.resize(key, 3, def.h) }, { label: "보통", run: () => homeBoard.resize(key, def.w, def.h) }, { label: "크게", run: () => homeBoard.resize(key, 6, def.h + 2) });
     acts.push({ label: "숨기기", run: () => { hidden.add(id); saveHidden(); renderHome(); } });
     return acts;
@@ -532,7 +514,7 @@ button.pv-res:hover { background: var(--card-hover); }
   function pins() {
     return load(55000);
   }
-  window.dotzCustom = { home, view, pins, items: homeItems, keep: keepPlace, menuActs, unhide, fmt: localTime, show };
+  window.dotzCustom = { home, view, pins, items: homeItems, keep: keepPlace, menuActs, unhide, fmt: localTime, show, split: splitActions };
 
   // The main script may already have rendered the first view: catch up, then keep the sidebar and open pages fresh.
   pins();
