@@ -238,6 +238,7 @@ export async function setFallback(target: string, chain: unknown[]) {
 	const available = await availableModels();
 	const primary = target === "orchestrator" ? orchestratorModel().model : target === "lanes" ? lanesModel().model : parseSelector(workerModel()).model;
 	const seen = new Set<string>();
+	const known = new Set(fallbackChain(target as FallbackTarget).map(entryId));
 	const clean: FallbackEntry[] = [];
 	const claudeRuns = runtimeFor(target === "orchestrator" ? "orchestrator" : "lane").id === "claude";
 	for (const input of chain) {
@@ -252,6 +253,8 @@ export async function setFallback(target: string, chain: unknown[]) {
 		if (claudeRuns && !model.startsWith("anthropic/")) throw new ControlError(`Claude Code runs anthropic models only (got ${model})`);
 		if (next.key_file && !keyFileOk(next.key_file)) throw new ControlError(`key_file "${next.key_file}" must name an existing file in <data dir>/secrets/ whose name contains "api-key" or "api_key" (for example anthropic-api-key)`);
 		if (next.key_file && !keyProviderOk(next)) throw new ControlError("API-key entries support anthropic, openai and openrouter models, and the key goes over https only to the provider's own API host or a host listed in config.json key_hosts (set base_url and api on the entry for another provider)");
+		// A newly registered API-key entry starts off: the owner switches it on when the key should be spent.
+		if (next.key_file && next.enabled === undefined && !known.has(entryId(next))) next.enabled = false;
 		if (!next.key_file && next.model === primary) continue;
 		if (seen.has(entryId(next))) continue;
 		seen.add(entryId(next));

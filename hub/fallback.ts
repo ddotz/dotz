@@ -6,7 +6,7 @@
 // hub/orchestrator.ts switchTo); a chain of bare models stays with omp (hub/runtime/omp.ts). Usage and limit state persists in <data dir>/fallback-usage.json.
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { cfg, DATA_DIR, entryId, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, entryId, entryOn, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
 import { apiKeyBan } from "./apikey-policy.ts";
 import { rateLimitDelay } from "./providers.ts";
 
@@ -55,6 +55,19 @@ function usageOf(e: FallbackEntry, period: Period, at = clock.now()): { key: str
 	const c = load().pools[poolOf(e)]?.[period];
 	const key = periodKey(period, at);
 	return c && c.key === key ? c : { key, tokens: 0, usd: 0 };
+}
+// Counts a request a task worker made through an API key against the key's pool (the workers of an orchestrator or lane
+// process run in child processes whose usage frames never reach the hub; their extension reports it). The process that owns
+// the chain notices a reached cap at its next own request, and a fresh start sees it in Chain.down.
+export function spendOnKey(keyFile: string, tokens: number, usd: number | undefined, at = clock.now()): void {
+	const pool = (load().pools[`key:${keyFile}`] ??= {});
+	for (const period of ["month", "day"] as const) {
+		const key = periodKey(period, at);
+		const c = pool[period]?.key === key ? pool[period]! : (pool[period] = { key, tokens: 0, usd: 0 });
+		c.tokens += tokens;
+		c.usd += usd ?? 0;
+	}
+	save();
 }
 const capReached = (e: FallbackEntry, at: number) => {
 	if (!e.cap) return false;
@@ -114,22 +127,39 @@ const keyedModel = (e: FallbackEntry) => {
 	const [provider, ...rest] = e.model.split("/");
 	return `${provider}-apikey/${rest.join("/")}`;
 };
-function keyEnv(e: FallbackEntry): Record<string, string> {
+// `worker` (the selector the process's task workers would run on) is given only for an entry with `workers` on: the provider
+// then also lists the worker model (the entry's own model when the worker's provider differs), the workers get the same
+// provider spec and the key's file name (never the key: a worker's extension reads the file itself) in their environment.
+function keyEnv(e: FallbackEntry, worker?: string): Record<string, string> {
 	if (!keyHostOk(keyBaseUrl(e))) throw new Error(`API-key entry ${e.model}: base URL host is not allowed`);
 	const ban = apiKeyBan();
 	if (ban) throw new Error(`API-key entry ${e.model}: no API key while ${ban} is pinned`);
 	const base = parseSelector(e.model).model;
-	const def = modelDef(base);
 	const [provider, ...rest] = base.split("/");
 	const api = KEY_APIS[provider];
+	const w = worker ? parseSelector(worker) : undefined;
+	const workerBase = w && w.model.split("/")[0] === provider ? w.model : base;
+	const row = (full: string) => {
+		const def = modelDef(full);
+		const id = full.split("/").slice(1).join("/");
+		return { id, name: `${def?.name ?? id} (API key)`, reasoning: Boolean(def?.reasoning), input: def?.input ?? ["text"], contextWindow: def?.contextWindow ?? 200_000, maxTokens: def?.maxTokens ?? 32_000, ...(def?.cost ? { cost: def.cost } : {}) };
+	};
 	const spec = {
 		id: `${provider}-apikey`,
 		baseModel: base,
 		baseUrl: e.base_url ?? api?.baseUrl,
 		api: e.api ?? api?.api,
-		models: [{ id: rest.join("/"), name: `${def?.name ?? rest.join("/")} (API key)`, reasoning: Boolean(def?.reasoning), input: def?.input ?? ["text"], contextWindow: def?.contextWindow ?? 200_000, maxTokens: def?.maxTokens ?? 32_000, ...(def?.cost ? { cost: def.cost } : {}) }],
+		models: [row(base), ...(worker && workerBase !== base ? [row(workerBase)] : [])],
+		...(worker ? { worker: { id: workerBase.split("/").slice(1).join("/"), thinking: w!.model === workerBase && w!.thinking ? w!.thinking : undefined } } : {}),
 	};
-	return { DOTZ_KEY_PROVIDER: JSON.stringify(spec), DOTZ_KEY_VALUE: readKey(e.key_file!) };
+	return { DOTZ_KEY_PROVIDER: JSON.stringify(spec), DOTZ_KEY_VALUE: readKey(e.key_file!), ...(worker ? { DOTZ_KEY_WORKERS: "1", DOTZ_KEY_FILE: basename(e.key_file!) } : {}) };
+}
+// The selector a keyed process's task workers run as, read from the environment keyEnv built (undefined when the process's
+// workers do not use the key).
+export function keyedWorker(env: Record<string, string | undefined>): string | undefined {
+	if (env.DOTZ_KEY_WORKERS !== "1" || !env.DOTZ_KEY_PROVIDER) return undefined;
+	const spec = JSON.parse(env.DOTZ_KEY_PROVIDER) as { id: string; worker?: { id: string; thinking?: string } };
+	return spec.worker ? `${spec.id}/${spec.worker.id}${spec.worker.thinking ? `:${spec.worker.thinking}` : ""}` : undefined;
 }
 
 // ---- the chain ------------------------------------------------------------------------------------------------------
@@ -153,7 +183,7 @@ export class ErrorStreak {
 }
 export type Why = "quota" | "error" | "cap" | "revert";
 export type Move = { from: number; to: number; why: Why };
-type Down = { why: "quota" | "error" | "cap"; until: number; since?: number };
+type Down = { why: "quota" | "error" | "cap" | "off"; until: number; since?: number };
 const ERROR_BLOCK_MS = 10 * 60_000;
 const KEY_BLOCK_MS = 60_000;
 
@@ -167,6 +197,8 @@ export class Chain {
 	// Why entry i cannot be used now (a limit it hit, its spend cap, a missing key), and until when.
 	down(i: number, at = clock.now()): Down | undefined {
 		const e = this.list[i];
+		// Switched off in the settings: never used, and never part of a limit or exhaustion decision.
+		if (!entryOn(e)) return { why: "off", until: Number.POSITIVE_INFINITY };
 		const b = load().blocked[poolOf(e)];
 		if (b && b.until > at) return b;
 		if (capReached(e, at)) return { why: "cap", until: periodEnd(e.cap!.period, at) };
@@ -254,10 +286,11 @@ export class Chain {
 		const model = e.key_file ? keyedModel({ ...e, model: split.model }) : split.model;
 		return `${model}:${hasLevel ? split.thinking : this.thinking}`;
 	}
-	// Environment a process of entry i needs (the key provider); nothing for an entry without a key.
-	env(i: number): Record<string, string> {
+	// Environment a process of entry i needs (the key provider); nothing for an entry without a key. `worker`: the selector the
+	// process's task workers run on, used only when the entry lets workers use the key.
+	env(i: number, worker?: string): Record<string, string> {
 		const e = this.list[i];
-		return e.key_file ? keyEnv(e) : {};
+		return e.key_file ? keyEnv(e, e.workers ? worker : undefined) : {};
 	}
 	label(i: number): string {
 		const e = this.list[i];
@@ -274,7 +307,8 @@ export class Chain {
 export function entryView(e: FallbackEntry) {
 	const used = e.cap ? usageOf(e, e.cap.period) : undefined;
 	const d = new Chain(e.model, [e], "off").down(1);
-	return { ...e, ...(used ? { used: { period: e.cap!.period, tokens: used.tokens, usd: used.usd } } : {}), ...(d ? { down: d.why, until: new Date(d.until).toISOString() } : {}), id: entryId(e) };
+	const why = d && d.why !== "off" ? d : undefined;
+	return { ...e, enabled: entryOn(e), ...(used ? { used: { period: e.cap!.period, tokens: used.tokens, usd: used.usd } } : {}), ...(why ? { down: why.why, until: new Date(why.until).toISOString() } : {}), id: entryId(e) };
 }
 
 // Failures the chain moves on from: a usage limit, a billing/auth problem only the owner can fix, a provider error. Anything

@@ -56,7 +56,9 @@ export function workerModel(): string {
 //   revert   go back to an earlier entry when its limit resets
 //   key_file name of a file under <data dir>/secrets/ with an API key: the same model billed through that key
 //   base_url / api  override of the key provider's endpoint (default: the provider's own API)
-export type FallbackEntry = { model: string; when?: "quota" | "error"; cap?: { period: "month" | "day"; usd?: number; tokens?: number }; revert?: boolean; key_file?: string; base_url?: string; api?: string };
+//   enabled  false = registered but never used (an API-key entry added from the settings starts off; unset = on, so entries saved before this field keep working)
+//   workers  API-key entry only: the task subagents and sessions of a process running on this entry bill the same key too
+export type FallbackEntry = { model: string; when?: "quota" | "error"; cap?: { period: "month" | "day"; usd?: number; tokens?: number }; revert?: boolean; key_file?: string; base_url?: string; api?: string; enabled?: boolean; workers?: boolean };
 export type FallbackTarget = "orchestrator" | "lanes" | "workers";
 export const FALLBACK_MAX = 6;
 const positiveNumber = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined);
@@ -76,8 +78,12 @@ export function entryOf(x: unknown): FallbackEntry | undefined {
 		...(str(o.key_file) ? { key_file: str(o.key_file) } : {}),
 		...(str(o.base_url) ? { base_url: str(o.base_url) } : {}),
 		...(str(o.api) ? { api: str(o.api) } : {}),
+		...(typeof o.enabled === "boolean" ? { enabled: o.enabled } : {}),
+		...(typeof o.workers === "boolean" && str(o.key_file) ? { workers: o.workers } : {}),
 	};
 }
+// An entry the owner has not switched off.
+export const entryOn = (e: FallbackEntry) => e.enabled !== false;
 // Same model through the same key counts once.
 export const entryId = (e: FallbackEntry) => `${e.model}|${e.key_file ?? ""}`;
 export function chainOf(v: unknown): FallbackEntry[] {
@@ -98,9 +104,10 @@ export const fallbackChain = (target: FallbackTarget): FallbackEntry[] => chainO
 export const isPlain = (e: FallbackEntry) => !e.when && !e.cap && e.revert === undefined && !e.key_file;
 // The entries a process starts with: the stored ones without the primary itself (an entry equal to the primary model would
 // only retry the model that just failed, unless it is that model through its own key).
-export const chainAfter = (primary: string, chain: FallbackEntry[]): FallbackEntry[] => chain.filter(e => e.key_file || (e.model !== primary && parseSelector(e.model).model !== parseSelector(primary).model));
+// A switched-off entry is not part of any process's chain.
+export const chainAfter = (primary: string, chain: FallbackEntry[]): FallbackEntry[] => chain.filter(e => entryOn(e) && (e.key_file || (e.model !== primary && parseSelector(e.model).model !== parseSelector(primary).model)));
 // Stored form: bare selector strings for plain entries, objects for the rest.
-const storedOf = (e: FallbackEntry): string | FallbackEntry => (isPlain(e) && !e.base_url && !e.api ? e.model : e);
+const storedOf = (e: FallbackEntry): string | FallbackEntry => (isPlain(e) && !e.base_url && !e.api && e.enabled === undefined ? e.model : e);
 export function setFallbackChain(target: FallbackTarget, chain: FallbackEntry[]): void {
 	updateModels(target, { fallback: chainOf(chain).map(storedOf) });
 }

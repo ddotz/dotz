@@ -1,10 +1,12 @@
 // The hub-driven chain's decisions on their own (no process): where a spent cap goes, when every entry is out, and which
 // failures move the chain at all.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { cfg, DATA_DIR } from "./config.ts";
-import { atTime, Chain, failsOver, failureReason, hubChain, keyHostOk, keyProviderOk, resetFallbackState } from "./fallback.ts";
+import { cfg, chainAfter, DATA_DIR, entryOf } from "./config.ts";
+import { atTime, Chain, failsOver, failureReason, hubChain, keyedWorker, keyHostOk, keyProviderOk, resetFallbackState, spendOnKey } from "./fallback.ts";
+import { writeWorkerProfile } from "./runtime/omo.ts";
 import { classifyProviderError } from "./providers.ts";
 
 mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
@@ -108,4 +110,74 @@ test("hubChain: OmO gets every chain driven by the hub (bare entries revert), om
 	expect(hubChain("omp", [{ model: "openai/x" }])).toBeUndefined();
 	expect(hubChain("omp", [{ model: "openai/x", when: "quota" }])).toEqual([{ model: "openai/x", when: "quota" }]);
 	expect(hubChain("claude", [{ model: "openai/x", when: "quota" }])).toBeUndefined();
+});
+
+test("a switched-off entry is registered but skipped: by the chain, by chainAfter, and by the start entry", () => {
+	resetFallbackState();
+	const at = Date.UTC(2026, 9, 10, 3);
+	const c = new Chain("anthropic/sub:low", [{ model: "openai/x", enabled: false }, { model: "openai/y" }], "low");
+	expect(c.down(1)?.why).toBe("off");
+	expect(c.next(0, "quota", at)).toBe(2);
+	expect(c.next(0, "error", at)).toBe(2);
+	expect(c.fail("quota", at + HOUR, at)).toEqual({ from: 0, to: 2, why: "quota" });
+	const only = new Chain("anthropic/sub:low", [{ model: "openai/x", enabled: false }], "low");
+	expect(only.fail("quota", at + HOUR, at)).toBeUndefined();
+	expect(only.exhaustedUntil(at)).toBeUndefined();
+	expect(chainAfter("anthropic/sub", [{ model: "openai/x", enabled: false }, { model: "openai/y" }, { model: "anthropic/k", key_file: "anthropic-api-key", enabled: false }])).toEqual([{ model: "openai/y" }]);
+	expect(entryOf({ model: "openai/x", enabled: false })).toEqual({ model: "openai/x", enabled: false });
+	expect(entryOf({ model: "openai/x", workers: true })).toEqual({ model: "openai/x" });
+	expect(entryOf({ model: "anthropic/k", key_file: "anthropic-api-key", workers: true })).toEqual({ model: "anthropic/k", key_file: "anthropic-api-key", workers: true });
+});
+
+test("workers on a keyed entry: workers get the key provider and worker model, never the key; workers off or absent: none", () => {
+	resetFallbackState();
+	writeFileSync(join(DATA_DIR, "secrets", "anthropic-api-key"), "sk-ant-test-key");
+	const agentDir = mkdtempSync(join(tmpdir(), "dotz-nopin-"));
+	const was = process.env.OMO_CODING_AGENT_DIR;
+	process.env.OMO_CODING_AGENT_DIR = agentDir;
+	try {
+		const keyed = { model: "anthropic/claude-opus-5-5", key_file: "anthropic-api-key", workers: true };
+		const worker = "anthropic/claude-sonnet-5-5:high";
+		const on = new Chain("anthropic/claude-opus-5-5:medium", [keyed], "medium").env(1, worker);
+		expect(on.DOTZ_KEY_WORKERS).toBe("1");
+		expect(on.DOTZ_KEY_FILE).toBe("anthropic-api-key");
+		expect(on.DOTZ_KEY_VALUE).toBe("sk-ant-test-key");
+		expect(on.DOTZ_KEY_PROVIDER).not.toContain("sk-ant-test-key");
+		expect(JSON.parse(on.DOTZ_KEY_PROVIDER).models.map((m: { id: string }) => m.id)).toEqual(["claude-opus-5-5", "claude-sonnet-5-5"]);
+		expect(keyedWorker(on)).toBe("anthropic-apikey/claude-sonnet-5-5:high");
+		for (const entry of [{ ...keyed, workers: false }, { model: keyed.model, key_file: keyed.key_file }]) {
+			const off = new Chain("anthropic/claude-opus-5-5:medium", [entry], "medium").env(1, worker);
+			expect(off.DOTZ_KEY_WORKERS).toBeUndefined();
+			expect(off.DOTZ_KEY_FILE).toBeUndefined();
+			expect(keyedWorker(off)).toBeUndefined();
+		}
+		// A worker model of another provider falls back to the entry's own model on the key.
+		expect(keyedWorker(new Chain("anthropic/claude-opus-5-5:medium", [keyed], "medium").env(1, "openai/gpt-x:high"))).toBe("anthropic-apikey/claude-opus-5-5");
+		// The worker profile of a keyed lane points every category at the key provider's model.
+		const file = join(agentDir, "omo.json");
+		const name = writeWorkerProfile({ workerModel: keyedWorker(on)!, workerFallback: [] }, file)!;
+		const cats = JSON.parse(readFileSync(file, "utf8")).profiles[name].categories;
+		expect(cats.quick.models).toEqual([{ model: "anthropic-apikey/claude-sonnet-5-5", reasoning: "high" }]);
+	} finally {
+		if (was === undefined) delete process.env.OMO_CODING_AGENT_DIR;
+		else process.env.OMO_CODING_AGENT_DIR = was;
+		rmSync(join(DATA_DIR, "secrets", "anthropic-api-key"), { force: true });
+	}
+});
+
+test("a worker's spend on the key counts against the entry's cap, shared with the orchestrator's and the lanes'", () => {
+	resetFallbackState();
+	writeFileSync(join(DATA_DIR, "secrets", "anthropic-api-key"), "sk-ant-test-key");
+	const at = Date.UTC(2026, 9, 10, 3);
+	const entry = { model: "anthropic/claude-opus-5-5", key_file: "anthropic-api-key", workers: true, cap: { period: "month" as const, usd: 5 } };
+	const c = new Chain("anthropic/claude-opus-5-5:medium", [entry], "medium");
+	c.active = 1;
+	try {
+		expect(c.spend(10, 2, at)).toBeUndefined();
+		spendOnKey("anthropic-api-key", 100, 3.5, at);
+		expect(c.down(1, at)?.why).toBe("cap");
+		expect(c.spend(1, 0, at)).toMatchObject({ capped: true });
+	} finally {
+		rmSync(join(DATA_DIR, "secrets", "anthropic-api-key"), { force: true });
+	}
 });

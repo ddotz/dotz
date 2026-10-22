@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { stickyEnv } from "../account-sticky.ts";
 import { apiKeyBan, withoutApiKeys } from "../apikey-policy.ts";
 import { chainAfter, fallbackChain, lanesMaxWorkers, log, parseSelector, workerIdleMin, workerModel, writeAtomic } from "../config.ts";
+import { keyedWorker } from "../fallback.ts";
 import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
 import { closeHostsOf, OMO, recordStarted } from "./omo-hosts.ts";
@@ -88,8 +89,10 @@ export function writeWorkerProfile(lane: { workerModel: string; workerFallback?:
 // the task-worker model and its fallbacks on the subscription login. Without categories they took OmO's defaults, whose
 // provider list goes on to `anthropic` (the API key): with the subscription account rate-limited, the orchestrator's
 // unspecified-high workers started on a dead API key and failed with 401 "invalid x-api-key" (2026-10-21 00:55 KST).
-// API-key fallback entries are left out: a worker never falls back to a key. A child gets the parent's extensions, not
-// its --exclude-tools, so the workers keep every tool.
+// API-key fallback entries are left out: a worker never falls back to a key, except when the process itself runs on a keyed
+// entry whose `workers` switch is on: the caller then passes that key provider's worker model as `worker` and no chain. A
+// child gets the parent's extensions, not its --exclude-tools, so the workers keep every tool.
+// (`worker` is the key provider's copy of the worker model, `<provider>-apikey/<id>`, which the child registers itself.)
 export const ORCHESTRATOR_WORKERS = "dotz-orchestrator-workers";
 export function writeOrchestratorProfile(file = omoConfigFile(), worker = workerModel(), chain = fallbackChain("workers")): string | undefined {
 	const models = [worker, ...chainAfter(worker, chain).filter(e => !e.key_file).map(e => e.model)].map(categoryModel);
@@ -156,7 +159,8 @@ export const omo: RuntimeAdapter = {
 	// claude-sdk-oauth stream drops the cacheWrite1h field, so nothing here reads that field.
 	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact" },
 	start(o) {
-		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? writeOrchestratorProfile() : undefined;
+		const onKey = keyedWorker(o.env);
+		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? (onKey ? writeOrchestratorProfile(undefined, onKey, []) : writeOrchestratorProfile()) : undefined;
 		const launcher = senpiLauncher();
 		// stickyEnv() is the account at spawn; a running process follows later switches by itself (the dotz extension re-pins it at each turn).
 		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
