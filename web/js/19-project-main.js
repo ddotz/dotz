@@ -309,9 +309,9 @@ function cmPaint(root, p, D) {
   if (root.dataset.sig === sig) return;
   root.dataset.sig = sig;
   $("#title").textContent = "프로젝트";
-  const ask = (label, text) => el("button", { class: "btn tonal", type: "button", "aria-label": `${label} 바꿔 달라고 하기`, onclick: () => cmAsk(text), text: "바꿔 달라고 하기" });
+  const ask = (label, text) => el("button", { class: "btn tonal", type: "button", "aria-label": `${label} 수정`, onclick: () => cmAsk(text), text: "수정" });
   const group = g => el("section", { class: "pmv-sec" },
-    el("div", { class: "pv-sh" }, el("div", { class: "sec", text: g.label }), el("button", { class: "btn text", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: g.items.length ? "더 부탁하기" : "만들어 달라고 하기" })),
+    el("div", { class: "pv-sh" }, el("div", { class: "sec", text: g.label }), el("button", { class: "btn text", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: "추가" })),
     g.items.length ? el("div", { class: "list" }, ...g.items.map(i => el("div", { class: "li" },
       cmText(i),
       i.bad ? el("span", { class: "tag warn", text: "확인 필요" }) : null,
