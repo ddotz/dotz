@@ -143,3 +143,14 @@ div.nt-mon .nt-dot { margin-top: 7px; }
   .ds-sheet { border-radius: 20px; max-height: min(80vh, 760px); padding-bottom: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .ds-bd, .ds-sheet { animation: none; } }
+
+/* Decision sheet (30-notices.js dkOpen): the docked decision card (07-chat.css .dcard) over the current screen. On the phone it stops at the tab bar
+   (same height as .side in 01-tokens.css: 46px row + hairline + trimmed home-indicator inset), so the bar stays visible and the card keeps clear of the safe area. */
+.dk-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .32); animation: nt-in .14s ease-out; }
+.dk-card:focus { outline: 0; }
+.dk-card { width: 100%; max-width: 520px; margin: 0 16px 24px; box-shadow: var(--float); animation: ds-up .18s ease-out; }
+@media (max-width: 639px) {
+  .dk-bd { bottom: calc(47px + max(2px, calc(env(safe-area-inset-bottom) - 16px))); }
+  .dk-card { margin: 0 max(8px, env(safe-area-inset-right)) 8px max(8px, env(safe-area-inset-left)); }
+}
+@media (prefers-reduced-motion: reduce) { .dk-bd, .dk-card { animation: none; } }

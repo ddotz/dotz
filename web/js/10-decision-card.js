@@ -68,10 +68,10 @@ function decisionOf(t) {
   if (!info.ask && !pc.blocks.length) return null;
   if (at && s.msgs.some(e => OWNER.has(e.kind) && msOf(e.ts) > msOf(at))) return null;
   const sig = hashOf(body.trim());
-  return { key: `${t}|${sig}`, sig, at, question: pc.question, blocks: pc.blocks };
+  return { key: `${t}|${sig}`, t, sig, at, question: pc.question, blocks: pc.blocks };
 }
 async function answerDecision(dc, text, opt) {
-  const t = target, lane = isLaneT(t) ? laneOf(t) : "";
+  const t = dc.t, lane = isLaneT(t) ? laneOf(t) : "";   // the card's own conversation: the notice sheet may answer for one that is not on screen
   DC.st[dc.key] = "sending"; paintDecision();
   try {
     // A card with one block whose question is a decision notice answers through the bell's path (30-notices.js), so both stay in step.
@@ -81,7 +81,8 @@ async function answerDecision(dc, text, opt) {
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label }] : []));
     const r = nd ? null : await api("/api/message", "POST", { text, ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
-    DC.st[dc.key] = "sent"; chatStick = true; scrollChat(true);
+    DC.st[dc.key] = "sent";
+    if (t === target) { chatStick = true; scrollChat(true); }
   } catch (e) { delete DC.st[dc.key]; delete DC.picks[dc.key]; toast(e.message, true); }
   paintDecision();
 }
@@ -95,11 +96,13 @@ function pickOption(dc, bi, opt) {
   answerDecision(dc, dc.blocks.length === 1 ? `${opt.n}) ${opt.label}` : `결정 답: ${dc.blocks.map((_, i) => `${p[i].n}) ${p[i].label}`).join(" · ")}`, dc.blocks.length === 1 ? opt : undefined);
 }
 function renderDecision(box, dc, picks, step) {
-  const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
+  const st = DC.st[dc.key] || "", fold = !dc.close && !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt" },
     el("span", { class: "dc-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" }),
     dc.question ? mdNode(dc.question, "md dc-q") : null),
-    el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop")));
+    // In the notice sheet (30-notices.js, dc.close) the corner button closes it instead of folding the card.
+    dc.close ? el("button", { class: "dc-fold", type: "button", "aria-label": "닫기", onclick: () => dc.close() }, icon("close"))
+      : el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop")));
   const kids = [head];
   if (!fold) {
     const body = el("div", { class: "dc-body" });
@@ -165,5 +168,6 @@ function paintDecision() {
     if (box.dataset.sig !== sig) { renderDecision(box, dc, picks, step); box.dataset.sig = sig; box.dataset.key = dc.key; }
   }
   syncInlineChoices();
+  dkPaint();
   if (had !== !!dc) updateComposerMeta();
 }
