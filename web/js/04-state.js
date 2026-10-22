@@ -151,11 +151,6 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent |
 $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
 const setBrand = () => { $("#brand-name").textContent = botName; paintAttn(); };
 $("#brand").onclick = () => go("home");
-function renderSideStatus() {
-  const o = (S && S.orchestrator) || {};
-  $("#side-dot").className = `dot ${S ? statusTone(o.status) : ""}`;
-  $("#side-st").textContent = S ? statusKo(o.status) : "연결 중";
-}
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
 const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? (ppWide() ? null : "projects") : current === "monitoring" ? "chat" : null;

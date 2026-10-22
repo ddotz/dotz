@@ -41,11 +41,11 @@ button:disabled { opacity: .4; cursor: default; pointer-events: none; }
 kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--layer); color: var(--fg-3); font: 500 11px/16px var(--font); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-/* layout: from 1100px one top row, below it the phone layout (tabs in a bottom bar). The markup is the same in both: #nav (the five tabs, one component), .sfoot (the status dot), #cmdk (search) and the app bar items.
+/* layout: from 1100px one top row, below it the phone layout (tabs in a bottom bar). The markup is the same in both: #nav (the five tabs, one component), #pchip (the computer chip), #cmdk (search) and the app bar items.
    Wide: .side, .main and .appbar are display: contents, so each of their children is a cell of the .app grid and sits in the one row. Below 1100px they are the usual flex boxes. The 1100px edge is also where 채팅 puts its list next to the conversation. */
-.app { display: grid; grid-template-columns: 20px auto auto auto auto auto auto minmax(0, 1fr) auto auto auto auto 12px; grid-template-rows: 48px auto minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); }
+.app { display: grid; grid-template-columns: 20px auto auto auto auto auto minmax(0, 1fr) auto auto auto auto 12px; grid-template-rows: 48px auto minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); }
 .side, .main, .appbar { display: contents; }
-.brand, .sfoot, .rail, .pchip, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
+.brand, .rail, .pchip, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
 .gban { grid-row: 2; grid-column: 1 / -1; }
 .views { grid-row: 3; grid-column: 1 / -1; }
 .brand { grid-column: 2; }
@@ -55,7 +55,6 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .logo { position: relative; flex: none; width: 16px; height: 16px; border-radius: 5px; background: var(--fg); }
 .logo::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--bg); }
 .brand { width: auto; }
-.sfoot { grid-column: 3; display: flex; align-items: center; gap: 6px; padding: 0 4px; color: var(--fg-3); font-size: 11px; line-height: 16px; white-space: nowrap; }
 .rail { grid-column: 4; display: flex; gap: 2px; margin-left: 12px; }
 .ni { position: relative; display: flex; flex: none; align-items: center; gap: 4px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 .ni:hover { background: var(--hover); color: var(--fg); }
@@ -67,18 +66,18 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .ni .nnb { min-width: 0; height: 16px; padding: 0; background: transparent; color: var(--warn); font-size: 12px; line-height: 16px; }
 .ni .nub { width: 6px; min-width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; }
 .ni .nub[hidden] { display: none; }
-.appbar .cmdk { grid-column: 10; display: flex; align-items: center; gap: 6px; width: auto; height: 28px; margin-left: 8px; padding: 0 4px 0 8px; border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); }
+.appbar .cmdk { grid-column: 9; display: flex; align-items: center; gap: 6px; width: auto; height: 28px; margin-left: 8px; padding: 0 4px 0 8px; border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); }
 .cmdk:hover { background: var(--card-hover); }
 .cmdk .tx { display: none; }
-#back { grid-column: 6; margin-left: 8px; }
-.appbar h1 { grid-column: 7; min-width: 0; max-width: 320px; margin: 0 0 0 8px; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#back { grid-column: 5; margin-left: 8px; }
+.appbar h1 { grid-column: 6; min-width: 0; max-width: 320px; margin: 0 0 0 8px; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* wide: the active tab names the page, so the big title shows only on a page with a back arrow (a project, a settings sub-page) */
 .appbar:not(.back) h1 { display: none; }
-.thead { grid-column: 8; }
-.conn { grid-column: 9; margin-left: 8px; }
-#vtog { grid-column: 11; margin-left: 4px; }
-.ustrip { grid-column: 12; margin-left: 4px; }
-.pchip { grid-column: 5; }
+.thead { grid-column: 7; }
+.conn { grid-column: 8; margin-left: 8px; }
+#vtog { grid-column: 10; margin-left: 4px; }
+.ustrip { grid-column: 11; margin-left: 4px; }
+.pchip { grid-column: 3; }
 .conn { flex: none; height: 20px; padding: 0 8px; border-radius: 10px; background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); font-size: 12px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 .ustrip { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; }
 .ustrip:hover { background: var(--hover); color: var(--fg); }
@@ -91,9 +90,9 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .ustrip.warn .uring { background: conic-gradient(var(--warn) calc(var(--p) * 1%), var(--track) 0); }
 .views { min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .view { max-width: 920px; margin: 0 auto; padding: 24px; }
+.view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
 /* wide: a page starts at the left like the top bar (--edge = where the logo starts); its own max-width only limits how far it grows to the right */
 @media (min-width: 1100px) { .view { margin: 0; padding-left: var(--edge); padding-right: var(--edge); } }
-.view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
 @media (max-width: 1099px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding-top: 0; }
   .main { order: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -106,7 +105,7 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
   .views { flex: 1; }
   /* compact tab bar: a 46px row; the home-indicator inset is trimmed (labels end ~18px above the screen edge, clear of the indicator) */
   .side { order: 2; display: flex; min-width: 0; min-height: 0; padding: 0 0 max(2px, calc(env(safe-area-inset-bottom) - 16px)); border-top: 1px solid var(--line); background: var(--card); }
-  .brand, .sfoot { display: none; }
+  .brand { display: none; }
   .rail { flex: 1; min-width: 0; gap: 0; margin: 0; }
   .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 1px; height: 46px; padding: 0 2px; border-radius: 0; font-size: 10px; line-height: 13px; text-align: center; }
   .ni:hover { background: transparent; }

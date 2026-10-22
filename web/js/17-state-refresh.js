@@ -14,7 +14,7 @@ async function refreshState() {
     if (isLaneT(target) && (!S.lanes.some(l => `lane:${l.name}` === target) || (PREV[target] && PREV[target] !== "exited" && targetInfo(target).status === "exited"))) setTarget(MAIN);
     if (isProjT(target) && !projTargets().includes(target)) setTarget(MAIN);   // its work channel was deleted
     noteStatus(); paintAuth(); paintDecision();
-    renderSideStatus(); renderBars(); renderWorking(); updateComposerMeta();
+    renderBars(); renderWorking(); updateComposerMeta();
     if (current === "lanes") renderLanes();
     if (current === "project") pmPaint();
     if (current === "home") renderHome();
