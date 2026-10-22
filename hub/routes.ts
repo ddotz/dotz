@@ -17,7 +17,7 @@ import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { answerDecision, dismissNotice, listNotices, markNoticesRead, readConversationNotices, resolveNotices, setViewing, unreadCount } from "./notices.ts";
+import { answerDecision, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { listSchedules } from "./schedule.ts";
 import { readTodo } from "./todo.ts";
@@ -144,6 +144,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		if (dismiss) {
 			const r = dismissNotice(decodeURIComponent(dismiss[1]!));
 			return json(r, r.ok ? 200 : r.held ? 409 : 404);
+		}
+		// The x (무시) on a question that waits, and its undo: off the badge and 답변 필요, kept in the history, nothing sent to the bot.
+		const ignore = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/(ignore|unignore)$/.exec(url.pathname) : null;
+		if (ignore) {
+			const r = (ignore[2] === "ignore" ? ignoreNotice : unignoreNotice)(decodeURIComponent(ignore[1]!));
+			return json(r.body, r.status);
 		}
 		// A button of a decision notice: the answer goes where the question came from (chat, session, project chat or login request).
 		const decide = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/answer$/.exec(url.pathname) : null;

@@ -114,14 +114,28 @@ describe("noticeOpen dispatch", () => {
 	});
 });
 
+describe("what waits on the owner (ntNeeds)", () => {
+	const needs = new Function("NT", "ntIsDec", `${between(notices, "const ntOpenDec", "const ntById")}; return ntNeeds;`)({ items: [] }, ntIsDec) as (n: N) => boolean;
+	test.each([
+		["open decision", { kind: "decision", tone: "ask", read: false, decision: dec }, true],
+		["unread [ask] twin", { kind: "alert", tone: "ask", read: false }, true],
+		["read [ask] twin", { kind: "alert", tone: "ask", read: true }, false],
+		["ignored decision", { kind: "decision", tone: "ask", read: true, ignored: "t", decision: { ...dec, state: "ignored" } }, false],
+		["answered decision", { kind: "decision", tone: "ask", read: true, decision: { ...dec, state: "answered" } }, false],
+		["plain unread alert", { kind: "alert", tone: "", read: false }, false],
+		["unread failure", { kind: "alert", tone: "fail", read: false }, false],
+	] as [string, N, boolean][])("%s", (_name, n, want) => expect(needs(n)).toBe(want));
+});
+
 describe("entry points use the shared handler", () => {
 	test("the home notice card: each row opens its notice through noticeOpen, without opening the card", () => {
 		const opened: N[] = [];
 		const stop: string[] = [];
 		const el = (_t: string, p: Record<string, unknown>, ...kids: unknown[]) => ({ p, kids });
 		const block = between(web("js/08-home.js"), "const hcNotices", "// Gateway restarts");
-		const hcNotices = new Function("el", "hcDot", "hcLine", "ntLaneNote", "ntWhen", "noticeOpen", `${block}; return hcNotices;`)(
-			el, () => null, (n: N) => n.title, () => "", () => "", (n: N) => opened.push(n)) as (l: N[]) => { kids: { p: { onclick: (ev: unknown) => void; onkeydown: (ev: unknown) => void } }[] };
+		// The x (무시) rides only on a row that waits on the owner (ntNeeds); here the decision row.
+		const hcNotices = new Function("el", "hcDot", "hcLine", "ntLaneNote", "ntWhen", "noticeOpen", "ntNeeds", "ntIgnoreBtn", `${block}; return hcNotices;`)(
+			el, () => null, (n: N) => n.title, () => "", () => "", (n: N) => opened.push(n), (n: N) => n.kind === "decision", (n: N) => ({ x: n.id })) as (l: N[]) => { kids: ({ x?: string } & { p: { onclick: (ev: unknown) => void; onkeydown: (ev: unknown) => void } })[] };
 		const list = [{ id: "a", kind: "decision", title: "결정" }, { id: "b", kind: "alert", title: "경고" }];
 		const rows = hcNotices(list).kids;
 		const ev = { stopPropagation: () => stop.push("s"), preventDefault: () => {}, key: "Enter" };
@@ -129,6 +143,8 @@ describe("entry points use the shared handler", () => {
 		rows[1]!.p.onkeydown(ev);
 		expect(opened).toEqual(list);
 		expect(stop).toHaveLength(2);
+		expect(rows[0]!.kids.some((k: unknown) => (k as { x?: string } | null)?.x === "a")).toBe(true);
+		expect(rows[1]!.kids.some((k: unknown) => (k as { x?: string } | null)?.x)).toBe(false);
 	});
 
 	test("the 알림 / 작업내역 screens: a tapped message opens its notice through noticeOpen, an inline choice row too", () => {
