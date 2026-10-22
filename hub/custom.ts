@@ -7,7 +7,8 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { BgWork } from "./bgwork.ts";
-import { DATA_DIR, expand, HOME, log, TZ } from "./config.ts";
+import { cfg, DATA_DIR, expand, HOME, log, paths, TEMPLATES, TZ } from "./config.ts";
+import { loadFeatureDirs } from "./featuredirs.ts";
 import { loadProjects, type ProjectRecord } from "./projects.ts";
 import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
 import { parseTone } from "./tone.ts";
@@ -25,7 +26,7 @@ export type Link = { name: string; url: string };
 type Pins = { projects: PinProject[]; hide_projects: string[]; routines: Routine[]; links: Link[] };
 type CustomError = { file: string; error: string };
 type ProjectLane = { name: string; title?: string; status: string; live: boolean; startedAt?: string; lastReportAt?: string; waiting?: boolean; lastText: string; reports: number; channel?: string };
-export type Project = { key: string; name: string; path?: string; note?: string; pinned: boolean; channel?: { id: string; name: string }; record?: ProjectRecord; recordKey?: string; lanes: ProjectLane[] };
+export type Project = { key: string; name: string; path?: string; note?: string; pinned: boolean; builtin?: boolean; channel?: { id: string; name: string }; record?: ProjectRecord; recordKey?: string; lanes: ProjectLane[] };
 type ChannelsIn = { work?: Record<string, string>; homes?: Record<string, string>; lanes?: Record<string, string>; threads?: Record<string, { parent?: string; name?: string }> };
 export type CustomDeps = {
 	lanes: () => Array<Record<string, unknown>>;
@@ -447,6 +448,47 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 	return [...pinned, ...auto].map(({ newest, ...p }) => p);
 }
 
+// ---- built-in project: 커스텀 ------------------------------------------------------------------------------------------
+// Present on every install, first in the list, no Discord channel and no stored record. It is not a pin and not derived from
+// sessions, so hide_projects, PUT /api/projects (key must be ch:/dir:) and the session grouping never touch it. Its page shows
+// what the owner has customized; requests made from it are personal (custom layer, features, RULES.md, identity), never the repo.
+export const BUILTIN_KEY = "builtin:custom";
+export const builtinProject = (): Project => ({ key: BUILTIN_KEY, name: "커스텀", note: "내 취향대로 바꾼 것을 한곳에서 보고, 바꾸고 싶은 건 말로 부탁해요", pinned: true, builtin: true, lanes: [] });
+
+type OverviewItem = { title: string; line: string; bad?: boolean };
+type OverviewGroup = { id: string; label: string; empty: string; items: OverviewItem[]; more?: number };
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+const routineWhen = (r: Routine) => (!r.schedule ? "눌러서 실행해요" : "at" in r.schedule ? `매일 ${r.schedule.at}에 해요` : `${r.schedule.every_minutes}분마다 해요`);
+const VIEW_KO: Record<View, string> = { text: "글", stat: "숫자", list: "목록", kv: "항목별 값" };
+const RULE_CAP = 15;
+
+export function builtinDetail() {
+	const errors: CustomError[] = [];
+	const cards = readCards(errors);
+	const { pins } = readPins({ sync: false });
+	// Only the owner's own list lines: the file's explanatory text and the rule lines it ships with are not theirs.
+	const shipped = new Set((TEMPLATES[paths.rules] ?? "").split("\n").map(l => l.trim()));
+	let rules: string[] = [];
+	try {
+		rules = readFileSync(paths.rules, "utf8").split("\n").map(l => l.trim()).filter(l => /^(?:[-*]|\d+[.)])\s+\S/.test(l) && !shipped.has(l)).map(l => l.replace(/^(?:[-*]|\d+[.)])\s+/, "").replace(/^deny:\s*.*?\s\|\s+/, "막아 둔 명령: "));
+	} catch {}
+	const feats = loadFeatureDirs(DATA_DIR).features.filter(f => f.origin === "personal");
+	const id = cfg.identity ?? {};
+	const said: OverviewItem[] = [];
+	if (id.name?.trim()) said.push({ title: "이름", line: id.name.trim() });
+	if (id.tone?.trim()) said.push({ title: "말투", line: clip(id.tone.trim().replace(/\s+/g, " "), 80) });
+	if (id.character?.trim()) said.push({ title: "성격", line: clip(id.character.trim().replace(/\s+/g, " "), 80) });
+	const groups: OverviewGroup[] = [
+		{ id: "cards", label: "홈 카드", empty: "아직 만든 카드가 없어요", items: cards.map(c => ("error" in c ? { title: c.id, line: "파일에 문제가 있어서 카드가 안 보여요", bad: true } : { title: c.spec.title, line: c.spec.note || `홈에 ${VIEW_KO[c.spec.view]}로 보여 줘요` })) },
+		{ id: "pins", label: "고정 항목", empty: "사이드바에 고정한 게 없어요", items: [...pins.projects.map(p => ({ title: p.name, line: p.note || "사이드바에 고정한 프로젝트예요" })), ...pins.links.map(l => ({ title: l.name, line: "사이드바에 고정한 링크예요" }))] },
+		{ id: "routines", label: "루틴", empty: "아직 만든 루틴이 없어요", items: pins.routines.map(r => ({ title: r.name, line: routineWhen(r) })) },
+		{ id: "rules", label: "내 규칙", empty: "아직 정한 규칙이 없어요", items: rules.slice(0, RULE_CAP).map(r => ({ title: clip(r, 60), line: "항상 지키는 규칙이에요" })), ...(rules.length > RULE_CAP ? { more: rules.length - RULE_CAP } : {}) },
+		{ id: "features", label: "내 기능", empty: "아직 만든 기능이 없어요", items: feats.map(f => ({ title: f.name, line: f.enabled ? clip(f.what || "내가 만든 기능이에요", 80) : "꺼져 있어요", ...(f.enabled ? {} : { bad: true }) })) },
+		{ id: "identity", label: "말투와 성격", empty: "기본 말투와 성격 그대로예요", items: said },
+	];
+	return { key: BUILTIN_KEY, builtin: true, dir: customDirLabel(), groups };
+}
+
 // ---- project page (GET /api/custom/project?key=) --------------------------------------------------------------------
 // What one project's page shows beyond the sidebar list: each lane's last report (report.md, which survives a gateway
 // restart; a restored lane's lastText is empty, so the old page showed "결과 없음" for lanes that all reported), the
@@ -641,6 +683,7 @@ const withPurpose = (p: Project): Project & { purpose?: string } => {
 };
 
 async function projectDetail(key: string, deps: CustomDeps) {
+	if (key === BUILTIN_KEY) return builtinDetail();
 	const { pins } = readPins({ sync: false });
 	const lanes = deps.lanes();
 	const channels = deps.channels();
@@ -675,7 +718,7 @@ async function listAll(deps: CustomDeps) {
 		const s = sched.find(x => x.text.startsWith(`[routine:${r.id}:`));
 		return { ...r, ...(s ? { next: s.at } : {}) };
 	});
-	return { dir: customDirLabel(), cards, projects: projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins, records: loadProjects() }).map(withPurpose), routines, links: pins.links, errors };
+	return { dir: customDirLabel(), cards, projects: [builtinProject(), ...projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins, records: loadProjects() }).map(withPurpose)], routines, links: pins.links, errors };
 }
 
 export async function customRoute(req: Request, url: URL, deps: CustomDeps): Promise<Response | undefined> {
