@@ -1,7 +1,7 @@
 /* cards, lists, tags, bars */
 .col { display: flex; flex-direction: column; gap: 12px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; }
-.card { position: relative; min-width: 0; border: 0; border-radius: var(--r-card); background: var(--card); padding: 20px; }
+.card { position: relative; min-width: 0; border: 0; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); padding: 20px; }
 .card.tap { cursor: pointer; transition: background .15s; }
 .card.tap:hover { background: var(--card-hover); }
 .card.tap:focus-visible { outline-offset: 0; }
@@ -43,7 +43,7 @@
 .more { margin-top: 12px; color: var(--fg-3); font-size: 12px; }
 .sec { margin: 28px 4px 10px; color: var(--fg-2); font: 600 14px/20px var(--font); }
 .sec:first-child { margin-top: 0; }
-.list { border: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.list { border: 0; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
 .list > * + * { border-top: 1px solid var(--line); }
 .li { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 48px; padding: 10px 16px; color: inherit; text-align: left; width: 100%; border: 0; background: transparent; }
 button.li:hover, .li.tap:hover { background: var(--card-hover); }

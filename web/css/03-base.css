@@ -236,12 +236,11 @@ details.work.bad:not(.live) .wdot { display: block; background: var(--err); anim
 .tl-in > .bm.rep, .tl-in > .bm.alert { max-width: none; padding: 14px 18px 16px; border-radius: var(--r-card); background: var(--card); }
 .bm .more pre { background: var(--layer) !important; }
 details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); background: var(--card); }
-.sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: 6px 8px; padding: 14px 12px 10px 18px !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; box-shadow: 0 6px 24px rgba(0, 0, 0, .06); }
+.sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: 6px 8px; padding: 14px 12px 10px 18px !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; box-shadow: var(--shadow-panel); }
 .sendrow:focus-within { border-color: var(--line-2) !important; }
 .sendrow textarea { grid-area: ta; }
 .sendrow > .ib { grid-area: send; }
 .sendrow > .cbar { grid-area: bar; margin: 0 0 0 -10px; padding: 0; min-height: 26px; }
-:root[data-theme="dark"] .sendrow { box-shadow: 0 6px 24px rgba(0, 0, 0, .35); }
 /* Claude-style edges: the transcript (chat and log) fades into the page under the header and above the composer while
    there is more to scroll that way. Overlays only - no mask, shadow or layout change. */
 .chatbox, .termbox { position: relative; }

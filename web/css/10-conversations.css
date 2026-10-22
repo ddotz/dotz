@@ -1,6 +1,6 @@
 /* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, status; no preview or time) and the "새 메시지" divider.
    Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
-.cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
+.cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow-panel); overflow: hidden auto; }
 .cv-side { display: none; }
 .cv-head { display: none; }
 #v-chat.cv-listing > .cv-side { display: block; }
