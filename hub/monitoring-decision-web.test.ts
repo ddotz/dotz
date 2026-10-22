@@ -45,7 +45,7 @@ test("one answered [ask] with a choice block is one card: lead text, its 결정 
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
 	await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), true)`);
 	await v.navigate(`http://127.0.0.1:${server.port}/?light#monitoring/notice`);
-	await v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("no notice")), 10000); const done = () => { if (typeof go === "function" && current !== "monitoring") go("monitoring", "notice"); if (document.querySelector("#mon-tl") && NT.loaded && ntById(${JSON.stringify(id)})) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.documentElement, { subtree: true, childList: true }); done(); })`);
+	await v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("no notice")), 10000); const done = () => { if (typeof go === "function" && current !== "monitoring") go("monitoring", "notice"); if (document.querySelector("#mon-tl") && NT.loaded && NM.loaded && !monRaf && ntById(${JSON.stringify(id)})) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.documentElement, { subtree: true, childList: true }); done(); })`);
 	// the card the tab draws for that notice, placed in the open conversation
 	const card = `document.querySelector('#mon-tl .bm[data-nid="${id}"]')`;
 	await v.evaluate(`(document.querySelector("#mon-tl").append(monNoticeNode(ntById(${JSON.stringify(id)}))), true)`);
