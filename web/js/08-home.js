@@ -19,7 +19,7 @@ const itemCard = (to, tone, ...kids) => { const c = tapCard(to, ...kids); if (to
 const menuBtn = id => el("button", { class: "ib", type: "button", "aria-label": "설정", title: "설정", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => { ev.stopPropagation(); homeMenu(ev.currentTarget, id); } }, icon("more"));
 
 // The ⋯ menu of a home card: only what an existing endpoint already does for that item, built from the state at click time.
-function homeMenu(anchor, id) {
+function homeMenu(anchor, id, inChat) {
   const acts = [];
   const add = (label, run) => acts.push({ value: acts.length, label, run });
   if (id.startsWith("group:")) {
@@ -64,7 +64,7 @@ function homeMenu(anchor, id) {
     add("공급자 열기", () => go("providers"));
   }
   const kind = homeKind(id);
-  if (kind && !homeGroups.has(kind)) add(`${HOME_KINDS[kind][0]} 한 카드로 묶기`, () => setHomeGroup(kind, true));
+  if (kind && !inChat && !homeGroups.has(kind)) add(`${HOME_KINDS[kind][0]} 한 카드로 묶기`, () => setHomeGroup(kind, true));
   showMenu(anchor, acts, { onPick: i => acts[i].run() });
 }
 
@@ -145,10 +145,25 @@ function homeMonitorCard() {
     list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
 }
 
+// The running sessions as rows (same rows as the notice cards): one tap opens that session's chat, a tap beside the rows opens the chat list.
+function homeSessionsCard() {
+  const list = ((S && S.lanes) || []).filter(laneAlive), shown = list.slice(0, 4), need = list.filter(l => l.pendingAsk || attnKind(`lane:${l.name}`)).length;
+  const open = l => openLaneChat(l.name);
+  const row = l => {
+    const [word] = sessionStatus(l), t = `lane:${l.name}`, line = nowLine(t);
+    return el("div", { class: "hc-row", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); open(l); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); open(l); } } },
+      hcDot(l.pendingAsk ? "ask" : l.status === "working" || l.status === "starting" ? "run" : "done"),
+      el("span", { class: "tb" }, el("span", { class: "t", text: l.title || l.name }), line ? el("span", { class: "n", text: line }) : null), el("span", { class: "m", text: l.pendingAsk ? "답변 필요" : word }));
+  };
+  return hcCard(() => go("chat", "list"), el("div", { class: "ch" }, el("h3", { text: "진행 중인 세션" }), need ? el("span", { class: "tag warn", text: `확인 필요 ${need}` }) : null),
+    !S || !list.length ? el("div", { class: "hc-none", text: S ? "진행 중인 세션이 없어요" : "불러오는 중…" }) : el("div", { class: "hc-list" }, ...shown.map(row)),
+    list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
+}
+
 let homeBoard = null;
 const HOME_BIG = { min: { w: 3, h: 3 }, max: { w: 12, h: 10 } }, HOME_SMALL = { min: { w: 2, h: 2 }, max: { w: 12, h: 6 } }, HOME_GROUP = { min: { w: 3, h: 2 }, max: { w: 12, h: 14 } };
 // Kinds of home items that can be bundled into one card (title, view the card opens); the bundled kinds are kept per browser.
-const HOME_KINDS = { lane: ["세션", "lanes"], ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
+const HOME_KINDS = { lane: ["세션", "chat"], ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
 const HOME_GROUPS_KEY = "dotz-home-groups";
 const homeKind = id => { const k = id.split(":")[0]; return HOME_KINDS[k] ? k : null; };
 let homeGroups = (() => { const v = lsJson(HOME_GROUPS_KEY, null); return new Set(Array.isArray(v) ? v : ["ctx", "limit", "prov"]); })();
@@ -248,6 +263,7 @@ function renderHome() {
   add("notices:alert", homeAlertCard(), { w: 4, h: 4 }, HOME_NOTICE);
   add("notices:worklog", homeWorklogCard(), { w: 4, h: 4 }, HOME_NOTICE);
   add("notices:watch", homeMonitorCard(), { w: 4, h: 4 }, HOME_NOTICE);
+  add("sessions:running", homeSessionsCard(), { w: 4, h: 4 }, HOME_NOTICE);
 
   // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}
   const E = { lane: [], ctx: [], limit: [], prov: [] };
