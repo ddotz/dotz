@@ -1,6 +1,7 @@
 /* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, status; no preview or time) and the "새 메시지" divider.
    Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
-.cv-side { display: none; background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
+.cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
+.cv-side { display: none; }
 .cv-head { display: none; }
 #v-chat.cv-listing > .cv-side { display: block; }
 #v-chat.cv-listing > :not(.cv-side) { display: none; }
@@ -13,7 +14,9 @@
 .cv-row:hover { background: var(--card-hover); }
 .cv-av { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 700 15px/24px var(--font); }
 .cv-av .ic { width: 20px; height: 20px; }
-.cv-av.bot { background: var(--fg); color: var(--bg); }
+/* the app's own mark (the top bar's .logo) as the main assistant's icon */
+.cv-av .logo { width: 55%; height: 55%; border-radius: 28%; }
+.cv-av .logo::after { inset: 31%; }
 .cv-av.nt { background: var(--layer); color: var(--fg); }
 .cv-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cv-n, .cv-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -56,7 +59,13 @@
   .cv-row + .cv-row { margin-top: 2px; border-top: 0; }
   .cv-row.on { background: var(--layer); }
   .cv-row.on::before { left: 2px; }
-  .cv-side .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
-  .cv-side .cv-av .ic { width: 14px; height: 14px; }
+  :is(.cv-side, .cv-list) .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
+  :is(.cv-side, .cv-list) .cv-av .ic { width: 14px; height: 14px; }
+  .cv-list { padding: 8px; }
+  /* 프로젝트: the list beside the open project's page, like 채팅 (go() in 05-command-palette.js sets .pp) */
+  .views.pp { display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 16px; overflow: hidden; width: 100%; max-width: 1360px; justify-self: center; padding: 24px 24px 0; }
+  .views.pp > .view { min-height: 0; max-width: none; margin: 0; padding: 0 0 24px; overflow-y: auto; }
+  .views.pp > #v-projects { grid-column: 1; grid-row: 1; margin-bottom: 16px; padding: 0; background: transparent; }
+  .views.pp > #v-project { grid-column: 2; grid-row: 1; }
   .cv-head .cv-av { width: 36px; height: 36px; font-size: 15px; }
 }

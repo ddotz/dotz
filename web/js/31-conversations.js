@@ -237,11 +237,14 @@ function monRowInfo() {
   const bad = NM.items.filter(m => m.last_result === "fail").length;
   return { mon: true, name: "모니터링", hint: !NM.loaded ? (NM.failed ? "불러오지 못했어요" : "불러오는 중…") : NM.items.length ? `모니터링 ${NM.items.length}개` : "모니터링 중인 것이 없어요", badge: bad ? [`실패 ${bad}`, "err"] : null };
 }
+// Every row has an icon, never a letter (so any name reads the same): the app's own mark for the main assistant, a bell / list for the fixed
+// feeds, the folder the 프로젝트 tab uses for a project, the session icon for a session.
 function convAvatar(t) {
-  const name = targetName(t);
   if (isFixedT(t)) return el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon(t === "alert" ? "bell" : "list"));
-  return el("span", { class: `cv-av${t === MAIN ? " bot" : ""}`, "aria-hidden": "true" }, isLaneT(t) ? icon("lanes") : Array.from(name || "d")[0].toUpperCase());
+  return el("span", { class: "cv-av", "aria-hidden": "true" }, t === MAIN ? el("span", { class: "logo" }) : icon(isLaneT(t) ? "lanes" : isProjT(t) ? "projects" : "chat"));
 }
+// The one list row of 채팅, 프로젝트 and 세션. A chat target (r.t) opens its conversation; r.open / r.sel / r.av let another list say what a tap opens,
+// which row is open and which icon it wears. A row is { header } for a group label, or { name, badge: [word, tone], unread }.
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
   if (r.mon) {
@@ -251,9 +254,9 @@ function convRow(r) {
       el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: r.name })),
       el("span", { class: "cv-m" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null));
   }
-  const sel = r.t === target && current === "chat";
-  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last ? "" : " none"}`, type: "button", "data-t": r.t, "aria-current": sel ? "true" : null, onclick: () => go("chat", r.t) },
-    convAvatar(r.t),
+  const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
+  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last ? "" : " none"}`, type: "button", "data-t": r.t || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
+    r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name })),
     el("span", { class: "cv-m" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
 }
@@ -299,6 +302,7 @@ function convChrome() {
   convSchedule();
 }
 matchMedia("(max-width: 1099px)").addEventListener("change", () => {
+  if (current === "projects" || current === "project") go(current, current === "project" ? ppCur : undefined);
   convChrome();
   if (convSync()) renderAll();
   document.querySelectorAll(".thead").forEach(b => { b.dataset.sig = ""; });

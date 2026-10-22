@@ -68,7 +68,6 @@ function openPalette() {
   inp.focus();
 }
 $("#cmdk").onclick = openPalette;
-$("#pal").onclick = openPalette;
 document.addEventListener("keydown", ev => { if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === "k") { ev.preventDefault(); openPalette(); } });
 
 
@@ -81,7 +80,9 @@ function parseHash(hash = location.hash) {
 function go(name, tgt) {
   closeMenu(false);
   if (!views.includes(name)) name = "home";
+  if (name === "projects" && ppWide()) { name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : "builtin:custom"; }
   if (name === "project" && !tgt) name = "projects";
+  if (name === "project") ppCur = tgt;
   // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
   chatList = name === "chat" && tgt === "list" && narrowChat();
   if (name === "chat" && tgt === "list") tgt = undefined;
@@ -94,7 +95,9 @@ function go(name, tgt) {
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
   const hash = tv ? (chatList ? "chat/list" : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name;
   navSync(name, hash);
-  for (const v of views) $(`#v-${v}`).hidden = v !== name;
+  const pp = name === "project" && ppWide();
+  for (const v of views) $(`#v-${v}`).hidden = v !== name && !(pp && v === "projects");
+  $("#views").classList.toggle("pp", pp);
   if ((name === "chat" || name === "activity") && !chatList) try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
   document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#appbar").classList.toggle("tv", tv);
@@ -108,7 +111,7 @@ function go(name, tgt) {
   if (tv) enterTarget();
   if (name === "home") { renderHome(); loadHomeData(); }
   if (name === "lanes") { laneSig = ""; renderLanes(); prjLoad(); }
-  if (name === "projects") { renderProjects(); prjLoad(); }
+  if (name === "projects" || pp) { renderProjects(); prjLoad(); }
   if (name === "monitoring") { renderMonitoring(); loadMonitors(); }
   if (name === "project") pmOpen(tgt);
   if (name === "settings") { loadUpdate(); loadAccounts(); renderSettings(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }

@@ -168,22 +168,8 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .brz.e { top: 14px; bottom: 16px; right: -3px; width: 8px; cursor: ew-resize; }
 .brz.s { left: 14px; right: 16px; bottom: -3px; height: 8px; cursor: ns-resize; }
 .board.narrow .brz { display: none; }
-/* 세션 탭: one status briefing card per session; the whole card is the tap target (18-lanes.js laneCard) */
-#v-lanes { max-width: 1120px; }
-.sb-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
-.sb-card { display: flex; flex-direction: column; gap: 8px; width: 100%; color: inherit; font: inherit; text-align: left; }
-.sb-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.sb-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 16px/22px var(--font); }
-.sb-proj { margin-top: -4px; padding-left: 16px; color: var(--fg-2); font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sb-proj.none { color: var(--fg-3); }
-.sb-state { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 15px; line-height: 22px; font-weight: 500; }
-.sb-state .t { min-width: 0; overflow-wrap: anywhere; }
-.sb-state .w, .sb-item .w { flex: none; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; white-space: nowrap; }
-.sb-recent { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: var(--r-ctl); background: var(--layer); }
-.sb-h { color: var(--fg-3); font-size: 12px; line-height: 16px; }
-.sb-item { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--fg-2); font-size: 14px; line-height: 20px; }
-.sb-item .t { min-width: 0; overflow-wrap: anywhere; }
-@media (max-width: 599px) { .sb-list { grid-template-columns: minmax(0, 1fr); } }
+/* 세션 and 프로젝트 tabs: a column of chat-list rows (.cv-list, 10-conversations.css) */
+#v-lanes, #v-projects { max-width: 640px; }
 
 .board.narrow { display: flex; flex-direction: column; gap: 12px; }
 .board.narrow .bi { position: relative; }
