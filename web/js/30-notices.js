@@ -53,7 +53,7 @@ function noticeLive(e) {
     NT.items = NT.items.filter(x => x.id !== e.id);
   } else if (e.kind === "notice_read") {
     const ids = new Set(e.ids || []);
-    for (const n of NT.items) if (e.all || ids.has(n.id)) n.read = true;
+    for (const n of NT.items) if (ids.has(n.id)) n.read = true;   // the hub names the ids it read (never "all"): what waits on the owner stays unread
   }
   if (typeof e.unread === "number") NT.unread = e.unread;
   ntPaint();
@@ -118,12 +118,12 @@ function ntAlignTop(node) {
   timeline.scrollTo({ top, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
 // A notice whose source message is on screen in the open chat counts as seen: read here and on the hub (so the other devices agree).
-// An open decision stays until it is answered.
+// What waits on the owner (ntNeeds) stays until it is answered or ignored.
 let ntSeenT = 0;
 function ntSeenSoon() { clearTimeout(ntSeenT); ntSeenT = setTimeout(ntSeen, 500); }
 function ntSeen() {
   if (current !== "chat" || document.visibilityState !== "visible" || !NT.loaded || !timeline.clientHeight) return;
-  const pending = NT.items.filter(n => !n.read && !ntOpenDec(n) && (n.src || n.open) === target && n.at);
+  const pending = NT.items.filter(n => !n.read && !ntNeeds(n) && (n.src || n.open) === target && n.at);
   if (!pending.length) return;
   const a = timeline.getBoundingClientRect(), shown = new Set();
   for (const m of tl.querySelectorAll("[data-ts]")) {
@@ -217,7 +217,7 @@ async function noticeOpenId(id) {
   return noticeOpen(n);
 }
 function ntRead(n) {
-  if (!n.id || n.read || !ntById(n.id)) return;
+  if (!n.id || n.read || ntNeeds(n) || !ntById(n.id)) return;
   n.read = true; NT.unread = Math.max(0, NT.unread - 1); ntPaint(); homeSoon();
   ntMarkRead({ ids: [n.id] });
 }
@@ -263,11 +263,11 @@ timeline.addEventListener("click", ev => {
 
 /* ---- decision sheet: the docked decision card (10-decision-card.js) over the current screen ---- */
 // Same card and same answer path as the one above the composer, for the conversation the notice came from; no navigation, no scroll.
-const DK = { node: null, box: null, ov: null, dc: null, seq: 0, opener: null, timer: 0, nid: "" };
+const DK = { node: null, box: null, ov: null, dc: null, seq: 0, opener: null, timer: 0, nid: "", ign: "" };   // ign: the notice its x (무시) ignores
 function dkClose(restore = true) {
   ++DK.seq; clearTimeout(DK.timer); DK.timer = 0;
   if (!DK.node) return;
-  DK.node.remove(); DK.node = DK.box = DK.dc = null; DK.nid = "";
+  DK.node.remove(); DK.node = DK.box = DK.dc = null; DK.nid = DK.ign = "";
   ovDone(DK.ov); DK.ov = null;
   document.removeEventListener("keydown", dkKey, true);
   if (restore && DK.opener && DK.opener.isConnected) DK.opener.focus({ preventScroll: true });
@@ -279,22 +279,24 @@ function dkPaint() {
   let dc = DK.dc;
   if (DK.nid) {   // a draft sheet follows its own notice
     const n = ntById(DK.nid);
-    if (!n || !ntOpenDec(n)) { const answered = !!n && ntIsDec(n); dkClose(false); if (answered) toast("답을 보냈어요"); return; }
+    if (!n || !ntOpenDec(n)) { const answered = !!n && ntIsDec(n) && !ntIgnoredDec(n); dkClose(false); if (answered) toast("답을 보냈어요"); return; }
   } else {
     dc = decisionOf(DK.dc.t);
     if (!dc || dc.sig !== DK.dc.sig) { dkClose(false); return; }   // answered, here or elsewhere
-    DK.dc = { ...dc, close: dkClose };
+    DK.dc = { ...dc, close: dkClose, ignore: DK.dc.ignore };
   }
   const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
   DK.box.dataset.key = dc.key;
   renderDecision(DK.box, DK.dc, picks, step);
   if (DC.st[dc.key] === "sent" && !DK.timer) DK.timer = setTimeout(() => { dkClose(false); toast("답을 보냈어요"); }, 900);
 }
-function dkOpen(dc, draft, nid) {
+function dkOpen(dc, draft, nid, ign) {
   dkClose(false);
   DK.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   DK.nid = nid || "";
-  DK.dc = { ...dc, close: dkClose, draft: draft || null };
+  const waits = !!ign && !!ign.id && ntNeeds(ign);
+  DK.ign = waits ? String(ign.id) : "";
+  DK.dc = { ...dc, close: dkClose, draft: draft || null, ignore: waits ? () => ntIgnore(ign) : null };
   DK.box = el("section", { class: "dcard dk-card", role: "dialog", "aria-label": "결정이 필요해요", tabindex: "-1" });
   DK.node = el("div", { class: "dk-bd", onpointerdown: ev => { if (ev.target === DK.node) dkClose(); } }, DK.box);
   document.body.append(DK.node);
@@ -314,13 +316,13 @@ async function ntAskSheet(n) {
   if (seq !== DK.seq) return true;   // another tap or a close came meanwhile
   const dc = decisionOf(t);
   if (!dc || !dc.blocks.length || (n.at && dc.at && dc.at !== n.at)) return false;
-  dkOpen(dc);
+  dkOpen(dc, null, "", n);
   return true;
 }
 // A draft waiting for send approval (hub/draft-approval.ts): the same sheet, built from the notice itself, with the draft above the three choices.
 function ntDraftSheet(n) {
   const d = n.decision;
-  dkOpen({ key: `dk:${n.id}`, t: d.to, sig: `dk:${n.id}`, at: d.reply_to || n.at || "", question: "", blocks: [{ title: n.title, options: d.options }] }, d.draft, String(n.id));
+  dkOpen({ key: `dk:${n.id}`, t: d.to, sig: `dk:${n.id}`, at: d.reply_to || n.at || "", question: "", blocks: [{ title: n.title, options: d.options }] }, d.draft, String(n.id), n);
 }
 // An entry that comes from a session names its parent project and status, in the words of sessionRow.
 function ntLaneNote(n) {
@@ -334,6 +336,10 @@ function ntLaneNote(n) {
 // button posts /api/notices/:id/answer: the hub sends the answer to the chat, session or login request the question came from.
 const ntIsDec = n => n.kind === "decision" && !!n.decision;
 const ntOpenDec = n => ntIsDec(n) && n.decision.state === "open";
+// Waits on the owner's action: an open decision or an [ask] item (the alert / message twin of one), unread and not ignored. Same rule as
+// hub/notices.ts needsAnswer, which keeps these unread however they are viewed: only an answer, a resolving signal or the x (무시) clears them.
+const ntNeeds = n => !n.read && !n.ignored && !n.dismissed && (ntOpenDec(n) || n.tone === "ask");
+const ntIgnoredDec = n => ntIsDec(n) && n.decision.state === "ignored";
 // The open decision a notice carries or links to: itself, or the one asked in the same conversation at the same time (the [ask] alert twin the hub
 // stores beside it), or the newest one of the conversation for that conversation's latest-message item (key msg:<conversation>).
 const ntLinkedDec = n => {
@@ -366,12 +372,41 @@ function ntFor(t, at, opt) {
   return NT.items.find(n => ntOpenDec(n) && n.decision.to === t && n.decision.group === 1 && n.decision.reply_to === at && n.decision.options.some(o => o.n === opt.n && o.label === opt.label)) || null;
 }
 
-// One row of the home card 답변 필요 (same markup as 08-home.js homeNowRow): tap = the detail sheet.
+// The x (무시) on a question that waits: off the badge and 답변 필요, kept in the history as 무시함, nothing is sent to the bot. The toast undoes it.
+async function ntIgnore(n) {
+  if (!n || !n.id || !ntNeeds(n)) return;
+  const id = String(n.id);
+  try {
+    const r = await api(`/api/notices/${enc(id)}/ignore`, "POST", {});
+    ntApply(r.item, r.unread);
+    if (r.ids && r.ids.length > 1) loadNotices();   // its alert / message twins changed too; their live frames follow, the refetch makes sure
+  } catch (err) { toast(err.message, true); return; }
+  if (NS.node && NS.id === id) ntSheetClose(false);
+  if (DK.node && DK.ign === id) dkClose(false);
+  toast("무시했어요", false, { label: "되돌리기", onclick: () => ntUnignore(id) }, 6000);
+}
+async function ntUnignore(id) {
+  try {
+    const r = await api(`/api/notices/${enc(id)}/unignore`, "POST", {});
+    ntApply(r.item, r.unread);
+    if (r.ids && r.ids.length > 1) loadNotices();
+    toast("다시 답변 필요로 돌렸어요");
+  } catch (err) { toast(err.message, true); }
+}
+// The 44px x of a row. It stops the click and key events so the row behind it does not open.
+function ntIgnoreBtn(n) {
+  return el("button", { type: "button", class: "ib nt-x", title: "무시", "aria-label": `${ntPlain(n.title) || "알림"} 무시`,
+    onclick: ev => { ev.stopPropagation(); ntIgnore(n); }, onkeydown: ev => ev.stopPropagation() }, icon("close"));
+}
+
+// One row of the home card 답변 필요 (same markup as 08-home.js homeNowRow): tap = the detail sheet, x = ignore.
 function ntHomeRow(n) {
-  return el("button", { class: "hr", type: "button", onclick: () => noticeOpen(n), "aria-label": `${ntPlain(n.title)} · 답변 필요` },
-    el("span", { class: "dot att" }),
-    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: ntPlain(n.title) })), el("span", { class: "ha", text: ntDecWhere(n.decision) })),
-    el("span", { class: "hs warn", text: "답변 필요" }));
+  return el("div", { class: "hr hrx" },
+    el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": `${ntPlain(n.title)} · 답변 필요` },
+      el("span", { class: "dot att" }),
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: ntPlain(n.title) })), el("span", { class: "ha", text: ntDecWhere(n.decision) })),
+      el("span", { class: "hs warn", text: "답변 필요" })),
+    ntIgnoreBtn(n));
 }
 
 /* ---- detail sheet ---- */
@@ -431,11 +466,12 @@ function ntSheetPaint() {
   if (NS.det) { ntDetailPaint(NS.det); return; }
   const n = ntById(NS.id);
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
-  const d = n.decision, open = d.state === "open", keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
+  const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
   const x = el("button", { type: "button", class: "ib", "aria-label": "닫기", onclick: () => ntSheetClose() });
   x.append(icon("close"));
   const kids = [
-    el("div", { class: "ds-hd" }, el("span", { class: `ds-ey${open ? "" : " done"}`, text: open ? "답변이 필요해요" : "답변했어요" }), x),
+    el("div", { class: "ds-hd" }, el("span", { class: `ds-ey${open ? "" : ignd ? " ign" : " done"}`, text: open ? "답변이 필요해요" : ignd ? "무시했어요" : "답변했어요" }),
+      open ? el("button", { type: "button", class: "ds-ign", "data-k": "ignore", disabled: NS.busy, onclick: () => ntIgnore(n) }, icon("close"), el("span", { text: "무시" })) : null, x),
     el("div", { class: "ds-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "답변이 필요해요" }),
       el("div", { class: "ds-m", text: `${ntDecWhere(d)} · ${ntWhen(n)}` }),
@@ -447,6 +483,11 @@ function ntSheetPaint() {
       o.desc ? el("span", { class: "ds-ds", text: o.desc }) : null));
     foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? "입력 창으로 가기" : "직접 답하기" }));
     if (NS.busy) foot.append(el("div", { class: "ds-st", role: "status", text: "보내는 중…" }));
+  } else if (ignd) {
+    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl ign", text: "무시했어요" }), el("span", { class: "ds-ra", text: "답하지 않고 넘겼어요" })));
+    foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "undo", onclick: () => ntUnignore(n.id), text: "되돌리기" }));
+    if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }));
+    foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" }));
   } else {
     foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: "이렇게 답했어요" }), el("span", { class: "ds-ra", text: ntPlain(d.answer || "") || "답했어요" })));
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }));

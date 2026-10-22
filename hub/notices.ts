@@ -32,6 +32,9 @@ export type Notice = {
 	read: boolean;
 	// Swiped away / x in the bell: kept (so a session's next progress line does not bring it back) but never listed or counted.
 	dismissed?: boolean;
+	// The owner's x on a question (ignoreNotice): off the badge and 답변 필요 but kept in the history, marked as ignored; undoable.
+	// Nothing is sent to the bot. The value is when it was ignored.
+	ignored?: string;
 	// kind "decision": a question that waits on the owner (title = the decision line, text = the whole asking message).
 	decision?: Decision;
 };
@@ -47,7 +50,8 @@ export type Decision = {
 	reply_to?: string;
 	// How many decisions the asking message held; with more than one the answer names its decision.
 	group: number;
-	state: "open" | "answered";
+	// "ignored": the owner waved it off with the x (Notice.ignored); the matter was not answered.
+	state: "open" | "answered" | "ignored";
 	// True when no answer came but the matter was resolved by other means (resolveAsks): the bot finished it, the owner acted outside the app.
 	resolved?: boolean;
 	answer?: string;
@@ -130,6 +134,12 @@ function retitleStored(): void {
 retitleStored();
 
 const isOpenDecision = (i: Notice) => i.decision?.state === "open";
+// A notice that waits on the owner's action: an open decision, or an [ask] item (the alert / message twin of one). Looking at it, anywhere, never
+// reads it; only an answer, a resolving signal (resolveAsks) or the owner's x (ignoreNotice) takes it off. Every other notice clears on view.
+export const needsAnswer = (i: Notice) => !i.read && !i.dismissed && !i.ignored && (isOpenDecision(i) || i.tone === "ask");
+// The alert / message twin of a decision: an [ask] item made by the same asking event, or by a repeat of the same text (a session's mid-turn line and its
+// turn-end report both post it), so it ends with the decision.
+const twinOf = (d: Notice, n: Notice) => !n.decision && n.tone === "ask" && (n.at === d.decision?.reply_to || n.text === d.text);
 
 // Oldest read item goes first; when everything is unread, the oldest one. An open decision is never dropped.
 function trim(): void {
@@ -164,6 +174,7 @@ function upsert(i: Input): Notice {
 		else if (reopened) {
 			old.read = false;
 			delete old.dismissed;
+			delete old.ignored;
 		}
 		item = old;
 	} else {
@@ -379,12 +390,25 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	return pc.blocks.map((b, i) => draft(b.title || (many ? `결정 ${i + 1}` : pc.question || line), b.options.map(o => ({ ...o })), pc.blocks.length, i));
 }
 
+// A repeat of an ask that is already answered or ignored makes its twin item before putDecision sees it: that twin ends the same way.
+function closeRepeat(old: Notice, at: string): void {
+	const hit = items.filter(n => n.at === at && twinOf(old, n) && !n.read);
+	for (const n of hit) {
+		n.read = true;
+		if (old.ignored) n.ignored = old.ignored;
+	}
+	if (hit.length && !replaying) {
+		save();
+		for (const n of hit) broadcast({ ts: at, kind: "notice", source: "gateway", item: n, unread: unreadCount() });
+	}
+}
+
 function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string }, at: string): void {
 	const old = items.find(n => n.key === d.key);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
 		if (old.decision.state === "open") return;
-		if (Date.parse(at) - Date.parse(old.decision.answered_at ?? "") < REASK_MS) return;
+		if (Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
 	const open = d.open ?? d.to;
 	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(d.draft ? { draft: d.draft } : {}) };
@@ -392,6 +416,7 @@ function putDecision(d: { key: string; title: string; detail: string; to: string
 	if (old) {
 		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}) });
 		delete old.dismissed;
+		delete old.ignored;
 		item = old;
 	} else {
 		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, key: d.key, ...(d.by ? { by: d.by } : {}), read: false, decision };
@@ -417,7 +442,7 @@ function settleDecision(item: Notice, answer: string, at = now(), resolved = fal
 	item.updated = at;
 	// The notices made by the same asking event (the alert and message twins) are settled with it.
 	if (d.reply_to !== undefined && !items.some(n => n !== item && isOpenDecision(n) && n.decision!.reply_to === d.reply_to))
-		readIds(items.filter(n => n.kind !== "decision" && !n.read && !n.dismissed && n.at === d.reply_to).map(n => n.id));
+		readIds(items.filter(n => twinOf(item, n) && !n.read && !n.dismissed).map(n => n.id));
 	if (replaying) return;
 	save();
 	broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
@@ -494,7 +519,7 @@ const isAsking = (i: Notice) => !i.dismissed && !i.decision?.to.startsWith("auth
 
 function readIds(ids: string[]): void {
 	if (!ids.length) return;
-	if (!replaying) return void markNoticesRead({ ids });
+	if (!replaying) return void markNoticesRead({ ids }, true);
 	for (const i of items) if (ids.includes(i.id) && !isOpenDecision(i)) i.read = true;
 }
 
@@ -652,14 +677,68 @@ export function readConversationNotices(conv: string, upTo: string): void {
 	if (ids.length) markNoticesRead({ ids });
 }
 
-export function markNoticesRead(sel: { ids?: unknown; all?: unknown }): { unread: number } {
+// `force` is for the hub's own closing paths (an answer settled the ask, a resolving signal): the request body can never set it, so a client's
+// view / "read all" leaves every item that needsAnswer unread. The frame always names the ids that were read (never "all"), so clients agree.
+export function markNoticesRead(sel: { ids?: unknown; all?: unknown }, force = false): { unread: number } {
 	const ids = Array.isArray(sel.ids) ? new Set(sel.ids.map(String)) : new Set<string>();
 	const all = sel.all === true;
-	const hit = items.filter(i => !i.read && !i.dismissed && !isOpenDecision(i) && (all || ids.has(i.id)));
+	const hit = items.filter(i => !i.read && !i.dismissed && !(force ? isOpenDecision(i) : needsAnswer(i)) && (all || ids.has(i.id)));
 	if (hit.length) {
 		for (const i of hit) i.read = true;
 		save();
-		broadcast({ ts: now(), kind: "notice_read", source: "gateway", ...(all ? { all: true } : { ids: hit.map(i => i.id) }), unread: unreadCount() });
+		broadcast({ ts: now(), kind: "notice_read", source: "gateway", ids: hit.map(i => i.id), unread: unreadCount() });
 	}
 	return { unread: unreadCount() };
+}
+
+// The ask notices that go with `item` (the decision and its alert / message twins, made by one asking message). Ignoring a decision of a message
+// with several decisions leaves the others and the twins; undoing brings the twins back with it.
+function askGroup(item: Notice, undo: boolean): Notice[] {
+	const on = (n: Notice) => (undo ? !!n.ignored : needsAnswer(n));
+	const group = new Set<Notice>([item]);
+	const roots = item.decision ? [item] : items.filter(d => d.decision && on(d) && twinOf(d, item));
+	for (const d of roots) {
+		group.add(d);
+		const siblings = items.some(n => n.decision && n.decision.reply_to === d.decision!.reply_to && on(n) && !roots.includes(n));
+		if (undo || !siblings) for (const t of items) if (on(t) && twinOf(d, t)) group.add(t);
+	}
+	return [...group];
+}
+
+function announce(group: Notice[], at: string): void {
+	save();
+	const unread = unreadCount();
+	for (const n of group) broadcast({ ts: at, kind: "notice", source: "gateway", item: n, unread });
+}
+
+// The x (무시) on a question that waits on the owner: it leaves the badge and 답변 필요, stays in the history marked ignored, answers nothing to
+// the bot, and every open page hears the changed items. An item that is not waiting (answered, resolved, plain info) cannot be ignored.
+export function ignoreNotice(id: unknown): { status: number; body: Record<string, unknown> } {
+	const item = items.find(i => i.id === String(id));
+	if (!item) return { status: 404, body: { error: "unknown notice" } };
+	if (item.ignored) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
+	if (!needsAnswer(item)) return { status: 409, body: { error: "not waiting" } };
+	const at = now(), group = askGroup(item, false);
+	for (const n of group) {
+		n.ignored = at;
+		n.read = true;
+		if (n.decision?.state === "open") n.decision.state = "ignored";
+	}
+	announce(group, at);
+	return { status: 200, body: { ok: true, item, ids: group.map(n => n.id), unread: unreadCount() } };
+}
+
+// Undo of ignoreNotice: the question waits again, unread, on every page.
+export function unignoreNotice(id: unknown): { status: number; body: Record<string, unknown> } {
+	const item = items.find(i => i.id === String(id));
+	if (!item) return { status: 404, body: { error: "unknown notice" } };
+	if (!item.ignored) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
+	const at = now(), group = askGroup(item, true);
+	for (const n of group) {
+		delete n.ignored;
+		n.read = false;
+		if (n.decision?.state === "ignored") n.decision.state = "open";
+	}
+	announce(group, at);
+	return { status: 200, body: { ok: true, item, ids: group.map(n => n.id), unread: unreadCount() } };
 }

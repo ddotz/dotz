@@ -6,7 +6,7 @@ import { CONFIG_FILE, paths } from "./config.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
-import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -287,7 +287,104 @@ test("a login request keeps its own end: the bot's resolve never touches it", ()
 	authSettled("rz1", "cancelled");
 });
 
+// ---- what waits on the owner stays unread however it is viewed; the x (무시) takes it off without answering ----
+const waiting = (title: string) => {
+	const d = decision(title);
+	return { id: d.id, twinId: stored().find(n => n.kind === "alert" && n.tone === "ask" && n.at === d.decision!.reply_to)!.id };
+};
+const stat = (id: string) => stored().find(n => n.id === id)!;
+const FAR = "9999-12-31T00:00:00.000Z";
+
+test("viewing a question that waits never reads it, on any path; a plain notice still clears on view", () => {
+	orchAsk("[ask] 보기만 해서는 남아야 해요\n**1) 예**\n**2) 아니요**");
+	const { id, twinId } = waiting("보기만 해서는 남아야 해요");
+	expect(stat(twinId)).toMatchObject({ kind: "alert", tone: "ask", read: false });
+	post("worklog", "[done] 보면 읽히는 기록이에요");
+	const info = byText("보면 읽히는 기록이에요")[0]!;
+	markNoticesRead({ ids: [id, twinId, info.id] });   // the sheet, the chat scroll, a push click
+	expect(stat(info.id).read).toBe(true);
+	markNoticesRead({ all: true });   // read all
+	readConversationNotices("alert", FAR);   // the conversation read position
+	setViewing("tab-wait", "alert", Date.now());   // the page shows the conversation
+	setViewing("tab-wait", "", Date.now());
+	expect(stat(id)).toMatchObject({ read: false, decision: { state: "open" } });
+	expect(stat(twinId).read).toBe(false);
+	expect(unreadCount()).toBeGreaterThanOrEqual(2);
+	expect(listNotices().items.slice(0, 1)[0]!.kind).toBe("decision");
+});
+
+test("answering a question that waits removes it and its twin from the unread count", async () => {
+	orchAsk("[ask] 답하면 사라져요\n**1) 예**\n**2) 아니요**");
+	const { id, twinId } = waiting("답하면 사라져요");
+	const before = unreadCount();
+	const r = await answerDecision(id, { n: 1 }, async () => {});
+	expect(r.status).toBe(200);
+	expect(stat(id)).toMatchObject({ read: true, decision: { state: "answered" } });
+	expect(stat(twinId).read).toBe(true);
+	expect(unreadCount()).toBe(before - 2);
+});
+
+test("a signal that the matter is over still clears a question that waits", () => {
+	orchAsk("[ask] 해결되면 사라져요\n**1) 예**\n**2) 아니요**");
+	const { id, twinId } = waiting("해결되면 사라져요");
+	resolveNotices({ ids: [id] });
+	expect(stat(id)).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
+	expect(stat(twinId).read).toBe(true);
+});
+
+test("ignoring takes a question and its twin off the count, keeps them in the history, answers nothing, and tells every page; undo brings them back", async () => {
+	orchAsk("[ask] 무시해 볼게요\n**1) 예**\n**2) 아니요**");
+	const { id, twinId } = waiting("무시해 볼게요");
+	let since = lastEventId();
+	const frames = () => (replayAfter(since) ?? []).map(f => JSON.parse(/data: (.*)\n/.exec(f)![1]!) as HubEvent).filter(e => e.kind === "notice");
+	const before = unreadCount();
+	const r = ignoreNotice(id);
+	expect(r.status).toBe(200);
+	expect(stat(id)).toMatchObject({ read: true, decision: { state: "ignored" } });
+	expect(stat(id).ignored).toBeString();
+	expect(stat(twinId)).toMatchObject({ read: true });
+	expect(stat(twinId).ignored).toBe(stat(id).ignored);
+	expect(unreadCount()).toBe(before - 2);
+	// live to every page: one notice frame per changed item, carrying the new count
+	expect(frames().map(e => (e.item as Notice).id).sort()).toEqual([id, twinId].sort());
+	expect(frames().every(e => e.unread === before - 2)).toBe(true);
+	// still listed (history), never an answer: a later owner message does not turn it into an answered one
+	expect(listNotices().items.some(n => n.id === id && n.decision?.state === "ignored")).toBe(true);
+	owner("아무 말");
+	expect(stat(id).decision).toMatchObject({ state: "ignored" });
+	expect(stat(id).decision!.answer).toBeUndefined();
+	// the same ask arriving again soon does not bring it back
+	orchAsk("[ask] 무시해 볼게요\n**1) 예**\n**2) 아니요**");
+	expect(stat(id).decision!.state).toBe("ignored");
+	expect(unreadCount()).toBe(before - 2);   // the repeat's own alert is ignored with it
+	// ignoring twice is harmless; an answered or plain notice cannot be ignored
+	expect(ignoreNotice(id).body.already).toBe(true);
+	expect(ignoreNotice(byText("보면 읽히는 기록이에요")[0]!.id).status).toBe(409);
+	expect(ignoreNotice("nope").status).toBe(404);
+	// survives a restart as stored
+	expect(JSON.parse(readFileSync(paths.notices, "utf8")).find((n: Notice) => n.id === id).decision.state).toBe("ignored");
+	// undo
+	since = lastEventId();
+	expect(unignoreNotice(id).status).toBe(200);
+	expect(stat(id)).toMatchObject({ read: false, decision: { state: "open" } });
+	expect(stat(id).ignored).toBeUndefined();
+	expect(stat(twinId)).toMatchObject({ read: false });
+	expect(unreadCount()).toBe(before + 1);   // the decision, its twin and the repeat's twin
+	expect(frames()).toHaveLength(3);
+	// it can be answered after the undo
+	expect((await answerDecision(id, { n: 2 }, async () => {})).status).toBe(200);
+	expect(stat(id).decision!.state).toBe("answered");
+});
+
+test("ignoring the alert twin ignores its decision too", () => {
+	orchAsk("[ask] 알림에서 무시해요\n**1) 예**\n**2) 아니요**");
+	const { id, twinId } = waiting("알림에서 무시해요");
+	expect(ignoreNotice(twinId).status).toBe(200);
+	expect(stat(id)).toMatchObject({ read: true, decision: { state: "ignored" } });
+});
+
 test("the store keeps at most 300 items, dropping read ones first and then the oldest", () => {
+	resolveNotices({ all: true });   // questions that wait are never read away: close them first so every item can be read
 	markNoticesRead({ all: true });
 	post("worklog", "읽지 않은 오래된 글");
 	for (let i = 0; i < NOTICE_CAP - 1; i++) post("worklog", `채우기 ${i}`);
