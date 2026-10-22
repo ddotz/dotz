@@ -4,7 +4,7 @@
 // the raw id appears only in API fields named `name`/`key` and on "-# " detail lines.
 import { aliasesFile, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
 import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, validateRules, writeRules } from "./account-rules.ts";
-import { type AccountSwitch, accountView, MAX_LOG_LINES, readPool, stickyAccount, type SwitchKind } from "./account-sticky.ts";
+import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, MAX_LOG_LINES, readPool, stickyAccount, type SwitchKind } from "./account-sticky.ts";
 import { TZ } from "./config.ts";
 import { type AccountReport, limitsText } from "./usage-account.ts";
 
@@ -200,8 +200,13 @@ const readBody = async (req: Request): Promise<Record<string, any>> => {
 // The /api/accounts routes (the caller has already checked the token). Undefined: not one of them.
 export async function accountsRoute(req: Request, url: URL): Promise<Response | undefined> {
 	const p = url.pathname;
-	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use"].includes(p)) return undefined;
+	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use", "/api/accounts/switches"].includes(p)) return undefined;
 	try {
+		// DELETE /api/accounts/switches?at=<time of the entry> removes one history entry; without `at` it clears the whole history.
+		if (req.method === "DELETE" && p === "/api/accounts/switches") {
+			const at = url.searchParams.get("at");
+			return Response.json({ removed: at === null ? clearSwitches() : deleteSwitch(at) });
+		}
 		if (req.method === "GET" && p === "/api/accounts") return Response.json(accountsBody());
 		if (req.method === "PUT" && p === "/api/accounts/alias") {
 			const b = await readBody(req);

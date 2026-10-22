@@ -84,5 +84,5 @@ work
 ## Where to look
 
 - `decisions.jsonl`: a line only when the account or the script's error changes (not on every run).
-- `~/.dotz/account-switches.jsonl`: every switch with its kind (`rule`, `script`, `manual`, `limit`, ...) and reason.
+- `~/.dotz/account-switches.jsonl`: every switch with its kind (`rule`, `script`, `manual`, `limit`, ...) and reason. Entries older than 3 days are pruned automatically (`accounts.history_days` in `config.json` changes it). The usage screen deletes one entry (X) or all of them; the API is `DELETE /api/accounts/switches[?at=<entry time>]`.
 - In chat: `/account` (current account and why, the rules), `/account <name>`, `/account auto`.
