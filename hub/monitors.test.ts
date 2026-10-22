@@ -24,7 +24,7 @@ test("one watch and one schedule come back in the owner-facing shape", async () 
 	const items = listMonitors();
 	expect(items).toHaveLength(2);
 	const watch = items.find(i => i.kind === "watch")!;
-	expect(watch).toMatchObject({ name: "demo watch", kind: "watch", channel: "ch:7", last_result: "ok", every: "10분마다" });
+	expect(watch).toMatchObject({ name: "demo watch", watch: "demo-watch", kind: "watch", channel: "ch:7", last_result: "ok", every: "10분마다" });
 	expect(Date.parse(watch.last_run!)).toBeGreaterThan(0);
 	expect(Date.parse(watch.next_run!) - Date.parse(watch.last_run!)).toBe(10 * 60_000);
 
