@@ -1,8 +1,9 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { appAsset, indexPage, webBuild } from "./webapp.ts";
 
-// Swipe a message sideways (touch) or press its hover button to reply to it: a quoted bar sits above the composer (x cancels it) and the send
-// carries the quoted message (hub/intake.ts parseReply). Touch is driven with synthetic pointer events; a real finger is a phone check.
+// Swipe a message from right to left (touch) or press its hover button to reply to it: a quoted bar sits above the composer (x cancels it)
+// and the send carries the quoted message (hub/intake.ts parseReply). Touch is driven with synthetic pointer events and synthetic touch
+// events (the same drag logic); a real finger is a phone check.
 const enc = new TextEncoder();
 const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
 const send = (e: object) => { for (const c of streams) c.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`)); };
@@ -53,23 +54,40 @@ beforeEach(async () => {
 	await waitFor(`document.querySelector('#tl [data-rid="m-owner-1"]') && document.querySelector('#tl [data-rid="${BOT_TS}"]')`);
 });
 
-// One touch drag on a message row: pointerdown at its centre (or at startX), then the moves, then the end event.
-const drag = (rid: string, moves: [number, number][], opts: { end?: "pointerup" | "pointercancel"; startX?: number } = {}) =>
+// One touch drag on a message row: the start event at its right part (or at startX), then the moves, then the end event. Moves are
+// [dx, dy] from the start; a negative dx is the finger moving left. via "touch" drives touchstart/touchmove/touchend instead of pointer events.
+type Via = "pointer" | "touch";
+const drag = (rid: string, moves: [number, number][], opts: { end?: "up" | "cancel"; startX?: number; via?: Via } = {}) =>
 	view.evaluate(`(() => {
+		const via = ${JSON.stringify(opts.via ?? "pointer")}, endKind = ${JSON.stringify(opts.end ?? "")};
 		const row = document.querySelector('#tl [data-rid="${rid}"]'), r = row.getBoundingClientRect();
-		const x0 = ${opts.startX ?? "null"} ?? r.left + 20, y0 = r.top + r.height / 2;
-		const fire = (type, x, y) => row.dispatchEvent(new PointerEvent(type, { pointerType: "touch", isPrimary: true, pointerId: 7, clientX: x, clientY: y, bubbles: true, cancelable: true }));
-		fire("pointerdown", x0, y0);
-		for (const [dx, dy] of ${JSON.stringify(moves)}) fire("pointermove", x0 + dx, y0 + dy);
-		window.__row = row; window.__fire = fire; window.__end = [x0, y0, ${JSON.stringify(moves.at(-1) ?? [0, 0])}];
-		if (${JSON.stringify(opts.end ?? "")}) fire(${JSON.stringify(opts.end ?? "")}, x0 + window.__end[2][0], y0 + window.__end[2][1]);
+		const x0 = ${opts.startX ?? "null"} ?? r.right - 20, y0 = r.top + r.height / 2;
+		const fire = (kind, x, y) => {
+			if (via === "pointer") {
+				const type = { down: "pointerdown", move: "pointermove", up: "pointerup", cancel: "pointercancel" }[kind];
+				row.dispatchEvent(new PointerEvent(type, { pointerType: "touch", isPrimary: true, pointerId: 7, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+				return null;
+			}
+			const type = { down: "touchstart", move: "touchmove", up: "touchend", cancel: "touchcancel" }[kind];
+			const t = { identifier: 3, clientX: x, clientY: y, target: row };
+			const e = new Event(type, { bubbles: true, cancelable: true });
+			Object.defineProperty(e, "touches", { value: kind === "up" || kind === "cancel" ? [] : [t] });
+			Object.defineProperty(e, "changedTouches", { value: [t] });
+			row.dispatchEvent(e);
+			return e.defaultPrevented;
+		};
+		const prevented = [];
+		fire("down", x0, y0);
+		for (const [dx, dy] of ${JSON.stringify(moves)}) prevented.push(fire("move", x0 + dx, y0 + dy));
+		window.__row = row; window.__fire = fire; window.__prevented = prevented; window.__end = [x0, y0, ${JSON.stringify(moves.at(-1) ?? [0, 0])}];
+		if (endKind) fire(endKind, x0 + window.__end[2][0], y0 + window.__end[2][1]);
 	})()`);
-const endDrag = () => view.evaluate(`window.__fire("pointerup", window.__end[0] + window.__end[2][0], window.__end[1] + window.__end[2][1])`);
+const endDrag = () => view.evaluate(`window.__fire("up", window.__end[0] + window.__end[2][0], window.__end[1] + window.__end[2][1])`);
 const bar = () => ev<{ hidden: boolean; au: string; ct: string } | null>(`(() => { const b = document.querySelector("#replybar"); return b ? { hidden: b.hidden, au: b.querySelector(".rp-au").textContent, ct: b.querySelector(".rp-ct").textContent } : null; })()`);
 
 describe("swipe to reply on a phone", () => {
 	test("a swipe past the threshold shows the quoted bar above the composer; the row follows the finger and snaps back", async () => {
-		await drag(BOT_TS, [[20, 2], [50, 3], [75, 3]]);
+		await drag(BOT_TS, [[-20, 2], [-50, 3], [-75, 3]]);
 		expect(await ev(`(() => { const r = window.__row; return { pull: r.classList.contains("rp-pull"), hit: r.classList.contains("rp-hit"), x: r.style.getPropertyValue("--rp-x"), ind: !!r.querySelector(".rp-ind") }; })()`)).toMatchObject({ pull: true, hit: true, ind: true });
 		await endDrag();
 		expect(await ev(`(() => { const r = window.__row; return { pull: r.classList.contains("rp-pull"), snap: r.classList.contains("rp-snap"), x: r.style.getPropertyValue("--rp-x"), ind: !!r.querySelector(".rp-ind") }; })()`)).toEqual({ pull: false, snap: true, x: "", ind: false });
@@ -79,20 +97,64 @@ describe("swipe to reply on a phone", () => {
 	});
 
 	test("under 60px, a vertical scroll, an edge start and a cancelled touch do not start a reply", async () => {
-		await drag(OWNER.mid, [[30, 1], [50, 2]], { end: "pointerup" });
+		await drag(OWNER.mid, [[-30, 1], [-50, 2]], { end: "up" });
 		expect(await bar()).toBeNull();
-		await drag(OWNER.mid, [[3, 20], [6, 60], [90, 70]], { end: "pointerup" });
+		await drag(OWNER.mid, [[-3, 20], [-6, 60], [-90, 70]], { end: "up" });
 		expect(await ev(`window.__row.classList.contains("rp-pull")`)).toBe(false);
 		expect(await bar()).toBeNull();
-		await drag(OWNER.mid, [[40, 2], [90, 2]], { end: "pointerup", startX: 10 });
+		await drag(OWNER.mid, [[-40, 2], [-90, 2]], { end: "up", startX: 388 });
 		expect(await bar()).toBeNull();
-		await drag(OWNER.mid, [[40, 2], [90, 2]], { end: "pointercancel" });
+		await drag(OWNER.mid, [[-40, 2], [-90, 2]], { end: "cancel" });
 		expect(await bar()).toBeNull();
 		expect(await ev(`window.__row.style.getPropertyValue("--rp-x")`)).toBe("");
 	});
 
+	test("a left-to-right drag does not start a reply, and the row does not move", async () => {
+		await drag(BOT_TS, [[20, 2], [60, 3], [90, 3]], { end: "up", startX: 40 });
+		expect(await ev(`(() => { const r = window.__row; return { pull: r.classList.contains("rp-pull"), snap: r.classList.contains("rp-snap"), ind: !!r.querySelector(".rp-ind") }; })()`)).toEqual({ pull: false, snap: false, ind: false });
+		expect(await bar()).toBeNull();
+		await drag(BOT_TS, [[20, 2], [60, 3], [90, 3]], { end: "up", startX: 40, via: "touch" });
+		expect(await bar()).toBeNull();
+	});
+
+	test("a right-edge start does not start a reply, a start 16px or more from the edge does", async () => {
+		await drag(OWNER.mid, [[-40, 2], [-90, 2]], { end: "up", startX: 380 });
+		expect(await bar()).toBeNull();
+		await drag(OWNER.mid, [[-40, 2], [-90, 2]], { end: "up", startX: 360 });
+		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
+	});
+
+	test("touch events: a right-to-left drag is cancelled once horizontal, moves the row left, shows the icon on the right and opens the bar", async () => {
+		await drag(BOT_TS, [[-5, 1], [-30, 2], [-75, 3]], { via: "touch" });
+		expect(await ev<boolean[]>(`window.__prevented`)).toEqual([false, true, true]);
+		expect(await ev(`(() => { const r = window.__row, ind = r.querySelector(".rp-ind"); return { hit: r.classList.contains("rp-hit"), indRight: ind.getBoundingClientRect().left > r.getBoundingClientRect().left + r.getBoundingClientRect().width / 2 }; })()`)).toEqual({ hit: true, indRight: true });
+		expect(await ev(`new DOMMatrix(getComputedStyle(window.__row).transform).m41 < 0`)).toBe(true);
+		await endDrag();
+		expect(await bar()).toEqual({ hidden: false, au: "dotz", ct: "내일 오전에 배포할게요" });
+	});
+
+	test("touch events: a vertical scroll is not cancelled and a short drag does not start a reply", async () => {
+		await drag(OWNER.mid, [[-2, 20], [-4, 60]], { end: "up", via: "touch" });
+		expect(await ev<boolean[]>(`window.__prevented`)).toEqual([false, false]);
+		expect(await bar()).toBeNull();
+		await drag(OWNER.mid, [[-30, 1], [-50, 2]], { end: "up", via: "touch" });
+		expect(await bar()).toBeNull();
+	});
+
+	test("a touchstart takes over from the pointer events of the same finger (a pointercancel mid-drag does not end it)", async () => {
+		await view.evaluate(`(() => {
+			const row = document.querySelector('#tl [data-rid="m-owner-1"]'), r = row.getBoundingClientRect(), x0 = r.right - 20, y0 = r.top + r.height / 2;
+			const pe = (type, x) => row.dispatchEvent(new PointerEvent(type, { pointerType: "touch", isPrimary: true, pointerId: 7, clientX: x, clientY: y0, bubbles: true, cancelable: true }));
+			const te = (type, x, ts) => { const t = { identifier: 3, clientX: x, clientY: y0, target: row }; const e = new Event(type, { bubbles: true, cancelable: true }); Object.defineProperty(e, "touches", { value: ts ? [] : [t] }); Object.defineProperty(e, "changedTouches", { value: [t] }); row.dispatchEvent(e); };
+			pe("pointerdown", x0); te("touchstart", x0);
+			te("touchmove", x0 - 30); pe("pointermove", x0 - 30); te("touchmove", x0 - 80); pe("pointercancel", x0 - 80);
+			te("touchend", x0 - 80, true);
+		})()`);
+		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
+	});
+
 	test("the x cancels the reply and the bar goes away", async () => {
-		await drag(OWNER.mid, [[30, 1], [80, 2]], { end: "pointerup" });
+		await drag(OWNER.mid, [[-30, 1], [-80, 2]], { end: "up" });
 		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
 		await view.click("#replybar .rp-x");
 		expect((await bar())?.hidden).toBe(true);
@@ -104,7 +166,7 @@ describe("swipe to reply on a phone", () => {
 	});
 
 	test("sending carries the quoted message (id, author, text), clears the bar, and the sent bubble shows the quote", async () => {
-		await drag(BOT_TS, [[30, 1], [80, 2]], { end: "pointerup" });
+		await drag(BOT_TS, [[-30, 1], [-80, 2]], { end: "up" });
 		await view.type("그럼 오늘은 테스트만요");
 		await view.evaluate(`document.querySelector("#send-btn").click()`);
 		while (!posted.length) await Bun.sleep(10);

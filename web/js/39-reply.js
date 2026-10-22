@@ -57,43 +57,48 @@ function rpQuote(e) {
   if (!r || !r.content) return null;
   return el("button", { class: "rpq", type: "button", onclick: () => rpJump(r.id) }, el("span", { class: "rpq-au", text: r.author === e.author ? "나" : r.author }), el("span", { class: "rpq-ct", text: r.content }));
 }
-// Swipe right on a message (touch / pen; a mouse uses the hover button). The row follows the finger with a rubber band, snaps at
-// RP_PULL, and a vertical drag (scroll) or a start at the screen edge (the browser's back gesture) is left alone.
-tl.addEventListener("pointerdown", ev => {
-  if (ev.pointerType === "mouse" || !ev.isPrimary || RP.drag) return;
-  const row = ev.target.closest("[data-rid]");
-  if (!row || ev.target.closest("a, button, summary, input, textarea, pre, table")) return;
-  if (ev.clientX < RP_EDGE || ev.clientX > innerWidth - RP_EDGE) return;
-  RP.drag = { row, id: ev.pointerId, x: ev.clientX, y: ev.clientY, dx: 0, lock: false, hit: false, ind: null };
-}, { passive: true });
-tl.addEventListener("pointermove", ev => {
+// Swipe a message from right to left (touch / pen; a mouse uses the hover button). The row follows the finger with a rubber band to the
+// left and the reply icon shows on the right; it snaps at RP_PULL. A vertical drag (scroll) or a start at a screen edge (the system back
+// gesture) is left alone. Touch events and pointer events feed the same drag; a touchstart takes over from the pointer events of the same
+// finger, because only touch events can be cancelled (preventDefault) once the drag is horizontal.
+function rpDown(src, id, row, tg, x, y) {
+  if (RP.drag || !row || !row.dataset.rid) return;
+  if (tg.closest("a, button, summary, input, textarea, pre, table")) return;
+  if (x < RP_EDGE || x > innerWidth - RP_EDGE) return;
+  RP.drag = { src, row, id, x, y, dx: 0, lock: false, hit: false, ind: null };
+}
+// Returns true while the drag is locked horizontal (the caller cancels the event then).
+function rpMove(src, id, x, y, ev) {
   const d = RP.drag;
-  if (!d || ev.pointerId !== d.id) return;
-  const dx = ev.clientX - d.x, dy = ev.clientY - d.y;
+  if (!d || d.src !== src || id !== d.id) return false;
+  const dx = d.x - x, dy = y - d.y; // dx > 0: the finger moved left
   if (!d.lock) {
-    if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { RP.drag = null; return; }
-    if (dx <= 12 || dx <= Math.abs(dy) * 1.6) return;
+    if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { RP.drag = null; return false; }
+    if (dx <= 12 || dx <= Math.abs(dy) * 1.6) return false;
     d.lock = true;
     d.ind = el("span", { class: "rp-ind" }, icon("reply"));
     d.row.classList.remove("rp-snap");
     d.row.classList.add("rp-pull");
     d.row.append(d.ind);
-    try { d.row.setPointerCapture(ev.pointerId); } catch {}
+    try { const sel = getSelection(); if (sel && !sel.isCollapsed) sel.removeAllRanges(); } catch {}
+    if (src === "p") try { d.row.setPointerCapture(id); } catch {}
   }
   d.dx = dx;
-  const x = Math.min(RP_MAX, dx <= RP_PULL ? Math.max(0, dx) : RP_PULL + (dx - RP_PULL) * 0.3);
-  d.row.style.setProperty("--rp-x", x + "px");
-  d.row.style.setProperty("--rp-p", String(Math.min(1, x / RP_PULL)));
+  const px = Math.min(RP_MAX, dx <= RP_PULL ? Math.max(0, dx) : RP_PULL + (dx - RP_PULL) * 0.3);
+  d.row.style.setProperty("--rp-x", px + "px");
+  d.row.style.setProperty("--rp-p", String(Math.min(1, px / RP_PULL)));
   const hit = dx >= RP_PULL;
   if (hit !== d.hit) {
     d.hit = hit;
     d.row.classList.toggle("rp-hit", hit);
     if (hit) try { navigator.vibrate && navigator.vibrate(8); } catch {}
   }
-});
-function rpEnd(ev, ok) {
+  if (ev.cancelable) ev.preventDefault();
+  return true;
+}
+function rpEnd(src, id, ok) {
   const d = RP.drag;
-  if (!d || ev.pointerId !== d.id) return;
+  if (!d || d.src !== src || id !== d.id) return;
   RP.drag = null;
   if (!d.lock) return;
   const row = d.row;
@@ -103,5 +108,23 @@ function rpEnd(ev, ok) {
   row.style.removeProperty("--rp-x"); row.style.removeProperty("--rp-p");
   if (ok && d.dx >= RP_PULL) rpStart(row);
 }
-tl.addEventListener("pointerup", ev => rpEnd(ev, true));
-tl.addEventListener("pointercancel", ev => rpEnd(ev, false));
+tl.addEventListener("pointerdown", ev => {
+  if (ev.pointerType === "mouse" || !ev.isPrimary) return;
+  rpDown("p", ev.pointerId, ev.target.closest("[data-rid]"), ev.target, ev.clientX, ev.clientY);
+}, { passive: true });
+tl.addEventListener("pointermove", ev => { rpMove("p", ev.pointerId, ev.clientX, ev.clientY, ev); });
+tl.addEventListener("pointerup", ev => rpEnd("p", ev.pointerId, true));
+tl.addEventListener("pointercancel", ev => rpEnd("p", ev.pointerId, false));
+tl.addEventListener("touchstart", ev => {
+  if (ev.touches.length !== 1) { if (RP.drag && RP.drag.src === "t") rpEnd("t", RP.drag.id, false); return; }
+  const t = ev.changedTouches[0];
+  if (RP.drag && RP.drag.src === "p" && !RP.drag.lock) RP.drag = null;
+  rpDown("t", t.identifier, ev.target.closest("[data-rid]"), ev.target, t.clientX, t.clientY);
+}, { passive: true });
+tl.addEventListener("touchmove", ev => {
+  const t = [...ev.changedTouches].find(c => RP.drag && c.identifier === RP.drag.id);
+  if (t) rpMove("t", t.identifier, t.clientX, t.clientY, ev);
+}, { passive: false });
+const rpTouchEnd = ok => ev => { for (const t of ev.changedTouches) rpEnd("t", t.identifier, ok); };
+tl.addEventListener("touchend", rpTouchEnd(true));
+tl.addEventListener("touchcancel", rpTouchEnd(false));

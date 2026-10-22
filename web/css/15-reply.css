@@ -1,9 +1,9 @@
 /* ---------- reply: quoted message above the composer, the swipe pull and the desktop hover button (web/js/39-reply.js) ---------- */
 [data-rid] { position: relative; touch-action: pan-y; }
-[data-rid].rp-pull, [data-rid].rp-snap { transform: translateX(var(--rp-x, 0px)); }
+[data-rid].rp-pull, [data-rid].rp-snap { transform: translateX(calc(var(--rp-x, 0px) * -1)); }
 [data-rid].rp-snap { transition: transform .18s cubic-bezier(.2, .8, .2, 1); }
-[data-rid].rp-pull { user-select: none; -webkit-user-select: none; }
-.rp-ind { position: absolute; top: 50%; left: calc(var(--rp-x, 0px) * -1 + 6px); width: 28px; height: 28px; margin-top: -14px; display: grid; place-items: center; border-radius: 50%; background: var(--hover); color: var(--fg-3); opacity: var(--rp-p, 0); transform: scale(calc(.6 + .4 * var(--rp-p, 0))); transition: background .12s, color .12s; pointer-events: none; }
+[data-rid].rp-pull { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.rp-ind { position: absolute; top: 50%; right: calc(var(--rp-x, 0px) * -1 + 6px); width: 28px; height: 28px; margin-top: -14px; display: grid; place-items: center; border-radius: 50%; background: var(--hover); color: var(--fg-3); opacity: var(--rp-p, 0); transform: scale(calc(.6 + .4 * var(--rp-p, 0))); transition: background .12s, color .12s; pointer-events: none; }
 .rp-hit > .rp-ind { background: var(--accent); color: var(--on-accent); transform: scale(1.12); }
 @keyframes rp-flash { from { background: color-mix(in srgb, var(--accent) 16%, transparent); } to { background: transparent; } }
 [data-rid].rp-flash { animation: rp-flash 1.2s ease-out; border-radius: var(--r-ctl); }
