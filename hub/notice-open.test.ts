@@ -35,7 +35,7 @@ describe("notice kind -> action", () => {
 		["failed session report", { kind: "result", tone: "fail", src: "lane:a" }, "session"],
 		["worklog item", { kind: "worklog", tone: "", src: "worklog" }, "worklog"],
 		["monitor notice", { kind: "watch", tone: "", title: "디스크 감시", src: "alert" }, "monitor"],
-		["monitor that is gone", { kind: "watch", tone: "", title: "없는 감시", src: "alert" }, "message"],
+		["monitor that is gone", { kind: "watch", tone: "", title: "없는 감시", src: "alert" }, "monitor"],
 		["plain alert", { kind: "alert", tone: "", src: "alert" }, "message"],
 		["plain message", { kind: "message", tone: "", src: "main" }, "message"],
 	])("%s", (_name, n, want) => {
@@ -103,7 +103,7 @@ describe("noticeOpen dispatch", () => {
 		expect(await run({ act: "sheet", id: "7" })).toEqual([["sheet", "7"]]);
 		expect(await run({ act: "detail", id: "8" })).toEqual([["read", { act: "detail", id: "8" }], ["detail", { act: "detail", id: "8" }]]);
 		expect((await run({ act: "session", id: "9" }))[1]![0]).toBe("session");
-		expect(await run({ act: "monitor", title: "디스크 감시" })).toEqual([["read", { act: "monitor", title: "디스크 감시" }], ["monitor", "디스크 감시"]]);
+		expect(await run({ act: "monitor", title: "디스크 감시" })).toEqual([["read", { act: "monitor", title: "디스크 감시" }], ["monitor", { act: "monitor", title: "디스크 감시" }]]);
 		expect(await run({ act: "worklog", id: "1" })).toEqual([["jump", { act: "worklog", id: "1" }]]);
 		expect(await run({ act: "message", id: "2" })).toEqual([["jump", { act: "message", id: "2" }]]);
 		expect(await run(null)).toEqual([]);

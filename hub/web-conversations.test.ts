@@ -50,7 +50,7 @@ describe("알림 and 작업 기록 are conversations of their own", () => {
 		expect(p.eventTarget(out(2, "worklog", { update_key: "lane:a" }))).toBe("worklog");
 		expect(p.eventTarget({ ts: at(3), kind: "out", source: "orchestrator", target: "web:alert", text: "답" })).toBe("alert");
 		expect(p.eventTarget({ ts: at(4), kind: "message", source: "web", channel: "web:worklog", text: "물음" })).toBe("worklog");
-		expect(p.eventTarget({ ts: at(5), kind: "watch", source: "watch:w", watch: "w", channels: ["1"], text: "x" })).toBe("alert");
+		expect(p.eventTarget({ ts: at(5), kind: "watch", source: "watch:w", watch: "w", channels: ["1"], text: "x" })).toBeNull();
 		expect(p.eventTarget({ ts: at(6), kind: "out", source: "orchestrator", target: "web", text: "답" })).toBe("main");
 		expect(p.eventTarget({ ts: at(7), kind: "out", source: "orchestrator", target: "ch:7", text: "답" })).toBe("ch:7");
 		expect(p.eventTarget({ ts: at(8), kind: "out", source: "lane:a", target: "lane:a", text: "답" })).toBe("lane:a");

@@ -241,7 +241,7 @@ function convRows() {
   if (ended.length) rows.push({ ended: true, key: `${ended.map(l => l.name).join("|")}|${endedOpen}` });
   return rows;
 }
-const FIXED_DESC = { alert: "경고와 모니터링 소식, 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
+const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
 // Every row has an icon, never a letter (so any name reads the same): the app's own mark for the main assistant, a bell / list for the fixed
 // feeds, the folder the 프로젝트 tab uses for a project, the session icon for a session.
 function convAvatar(t) {
