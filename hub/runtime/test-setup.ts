@@ -8,6 +8,7 @@ import { installClock } from "./test-clock.ts";
 
 // Tuning knobs and lane/hub markers of whatever shell runs the tests must not leak into the code under test.
 for (const k of Object.keys(process.env)) if (k.startsWith("DOTZ_") && k !== "DOTZ_TEST_DIR") delete process.env[k];
+process.env.DOTZ_WEB_LIVE = "1";   // tests read the working-tree web files; hub/web-committed.test.ts turns this off
 if (!process.env.DOTZ_TEST_DIR) {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-test-"));
 	process.env.DOTZ_TEST_DIR = dir;

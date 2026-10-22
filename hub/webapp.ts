@@ -5,14 +5,27 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { compressResponse } from "./compress.ts";
+import { publishedWeb } from "./web-committed.ts";
 
-const WEB_DIR = join(import.meta.dir, "..", "web");
+const WEB_DIR = process.env.DOTZ_WEB_DIR ?? join(import.meta.dir, "..", "web");
+// The committed web/ (hub/web-committed.ts), or undefined to read the working tree.
+const committed = () => publishedWeb(join(WEB_DIR, ".."));
+/** Text of one web/ file from the committed tree, undefined when the disk is the source. */
+export const committedText = (rel: string): string | undefined => committed()?.files.get(rel);
 type Kind = "js" | "css";
 const cache: Partial<Record<Kind, { key: string; text: string; etag: string }>> = {};
 
-export const moduleFiles = (kind: Kind): string[] => readdirSync(join(WEB_DIR, kind)).filter(f => f.endsWith(`.${kind}`)).sort();
-const filesKey = (kind: Kind): string => moduleFiles(kind).map(f => { const st = statSync(join(WEB_DIR, kind, f)); return `${f}:${st.size}:${st.mtimeMs}`; }).join("|");
-const joined = (kind: Kind): string => moduleFiles(kind).map(f => readFileSync(join(WEB_DIR, kind, f), "utf8")).join("\n");
+export const moduleFiles = (kind: Kind): string[] => {
+	const snap = committed();
+	if (snap) return [...snap.files.keys()].filter(p => p.startsWith(`${kind}/`)).map(p => p.slice(kind.length + 1)).sort();
+	return readdirSync(join(WEB_DIR, kind)).filter(f => f.endsWith(`.${kind}`)).sort();
+};
+const filesKey = (kind: Kind): string => {
+	const snap = committed();
+	if (snap) return snap.tree;
+	return moduleFiles(kind).map(f => { const st = statSync(join(WEB_DIR, kind, f)); return `${f}:${st.size}:${st.mtimeMs}`; }).join("|");
+};
+const joined = (kind: Kind): string => moduleFiles(kind).map(f => committedText(`${kind}/${f}`) ?? readFileSync(join(WEB_DIR, kind, f), "utf8")).join("\n");
 
 // The web build id: a hash of every script and style file, so it changes with each web change and needs no hand-kept version.
 // The script carries it as WEB_BUILD and /api/state reports it; a page that runs an older one fetches the new shell (23-installable-app-web.js).
@@ -36,9 +49,6 @@ export function bundle(kind: Kind): { text: string; etag: string } {
 	return next;
 }
 
-// The whole page source (markup + styles + script) for tests that look for a class or a call anywhere in the web app.
-export const webSource = (): string => [readFileSync(join(WEB_DIR, "index.html"), "utf8"), bundle("css").text, bundle("js").text].join("\n");
-
 export function appAsset(req: Request, path: string): Promise<Response> | undefined {
 	const kind: Kind | undefined = path === "/app.js" ? "js" : path === "/app.css" ? "css" : undefined;
 	if (!kind || (req.method !== "GET" && req.method !== "HEAD")) return undefined;
@@ -54,9 +64,10 @@ const notModified = (req: Request, etag: string): boolean => (req.headers.get("i
 // GET / : the page markup, revalidated by ETag (size + mtime) so a warm open costs one 304.
 export function indexPage(req: Request): Promise<Response> {
 	const file = join(WEB_DIR, "index.html");
-	const st = statSync(file);
-	const etag = `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
+	const html = committedText("index.html");
+	const st = html === undefined ? statSync(file) : undefined;
+	const etag = st ? `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"` : `W/"${createHash("sha1").update(html!).digest("hex").slice(0, 16)}"`;
 	const headers = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", ETag: etag };
 	if (notModified(req, etag)) return Promise.resolve(new Response(null, { status: 304, headers }));
-	return compressResponse(req, new Response(req.method === "HEAD" ? null : readFileSync(file, "utf8"), { headers }), etag);
+	return compressResponse(req, new Response(req.method === "HEAD" ? null : html ?? readFileSync(file, "utf8"), { headers }), etag);
 }
