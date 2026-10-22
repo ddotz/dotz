@@ -88,12 +88,12 @@ describe("the x (무시) in a headless browser", () => {
 
 		// surface 3: the decision sheet header
 		await phone.evaluate(`document.querySelector(".hn .hrx .hrx-m").click()`);
-		await waitFor(phone, `document.querySelector(".ds-sheet .ds-ign")`);
-		const x3 = await rect(phone, ".ds-sheet .ds-ign");
-		const sheet = await rect(phone, ".ds-sheet");
+		await waitFor(phone, `document.querySelector(".fs-card .fs-ign")`);
+		const x3 = await rect(phone, ".fs-card .fs-ign");
+		const sheet = await rect(phone, ".fs-card");
 		expect(x3!.h).toBeGreaterThanOrEqual(44);
 		expect(x3!.right).toBeLessThanOrEqual(sheet!.right);
-		expect(await phone.evaluate(`[...document.querySelectorAll(".ds-hd > *")].every(e => e.getBoundingClientRect().right <= 390)`)).toBe(true);
+		expect(await phone.evaluate(`[...document.querySelectorAll(".fs-hd > *")].every(e => e.getBoundingClientRect().right <= 390)`)).toBe(true);
 		expect(await phone.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
 		await settled(phone);
 		await Bun.write(`${SNAP}/sheet-390.png`, await phone.screenshot());
@@ -103,8 +103,8 @@ describe("the x (무시) in a headless browser", () => {
 		expect(twin().read).toBe(false);
 
 		// ignore from the sheet: leaves 답변 필요 here and on the other page, the toast offers the undo, the hub keeps it as ignored
-		await phone.evaluate(`document.querySelector(".ds-sheet .ds-ign").click()`);
-		await waitFor(phone, `document.querySelector(".snack") && /무시했어요/.test(document.querySelector(".snack").textContent) && !document.querySelector(".ds-sheet")`);
+		await phone.evaluate(`document.querySelector(".fs-card .fs-ign").click()`);
+		await waitFor(phone, `document.querySelector(".snack") && /무시했어요/.test(document.querySelector(".snack").textContent) && !document.querySelector(".fs-card")`);
 		await waitFor(phone, `!document.querySelector(".hn .hrx")`);
 		await waitFor(desk, `!document.querySelector(".hn .hrx")`);
 		expect(item().decision!.state).toBe("ignored");
@@ -124,12 +124,12 @@ describe("the x (무시) in a headless browser", () => {
 		// the x on the home row ignores without opening the sheet
 		await phone.evaluate(`document.querySelector(".hn .hrx .nt-x").click()`);
 		await waitFor(phone, `!document.querySelector(".hn .hrx") && document.querySelector(".snack")`);
-		expect(await phone.evaluate(`!!document.querySelector(".ds-sheet")`)).toBe(false);
+		expect(await phone.evaluate(`!!document.querySelector(".fs-card")`)).toBe(false);
 		expect(item().decision!.state).toBe("ignored");
 		// its history entry says it was ignored
 		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(item().id)})`);
-		await waitFor(phone, `document.querySelector(".ds-ey.ign")`);
-		expect(await phone.evaluate(`document.querySelector(".ds-ey").textContent`)).toBe("무시했어요");
+		await waitFor(phone, `document.querySelector(".fs-ey.ign")`);
+		expect(await phone.evaluate(`document.querySelector(".fs-ey").textContent`)).toBe("무시했어요");
 		await settled(phone);
 		await Bun.write(`${SNAP}/history-390.png`, await phone.screenshot());
 		await desk.evaluate(`document.querySelectorAll(".snack").forEach(n => n.remove())`);

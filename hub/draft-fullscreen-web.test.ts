@@ -4,7 +4,7 @@ import { emit, sseResponse } from "./events.ts";
 import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount } from "./notices.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// Send-approval drafts open as a full-screen view (a large dialog on desktop); every other decision keeps the bottom sheet.
+// Send-approval drafts open as a full-screen view (a large dialog on desktop); every other decision uses the same full-screen frame (hub/overlay-fullscreen-web.test.ts) without the large size.
 // Headless browser against the real notice store; the decisions are fixtures and nothing is sent.
 const SNAP = "/tmp/dotz-draft-fullscreen";
 const json = (v: unknown, status = 200) => Response.json(v, { status });
@@ -56,7 +56,7 @@ afterAll(() => {
 });
 
 describe("draft approval opens full screen", () => {
-	test("a draft decision opens the full-screen view with the buttons always visible; any other decision opens the sheet", async () => {
+	test("a draft decision opens the full-screen view with the buttons always visible; any other decision opens the normal-size frame", async () => {
 		resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });
 		markNoticesRead({ all: true });
 		draft("d-full-1");
@@ -65,17 +65,16 @@ describe("draft approval opens full screen", () => {
 		const pn = find(n => !n.decision?.draft && n.title === "그냥 결정이에요");
 		expect(dn.decision!.draft!.body).toContain("28번째 줄");
 
-		// phone 390: the view covers the screen above the tab bar
+		// phone 390: the view covers the whole screen, tab bar included
 		const phone = await open(390, 844);
 		await waitFor(phone, `typeof noticeSheetOpen === "function" && document.querySelector(".hn")`);
 		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(String(dn.id))})`);
-		await waitFor(phone, `document.querySelector(".dk-bd.dk-full .dc-act")`);
+		await waitFor(phone, `document.querySelector(".fs-bd .fs-card.tall .dc-act")`);
 		await settled(phone);
-		expect(await phone.evaluate(`!!document.querySelector(".ds-sheet")`)).toBe(false);
-		const card = (await box(phone, ".dk-full-card"))!;
+				const card = (await box(phone, ".fs-card.tall"))!;
 		expect(card.w).toBe(390);
 		expect(card.t).toBe(0);
-		expect(card.h).toBeGreaterThan(844 - 80);
+		expect(card.h).toBe(844);
 		const inside = async (sel: string) => {
 			const b = (await box(phone, sel))!;
 			expect(b).toBeTruthy();
@@ -83,64 +82,65 @@ describe("draft approval opens full screen", () => {
 			expect(b.b).toBeLessThanOrEqual(card.b);
 			return b;
 		};
-		await inside(".dc-dhd");
-		await inside(".dc-dhd .dc-ign");
-		await inside(".dc-dhd .dc-fold");
+		await inside(".fs-hd");
+		await inside(".fs-hd .fs-ign");
+		await inside(".fs-hd .fs-x");
 		const send = await inside(".dc-act.main");
 		expect((await inside(".dc-acts .dc-act:nth-child(2)")).h).toBeGreaterThanOrEqual(44);
 		expect(send.h).toBeGreaterThanOrEqual(48);
-		expect(await phone.evaluate(`document.querySelector(".dc-dbody").scrollHeight > document.querySelector(".dc-dbody").clientHeight + 200`)).toBe(true);
+		expect(await phone.evaluate(`document.querySelector(".fs-body").scrollHeight > document.querySelector(".fs-body").clientHeight + 200`)).toBe(true);
 		await Bun.write(`${SNAP}/draft-390-top.png`, await phone.screenshot());
 
 		// scrolled to the end of the draft: header and footer did not move
-		const footTop = (await box(phone, ".dc-ft"))!.t;
-		await phone.evaluate(`document.querySelector(".dc-dbody").scrollTop = 1e6`);
+		const footTop = (await box(phone, ".fs-ft"))!.t;
+		await phone.evaluate(`document.querySelector(".fs-body").scrollTop = 1e6`);
 		await settled(phone);
-		expect((await box(phone, ".dc-ft"))!.t).toBe(footTop);
-		expect((await box(phone, ".dc-dhd"))!.t).toBe(card.t);
+		expect((await box(phone, ".fs-ft"))!.t).toBe(footTop);
+		expect((await box(phone, ".fs-hd"))!.t).toBe(card.t);
 		await inside(".dc-act.main");
 		await Bun.write(`${SNAP}/draft-390-scrolled.png`, await phone.screenshot());
 
 		// 고치기: the input and its send button stay in the footer
 		await phone.evaluate(`document.querySelector(".dc-acts .dc-act:nth-child(2)").click()`);
-		await waitFor(phone, `document.querySelector(".dc-ft .dc-note")`);
+		await waitFor(phone, `document.querySelector(".fs-ft .dc-note")`);
 		await waitFor(phone, `document.activeElement && document.activeElement.classList.contains("dc-note")`);
-		await inside(".dc-ft .dc-note");
-		await inside(".dc-ft .dc-go");
-		expect(await phone.evaluate(`!!document.querySelector(".dc-ft .dc-go").disabled`)).toBe(true);
+		await inside(".fs-ft .dc-note");
+		await inside(".fs-ft .dc-go");
+		expect(await phone.evaluate(`!!document.querySelector(".fs-ft .dc-go").disabled`)).toBe(true);
 		await phone.evaluate(`(() => { const t = document.querySelector(".dc-note"); t.value = "인사말을 더 짧게 해 주세요"; t.dispatchEvent(new Event("input")); })()`);
-		expect(await phone.evaluate(`!!document.querySelector(".dc-ft .dc-go").disabled`)).toBe(false);
+		expect(await phone.evaluate(`!!document.querySelector(".fs-ft .dc-go").disabled`)).toBe(false);
 		await settled(phone);
 		await Bun.write(`${SNAP}/draft-390-edit.png`, await phone.screenshot());
 		await phone.evaluate(`dkClose()`);
-		await waitFor(phone, `!document.querySelector(".dk-bd")`);
+		await waitFor(phone, `!document.querySelector(".fs-bd")`);
 
 		// the same view at 360
 		const small = await open(360, 740);
 		await waitFor(small, `typeof noticeSheetOpen === "function" && document.querySelector(".hn")`);
 		await small.evaluate(`noticeSheetOpen(${JSON.stringify(String(dn.id))})`);
-		await waitFor(small, `document.querySelector(".dk-bd.dk-full .dc-act")`);
+		await waitFor(small, `document.querySelector(".fs-bd .fs-card.tall .dc-act")`);
 		await settled(small);
-		const sc = (await box(small, ".dk-full-card"))!;
+		const sc = (await box(small, ".fs-card.tall"))!;
 		expect(sc.w).toBe(360);
-		for (const sel of [".dc-act.main", ".dc-acts .dc-act:nth-child(3)", ".dc-dhd .dc-ign", ".dc-dhd .dc-fold"]) expect((await box(small, sel))!.b).toBeLessThanOrEqual(sc.b);
+		for (const sel of [".dc-act.main", ".dc-acts .dc-act:nth-child(3)", ".fs-hd .fs-ign", ".fs-hd .fs-x"]) expect((await box(small, sel))!.b).toBeLessThanOrEqual(sc.b);
 		await Bun.write(`${SNAP}/draft-360.png`, await small.screenshot());
 
-		// a plain decision keeps the bottom sheet
+		// a plain decision is full screen on the phone too, but not the large dialog
 		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(String(pn.id))})`);
-		await waitFor(phone, `document.querySelector(".ds-sheet")`);
-		expect(await phone.evaluate(`!!document.querySelector(".dk-full, .dk-full-card")`)).toBe(false);
-		const sheet = (await box(phone, ".ds-sheet"))!;
-		expect(sheet.h).toBeLessThan(844 / 2);
-		await phone.evaluate(`document.querySelector(".ds-bd").remove()`);
+		await waitFor(phone, `document.querySelector(".fs-card .ds-opt")`);
+		await settled(phone);
+		expect(await phone.evaluate(`!!document.querySelector(".fs-card.tall")`)).toBe(false);
+		const sheet = (await box(phone, ".fs-card"))!;
+		expect(sheet.h).toBe(844);
+		await phone.evaluate(`ntSheetClose()`);
 
 		// desktop: a large centered dialog
 		const desk = await open(1280, 800);
 		await waitFor(desk, `typeof noticeSheetOpen === "function" && document.querySelector(".hn")`);
 		await desk.evaluate(`noticeSheetOpen(${JSON.stringify(String(dn.id))})`);
-		await waitFor(desk, `document.querySelector(".dk-bd.dk-full .dc-act")`);
+		await waitFor(desk, `document.querySelector(".fs-bd .fs-card.tall .dc-act")`);
 		await settled(desk);
-		const dc = (await box(desk, ".dk-full-card"))!;
+		const dc = (await box(desk, ".fs-card.tall"))!;
 		expect(dc.w).toBeGreaterThanOrEqual(600);
 		expect(dc.h).toBeGreaterThanOrEqual(600);
 		expect(Math.abs((dc.l + dc.r) / 2 - 640)).toBeLessThanOrEqual(2);
