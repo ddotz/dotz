@@ -174,7 +174,7 @@ export const ko: Catalog = {
 	inboxFirst: channel => `(새 작업 채널 #${channel}: 오너는 채널 단위로 일을 맡겨요. 이 채널의 작업과 보고는 여기에 두세요. 이 채널의 일에 로그인 유지나 시간이 지나며 확인할 것이 필요하면 직접 dotz_channel setup으로 이 채널에 설정하세요.)`,
 	inboxBurst: n => `(sent as ${n} messages in a row; 하나의 요청으로 함께 읽으세요)`,
 	replyingTo: (author, content) => `(${author}의 메시지에 대한 답장: "${content}")`,
-	decisionAnswer: picks => `결정 답: ${picks.map((p, i) => `${i + 1}) ${p.q || "-"} → ${p.n}) ${p.label}`).join("; ")}`,
+	decisionAnswer: picks => `결정 답: ${picks.map((p, i) => `${picks.length > 1 ? `${i + 1}) ` : ""}${p.q || "-"} → ${p.n}) ${p.label}`).join("; ")}`,
 	decisionAsked: quote => `(당신이 한 이 질문에 대한 답이에요: "${quote}")`,
 	workChannels: list => `(작업 채널 목록, 이 메시지의 채널은 아님: ${list.length ? list.join("; ") : "아직 없음"})`,
 	channelNames: { chat: "대화", alert: "알림", worklog: "작업로그", mail: "메일", workCategory: name => `${name} 작업` },
