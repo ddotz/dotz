@@ -651,6 +651,16 @@ function readChannelMap(): ChannelMap | null {
 }
 const channelLanes = () => readChannelMap()?.lanes ?? new Map<string, string>();
 const laneExists = (name: string) => existsSync(join(paths.lanes, name, "lane.json"));
+// A session stopped for good: saved as exited, no question waiting on the owner, nothing queued. Returns when it was last active, else undefined.
+function stoppedSince(name: string): number | undefined {
+	try {
+		const r = JSON.parse(readFileSync(join(paths.lanes, name, "lane.json"), "utf8"));
+		const at = Date.parse(r?.lastReportAt ?? r?.startedAt);
+		return r?.status === "exited" && !r.pendingAsk && !r.waiting && !Number.isNaN(at) ? at : undefined;
+	} catch {
+		return undefined;
+	}
+}
 
 // A session that no longer exists answers nobody: its questions are closed as resolved, and its notices are read and leave the list and the badge
 // (kept in notices.json as dismissed). Every open page hears a notice_dismiss per item.
@@ -684,7 +694,8 @@ export function dropChannelNotices(conv: string, messagesOnly = false): number {
 }
 
 // On load: notices of sessions that no longer exist (deleted, or removed while the hub was down) are retired when they still count (unread or open);
-// read ones stay as history. And a notice whose message the read position already covers is read.
+// read ones stay as history. So are the message and result notices of a session that stopped before the stop hook (dropChannelNotices) existed:
+// saved as exited, and not active since the notice. And a notice whose message the read position already covers is read.
 function reconcileStored(): void {
 	replaying = true;
 	try {
@@ -696,9 +707,14 @@ function reconcileStored(): void {
 			const ch = [i.src, i.open].find(c => c && /^ch:\d+$/.test(c));
 			return !!map && !!ch && !map.known.has(ch.slice(3));
 		};
+		const stoppedBefore = (i: Notice, lane: string | undefined) => {
+			if (lane === undefined || isOpenDecision(i) || (i.kind !== "message" && i.kind !== "result")) return false;
+			const since = stoppedSince(lane);
+			return since !== undefined && since <= Date.parse(i.updated);
+		};
 		const stale = items.filter(i => {
 			const lane = laneOfNotice(i, map?.lanes);
-			return !i.dismissed && (!i.read || isOpenDecision(i)) && ((lane !== undefined && isGone(lane)) || lostChannel(i));
+			return !i.dismissed && (!i.read || isOpenDecision(i)) && ((lane !== undefined && isGone(lane)) || lostChannel(i) || stoppedBefore(i, lane));
 		});
 		retire(stale);
 		// A title that is a raw channel id (made before the name was known) gets its name.
