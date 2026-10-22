@@ -4,7 +4,7 @@ import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount 
 import { appAsset, indexPage } from "./webapp.ts";
 
 // Every pop-up over the app is the same full-screen frame (web/css/14-overlay.css, web/js/38-overlay.js): on a phone it covers the tab bar with a fixed
-// header and footer, on desktop it is a centered dialog. Headless browser against the real notice store; every decision and form here is a fixture.
+// header and footer, on desktop it is a centered dialog. The computer switcher and the settings tab's dialogs (dialog({ classic: true })) keep their earlier look. Headless browser against the real notice store; every decision and form here is a fixture.
 const SNAP = "/tmp/dotz-overlay-fullscreen";
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 type Field = { name: string; label: string; type: string; optional?: boolean };
@@ -154,6 +154,23 @@ describe("every overlay opens as the shared full-screen frame", () => {
 		await Bun.write(`${SNAP}/computer-switcher-390.png`, await phone.screenshot());
 		await phone.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`);
 		await waitFor(phone, `!document.querySelector(".ds-bd")`);
+	}, 30_000);
+
+	test("a settings dialog stays the small centered box, not the full-screen frame", async () => {
+		const phone = await open(390, 844);
+		await phone.evaluate(`dialog({ classic: true, title: "재시작", body: el("p", { text: "작업이 끝난 뒤 재시작할 수 있어요" }), actions: [{ label: "취소", onclick: c => c() }, { label: "재시작", kind: "pri", onclick: c => c() }] })`);
+		await waitFor(phone, `document.querySelector("dialog.dlg.cl[open] .dhd .dx") && document.querySelector("dialog.dlg.cl .dact .btn")`);
+		await settled(phone);
+		expect(await phone.evaluate(`!document.querySelector(".fs-bd, .fs-card, .fs-hd")`)).toBe(true);
+		const dlg = (await box(phone, "dialog.dlg.cl"))!;
+		expect(dlg.w).toBeGreaterThan(300);
+		expect(dlg.w).toBeLessThanOrEqual(366);
+		expect(dlg.t).toBeGreaterThan(0);
+		expect(dlg.h).toBeLessThan(844);
+		expect(await phone.evaluate(`getComputedStyle(document.querySelector("dialog.dlg.cl")).paddingTop`)).toBe("20px");
+		await Bun.write(`${SNAP}/settings-dialog-390.png`, await phone.screenshot());
+		await phone.click("dialog.dlg.cl .dhd .dx");
+		await waitFor(phone, `!document.querySelector("dialog[open]")`);
 	}, 30_000);
 
 	test("a login request form is full screen: fields scroll between a pinned header and footer", async () => {

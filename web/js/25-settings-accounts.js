@@ -48,7 +48,7 @@ function accDialog(a) {
   const label = a.label || a.alias || a.name;
   const inp = el("input", { class: "fi", type: "text", value: a.alias || "", maxlength: "40", autocomplete: "off", placeholder: "별칭 (예: 회사, 개인)", "aria-label": "별칭" });
   const alias = (v, msg) => (btn, close) => accMut(btn, () => api("/api/accounts/alias", "PUT", { key: a.name, alias: v }), msg, close);
-  const d = dialog({ title: label, body: el("div", { class: "col" }, a.name !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: a.name })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 6px", text: "별칭" }), inp)), actions: [
+  const d = dialog({ classic: true, title: label, body: el("div", { class: "col" }, a.name !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: a.name })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 6px", text: "별칭" }), inp)), actions: [
     a.alias ? { label: "지우기", kind: "danger", onclick: (c, b) => alias("", "별칭을 지웠어요")(b, c) } : null,
     { label: "이 계정으로 바꾸기", kind: "tonal", disabled: a.current, onclick: (c, b) => accMut(b, () => api("/api/accounts/use", "POST", { account: a.name }), `${label}로 바꿨어요`, c) },
     { label: "저장", kind: "pri", onclick: (c, b) => alias(inp.value.trim(), inp.value.trim() ? "별칭을 저장했어요" : "별칭을 지웠어요")(b, c) }].filter(Boolean) });
@@ -126,6 +126,6 @@ function rulesDialog() {
     { label: "취소", onclick: c => c() },
     { label: json ? "폼으로 보기" : "JSON으로 편집", onclick: toggle },
     { label: "저장", kind: "pri", onclick: (c, b) => accMut(b, () => api("/api/accounts/rules", "PUT", { rules: json ? parse() : clean(R) }), "규칙을 저장했어요", c) }];
-  const d = dialog({ title: "전환 규칙", body: box, wide: true, actions: acts() });
+  const d = dialog({ classic: true, title: "전환 규칙", body: box, wide: true, actions: acts() });
   paint();
 }
