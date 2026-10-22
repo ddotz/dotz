@@ -168,3 +168,47 @@ describe("entry points use the shared handler", () => {
 		expect(home).toContain("noticeOpen(n)");
 	});
 });
+
+// Owner 2026-10-22 (phone): a decision tapped from 알림 moved into the conversation and the decision UI showed with it. Entering 알림 / 작업 기록
+// docked the waiting question above the composer (10-decision-card.js paintDecision); a decision opens only as the sheet.
+describe("a decision never docks in the 알림 / 작업내역 conversations", () => {
+	const run = (target: string) => {
+		const box = { hidden: true, dataset: {} as Record<string, string> }, calls: string[] = [], DC: { cur: unknown; picks: Record<string, unknown>; step: Record<string, unknown>; fold: Record<string, unknown>; st: Record<string, unknown> } = { cur: null, picks: {}, step: {}, fold: {}, st: {} };
+		const dc = { key: `${target}|x`, t: target, sig: "x", at: "T", question: "q", blocks: [{ title: "", options: [{ n: 1, label: "a" }] }] };
+		const src = web("js/10-decision-card.js"), body = src.slice(src.indexOf("function paintDecision"));
+		new Function("$", "decisionOf", "isFixedT", "target", "DC", "clear", "renderDecision", "syncInlineChoices", "dkPaint", "updateComposerMeta", `${body}; paintDecision();`)(
+			() => box, () => dc, (x: string) => x === "alert" || x === "worklog", target, DC, () => {}, () => calls.push("render"), () => {}, () => {}, () => {});
+		return { hidden: box.hidden, cur: DC.cur, calls };
+	};
+	test("the main chat still docks it", () => {
+		const r = run("main");
+		expect(r.hidden).toBe(false);
+		expect(r.cur).not.toBeNull();
+	});
+	test.each(["alert", "worklog"])("%s: no card above the composer", t => {
+		const r = run(t);
+		expect(r.hidden).toBe(true);
+		expect(r.cur).toBeNull();
+		expect(r.calls).toEqual([]);
+	});
+});
+
+// A tap on a push that had to start the app: ?m=<ts> (jump to the message) or ?n=<id> (decision sheet). A decision carries n; its sheet must survive, and it
+// never also jumps to a conversation. (23-installable-app-web.js strips m from the address; it used to strip n with it.)
+describe("cold start from a tapped push", () => {
+	const start = (href: string) => {
+		const u = new URL(href), replaced: string[] = [];
+		const out = new Function("location", "history", `${between(web("js/23-installable-app-web.js"), "// A tap that had to start the app", "async function pwaInit")}; return { pushOpenTs };`)(
+			{ search: u.search, pathname: u.pathname, hash: u.hash }, { state: null, replaceState: (_s: unknown, _t: string, url: string) => replaced.push(url) }) as { pushOpenTs: string };
+		return { ts: out.pushOpenTs, url: replaced[replaced.length - 1] ?? "unchanged" };
+	};
+	test("?m alone: the message opens, m leaves the address", () => {
+		expect(start("http://h/?m=T1#chat/main")).toEqual({ ts: "T1", url: "/#chat/main" });
+	});
+	test("?n alone is left for the decision sheet", () => {
+		expect(start("http://h/?n=abc")).toEqual({ ts: "", url: "unchanged" });
+	});
+	test("?m and ?n together: n stays in the address, no jump to the conversation", () => {
+		expect(start("http://h/?m=T1&n=abc#home")).toEqual({ ts: "", url: "/?n=abc#home" });
+	});
+});
