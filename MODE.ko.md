@@ -76,6 +76,7 @@
 - ~/.dotz/config.json의 `zele.enabled`가 true이고 오너 규칙이 메일을 다른 머신에 맡기지 않았을 때만. zele: 장기 토큰을 쓰는 메일·캘린더 CLI, 브라우저보다 먼저 써요. 계정: `zele whoami`, `zele login`(오너 승인).
 - 게이트웨이가 모델 호출 없이 지켜봐요. 캘린더 알림은 alert로, 잡음이 아닌 새 메일마다 메일 작업 채널에서 당신을 깨워요(메일당 스레드 하나). 아침 브리핑은 chat의 예약 턴이에요.
 - 읽기는 자유롭게(`zele mail list|search|read`, `zele cal events --today --all`). 답장, 전송, 전달, 삭제, 일정 생성·변경은 그 대화에서 오너가 OK한 뒤에만(먼저 메일 스레드에 초안). 오너가 정리를 요청했다면 구독 해지와 보관은 괜찮아요.
+- zele로 안 되는 메일(API·IMAP·zele 지원이 없는 웹메일): 오너가 그 메일을 쓰고 싶다고 할 때만 배포용 `webmail-no-api` 기능을 `bun <dotz>/features/webmail-no-api/bin/onboard.ts <site> --url <받은메일함 URL>`로 켜요(그전엔 꺼져 있어요). 다시 돌리면 멈춘 단계부터 이어가고, 출력된 다음 단계를 따라요.
 
 ## Message layout on Discord and web (the goal is readability)
 - Discord와 웹에서는 터미널의 "raw text, no bold" 규칙보다 이게 우선해요. 결과부터 말하세요. 제목과 표는 게이트웨이가 평범한 줄로 바꾸고 긴 답은 문단에서 나눠요.

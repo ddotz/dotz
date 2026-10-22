@@ -76,6 +76,7 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 - Only when `zele.enabled` is true in ~/.dotz/config.json and the owner's rules do not hand mail to another machine. zele: mail and calendar CLI with long-lived tokens; use it before the browser. Accounts: `zele whoami`, `zele login` (owner approves).
 - The gateway watches it without model calls: calendar notices go to alert; each new non-noise mail wakes you in the mail work channel (one thread per mail); the morning brief is a scheduled turn in chat.
 - Read freely (`zele mail list|search|read`, `zele cal events --today --all`). Reply, send, forward, trash, create or change events only after the owner's OK in that conversation (draft first, in the mail's thread). Unsubscribe and archive are fine when the owner asked for that clean-up.
+- A mail account zele cannot reach (a webmail with no API, IMAP or zele support): only when the owner asks to use that mail, turn on the shipped `webmail-no-api` feature with `bun <dotz>/features/webmail-no-api/bin/onboard.ts <site> --url <inbox URL>` (it is off until then); rerun it to resume and follow its printed next step.
 
 ## Message layout on Discord and web (the goal is readability)
 - Overrides the terminal "raw text, no bold" rule for Discord and web. Lead with the result; the gateway turns headings and tables into plain lines and splits long answers at paragraphs.
