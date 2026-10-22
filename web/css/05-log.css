@@ -125,8 +125,6 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hr { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
 .hr + .hr { box-shadow: inset 0 1px 0 var(--line); }
 .hr.st:hover { background: transparent; }
-#lanes-work { margin-bottom: 24px; }
-#lanes-work[hidden] { display: none; }
 .hr:hover { background: var(--card-hover); }
 .hr .dot { width: 10px; height: 10px; }
 .hr .hb { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -136,19 +134,23 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hr .hp { flex: none; color: var(--fg-3); font-size: 12.5px; line-height: 16px; font-variant-numeric: tabular-nums; }
 .hr .hs { flex: none; min-width: 44px; text-align: right; color: var(--fg-2); font-size: 13px; font-weight: 500; }
 .hr .hs.pri { color: var(--accent); } .hr .hs.warn { color: var(--warn); } .hr .hs.err { color: var(--err); }
+/* a session row (sessionRow in 18-lanes.js): the parent project leads the second line, the activity trails it */
+.hr .ha:has(.sproj) { display: flex; align-items: baseline; gap: 6px; }
+.hr .sproj { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-weight: 500; }
+.hr .sproj.none { color: var(--fg-3); font-weight: 400; }
+.hr .sline { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg-3); }
+.hr .sline::before { content: "·"; margin-right: 6px; }
+.srows .hr + .li, .srows .li + .hr { box-shadow: inset 0 1px 0 var(--line); }
 .hn .empty { padding: 18px 16px; text-align: left; font-size: 13px; color: var(--fg-3); }
 #home-sec { margin-top: 28px; }
 
 /* lanes board */
-#v-lanes { max-width: none; }
-.lboard { display: flex; flex-direction: column; gap: 12px; }
 /* board: free-form 12-column card grid shared by 홈 and 레인 (positions are calc() of the container width, so no JS layout pass is needed) */
 .bbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .bbar .btn { height: 24px; font-size: 12px; }
 @media (max-width: 639px) { .bbar { display: none; } }
 .board { position: relative; }
 .bi { position: absolute; border-radius: 8px; transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease, box-shadow .15s; }
-.bi > .card, .bi > .lpane { width: 100%; height: 100%; }
 .bi > .card { overflow: hidden auto; }
 .bi:hover, .bi.bdrag { box-shadow: var(--float); }
 .bi.bdrag { z-index: 6; transition: box-shadow .15s; }
@@ -166,11 +168,29 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .brz.e { top: 14px; bottom: 16px; right: -3px; width: 8px; cursor: ew-resize; }
 .brz.s { left: 14px; right: 16px; bottom: -3px; height: 8px; cursor: ns-resize; }
 .board.narrow .brz { display: none; }
+/* 세션 탭: one status briefing card per session; the whole card is the tap target (18-lanes.js laneCard) */
+#v-lanes { max-width: 1120px; }
+.sb-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+.sb-card { display: flex; flex-direction: column; gap: 8px; width: 100%; color: inherit; font: inherit; text-align: left; }
+.sb-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sb-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 16px/22px var(--font); }
+.sb-proj { margin-top: -4px; padding-left: 16px; color: var(--fg-2); font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-proj.none { color: var(--fg-3); }
+.sb-state { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 15px; line-height: 22px; font-weight: 500; }
+.sb-state .t { min-width: 0; overflow-wrap: anywhere; }
+.sb-state .w, .sb-item .w { flex: none; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; white-space: nowrap; }
+.sb-recent { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: var(--r-ctl); background: var(--layer); }
+.sb-h { color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.sb-item { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--fg-2); font-size: 14px; line-height: 20px; }
+.sb-item .t { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 599px) { .sb-list { grid-template-columns: minmax(0, 1fr); } }
+
 .board.narrow { display: flex; flex-direction: column; gap: 12px; }
 .board.narrow .bi { position: relative; }
 .board.narrow .bi > .card { height: auto; overflow: visible; }
 .board.narrow .bhead { cursor: default; }
-.card.att, .lpane.att { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 8%, var(--card)); }
+.bi > .card { width: 100%; height: 100%; }
+.card.att { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 8%, var(--card)); }
 .card.att.err { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); background: color-mix(in srgb, var(--err) 8%, var(--card)); }
 .card.tap.att:hover { border-color: color-mix(in srgb, var(--warn) 75%, var(--line)); background: color-mix(in srgb, var(--warn) 14%, var(--card)); }
 .card.tap.att.err:hover { border-color: color-mix(in srgb, var(--err) 75%, var(--line)); background: color-mix(in srgb, var(--err) 14%, var(--card)); }
@@ -188,29 +208,8 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 @media (hover: none) { .grow > .ib { opacity: 1; } }
 .grow.att { background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .grow.att.err { background: color-mix(in srgb, var(--err) 12%, transparent); }
-@media (pointer: coarse) { .brz.e, .brz.s { display: none; } .brz.se { width: 24px; height: 24px; } .brz.se::after { right: 6px; bottom: 6px; } .board:not(.narrow) .bi > .lpane .lcomp { padding: 8px 24px 24px 8px; } }
-.lpane { display: flex; flex-direction: column; min-width: 0; height: 360px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
-.lpane.off .lname { color: var(--fg-2); }
-.lhead { flex: none; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 6px; border-bottom: 1px solid var(--line); }
-.ltop { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.lname { flex: 0 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; font: 600 13px/20px var(--font); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lname:hover { text-decoration: underline; text-underline-offset: 3px; }
-.lmodel { padding-left: 16px; color: var(--fg-3); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lacts { display: flex; flex-wrap: wrap; gap: 2px; margin: 2px -6px 0; }
-.lacts .btn { height: 24px; padding: 0 6px; font-size: 12px; }
-.lacts .btn.tonal { padding: 0 10px; margin-left: 6px; }
-@media (pointer: coarse) { .lacts .btn { height: 36px; padding: 0 10px; } .lname { min-height: 36px; } }
-.lrep { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; overflow: hidden; background: var(--layer); cursor: pointer; }
-.lrep .mt { display: flex; align-items: center; gap: 6px; flex: none; }
-.lrep .md { min-width: 0; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
-.lrep .md pre { max-width: 100%; overflow-x: auto; }
+@media (pointer: coarse) { .brz.e, .brz.s { display: none; } .brz.se { width: 24px; height: 24px; } .brz.se::after { right: 6px; bottom: 6px; } }
 /* markdown has block children (lists, code), so a line clamp would cut through a line: cap the height and fade a long report */
-.lclamp { max-height: 100px; overflow: hidden; }
-.lclamp.long { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
-.board:not(.narrow) .lclamp { flex: 0 1 auto; min-height: 0; max-height: none; }
-.lmore { align-self: flex-start; flex: none; height: 24px; margin-left: -6px; padding: 0 6px; font-size: 12px; }
-@media (pointer: coarse) { .lmore { height: 36px; } }
-.lnone { color: var(--fg-3); font-size: 13px; line-height: 20px; }
 .lstat { flex: none; padding: 6px 12px; border-top: 1px solid var(--line); color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lr { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 26px; padding: 0 12px; }
 .lr:hover { background: var(--hover); }
@@ -223,8 +222,6 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .lr.tx .lb { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; font-family: var(--font); font-size: 12.5px; }
 .lr.dv, .lr.th { color: var(--fg-3); }
 .lr.er .lb { color: var(--err); }
-.lcomp { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
-@media (pointer: fine) { .lcomp .fi { height: 28px; } }
 @media (max-width: 599px) {
   .lr.tx .lb { -webkit-line-clamp: 1; }
 }
