@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
-import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, workerModel, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, tzLabel, workerModel, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { dropSection, renderState } from "./recall-parts.ts";
 import { featurePrompt } from "./featuredirs.ts";
@@ -16,7 +16,7 @@ import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx
 import { anthropicUsage, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { firstAlertForReset } from "./rate-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, Reverter, revertWhy, workerKeyEnv } from "./fallback.ts";
+import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy, workerKeyEnv } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
@@ -192,7 +192,7 @@ async function failOver(e: AgentError): Promise<boolean> {
 	const active = chain;
 	if (!active) return false;
 	const reason = failureReason({ kind: e.kind, text: e.text });
-	const until = reason === "quota" ? Date.now() + (await rateLimitDelay(e.text, active.selector(active.active))).ms : undefined;
+	const until = reason === "quota" ? await quotaResetAt(e.text, active.selector(active.active), "orchestrator") : undefined;
 	if (chain !== active) return false;
 	const move = active.fail(reason, until);
 	if (!move) return false;
@@ -202,17 +202,27 @@ async function failOver(e: AgentError): Promise<boolean> {
 // with a handover, never on the same session (owner 2026-10-21: "쿐시 깨지는거 곤란하다"; a model switch on a session
 // writes its whole prompt cache again, a handover is small). `again` tells it to answer the request that just failed. One
 // switch at a time: a revert racing a failover is dropped. The alert channel hears an API-key episode once at its start
-// and once at its end (the first turn that succeeds off the key), not at every hop or probe.
+// and once at its end (the first turn that succeeds off the key), not at every hop or probe. The same holds for the notice
+// and the log line: a fall-back says when the limit ends (KST), a return waits for the first turn that works on the entry
+// it returned to, and a return that falls back again right away (a failed probe) says nothing at all.
+let returning: Move | undefined;
 function switchTo(move: Move, again: boolean): boolean {
 	if (!chain || restarting) return false;
-	const line = msg().fallbackMove(chain.label(move.from), chain.label(move.to), move.why);
-	log(`orchestrator ${line}`);
-	onNotice(line);
+	const quiet = move.why === "revert" || (returning !== undefined && move.why === "quota");
+	returning = move.why === "revert" ? move : undefined;
+	if (!quiet) {
+		const reset = move.why === "quota" ? chain.down(move.from)?.until : undefined;
+		const back = reset ? `${new Date(reset).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })} (${tzLabel()})` : undefined;
+		const line = msg().fallbackMove(chain.label(move.from), chain.label(move.to), move.why, back);
+		log(`orchestrator ${line}`);
+		onNotice(line);
+		if (!chain.list[move.to].key_file && !saved().apiSince && (move.why === "quota" || move.why === "error")) onAlert(`${NAME}: ${line}`);
+	}
 	const keyed = Boolean(chain.list[move.to].key_file);
 	if (keyed && !saved().apiSince) {
 		save({ apiSince: now() });
 		onAlert(`${NAME}: ${msg().apiStart(chain.label(move.to))}`);
-	} else if (!keyed && !saved().apiSince && (move.why === "quota" || move.why === "error")) onAlert(`${NAME}: ${line}`);
+	}
 	freshSwitch = { again };
 	continueAfterSwitch = again;
 	restart();
@@ -303,6 +313,12 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					onText(ev.text);
 				}
 				if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);
+				if (ev.stop !== "error" && ev.text && returning && chain && p === proc) {
+					const line = msg().fallbackMove(chain.label(returning.from), chain.label(returning.to), "revert");
+					returning = undefined;
+					log(`orchestrator ${line}`);
+					onNotice(line);
+				}
 				if (ev.stop !== "error" && ev.text && chain && !chain.list[chain.active].key_file && saved().apiSince) {
 					save({ apiSince: undefined });
 					onAlert(`${NAME}: ${msg().apiEnd(chain.label(chain.active))}`);

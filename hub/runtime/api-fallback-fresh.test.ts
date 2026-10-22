@@ -81,6 +81,7 @@ const patchable = Bun as unknown as { spawn: unknown };
 const realSpawn = Bun.spawn;
 const savedCfg = { orchestrator: cfg.orchestrator, lanes: cfg.lanes, models: cfg.models };
 const alerts: string[] = [];
+const notices: string[] = [];
 const realUsable = o.subscriptionCheck.usable;
 let usable: boolean | undefined;
 
@@ -96,7 +97,7 @@ beforeAll(() => {
 		throw new Error(`unexpected spawn in a test: ${args.join(" ")}`);
 	};
 	o.subscriptionCheck.usable = async () => usable;
-	o.setNoticeHandler(() => {});
+	o.setNoticeHandler(t => notices.push(t));
 	o.setAlertHandler(t => alerts.push(t));
 	o.setAnswerHandlers(() => {}, () => {});
 	l.setNoticeHandler(() => {});
@@ -192,6 +193,47 @@ test("simulated 429: API key for the orchestrator only, fresh sessions both ways
 	expect(alerts.filter(a => a.includes("API key no longer in use"))).toHaveLength(1);
 	expect(JSON.stringify(alerts)).not.toContain(KEY);
 	log(`step 5  first good turn on the subscription\n        alert: ${alerts.at(-1)}`);
+	o.stop();
+	await advance(300);
+}, 60_000);
+
+test("failed probe before the reset time: no restart before it, one fall-back notice with the reset, a silent failed probe, no retry within the back-off", async () => {
+	rmSync(authFile, { force: true });
+	alerts.length = 0;
+	notices.length = 0;
+	usable = undefined;
+	const sub = await startOnSubscription();
+	const limit = (text: string): AgentEvent => ({ type: "assistant", text: "", stop: "error", error: { text, kind: "rate", compaction: false } });
+	o.deliver("오늘 일정 알려줘", true);
+	await sub.push({ type: "alive" }, { type: "turn_start" }, limit("429 usage limit reached retry-after-ms: 7200000"), { type: "turn_end" });
+	await advance(500);
+	const api = current();
+	expect(api.opts.model).toBe("anthropic-apikey/claude-sonnet-5-5:high");
+	expect(notices).toHaveLength(1);
+	expect(notices[0]).toContain("KST");
+	await api.agent.push({ type: "session", ref: join(DATA, "api-sim-session-2.jsonl") }, ...answer("일정은 ..."));
+
+	// The reset is two hours away (plus the one-minute margin): nothing is tried before it.
+	const n = orchestrators().length;
+	await advance(110 * 60_000);
+	expect(orchestrators()).toHaveLength(n);
+	// At the reset the subscription is tried; the limit is still there, so it falls back again without a word.
+	await advance(12 * 60_000);
+	const probe = current();
+	expect(orchestrators()).toHaveLength(n + 1);
+	expect(probe.opts.model).toBe("anthropic/claude-opus-5-5:medium");
+	await probe.agent.push({ type: "session", ref: join(DATA, "api-sim-session-3.jsonl") }, { type: "alive" }, { type: "turn_start" }, limit("429 usage limit reached"), { type: "turn_end" });
+	await advance(500);
+	expect(orchestrators()).toHaveLength(n + 2);
+	expect(current().opts.model).toBe("anthropic-apikey/claude-sonnet-5-5:high");
+	expect(notices).toHaveLength(1);
+	expect(alerts.filter(a => a.includes("API key in use"))).toHaveLength(1);
+	// No reset is named now: one hour, not ten minutes.
+	await current().agent.push({ type: "session", ref: join(DATA, "api-sim-session-2.jsonl") }, ...answer("일정은 ..."));
+	await advance(50 * 60_000);
+	expect(orchestrators()).toHaveLength(n + 2);
+	await advance(12 * 60_000);
+	expect(orchestrators()).toHaveLength(n + 3);
 	o.stop();
 	await advance(300);
 }, 60_000);

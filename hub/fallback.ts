@@ -28,7 +28,7 @@ function periodEnd(period: Period, at: number): number {
 
 // ---- persisted state ------------------------------------------------------------------------------------------------
 type Counter = { key: string; tokens: number; usd: number };
-type Blocked = { until: number; why: "quota" | "error"; since?: number };
+type Blocked = { until: number; why: "quota" | "error"; since?: number; tries?: number };
 type State = { pools: Record<string, Partial<Record<Period, Counter>>>; blocked: Record<string, Blocked> };
 let state: State | undefined;
 function load(): State {
@@ -190,7 +190,13 @@ export function workerKeyEnv(workerSelector: string, entries: FallbackEntry[]): 
 }
 
 // ---- the chain ------------------------------------------------------------------------------------------------------
-export const REVERT_PROBE_MS = 10 * 60_000;
+// A usage limit whose reset nothing names (no usage report window, no retry-after) is not guessed at 10 minutes: the entry is
+// tried again after 30 min, then 1 h, 2 h, 4 h, at most 5 h (2026-10-22: a 10-minute probe fell back and returned every
+// ~10 min for hours while the real reset, 16:01, was recorded). Every try that fails doubles the wait.
+const UNKNOWN_RESET_MS = 30 * 60_000;
+const UNKNOWN_RESET_MAX_MS = 5 * 3_600_000;
+// A block written this soon after the previous one ended (or was lifted) is a failed try of the same episode.
+const PROBE_WINDOW_MS = 30 * 60_000;
 // Consecutive failed turns (any cause) after which automatic retries, failovers and keepalives stop until a turn succeeds;
 // the owner is told once (2026-10-20: nine "stream start timed out" turns in a row, each retried).
 export const ERROR_STREAK_STOP = 5;
@@ -210,7 +216,7 @@ export class ErrorStreak {
 }
 export type Why = "quota" | "error" | "cap" | "revert";
 export type Move = { from: number; to: number; why: Why };
-type Down = { why: "quota" | "error" | "cap" | "off"; until: number; since?: number };
+type Down = { why: "quota" | "error" | "cap" | "off"; until: number; since?: number; tries?: number };
 const ERROR_BLOCK_MS = 10 * 60_000;
 const KEY_BLOCK_MS = 60_000;
 
@@ -261,8 +267,13 @@ export class Chain {
 		return Math.min(...downs.map(d => d!.until));
 	}
 	// The active entry failed (`quota`: usage limit until `until`; `error`: provider error): the entry to switch to, if any.
+	// A quota without `until` (the reset is unknown) waits UNKNOWN_RESET_MS, doubled for each failed try of this episode.
 	fail(reason: "quota" | "error", until?: number, at = clock.now()): Move | undefined {
-		load().blocked[poolOf(this.list[this.active])] = { why: reason, until: until ?? at + ERROR_BLOCK_MS, since: at };
+		const pool = poolOf(this.list[this.active]);
+		const prev = load().blocked[pool];
+		const tries = reason === "quota" && prev?.why === "quota" && at >= prev.until && at - prev.until < PROBE_WINDOW_MS ? (prev.tries ?? 0) + 1 : 0;
+		const wait = reason === "quota" ? Math.min(UNKNOWN_RESET_MS * 2 ** tries, UNKNOWN_RESET_MAX_MS) : ERROR_BLOCK_MS;
+		load().blocked[pool] = { why: reason, until: until ?? at + wait, since: at, ...(tries ? { tries } : {}) };
 		save();
 		const to = this.next(this.active, reason, at);
 		return to === undefined ? undefined : { from: this.active, to, why: reason };
@@ -288,17 +299,17 @@ export class Chain {
 	// An earlier entry is usable again and the active one is marked `revert`: where to go back to.
 	// Every fallback entry goes back (a keyed or conditional one too, 2026-10-20: an API-key fallback stayed ~30 min after the
 	// subscription's limit reset because only bare entries were marked); `revert: false` keeps an entry. An earlier entry out
-	// on a usage limit is tried again REVERT_PROBE_MS after the limit was written (the reset time is an estimate); a failed try
-	// writes the limit again, so tries stay that far apart. `lifted`: the provider's usage report says the limit is over, so
-	// an earlier entry out on a usage limit is usable now.
+	// on a usage limit comes back only when its recorded reset has passed (down() ends by itself); no try starts a turn before
+	// that. `lifted`: the provider's usage report says the limit is over, so an earlier entry out on a usage limit is usable
+	// now, once per episode: a try that fails anyway (tries > 0) waits for the recorded time again.
 	revertTarget(at = clock.now(), lifted = false): Move | undefined {
 		if (this.active === 0 || this.list[this.active].revert === false) return undefined;
 		for (let j = 0; j < this.active; j++) {
 			const d = this.down(j, at);
 			if (!d) return { from: this.active, to: j, why: "revert" };
-			if (d.why === "quota" && (lifted || at - (d.since ?? 0) >= REVERT_PROBE_MS)) {
-				// The restart picks its entry from the recorded limits (initial()), so the try lifts this one.
-				delete load().blocked[poolOf(this.list[j])];
+			if (d.why === "quota" && lifted && !d.tries) {
+				// The restart picks its entry from the recorded limits (initial()), so the try ends this one (kept, for the count of tries).
+				load().blocked[poolOf(this.list[j])]!.until = at;
 				save();
 				return { from: this.active, to: j, why: "revert" };
 			}
@@ -363,6 +374,12 @@ const MAX_TIMER_MS = 2 ** 31 - 1;
 export function atTime(until: number, keep: (t: Timer) => void, fn: () => void): void {
 	const left = until - Date.now();
 	keep(left > MAX_TIMER_MS ? setTimeout(() => atTime(until, keep, fn), MAX_TIMER_MS) : setTimeout(fn, Math.max(1000, left)));
+}
+
+// When a usage limit ends, if a usage report window or the error's retry-after says (else undefined: the chain backs off, see fail()).
+export async function quotaResetAt(text: string, model: string, role: "orchestrator" | "lane"): Promise<number | undefined> {
+	const d = await rateLimitDelay(text, model, role);
+	return d.reset || /retry-after-ms:\s*\d+/.test(text) ? Date.now() + d.ms : undefined;
 }
 
 // ---- going back after the runtime's own fallback walk --------------------------------------------------------------------
