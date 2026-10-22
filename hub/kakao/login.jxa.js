@@ -1,7 +1,9 @@
 // KakaoTalk login by Accessibility (System Events), run as `osascript -l JavaScript` with ONE JSON line on stdin:
-//   {action:"state"} | {action:"login", id, password} | {action:"ack"}
-// Prints one JSON line {state:"main"|"login"|"locked"|"confirm"|"error"|"unknown", detail?}. Details are fixed words; the input is
-// never printed. It only sets AXValue on the fields and performs AXPress on buttons: no key events, no app activation, no window raise.
+//   {action:"state"} | {action:"focus", field:"id"|"password"} | {action:"submit"} | {action:"ack"}
+// Prints one JSON line {state:"main"|"login"|"locked"|"confirm"|"error"|"unknown", detail?, pid?}. Details are fixed words.
+// KakaoTalk enables its login button only on real key input, so the id and password are never sent here: "focus" clears one field
+// and gives it AXFocused (pid in the answer), login.ts types into that process (keys.ts), then "submit" presses the button once it
+// is enabled. It only sets AXValue / AXFocused and performs AXPress: no app activation, no window raise, no System Events key input.
 //
 // Detection is ported from kmsg Sources/kmsg/Auth/KakaoTalkAuthenticator.swift (MIT, Park Hee Chan, commit 54cbff79): the login
 // markers (isLikelyLoginWindow / containsLoginMarkers), the lock screen test (resolveLockScreen: marker text in the window's own
@@ -118,15 +120,16 @@ function observe() {
 	var se = Application("System Events");
 	var procs = se.processes.whose({ bundleIdentifier: BUNDLE })();
 	if (!procs || !procs.length) return { windows: [], result: { state: "unknown", detail: "not_running" } };
+	var pid = get(procs[0], "unixId");
 	var wins = procs[0].windows();
 	var views = [];
 	for (var i = 0; i < wins.length; i++) {
 		var s = scan(wins[i]);
 		views.push({ win: wins[i], scan: s, cls: classify(s) });
 	}
-	if (!views.length) return { windows: [], result: { state: "unknown", detail: "no_window" } };
+	if (!views.length) return { windows: [], pid: pid, result: { state: "unknown", detail: "no_window" } };
 	views.sort(function (a, b) { return PRIORITY.indexOf(a.cls.state) - PRIORITY.indexOf(b.cls.state); });
-	return { windows: views, result: views[0].cls };
+	return { windows: views, pid: pid, result: views[0].cls };
 }
 
 function labels(b) {
@@ -185,10 +188,12 @@ function dismissNotice(s) {
 	return best ? press(best.el) : false;
 }
 
-function setValue(el, text) {
+function focusEmpty(el) {
 	try {
 		el.value = "";
-		el.value = text;
+	} catch (e) {}
+	try {
+		el.focused = true;
 		return true;
 	} catch (e) {
 		return false;
@@ -199,21 +204,38 @@ function byPosition(a, b) {
 	return a.pos[1] - b.pos[1] || a.pos[0] - b.pos[0];
 }
 
-function submitLogin(v, id, password) {
+// The password field is an AXTextField described as "보안 텍스트 필드" on the Korean UI (AXSecureTextField elsewhere).
+function loginFields(v) {
 	var fields = v.scan.fields.slice().sort(byPosition);
-	if (fields.length < 2) return { state: "error", detail: "ui_changed" };
-	var pw = fields.filter(function (f) { return f.role === "AXSecureTextField" || /password|passwd|비밀번호/.test(f.title + " " + f.desc); })[0] || fields[1];
-	var user = fields.filter(function (f) { return f !== pw; })[0];
-	var button = loginButton(v.scan, pw);
-	if (!button || !setValue(user.el, id) || !setValue(pw.el, password)) return { state: "error", detail: "ui_changed" };
-	return press(button.el) ? { state: "login", detail: "submitted" } : { state: "error", detail: "ui_changed" };
+	if (fields.length < 2) return undefined;
+	var pw = fields.filter(function (f) { return f.role === "AXSecureTextField" || /password|passwd|secure|비밀번호|보안/.test(f.title + " " + f.desc); })[0] || fields[1];
+	return { user: fields.filter(function (f) { return f !== pw; })[0], pw: pw };
 }
 
-function submitLock(v, password) {
-	var field = v.scan.fields[0];
-	var button = lockButton(v.scan);
-	if (!button || !setValue(field.el, password)) return { state: "error", detail: "ui_changed" };
-	return press(button.el) ? { state: "locked", detail: "submitted" } : { state: "locked", detail: "submit_disabled" };
+function focus(v, field, pid) {
+	var state = v.cls.state;
+	var el;
+	if (state === "locked") el = v.scan.fields[0];
+	else {
+		var f = loginFields(v);
+		if (!f) return { state: "error", detail: "ui_changed" };
+		el = field === "id" ? f.user : f.pw;
+	}
+	if (!el || !focusEmpty(el.el) || typeof pid !== "number") return { state: "error", detail: "ui_changed" };
+	return { state: state, detail: "focused", pid: pid };
+}
+
+function submit(v) {
+	var state = v.cls.state;
+	var button;
+	if (state === "locked") button = lockButton(v.scan);
+	else {
+		var f = loginFields(v);
+		button = f && loginButton(v.scan, f.pw);
+	}
+	if (!button) return { state: "error", detail: "ui_changed" };
+	if (!button.enabled) return { state: state, detail: "submit_disabled" };
+	return press(button.el) ? { state: state, detail: "submitted" } : { state: "error", detail: "ui_changed" };
 }
 
 function readInput() {
@@ -236,13 +258,10 @@ function run() {
 				if (v.cls.detail === "notice") dismissNotice(v.scan);
 			});
 			out = { state: seen.result.state, detail: "notice_handled" };
-		} else if (req.action === "login" && typeof req.id === "string" && typeof req.password === "string") {
+		} else if (req.action === "focus" || req.action === "submit") {
 			var target = seen.windows[0];
-			if (seen.result.state === "login" && seen.result.detail === "notice") {
-				dismissNotice(target.scan);
-				out = { state: "login", detail: "notice_handled" };
-			} else if (seen.result.state === "locked") out = submitLock(target, req.password);
-			else if (seen.result.state === "login" || (seen.result.state === "error" && seen.result.detail === "rejected")) out = submitLogin(target, req.id, req.password);
+			var form = seen.result.state === "locked" || (seen.result.state === "login" && seen.result.detail !== "notice") || (seen.result.state === "error" && seen.result.detail === "rejected");
+			if (form) out = req.action === "submit" ? submit(target) : focus(target, req.field === "id" ? "id" : "password", seen.pid);
 		}
 		return JSON.stringify(out);
 	} catch (e) {

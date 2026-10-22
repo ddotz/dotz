@@ -42,7 +42,8 @@ function fakeMachine(o: { installed?: boolean; trusted?: boolean; states: KakaoS
 		if (prog === "osascript") {
 			if (argv.some(a => a.includes("AXIsProcessTrusted"))) return { code: 0, stdout: `${o.trusted === false ? "false" : "true"}\n`, stderr: "" };
 			const req = JSON.parse(opts?.stdin ?? "{}");
-			if (req.action === "login") {
+			if (req.action === "focus") return { code: 0, stdout: `${JSON.stringify({ state: last.state, detail: "focused", pid: 4242 })}\n`, stderr: "" };
+			if (req.action === "submit") {
 				if (o.afterSubmit) states.splice(0, states.length, ...o.afterSubmit);
 				return { code: 0, stdout: `${JSON.stringify({ state: "login", detail: "submitted" })}\n`, stderr: "" };
 			}
@@ -51,15 +52,16 @@ function fakeMachine(o: { installed?: boolean; trusted?: boolean; states: KakaoS
 		}
 		return { code: 127, stdout: "", stderr: "unexpected" };
 	};
-	return { calls, runner };
+	const typed: [number, string][] = [];
+	return { calls, runner, typed, type: async (pid: number, text: string) => void typed.push([pid, text]) };
 }
 
 function clock() {
 	let t = 1_000_000;
 	return { now: () => t, sleep: async (ms: number) => void (t += ms) };
 }
-const deps = (runner: Runner) => ({ paths, runner, ...clock() });
-const submits = (calls: Call[]) => calls.filter(c => c.stdin?.includes('"action":"login"'));
+const deps = (runner: Runner) => ({ paths, runner, type: async () => {}, ...clock() });
+const submits = (calls: Call[]) => calls.filter(c => c.stdin?.includes('"action":"submit"'));
 const everything = (calls: Call[]) => calls.map(c => c.argv.join(" ")).join("\n");
 
 test("not installed, no accessibility and no credentials stop before anything is launched or submitted", async () => {
@@ -75,20 +77,20 @@ test("not installed, no accessibility and no credentials stop before anything is
 	expect(m.calls.some(c => c.argv[0] === "open")).toBe(false);
 });
 
-test("a login screen is submitted once and ends ok; the app opens hidden and credentials travel only on stdin", async () => {
+test("a login screen is typed into and submitted once, ending ok; the app opens hidden and credentials go only to KakaoTalk's pid", async () => {
 	storeCreds();
 	const m = fakeMachine({ states: [{ state: "unknown" }, { state: "login" }], afterSubmit: [{ state: "login", detail: "submitted" }, { state: "main" }] });
-	expect(await login(deps(m.runner))).toEqual({ status: "ok" });
+	expect(await login({ ...deps(m.runner), type: m.type })).toEqual({ status: "ok" });
+	expect(m.typed).toEqual([[4242, ID], [4242, PW]]);
+	expect(m.calls.filter(c => c.stdin?.includes('"action":"focus"')).map(c => JSON.parse(c.stdin!).field)).toEqual(["id", "password"]);
 	const open = m.calls.find(c => c.argv[0] === "open")!;
 	expect(open.argv).toContain("-g");
 	expect(open.argv).toContain("-j");
 	expect(open.argv).not.toContain("-n");
-	const sent = submits(m.calls);
-	expect(sent).toHaveLength(1);
-	expect(JSON.parse(sent[0]!.stdin!)).toEqual({ action: "login", id: ID, password: PW });
+	expect(submits(m.calls)).toHaveLength(1);
 	expect(everything(m.calls)).not.toContain(PW);
 	expect(everything(m.calls)).not.toContain(ID);
-	for (const c of m.calls) if (!c.stdin?.includes('"action":"login"')) expect(c.stdin ?? "").not.toContain(PW);
+	for (const c of m.calls) expect(c.stdin ?? "").not.toContain(PW);
 });
 
 test("an already logged-in app is ok without a submit", async () => {
@@ -168,7 +170,7 @@ test("the helpers use the documented commands", async () => {
 	expect(m.calls[1]!.argv.join(" ")).toContain("osascript -l JavaScript -e");
 });
 
-test("the JXA source never activates the app, types keys or raises a window", () => {
+test("the JXA source never activates the app, sends System Events keystrokes or raises a window", () => {
 	for (const word of ["activate", "keystroke", "key code", "frontmost", "set visible"]) expect(jxa).not.toContain(word);
 	expect(() => new Function(jxa)).not.toThrow();
 });
@@ -184,13 +186,15 @@ function node(s: Spec): any {
 	e.enabled = () => s.enabled ?? true;
 	e.position = () => s.pos ?? [0, 0];
 	e.uiElements = () => e.kids;
+	e.focusedSet = 0;
+	Object.defineProperty(e, "focused", { get: () => () => false, set: (v: boolean) => void (v && e.focusedSet++) });
 	Object.defineProperty(e, "value", { get: () => () => e._v, set: (v: string) => { e._v = v; e.sets.push(v); } });
 	e.actions = { byName: (n: string) => ({ perform: () => { if (n !== "AXPress") throw new Error("only AXPress"); e.pressed++; } }) };
 	return e;
 }
 function runJxa(windows: Spec[], req: unknown, running = true) {
 	const wins = windows.map(node);
-	const proc = { windows: () => wins };
+	const proc = { windows: () => wins, unixId: () => 4242 };
 	const app = () => ({ processes: Object.assign(() => (running ? [proc] : []), { whose: () => () => (running ? [proc] : []) }) });
 	const $ = { NSFileHandle: { fileHandleWithStandardInput: { readDataToEndOfFile: typeof req === "string" ? req : JSON.stringify(req) } }, NSString: { alloc: { initWithDataEncoding: (d: string) => d } }, NSUTF8StringEncoding: 4 };
 	const out = new Function("Application", "ObjC", "$", `${jxa}\nreturn run();`)(app, { import() {}, unwrap: (x: unknown) => x }, $) as string;
@@ -220,32 +224,45 @@ test("JXA: state detection for login, lock, confirm, rejection, main and a close
 	expect(runJxa([{ role: "AXWindow", title: "Chats", kids: [{ role: "AXStaticText", value: "비밀번호 틀렸다" }, { role: "AXScrollArea" }] }], { action: "state" }).json).toEqual({ state: "main" });
 });
 
-test("JXA: login fills the two fields by AXValue, presses only the login button and never prints the input", () => {
-	const r = runJxa([loginWindow], { action: "login", id: ID, password: PW });
-	const [idField, pwField, qr, button] = r.wins[0].kids;
-	expect(idField._v).toBe(ID);
-	expect(pwField._v).toBe(PW);
+test("JXA: focus clears and focuses one field and answers the pid; submit presses only an enabled login button", () => {
+	let r = runJxa([loginWindow], { action: "focus", field: "id" });
+	expect(r.json).toEqual({ state: "login", detail: "focused", pid: 4242 });
+	expect(r.wins[0].kids[0].sets).toEqual([""]);
+	expect(r.wins[0].kids[0].focusedSet).toBe(1);
+	r = runJxa([loginWindow], { action: "focus", field: "password" });
+	expect(r.wins[0].kids[1].focusedSet).toBe(1);
+	expect(r.wins[0].kids[0].focusedSet).toBe(0);
+	const korean: Spec = { ...loginWindow, kids: [{ role: "AXTextField", pos: [0, 10], desc: "텍스트 필드" }, { role: "AXTextField", pos: [0, 50], desc: "보안 텍스트 필드" }, { role: "AXButton", title: "로그인", pos: [0, 90] }] };
+	r = runJxa([korean], { action: "focus", field: "password" });
+	expect(r.wins[0].kids[1].focusedSet).toBe(1);
+	r = runJxa([loginWindow], { action: "submit" });
+	const [, , qr, button] = r.wins[0].kids;
 	expect(button.pressed).toBe(1);
 	expect(qr.pressed).toBe(0);
 	expect(r.json).toEqual({ state: "login", detail: "submitted" });
-	expect(r.out).not.toContain(PW);
-	expect(r.out).not.toContain(ID);
+	const disabled: Spec = { ...korean, kids: [...korean.kids!.slice(0, 2), { role: "AXButton", title: "로그인", pos: [0, 90], enabled: false }] };
+	r = runJxa([disabled], { action: "submit" });
+	expect(r.json).toEqual({ state: "login", detail: "submit_disabled" });
+	expect(r.wins[0].kids[2].pressed).toBe(0);
 });
 
-test("JXA: the lock screen password goes into its single field and confirm is pressed; a bad request is an error", () => {
+test("JXA: on the lock screen focus takes its single field and submit presses confirm; a bad request is an error", () => {
 	const lock: Spec = { role: "AXWindow", title: "KakaoTalk", kids: [{ role: "AXStaticText", value: "잠금 모드" }, { role: "AXTextField" }, { role: "AXButton", title: "계정 변경" }, { role: "AXButton", title: "확인" }] };
-	const r = runJxa([lock], { action: "login", id: ID, password: PW });
-	const [, field, other, ok] = r.wins[0].kids;
-	expect(field._v).toBe(PW);
+	expect(runJxa([lock], { action: "focus", field: "password" }).wins[0].kids[1].focusedSet).toBe(1);
+	const r = runJxa([lock], { action: "submit" });
+	const [, , other, ok] = r.wins[0].kids;
 	expect(ok.pressed).toBe(1);
 	expect(other.pressed).toBe(0);
 	expect(r.json).toEqual({ state: "locked", detail: "submitted" });
 	expect(runJxa([lock], "not json").json).toEqual({ state: "error", detail: "bad_input" });
 });
 
-test("JXA: a login action on a logged-in app changes nothing", () => {
+test("JXA: focus and submit on a logged-in app change nothing", () => {
 	const main: Spec = { role: "AXWindow", title: "Chats", kids: [{ role: "AXScrollArea" }, { role: "AXTextField", title: "search" }] };
-	const r = runJxa([main], { action: "login", id: ID, password: PW });
-	expect(r.json).toEqual({ state: "main" });
-	expect(r.wins[0].kids[1].sets).toEqual([]);
+	for (const req of [{ action: "focus", field: "password" }, { action: "submit" }]) {
+		const r = runJxa([main], req);
+		expect(r.json).toEqual({ state: "main" });
+		expect(r.wins[0].kids[1].sets).toEqual([]);
+		expect(r.wins[0].kids[1].focusedSet).toBe(0);
+	}
 });
