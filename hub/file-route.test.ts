@@ -4,7 +4,9 @@ import { expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { emit, sentFiles } from "./events.ts";
+import { HUB_TOKEN } from "./config.ts";
 import { allowedRoots, fileLinePaths, fileRoute } from "./files.ts";
+import { makeRoute } from "./routes.ts";
 import { bundle } from "./webapp.ts";
 
 const DATA = process.env.DOTZ_DIR!;
@@ -64,6 +66,29 @@ test("a file that was never attached is refused, also by traversal from an attac
 	expect((await get(join(QA, "other.png"))).status).toBe(403);
 	expect((await get(join(QA, "..", "..", "..", "outside.txt"))).status).toBe(403);
 	expect((await get(join(DATA, "..", "outside.txt"))).status).toBe(403);
+});
+
+// A computer in the app's switcher (맥미니) is a gateway of its own: the page opens on its origin and asks that gateway's /api/file, with the same
+// auth as every other call. So a [file] line its bot sent is served through the full route, and refused without the login.
+test("a peer gateway's sent [file] image is served through the whole route, and only with the auth", async () => {
+	const shot = join(DATA, "..", "peer-shot.png");
+	writeFileSync(shot, "PEERPNG");
+	sendFiles(shot);
+	const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
+	const url = `http://mini.tailnet.ts.net/api/file?path=${encodeURIComponent(shot)}`;
+	expect((await route(new Request(url))).status).toBe(403);
+	const ok = await route(new Request(url, { headers: { "x-dotz-token": HUB_TOKEN } }));
+	expect([ok.status, ok.headers.get("content-type"), await ok.text()]).toEqual([200, "image/png", "PEERPNG"]);
+	const head = await route(new Request(url, { method: "HEAD", headers: { "x-dotz-token": HUB_TOKEN } }));
+	expect([head.status, head.headers.get("content-length")]).toEqual([200, "7"]);
+});
+
+test("a notice sheet keeps the files of its [file] lines as chips next to the text", () => {
+	const js = bundle("js").text;
+	const grab = (re: RegExp) => re.exec(js)?.[0] ?? "";
+	const fn = new Function("mdNode", "filesNode", `${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/function ntBody\(n\) \{[\s\S]*?\n\}\n/)}\nreturn ntBody;`)((t: string) => ({ md: t }), (f: { path: string }[]) => (f.length ? { files: f.map(x => x.path) } : null));
+	expect(fn({ text: "맥미니 결과\n[file] /Users/x/shot.png\n[file] /Users/x/report.pdf" })).toEqual([{ md: "맥미니 결과" }, { files: ["/Users/x/shot.png", "/Users/x/report.pdf"] }]);
+	expect(fn({ text: "파일 없음" })).toEqual([{ md: "파일 없음" }, null]);
 });
 
 test("the web turns [file] lines into chips, keeps them out of notice text and has the reader", () => {
