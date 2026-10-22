@@ -46,7 +46,8 @@ function turnIntents(source: string, since: number): { t: string; at: number }[]
 		if (at < since) continue;
 		if (r.type === "turn_end") out.length = 0;
 		else if (r.type === "tool_call") {
-			const t = short((r.intent || r.text || "").replace(/\s+/g, " ").trim(), 60);
+			// An absolute path reads as its file name: the owner knows the file, not the folders above it.
+			const t = short((r.intent || r.text || "").replace(/\s+/g, " ").trim().replace(/(?:~?\/[^\s/]+)+\/([^\s/]+)/g, "$1"), 60);
 			if (t && out.at(-1)?.t !== t) out.push({ t, at });
 		}
 	}
