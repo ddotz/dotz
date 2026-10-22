@@ -1,6 +1,7 @@
 // Web Push to the installed web app: VAPID keys made once in ~/.dotz/secrets/vapid.json (0600, never logged), the
 // subscriptions with their per-kind toggles in ~/.dotz/push.json, and the rule that picks which hub events become a
 // notification. A device whose page reported itself visible and focused in the last minute is skipped (no double alert).
+import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
@@ -160,6 +161,10 @@ const sameOrigin = (a: string, b: string) => {
 };
 const DID = /^[\w-]{8,64}$/;
 const device = (s: Stored) => s.did ?? `e:${s.endpoint}`;
+// One browser/app subscription is one endpoint, whichever computers hold it. Its short hash travels between gateways (the endpoint itself never does), so a
+// computer that holds the same endpoint under no device id (an old subscription) still counts as the same device and stays quiet when another computer covered it.
+const epKey = (endpoint: string) => `ep:${createHash("sha256").update(endpoint).digest("hex").slice(0, 24)}`;
+const EP_KEY = /^ep:[0-9a-f]{24}$/;
 
 // What this gateway knows about a device (by `did`), in ~/.dotz/push-devices.json. `app`: the device has the installed app (on this or another gateway; the
 // app tells every gateway, see tellPeers). `off`: THIS gateway's notices do not reach the device. The setting lives where the decision is made: the gateway
@@ -200,8 +205,9 @@ const wants = (s: Stored, m: PushMessage, t: number) => (m.kind === "test" || s.
 function cover(list: Stored[], m: PushMessage, done: Set<string>): void {
 	const now = Date.now();
 	for (const s of [...list].sort((x, y) => Number(y.app === true) - Number(x.app === true))) {
-		if (done.has(device(s))) continue;
+		if (done.has(device(s)) || done.has(epKey(s.endpoint))) continue;
 		done.add(device(s));
+		done.add(epKey(s.endpoint));
 		if (!s.app && hasApp(s.did)) continue;   // a browser of a device that has the app is never a channel
 		if (wants(s, m, now)) void deliver(s, m);
 	}
@@ -222,6 +228,7 @@ async function relayTo(peerUrl: string, body: string): Promise<string[] | undefi
 async function fanOut(m: PushMessage): Promise<void> {
 	// A device this gateway is switched off for counts as covered: no subscription of it fires here, and the peers are told to skip it too.
 	const done = new Set<string>(Object.keys(devices).filter(isOff));
+	for (const s of subs) if (s.did && isOff(s.did)) done.add(epKey(s.endpoint));
 	cover(subs.filter(s => s.app === true), m, done);
 	let list: Awaited<ReturnType<typeof relayPeers>> = [];
 	try {
@@ -257,9 +264,11 @@ async function ownAndPeers(): Promise<{ me?: Awaited<ReturnType<typeof relayPeer
 	return { me, peers: me ? list.filter(f => !f.self) : [] };
 }
 // The app (or its removal) is told to every other gateway, so each one drops the device's browser subscriptions and answers the settings screen alike.
-async function tellPeers(body: object): Promise<void> {
+// `eps` (with app: true): the endpoints of the device's app subscriptions here, so a peer that holds one of them under no device id adopts it (see /api/push/device).
+async function tellPeers(body: { did: string; app: boolean }): Promise<void> {
 	const { me, peers } = await ownAndPeers();
-	if (me) await Promise.all(peers.map(p => peerJson(p.url, "/api/push/device", { from: me.url, ...body })));
+	const eps = body.app ? subs.filter(s => s.did === body.did && s.app === true).map(s => epKey(s.endpoint)) : [];
+	if (me) await Promise.all(peers.map(p => peerJson(p.url, "/api/push/device", { from: me.url, ...body, ...(eps.length ? { eps } : {}) })));
 }
 // The settings screen's list: one row per discovered gateway (this one first), `on` = that gateway's notices reach the device. A gateway that does not answer is `online: false`.
 async function gatewayView(did: string): Promise<{ app: boolean; gateways: Array<{ name: string; url: string; self: boolean; on: boolean; online: boolean }> }> {
@@ -390,6 +399,17 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 		if (typeof did !== "string" || !DID.test(did)) return json({ error: "did required" }, 400);
 		if (req.method === "GET") return json({ on: !isOff(did), app: hasApp(did) });
 		if (typeof b.on === "boolean") patchDevice(did, { off: b.on ? undefined : true });
+		// A subscription here without a device id whose endpoint is the app's elsewhere is that same app subscription: it takes the id and the app role,
+		// so the device is one device here too (and stays this computer's own fallback channel if the app's computer is down).
+		if (b.app === true && Array.isArray(b.eps)) {
+			const eps = new Set<string>(b.eps.filter((k: unknown): k is string => typeof k === "string" && EP_KEY.test(k)).slice(0, 20));
+			const same = subs.filter(s => !s.did && eps.has(epKey(s.endpoint)));
+			if (same.length) {
+				for (const s of same) Object.assign(s, { did, app: true });
+				save();
+				log(`push: ${same.length} subscription(s) without a device id adopted as the app's`);
+			}
+		}
 		if (typeof b.app === "boolean") patchDevice(did, { app: b.app ? true : undefined });
 		return json({ ok: true });
 	}
