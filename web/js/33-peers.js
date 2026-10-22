@@ -78,6 +78,7 @@ function prPaint() {
   // el() skips a null child; Node.append() would write it as the text "null" (the chip once read "맥북 null"), so the chip is built with el().
   clear(chip).append(el("span", { class: "pc-n", text: me.name }), el("span", { class: "pc-c" }, icon("chev", "pc-i"), more ? el("span", { class: `pc-d${need ? " need" : ""}`, role: "img", "aria-label": "다른 컴퓨터에 새 알림" }) : null));
   chip.setAttribute("aria-label", `컴퓨터 바꾸기, 지금은 ${me.name}`);
+  chip.title = `컴퓨터 바꾸기 (${prKeyHint}, 다음 컴퓨터로)`;
   if (PR.node) prSheet();
 }
 
@@ -168,6 +169,21 @@ const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", o
 mnLoad();
 
 $("#pchip").onclick = prOpen;
+// ⌘` (Ctrl+` elsewhere) goes straight to the next computer in the sheet's order, wrapping round, skipping ones that are offline, with no sheet.
+// macOS keeps ⌘` for cycling an app's windows, so Ctrl+` also works on a Mac.
+const prKeyHint = isMac ? "⌘` · Ctrl+`" : "Ctrl+`";
+function prNext() {
+  const n = PR.list.length, at = PR.list.findIndex(p => p.self);
+  if (n < 2 || at < 0) return false;
+  const next = Array.from({ length: n - 1 }, (_, i) => PR.list[(at + 1 + i) % n]).find(p => p.online);
+  if (next) prPick(next); else toast("다른 컴퓨터에 연결할 수 없어요", true);
+  return true;
+}
+document.addEventListener("keydown", ev => {
+  if (ev.isComposing || ev.altKey || ev.shiftKey || !(ev.ctrlKey || (isMac && ev.metaKey)) || (ev.code !== "Backquote" && ev.key !== "`")) return;
+  if (document.querySelector("dialog[open]")) return;
+  if (prNext()) ev.preventDefault();
+});
 // Tapping 홈 again while on 홈 opens the computer sheet (like the 채팅 tab's re-tap, 04-state.js chatTabTap) and the next tap closes it; with one gateway the tab behaves as before.
 const homeTabTap = () => { if (PR.node) prClose(); else if (current === "home" && PR.list.length >= 2) prOpen(); else go("home"); };
 if (PR.list.length) prPaint();
