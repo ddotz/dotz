@@ -24,6 +24,11 @@ const EVENTS: Array<[string, Record<string, unknown>, string]> = [
 	["delivery state of a message to the main chat", { kind: "delivery", source: "gateway", target: "web", ref: "a1", state: "received" }, "main"],
 	["session answer note (source and target are the session)", { kind: "out", source: "lane:a", target: "lane:a", text: "10분 안에 알려요.", answers: ["a1"] }, "lane:a"],
 	["lane answer posted to the work channel", { kind: "out", source: "lane:a", target: CH, text: "x" }, "lane:a"],
+	["a mail (hub/mail.ts) is its own conversation", { kind: "mail", source: "zele", channel: "mail:zele-1", conv: "mail:zele-1", mail: "zele-1", text: "x" }, "mail:zele-1"],
+	["owner message in a mail's thread of a work channel", { kind: "message", source: "web", channel: "th:42", parent: CH, conv: "mail:zele-1", text: "ㅇㅇ" }, "mail:zele-1"],
+	["answer to a mail's thread", { kind: "out", source: "orchestrator", target: "th:42", channel: CH, conv: "mail:zele-1", text: "x" }, "mail:zele-1"],
+	["answer to a web-only mail", { kind: "out", source: "orchestrator", target: "mail:zele-1", text: "x" }, "mail:zele-1"],
+	["delivery state of a web-only mail message", { kind: "delivery", source: "gateway", target: "mail:zele-1", ref: "a1", state: "received" }, "mail:zele-1"],
 ];
 
 describe("what the orchestrator sends to Discord also shows in the web project chat", () => {

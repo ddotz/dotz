@@ -1,7 +1,7 @@
 /* ---------- todo strip: the target's plan (GET /api/todo), one line above the timeline ---------- */
 const TD = { by: {}, open: {}, timer: 0, calls: new Set() };
 async function loadTodo(t = target) {
-  if (isFixedT(t)) { TD.by[t] = []; if (t === target) { paintTodo(); if (CV.key && !CV.placed) renderAll(); } return; }   // no plan in 알림 / 작업 기록
+  if (isFixedT(t) || isMailT(t)) { TD.by[t] = []; if (t === target) { paintTodo(); if (CV.key && !CV.placed) renderAll(); } return; }   // no plan in 알림 / 작업 기록
   let r;
   try { r = await api(`/api/todo?target=${enc(t)}`); } catch { TD.by[t] = TD.by[t] || []; r = null; }
   if (r) TD.by[t] = Array.isArray(r.phases) ? r.phases : [];

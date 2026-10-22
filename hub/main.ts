@@ -40,6 +40,7 @@ import { addWatch, allWatches, approveWatch, isWatchIssue, startWatches, stopWat
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
+import { mailByKey, mailByThread, mailTarget, postMail, type MailDeps } from "./mail.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
 import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, installDelivery, replies } from "./outbound.ts";
@@ -53,7 +54,7 @@ installDelivery();
 setLaneTitleResolver(name => lanes.get(name)?.title);
 setWatchLabelResolver(watchLabel);
 setOrchestratorAvailable(() => orch.status !== "stopped" && orch.status !== "rate-limited");
-setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] : undefined));
+setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
 backfillNotices();
 installLaneHandlers();
@@ -114,7 +115,8 @@ const onOwner = (m: discord.Incoming) => {
 	if (typeof m.channel === "object" && "thread" in m.channel) {
 		const info = discord.threadInfo(m.channel.thread);
 		const extra = pluginThread({ thread: m.channel.thread, text: m.content });
-		const threadEvent = { ...event, channel: `th:${m.channel.thread}`, kind: "message", thread_name: m.channel.name, parent: info?.parentTarget, parent_name: extra?.parentName ?? info?.parentName };
+		const mail = mailByThread(m.channel.thread);
+		const threadEvent = { ...event, channel: `th:${m.channel.thread}`, kind: "message", thread_name: m.channel.name, parent: info?.parentTarget, parent_name: extra?.parentName ?? info?.parentName, ...(mail ? { conv: mailTarget(mail.key) } : {}) };
 		emit("inbox", threadEvent);
 		intake(extra?.note ? { ...threadEvent, plugin_note: extra.note } : threadEvent, threadEvent.channel, m.id);
 		return;
@@ -162,27 +164,35 @@ await discord.ensureChannels().catch(e => {
 });
 void discord.syncProfile().catch(e => log(`syncProfile failed: ${e}`));
 
+// Each mail is a conversation (hub/mail.ts): zele here and outside posters through POST /api/mail (hub/routes.ts) share these.
+let mailChannelId: string | undefined;
+const mailDeps = (): MailDeps => ({
+	createThread: discord.createThread,
+	send: (target, text) => discord.send(target, text),
+	mailChannel: async () => {
+		if (!discord.status.enabled) return undefined;
+		if (mailChannelId && discord.channels.work[mailChannelId]) return mailChannelId;
+		const mailName = msg().channelNames.mail;
+		const found = Object.entries(discord.channels.work).find(([, n]) => n === mailName)?.[0];
+		const id = found ?? (await discord.createWorkChannel(mailName)).id;
+		if (!found) setupChannel({ channel: id, purpose: "메일 수신함: 메일마다 스레드 하나(웹에서는 대화 하나), 답장은 확인받은 뒤에만" }, mailName, "");
+		return (mailChannelId = id);
+	},
+	discordOn: discord.status.enabled,
+	emit: event => emit("inbox", event as Parameters<typeof emit>[1]),
+	wake: (event, target) => deliver(inboxText(event), { target }),
+});
+
 void startZele({
 	alert,
-	mail: (channel, text) => {
-		const event = { ts: now(), kind: "mail", source: "zele", channel_id: channel, text };
-		emit("inbox", event);
-		deliver(inboxText(event), { target: `ch:${channel}` });
+	mail: async m => {
+		await postMail({ source: "zele", id: m.id, from: m.from, to: m.to, subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, wake: true }, mailDeps()).catch(e => log(`zele: mail ${m.id} not posted: ${(e as Error).message}`));
 	},
 	brief: text => {
 		const target = !discord.status.enabled ? "web" : discord.channels.brief ? "brief" : "chat";
 		const event = { ts: now(), kind: "schedule", source: "zele", id: "zele", channel: target, text };
-		// Without a mail channel (no Discord) a new mail comes through here too: shown as mail, not as a schedule.
-		emit("inbox", text.startsWith("[mail") ? { ...event, kind: "mail", text: text.replace(/^\[mail[^\]]*\]\s*/, "") } : event);
+		emit("inbox", event);
 		deliver(inboxText(event), { target });
-	},
-	mailChannel: async () => {
-		if (!discord.status.enabled) return undefined;
-		const mailName = msg().channelNames.mail;
-		const found = Object.entries(discord.channels.work).find(([, n]) => n === mailName)?.[0];
-		const id = found ?? (await discord.createWorkChannel(mailName)).id;
-		if (!found) setupChannel({ channel: id, purpose: "메일 수신함 (zele): 새 메일은 메일마다 스레드로 요약, 답장은 확인받은 뒤에만" }, mailName, "");
-		return id;
 	},
 });
 
@@ -205,7 +215,7 @@ setLaneIdleHandler(name => flushQueue(`lane:${name}`));
 // Safety net for what the idle hooks miss: items kept over a gateway restart, a lane that went idle without a turn end.
 setInterval(() => queuedTargets().forEach(flushQueue), QUEUE_SWEEP_MS);
 
-const route = makeRoute({ busyNow, restartGateway, restartGatewayNow });
+const route = makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps });
 // Page, script, styles and JSON answers go out gzipped (hub/compress.ts); /api/file keeps its exact bytes and Content-Length.
 const server = Bun.serve({
 	hostname: HOST,
