@@ -49,6 +49,9 @@
 .dc-go:disabled { opacity: .45; }
 @media (pointer: coarse) { .dc-note { font-size: 16px; } }
 .dc-st { flex: none; padding: 4px 16px 10px; color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+/* In the 알림 / 작업내역 conversations the rows are not answer buttons: a tap on the message opens the decision sheet (30-notices.js). */
+.dcm.fx { cursor: pointer; }
+.dcm.fx .dcm-row { pointer-events: none; }
 .dcm { display: flex; flex-direction: column; gap: 6px; max-width: 520px; margin-top: 10px; }
 .todo { flex: none; margin: 0 0 8px; border-radius: 12px; background: var(--card); }
 .todo[hidden] { display: none; }

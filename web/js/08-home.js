@@ -115,7 +115,8 @@ const hcCard = (open, ...kids) => { const c = tapCard(open, ...kids); c.classLis
 const hcDot = tone => el("span", { class: `nt-dot tone-${tone || "none"}`, "aria-hidden": "true" });
 // A generic title (작업 기록, 알림) says nothing in a 3-row card: the row shows the entry's first line instead.
 const hcLine = n => { const t = ntPlain(n.title); return !t || t === "작업 기록" || t === "작업내역" || t === "알림" ? ntPlain(String(n.text || "").split("\n")[0]) || t || "알림" : t; };
-const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row" }, hcDot(n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), el("span", { class: "m", text: ntWhen(n) }))));
+// Each row opens its own item by kind (30-notices.js noticeOpen); a tap beside the rows still opens the card's conversation.
+const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); noticeOpen(n); } } }, hcDot(n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), el("span", { class: "m", text: ntWhen(n) }))));
 // Gateway restarts are kept in the store (born read) but never shown on 홈 (owner 2026-10-19: restarts are not his news).
 const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
 function homeAlertCard() {

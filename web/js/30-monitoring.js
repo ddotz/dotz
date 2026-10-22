@@ -28,8 +28,8 @@ function monRow(m) {
       el("span", { class: "nt-t" }, ntPlain(m.name) || MON_KIND[m.kind] || "모니터링", m.kind === "schedule" ? el("span", { class: "tag mon-kind", text: MON_KIND.schedule }) : null),
       el("span", { class: "nt-x", text: run }),
       next ? el("span", { class: "nt-m", text: next }) : null)];
-  if (!(m.channel && isProjT(m.channel))) return el("div", { class: "nt-row nt-mon" }, ...kids);
-  return el("button", { type: "button", class: "nt-row nt-mon", onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else openTarget(m.channel, "chat"); } }, ...kids, icon("chev", "chev"));
+  if (!(m.channel && isProjT(m.channel))) return el("div", { class: "nt-row nt-mon", "data-mon-name": m.name }, ...kids);
+  return el("button", { type: "button", class: "nt-row nt-mon", "data-mon-name": m.name, onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else openTarget(m.channel, "chat"); } }, ...kids, icon("chev", "chev"));
 }
 
 function renderMonitoring() {

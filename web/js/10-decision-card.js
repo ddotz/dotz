@@ -171,7 +171,7 @@ async function answerInline(nd, opt) {
   dcSending.delete(nd.id); syncInlineChoices();
 }
 function choicesNode(sig, pc, at) {
-  const box = el("div", { class: "dcm", "data-sig": sig, "data-at": at || null });
+  const box = el("div", { class: isFixedT(target) ? "dcm fx" : "dcm", "data-sig": sig, "data-at": at || null });
   pc.blocks.forEach((b, bi) => {
     if (b.title && pc.blocks.length > 1) box.append(el("div", { class: "dcm-sub", text: b.title }));
     for (const o of b.options) box.append(el("button", { class: `dcm-row${o.rec ? " rec" : ""}`, type: "button", disabled: true, "data-b": bi, "data-n": o.n, onclick: () => { const dc = DC.cur; if (dc && dc.sig === sig) pickOption(dc, bi, o); else { const nd = pc.blocks.length === 1 ? dcNoticeAt(at) : null; if (nd && nd.decision.state === "open" && !dcSending.has(nd.id)) answerInline(nd, o); } } },

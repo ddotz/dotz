@@ -47,7 +47,7 @@ function noticeLive(e) {
     const i = NT.items.findIndex(x => x.id === e.item.id);
     if (e.item.dismissed) { if (i >= 0) NT.items.splice(i, 1); }
     else if (i < 0) NT.items.push(e.item); else NT.items[i] = e.item;
-    if (i < 0 && ntOpenDec(e.item) && NT.loaded) toast("답변이 필요해요", false, { label: "열기", onclick: () => noticeSheetOpen(e.item.id) }, 8000);
+    if (i < 0 && ntOpenDec(e.item) && NT.loaded) toast("답변이 필요해요", false, { label: "열기", onclick: () => noticeOpenId(e.item.id) }, 8000);
     if (e.item.kind === "watch") loadMonitors();
   } else if (e.kind === "notice_dismiss") {
     NT.items = NT.items.filter(x => x.id !== e.id);
@@ -173,10 +173,93 @@ async function ntJump(n) {
 
 // A tapped push: open its conversation and land on the message it is about (loaded first when the stream missed it).
 function pushOpen(hash, at) {
-  const p = parseHash(hash);
-  if (at && p.view === "chat") ntJump({ src: p.t || MAIN, at });
+  const p = parseHash(hash), t = p.t || MAIN;
+  if (at && p.view === "chat") noticeOpen(ntMsgFor(t, at) || { kind: "message", tone: "", src: t, open: t, at });
   else go(p.view, p.t);
 }
+
+/* ---- one handler for every notice entry point ---- */
+// The corner toast, a tapped push, a row of 답변 필요, a row of the 홈 notice cards and a message tapped in the 알림 / 작업내역 conversations all end in
+// noticeOpen: the item opens by the kind of thing it links to, never by where it was tapped.
+//   sheet    a decision notice (hub/notices.ts kind "decision")           -> the bottom decision sheet over the current screen
+//   ask      an [ask] message whose question still waits                    -> the same sheet (else the conversation at that message)
+//   detail   a failure alert                                                -> a detail sheet over the current screen
+//   session  a session's report                                             -> that session's view
+//   worklog  a 작업내역 post                                                 -> 작업내역, on that item
+//   monitor  a 모니터링 notice whose monitor still exists                   -> 모니터링, at that monitor
+//   message  anything else (plain message, result)                         -> the conversation, on that message
+function noticeKindAction(n, mons = NM.items) {
+  if (ntIsDec(n)) return "sheet";
+  if (n.tone === "ask") return "ask";
+  if (n.kind === "alert" && n.tone === "fail") return "detail";
+  if (n.kind === "result" || String(n.src || n.open || "").startsWith("lane:")) return "session";
+  if (n.kind === "worklog") return "worklog";
+  if (n.kind === "watch" && mons.some(m => m.name === n.title)) return "monitor";
+  return "message";
+}
+async function noticeOpen(n) {
+  if (!n) return;
+  const a = noticeKindAction(n);
+  if (a === "detail" || a === "session" || a === "monitor") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
+  switch (a) {
+    case "sheet": return noticeSheetOpen(n.id);
+    case "ask": if (await ntAskSheet(n)) return; return ntJump(n);   // answered or gone: the conversation
+    case "detail": return ntDetailOpen(n);
+    case "session": return ntSession(n);
+    case "monitor": return monOpen(n.title);
+    default: return ntJump(n);
+  }
+}
+async function noticeOpenId(id) {
+  let n = ntById(id);
+  if (!n) { await loadNotices(); n = ntById(id); }
+  if (!n) { toast("이 알림은 이미 처리됐어요"); return; }
+  return noticeOpen(n);
+}
+function ntRead(n) {
+  if (!n.id || n.read || !ntById(n.id)) return;
+  n.read = true; NT.unread = Math.max(0, NT.unread - 1); ntPaint(); homeSoon();
+  ntMarkRead({ ids: [n.id] });
+}
+// The stored notice of a message (its decision first), by conversation and event time; a 작업내역 line of a session is stored under the session, so time alone is the fallback.
+const ntMsgFor = (src, at) => NT.items.find(x => ntIsDec(x) && x.decision.to === src && x.decision.reply_to === at)
+  || NT.items.find(x => (x.src || x.open) === src && x.at === at) || NT.items.find(x => x.at === at) || null;
+// A conversation event (toast, a message of the 알림 / 작업내역 conversations) as a notice: the stored one, else one drawn from the event itself.
+function ntOfEvent(e) {
+  const own = e.kind === "out" && (e.target === "alert" || e.target === "worklog") ? e.target : "";
+  const lane = e.kind === "lane_report" ? String(e.lane || "") : "";
+  const src = e.ask && e.target ? e.target : own || (lane ? `lane:${lane}` : e.open || MAIN);
+  const real = ntMsgFor(src, e.ts);
+  if (real) return real;
+  const p = parseTone(noHandoff(String(e.text || "")));
+  return { id: "", kind: own === "alert" ? "alert" : own === "worklog" ? "worklog" : lane ? "result" : "message", tone: e.ask ? "ask" : own || lane ? p.tone : "",
+    title: e.title || (own === "alert" ? "알림" : own === "worklog" ? "작업 기록" : lane ? `세션 ${lane}` : botName), text: p.text, src, open: src, at: e.ts, ts: e.ts };
+}
+function ntSession(n) {
+  const t = n.src || n.open;
+  if (isLaneT(t) && S && S.lanes.some(l => `lane:${l.name}` === t)) openTarget(t, lastChatView());
+  else ntJump(n);   // the session is gone: its result card in the main chat
+}
+async function monOpen(name) {
+  go("monitoring");
+  await ntRaf(); await ntRaf();
+  const row = [...document.querySelectorAll("#v-monitoring [data-mon-name]")].find(r => r.dataset.monName === name);
+  if (!row) return;
+  row.scrollIntoView({ block: "center" });
+  row.classList.remove("nt-hl"); void row.offsetWidth;
+  row.classList.add("nt-hl");
+  setTimeout(() => row.classList.remove("nt-hl"), 2300);
+}
+// A message tapped in the 알림 / 작업내역 conversations opens like its notice does (capture phase: the choice rows inside it do not answer in place there).
+timeline.addEventListener("click", ev => {
+  if (current !== "chat" || !isFixedT(target) || !(ev.target instanceof Element)) return;
+  const m = ev.target.closest(".bm[data-ts]");
+  if (!m || !tl.contains(m) || ev.target.closest("a, summary, details[open] pre, input, textarea, button:not(.dcm-row)") || getSelection().toString()) return;
+  const e = ts(target).msgs.find(x => x.ts === m.dataset.ts);
+  if (!e) return;
+  ev.stopPropagation(); ev.preventDefault();
+  noticeOpen(ntOfEvent(e));
+}, true);
 
 /* ---- decision sheet: the docked decision card (10-decision-card.js) over the current screen ---- */
 // Same card and same answer path as the one above the composer, for the conversation the notice came from; no navigation, no scroll.
@@ -277,17 +360,17 @@ function ntFor(t, at, opt) {
 
 // One row of the home card 답변 필요 (same markup as 08-home.js homeNowRow): tap = the detail sheet.
 function ntHomeRow(n) {
-  return el("button", { class: "hr", type: "button", onclick: () => noticeSheetOpen(n.id), "aria-label": `${ntPlain(n.title)} · 답변 필요` },
+  return el("button", { class: "hr", type: "button", onclick: () => noticeOpen(n), "aria-label": `${ntPlain(n.title)} · 답변 필요` },
     el("span", { class: "dot att" }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: ntPlain(n.title) })), el("span", { class: "ha", text: ntDecWhere(n.decision) })),
     el("span", { class: "hs warn", text: "답변 필요" }));
 }
 
 /* ---- detail sheet ---- */
-const NS = { id: "", node: null, ov: null, busy: false, opener: null };
+const NS = { id: "", det: null, node: null, ov: null, busy: false, opener: null };   // det: a notice shown read-only (a failure alert), not looked up by id
 function ntSheetClose(restore = true) {
   if (!NS.node) return;
-  NS.node.remove(); NS.node = null; NS.id = "";
+  NS.node.remove(); NS.node = null; NS.id = ""; NS.det = null;
   ovDone(NS.ov); NS.ov = null;
   document.removeEventListener("keydown", ntSheetKey, true);
   if (restore && NS.opener && NS.opener.isConnected) NS.opener.focus({ preventScroll: true });
@@ -317,8 +400,27 @@ async function ntAnswer(n, opt) {
   catch (err) { toast(err.message, true); }
   NS.busy = false; ntSheetPaint();
 }
+// A failure alert: its whole text in the same sheet over the current screen, with the way into the conversation.
+function ntDetailOpen(n) {
+  ntSheetClose(false);
+  ntSheetShow(String(n.id || ""), n);
+}
+function ntDetailPaint(n) {
+  const x = el("button", { type: "button", class: "ib", "aria-label": "닫기", onclick: () => ntSheetClose() });
+  x.append(icon("close"));
+  clear($(".ds-sheet", NS.node)).append(
+    el("div", { class: "ds-hd" }, el("span", { class: "ds-ey", text: "문제가 생겼어요" }), x),
+    el("div", { class: "ds-body" },
+      el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "알림" }),
+      el("div", { class: "ds-m", text: ntWhen(n) }),
+      mdNode(fileLines(n.text).text, "md ds-md")),
+    el("div", { class: "ds-foot" },
+      el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }),
+      el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" })));
+}
 function ntSheetPaint() {
   if (!NS.node) return;
+  if (NS.det) { ntDetailPaint(NS.det); return; }
   const n = ntById(NS.id);
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
   const d = n.decision, open = d.state === "open", keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
@@ -356,8 +458,11 @@ async function noticeSheetOpen(id) {
   if (NS.node && NS.id === String(n.id)) return;
   ntSheetClose(false);
   if (n.decision.draft && n.decision.state === "open") { ntDraftSheet(n); return; }
+  ntSheetShow(String(n.id), null);
+}
+function ntSheetShow(id, det) {
   NS.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  NS.id = String(n.id); NS.busy = false;
+  NS.id = id; NS.det = det; NS.busy = false;
   NS.node = el("div", { class: "ds-bd", onpointerdown: ev => { if (ev.target === NS.node) ntSheetClose(); } }, el("div", { class: "ds-sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "ds-t" }));
   document.body.append(NS.node);
   NS.ov = ovOpen(() => ntSheetClose(false));
@@ -368,14 +473,14 @@ async function noticeSheetOpen(id) {
 }
 
 // A tapped notification (or an option button on it) asks an open window to show the decision; a cold start carries it as ?n=<id>.
-if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) noticeSheetOpen(d.notice); });
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) noticeOpenId(d.notice); });
 {
   const want = new URLSearchParams(location.search).get("n") || "";
   if (want) {
     const u = new URL(location.href);
     u.searchParams.delete("n");
     history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-    setTimeout(() => noticeSheetOpen(want), 500);
+    setTimeout(() => noticeOpenId(want), 500);
   }
 }
 
