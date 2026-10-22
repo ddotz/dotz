@@ -149,7 +149,9 @@ function notify(e) {
   n.append(el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
   // An alert / worklog post opens its conversation and lands on the message (the bell's jump, 30-notices.js).
   const own = e.kind === "out" && (e.target === "alert" || e.target === "worklog") ? e.target : "";
-  n.addEventListener("click", () => { close(); if (own && !e.open) ntJump({ src: own, at: e.ts }); else openTarget(e.open || (lane ? `lane:${lane}` : MAIN), lastChatView()); });
+  // A question that still waits (e.ask) opens only the decision sheet over the current screen (the bell's path, 30-notices.js ntAskSheet); answered or gone: the conversation.
+  const askT = e.ask ? e.target : (own || lane) && parseTone(noHandoff(text)).tone === "ask" ? own || `lane:${lane}` : "";
+  n.addEventListener("click", () => { close(); if (askT) { ntAskSheet({ src: askT, ts: e.ts, tone: "ask" }).then(ok => { if (!ok) { if (own && !e.open) ntJump({ src: own, at: e.ts }); else openTarget(e.open || (lane ? `lane:${lane}` : MAIN), lastChatView()); } }); return; } if (own && !e.open) ntJump({ src: own, at: e.ts }); else openTarget(e.open || (lane ? `lane:${lane}` : MAIN), lastChatView()); });
   n.addEventListener("pointerenter", () => { hover = true; t.sync(); });
   n.addEventListener("pointerleave", () => { hover = false; t.sync(); });
   n.addEventListener("animationend", () => n.classList.remove("in"), { once: true });
