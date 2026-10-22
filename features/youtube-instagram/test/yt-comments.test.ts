@@ -98,6 +98,39 @@ test("over the daily quota budget it is silent and makes no call", async () => {
 	expect(ctx.calls).toHaveLength(0);
 });
 
+const quotaGone = () => Response.json({ error: { errors: [{ reason: "quotaExceeded" }] } }, { status: 403 });
+
+test("a 403 quotaExceeded prints one notice, stays silent for the rest of the Pacific day and keeps the baseline; the next day is normal", async () => {
+	const ctx = fakeCtx(env, { routes: { [KEY]: () => ({ items: [old] }) } });
+	await run(ctx, []);
+	ctx.routes[KEY] = quotaGone;
+	expect(await run(ctx, [])).toEqual({ lines: ["yt-quota-exhausted until=16:00"], code: 0 });
+	expect(readState(env)).toEqual({ fails: 0, data: { since: "2030-06-15T10:00:00Z" } });
+	const before = ctx.calls.length;
+	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
+	expect(await run(fakeCtx(env, { now: "2030-06-16T06:30:00Z", routes: ctx.routes }), [])).toEqual({ lines: [], code: 0 });
+	expect(ctx.calls).toHaveLength(before);
+
+	const next = fakeCtx(env, { now: "2030-06-16T07:01:00Z", routes: { [KEY]: () => ({ items: page }) } });
+	expect(await run(next, [])).toEqual({ lines: ["yt-comment c2 video=v1 by=Bob: hi", "yt-comment c3 video=v1 by=Cy: multi line text"], code: 0 });
+});
+
+test("when 3 pages do not reach the baseline an overflow line follows the listed comments", async () => {
+	const ctx = fakeCtx(env, { routes: { [KEY]: () => ({ items: [old] }) } });
+	await run(ctx, []);
+	let n = 0;
+	ctx.routes[KEY] = () => {
+		const i = n++;
+		return { items: [ytThread(`n${i}`, "Ann", "UCann", `page ${i}`, `2030-06-15T11:0${9 - i}:00Z`)], nextPageToken: "more" };
+	};
+	expect(await run(ctx, [])).toEqual({
+		lines: ["yt-comment n2 video=v1 by=Ann: page 2", "yt-comment n1 video=v1 by=Ann: page 1", "yt-comment n0 video=v1 by=Ann: page 0", "yt-comment-overflow more than 3 new comments; older ones not listed"],
+		code: 0,
+	});
+	expect(ctx.calls.filter(c => c.url.includes("commentThreads"))).toHaveLength(4);
+	expect(readState(env).data.since).toBe("2030-06-15T11:09:00Z");
+});
+
 test("missing config prints DOTZ_FAIL setup", async () => {
 	rmSync(paths.config());
 	const res = await run(fakeCtx(env), []);

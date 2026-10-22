@@ -1,8 +1,10 @@
 // Shared runner of the watch scripts (DESIGN.md "Output contract"): state.json in $DOTZ_WATCH_STATE_DIR, quiet hours in the
 // owner's time zone, transient-failure absorption (one in-script retry, then a fail counter that stays silent until the 3rd
-// failed run in a row), and the stable `DOTZ_FAIL <kind>` lines hub/watch.ts parses. Also the zone-time helpers other libs share.
+// failed run in a row), the stable `DOTZ_FAIL <kind>` lines hub/watch.ts parses, and the once-a-day `yt-quota-exhausted`
+// notice when YouTube says the quota is gone. Also the zone-time helpers other libs share.
 import { join } from "node:path";
 import { type Config, type Ctx, loadConfig, readJson, realCtx, SetupError, writeJson } from "./config.ts";
+import { announceExhausted } from "./quota.ts";
 
 export type Platform = "youtube" | "instagram";
 export type RunResult = { lines: string[]; code: number };
@@ -13,6 +15,16 @@ export class AuthError extends Error {
 		super(message);
 		this.name = "AuthError";
 		this.platform = platform;
+	}
+}
+
+// YouTube answered 403 quotaExceeded / dailyLimitExceeded: retrying cannot help until the Pacific midnight reset.
+export class QuotaError extends Error {
+	readonly reason: string;
+	constructor(reason: string) {
+		super(`youtube 403 ${reason}`);
+		this.name = "QuotaError";
+		this.reason = reason;
 	}
 }
 
@@ -88,14 +100,16 @@ function readState<S>(file: string): Stored<S> {
 
 // `body` gets the config and the previous baseline (undefined on the first run, which must only record one). It returns the
 // lines to print plus the new baseline, or "skip" to leave state untouched (quota short). Throw TransientError / AuthError /
-// SetupError for the cases the contract names.
+// SetupError for the cases the contract names; a QuotaError prints the exhausted notice (first time in a Pacific day only),
+// exits 0 and leaves the baseline where it was.
 export async function runWatch<S>(ctx: Ctx, opts: { quiet?: boolean; body: (cfg: Config, prev: S | undefined) => Promise<WatchOutcome<S>> }): Promise<RunResult> {
 	const dir = ctx.env.DOTZ_WATCH_STATE_DIR;
 	if (!dir) return fail("setup", "DOTZ_WATCH_STATE_DIR is not set; run it as a dotz watch");
 	const file = join(dir, "state.json");
 	const stored = readState<S>(file);
+	let cfg: Config | undefined;
 	try {
-		const cfg = loadConfig();
+		cfg = loadConfig();
 		if (opts.quiet && inQuietHours(cfg, ctx.now())) return { lines: [], code: 0 };
 		let out: WatchOutcome<S>;
 		try {
@@ -109,6 +123,7 @@ export async function runWatch<S>(ctx: Ctx, opts: { quiet?: boolean; body: (cfg:
 		writeJson(file, { fails: 0, data: out.state ?? stored.data });
 		return { lines: out.lines, code: 0 };
 	} catch (e) {
+		if (e instanceof QuotaError && cfg) return { lines: await announceExhausted(ctx, cfg), code: 0 };
 		if (e instanceof TransientError) {
 			const fails = stored.fails + 1;
 			writeJson(file, { fails, data: stored.data });

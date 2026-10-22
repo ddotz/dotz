@@ -2,15 +2,17 @@
 // insertVideo when upload_via=api, Instagram through the tunnel + publishReel when post_via=api; a target set to `aside` is
 // announced once as `aside-needed <jobId> <platform>` and the job stays scheduled for the orchestrator. Prints
 // `posted <jobId> youtube=<id>` / `instagram=<id>` / `failed <jobId> <reason>`. publishJob is also what `sns.ts publish` runs.
+// A YouTube upload saves its fingerprint on the job first and sends it as a tag; a retry looks the tag up before it uploads
+// again. An exhausted YouTube quota is no failure: the job stays scheduled and the notice is `yt-quota-exhausted until=HH:MM`.
 import { copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { Config, Ctx } from "../lib/config.ts";
 import { publishReel, reply as igReply } from "../lib/instagram.ts";
-import { dueJobs, getJob, type Job, markDone, markFailed, markNotified, markPosting, recordResult, release, setError } from "../lib/jobs.ts";
-import { COSTS, can } from "../lib/quota.ts";
+import { dueJobs, getJob, type Job, markDone, markFailed, markNotified, markPosting, recordResult, release, saveUploadIntent, setError } from "../lib/jobs.ts";
+import { announceExhausted, COSTS, can, exhaustedLine, isExhausted } from "../lib/quota.ts";
 import { type TunnelOpts, withTunnel } from "../lib/tunnel.ts";
-import { AuthError, main, oneLine, type Platform, type RunResult, runWatch, TransientError } from "../lib/watchkit.ts";
-import { insertVideo, replyToComment, updateVideo, type VideoReader, videosWithLocalizations } from "../lib/youtube.ts";
+import { AuthError, main, oneLine, type Platform, QuotaError, type RunResult, runWatch, TransientError } from "../lib/watchkit.ts";
+import { findUploadByTag, insertVideo, replyToComment, updateVideo, type VideoReader, videosWithLocalizations } from "../lib/youtube.ts";
 
 export const hooks: { reader?: VideoReader; tunnel?: TunnelOpts } = {};
 
@@ -40,7 +42,13 @@ async function publishTarget(ctx: Ctx, cfg: Config, job: Job, platform: Platform
 	const u = job.upload as NonNullable<Job["upload"]>;
 	if (!existsSync(u.file)) throw new Error("file is missing");
 	if (platform === "youtube") {
-		return insertVideo(ctx, { file: u.file, title: u.title, description: u.description, tags: u.tags, privacy: u.privacy, defaultLanguage: cfg.youtube?.base_language, localizations: u.localizations }, hooks.reader);
+		const known = job.upload_intent;
+		const intent = known ?? saveUploadIntent(ctx, job.id);
+		if (known) {
+			const found = await findUploadByTag(ctx, (cfg.youtube as NonNullable<Config["youtube"]>).channel_id, intent.fingerprint);
+			if (found) return found;
+		}
+		return insertVideo(ctx, { file: u.file, title: u.title, description: u.description, tags: [...u.tags, intent.fingerprint], privacy: u.privacy, defaultLanguage: cfg.youtube?.base_language, localizations: u.localizations }, hooks.reader);
 	}
 	return withTunnel(u.file, url => publishReel(ctx, url, u.ig_caption ?? u.title), { ...hooks.tunnel, sleep: ctx.sleep });
 }
@@ -80,20 +88,27 @@ export async function publishJob(ctx: Ctx, cfg: Config, id: string, explicit = f
 	}
 	const api = remaining.filter(t => via(cfg, job, t) === "api");
 	if (!api.length) return lines;
-	const quotaShort = api.includes("youtube") && !can(ctx, cfg, youtubeCost(job));
-	const todo = quotaShort ? api.filter(t => t !== "youtube") : api;
+	const exhausted = api.includes("youtube") && isExhausted(ctx);
+	const quotaShort = api.includes("youtube") && !exhausted && !can(ctx, cfg, youtubeCost(job));
+	const todo = exhausted || quotaShort ? api.filter(t => t !== "youtube") : api;
+	const notice = exhausted && explicit ? exhaustedLine(ctx, cfg) : undefined;
+	if (notice) lines.push(notice);
 	if (quotaShort) {
 		if (explicit || job.error !== "quota") lines.push(`failed ${id} quota`);
 		setError(id, "quota");
-		if (!todo.length) return lines;
 	}
-	markPosting(id);
+	if (!todo.length) return lines;
+	markPosting(id, ctx.now());
 	for (const platform of todo) {
 		try {
 			const ref = await publishTarget(ctx, cfg, job, platform);
 			recordResult(id, platform, ref);
 			lines.push(`posted ${id} ${platform}=${ref}`);
 		} catch (e) {
+			if (e instanceof QuotaError) {
+				lines.push(...(await announceExhausted(ctx, cfg)));
+				continue;
+			}
 			if (e instanceof AuthError || e instanceof TransientError) {
 				release(id);
 				if (lines.length) return lines;

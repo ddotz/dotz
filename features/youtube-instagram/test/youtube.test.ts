@@ -4,8 +4,9 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { paths, readJson, SetupError, writeJson } from "../lib/config.ts";
-import { AuthError, TransientError } from "../lib/watchkit.ts";
-import { accessToken, channelStats, commentThreadsSince, insertVideo, myChannel, replyToComment, restoreVideo, updateVideo, YoutubeError, type YtVideo } from "../lib/youtube.ts";
+import { AuthError, QuotaError, TransientError } from "../lib/watchkit.ts";
+import { can } from "../lib/quota.ts";
+import { accessToken, channelStats, commentThreadsSince, findUploadByTag, insertVideo, myChannel, replyToComment, restoreVideo, updateVideo, YoutubeError, type YtVideo } from "../lib/youtube.ts";
 import { CHANNEL, calls, fakeCtx, setupEnv, type TestEnv, TOKEN_URL, YT, ytThread } from "./helpers.ts";
 
 const TOKEN = `POST ${TOKEN_URL}`;
@@ -16,6 +17,7 @@ beforeEach(() => {
 afterEach(() => env.cleanup());
 
 const units = () => readJson<{ units: number }>(paths.quota())?.units;
+const unlinkLedger = () => rmSync(paths.quota());
 
 test("accessToken refreshes with a form body, caches until 60 s before expiry and reuses the cache", async () => {
 	rmSync(paths.ytAccess());
@@ -115,6 +117,61 @@ test("insertVideo without localizations leaves the part out, and a missing sessi
 	const ctx = fakeCtx(env, { routes: { "POST https://www.googleapis.com/upload/youtube/v3/videos": () => new Response("{}") } });
 	await expect(insertVideo(ctx, { file: "/x.mp4", title: "T", description: "", privacy: "private" }, () => ({ size: 1, body: () => "x" }))).rejects.toThrow(/noUploadSession/);
 	expect(new URL(ctx.calls[0].url).searchParams.get("part")).toBe("snippet,status");
+});
+
+test("commentThreadsSince flags an overflow only when the page cap is hit with more pages and no baseline reached", async () => {
+	const since = "2030-06-15T10:00:00Z";
+	const newer = ytThread("a", "A", "UCa", "t", "2030-06-15T11:00:00Z");
+	const route = `GET ${YT}/commentThreads`;
+	const endless = fakeCtx(env, { routes: { [route]: () => ({ items: [newer], nextPageToken: "more" }) } });
+	expect((await commentThreadsSince(endless, CHANNEL, since)).overflow).toBe(true);
+	const ends = fakeCtx(env, { routes: { [route]: (_c, n) => (n < 2 ? { items: [newer], nextPageToken: "more" } : { items: [newer] }) } });
+	expect((await commentThreadsSince(ends, CHANNEL, since)).overflow).toBe(false);
+	const reached = fakeCtx(env, { routes: { [route]: () => ({ items: [newer, ytThread("old", "O", "UCo", "t", since)], nextPageToken: "more" }) } });
+	expect((await commentThreadsSince(reached, CHANNEL, since)).overflow).toBe(false);
+	const first = fakeCtx(env, { routes: { [route]: () => ({ items: [newer], nextPageToken: "more" }) } });
+	expect((await commentThreadsSince(first, CHANNEL, undefined)).overflow).toBe(false);
+});
+
+test("a 403 quotaExceeded or dailyLimitExceeded is a QuotaError that marks the ledger exhausted; other 403s stay YoutubeError", async () => {
+	for (const reason of ["quotaExceeded", "dailyLimitExceeded"]) {
+		const ctx = fakeCtx(env, { routes: { [`GET ${YT}/channels`]: () => Response.json({ error: { errors: [{ reason }] } }, { status: 403 }) } });
+		const e = await myChannel(ctx).catch(x => x);
+		expect(e).toBeInstanceOf(QuotaError);
+		expect(e).not.toBeInstanceOf(TransientError);
+		expect(e.message).toBe(`youtube 403 ${reason}`);
+		expect(readJson<{ exhausted_until: string }>(paths.quota())?.exhausted_until).toBe("2030-06-16T07:00:00.000Z");
+		expect(can(ctx, { quota: { daily_budget: 100000 } } as never, 1)).toBe(false);
+		unlinkLedger();
+	}
+	const forbidden = fakeCtx(env, { routes: { [`GET ${YT}/channels`]: () => Response.json({ error: { errors: [{ reason: "forbidden" }] } }, { status: 403 }) } });
+	const e = await myChannel(forbidden).catch(x => x);
+	expect(e).toBeInstanceOf(YoutubeError);
+	expect(e).not.toBeInstanceOf(QuotaError);
+	expect(readJson<{ exhausted_until?: string }>(paths.quota())?.exhausted_until).toBeUndefined();
+});
+
+test("a quota refusal while opening the upload session is a QuotaError too", async () => {
+	const ctx = fakeCtx(env, { routes: { "POST https://www.googleapis.com/upload/youtube/v3/videos": () => Response.json({ error: { errors: [{ reason: "quotaExceeded" }] } }, { status: 403 }) } });
+	await expect(insertVideo(ctx, { file: "/x.mp4", title: "T", description: "", privacy: "private" }, () => ({ size: 1, body: () => "x" }))).rejects.toBeInstanceOf(QuotaError);
+});
+
+test("findUploadByTag returns the recent upload carrying the tag, books 2 units, and treats a missing uploads playlist as nothing found", async () => {
+	const item = (id: string) => ({ snippet: { title: id, publishedAt: "2030-06-14T00:00:00Z", resourceId: { videoId: id } } });
+	const ctx = fakeCtx(env, {
+		routes: {
+			[`GET ${YT}/playlistItems`]: () => ({ items: [item("a"), item("b")] }),
+			[`GET ${YT}/videos`]: () => ({ items: [{ id: "a", snippet: { tags: ["x"] } }, { id: "b", snippet: { tags: ["dz-0123456789ab"] } }] }),
+		},
+	});
+	expect(await findUploadByTag(ctx, CHANNEL, "dz-0123456789ab")).toBe("b");
+	expect(new URL(calls(ctx, "/videos?")[0].url).searchParams.get("part")).toBe("snippet");
+	expect(new URL(calls(ctx, "/videos?")[0].url).searchParams.get("id")).toBe("a,b");
+	expect(units()).toBe(2);
+	expect(await findUploadByTag(ctx, CHANNEL, "dz-ffffffffffff")).toBeUndefined();
+	const empty = fakeCtx(env, { routes: { [`GET ${YT}/playlistItems`]: () => Response.json({ error: { errors: [{ reason: "playlistNotFound" }] } }, { status: 404 }) } });
+	expect(await findUploadByTag(empty, CHANNEL, "dz-0123456789ab")).toBeUndefined();
+	expect(calls(empty, "/videos?")).toHaveLength(0);
 });
 
 const video: YtVideo = { id: "v9", title: "T", description: "Orig", categoryId: "22", tags: ["x"], localizations: { en: { title: "E", description: "e" } } };
