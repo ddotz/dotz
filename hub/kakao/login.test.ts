@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import jxa from "./login.jxa.js" with { type: "text" };
@@ -16,13 +16,16 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function storeFallback(id = ID, password = PW) {
-	mkdirSync(join(dir, "secrets"), { recursive: true });
-	writeFileSync(paths.secretFile, JSON.stringify({ username: id, password }), { mode: 0o600 });
+// The fake Keychain the fake machine's `security find-generic-password` answers from.
+let keychain = new Map<string, string>();
+beforeEach(() => void (keychain = new Map()));
+function storeCreds(id = ID, password = PW) {
+	keychain.set("id", id);
+	keychain.set("password", password);
 }
 
 type Call = { argv: string[]; stdin?: string };
-// A fake machine: the Keychain is empty (credentials come from the fallback file), the state script answers {action:"state"}.
+// A fake machine: credentials come from the fake Keychain, the state script answers {action:"state"}.
 function fakeMachine(o: { installed?: boolean; trusted?: boolean; states: KakaoState[]; afterSubmit?: KakaoState[] }) {
 	const calls: Call[] = [];
 	const states = [...o.states];
@@ -31,7 +34,10 @@ function fakeMachine(o: { installed?: boolean; trusted?: boolean; states: KakaoS
 		calls.push({ argv, stdin: opts?.stdin });
 		const prog = argv[0];
 		if (prog === "/bin/test") return { code: o.installed === false ? 1 : 0, stdout: "", stderr: "" };
-		if (prog === "security") return { code: 44, stdout: "", stderr: "" };
+		if (prog === "security") {
+			const v = argv[1] === "find-generic-password" ? keychain.get(argv[argv.indexOf("-a") + 1]!) : undefined;
+			return v === undefined ? { code: 44, stdout: "", stderr: "" } : { code: 0, stdout: `${v}\n`, stderr: "" };
+		}
 		if (prog === "open") return { code: 0, stdout: "", stderr: "" };
 		if (prog === "osascript") {
 			if (argv.some(a => a.includes("AXIsProcessTrusted"))) return { code: 0, stdout: `${o.trusted === false ? "false" : "true"}\n`, stderr: "" };
@@ -70,7 +76,7 @@ test("not installed, no accessibility and no credentials stop before anything is
 });
 
 test("a login screen is submitted once and ends ok; the app opens hidden and credentials travel only on stdin", async () => {
-	storeFallback();
+	storeCreds();
 	const m = fakeMachine({ states: [{ state: "unknown" }, { state: "login" }], afterSubmit: [{ state: "login", detail: "submitted" }, { state: "main" }] });
 	expect(await login(deps(m.runner))).toEqual({ status: "ok" });
 	const open = m.calls.find(c => c.argv[0] === "open")!;
@@ -86,14 +92,14 @@ test("a login screen is submitted once and ends ok; the app opens hidden and cre
 });
 
 test("an already logged-in app is ok without a submit", async () => {
-	storeFallback();
+	storeCreds();
 	const m = fakeMachine({ states: [{ state: "main" }] });
 	expect(await login(deps(m.runner))).toEqual({ status: "ok" });
 	expect(submits(m.calls)).toHaveLength(0);
 });
 
 test("a device confirmation returns confirm, and resumeAfterConfirm waits for main without submitting again", async () => {
-	storeFallback();
+	storeCreds();
 	const m = fakeMachine({ states: [{ state: "login" }], afterSubmit: [{ state: "confirm" }] });
 	expect((await login(deps(m.runner))).status).toBe("confirm");
 	expect(submits(m.calls)).toHaveLength(1);
@@ -112,7 +118,7 @@ test("a device confirmation returns confirm, and resumeAfterConfirm waits for ma
 });
 
 test("a rejected password gives bad_credentials, is remembered by hash only, and is never submitted again until it changes", async () => {
-	storeFallback();
+	storeCreds();
 	const m = fakeMachine({ states: [{ state: "login" }], afterSubmit: [{ state: "login", detail: "submitted" }, { state: "error", detail: "rejected" }] });
 	expect((await login(deps(m.runner))).status).toBe("bad_credentials");
 	const file = join(dir, "kakao", "login.json");
@@ -128,7 +134,7 @@ test("a rejected password gives bad_credentials, is remembered by hash only, and
 	expect(submits(again.calls)).toHaveLength(0);
 	expect(again.calls.some(c => c.argv[0] === "open")).toBe(false);
 
-	storeFallback(ID, "Pw-changed-2");
+	storeCreds(ID, "Pw-changed-2");
 	const changed = fakeMachine({ states: [{ state: "login" }], afterSubmit: [{ state: "main" }] });
 	expect((await login(deps(changed.runner))).status).toBe("ok");
 	expect(submits(changed.calls)).toHaveLength(1);
@@ -136,14 +142,14 @@ test("a rejected password gives bad_credentials, is remembered by hash only, and
 });
 
 test("a rejection notice left on screen before the submit is not counted against the new password", async () => {
-	storeFallback();
+	storeCreds();
 	const m = fakeMachine({ states: [{ state: "error", detail: "rejected" }], afterSubmit: [{ state: "error", detail: "rejected" }, { state: "login" }, { state: "main" }] });
 	expect((await login(deps(m.runner))).status).toBe("ok");
 	expect(submits(m.calls)).toHaveLength(1);
 });
 
 test("a screen that never reaches main ends failed within the budget", async () => {
-	storeFallback();
+	storeCreds();
 	const m = fakeMachine({ states: [{ state: "unknown" }] });
 	const t = clock();
 	expect((await login({ paths, runner: m.runner, ...t })).status).toBe("failed");

@@ -1,6 +1,6 @@
-// KakaoTalk id / password / database key store. The macOS Keychain (service dotz.kakao, accounts id|password|dbkey) is the
-// home; when it is unavailable a 0600 JSON file ({username,password,dbkey}) under <dataDir>/secrets is the fallback.
-// A value is only ever written to the `security -i` STDIN (never argv), and never put into a log line or an error.
+// KakaoTalk id / password / database key store: the macOS Keychain only (service dotz.kakao, accounts id|password|dbkey).
+// No plaintext copy is kept: the 0600 file the gateway's secret flow writes (<dataDir>/secrets/kakao) is moved into the Keychain
+// and deleted at once, also when the move fails. A value is only ever written to the `security -i` STDIN (never argv), and never put into a log line or an error.
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { KEYCHAIN_SERVICE, type KakaoPaths, type Runner } from "./types.ts";
@@ -34,11 +34,6 @@ function readFallback(paths: KakaoPaths): Record<string, string> {
 	}
 }
 
-function writeFallback(paths: KakaoPaths, data: Record<string, string>): void {
-	if (Object.keys(data).length) writePrivate(paths.secretFile, `${JSON.stringify(data)}\n`);
-	else rmSync(paths.secretFile, { force: true });
-}
-
 async function keychainGet(name: SecretName, { runner }: CredDeps): Promise<string | undefined> {
 	try {
 		const r = await runner(["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", name, "-w"]);
@@ -67,35 +62,29 @@ async function keychainSet(name: SecretName, value: string, deps: CredDeps): Pro
 }
 
 export async function getSecret(name: SecretName, deps: CredDeps): Promise<string | undefined> {
-	return (await keychainGet(name, deps)) ?? readFallback(deps.paths)[FIELD[name]];
+	return keychainGet(name, deps);
 }
 
-// Returns where the value ended up.
-export async function setSecret(name: SecretName, value: string, deps: CredDeps): Promise<"keychain" | "file"> {
-	const fallback = readFallback(deps.paths);
-	if (await keychainSet(name, value, deps)) {
-		// No second copy on disk once the Keychain holds it.
-		if (FIELD[name] in fallback) {
-			delete fallback[FIELD[name]];
-			writeFallback(deps.paths, fallback);
-		}
-		return "keychain";
-	}
-	writeFallback(deps.paths, { ...fallback, [FIELD[name]]: value });
-	return "file";
+// Throws (without the value) when the Keychain does not take it; nothing is written to disk instead.
+export async function setSecret(name: SecretName, value: string, deps: CredDeps): Promise<void> {
+	if (!(await keychainSet(name, value, deps))) throw new Error("키체인에 저장하지 못했어요");
 }
 
-// Moves what the secret flow wrote (<dataDir>/secrets/kakao) into the Keychain; the file is deleted only when every value in it
-// was stored there. False when there is no file, it holds no id and password, or a Keychain write failed (the file stays then).
+// Moves what the secret flow wrote (<dataDir>/secrets/kakao) into the Keychain and deletes the file in every case, so no plaintext
+// copy stays. False when there is no file, it holds no id and password, or a Keychain write failed (the owner is asked again).
 export async function importAuthFile(deps: CredDeps): Promise<boolean> {
+	if (!existsSync(deps.paths.secretFile)) return false;
 	const file = readFallback(deps.paths);
-	if (!file.username || !file.password) return false;
-	for (const name of NAMES) {
-		const value = file[FIELD[name]];
-		if (value && !(await keychainSet(name, value, deps))) return false;
+	try {
+		if (!file.username || !file.password) return false;
+		for (const name of NAMES) {
+			const value = file[FIELD[name]];
+			if (value && !(await keychainSet(name, value, deps))) return false;
+		}
+		return true;
+	} finally {
+		rmSync(deps.paths.secretFile, { force: true });
 	}
-	rmSync(deps.paths.secretFile, { force: true });
-	return true;
 }
 
 export async function hasCredentials(deps: CredDeps): Promise<boolean> {
