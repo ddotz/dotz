@@ -41,6 +41,11 @@ let onGone: (id: string) => void = () => {};
 export function setChannelGoneHandler(fn: (id: string) => void): void {
 	onGone = fn;
 }
+// A stopped lane gives up its channel (deleted = true) or parks it; the notices of that channel follow (hub/notices.ts dropChannelNotices).
+let onLaneRelease: (id: string, deleted: boolean) => void = () => {};
+export function setLaneReleaseHandler(fn: (id: string, deleted: boolean) => void): void {
+	onLaneRelease = fn;
+}
 const save = () => writeAtomic(paths.channels, `${JSON.stringify(channels, null, 2)}\n`);
 // A gateway on a temp data dir (a test or a copy, hub/live-guard.ts) never connects, even with a real token in its config.
 export const dryRunReason = gatewayDryRun(DATA_DIR);
@@ -346,6 +351,7 @@ export async function releaseLane(lane: string, info?: { cwd?: string; sessionFi
 	const parentId = channels.homes[lane];
 	if (id && !parentId) {
 		const throwaway = /^\/(private\/)?tmp\//.test(info?.cwd ?? "") || !info?.sessionFile || !existsSync(info.sessionFile);
+		onLaneRelease(id, throwaway);
 		if (throwaway) {
 			delete channels.lanes[lane];
 			save();

@@ -26,7 +26,7 @@ import { applyAccountChange as holdOrchestratorKeepalive, orch, orchBusy, setIdl
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { forgetAccountUsage, usageSnapshot } from "./providers.ts";
-import { backfillNotices, setConvNameResolver, setLaneTitleResolver, setOrchestratorAvailable, setWatchLabelResolver, updateAvailable, updateResolved } from "./notices.ts";
+import { backfillNotices, dropChannelNotices, setConvNameResolver, setLaneTitleResolver, setOrchestratorAvailable, setWatchLabelResolver, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
@@ -54,7 +54,7 @@ installDelivery();
 setLaneTitleResolver(name => lanes.get(name)?.title);
 setWatchLabelResolver(watchLabel);
 setOrchestratorAvailable(() => orch.status !== "stopped" && orch.status !== "rate-limited");
-setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : undefined));
+setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] ?? discord.channels.threads[conv.slice(3)]?.name : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
 backfillNotices();
 installLaneHandlers();
@@ -97,7 +97,9 @@ startPush({ subject: () => webBase ?? "mailto:dotz@example.com" });
 startPeerStreams();
 
 setTrashChannels({ take: discord.takeLaneChannel, put: discord.putLaneChannel, remove: discord.deleteChannel });
+discord.setLaneReleaseHandler((id, deleted) => void dropChannelNotices(`ch:${id}`, !deleted));
 discord.setChannelGoneHandler(id => {
+	dropChannelNotices(`ch:${id}`);
 	if (clearChannel(id)) log(`work channel ${id} is gone; its logins and monitors were released`);
 });
 
