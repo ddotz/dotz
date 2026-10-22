@@ -199,7 +199,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
      lane reports and alerts = tonal card (--layer + hairline); work in between folds into one quiet summary row
    - secondary text uses --fg-2 (AA on both themes); --fg-3 stays for non-text only */
 .chatbox { position: relative; flex: 1; min-height: 0; }
-.timeline { height: 100%; overflow-y: auto; overflow-x: hidden; }
+.timeline { height: 100%; overflow-y: auto; overflow-x: hidden; padding-inline: 8px; margin-inline: -8px; }   /* the 8px gutter (padding, given back as margin) is room for the notice highlight's ring and bar: overflow-x hidden would clip them at the column edge (09-notices.css) */
 .tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto; padding: 8px 0 32px; }
 @media (max-width: 639px) { .tl-in { padding: 0 0 24px; } .tl-in > .bm { padding: 14px 16px; } }
 .ub.clamp { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }

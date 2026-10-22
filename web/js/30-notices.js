@@ -154,15 +154,24 @@ async function ntReach(t, at) {
 function ntCenter(node) {
   chatUnpin();
   const a = timeline.getBoundingClientRect(), b = node.getBoundingClientRect();
-  timeline.scrollTop += b.top - a.top - (b.height >= a.height - 24 ? 12 : (a.height - b.height) / 2);
+  const top = timeline.scrollTop + b.top - a.top - (b.height >= a.height - 24 ? 12 : (a.height - b.height) / 2);
+  timeline.scrollTo({ top, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
-// ~1.5s accent wash that fades (a static outline that fades under reduced motion: 09-notices.css).
+// The element that carries the highlight: the card or bubble inside the message when there is one (so the glow follows its own rounded shape),
+// else the message itself, drawn as a bar + tint ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
+function ntHlHost(node) {
+  const card = node.matches(".um") ? node.querySelector(":scope > .ub") : node.matches(".bm") ? node.querySelector(":scope > .ccard") : node.matches(".cmdbox") ? node.querySelector(":scope > .ccard") : node.matches(".sn, .pn, .ccard") ? node : null;
+  if (!card && node.matches(".bm.rep, .bm.alert")) return { host: node, bar: false };   // these carry their own rounded card background
+  return { host: card || node, bar: !card };
+}
 function ntFlash(node) {
-  node.classList.remove("nt-hl");
-  void node.offsetWidth;
-  node.classList.add("nt-hl");
-  clearTimeout(node._hl);
-  node._hl = setTimeout(() => node.classList.remove("nt-hl"), 1700);
+  const { host, bar } = ntHlHost(node);
+  for (const x of tl.querySelectorAll(".nt-hl")) x.classList.remove("nt-hl", "nt-bar");
+  void host.offsetWidth;
+  host.classList.add("nt-hl");
+  host.classList.toggle("nt-bar", bar);
+  clearTimeout(host._hl);
+  host._hl = setTimeout(() => host.classList.remove("nt-hl", "nt-bar"), 2300);
 }
 let ntJumpSeq = 0;
 async function ntJump(n) {
