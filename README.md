@@ -258,10 +258,13 @@ pushed to `backup.remote` when that key is set (off by default). Files that look
 and a push with secret-like content in its history is refused. A remote URL with embedded credentials is refused too.
 Failures go to the hub log and to the owner at most once a day.
 
-**omp update check (omp only).** At `omp_update.at` (default `"04:20"`) the gateway runs `omp update --check`. `omp_update.mode`
-is `"check"` by default (one worklog line per new version, nothing installed). `"install"` runs `omp update` and
-restarts the gateway once it is idle. `"off"` disables the check. Installs managed by another program (Tern) are
-skipped. `bun hub/update.ts --check-now` prints the result.
+**Harness update.** At `omp_update.at` (default `"04:20"`) the gateway checks the harness dotz runs on. OmO: `omo --version`
+against the `omo-ai` version npm calls latest (the senpi engine moves with it). omp: `omp update --check`. `omp_update.mode`
+(the key keeps its old name) is `"install"` by default: `bun add -g omo-ai@latest` (omp: `omp update`), a check that the
+harness reports the new version, one worklog line, then one gateway restart once everything is idle. A failed install keeps
+the old version and posts an issue with a choice block to the alert conversation. `"check"` only posts one worklog line per
+new version; `"off"` disables the job. Installs managed by another program (Tern) are skipped. `bun hub/update.ts --check-now`
+prints what is pending without installing.
 
 ## Feature folders (shipped and personal)
 

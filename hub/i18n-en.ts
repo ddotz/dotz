@@ -353,8 +353,8 @@ Do this, briefly:
 				reference: "Reference language",
 			},
 			update: {
-				label: "omp update check", install: "automatic install", check: "new versions only", na: (h: string) => `Not applicable · the runtime is ${h}`,
-				desc: "Checks daily whether a new omp version exists and tells the work-log channel. With 'automatic install' it installs and restarts the gateway when everything is idle.",
+				label: "Harness update", install: "automatic install", check: "new versions only", na: (h: string) => `Not applicable · the runtime is ${h}`,
+				desc: "Checks nightly whether the harness (OmO or omp) has a new version. With 'automatic install' (the default) it installs and restarts the gateway when everything is idle; 'new versions only' just tells the work-log channel.",
 			},
 			audit: {
 				label: "Token usage audit",

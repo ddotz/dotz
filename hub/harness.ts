@@ -107,7 +107,7 @@ const DEFS = new Map<string, Def>([
 	// reflect.ts / token-audit.ts / update.ts
 	["reflect_at", { type: "text", applies: "restart", default: DEFAULTS.reflect_at }],
 	["token_audit_at", { type: "text", applies: "restart", default: DEFAULTS.token_audit_at }],
-	["omp_update.mode", { type: "select", applies: "restart", default: "check", options: ["check", "install", "off"] }],
+	["omp_update.mode", { type: "select", applies: "restart", default: "install", options: ["check", "install", "off"] }],
 	["omp_update.at", { type: "text", applies: "restart", default: DEFAULTS.update_at }],
 	// reflect.ts reads backup.remote on every snapshot
 	["backup.remote", { type: "text", applies: "live", mirror: true, default: "" }],
@@ -278,6 +278,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 	const expensiveModels = g.expensive_models.join(", ") || c.none;
 	const laneOmo = runtimeFor("lane").id === "omo";
 	const ompUsed = hx.ids.includes("omp");
+	const updatable = ompUsed || hx.ids.includes("omo");
 	const tailnet = Boolean(disk.web?.tailscale_https_port);
 	const rules = existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "";
 	const subagents = ["orchestrator", ...laneList.map(l => `lane:${l.name}`)].reduce((n, s) => n + runningSubagents(s), 0);
@@ -371,7 +372,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		},
 		// ---- support: around the gateway
 		{ id: "outlang", kind: "system", group: "support", anchor: "gateway", order: 1, label: N.outlang.label, status: modeOf(disk) === "off" ? "off" : "ok", summary: modeOf(disk) === "off" ? c.disabled : N.outlang.summary(lang()), desc: N.outlang.desc, facts: [{ label: N.outlang.reference, value: lang() }], settings: [S("output_language.mode"), S("output_language.model"), S("output_language.timeout_s")] },
-		{ id: "update", kind: "system", group: "support", anchor: "gateway", order: 2, label: N.update.label, status: !ompUsed || disk.omp_update?.mode === "off" || disk.omp_update?.at === "off" ? "off" : "ok", summary: !ompUsed ? N.update.na(hx.name) : disk.omp_update?.mode === "off" ? c.disabled : `${timeOr(disk.omp_update?.at, DEFAULTS.update_at)} · ${N.update[disk.omp_update?.mode === "install" ? "install" : "check"]}`, desc: N.update.desc, facts: [], settings: [S("omp_update.mode"), S("omp_update.at")] },
+		{ id: "update", kind: "system", group: "support", anchor: "gateway", order: 2, label: N.update.label, status: !updatable || disk.omp_update?.mode === "off" || disk.omp_update?.at === "off" ? "off" : "ok", summary: !updatable ? N.update.na(hx.name) : disk.omp_update?.mode === "off" ? c.disabled : `${timeOr(disk.omp_update?.at, DEFAULTS.update_at)} · ${N.update[disk.omp_update?.mode === "check" ? "check" : "install"]}`, desc: N.update.desc, facts: [], settings: [S("omp_update.mode"), S("omp_update.at")] },
 		{ id: "audit", kind: "system", group: "support", anchor: "gateway", order: 3, label: N.audit.label, status: String(disk.token_audit_at ?? DEFAULTS.token_audit_at) === "off" ? "off" : "ok", summary: timeOr(disk.token_audit_at, DEFAULTS.token_audit_at), desc: N.audit.desc, facts: [], settings: [S("token_audit_at")] },
 		{ id: "reflect", kind: "system", group: "support", anchor: "gateway", order: 4, label: N.reflect.label, status: String(disk.reflect_at ?? DEFAULTS.reflect_at) === "off" ? "off" : "ok", summary: N.reflect.summary(timeOr(disk.reflect_at, DEFAULTS.reflect_at)), desc: N.reflect.desc, facts: [], settings: [S("reflect_at")] },
 		{ id: "backup", kind: "system", group: "support", anchor: "reflect", order: 1, label: N.backup.label, status: disk.backup?.remote ? "ok" : "off", summary: disk.backup?.remote ? N.backup.remote : N.backup.local, desc: N.backup.desc, facts: [{ label: N.backup.external, value: disk.backup?.remote ? c.set : c.none }], settings: [S("backup.remote", disk.backup?.remote && /\/\/[^/@\s]+@/.test(String(disk.backup.remote)) ? { value: N.backup.credentialed, editable: false, hint: N.backup.credentialedHint } : {})] },
