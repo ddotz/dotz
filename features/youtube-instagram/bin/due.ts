@@ -112,7 +112,15 @@ export async function run(ctx: Ctx, _args: string[] = []): Promise<RunResult> {
 	return runWatch<null>(ctx, {
 		body: async cfg => {
 			const lines: string[] = [];
-			for (const j of dueJobs(ctx.now())) lines.push(...(await publishJob(ctx, cfg, j.id)));
+			for (const j of dueJobs(ctx.now())) {
+				try {
+					lines.push(...(await publishJob(ctx, cfg, j.id)));
+				} catch (e) {
+					// Keep what already went out this run; the failing job was released and is retried on the next run.
+					if (lines.length) return { lines };
+					throw e;
+				}
+			}
 			return { lines };
 		},
 	});
