@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
 import { type DraftApproval, draftActionOf, parseDraftApproval } from "./draft-approval.ts";
+import { askDefaults } from "./ask-options.ts";
 import { broadcast, emit, eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
@@ -61,6 +62,9 @@ export type Decision = {
 	answered_at?: string;
 	// A draft waiting for send approval (hub/draft-approval.ts): the sheet shows it above the options.
 	draft?: DraftApproval;
+	// The options are the gateway's defaults for a question without a choice block (ask-options.ts): buttons for the owner, but the matter still
+	// ends like a plain question (the resolving signals may close it).
+	assumed?: true;
 };
 
 export const NOTICE_CAP = 300;
@@ -403,7 +407,7 @@ const firstLine = (text: string) => {
 	return l.length > 80 ? `${l.slice(0, 79)}…` : l;
 };
 
-type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string; by?: string; ref?: string; draft?: DraftApproval };
+type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string; by?: string; ref?: string; draft?: DraftApproval; assumed?: true };
 
 // The decisions an event asks of the owner: an [ask] from the assistant or a session, or any message holding a choice block
 // (2+ options), split by its decision blocks.
@@ -426,7 +430,12 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	const sendDraft = pc.blocks.length === 1 ? parseDraftApproval(body) : undefined;
 	const by = authorOf(e), ref = refOf(e);
 	const draft = (title: string, options: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail, options, to, replyTo: e.ts, group, ...(by ? { by } : {}), ...(ref ? { ref } : {}), key: `dec:${to}:${hashOf(`${idx}|${title}|${options.map(o => o.label).join("/")}${sendDraft ? `|${sendDraft.to}|${sendDraft.subject ?? ""}|${sendDraft.body}` : ""}`)}`, ...(sendDraft ? { draft: sendDraft } : {}) });
-	if (!pc.blocks.length) return [draft(line || "답변이 필요해요", to.startsWith("lane:") && /\/budget-ok/.test(body) ? BUDGET_OPTIONS : [], 1, 0)];
+	// No choice block (a plain question, often in a mail or work thread): the budget question's buttons, else yes / no or send defaults (ask-options.ts).
+	if (!pc.blocks.length) {
+		if (to.startsWith("lane:") && /\/budget-ok/.test(body)) return [draft(line || "답변이 필요해요", BUDGET_OPTIONS, 1, 0)];
+		const options = askDefaults(body);
+		return [{ ...draft(line || "답변이 필요해요", options, 1, 0), ...(options.length ? { assumed: true as const } : {}) }];
+	}
 	const many = pc.blocks.length > 1;
 	return pc.blocks.map((b, i) => draft(b.title || (many ? `결정 ${i + 1}` : pc.question || line), b.options.map(o => ({ ...o })), pc.blocks.length, i));
 }
@@ -444,7 +453,7 @@ function closeRepeat(old: Notice, at: string): void {
 	}
 }
 
-function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string }, at: string): void {
+function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true }, at: string): void {
 	const old = items.find(n => n.key === d.key);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
@@ -452,7 +461,7 @@ function putDecision(d: { key: string; title: string; detail: string; to: string
 		if (Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
 	const open = d.open ?? d.to;
-	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(d.draft ? { draft: d.draft } : {}) };
+	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}) };
 	let item: Notice;
 	if (old) {
 		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}), ...(d.ref ? { ref: d.ref } : {}) });
@@ -556,7 +565,7 @@ export function authSettled(id: string, status: string): void {
 // bot naming that notice (ids / match in signal 4). A resolved decision is marked `resolved` and holds no answer text.
 
 const refOf = (e: HubEvent): string | undefined => (typeof e.reply_to === "string" && e.reply_to ? e.reply_to : undefined);
-const hasChoice = (i: Notice) => !!i.decision && i.decision.options.length > 0;
+const hasChoice = (i: Notice) => !!i.decision && i.decision.options.length > 0 && !i.decision.assumed;
 
 function authorOf(e: HubEvent): string | undefined {
 	if (e.kind === "lane_report") return typeof e.lane === "string" && e.lane ? `lane:${e.lane}` : undefined;
@@ -705,6 +714,13 @@ export function dropChannelNotices(conv: string, messagesOnly = false): number {
 function reconcileStored(): void {
 	replaying = true;
 	try {
+		// An open question stored without options (made before ask-options.ts) gets them by the same rule, in memory only: the file keeps what
+		// was stored until the item changes for another reason.
+		for (const i of items)
+			if (isOpenDecision(i) && !i.decision!.options.length && !i.decision!.to.startsWith("auth:")) {
+				i.decision!.options = askDefaults(i.text);
+				if (i.decision!.options.length) i.decision!.assumed = true;
+			}
 		const gone = new Map<string, boolean>();
 		const isGone = (name: string) => gone.get(name) ?? (gone.set(name, !laneExists(name)), gone.get(name)!);
 		const map = readChannelMap();

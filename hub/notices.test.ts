@@ -675,7 +675,7 @@ test("a session [ask] makes one decision for that session, a repeated copy adds 
 	emit("inbox", { ts: ts(), kind: "lane_report", source: "lane:x", lane: "x", text: line });
 	const [d, ...rest] = decisions("lane:x");
 	expect(rest).toHaveLength(0);
-	expect(d).toMatchObject({ kind: "decision", title: "이어서 진행할까요?", open: "lane:x", read: false, decision: { options: [], state: "open", group: 1 } });
+	expect(d).toMatchObject({ kind: "decision", title: "이어서 진행할까요?", open: "lane:x", read: false, decision: { options: [{ n: 1, label: "네" }, { n: 2, label: "아니요" }], assumed: true, state: "open", group: 1 } });
 	owner("네");   // the main chat is another conversation
 	expect(stored().find(n => n.id === d!.id)!.decision!.state).toBe("open");
 	laneOwner("y", "아니요");
