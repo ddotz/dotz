@@ -1,0 +1,9 @@
+/* ---------- composer above the phone keyboard ----------
+   --kb / --vvh come from web/js/34-composer-viewport.js (visualViewport). With interactive-widget=resizes-content the page already shrinks
+   above the keyboard and --kb stays 0; on a browser that ignores it, --kb shrinks the app so the whole composer still sits above the keyboard.
+   The layout is the default one; only the box's growth is capped: about 5 lines, and never more than 40% of the visible height for the
+   whole composer (box + chip row + paddings, ~72px), then the box scrolls inside itself. */
+@media (max-width: 639px) {
+  .app { height: calc(100dvh - var(--kb, 0px)); }
+  .sendrow textarea { max-height: min(calc(7.5em + 2 * var(--ta-pad)), calc(var(--vvh, 100dvh) * .4 - 72px)); overflow-y: auto; }
+}

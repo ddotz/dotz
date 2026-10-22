@@ -372,7 +372,7 @@ function ownerReplied(e: HubEvent): void {
 	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && (id ? i.id === id : i.decision!.to === to)) settleDecision(i, text, e.ts);
 }
 
-export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string }) => Promise<void>;
+export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; picks?: { q: string; n: number; label: string }[] }) => Promise<void>;
 // A button of a decision: `n` is the option's number. The answer goes to the asking chat / session (or the login request) through `send`; only
 // when that worked is the notice answered.
 export async function answerDecision(id: unknown, body: { n?: unknown }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -386,7 +386,8 @@ export async function answerDecision(id: unknown, body: { n?: unknown }, send: D
 	const text = o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label);
 	sending.set(item.id, label);
 	try {
-		await send({ to: d.to, text, notice: item.id, ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}) });
+		// `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines).
+		await send({ to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}) });
 		settleDecision(item, label);
 	} catch (err) {
 		return { status: 409, body: { error: (err as Error).message } };

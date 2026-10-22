@@ -382,3 +382,49 @@ test("stored web prompts without an id count as answered when an answer to their
 	expect(n).toBe(2);
 	expect(state.delivered).toEqual(["new web, no answer yet", "old chat, no answer"]);
 });
+
+test("a message redelivered at idle and answered with dotz_send before its turn starts does not post a second answer", () => {
+	const { q, state, startTurn } = setup();
+	startTurn("first", web("w1"));
+	q.deliver("second", web("w2"));
+	expect(state.steered).toHaveLength(1);
+	q.onAnswer("-");
+	state.working = false;
+	q.settleTurn();
+	// Idle: the unanswered steered message goes in as a normal prompt and waits in the runtime's queue ...
+	q.redeliverSteered();
+	expect(state.delivered).toEqual(["first", "second"]);
+	// ... the model answers it with dotz_send meanwhile ...
+	q.sent("web", "quick answer", "w2");
+	// ... then its queued turn starts: its answer repeats the first one and goes nowhere.
+	q.onPrompt("second");
+	q.onAnswer("the same answer once more");
+	q.settleTurn();
+	expect(state.posts).toEqual([]);
+	// The next owner message is a new turn and is answered as usual.
+	startTurn("third", web("w3"));
+	q.onAnswer("fresh answer");
+	expect(state.posts).toEqual([{ target: "web", text: "fresh answer", replyTo: "w3" }]);
+});
+
+test("a final answer that starts like a text the turn already posted to the same conversation is dropped", () => {
+	const { q, state, startTurn } = setup();
+	const a = "Claude Duet is a new app Anthropic released on October 21 as a research preview. Pro and Max only.";
+	const b = "Claude Duet is a new app, Anthropic released on October 21 as a research preview; waitlist only.";
+	// "chat" and "web" are both the main web conversation: the schedule's channel and the target its text names.
+	startTurn("schedule", { target: "chat" });
+	q.sent("web", a);
+	q.onAnswer(b);
+	expect(state.posts).toEqual([]);
+
+	// Another conversation, or a different text, is still posted.
+	state.working = false;
+	startTurn("schedule 2", { target: "chat" });
+	q.sent("alert", a);
+	q.onAnswer(b);
+	state.working = false;
+	startTurn("schedule 3", { target: "chat" });
+	q.sent("web", a);
+	q.onAnswer("Short and different answer that says something else entirely.");
+	expect(state.posts.map(p => p.text)).toEqual([b, "Short and different answer that says something else entirely."]);
+});

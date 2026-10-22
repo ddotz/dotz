@@ -153,7 +153,7 @@ export const ko: Catalog = {
 	noGit: `\n\n이 폴더는 git 저장소가 아니라서 격리(isolated) 서브에이전트가 뜨지 않아요. 서브에이전트는 격리 없이 띄우세요(읽기만 하는 일은 격리가 필요 없어요). 파일을 고치는 서브에이전트라면 다른 서브에이전트와 겹치지 않는 파일만 맡기세요.`,
 
 	replay: `${koLeads.replayLead}. 지금 처리하세요. 이미 일부는 끝났을 수 있으니 같은 동작을 반복하기 전에 확인하세요.`,
-	newMessage: (target, replyTo, text) => `${koLeads.newMessageLead}. 지금 바로 완성된 답을 줄 수 있으면(간단한 질문) dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}로 보내고, 아니면 아무것도 보내지 마세요. 지금 턴이 끝나면 이 메시지가 따로 턴으로 와요. 그다음 하던 일을 이어가세요. 최종 답은 처음 시작한 요청으로 가요.\n\n${text}`,
+	newMessage: (target, replyTo, text) => `${koLeads.newMessageLead}. 지금 바로 완성된 답을 줄 수 있으면(간단한 질문) dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}로 보내세요. 그러면 그 메시지는 답한 것으로 끝나고 다시 턴으로 오지 않아요. 아니면 아무것도 보내지 마세요. 그때는 지금 턴이 끝나면 이 메시지가 따로 턴으로 와요. 그다음 하던 일을 이어가세요. 최종 답은 처음 시작한 요청으로 가요.\n\n${text}`,
 	nowRunning: "[지금 도는 것]",
 	nowLanes: (n, body) => `세션 ${n}(${body})`,
 	nowLaneBusy: "작업 중",
@@ -174,6 +174,8 @@ export const ko: Catalog = {
 	inboxFirst: channel => `(새 작업 채널 #${channel}: 오너는 채널 단위로 일을 맡겨요. 이 채널의 작업과 보고는 여기에 두세요. 이 채널의 일에 로그인 유지나 시간이 지나며 확인할 것이 필요하면 직접 dotz_channel setup으로 이 채널에 설정하세요.)`,
 	inboxBurst: n => `(sent as ${n} messages in a row; 하나의 요청으로 함께 읽으세요)`,
 	replyingTo: (author, content) => `(${author}의 메시지에 대한 답장: "${content}")`,
+	decisionAnswer: picks => `결정 답: ${picks.map((p, i) => `${i + 1}) ${p.q || "-"} → ${p.n}) ${p.label}`).join("; ")}`,
+	decisionAsked: quote => `(당신이 한 이 질문에 대한 답이에요: "${quote}")`,
 	workChannels: list => `(작업 채널 목록, 이 메시지의 채널은 아님: ${list.length ? list.join("; ") : "아직 없음"})`,
 	channelNames: { chat: "대화", alert: "알림", worklog: "작업로그", mail: "메일", workCategory: name => `${name} 작업` },
 	threadDone: "작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.",
