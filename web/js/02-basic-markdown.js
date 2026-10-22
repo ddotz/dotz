@@ -62,11 +62,23 @@ function blocks(text) {
   flushP(); flushL(); flushT();
   return html.join("");
 }
+// A fence tagged 목록 is a list shown as UI rows (hub/listblock.ts writes it): an optional "# " title line, then one row per line
+// "title | subtitle | meta | badge" (the last three optional). Each row gets a round initial, the meta on the right and a count badge.
+function listBlockHtml(src) {
+  const lines = String(src ?? "").split("\n").map(l => l.trim()).filter(Boolean);
+  const head = lines[0] && lines[0].startsWith("# ") ? lines.shift().slice(2) : "";
+  const rows = lines.map(l => {
+    const [t = "", s = "", meta = "", badge = ""] = l.split(" | ").map(x => x.trim());
+    const initial = Array.from(t.replace(/^[^\p{L}\p{N}]+/u, ""))[0] || "·";
+    return `<div class="mlist-row"><span class="mlist-av" aria-hidden="true">${esc(initial)}</span><div class="mlist-main"><div class="mlist-t">${esc(t)}</div>${s ? `<div class="mlist-s">${esc(s)}</div>` : ""}</div>${meta || badge ? `<div class="mlist-r">${meta ? `<span class="mlist-m">${esc(meta)}</span>` : ""}${/^\d+\+?$/.test(badge) && badge !== "0" ? `<span class="mlist-b">${esc(badge)}</span>` : ""}</div>` : ""}</div>`;
+  });
+  return `<div class="mlist">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
+}
 function mdHtml(src) {
   // split() with two groups: [text, language, code, text, language, code, ...]; each code block gets its copy / run bar (35-code-blocks.js).
   const parts = String(src ?? "").split(/```([^\n`]*)\n?([\s\S]*?)(?:```|$)/);
   // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
-  return parts.map((p, i) => i % 3 === 0 ? blocks(p) : i % 3 === 2 ? (parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
+  return parts.map((p, i) => i % 3 === 0 ? blocks(p) : i % 3 === 2 ? (parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
 }
 const mdNode = (src, cls = "md") => el("div", { class: cls, safeHtml: mdHtml(src) });
 

@@ -312,13 +312,15 @@ const num = (v: unknown) => Number(v ?? 0);
 export async function rooms(db: KakaoDb): Promise<Room[]> {
 	const rows = await db.query(
 		`SELECT CAST(r.chatId AS TEXT) AS chatId, r.type AS type, r.chatName AS chatName, r.countOfNewMessage AS unread, r.lastUpdatedAt AS lastAt,
-			COALESCE(NULLIF(u.friendNickName, ''), NULLIF(u.displayName, ''), NULLIF(u.nickName, '')) AS peer
+			COALESCE(NULLIF(u.friendNickName, ''), NULLIF(u.displayName, ''), NULLIF(u.nickName, '')) AS peer,
+			(SELECT COALESCE(NULLIF(mt.groupNickname, ''), NULLIF(mt.content, '')) FROM NTChatMeta mt WHERE mt.chatId = r.chatId AND mt.type = 3 LIMIT 1) AS title
 		FROM NTChatRoom r LEFT JOIN NTUser u ON r.directChatMemberUserId = u.userId AND u.linkId = 0
 		ORDER BY r.lastUpdatedAt DESC`,
 	);
+	// The room title the owner (or a member) set is chat meta type 3; KakaoTalk shows it before chatName and the 1:1 peer's name.
 	return rows.map((r) => ({
 		chatId: str(r.chatId),
-		name: str(r.chatName) || str(r.peer) || "(unknown)",
+		name: str(r.title).trim() || str(r.chatName) || str(r.peer) || "(unknown)",
 		type: num(r.type),
 		kind: roomKind(num(r.type)),
 		unread: num(r.unread),

@@ -1,7 +1,7 @@
 // Tests only: a plain SQLite file with the subset of KakaoTalk's schema the reader touches. Generic fake names; production never imports this.
 import { Database } from "bun:sqlite";
 
-export type FixtureRoom = { chatId: bigint | number; type: number; chatName?: string | null; members?: number; unread?: number; lastUpdatedAt?: number; peer?: number | null };
+export type FixtureRoom = { chatId: bigint | number; type: number; chatName?: string | null; title?: string; members?: number; unread?: number; lastUpdatedAt?: number; peer?: number | null };
 export type FixtureUser = { userId: number; linkId?: number; friendNickName?: string | null; displayName?: string | null; nickName?: string | null };
 export type FixtureMsg = { logId: bigint | number; chatId: bigint | number; authorId: number; message: string; type?: number; sentAt: number };
 export type FixtureSpec = { ownerId?: number; rooms?: FixtureRoom[]; users?: FixtureUser[]; messages?: FixtureMsg[] };
@@ -47,10 +47,13 @@ export function makeFixtureDb(path: string, spec: FixtureSpec = {}): Database {
 		CREATE TABLE NTChatMessage (logId INTEGER PRIMARY KEY, chatId INTEGER, authorId INTEGER, message TEXT, type INTEGER, sentAt INTEGER);
 		CREATE TABLE NTUser (userId INTEGER, linkId INTEGER, friendNickName TEXT, displayName TEXT, nickName TEXT, PRIMARY KEY (userId, linkId));
 		CREATE TABLE NTChatContext (userId INTEGER);
+		CREATE TABLE NTChatMeta (chatId INTEGER, type INTEGER, content TEXT, groupNickname TEXT);
 	`);
 	db.query("INSERT INTO NTChatContext (userId) VALUES (?)").run(spec.ownerId ?? OWNER);
-	for (const r of spec.rooms ?? DEFAULT_ROOMS)
+	for (const r of spec.rooms ?? DEFAULT_ROOMS) {
 		db.query("INSERT INTO NTChatRoom VALUES (?, ?, ?, ?, ?, ?, ?)").run(BigInt(r.chatId), r.type, r.chatName ?? null, r.members ?? 2, r.unread ?? 0, r.lastUpdatedAt ?? 0, r.peer ?? null);
+		if (r.title) db.query("INSERT INTO NTChatMeta VALUES (?, 3, ?, ?)").run(BigInt(r.chatId), r.title, r.title);
+	}
 	for (const u of spec.users ?? DEFAULT_USERS)
 		db.query("INSERT INTO NTUser VALUES (?, ?, ?, ?, ?)").run(u.userId, u.linkId ?? 0, u.friendNickName ?? null, u.displayName ?? null, u.nickName ?? null);
 	for (const m of spec.messages ?? DEFAULT_MESSAGES) addMessage(db, m);

@@ -18,8 +18,8 @@
 // +72 / +66 bytes, caps raised by exactly that (rounded up to 10).
 // 2026-10-22: watch-check details left to the dotz_watch description, the thread table to one line (hub/threads.ts applies it),
 // the personal-data bullet to a pointer at dotz_auth: 25395 -> 24566 / 29834 -> 28965 bytes; caps lowered to match.
-export const MODE_MD_MAX_BYTES = 24683; // measured 24659 (2026-10-22: each mail is a web conversation, POST /api/mail: +93 bytes)
-export const MODE_KO_MD_MAX_BYTES = 28990; // measured 28965
+export const MODE_MD_MAX_BYTES = 24860; // measured 24833 (2026-10-22: each mail is a web conversation, POST /api/mail: +93 bytes; the 목록 list-block rule, owner request: +174)
+export const MODE_KO_MD_MAX_BYTES = 29190; // measured 29163 (the 목록 list-block rule: +198)
 export const RULES_TEMPLATE_MAX_BYTES = 780; // measured 703
 export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 // The owner card and boundaries go into the orchestrator's start prompt (observations.md does not).
