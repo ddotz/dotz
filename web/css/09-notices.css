@@ -63,18 +63,11 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .hc-more { margin-top: 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .hc-none { margin-top: 8px; color: var(--fg-3); font: 400 14px/22px var(--font); }
 
-/* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens a bottom sheet on the phone and a centered dialog from 700px: the whole text, then one button per option (recommended first). */
-.ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); animation: nt-in .14s ease-out; }
-.ds-sheet { display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: 20px 20px 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); animation: ds-up .18s ease-out; }
-.ds-hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 12px 0 20px; }
-.ds-ey { flex: 1; color: var(--warn); font: 600 13px/20px var(--font); }
-.ds-ey.done { color: var(--ok); }
-.ds-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 20px 12px; }
+/* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option (recommended first). */
 .ds-t { margin: 4px 0 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .ds-m { margin: 2px 0 12px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .ds-md { color: var(--fg-2); font: 400 14px/22px var(--font); overflow-wrap: anywhere; }
-.ds-foot { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 8px 20px 16px; }
-.ds-opt, .ds-direct { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; width: 100%; min-height: 52px; padding: 10px 16px; border: 0; border-radius: var(--r-ctl); background: var(--bg); color: var(--fg); font: inherit; text-align: left; }
+.ds-opt, .ds-direct { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; width: 100%; min-height: 52px; padding: 10px 16px; border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg); font: inherit; text-align: left; }
 .ds-opt.c { align-items: center; }
 .ds-opt:hover, .ds-direct:hover { background: var(--hover); }
 .ds-opt:active, .ds-direct:active { background: var(--active); }
@@ -86,56 +79,23 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .ds-ds { font: 400 13px/18px var(--font); opacity: .82; overflow-wrap: anywhere; }
 .ds-direct { align-items: center; background: transparent; color: var(--fg-2); font: 500 14px/20px var(--font); }
 .ds-st { color: var(--fg-3); font: 400 13px/18px var(--font); text-align: center; }
-.ds-res { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-radius: var(--r-ctl); background: var(--bg); }
+.ds-res { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-radius: var(--r-ctl); background: var(--fs-fill); }
 .ds-rl { color: var(--ok); font: 600 12px/16px var(--font); }
 .ds-ra { font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
 @keyframes ds-up { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
-@media (min-width: 700px) {
-  .ds-bd { align-items: center; }
-  .ds-sheet { border-radius: 20px; max-height: min(80vh, 760px); padding-bottom: 0; }
-}
-@media (prefers-reduced-motion: reduce) { .ds-bd, .ds-sheet { animation: none; } }
 
-/* Decision sheet (30-notices.js dkOpen): the docked decision card (07-chat.css .dcard) over the current screen. On the phone it stops at the tab bar
-   (same height as .side in 01-tokens.css: 46px row + hairline + trimmed home-indicator inset), so the bar stays visible and the card keeps clear of the safe area. */
-.dk-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .32); animation: nt-in .14s ease-out; }
-.dk-card:focus { outline: 0; }
-.dk-card { width: 100%; max-width: 520px; margin: 0 16px 24px; box-shadow: var(--float); animation: ds-up .18s ease-out; }
-@media (max-width: 639px) {
-  .dk-bd { bottom: calc(47px + max(2px, calc(env(safe-area-inset-bottom) - 16px))); }
-  .dk-card { margin: 0 max(8px, env(safe-area-inset-right)) 8px max(8px, env(safe-area-inset-left)); }
-}
-@media (prefers-reduced-motion: reduce) { .dk-bd, .dk-card { animation: none; } }
-
-/* Draft approval (hub/draft-approval.ts, 10-decision-card.js renderDraft): fills the screen so the draft and the choices both show. Phone: above the tab bar,
-   header and footer fixed, only the draft scrolls. Desktop: a large centered dialog. 30-notices.js dkFit keeps it above the keyboard (.kb). */
-.dk-full-card { --dk-fill: var(--layer); width: min(720px, calc(100% - 48px)); max-width: none; height: min(86dvh, 820px); max-height: none; margin: 0; border-radius: 20px; background: var(--card); }
-.dk-bd.dk-full { align-items: center; }
-.dc-dhd { padding: 16px 8px 12px 24px; }
-.dc-dhd .dc-tt { display: flex; flex-direction: column; gap: 2px; }
+/* Decision overlay (30-notices.js dkOpen, 10-decision-card.js renderSheet) and draft approval (hub/draft-approval.ts): content only; the frame is 14-overlay.css. */
 .dc-dh { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 22px; }
 .dc-dh .dc-dr-v { font-size: 16px; word-break: keep-all; }
 .dc-dh .dc-dr-v.sub { font-weight: 500; }
-.dc-dbody { flex: 1; min-height: 0; margin: 0 16px; padding: 16px; border-radius: 12px; background: var(--dk-fill); overflow-y: auto; overscroll-behavior: contain; }
-.dc-dbody:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.dc-dbody .dc-dr-b { max-height: none; margin: 0; overflow: visible; font-size: 15px; line-height: 24px; word-break: keep-all; }
-.dc-ft { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 16px; }
-.dc-ft .dc-st { padding: 0 4px; }
+.fs-body .dc-dr-b { max-height: none; margin: 0; overflow: visible; font-size: 15px; line-height: 24px; word-break: keep-all; }
+.fs-body .dc-q { margin-top: 0; font-size: 17px; line-height: 26px; }
 .dc-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.dc-act { display: flex; align-items: center; justify-content: center; min-height: 48px; border: 0; border-radius: var(--r-ctl); background: var(--dk-fill); color: var(--fg); font: 600 15px/22px var(--font); }
+.dc-act { display: flex; align-items: center; justify-content: center; min-height: 48px; border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg); font: 600 15px/22px var(--font); }
 .dc-act:active:not(:disabled) { background: var(--active); }
 .dc-act.main { grid-column: 1 / -1; min-height: 52px; background: var(--accent); color: var(--on-accent); }
 .dc-act.main:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, #000); }
 .dc-act:disabled { opacity: .55; }
-.dc-ft .dc-note, .dc-ft .dc-back { background: var(--dk-fill); }
-.dc-ft .dc-note { min-height: 88px; }
-@media (max-width: 639px) {
-  .dk-bd.dk-full { align-items: stretch; background: var(--bg); }
-  .dk-bd.dk-full.kb { bottom: auto; }
-  .dk-full-card { --dk-fill: var(--card); width: 100%; height: 100%; max-height: none; margin: 0; border-radius: 0; background: var(--bg); box-shadow: none; padding-top: env(safe-area-inset-top); }
-  .dc-dhd { padding-left: max(16px, env(safe-area-inset-left)); }
-  .dc-dbody { margin: 0 max(8px, env(safe-area-inset-left)); }
-}
 
 /* x (무시): a question that waits on the owner can be waved off. 44px thumb target on every surface, quiet --fg-3 until pressed. */
 .nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }
@@ -145,11 +105,5 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .hrx .nt-x { margin-right: 8px; }
 .hc-row:has(.nt-x) { min-height: 44px; }
 .hc-row .nt-x { margin-right: -6px; }
-.ds-ign, .dc-ign { flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: 500 14px/20px var(--font); }
-.ds-ign:hover, .dc-ign:hover { background: var(--hover); color: var(--fg); }
-.ds-ign:active, .dc-ign:active { background: var(--active); }
-.ds-ign:disabled { opacity: .55; }
-.ds-ey.ign, .ds-rl.ign { color: var(--fg-3); }
+.ds-rl.ign { color: var(--fg-3); }
 .dc-hb { flex: none; display: flex; align-items: center; gap: 2px; }
-.dc-ign { min-height: 32px; padding: 0 10px; font-size: 13px; }
-@media (pointer: coarse) { .dc-ign { min-height: 44px; margin-block: -6px; } }

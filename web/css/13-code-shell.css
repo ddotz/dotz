@@ -11,8 +11,8 @@
 .cb-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 dialog.dlg.shell[open] { display: flex; flex-direction: column; width: min(760px, calc(100vw - 24px)); height: min(680px, calc(var(--vvh, 100dvh) - 24px)); padding: 14px; overflow: hidden; }
-dialog.dlg.shell .dhd { margin-bottom: 8px; }
-dialog.dlg.shell .dbody { flex: 1; min-height: 0; }
+dialog.dlg.shell .fs-hd { padding: 0 0 8px; }
+dialog.dlg.shell .dbody { padding: 0; }
 dialog.dlg.shell .dact { display: none; }
 .sh-wrap { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; min-width: 0; }
 .sh-st { font: 500 12px/16px var(--font); color: var(--fg-3); }

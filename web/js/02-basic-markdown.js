@@ -163,12 +163,11 @@ function notify(e) {
 
 /* ---------- dialog ---------- */
 function dialog({ title, body, actions = [], onclose, wide }) {
-  const d = el("dialog", { class: wide ? "dlg wide" : "dlg" });
-  const bodyBox = el("div", { class: "dbody" }, body);
-  const actBox = el("div", { class: "dact" });
+  const d = el("dialog", { class: wide ? "dlg wide fs-card" : "dlg fs-card" });
+  const bodyBox = el("div", { class: "dbody fs-body" }, body);
+  const actBox = el("div", { class: "dact fs-ft row" });
   // The ✕ and a tap outside the box both close it and drop the edit, like Esc and the Android back gesture (dialogHist) already do.
-  const x = el("button", { type: "button", class: "ib dx", "aria-label": "닫기", onclick: () => d.close() }, icon("close"));
-  d.append(el("div", { class: "dhd" }, el("h2", { class: "dtitle", text: title }), x), bodyBox, actBox);
+  d.append(fsHead([el("h2", { class: "dtitle", text: title })], { close: () => d.close() }), bodyBox, actBox);
   let downOutside = false;
   const outside = ev => { const r = d.getBoundingClientRect(); return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom; };
   d.addEventListener("pointerdown", ev => { downOutside = outside(ev); });

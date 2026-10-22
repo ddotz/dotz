@@ -1,0 +1,45 @@
+/* Full-screen overlay: the one frame for every pop-up over the app (38-overlay.js fsOpen; 02-basic-markdown.js dialog() wears the same classes on a native <dialog>).
+   Phone: covers the whole screen, tab bar included: header (title, 무시, close) and footer (actions) stay put, only the body scrolls, safe-area padded,
+   kept above the keyboard (.kb, set by fsOpen). Desktop: a centered dialog (.tall = the large one, for a draft). Menus, toasts and tooltips are not overlays. */
+.fs-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center; background: var(--scrim); animation: nt-in .14s ease-out; }
+.fs-card { --fs-fill: var(--layer); display: flex; flex-direction: column; width: min(560px, calc(100% - 48px)); max-height: min(86dvh, 820px); margin: 0; border-radius: 20px; background: var(--card); color: var(--fg); box-shadow: var(--float); overflow: hidden; animation: ds-up .18s ease-out; }
+.fs-card:focus { outline: 0; }
+.fs-card.tall { width: min(720px, calc(100% - 48px)); height: min(86dvh, 820px); }
+dialog.fs-card:not([open]) { display: none; }
+dialog.fs-card::backdrop { background: var(--scrim); }
+.fs-hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 16px 8px 12px 24px; }
+.fs-tt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fs-ey { display: block; color: var(--fg-2); font: 600 13px/20px var(--font); }
+.fs-t { margin: 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.fs-ey.warn { color: var(--warn); }
+.fs-ey.done { color: var(--ok); }
+.fs-ey.ign { color: var(--fg-3); }
+.fs-hb { flex: none; display: flex; align-items: center; gap: 2px; }
+.fs-ign { flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: 500 14px/20px var(--font); }
+.fs-ign:hover { background: var(--hover); color: var(--fg); }
+.fs-ign:active { background: var(--active); }
+.fs-ign:disabled { opacity: .55; }
+.ib.fs-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }
+.fs-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 24px 16px; }
+.fs-body.panel { margin: 0 16px; padding: 16px; border-radius: 12px; background: var(--fs-fill); }
+.fs-body.fit { flex: 0 1 auto; }
+.fs-body:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fs-ft { flex: none; margin-top: auto; display: flex; flex-direction: column; gap: 8px; max-height: 55%; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 16px; }
+.fs-ft.row { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; max-height: none; }
+.fs-ft:empty { display: none; }
+.fs-ft .dc-row, .fs-ft .dc-note, .fs-ft .dc-back, .fs-ft .dc-chip:not(.on) { background: var(--fs-fill); }
+.fs-ft .dc-row.on { background: color-mix(in srgb, var(--accent) 12%, var(--fs-fill)); }
+.fs-ft .dc-st { padding: 0 4px; }
+.fs-ft .dc-note { min-height: 88px; }
+@media (max-width: 639px) {
+  .fs-bd { align-items: stretch; background: var(--bg); }
+  .fs-bd.kb { bottom: auto; }
+  .fs-card, .fs-card.tall, dialog.dlg.fs-card[open] { --fs-fill: var(--card); width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; border-radius: 0; background: var(--bg); box-shadow: none; padding-top: env(safe-area-inset-top); }
+  dialog.dlg.fs-card[open] { height: var(--vvh, 100dvh); }
+  .fs-hd { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+  .fs-body { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .fs-body.panel { margin: 0 max(8px, env(safe-area-inset-left)); padding: 16px; }
+  .fs-ft { padding: 12px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  .fs-ft.row .btn { flex: 1; min-height: 48px; }
+}
+@media (prefers-reduced-motion: reduce) { .fs-bd, .fs-card { animation: none; } }
