@@ -304,6 +304,14 @@ cached 60 s. `web.peers` adds URLs by hand, `web.peer_discovery: false` turns di
 computer (default derived from its hostname; peers learn it from `GET /api/peer-info`). The other gateway checks your tailnet
 identity against its own allow-list, so each machine must allow your login.
 
+*Push with several gateways.* Each device (a phone, a laptop: one browser or one installed app) gets each notice once, whichever gateway
+made it. The web app gives its device an id and hands it on when you open another computer from the computer chip, so that device's
+subscriptions on every gateway count as one (`hub/push.ts`). The gateway that made the notice picks one subscription per device: the
+installed app's, on any gateway, else a browser's; the other gateways deliver it through `POST /api/push/relay` (discovered peers only,
+behind the same tailnet check), titled "<computer> · ...", and tapping it opens the app on that computer's view. A gateway that does not
+answer is skipped and the device's next subscription fires instead; a relayed notice is never relayed again. To merge a phone's browser
+subscription on one gateway with its app on another, open that gateway once from the app's computer chip; install the app from one gateway only.
+
 ## Integrations (off until you ask)
 
 Shipped integrations are off after install. Ask the orchestrator ("카톡 연결해줘", "유튜브·인스타 연결해줘") and it runs the

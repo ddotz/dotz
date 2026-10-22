@@ -78,6 +78,16 @@ if (SHELL_RESTORE && !SHELL_RESTORE.key && SHELL_RESTORE.views) for (const ms of
 // A tap that had to start the app carries the message as ?m=<ts>: 99-boot.js opens it once the state is in. A decision carries ?n=<id> (its sheet,
 // 30-notices.js): it stays in the address and never also jumps to a conversation.
 const pushQ = new URLSearchParams(location.search);
+// The device id: every subscription this device makes, on any computer, carries it, so the computers know they are one device (hub/push.ts fanOut).
+// It is minted once here; opening another computer from this app (33-peers.js) hands it on as ?did=, and the page that arrives with one keeps that one.
+let DEVICE_ID = "";
+try {
+  const incoming = pushQ.get("did") || "";
+  if (/^[\w-]{8,64}$/.test(incoming)) localStorage.setItem("dotz-did", incoming);
+  DEVICE_ID = localStorage.getItem("dotz-did") || "";
+  if (!DEVICE_ID) localStorage.setItem("dotz-did", DEVICE_ID = crypto.randomUUID());
+} catch {}
+if (pushQ.has("did")) { pushQ.delete("did"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
 // ?pc=<origin> (a notice relayed from another computer): the page switches to that computer (33-peers.js prFollow), with ?n / ?m as its own item.
 const PUSH_FOLLOW = pushQ.has("pc") ? location.href : "";
 let pushOpenTs = pushQ.has("n") || PUSH_FOLLOW ? "" : pushQ.get("m") || "";
@@ -91,9 +101,9 @@ async function pwaInit() {
 }
 async function pushLoad() {
   try { PWA.info = await api(`/api/push${PWA.sub ? `?endpoint=${enc(PWA.sub.endpoint)}` : ""}`); } catch {}
-  // The installed app's subscription is marked as the app's (hub/push.ts app): the other computers relay their notices to it. Once per subscription.
-  if (PWA.sub && PWA.info && PWA.info.subscribed && !PWA.info.app && isStandalone()) {
-    try { await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), app: true }); PWA.info.app = true; } catch {}
+  // This computer learns which device the subscription is (the id) and whether it is the installed app's (hub/push.ts): once per change.
+  if (PWA.sub && PWA.info && PWA.info.subscribed && (PWA.info.did !== DEVICE_ID || (!PWA.info.app && isStandalone()))) {
+    try { await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), did: DEVICE_ID, ...(isStandalone() ? { app: true } : {}) }); PWA.info.did = DEVICE_ID; if (isStandalone()) PWA.info.app = true; } catch {}
   }
   if (current === "settings") renderSettings();
 }
@@ -103,7 +113,7 @@ async function pushEnable(btn) {
     const reg = PWA.reg || await navigator.serviceWorker.ready;
     const info = PWA.info || await api("/api/push");
     PWA.sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(info.publicKey) });
-    await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), app: isStandalone() });
+    await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), app: isStandalone(), did: DEVICE_ID });
     toast("알림을 켰어요");
   });
   await pushLoad();

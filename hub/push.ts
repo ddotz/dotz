@@ -13,8 +13,9 @@ import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "
 export const PUSH_KINDS = ["answer", "ask", "lane", "usage", "update"] as const;
 type PushKind = (typeof PUSH_KINDS)[number];
 type Prefs = Record<PushKind, boolean>;
-// `app`: made by the installed app (the page runs standalone), the one subscription an owner wants every computer's notices on.
-type Stored = Subscription & { prefs: Prefs; ua?: string; at: string; app?: boolean };
+// `app`: made by the installed app (the page runs standalone), the subscription a device is reached through when it has one.
+// `did`: the device's id, shared by all its subscriptions on every computer (see fanOut).
+type Stored = Subscription & { prefs: Prefs; ua?: string; at: string; app?: boolean; did?: string };
 // `ts` is the id of the hub event the notification is about (its timestamp, the same key the web keeps its messages under): a tap
 // makes sure that message is loaded before it jumps to it.
 // `id` + `actions` (a decision notice): the page opens its detail sheet, and the service worker offers the first options as buttons that
@@ -141,10 +142,12 @@ async function deliver(sub: Stored, m: PushMessage): Promise<number> {
 	}
 }
 
-// One app for every computer. A notice is also relayed to the other computers (POST /api/push/relay, same tailnet identity check as every
-// /api route); a computer holding an app subscription pushes it under its own origin, labeled with the computer's name. When one did, this
-// computer's browser subscriptions (not made by the app) stay quiet for it, so the owner is not told twice. A relay nobody accepted
-// (peer down, older peer, no app subscription, kind switched off) leaves the local subscriptions to fire as before.
+// One notice, each of the owner's devices once. A device is one browser or installed app; the web app mints an id for it (`did`) and hands it
+// on whenever it opens another computer (web/js/23-installable-app-web.js, 33-peers.js), so its subscriptions on every computer carry the same id.
+// A subscription without an id is a device of its own. The computer that made the notice picks ONE subscription per device: the installed app's on
+// any computer (its own first, then the peers in a fixed order), else a browser's (own first). A peer delivers through POST /api/push/relay, titled
+// with the sender's name; the tap carries ?pc= so the app opens the sender's view. A peer that does not answer covers no device, so the next choice
+// (this computer's own subscription of that device) fires. A relayed notice is delivered where it lands and never sent on, so there is no loop.
 const RELAY_MS = 2500;
 let relayPeers: () => Promise<Array<Pick<Found, "name" | "url" | "self">>> = knownComputers;
 export const setRelayPeers = (fn: typeof relayPeers): void => void (relayPeers = fn);
@@ -155,32 +158,58 @@ const sameOrigin = (a: string, b: string) => {
 		return false;
 	}
 };
+const DID = /^[\w-]{8,64}$/;
+const device = (s: Stored) => s.did ?? `e:${s.endpoint}`;
+const wants = (s: Stored, m: PushMessage, t: number) => (m.kind === "test" || s.prefs[m.kind] !== false) && (presence.get(s.endpoint) ?? 0) <= t - PRESENCE_MS;
 
-async function relayTo(peerUrl: string, body: string): Promise<boolean> {
+// Deliver through one subscription for each device not in `done` (an app's before a browser's) and mark the device done. A device whose chosen
+// subscription has the kind switched off (or whose page is open) stays quiet: that is its owner's choice there, and no other subscription fires.
+function cover(list: Stored[], m: PushMessage, done: Set<string>): void {
+	const now = Date.now();
+	for (const s of [...list].sort((x, y) => Number(y.app === true) - Number(x.app === true))) {
+		if (done.has(device(s))) continue;
+		done.add(device(s));
+		if (wants(s, m, now)) void deliver(s, m);
+	}
+}
+
+// undefined: the peer did not take the relay (down, refused, an error); otherwise the devices it covered.
+async function relayTo(peerUrl: string, body: string): Promise<string[] | undefined> {
 	try {
 		const r = await fetch(`${peerUrl}/api/push/relay`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" });
-		return r.ok && ((await r.json()) as { accepted?: unknown }).accepted === true;
+		if (!r.ok) return undefined;
+		const served = ((await r.json()) as { served?: unknown }).served;
+		return Array.isArray(served) ? served.filter((k): k is string => typeof k === "string") : [];
 	} catch {
-		return false;
+		return undefined;
 	}
-}
-async function relayOut(m: PushMessage): Promise<boolean> {
-	let list: Awaited<ReturnType<typeof relayPeers>>;
-	try {
-		list = await relayPeers();
-	} catch {
-		return false;
-	}
-	const me = list.find(f => f.self);
-	const others = list.filter(f => !f.self);
-	if (!me || !others.length) return false;
-	const body = JSON.stringify({ from: me.url, kind: m.kind, title: m.title, body: m.body, url: m.url, tag: m.tag, ts: m.ts, id: m.id });
-	return (await Promise.all(others.map(p => relayTo(p.url, body)))).some(Boolean);
 }
 
-const wants = (s: Stored, m: PushMessage, t: number) => (m.kind === "test" || s.prefs[m.kind] !== false) && (presence.get(s.endpoint) ?? 0) <= t - PRESENCE_MS;
+async function fanOut(m: PushMessage): Promise<void> {
+	const done = new Set<string>();
+	cover(subs.filter(s => s.app === true), m, done);
+	let list: Awaited<ReturnType<typeof relayPeers>> = [];
+	try {
+		list = await relayPeers();
+	} catch {}
+	const me = list.find(f => f.self);
+	const up = me ? list.filter(f => !f.self).sort((x, y) => (x.url < y.url ? -1 : 1)) : [];
+	// Peers one after the other: each is told what is already covered, so a device with an app on two computers hears it once.
+	const ask = async (via: "app" | "all") => {
+		for (const p of [...up]) {
+			const skip = [...done].filter(k => !k.startsWith("e:"));
+			const got = await relayTo(p.url, JSON.stringify({ from: me!.url, via, skip, kind: m.kind, title: m.title, body: m.body, url: m.url, tag: m.tag, ts: m.ts, id: m.id }));
+			if (got) for (const k of got) done.add(k);
+			else up.splice(up.indexOf(p), 1);
+		}
+	};
+	await ask("app");
+	cover(subs, m, done);
+	await ask("all");
+}
+
 const RELAY_HASH = /^#[\w:%.\-/]{0,200}$/;
-// A notice another computer relayed, as this computer's app shows it: the computer's name leads the title, the tap carries ?pc=<its origin>
+// A notice another computer relayed, as this computer shows it: the computer's name leads the title, the tap carries ?pc=<its origin>
 // (and the item: ?n= for a decision, ?m= for a message) so the app switches to that computer's view. The sender's id/ts name items on ITS
 // hub, so no option buttons (they would post the answer to this hub) and the tag is per computer.
 export function relayedMessage(peer: { name: string; url: string }, p: Record<string, unknown>): PushMessage | undefined {
@@ -200,24 +229,18 @@ export function relayedMessage(peer: { name: string; url: string }, p: Record<st
 }
 
 const recent = new Map<string, number>();
-// Resolves once the browser subscriptions have been decided (sent, or skipped because a peer's app took the notice).
+// Resolves once every device has been decided (sent, covered by a peer, or quiet by its own setting).
 export function notify(m: PushMessage): Promise<void> {
 	const key = `${m.tag}|${m.body}`;
 	const t = Date.now();
 	for (const [k, at] of recent) if (t - at > DEDUPE_MS) recent.delete(k);
 	if (recent.has(key)) return Promise.resolve();
 	recent.set(key, t);
-	const send = (list: Stored[]) => {
-		const now = Date.now();
-		for (const s of list) if (wants(s, m, now)) void deliver(s, m);
-	};
-	if (m.kind === "test") return Promise.resolve(send(subs));
-	send(subs.filter(s => s.app === true));
-	const browsers = subs.filter(s => s.app !== true);
-	return relayOut(m).then(accepted => {
-		if (!accepted) send(browsers.filter(s => subs.includes(s)));
-		else if (browsers.length) log(`push: relayed to the app on another computer; ${browsers.length} browser subscription(s) skipped`);
-	});
+	if (m.kind === "test") {
+		for (const s of subs) if (wants(s, m, t)) void deliver(s, m);
+		return Promise.resolve();
+	}
+	return fanOut(m);
 }
 
 export function startPush(opts: { subject: () => string }): void {
@@ -246,29 +269,32 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 	const p = url.pathname;
 	if (req.method === "GET" && p === "/api/push") {
 		const s = findSub(url.searchParams.get("endpoint"));
-		return json({ publicKey: vapid().publicKey, kinds: PUSH_KINDS, subscribed: Boolean(s), prefs: s?.prefs ?? defaults(), app: s?.app === true });
+		return json({ publicKey: vapid().publicKey, kinds: PUSH_KINDS, subscribed: Boolean(s), prefs: s?.prefs ?? defaults(), app: s?.app === true, did: s?.did ?? "" });
 	}
 	if (req.method === "POST" && p === "/api/push/subscribe") {
 		const sub = b.subscription as Subscription | undefined;
 		if (!sub?.endpoint || !/^https:\/\//.test(sub.endpoint) || !sub.keys?.p256dh || !sub.keys?.auth) return json({ error: "subscription with https endpoint and keys required" }, 400);
 		const old = findSub(sub.endpoint);
 		const prefs = { ...defaults(), ...(old?.prefs ?? {}), ...(b.prefs ?? {}) };
-		subs = [...subs.filter(s => s.endpoint !== sub.endpoint), { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, prefs, ...(b.app === true || old?.app === true ? { app: true } : {}), ua: String(req.headers.get("user-agent") ?? "").slice(0, 160), at: new Date().toISOString() }];
+		const did = typeof b.did === "string" && DID.test(b.did) ? b.did : old?.did;
+		subs = [...subs.filter(s => s.endpoint !== sub.endpoint), { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, prefs, ...(b.app === true || old?.app === true ? { app: true } : {}), ...(did ? { did } : {}), ua: String(req.headers.get("user-agent") ?? "").slice(0, 160), at: new Date().toISOString() }];
 		save();
 		log(`push: subscribed at ${origin(sub.endpoint)} (${subs.length} total)`);
 		return json({ ok: true, prefs });
 	}
-	// Another computer's notice for this computer's app subscriptions. Only a computer this one discovered as its peer (hub/peers.ts) may send
-	// one, named by the discovery, never by the body; the caller already passed the gateway's owner check like any /api call.
+	// Another computer's notice for this computer's subscriptions: `via` app = only the apps', skip = the devices already covered. Only a computer this one
+	// discovered as its peer (hub/peers.ts) may send one, named by the discovery, never by the body; the caller already passed the gateway's owner check
+	// like any /api call. The answer lists the devices this computer covered. Nothing here sends a notice on.
 	if (req.method === "POST" && p === "/api/push/relay") {
 		const from = typeof b.from === "string" ? b.from : "";
 		const peer = (await relayPeers().catch(() => [])).find(f => !f.self && sameOrigin(f.url, from));
 		if (!peer) return json({ error: "not a known computer" }, 403);
 		const m = relayedMessage(peer, b);
 		if (!m) return json({ error: "kind, title and body required" }, 400);
-		const t = Date.now(), targets = subs.filter(s => s.app === true && s.prefs[m.kind as PushKind] !== false);
-		for (const s of targets) if (wants(s, m, t)) void deliver(s, m);
-		return json({ ok: true, accepted: targets.length > 0 });
+		const skip = new Set<string>(Array.isArray(b.skip) ? b.skip.filter((k: unknown): k is string => typeof k === "string" && k.length <= 80).slice(0, 200) : []);
+		const done = new Set(skip);
+		cover(b.via === "app" ? subs.filter(s => s.app === true) : subs, m, done);
+		return json({ ok: true, served: [...done].filter(k => !skip.has(k)) });
 	}
 	if (req.method === "POST" && p === "/api/push/unsubscribe") {
 		subs = subs.filter(s => s.endpoint !== b.endpoint);

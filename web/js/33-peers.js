@@ -33,7 +33,7 @@ function prTryFollow() {
   if (!p && !PR.fresh) return;   // the cached list may predate this computer; wait for the fresh one
   prFollowHref = "";
   if (!p || !p.online) { toast(p ? `${p.name}에 연결할 수 없어요` : "그 컴퓨터를 찾지 못했어요", true); history.replaceState(history.state, "", location.pathname + location.hash); return; }
-  const q = new URLSearchParams();
+  const q = new URLSearchParams({ did: DEVICE_ID });
   for (const k of ["n", "m"]) if (u.searchParams.has(k)) q.set(k, u.searchParams.get(k));
   location.replace(`${p.url}/${q.size ? `?${q}` : ""}${u.hash}`);
 }
@@ -63,7 +63,7 @@ function prPick(p) {
   if (p.self) { prClose(); return; }
   if (!p.online) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
   toast(`${p.name}(으)로 넘어가요`);
-  location.href = prUrl(p);
+  location.href = prUrl(p, `?did=${enc(DEVICE_ID)}`);   // the device id goes along: the push subscriptions on both computers become one device
 }
 
 function prSheet() {
