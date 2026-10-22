@@ -26,6 +26,19 @@ test("withHomes names the parent project of a session started in a work channel 
 	expect(withHomes(rows, {})).toEqual(rows);
 });
 
+test("withHomes keeps the project of a stopped lane after the gateway dropped its channel mapping", () => {
+	// releaseLane deletes homes[lane] on stop; the lane record still carries the home channel id and the project name.
+	lanes.set("done", { ...lane("done", "prov/model-x"), status: "exited", proc: undefined, home: "1561565203714408448", homeName: "dotz-개선" });
+	lanes.set("gone", { ...lane("gone", "prov/model-x"), status: "exited", proc: undefined, home: "42" });
+	const rows = [{ name: "done" }, { name: "gone" }, { name: "loose" }];
+	const live = withHomes(rows, { homes: {}, work: { "1561565203714408448": "dotz-개선" } });
+	expect(live[0]).toEqual({ name: "done", home: "ch:1561565203714408448", project: "dotz-개선" });
+	expect(live[2]).toEqual({ name: "loose" });
+	// the work channel itself is gone: the stored name stands in; none stored leaves an empty project, never a lost home
+	expect(withHomes(rows, {})[0]).toMatchObject({ home: "ch:1561565203714408448", project: "dotz-개선" });
+	expect(withHomes(rows, {})[1]).toEqual({ name: "gone", home: "ch:42", project: "" });
+});
+
 test("the /api/models view resolves with the lanes in it", async () => {
 	lanes.set("a", lane("a", "prov/model-x:high"));
 	const view = await modelsView();

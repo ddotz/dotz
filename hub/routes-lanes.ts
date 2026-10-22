@@ -7,6 +7,7 @@ import { emit } from "./events.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, trashList } from "./lanetrash.ts";
 import { abortLane, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, estimateOf, handoverLane, isExpensive, laneJustification, lanes, laneList, launch, restartLane, resumeByName, sendToLane, stopLane, titleProblem, verifyLane } from "./lanes.ts";
 import { anthropicUsage } from "./providers.ts";
+import { keepHome, persist } from "./lanestate.ts";
 import { laneVerified } from "./notices.ts";
 import { stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace } from "./threads.ts";
@@ -161,6 +162,14 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 					log(`lane channel failed: ${e}`);
 					return undefined;
 				});
+				// The parent project outlives the channel map: releaseLane drops homes[lane] on stop/end, the lane record keeps it.
+				const parent = discord.channels.homes[lane.name];
+				if (parent) {
+					lane.home = parent;
+					const homeName = discord.channels.work[parent];
+					if (homeName) lane.homeName = homeName;
+					persist(lane);
+				}
 				// Work started from a work channel or a thread is answered in the lane's thread, where its reports will come.
 				if (channel && asking?.target && answerMovesToLane(place, asking.target)) queue.retarget(asking.target, `lane:${lane.name}`);
 				log(`lane ${lane.name} why (${b.owner_asked_for_lane ? "owner asked" : `${Number(b.hours)}h`}): ${String(b.why).trim().slice(0, 300)}`);
@@ -196,6 +205,7 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 			}
 			if (req.method === "DELETE" && parts.length === 3) {
 				stopLane(parts[2]);
+				keepHome(lanes.get(parts[2]), discord.homeOf(parts[2]));
 				void discord.releaseLane(parts[2], lanes.get(parts[2])).catch(e => log(`lane ${parts[2]} thread release failed: ${e}`));
 				return json({ ok: true });
 			}

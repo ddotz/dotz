@@ -314,6 +314,12 @@ export function homeChannel(home: string): string {
 // A lane with its own channel keeps it while its session can be resumed (an owner message there resumes the lane) and
 // gets a one-line stopped marker; a throwaway lane (cwd under /tmp) or one whose session file is gone loses the channel,
 // since nothing could come back to it (owner 2026-10-20, option 1).
+// The lane's parent project while the channel map still has it (releaseLane drops it); the lane record keeps a copy.
+export function homeOf(lane: string): { home: string; homeName?: string } | undefined {
+	const id = channels.homes[lane];
+	return id ? { home: id, ...(channels.work[id] ? { homeName: channels.work[id] } : {}) } : undefined;
+}
+
 export async function releaseLane(lane: string, info?: { cwd?: string; sessionFile?: string }): Promise<void> {
 	const id = channels.lanes[lane];
 	const parentId = channels.homes[lane];

@@ -5,7 +5,7 @@ import { type ProviderErrorKind } from "./providers.ts";
 import type { Chain, Move, Reverter } from "./fallback.ts";
 import { createOwnerNotes } from "./lanerelay.ts";
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { broadcast } from "./events.ts";
 import { TEMP_PATH } from "./live-guard.ts";
 
@@ -17,7 +17,7 @@ type Claim = { state: "reported" | "verified"; at: string; evidence?: string; pr
 // The full text also sits in pending-ask.md (dir(name)) while pending, because report.md is overwritten by gateway notices.
 type Ask = { text: string; at: string };
 // `runtime`: the runtime that wrote sessionFile (omo, omp, claude); a session is only ever resumed by that runtime.
-export type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; waiting?: string };
+export type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; waiting?: string; home?: string; homeName?: string };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	// The orchestrator sent work (launch, dotz_lane send) that no relayed report answered yet; an owner-only exchange in
@@ -111,11 +111,28 @@ export function resetLaneStateForTest(): void {
 	ownerNotes = newOwnerNotes();
 }
 
+// Before a stop releases the lane's thread (which drops the channel map's parent), copy the parent onto the lane record.
+export function keepHome(lane: Lane | undefined, parent: { home: string; homeName?: string } | undefined): void {
+	if (!lane || !parent || lane.home) return;
+	lane.home = parent.home;
+	if (parent.homeName) lane.homeName = parent.homeName;
+	persist(lane);
+}
+
 export const dir = (name: string) => join(paths.lanes, name);
 export function persist(lane: Lane): void {
-	const { name, title, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, runtime, reports, lastReportAt, parked, held, worktree, claim, pendingAsk, waiting } = lane;
+	// The parent project set on disk (an older gateway or a manual backfill) is never dropped by a record that lacks it.
+	if (!lane.home) {
+		try {
+			const disk = JSON.parse(readFileSync(join(dir(lane.name), "lane.json"), "utf8")) as { home?: string; homeName?: string };
+			if (disk.home) Object.assign(lane, { home: disk.home }, disk.homeName ? { homeName: disk.homeName } : {});
+		} catch {
+			// no record yet
+		}
+	}
+	const { name, title, cwd, model, workerModel, fableOk, status, startedAt, sessionFile, runtime, reports, lastReportAt, parked, held, worktree, claim, pendingAsk, waiting, home, homeName } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(parked ? { parked } : {}), ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}), ...(waiting ? { waiting } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(parked ? { parked } : {}), ...(held?.length ? { held } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}), ...(waiting ? { waiting } : {}), ...(home ? { home, ...(homeName ? { homeName } : {}) } : {}) }, null, 2)}\n`);
 }
 export function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;
