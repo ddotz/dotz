@@ -195,7 +195,8 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	const to = s.mail ? (thread ? `th:${thread}` : mailTarget(s.mail.key)) : (s.project?.target ?? (s.conv ? `web:${s.conv}` : s.channel));
 	const hook = thread ? pluginThread({ thread, text: s.text }) : undefined;
 	const info = thread ? discord.threadInfo(thread) : undefined;
-	const where = s.mail ? { conv: mailTarget(s.mail.key), thread_name: s.mail.subject, ...(info ? { parent: info.parentTarget } : {}), parent_name: hook?.parentName ?? info?.parentName ?? msg().channelNames.mail } : s.project ? { channel_name: s.project.name } : {};
+	// A web-only mail has no thread: its turn names the conversation (the mail note carries the subject), not a thread.
+	const where = s.mail ? { conv: mailTarget(s.mail.key), ...(thread ? { thread_name: s.mail.subject, ...(info ? { parent: info.parentTarget } : {}), parent_name: hook?.parentName ?? info?.parentName ?? msg().channelNames.mail } : {}) } : s.project ? { channel_name: s.project.name } : {};
 	const event = { ts: now(), kind: "message", source: s.channel, channel: to, ...where, author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
 	emit("inbox", event);
 	const note = s.mail ? (hook?.note ?? msg().mailNote(s.mail.source, s.mail.id, s.mail.subject)) : undefined;

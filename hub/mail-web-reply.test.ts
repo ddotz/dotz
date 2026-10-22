@@ -91,5 +91,6 @@ test("a mail with no thread the hub knows answers in its web conversation, with 
 	expect(turn).toContain(`zele ${key.slice(5)}`);
 	expect(turn).toContain("웹 전용");
 	expect(turn).not.toContain("[mailguard]");
+	expect(turn).not.toContain('(thread "');
 	expect(eventTarget(inbox.findLast(e => e.text === "요약해 줘")!)).toBe(`mail:${key}`);
 });
