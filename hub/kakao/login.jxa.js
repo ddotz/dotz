@@ -9,7 +9,10 @@
 // markers (isLikelyLoginWindow / containsLoginMarkers), the lock screen test (resolveLockScreen: marker text in the window's own
 // static text, exactly one input field, no scroll area or table), the post-login acknowledgement dialog, the login/lock button scoring
 // (scoreButton / scoreLockConfirmButton) and the field roles. Error texts follow kakaocli LoginAutomator.checkForLoginErrors (MIT).
-// The Korean marker variants and the device-confirmation words are additions of this port and have not been seen on a real screen.
+// Seen on a real Korean screen (2026-10): the login window "로그인" with "텍스트 필드" / "보안 텍스트 필드" (both AXTextField), a login
+// button that stays disabled until real key input, the forced-logout notice "다른 기기에서 로그인해 로그아웃 되었습니다." and the
+// "다른 기기에서 로그인 중입니다. 강제 로그아웃하고, 현재 기기에서 로그인 하시겠습니까?" ask (취소 / 확인). The device-confirmation
+// words are still unseen.
 ObjC.import("Foundation");
 
 var BUNDLE = "com.kakao.KakaoTalkMac";
@@ -20,7 +23,8 @@ var LIST_ROLES = ["AXScrollArea", "AXTable", "AXOutline", "AXList"];
 
 var LOGIN_MARKERS = ["qr code", "start over", "keep me logged in", "find my kakao account", "reset password", "remaining time", "how to log in", "log in using a qr code", "로그인 상태 유지", "카카오계정 찾기", "비밀번호 재설정", "다시 시작"];
 var LOCK_MARKERS = ["currently locked", "lock mode", "잠금 모드", "잠겨 있습니다", "잠금 상태"];
-var ACK_MARKERS = ["currently logged in", "already logged in", "you are currently logged in", "you are already logged in", "logged in on another device", "이미 로그인", "로그인되어 있습니다"];
+// Also the "logged in on another computer - log it out and log in here?" notice: its OK logs the other computer out.
+var ACK_MARKERS = ["currently logged in", "already logged in", "you are currently logged in", "you are already logged in", "logged in on another device", "another pc", "another computer", "other device", "log out", "logged out", "이미 로그인", "로그인되어 있습니다", "다른 pc", "다른 컴퓨터", "다른 기기", "다른 곳에서", "로그아웃"];
 var CONFIRM_MARKERS = ["verification", "verify", "otp", "2fa", "인증", "new device", "새로운 기기", "새 기기"];
 var REJECT_MARKERS = [["비밀번호", "틀"], ["비밀번호", "올바르지"], ["비밀번호", "일치"], ["incorrect"], ["wrong"], ["invalid"]];
 var NETWORK_MARKERS = ["네트워크", "network", "connection"];
@@ -179,7 +183,8 @@ function dismissNotice(s) {
 	var bestScore = 0;
 	s.buttons.forEach(function (b) {
 		var l = labels(b);
-		var score = l.indexOf("ok") >= 0 ? 140 : l.indexOf("확인") >= 0 ? 120 : l.indexOf("confirm") >= 0 ? 100 : 0;
+		var score = l.indexOf("ok") >= 0 ? 140 : l.indexOf("확인") >= 0 ? 120 : l.indexOf("confirm") >= 0 ? 100 : l.indexOf("예") >= 0 || l.indexOf("yes") >= 0 ? 90 : l.indexOf("로그아웃") >= 0 || l.indexOf("계속") >= 0 || l.indexOf("continue") >= 0 ? 80 : 0;
+		if (l.some(function (t) { return t.indexOf("취소") >= 0 || t.indexOf("cancel") >= 0 || t.indexOf("아니") >= 0 || t === "no"; })) score = 0;
 		if (score > bestScore) {
 			best = b;
 			bestScore = score;
@@ -254,10 +259,11 @@ function run() {
 		var seen = observe();
 		var out = seen.result;
 		if (req.action === "ack") {
+			var handled = false;
 			seen.windows.forEach(function (v) {
-				if (v.cls.detail === "notice") dismissNotice(v.scan);
+				if (v.cls.detail === "notice" && dismissNotice(v.scan)) handled = true;
 			});
-			out = { state: seen.result.state, detail: "notice_handled" };
+			out = { state: seen.result.state, detail: handled ? "notice_handled" : "notice_unhandled" };
 		} else if (req.action === "focus" || req.action === "submit") {
 			var target = seen.windows[0];
 			var form = seen.result.state === "locked" || (seen.result.state === "login" && seen.result.detail !== "notice") || (seen.result.state === "error" && seen.result.detail === "rejected");
