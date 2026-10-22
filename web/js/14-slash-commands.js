@@ -172,15 +172,15 @@ async function sendChat(how) {
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   chatStick = true; termStick = true;
   if (text.startsWith("/")) { sendCommand(text); return; }
-  const mode = how || (isWorking(t) ? "steer" : undefined);
+  const mode = how || (isWorking(t) ? "steer" : undefined), reply = rpTake();
   try {
-    const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) });
+    const r = await api("/api/message", "POST", { text, ...(reply ? { reply } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) });
     scrollChat(true); scrollTerm(true);
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast("작업이 끝나면 전달할게요"); }
     // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.
   else if (mode === "interrupt") toast("중단하고 보냈어요");
   }
-  catch (e) { toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); }
+  catch (e) { toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); rpRestore(reply); }
 }
 // The composer follows the selected target and the view mode.
 function updateComposerMeta() {
@@ -190,6 +190,7 @@ function updateComposerMeta() {
   ta.disabled = off; $("#send-btn").disabled = off;
   ta.placeholder = off ? "종료된 세션이에요" : DC.cur ? "번호를 누르거나 직접 입력해 주세요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기" : isTerm ? "메시지 또는 /명령" : isProjT(target) ? `${targetName(target)} 프로젝트의 ${botName}에게 메시지 · /명령` : `${targetName(target)}에게 메시지 · /명령`;
   $("#composer").classList.toggle("tmode", isTerm);
+  rpPaint();
 }
 // The elapsed time ticks every second on its own; events only arrive when a tool runs, so a time drawn only on events
 // froze (owner 2026-10-20: stuck at 18s until the answer came).

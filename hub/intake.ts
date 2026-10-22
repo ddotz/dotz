@@ -33,6 +33,20 @@ export function inboxText(e: Record<string, any>): string {
 // `reply_to` is that message's ts), so the answer holds up when it is sent from another conversation than the one that asked.
 export type Pick = { q: string; n: number; label: string };
 const QUOTE_MAX = 200;
+
+// A web message sent as a reply (swipe or the reply button on a message): `id` is the quoted message's stable id (an owner message's
+// mid, or an assistant message's ts), `author` and `content` have the shape of a Discord reply (event.reply), so inboxBody prints
+// the same replyingTo line and the model reads the quoted message as the context of the new one. An empty author is the owner.
+export type Reply = { id: string; author: string; content: string };
+const REPLY_MAX = 300; // same cut as a Discord reply (discord.ts referenced_message)
+export function parseReply(raw: unknown, login: string): Reply | undefined {
+	const r = raw as Record<string, unknown> | null;
+	const content = typeof r?.content === "string" ? r.content.trim().slice(0, REPLY_MAX) : "";
+	if (!content) return undefined;
+	const author = typeof r?.author === "string" ? r.author.trim().slice(0, 60) : "";
+	return { id: typeof r?.id === "string" ? r.id.slice(0, 40) : "", author: author || login, content };
+}
+export const replyLine = (r: Reply): string => msg().replyingTo(r.author, r.content);
 function decisionLines(p: Record<string, any>): string[] {
 	const m = msg();
 	const out: string[] = [];
@@ -141,11 +155,11 @@ async function accountChatAnswer(target: string, ask: Parameters<typeof accountA
 // message, a working lane gets it steered in; "steer": into the running turn now; "interrupt": abort, then new prompt.
 // `files` are uploads (files.ts): the chat shows them as chips, the agent gets one [attachment] line per file with its path.
 // `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
-type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; decision?: string; picks?: Pick[] };
+type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; decision?: string; picks?: Pick[] };
 export async function sendWeb(s: WebSend): Promise<void> {
 	const mid = newMid();
 	// replyTo: the asking message of a decision answer; decision: its notice, which that answer settles alone (notices.ts ownerReplied).
-	const extra = { mid, ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}), ...(s.replyTo ? { reply_to: s.replyTo } : {}), ...(s.decision ? { decision: s.decision } : {}), ...(s.picks?.length ? { picks: s.picks } : {}) };
+	const extra = { mid, ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}), ...(s.replyTo ? { reply_to: s.replyTo } : {}), ...(s.reply ? { reply: s.reply } : {}), ...(s.decision ? { decision: s.decision } : {}), ...(s.picks?.length ? { picks: s.picks } : {}) };
 	if (s.lane) {
 		const name = s.lane;
 		const channel = `lane:${name}`;
@@ -159,7 +173,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		// gateway message in the session's chat, not only as the request's error.
 		try {
 			if (approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
-			const how = sendToLane(name, [`[owner via web] ${s.text}`, s.files?.length ? attachmentLines(s.files) : ""].filter(Boolean).join("\n"), mid);
+			const how = sendToLane(name, [`[owner via web] ${s.text}`, s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : ""].filter(Boolean).join("\n"), mid);
 			emitDelivery(channel, mid, how);
 			// The web shows the receipt as the message's delivery state only (no canned receipt message, owner 2026-10-17).
 			livestatus.begin(channel, channel, true);
