@@ -335,7 +335,9 @@ export function entryView(e: FallbackEntry) {
 	const used = e.cap ? usageOf(e, e.cap.period) : undefined;
 	const d = new Chain(e.model, [e], "off").down(1);
 	const why = d && d.why !== "off" ? d : undefined;
-	return { ...e, enabled: entryOn(e), ...(used ? { used: { period: e.cap!.period, tokens: used.tokens, usd: used.usd } } : {}), ...(why ? { down: why.why, until: new Date(why.until).toISOString() } : {}), id: entryId(e) };
+	// an API-key entry is down because OmO is pinned to an account that forbids keys (hub/apikey-policy.ts): say so, with that account
+	const ban = e.key_file && why?.why === "error" ? apiKeyBan() : undefined;
+	return { ...e, enabled: entryOn(e), ...(ban ? { down_reason: "api_key_ban", down_account: ban } : {}), ...(used ? { used: { period: e.cap!.period, tokens: used.tokens, usd: used.usd } } : {}), ...(why ? { down: why.why, until: new Date(why.until).toISOString() } : {}), id: entryId(e) };
 }
 
 // Failures the chain moves on from: a usage limit, a billing/auth problem only the owner can fix, a provider error. Anything

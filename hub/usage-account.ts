@@ -55,6 +55,13 @@ export function blockOf(account: Json | undefined, slot: Json | undefined, now: 
 	return found.sort((a, b) => (b.until ?? Number.POSITIVE_INFINITY) - (a.until ?? Number.POSITIVE_INFINITY))[0];
 }
 
+// The account requests really go to. OmO skips a blocked account, so the chosen one (dotz's pick, or the pin) is used only
+// while it is not blocked; otherwise the pool's pick is: not blocked, latest success. With nothing usable the chosen one stays.
+export function usedAccount(chosen: string | undefined, names: string[], isBlocked: (name: string) => boolean, lastSuccess: (name: string) => number): string | undefined {
+	if (chosen && names.includes(chosen) && !isBlocked(chosen)) return chosen;
+	return [...names].filter(n => !isBlocked(n)).sort((a, b) => lastSuccess(b) - lastSuccess(a))[0] ?? chosen ?? names[0];
+}
+
 // OmO's subscription account for Anthropic models: the one dotz keeps its processes on (`prefer`, hub/account-sticky.ts: a
 // manual pick, a rule or the owner's pin all end up there, and its processes get it as their soft pin), else the pinned one,
 // else the pool's pick (not blocked, latest success). `prefer` wins over auth.json's pin, or a manual switch would keep
@@ -68,9 +75,12 @@ export function subscriptionAccount(file = authFile(), now = Date.now(), prefer?
 	const usable = (a: Json) => !blockOf(a, slots[a.name], now);
 	const last = (a: Json) => Number(slots[a.name]?.lastSuccessAt ?? 0);
 	const preferred = accounts.find(a => a.name === prefer);
-	const chosen = preferred ?? pin ?? [...accounts].sort((a, b) => Number(usable(b)) - Number(usable(a)) || last(b) - last(a))[0];
+	const wanted = preferred ?? pin ?? [...accounts].sort((a, b) => Number(usable(b)) - Number(usable(a)) || last(b) - last(a))[0];
+	// a blocked pick is skipped by OmO, so the numbers are those of the account it really falls back to
+	const usedName = usedAccount(wanted.name, accounts.map(a => a.name), n => !usable(accounts.find(a => a.name === n)!), n => last(accounts.find(a => a.name === n)!));
+	const chosen = accounts.find(a => a.name === usedName) ?? wanted;
 	const pinned = chosen === pin;
-	return { name: chosen.name, pinned, ...(preferred && !pinned ? { sticky: true } : {}), token: chosen.access, expiresAt: typeof chosen.expires === "number" ? chosen.expires : null };
+	return { name: chosen.name, pinned, ...(preferred && chosen === preferred && !pinned ? { sticky: true } : {}), token: chosen.access, expiresAt: typeof chosen.expires === "number" ? chosen.expires : null };
 }
 
 // Every subscription account OmO holds, for the per-account usage numbers the owner's rules read (hub/account-rules.ts).

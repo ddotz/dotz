@@ -4,9 +4,10 @@
 // the raw id appears only in API fields named `name`/`key` and on "-# " detail lines.
 import { aliasesFile, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
 import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, validateRules, writeRules } from "./account-rules.ts";
-import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, MAX_LOG_LINES, type Pool, readPool, stickyAccount, type SwitchKind } from "./account-sticky.ts";
+import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
 import { TZ } from "./config.ts";
-import { type AccountReport, limitsText } from "./usage-account.ts";
+import { accountUsedChanged } from "./notices.ts";
+import { type AccountReport, limitsText, usedAccount } from "./usage-account.ts";
 
 export class AccountsError extends Error {
 	constructor(message: string, readonly status = 400) {
@@ -20,11 +21,28 @@ const SCRIPT_ERROR_TEXT: Record<ScriptErrorKind, string> = { timeout: "시간이
 
 const clock = (ms: number) => new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(ms));
 const dayKey = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(ms));
-// "18:00" today, "10월 22일 18:00" otherwise.
+// "18:00" today, "내일 01:00" tomorrow, "10월 25일 18:00" otherwise.
 function clockText(ms: number, now: number): string {
 	if (dayKey(ms) === dayKey(now)) return clock(ms);
-	const d = new Intl.DateTimeFormat("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric" }).format(new Date(ms));
-	return `${d} ${clock(ms)}`;
+	if (dayKey(ms) === dayKey(now + 86_400_000)) return `내일 ${clock(ms)}`;
+	const part = (type: "month" | "day") => new Intl.DateTimeFormat("en-US", { timeZone: TZ, [type]: "numeric" }).format(new Date(ms));
+	return `${part("month")}월 ${part("day")}일 ${clock(ms)}`;
+}
+
+// The bell alert for a change of the account requests really use: from which to which, and why.
+export function usedChangeNotice(c: UsedChange, aliases = readAliases()): string {
+	const from = label(c.from, undefined, aliases);
+	const to = label(c.to, undefined, aliases);
+	const head = `요청 계정을 ${from}에서 ${to}${josa(to, "으로", "로")} 바꿨어요.`;
+	const until = c.until ? ` ${from}의 한도는 ${clockText(c.until, Date.parse(c.at))}에 풀려요.` : "";
+	const switched: Record<SwitchKind, string> = { start: "처음 골랐기 때문이에요.", limit: "이전 계정이 한도에 걸렸기 때문이에요.", owner: "OmO에서 계정을 직접 고정했기 때문이에요.", gone: "이전 계정이 사라졌기 때문이에요.", rule: c.rule ? `규칙 "${c.rule}" 때문이에요.` : "규칙 때문이에요.", script: "스크립트가 골랐기 때문이에요.", manual: "직접 골랐기 때문이에요." };
+	const because = { limit: `${from}${josa(from, "이", "가")} 한도에 걸렸기 때문이에요.${until}`, auth_error: `${from}의 로그인이 풀렸기 때문이에요.`, gone: `${from}${josa(from, "이", "가")} 사라졌기 때문이에요.`, restored: `막혀 있던 ${to}${josa(to, "이", "가")} 다시 쓸 수 있게 됐기 때문이에요.`, switch: switched[c.switchKind ?? "start"] }[c.cause];
+	return `${head} ${because}`;
+}
+
+// Called once at start: every change of the account in use that the owner did not make in the web is posted as an alert.
+export function announceUsedChanges(): void {
+	onUsedChange(c => accountUsedChanged(usedChangeNotice(c), `account-used:${c.at}`));
 }
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const pct = (n: number) => `${Math.round(n)}%`;
@@ -91,11 +109,16 @@ const labeledSwitch = (s: AccountSwitch, aliases = readAliases()): LabeledSwitch
 export function labeledAccountView(limit = MAX_LOG_LINES) {
 	const v = accountView(limit);
 	const aliases = readAliases();
-	return { ...v, ...(v.account ? { account_label: label(v.account, undefined, aliases) } : {}), switches: v.switches.map(s => labeledSwitch(s, aliases)) };
+	// the account requests really use, not the pick OmO skips while it is blocked
+	const pool = readPool();
+	const account = v.account && pool ? usedAccount(v.account, pool.names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0) : v.account;
+	const moved = account !== v.account;
+	return { ...v, ...(moved ? { since: undefined } : {}), ...(account ? { account, account_label: label(account, undefined, aliases) } : {}), switches: v.switches.map(s => labeledSwitch(s, aliases)) };
 }
 
 // A manual pick whose account is blocked is skipped (evaluate()), so the text says so plainly, with the resume time in local
 // time and the account requests really use; otherwise the pick would read as active while it is not.
+const blockedTag = (kind: string, until: number | undefined, now: number): string => `${kind === "rate_limit" ? "한도 걸림" : kind === "auth_error" ? "로그인 풀림" : "쓸 수 없음"}${until ? ` · ${clockText(until, now)}까지` : ""}`;
 const manualText = (m: Manual | undefined, now: number, names: string[], aliases: Record<string, string>, pool?: Pool, current?: string): string | null => {
 	if (!m || (m.until && Date.parse(m.until) <= now)) return null;
 	const id = resolveAccount(m.account, names, aliases);
@@ -108,14 +131,34 @@ const manualText = (m: Manual | undefined, now: number, names: string[], aliases
 	return `${base} · ${by} ${b.until ? `${clockText(b.until, now)}까지` : "지금은"} 못 써요${cur ? `, 지금은 ${cur}${josa(cur, "으로", "로")} 요청해요` : ""}`;
 };
 
+// The chosen account in words: where requests go instead while it is blocked, else who chose it.
+function chosenText(chosen: string, used: string | undefined, source: Decision["source"], rule: string | undefined, until: string | undefined, pool: Pool | undefined, now: number, aliases: Record<string, string>): string {
+	const b = pool?.blocked[chosen];
+	if (b) {
+		if (!used || used === chosen) return "지금은 못 써요. 쓸 수 있는 다른 계정이 없어요";
+		const u = label(used, undefined, aliases);
+		const to = `${u}${josa(u, "으로", "로")} 요청해요`;
+		if (blockedKind(b.reason) === "auth_error") return `로그인이 풀려서 ${to}`;
+		return b.until ? `한도가 풀리는 ${clockText(b.until, now)}까지 ${to}` : `지금은 한도에 걸려서 ${to}`;
+	}
+	if (source === "manual") return `직접 골랐어요${until ? ` · ${clockText(Date.parse(until), now)}까지` : ""}`;
+	if (source === "script") return "스크립트가 골랐어요";
+	if (source === "rule") return rule ? `규칙 "${rule}"으로 골랐어요` : "규칙으로 골랐어요";
+	return "자동으로 골랐어요";
+}
+
 export function accountsBody(now = Date.now()) {
-	const current = stickyAccount(now);
+	const sticky = stickyAccount(now);
 	const pool = readPool(undefined, now);
 	const names = pool?.names ?? [];
+	// OmO skips a blocked account: this is where requests really go.
+	const current = pool ? usedAccount(sticky, names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0) : sticky;
 	const aliases = readAliases();
 	const usage = getUsage();
 	const rules = readRules();
 	const lab = (n: string) => label(n, undefined, aliases);
+	const manual = rules.manual && (!rules.manual.until || Date.parse(rules.manual.until) > now) ? rules.manual : undefined;
+	const manualId = manual ? resolveAccount(manual.account, names, aliases) : undefined;
 	// a rule names its account by id or alias
 	const labAny = (t: string) => {
 		const id = resolveAccount(t, names, aliases);
@@ -123,7 +166,15 @@ export function accountsBody(now = Date.now()) {
 	};
 	const d = lastDecision();
 	const opinion = getScriptOpinion();
+	// the owner's pick (a manual pin, even a blocked one), else what dotz decided
+	const chosenId = manualId ?? sticky;
+	const chosenBlock = chosenId ? pool?.blocked[chosenId] : undefined;
+	const chosenSource: Decision["source"] = manualId ? "manual" : d.source;
 	return {
+		// `current` is the account requests really use; `chosen` the one picked (they differ while the pick is blocked)
+		chosen: chosenId
+			? { name: chosenId, label: lab(chosenId), source: chosenSource, blocked: chosenBlock ? blockedKind(chosenBlock.reason) : null, blocked_until: chosenBlock?.until ? new Date(chosenBlock.until).toISOString() : null, used_instead: current && current !== chosenId ? { name: current, label: lab(current) } : null, text: chosenText(chosenId, current, chosenSource, d.rule, manualId ? manual?.until : undefined, pool, now, aliases) }
+			: null,
 		accounts: names.map(name => {
 			const b = pool?.blocked[name];
 			return {
@@ -133,6 +184,7 @@ export function accountsBody(now = Date.now()) {
 				current: name === current,
 				blocked: b ? blockedKind(b.reason) : null,
 				blocked_until: b?.until ? new Date(b.until).toISOString() : null,
+				blocked_tag: b ? blockedTag(blockedKind(b.reason), b.until, now) : null,
 				five_hour_left: usage[name]?.five_hour_left ?? null,
 				seven_day_left: usage[name]?.seven_day_left ?? null,
 			};
@@ -148,6 +200,7 @@ export function accountsBody(now = Date.now()) {
 		rules,
 		rules_text: (rules.rules ?? []).map((r, index) => ({ index, text: describeRule(r, labAny) })),
 		manual_text: manualText(rules.manual, now, names, aliases, pool, current),
+		used: current ? { name: current, label: lab(current) } : null,
 		script: {
 			path: rules.script?.path ?? null,
 			timeout_ms: rules.script?.timeout_ms ?? DEFAULT_SCRIPT_TIMEOUT_MS,
@@ -174,15 +227,19 @@ async function useAccount(text: string, until?: string): Promise<{ auto: true } 
 	const t = text.trim();
 	if (!t) throw new AccountsError("어느 계정인지 알려 주세요", 400);
 	if (/^(auto|자동)$/i.test(t)) {
-		setManual(undefined);
-		await checkNow();
+		await quietly(async () => {
+			setManual(undefined);
+			await checkNow();
+		});
 		return { auto: true };
 	}
 	const id = resolveAccount(t, readPool()?.names ?? []);
 	if (!id) throw new AccountsError(`그런 계정이 없어요: ${t}`, 400);
 	if (until !== undefined && (typeof until !== "string" || Number.isNaN(Date.parse(until)))) throw new AccountsError("until은 ISO 시각이어야 해요 (예: 2026-10-21T18:00:00+09:00)", 400);
-	setManual(id, undefined, until || undefined);
-	const d = await checkNow();
+	const d = await quietly(async () => {
+		setManual(id, undefined, until || undefined);
+		return checkNow();
+	});
 	return { id, label: label(id), applied: d.account === id };
 }
 
@@ -261,6 +318,7 @@ export function accountText(now = Date.now()): string {
 	const cur = b.accounts.find(a => a.current);
 	const lines = [`지금 계정: ${cur ? cur.label : "아직 안 골랐어요"}`, `이유: ${whyText(b.decision)}`];
 	if (b.manual_text) lines.push(`직접 고정: ${b.manual_text} (자동으로 돌리려면 /account auto)`);
+	if (b.chosen && b.chosen.used_instead) lines.push(`고른 계정: ${b.chosen.label} · ${b.chosen.text}`);
 	lines.push("계정:", ...b.accounts.map(a => `- ${a.label}${a.current ? " (지금)" : ""} · ${stateText(a, now)} · ${leftText(a)}`));
 	lines.push(b.rules_text.length ? "규칙:" : "규칙: 없음", ...b.rules_text.map(r => `${r.index + 1}. ${r.text}`));
 	lines.push(b.script.path ? `스크립트: ${b.script.path}${b.script.last?.error_text ? ` (마지막: ${b.script.last.error_text})` : ""}` : "스크립트: 없음");
