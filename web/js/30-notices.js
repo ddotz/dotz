@@ -222,10 +222,61 @@ function pushOpen(hash, at) {
   else go(p.view, p.t);
 }
 
-function openNotice(n) {
+async function openNotice(n) {
   closeNotices(false);
   if (!n.read) { n.read = true; NT.unread = Math.max(0, NT.unread - 1); paintBell(); ntMarkRead({ ids: [n.id] }); }
+  if (n.tone === "ask" && await ntAskSheet(n)) return;   // a question that still waits: only the sheet, on the screen the owner is on
   ntJump(n);
+}
+
+/* ---- decision sheet: the docked decision card (10-decision-card.js) over the current screen ---- */
+// Same card and same answer path as the one above the composer, for the conversation the notice came from; no navigation, no scroll.
+const DK = { node: null, box: null, ov: null, dc: null, seq: 0, opener: null, timer: 0 };
+function dkClose(restore = true) {
+  ++DK.seq; clearTimeout(DK.timer); DK.timer = 0;
+  if (!DK.node) return;
+  DK.node.remove(); DK.node = DK.box = DK.dc = null;
+  ovDone(DK.ov); DK.ov = null;
+  document.removeEventListener("keydown", dkKey, true);
+  if (restore && DK.opener && DK.opener.isConnected) DK.opener.focus({ preventScroll: true });
+  DK.opener = null;
+}
+function dkKey(ev) { if (ev.key === "Escape" && DK.node) { ev.preventDefault(); ev.stopPropagation(); dkClose(); } }
+function dkPaint() {
+  if (!DK.node) return;
+  const dc = decisionOf(DK.dc.t);
+  if (!dc || dc.sig !== DK.dc.sig) { dkClose(false); return; }   // answered, here or elsewhere
+  DK.dc = { ...dc, close: dkClose };
+  const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
+  DK.box.dataset.key = dc.key;
+  renderDecision(DK.box, DK.dc, picks, step);
+  if (DC.st[dc.key] === "sent" && !DK.timer) DK.timer = setTimeout(() => { dkClose(false); toast("답을 보냈어요"); }, 900);
+}
+function dkOpen(dc) {
+  dkClose(false);
+  DK.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  DK.dc = { ...dc, close: dkClose };
+  DK.box = el("section", { class: "dcard dk-card", role: "dialog", "aria-label": "결정이 필요해요", tabindex: "-1" });
+  DK.node = el("div", { class: "dk-bd", onpointerdown: ev => { if (ev.target === DK.node) dkClose(); } }, DK.box);
+  document.body.append(DK.node);
+  DK.ov = ovOpen(() => dkClose(false));
+  document.addEventListener("keydown", dkKey, true);
+  dkPaint();
+  DK.box.focus({ preventScroll: true });   // not a row: a focus ring on the first option would read as a pick
+}
+// Opens the sheet for an [ask] notice whose question still waits in its conversation; false when it does not (answered, gone): the caller jumps.
+async function ntAskSheet(n) {
+  const t = n.src || n.open || "main", at = n.at || n.updated || n.ts, seq = ++DK.seq;
+  if (!validTarget(t)) return false;
+  try {
+    if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t);
+    await ensureMsg(t, at);
+  } catch { return false; }
+  if (seq !== DK.seq) return true;   // another tap or a close came meanwhile
+  const dc = decisionOf(t);
+  if (!dc || !dc.blocks.length || (n.at && dc.at && dc.at !== n.at)) return false;
+  dkOpen(dc);
+  return true;
 }
 // Hook: open a notice by id as if it was tapped (tap + scroll + highlight).
 function noticeOpen(id) { const n = NT.items.find(x => String(x.id) === String(id)); if (n) openNotice(n); return !!n; }
@@ -499,6 +550,7 @@ function ntApply(item, unread) {
   paintBell();
   if (NT.open) renderNotices();
   ntSheetPaint();
+  dkPaint();
   homeSoon();
   syncInlineChoices();
 }
