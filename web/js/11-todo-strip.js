@@ -161,22 +161,18 @@ function msgNode(e) {
     case "lane_start": return el("div", { class: "a-div", text: `세션 시작 · ${hm}` });
     case "mail": {
       // A mail conversation's first message (hub/mail.ts postMail): sender, subject, then the summary and the body (원문).
-      if (e.subject) return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL.mail }), el("div", { class: "st" },
-        el("div", { class: "ml-from", text: mailSender(e.from) }), el("div", { class: "ml-subj", text: e.subject }), mdNode(text.split("\n").slice(1).join("\n").trim()),
-        el("div", { class: "mt", text: hm })));
+      if (e.subject) return resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim() });
       const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
       const subj = f("subject"), acct = (text.match(/^new mail \(([^)]*)\)/m) || [])[1] || "";
       const snip = (text.match(/^snippet: ?([\s\S]*)$/m) || [])[1] || "";
       const from = f("from").replace(/\s*<[^>]+>\s*$/, "").replace(/^"|"$/g, "") || f("from");
-      if (subj) return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL.mail }), el("div", { class: "st" },
-        el("div", { class: "ml-from", text: from }), el("div", { class: "ml-subj", text: subj }), snip ? el("div", { class: "ml-snip", text: snip.trim() }) : null,
-        el("div", { class: "mt", text: [hm, acct].filter(Boolean).join(" · ") })));
+      if (subj) return resultCard({ src: from || acct || SYS_LABEL.mail, at: e.ts, title: subj, text: snip.trim() });
     }
     // falls through: a mail without a subject line shows as plain text
     case "schedule": case "watch": {
       // Same card as any other assistant message: who, when, then the plain line; the raw output folds under 원문.
       const body = e.kind === "watch" ? watchLine(e.label || e.watch, e.reason, text) : scheduleLine(text);
-      return el("div", { class: "bm" }, el("div", { class: "mt" }, el("span", { class: "mn", text: SYS_LABEL[e.kind] }), hm ? ` · ${hm}` : null), mdNode(body));
+      return resultCard({ src: e.kind === "watch" ? humanLabel(e.label || e.watch) : SYS_LABEL[e.kind], at: e.ts, text: e.kind === "watch" ? body : body.replace(/^[^\n]*\n?/, ""), title: e.kind === "watch" ? undefined : body.split("\n")[0] });
     }
     default: {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
@@ -266,7 +262,7 @@ function chatPush(en, bulk) {
       tl.append(n); if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
-    if (!WORK.has(en.a.type)) return;
+    if (!WORK.has(en.a.type) || isMailT(target)) return;
     if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
     CS.group.add(en.a);
   }
