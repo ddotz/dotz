@@ -101,7 +101,7 @@ describe("shell update", () => {
 		handlers.message!({ data: { type: "other" }, waitUntil: () => { throw new Error("not a refresh"); } });
 	});
 
-	test("the page reloads at once when nothing is open, otherwise offers a chip, never loops, and asks the worker after a long absence", () => {
+	test("the page reloads only while hidden and nothing is open, otherwise offers a chip, never loops, and asks the worker after a long absence", () => {
 		const src = web("js/23-installable-app-web.js");
 		const block = src.slice(src.indexOf("const SHELL_KEY"), src.indexOf("// A tap that had to start the app"));
 		const mem = new Map<string, string>(), chips: { onclick: () => void }[] = [], docH: Record<string, () => void> = {};
@@ -118,7 +118,11 @@ describe("shell update", () => {
 
 		swMsg!({ data: { type: "something-else" } });
 		expect(reloads).toBe(0);
-		post();   // safe: reloads, keeping route and place
+		post();   // visible: never an automatic reload, even with an empty composer (it would close the phone keyboard)
+		expect(reloads).toBe(0);
+		expect(chips).toHaveLength(1);
+		doc.visibilityState = "hidden";
+		post();   // hidden and safe: reloads, keeping route and place
 		expect(reloads).toBe(1);
 		expect(JSON.parse(mem.get("dotz-shell-reload")!)).toMatchObject({ hash: "#chat/main", views: 42, key: "main", stick: false, anchor: { ts: "2026-10-21T06:00:00Z", off: 7 } });
 		now += 10_000;

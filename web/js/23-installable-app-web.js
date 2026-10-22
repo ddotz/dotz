@@ -1,5 +1,5 @@
 /* ---------- installable app + web push (web/sw.js, /api/push in hub/push.ts) ---------- */
-const PWA = { reg: null, sub: null, info: null };
+const PWA = { reg: null, sub: null, info: null, gw: null, claimed: false };
 const PUSH_KINDS = [["answer", "웹에서 맡긴 작업 완료 (짧은 답은 안 울려요)"], ["ask", "확인 필요 (질문 · 승인)"], ["lane", "세션 시작 · 완료 · 실패"], ["usage", "중요한 경고 (한도 · 오류 · 멈춤)"], ["update", "dotz 새 버전"]];
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -35,8 +35,8 @@ window.addEventListener("load", sharedIntake);
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}, h = d.open ? new URL(d.open, location.href).hash : ""; if (!h || d.notice) return;   // a decision push (d.notice) opens its sheet over the current screen (30-notices.js), no jump
   if (d.ts) pushOpen(h, d.ts); else if (location.hash !== h) { const p = parseHash(h); go(p.view, p.t); } });
 // A new shell version: sw.js refreshShell posts {type:"shell-updated"} when its background fetch brought a changed page, script or styles.
-// The page reloads onto it at once if nothing would be lost (empty composer, no attachment, sheet, dialog, or viewer open), else a chip
-// offers it. The route is the hash and survives the reload; the scroll place is kept in sessionStorage and put back (chatOpen, shellRestoreViews).
+// The page reloads onto it only while it is hidden and nothing would be lost (empty composer, no attachment, sheet, dialog, or viewer open): a reload
+// under a visible page closes the phone keyboard, even with an empty box. Otherwise a chip offers it, and the reload comes when the page is next hidden. The route is the hash and survives the reload; the scroll place is kept in sessionStorage and put back (chatOpen, shellRestoreViews).
 // One automatic reload per minute at most, so a shell that keeps changing cannot loop.
 const SHELL_KEY = "dotz-shell-reload", SHELL_LOOP_MS = 60000, SHELL_AWAY_MS = 3 * 60000;
 const shellMem = () => { try { return JSON.parse(sessionStorage.getItem(SHELL_KEY) || "null") || {}; } catch { return {}; } };
@@ -44,20 +44,25 @@ let SHELL_RESTORE = (() => { const m = shellMem(); if (!m.at || m.used || Date.n
 if (SHELL_RESTORE) setTimeout(() => { SHELL_RESTORE = null; }, 15000);
 const shellSafe = () => !ta.value.trim() && !ATT.length && !OV.length && !SUBD && !document.querySelector("dialog[open]");
 function shellApply() {
+  shellPending = false;
   const s = { at: Date.now(), hash: location.hash, views: $("#views").scrollTop };
   if (current === "chat" && !convListing()) Object.assign(s, { key: target, stick: chatStick, anchor: chatAnchor() });
   try { sessionStorage.setItem(SHELL_KEY, JSON.stringify(s)); } catch {}
-  location.reload();
+  reloadPage();
 }
+function reloadPage() { location.reload(); }
+const shellIdle = () => document.visibilityState === "hidden" && shellSafe() && Date.now() - (shellMem().at || 0) > SHELL_LOOP_MS;
+let shellPending = false;
 function shellUpdated() {
-  if (shellSafe() && Date.now() - (shellMem().at || 0) > SHELL_LOOP_MS) return shellApply();
+  if (shellIdle()) return shellApply();
+  shellPending = true;
   if (!document.querySelector(".shell-chip")) document.body.append(el("button", { class: "shell-chip", type: "button", text: "새 버전 · 눌러서 적용", onclick: shellApply }));
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { if (ev.data && ev.data.type === "shell-updated") shellUpdated(); });
 // Back after a while away: ask the worker to look for a new shell now (a notification tap or a long sleep leaves the open page behind).
 let shellHiddenAt = 0;
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") { shellHiddenAt = Date.now(); return; }
+  if (document.visibilityState === "hidden") { shellHiddenAt = Date.now(); if (shellPending && shellIdle()) shellApply(); return; }
   const away = shellHiddenAt ? Date.now() - shellHiddenAt : 0;
   shellHiddenAt = 0;
   const sw = away > SHELL_AWAY_MS && "serviceWorker" in navigator && (navigator.serviceWorker.controller || (PWA.reg && PWA.reg.active));
@@ -105,7 +110,28 @@ async function pushLoad() {
   if (PWA.sub && PWA.info && PWA.info.subscribed && (PWA.info.did !== DEVICE_ID || (!PWA.info.app && isStandalone()))) {
     try { await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), did: DEVICE_ID, ...(isStandalone() ? { app: true } : {}) }); PWA.info.did = DEVICE_ID; if (isStandalone()) PWA.info.app = true; } catch {}
   }
+  await pushGateways();
   if (current === "settings") renderSettings();
+}
+// One delivery channel per device: the installed app. GET /api/push/gateways (hub/push.ts) answers with every gateway and whether its notices reach this device;
+// the page on any gateway's origin shows and edits the same list. A browser subscription of THIS origin for a device that has the app is a second channel: it goes.
+async function pushGateways() {
+  if (!DEVICE_ID) return;
+  if (isStandalone() && PWA.sub && PWA.info && PWA.info.app && !PWA.claimed) { PWA.claimed = true; api("/api/push/claim", "POST", { did: DEVICE_ID }).catch(() => {}); }
+  try { PWA.gw = await api(`/api/push/gateways?did=${enc(DEVICE_ID)}`); } catch { PWA.gw = null; }
+  if (PWA.gw && PWA.gw.app && PWA.sub && PWA.info && !PWA.info.app) {
+    const sub = PWA.sub;
+    PWA.sub = null; PWA.info.subscribed = false;
+    try { await api("/api/push/unsubscribe", "POST", { endpoint: sub.endpoint }); } catch {}
+    await sub.unsubscribe().catch(() => {});
+  }
+}
+async function pushGw(g, on) {
+  const was = g.on;
+  g.on = on; renderSettings();
+  try { await api("/api/push/gateways", "PUT", { did: DEVICE_ID, url: g.url, on }); } catch (e) { g.on = was; toast(e.message, true); }
+  await pushGateways();
+  renderSettings();
 }
 async function pushEnable(btn) {
   await busy(btn, async () => {
@@ -168,22 +194,26 @@ async function installApp() {
   dialog({ title: "앱 설치", body: el("div", {}, el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))), el("p", { class: "note", text: "전에 추가한 dotz 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요." })), actions: [{ label: "확인", kind: "pri", onclick: c => c() }] });
 }
 function pushSection() {
-  const li = (ic, title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), ...trail);
+  const li = (ic, title, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), ...trail);
   const ios = isIOS(), standalone = isStandalone();
   const rows = [];
-  if (!standalone) rows.push(li("home", "앱 설치", "주소창 없이 홈 화면에서 앱으로 열어요", el("button", { class: "btn", type: "button", onclick: () => installApp() }, "앱 설치")));
+  if (!standalone) rows.push(li("home", "앱 설치", el("button", { class: "btn", type: "button", onclick: () => installApp() }, "앱 설치")));
   const subscribed = PWA.sub && PWA.info && PWA.info.subscribed;
-  if (!pushCapable()) rows.push(li("bell", "알림", ios && !standalone ? "iPhone은 홈 화면에 추가한 dotz 앱에서 켤 수 있어요 (iOS 16.4 이상)" : "이 브라우저는 푸시 알림을 지원하지 않아요"));
-  else if (Notification.permission === "denied") rows.push(li("bell", "알림", "알림 권한이 막혀 있어요. 기기 설정에서 dotz 알림을 허용해 주세요"));
-  else if (!subscribed) rows.push(li("bell", "알림", "작업 시작 · 완료 · 확인 필요 · 중요한 경고만 폰으로 받아요", el("button", { class: "btn", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
-  else {
+  if (PWA.gw && PWA.gw.app) {
+    // The device has the app: one row per gateway, whichever gateway's page this is. A gateway that does not answer cannot be switched.
+    for (const g of PWA.gw.gateways) {
+      const label = `${g.name || "이 컴퓨터"} 알림`;
+      rows.push(li("bell", label, g.online ? el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(g.on), "aria-label": label, onclick: () => pushGw(g, !g.on) }) : el("span", { class: "sup", text: "연결 안 됨" })));
+    }
+  } else if (!pushCapable()) rows.push(li("bell", ios && !standalone ? "iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요" : "이 브라우저는 알림을 지원하지 않아요"));
+  else if (Notification.permission === "denied") rows.push(li("bell", "알림 권한이 막혀 있어요"));
+  else if (!subscribed) rows.push(li("bell", "알림", el("button", { class: "btn", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
+  if (subscribed) {
     for (const [k, label] of PUSH_KINDS) {
       const on = PWA.info.prefs[k] !== false;
-      rows.push(li("bell", label, "", el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": label, onclick: () => pushPref(k, !on) })));
+      rows.push(li("bell", label, el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": label, onclick: () => pushPref(k, !on) })));
     }
-    rows.push(li("bell", "알림 확인", "이 기기로 알림 하나를 보내요", el("button", { class: "btn tonal", type: "button", onclick: ev => pushTest(ev.currentTarget) }, "테스트 알림 보내기"), el("button", { class: "btn text", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, "끄기")));
+    rows.push(li("bell", "알림 확인", el("button", { class: "btn tonal", type: "button", onclick: ev => pushTest(ev.currentTarget) }, "테스트 알림 보내기"), el("button", { class: "btn text", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, "끄기")));
   }
-  const out = [el("div", { class: "sec", text: "앱 · 알림" }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: "휴대폰 갤러리에서 공유 → dotz로 사진을 바로 보낼 수 있어요 (홈 화면에 설치한 앱에서)" })];
-  if (subscribed) out.push(el("div", { class: "note", text: "이 화면을 보고 있는 동안에는 알림을 보내지 않아요." }));
-  return out;
+  return [el("div", { class: "sec", text: "앱 · 알림" }), el("div", { class: "list" }, ...rows)];
 }
