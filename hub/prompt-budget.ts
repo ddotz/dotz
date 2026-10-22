@@ -14,8 +14,10 @@
 // prints, DOTZ_FAIL, $DOTZ_WATCH_STATE_DIR): +437 / +496 bytes, caps raised by exactly that (rounded up to 10).
 // 2026-10-22: personal and security data (address, card, phone, ID numbers, passwords) is asked only through the dotz_auth form, never in chat:
 // +383 / +424 bytes, caps raised by exactly that (rounded up to 10).
-export const MODE_MD_MAX_BYTES = 25350; // measured 25323 (2026-10-22: the " …" needs-detail mark on a choice option)
-export const MODE_KO_MD_MAX_BYTES = 29800; // measured 29768
+// 2026-10-22: a new rule also gets a short title in rule-titles.json (the 커스텀 screen shows it, no model call per page view):
+// +72 / +66 bytes, caps raised by exactly that (rounded up to 10).
+export const MODE_MD_MAX_BYTES = 25430; // measured 25395 (2026-10-22: the " …" needs-detail mark on a choice option)
+export const MODE_KO_MD_MAX_BYTES = 29870; // measured 29834
 export const RULES_TEMPLATE_MAX_BYTES = 780; // measured 703
 export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 // The owner card and boundaries go into the orchestrator's start prompt (observations.md does not).

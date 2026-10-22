@@ -290,6 +290,20 @@ function cmAsk(text) {
   openTarget(MAIN, lastChatView());
   ta.value = text; autosize(); saveDraft(); updateHints(); ta.focus();
 }
+// A row's text: the title, the plain line when there is one, and (rules) the full text behind a tap on the row.
+function cmText(i) {
+  const tx = el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: i.title }), i.line ? el("div", { class: "sup", text: i.line }) : null);
+  if (!i.full) return tx;
+  const full = el("div", { class: "sup", text: i.full, hidden: true });
+  tx.append(full);
+  tx.title = i.full; tx.style.cursor = "pointer";
+  tx.setAttribute("role", "button"); tx.tabIndex = 0;
+  const flip = () => { full.hidden = !full.hidden; tx.setAttribute("aria-expanded", String(!full.hidden)); };
+  tx.addEventListener("click", flip);
+  tx.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+  tx.setAttribute("aria-expanded", "false");
+  return tx;
+}
 function cmPaint(root, p, D) {
   const sig = JSON.stringify([p, D]);
   if (root.dataset.sig === sig) return;
@@ -299,7 +313,7 @@ function cmPaint(root, p, D) {
   const group = g => el("section", { class: "pmv-sec" },
     el("div", { class: "pv-sh" }, el("div", { class: "sec", text: g.label }), el("button", { class: "btn text", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: g.items.length ? "더 부탁하기" : "만들어 달라고 하기" })),
     g.items.length ? el("div", { class: "list" }, ...g.items.map(i => el("div", { class: "li" },
-      el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: i.title }), el("div", { class: "sup", text: i.line })),
+      cmText(i),
       i.bad ? el("span", { class: "tag warn", text: "확인 필요" }) : null,
       ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `))),
       g.more ? el("div", { class: "sup", style: "padding:10px 16px", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));

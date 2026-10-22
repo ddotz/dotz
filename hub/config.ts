@@ -232,6 +232,7 @@ export const paths = {
 	watches: join(DATA_DIR, "watches.json"),
 	setups: join(DATA_DIR, "channel-setups.json"),
 	rules: join(DATA_DIR, "RULES.md"),
+	ruleTitles: join(DATA_DIR, "rule-titles.json"),
 	lessons: join(DATA_DIR, "LESSONS.md"),
 	// Owner memory (modeled on 오모냥's human card / boundaries / observations): owner.md and boundaries.md go into the
 	// orchestrator's start prompt, observations.md only into the nightly reflection.
