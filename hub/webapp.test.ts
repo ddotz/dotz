@@ -111,9 +111,9 @@ describe("shell update", () => {
 		const ui = { ta: { value: "" }, ATT: [] as unknown[], OV: [] as unknown[], NT: { open: false }, SUBD: null as unknown };
 		const nav = { serviceWorker: { addEventListener: (_t: string, h: (ev: unknown) => void) => { swMsg = h; }, controller: { postMessage: (m: unknown) => posted.push(m) } } };
 		const loc = { hash: "#chat/main", reload: () => { reloads++; } };
-		new Function("sessionStorage", "location", "Date", "ta", "ATT", "OV", "NT", "SUBD", "document", "el", "$", "current", "target", "chatStick", "chatAnchor", "convListing", "navigator", "PWA", block)(
+		new Function("sessionStorage", "location", "Date", "ta", "ATT", "OV", "NT", "SUBD", "document", "el", "$", "current", "target", "chatStick", "chatAnchor", "convListing", "navigator", "PWA", "homeTop", block)(
 			{ getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => mem.set(k, v) }, loc, { now: () => now },
-			ui.ta, ui.ATT, ui.OV, ui.NT, ui.SUBD, doc, (_t: string, p: { onclick: () => void }) => p, () => ({ scrollTop: 42 }), "chat", "main", false, () => ({ ts: "2026-10-21T06:00:00Z", off: 7 }), () => false, nav, { reg: null });
+			ui.ta, ui.ATT, ui.OV, ui.NT, ui.SUBD, doc, (_t: string, p: { onclick: () => void }) => p, () => ({ scrollTop: 42 }), "chat", "main", false, () => ({ ts: "2026-10-21T06:00:00Z", off: 7 }), () => false, nav, { reg: null }, () => {});
 		const post = () => swMsg!({ data: { type: "shell-updated" } });
 
 		swMsg!({ data: { type: "something-else" } });
