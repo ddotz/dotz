@@ -1,12 +1,12 @@
 import { afterAll, expect, test } from "bun:test";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CONFIG_FILE, paths } from "./config.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
-import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropLaneNotices, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -839,9 +839,10 @@ test("a notice whose message the owner has seen is no longer unread: by the read
 });
 
 // A throwaway data dir for a fresh process: config copy, optional stored notices / read positions, and the sessions that still exist on disk.
-function storeDir(files: { notices?: Notice[]; reads?: Record<string, string>; lanes?: string[] }): string {
+function storeDir(files: { notices?: Notice[]; reads?: Record<string, string>; lanes?: string[]; channels?: Record<string, unknown> }): string {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-stale-"));
 	copyFileSync(CONFIG_FILE, join(dir, "config.json"));
+	if (files.channels) writeFileSync(join(dir, "channels.json"), JSON.stringify(files.channels));
 	if (files.notices) writeFileSync(join(dir, "notices.json"), JSON.stringify(files.notices));
 	if (files.reads) writeFileSync(join(dir, "reads.json"), JSON.stringify(files.reads));
 	for (const l of files.lanes ?? []) {
@@ -919,6 +920,50 @@ test("a notice that arrives after the owner already read that conversation past 
 	expect(stored().find(n => n.key === "lane:born1")).toMatchObject({ read: true });
 	emit("outbox", { ts: "2026-10-22T06:00:00.000Z", kind: "out", source: "lane:born1", target: "worklog", text: "[done] 새 결과", update_key: "lane:born1" });
 	expect(stored().find(n => n.key === "lane:born1")).toMatchObject({ read: false });
+});
+
+test("on load, a notice of a channel the gateway no longer has is retired; known channels, a session's own channel and read history stay", () => {
+	const at = "2026-10-20T01:00:00.000Z";
+	const msg = (id: string, ch: string, extra: Partial<Notice> = {}) => stale(id, `ch:${ch}`, at, { kind: "message", title: `ch:${ch}`, key: `msg:ch:${ch}`, ...extra });
+	const dir = storeDir({
+		lanes: ["alive"],
+		channels: { chat: "1", worklog: "2", alert: "3", lanes: { alive: "500" }, homes: {}, work: { "600": "프로젝트" }, threads: {}, archiveAt: {} },
+		notices: [msg("ddddddd1", "700"), msg("ddddddd2", "600"), msg("ddddddd3", "500"), msg("ddddddd4", "701", { read: true })],
+	});
+	const fresh = loadIn(dir);
+	expect(fresh.items.map(n => n.id).sort()).toEqual(["ddddddd2", "ddddddd3", "ddddddd4"]);
+	expect(fresh.unread).toBe(2);
+	const saved: Notice[] = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8"));
+	expect(saved.find(n => n.id === "ddddddd1")).toMatchObject({ dismissed: true, read: true });
+	// a title that is only the raw channel id is replaced by a plain label (the session's title where the channel is a session's)
+	expect(saved.find(n => n.id === "ddddddd2")!.title).toBe("채널");
+	expect(saved.find(n => n.id === "ddddddd3")!.title).toBe("alive");
+	expect(saved.every(n => !/^ch:\d+$/.test(n.title) || n.dismissed || n.read)).toBe(true);
+});
+
+test("a session's channel messages are titled by the session; stopping the session closes them, deleting the channel closes everything of it", () => {
+	writeFileSync(paths.channels, JSON.stringify({ chat: "1", worklog: "2", alert: "3", lanes: { x: "8801" }, homes: {}, work: {}, threads: {}, archiveAt: {} }));
+	try {
+		const items = (conv: string) => stored().filter(n => n.src === conv && !n.dismissed);
+		post("ch:8801", "세션 채널의 답이에요");
+		expect(items("ch:8801")).toHaveLength(1);
+		expect(items("ch:8801")[0]).toMatchObject({ kind: "message", title: "로그인 고치기", read: false });
+		post("ch:8802", "이름을 모르는 채널의 답이에요");
+		expect(items("ch:8802")[0]!.title).toBe("채널");
+		// the session stops: its channel's message item goes, another channel's stays
+		expect(dropChannelNotices("ch:8801", true)).toBe(1);
+		expect(items("ch:8801")).toHaveLength(0);
+		expect(stored().find(n => n.src === "ch:8801")).toMatchObject({ dismissed: true, read: true });
+		expect(items("ch:8802")).toHaveLength(1);
+		// the channel is deleted: everything of it goes, and the session's own channel notice is found by its lane too
+		expect(dropChannelNotices("ch:8802")).toBe(1);
+		expect(items("ch:8802")).toHaveLength(0);
+		post("ch:8801", "다시 온 답이에요");
+		expect(dropLaneNotices("x")).toBeGreaterThan(0);
+		expect(items("ch:8801")).toHaveLength(0);
+	} finally {
+		rmSync(paths.channels, { force: true });
+	}
 });
 
 // The notice store is one per process: leave no question that still waits behind for the next test file (ignoring needs no clock, unlike resolving).
