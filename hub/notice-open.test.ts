@@ -13,10 +13,15 @@ const between = (src: string, from: string, to: string) => {
 type N = Record<string, unknown>;
 const dec = { options: [], to: "main", reply_to: "t", group: 1, state: "open" };
 
-// The kind -> action mapping (30-notices.js noticeKindAction), run as shipped.
-const actionOf = new Function("NM", "ntIsDec", `${between(notices, "function noticeKindAction", "async function noticeOpen(")}; return noticeKindAction;`)(
-	{ items: [] }, (n: N) => n.kind === "decision" && !!n.decision,
+// The kind -> action mapping (30-notices.js noticeKindAction), run as shipped, over a given notice store.
+const ntIsDec = (n: N) => n.kind === "decision" && !!n.decision;
+const linkedBlock = between(notices, "const ntOpenDec", "const ntById");
+const ntDecisions = (items: N[]) => () => items.filter(n => ntIsDec(n) && (n.decision as N).state === "open");
+const linkedOf = (items: N[]) => new Function("NT", "ntIsDec", "ntDecisions", `${linkedBlock}; return ntLinkedDec;`)({ items }, ntIsDec, ntDecisions(items)) as (n: N) => N | null;
+const actionIn = (items: N[]) => new Function("NM", "ntIsDec", "ntLinkedDec", `${between(notices, "function noticeKindAction", "async function noticeOpen(")}; return noticeKindAction;`)(
+	{ items: [] }, ntIsDec, linkedOf(items),
 ) as (n: N, mons?: { name: string }[]) => string;
+const actionOf = actionIn([]);
 
 describe("notice kind -> action", () => {
 	const mons = [{ name: "디스크 감시" }];
@@ -38,13 +43,60 @@ describe("notice kind -> action", () => {
 	});
 });
 
+// Shapes from the live GET /api/notices of 2026-10-22 (bodies and option texts stripped): one [ask] question is stored as three items,
+// the decision, an [ask] alert with the same time, and the conversation's latest-message item (key msg:alert) that the 알림 row shows.
+const live = (state: "open" | "answered"): N[] => [
+	{ id: "c223ecf2", ts: "2026-10-22T06:34:12.758Z", updated: "2026-10-22T06:34:12.758Z", kind: "decision", tone: "ask", title: "알림 열기 확인", open: "alert", src: "alert", at: "2026-10-22T06:34:12.758Z", key: "dec:alert:5q00w4", read: false,
+		decision: { options: [{ n: "1", label: "확인됨" }, { n: "2", label: "안 됨" }], to: "alert", reply_to: "2026-10-22T06:34:12.758Z", group: 1, state } },
+	{ id: "eb0e4c1e", ts: "2026-10-22T00:32:40.030Z", updated: "2026-10-22T06:34:23.811Z", kind: "message", tone: "", title: "알림", open: "alert", src: "alert", at: "2026-10-22T06:34:23.811Z", key: "msg:alert", read: false },
+	{ id: "1f3d708d", ts: "2026-10-22T06:34:12.758Z", updated: "2026-10-22T06:34:12.758Z", kind: "alert", tone: "ask", title: "알림", open: "alert", src: "alert", at: "2026-10-22T06:34:12.758Z", read: false },
+	{ id: "2989a018", ts: "2026-10-21T13:36:56.683Z", updated: "2026-10-22T06:32:58.531Z", kind: "message", tone: "", title: "땃쥐", open: "main", src: "main", at: "2026-10-22T06:32:58.531Z", key: "msg:main", read: true },
+	{ id: "9973c0d6", ts: "2026-10-22T06:01:21.759Z", updated: "2026-10-22T06:01:21.759Z", kind: "worklog", tone: "", title: "작업 기록", open: "worklog", src: "worklog", at: "2026-10-22T06:01:21.759Z", read: true },
+];
+
+describe("a notice that links to an open decision", () => {
+	test.each([["decision", "c223ecf2"], ["[ask] alert twin", "1f3d708d"], ["latest-message item of the conversation", "eb0e4c1e"]])("%s opens the decision sheet, not the conversation", (_n, id) => {
+		const items = live("open"), n = items.find(x => x.id === id)!;
+		expect(actionIn(items)(n)).toBe("sheet");
+		expect(linkedOf(items)(n)!.id).toBe("c223ecf2");
+	});
+	test("once it is answered the twins fall back to their own kind", () => {
+		const items = live("answered");
+		expect(actionIn(items)(items.find(x => x.id === "1f3d708d")!)).toBe("ask");
+		expect(actionIn(items)(items.find(x => x.id === "eb0e4c1e")!)).toBe("message");
+	});
+	test("items of other conversations never link to it", () => {
+		const items = live("open");
+		expect(actionIn(items)(items.find(x => x.id === "2989a018")!)).toBe("message");
+		expect(actionIn(items)(items.find(x => x.id === "9973c0d6")!)).toBe("worklog");
+	});
+	test("noticeOpen hands the sheet the decision's id, whichever twin was tapped", async () => {
+		const items = live("open"), opened: unknown[] = [];
+		const fn = new Function("noticeKindAction", "ntLinkedDec", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntSession", "monOpen",
+			`${between(notices, "async function noticeOpen(", "async function noticeOpenId(")}; return noticeOpen;`)(
+			actionIn(items), linkedOf(items), () => {}, (id: string) => opened.push(id), () => { throw new Error("ask"); }, () => { throw new Error("jump"); }, () => {}, () => {}, () => {});
+		for (const n of items.slice(0, 3)) await fn(n);
+		expect(opened).toEqual(["c223ecf2", "c223ecf2", "c223ecf2"]);
+	});
+});
+
+describe("web build id", () => {
+	test("the script carries the id that /api/state reports, so an open page can tell it is stale", async () => {
+		const { bundle, webBuild } = await import("./webapp.ts");
+		expect(bundle("js").text.startsWith(`const WEB_BUILD = "${webBuild()}";`)).toBe(true);
+		expect(webBuild()).toMatch(/^[0-9a-f]{12}$/);
+		expect(readFileSync(join(import.meta.dir, "routes.ts"), "utf8")).toContain("web_build: webBuild()");
+		expect(web("js/17-state-refresh.js")).toContain("webBuildCheck(S.web_build)");
+	});
+});
+
 describe("noticeOpen dispatch", () => {
 	const run = (n: N | null, ask = true) => {
 		const calls: unknown[][] = [];
 		const rec = (name: string) => (...a: unknown[]) => { calls.push([name, ...a]); return undefined; };
-		const fn = new Function("noticeKindAction", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntSession", "monOpen",
+		const fn = new Function("noticeKindAction", "ntLinkedDec", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntSession", "monOpen",
 			`${between(notices, "async function noticeOpen(", "async function noticeOpenId(")}; return noticeOpen;`)(
-			(x: N) => x.act, rec("read"), rec("sheet"), (x: N) => { calls.push(["ask", x.id]); return Promise.resolve(ask); }, rec("jump"), rec("detail"), rec("session"), rec("monitor"));
+			(x: N) => x.act, () => null, rec("read"), rec("sheet"), (x: N) => { calls.push(["ask", x.id]); return Promise.resolve(ask); }, rec("jump"), rec("detail"), rec("session"), rec("monitor"));
 		return fn(n).then(() => calls);
 	};
 	test("each action reaches its own opener", async () => {

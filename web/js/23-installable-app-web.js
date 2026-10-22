@@ -63,6 +63,16 @@ document.addEventListener("visibilitychange", () => {
   const sw = away > SHELL_AWAY_MS && "serviceWorker" in navigator && (navigator.serviceWorker.controller || (PWA.reg && PWA.reg.active));
   if (sw) sw.postMessage({ type: "refresh-shell" });
 });
+// The hub reports the build id of the shell it serves (/api/state web_build). A page that runs another one, however long it stayed open,
+// has the worker store the new shell, then reloads onto it (or shows the chip). One try per build and page life.
+let webBuildAsked = "";
+async function webBuildCheck(b) {
+  if (!b || b === WEB_BUILD || webBuildAsked === b) return;
+  webBuildAsked = b;
+  const sw = "serviceWorker" in navigator && (navigator.serviceWorker.controller || (PWA.reg && PWA.reg.active));
+  if (sw) await new Promise(res => { const ch = new MessageChannel(); ch.port1.onmessage = res; setTimeout(res, 8000); sw.postMessage({ type: "refresh-shell" }, [ch.port2]); });
+  shellUpdated();
+}
 // Views other than a conversation have no anchor: put their scroll back once they are drawn.
 if (SHELL_RESTORE && !SHELL_RESTORE.key && SHELL_RESTORE.views) for (const ms of [300, 1200]) setTimeout(() => { const v = $("#views"); if (SHELL_RESTORE && !v.scrollTop) v.scrollTop = SHELL_RESTORE.views; }, ms);
 // A tap that had to start the app carries the message as ?m=<ts>: 99-boot.js opens it once the state is in.

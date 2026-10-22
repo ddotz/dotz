@@ -11,14 +11,25 @@ type Kind = "js" | "css";
 const cache: Partial<Record<Kind, { key: string; text: string; etag: string }>> = {};
 
 export const moduleFiles = (kind: Kind): string[] => readdirSync(join(WEB_DIR, kind)).filter(f => f.endsWith(`.${kind}`)).sort();
+const filesKey = (kind: Kind): string => moduleFiles(kind).map(f => { const st = statSync(join(WEB_DIR, kind, f)); return `${f}:${st.size}:${st.mtimeMs}`; }).join("|");
+const joined = (kind: Kind): string => moduleFiles(kind).map(f => readFileSync(join(WEB_DIR, kind, f), "utf8")).join("\n");
+
+// The web build id: a hash of every script and style file, so it changes with each web change and needs no hand-kept version.
+// The script carries it as WEB_BUILD and /api/state reports it; a page that runs an older one fetches the new shell (23-installable-app-web.js).
+let buildHit: { key: string; id: string } | undefined;
+export function webBuild(): string {
+	const key = `${filesKey("js")}#${filesKey("css")}`;
+	if (buildHit && buildHit.key === key) return buildHit.id;
+	buildHit = { key, id: createHash("sha1").update(joined("js")).update(joined("css")).digest("hex").slice(0, 12) };
+	return buildHit.id;
+}
 
 // The joined text, re-read only when a file changed (name list + sizes + mtimes), so an edit shows on the next load.
 export function bundle(kind: Kind): { text: string; etag: string } {
-	const files = moduleFiles(kind);
-	const key = files.map(f => { const st = statSync(join(WEB_DIR, kind, f)); return `${f}:${st.size}:${st.mtimeMs}`; }).join("|");
+	const key = kind === "js" ? `${filesKey("js")}#${filesKey("css")}` : filesKey(kind);
 	const hit = cache[kind];
 	if (hit && hit.key === key) return hit;
-	const text = files.map(f => readFileSync(join(WEB_DIR, kind, f), "utf8")).join("\n");
+	const text = kind === "js" ? `const WEB_BUILD = "${webBuild()}";\n${joined("js")}` : joined(kind);
 	const next = { key, text, etag: `W/"${createHash("sha1").update(text).digest("hex").slice(0, 16)}"` };
 	cache[kind] = next;
 	return next;

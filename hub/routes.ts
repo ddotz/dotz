@@ -24,7 +24,7 @@ import { readTodo } from "./todo.ts";
 import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { appAsset, indexPage, webBuild } from "./webapp.ts";
 import { listPeers } from "./peers.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { hostname } from "node:os";
@@ -125,7 +125,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now() });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));

@@ -189,7 +189,7 @@ function pushOpen(hash, at) {
 //   monitor  a 모니터링 notice whose monitor still exists                   -> 모니터링, at that monitor
 //   message  anything else (plain message, result)                         -> the conversation, on that message
 function noticeKindAction(n, mons = NM.items) {
-  if (ntIsDec(n)) return "sheet";
+  if (ntIsDec(n) || ntLinkedDec(n)) return "sheet";
   if (n.tone === "ask") return "ask";
   if (n.kind === "alert" && n.tone === "fail") return "detail";
   if (n.kind === "result" || String(n.src || n.open || "").startsWith("lane:")) return "session";
@@ -202,7 +202,7 @@ async function noticeOpen(n) {
   const a = noticeKindAction(n);
   if (a === "detail" || a === "session" || a === "monitor") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
   switch (a) {
-    case "sheet": return noticeSheetOpen(n.id);
+    case "sheet": return noticeSheetOpen((ntLinkedDec(n) || n).id);
     case "ask": if (await ntAskSheet(n)) return; return ntJump(n);   // answered or gone: the conversation
     case "detail": return ntDetailOpen(n);
     case "session": return ntSession(n);
@@ -334,6 +334,14 @@ function ntLaneNote(n) {
 // button posts /api/notices/:id/answer: the hub sends the answer to the chat, session or login request the question came from.
 const ntIsDec = n => n.kind === "decision" && !!n.decision;
 const ntOpenDec = n => ntIsDec(n) && n.decision.state === "open";
+// The open decision a notice carries or links to: itself, or the one asked in the same conversation at the same time (the [ask] alert twin the hub
+// stores beside it), or the newest one of the conversation for that conversation's latest-message item (key msg:<conversation>).
+const ntLinkedDec = n => {
+  if (ntOpenDec(n)) return n;
+  const t = n.src || n.open;
+  return NT.items.find(d => ntOpenDec(d) && d.decision.to === t && n.at && d.decision.reply_to === n.at)
+    || (n.kind === "message" && n.key === `msg:${t}` ? ntDecisions().find(d => d.decision.to === t) : null) || null;
+};
 const ntById = id => NT.items.find(x => String(x.id) === String(id));
 const ntDecisions = () => NT.items.filter(ntOpenDec).sort((a, b) => ntAt(b) - ntAt(a));
 const ntHasDecision = t => NT.items.some(n => ntOpenDec(n) && n.decision.to === t);
