@@ -16,7 +16,7 @@ const CMDS = [
   { c: "/effort", d: "추론 강도 바꾸기", args: [{ n: "대상", opts: slModelTargets }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]) }] },
   { c: "/restart", d: "에이전트 재시작 · 게이트웨이는 전체 재시작", args: [{ n: "대상", opts: () => [["orchestrator", botName], ["gateway", "게이트웨이 전체 (한가할 때)"], ...slLanes()] }] },
   { c: "/stop", d: "세션 멈추기 (나중에 다시 시작할 수 있어요)", args: [{ n: "세션", opts: slLanes }] },
-  { c: "/resume", d: "멈춘 세션 재개, 또는 도는 세션에 글 보내기", args: [{ n: "세션", opts: slLanes }, { n: "글", free: true, opt: true }] },
+  { c: "/resume", d: "멈춘 세션 이어가기, 실행 중이면 메시지 보내기", args: [{ n: "세션", opts: slLanes }, { n: "글", free: true, opt: true }] },
   { c: "/abort", d: "지금 하는 일 취소 (비우면 봇)", args: [{ n: "대상", opts: slProcs, opt: true }] },
   { c: "/providers", d: "로그인·API 키·공급자별 모델" },
   { c: "/login", d: "공급자 로그인 (링크가 열려요)", args: [{ n: "공급자", opts: slProviders, opt: true }] },
@@ -220,7 +220,7 @@ function renderWorking() {
   if (on) {
     const n = runningSubs(sourceOf(target)).length;
     $(".dot", box).className = `dot ${st === "rate-limited" ? "warn" : "pri"}`;
-    workingLabel = `${st === "rate-limited" ? "한도에 걸려 잠시 쉬는 중" : "작업 중…"}`; workingSubs = n;
+    workingLabel = `${st === "rate-limited" ? "사용량 한도로 대기 중" : "작업 중…"}`; workingSubs = n;
     tickWorking();
     $("#working-stop").hidden = st === "rate-limited";
   } else if (bg.length) {

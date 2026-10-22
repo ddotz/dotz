@@ -85,7 +85,7 @@ async function deleteEnded(names) {
 }
 // Lanes the gateway refused to delete: a calm note with the reason in plain words, not an error (lanetrash.ts reasons).
 const keptWhy = err => /uncommitted/i.test(err) ? "아직 커밋하지 않은 변경이 있어요. 커밋하거나 정리하면 지울 수 있어요."
-  : /live|running|working|busy|실행 중|작업 중/i.test(err) ? "아직 돌고 있어요. 멈춘 뒤에 지울 수 있어요."
+  : /live|running|working|busy|실행 중|작업 중/i.test(err) ? "아직 실행 중이에요. 멈춘 뒤에 지울 수 있어요."
   : "작업 폴더를 정리하지 못했어요. 잠시 뒤에 다시 해 보세요.";
 function keptLanes(bad) {
   dialog({ title: bad.length === 1 ? `${bad[0].name} 세션은 그대로 뒀어요` : `세션 ${bad.length}개는 그대로 뒀어요`,

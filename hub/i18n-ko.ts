@@ -106,7 +106,7 @@ export const ko: Catalog = {
 			groups: [
 				{ label: "보기", items: [["/status", "메인 에이전트·세션·Discord 상태"], ["/context", "프로세스별 컨텍스트 사용량"], ["/lanes", "세션과 모델 목록"], ["/quota", "공급자별 사용량 한도"], ["/providers", "로그인한 공급자와 모델 수"]] },
 				{ label: "모델", items: [["/model [대상] [모델] [추론 강도]", "모델 보기·바꾸기. 대상: orchestrator, lanes(새 세션), workers(서브에이전트), 세션 이름"], ["/effort <대상> <수준>", `추론 강도 바꾸기 (${levels})`], ["/compact <대상>", "컨텍스트 압축"]] },
-				{ label: "세션", items: [["/stop <세션>", "세션 멈추기 (나중에 이어갈 수 있어요)"], ["/resume <세션> [메시지]", "멈춘 세션 이어가기, 실행 중이면 메시지 보내기"], ["/abort [대상]", "하던 일 중단 (기본: orchestrator)"], ["/restart <대상>", `프로세스 다시 시작. gateway는 모두 쉴 때까지 기다려요 (${minutes}분 넘으면 알림)`]] },
+				{ label: "세션", items: [["/stop <세션>", "세션 멈추기 (나중에 이어갈 수 있어요)"], ["/resume <세션> [메시지]", "멈춘 세션 이어가기, 실행 중이면 메시지 보내기"], ["/abort [대상]", "하던 일 중단 (기본: orchestrator)"], ["/restart <대상>", `프로세스 다시 시작. gateway는 모든 작업이 끝날 때까지 기다려요 (${minutes}분 넘으면 알림)`]] },
 				{ label: "계정", items: [["/login [공급자]", "로그인. /login cancel로 취소"], ["/logout <공급자>", "로그아웃하고 키 지우기"], ["/account [id|별칭|auto]", "지금 Claude 계정과 이유. 계정을 고르거나 고정 풀기"], ["/account alias <id> <별칭>", "계정 별칭 정하기 (<id>만 쓰면 지움)"]] },
 			],
 			note: "실행 중인 세션의 모델이나 추론 강도를 바꾸려면 --force가 필요해요. 캐시를 다시 쓰기 때문이에요. Discord에서는 / 대신 ! 도 돼요. 모델은 이름의 고유한 일부(\"opus\")로 불러도 돼요.",
@@ -239,7 +239,7 @@ export const ko: Catalog = {
 			"orchestrator.rotate_tokens": { label: "새 대화 기록으로 넘어가는 기준", unit: "토큰", hint: "대화가 이만큼 길어지면 한가한 때 새 대화 기록으로 넘어가요" },
 			"lanes.model": { label: "새 세션 기본 모델" },
 			"lanes.thinking": { label: "새 세션 추론 강도" },
-			"lanes.max_active": { label: "동시에 일하는 세션 수", unit: "개", hint: "비워 두면 이 컴퓨터의 여유 메모리·CPU로 계산해요. 숫자를 적으면 그 값이 상한이에요" },
+			"lanes.max_active": { label: "동시 실행 세션 수", unit: "개", hint: "비워 두면 이 컴퓨터의 여유 메모리·CPU로 계산해요. 숫자를 적으면 그 값이 상한이에요" },
 			"lanes.compact_at": { label: "자동 압축 시작", unit: "토큰", hint: "세션 컨텍스트가 이만큼 차면 요약해서 줄여요" },
 			"lanes.keep_recent": { label: "압축해도 남기는 최근 대화", unit: "토큰" },
 			"lanes.worker_model": { label: "서브에이전트 모델" },
@@ -290,7 +290,7 @@ export const ko: Catalog = {
 			},
 			watch: {
 				label: "모니터링", summary: (n, failing) => `모니터링 ${n}개${failing ? ` · 연속 실패 ${failing}개` : ""}`, none: "모니터링 없음",
-				desc: (after, every) => `모델을 깨우지 않고 정해진 간격으로 확인 스크립트를 실행해서, 값이 바뀌었거나 조건에 맞거나 실패했을 때만 알려요. 로그인 유지(만료 확인)도 여기서 해요. ${after}번 연속 실패하면 ${every}에 한 번만 알리고, 복구되면 한 번 알려요.`,
+				desc: (after, every) => `모델을 호출하지 않고 정해진 간격으로 확인 스크립트를 실행해서, 값이 바뀌었거나 조건에 맞거나 실패했을 때만 알려요. 로그인 유지(만료 확인)도 여기서 해요. ${after}번 연속 실패하면 ${every}에 한 번만 알리고, 복구되면 한 번 알려요.`,
 				watches: "모니터링", setups: "작업 채널별 설정", failing: "연속 실패 중",
 			},
 			mail: {
@@ -300,7 +300,7 @@ export const ko: Catalog = {
 			},
 			gateway: {
 				label: "게이트웨이", summary: "메시지 묶기 · 명령 처리 · 답장 전달",
-				desc: after => `모든 입력이 지나가는 문이에요. 같은 채널에서 연달아 온 글은 한 번에 묶어서 넘기고, /model·/restart 같은 명령과 \"한도\" 질문은 어시스턴트를 깨우지 않고 직접 답해요. 답장은 질문한 채널로 돌려보내요. 작업하는 동안에는 👀, 입력 중 표시, ${after} 뒤부터 제자리에서 고치는 진행 메시지 하나만 보이고, 답은 다 됐을 때 한 번에 나가요. 재시작해도 답 못 한 메시지는 다시 처리해요.`,
+				desc: after => `모든 입력이 지나가는 문이에요. 같은 채널에서 연달아 온 글은 한 번에 묶어서 넘기고, /model·/restart 같은 명령과 \"한도\" 질문은 어시스턴트를 호출하지 않고 직접 답해요. 답장은 질문한 채널로 돌려보내요. 작업하는 동안에는 👀, 입력 중 표시, ${after} 뒤부터 제자리에서 고치는 진행 메시지 하나만 보이고, 답은 다 됐을 때 한 번에 나가요. 재시작해도 답 못 한 메시지는 다시 처리해요.`,
 				merge: "묶는 시간", mergeValue: (ms, max) => `${ms}ms (최대 ${max}까지)`, direct: "직접 답하는 것", directValue: "/명령, \"한도\"",
 				route: "답장 길", routeValue: "질문이 온 채널(Discord·웹·터미널)로", restart: "재시작", restartValue: wait => `작업이 모두 끝난 뒤 새 코드로 다시 시작 (${wait} 넘게 기다리면 알림)`,
 			},
@@ -370,7 +370,7 @@ export const ko: Catalog = {
 			},
 			hygiene: {
 				label: "세션 야간 정리", summary: when => `${when} · 길어진 세션 압축·교체`,
-				desc: every => `매일 정해진 시각에 한가한 세션을 살펴서, 대화 기록 파일이 크면 새 대화 기록으로 넘기고 컨텍스트가 크면 압축해요. 일하던 세션은 건드리지 않아요. 끝난 서브에이전트의 남은 임시 폴더도 ${every}마다 지워요.`,
+				desc: every => `매일 정해진 시각에 한가한 세션을 살펴서, 대화 기록 파일이 크면 새 대화 기록으로 넘기고 컨텍스트가 크면 압축해요. 작업 중인 세션은 건드리지 않아요. 끝난 서브에이전트의 남은 임시 폴더도 ${every}마다 지워요.`,
 			},
 			memguard: {
 				label: "메모리 가드", summary: gb => `프로세스당 ${gb}GB 넘으면 재시작`,
@@ -378,7 +378,7 @@ export const ko: Catalog = {
 			},
 			guard: {
 				label: (h: string) => `작업 가드 (${h})`, summary: "브리핑·패치·예산·외부 명령 점검", missing: "불러오지 않아요",
-				desc: (h: string, file: string) => `${h}가 불러오는 작업 가드예요(${file}). 서브에이전트를 부르는 순간과 서브에이전트가 도는 동안 아래 규칙을 강제해요. 여기서는 읽기만 돼요.`,
+				desc: (h: string, file: string) => `${h}가 불러오는 작업 가드예요(${file}). 서브에이전트를 부르는 순간과 서브에이전트가 실행되는 동안 아래 규칙을 강제해요. 여기서는 읽기만 돼요.`,
 				expensiveOff: "꺼짐 (config.json의 guard.ask_before_expensive 가 꺼져 있어요)",
 				installed: "설치됨", notInstalled: "설치 안 됨 (규칙이 강제되지 않아요)",
 				briefing: "브리핑", briefingValue: (chars, lines, answer) => `완료 조건 필수 · ${chars}자·코드 ${lines}줄 제한 · 답변 ${answer}자 이내`,
@@ -425,7 +425,7 @@ export const ko: Catalog = {
 			},
 			deny: { label: "프로젝트 차단 명령", summary: n => `${n}줄`, desc: "프로젝트 지침 파일의 '## Blocked commands' 아래 '- deny:' 줄이에요. 이 프로젝트에만 적힌 규칙이에요." },
 			settings: {
-				model: { label: "세션 모델", hint: "바로 적용돼요. 돌고 있는 세션은 새 모델로 다시 시작해요" },
+				model: { label: "세션 모델", hint: "바로 적용돼요. 실행 중인 세션은 새 모델로 다시 시작해요" },
 				effort: { label: "세션 강도" },
 				workerModel: { label: "서브에이전트 모델", hint: "이 세션이 다음에 띄우는 서브에이전트부터 적용돼요" },
 				workerEffort: { label: "서브에이전트 강도" },

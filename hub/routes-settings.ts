@@ -74,7 +74,7 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 			try {
 				const done = await useRuntime(id, roles);
 				log(`runtime ${id} selected for ${done.join(", ")}`);
-				return json({ ok: true, runtime: id, roles: done, applies: "어시스턴트와 세션을 다시 시작하면 적용돼요. 지금 돌고 있는 프로세스는 그대로예요." });
+				return json({ ok: true, runtime: id, roles: done, applies: "어시스턴트와 세션을 다시 시작하면 적용돼요. 실행 중인 프로세스는 그대로예요." });
 			} catch (error) {
 				if (error instanceof UseRefused) return json({ error: error.message, runtime: id }, 409);
 				throw error;

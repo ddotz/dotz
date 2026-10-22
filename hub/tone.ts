@@ -33,7 +33,7 @@ export function stripHandoff(text: string): string {
 
 // `[later]` ends a turn whose answer a background worker will bring: a sentinel for the gateway, never text for the owner.
 // Where a preview must show something, it reads LATER_LINE.
-export const LATER_LINE = "뒤에서 작업 중이에요";
+export const LATER_LINE = "백그라운드 작업 중";
 export const isLater = (text: string): boolean => /^\s*\[later\]\s*$/i.test(text);
 
 // A one-line preview's source text: the handoff block and an "Ask: " label are dropped, a lone `[later]` becomes LATER_LINE.

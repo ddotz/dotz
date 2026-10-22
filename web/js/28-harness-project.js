@@ -172,7 +172,7 @@ function hStageCard(s) {
     hNodeEls.set(n.id, r); hGeo.set(n.id, r);
     return r;
   })));
-  if (s.chips.length) card.append(el("div", { class: "hm-with" }, el("div", { class: "wl", text: `함께 도는 것 · ${s.chips.length}` }), el("div", { class: "hm-chips" }, ...s.chips.map(hChip))));
+  if (s.chips.length) card.append(el("div", { class: "hm-with" }, el("div", { class: "wl", text: `함께 실행되는 항목 · ${s.chips.length}` }), el("div", { class: "hm-chips" }, ...s.chips.map(hChip))));
   return card;
 }
 
