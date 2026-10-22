@@ -34,6 +34,20 @@
 .dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 15px; line-height: 24px; font-weight: 600; overflow-wrap: anywhere; }
 .dc-tag { flex: none; padding: 0 6px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 11px; line-height: 18px; font-weight: 600; }
 .dc-ds { color: var(--fg-3); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.dc-draft { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--card); }
+.dc-dr-h { display: flex; gap: 8px; font-size: 13px; line-height: 20px; }
+.dc-dr-k { flex: none; color: var(--fg-3); }
+.dc-dr-v { min-width: 0; color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
+.dc-dr-b { max-height: min(22dvh, 180px); margin-top: 2px; overflow-y: auto; overscroll-behavior: contain; color: var(--fg); font-size: 14px; line-height: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dc-edit { flex: none; display: flex; flex-direction: column; gap: 8px; }
+.dc-note { width: 100%; box-sizing: border-box; min-height: 72px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); resize: vertical; font-size: 14px; line-height: 22px; }
+.dc-note:focus { outline: 0; border-color: var(--accent); }
+.dc-eb { display: flex; gap: 8px; }
+.dc-back, .dc-go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-ctl); font-weight: 600; font-size: 15px; }
+.dc-back { background: var(--card); color: var(--fg-2); }
+.dc-go { background: var(--accent); color: var(--on-accent); }
+.dc-go:disabled { opacity: .45; }
+@media (pointer: coarse) { .dc-note { font-size: 16px; } }
 .dc-st { flex: none; padding: 4px 16px 10px; color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
 .dcm { display: flex; flex-direction: column; gap: 6px; max-width: 520px; margin-top: 10px; }
 .todo { flex: none; margin: 0 0 8px; border-radius: 12px; background: var(--card); }
