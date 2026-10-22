@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { atomicWrite, cardFile, featureFile, isOn, OFF_LINE, type Deps, pidAlive, type Ports, readJson, readState, RUNNING_LINE, runDry, runLoginOnly, runOnboarding, stepName, WATCH_NAME } from "./onboard.ts";
 import { createHub } from "./hub.ts";
+import { listBlock } from "../listblock.ts";
 import { defaultRunner, type HubFull, type KakaoConfig, type KakaoPaths, kakaoPaths, type Msg, type Room, type Runner } from "./types.ts";
 
 export type Reader = {
@@ -45,7 +46,7 @@ export type Ctx = {
 const VALUE_FLAGS = new Set(["to", "chat", "limit", "draft"]);
 const GATED = new Set(["login", "rooms", "read", "draft", "send"]);
 const MAX_READ = 50;
-const USAGE = "사용법: cli.ts setup [--to <대상>] [--dry-run] | status [--json] | login | rooms [--all] [--limit 30] | read --chat <id> [--limit 20] | draft --chat <id> | send --draft <코드> | off [--forget]";
+const USAGE = "사용법: cli.ts setup [--to <대상>] [--dry-run] | status [--json] | login | rooms [--all] [--limit 30] [--plain] | read --chat <id> [--limit 20] | draft --chat <id> | send --draft <코드> | off [--forget]";
 
 function parseArgs(argv: string[]): Record<string, string | true> {
 	const out: Record<string, string | true> = {};
@@ -123,7 +124,8 @@ const newestIncoming = (list: Msg[]) => list.findLast(m => m.type === 1 && !m.fr
 
 const KIND: Record<Room["kind"], string> = { direct: "1:1", group: "단체", self: "나와의 채팅", channel: "채널", open: "오픈채팅", other: "기타" };
 
-// Newest first; without --all only the rooms drafts can be made for.
+// Newest first; without --all only the rooms drafts can be made for. Prints a 목록 block for the owner (post it unchanged);
+// --plain prints one "chatId  name  (kind, time)" line per room for read / draft.
 async function rooms(args: Record<string, string | true>, ctx: Ctx, config: KakaoConfig): Promise<number> {
 	const limit = Math.min(Math.max(Math.trunc(Number(str(args.limit) ?? 30)) || 30, 1), 500);
 	const reader = await ctx.reader(config);
@@ -133,11 +135,16 @@ async function rooms(args: Record<string, string | true>, ctx: Ctx, config: Kaka
 		const d = new Date(at > 1e11 ? at : at * 1000);
 		return d.toDateString() === today ? clock(at) : `${d.getMonth() + 1}/${d.getDate()} ${clock(at)}`;
 	};
-	for (const r of all.slice(0, limit)) {
-		const name = r.name === "(unknown)" ? `${(await reader.label?.(r.chatId)) ?? "이름 없는 방"} (이름 없음)` : r.name;
-		ctx.out(`${r.chatId}  ${name}  (${KIND[r.kind]}${r.unread > 0 ? `, 안 읽음 ${r.unread}` : ""}, ${stamp(r.lastAt)})`);
+	const shown = all.slice(0, limit);
+	const names = new Map<string, string>();
+	for (const r of shown) names.set(r.chatId, r.name === "(unknown)" ? ((await reader.label?.(r.chatId)) ?? "이름 없는 방") : r.name);
+	if (args.plain) {
+		for (const r of shown) ctx.out(`${r.chatId}  ${names.get(r.chatId)}${r.name === "(unknown)" ? " (이름 없음)" : ""}  (${KIND[r.kind]}${r.unread > 0 ? `, 안 읽음 ${r.unread}` : ""}, ${stamp(r.lastAt)})`);
+		ctx.out(`대화방 ${shown.length}개 / 전체 ${all.length}개`);
+		return 0;
 	}
-	ctx.out(`대화방 ${Math.min(limit, all.length)}개 / 전체 ${all.length}개`);
+	const rows = shown.map(r => ({ title: names.get(r.chatId)!, sub: r.name === "(unknown)" ? `${KIND[r.kind]} · 이름 없는 방` : KIND[r.kind], meta: stamp(r.lastAt), badge: r.unread }));
+	ctx.out(listBlock(`카톡 대화방 · 최근 ${shown.length}개 / 전체 ${all.length}개`, rows));
 	return 0;
 }
 

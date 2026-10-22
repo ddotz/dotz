@@ -179,9 +179,12 @@ test("rooms lists draftable rooms newest first, labels unnamed groups by their m
 	expect(await run(["rooms"], ctx)).toBe(1);
 	enable(ctx);
 	log.out.length = 0;
-	expect(await run(["rooms"], ctx)).toBe(0);
+	expect(await run(["rooms", "--plain"], ctx)).toBe(0);
 	expect(log.out).toEqual(["102  Kim, Lee (이름 없음)  (단체, 11:59)", "101  Alex  (1:1, 안 읽음 2, 11:50)", "103  Old  (단체, 10/20 09:05)", "대화방 3개 / 전체 3개"]);
 	log.out.length = 0;
-	expect(await run(["rooms", "--all", "--limit", "1"], ctx)).toBe(0);
+	expect(await run(["rooms"], ctx)).toBe(0);
+	expect(log.out).toEqual(["```목록\n# 카톡 대화방 · 최근 3개 / 전체 3개\nKim, Lee | 단체 · 이름 없는 방 | 11:59\nAlex | 1:1 | 11:50 | 2\nOld | 단체 | 10/20 09:05\n```"]);
+	log.out.length = 0;
+	expect(await run(["rooms", "--all", "--limit", "1", "--plain"], ctx)).toBe(0);
 	expect(log.out).toEqual(["105  Shop  (채널, 12:00)", "대화방 1개 / 전체 4개"]);
 });
