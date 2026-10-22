@@ -19,6 +19,7 @@ import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
+import { isLater, LATER_LINE } from "./tone.ts";
 
 const STATE = join(DATA_DIR, "orchestrator.json");
 const ROTATE_BYTES = 50e6;
@@ -293,7 +294,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				break;
 			case "assistant":
 				if (ev.text) {
-					orch.lastText = ev.text;
+					orch.lastText = isLater(ev.text) ? LATER_LINE : ev.text;
 					onText(ev.text);
 				}
 				if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);

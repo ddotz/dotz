@@ -46,6 +46,7 @@ function quietReply(s, e) {
 // The orchestrator's activity is also the log of every loaded project target; a project's 대화 shows only its messages,
 // since the same process also works for the main chat and other channels.
 function ingestAct(a) {
+  if (a.type === "text" && isLaterText(a.text)) return;   // the orchestrator's [later] turn end is no chat line
   const own = targetOfSource(a.source);
   for (const t of own === MAIN ? [MAIN, ...Object.keys(TS).filter(isProjT)] : [own]) {
     const s = ts(t), k = actKey(a);
@@ -61,7 +62,7 @@ async function loadTarget(t) {
   s.loading = (async () => {
     await Promise.all([
       api(`/api/history?target=${enc(t)}&limit=150`).then(r => { for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
-      isFixedT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k)) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
+      isFixedT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
     ]);
     s.hLoaded = s.aLoaded = true;
     if (t === MAIN) paintRestartBanner();
