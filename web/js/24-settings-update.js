@@ -56,7 +56,7 @@ function updRestart() {
     updWaitTick();
   };
   if (!working.length) return fire("idle");
-  dialog({ title: "재시작", body: el("div", { class: "col" }, el("p", { class: "sup", text: `지금 일하는 중: ${working.join(", ")}` }), el("p", { class: "sup", text: "작업이 끝난 뒤 재시작하거나, 지금 끊고 재시작할 수 있어요. 끊긴 요청은 다시 켜질 때 이어서 보내요." })), actions: [
+  dialog({ classic: true, title: "재시작", body: el("div", { class: "col" }, el("p", { class: "sup", text: `지금 일하는 중: ${working.join(", ")}` }), el("p", { class: "sup", text: "작업이 끝난 뒤 재시작하거나, 지금 끊고 재시작할 수 있어요. 끊긴 요청은 다시 켜질 때 이어서 보내요." })), actions: [
     { label: "작업이 끝나면", onclick: c => { c(); fire("idle"); } },
     { label: "지금 재시작", kind: "pri", onclick: c => { c(); fire("now"); } }] });
 }

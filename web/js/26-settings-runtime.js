@@ -44,7 +44,7 @@ function rtFlow(r) {
   const roles = new Set(["orchestrator", "lanes"]);
   let report = null, st = null, timer = 0, checking = false;
   const box = el("div", { style: "display:flex;flex-direction:column;gap:12px" });
-  const d = dialog({ title: `${r.label}로 바꾸기`, body: box, wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
+  const d = dialog({ classic: true, title: `${r.label}로 바꾸기`, body: box, wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
   const usable = () => r.hasAdapter && (r.id === "omp" || (r.id === "omo" && r.installed !== false) || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
   async function pull() {
     try { const x = await api(`/api/runtimes/${r.id}`); report = x.report; st = x.state; } catch { return; }
