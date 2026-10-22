@@ -44,6 +44,8 @@ const APP_FILES: Record<string, [string, string]> = {
 	"/icons/icon-512.png": ["icons/icon-512.png", "image/png"],
 	"/icons/maskable-512.png": ["icons/maskable-512.png", "image/png"],
 	"/icons/apple-touch-icon.png": ["icons/apple-touch-icon.png", "image/png"],
+	"/icons/dotz.svg": ["icons/dotz.svg", "image/svg+xml"],
+	"/icons/badge-96.png": ["icons/badge-96.png", "image/png"],
 };
 const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
 

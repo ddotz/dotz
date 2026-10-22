@@ -109,8 +109,8 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .dc-act:disabled { opacity: .55; }
 
 /* x (무시): a question that waits on the owner can be waved off. 44px thumb target on every surface, quiet --fg-3 until pressed. */
-.nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }
-.nt-x:active { background: var(--active); color: var(--fg); }
+button.nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }
+button.nt-x:active { background: var(--active); color: var(--fg); }
 .hr.hrx { gap: 0; padding: 0; }
 .hrx-m { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 4px 12px 16px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
 .hrx .nt-x { margin-right: 8px; }
