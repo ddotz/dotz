@@ -16,6 +16,8 @@ import { anthropicUsage } from "./providers.ts";
 import { withTurnLanguage } from "./outlang.ts";
 import { channelContext, listSetups } from "./workchannels.ts";
 import { deliver, awaiting, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice } from "./outbound.ts";
+import { mailTarget, type MailRecord } from "./mail.ts";
+import { pluginThread } from "./plugins.ts";
 
 // Chat is the hub over every work channel: each chat turn carries a short directory so the orchestrator can route the
 // work into the channel it belongs to (or split a growing thread of work into a new one).
@@ -67,7 +69,10 @@ function inboxBody(e: Record<string, any>): string {
 		if (!ch) return `${m.inboxWatchNoChannel(e.watch, e.reason)}\n${e.text}`;
 		return `${m.inboxWatch(e.watch, e.reason, ch)}\n${e.text}\n${channelContext(ch)}`;
 	}
-	if (e.kind === "mail") return `${m.inboxMail(e.channel_id)}\n${e.text}\n${channelContext(e.channel_id)}`;
+	if (e.kind === "mail") {
+		const home = typeof e.parent === "string" && e.parent.startsWith("ch:") ? channelContext(e.parent.slice(3)) : "";
+		return [m.inboxMail(e.thread ? `th:${e.thread}` : e.channel), e.text, home].filter(Boolean).join("\n");
+	}
 	if (e.kind === "schedule") return `${m.inboxSchedule(e.id, e.every, e.channel)}\n${e.text}`;
 	const where = e.thread_name ? m.inboxThread(e.thread_name, e.parent_name) : e.channel_name ? ` #${e.channel_name}` : "";
 	const lines = [`[dotz inbox] ${e.channel}${where}${e.message_id ?? e.mid ? ` msg=${e.message_id ?? e.mid}` : ""} from ${e.author ?? "owner"}`];
@@ -155,7 +160,9 @@ async function accountChatAnswer(target: string, ask: Parameters<typeof accountA
 // message, a working lane gets it steered in; "steer": into the running turn now; "interrupt": abort, then new prompt.
 // `files` are uploads (files.ts): the chat shows them as chips, the agent gets one [attachment] line per file with its path.
 // `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
-type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; decision?: string; picks?: Pick[] };
+// `mail` (hub/mail.ts): the message reaches the orchestrator as one in that mail's Discord thread does (main.ts onOwner), plugin
+// thread hook included; a mail with no thread the hub knows answers in its web conversation `mail:<key>`.
+type WebSend = { lane?: string; project?: { target: string; name: string }; mail?: MailRecord; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; decision?: string; picks?: Pick[] };
 export async function sendWeb(s: WebSend): Promise<void> {
 	const mid = newMid();
 	// replyTo: the asking message of a decision answer; decision: its notice, which that answer settles alone (notices.ts ownerReplied).
@@ -184,20 +191,26 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		return;
 	}
 	// conv: asked in the web's 알림 / 작업 기록 conversation; the answer comes back as target "web:<conv>" into the same one.
-	const to = s.project?.target ?? (s.conv ? `web:${s.conv}` : s.channel);
-	const event = { ts: now(), kind: "message", source: s.channel, channel: to, ...(s.project ? { channel_name: s.project.name } : {}), author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
+	const thread = s.mail?.thread && (discord.channels.threads[s.mail.thread] || discord.status.enabled) ? s.mail.thread : undefined;
+	const to = s.mail ? (thread ? `th:${thread}` : mailTarget(s.mail.key)) : (s.project?.target ?? (s.conv ? `web:${s.conv}` : s.channel));
+	const hook = thread ? pluginThread({ thread, text: s.text }) : undefined;
+	const info = thread ? discord.threadInfo(thread) : undefined;
+	const where = s.mail ? { conv: mailTarget(s.mail.key), thread_name: s.mail.subject, ...(info ? { parent: info.parentTarget } : {}), parent_name: hook?.parentName ?? info?.parentName ?? msg().channelNames.mail } : s.project ? { channel_name: s.project.name } : {};
+	const event = { ts: now(), kind: "message", source: s.channel, channel: to, ...where, author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
 	emit("inbox", event);
+	const note = s.mail ? (hook?.note ?? msg().mailNote(s.mail.source, s.mail.id, s.mail.subject)) : undefined;
+	const turn = note ? { ...event, plugin_note: note } : event;
 	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(to, event.text);
 	else if (s.mode === "steer" && orch.status === "working") {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
-		deliver(inboxText(event), { target: to, replyTo: mid, owner: true });
+		deliver(inboxText(turn), { target: to, replyTo: mid, owner: true });
 		expectReply(to);
 		emitDelivery(to, mid, "steered");
 		awaiting.set(to, [...(awaiting.get(to) ?? []), mid]);
 	} else {
 		if (s.mode === "interrupt" && orch.status === "working") abortOrchestrator();
-		intake(event, to, mid);
+		intake(turn, to, mid);
 	}
 }
 

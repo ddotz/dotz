@@ -10,6 +10,7 @@ import { isNote, msg } from "./i18n.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
 import { answeredIds, answeredSince, emit, emitDelivery, recentOwnerMessages } from "./events.ts";
 import { outEvent } from "./projectchat.ts";
+import { mailByThread, mailTarget } from "./mail.ts";
 import { allowedRoots } from "./files.ts";
 import { claimPrefix, LaneRuntimeMismatch, lanes, type LaneDelivery, turnHeader } from "./lanes.ts";
 import { deliver as deliverToOrchestrator, orch, setAlertHandler, setAnswerHandlers, setTurnHeader, steer as steerOrchestrator } from "./orchestrator.ts";
@@ -67,11 +68,16 @@ export function deliver(text: string, reply?: { target: string; replyTo?: string
 }
 
 // "web:alert" / "web:worklog": the answer to a question the owner asked in that web conversation (hub/intake.ts sendWeb).
-const isLocal = (target: string) => target === "web" || target === "terminal" || target === "web:alert" || target === "web:worklog";
+// "mail:<key>": a mail with no Discord thread (hub/mail.ts) lives in the web only.
+const isLocal = (target: string) => target === "web" || target === "terminal" || target === "web:alert" || target === "web:worklog" || target.startsWith("mail:");
 // The work channel a Discord thread hangs from: its sends show in that project's web chat (projectchat.ts outEvent).
 const threadHome = (thread: string): string | undefined => {
 	const parent = discord.channels.threads[thread]?.parent;
 	return parent && discord.channels.work[parent] ? parent : undefined;
+};
+const threadMail = (thread: string): string | undefined => {
+	const m = mailByThread(thread);
+	return m && mailTarget(m.key);
 };
 // The newest owner message per target (threads.ts replyRef: a thread answer carries a reply reference only when it is not to that one).
 export const lastOwner = new Map<string, string>();
@@ -94,7 +100,7 @@ export function laneFailed(target: string, lane: string, ref: string | undefined
 }
 type OutJob = { target: string; text: string; replyTo?: string; extra: Record<string, unknown> };
 const jobAnswers = (j: OutJob) => (j.extra.source === undefined || j.extra.source === "orchestrator" ? j.replyTo : undefined);
-const emitOut = (j: OutJob, t: string) => emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target: j.target, text: t, reply_to: j.replyTo ?? null, ...j.extra }, threadHome));
+const emitOut = (j: OutJob, t: string) => emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target: j.target, text: t, reply_to: j.replyTo ?? null, ...j.extra }, threadHome, threadMail));
 // Everything after the text is final: the delivery states, then the web is done or the send ledger (kept on disk) takes over.
 function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason?: string }> {
 	// An answer (not a progress note, not a gateway notice) settles the owner messages waiting in this conversation.
@@ -166,7 +172,7 @@ export async function progress(target: string, key: string, text: string, replyT
 			const rest = parseTone(t).text;
 			if (prefix) t = `${t.slice(0, t.length - rest.length)}${prefix}${rest}`;
 		}
-		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key }, threadHome));
+		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key }, threadHome, threadMail));
 		return t;
 	});
 	if (isLocal(target)) return { delivered: true };

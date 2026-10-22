@@ -35,6 +35,7 @@ function convLastOf(e) {
 // A live message (called by ingestMsg once per new event): moves the row's preview and, unless the owner is looking at that
 // conversation's bottom right now, adds to its unread count (server rule: hub/conversations.ts).
 function convNote(e, t, was) {
+  if (isMailT(t) && e.kind === "mail" && !MAILS.has(t)) MAILS.set(t, { subject: e.subject || "", from: e.from || "", source: e.source || "", at: e.ts });
   const last = convLastOf(e);
   if (!last) return;
   const prev = CONV.get(t);
@@ -50,6 +51,7 @@ async function convLoad() {
     const r = await api("/api/conversations");
     for (const it of r.items || []) {
       const t = it.target, prev = CONV.get(t);
+      if (it.mail) MAILS.set(t, it.mail);
       if (it.last && (!prev || prev.ts <= it.last.ts)) CONV.set(t, it.last);
       else if (!CONV.has(t)) CONV.set(t, null);
       let unread = it.unread | 0;
@@ -229,6 +231,10 @@ function convRows() {
   }
   const loose = sess.filter(l => !placed.has(l.name));
   if (loose.length) rows.push({ header: "프로젝트 없음" }, ...loose.map(sub));
+  // 메일: one conversation per mail (hub/mail.ts), newest first, the 30 newest shown.
+  const mailAt = t => at(t) || (MAILS.get(t) || {}).at || "";
+  const mails = [...MAILS.keys()].sort((a, b) => mailAt(b).localeCompare(mailAt(a))).slice(0, 30);
+  if (mails.length) rows.push({ header: "메일" }, ...mails.map(mk));
   return rows;
 }
 const FIXED_DESC = { alert: "경고와 모니터링 소식, 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
@@ -266,7 +272,7 @@ const convHead = el("div", { id: "cv-head", class: "cv-head" });
 $("#v-chat").prepend(convSide, convHead);
 
 function convPaintHead() {
-  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : i.alive ? statusKo(i.status) : "종료됨", sig = `${target}|${targetName(target)}|${state}`;
+  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : i.alive ? statusKo(i.status) : "종료됨", sig = `${target}|${targetName(target)}|${state}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   clear(convHead).append(convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: targetName(target) }), el("span", { class: "cv-p", text: state })));

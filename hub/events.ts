@@ -1,6 +1,7 @@
 import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { paths } from "./config.ts";
 import { fileLinePaths } from "./files.ts";
+import { mailByThread, mailTarget } from "./mail.ts";
 
 export type HubEvent = { ts: string; kind: string; source: string; text: string; [key: string]: unknown };
 
@@ -42,7 +43,10 @@ export function emit(box: "inbox" | "outbox", event: HubEvent): void {
 // `mid` (or a Discord message id). The web shows the latest state in that message's meta line.
 type DeliveryState = "steered" | "received" | "queued" | "held" | "resumed" | "answered" | "failed";
 export function emitDelivery(target: string, ref: string | undefined, state: DeliveryState, text = ""): void {
-	if (ref) emit("outbox", { ts: new Date().toISOString(), kind: "delivery", source: "gateway", target, ref, state, text });
+	if (!ref) return;
+	// A web message in a mail conversation travels as one in the mail's thread: its state shows in that conversation.
+	const mail = target.startsWith("th:") ? mailByThread(target.slice(3)) : undefined;
+	emit("outbox", { ts: new Date().toISOString(), kind: "delivery", source: "gateway", target, ref, state, text, ...(mail ? { conv: mailTarget(mail.key) } : {}) });
 }
 
 // Live-only activity (what an omp process is doing): streamed over SSE and kept in a per-source ring buffer, never
@@ -124,6 +128,9 @@ export function askedText(ts: string): string | undefined {
 const FIXED_CONV = /^(?:web:)?(alert|worklog)$/;
 export function eventTarget(e: HubEvent): string | undefined {
 	if (e.kind === "activity" || e.kind === "subagents" || e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss" || e.kind === "read") return undefined;
+	// A mail is its own conversation (hub/mail.ts): stamped `conv` on its thread's messages, or the web-only target itself.
+	const mail = [e.conv, e.channel, e.target].find((v): v is string => typeof v === "string" && v.startsWith("mail:"));
+	if (mail) return mail;
 	const lane = typeof e.lane === "string" ? e.lane : [e.source, e.target, e.channel].find(v => typeof v === "string" && v.startsWith("lane:"))?.slice(5);
 	if (lane) return `lane:${lane}`;
 	// A project's work channel is its own conversation (hub/projectchat.ts): the owner's message there and the answers to it.

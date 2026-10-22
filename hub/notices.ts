@@ -285,7 +285,7 @@ function feed(e: HubEvent): void {
 /* ---------- unread answers: one bell item per conversation the owner is not looking at ---------- */
 const VIEW_MS = 60_000;
 const MESSAGE_PREVIEW = 120;
-const CONV_RE = /^(?:main|alert|worklog|lane:[\w.-]+|ch:\d+)$/;
+const CONV_RE = /^(?:main|alert|worklog|lane:[\w.-]+|ch:\d+|mail:[a-z0-9._-]+)$/;
 // What each open web page reports it is showing (id -> conversation, "" = hidden / not a chat). A report older than VIEW_MS no longer counts.
 const viewers = new Map<string, { conv: string; at: number }>();
 let convNameOf: (conv: string) => string | undefined = () => undefined;

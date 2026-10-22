@@ -330,13 +330,20 @@ const laneOf = t => t.slice(5);
 const isProjT = t => /^ch:\d+$/.test(t);
 const projOf = t => t.slice(3);
 const projTargets = () => Object.keys((S && S.channels && S.channels.work) || {}).map(id => `ch:${id}`);
-const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5);
-const sourceOf = t => t === MAIN || isProjT(t) || isFixedT(t) ? "orchestrator" : t;
+// A mail (hub/mail.ts): one conversation per mail, target mail:<key>, answered by the orchestrator. MAILS: target -> { subject, from,
+// source, at }, from GET /api/conversations and live mail events (31-conversations.js).
+const isMailT = t => t.startsWith("mail:");
+const mailOf = t => t.slice(5);
+const MAILS = new Map();
+const mailSender = f => String(f || "").replace(/<[^>]*>/g, "").replace(/["']/g, "").trim() || String(f || "");
+const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5);
+const sourceOf = t => t === MAIN || isProjT(t) || isFixedT(t) || isMailT(t) ? "orchestrator" : t;
 const targetOfSource = s => s === "orchestrator" ? MAIN : s;
 // Owner-facing names: a project by its title (else its channel name), a session by its title (else its key).
 const targetName = t => {
   if (t === MAIN) return botName;
   if (isFixedT(t)) return FIXED_NAME[t];
+  if (isMailT(t)) return (MAILS.get(t) || {}).subject || "메일";
   if (isProjT(t)) {
     let list = [];
     try { list = (PRJ && PRJ.projects) || []; } catch { /* PRJ (the project list, declared further down) is not set up yet */ }
@@ -352,7 +359,7 @@ const modeOf = () => current === "activity" ? "term" : "chat";
 let target = MAIN;
 try { const v = localStorage.getItem(TARGET_KEY); if (v && validTarget(v)) target = v; } catch {}
 function targetInfo(t) {
-  if (t === MAIN || isFixedT(t)) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
+  if (t === MAIN || isFixedT(t) || isMailT(t)) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
   if (isProjT(t)) { const o = (S && S.orchestrator) || {}, known = projTargets().includes(t); return { status: o.status || "", alive: known || !S, known }; }
   const l = S && S.lanes.find(x => x.name === laneOf(t));
   return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable, ask: l.pendingAsk && l.pendingAsk.text ? l.pendingAsk : null } : { status: "", alive: true, known: false };

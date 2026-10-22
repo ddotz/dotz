@@ -1,6 +1,7 @@
 // Mail and calendar through zele (Gmail API, IMAP/SMTP, Google Calendar with long-lived tokens, so nothing depends on a
 // browser login), ported from 오모냥's zele-watch.ts. The gateway polls; calendar notices go straight to the alert
-// channel with no model call, new mail wakes the orchestrator in the mail work channel (one thread per mail), and the
+// channel with no model call, new mail becomes a mail conversation (hub/mail.ts postMail: web, plus a thread in the mail
+// channel with Discord on) and wakes the orchestrator there, and the
 // morning brief is one orchestrator turn in chat. First run only records what exists, so old mail is never replayed.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -8,12 +9,12 @@ import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
 
 type Item = Record<string, string | number | undefined>;
 type Seen = { summary: string; start: string; end: string };
-type State = { seeded: boolean; mail: string[]; events: Record<string, Seen>; soon: string[]; briefDate: string; mailChannel?: string };
+type State = { seeded: boolean; mail: string[]; events: Record<string, Seen>; soon: string[]; briefDate: string };
+export type NewMail = { id: string; account: string; from: string; to: string; subject: string; snippet: string };
 type Hooks = {
 	alert: (text: string) => void;
-	mail: (channel: string, text: string) => void;
+	mail: (m: NewMail) => Promise<void>;
 	brief: (text: string) => void;
-	mailChannel: () => Promise<string | undefined>;
 };
 
 const STATE = join(DATA_DIR, "zele-state.json");
@@ -93,10 +94,7 @@ export async function tick(h: Hooks, now = new Date()): Promise<void> {
 			log(`zele: skipped noise mail ${m.from} | ${m.subject}`);
 			continue;
 		}
-		s.mailChannel ??= await h.mailChannel();
-		const text = [`new mail (${m.account}) id=${m.id}`, `from: ${m.from}`, `to: ${m.to ?? ""}`, `subject: ${m.subject}`, `snippet: ${String(m.snippet ?? "").slice(0, 400)}`].join("\n");
-		if (s.mailChannel) h.mail(s.mailChannel, text);
-		else h.brief(`[mail, no mail channel] ${text}`);
+		await h.mail({ id: key, account: String(m.account ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), subject: String(m.subject ?? ""), snippet: String(m.snippet ?? "").slice(0, 400) });
 	}
 
 	const upcoming = (await zele(["cal", "events", "--days", "14", "--all", "--limit", "100"])).filter(ev => !isHoliday(ev));

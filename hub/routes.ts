@@ -11,6 +11,7 @@ import { conversationList } from "./conversations.ts";
 import { markRead } from "./reads.ts";
 import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
+import { MailError, mailByKey, mailTargets, postMail, type MailDeps } from "./mail.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
@@ -58,8 +59,9 @@ function authorized(req: Request): boolean {
 	return false;
 }
 
-type RestartHooks = { busyNow: () => string[]; restartGateway: () => string; restartGatewayNow: () => string };
-export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: RestartHooks): (req: Request) => Promise<Response> {
+type RestartHooks = { busyNow: () => string[]; restartGateway: () => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps };
+const isMailTarget = (t: string) => /^mail:[a-z0-9._-]+$/.test(t);
+export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps }: RestartHooks): (req: Request) => Promise<Response> {
 	return async (req: Request): Promise<Response> => {
 		const url = new URL(req.url);
 		// The install files (manifest, service worker, icons) are public and secret-free, like any app store listing: a browser
@@ -168,7 +170,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 				const lane = a.to.startsWith("lane:") ? a.to.slice(5) : undefined;
 				const project = a.to.startsWith("ch:") ? projectTarget(a.to, discord.channels.work) : undefined;
 				const conv = a.to === "alert" || a.to === "worklog" ? a.to : undefined;
-				await sendWeb({ lane, project, conv, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice, picks: a.picks });
+				const mail = a.to.startsWith("mail:") ? mailByKey(a.to.slice(5)) : undefined;
+				if (a.to.startsWith("mail:") && !mail) throw new Error("이 메일 대화를 찾을 수 없어요");
+				await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice, picks: a.picks });
 			});
 			return json(r.body, r.status);
 		}
@@ -178,11 +182,26 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 			if (r.ok) readConversationNotices(r.target, r.ts);
 			return json(r, r.ok ? 200 : 400);
 		}
-		if (req.method === "GET" && url.pathname === "/api/conversations") return json({ items: conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`)]) });
+		if (req.method === "GET" && url.pathname === "/api/conversations") {
+			const items = conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).map(c => {
+				const m = c.target.startsWith("mail:") ? mailByKey(c.target.slice(5)) : undefined;
+				return m ? { ...c, mail: { subject: m.subject, from: m.from, source: m.source, at: m.at } } : c;
+			});
+			return json({ items });
+		}
+		// A mail from an outside poster (a webmail watcher, a custom plugin): one conversation per mail (hub/mail.ts, docs/custom-plugins.md).
+		if (req.method === "POST" && url.pathname === "/api/mail") {
+			if (!mailDeps) return json({ error: "mail is not wired in this process" }, 503);
+			try {
+				return json(await postMail(await body(req), mailDeps()));
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof MailError ? error.status : 500);
+			}
+		}
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main";
-			if (target !== "main" && target !== "alert" && target !== "worklog" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, alert, worklog, lane:<name> or ch:<id>" }, 400);
+			if (target !== "main" && target !== "alert" && target !== "worklog" && !target.startsWith("lane:") && !isProjectTarget(target) && !isMailTarget(target)) return json({ error: "target must be main, alert, worklog, lane:<name>, ch:<id> or mail:<key>" }, 400);
 			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
 			return json({ target, events: historyEvents(target, limit, url.searchParams.get("before") ?? undefined) });
 		}
@@ -231,8 +250,10 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 			// A reply to a message (swipe / reply button in the web): the quoted message reaches the model like a Discord reply (intake.ts parseReply).
 			const reply = parseReply(b.reply, login);
 			let project: { target: string; name: string } | undefined;
+			if ([lane, b.project, b.mail].filter(Boolean).length > 1) return json({ error: "lane, project and mail are exclusive" }, 400);
+			const mail = b.mail ? mailByKey(String(b.mail)) : undefined;
+			if (b.mail && !mail) return json({ error: `no mail conversation ${String(b.mail)}` }, 404);
 			if (b.project) {
-				if (lane) return json({ error: "lane and project are exclusive" }, 400);
 				try {
 					project = projectTarget(String(b.project), discord.channels.work);
 				} catch (error) {
@@ -240,14 +261,14 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 				}
 			}
 			// The queue sends to the main conversation when the turn ends; a project message goes in now (intake merges a burst).
-			if (mode === "queue" && !project && !conv && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
+			if (mode === "queue" && !project && !mail && !conv && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
 				const item = enqueue(lane ? `lane:${lane}` : "main", [reply ? replyLine(reply) : "", text, files.length ? attachmentLines(files) : ""].filter(Boolean).join("\n"), login);
 				return json({ ok: true, queued: item });
 			}
 			try {
 				// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
 				const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
-				await sendWeb({ lane, project, conv: lane || project ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}) });
+				await sendWeb({ lane, project, mail, conv: lane || project || mail ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}

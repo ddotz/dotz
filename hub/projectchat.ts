@@ -7,9 +7,12 @@ export const isProjectTarget = (t: string) => /^ch:\d+$/.test(t);
 // The outbox event of anything the gateway sends to Discord (owner 2026-10-21: what goes out on Discord also shows in the gateway chat).
 // A work channel is its own web conversation by its target; a thread of a work channel (`th:<id>`) belongs to the channel it hangs from,
 // which `eventTarget` finds through `channel`. `parentOf` gives that work channel's id for a thread, or nothing for any other thread.
-export function outEvent<E extends { target: string }>(e: E, parentOf: (thread: string) => string | undefined): E & { channel?: string } {
-	const parent = e.target.startsWith("th:") ? parentOf(e.target.slice(3)) : undefined;
-	return parent ? { ...e, channel: `ch:${parent}` } : e;
+// `mailOf` gives the mail conversation (`mail:<key>`, hub/mail.ts) of a mail's thread: a send there shows in that conversation.
+export function outEvent<E extends { target: string }>(e: E, parentOf: (thread: string) => string | undefined, mailOf: (thread: string) => string | undefined = () => undefined): E & { channel?: string; conv?: string } {
+	const thread = e.target.startsWith("th:") ? e.target.slice(3) : undefined;
+	const parent = thread ? parentOf(thread) : undefined;
+	const conv = thread ? mailOf(thread) : undefined;
+	return parent || conv ? { ...e, ...(parent ? { channel: `ch:${parent}` } : {}), ...(conv ? { conv } : {}) } : e;
 }
 
 // `id` is the channel id or `ch:<id>`; only a work channel the gateway knows is a project target.
