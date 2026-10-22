@@ -279,6 +279,14 @@ describe("typed reads on the fixture", () => {
 		db.close();
 	});
 
+	test("rooms: a room title set in KakaoTalk (chat meta type 3) wins over chatName and the 1:1 name", async () => {
+		const path = join(dir, "titled.db");
+		makeFixtureDb(path, { rooms: [{ chatId: 1, type: 1, chatName: null, title: "가족" }, { chatId: 2, type: 0, chatName: null, peer: 2001, title: "Alex (work)" }, { chatId: 3, type: 1, chatName: null }] }).close();
+		const db = sqliteDb(path);
+		expect((await rooms(db)).map(r => [r.chatId, r.name])).toEqual([["1", "가족"], ["2", "Alex (work)"], ["3", "(unknown)"]]);
+		db.close();
+	});
+
 	test("room kinds follow the mapping and unknown types are other", () => {
 		expect([0, 1, 3, 5, 9999, 7, -1].map(roomKind)).toEqual(["direct", "group", "group", "self", "other", "other", "other"]);
 	});
