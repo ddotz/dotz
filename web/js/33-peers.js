@@ -4,7 +4,7 @@
 // The last list that arrived is kept in localStorage and drawn at once: coming back from the other computer the page starts from the service worker's
 // cached shell before the phone's network is up, and a first /api/peers that failed left the chip hidden until the next minute. A failed fetch is retried within seconds.
 const prCached = () => { const l = lsJson("dotz-peers", []); return Array.isArray(l) ? l.filter(p => p && typeof p.name === "string" && typeof p.url === "string") : []; };
-const PR = { list: prCached(), node: null, ov: null, opener: null, tries: 0, timer: 0 };
+const PR = { list: prCached(), node: null, ov: null, opener: null, tries: 0, timer: 0, fresh: false };
 const PR_RETRY_MS = [2000, 5000, 15000];
 const prSelf = () => PR.list.find(p => p.self);
 const prOthers = () => PR.list.filter(p => !p.self);
@@ -12,7 +12,7 @@ const prText = p => [p.need > 0 ? `답변 필요 ${p.need}` : "", p.unread > 0 ?
 
 async function prLoad() {
   try {
-    const r = await api("/api/peers"); PR.list = Array.isArray(r) ? r : []; PR.tries = 0;
+    const r = await api("/api/peers"); PR.list = Array.isArray(r) ? r : []; PR.tries = 0; PR.fresh = true;
     try { localStorage.setItem("dotz-peers", JSON.stringify(PR.list.map(({ name, url, self, online }) => ({ name, url, self, online })))); } catch {}
   } catch {
     clearTimeout(PR.timer);
@@ -22,7 +22,25 @@ async function prLoad() {
   prPaint();
 }
 
+// A tapped notice relayed from another computer arrives as ?pc=<that computer's origin>[&n=<decision id>|&m=<message ts>]#<route> (cold start:
+// PUSH_FOLLOW in 23-installable-app-web.js; open app: a {follow} message from sw.js). Only an origin in this gateway's own computer list is followed
+// (never a free URL); the page then continues on that computer at the item. Unknown after a fresh list, or offline: it stays here.
+let prFollowHref = typeof PUSH_FOLLOW === "string" ? PUSH_FOLLOW : "";
+function prTryFollow() {
+  if (!prFollowHref) return;
+  let u; try { u = new URL(prFollowHref, location.href); } catch { prFollowHref = ""; return; }
+  const p = prOthers().find(x => x.url === u.searchParams.get("pc"));
+  if (!p && !PR.fresh) return;   // the cached list may predate this computer; wait for the fresh one
+  prFollowHref = "";
+  if (!p || !p.online) { toast(p ? `${p.name}에 연결할 수 없어요` : "그 컴퓨터를 찾지 못했어요", true); history.replaceState(history.state, "", location.pathname + location.hash); return; }
+  const q = new URLSearchParams();
+  for (const k of ["n", "m"]) if (u.searchParams.has(k)) q.set(k, u.searchParams.get(k));
+  location.replace(`${p.url}/${q.size ? `?${q}` : ""}${u.hash}`);
+}
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (typeof d.follow === "string") { prFollowHref = d.follow; prTryFollow(); } });
+
 function prPaint() {
+  prTryFollow();
   const chip = $("#pchip"), me = prSelf(), on = !!me && PR.list.length >= 2;
   $("#appbar").classList.toggle("hasp", on);
   chip.hidden = !on;

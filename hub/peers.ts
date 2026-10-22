@@ -131,7 +131,7 @@ async function tailscaleStatus(): Promise<TsStatus | undefined> {
 	return undefined;
 }
 
-type Found = { name: string; host: string; url: string; self: boolean };
+export type Found = { name: string; host: string; url: string; self: boolean };
 
 // Which gateways exist (slow part: tailscale status and the probes). Self comes first.
 export async function discover(): Promise<Found[]> {
@@ -166,6 +166,8 @@ export async function discover(): Promise<Found[]> {
 }
 
 const discovered = cached(DISCOVERY_TTL_MS, () => discover().catch(error => { log(`peers: discovery failed: ${(error as Error).message}`); return [] as Found[]; }));
+// The discovered computers (self first), from the same cache as the switcher. hub/push.ts relays notices to them and accepts relays only from them.
+export const knownComputers = (): Promise<Found[]> => discovered();
 const countsCache = new Map<string, { at: number; v: { unread: number; need: number } | undefined }>();
 
 // The list for GET /api/peers. One entry or none: the web app hides the switcher (it needs two gateways).

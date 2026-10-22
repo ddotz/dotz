@@ -86,7 +86,7 @@ self.addEventListener("push", ev => {
     icon: "/icons/icon-192.png",
     badge: "/icons/badge-96.png",
     ...(actions.length ? { actions } : {}),
-    data: { url: m.url || "/", ts: m.id ? "" : m.ts || "", id: m.id || "" },
+    data: { url: m.url || "/", ts: m.id ? "" : m.ts || "", id: m.id || "", pc: m.pc || "" },
   }));
 });
 
@@ -99,6 +99,12 @@ self.addEventListener("notificationclick", ev => {
   const openApp = async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const win = wins.find(w => new URL(w.url).origin === location.origin);
+    // A notice relayed from another computer: this app opens, then the page switches to that computer (33-peers.js prFollow), at the item.
+    if (data.pc) {
+      if (win) { await win.focus(); win.postMessage({ follow: url }); return; }
+      await self.clients.openWindow(url);
+      return;
+    }
     if (win) {
       await win.focus();
       win.postMessage({ open: url, ts: at, ...(id ? { notice: id } : {}) });

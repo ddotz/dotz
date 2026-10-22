@@ -483,7 +483,7 @@ function ntSheetShow(id, det) {
 // A tapped notification (or an option button on it) asks an open window to show the decision; a cold start carries it as ?n=<id>.
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) noticeOpenId(d.notice); });
 {
-  const want = new URLSearchParams(location.search).get("n") || "";
+  const want = PUSH_FOLLOW ? "" : new URLSearchParams(location.search).get("n") || "";   // a relayed notice's ?n names an item on the other computer (prFollow)
   if (want) {
     const u = new URL(location.href);
     u.searchParams.delete("n");
