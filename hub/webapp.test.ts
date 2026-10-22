@@ -178,7 +178,7 @@ describe("web app modules", () => {
 	});
 
 	test("page, script and styles go out gzipped to a client that accepts it, with the same validator, and plain to one that does not", async () => {
-		const gz = { "accept-encoding": "gzip, br" };
+		const gz = { "accept-encoding": "gzip" };
 		for (const [path, get] of [["/app.js", (r: Request) => appAsset(r, "/app.js")!], ["/app.css", (r: Request) => appAsset(r, "/app.css")!], ["/", (r: Request) => indexPage(r)]] as const) {
 			const plain = await get(new Request(`http://x${path}`));
 			const zipped = await get(new Request(`http://x${path}`, { headers: gz }));

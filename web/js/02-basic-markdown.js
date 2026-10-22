@@ -79,15 +79,28 @@ function parseTone(text) {
 }
 
 /* ---------- api ---------- */
-// index.html starts the first /api/state fetch in <head>, before this 480KB script is downloaded and parsed; the first api() of that path takes it over.
+// index.html starts the first answers (state, history, plan, read positions, activity) in <head>, before this 480KB script is downloaded and parsed; the first api() of that path takes it over.
+// A GET that is already in flight is shared (the same path asked twice at boot is one request); each caller parses its own copy of the text.
+const apiGets = new Map();
 async function api(path, method = "GET", body) {
   const go = () => fetch(path, { method, cache: "no-store", headers: body !== undefined ? { "Content-Type": "application/json" } : undefined, body: body !== undefined ? JSON.stringify(body) : undefined });
-  const early = method === "GET" && window.__early && window.__early[path];
-  if (early) delete window.__early[path];
-  const r = await (early ? early.catch(go) : go());
+  const read = async r => ({ ok: r.ok, status: r.status, text: await r.text() });
+  let res;
+  if (method === "GET") {
+    let p = apiGets.get(path);
+    if (!p) {
+      const early = window.__early && window.__early[path];
+      if (early) delete window.__early[path];
+      p = (early ? early.catch(go) : go()).then(read);
+      apiGets.set(path, p);
+      const done = () => { if (apiGets.get(path) === p) apiGets.delete(path); };
+      p.then(done, done);
+    }
+    res = await p;
+  } else res = await read(await go());
   let data = null;
-  try { data = await r.json(); } catch {}
-  if (!r.ok) throw Object.assign(new Error((data && data.error) || `HTTP ${r.status}`), { data });
+  try { data = JSON.parse(res.text); } catch {}
+  if (!res.ok) throw Object.assign(new Error((data && data.error) || `HTTP ${res.status}`), { data });
   return data;
 }
 async function busy(btn, fn) {
