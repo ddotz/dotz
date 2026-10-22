@@ -107,7 +107,7 @@ export const ko: Catalog = {
 				{ label: "보기", items: [["/status", "메인 에이전트·세션·Discord 상태"], ["/context", "프로세스별 컨텍스트 사용량"], ["/lanes", "세션과 모델 목록"], ["/quota", "공급자별 사용량 한도"], ["/providers", "로그인한 공급자와 모델 수"]] },
 				{ label: "모델", items: [["/model [대상] [모델] [추론 강도]", "모델 보기·바꾸기. 대상: orchestrator, lanes(새 세션), workers(서브에이전트), 세션 이름"], ["/effort <대상> <수준>", `추론 강도 바꾸기 (${levels})`], ["/compact <대상>", "컨텍스트 압축"]] },
 				{ label: "세션", items: [["/stop <세션>", "세션 멈추기 (나중에 이어갈 수 있어요)"], ["/resume <세션> [메시지]", "멈춘 세션 이어가기, 실행 중이면 메시지 보내기"], ["/abort [대상]", "하던 일 중단 (기본: orchestrator)"], ["/restart <대상>", `프로세스 다시 시작. gateway는 모두 쉴 때까지 기다려요 (${minutes}분 넘으면 알림)`]] },
-				{ label: "계정", items: [["/login [공급자]", "로그인. /login cancel로 취소"], ["/logout <공급자>", "로그아웃하고 키 지우기"], ["/account [id|별칭|auto]", "지금 Claude 계정과 이유. 계정을 고르거나 자동으로 돌리기"], ["/account alias <id> <별칭>", "계정 별칭 정하기 (<id>만 쓰면 지움)"]] },
+				{ label: "계정", items: [["/login [공급자]", "로그인. /login cancel로 취소"], ["/logout <공급자>", "로그아웃하고 키 지우기"], ["/account [id|별칭|auto]", "지금 Claude 계정과 이유. 계정을 고르거나 고정 풀기"], ["/account alias <id> <별칭>", "계정 별칭 정하기 (<id>만 쓰면 지움)"]] },
 			],
 			note: "실행 중인 세션의 모델이나 추론 강도를 바꾸려면 --force가 필요해요. 캐시를 다시 쓰기 때문이에요. Discord에서는 / 대신 ! 도 돼요. 모델은 이름의 고유한 일부(\"opus\")로 불러도 돼요.",
 		}),
