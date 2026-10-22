@@ -278,6 +278,7 @@ function renderCtxRing() {
   // model and effort are separate chips, each with its own popover
   const [base, level] = String(sel || "").split(":"), eb = $("#c-effort");
   mb.hidden = !sel; eb.hidden = !level;
+  if (sel) prefetchTV();
   if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${owner} 모델 · ${t}`; }
   if (level) { eb.textContent = thinkKo(level); eb.title = `${owner} 추론 강도 · ${thinkKo(level)}`; }
   const keyed = !!(orchT ? S && S.orchestrator && S.orchestrator.key_fallback : lane && lane.key_fallback);
@@ -296,6 +297,25 @@ function renderCtxRing() {
 // The chips are quick switches; the last row of each opens the 모델 · 폴백 screen at this target (fallback order lives there).
 const MODELS_LINK = { value: "__models", label: "모델 · 폴백 설정", sub: "폴백 순서까지" };
 const targetParam = () => isLaneT(target) ? target : "main";
+// GET /api/target per target, kept so a chip opens its menu at once; the server builds it from the CLI model list, which is slow while cold.
+// The first click used to wait for that response (owner 2026-10-22: first click on the model/effort chip felt slow).
+const TV = new Map(), TV_BUSY = new Set();
+async function fetchTV(k) { const T = await api(`/api/target?target=${enc(k)}`); TV.set(k, T); return T; }
+// Fills the cache at idle once the chips render, so even the first click finds it.
+function prefetchTV() {
+  const k = targetParam();
+  if (TV.has(k) || TV_BUSY.has(k)) return;
+  TV_BUSY.add(k);
+  (window.requestIdleCallback || (f => setTimeout(f, 300)))(() => fetchTV(k).catch(() => {}).finally(() => TV_BUSY.delete(k)), { timeout: 3000 });
+}
+// Opens a chip menu from the cached view without waiting, then refetches; the menu is rebuilt only when the fresh view differs.
+async function chipMenu(anchor, build) {
+  const k = targetParam(), hit = TV.get(k);
+  if (!hit) return build(await fetchTV(k));
+  build(hit);
+  const sig = T => JSON.stringify([T.model, T.thinking, T.models.map(m => m.selector)]);
+  fetchTV(k).then(T => { if (openMenu && openMenu.anchor === anchor && targetParam() === k && sig(T) !== sig(hit)) { closeMenu(false); build(T); } }).catch(() => {});
+}
 async function targetChange(title, change, label) {
   const body = { target: targetParam(), ...change };
   let r;
@@ -306,19 +326,25 @@ async function targetChange(title, change, label) {
     r = await api("/api/target", "PUT", { ...body, force: true });
   }
   toast(change.compact ? (r.compaction === "queued" ? "작업이 끝나면 압축해요" : "압축을 시작했어요") : (applyKo[r.applied] || "적용했어요"));
-  await Promise.all([loadModels(true), loadContext(true)]); refreshState();
+  TV.delete(body.target);
+  await Promise.all([loadModels(true), loadContext(true), fetchTV(body.target).catch(() => {})]); refreshState();
 }
-$("#c-model").onclick = ev => busy(null, async () => {
-  const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(targetParam())}`);
-  const name = targetName(target), items = [...modelPickItems(T.models, T.model), MODELS_LINK];
-  showMenu(anchor, items, { value: T.model, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
+$("#c-model").onclick = ev => busy(null, () => {
+  const anchor = ev.currentTarget;
+  return chipMenu(anchor, T => {
+    const name = targetName(target), items = [...modelPickItems(T.models, T.model), MODELS_LINK];
+    showMenu(anchor, items, { value: T.model, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
+  });
 });
 // Effort only: low / medium / high (plus the current level when it is another one); the model is never touched.
-$("#c-effort").onclick = ev => busy(null, async () => {
-  const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(targetParam())}`), name = targetName(target);
-  const levels = ["low", "medium", "high"].filter(v => T.thinking_levels.includes(v));
-  if (T.thinking && !levels.includes(T.thinking)) levels.push(T.thinking);
-  showMenu(anchor, [{ header: "추론 강도" }, ...levels.map(v => ({ value: v, label: v })), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${v}`)) });
+$("#c-effort").onclick = ev => busy(null, () => {
+  const anchor = ev.currentTarget;
+  return chipMenu(anchor, T => {
+    const name = targetName(target);
+    const levels = ["low", "medium", "high"].filter(v => T.thinking_levels.includes(v));
+    if (T.thinking && !levels.includes(T.thinking)) levels.push(T.thinking);
+    showMenu(anchor, [{ header: "추론 강도" }, ...levels.map(v => ({ value: v, label: v })), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${v}`)) });
+  });
 });
 $("#ctx-ring").setAttribute("aria-haspopup", "listbox");
 $("#ctx-ring").onclick = ev => busy(null, async () => {
