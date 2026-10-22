@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { cfg, chainAfter, DATA_DIR, entryOf } from "./config.ts";
-import { atTime, Chain, failsOver, failureReason, hubChain, keyedWorker, keyHostOk, keyProviderOk, resetFallbackState, spendOnKey } from "./fallback.ts";
+import { atTime, Chain, failsOver, failureReason, hubChain, keyedWorker, keyHostOk, keyProviderOk, resetFallbackState, spendOnKey, workerKeyEnv } from "./fallback.ts";
 import { writeWorkerProfile } from "./runtime/omo.ts";
 import { classifyProviderError } from "./providers.ts";
 
@@ -158,6 +158,47 @@ test("workers on a keyed entry: workers get the key provider and worker model, n
 		const name = writeWorkerProfile({ workerModel: keyedWorker(on)!, workerFallback: [] }, file)!;
 		const cats = JSON.parse(readFileSync(file, "utf8")).profiles[name].categories;
 		expect(cats.quick.models).toEqual([{ model: "anthropic-apikey/claude-sonnet-5-5", reasoning: "high" }]);
+	} finally {
+		if (was === undefined) delete process.env.OMO_CODING_AGENT_DIR;
+		else process.env.OMO_CODING_AGENT_DIR = was;
+		rmSync(join(DATA_DIR, "secrets", "anthropic-api-key"), { force: true });
+	}
+});
+
+test("the workers' own chain ends in an API key: the key reaches the spawned workers only while the subscription is out", () => {
+	resetFallbackState();
+	writeFileSync(join(DATA_DIR, "secrets", "anthropic-api-key"), "sk-ant-test-key");
+	const agentDir = mkdtempSync(join(tmpdir(), "dotz-nopin-"));
+	const was = process.env.OMO_CODING_AGENT_DIR;
+	process.env.OMO_CODING_AGENT_DIR = agentDir;
+	try {
+		const worker = "anthropic/claude-sonnet-5-5:high";
+		const keyed = { model: "anthropic/claude-sonnet-5-5", key_file: "anthropic-api-key", when: "quota" as const };
+		// The subscription model is usable: the workers keep it and the process gets no key variable.
+		expect(workerKeyEnv(worker, [keyed])).toEqual({});
+		expect(workerKeyEnv(worker, [{ model: "openai/x" }])).toEqual({});
+		// Its usage limit is recorded: the spawn config carries the key provider, the key file name and the worker model, never the key.
+		const now = Date.now();
+		new Chain(worker, [keyed], "high").fail("quota", now + HOUR, now);
+		const env = workerKeyEnv(worker, [keyed]);
+		expect(env.DOTZ_KEY_VALUE).toBeUndefined();
+		expect(JSON.stringify(env)).not.toContain("sk-ant-test-key");
+		expect(env.DOTZ_KEY_WORKERS).toBe("1");
+		expect(env.DOTZ_KEY_FILE).toBe("anthropic-api-key");
+		const spec = JSON.parse(env.DOTZ_KEY_PROVIDER);
+		expect(spec.id).toBe("anthropic-apikey");
+		expect(spec.models.map((m: { id: string }) => m.id)).toEqual(["claude-sonnet-5-5"]);
+		expect(keyedWorker(env)).toBe("anthropic-apikey/claude-sonnet-5-5:high");
+		// The worker profile of the process points every category at the key provider's model.
+		const file = join(agentDir, "omo.json");
+		const name = writeWorkerProfile({ workerModel: keyedWorker(env)!, workerFallback: [] }, file)!;
+		expect(JSON.parse(readFileSync(file, "utf8")).profiles[name].categories.quick.models).toEqual([{ model: "anthropic-apikey/claude-sonnet-5-5", reasoning: "high" }]);
+		// Switched off, or past its spend cap (the workers' spend counts on the shared key pool): no key.
+		expect(workerKeyEnv(worker, [{ ...keyed, enabled: false }])).toEqual({});
+		spendOnKey("anthropic-api-key", 1000, 6);
+		expect(workerKeyEnv(worker, [{ ...keyed, cap: { period: "month", usd: 5 } }])).toEqual({});
+		// A condition that does not fit a usage limit (error only) keeps the key off while the subscription is merely rate-limited.
+		expect(workerKeyEnv(worker, [{ ...keyed, when: "error" }])).toEqual({});
 	} finally {
 		if (was === undefined) delete process.env.OMO_CODING_AGENT_DIR;
 		else process.env.OMO_CODING_AGENT_DIR = was;

@@ -132,7 +132,7 @@ const NO_ASK = "--no-ask-user";
 // An API-key fallback entry runs as its own provider, which only exists once the dotz extension has registered it from
 // DOTZ_KEY_PROVIDER (hub/fallback.ts keyEnv): the process starts on the entry's own model and is switched to the key
 // provider's copy before the first prompt (RPC commands run in order), as on omp.
-const keyProviderOf = (o: SpawnOpts) => (o.env.DOTZ_KEY_PROVIDER && !apiKeyBan() ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined);
+const keyProviderOf = (o: SpawnOpts) => (o.env.DOTZ_KEY_PROVIDER && o.env.DOTZ_KEY_VALUE && !apiKeyBan() ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined);
 
 // Light profile (measured 2026-10-20 over RPC, first-turn prompt on Sonnet 5.5: orchestrator 39.7K -> 35.9K, lane 35.8K ->
 // 34.5K): tools no dotz process uses are left out. The goal loop (dotz drives turns and checks [done] itself) and the
