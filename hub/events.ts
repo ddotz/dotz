@@ -112,6 +112,12 @@ export function recentEvents(limit = 150): HubEvent[] {
 	return limit > 0 ? recent.slice(-limit) : []; // slice(-0) is the whole list, and the page asks /api/state for limit=0 meaning none
 }
 
+// The text of the assistant message posted at `ts` (the message a decision answer replies to): the live ring first, then the outbox tail.
+export function askedText(ts: string): string | undefined {
+	const find = (list: HubEvent[]) => list.findLast(e => e.ts === ts && (e.kind === "out" || e.kind === "lane_report") && typeof e.text === "string");
+	return (find(recent) ?? find(tailEvents(paths.outbox)))?.text;
+}
+
 // Which conversation an event belongs to: "main" (owner <-> the assistant), "lane:<name>", a project's "ch:<id>" or one of the two
 // fixed conversations "alert" / "worklog" (the gateway's alerts and watch wake events, and the answers to the owner's questions
 // asked there, sent as target "web:alert" / "web:worklog"). The web app mirrors this rule for live events, so keep the two in step.

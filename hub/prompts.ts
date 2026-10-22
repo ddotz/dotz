@@ -60,6 +60,13 @@ export type PromptDeps = {
 	covers?: (target: string) => boolean;
 };
 
+// Near-identical answers: the first NEAR_CHARS letters and digits (lowercased, no spaces or punctuation) match, at least NEAR_MIN long.
+const NEAR_CHARS = 40;
+const NEAR_MIN = 20;
+const head = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "").slice(0, NEAR_CHARS);
+// "chat" and "web" are both the owner's main conversation on the web page (hub/events.ts eventTarget).
+const isMain = (t: string) => t === "chat" || t === "web";
+const sameConv = (a: string, b: string) => a === b || (isMain(a) && isMain(b));
 const MAX_PROMPTS = 200;
 const MAX_ANSWERED = 5000;
 const REPLAY_MAX_AGE_MS = 12 * 3600_000;
@@ -200,6 +207,12 @@ export function createPrompts(deps: PromptDeps) {
 			return;
 		}
 		current = i >= 0 ? prompts.splice(i, 1)[0] : undefined;
+		// A prompt redelivered at idle waits in the runtime's queue and cannot be taken back; if a dotz_send answered its message
+		// meanwhile (2026-10-22 00:32, web 3e7dd934), it still starts as a turn, but that turn's own answer would only repeat the first.
+		if (current && isAnswered(current.replyTo)) {
+			current.done = true;
+			deps.log(`the prompt for ${current.target ?? "-"} was already answered by a dotz_send; this turn's answer is dropped`);
+		}
 		save();
 	}
 
@@ -285,7 +298,11 @@ export function createPrompts(deps: PromptDeps) {
 		// Parts sent early with dotz_send do not replace the answer; skip it only when it repeats something already sent.
 		const sentHere = p.sent.some(s => s.target === target);
 		const held = p.held ?? [];
-		const repeat = t === "-" || p.sent.some(s => s.target === target && s.text.includes(t)) || held.some(h => h.includes(t));
+		// Also a repeat: the same first NEAR_CHARS normalized characters as something this turn already posted to that conversation
+		// (a schedule text said "tell web" while its final answer goes to "chat", both the main web conversation).
+		const key = head(t);
+		const prior = [...p.sent.filter(s => sameConv(s.target, target)).map(s => s.text), ...held];
+		const repeat = t === "-" || prior.some(h => h.includes(t) || (key.length >= NEAR_MIN && head(h) === key));
 		if (repeat && !held.length) {
 			if (sentHere) deps.clearProgress(target);
 			return;

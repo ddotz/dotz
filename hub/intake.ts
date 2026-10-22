@@ -4,7 +4,7 @@ import { limitsCard, looksLikeCommand, parseCommand, runCommand } from "./contro
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { msg } from "./i18n.ts";
-import { emit, emitDelivery } from "./events.ts";
+import { askedText, emit, emitDelivery } from "./events.ts";
 import { attachmentLines, type Upload } from "./files.ts";
 import { abortLane, approvesBudget, lanes, ownerNotes, sendToLane } from "./lanes.ts";
 import { accountView, readPool } from "./account-sticky.ts";
@@ -29,6 +29,22 @@ export function inboxText(e: Record<string, any>): string {
 	return withTurnLanguage(inboxBody(e));
 }
 
+// A decision answer says which question it answers: the chosen option per block and the start of the asking message (its
+// `reply_to` is that message's ts), so the answer holds up when it is sent from another conversation than the one that asked.
+export type Pick = { q: string; n: number; label: string };
+const QUOTE_MAX = 200;
+function decisionLines(p: Record<string, any>): string[] {
+	const m = msg();
+	const out: string[] = [];
+	if (Array.isArray(p.picks) && p.picks.length) out.push(m.decisionAnswer(p.picks));
+	const asked = typeof p.reply_to === "string" && (p.picks?.length || p.decision) ? askedText(p.reply_to) : undefined;
+	if (asked) {
+		const flat = asked.replace(/^\s*\[[^\]\n]{1,10}\][ \t]*/, "").replace(/\s+/g, " ").trim();
+		out.push(m.decisionAsked(flat.length > QUOTE_MAX ? `${flat.slice(0, QUOTE_MAX - 1)}…` : flat));
+	}
+	return out;
+}
+
 function inboxBody(e: Record<string, any>): string {
 	const m = msg();
 	if (e.kind === "lane_report") return `${m.inboxLaneReport(e.lane)}\n${e.text}`;
@@ -48,6 +64,7 @@ function inboxBody(e: Record<string, any>): string {
 		if (p.reply) lines.push(m.replyingTo(p.reply.author, p.reply.content));
 		for (const a of p.attachments ?? []) lines.push(`[attachment] ${a.name}${a.type ? ` (${a.type})` : ""} ${a.url}`);
 		lines.push(p.text);
+		lines.push(...decisionLines(p));
 	}
 	if (e.plugin_note) lines.push(e.plugin_note);
 	const home = e.parent?.startsWith("ch:") ? e.parent : e.channel;
@@ -124,11 +141,11 @@ async function accountChatAnswer(target: string, ask: Parameters<typeof accountA
 // message, a working lane gets it steered in; "steer": into the running turn now; "interrupt": abort, then new prompt.
 // `files` are uploads (files.ts): the chat shows them as chips, the agent gets one [attachment] line per file with its path.
 // `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
-type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; decision?: string };
+type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; decision?: string; picks?: Pick[] };
 export async function sendWeb(s: WebSend): Promise<void> {
 	const mid = newMid();
 	// replyTo: the asking message of a decision answer; decision: its notice, which that answer settles alone (notices.ts ownerReplied).
-	const extra = { mid, ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}), ...(s.replyTo ? { reply_to: s.replyTo } : {}), ...(s.decision ? { decision: s.decision } : {}) };
+	const extra = { mid, ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}), ...(s.replyTo ? { reply_to: s.replyTo } : {}), ...(s.decision ? { decision: s.decision } : {}), ...(s.picks?.length ? { picks: s.picks } : {}) };
 	if (s.lane) {
 		const name = s.lane;
 		const channel = `lane:${name}`;

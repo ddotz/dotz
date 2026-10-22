@@ -354,7 +354,8 @@ test("a button answers one decision as a reply to the asking message; a plain ow
 	};
 	const r = await answerDecision(b.id, { n: 2 }, send);
 	expect(r.status).toBe(200);
-	expect(sent).toEqual([{ to: "main", text: "둘째: 2) 라", replyTo: at, notice: b.id }]);
+	// `picks` hands the agent the block's question with the chosen option, whichever conversation the button was pressed in.
+	expect(sent).toEqual([{ to: "main", text: "둘째: 2) 라", replyTo: at, notice: b.id, picks: [{ q: "둘째", n: 2, label: "라" }] }]);
 	const after = (id: string) => stored().find(n => n.id === id)!;
 	expect(after(b.id)).toMatchObject({ read: true, decision: { state: "answered", answer: "2) 라" } });
 	expect(after(a.id)).toMatchObject({ read: false, decision: { state: "open" } });
@@ -451,7 +452,7 @@ test("a choice block without [ask] is a decision: notice, push hook and the answ
 	const sent: Parameters<DecisionSend>[0][] = [];
 	const r = await answerDecision(d!.id, { n: 1 }, async x => void sent.push(x));
 	expect(r.status).toBe(200);
-	expect(sent).toEqual([{ to: "main", text: "1) 먼저 커밋", replyTo: at, notice: d!.id }]);
+	expect(sent).toEqual([{ to: "main", text: "1) 먼저 커밋", replyTo: at, notice: d!.id, picks: [{ q: "정리 세션 시작 전 쌓인 변경 처리", n: 1, label: "먼저 커밋" }] }]);
 	// a session's message with a block is the same, addressed to that session; a one-option list is not a decision
 	const lat = ts();
 	emit("outbox", { ts: lat, kind: "out", source: "lane:x", target: "lane:x", text: "[done] 끝났어요\n**1) 병합**\n**2) 보류**" });

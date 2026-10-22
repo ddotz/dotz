@@ -152,7 +152,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 				const lane = a.to.startsWith("lane:") ? a.to.slice(5) : undefined;
 				const project = a.to.startsWith("ch:") ? projectTarget(a.to, discord.channels.work) : undefined;
 				const conv = a.to === "alert" || a.to === "worklog" ? a.to : undefined;
-				await sendWeb({ lane, project, conv, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice });
+				await sendWeb({ lane, project, conv, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice, picks: a.picks });
 			});
 			return json(r.body, r.status);
 		}
@@ -227,7 +227,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 				return json({ ok: true, queued: item });
 			}
 			try {
-				await sendWeb({ lane, project, conv: lane || project ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files });
+				// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
+				const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120) }] : [])) : [];
+				await sendWeb({ lane, project, conv: lane || project ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(picks.length ? { picks } : {}) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}

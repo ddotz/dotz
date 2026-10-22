@@ -160,7 +160,7 @@ export const en = {
 	noGit: `\n\nThis folder is not a git repository, so isolated task subagents cannot start here: run subagents without isolation (read-only work needs none), and if a subagent must edit files, keep its slice to files no other subagent touches.`,
 
 	replay: `${enLeads.replayLead}. Handle it now; it may be partly done already, so check before repeating an action.`,
-	newMessage: (target: string, replyTo: string | undefined, text: string) => `${enLeads.newMessageLead}. If its full answer is ready now (a quick question), send it with dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}; otherwise send nothing: it comes back as its own turn when you are idle. Then continue the current work; your final answer still goes to the request you started with.\n\n${text}`,
+	newMessage: (target: string, replyTo: string | undefined, text: string) => `${enLeads.newMessageLead}. If its full answer is ready now (a quick question), send it with dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}: that settles the message, it counts as answered and never comes back as a turn. Otherwise send nothing: it comes back as its own turn when you are idle. Then continue the current work; your final answer still goes to the request you started with.\n\n${text}`,
 	// The one leading line of an owner prompt that says what runs now (workers named by the hub from its own state; no model call).
 	nowRunning: "[running now]",
 	nowLanes: (n: number, body: string) => `sessions ${n}(${body})`,
@@ -183,6 +183,9 @@ export const en = {
 	inboxFirst: (channel: string) => `(new work channel #${channel}: the owner hands out work by channel. Keep this channel's work and reports here. If its work needs a login kept alive or something checked over time, set that up for this channel with dotz_channel setup yourself.)`,
 	inboxBurst: (n: number) => `(sent as ${n} messages in a row; read them together as one request)`,
 	replyingTo: (author: string, content: string) => `(replying to ${author}: "${content}")`,
+	// A decision answer: each block's question with the chosen option, and the start of the message that asked (hub/intake.ts).
+	decisionAnswer: (picks: { q: string; n: number; label: string }[]) => `Decision answer: ${picks.map((p, i) => `${i + 1}) ${p.q || "-"} -> ${p.n}) ${p.label}`).join("; ")}`,
+	decisionAsked: (quote: string) => `(this answers your question: "${quote}")`,
 	workChannels: (list: string[]) => `(work channel list, not this message's channel: ${list.length ? list.join("; ") : "none yet"})`,
 	// Discord channel names the gateway creates, and the done marker of a lane thread.
 	channelNames: { chat: "chat", alert: "alerts", worklog: "worklog", mail: "mail", workCategory: (name: string) => `${name} work` },
