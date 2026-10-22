@@ -31,6 +31,7 @@ import { hostname } from "node:os";
 import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
 import { sendWeb } from "./intake.ts";
 import { json, body, terminals } from "./routes-util.ts";
+import { ptyRoute } from "./pty.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
 
@@ -70,6 +71,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		const parts = url.pathname.split("/").filter(Boolean);
 		const authResponse = authRoute(req, url);
 		if (authResponse) return authResponse;
+		const ptyResponse = await ptyRoute(req, url);
+		if (ptyResponse) return ptyResponse;
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/") return indexPage(req);
 		const asset = appAsset(req, url.pathname);
 		if (asset) return asset;
@@ -129,11 +132,11 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
+		// The bot closes the questions whose matter is over (ids, match text, conv or all): they are answered, read and off 답변 필요.
+		if (req.method === "POST" && url.pathname === "/api/notices/resolve") return json(resolveNotices(await body(req)));
 		// The page reports the conversation it shows ("" = hidden): answers there make no unread message item (hub/notices.ts).
 		if (req.method === "POST" && url.pathname === "/api/viewing") {
 			const b = await body(req);
-		// The bot closes the questions whose matter is over (ids, match text, conv or all): they are answered, read and off 답변 필요.
-		if (req.method === "POST" && url.pathname === "/api/notices/resolve") return json(resolveNotices(await body(req)));
 			const r = setViewing(b.id, b.conv);
 			return json(r, r.ok ? 200 : 400);
 		}
@@ -269,11 +272,11 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		if (req.method === "POST" && url.pathname === "/api/send") {
 			const b = await body(req);
 			const target = String(b.target ?? "chat");
+			// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
+			if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves });
 			if (b.update_key) {
 				try {
 					return json(await progress(target, String(b.update_key), String(b.text ?? ""), b.reply_to));
-			// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
-			if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves });
 				} catch (error) {
 					return json({ delivered: false, reason: (error as Error).message }, 502);
 				}
