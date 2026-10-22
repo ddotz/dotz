@@ -24,7 +24,7 @@ test("one watch and one schedule come back in the owner-facing shape", async () 
 	const items = listMonitors();
 	expect(items).toHaveLength(2);
 	const watch = items.find(i => i.kind === "watch")!;
-	expect(watch).toMatchObject({ name: "demo-watch", kind: "watch", channel: "ch:7", last_result: "ok", every: "10분마다" });
+	expect(watch).toMatchObject({ name: "demo watch", kind: "watch", channel: "ch:7", last_result: "ok", every: "10분마다" });
 	expect(Date.parse(watch.last_run!)).toBeGreaterThan(0);
 	expect(Date.parse(watch.next_run!) - Date.parse(watch.last_run!)).toBe(10 * 60_000);
 
@@ -65,7 +65,7 @@ test("a one-shot watch is deleted after its first match report and a recurring o
 	expect(reports.filter(r => r.startsWith("gone-after-match:"))).toHaveLength(1);
 	expect(reports.filter(r => r.startsWith("stays-after-match:")).length).toBeGreaterThanOrEqual(2);
 	expect(allWatches().map(w => w.name)).toEqual(["stays-after-match"]);
-	expect(listMonitors().filter(m => m.kind === "watch").map(m => m.name)).toEqual(["stays-after-match"]);
+	expect(listMonitors().filter(m => m.kind === "watch").map(m => m.name)).toEqual(["stays after match"]);
 	const saved = JSON.parse(readFileSync(paths.watches, "utf8")) as { name: string }[];
 	expect(saved.map(w => w.name)).toEqual(["stays-after-match"]);
 	expect(existsSync(paths.watches)).toBe(true);

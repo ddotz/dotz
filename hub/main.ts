@@ -34,7 +34,7 @@ import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
 import { onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
 import { clearChannel, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
-import { watchReasonKo } from "./watchtext.ts";
+import { watchLine } from "./watchtext.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
 import { addWatch, allWatches, approveWatch, isWatchIssue, startWatches, stopWatches, watchChoice } from "./watch.ts";
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
@@ -285,13 +285,13 @@ startWatches((w, reason, output) => {
 		emit("inbox", event);
 		if (!w.channels?.length) return deliver(inboxText(event));
 		const [first, ...others] = w.channels;
-		for (const c of others) void out(`ch:${c}`, `[${event.label}] ${watchReasonKo(reason)} (처리는 #${discord.channels.work[first] ?? first}에서)\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(() => undefined);
+		for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)` }).slice(0, 1900), undefined, { source: "gateway" }).catch(() => undefined);
 		return deliver(inboxText(event), { target: `ch:${first}` });
 	}
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);
 	const label = watchLabel(w.name);
-	void out(issue ? "alert" : w.to, `[${label}] ${watchReasonKo(reason)}\n${output}`.slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label)}` : ""), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	void out(issue ? "alert" : w.to, watchLine(label, reason, output).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label)}` : ""), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 syncFeatureWatches();
 startPlugins({

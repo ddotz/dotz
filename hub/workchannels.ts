@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { now, paths, writeAtomic } from "./config.ts";
 import { addWatch, allWatches, removeWatch, setWatchChannels, type Watch } from "./watch.ts";
+import { humanLabel } from "./watchtext.ts";
 
 export type Login = { session_url: string; expect?: string; host?: string; profile?: string };
 export type Monitor = { command: string; every_minutes?: number; on?: "change" | "match" | "fail"; pattern?: string; label?: string };
@@ -72,12 +73,12 @@ export function clearChannel(channel: string): boolean {
 export const getSetup = (channel: string) => setups.find(s => s.channel === channel);
 
 // What the owner reads for a watch: its own label, else "<채널 이름> 감시 <n>" for a monitor of a channel setup (also for monitors
-// stored before labels existed), else the name.
+// stored before labels existed), else the name; a key-shaped name or label ("kakao-new") is shown as words (humanLabel).
 export function watchLabel(name: string): string {
 	const own = allWatches().find(w => w.name === name)?.label;
-	if (own) return own;
+	if (own) return humanLabel(own);
 	const s = setups.find(x => x.monitors.includes(name));
-	return s ? `${s.name} 감시 ${s.monitors.indexOf(name) + 1}` : name;
+	return s ? `${s.name} 감시 ${s.monitors.indexOf(name) + 1}` : humanLabel(name, name);
 }
 
 // The inbox event a watch report becomes (hub/notices.ts and the web read label / to to word it).
