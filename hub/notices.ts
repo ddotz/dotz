@@ -27,6 +27,8 @@ export type Notice = {
 	src?: string;
 	at?: string;
 	key?: string;
+	// Who raised it: "orchestrator", "lane:<name>" or "gateway" (older items have none: originOf falls back to the decision target / lane key).
+	by?: string;
 	read: boolean;
 	// Swiped away / x in the bell: kept (so a session's next progress line does not bring it back) but never listed or counted.
 	dismissed?: boolean;
@@ -46,6 +48,8 @@ export type Decision = {
 	// How many decisions the asking message held; with more than one the answer names its decision.
 	group: number;
 	state: "open" | "answered";
+	// True when no answer came but the matter was resolved by other means (resolveAsks): the bot finished it, the owner acted outside the app.
+	resolved?: boolean;
 	answer?: string;
 	answered_at?: string;
 	// A draft waiting for send approval (hub/draft-approval.ts): the sheet shows it above the options.
@@ -139,7 +143,7 @@ function trim(): void {
 	}
 }
 
-type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; read?: boolean; unread?: boolean; src?: string; at?: string };
+type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; by?: string; read?: boolean; unread?: boolean; src?: string; at?: string };
 
 function upsert(i: Input): Notice {
 	const at = i.at ?? now();
@@ -155,6 +159,7 @@ function upsert(i: Input): Notice {
 		old.src = i.src ?? i.open;
 		old.at = at;
 		old.updated = at;
+		if (i.by) old.by = i.by;
 		if (i.read) old.read = true;
 		else if (reopened) {
 			old.read = false;
@@ -162,7 +167,7 @@ function upsert(i: Input): Notice {
 		}
 		item = old;
 	} else {
-		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: i.kind, tone: i.tone, title: i.title, text: i.text, open: i.open, src: i.src ?? i.open, at, ...(i.key ? { key: i.key } : {}), read: i.read === true };
+		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: i.kind, tone: i.tone, title: i.title, text: i.text, open: i.open, src: i.src ?? i.open, at, ...(i.key ? { key: i.key } : {}), ...(i.by ? { by: i.by } : {}), read: i.read === true };
 		items.push(item);
 		trim();
 	}
@@ -192,16 +197,19 @@ function fromOutbox(e: HubEvent): void {
 	const { tone, text } = clean(e.text);
 	if (!text) return;
 	const restart = RESTART_PREFIX.test(text);
+	const by = authorOf(e);
+	const recovered = e.source === "gateway" ? /^\[([^\]\n]+)\]\s*recovered\b/.exec(text)?.[1] : undefined;
+	if (recovered) watchRecovered(recovered, e.ts);
 	if (target === "worklog" || (restart && target === "web" && e.source === "gateway")) {
 		if (key?.startsWith("lane:")) {
 			const name = key.slice(5);
-			return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: key, key, at: e.ts });
+			return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: key, key, ...(by ? { by } : {}), at: e.ts });
 		}
 		return void upsert({ kind: "worklog", tone, title: systemTitle(text, "작업 기록"), text, open: target === "worklog" ? "worklog" : "main", key, read: restart, at: e.ts });
 	}
-	if (target === "alert") return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key, at: e.ts });
+	if (target === "alert") return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key, ...(by ? { by } : {}), read: Boolean(recovered), at: e.ts });
 	const watch = /^ch:\d+$/.test(target) && e.source === "gateway" ? /^\[([^\]\n]+)\]\s*/.exec(text) : null;
-	if (watch) upsert({ kind: "watch", tone, title: watch[1]!, text: text.slice(watch[0].length) || text, open: target, key, at: e.ts });
+	if (watch) upsert({ kind: "watch", tone, title: watch[1]!, text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts });
 }
 
 function fromInbox(e: HubEvent): void {
@@ -209,12 +217,14 @@ function fromInbox(e: HubEvent): void {
 		const name = String(e.lane ?? "");
 		const { tone, text } = clean(e.text);
 		if (!name || !text || !LOUD.has(tone)) return;
-		return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: `lane:${name}`, key: `lane:${name}`, at: e.ts });
+		return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: `lane:${name}`, key: `lane:${name}`, by: `lane:${name}`, at: e.ts });
 	}
 	if (e.kind === "watch") {
+		const recovered = /^recovered\b/.test(String(e.reason ?? ""));
+		if (recovered) watchRecovered(String(e.watch ?? ""), e.ts);
 		// The wake event itself is a message of the 알림 conversation (hub/events.ts eventTarget).
 		const body = [e.reason, e.text].filter(v => typeof v === "string" && v.trim()).join("\n");
-		return void upsert({ kind: "watch", tone: "", title: String(e.watch ?? "모니터링"), text: clean(body).text || "알림이 왔어요", open: "alert", at: e.ts });
+		return void upsert({ kind: "watch", tone: "", title: String(e.watch ?? "모니터링"), text: clean(body).text || "알림이 왔어요", open: "alert", read: recovered, at: e.ts });
 	}
 	if (e.kind === "schedule") {
 		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
@@ -224,6 +234,7 @@ function fromInbox(e: HubEvent): void {
 
 function feed(e: HubEvent): void {
 	try {
+		resolveByReport(e);
 		if (e.kind === "lane_start") noteLaunch(e);
 		else if (e.kind === "out") {
 			fromOutbox(e);
@@ -341,7 +352,7 @@ const firstLine = (text: string) => {
 	return l.length > 80 ? `${l.slice(0, 79)}…` : l;
 };
 
-type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string; draft?: DraftApproval };
+type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string; by?: string; draft?: DraftApproval };
 
 // The decisions an event asks of the owner: an [ask] from the assistant or a session, or any message holding a choice block
 // (2+ options), split by its decision blocks.
@@ -361,13 +372,14 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	const detail = body.slice(0, TEXT_MAX);
 	const line = firstLine(body);
 	const sendDraft = pc.blocks.length === 1 ? parseDraftApproval(body) : undefined;
-	const draft = (title: string, options: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail, options, to, replyTo: e.ts, group, key: `dec:${to}:${hashOf(`${idx}|${title}|${options.map(o => o.label).join("/")}${sendDraft ? `|${sendDraft.to}|${sendDraft.subject ?? ""}|${sendDraft.body}` : ""}`)}`, ...(sendDraft ? { draft: sendDraft } : {}) });
+	const by = authorOf(e);
+	const draft = (title: string, options: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail, options, to, replyTo: e.ts, group, ...(by ? { by } : {}), key: `dec:${to}:${hashOf(`${idx}|${title}|${options.map(o => o.label).join("/")}${sendDraft ? `|${sendDraft.to}|${sendDraft.subject ?? ""}|${sendDraft.body}` : ""}`)}`, ...(sendDraft ? { draft: sendDraft } : {}) });
 	if (!pc.blocks.length) return [draft(line || "답변이 필요해요", to.startsWith("lane:") && /\/budget-ok/.test(body) ? BUDGET_OPTIONS : [], 1, 0)];
 	const many = pc.blocks.length > 1;
 	return pc.blocks.map((b, i) => draft(b.title || (many ? `결정 ${i + 1}` : pc.question || line), b.options.map(o => ({ ...o })), pc.blocks.length, i));
 }
 
-function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval }, at: string): void {
+function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string }, at: string): void {
 	const old = items.find(n => n.key === d.key);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
@@ -378,11 +390,11 @@ function putDecision(d: { key: string; title: string; detail: string; to: string
 	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(d.draft ? { draft: d.draft } : {}) };
 	let item: Notice;
 	if (old) {
-		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, updated: at, read: false, decision });
+		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}) });
 		delete old.dismissed;
 		item = old;
 	} else {
-		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, key: d.key, read: false, decision };
+		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, key: d.key, ...(d.by ? { by: d.by } : {}), read: false, decision };
 		items.push(item);
 		trim();
 	}
@@ -394,14 +406,18 @@ function putDecision(d: { key: string; title: string; detail: string; to: string
 
 // The label a button answer shows (the sent text may be longer): set while its message is on the way, since that message settles the notice too.
 const sending = new Map<string, string>();
-function settleDecision(item: Notice, answer: string, at = now()): void {
+function settleDecision(item: Notice, answer: string, at = now(), resolved = false): void {
 	const d = item.decision;
 	if (!d || d.state !== "open") return;
 	d.state = "answered";
 	d.answer = (sending.get(item.id) ?? answer).slice(0, 200);
 	d.answered_at = at;
+	if (resolved) d.resolved = true;
 	item.read = true;
 	item.updated = at;
+	// The notices made by the same asking event (the alert and message twins) are settled with it.
+	if (d.reply_to !== undefined && !items.some(n => n !== item && isOpenDecision(n) && n.decision!.reply_to === d.reply_to))
+		readIds(items.filter(n => n.kind !== "decision" && !n.read && !n.dismissed && n.at === d.reply_to).map(n => n.id));
 	if (replaying) return;
 	save();
 	broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
@@ -455,6 +471,79 @@ export function authSettled(id: string, status: string): void {
 	if (item) settleDecision(item, AUTH_DONE_WORDS[status] ?? "끝났어요");
 }
 
+/* ---------- resolved matters: a notice whose work is over leaves the badge and the 'needs you' lists without an answer ---------- */
+// The owner often settles a matter outside the app (a sudo password typed in a terminal, a file fixed by hand) and the bot then simply carries
+// on, so an ask also counts as answered when real signals say its matter is over. resolveAsks is the one place that does it; it marks an open
+// decision answered (`resolved`), reads the ask's twins and leaves every notice in the history. The signals:
+//  1. the session that asked reports [done] / [fail] (its own report, or the worklog line keyed lane:<name>, or laneVerified);
+//  2. the orchestrator turn that asked ends with a [done] / [fail] final answer (orchestratorTurnStarted / orchestratorAnswered);
+//  3. a watch posts "recovered" (watchRecovered);
+//  4. the bot says so (resolveNotices: POST /api/notices/resolve, or dotz_send's `resolves`);
+//  and, as before, the owner answering by a button, a reply in that chat or session (ownerReplied), or the login request ending.
+const RESOLVED_WORDS = "해결됐어요";
+
+function authorOf(e: HubEvent): string | undefined {
+	if (e.kind === "lane_report") return typeof e.lane === "string" && e.lane ? `lane:${e.lane}` : undefined;
+	if (e.kind !== "out") return undefined;
+	const src = String(e.source ?? "");
+	return src.startsWith("lane:") || src === "orchestrator" || src === "gateway" ? src : undefined;
+}
+// Older items carry no `by`: a session's question shows in its decision target or lane key.
+const originOf = (i: Notice): string | undefined => i.by ?? (i.decision?.to.startsWith("lane:") ? i.decision.to : i.key?.startsWith("lane:") ? i.key : undefined);
+const isAsking = (i: Notice) => !i.dismissed && !i.decision?.to.startsWith("auth:") && (isOpenDecision(i) || (i.tone === "ask" && !i.read));
+
+function readIds(ids: string[]): void {
+	if (!ids.length) return;
+	if (!replaying) return void markNoticesRead({ ids });
+	for (const i of items) if (ids.includes(i.id) && !isOpenDecision(i)) i.read = true;
+}
+
+// Resolves every asking notice that `pick` accepts and that was raised before `at`. Returns how many it closed.
+function resolveAsks(pick: (i: Notice) => boolean, at: string): number {
+	const hit = items.filter(i => isAsking(i) && (i.at ?? i.ts) < at && pick(i));
+	for (const i of hit) if (isOpenDecision(i)) settleDecision(i, RESOLVED_WORDS, at, true);
+	readIds(hit.filter(i => !i.read).map(i => i.id));
+	return hit.length;
+}
+
+// Signal 1: a session's [done] / [fail] closes what that session asked.
+function resolveByReport(e: HubEvent): void {
+	if ((e.kind !== "out" && e.kind !== "lane_report") || typeof e.ts !== "string") return;
+	const { tone } = clean(e.text);
+	if (tone !== "done" && tone !== "fail") return;
+	const key = typeof e.update_key === "string" && e.update_key.startsWith("lane:") ? e.update_key : "";
+	const who = key || (authorOf(e)?.startsWith("lane:") ? authorOf(e)! : "");
+	if (who) resolveAsks(i => originOf(i) === who, e.ts);
+}
+
+// Signal 2: the orchestrator asked mid-turn (dotz_send to the alert chat), carried on, and the turn ended with a result. An ask that is the
+// turn's own final answer is delivered after the turn ended, so no later answer can have closed it.
+let orchTurnFrom: string | undefined;
+export const orchestratorTurnStarted = (at = now()): void => void (orchTurnFrom = at);
+export function orchestratorAnswered(text: string, at = now()): number {
+	const from = orchTurnFrom;
+	const { tone } = clean(text);
+	if (!from || (tone !== "done" && tone !== "fail")) return 0;
+	return resolveAsks(i => i.by === "orchestrator" && (i.at ?? i.ts) >= from, at);
+}
+
+// Signal 3: a watch that failed passes again. Its failure alert (and the choice it carried) is over; the recovery note itself is born read.
+function watchRecovered(name: string, at: string): void {
+	if (!name) return;
+	resolveAsks(i => i.text.startsWith(`[${name}]`) || (i.kind === "watch" && i.title === name), at);
+	readIds(items.filter(i => !i.read && !i.dismissed && i.ts < at && ((i.kind === "watch" && i.title === name) || (i.kind === "alert" && i.text.startsWith(`[${name}]`)))).map(i => i.id));
+}
+
+// Signal 4: the bot resolves notices itself. `ids` picks exact notices, `match` every asking notice whose title or text holds that text, `conv` every
+// one asked in that conversation, `all` every open ask. A login request keeps its own end (authSettled).
+export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unknown; all?: unknown }): { resolved: number; unread: number } {
+	const ids = Array.isArray(sel.ids) ? new Set(sel.ids.map(String)) : undefined;
+	const match = typeof sel.match === "string" && sel.match.trim() ? sel.match.trim().toLowerCase() : undefined;
+	const conv = typeof sel.conv === "string" && sel.conv ? sel.conv : undefined;
+	const pick = (i: Notice) => (ids ? ids.has(i.id) : match ? `${i.title}\n${i.text}`.toLowerCase().includes(match) : conv ? (i.src ?? i.open) === conv || i.decision?.to === conv : sel.all === true);
+	return { resolved: resolveAsks(pick, now()), unread: unreadCount() };
+}
+
 onEmit(feed);
 
 export const BACKFILL_DAYS = 7;
@@ -503,6 +592,7 @@ export function laneVerified(name: string, fallbackText: string): void {
 	const text = ((prior?.tone === "done" ? prior.text : clean(fallbackText).text) || "확인을 마쳤어요").slice(0, 600);
 	// The notice points at the compact card in the main chat, which carries the same ts.
 	const at = now();
+	resolveAsks(i => originOf(i) === key, at);
 	upsert({ kind: "result", tone: "done", title, text, open: key, key, unread: true, src: "main", at });
 	emit("outbox", { ts: at, kind: "result", source: "gateway", target: "web", session: name, title, tone: "done", verified: true, text: summary(text), open: key });
 }

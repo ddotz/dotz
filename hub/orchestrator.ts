@@ -18,6 +18,7 @@ import { runtimeFor } from "./runtime/index.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
+import { orchestratorAnswered, orchestratorTurnStarted } from "./notices.ts";
 
 const STATE = join(DATA_DIR, "orchestrator.json");
 const ROTATE_BYTES = 50e6;
@@ -254,6 +255,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 		noteEvent(orch.ctx, ev, port);
 		switch (ev.type) {
 			case "turn_start":
+				orchestratorTurnStarted();
 				clearTimeout(errorHold);
 				orch.status = "working";
 				unstarted.length = 0;
@@ -294,7 +296,10 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					orch.lastText = ev.text;
 					onText(ev.text);
 				}
-				if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);
+				if (ev.text && (ev.stop === "stop" || ev.stop === "length")) {
+					orchestratorAnswered(ev.text);
+					onAnswer(ev.text);
+				}
 				if (ev.stop !== "error" && ev.text && chain && !chain.list[chain.active].key_file && saved().apiSince) {
 					save({ apiSince: undefined });
 					onAlert(`${NAME}: ${msg().apiEnd(chain.label(chain.active))}`);

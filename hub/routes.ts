@@ -17,7 +17,7 @@ import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { answerDecision, dismissNotice, listNotices, markNoticesRead, readConversationNotices, setViewing, unreadCount } from "./notices.ts";
+import { answerDecision, dismissNotice, listNotices, markNoticesRead, readConversationNotices, resolveNotices, setViewing, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { listSchedules } from "./schedule.ts";
 import { readTodo } from "./todo.ts";
@@ -132,6 +132,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		// The page reports the conversation it shows ("" = hidden): answers there make no unread message item (hub/notices.ts).
 		if (req.method === "POST" && url.pathname === "/api/viewing") {
 			const b = await body(req);
+		// The bot closes the questions whose matter is over (ids, match text, conv or all): they are answered, read and off 답변 필요.
+		if (req.method === "POST" && url.pathname === "/api/notices/resolve") return json(resolveNotices(await body(req)));
 			const r = setViewing(b.id, b.conv);
 			return json(r, r.ok ? 200 : 400);
 		}
@@ -270,6 +272,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 			if (b.update_key) {
 				try {
 					return json(await progress(target, String(b.update_key), String(b.text ?? ""), b.reply_to));
+			// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
+			if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves });
 				} catch (error) {
 					return json({ delivered: false, reason: (error as Error).message }, 502);
 				}
