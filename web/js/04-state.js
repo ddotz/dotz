@@ -140,14 +140,28 @@ const chatTabMode = () => { try { return localStorage.getItem(CHAT_TAB_KEY) === 
 const chatTabModeSet = v => { try { localStorage.setItem(CHAT_TAB_KEY, v); } catch {} };
 const chatTabEnter = () => { if (chatTabMode() === "main") setTarget(MAIN); go(lastChatView()); };
 const chatTabTap = () => (convListing() ? closeChatList() : narrowChat() && (current === "chat" || current === "activity") ? openChatList() : current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter());
-for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+// ⌘/Ctrl+1..5 open the tabs in NAV order; the browser may keep ⌘1..9 for its own tabs in a normal tab (it reaches the page in an installed app window).
+const navKeyHint = id => { const i = NAV.findIndex(n => n[0] === id); return i < 0 ? "" : isMac ? `⌘${i + 1}` : `Ctrl+${i + 1}`; };
+function navShortcut(id) {
+  if (id !== "home" && PR.node) prClose(false);
+  if (id === "chat") current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter();
+  else go(id);
+}
+document.addEventListener("keydown", ev => {
+  if (ev.isComposing || ev.altKey || ev.shiftKey || !(isMac ? ev.metaKey : ev.ctrlKey) || document.querySelector("dialog[open]")) return;
+  const n = /^Digit([1-5])$/.exec(ev.code || "")?.[1] || (/^[1-5]$/.test(ev.key) ? ev.key : "");
+  if (!n) return;
+  ev.preventDefault();
+  navShortcut(NAV[n - 1][0]);
+});
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
 const themeNext = () => themeIs() === "dark" ? "라이트" : "다크";
 function toggleTheme() { dotzTheme.toggle(); if (current === "settings") renderSettings(); }
 window.addEventListener("dotz-theme", () => { if (current === "settings") renderSettings(); });
-const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
 const setBrand = () => { $("#brand-name").textContent = botName; paintAttn(); };
 $("#brand").onclick = () => go("home");
