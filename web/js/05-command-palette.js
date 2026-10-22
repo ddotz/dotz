@@ -27,7 +27,7 @@ function openPalette() {
       else for (const [c, desc] of hintList) if (c.startsWith(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
     } else {
       for (const [c, desc] of hintList) if (!v || c.includes(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
-      for (const id of views) if (id !== "activity" && id !== "project" && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], go: id === "chat" ? lastChatView() : id });
+      for (const id of views) if (id !== "activity" && id !== "project" && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
       if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 ${ended.length}`, act: () => { endedOpen = true; go("lanes"); } });
