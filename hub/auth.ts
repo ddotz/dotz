@@ -5,15 +5,16 @@
 // held in memory until it is taken once (otp) or not kept at all (approve). Values are never logged, put in events, state
 // or any prompt: log lines carry id, site, kind and status only. See hub/main.ts for the /api/auth* routes.
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { cfg, DATA_DIR, HUB_TOKEN, log, TZ, writeAtomic } from "./config.ts";
 import { ASK_PREFIX, askInteraction } from "./askbuttons.ts";
 import * as discord from "./discord.ts";
 import { msg } from "./i18n.ts";
 import { authRequested, authSettled } from "./notices.ts";
+import { buildForm, type FormField, normalizeValue } from "./authfields.ts";
 
-type Kind = "secret" | "otp" | "approve";
+type Kind = "secret" | "otp" | "approve" | "form";
 type Field = "username" | "password" | "code";
 type Status = "pending" | "entered" | "approved" | "cancelled" | "timeout";
 type AuthRequest = {
@@ -26,6 +27,9 @@ type AuthRequest = {
 	status: Status;
 	channelId: string;
 	messageId: string;
+	form?: FormField[];
+	remember: boolean;
+	keys?: string[];
 	path?: string;
 	otp?: string;
 	timer?: ReturnType<typeof setTimeout>;
@@ -42,26 +46,46 @@ const KEEP_MS = 30 * 60_000;
 const OTP_MS = 5 * 60_000;
 const MAX_WAIT_S = 55;
 const OWNER = String(cfg.discord?.owner_id ?? "");
-const RESERVED = new Set(["hub-token", "discord-bot-token", basename(String(cfg.discord?.token_file ?? "")).toLowerCase()].filter(Boolean));
+const RESERVED = new Set(["once", "hub-token", "discord-bot-token", basename(String(cfg.discord?.token_file ?? "")).toLowerCase()].filter(Boolean));
 const SECRETS_DIR = join(DATA_DIR, "secrets");
+const ONCE_DIR = join(SECRETS_DIR, "once");
+const ONCE_MS = 60 * 60_000;
 const reqs = new Map<string, AuthRequest>();
 
 // Plain text like every gateway message (MODE "Message layout"): one leading status emoji, no embed.
 const MARKS: Record<Status, string> = { pending: "❓", entered: "✅", approved: "✅", cancelled: "❌", timeout: "❌" };
+// One-time form files are removed an hour after they are written; a restart loses the timers, so start-up sweeps what is left.
+function sweepOnce(): void {
+	if (!existsSync(ONCE_DIR)) return;
+	for (const name of readdirSync(ONCE_DIR)) {
+		const file = join(ONCE_DIR, name);
+		if (Date.now() - statSync(file).mtimeMs > ONCE_MS) rmSync(file, { force: true });
+	}
+}
+sweepOnce();
+
+// The web app's address for the Discord link button of a form (set by main.ts once the tailnet address is known).
+let formLink: () => string | undefined = () => undefined;
+export const setFormLink = (fn: () => string | undefined): void => {
+	formLink = fn;
+};
 const clock = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
 
 function contentOf(r: AuthRequest): string {
 	const m = msg().auth;
 	const head = `${MARKS[r.status]} ${m.titles[r.kind]} (${m.site}: ${r.site})`;
 	const tail = r.status === "pending" ? m.expires(clock.format(r.expiresAt)) : m.statuses[r.status];
-	return `${head}\n${r.purpose}\n${tail}`.slice(0, 1900);
+	const hint = r.kind === "form" ? `\n${formLink() ? m.formHint : m.formHintNoLink}` : "";
+	return `${head}\n${r.purpose}${hint}\n${tail}`.slice(0, 1900);
 }
 
 function componentsOf(r: AuthRequest) {
 	const m = msg().auth;
 	const off = r.status !== "pending";
 	const button = (action: string, label: string, style: number) => ({ type: 2, style, label, custom_id: `${PREFIX}:${r.id}:${action}`, disabled: off });
-	return [{ type: 1, components: [r.kind === "approve" ? button("approve", m.approve, 3) : button("input", m.input, 1), button("cancel", m.cancel, 2)] }];
+	const url = formLink();
+	const first = r.kind === "approve" ? button("approve", m.approve, 3) : r.kind !== "form" ? button("input", m.input, 1) : url ? { type: 2, style: 5, label: m.openForm, url: `${url}/`, disabled: off } : undefined;
+	return [{ type: 1, components: [first, button("cancel", m.cancel, 2)].filter(Boolean) }];
 }
 
 const view = (r: AuthRequest) => ({
@@ -70,6 +94,7 @@ const view = (r: AuthRequest) => ({
 	kind: r.kind,
 	status: r.status,
 	...(r.status === "entered" && r.path ? { path: r.path } : {}),
+	...(r.status === "entered" && r.keys ? { keys: r.keys, once: !r.remember } : {}),
 	...(r.otp !== undefined ? { take: `/api/auth/${r.id}/take` } : {}),
 });
 
@@ -131,7 +156,17 @@ function submitted(d: discord.Interaction, fields: Field[]): Record<string, stri
 }
 
 function store(r: AuthRequest, values: Record<string, string>): void {
-	if (r.kind === "secret") {
+	if (r.form) {
+		const dir = r.remember ? SECRETS_DIR : ONCE_DIR;
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		chmodSync(SECRETS_DIR, 0o700);
+		chmodSync(dir, 0o700);
+		const file = r.remember ? join(SECRETS_DIR, r.site) : join(ONCE_DIR, `${r.site}-${r.id}`);
+		writeAtomic(file, `${JSON.stringify(values)}\n`, 0o600);
+		r.path = file;
+		r.keys = Object.keys(values);
+		if (!r.remember) setTimeout(() => rmSync(file, { force: true }), ONCE_MS).unref();
+	} else if (r.kind === "secret") {
 		mkdirSync(SECRETS_DIR, { recursive: true, mode: 0o700 });
 		chmodSync(SECRETS_DIR, 0o700);
 		const file = join(SECRETS_DIR, r.site);
@@ -159,13 +194,14 @@ async function interaction(d: discord.Interaction): Promise<void> {
 	const r = reqs.get(id);
 	if (!r || r.status !== "pending") return reply(d, 4, ephemeral(m.finished));
 	if (d.type === 3) {
+		if (action === "input" && r.kind === "form") return reply(d, 4, ephemeral(m.formWebOnly));
 		if (action === "input" && r.kind !== "approve") return reply(d, 9, modalOf(r));
 		if (action === "approve" && r.kind === "approve") settle(r, "approved");
 		else if (action === "cancel") settle(r, "cancelled");
 		else return reply(d, 4, ephemeral(m.finished));
 		return reply(d, 7, { content: contentOf(r), components: componentsOf(r) });
 	}
-	if (d.type === 5 && action === undefined && r.kind !== "approve") {
+	if (d.type === 5 && action === undefined && (r.kind === "secret" || r.kind === "otp")) {
 		const values = submitted(d, r.fields);
 		if (!values) return reply(d, 4, ephemeral(m.incomplete));
 		try {
@@ -195,10 +231,10 @@ async function create(req: Request): Promise<Response> {
 	const b = (await req.json().catch(() => undefined)) as Record<string, unknown> | undefined;
 	if (!b || typeof b !== "object" || Array.isArray(b)) return err("body must be a JSON object", 400);
 	const kind = b.kind;
-	if (kind !== "secret" && kind !== "otp" && kind !== "approve") return err("kind must be secret, otp or approve", 400);
+	if (kind !== "secret" && kind !== "otp" && kind !== "approve" && kind !== "form") return err("kind must be secret, otp, approve or form", 400);
 	const site = b.site;
 	if (typeof site !== "string" || !SITE_RE.test(site)) return err("site must match /^[a-z0-9][a-z0-9._-]{0,63}$/", 400);
-	if (kind === "secret" && RESERVED.has(site)) return err(`site ${site} is reserved`, 400);
+	if ((kind === "secret" || kind === "form") && RESERVED.has(site)) return err(`site ${site} is reserved`, 400);
 	const purpose = typeof b.purpose === "string" ? b.purpose.trim().slice(0, 500) : "";
 	if (!purpose) return err("purpose is required", 400);
 	const target = b.target;
@@ -211,7 +247,14 @@ async function create(req: Request): Promise<Response> {
 		if (kind === "secret") fields = [...new Set(b.fields as Field[])];
 		if (kind === "secret" && !fields.length) return err("fields must not be empty for secret", 400);
 	}
-	const r: AuthRequest = { id: randomBytes(6).toString("hex"), site, kind, fields, purpose, expiresAt: Date.now() + minutes * 60_000, status: "pending", channelId: "", messageId: "", waiters: new Set() };
+	let form: FormField[] | undefined;
+	if (kind === "form") {
+		const built = buildForm(b.form, t => msg().auth.formLabels[t] ?? t);
+		if (typeof built === "string") return err(built, 400);
+		form = built;
+	}
+	if (b.remember !== undefined && typeof b.remember !== "boolean") return err("remember must be true or false", 400);
+	const r: AuthRequest = { id: randomBytes(6).toString("hex"), site, kind, fields, form, remember: b.remember === true, purpose, expiresAt: Date.now() + minutes * 60_000, status: "pending", channelId: "", messageId: "", waiters: new Set() };
 	// Discord is one way to answer; the web app is always the other, so a failed or missing Discord post is not fatal.
 	if (discord.status.enabled) {
 		try {
@@ -250,7 +293,16 @@ function takeOtp(req: Request, r: AuthRequest | undefined): Response {
 // Pending requests for the web app: no values, only what the form needs.
 export function pendingAuth() {
 	const m = msg().auth;
-	return [...reqs.values()].filter(r => r.status === "pending").map(r => ({ id: r.id, site: r.site, kind: r.kind, title: m.titles[r.kind], purpose: r.purpose, expiresAt: new Date(r.expiresAt).toISOString(), fields: r.fields.map(f => ({ name: f, label: m.labels[f] })) }));
+	return [...reqs.values()].filter(r => r.status === "pending").map(r => ({
+		id: r.id,
+		site: r.site,
+		kind: r.kind,
+		title: m.titles[r.kind],
+		purpose: r.purpose,
+		expiresAt: new Date(r.expiresAt).toISOString(),
+		fields: r.form ? r.form.map(f => ({ name: f.key, label: f.label, type: f.input, inputmode: f.inputmode, autocomplete: f.autocomplete, mask: f.mask, optional: f.optional, maxlength: f.maxlength, placeholder: f.placeholder })) : r.fields.map(f => ({ name: f, label: m.labels[f] })),
+		...(r.form ? { remember: r.remember } : {}),
+	}));
 }
 
 // The web app's answer: {action: "submit", values} | {action: "approve"} | {action: "cancel"}. The caller already passed
@@ -258,11 +310,32 @@ export function pendingAuth() {
 async function answer(req: Request, r: AuthRequest | undefined): Promise<Response> {
 	if (!r) return err("unknown request", 404);
 	if (r.status !== "pending") return json(view(r));
-	const b = (await req.json().catch(() => undefined)) as { action?: unknown; values?: unknown } | undefined;
+	const b = (await req.json().catch(() => undefined)) as { action?: unknown; values?: unknown; remember?: unknown } | undefined;
 	const action = b?.action;
 	if (action === "cancel") settle(r, "cancelled");
 	else if (action === "approve" && r.kind === "approve") settle(r, "approved");
-	else if (action === "submit" && r.kind !== "approve") {
+	else if (action === "submit" && r.form) {
+		const raw = (b?.values && typeof b.values === "object" ? b.values : {}) as Record<string, unknown>;
+		const values: Record<string, string> = {};
+		for (const f of r.form) {
+			const v = raw[f.key];
+			if (typeof v !== "string" || !v.trim()) {
+				if (f.optional) continue;
+				return json({ error: "required", field: f.key }, 400);
+			}
+			const clean = normalizeValue(f, v);
+			if (clean === undefined) return json({ error: "invalid", field: f.key }, 400);
+			values[f.key] = clean;
+		}
+		if (typeof b?.remember === "boolean") r.remember = b.remember;
+		try {
+			store(r, values);
+		} catch (e) {
+			log(`auth ${r.id} ${r.site} ${r.kind} store failed: ${e}`);
+			return err("store failed", 500);
+		}
+		settle(r, "entered");
+	} else if (action === "submit" && (r.kind === "secret" || r.kind === "otp")) {
 		const raw = (b?.values && typeof b.values === "object" ? b.values : {}) as Record<string, unknown>;
 		const values: Record<string, string> = {};
 		for (const f of r.fields) {

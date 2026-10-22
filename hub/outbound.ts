@@ -7,6 +7,7 @@ import { DATA_DIR, log, now, paths, TZ, writeAtomic } from "./config.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { isNote, msg } from "./i18n.ts";
+import { asksPersonalInChat } from "./personal-ask.ts";
 import { answeredIds, answeredSince, emit, emitDelivery, recentOwnerMessages } from "./events.ts";
 import { outEvent } from "./projectchat.ts";
 import { allowedRoots } from "./files.ts";
@@ -119,6 +120,10 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	try {
 		sent = await inOrder(target, async () => {
 			const t = await localize(job.text, target, typeof extra.source === "string" ? extra.source : "orchestrator");
+			if (asksPersonalInChat(t)) {
+				log(`personal-data ask in chat to ${target}: the form (dotz_auth) is the only way to ask`);
+				steerOrchestrator(msg().personalAskNote);
+			}
 			// False: shutdown already landed this post with the original text.
 			landed = replies.end(job);
 			if (landed) emitOut(job, t);

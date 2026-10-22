@@ -120,6 +120,7 @@ export const ko: Catalog = {
 	pendingAsksHead: `${ADDRESS || "오너"} 답을 기다리는 세션 질문`,
 	pendingAskEntry: (lane, at, text, cutFile) => `- 세션 ${lane} (${at}에 물음):\n${text}${cutFile ? `\n... (잘림; 질문 전문은 ${cutFile})` : ""}`,
 	retainNudge: koRetainNudge,
+	personalAskNote: "[dotz gateway] 방금 보낸 메시지가 채팅에서 개인·보안 정보(카드, 주소, 전화번호, 신분증, 비밀번호 등)를 묻는 것처럼 보여요. 이런 값은 채팅이 아니라 dotz_auth kind=form(또는 secret)으로만 요청하세요. 이미 보낸 메시지는 정정해서 폼으로 다시 요청하세요.",
 	keepalive: "[keepalive] 게이트웨이의 캐시 유지 신호예요. ok 한 단어로만 답하세요. 도구, 전송, 상태 수정은 하지 마세요.",
 
 	orchRate: held => `${koLeads.rateLead}. 멈췄을 때 처리하던 요청을 이어서 하세요.${held ? ` 멈춰 있는 동안 도착한 메시지 ${held}건이 오래된 순으로 이어서 와요.` : ""}`,
@@ -194,13 +195,18 @@ export const ko: Catalog = {
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,
 
 	auth: {
-		titles: { secret: "로그인 정보가 필요해요", otp: "인증 코드가 필요해요", approve: "로그인 승인이 필요해요" },
+		titles: { secret: "로그인 정보가 필요해요", otp: "인증 코드가 필요해요", approve: "로그인 승인이 필요해요", form: "개인정보가 필요해요" },
 		site: "사이트",
 		expires: time => `${time} ${tzLabel()}까지`,
 		input: "입력하기",
 		approve: "승인",
 		cancel: "취소",
 		labels: { username: "아이디", password: "비밀번호", code: "인증 코드" },
+		formLabels: { name: "이름", phone: "전화번호", email: "이메일", postal_code: "우편번호", address1: "주소", address2: "상세 주소", card_holder: "카드 소유자 이름", card_number: "카드 번호", card_expiry: "유효기간 (MM/YY)", card_cvc: "CVC", birth_date: "생년월일", id_number: "신분증 번호", account_number: "계좌 번호", other: "기타" } as Record<string, string>,
+		openForm: "앱에서 입력하기",
+		formHint: "값은 채팅이 아니라 앱의 입력 창에서만 받아요. 아래 버튼으로 앱을 열어 주세요.",
+		formHintNoLink: "값은 채팅이 아니라 앱의 입력 창에서만 받아요. 앱을 열어 주세요.",
+		formWebOnly: "이 값은 앱의 입력 창에서만 받아요.",
 		modalTitle: site => `${site} 로그인`,
 		statuses: { entered: "입력을 받았어요.", approved: "승인됐어요.", cancelled: "취소됐어요.", timeout: "시간이 지나 만료됐어요." },
 		notOwner: "주인만 답할 수 있어요.",

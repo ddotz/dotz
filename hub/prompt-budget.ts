@@ -12,8 +12,10 @@
 // worker -> subagent rename (longer words): ~21119 -> 22154 / ~24902 -> 26109 bytes.
 // 2026-10-21: script-first monitoring rules replace the dotz_watch bullet (script in the project's folder, what a good check
 // prints, DOTZ_FAIL, $DOTZ_WATCH_STATE_DIR): +437 / +496 bytes, caps raised by exactly that (rounded up to 10).
-export const MODE_MD_MAX_BYTES = 24810; // measured 22591
-export const MODE_KO_MD_MAX_BYTES = 29220; // measured 26605
+// 2026-10-22: personal and security data (address, card, phone, ID numbers, passwords) is asked only through the dotz_auth form, never in chat:
+// +383 / +424 bytes, caps raised by exactly that (rounded up to 10).
+export const MODE_MD_MAX_BYTES = 25200; // measured 25191
+export const MODE_KO_MD_MAX_BYTES = 29650; // measured 29610
 export const RULES_TEMPLATE_MAX_BYTES = 780; // measured 703
 export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 // The owner card and boundaries go into the orchestrator's start prompt (observations.md does not).
