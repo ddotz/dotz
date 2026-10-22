@@ -9,6 +9,7 @@ setup: when the owner asks to connect KakaoTalk (카톡 연결/켜기), run `bun
 deny:
   - (^|[\s;&|(])kmsg\s+(send|send-image|auth|mcp-server)\b | KakaoTalk sends go only through `bun hub/kakao/cli.ts send --draft <code>` after the owner approved that draft
   - (^|[\s;&|(])kakaocli\s+(send|login|harvest)\b | KakaoTalk sends and logins go only through hub/kakao/cli.ts
+  - (>|\btee\b|\bcp\b|\bmv\b|\bsed\s+-i).*\binbox\.jsonl | inbox.jsonl is the gateway's record of the owner's messages (it holds the send approvals); only the gateway writes it
   - (^|[\s;&|(])security\s+find-generic-password\b.*dotz\.kakao | the KakaoTalk credentials stay in the Keychain; hub/kakao reads them itself
 ---
 The KakaoTalk watch wakes you with lines `kakao chat=<id> new=<n> from=<logId> to=<logId> at=<time>`: ids only. For each room:
