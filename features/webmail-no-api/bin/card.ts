@@ -1,36 +1,32 @@
-// Home card data command (kv view). Offline- and pre-setup-safe: it only reads local files, never the network, so it never
-// fails the card. Before setup it tells the owner how to turn the site on.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { dataDir, loadConfig, loadSpec } from "../lib/config.ts";
+// Home card data command (kv view). Offline- and pre-setup-safe: it reads only this site's local files (the watch's
+// status.json and the onboarding state), never the network, so it never fails the card.
+import { existsSync, readFileSync } from "node:fs";
+import { loadConfig, paths } from "../lib/config.ts";
 
-const SITE = process.env.WEBMAIL_SITE ?? process.argv[2] ?? "";
-
-function watchState(site: string): any {
-	const f = join(dataDir(), "watches");
-	if (!existsSync(f)) return undefined;
-	for (const dir of readdirSync(f)) {
-		const sf = join(f, dir, "state.json");
-		if (existsSync(sf)) {
-			try {
-				const s = JSON.parse(readFileSync(sf, "utf8"));
-				if (Array.isArray(s.seen)) return s;
-			} catch {}
-		}
+const readJson = (f: string): any => {
+	try {
+		return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : undefined;
+	} catch {
+		return undefined;
 	}
-	return undefined;
-}
+};
+const kst = (iso: string) => new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
-function card(): Record<string, string> {
-	const spec = loadSpec(SITE);
-	const config = loadConfig(SITE);
-	if (!spec || !config) return { 상태: `설정 전이에요. 채팅에서 "${SITE || "회사"} 메일 설정해줘"라고 말해 주세요` };
-	const st = watchState(SITE);
-	const out: Record<string, string> = { 사이트: SITE, 확인간격: `${config.poll_minutes}분` };
-	if (st?.loggedOut) out.상태 = "로그인이 풀렸어요";
-	else if (st?.lastOk) out.상태 = `정상 (마지막 확인 ${new Date(st.lastOk).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })})`;
-	else out.상태 = "감시 대기 중";
+export function card(site: string): Record<string, string> {
+	const config = loadConfig(site);
+	const ob = readJson(paths.onboard(site));
+	if (!config) {
+		if (ob && ob.status !== "done") return { 상태: `연결 중 멈춤: ${ob.message ?? ob.current ?? "다시 실행하면 이어서 해요"}` };
+		return { 상태: "연결 전이에요. zele로 안 되는 메일을 쓰고 싶다고 채팅에 말해 주세요" };
+	}
+	const st = readJson(paths.status(site));
+	const out: Record<string, string> = { 확인간격: `${config.poll_minutes}분` };
+	if (!st) out.상태 = "첫 확인을 기다리는 중";
+	else if (st.loggedOut) out.상태 = "로그인이 풀렸어요";
+	else if (st.failing) out.상태 = "확인이 계속 실패해요";
+	else out.상태 = st.lastOk ? `정상 (${kst(st.lastOk)} 확인)` : "확인 중";
+	if (st?.lastNewAt) out.최근새메일 = `${kst(st.lastNewAt)} ${st.lastNewCount}통`;
 	return out;
 }
 
-if (import.meta.main) console.log(JSON.stringify(card()));
+if (import.meta.main) console.log(JSON.stringify(card(process.env.WEBMAIL_SITE ?? process.argv[2] ?? "")));

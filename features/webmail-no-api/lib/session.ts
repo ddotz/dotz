@@ -6,7 +6,7 @@
 // load every refresh_hours (done by the gateway's `session` watch, not here) is still needed. The cheap request uses
 // conditional headers (If-None-Match / If-Modified-Since) so an unchanged inbox comes back 304 with no body: zero parsing,
 // minimal bytes.
-import { endpointUrl, getPath, type SiteSpec } from "./spec.ts";
+import { endpointUrl, getPath, parseJson, requestInit, type SiteSpec } from "./spec.ts";
 import { UA, type Ctx } from "./config.ts";
 
 export type LoginState = { kind: "ok"; body: unknown } | { kind: "loggedout"; why: string } | { kind: "error"; msg: string };
@@ -21,7 +21,7 @@ export function classifyList(spec: SiteSpec, status: number, body: string): Logi
 	if (status >= 300 && status < 400) return { kind: "loggedout", why: `redirect ${status}` };
 	if (status === 401 || status === 403) return { kind: "loggedout", why: `status ${status}` };
 	try {
-		const json = JSON.parse(body);
+		const json = parseJson(body);
 		if (Array.isArray(getPath(json, spec.list.listPath))) return { kind: "ok", body: json };
 		return { kind: "loggedout", why: `json without ${spec.list.listPath} (status ${status})` };
 	} catch {
@@ -31,10 +31,18 @@ export function classifyList(spec: SiteSpec, status: number, body: string): Logi
 	}
 }
 
+// One list call as the site's own client makes it (method, body and its content type from the spec).
+export function listRequest(spec: SiteSpec, cookie: string, extra: Record<string, string> = {}): { url: string; init: RequestInit } {
+	const tokens = { mailbox: spec.list.mailbox, page: 1 };
+	const { method, body, contentType } = requestInit(spec.list, tokens);
+	const h = headers(spec, cookie, { Accept: "application/json", ...(contentType ? { "Content-Type": contentType } : {}), ...extra });
+	return { url: endpointUrl(spec.origin, spec.list, tokens), init: { method, headers: h, ...(body !== undefined ? { body } : {}), redirect: "manual", signal: AbortSignal.timeout(30_000) } };
+}
+
 export async function fetchList(ctx: Ctx, spec: SiteSpec, cookie: string): Promise<LoginState> {
-	const url = endpointUrl(spec.origin, spec.list, { mailbox: spec.list.mailbox });
+	const { url, init } = listRequest(spec, cookie);
 	try {
-		const r = await ctx.fetch(url, { method: spec.list.method ?? "GET", headers: headers(spec, cookie, { Accept: "application/json" }), redirect: "manual", signal: AbortSignal.timeout(30_000) });
+		const r = await ctx.fetch(url, init);
 		return classifyList(spec, r.status, await r.text());
 	} catch (e) {
 		return { kind: "error", msg: String(e).slice(0, 200) };
@@ -47,12 +55,12 @@ export type KeepaliveResult = { status: "ok" | "notmodified" | "loggedout" | "er
 // transferred or parsed). A validator (ETag / Last-Modified) from the previous call is sent back so the server can answer
 // 304; the new validators are returned for the caller to persist.
 export async function keepalive(ctx: Ctx, spec: SiteSpec, cookie: string, prev: { etag?: string; lastModified?: string } = {}): Promise<KeepaliveResult> {
-	const url = endpointUrl(spec.origin, spec.list, { mailbox: spec.list.mailbox });
 	const cond: Record<string, string> = {};
 	if (prev.etag) cond["If-None-Match"] = prev.etag;
 	if (prev.lastModified) cond["If-Modified-Since"] = prev.lastModified;
+	const { url, init } = listRequest(spec, cookie, cond);
 	try {
-		const r = await ctx.fetch(url, { method: spec.list.method ?? "GET", headers: headers(spec, cookie, { Accept: "application/json", ...cond }), redirect: "manual", signal: AbortSignal.timeout(30_000) });
+		const r = await ctx.fetch(url, init);
 		const etag = r.headers.get("etag") ?? undefined;
 		const lastModified = r.headers.get("last-modified") ?? undefined;
 		if (r.status === 304) return { status: "notmodified", etag: etag ?? prev.etag, lastModified: lastModified ?? prev.lastModified, note: "304 not modified" };

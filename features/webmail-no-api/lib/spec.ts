@@ -20,6 +20,9 @@ export type Endpoint = {
 	method?: "GET" | "POST";
 	// Extra query params merged into the URL (minimal-fields selectors belong here, e.g. {"fields":"id,subject,date"}).
 	params?: Record<string, string>;
+	// Request body template for sites whose client POSTs (form or JSON), with the same {...} tokens as the path.
+	body?: string;
+	bodyType?: "json" | "form";
 };
 
 export type SiteSpec = {
@@ -48,6 +51,29 @@ export type SiteSpec = {
 
 export const SITE_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
+// JSON as a web client receives it. Some sites prefix their XHR JSON with an anti-hijacking guard (")]}',", "while(1);",
+// "for(;;);") that the page strips before parsing; do the same so those sites are not mistaken for logged out.
+export function parseJson(text: string): unknown {
+	const t = text.replace(/^\uFEFF/, "").replace(/^\s*(\)\]\}',?|while\s*\(1\);|for\s*\(;;\);)\s*/, "");
+	return JSON.parse(t);
+}
+
+// Cookie host_key values to read for a host: the host itself and each parent domain that is not a public suffix. A
+// two-letter country code with a generic second level (co.kr, co.jp, com.au, ac.uk ...) is a suffix, so for
+// mail.example.co.kr the parents are example.co.kr only, never co.kr.
+const GENERIC_SLD = /^(co|com|net|org|ac|go|or|ne|re|gov|edu|mil|pe|ltd|plc)$/;
+export function cookieHostsFor(host: string): string[] {
+	if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || !host.includes(".")) return [host];
+	const labels = host.split(".");
+	const tld = labels[labels.length - 1];
+	const minLabels = tld.length === 2 && labels.length >= 3 && GENERIC_SLD.test(labels[labels.length - 2]) ? 3 : 2;
+	const out = [host, `.${host}`];
+	for (let i = 1; labels.length - i >= minLabels; i++) out.push(`.${labels.slice(i).join(".")}`, labels.slice(i).join("."));
+	return [...new Set(out)];
+}
+
+const isLocalHost = (h: string) => h === "localhost" || h === "127.0.0.1";
+
 // Read a dot path ("a.b.c") out of a parsed JSON value. Returns undefined when any step is missing. No array indexing: the
 // list array is addressed by `listPath` and iterated by the caller.
 export function getPath(obj: unknown, path: string): unknown {
@@ -72,8 +98,17 @@ export function endpointUrl(origin: string, ep: Endpoint, tokens: Record<string,
 	const base = /^https?:\/\//i.test(filled) ? filled : origin.replace(/\/+$/, "") + (filled.startsWith("/") ? "" : "/") + filled;
 	if (!ep.params || !Object.keys(ep.params).length) return base;
 	const u = new URL(base);
-	for (const [k, v] of Object.entries(ep.params)) u.searchParams.set(k, v);
+	for (const [k, v] of Object.entries(ep.params)) u.searchParams.set(k, v.replace(/\{(\w+)\}/g, (m, t) => (tokens[t] === undefined ? m : String(tokens[t]))));
 	return u.toString();
+}
+
+const fillRaw = (s: string, tokens: Record<string, string | number | undefined>) => s.replace(/\{(\w+)\}/g, (m, k) => (tokens[k] === undefined ? m : String(tokens[k])));
+
+// fetch() init pieces for one endpoint call: method, filled body and its content type.
+export function requestInit(ep: Endpoint, tokens: Record<string, string | number | undefined> = {}): { method: string; body?: string; contentType?: string } {
+	const method = ep.method ?? (ep.body ? "POST" : "GET");
+	if (!ep.body || method === "GET") return { method };
+	return { method, body: fillRaw(ep.body, tokens), contentType: ep.bodyType === "json" ? "application/json" : "application/x-www-form-urlencoded; charset=UTF-8" };
 }
 
 // Boundary check of a spec read from disk or produced by capture. Returns an owner-facing Korean problem string, or
@@ -88,7 +123,7 @@ export function validateSpec(s: any): string | undefined {
 	} catch {
 		return "origin이 올바른 URL이 아니에요";
 	}
-	if (origin.protocol !== "https:") return "origin은 https여야 해요";
+	if (origin.protocol !== "https:" && !(origin.protocol === "http:" && isLocalHost(origin.hostname))) return "origin은 https여야 해요";
 	if (!Array.isArray(s.cookieHosts) || !s.cookieHosts.length || !s.cookieHosts.every((h: unknown) => typeof h === "string" && h.trim())) return "cookieHosts에 쿠키 호스트를 하나 이상 넣어야 해요";
 	if (!s.list || typeof s.list.path !== "string" || !s.list.path) return "list.path가 비어 있어요";
 	if (typeof s.list.listPath !== "string" || !s.list.listPath) return "list.listPath(메일 배열 경로)가 비어 있어요";

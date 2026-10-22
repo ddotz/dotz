@@ -1,8 +1,9 @@
 # Webmail without an API (design of record)
 
-Shipped feature folder (hub/featuredirs.ts), **off by default** (`enabled: false` in feature.md, per the owner rule
-[10-22]: shipped integrations start off and are turned on with a setup step on request). Nothing runs until the owner asks
-and setup writes a per-site spec and config into the custom layer. zele stays the first choice for mail/calendar; this
+Shipped feature folder (hub/featuredirs.ts), **off by default** (`enabled: false` in feature.md, per the owner rules
+[10-22]: shipped integrations start off; onboarding is one request, automated end to end, with owner steps batched into
+one ask). It turns on only when the owner asks to use a mail zele cannot reach (MODE, Mail and calendar), through
+`bin/onboard.ts`, which writes this install's switch (a personal feature.md copy with `enabled: true`). zele stays the first choice for mail/calendar; this
 feature is only for sites that have no API, no official CLI and no zele support. An install where another machine owns mail
 (features/no-mail-calendar-here) keeps that rule.
 
@@ -26,6 +27,23 @@ drops everything specific to that company. Generalized, in order:
 Left out (never in the repo): the company name, its hosts, endpoints, mailbox ids, account ids, any mail content or hint,
 secrets, and the owner's own launchd jobs. Each install captures its own `spec.json` into `~/.dotz/custom/webmail/<site>/`.
 
+## Onboarding (lib/onboard.ts, bin/onboard.ts)
+
+`onboard.ts <site> --url <inbox> --channel ch:<id>` runs six idempotent steps and records each in
+`custom/webmail/<site>/onboard.json`, so a rerun resumes at the step that stopped (`--status` shows it):
+
+| step | does | owner touch |
+|---|---|---|
+| preflight | mail handed to another machine? (a personal deny on zele), https URL, Aside present (started hidden) | none |
+| login | background tab: password field? then `aside exec` signs in with the browser's saved password | one batched ask: save the password / approve the 2nd factor; `--approve` resumes |
+| capture | records the client's calls (load-time calls replayed from Performance entries, fetch/XHR hooked, one mail opened by clicking a listed subject); a second, deep pass if the first finds no list | none; HTML-only sites get a Korean fallback (IMAP/zele, or `--har`) |
+| test | live list + read; if no mail was opened, probes likely read endpoints with a real id; a lost login goes back to login once | none |
+| apply | config, home card, sidebar project, this install's feature switch | none |
+| watch | POST /api/watches: the new-mail watch (to orchestrator, in the mail channel) and a session watch (https only) | none |
+
+Progress is one message edited in place (POST /api/send with an update_key). Exit codes: 0 done, 3 waiting for the
+owner (the printed ask), 1 failed (the printed reason).
+
 ## The SiteSpec (lib/spec.ts)
 
 The one generalization boundary. A spec describes a site's own API shape with no personal data: `origin`, `cookieHosts`,
@@ -45,12 +63,15 @@ features/webmail-no-api/
   lib/adapter.ts    generic list/read/search + makeDraft (never sends), html->text
   lib/capture.ts    the adapter generator: a recording -> a SiteSpec proposal
   lib/cookies.ts    live cookie header from the Aside store (live scripts only; tests inject a fake)
+  lib/gateway.ts    local gateway API (watches, the evolving progress message), hub token read at call time
+  lib/onboard.ts    the resumable onboarding state machine (all I/O injected)
+  bin/onboard.ts    the one onboarding command with the live I/O (Aside background, saved password, gateway)
   bin/capture.ts    record XHR from a background Aside tab (or --from a HAR) -> write spec
   bin/setup.ts      write config, home card, sidebar project; print the watch spec to register
   bin/mail.ts       action CLI: list | read | search | draft | send (send guarded by owner approval)
   bin/watch.ts      one-shot watch the gateway runs every poll_minutes
   bin/card.ts       home card data command (offline/pre-setup safe)
-  test/*.test.ts    adapter, capture generator, keepalive, watch (incl. logout recovery), off-by-default; fake mail server
+  test/*.test.ts    adapter, generator, keepalive, watch, onboarding dry run with resume, unusual sites, off-by-default
 ```
 
 All TypeScript, run with `bun <abs path>`. No npm dependencies (Bun builtins only, like the rest of dotz). Pure logic
@@ -73,3 +94,13 @@ The orchestrator writes that marker only after the owner says OK (ㅇㅇ/보내)
 marker and the draft are removed after a send. An install that wants a hard, hook-enforced gate can add a `deny` in a
 custom plugin that blocks the raw send command until an OK token appears in the thread; the shipped default is the in-code
 TTL guard plus the approval convention.
+
+## Unusual sites handled
+
+- JSON behind an anti-hijacking prefix (`)]}',`, `while(1);`, `for(;;);`) is parsed like the page does.
+- POST list/read/search calls keep their method and a body template (`{id}`, `{q}`; form or JSON).
+- A read addressed by a query parameter (`?msgId=...`) and the site's own query params (paging, field selectors) are kept.
+- Read flags as `Y`/`N`, `0`/`1` or booleans; cookie hosts never include a public suffix (`co.kr`, `com`).
+- A recording that never opened a mail: the read endpoint is found by probing with a real id.
+- A site with no JSON calls (server-rendered HTML): a clear Korean message pointing to IMAP/zele or a HAR file.
+- A backlog after an outage: the 10 newest mails get a thread line each, the rest one `mail-backlog` line.

@@ -4,7 +4,7 @@
 // `DOTZ_FAIL network` make the gateway raise it as an issue. State lives in the per-watch dir the gateway sets.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, loadSpec, liveCtx } from "../lib/config.ts";
+import { loadConfig, loadSpec, liveCtx, paths, writeJson } from "../lib/config.ts";
 import { cookieHeaderFromAside } from "../lib/cookies.ts";
 import { endpointUrl } from "../lib/spec.ts";
 import { initialState, pollOnce, type WatchState } from "../lib/watchkit.ts";
@@ -37,7 +37,7 @@ async function main(): Promise<number> {
 	const config = loadConfig(SITE);
 	if (!spec || !config) {
 		console.log("DOTZ_FAIL setup");
-		console.log(`webmail site "${SITE}" is not set up (no spec.json/config.json)`);
+		console.log(`"${SITE}" 메일은 아직 연결 전이에요 (onboard.ts로 연결하면 생겨요)`);
 		return 1;
 	}
 	const ctx = liveCtx(cookieHeaderFromAside);
@@ -46,6 +46,8 @@ async function main(): Promise<number> {
 	const recover = () => recoverViaAside(spec.origin);
 	const res = await pollOnce(ctx, spec, config, state, recover);
 	saveState(f, res.state);
+	const newCount = res.lines.filter((l) => l.startsWith("mail ")).length;
+	writeJson(paths.status(SITE), { lastRun: new Date(ctx.now()).toISOString(), lastOk: res.state.lastOk, loggedOut: res.state.loggedOut, failing: res.fail ?? null, ...(newCount ? { lastNewAt: new Date(ctx.now()).toISOString(), lastNewCount: newCount } : {}) }, 0o644);
 	for (const line of res.lines) console.log(line);
 	ctx.log(`watch ${SITE}: ${res.note} (${endpointUrl(spec.origin, spec.list, { mailbox: spec.list.mailbox })})`);
 	if (res.fail) {

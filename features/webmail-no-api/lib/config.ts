@@ -17,6 +17,8 @@ export const paths = {
 	drafts: (site: string) => join(siteDir(site), "drafts"),
 	cache: (site: string) => join(siteDir(site), "cache"),
 	approval: (site: string) => join(siteDir(site), "send-approved"),
+	status: (site: string) => join(siteDir(site), "status.json"),
+	onboard: (site: string) => join(siteDir(site), "onboard.json"),
 };
 
 export type SiteConfig = {
