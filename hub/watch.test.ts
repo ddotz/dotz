@@ -205,3 +205,34 @@ test("GET returns the script of a script watch; PUT replaces it atomically, keep
 	expect(() => watchScript("t-edit")).toThrow("not a text file");
 	expect(() => putWatchScript("t-edit", "#!/bin/sh\n")).toThrow("not a text file");
 });
+
+// A restart used to arm every watch a whole interval from boot, so a 120-minute watch restarted before its time never ran
+// (gateway restarts at 07:38 and 07:56 left nas-php-node-patch idle for hours). At boot the interval counts from lastRun.
+// Each run prints a new number, so every run after the first is a reported change; the note is the signal that a run happened.
+async function bootWithLastRun(name: string, agoMinutes: number) {
+	const counter = join(DATA_DIR, `watch-${name}.txt`);
+	writeFileSync(counter, "0");
+	addWatch({ name, command: `n=$(cat '${counter}'); echo $((n + 1)) > '${counter}'; echo $n`, every_minutes: 120, on: "change", to: "alert" }, "");
+	await runWatch(name);
+	state(name).lastRun = new Date(clock.now - agoMinutes * 60_000).toISOString();
+	patchWatch(name, {}); // persists the state; the timer is re-armed, then the restart replaces it
+	reloadWatches();
+}
+
+test("a watch that is overdue at boot runs at once instead of a whole interval later", async () => {
+	await bootWithLastRun("t-overdue", 121);
+	const ran = nextNote();
+	await advance(1);
+	await ran;
+	expect(notes).toEqual([{ name: "t-overdue", reason: "output changed" }]);
+});
+
+test("a watch that is not yet due at boot waits only what is left of its interval", async () => {
+	await bootWithLastRun("t-left", 100);
+	await advance(19 * 60_000);
+	expect(notes).toEqual([]);
+	const ran = nextNote();
+	await advance(60_000);
+	await ran;
+	expect(notes).toEqual([{ name: "t-left", reason: "output changed" }]);
+});
