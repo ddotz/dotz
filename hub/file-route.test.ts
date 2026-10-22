@@ -68,6 +68,17 @@ test("a file that was never attached is refused, also by traversal from an attac
 	expect((await get(join(DATA, "..", "outside.txt"))).status).toBe(403);
 });
 
+test("a listed work-channel result under projects/ is served; an unlisted neighbour in the same folder is refused", async () => {
+	const dir = join(DATA, "projects", "cartier");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "shot.png"), "PROJPNG");
+	writeFileSync(join(dir, "unlisted.png"), "x");
+	sendFiles("projects/cartier/shot.png");
+	const ok = await get("projects/cartier/shot.png");
+	expect([ok.status, ok.headers.get("content-type"), await ok.text()]).toEqual([200, "image/png", "PROJPNG"]);
+	expect((await get(join(dir, "unlisted.png"))).status).toBe(403);
+});
+
 // A computer in the app's switcher (맥미니) is a gateway of its own: the page opens on its origin and asks that gateway's /api/file, with the same
 // auth as every other call. So a [file] line its bot sent is served through the full route, and refused without the login.
 test("a peer gateway's sent [file] image is served through the whole route, and only with the auth", async () => {
