@@ -109,14 +109,6 @@ async function ntReach(t, at) {
     if (t === target) renderAll(true);
   }
 }
-// Top of the message to the top of the visible timeline, just under the app bar (a message taller than the view is aligned the same way).
-function ntAlignTop(node) {
-  chatUnpin();
-  const a = timeline.getBoundingClientRect(), b = node.getBoundingClientRect(), bar = $("#appbar").getBoundingClientRect();
-  const inset = Math.max(0, bar.bottom - a.top) + 20;
-  const top = Math.max(0, timeline.scrollTop + b.top - a.top - inset);
-  timeline.scrollTo({ top, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-}
 // A notice whose source message is on screen in the open chat counts as seen: read here and on the hub (so the other devices agree).
 // What waits on the owner (ntNeeds) stays until it is answered or ignored.
 let ntSeenT = 0;
@@ -158,16 +150,16 @@ let ntJumpSeq = 0;
 async function ntJump(n) {
   const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, t = ntGo(n.src || n.open || "main");
   if (!t) return;
-  CV.landed = true;   // no jump to the "새 메시지" divider: this opening lands on the message
   chatUnpin();
+  CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
   try {
     if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t);
     await ensureMsg(t, at);   // a stale stream may not have the message yet: fetch it before jumping
     await ntReach(t, at);
-    await ntRaf(); await ntRaf();   // after the renders' own scroll-to-bottom
+    for (let i = 0; i < 300 && seq === ntJumpSeq && !CV.placed; i++) await ntRaf();   // the opening's first draw waits for the read position (chatReady)
     if (seq !== ntJumpSeq || target !== t || current !== "chat") return;
     const m = ntFind(at);
-    if (m) { ntAlignTop(m); ntFlash(m); }
+    if (m) { chatJump(m); ntFlash(m); }
   } catch {}
 }
 
