@@ -23,6 +23,11 @@ let holdImages = true;
 let release = () => {};
 let gate: Promise<void> = Promise.resolve();
 let imageHits = 0;
+// The page asks for its history from index.html, before the load event (0fcfab4), and a held image would keep that event from firing:
+// boot() holds the history answer until navigate() has returned, so the images are requested after the load.
+let holdHistory = false;
+let histGate: Promise<void> = Promise.resolve();
+let openHistory = () => {};
 const arm = () => { holdImages = true; gate = new Promise(r => { release = () => { holdImages = false; r(); }; }); };
 
 const json = (v: unknown) => Response.json(v);
@@ -38,6 +43,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 1 });
 		if (url.pathname === "/api/history") {
+			if (holdHistory) await histGate;
 			const t = url.searchParams.get("target");
 			return json({ target: t, events: t === "main" ? events : [] });
 		}
@@ -74,7 +80,10 @@ const measure = async (at: string): Promise<M> => JSON.parse((await view.evaluat
 	return { off: n ? Math.round(n.getBoundingClientRect().top - a.top) : -9999, inset: Math.round(Math.max(0, bar.bottom - a.top) + 20), divOff: CV.divNode ? Math.round(CV.divNode.getBoundingClientRect().top - a.top) : null, stick: chatStick, top: Math.round(timeline.scrollTop) };
 })())`)) as string);
 const boot = async () => {
+	holdHistory = true;
+	histGate = new Promise(r => { openHistory = () => { holdHistory = false; r(); }; });
 	await view.navigate(`http://127.0.0.1:${server.port}/`);
+	openHistory();
 	await waitFor(`typeof NT !== "undefined" && NT.loaded && NT.items.length === 1 && S`);
 };
 const tap = () => view.evaluate(`(noticeOpen(NT.items[0]), 0)`);
