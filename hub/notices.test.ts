@@ -839,7 +839,7 @@ test("a notice whose message the owner has seen is no longer unread: by the read
 });
 
 // A throwaway data dir for a fresh process: config copy, optional stored notices / read positions, and the sessions that still exist on disk.
-function storeDir(files: { notices?: Notice[]; reads?: Record<string, string>; lanes?: string[]; channels?: Record<string, unknown> }): string {
+function storeDir(files: { notices?: Notice[]; reads?: Record<string, string>; lanes?: string[]; records?: Record<string, Record<string, unknown>>; channels?: Record<string, unknown> }): string {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-stale-"));
 	copyFileSync(CONFIG_FILE, join(dir, "config.json"));
 	if (files.channels) writeFileSync(join(dir, "channels.json"), JSON.stringify(files.channels));
@@ -848,6 +848,10 @@ function storeDir(files: { notices?: Notice[]; reads?: Record<string, string>; l
 	for (const l of files.lanes ?? []) {
 		mkdirSync(join(dir, "lanes", l), { recursive: true });
 		writeFileSync(join(dir, "lanes", l, "lane.json"), JSON.stringify({ title: l }));
+	}
+	for (const [l, rec] of Object.entries(files.records ?? {})) {
+		mkdirSync(join(dir, "lanes", l), { recursive: true });
+		writeFileSync(join(dir, "lanes", l, "lane.json"), JSON.stringify({ name: l, title: l, ...rec }));
 	}
 	return dir;
 }
@@ -964,6 +968,30 @@ test("a session's channel messages are titled by the session; stopping the sessi
 	} finally {
 		rmSync(paths.channels, { force: true });
 	}
+});
+
+test("on load, message and result notices of a session stopped before the stop hook existed are closed; a running session, a pending question and newer activity stay", () => {
+	const last = "2026-10-20T01:00:00.000Z", at = "2026-10-20T02:00:00.000Z", later = "2026-10-20T03:00:00.000Z";
+	const msg = (id: string, ch: string, extra: Partial<Notice> = {}) => stale(id, `ch:${ch}`, at, { kind: "message", title: "채널", key: `msg:ch:${ch}`, ...extra });
+	const asking: Notice = stale("eeeeeee5", "lane:asking", at, { kind: "decision", tone: "ask", decision: { to: "lane:asking", reply_to: at, options: [{ n: 1, label: "가" }], state: "open" } as Notice["decision"] });
+	const dir = storeDir({
+		channels: { chat: "1", worklog: "2", alert: "3", lanes: { done: "500", busy: "501", active: "502" }, homes: {}, work: {}, threads: {}, archiveAt: {} },
+		records: {
+			done: { status: "exited", startedAt: last, lastReportAt: last },
+			busy: { status: "working", startedAt: last, lastReportAt: last },
+			active: { status: "exited", startedAt: last, lastReportAt: later },
+			asking: { status: "exited", startedAt: last, lastReportAt: last, pendingAsk: { text: "어느 쪽으로 할까요?", at } },
+		},
+		notices: [msg("eeeeeee1", "500"), msg("eeeeeee2", "501"), msg("eeeeeee3", "502"), stale("eeeeeee4", "lane:done", at), asking],
+	});
+	const fresh = loadIn(dir);
+	expect(fresh.items.map(n => n.id).sort()).toEqual(["eeeeeee2", "eeeeeee3", "eeeeeee5"]);
+	const saved: Notice[] = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8"));
+	expect(saved.find(n => n.id === "eeeeeee1")).toMatchObject({ dismissed: true, read: true });
+	expect(saved.find(n => n.id === "eeeeeee4")).toMatchObject({ dismissed: true, read: true });
+	expect(saved.find(n => n.id === "eeeeeee5")).toMatchObject({ read: false, decision: { state: "open" } });
+	// the closing is stored: a second load agrees
+	expect(loadIn(dir).items.map(n => n.id).sort()).toEqual(["eeeeeee2", "eeeeeee3", "eeeeeee5"]);
 });
 
 // The notice store is one per process: leave no question that still waits behind for the next test file (ignoring needs no clock, unlike resolving).
