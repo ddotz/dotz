@@ -114,6 +114,39 @@ describe("typing on the phone composer while the page updates", () => {
 		await setHidden(false);
 	}, 30_000);
 
+	// A decision answered with a reason is typed into the sheet's own field (the dock sheet for an [ask] in a conversation, the notice sheet from
+	// 알림). A live update must not redraw that field: a new node takes the focus from the old one, and a phone closes and reopens its keyboard.
+	test("the reason typed in a decision sheet keeps its field through a live progress update and a new notice", async () => {
+		const now = () => new Date().toISOString();
+		const note = async () => JSON.parse((await view.evaluate(`JSON.stringify({ same: document.activeElement === window.__note, conn: window.__note.isConnected, value: window.__note.value })`)) as string) as { same: boolean; conn: boolean; value: string };
+		const markNote = () => view.evaluate(`(() => { window.__note = document.activeElement; })()`);
+		const noteFocused = `document.activeElement && document.activeElement.classList.contains("dc-note")`;
+		// the dock sheet: an [ask] in the main conversation, opened over the screen, option 2 (안 됨) asks for the reason
+		send({ kind: "out", target: "main", source: "orchestrator", text: "[ask] 폰에서 확인해 주세요\n1) 확인됨\n2) 안 됨", ts: now() });
+		await waitFor(`decisionOf("main")`);
+		await view.evaluate(`(() => { dkOpen(decisionOf("main")); pickOption(DK.dc, 0, DK.dc.blocks[0].options.find(o => o.n === 2)); })()`);
+		await waitFor(noteFocused);
+		await view.type("버튼이 안 보여");
+		await markNote();
+		send({ kind: "out", target: "main", source: "orchestrator", update_key: "progress", text: "진행 중 1", ts: now() });
+		await waitFor(`ts("main").msgs.some(m => m.text === "진행 중 1")`);
+		expect(await note()).toEqual({ same: true, conn: true, value: "버튼이 안 보여" });
+		await view.evaluate(`dkClose(false)`);
+		// the notice sheet: an open decision notice, option 2 asks for the reason, then another notice arrives
+		send({ kind: "notice", item: { id: 9101, kind: "decision", title: "배포를 확인해 주세요", text: "폰에서 확인해 주세요", ts: now(), decision: { state: "open", to: "main", options: [{ n: 1, label: "확인됨" }, { n: 2, label: "안 됨" }] } } });
+		await waitFor(`ntById(9101)`);
+		await view.evaluate(`noticeSheetOpen(9101)`);
+		await waitFor(`NS.node`);
+		await view.evaluate(`ntAnswer(ntById(9101), ntById(9101).decision.options[1])`);
+		await waitFor(noteFocused);
+		await view.type("글자가 잘려요");
+		await markNote();
+		send({ kind: "notice", item: { id: 9102, kind: "message", title: "세션 x", text: "서브 작업이 끝났어요", ts: now() } });
+		await waitFor(`ntById(9102)`);
+		expect(await note()).toEqual({ same: true, conn: true, value: "글자가 잘려요" });
+		await view.evaluate(`ntSheetClose(false)`);
+	}, 30_000);
+
 	test("the app height follows the same viewport the layout uses, so a lagging window.innerHeight cannot shrink the page twice", async () => {
 		await view.resize(390, 544);   // the keyboard has already resized the page (resizes-content)
 		await view.evaluate(`Object.defineProperty(window, "innerHeight", { configurable: true, get: () => 844 }), 0`);   // a frame where innerHeight lags

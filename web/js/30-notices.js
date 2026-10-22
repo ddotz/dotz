@@ -272,8 +272,8 @@ function dkPaint() {
     DK.dc = { ...dc, close: dkClose, ignore: DK.dc.ignore };
   }
   const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
-  DK.box.dataset.key = dc.key;
-  renderDecision(DK.box, DK.dc, picks, step);
+  const sig = dcSig(dc, picks, step);
+  if (DK.box.dataset.sig !== sig) { DK.box.dataset.key = dc.key; renderDecision(DK.box, DK.dc, picks, step); DK.box.dataset.sig = sig; }
   if (DC.st[dc.key] === "sent" && !DK.timer) DK.timer = setTimeout(() => { dkClose(false); toast("답을 보냈어요"); }, 900);
 }
 function dkOpen(dc, draft, nid, ign) {
@@ -454,6 +454,11 @@ function ntSheetPaint() {
       el("div", { class: "ds-m", text: `${ntDecWhere(d)} · ${ntWhen(n)}` }),
       ...ntBody(n))];
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
+  // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
+  // replaced (a new field takes the focus and a phone closes and reopens its keyboard).
+  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? ed.opt.n : 0]);
+  if (NS.h.box.dataset.sig === sig) return;
+  NS.h.box.dataset.sig = sig;
   const hadNote = !!NS.node.querySelector(".dc-note:focus");
   if (ed) foot.append(ntEditNode(n, ed));
   else if (open) {
