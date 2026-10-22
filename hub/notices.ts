@@ -7,7 +7,7 @@ import { type DraftApproval, draftActionOf, parseDraftApproval } from "./draft-a
 import { broadcast, emit, eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
-import { watchLine, watchReasonKo } from "./watchtext.ts";
+import { humanLabel, scheduleLine, watchLine, watchReasonKo } from "./watchtext.ts";
 
 // The web notification store: every worklog / alert / session result / watch / schedule post, kept in notices.json so the
 // bell survives a restart. Fed by what the hub already emits (onEmit), so main.ts only wires the API and the resolver.
@@ -244,17 +244,17 @@ function fromInbox(e: HubEvent): void {
 	if (e.kind === "watch") {
 		const recovered = /^recovered\b/.test(String(e.reason ?? ""));
 		const name = String(e.watch ?? "");
-		const label = typeof e.label === "string" && e.label.trim() ? e.label.trim() : name;
+		const label = humanLabel(typeof e.label === "string" && e.label.trim() ? e.label : name, "");
 		if (recovered) watchRecovered(name, e.ts, label);
 		// The wake event itself is a message of the 알림 conversation (hub/events.ts eventTarget); the bell gets nothing extra when the
 		// orchestrator, which reports in the channel, is up.
 		if (e.to === "orchestrator" && Array.isArray(e.channels) && e.channels.length && orchestratorUp()) return;
-		const text = clean(watchLine(label || "모니터링", String(e.reason ?? ""), String(e.text ?? ""))).text;
+		const text = clean(watchLine(label || "모니터링", String(e.reason ?? ""), String(e.text ?? ""), { raw: false })).text;
 		return void upsert({ kind: "watch", tone: "", title: label || "모니터링", text: text || "알림이 왔어요", open: "alert", read: recovered, at: e.ts });
 	}
 	if (e.kind === "schedule") {
 		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
-		upsert({ kind: "watch", tone: "", title: "예약", text: clean(e.text).text || "예약한 일이 시작됐어요", open: ch, at: e.ts });
+		upsert({ kind: "watch", tone: "", title: "예약", text: clean(scheduleLine(String(e.text ?? ""), { raw: false })).text, open: ch, at: e.ts });
 	}
 }
 
@@ -683,7 +683,7 @@ function readable(n: Notice): Notice {
 	if (n.kind !== "watch") return n;
 	const title = watchLabelOf(n.title);
 	const [first = "", ...rest] = n.text.split("\n");
-	const text = watchReasonKo(first) !== first ? watchLine(title, first, rest.join("\n")) : n.text;
+	const text = watchReasonKo(first) !== first ? watchLine(title, first, rest.join("\n"), { raw: false }) : n.text;
 	return title === n.title && text === n.text ? n : { ...n, title, text };
 }
 

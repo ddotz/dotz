@@ -65,7 +65,8 @@ function blocks(text) {
 function mdHtml(src) {
   // split() with two groups: [text, language, code, text, language, code, ...]; each code block gets its copy / run bar (35-code-blocks.js).
   const parts = String(src ?? "").split(/```([^\n`]*)\n?([\s\S]*?)(?:```|$)/);
-  return parts.map((p, i) => i % 3 === 0 ? blocks(p) : i % 3 === 2 ? codeBlockHtml(parts[i - 1], p) : "").join("");
+  // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
+  return parts.map((p, i) => i % 3 === 0 ? blocks(p) : i % 3 === 2 ? (parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
 }
 const mdNode = (src, cls = "md") => el("div", { class: cls, safeHtml: mdHtml(src) });
 
