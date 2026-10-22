@@ -50,7 +50,7 @@
 
 /* The message a notice led to (ntFlash in 30-notices.js marks the element with .nt-hl). The effect sits on the content, never on the row:
    - a card or bubble (.ub, .ccard, .sn, .pn) is lit inside its own rounded shape: a faint tint of itself plus a soft accent ring (the overlay copies the host's radius);
-   - plain text (.nt-hl.nt-bar) gets a slim rounded 3px accent bar at the left and a faint tint inside the message's own bounds.
+   - plain text (.nt-hl.nt-bar) gets only a faint tint inside the message's own bounds (no left bar: owner 2026-10-22).
    It fades in ~0.2s after the scroll lands (delay), holds, and is gone at ~2s. The ring and glow stay within 8px: the timeline's own 8px gutter (03-base.css) keeps them from being clipped. */
 .nt-hl { position: relative; --hl: 9%; --hl-ring: 34%; --hl-glow: 20%; }
 :root[data-theme="dark"] .nt-hl { --hl: 13%; --hl-ring: 46%; --hl-glow: 26%; }
@@ -59,11 +59,10 @@
 .nt-hl.nt-bar { border-radius: var(--r-ctl); }
 @media (min-width: 640px) { .nt-hl.nt-bar { margin-inline: -8px; padding-inline: 8px; } }
 .nt-hl.nt-bar::after { box-shadow: none; }
-.nt-hl.nt-bar::before { content: ""; position: absolute; z-index: 1; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--accent); opacity: 0; pointer-events: none; animation: nt-hl 1.8s ease-in-out .2s both; }
 @keyframes nt-hl { 0% { opacity: 0; } 14% { opacity: 1; } 50% { opacity: 1; } 100% { opacity: 0; } }
 /* Reduced motion: no fade or scroll animation, just a still tint for a moment (a step animation; !important beats the global animation: none). */
 @media (prefers-reduced-motion: reduce) {
-  .nt-hl::before, .nt-hl::after { animation: nt-hl-still 1.4s step-end both !important; }
+  .nt-hl::after { animation: nt-hl-still 1.4s step-end both !important; }
 }
 @keyframes nt-hl-still { 0% { opacity: 1; } 100% { opacity: 0; } }
 
