@@ -219,15 +219,14 @@ setInterval(viewReport, 2000);
 // The main assistant and the two feeds first, then the running sessions under 진행 중 (one with a question waiting first), the projects by their
 // newest message (silent ones after, in project order) and the mails. A session that ended stays in the list only while it is open;
 // the ended ones fold into one group at the bottom. 모니터링 has its own tab (30-monitoring.js) and uses this same row.
-const convWhen = t => (t ? monTime(t) : "");
 function convRows() {
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
-  const mk = t => ({ t, last: CONV.get(t) || null, name: targetName(t), unread: ts(t).unread });
+  const mk = t => { const last = CONV.get(t) || null; return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread }; };
   const all = (S && S.lanes) || [];
   const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
   const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
-  const sess = l => { const t = `lane:${l.name}`; return { ...mk(t), badge: sessionStatus(l), hint: convPreview(l.lastText), when: convWhen(at(t)) }; };
+  const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionStatus(l), hint: convPreview(l.lastText) || m.hint }; };
   const rows = [MAIN, "alert", "worklog"].map(mk);
   if (running.length) rows.push({ header: "진행 중" }, ...running.map(sess));
   if (projects.length) rows.push({ header: "프로젝트" }, ...projects.map(mk));
@@ -250,7 +249,7 @@ function convAvatar(t) {
 }
 // The one list row of 채팅, 프로젝트 and 모니터링. A chat target (r.t) opens its conversation; r.open / r.sel / r.av let another list say what a tap opens,
 // which row is open and which icon it wears. A row is { header } for a group label, { ended } for the folded ended sessions, or
-// { name, badge: [word, tone], unread }, with an optional one-line preview (hint) and time (when) under and beside the name.
+// { name, badge: [word, tone], unread }, with an optional one-line preview (hint) under the name. A row never shows a time: the name and the content tell what it is.
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
   if (r.ended) return endedGroup() || "";
@@ -258,7 +257,7 @@ function convRow(r) {
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, r.when ? el("span", { class: "cv-t", text: r.when }) : null, el("span", { class: "cv-m2" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null)));
+    el("span", { class: "cv-m" }, el("span", { class: "cv-m2" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -280,7 +279,7 @@ function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
   convTitle();
-  const rows = convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.when]), target, current]);
+  const rows = convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint]), target, current]);
   if (sig !== convSig) {
     convSig = sig;
     const top = convSide.scrollTop;
