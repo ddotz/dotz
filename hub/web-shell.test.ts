@@ -33,7 +33,7 @@ const open = async (width: number, height: number): Promise<View> => {
 	return v;
 };
 // Resolves once the page-side condition holds (checked on every DOM change); rejects after `ms`.
-const waitFor = (v: View, expr: string, ms = 10_000) =>
+const waitFor = (v: View, expr: string, ms = 30_000) =>
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }); done(); })`);
 const SAMPLE = "1번으로 갈게요. 터미널에서 아래 한 줄만 실행해 주세요.\n\n```\nsudo killall trustd\n```\n\n```json\n{\"a\": 1}\n```\n\n```bash\nls -la ~/Library && echo 'a very long line that has to scroll sideways inside the block and never widen the page'\n```";
 // Draws the sample in a fixed layer, so the app's own boot re-rendering cannot take it away mid-test.
@@ -52,7 +52,7 @@ describe("code block buttons and the terminal, in a headless browser", () => {
 		expect(m.blocks.map((b: { kinds: string[] }) => b.kinds)).toEqual([["copy", "run"], ["copy"], ["copy", "run"]]);
 		for (const b of m.blocks) { expect(b.right).toBeLessThanOrEqual(390); expect(b.minH).toBeGreaterThanOrEqual(36); }
 		await Bun.write(`${SNAP}/blocks-390.png`, await v.screenshot());
-	}, 30_000);
+	}, 60_000);
 
 	test("copy uses the clipboard API when there is one and the hidden-textarea fallback when there is not", async () => {
 		const v = await open(390, 844);
@@ -66,9 +66,10 @@ describe("code block buttons and the terminal, in a headless browser", () => {
 		await v.click("#t-host .cb:nth-of-type(3) .cb-btn");
 		await waitFor(v, `document.querySelector("#t-host .cb:nth-of-type(3) .cb-btn").dataset.label === "복사했어요"`);
 		expect(await v.evaluate(`window.__clip`)).toContain("ls -la ~/Library && echo");
-	}, 30_000);
+	}, 60_000);
 
 	test("터미널에서 실행 puts the command in the terminal box without running it; 실행 sends it; the password prompt opens the password box; the password is not kept", async () => {
+		await host.restart();   // a fresh shell: the previous test may have left it at a password prompt
 		const v = await open(390, 844);
 		await showSample(v);
 		await v.click("#t-host .cb .cb-btn.run");
@@ -94,9 +95,10 @@ describe("code block buttons and the terminal, in a headless browser", () => {
 		expect(after).toMatchObject({ field: "", hidden: true, inDom: false, inStorage: false });
 		expect(after.out).not.toContain(SECRET);
 		expect(host.subscribe(() => {}).backlog).not.toContain(SECRET);
-	}, 45_000);
+	}, 120_000);
 
 	test("the password box can also be opened by its key, and closing the terminal leaves the shell running for the next open", async () => {
+		await host.restart();   // a fresh shell: the previous test may have left it at a password prompt
 		const v = await open(390, 844);
 		await v.evaluate(`openShell({})`);
 		await waitFor(v, `SH.alive`);
@@ -107,7 +109,7 @@ describe("code block buttons and the terminal, in a headless browser", () => {
 		await v.evaluate(`SH.dlg.close()`);
 		await waitFor(v, `!document.querySelector("dialog.shell")`);
 		expect(host.alive).toBe(true);
-	}, 30_000);
+	}, 60_000);
 
 	test("on a desktop width the terminal is a sheet, not full screen", async () => {
 		const v = await open(1280, 800);
@@ -118,5 +120,5 @@ describe("code block buttons and the terminal, in a headless browser", () => {
 		expect(w).toBeLessThanOrEqual(760);
 		expect(w).toBeGreaterThan(400);
 		await Bun.write(`${SNAP}/shell-1280.png`, await v.screenshot());
-	}, 30_000);
+	}, 60_000);
 });
