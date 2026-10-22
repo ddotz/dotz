@@ -91,7 +91,8 @@ function statusLineKo(t) {
 }
 function actLine(a) {
   switch (a.type) {
-    case "text": case "error": return oneLine(a.text ?? "");
+    case "text": return friendlyLine(a.text);
+    case "error": return oneLine(a.text ?? "");
     case "status": return statusLineKo(a.text);
     case "tool_call": return toolLineKo(a);
     default: return "";
@@ -169,8 +170,17 @@ function nowLine(t) {
   for (let i = acts.length - 1; i >= 0 && i >= acts.length - 40; i--) { const s = actLine(acts[i]); if (s) return s; }
   if (isLaneT(t) && LAST[laneOf(t)]) return LAST[laneOf(t)];
   const l = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null, last = t === MAIN ? (S && S.orchestrator && S.orchestrator.lastText) : l && l.lastText;
-  return last ? oneLine(parseTone(noHandoff(String(last))).text) : "";
+  return last ? friendlyLine(last) : "";
 }
+// A preview line shows what the owner may read: never the [later] sentinel (a turn handed to a background worker), the handoff
+// block, or an "Ask: " label. Same rule as hub/tone.ts previewSource.
+const LATER_LINE = "뒤에서 작업 중이에요";
+const isLaterText = s => /^\s*\[later\]\s*$/i.test(String(s ?? ""));
+function previewSrc(raw) {
+  const s = noHandoff(String(raw ?? "")).replace(/^\s*Ask:[ \t]*/i, "");
+  return isLaterText(s) ? LATER_LINE : s;
+}
+const friendlyLine = raw => oneLine(parseTone(previewSrc(raw)).text);
 // Same rule as hub/tone.ts stripHandoff: the agent's leading "Ask: ... For you: ... Next: ..." block is not shown.
 function noHandoff(text) {
   const m = /^\s*Ask:[^\n]*(?:\n(?!\s*\n)[^\n]*)*/.exec(text);

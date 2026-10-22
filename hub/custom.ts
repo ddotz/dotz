@@ -11,7 +11,7 @@ import { cfg, DATA_DIR, expand, HOME, log, paths, TEMPLATES, TZ } from "./config
 import { loadFeatureDirs } from "./featuredirs.ts";
 import { loadProjects, type ProjectRecord } from "./projects.ts";
 import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
-import { parseTone } from "./tone.ts";
+import { parseTone, previewSource } from "./tone.ts";
 import { exec, listWatches } from "./watch.ts";
 import { getSetup } from "./workchannels.ts";
 
@@ -518,7 +518,7 @@ const MARK_LINE = /^\s*(?:[-*]\s*)?\**\s*\[(done|run|ask|fail|완료)\]/i;
 // The line a report is summed up by: its [done]/[fail]/... line (an OmO lane may open with an "Ask: ..." handoff block),
 // else its first line; the marker and markdown emphasis are stripped. `body` is what follows that line.
 export function reportHead(text: string): { tone?: string; line: string; body: string } {
-	const lines = text.split("\n");
+	const lines = previewSource(text).split("\n");
 	let i = lines.findIndex(l => MARK_LINE.test(l));
 	if (i < 0) i = lines.findIndex(l => l.trim());
 	if (i < 0) return { line: "", body: "" };

@@ -13,7 +13,7 @@ const convIncoming = e => convReal(e) && !OWNER.has(e.kind) && !cleanRestart(e);
 
 // Same rule as hub/conversations.ts previewOf: first meaningful line, plain text, 120 chars.
 function convPreview(raw) {
-  const text = parseTone(noHandoff(String(raw ?? ""))).text;
+  const text = parseTone(previewSrc(raw)).text;
   let fence = false;
   for (const line of text.split("\n")) {
     if (/^\s*```/.test(line)) { fence = !fence; continue; }
