@@ -121,9 +121,12 @@ function renderDecision(box, dc, picks, step) {
   const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt" },
     el("span", { class: "dc-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" }),
     qText ? mdNode(qText, "md dc-q") : null),
-    // In the notice sheet (30-notices.js, dc.close) the corner button closes it instead of folding the card.
-    dc.close ? el("button", { class: "dc-fold", type: "button", "aria-label": "닫기", onclick: () => dc.close() }, icon("close"))
-      : el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop")));
+    el("div", { class: "dc-hb" },
+      // In the notice sheet (30-notices.js, dc.ignore) the x (무시) waves the question off without answering it.
+      dc.ignore ? el("button", { class: "dc-ign", type: "button", onclick: () => dc.ignore() }, icon("close"), el("span", { text: "무시" })) : null,
+      // In the notice sheet (30-notices.js, dc.close) the corner button closes it instead of folding the card.
+      dc.close ? el("button", { class: "dc-fold", type: "button", "aria-label": "닫기", onclick: () => dc.close() }, icon("close"))
+        : el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop"))));
   const kids = [head];
   if (!fold) {
     const body = el("div", { class: "dc-body" });

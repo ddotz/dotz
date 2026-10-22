@@ -1,0 +1,138 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { sseResponse, emit } from "./events.ts";
+import { ignoreNotice, listNotices, markNoticesRead, type Notice, resolveNotices, unignoreNotice, unreadCount } from "./notices.ts";
+import { appAsset, indexPage } from "./webapp.ts";
+
+// The x (무시) on the three surfaces, in a headless browser against the real notice store: the 답변 필요 row on 홈, a row of the 알림 card, and the
+// decision sheet's header. A second page on the same hub hears the change live (the event stream).
+const SNAP = "/tmp/dotz-notice-ignore-test";
+const json = (v: unknown, status = 200) => Response.json(v, { status });
+const server = Bun.serve({
+	port: 0,
+	hostname: "127.0.0.1",
+	idleTimeout: 0,
+	async fetch(req) {
+		const url = new URL(req.url);
+		if (url.pathname === "/") return indexPage(req);
+		const asset = appAsset(req, url.pathname);
+		if (asset) return asset;
+		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: unreadCount() });
+		if (url.pathname === "/api/notices" && req.method === "GET") return json(listNotices(100));
+		if (url.pathname === "/api/notices/read") return json(markNoticesRead(await req.json()));
+		const m = /^\/api\/notices\/([^/]+)\/(ignore|unignore)$/.exec(url.pathname);
+		if (m && req.method === "POST") {
+			const r = (m[2] === "ignore" ? ignoreNotice : unignoreNotice)(m[1]);
+			return json(r.body, r.status);
+		}
+		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
+	},
+});
+const base = `http://127.0.0.1:${server.port}/`;
+type View = InstanceType<typeof Bun.WebView>;
+const views: View[] = [];
+const open = async (width: number, height: number): Promise<View> => {
+	const v = new Bun.WebView({ width, height });
+	views.push(v);
+	await v.navigate(base);
+	return v;
+};
+const waitFor = (v: View, expr: string, ms = 10_000) =>
+	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }); done(); })`);
+const stored = () => listNotices(300).items;
+const ask = (title: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n**1) 예**\n**2) 아니요**` });
+const settled = (v: View) => v.evaluate(`Promise.all(document.getAnimations().map(a => a.finished.catch(() => 0))).then(() => true)`);
+const rect = (v: View, sel: string) => v.evaluate(`JSON.stringify((() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const r = e.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right) }; })())`).then(s => JSON.parse(s as string) as { w: number; h: number; left: number; right: number } | null);
+
+beforeAll(() => { Bun.spawnSync(["mkdir", "-p", SNAP]); });
+afterAll(() => { for (const v of views) v.close(); server.stop(true); });
+
+describe("the x (무시) in a headless browser", () => {
+	test("at 390px the x sits on the 답변 필요 row, the 알림 card row and the sheet header, thumb-sized and inside the screen; ignoring syncs live and undo brings the question back", async () => {
+		resolveNotices({ all: true });
+		markNoticesRead({ all: true });
+		ask("엑스 확인용 질문이에요");
+		const item = () => stored().find(n => n.kind === "decision" && n.title === "엑스 확인용 질문이에요")! as Notice;
+		const twin = () => stored().find(n => n.kind === "alert" && n.tone === "ask" && n.at === item().decision?.reply_to)! as Notice;
+		expect(item().decision!.state).toBe("open");
+		const before = unreadCount();
+
+		const phone = await open(390, 844);
+		const desk = await open(1280, 800);
+		await waitFor(phone, `document.querySelector(".hn .hrx")`);
+		await waitFor(desk, `document.querySelector(".hn .hrx")`);
+
+		// surface 1: the 답변 필요 row
+		const row = await rect(phone, ".hn .hrx");
+		const x1 = await rect(phone, ".hn .hrx .nt-x");
+		expect(row && x1).toBeTruthy();
+		expect(x1!.w).toBeGreaterThanOrEqual(44);
+		expect(x1!.h).toBeGreaterThanOrEqual(44);
+		expect(x1!.right).toBeLessThanOrEqual(390);
+		expect(await phone.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
+		expect(await phone.evaluate(`(() => { const r = document.querySelector(".hn .hrx"); return r.scrollWidth <= r.clientWidth; })()`)).toBe(true);
+		await phone.evaluate(`document.querySelector("#home-now").scrollIntoView({ block: "start" })`);
+		await settled(phone);
+		await Bun.write(`${SNAP}/home-390.png`, await phone.screenshot());
+
+		// surface 2: a row of the 알림 card (the unread [ask] twin)
+		await waitFor(phone, `document.querySelector(".hc-row .nt-x")`);
+		await phone.evaluate(`document.querySelector(".hc-row .nt-x").scrollIntoView({ block: "center" })`);
+		const x2 = await rect(phone, ".hc-row .nt-x");
+		expect(x2!.w).toBeGreaterThanOrEqual(44);
+		expect(x2!.h).toBeGreaterThanOrEqual(44);
+		expect(x2!.right).toBeLessThanOrEqual(390);
+		expect(await phone.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
+		await Bun.write(`${SNAP}/alert-card-390.png`, await phone.screenshot());
+
+		// surface 3: the decision sheet header
+		await phone.evaluate(`document.querySelector(".hn .hrx .hrx-m").click()`);
+		await waitFor(phone, `document.querySelector(".ds-sheet .ds-ign")`);
+		const x3 = await rect(phone, ".ds-sheet .ds-ign");
+		const sheet = await rect(phone, ".ds-sheet");
+		expect(x3!.h).toBeGreaterThanOrEqual(44);
+		expect(x3!.right).toBeLessThanOrEqual(sheet!.right);
+		expect(await phone.evaluate(`[...document.querySelectorAll(".ds-hd > *")].every(e => e.getBoundingClientRect().right <= 390)`)).toBe(true);
+		expect(await phone.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
+		await settled(phone);
+		await Bun.write(`${SNAP}/sheet-390.png`, await phone.screenshot());
+
+		// viewing never cleared it
+		expect(item().read).toBe(false);
+		expect(twin().read).toBe(false);
+
+		// ignore from the sheet: leaves 답변 필요 here and on the other page, the toast offers the undo, the hub keeps it as ignored
+		await phone.evaluate(`document.querySelector(".ds-sheet .ds-ign").click()`);
+		await waitFor(phone, `document.querySelector(".snack") && /무시했어요/.test(document.querySelector(".snack").textContent) && !document.querySelector(".ds-sheet")`);
+		await waitFor(phone, `!document.querySelector(".hn .hrx")`);
+		await waitFor(desk, `!document.querySelector(".hn .hrx")`);
+		expect(item().decision!.state).toBe("ignored");
+		expect(item().ignored).toBeString();
+		expect(unreadCount()).toBe(before - 2);
+		await settled(phone);
+		await Bun.write(`${SNAP}/ignored-toast-390.png`, await phone.screenshot());
+
+		// undo from the toast
+		await phone.evaluate(`document.querySelector(".snack .sa").click()`);
+		await waitFor(phone, `document.querySelector(".hn .hrx")`);
+		await waitFor(desk, `document.querySelector(".hn .hrx")`);
+		expect(item().decision!.state).toBe("open");
+		expect(item().read).toBe(false);
+		expect(unreadCount()).toBe(before);
+
+		// the x on the home row ignores without opening the sheet
+		await phone.evaluate(`document.querySelector(".hn .hrx .nt-x").click()`);
+		await waitFor(phone, `!document.querySelector(".hn .hrx") && document.querySelector(".snack")`);
+		expect(await phone.evaluate(`!!document.querySelector(".ds-sheet")`)).toBe(false);
+		expect(item().decision!.state).toBe("ignored");
+		// its history entry says it was ignored
+		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(item().id)})`);
+		await waitFor(phone, `document.querySelector(".ds-ey.ign")`);
+		expect(await phone.evaluate(`document.querySelector(".ds-ey").textContent`)).toBe("무시했어요");
+		await settled(phone);
+		await Bun.write(`${SNAP}/history-390.png`, await phone.screenshot());
+		await desk.evaluate(`document.querySelectorAll(".snack").forEach(n => n.remove())`);
+		await settled(desk);
+		await Bun.write(`${SNAP}/home-desktop.png`, await desk.screenshot());
+	}, 60_000);
+});
