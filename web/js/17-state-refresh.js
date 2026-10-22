@@ -7,6 +7,7 @@ async function refreshState() {
     S = await api("/api/state?limit=0");
     S.work_skew = (S.work_now || Date.now()) - Date.now();
     setConn(true);
+    webBuildCheck(S.web_build);
     ntSync(S);
     if (S.name && S.name !== botName) { botName = S.name; setBrand(); if (current === "home") $("#title").textContent = botName; if (ts(target).hLoaded) renderAll(); }
     // A lane that exits disappears at once: the view falls back to the main assistant (it stays reachable from ⌘K).

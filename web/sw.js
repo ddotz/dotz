@@ -50,7 +50,8 @@ function refreshShell() {
   return refreshing;
 }
 // The page asks for a check when it comes back after a while away.
-self.addEventListener("message", ev => { if (ev.data && ev.data.type === "refresh-shell") ev.waitUntil(refreshShell()); });
+// A port in the message gets a reply when the refresh is done, so the page can reload onto the stored copies.
+self.addEventListener("message", ev => { if (ev.data && ev.data.type === "refresh-shell") ev.waitUntil(refreshShell().then(() => { if (ev.ports && ev.ports[0]) ev.ports[0].postMessage("done"); })); });
 
 self.addEventListener("activate", ev => {
   ev.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== SHARE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
