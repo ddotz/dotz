@@ -2,6 +2,7 @@
 // machine unless every file about to be pushed passes the secret scan below (ported from 오모냥 backup.py).
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { log, TZ, writeAtomic } from "./config.ts";
 
@@ -86,6 +87,13 @@ function alertOnce(dir: string, text: string): string | undefined {
 	return text;
 }
 
+// Each install pushes to its own branch so two computers sharing one `backup.remote` never collide on main.
+// Pure: the branch is `backup/<hostname label, lowercased, [a-z0-9._-] only>`; an unusable hostname gives `backup/install`.
+export function backupBranch(host: string): string {
+	const id = (host.replace(/\.$/, "").split(".")[0] ?? "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "");
+	return `backup/${id || "install"}`;
+}
+
 // Pushes HEAD to `remote` when nothing unpushed (this run's commit or older ones) trips the scan. Returns alert text
 // for the owner, at most once a day; undefined when pushed, nothing to push, or already alerted today.
 export async function pushBackup(dir: string, remote: string, flagged: string[]): Promise<string | undefined> {
@@ -107,8 +115,7 @@ export async function pushBackup(dir: string, remote: string, flagged: string[])
 		const bad = await scan(dir, f => `${c}:${f}`, changed);
 		if (bad.length) return fail(`push blocked, secret-like content in history ${c.slice(0, 8)}: ${bad.join(", ")}`, `백업 기록(${c.slice(0, 8)})에 비밀값처럼 보이는 내용이 있어서 올리기를 막았어요 (파일: ${bad.join(", ")}). 기록 정리가 필요해요.`);
 	}
-	const branch = (await git(dir, ["symbolic-ref", "--short", "-q", "HEAD"])).out.trim() || "main";
-	const r = await git(dir, ["push", "-q", remote, `HEAD:refs/heads/${branch}`], 120_000);
+	const r = await git(dir, ["push", "-q", remote, `HEAD:refs/heads/${backupBranch(hostname())}`], 120_000);
 	if (r.code !== 0) return fail(`push failed: ${scrub(r.out).trim().slice(-300)}`, "백업을 올리지 못했어요. hub.log의 'backup:' 줄을 확인해 주세요.");
 	await git(dir, ["update-ref", ref, head]);
 	log(`backup: pushed ${commits.length} commit(s)`);
