@@ -102,17 +102,13 @@
 
 /* dialog, palette, toast */
 dialog.dlg, dialog.pal { margin: auto; border: 0; border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: 0 16px 48px rgb(0 0 0 / .22); overflow: auto; }
-dialog.dlg { width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 20px; }
+dialog.dlg { width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0; overflow: hidden; }
 .steps { display: grid; gap: 8px; margin: 0; padding-left: 20px; font-size: 14px; line-height: 21px; }
 dialog.dlg::backdrop, dialog.pal::backdrop { background: var(--scrim); }
 dialog.dlg.wide { width: min(640px, calc(100vw - 24px)); }
-.dhd { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 16px; }
-.dhd .dx { margin: -2px -6px 0 auto; }
-.dtitle { flex: 1; min-width: 0; margin: 0; font: 700 18px/26px var(--font); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.dtitle { margin: 0; font: 700 18px/26px var(--font); letter-spacing: -.01em; overflow-wrap: anywhere; }
 .dbody { display: flex; flex-direction: column; gap: 12px; color: var(--fg-2); }
 .dbody p { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
-.dact { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 20px; }
-.dact:empty { display: none; }
 dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padding: 0; max-height: min(480px, calc(100dvh - 24px)); }
 .pal-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--fg-3); }
 .pal-in { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--fg); font-size: 14px; }

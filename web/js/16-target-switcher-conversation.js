@@ -118,53 +118,60 @@ new ResizeObserver(() => { const sw = $("#thead .tsw"); if (sw) fitChips(sw); })
 /* ---------- login requests (dotz_auth) ---------- */
 // A credential the agent asked for: answered here or on Discord. Values go straight to the gateway, which stores them in a
 // 0600 secrets file; they are never kept in the page.
-const AUTH_DONE = new Set();
+const AUTH_DONE = new Set(), AUTH_HID = new Set(), AUTH_CARDS = new Map();   // AUTH_HID: closed with the x or back, still waiting (the notice's 입력 창으로 가기 shows it again)
+let authH = null, authId = "";
 function paintAuth() {
   const list = ((S && S.auth) || []).filter(a => !AUTH_DONE.has(a.id));
-  let box = $("#authbox");
-  if (!list.length) { if (box) box.remove(); return; }
-  if (!box) { box = el("div", { id: "authbox" }); document.body.append(box); }
-  const have = new Set([...box.children].map(n => n.dataset.id));
-  for (const n of [...box.children]) if (!list.some(a => a.id === n.dataset.id)) n.remove();
-  for (const a of list) {
-    if (have.has(a.id)) continue;
-    const isForm = a.kind === "form";
-    const mkInput = f => isForm
-      ? el("input", { type: f.mask ? "password" : f.type, id: `au-${a.id}-${f.name}`, name: f.name, inputmode: f.inputmode, autocomplete: f.autocomplete, maxlength: f.maxlength, placeholder: f.placeholder || "", autocapitalize: "off", autocorrect: "off", spellcheck: "false" })
-      : el("input", { type: f.name === "username" ? "text" : "password", name: f.name, placeholder: f.label, "aria-label": f.label, autocomplete: f.name === "username" ? "username" : f.name === "code" ? "one-time-code" : "current-password" });
-    const inputs = (a.fields || []).map(mkInput);
-    const wrap = (f, inp) => {
-      const err = el("div", { class: "ferr", role: "alert" });
-      const eye = f.mask ? el("button", { class: "eye", type: "button", "aria-label": `${f.label} 보기`, text: "보기", onclick: () => { const hidden = inp.type === "password"; inp.type = hidden ? "text" : "password"; eye.textContent = hidden ? "숨기기" : "보기"; } }) : null;
-      inp.addEventListener("input", () => { inp.classList.remove("bad"); err.textContent = ""; });
-      return el("div", { class: "fld" }, el("label", { for: inp.id, text: f.label + (f.optional ? "(선택)" : "") }), el("div", { class: "ctl" }, inp, eye), err);
-    };
-    const rem = isForm ? el("input", { type: "checkbox", id: `au-${a.id}-remember` }) : null;
-    if (rem) rem.checked = !!a.remember;
-    const done = async (action, values) => {
-      try { await api(`/api/auth/${encodeURIComponent(a.id)}`, "POST", { action, ...(values ? { values } : {}), ...(rem && action === "submit" ? { remember: rem.checked } : {}) }); }
-      catch (e) {
-        const bad = e && e.data && inputs.find(i => i.name === e.data.field);
-        if (bad) { bad.classList.add("bad"); bad.closest(".fld").querySelector(".ferr").textContent = e.data.error === "required" ? "비워 둘 수 없어요" : "형식을 확인해 주세요"; bad.focus(); return; }
-        toast("전달하지 못했어요. 다시 시도해 주세요"); return;
-      }
-      AUTH_DONE.add(a.id); card.remove(); if (!box.children.length) box.remove();
-      toast(action === "cancel" ? "요청을 취소했어요" : "전달했어요");
-    };
-    const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? "승인" : "보내기" });
-    const no = el("button", { class: "btn tonal", type: "button", text: "취소", onclick: () => done("cancel") });
-    const card = el("form", { class: "au", "data-id": a.id }, el("div", { class: "abd" }, el("h3", { text: a.title }), el("p", { text: a.purpose }), ...(isForm ? a.fields.map((f, k) => wrap(f, inputs[k])) : inputs),
-      rem ? el("label", { class: "rem", for: rem.id }, rem, el("span", { text: "다음에도 쓰게 저장해 두기 (끄면 한 번 쓰고 지워요)" })) : null,
-      a.kind === "approve" ? null : el("div", { class: "note", text: "입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요." })),
-      el("div", { class: "row" }, no, ok));
-    card.addEventListener("submit", ev => {
-      ev.preventDefault();
-      if (a.kind === "approve") return done("approve");
-      const values = Object.fromEntries(inputs.map(i => [i.name, i.value]));
-      const miss = inputs.find((i, k) => !i.value.trim() && !(a.fields[k] && a.fields[k].optional));
-      if (miss) { miss.focus(); return; }
-      done("submit", values);
-    });
-    box.append(card);
-  }
+  for (const id of [...AUTH_CARDS.keys()]) if (!list.some(a => a.id === id)) { AUTH_CARDS.get(id).remove(); AUTH_CARDS.delete(id); }
+  for (const a of list) if (!AUTH_CARDS.has(a.id)) AUTH_CARDS.set(a.id, authCard(a));
+  const cur = list.find(a => !AUTH_HID.has(a.id));
+  if (!cur) { if (authH) { authId = ""; authH.close(false); } return; }
+  if (!authH) { const h = fsOpen({ onClose: () => { if (authId) AUTH_HID.add(authId); authId = ""; if (authH === h) authH = null; } }); authH = h; }
+  if (authId === cur.id) return;
+  authId = cur.id;
+  authH.box.setAttribute("aria-labelledby", `au-t-${cur.id}`);
+  clear(authH.box).append(AUTH_CARDS.get(cur.id));
+}
+// One login request as a form: header (title, close), body (the fields), footer (취소 / 보내기).
+function authCard(a) {
+  const isForm = a.kind === "form";
+  const mkInput = f => isForm
+    ? el("input", { type: f.mask ? "password" : f.type, id: `au-${a.id}-${f.name}`, name: f.name, inputmode: f.inputmode, autocomplete: f.autocomplete, maxlength: f.maxlength, placeholder: f.placeholder || "", autocapitalize: "off", autocorrect: "off", spellcheck: "false" })
+    : el("input", { type: f.name === "username" ? "text" : "password", name: f.name, placeholder: f.label, "aria-label": f.label, autocomplete: f.name === "username" ? "username" : f.name === "code" ? "one-time-code" : "current-password" });
+  const inputs = (a.fields || []).map(mkInput);
+  const wrap = (f, inp) => {
+    const err = el("div", { class: "ferr", role: "alert" });
+    const eye = f.mask ? el("button", { class: "eye", type: "button", "aria-label": `${f.label} 보기`, text: "보기", onclick: () => { const hidden = inp.type === "password"; inp.type = hidden ? "text" : "password"; eye.textContent = hidden ? "숨기기" : "보기"; } }) : null;
+    inp.addEventListener("input", () => { inp.classList.remove("bad"); err.textContent = ""; });
+    return el("div", { class: "fld" }, el("label", { for: inp.id, text: f.label + (f.optional ? "(선택)" : "") }), el("div", { class: "ctl" }, inp, eye), err);
+  };
+  const rem = isForm ? el("input", { type: "checkbox", id: `au-${a.id}-remember` }) : null;
+  if (rem) rem.checked = !!a.remember;
+  const done = async (action, values) => {
+    try { await api(`/api/auth/${encodeURIComponent(a.id)}`, "POST", { action, ...(values ? { values } : {}), ...(rem && action === "submit" ? { remember: rem.checked } : {}) }); }
+    catch (e) {
+      const bad = e && e.data && inputs.find(i => i.name === e.data.field);
+      if (bad) { bad.classList.add("bad"); bad.closest(".fld").querySelector(".ferr").textContent = e.data.error === "required" ? "비워 둘 수 없어요" : "형식을 확인해 주세요"; bad.focus(); return; }
+      toast("전달하지 못했어요. 다시 시도해 주세요"); return;
+    }
+    AUTH_DONE.add(a.id); paintAuth();
+    toast(action === "cancel" ? "요청을 취소했어요" : "전달했어요");
+  };
+  const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? "승인" : "보내기" });
+  const no = el("button", { class: "btn tonal", type: "button", text: "취소", onclick: () => done("cancel") });
+  const card = el("form", { class: "au", "data-id": a.id },
+    fsHead([el("span", { class: "fs-ey", text: a.kind === "approve" ? "승인 요청" : "입력 요청" }), el("h3", { class: "fs-t", id: `au-t-${a.id}`, text: a.title })], { close: () => { AUTH_HID.add(a.id); paintAuth(); } }),
+    el("div", { class: "fs-body abd" }, el("p", { text: a.purpose }), ...(isForm ? a.fields.map((f, k) => wrap(f, inputs[k])) : inputs),
+    rem ? el("label", { class: "rem", for: rem.id }, rem, el("span", { text: "다음에도 쓰게 저장해 두기 (끄면 한 번 쓰고 지워요)" })) : null,
+    a.kind === "approve" ? null : el("div", { class: "note", text: "입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요." })),
+    el("div", { class: "fs-ft row" }, no, ok));
+  card.addEventListener("submit", ev => {
+    ev.preventDefault();
+    if (a.kind === "approve") return done("approve");
+    const values = Object.fromEntries(inputs.map(i => [i.name, i.value]));
+    const miss = inputs.find((i, k) => !i.value.trim() && !(a.fields[k] && a.fields[k].optional));
+    if (miss) { miss.focus(); return; }
+    done("submit", values);
+  });
+  return card;
 }

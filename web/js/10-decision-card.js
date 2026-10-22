@@ -117,45 +117,55 @@ function editNode(dc, opt, st) {
   const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, "돌아가기");
   return el("div", { class: "dc-edit" }, ta, el("div", { class: "dc-eb" }, back, go));
 }
-// A draft waiting for send approval fills the screen (30-notices.js dkOpen): header = who and what, middle = the draft, sticky footer = the choices.
-// The header (with 무시 and the close button) and the footer stay put; only the draft scrolls.
-function renderDraft(box, dc) {
-  const st = DC.st[dc.key] || "", d = dc.draft, picks = DC.picks[dc.key] || [], edit = DC.edit[dc.key] && !st.startsWith("sent") ? DC.edit[dc.key] : null;
-  const old = $(".dc-dbody", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
+// A decision in the full-screen overlay (30-notices.js dkOpen, 38-overlay.js): header = what it is, body = the draft or the question, sticky footer = the choices.
+// A draft waiting for send approval shows who and what in the header and 보내기 / 고치기 / 보내지 않기 in the footer. Only the body scrolls.
+function renderSheet(box, dc, picks, step) {
+  const st = DC.st[dc.key] || "", d = dc.draft, edit = d && DC.edit[dc.key] && !st.startsWith("sent") ? DC.edit[dc.key] : null;
+  const old = $(".fs-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   const oldNote = $(".dc-note", box), refocus = !!oldNote && document.activeElement === oldNote, caret = refocus ? oldNote.selectionStart : 0;
-  const qText = ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "");
-  const head = el("div", { class: "dc-hd dc-dhd" }, el("div", { class: "dc-tt" },
-    el("span", { class: "dc-ey", text: qText || "보내기 전에 확인해요" }),
+  const qText = d ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
+  const head = fsHead(d ? [
+    el("span", { class: "fs-ey", text: qText || "보내기 전에 확인해요" }),
     el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
-    d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null),
-    el("div", { class: "dc-hb" },
-      dc.ignore ? el("button", { class: "dc-ign", type: "button", onclick: () => dc.ignore() }, icon("close"), el("span", { text: "무시" })) : null,
-      dc.close ? el("button", { class: "dc-fold", type: "button", "aria-label": "닫기", onclick: () => dc.close() }, icon("close")) : null));
-  const body = el("div", { class: "dc-dbody", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, el("div", { class: "dc-dr-b", text: d.body }));
-  const foot = el("div", { class: "dc-ft" });
+    d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null]
+    : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, el("div", { class: "dc-dr-b", text: d.body }))
+    : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
+  const foot = el("div", { class: "fs-ft" });
+  if (d) {
+    if (edit) foot.append(editNode(dc, edit, st));
+    else foot.append(el("div", { class: "dc-acts" }, ...dc.blocks[0].options.map((o, i) =>
+      el("button", { class: `dc-act${i === 0 ? " main" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label))));
+  } else {
+    if (dc.blocks.length > 1) foot.append(el("div", { class: "dc-steps", role: "group", "aria-label": "결정 단계" }, ...dc.blocks.map((b, i) =>
+      el("button", { class: `dc-chip${i === step ? " on" : ""}${picks[i] ? " got" : ""}`, type: "button", disabled: !!st, "aria-pressed": String(i === step), onclick: () => { DC.step[dc.key] = i; paintDecision(); } }, `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}`))));
+    const blk = dc.blocks[step];
+    if (blk) {
+      if (blk.title && dc.blocks.length > 1) foot.append(el("div", { class: "dc-sub", text: blk.title }));
+      for (const o of blk.options) foot.append(choiceRow(dc, step, o, picks, st));
+    }
+  }
   if (st) foot.append(el("div", { class: "dc-st", role: "status", text: st === "sending" ? "보내는 중…" : "보냈어요 · 답을 기다려요" }));
-  if (edit) foot.append(editNode(dc, edit, st));
-  else foot.append(el("div", { class: "dc-acts" }, ...dc.blocks[0].options.map((o, i) =>
-    el("button", { class: `dc-act${i === 0 ? " main" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label))));
-  clear(box).append(head, body, foot);
-  body.scrollTop = top;
+  clear(box).append(head, ...(body ? [body] : []), foot);
+  if (body) body.scrollTop = top;
   const nn = $(".dc-note", box);
   if (nn && (refocus || (edit && !oldNote))) { nn.focus({ preventScroll: true }); nn.setSelectionRange(caret || nn.value.length, caret || nn.value.length); }
 }
+function choiceRow(dc, step, o, picks, st) {
+  return el("button", { class: `dc-row${o.rec ? " rec" : ""}${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
+    el("span", { class: "dc-key", text: String(o.n) }),
+    el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null));
+}
 function renderDecision(box, dc, picks, step) {
-  if (dc.draft) { renderDraft(box, dc); return; }
-  const st = DC.st[dc.key] || "", fold = !dc.close && !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
+  if (dc.close) { renderSheet(box, dc, picks, step); return; }
+  const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   // A draft message starts with its quoted draft, so the question is the block's own title without the draft's id.
   const qText = dc.draft ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
   const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt" },
     el("span", { class: "dc-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" }),
     qText ? mdNode(qText, "md dc-q") : null),
     el("div", { class: "dc-hb" },
-      // In the notice sheet (30-notices.js, dc.ignore) the x (무시) waves the question off without answering it.
-      dc.ignore ? el("button", { class: "dc-ign", type: "button", onclick: () => dc.ignore() }, icon("close"), el("span", { text: "무시" })) : null,
-      // In the notice sheet (30-notices.js, dc.close) the corner button closes it instead of folding the card.
-      dc.close ? el("button", { class: "dc-fold", type: "button", "aria-label": "닫기", onclick: () => dc.close() }, icon("close"))
-        : el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop"))));
+      el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop"))));
   const kids = [head];
   if (!fold) {
     const body = el("div", { class: "dc-body" });

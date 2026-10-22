@@ -255,26 +255,11 @@ timeline.addEventListener("click", ev => {
 
 /* ---- decision sheet: the docked decision card (10-decision-card.js) over the current screen ---- */
 // Same card and same answer path as the one above the composer, for the conversation the notice came from; no navigation, no scroll.
-const DK = { node: null, box: null, ov: null, dc: null, seq: 0, opener: null, timer: 0, nid: "", ign: "" };   // ign: the notice its x (무시) ignores
+const DK = { h: null, node: null, box: null, dc: null, seq: 0, timer: 0, nid: "", ign: "" };   // ign: the notice its x (무시) ignores
 function dkClose(restore = true) {
   ++DK.seq; clearTimeout(DK.timer); DK.timer = 0;
-  if (!DK.node) return;
-  DK.node.remove(); DK.node = DK.box = DK.dc = null; DK.nid = DK.ign = "";
-  ovDone(DK.ov); DK.ov = null;
-  document.removeEventListener("keydown", dkKey, true);
-  if (window.visualViewport) { visualViewport.removeEventListener("resize", dkFit); visualViewport.removeEventListener("scroll", dkFit); }
-  if (restore && DK.opener && DK.opener.isConnected) DK.opener.focus({ preventScroll: true });
-  DK.opener = null;
+  if (DK.h) DK.h.close(restore);
 }
-// A draft sheet fills the screen; with the keyboard open the visual viewport is shorter than the page, so the sheet follows it and the footer stays above the keys.
-function dkFit() {
-  const n = DK.node, v = window.visualViewport;
-  if (!n || !v) return;
-  const kb = window.innerHeight - v.height > 120;
-  n.style.top = kb ? `${v.offsetTop}px` : ""; n.style.height = kb ? `${v.height}px` : ""; n.style.bottom = kb ? "auto" : "";
-  n.classList.toggle("kb", kb);
-}
-function dkKey(ev) { if (ev.key === "Escape" && DK.node) { ev.preventDefault(); ev.stopPropagation(); dkClose(); } }
 function dkPaint() {
   if (!DK.node) return;
   let dc = DK.dc;
@@ -293,19 +278,13 @@ function dkPaint() {
 }
 function dkOpen(dc, draft, nid, ign) {
   dkClose(false);
-  DK.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   DK.nid = nid || "";
   const waits = !!ign && !!ign.id && ntNeeds(ign);
   DK.ign = waits ? String(ign.id) : "";
   DK.dc = { ...dc, close: dkClose, draft: draft || null, ignore: waits ? () => ntIgnore(ign) : null };
-  DK.box = el("section", { class: draft ? "dcard dk-card dk-full-card" : "dcard dk-card", role: "dialog", "aria-label": draft ? "보낼 내용 확인" : "결정이 필요해요", tabindex: "-1" });
-  DK.node = el("div", { class: draft ? "dk-bd dk-full" : "dk-bd", onpointerdown: ev => { if (ev.target === DK.node) dkClose(); } }, DK.box);
-  document.body.append(DK.node);
-  DK.ov = ovOpen(() => dkClose(false));
-  document.addEventListener("keydown", dkKey, true);
-  if (draft && window.visualViewport) { visualViewport.addEventListener("resize", dkFit); visualViewport.addEventListener("scroll", dkFit); dkFit(); }
-  dkPaint();
-  DK.box.focus({ preventScroll: true });   // not a row: a focus ring on the first option would read as a pick
+  const h = fsOpen({ label: draft ? "보낼 내용 확인" : "결정이 필요해요", cls: draft ? "tall" : "", onClose: () => { if (DK.h === h) { DK.h = DK.node = DK.box = DK.dc = null; DK.nid = DK.ign = ""; } } });
+  DK.h = h; DK.node = h.node; DK.box = h.box;
+  dkPaint();   // the card itself holds the focus, not a row: a focus ring on the first option would read as a pick
 }
 // Opens the sheet for an [ask] notice whose question still waits in its conversation; false when it does not (answered, gone): the caller jumps.
 async function ntAskSheet(n) {
@@ -412,30 +391,12 @@ function ntHomeRow(n) {
 }
 
 /* ---- detail sheet ---- */
-const NS = { id: "", det: null, node: null, ov: null, busy: false, opener: null };   // det: a notice shown read-only (a failure alert), not looked up by id
-function ntSheetClose(restore = true) {
-  if (!NS.node) return;
-  NS.node.remove(); NS.node = null; NS.id = ""; NS.det = null;
-  ovDone(NS.ov); NS.ov = null;
-  document.removeEventListener("keydown", ntSheetKey, true);
-  if (restore && NS.opener && NS.opener.isConnected) NS.opener.focus({ preventScroll: true });
-  NS.opener = null;
-}
-function ntSheetKey(ev) {
-  if (!NS.node) return;
-  if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); ntSheetClose(); return; }
-  if (ev.key !== "Tab") return;
-  const f = [...NS.node.querySelectorAll("button:not([disabled])")];
-  if (!f.length) return;
-  const first = f[0], last = f[f.length - 1], at = document.activeElement;
-  if (!NS.node.contains(at)) { ev.preventDefault(); first.focus(); }
-  else if (ev.shiftKey && at === first) { ev.preventDefault(); last.focus(); }
-  else if (!ev.shiftKey && at === last) { ev.preventDefault(); first.focus(); }
-}
+const NS = { id: "", det: null, h: null, node: null, busy: false };   // det: a notice shown read-only (a failure alert), not looked up by id
+function ntSheetClose(restore = true) { if (NS.h) NS.h.close(restore); }
 // "직접 답하기": to the asking message in its chat (a login request: its own form).
 function ntDirect(n) {
   ntSheetClose(false);
-  if (n.decision.to.startsWith("auth:")) { const f = document.querySelector("#authbox input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast("입력 창이 이미 닫혔어요"); return; }
+  if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast("입력 창이 이미 닫혔어요"); return; }
   ntJump(n);
 }
 async function ntAnswer(n, opt) {
@@ -451,15 +412,13 @@ function ntDetailOpen(n) {
   ntSheetShow(String(n.id || ""), n);
 }
 function ntDetailPaint(n) {
-  const x = el("button", { type: "button", class: "ib", "aria-label": "닫기", onclick: () => ntSheetClose() });
-  x.append(icon("close"));
-  clear($(".ds-sheet", NS.node)).append(
-    el("div", { class: "ds-hd" }, el("span", { class: "ds-ey", text: "문제가 생겼어요" }), x),
-    el("div", { class: "ds-body" },
+  clear(NS.h.box).append(
+    fsHead([el("span", { class: "fs-ey warn", text: "문제가 생겼어요" })], { close: () => ntSheetClose() }),
+    el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "알림" }),
       el("div", { class: "ds-m", text: ntWhen(n) }),
       mdNode(fileLines(n.text).text, "md ds-md")),
-    el("div", { class: "ds-foot" },
+    el("div", { class: "fs-ft" },
       el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }),
       el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" })));
 }
@@ -469,16 +428,14 @@ function ntSheetPaint() {
   const n = ntById(NS.id);
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
   const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
-  const x = el("button", { type: "button", class: "ib", "aria-label": "닫기", onclick: () => ntSheetClose() });
-  x.append(icon("close"));
   const kids = [
-    el("div", { class: "ds-hd" }, el("span", { class: `ds-ey${open ? "" : ignd ? " ign" : " done"}`, text: open ? "답변이 필요해요" : ignd ? "무시했어요" : d.resolved ? "해결됐어요" : "답변했어요" }),
-      open ? el("button", { type: "button", class: "ds-ign", "data-k": "ignore", disabled: NS.busy, onclick: () => ntIgnore(n) }, icon("close"), el("span", { text: "무시" })) : null, x),
-    el("div", { class: "ds-body" },
+    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: open ? "답변이 필요해요" : ignd ? "무시했어요" : d.resolved ? "해결됐어요" : "답변했어요" })],
+      { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
+    el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "답변이 필요해요" }),
       el("div", { class: "ds-m", text: `${ntDecWhere(d)} · ${ntWhen(n)}` }),
       mdNode(fileLines(n.text).text, "md ds-md"))];
-  const foot = el("div", { class: "ds-foot" });
+  const foot = el("div", { class: "fs-ft" });
   if (open) {
     for (const o of ntOptsOrdered(d.options)) foot.append(el("button", { type: "button", class: `ds-opt${o.rec ? " rec" : ""}`, "data-k": `o${o.n}`, disabled: NS.busy, onclick: () => ntAnswer(n, o) },
       el("span", { class: "ds-lb" }, o.label, o.rec ? el("span", { class: "ds-tag", text: "추천" }) : null),
@@ -496,10 +453,10 @@ function ntSheetPaint() {
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" }));
   }
   kids.push(foot);
-  const sheet = $(".ds-sheet", NS.node), top = $(".ds-body", sheet) ? $(".ds-body", sheet).scrollTop : 0;
-  clear(sheet).append(...kids);
-  $(".ds-body", sheet).scrollTop = top;
-  const again = keep ? sheet.querySelector(`[data-k="${keep}"]`) : null;
+  const box = NS.h.box, top = $(".fs-body", box) ? $(".fs-body", box).scrollTop : 0;
+  clear(box).append(...kids);
+  $(".fs-body", box).scrollTop = top;
+  const again = keep ? box.querySelector(`[data-k="${keep}"]`) : null;
   if (again) again.focus({ preventScroll: true });
 }
 async function noticeSheetOpen(id) {
@@ -512,12 +469,9 @@ async function noticeSheetOpen(id) {
   ntSheetShow(String(n.id), null);
 }
 function ntSheetShow(id, det) {
-  NS.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   NS.id = id; NS.det = det; NS.busy = false;
-  NS.node = el("div", { class: "ds-bd", onpointerdown: ev => { if (ev.target === NS.node) ntSheetClose(); } }, el("div", { class: "ds-sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "ds-t" }));
-  document.body.append(NS.node);
-  NS.ov = ovOpen(() => ntSheetClose(false));
-  document.addEventListener("keydown", ntSheetKey, true);
+  const h = fsOpen({ labelledby: "ds-t", onClose: () => { if (NS.h === h) { NS.h = NS.node = null; NS.id = ""; NS.det = null; } } });
+  NS.h = h; NS.node = h.node;
   ntSheetPaint();
   const first = NS.node.querySelector(".ds-opt, .ds-direct");
   if (first) first.focus({ preventScroll: true });
