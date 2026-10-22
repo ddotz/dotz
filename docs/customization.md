@@ -49,13 +49,13 @@ rejects files over 16 KB.
 | `timeout_seconds` | 1-60, default 10 | kill deadline of the command |
 | `link` | `https://...` or `#view` | where a tap on the card goes |
 | `order` | number | lower first, then by id |
-| `actions` | array, max 4 | buttons on the card, see below |
+| `actions` | array, max 4 | buttons on the card (2 show, the rest are in the `⋯` menu), see below |
 
 Unknown keys are ignored.
 
 ### Actions: the card's own logic
 
-A card can carry up to 4 buttons. Each one has a `label` (1-20 characters) and exactly one of these:
+A card can carry up to 4 actions. The first 2 are buttons in the card footer and the others are in the card's `⋯` menu. Each one has a `label` (1-20 characters) and exactly one of these:
 
 - `command`: runs like the data command (same `cwd` and timeout). The page toasts the first output line, and the card
   re-runs its data command and redraws.
@@ -80,8 +80,10 @@ One card never runs twice at the same time.
 
 - `text`: a string, or `{ "text": string }`.
 - `stat`: `{ "value": string|number, "label"?: string, "sub"?: string }`, or a plain string or number (the value).
-- `list`: an array of strings, or of `{ "title": string, "sub"?: string, "url"?: string }`. The card shows up to 50 rows.
-- `kv`: an object (key -> value), or an array of `[key, value]` pairs.
+- `list`: an array of strings, or of `{ "title": string, "sub"?: string, "url"?: string }`. The card shows up to 5 rows.
+- `kv`: an object (key -> value), or an array of `[key, value]` pairs. The card shows up to 6 rows.
+
+Rows past the limit show as `더 보기 · N개`. Put the most important rows first.
 
 ### render.js
 
@@ -90,6 +92,38 @@ One card never runs twice at the same time.
 DOM helper. It returns a DOM node or a string, which is shown as text. The page loads it from
 `/api/custom/render?id=<id>&v=<rev>`, where `rev` is the file's mtime. If the script throws or fails to load, only
 that card turns into an error card.
+
+## Card design
+
+Every card is drawn with the same classes as the built-in home cards, so it looks like them. A card file cannot carry
+HTML or CSS: only the fields below change what the page draws.
+
+| card.json | Element |
+|---|---|
+| `title` | header: 16px semibold, one line, then the `⋯` menu |
+| `stale` (set by the gateway) | `오래된 값` tag in the header |
+| `note` | one gray 12px line under the header |
+| `view: stat` | one 20px bold value, then gray 12px `label` and `sub` |
+| `view: kv` | one row per key: label 14px left, value 12px gray right, one line each, 8px apart |
+| `view: list` | one row per item: `title` left, `sub` gray right, one line each |
+| `view: text` | 14px text, at most 4 lines |
+| `actions` | small buttons in one footer row, never wrapped |
+| `link` | the whole card is tappable (also `열기` in the menu) |
+| `render.js` | your own node inside the body, see below |
+
+Limits:
+
+- At most 2 action buttons show in the footer: the first 2 actions. Actions 3 and 4 move into the `⋯` menu, in order.
+  A label is cut with an ellipsis when it does not fit, so keep it short (about 8 characters or less).
+- `kv` shows 6 rows and `list` shows 5. The rest is a `더 보기 · N개` line.
+- Values are plain text on one line. Write dates as ISO 8601 (the page shows them in local time), write an empty value
+  as an empty string or `-` (the page shows `없음`), and put units in the value (`12개`, `42%`).
+- The card is as tall as its content, so do not add blank lines or filler rows.
+- Titles: 1 to 40 characters, a noun phrase (`카톡`, not `카톡 상태를 보여주는 카드`). No emoji.
+
+A `render.js` body must use the same classes and tokens: `.kv` with `.k` and `.v`, `.row` with `.nm` and `.sup`, `.big`,
+`.sup`, `.tag` (`ok`, `warn`, `err`), and the CSS variables (`var(--fg)`, `var(--fg-2)`, `var(--fg-3)`). No inline
+colors, font sizes or fixed heights, and no buttons: logic goes in `actions`.
 
 ## Sidebar pins: `pins.json`
 

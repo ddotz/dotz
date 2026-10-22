@@ -5,6 +5,9 @@
 .card.tap { cursor: pointer; transition: background .15s; }
 .card.tap:hover { background: var(--card-hover); }
 .card.tap:focus-visible { outline-offset: 0; }
+.card.foot { display: flex; flex-direction: column; }
+.cf { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 12px; }
+.cf .btn { flex: 0 1 auto; min-width: 0; height: 28px; padding: 0 10px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
 .ch { display: flex; align-items: center; gap: 8px; min-height: 20px; margin-bottom: 12px; }
 .ch h3 { flex: 1; min-width: 0; margin: 0; font: 600 16px/22px var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ch .chev { width: 14px; height: 14px; color: var(--fg-3); }
@@ -27,9 +30,12 @@
 .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .row + .row { margin-top: 8px; }
 .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row.tap { cursor: pointer; }
+.row.tap:hover .nm { color: var(--accent); }
 .kv { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .kv .k { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kv .v { flex: none; color: var(--fg-2); font-size: 12px; }
+.kv + .kv { margin-top: 8px; }
+.kv .v { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-size: 12px; }
 .bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; margin-top: 8px; }
 .bar i { display: block; height: 100%; border-radius: 2px; background: var(--bar, var(--accent)); transition: width .3s; }
 .bar.warn { --bar: var(--warn); } .bar.err { --bar: var(--err); }
@@ -51,6 +57,7 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .heads .t { min-width: 0; font: 600 13px/20px var(--font); overflow-wrap: anywhere; }
 .sp { flex: 1; }
 .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.clamp.c4 { -webkit-line-clamp: 4; white-space: pre-line; overflow-wrap: anywhere; }
 .pickbox { display: flex; flex-direction: column; gap: 16px; max-height: min(46dvh, 340px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
 .kb:empty { display: none; }
 .li.on { background: var(--active); }
