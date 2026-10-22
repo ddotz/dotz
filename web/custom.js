@@ -5,7 +5,7 @@
   "use strict";
 
   const CSS = `
-.cu-home .grid { align-items: start; }
+.board .cu-th .ib { flex: none; width: 24px; height: 24px; align-self: center; }
 .cu-r { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 10px 16px; border: 0; border-radius: 0; background: var(--card); color: var(--fg); font: 500 15px/22px var(--font); text-align: left; text-decoration: none; }
 button.cu-r, a.cu-r { cursor: pointer; }
 button.cu-r:hover, a.cu-r:hover { background: var(--card-hover); }
@@ -132,6 +132,21 @@ button.pv-res:hover { background: var(--card-hover); }
   let DATA = null, loadedAt = 0, flight = null, projKey = "";
   const str = v => v == null ? "" : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v);
   const isHttp = u => typeof u === "string" && /^https?:\/\//i.test(u);
+  // Card values as people read them: an ISO date-time in the browser's local time, an empty value as "없음".
+  const ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})/g;
+  const clock = d => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  function localTime(iso, now = new Date()) {
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    const min = Math.floor((now - d) / 60000), day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    if (min >= 0 && min < 1) return "방금";
+    if (min >= 1 && min < 60) return `${min}분 전`;
+    const dd = Math.round((day(now) - day(d)) / 86400000);
+    if (dd === 0) return clock(d);
+    if (dd === 1) return `어제 ${clock(d)}`;
+    return `${d.getFullYear() === now.getFullYear() ? "" : `${d.getFullYear()}년 `}${d.getMonth() + 1}월 ${d.getDate()}일 ${clock(d)}`;
+  }
+  const show = v => { const s = str(v).trim(); return !s || /^[-–—]$/.test(s) ? "없음" : s.replace(ISO, m => localTime(m)).replace(/([:：])\s*[-–—]$/, "$1 없음"); };
   const openLink = l => { if (isHttp(l)) window.open(l, "_blank", "noopener,noreferrer"); else if (typeof l === "string" && l[0] === "#") location.hash = l; };
   const same = (box, sig) => { if (box.dataset.sig === sig) return true; box.dataset.sig = sig; return false; };
 
@@ -142,7 +157,7 @@ button.pv-res:hover { background: var(--card-hover); }
     return flight;
   }
   function onData() {
-    if (current === "home") paintHome();
+    if (current === "home") renderHome();
     if (current === "project") paintProject();
   }
 
@@ -156,16 +171,16 @@ button.pv-res:hover { background: var(--card-hover); }
     if (d === undefined || d === null) return el("div", { class: "cu-m", text: "값 없음" });
     if (v === "stat") {
       const o = typeof d === "object" && !Array.isArray(d) ? d : { value: d };
-      return el("div", null, el("div", { class: "cu-big", text: str(o.value) }),
-        o.label != null ? el("div", { class: "cu-m", text: str(o.label) }) : null,
-        o.sub != null ? el("div", { class: "cu-m", text: str(o.sub) }) : null);
+      return el("div", null, el("div", { class: "cu-big", text: show(o.value) }),
+        o.label != null ? el("div", { class: "cu-m", text: show(o.label) }) : null,
+        o.sub != null ? el("div", { class: "cu-m", text: show(o.sub) }) : null);
     }
     if (v === "list") {
       const items = (Array.isArray(d) ? d : []).slice(0, 50);
       if (!items.length) return el("div", { class: "cu-m", text: "비어 있어요" });
       return el("div", null, ...items.map(it => {
         const o = it && typeof it === "object" ? it : { title: it };
-        const kids = [el("span", { class: "cu-lt", text: str(o.title) }), o.sub != null ? el("span", { class: "cu-m", text: str(o.sub) }) : null];
+        const kids = [el("span", { class: "cu-lt", text: show(o.title) }), o.sub != null ? el("span", { class: "cu-m", text: show(o.sub) }) : null];
         return isHttp(o.url)
           ? el("a", { class: "cu-li", href: o.url, target: "_blank", rel: "noopener noreferrer", onclick: ev => ev.stopPropagation() }, ...kids)
           : el("div", { class: "cu-li" }, ...kids);
@@ -174,13 +189,13 @@ button.pv-res:hover { background: var(--card-hover); }
     if (v === "kv") {
       const pairs = Array.isArray(d) ? d.filter(Array.isArray).map(p => [p[0], p[1]]) : d && typeof d === "object" ? Object.entries(d) : [];
       if (!pairs.length) return el("div", { class: "cu-m", text: "비어 있어요" });
-      return el("div", null, ...pairs.map(([k, val]) => el("div", { class: "cu-kv" }, el("span", { text: str(k) }), el("span", { text: str(val) }))));
+      return el("div", null, ...pairs.map(([k, val]) => el("div", { class: "cu-kv" }, el("span", { text: str(k) }), el("span", { text: show(val) }))));
     }
-    return el("div", { class: "cu-text", text: typeof d === "object" && !Array.isArray(d) && "text" in d ? str(d.text) : str(d) });
+    return el("div", { class: "cu-text", text: show(typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d) });
   }
 
   const firstLine = s => (String(s || "").split("\n").map(x => x.trim()).find(Boolean) || "").slice(0, 80);
-  function actionButton(c, i, a, card) {
+  function actionButton(c, i, a) {
     const b = el("button", { class: "btn tonal", type: "button", text: a.label });
     b.addEventListener("click", ev => {
       ev.stopPropagation();
@@ -190,10 +205,7 @@ button.pv-res:hover { background: var(--card-hover); }
         if (a.kind === "prompt") { toast(`${botName}에게 보냈어요`); return; }
         const line = firstLine(r.output);
         toast(r.ok ? line || "끝냈어요" : `실패했어요${line ? ` · ${line}` : ""}`, !r.ok);
-        if (r.card) {
-          if (DATA) DATA.cards = (DATA.cards || []).map(x => x.id === c.id ? r.card : x);
-          if (card.isConnected) card.replaceWith(cardNode(r.card));
-        }
+        if (r.card) applyCard(r.card);
       });
     });
     return b;
@@ -205,15 +217,15 @@ button.pv-res:hover { background: var(--card-hover); }
       const tap = !!c.link;
       const body = el("div", { class: "cu-body" });
       const card = el("div", { class: `card cu-card${tap ? " tap" : ""}`, "data-card": c.id },
-        el("div", { class: "cu-th" }, el("h3", { class: "cu-t", text: c.title || c.id }), c.stale ? el("span", { class: "cu-m", text: "오래된 값" }) : null),
-        c.note ? el("div", { class: "cu-m", text: c.note }) : null, body);
+        el("div", { class: "cu-th" }, el("h3", { class: "cu-t", text: c.title || c.id }), c.stale ? el("span", { class: "cu-m", text: "오래된 값" }) : null, menuBtn(`custom:${c.id}`)),
+        c.note ? el("div", { class: "cu-m", text: show(c.note) }) : null, body);
       if (tap) {
         card.setAttribute("role", "button"); card.tabIndex = 0;
         card.addEventListener("click", () => openLink(c.link));
         card.addEventListener("keydown", ev => { if (ev.target === card && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openLink(c.link); } });
       }
       const acts = (c.actions || []).slice(0, 4);
-      if (acts.length) card.append(el("div", { class: "cu-acts" }, ...acts.map((a, i) => actionButton(c, i, a, card))));
+      if (acts.length) card.append(el("div", { class: "cu-acts" }, ...acts.map((a, i) => actionButton(c, i, a))));
       if (c.render) {
         import(`/api/custom/render?id=${enc(c.id)}&v=${enc(c.rev || "")}`)
           .then(m => m.default(c.data, { el, card: c }))
@@ -229,16 +241,46 @@ button.pv-res:hover { background: var(--card-hover); }
   const SCHED = r => !r.schedule ? "" : r.schedule.at ? `매일 ${r.schedule.at}` : r.schedule.every_minutes ? `${r.schedule.every_minutes}분마다` : "";
 
   /* ---------- 홈 ---------- */
-  function paintHome() {
-    const box = $("#home-custom");
-    if (!box || !DATA) return;
-    const cards = (DATA.cards || []).slice();
-    if (same(box, JSON.stringify(cards))) return;
-    clear(box);
-    if (!cards.length) return;
-    box.classList.add("cu-home");
-    box.append(el("div", { class: "sec", text: "내 카드" }), el("div", { class: "grid" }, ...cards.map(cardNode)));
+  // The cards are items of the home board (08-home.js renderHome), so they move, resize and persist like every other home card.
+  const HIDDEN_KEY = "dotz-home-hidden-custom", nodes = new Map();
+  let hidden = new Set((a => Array.isArray(a) ? a.filter(x => typeof x === "string") : [])(lsJson(HIDDEN_KEY, [])));
+  const saveHidden = () => { try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* storage full or blocked */ } };
+  function homeNode(c) {
+    const sig = JSON.stringify(c), hit = nodes.get(c.id);
+    if (hit && hit.sig === sig) return hit.node;
+    const node = cardNode(c);
+    nodes.set(c.id, { sig, node });
+    return node;
   }
+  // Default size: a third of the width, tall enough for the content (header, rows, buttons); wider only for long text.
+  function homeSize(c) {
+    const d = c.data, v = c.view || "text", n = Array.isArray(d) ? d.length : d && typeof d === "object" ? Object.keys(d).length : 1;
+    const text = str(d && typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d);
+    const body = c.render ? 140 : v === "kv" ? n * 30 : v === "list" ? Math.min(8, n) * 40 : v === "stat" ? 64 : Math.min(12, Math.ceil(text.length / 36)) * 22;
+    const px = 24 + 22 + 12 + (c.note ? 18 : 0) + body + ((c.actions || []).length ? 50 : 0);
+    return { w: !c.render && v === "text" && text.length > 160 ? 6 : 4, h: Math.min(10, Math.max(3, Math.ceil((px + BGAP) / BSTEP))) };
+  }
+  function homeItems() {
+    if (!DATA) return [];
+    return (DATA.cards || []).filter(c => !hidden.has(c.id)).map(c => ({ id: `custom:${c.id}`, node: homeNode(c), head: ".cu-th", def: homeSize(c), min: { w: 3, h: 2 }, max: { w: 12, h: 14 } }));
+  }
+  // Saved places of cards stay while the list has not loaded or the card is only hidden.
+  const keepPlace = id => !DATA || hidden.has(id.slice(7));
+  function applyCard(card) {
+    if (DATA) DATA.cards = (DATA.cards || []).map(x => x.id === card.id ? card : x);
+    onData();
+  }
+  function menuActs(id) {
+    const c = ((DATA && DATA.cards) || []).find(x => x.id === id);
+    if (!c) return [];
+    const key = `custom:${id}`, def = homeSize(c);
+    const acts = [{ label: "새로고침", run: () => busy(null, async () => { applyCard(await api("/api/custom/refresh", "POST", { id })); }) }];
+    if (c.link) acts.push({ label: "열기", run: () => openLink(c.link) });
+    acts.push({ label: "작게", run: () => homeBoard.resize(key, 3, def.h) }, { label: "보통", run: () => homeBoard.resize(key, def.w, def.h) }, { label: "크게", run: () => homeBoard.resize(key, 6, def.h + 2) });
+    acts.push({ label: "숨기기", run: () => { hidden.add(id); saveHidden(); renderHome(); } });
+    return acts;
+  }
+  function unhide() { hidden = new Set(); saveHidden(); }
 
   /* ---------- project page ---------- */
   // Data: the project from /api/custom (name, path, lanes) plus GET /api/custom/project?key= (reports, receipts, commits,
@@ -478,7 +520,6 @@ button.pv-res:hover { background: var(--card-hover); }
 
   /* ---------- hooks called from index.html ---------- */
   function home() {
-    paintHome();
     load(10000);
   }
   function view(name, tgt) {
@@ -491,7 +532,7 @@ button.pv-res:hover { background: var(--card-hover); }
   function pins() {
     return load(55000);
   }
-  window.dotzCustom = { home, view, pins };
+  window.dotzCustom = { home, view, pins, items: homeItems, keep: keepPlace, menuActs, unhide, fmt: localTime, show };
 
   // The main script may already have rendered the first view: catch up, then keep the sidebar and open pages fresh.
   pins();

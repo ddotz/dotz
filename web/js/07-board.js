@@ -120,6 +120,7 @@ function makeBoard(container, key, opts = {}) {
     paint();
   }
   function reset() {
+    if (opts.onReset) opts.onReset();
     saved = {}; ghost = []; lastJson = "{}";
     try { localStorage.removeItem(store); } catch { /* ignore */ }
     set(cur);
@@ -205,7 +206,16 @@ function makeBoard(container, key, opts = {}) {
     bPush(list, t); bCompact(list, it.id, ghost); bEven(list, ev.shiftKey ? it.id : null, it.id);
     lay = list; persist(); paint();
   });
-  const board = { set, reset, paint, bar };
+  // Size one card from code (a preset in its ⋯ menu): the same push, compact and persist as Shift+arrow.
+  function resize(id, w, h) {
+    const it = meta(id), r = lay.find(x => x.id === id);
+    if (!it || !r) return;
+    const list = lay.map(x => ({ ...x })), t = list.find(x => x.id === id);
+    Object.assign(t, bFit({ ...r, w, h }, it));
+    bPush(list, t); bCompact(list, id, ghost); bEven(list, id, id);
+    lay = list; persist(); paint();
+  }
+  const board = { set, reset, paint, bar, resize };
   boards.add(board);
   return board;
 }
