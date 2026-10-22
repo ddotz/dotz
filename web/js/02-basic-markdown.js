@@ -147,11 +147,8 @@ function notify(e) {
     setTimeout(() => n.remove(), 220);
   }
   n.append(el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
-  // An alert / worklog post opens its conversation and lands on the message (the notice jump, 30-notices.js).
-  const own = e.kind === "out" && (e.target === "alert" || e.target === "worklog") ? e.target : "";
-  // A question that still waits (e.ask) opens only the decision sheet over the current screen (the notice path, 30-notices.js ntAskSheet); answered or gone: the conversation.
-  const askT = e.ask ? e.target : (own || lane) && parseTone(noHandoff(text)).tone === "ask" ? own || `lane:${lane}` : "";
-  n.addEventListener("click", () => { close(); if (askT) { ntAskSheet({ src: askT, ts: e.ts, tone: "ask" }).then(ok => { if (!ok) { if (own && !e.open) ntJump({ src: own, at: e.ts }); else openTarget(e.open || (lane ? `lane:${lane}` : MAIN), lastChatView()); } }); return; } if (own && !e.open) ntJump({ src: own, at: e.ts }); else openTarget(e.open || (lane ? `lane:${lane}` : MAIN), lastChatView()); });
+  // A tap opens the item by its kind, like every other notice entry point (30-notices.js noticeOpen).
+  n.addEventListener("click", () => { close(); noticeOpen(ntOfEvent(e)); });
   n.addEventListener("pointerenter", () => { hover = true; t.sync(); });
   n.addEventListener("pointerleave", () => { hover = false; t.sync(); });
   n.addEventListener("animationend", () => n.classList.remove("in"), { once: true });
