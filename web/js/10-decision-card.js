@@ -245,11 +245,16 @@ function paintDecision() {
   if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; clear(box); }
   else {
     const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
-    const sig = JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0]);
+    const sig = dcSig(dc, picks, step);
     box.hidden = false;
     if (box.dataset.sig !== sig) { renderDecision(box, dc, picks, step); box.dataset.sig = sig; box.dataset.key = dc.key; }
   }
   syncInlineChoices();
   dkPaint();
   if (had !== !!dc) updateComposerMeta();
+}
+// What a decision card shows; the card (docked or in the sheet) is redrawn only when this changes. A redraw replaces the reason field, and on
+// a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
+function dcSig(dc, picks, step) {
+  return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0]);
 }
