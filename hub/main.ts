@@ -25,7 +25,7 @@ import { runtimeFor } from "./runtime/index.ts";
 import { applyAccountChange as holdOrchestratorKeepalive, orch, orchBusy, setIdleHandler as setOrchIdleHandler, start as startOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
-import { usageSnapshot } from "./providers.ts";
+import { forgetAccountUsage, usageSnapshot } from "./providers.ts";
 import { backfillNotices, setConvNameResolver, setLaneTitleResolver, setOrchestratorAvailable, setWatchLabelResolver, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
@@ -239,6 +239,7 @@ if (restarted) {
 // next turn and pins the answer in its own environment. Checked each minute, so a limit or a rule's time window is followed
 // without waiting for a turn.
 onAccountSwitch(s => {
+	forgetAccountUsage(s.to);
 	if (runtimeFor("orchestrator").id === "omo") holdOrchestratorKeepalive();
 	void out(discord.status.enabled ? "worklog" : "web", switchNotice(s), undefined, { source: "gateway" }).catch(e => log(`account switch notice failed: ${e}`));
 });

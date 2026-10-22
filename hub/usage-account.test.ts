@@ -3,7 +3,9 @@
 import { afterEach, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { anthropicUsage } from "./providers.ts";
+import { resetStickyForTest } from "./account-sticky.ts";
+import { setManual } from "./account-rules.ts";
+import { anthropicUsage, forgetAccountUsage, quota } from "./providers.ts";
 import { AccountUsage, limitsOf, limitsText, MIN_REFRESH_MS, subscriptionAccount } from "./usage-account.ts";
 
 const agentDir = process.env.OMO_CODING_AGENT_DIR!;
@@ -34,6 +36,41 @@ test("under OmO the limits are the pinned account's, read with its own token, an
 	const text = limitsText(r!, Date.now());
 	expect(text).toContain("miseol-shared");
 	expect(text).toContain("66.0% used");
+});
+
+test("after an account switch the quota is the new account's, not the pinned or cached one", async () => {
+	auth({ pinned: "miseol-shared", accounts });
+	const seen: string[] = [];
+	let fiveOfDefault = 2;
+	globalThis.fetch = (async (_url: string, init: RequestInit) => {
+		const token = String((init.headers as Record<string, string>).authorization);
+		seen.push(token);
+		return Response.json(token === "Bearer tok-miseol" ? body(37, 11) : body(fiveOfDefault, 22));
+	}) as typeof fetch;
+	const fiveOf = async () => {
+		const q = await quota();
+		const p = q.providers.find(x => x.provider === "anthropic");
+		return { account: p?.account, five: p?.limits.find(l => l.id === "anthropic:5h")?.used };
+	};
+	try {
+		resetStickyForTest();
+		for (const a of accounts) forgetAccountUsage(a.name); // the first test left a held read
+		expect(await fiveOf()).toEqual({ account: "miseol-shared", five: 37 });
+		// the owner picks the other account in the web app (POST /api/accounts/use)
+		setManual("default");
+		expect(await fiveOf()).toEqual({ account: "default", five: 2 });
+		expect(seen.at(-1)).toBe("Bearer tok-default");
+		// a switch drops the new account's hold, so its next read is fresh instead of up to 2 minutes old
+		fiveOfDefault = 9;
+		forgetAccountUsage("default");
+		expect(await fiveOf()).toEqual({ account: "default", five: 9 });
+		// and back
+		setManual("miseol-shared");
+		expect(await fiveOf()).toEqual({ account: "miseol-shared", five: 37 });
+	} finally {
+		setManual(undefined);
+		resetStickyForTest();
+	}
 });
 
 test("unpinned: the pool's account that is not blocked and last succeeded", () => {
