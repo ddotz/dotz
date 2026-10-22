@@ -208,7 +208,7 @@ const dcNoticeAt = at => (at ? NT.items.find(n => ntIsDec(n) && n.decision.to ==
 const dcSending = new Set();
 function syncInlineChoices() {
   const dc = DC.cur;
-  for (const n of document.querySelectorAll(".dcm")) {
+  for (const n of document.querySelectorAll(".dcm:not(.mon-dc)")) {
     const mine = !!dc && dc.sig === n.dataset.sig, nt = mine ? null : dcNoticeAt(n.dataset.at);
     const live = mine ? !DC.st[dc.key] : !!nt && nt.decision.state === "open" && !dcSending.has(nt.id), p = mine ? DC.picks[dc.key] || [] : [];
     const said = nt && nt.decision.state === "answered" ? String(nt.decision.answer || "") : "";

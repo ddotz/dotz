@@ -3,8 +3,8 @@
 .cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow-panel); overflow: hidden auto; }
 .cv-side { display: none; }
 .cv-head { display: none; }
-#v-chat.cv-listing > .cv-side { display: block; }
-#v-chat.cv-listing > :not(.cv-side) { display: none; }
+#v-chat.cv-listing > .cv-side, #v-monitoring.cv-listing > .cv-side { display: block; }
+#v-chat.cv-listing > :not(.cv-side), #v-monitoring.cv-listing > :not(.cv-side) { display: none; }
 
 .cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 48px; padding: 6px 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
 .cv-row + .cv-row { border-top: 1px solid var(--line); }
@@ -29,6 +29,14 @@
 .cv-row.sub .cv-n { font-size: 14px; }
 .cv-gh { padding: 12px 16px 4px; color: var(--fg-3); font: 500 12px/16px var(--font); }
 .cv-m { flex: none; display: flex; align-items: center; gap: 6px; }
+/* a row with a preview line (running sessions, 모니터링): the time sits above the badge on the right */
+.cv-row.pv { align-items: flex-start; padding-block: 10px; }
+.cv-row.pv .cv-p { font-size: 13px; line-height: 18px; }
+.cv-row.pv .cv-m { flex-direction: column; align-items: flex-end; gap: 4px; }
+.cv-m2 { display: flex; align-items: center; gap: 6px; }
+.cv-m2:empty { display: none; }
+.cv-t { color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
+.cv-head .cvmenu { margin-left: auto; }
 
 /* the header picker (chips / caret menu) is replaced by the list in 대화; 로그 keeps it */
 .thead[data-mode="chat"] :is(.tsw, .tdrop) { display: none !important; }
@@ -45,14 +53,15 @@
 
 @media (min-width: 1100px) {
   :root { --cv-w: 240px; }
-  #v-chat { display: grid; max-width: none; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
-  #v-chat > * { grid-column: 2; }
-  #v-chat > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 8px; }
-  #v-chat > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px 12px; }
+  :is(#v-chat, #v-monitoring) { display: grid; max-width: none; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  :is(#v-chat, #v-monitoring) > * { grid-column: 2; }
+  :is(#v-chat, #v-monitoring) > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 8px; }
+  :is(#v-chat, #v-monitoring) > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px 12px; }
   #v-chat > .subs { grid-row: 2; }
   #v-chat > .todo { grid-row: 3; }
-  #v-chat > .chatbox { grid-row: 4; }
+  :is(#v-chat, #v-monitoring) > .chatbox { grid-row: 4; }
   #v-chat > .composer { grid-row: 5; }
+  .cv-row.pv { padding-block: 6px; }
   .cv-row { min-height: 36px; padding: 4px 10px; gap: 8px; border-radius: var(--r-ctl); }
   .cv-row.sub { min-height: 36px; padding-left: 20px; }
   .cv-row .cv-n, .cv-row.sub .cv-n { font-size: 14px; line-height: 20px; }

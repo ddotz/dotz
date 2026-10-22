@@ -1,5 +1,4 @@
-/* ---------- 세션 탭: one status briefing card per session; a tap anywhere on it opens that session's chat ---------- */
-let laneSig = "";
+/* ---------- 세션: a session's last report and chat link, and the 프로젝트 list below (the 세션 tab is gone: running sessions are rows of 채팅 and a card on 홈) ---------- */
 const LP = {};                  // lane name -> { acts: oldest-first {ts, text} lines in Korean, rev, loaded, loading, failedAt }
 const LANE_TAIL = 40;           // activity rows read per session
 const LANE_ACTS = 12;           // lines kept per session
@@ -65,9 +64,7 @@ function laneRecent(name) {
   }
   return out.map(r => ({ ts: r.ts, text: r.n > 1 ? `${r.text} (${r.n}번)` : r.text, report: r.report }));
 }
-function laneRefresh(p) { p.rev++; laneSoon(); }
-let laneSoonT;
-const laneSoon = () => { clearTimeout(laneSoonT); laneSoonT = setTimeout(() => { if (current === "lanes") { laneSig = ""; renderLanes(); } }, 300); };
+function laneRefresh(p) { p.rev++; }
 function laneIngest(p, a) {
   const k = laneKey(a);
   if (p.seen.has(k)) return;
@@ -101,46 +98,7 @@ function laneActivity(a) {
 }
 function laneTailsStale() {
   for (const p of Object.values(LP)) p.loaded = false;
-  if (current === "lanes") { laneSig = ""; renderLanes(); }
 }
-// Running and waiting sessions, a question waiting for the owner first, then the ones at work; the ended ones fold below (renderEndedLanes).
-// 세션: the live sessions as chat-list rows, grouped under their project (the group with the session that needs the owner most comes first).
-function laneRows(lanes) {
-  const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
-  const recentTs = l => { const r = laneRecent(l.name)[0]; return r ? r.ts : 0; };
-  const groups = new Map();
-  for (const l of lanes.slice().sort((x, y) => rank(x) - rank(y) || recentTs(y) - recentTs(x))) {
-    const p = laneProject(l) || "프로젝트 없음";
-    if (!groups.has(p)) groups.set(p, []);
-    groups.get(p).push(l);
-  }
-  const rows = [];
-  for (const [p, ls] of groups) rows.push({ header: p }, ...ls.map(l => ({ t: `lane:${l.name}`, name: l.title || l.name, badge: sessionStatus(l), unread: ts(`lane:${l.name}`).unread, open: () => openLaneChat(l.name), sel: false })));
-  return rows;
-}
-function renderLanes() {
-  if (!S) return;
-  const lanes = S.lanes.filter(laneAlive);
-  for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) delete LP[n];
-  for (const l of lanes) if (!LP[l.name]) LP[l.name] = { name: l.name, acts: [], seen: new Set(), queue: [], rev: 0, loaded: false, loading: false, failedAt: 0 };
-  const sig = JSON.stringify([lanes.map(l => [l.name, l.title, l.home, l.project, l.status, attnKind(`lane:${l.name}`), l.pendingAsk && l.pendingAsk.at, LP[l.name].rev, ts(`lane:${l.name}`).unread]), prjRev]);
-  if (sig !== laneSig) {
-    laneSig = sig;
-    const box = $("#lanes");
-    clear(box);
-    if (!lanes.length) box.append(emptyNode("작동 중인 세션이 없어요"));
-    else box.append(el("div", { class: "cv-list" }, ...laneRows(lanes).map(convRow)));
-    for (const l of lanes) { const p = LP[l.name]; if (!p.loaded && !p.loading && Date.now() - p.failedAt > 15000) laneLoad(p); }
-  }
-  renderEndedLanes();
-}
-function renderEndedLanes() {
-  const box = $("#lanes-ended"), names = endedLanes().map(l => l.name).join("|");
-  if (box.dataset.sig === `${names}|${endedOpen}`) return;
-  box.dataset.sig = `${names}|${endedOpen}`;
-  clear(box).append(endedGroup() || "");
-}
-
 /* ---------- 프로젝트 (docs/layers.md §5): the list (GET /api/custom) and the main view (GET /api/custom/project?key=) ---------- */
 let PRJ = null, PRJ_FAIL = false, prjFlight = null, prjRev = 0;
 const prjTitle = p => (p.record && p.record.title) || p.title || p.name;
@@ -155,7 +113,6 @@ function prjLoad() {
     prjFlight = null; prjRev++;
     if (current === "project") { if (ppWide()) renderProjects(); pmPaint(); }
     else if (current === "projects") renderProjects();
-    else if (current === "lanes") renderLanes();
   });
   return prjFlight;
 }

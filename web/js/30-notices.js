@@ -22,6 +22,7 @@ const ntPlain = s => String(s ?? "")
 function ntPaint() {
   convSchedule();
   paintAttn();
+  if (current === "monitoring") monSchedule();
 }
 
 async function loadNotices() {
@@ -232,16 +233,7 @@ function ntSession(n) {
   if (isLaneT(t) && S && S.lanes.some(l => `lane:${l.name}` === t)) openTarget(t, lastChatView());
   else ntJump(n);   // the session is gone: its result card in the main chat
 }
-async function monOpen(name) {
-  go("monitoring");
-  await ntRaf(); await ntRaf();
-  const row = [...document.querySelectorAll("#v-monitoring [data-mon-name]")].find(r => r.dataset.monName === name);
-  if (!row) return;
-  row.scrollIntoView({ block: "center" });
-  row.classList.remove("nt-hl"); void row.offsetWidth;
-  row.classList.add("nt-hl");
-  setTimeout(() => row.classList.remove("nt-hl"), 2300);
-}
+const monOpen = name => go("monitoring", `m:${name}`);
 // A message tapped in the 알림 / 작업내역 conversations opens like its notice does (capture phase: the choice rows inside it do not answer in place there).
 timeline.addEventListener("click", ev => {
   if (current !== "chat" || !isFixedT(target) || !(ev.target instanceof Element)) return;

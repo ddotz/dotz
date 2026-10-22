@@ -17,7 +17,7 @@ function routeChain(name, hash) {
   if (name === "chat" || name === "activity") return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
   if (name === "harness") return ["home", "settings", hash];
   if (name === "project") return ["home", "projects", hash];
-  if (name === "monitoring") return narrowChat() ? ["home", "chat/list", hash] : ["home", hash];
+  if (name === "monitoring") return narrowChat() && !MON.list ? ["home", "monitoring", hash] : ["home", hash];
   if (SUB.has(name)) {
     const bt = backTarget();
     if (bt === "home") return ["home", hash];

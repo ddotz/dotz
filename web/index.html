@@ -75,7 +75,11 @@
       <section class="view" id="v-home" hidden><div id="home-now"></div><div class="sec" id="home-sec">상태</div><div id="home-cards"></div><div id="home-custom"></div></section>
       <section class="view" id="v-project" hidden></section>
       <section class="view" id="v-projects" hidden></section>
-      <section class="view" id="v-monitoring" hidden></section>
+      <section class="view fill" id="v-monitoring" hidden>
+        <aside class="cv-side" id="mon-side" aria-label="모니터링 목록"></aside>
+        <div class="cv-head" id="mon-head"></div>
+        <div class="chatbox"><div class="timeline" id="mon-timeline"><div class="tl-in" id="mon-tl"></div></div></div>
+      </section>
       <section class="view fill" id="v-chat" hidden>
         <div class="subs" hidden></div>
         <div class="todo" id="todo" hidden></div>
@@ -115,7 +119,6 @@
           <button class="btn tonal jump" id="act-jump" type="button" aria-label="맨 아래로" title="맨 아래로" hidden></button>
         </div>
       </section>
-      <section class="view" id="v-lanes" hidden><div id="lanes"></div><div id="lanes-ended"></div></section>
       <section class="view" id="v-harness" hidden><div id="harness"></div></section>
       <section class="view" id="v-settings" hidden><div id="settings"></div></section>
       <section class="view" id="v-models" hidden><div id="models"></div></section>

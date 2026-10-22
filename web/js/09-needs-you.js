@@ -79,7 +79,6 @@ function toastAttn() {
 function attnChanged() {
   renderBars();
   if (current === "home") renderHome();
-  if (current === "lanes") renderLanes();
 }
 
 /* ---------- usage strip in the app header: the tightest Anthropic-like limit ---------- */

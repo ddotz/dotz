@@ -8,7 +8,8 @@ const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js",
 const state = web("04-state.js"), peers = web("33-peers.js");
 const tabSrc = state.slice(state.indexOf("const isMac ="), state.indexOf("for (const [id, label] of NAV)"));
 const gwSrc = peers.slice(peers.indexOf("const prKeyHint"), peers.indexOf("// Tapping 홈 again"));
-const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["lanes", "세션"], ["settings", "설정"]];
+const navStart = state.indexOf("const NAV =");
+const NAV = new Function(`${state.slice(navStart, state.indexOf(";\n", navStart) + 1)} return NAV;`)() as [string, string][];
 
 type Handler = (ev: unknown) => void;
 type Key = Partial<{ key: string; code: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;
@@ -44,10 +45,10 @@ function gateways(platform: string, list: Peer[], o: { dialog?: boolean } = {}) 
 }
 
 describe("Cmd/Ctrl+1..5 tab shortcuts", () => {
-	test("on a Mac Cmd+1..5 open 홈, 채팅, 프로젝트, 세션, 설정 in tab order", () => {
+	test("on a Mac Cmd+1..5 open 홈, 채팅, 프로젝트, 모니터링, 설정 in tab order", () => {
 		const t = tabs("MacIntel", { current: "settings" });
 		for (const n of [1, 2, 3, 4, 5]) expect(fire(t.handlers, { key: String(n), code: `Digit${n}`, metaKey: true })).toBe(true);
-		expect(t.log).toEqual(["go:home", "chatEnter", "go:projects", "go:lanes", "go:settings"]);
+		expect(t.log).toEqual(["go:home", "chatEnter", "go:projects", "go:monitoring", "go:settings"]);
 	});
 
 	test("Ctrl+1 does nothing on a Mac and Cmd+1 does nothing elsewhere; Ctrl+3 works elsewhere", () => {
@@ -75,7 +76,7 @@ describe("Cmd/Ctrl+1..5 tab shortcuts", () => {
 	});
 
 	test("tooltips name the shortcut", () => {
-		expect(tabs("MacIntel").navKeyHint("lanes")).toBe("⌘4");
+		expect(tabs("MacIntel").navKeyHint("monitoring")).toBe("⌘4");
 		expect(tabs("Win32").navKeyHint("settings")).toBe("Ctrl+5");
 		expect(tabs("Win32").navKeyHint("models")).toBe("");
 	});

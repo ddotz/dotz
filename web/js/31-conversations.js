@@ -216,57 +216,49 @@ addEventListener("pagehide", () => viewReport(true));
 setInterval(viewReport, 2000);
 
 /* ---- the list ---- */
-// The main assistant first, then the projects by their newest message (silent ones after, in project order), each followed by its live
-// sessions (indented, with the session's status badge); sessions started from chat close the list under "프로젝트 없음".
+// The main assistant and the two feeds first, then the running sessions under 진행 중 (one with a question waiting first), the projects by their
+// newest message (silent ones after, in project order) and the mails. A session that ended stays in the list only while it is open;
+// the ended ones fold into one group at the bottom. 모니터링 has its own tab (30-monitoring.js) and uses this same row.
+const convWhen = t => (t ? monTime(t) : "");
 function convRows() {
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
   const mk = t => ({ t, last: CONV.get(t) || null, name: targetName(t), unread: ts(t).unread });
-  const sess = ((S && S.lanes) || []).filter(l => laneAlive(l) || `lane:${l.name}` === target);
-  const sub = l => { const t = `lane:${l.name}`; return { ...mk(t), sub: true, badge: sessionStatus(l), hint: convPreview(l.lastText) }; };
-  const rows = [MAIN, "alert", "worklog", "monitoring"].map(t => (t === "monitoring" ? monRowInfo() : mk(t))), placed = new Set();
-  rows.push(...intgRows());
-  for (const t of projects) {
-    rows.push(mk(t));
-    for (const l of sess) if (laneHome(l) === t) { placed.add(l.name); rows.push(sub(l)); }
-  }
-  const loose = sess.filter(l => !placed.has(l.name));
-  if (loose.length) rows.push({ header: "프로젝트 없음" }, ...loose.map(sub));
+  const all = (S && S.lanes) || [];
+  const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
+  const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
+  const sess = l => { const t = `lane:${l.name}`; return { ...mk(t), badge: sessionStatus(l), hint: convPreview(l.lastText), when: convWhen(at(t)) }; };
+  const rows = [MAIN, "alert", "worklog"].map(mk);
+  if (running.length) rows.push({ header: "진행 중" }, ...running.map(sess));
+  if (projects.length) rows.push({ header: "프로젝트" }, ...projects.map(mk));
+  const open = all.find(l => !laneAlive(l) && `lane:${l.name}` === target);
+  if (open) rows.push(sess(open));
   // 메일: one conversation per mail (hub/mail.ts), newest first, the 30 newest shown.
   const mailAt = t => at(t) || (MAILS.get(t) || {}).at || "";
   const mails = [...MAILS.keys()].sort((a, b) => mailAt(b).localeCompare(mailAt(a))).slice(0, 30);
   if (mails.length) rows.push({ header: "메일" }, ...mails.map(mk));
+  const ended = endedLanes();
+  if (ended.length) rows.push({ ended: true, key: `${ended.map(l => l.name).join("|")}|${endedOpen}` });
   return rows;
 }
 const FIXED_DESC = { alert: "경고와 모니터링 소식, 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
-// 모니터링 is a screen, not a conversation: its row sits with 알림 and 작업내역 and opens that screen.
-function monRowInfo() {
-  const bad = NM.items.filter(m => m.last_result === "fail").length;
-  return { mon: true, name: "모니터링", hint: !NM.loaded ? (NM.failed ? "불러오지 못했어요" : "불러오는 중…") : NM.items.length ? `모니터링 ${NM.items.length}개` : "모니터링 중인 것이 없어요", badge: bad ? [`실패 ${bad}`, "err"] : null };
-}
 // Every row has an icon, never a letter (so any name reads the same): the app's own mark for the main assistant, a bell / list for the fixed
 // feeds, the folder the 프로젝트 tab uses for a project, the session icon for a session.
 function convAvatar(t) {
   if (isFixedT(t)) return el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon(t === "alert" ? "bell" : "list"));
   return el("span", { class: "cv-av", "aria-hidden": "true" }, t === MAIN ? el("span", { class: "logo" }) : icon(isLaneT(t) ? "lanes" : isProjT(t) ? "projects" : "chat"));
 }
-// The one list row of 채팅, 프로젝트 and 세션. A chat target (r.t) opens its conversation; r.open / r.sel / r.av let another list say what a tap opens,
-// which row is open and which icon it wears. A row is { header } for a group label, or { name, badge: [word, tone], unread }.
+// The one list row of 채팅, 프로젝트 and 모니터링. A chat target (r.t) opens its conversation; r.open / r.sel / r.av let another list say what a tap opens,
+// which row is open and which icon it wears. A row is { header } for a group label, { ended } for the folded ended sessions, or
+// { name, badge: [word, tone], unread }, with an optional one-line preview (hint) and time (when) under and beside the name.
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
-  if (r.intg) return intgRow(r);
-  if (r.mon) {
-    const on = current === "monitoring" && !INTG.view;
-    return el("button", { class: `cv-row${on ? " on" : ""}`, type: "button", "data-mon": "1", "aria-current": on ? "true" : null, onclick: () => go("monitoring") },
-      el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon("activity")),
-      el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: r.name })),
-      el("span", { class: "cv-m" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null));
-  }
+  if (r.ended) return endedGroup() || "";
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
-  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last ? "" : " none"}`, type: "button", "data-t": r.t || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
+  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
-    el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name })),
-    el("span", { class: "cv-m" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
+    el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
+    el("span", { class: "cv-m" }, r.when ? el("span", { class: "cv-t", text: r.when }) : null, el("span", { class: "cv-m2" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -277,13 +269,18 @@ function convPaintHead() {
   const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : i.alive ? statusKo(i.status) : "종료됨", sig = `${target}|${targetName(target)}|${state}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
-  clear(convHead).append(convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: targetName(target) }), el("span", { class: "cv-p", text: state })));
+  clear(convHead).append(...[convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: targetName(target) }), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null].filter(Boolean));
 }
+// A session's actions (stop, restart, model) are the home card's ⋯ menu (08-home.js homeMenu), here in the conversation's header: in the head on wide screens, in the app bar on a phone.
+const cvMenuBtn = () => el("button", { class: "ib cvmenu", type: "button", "aria-label": "세션 메뉴", title: "세션 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, target, true) }, icon("more"));
+const cvAppMenu = cvMenuBtn();
+cvAppMenu.id = "cvmenu"; cvAppMenu.hidden = true;
+$("#vtog").before(cvAppMenu);
 function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
   convTitle();
-  const rows = convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint]), target, current, INTG.view]);
+  const rows = convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.when]), target, current]);
   if (sig !== convSig) {
     convSig = sig;
     const top = convSide.scrollTop;
@@ -297,13 +294,19 @@ function convSchedule() { if (!convRaf) convRaf = requestAnimationFrame(convPain
 /* ---- app bar ---- */
 // Phone, inside a conversation: back arrow to the list and the conversation's name as the title.
 function convOnPhone() { return current === "chat" && narrowChat() && !chatList; }
-function convTitle() { if (current === "chat") $("#title").textContent = convOnPhone() ? targetName(target) : titles.chat; }
+function convTitle() {
+  if (current === "chat") $("#title").textContent = convOnPhone() ? targetName(target) : titles.chat;
+  else if (current === "monitoring") $("#title").textContent = monConv() ? monName() : titles.monitoring;
+  cvAppMenu.hidden = !(convOnPhone() && isLaneT(target));
+}
 function convChrome() {
-  const conv = convOnPhone(), back = !!backTarget() || conv, bar = $("#appbar");
+  const conv = convOnPhone() || monConv(), back = !!backTarget() || conv, bar = $("#appbar");
   $("#back").hidden = !back;
   bar.classList.toggle("back", back);
   bar.classList.toggle("cvconv", conv);
   $("#v-chat").classList.toggle("cv-listing", convListing());
+  $("#v-monitoring").classList.toggle("cv-listing", current === "monitoring" && narrowChat() && MON.list);
+  if (current === "monitoring") monSchedule();
   if (convListing()) $("#vtog").hidden = true;
   convTitle();
   convSig = ""; convHeadSig = "";

@@ -9,7 +9,6 @@ async function loadModels(quiet) {
   if (current === "home") renderHome();
   if (current === "settings") renderSettings();
   if (current === "context") renderContext();
-  if (current === "lanes") { laneSig = ""; renderLanes(); }
 }
 // Model picker rows from the server's choices: one "<Family> <version>" per model grouped by family, the latest two per
 // family shown and the rest folded under '이전 모델' (the current selection is never folded).

@@ -30,7 +30,7 @@ function openPalette() {
       for (const id of views) if (id !== "activity" && id !== "project" && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
-      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 ${ended.length}`, act: () => { endedOpen = true; go("lanes"); } });
+      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 ${ended.length}`, act: () => { endedOpen = true; go("chat", "list"); } });
       else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || "종료된 세션".startsWith(v))) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
       if (!v || "셸 터미널 명령줄 shell terminal".includes(v)) items.push({ kind: "act", ic: "shell", label: "셸 터미널 열기", act: () => openShell() });
       if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
@@ -77,12 +77,16 @@ function parseHash(hash = location.hash) {
   try { t = decodeURIComponent(t); } catch {}
   return { view: i < 0 ? h : h.slice(0, i), t };
 }
+// The 세션 tab is gone: an old #lanes address opens the chat (its list on a phone), where running sessions sit under 진행 중.
+const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : [name, tgt]);
 function go(name, tgt) {
   closeMenu(false);
+  [name, tgt] = routeAlias(name, tgt);
   if (!views.includes(name)) name = "home";
   if (name === "projects" && ppWide()) { name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : "builtin:custom"; }
   if (name === "project" && !tgt) name = "projects";
   if (name === "project") ppCur = tgt;
+  if (name === "monitoring") monRoute(tgt);
   // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
   chatList = name === "chat" && tgt === "list" && narrowChat();
   if (name === "chat" && tgt === "list") tgt = undefined;
@@ -93,7 +97,7 @@ function go(name, tgt) {
   if (convSync()) renderAll();
   const tv = name === "chat" || name === "activity";
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
-  const hash = tv ? (chatList ? "chat/list" : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name;
+  const hash = tv ? (chatList ? "chat/list" : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "monitoring" ? monHash() : name;
   navSync(name, hash);
   const pp = name === "project" && ppWide();
   for (const v of views) $(`#v-${v}`).hidden = v !== name && !(pp && v === "projects");
@@ -110,9 +114,8 @@ function go(name, tgt) {
   if (name === "harness") loadHarness(); else closeHSheet();
   if (tv) enterTarget();
   if (name === "home") { renderHome(); loadHomeData(); }
-  if (name === "lanes") { laneSig = ""; renderLanes(); prjLoad(); }
   if (name === "projects" || pp) { renderProjects(); prjLoad(); }
-  if (name === "monitoring") { renderMonitoring(); loadMonitors(); }
+  if (name === "monitoring") { renderMonitoring(); loadMonitors(); loadNotices(); loadIntegrations(); }
   if (name === "project") pmOpen(tgt);
   if (name === "settings") { loadUpdate(); loadAccounts(); renderSettings(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
