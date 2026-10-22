@@ -141,8 +141,9 @@ test("simulated 429: API key for the orchestrator only, fresh sessions both ways
 	expect(api.opts).toMatchObject({ role: "orchestrator", model: "anthropic-apikey/claude-sonnet-5-5:high" });
 	expect(api.opts.resume).toBeUndefined();
 	expect(api.opts.env.DOTZ_KEY_VALUE).toBe(KEY);
-	expect(api.agent.texts[0]).toContain("[handover]");
-	expect(api.agent.texts[0]).toContain("오늘 일정 알려줘");
+	expect(api.agent.texts[0]).not.toContain("[handover]");
+	expect(api.agent.texts[1]).toContain("[handover]");
+	expect(api.agent.texts[1]).toContain("오늘 일정 알려줘");
 	expect(api.agent.texts[0]).toContain("This is the API-key fallback");
 	expect(api.agent.texts[0]).toContain("answer it now");
 	expect(alerts.filter(a => a.includes("API key in use"))).toHaveLength(1);
@@ -179,7 +180,8 @@ test("simulated 429: API key for the orchestrator only, fresh sessions both ways
 	expect(back.opts.model).toBe("anthropic/claude-opus-5-5:medium");
 	expect(back.opts.resume).toBeUndefined();
 	expect(back.opts.env.DOTZ_KEY_VALUE).toBeUndefined();
-	expect(back.agent.texts[0]).toContain("[handover]");
+	expect(back.agent.texts[0]).not.toContain("[handover]");
+	expect(back.agent.texts[1]).toContain("[handover]");
 	expect(back.agent.texts[0]).toContain("The subscription is usable again");
 	log(`step 4  usage report: usable -> ${back.opts.model}, resume=${back.opts.resume ?? "none (fresh session + handover)"}`);
 

@@ -158,7 +158,7 @@ test("pending asks block: a >700 char question is whole, a >1500 char one is cut
 	expect(pendingAsksBlock()).toBe("");
 });
 
-test("orchestrator: a fresh start carries pending asks in its first prompt, a resumed one on the next owner message once", async () => {
+test("orchestrator: a fresh start sends pending asks in a second steer message, not in the pinned first prompt; a resumed one on the next owner message once", async () => {
 	const lanesDir = join(DATA, "lanes");
 	const long = question(1000);
 	mkdirSync(join(lanesDir, "pa-orch"), { recursive: true });
@@ -168,9 +168,13 @@ test("orchestrator: a fresh start carries pending asks in its first prompt, a re
 	rmSync(join(DATA, "orchestrator.json"), { force: true });
 	o.start();
 	const fresh = agents.at(-1)!;
-	expect(fresh.sent).toHaveLength(1);
-	expect(fresh.sent[0]!.text).toContain(msg().pendingAsksHead);
-	expect(fresh.sent[0]!.text).toContain(long);
+	expect(fresh.sent).toHaveLength(2);
+	expect(fresh.sent[0]!.mode).toBe("prompt");
+	expect(fresh.sent[0]!.text).not.toContain(msg().pendingAsksHead);
+	expect(fresh.sent[0]!.text).not.toContain(long);
+	expect(fresh.sent[1]!.mode).toBe("steer");
+	expect(fresh.sent[1]!.text).toContain(msg().pendingAsksHead);
+	expect(fresh.sent[1]!.text).toContain(long);
 	await advance(4000);
 	o.stop();
 	await advance(1000);
