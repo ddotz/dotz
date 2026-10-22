@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { beforeEach, expect, test } from "bun:test";
 import { DATA_DIR } from "./config.ts";
 import { saveProject } from "./projects.ts";
-import { BUILTIN_KEY, type CustomDeps, customRoute, type DetailInput, projectDetailView, projectsView, readCards, readPins, reportHead, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
+import { BUILTIN_KEY, type CustomDeps, customRoute, type DetailInput, projectDetailView, projectsView, readCards, readPins, reportHead, ruleTitle, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import { addSchedule, listSchedules, removeSchedule } from "./schedule.ts";
 
@@ -71,6 +71,35 @@ test("GET /api/custom/project?key=builtin:custom shows what is customized, each 
 	expect(by("cards")).toEqual([{ title: "디스크", line: "맥 내장" }]);
 	expect(by("pins").map((i: any) => i.title)).toEqual(["내 일", "클라우드플레어"]);
 	expect(by("routines")).toEqual([{ title: "아침 점검", line: "매일 09:00에 해요" }]);
+});
+
+test("ruleTitle: the sidecar phrase wins, else the first clause without the date, cut to 25 characters", () => {
+	expect(ruleTitle("[10-21] 답을 매번 '형,' 같은 호칭으로 시작하지 않아요", { "[10-21] 답을 매번 '형,' 같은 호칭으로 시작하지 않아요": "  답을 호칭으로 시작하지 않기 " })).toBe("답을 호칭으로 시작하지 않기");
+	expect(ruleTitle("[10-21] 매번 확인해요. 이유는 여기에 적어요")).toBe("매번 확인해요");
+	expect(ruleTitle("[10-22] 야간 작업(정리, 교훈)에서 문제가 생기면 알림으로 보고해요")).toBe("야간 작업");
+	const long = ruleTitle("[10-22] 가나다라마바사아자차카타파하가나다라마바사아자차카타파하", {});
+	expect(long).toBe("가나다라마바사아자차카타파하가나다라마바사아자차카타파하".slice(0, 24) + "…");
+	expect(ruleTitle("x", { x: 5 })).toBe("x");
+});
+
+test("GET /api/custom/project?key=builtin:custom: a rule row has a short title and its full text, no fixed subline", async () => {
+	const text = "[10-22] 야간 작업에서 문제가 생기면 알림 대화창에 보고해요";
+	const other = "[10-22] 매번 확인해요. 이유는 여기에 적어요";
+	const rulesFile = join(DATA_DIR, "RULES.md"), titlesFile = join(DATA_DIR, "rule-titles.json");
+	const kept = existsSync(rulesFile) ? readFileSync(rulesFile) : undefined;
+	try {
+		writeFileSync(rulesFile, `# rules\n\n## Rules\n- ${text}\n- ${other}\n`);
+		writeFileSync(titlesFile, JSON.stringify({ [text]: "야간 작업 문제는 알림으로" }));
+		const items = (await json(await call("GET", `/api/custom/project?key=${BUILTIN_KEY}`))).groups.find((g: any) => g.id === "rules").items;
+		expect(items).toEqual([{ title: "야간 작업 문제는 알림으로", full: text }, { title: "매번 확인해요", full: other }]);
+		writeFileSync(titlesFile, "{nope");
+		const bad = (await json(await call("GET", `/api/custom/project?key=${BUILTIN_KEY}`))).groups.find((g: any) => g.id === "rules").items;
+		expect(bad.map((i: any) => i.title)).toEqual(["야간 작업에서 문제가 생기면 알림 대화창에 보고해요".slice(0, 24) + "…", "매번 확인해요"]);
+	} finally {
+		if (kept) writeFileSync(rulesFile, kept);
+		else rmSync(rulesFile, { force: true });
+		rmSync(titlesFile, { force: true });
+	}
 });
 
 test("broken JSON, a bad id and a missing title come back as {id,file,error}", async () => {
