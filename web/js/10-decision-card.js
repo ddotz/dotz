@@ -23,7 +23,7 @@ function parseChoices(text) {
   const blocks = [];
   for (; i < lines.length; i++) {
     const h = HEAD.exec(lines[i]);
-    if (h) { cur = { title: h[1].trim(), options: [] }; blocks.push(cur); continue; }
+    if (h) { cur = { title: h[1].trim(), options: [], headed: true }; blocks.push(cur); continue; }
     const m = OPT.exec(lines[i]);
     if (!m) continue;
     const n = Number(m[1]);
@@ -35,10 +35,11 @@ function parseChoices(text) {
   }
   return { question, blocks: blocks.filter(b => b.options.length) };
 }
-// Buttons only for a message that carries the [ask] marker (same rule as hub/notices.ts decisionsOf): a plain reply with a "1)" list stays text.
-// The one exception is the gateway's own alert, whose issue reports end in a choice block (2+ options) without a marker.
+// Buttons for a message with the [ask] marker, or with any other marker (or none) when it holds a "결정:" choice block of 2+ options
+// (same rule as hub/notices.ts decisionsOf): a plain reply with a bare "1)" list stays text. The gateway's own alert keeps its looser rule.
 const isChoiceMsg = pc => pc.blocks.some(b => b.options.length > 1);
-const choiceAsks = (e, tone, pc) => tone === "ask" || (e.kind === "out" && e.source === "gateway" && e.target === "alert" && isChoiceMsg(pc));
+const isHeadedChoice = pc => pc.blocks.some(b => b.headed && b.options.length > 1);
+const choiceAsks = (e, tone, pc) => tone === "ask" || isHeadedChoice(pc) || (e.kind === "out" && e.source === "gateway" && e.target === "alert" && isChoiceMsg(pc));
 const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, note: {} };
 // A draft waiting for send approval (hub/draft-approval.ts): the notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
 const DRAFT_EDIT = "고치기";
@@ -68,11 +69,13 @@ function decisionOf(t) {
     }
     if (!raw) return null;
   }
-  const body = parseTone(noHandoff(raw)).text, pc = parseChoices(body);
+  const pt = parseTone(noHandoff(raw)), body = pt.text, pc = parseChoices(body);
   if (!info.ask && !pc.blocks.length) return null;
   if (at && s.msgs.some(e => OWNER.has(e.kind) && msOf(e.ts) > msOf(at))) return null;
   const sig = hashOf(body.trim());
-  return { key: `${t}|${sig}`, t, sig, at, question: pc.question, blocks: pc.blocks };
+  // A status message ([done] ...) that ends in a choice block: its first line is the status, so the block's own title is the question.
+  const question = !info.ask && pt.tone !== "ask" && pc.blocks.length === 1 && pc.blocks[0].title ? pc.blocks[0].title : pc.question;
+  return { key: `${t}|${sig}`, t, sig, at, question, blocks: pc.blocks };
 }
 async function answerDecision(dc, text, opt, note) {
   const t = dc.t, lane = isLaneT(t) ? laneOf(t) : "";   // the card's own conversation: the notice sheet may answer for one that is not on screen

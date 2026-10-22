@@ -712,12 +712,17 @@ const CHOICE = "결정: 정리 세션 시작 전 쌓인 변경 처리\n**1) 먼�
 test("a plain reply with a numbered list is text: no decision, no notice, no push hook", () => {
 	const fresh: Notice[] = [];
 	onDecision(n => fresh.push(n));
-	const at = ["2052-01-01T00:00:01.000Z", "2052-01-01T00:00:02.000Z", "2052-01-01T00:00:03.000Z"];
+	const at = ["2052-01-01T00:00:01.000Z", "2052-01-01T00:00:03.000Z"];
 	post("web", "설치 방법은 두 가지예요\n1) 브루로 설치\n2) 직접 빌드", { ts: at[0] });
-	post("web", "결정: 다른 질문\n**1) 가나** ← 추천\n설명\n**2) 다라**\n설명", { ts: at[1] });
-	emit("outbox", { ts: at[2], kind: "out", source: "lane:x", target: "lane:x", text: "[done] 끝났어요\n**1) 병합**\n**2) 보류**" });
+	emit("outbox", { ts: at[1], kind: "out", source: "lane:x", target: "lane:x", text: "[done] 끝났어요\n**1) 병합**\n**2) 보류**" });
 	expect(stored().filter(n => n.kind === "decision" && at.includes(n.decision?.reply_to ?? ""))).toHaveLength(0);
 	expect(fresh).toHaveLength(0);
+});
+
+test("a reply without a marker but with a 결정: choice block is a decision", () => {
+	const at = "2052-01-01T00:00:02.000Z";
+	post("web", "결정: 다른 질문\n**1) 가나** ← 추천\n설명\n**2) 다라**\n설명", { ts: at });
+	expect(decisions("main").filter(n => n.decision!.reply_to === at)).toHaveLength(1);
 });
 
 test("an [ask] with a choice block is a decision: notice, push hook and the answer path work", async () => {

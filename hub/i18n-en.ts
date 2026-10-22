@@ -22,7 +22,7 @@ const enRetainNudge = "Before continuing, save any durable owner, project or pre
 
 // How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
 // decision buttons and decision notices read (web/js/10-decision-card.js, hub/choices.ts).
-const enIssue = `report it with dotz_send alert: one line for the issue that starts with the [ask] marker (only an [ask] message gets buttons), then a choice block of 2-4 options in this shape:
+const enIssue = `report it with dotz_send alert: one line for the issue that starts with the [ask] marker (a message with a choice block gets buttons whatever its marker), then a choice block of 2-4 options in this shape:
 Decision: <question>
 **1) <name>** ← recommended
 <one-line consequence>

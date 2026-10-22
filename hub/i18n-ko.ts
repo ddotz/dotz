@@ -5,7 +5,7 @@ import type { Catalog, Leads } from "./i18n-en.ts";
 
 // How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
 // decision buttons and decision notices read (web/js/10-decision-card.js, hub/choices.ts).
-const koIssue = `dotz_send alert로 보고하세요: 문제를 [ask]로 시작하는 한 줄로 쓰고([ask] 메시지만 버튼이 돼요), 이어서 이 모양의 선택지 블록(2~4개)을 붙이세요.
+const koIssue = `dotz_send alert로 보고하세요: 문제를 [ask]로 시작하는 한 줄로 쓰고(선택지 블록이 있으면 표식과 상관없이 버튼이 돼요), 이어서 이 모양의 선택지 블록(2~4개)을 붙이세요.
 결정: <질문>
 **1) <이름>** ← 추천
 <한 줄 결과>
