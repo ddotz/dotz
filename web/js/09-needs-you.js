@@ -76,7 +76,7 @@ function toastAttn() {
     ATTN_LAST[t] = k;
     if (!k || k === was || watching(t) || (k === "done" && isLaneT(t)) || (!attnPainted && k !== "ask")) continue;
     const ask = targetInfo(t).ask;
-    notify({ kind: "needs", target: t, open: t, tone: "warn", title: `${targetName(t)} · ${attnLabel(k)}`,
+    notify({ kind: "needs", target: t, open: t, ask: k === "ask", tone: "warn", title: `${targetName(t)} · ${attnLabel(k)}`,
       ts: k === "ask" ? ask.at : k === "done" ? DONE[t] : new Date().toISOString(),
       text: k === "ask" ? ask.text : k === "limit" ? "한도에 걸려 기다리고 있어요" : "답을 마쳤어요. 확인해 주세요" });
   }
