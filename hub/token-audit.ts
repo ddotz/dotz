@@ -349,7 +349,7 @@ export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[]
 			const after = Math.max(0, ...s.fbSegs.map(seg => fallbackAfterCapacity(seg, exhaust)));
 			F.push({
 				flag: s.fbTurns >= 20 && after > 60, kind: "폴백 모델", who, tip: "원래 모델 복귀 확인", what: `의도한 ${s.intended}이 아닌 ${[...s.fbModels].join(", ")}로 ${s.fbTurns}턴`, amount: `${s.fbTurns}턴`, save: 0,
-				evidence: after > 0 ? `한도(429)가 풀린 뒤에도 폴백 ${Math.round(after)}분` : "모두 한도(429 retry-after) 안의 폴백: 체인이 제대로 도는 중",
+				evidence: after > 0 ? `한도(429)가 풀린 뒤에도 폴백 ${Math.round(after)}분` : "모두 한도(429 retry-after) 안의 폴백: 체인이 정상 작동 중",
 				fix: after > 60 ? "제안: 한도가 풀린 뒤에도 폴백에 머무는지 확인 - 의도한 모델 복원" : undefined,
 			});
 		}

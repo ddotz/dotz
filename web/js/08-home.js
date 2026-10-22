@@ -137,7 +137,7 @@ function homeMonitorCard() {
   const list = ntMons(), shown = list.slice(0, 4), bad = list.filter(m => m.last_result === "fail").length;
   const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…";
   return hcCard(() => go("monitoring"), el("div", { class: "ch" }, el("h3", { text: "모니터링" }), bad ? el("span", { class: "tag err", text: `실패 ${bad}` }) : null),
-    state || !list.length ? el("div", { class: "hc-none", text: state || "모니터링 중인 것이 없어요" }) : el("div", { class: "hc-list" }, ...shown.map(m => {
+    state || !list.length ? el("div", { class: "hc-none", text: state || "모니터링 중인 항목이 없어요" }) : el("div", { class: "hc-list" }, ...shown.map(m => {
       const r = m.last_result ? NT_RESULT[m.last_result] : null;
       return el("div", { class: "hc-mon" }, hcDot(r && r[1]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "모니터링" }),
         el("span", { class: "s", text: [ntMonRun(m), r && r[0], ntMonNext(m)].filter(Boolean).join(" · ") })));
@@ -191,7 +191,7 @@ function nowLine(t) {
 }
 // A preview line shows what the owner may read: never the [later] sentinel (a turn handed to a background worker), the handoff
 // block, or an "Ask: " label. Same rule as hub/tone.ts previewSource.
-const LATER_LINE = "뒤에서 작업 중이에요";
+const LATER_LINE = "백그라운드 작업 중";
 const isLaterText = s => /^\s*\[later\]\s*$/i.test(String(s ?? ""));
 function previewSrc(raw) {
   const s = noHandoff(String(raw ?? "")).replace(/^\s*Ask:[ \t]*/i, "");
@@ -235,7 +235,7 @@ function renderHomeNow() {
   const bg = workRunning(), working = run.filter(t => rank(t) < 2).length + bg.length;
   clear(box).append(
     el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
-    el("div", { class: "hn" }, ...dec.map(ntHomeRow), ...loose.map(ntHomeRow), ...need.map(x => homeNowRow(x.t, NEED[x.k], "att")), ...(waiting ? [] : [el("div", { class: "empty", text: "기다리는 게 없어요" })])),
+    el("div", { class: "hn" }, ...dec.map(ntHomeRow), ...loose.map(ntHomeRow), ...need.map(x => homeNowRow(x.t, NEED[x.k], "att")), ...(waiting ? [] : [el("div", { class: "empty", text: "답변할 항목이 없어요" })])),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
     el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", "")), ...bg.map(workRow)),
     endedGroup() || "");

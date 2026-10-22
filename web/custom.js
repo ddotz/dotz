@@ -354,8 +354,8 @@ button.pv-res:hover { background: var(--card-hover); }
     const acts = el("div", { class: "pv-acts" });
     const stop = ev => ev.stopPropagation();
     if (l.resumable) {
-      const b = el("button", { class: "btn tonal", type: "button", text: "이어서 하기" });
-      b.addEventListener("click", ev => { stop(ev); busy(b, async () => { await api(`/api/lanes/${enc(l.name)}/resume`, "POST", {}); toast(`${l.name} 레인을 이어서 해요`); loadDetail(0); }); });
+      const b = el("button", { class: "btn tonal", type: "button", text: "이어서 진행" });
+      b.addEventListener("click", ev => { stop(ev); busy(b, async () => { await api(`/api/lanes/${enc(l.name)}/resume`, "POST", {}); toast(`${l.name} 레인을 이어서 진행해요`); loadDetail(0); }); });
       acts.append(b);
     }
     if (!l.live) {
@@ -415,7 +415,7 @@ button.pv-res:hover { background: var(--card-hover); }
     const b = el("button", { class: "pv-task", type: "button", title: `${t.next ? `다음: ${t.next}\n\n` : ""}누르면 ${botName}에게 요청으로 보내요` },
       el("span", { class: "pv-ring" }), el("span", { class: "pv-tw", text: t.what || t.id }));
     b.addEventListener("click", () => busy(b, async () => {
-      if (!await ask("할 일 보내기", `${botName}에게 이어서 해 달라고 보내요: ${t.what}`, "보내기")) return;
+      if (!await ask("할 일 보내기", `${botName}에게 이어서 진행하도록 요청해요: ${t.what}`, "보내기")) return;
       await sendReq(`할 일 ${t.id}: ${t.what} - 이어서 해 주세요.`, "main");
     }));
     return b;

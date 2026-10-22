@@ -149,7 +149,7 @@ function sessionRow(l, o = {}) {
 // Status dot and word of a project: waiting on the owner > working > a live session or channel > nothing running.
 function prjStatus(p) {
   const ls = p.lanes || [];
-  if (prjPaused(p)) return ["", "쉬는 중"];
+  if (prjPaused(p)) return ["", "일시 정지"];
   if (ls.some(l => l.waiting)) return ["att", "질문 대기"];
   if (ls.some(l => l.live && l.status === "working")) return ["pri", "작업 중"];
   return [ls.some(l => l.live) || p.channel ? "ok" : "", ""];
@@ -167,7 +167,7 @@ function renderProjects() {
   const box = $("#v-projects");
   if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
   const list = PRJ.projects || [];
-  if (!list.length) { delete box.dataset.sig; clear(box).append(emptyNode("아직 프로젝트가 없어요. 채팅에서 계속 돌아가야 하는 일을 맡기면 여기에 생겨요")); return; }
+  if (!list.length) { delete box.dataset.sig; clear(box).append(emptyNode("아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요")); return; }
   const sig = JSON.stringify([list, ppCur, current === "project", list.map(p => { const c = prjChat(p); return c ? ts(c).unread : 0; })]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;

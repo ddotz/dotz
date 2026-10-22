@@ -120,7 +120,7 @@ function pmGlance(ms, rows) {
     const now = pmNow(rows), wait = pmWait(rows), next = ms.find(m => !m.done);
   const line = (label, text, tone) => el("div", { class: "pmv-gl" }, el("span", { class: `dot ${tone}` }), el("span", { class: "pmv-gl-k", text: label }), el("span", { class: "pmv-gl-v", text }));
   return el("div", { class: "pmv-glance" },
-    line("지금 하는 일", now.length ? now.map(r => r.title).join(", ") : "지금 돌고 있는 세션은 없어요", now.length ? "pri" : ""),
+    line("지금 하는 일", now.length ? now.map(r => r.title).join(", ") : "실행 중인 세션이 없어요", now.length ? "pri" : ""),
     line("기다리는 것", wait.length ? `${wait.map(r => r.title).join(", ")} · 답이 필요해요` : "없어요", wait.length ? "att" : ""),
     line("다음에 할 일", next ? next.text : ms.length ? "목표를 모두 끝냈어요" : "아직 정한 단계가 없어요", ""));
 }
@@ -198,8 +198,8 @@ function pmRoutine(x) {
         el("span", { class: "pmv-rt-name", text: name }),
         // How it runs (owner 2026-10-21: recurring work runs as scripts first): a monitor is a script the gateway runs with no
         // tokens, a routine or schedule wakes the model.
-        el("span", { class: "tag", title: x.kind === "monitor" ? "게이트웨이가 직접 돌려요 · 토큰 없음" : "돌 때마다 모델이 깨어나요", text: x.kind === "monitor" ? "스크립트" : "모델" }),
-        x.paused ? el("span", { class: "tag", text: "쉬는 중" }) : null, why && tone ? el("span", { class: `tag ${tone}`, text: why }) : null),
+        el("span", { class: "tag", title: x.kind === "monitor" ? "게이트웨이가 직접 실행 · 토큰 없음" : "실행할 때마다 모델을 호출해요", text: x.kind === "monitor" ? "스크립트" : "모델" }),
+        x.paused ? el("span", { class: "tag", text: "일시 정지" }) : null, why && tone ? el("span", { class: `tag ${tone}`, text: why }) : null),
       el("div", { class: "pmv-rt-meta" }, ...meta.map(t => el("span", { text: t }))),
       ...(x.pattern ? [el("div", { class: "pmv-rt-meta" }, el("span", { text: `패턴 · ${x.pattern}` }))] : []), acts, note);
   };
@@ -254,7 +254,7 @@ const pmWorkRow = w => {
 };
 // 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.
 function pmDoing(live, running) {
-  if (!live.length && !running.length) return emptyNode("지금 돌고 있는 일이 없어요");
+  if (!live.length && !running.length) return emptyNode("진행 중인 작업이 없어요");
   return el("div", { class: "list srows" }, ...live.map(pmSessionRow), ...running.map(pmWorkRow));
 }
 function pmRecent(past, done) {

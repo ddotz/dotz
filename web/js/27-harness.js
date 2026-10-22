@@ -173,7 +173,7 @@ function renderHarness() {
   })) : null;
   const bar = el("div", { class: "hm-bar" },
     pj ? hProjHead(pj) : null,
-    el("div", { class: "sup", text: pj ? `이 프로젝트만의 지도예요. 카드를 누르면 값과 설명이 열리고, 고칠 때는 프로젝트 범위를 붙여 ${botName}에게 요청이 가요. 전역 값과 다른 설정에는 '바꿈' 표시가 붙어요.` : hDetail ? "카드를 누르면 설명과 설정이 열려요. 점선 카드는 곁에서 돕는 시스템이에요." : `큰 카드가 메시지가 흐르는 길이에요. 카드 안의 작은 칩은 함께 도는 시스템·파일이고, ${mobile ? "눌러서" : "칩에 마우스를 올리거나 눌러서"} 이어진 곳과 설정을 봐요. 고칠 때는 ${botName}에게 요청이 가요.` }),
+    el("div", { class: "sup", text: pj ? `이 프로젝트만의 지도예요. 카드를 누르면 값과 설명이 열리고, 고칠 때는 프로젝트 범위를 붙여 ${botName}에게 요청이 가요. 전역 값과 다른 설정에는 '바꿈' 표시가 붙어요.` : hDetail ? "카드를 누르면 설명과 설정이 열려요. 점선 카드는 곁에서 돕는 시스템이에요." : `큰 카드가 메시지가 흐르는 길이에요. 카드 안의 작은 칩은 함께 실행되는 시스템·파일이고, ${mobile ? "눌러서" : "칩에 마우스를 올리거나 눌러서"} 이어진 곳과 설정을 봐요. 고칠 때는 ${botName}에게 요청이 가요.` }),
     onlySeg,
     FC && !pj ? el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
     el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hDetail), title: "모든 시스템과 연결선을 한 화면에 그려요", onclick: () => { hDetail = !hDetail; try { localStorage.setItem("dotz-hdetail", hDetail ? "1" : "0"); } catch {} renderHarness(); } }, "자세히"),
