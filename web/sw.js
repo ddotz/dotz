@@ -103,7 +103,7 @@ self.addEventListener("notificationclick", ev => {
       win.postMessage({ open: url, ts: at, ...(id ? { notice: id } : {}) });
       return;
     }
-    const cold = new URL(url);
+    const cold = new URL(id ? "/" : url, location.origin);   // a decision opens its sheet over the start screen, not its conversation
     if (at) cold.searchParams.set("m", at);
     if (id) cold.searchParams.set("n", id);
     await self.clients.openWindow(cold.href);
