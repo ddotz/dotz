@@ -214,14 +214,6 @@ addEventListener("pagehide", () => viewReport(true));
 setInterval(viewReport, 2000);
 
 /* ---- the list ---- */
-// KST HH:MM for today, M/D for earlier days.
-function convTime(iso) {
-  const d = new Date(iso);
-  if (isNaN(d)) return "";
-  if (kstDay(d) === kstDay(Date.now())) return d.toLocaleTimeString("en-GB", { ...KST, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { ...KST, month: "numeric", day: "numeric" }).formatToParts(d).map(x => [x.type, x.value]));
-  return `${p.month}/${p.day}`;
-}
 // The main assistant first, then the projects by their newest message (silent ones after, in project order), each followed by its live
 // sessions (indented, with the session's status badge); sessions started from chat close the list under "프로젝트 없음".
 function convRows() {
@@ -256,15 +248,14 @@ function convRow(r) {
     const on = current === "monitoring";
     return el("button", { class: `cv-row${on ? " on" : ""}`, type: "button", "data-mon": "1", "aria-current": on ? "true" : null, onclick: () => go("monitoring") },
       el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon("activity")),
-      el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: r.name }), el("span", { class: "cv-p", text: r.hint })),
+      el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: r.name })),
       el("span", { class: "cv-m" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null));
   }
   const sel = r.t === target && current === "chat";
-  const text = r.last ? `${r.last.from === "owner" ? "나: " : ""}${r.last.text}` : r.hint || "아직 대화가 없어요";
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last ? "" : " none"}`, type: "button", "data-t": r.t, "aria-current": sel ? "true" : null, onclick: () => go("chat", r.t) },
     convAvatar(r.t),
-    el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: r.name }), el("span", { class: "cv-p", text })),
-    el("span", { class: "cv-m" }, el("span", { class: "cv-t", text: r.last ? convTime(r.last.ts) : "" }), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
+    el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name })),
+    el("span", { class: "cv-m" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
