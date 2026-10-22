@@ -29,7 +29,7 @@ import { listPeers } from "./peers.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { hostname } from "node:os";
 import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
-import { sendWeb } from "./intake.ts";
+import { parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body, terminals } from "./routes-util.ts";
 import { ptyRoute } from "./pty.ts";
 import { routeLanes } from "./routes-lanes.ts";
@@ -228,6 +228,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 			const lane = b.lane ? String(b.lane) : undefined;
 			const conv = b.conv === "alert" || b.conv === "worklog" ? b.conv : undefined;
 			const channel = b.channel === "terminal" ? "terminal" : "web";
+			// A reply to a message (swipe / reply button in the web): the quoted message reaches the model like a Discord reply (intake.ts parseReply).
+			const reply = parseReply(b.reply, login);
 			let project: { target: string; name: string } | undefined;
 			if (b.project) {
 				if (lane) return json({ error: "lane and project are exclusive" }, 400);
@@ -239,13 +241,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 			}
 			// The queue sends to the main conversation when the turn ends; a project message goes in now (intake merges a burst).
 			if (mode === "queue" && !project && !conv && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
-				const item = enqueue(lane ? `lane:${lane}` : "main", [text, files.length ? attachmentLines(files) : ""].filter(Boolean).join("\n"), login);
+				const item = enqueue(lane ? `lane:${lane}` : "main", [reply ? replyLine(reply) : "", text, files.length ? attachmentLines(files) : ""].filter(Boolean).join("\n"), login);
 				return json({ ok: true, queued: item });
 			}
 			try {
 				// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
 				const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120) }] : [])) : [];
-				await sendWeb({ lane, project, conv: lane || project ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(picks.length ? { picks } : {}) });
+				await sendWeb({ lane, project, conv: lane || project ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}
