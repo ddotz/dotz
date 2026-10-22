@@ -43,12 +43,12 @@ function prSheet() {
   const x = el("button", { type: "button", class: "ib", "aria-label": "닫기", onclick: () => prClose() });
   x.append(icon("close"));
   const rows = PR.list.map(p => {
-    const sub = p.self ? "지금 보고 있어요" : p.online ? "연결됨" : "꺼져 있어요";
+    // Connection state is the pill on the right (not a second dot next to the accent dot of the computer being viewed), so the subtitle only says "지금 보고 있어요".
     const note = prText(p);
     return el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}`, "aria-current": p.self ? "true" : null, onclick: () => prPick(p) },
-      el("span", { class: `dot ${p.online ? "ok" : ""}`, "aria-hidden": "true" }),
-      el("span", { class: "pr-b" }, el("span", { class: "pr-t", text: p.name }), el("span", { class: "pr-s", text: sub })),
-      note ? el("span", { class: `pr-bd${p.need > 0 ? " need" : ""}`, text: note }) : null);
+      el("span", { class: "pr-b" }, el("span", { class: "pr-t", text: p.name }), p.self ? el("span", { class: "pr-s", text: "지금 보고 있어요" }) : null),
+      note ? el("span", { class: `pr-bd${p.need > 0 ? " need" : ""}`, text: note }) : null,
+      el("span", { class: `pr-st${p.online ? " ok" : ""}`, text: p.online ? "연결됨" : "연결 안 됨" }));
   });
   clear(PR.node.firstElementChild).append(
     el("div", { class: "ds-hd" }, el("span", { class: "ds-ey pr-ey", text: "컴퓨터" }), x),
