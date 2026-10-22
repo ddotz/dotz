@@ -80,7 +80,7 @@ function renderBars() {
       ...(LA.some(v => !PA.some(p => p.t === homeOfT(v.t))) ? [{ header: "프로젝트 없음" }, ...LA.filter(v => !PA.some(p => p.t === homeOfT(v.t))).map(sesItem)] : []),
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
       ...(D.length ? [{ value: "__ended", label: `종료된 세션 ${D.length}`, sub: "기록 보기 · 재개" }] : [])];
-    drop._pick = v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else pickTarget(v); };
+    drop._pick = v => { if (v === "__ended") { endedOpen = true; go("chat", "list"); } else pickTarget(v); };
     drop.onclick = () => showMenu(drop, drop._items(), { value: target, onPick: drop._pick });
     const ud = mode === "term" && ts(target).unread > 0;
     clear(bar).append(sw, drop);

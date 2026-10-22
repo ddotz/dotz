@@ -15,7 +15,6 @@ async function refreshState() {
     if (isProjT(target) && !projTargets().includes(target)) setTarget(MAIN);   // its work channel was deleted
     noteStatus(); paintAuth(); paintDecision();
     renderBars(); renderWorking(); updateComposerMeta();
-    if (current === "lanes") renderLanes();
     if (current === "project") pmPaint();
     if (current === "home") renderHome();
     if (current === "settings") renderSettings();
