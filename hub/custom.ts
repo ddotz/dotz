@@ -455,12 +455,23 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 export const BUILTIN_KEY = "builtin:custom";
 export const builtinProject = (): Project => ({ key: BUILTIN_KEY, name: "커스텀", note: "내 취향대로 바꾼 것을 한곳에서 보고, 바꾸고 싶은 건 말로 부탁해요", pinned: true, builtin: true, lanes: [] });
 
-type OverviewItem = { title: string; line: string; bad?: boolean };
+type OverviewItem = { title: string; line?: string; full?: string; bad?: boolean };
 type OverviewGroup = { id: string; label: string; empty: string; items: OverviewItem[]; more?: number };
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const routineWhen = (r: Routine) => (!r.schedule ? "눌러서 실행해요" : "at" in r.schedule ? `매일 ${r.schedule.at}에 해요` : `${r.schedule.every_minutes}분마다 해요`);
 const VIEW_KO: Record<View, string> = { text: "글", stat: "숫자", list: "목록", kv: "항목별 값" };
 const RULE_CAP = 15;
+const RULE_TITLE_MAX = 25;
+
+// One short phrase for a rule row. The owner's phrase wins: <DATA_DIR>/rule-titles.json maps a rule's text (as written after
+// its "- ") to a title, which the bot adds with the rule. Without one: the text without its [MM-DD] stamp, up to the first
+// sentence or clause end (". ", ": ", "; ", "("), cut to RULE_TITLE_MAX. No model call; the full text stays on the row.
+export function ruleTitle(text: string, titles: Record<string, unknown> = {}): string {
+	const own = titles[text];
+	if (typeof own === "string" && own.trim()) return clip(own.trim().replace(/\s+/g, " "), RULE_TITLE_MAX);
+	const plain = text.replace(/^\[\d{2}-\d{2}\]\s*/, "").replace(/\s+/g, " ").trim();
+	return clip((plain.split(/[.:;]\s|\s?\(/)[0] || plain).trim(), RULE_TITLE_MAX);
+}
 
 export function builtinDetail() {
 	const errors: CustomError[] = [];
@@ -472,6 +483,11 @@ export function builtinDetail() {
 	try {
 		rules = readFileSync(paths.rules, "utf8").split("\n").map(l => l.trim()).filter(l => /^(?:[-*]|\d+[.)])\s+\S/.test(l) && !shipped.has(l)).map(l => l.replace(/^(?:[-*]|\d+[.)])\s+/, "").replace(/^deny:\s*.*?\s\|\s+/, "막아 둔 명령: "));
 	} catch {}
+	let ruleTitles: Record<string, unknown> = {};
+	try {
+		const raw = JSON.parse(readFileSync(paths.ruleTitles, "utf8"));
+		if (raw && typeof raw === "object" && !Array.isArray(raw)) ruleTitles = raw;
+	} catch {}
 	const feats = loadFeatureDirs(DATA_DIR).features.filter(f => f.origin === "personal");
 	const id = cfg.identity ?? {};
 	const said: OverviewItem[] = [];
@@ -482,7 +498,7 @@ export function builtinDetail() {
 		{ id: "cards", label: "홈 카드", empty: "아직 만든 카드가 없어요", items: cards.map(c => ("error" in c ? { title: c.id, line: "파일에 문제가 있어서 카드가 안 보여요", bad: true } : { title: c.spec.title, line: c.spec.note || `홈에 ${VIEW_KO[c.spec.view]}로 보여 줘요` })) },
 		{ id: "pins", label: "고정 항목", empty: "사이드바에 고정한 게 없어요", items: [...pins.projects.map(p => ({ title: p.name, line: p.note || "사이드바에 고정한 프로젝트예요" })), ...pins.links.map(l => ({ title: l.name, line: "사이드바에 고정한 링크예요" }))] },
 		{ id: "routines", label: "루틴", empty: "아직 만든 루틴이 없어요", items: pins.routines.map(r => ({ title: r.name, line: routineWhen(r) })) },
-		{ id: "rules", label: "내 규칙", empty: "아직 정한 규칙이 없어요", items: rules.slice(0, RULE_CAP).map(r => ({ title: clip(r, 60), line: "항상 지키는 규칙이에요" })), ...(rules.length > RULE_CAP ? { more: rules.length - RULE_CAP } : {}) },
+		{ id: "rules", label: "내 규칙", empty: "아직 정한 규칙이 없어요", items: rules.slice(0, RULE_CAP).map(r => ({ title: ruleTitle(r, ruleTitles), full: r })), ...(rules.length > RULE_CAP ? { more: rules.length - RULE_CAP } : {}) },
 		{ id: "features", label: "내 기능", empty: "아직 만든 기능이 없어요", items: feats.map(f => ({ title: f.name, line: f.enabled ? clip(f.what || "내가 만든 기능이에요", 80) : "꺼져 있어요", ...(f.enabled ? {} : { bad: true }) })) },
 		{ id: "identity", label: "말투와 성격", empty: "기본 말투와 성격 그대로예요", items: said },
 	];
