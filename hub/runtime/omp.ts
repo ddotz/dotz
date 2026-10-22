@@ -335,7 +335,7 @@ export const omp: RuntimeAdapter = {
 		const mode = o.role === "orchestrator" ? ["--extension", EXTENSION, ...orchestratorOverlay(o)] : [`--config=${writeOverlay(o, o.lane!)}`];
 		// An API-key entry's provider only exists once the dotz extension has registered it (hub/fallback.ts keyEnv): the process
 		// starts on the entry's own model and is switched to the key provider's copy before the first prompt (RPC commands run in order).
-		const key = o.env.DOTZ_KEY_PROVIDER ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined;
+		const key = o.env.DOTZ_KEY_PROVIDER && o.env.DOTZ_KEY_VALUE ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined;
 		const startModel = key ? `${key.baseModel}:${parseSelector(o.model).thinking}` : o.model;
 		const proc = Bun.spawn([OMP, "--mode", "rpc", "--model", startModel, ...mode, ...(o.resume ? ["--resume", o.resume] : [])], {
 			cwd: o.cwd,

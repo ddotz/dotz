@@ -58,7 +58,9 @@ function fbEditor(L, F, list, i) {
   const only = F.providers && F.providers.length === 1 ? F.providers[0] : "";
   const seg = (label, opts, val, pick) => el("div", { class: "tf" }, el("span", { class: "lb", text: label }), el("div", { class: "seg", role: "radiogroup", "aria-label": label },
     ...opts.map(([v, t]) => el("button", { type: "button", role: "radio", "aria-checked": String(v === val), class: v === val ? "on" : "", onclick: () => pick(v) }, t))));
-  const hub = F.conditions && L.id !== "workers";
+  const hub = F.conditions;
+  // The subagents' chain keeps bare models plain; only its API-key entries take a condition, a cap and a revert.
+  const cond = hub && (L.id !== "workers" || Boolean(d.key_file));
   const keyable = hub && ["anthropic", "openai", "openrouter"].includes(base.split("/")[0]);
   const pickKey = () => fbKeyDialog({ ...d, model: base }, f => { d.key_file = f || undefined; redraw(); });
   const kp = d.key_file && fbKeys ? (fbKeys.providers || []).find(p => p.file === d.key_file) : null;
@@ -67,8 +69,9 @@ function fbEditor(L, F, list, i) {
   const capNum = (k, opts) => input({ type: "number", min: "0", ...opts, value: c[k] ? String(c[k]) : "", placeholder: "없음", oninput: ev => { c[k] = ev.target.value; } });
   const save = btn => busy(btn, async () => {
     const { _cap, ...e } = d, u = Number(_cap.usd), t = Number(_cap.tokens);
-    e.cap = hub && (u > 0 || t > 0) ? { period: _cap.period, ...(u > 0 ? { usd: u } : {}), ...(t > 0 ? { tokens: t } : {}) } : undefined;
-    if (!hub) for (const k of ["when", "revert", "key_file"]) delete e[k];
+    e.cap = cond && (u > 0 || t > 0) ? { period: _cap.period, ...(u > 0 ? { usd: u } : {}), ...(t > 0 ? { tokens: t } : {}) } : undefined;
+    if (!cond) for (const k of ["when", "revert"]) delete e[k];
+    if (!hub) delete e.key_file;
     if (await fbSave(L.id, list.map((x, j) => (j === i ? e : x)))) { fbOpen = null; renderModels(); }
   });
   const remove = btn => busy(btn, async () => { if (await fbSave(L.id, list.filter((_, j) => j !== i))) { fbOpen = null; renderModels(); } });
@@ -77,12 +80,12 @@ function fbEditor(L, F, list, i) {
       selectField("모델", nm, () => modelItems(`fbe:${L.id}`, base, only), base, v => setModel(fbBase(v), level)),
       selectField("추론 강도", level || "기본 모델과 같게", [{ value: "", label: "기본 모델과 같게" }, ...(M.thinking_levels || []).map(lv => ({ value: lv, label: lv }))], level, v => setModel(base, v))),
     seg("사용", [["on", "켜기"], ["off", "끄기"]], d.enabled === false ? "off" : "on", v => { d.enabled = v === "on"; redraw(); }),
-    d.key_file && keyable ? seg("서브에이전트·세션", [["", "API 키로 안 돌려요"], ["on", "같은 키로 돌려요"]], d.workers ? "on" : "", v => { d.workers = v === "on" ? true : undefined; redraw(); }) : null,
+    d.key_file && keyable && L.id !== "workers" ? seg("서브에이전트·세션", [["", "API 키로 안 돌려요"], ["on", "같은 키로 돌려요"]], d.workers ? "on" : "", v => { d.workers = v === "on" ? true : undefined; redraw(); }) : null,
     keyable ? seg("사용 방식", [["login", "구독 (로그인)"], ["key", "API 키"]], d.key_file ? "key" : "login", v => { if (v === "login") { d.key_file = undefined; redraw(); } else pickKey(); }) : null,
     d.key_file && keyable ? el("div", { class: "fbe-key" }, el("span", { class: `sup${kp && !kp.present ? " warn" : ""}`, text: keyText }), el("button", { type: "button", class: "btn text", onclick: pickKey }, "키 바꾸기")) : null,
-    hub ? seg("넘어가는 때", [["", "앞 모델이 안 될 때"], ["quota", "한도 소진 시 (429)"], ["error", "제공자 오류 시"]], d.when || "", v => { d.when = v || undefined; redraw(); }) : null,
-    hub ? seg("기본 모델 복귀", [["", "한도가 풀리면 복귀"], ["keep", "계속 이 모델"]], d.revert === false ? "keep" : "", v => { d.revert = v === "keep" ? false : undefined; redraw(); }) : null,
-    hub ? el("div", { class: "fbe-cap" },
+    cond ? seg("넘어가는 때", [["", "앞 모델이 안 될 때"], ["quota", "한도 소진 시 (429)"], ["error", "제공자 오류 시"]], d.when || "", v => { d.when = v || undefined; redraw(); }) : null,
+    cond ? seg("기본 모델 복귀", [["", "한도가 풀리면 복귀"], ["keep", "계속 이 모델"]], d.revert === false ? "keep" : "", v => { d.revert = v === "keep" ? false : undefined; redraw(); }) : null,
+    cond ? el("div", { class: "fbe-cap" },
       seg("사용 상한 (KST)", [["month", "월"], ["day", "일"]], c.period, v => { c.period = v; redraw(); }),
       textField("금액 (USD)", capNum("usd", { step: "any", inputmode: "decimal" })),
       textField("토큰", capNum("tokens", { step: "1", inputmode: "numeric" }))) : null,
@@ -194,8 +197,8 @@ function fbParts(L) {
     showMenu(ev.currentTarget, modelItems(`fb:${L.id}`, "", only), { value: "", onPick: v => { if (list.some(x => x.model === v && !x.key_file) || fbBase(v) === prim) toast("이미 있는 모델이에요", true); else { fbOpen = { layer: L.id, i: list.length, draft: fbDraftOf({ model: v }) }; fbSave(L.id, [...list, { model: v }]); } } });
   } }, icon("add"), full ? "더 넣을 수 없어요" : "폴백 모델 추가");
   // The usual case: the subscription ran out, so the same model goes on through an API key (only after a usage limit).
-  const addKey = F.conditions && L.id !== "workers" && prim && !full && !list.some(x => x.key_file && fbBase(x.model) === prim) ? el("button", { type: "button", class: "fb-add", onclick: () => fbKeyDialog({ model: prim }, file => file && fbSave(L.id, [...list, { model: prim, key_file: file, when: "quota" }])) }, icon("add"), "구독 소진 시 API 키로 계속") : null;
-  const how = L.id === "workers" ? "서브에이전트 폴백은 순서만 정해요. 조건·상한·API 키는 쓰지 않아요."
+  const addKey = F.conditions && prim && !full && !list.some(x => x.key_file && fbBase(x.model) === prim) ? el("button", { type: "button", class: "fb-add", onclick: () => fbKeyDialog({ model: prim }, file => file && fbSave(L.id, [...list, { model: prim, key_file: file, when: "quota" }])) }, icon("add"), "구독 소진 시 API 키로 계속") : null;
+  const how = L.id === "workers" ? "서브에이전트 폴백은 순서대로 넘어가요. API 키 단계는 세션이 시작될 때 정해져요. 이미 도는 서브에이전트는 모델을 그대로 쓰고, 상한·복귀는 다음 시작부터 반영돼요."
     : F.harness && F.harness.id === "claude" ? "Claude Code는 Anthropic 모델만, 조건 없이 순서대로 넘어가요."
     : "단계를 누르면 바로 수정해요(모델·추론 강도·구독/API 키·넘어가는 때·복귀·상한). 끌거나 화살표로 순서를 바꿔요.";
   return {
