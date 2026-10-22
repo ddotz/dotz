@@ -185,7 +185,7 @@ export const en = {
 	inboxBurst: (n: number) => `(sent as ${n} messages in a row; read them together as one request)`,
 	replyingTo: (author: string, content: string) => `(replying to ${author}: "${content}")`,
 	// A decision answer: each block's question with the chosen option, and the start of the message that asked (hub/intake.ts).
-	decisionAnswer: (picks: { q: string; n: number; label: string }[]) => `Decision answer: ${picks.map((p, i) => `${picks.length > 1 ? `${i + 1}) ` : ""}${p.q || "-"} -> ${p.n}) ${p.label}`).join("; ")}`,
+	decisionAnswer: (picks: { q: string; n: number; label: string; note?: string }[]) => `Decision answer: ${picks.map((p, i) => `${picks.length > 1 ? `${i + 1}) ` : ""}${p.q || "-"} -> ${p.n}) ${p.label}${p.note ? ` - ${p.note}` : ""}`).join("; ")}`,
 	decisionAsked: (quote: string) => `(this answers your question: "${quote}")`,
 	workChannels: (list: string[]) => `(work channel list, not this message's channel: ${list.length ? list.join("; ") : "none yet"})`,
 	// Discord channel names the gateway creates, and the done marker of a lane thread.
@@ -229,6 +229,8 @@ Do this, briefly:
 		incomplete: "Some fields were empty. Press the button again.",
 		storeFailed: "Could not save it. Press the button again.",
 		answerFailed: "Could not pass your answer on. Type it in the channel instead.",
+		noteLabel: "Tell us more",
+		noteMissing: "The text was empty. Press the button again and write it.",
 	},
 
 	// Owner-facing strings of the 구성 map (hub/harness.ts); `locale` formats its dates and numbers.

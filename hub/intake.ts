@@ -31,7 +31,7 @@ export function inboxText(e: Record<string, any>): string {
 
 // A decision answer says which question it answers: the chosen option per block and the start of the asking message (its
 // `reply_to` is that message's ts), so the answer holds up when it is sent from another conversation than the one that asked.
-export type Pick = { q: string; n: number; label: string };
+export type Pick = { q: string; n: number; label: string; note?: string };
 const QUOTE_MAX = 200;
 
 // A web message sent as a reply (swipe or the reply button on a message): `id` is the quoted message's stable id (an owner message's

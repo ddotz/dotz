@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
-import { type DecisionOption, hasDecisionHead, parseDecisions } from "./choices.ts";
+import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
 import { type DraftApproval, draftActionOf, parseDraftApproval } from "./draft-approval.ts";
 import { broadcast, emit, eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
@@ -462,7 +462,7 @@ function ownerReplied(e: HubEvent): void {
 	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && (id ? i.id === id : i.decision!.to === to)) settleDecision(i, text, e.ts);
 }
 
-export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; picks?: { q: string; n: number; label: string }[] }) => Promise<void>;
+export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; picks?: { q: string; n: number; label: string; note?: string }[] }) => Promise<void>;
 // A button of a decision: `n` is the option's number. The answer goes to the asking chat / session (or the login request) through `send`; only
 // when that worked is the notice answered.
 export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -473,14 +473,18 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	const o = d.options.find(x => x.n === Number(body.n));
 	if (!o || o.action === "form") return { status: 400, body: { error: "unknown option" } };
 	const label = `${o.n}) ${o.label}`;
-	// 고치기 on a draft carries what to change; it is the only option that takes a note, and it needs one.
-	const note = d.draft && draftActionOf(o.label) === "edit" ? String(body.note ?? "").replace(/\s+/g, " ").trim().slice(0, 500) : "";
-	if (d.draft && draftActionOf(o.label) === "edit" && !note) return { status: 400, body: { error: "무엇을 고칠지 적어 주세요" } };
+	// 고치기 on a draft carries what to change and needs it. Elsewhere an option that needs detail (choices.ts detailOf: 안 됨 …) needs the owner's written reason too;
+	// a button with its own `say` / `action` (login request, fixed yes / no) never does.
+	const draftEdit = !!d.draft && draftActionOf(o.label) === "edit";
+	const asksDetail = !d.draft && !o.say && !o.action && detailOf(o);
+	const note = draftEdit || asksDetail ? String(body.note ?? "").replace(/\s+/g, " ").trim().slice(0, 500) : "";
+	if (draftEdit && !note) return { status: 400, body: { error: "무엇을 고칠지 적어 주세요" } };
+	if (asksDetail && !note) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");
 	sending.set(item.id, label);
 	try {
 		// `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines).
-		await send({ to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}) });
+		await send({ to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}) }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}) });
 		settleDecision(item, label);
 	} catch (err) {
 		return { status: 409, body: { error: (err as Error).message } };

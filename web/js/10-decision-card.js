@@ -4,6 +4,10 @@
 const CH_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
 const CH_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 const CH_CLOSE = /번호(?:로|를).*(?:답|알려)/;
+// An option that needs detail (tap opens a text field; the answer goes out as `n) label - <text>`): the bot marks it with a trailing ` …` on the name
+// (stripped from the label), or it is guessed from a negative / edit label or a description that asks for text. Mirrors hub/choices.ts detailOf.
+const DETAIL_MARK = /\s*…\s*$/, DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|아니|아냐|고치기|수정|다른)/, DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
+const detailOf = o => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc || "");
 const isDescLine = nx => nx !== undefined && !!nx.trim() && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx);
 // The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
 function stripChoices(text) {
@@ -31,7 +35,8 @@ function parseChoices(text) {
     let desc = "";
     const nx = lines[i + 1];
     if (isDescLine(nx)) { desc = nx.trim(); i++; }
-    cur.options.push({ n, label: m[2].replace(/^\*+|\*+$/g, "").trim(), desc, rec: !!m[3] });
+    const raw = m[2].replace(/^\*+|\*+$/g, "").trim();
+    cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, rec: !!m[3], ...(DETAIL_MARK.test(raw) ? { detail: true } : {}) });
   }
   return { question, blocks: blocks.filter(b => b.options.length) };
 }
@@ -85,7 +90,7 @@ async function answerDecision(dc, text, opt, note) {
     const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
     if (nd) await ntPost(nd, opt.n, note);
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
-    const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label }] : []));
+    const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
     const r = nd ? null : await api("/api/message", "POST", { text, ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
     DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
@@ -93,15 +98,19 @@ async function answerDecision(dc, text, opt, note) {
   } catch (e) { delete DC.st[dc.key]; delete DC.picks[dc.key]; toast(e.message, true); }
   paintDecision();
 }
-function pickOption(dc, bi, opt) {
+// A draft asks for text on 고치기 only; any other decision on an option that needs detail (안 됨 …): what to change / why is typed first, nothing is sent before.
+const needsNote = (dc, opt) => (dc.draft ? opt.label === DRAFT_EDIT : detailOf(opt));
+const pickSay = o => `${o.n}) ${o.label}${o.note ? ` - ${o.note}` : ""}`;
+function pickOption(dc, bi, opt, note) {
   if (DC.st[dc.key]) return;
-  if (dc.draft && opt.label === DRAFT_EDIT) { DC.edit[dc.key] = opt; paintDecision(); return; }   // what to change is typed first
+  if (!note && needsNote(dc, opt)) { DC.edit[dc.key] = { bi, opt }; paintDecision(); return; }
   const p = DC.picks[dc.key] || [];
   DC.picks[dc.key] = p;
-  p[bi] = opt;
+  p[bi] = note ? { ...opt, note } : opt;
+  delete DC.edit[dc.key]; delete DC.note[dc.key];
   const next = dc.blocks.findIndex((_, i) => !p[i]);
   if (next >= 0) { DC.step[dc.key] = next; paintDecision(); return; }
-  answerDecision(dc, dc.blocks.length === 1 ? `${opt.n}) ${opt.label}` : `결정 답: ${dc.blocks.map((_, i) => `${p[i].n}) ${p[i].label}`).join(" · ")}`, dc.blocks.length === 1 ? opt : undefined);
+  answerDecision(dc, dc.blocks.length === 1 ? pickSay(p[0]) : `결정 답: ${dc.blocks.map((_, i) => pickSay(p[i])).join(" · ")}`, dc.blocks.length === 1 ? p[0] : undefined, dc.blocks.length === 1 ? note : undefined);
 }
 function draftNode(d) {
   return el("div", { class: "dc-draft" },
@@ -109,18 +118,19 @@ function draftNode(d) {
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
     el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }));
 }
-// 고치기 on a draft: the owner types the change, then the answer goes out with it.
-function editNode(dc, opt, st) {
-  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: "어떻게 고칠까요?", "aria-label": "고칠 내용", disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
+// 고치기 on a draft, or an option that needs detail (안 됨 …): the owner types the change / reason, then the answer goes out with it.
+function editNode(dc, ed, st) {
+  const opt = ed.opt, drf = !!dc.draft;
+  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: drf ? "어떻게 고칠까요?" : "이유나 내용을 적어 주세요", "aria-label": drf ? "고칠 내용" : "자세한 내용", disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
   ta.value = DC.note[dc.key] || "";
-  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) answerDecision(dc, `${opt.n}) ${opt.label} - ${note}`, opt, note); } }, "고칠 내용 보내기");
+  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, note); } }, drf ? "고칠 내용 보내기" : "내용 보내기");
   const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, "돌아가기");
-  return el("div", { class: "dc-edit" }, ta, el("div", { class: "dc-eb" }, back, go));
+  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A decision in the full-screen overlay (30-notices.js dkOpen, 38-overlay.js): header = what it is, body = the draft or the question, sticky footer = the choices.
 // A draft waiting for send approval shows who and what in the header and 보내기 / 고치기 / 보내지 않기 in the footer. Only the body scrolls.
 function renderSheet(box, dc, picks, step) {
-  const st = DC.st[dc.key] || "", d = dc.draft, edit = d && DC.edit[dc.key] && !st.startsWith("sent") ? DC.edit[dc.key] : null;
+  const st = DC.st[dc.key] || "", d = dc.draft, edit = DC.edit[dc.key] && !st.startsWith("sent") ? DC.edit[dc.key] : null;
   const old = $(".fs-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   const oldNote = $(".dc-note", box), refocus = !!oldNote && document.activeElement === oldNote, caret = refocus ? oldNote.selectionStart : 0;
   const qText = d ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
@@ -132,9 +142,9 @@ function renderSheet(box, dc, picks, step) {
   const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, el("div", { class: "dc-dr-b", text: d.body }))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   const foot = el("div", { class: "fs-ft" });
-  if (d) {
-    if (edit) foot.append(editNode(dc, edit, st));
-    else foot.append(el("div", { class: "dc-acts" }, ...dc.blocks[0].options.map((o, i) =>
+  if (edit) foot.append(editNode(dc, edit, st));
+  else if (d) {
+    foot.append(el("div", { class: "dc-acts" }, ...dc.blocks[0].options.map((o, i) =>
       el("button", { class: `dc-act${i === 0 ? " main" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label))));
   } else {
     if (dc.blocks.length > 1) foot.append(el("div", { class: "dc-steps", role: "group", "aria-label": "결정 단계" }, ...dc.blocks.map((b, i) =>
@@ -158,6 +168,7 @@ function choiceRow(dc, step, o, picks, st) {
 }
 function renderDecision(box, dc, picks, step) {
   if (dc.close) { renderSheet(box, dc, picks, step); return; }
+  const hadNote = !!$(".dc-note", box);
   const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   // A draft message starts with its quoted draft, so the question is the block's own title without the draft's id.
   const qText = dc.draft ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
@@ -170,7 +181,7 @@ function renderDecision(box, dc, picks, step) {
   if (!fold) {
     const body = el("div", { class: "dc-body" });
     if (dc.draft) body.append(draftNode(dc.draft));
-    if (dc.draft && DC.edit[dc.key] && !st.startsWith("sent")) { body.append(editNode(dc, DC.edit[dc.key], st)); kids.push(body); }
+    if (DC.edit[dc.key] && !st.startsWith("sent")) { body.append(editNode(dc, DC.edit[dc.key], st)); kids.push(body); }
     else {
     if (dc.blocks.length > 1) body.append(el("div", { class: "dc-steps", role: "group", "aria-label": "결정 단계" }, ...dc.blocks.map((b, i) =>
       el("button", { class: `dc-chip${i === step ? " on" : ""}${picks[i] ? " got" : ""}`, type: "button", disabled: !!st, "aria-pressed": String(i === step), onclick: () => { DC.step[dc.key] = i; paintDecision(); } }, `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}`))));
@@ -188,6 +199,7 @@ function renderDecision(box, dc, picks, step) {
   clear(box).append(...kids);
   box.classList.toggle("fold", fold);
   const nb = $(".dc-body", box); if (nb) nb.scrollTop = top;
+  const nn = $(".dc-note", box); if (nn && !hadNote) nn.focus({ preventScroll: true });   // the field a tap just opened takes the focus
 }
 // In-message rows follow the same state: tappable only while their question is the pending one.
 // Otherwise they follow the message's own decision notice (hub/notices.ts keeps it open until answered, however much was posted
@@ -208,6 +220,8 @@ function syncInlineChoices() {
 }
 // A tap on a message that is no longer the pending card: answered through the notice path, so the notice and the buttons settle together.
 async function answerInline(nd, opt) {
+  // An option that needs detail opens the notice sheet with its text field; nothing is sent from the row.
+  if (!nd.decision.draft && ntNeedsNote(nd, opt)) { await noticeSheetOpen(nd.id); ntAnswer(nd, opt); return; }
   dcSending.add(nd.id); syncInlineChoices();
   try { await ntPost(nd, opt.n); } catch (e) { toast(e.message, true); }
   dcSending.delete(nd.id); syncInlineChoices();
@@ -231,7 +245,7 @@ function paintDecision() {
   if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; clear(box); }
   else {
     const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
-    const sig = JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || ""]);
+    const sig = JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0]);
     box.hidden = false;
     if (box.dataset.sig !== sig) { renderDecision(box, dc, picks, step); box.dataset.sig = sig; box.dataset.key = dc.key; }
   }
