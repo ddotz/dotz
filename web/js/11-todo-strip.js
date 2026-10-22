@@ -48,6 +48,24 @@ function speakerOf(e) {
   return "";
 }
 const SYS_LABEL = { schedule: "예약", watch: "모니터링", mail: "메일" };
+// A watch event as the owner reads it: "<감시 이름>: 결과가 바뀌었어요", the check output on the next line (mirrors hub/watchtext.ts).
+function watchReasonKo(reason) {
+  const r = String(reason || "").trim();
+  if (r === "output changed" || r === "change") return "결과가 바뀌었어요";
+  if (r === "match" || r.startsWith("matched /")) return "찾던 내용이 나왔어요";
+  if (r === "fail") return "점검에 실패했어요";
+  if (r === "recovered") return "다시 정상이에요";
+  const fails = (r.match(/^failed (\d+) times in a row/) || [])[1];
+  if (fails) return `${fails}번 연속 실패했어요`;
+  if (r.startsWith("stopped after")) return "실패가 이어져 멈췄어요. 승인하면 다시 돌아요";
+  if (r.startsWith("needs the owner")) return "승인이 필요해요";
+  return r;
+}
+function watchBody(e, text) {
+  const name = String(e.label || e.watch || "").trim();
+  if (!name || !e.reason) return text;
+  return `${name}: ${watchReasonKo(e.reason)}${String(text).trim() ? `\n\n${text}` : ""}`;
+}
 // Gateway restart notices: a clean one (nothing was cut off) leaves the chat and only counts toward the top banner.
 const isRestart = e => e.kind === "out" && e.source === "gateway" && /^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(e.text ?? ""));
 const cleanRestart = e => isRestart(e) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
@@ -169,7 +187,7 @@ function msgNode(e) {
     }
     // falls through: a mail without a subject line shows as plain text
     case "schedule": case "watch":
-      return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL[e.kind] }), el("div", { class: "st" }, mdNode(text), el("div", { class: "mt", text: hm })));
+      return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL[e.kind] }), el("div", { class: "st" }, mdNode(e.kind === "watch" ? watchBody(e, text) : text), el("div", { class: "mt", text: hm })));
     default: {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
       // A session's report or answer is a full message; only the gateway's progress line (update_key) stays one compact note.

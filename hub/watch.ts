@@ -23,6 +23,7 @@ import { blockedByFeatures } from "./featuredirs.ts";
 export type Watch = {
 	id: string;
 	name: string;
+	label?: string; // what the owner reads instead of the [a-z0-9-] name (hub/workchannels.ts watchLabel)
 	command: string;
 	script?: string;
 	cwd?: string;
@@ -327,7 +328,8 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	}
 	const old = items.findIndex(w => w.name === name);
 	if (old >= 0) removeWatch(items[old].id);
-	const w: Watch = { id: randomBytes(3).toString("hex"), name, command, ...(script ? { script } : {}), ...(input.cwd ? { cwd: String(input.cwd) } : script ? { cwd: dirname(script) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), ...(input.once === true ? { once: true } : {}), state: { fails: 0 } };
+	const label = String(input.label ?? "").trim().slice(0, 60);
+	const w: Watch = { id: randomBytes(3).toString("hex"), name, ...(label ? { label } : {}), command, ...(script ? { script } : {}), ...(input.cwd ? { cwd: String(input.cwd) } : script ? { cwd: dirname(script) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), ...(input.once === true ? { once: true } : {}), state: { fails: 0 } };
 	items.push(w);
 	save();
 	void run(w);
