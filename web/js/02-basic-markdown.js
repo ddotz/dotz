@@ -63,8 +63,9 @@ function blocks(text) {
   return html.join("");
 }
 function mdHtml(src) {
-  const parts = String(src ?? "").split(/```[^\n`]*\n?([\s\S]*?)(?:```|$)/);
-  return parts.map((p, i) => i % 2 ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : blocks(p)).join("");
+  // split() with two groups: [text, language, code, text, language, code, ...]; each code block gets its copy / run bar (35-code-blocks.js).
+  const parts = String(src ?? "").split(/```([^\n`]*)\n?([\s\S]*?)(?:```|$)/);
+  return parts.map((p, i) => i % 3 === 0 ? blocks(p) : i % 3 === 2 ? codeBlockHtml(parts[i - 1], p) : "").join("");
 }
 const mdNode = (src, cls = "md") => el("div", { class: cls, safeHtml: mdHtml(src) });
 
