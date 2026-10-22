@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CONFIG_FILE, paths } from "./config.ts";
 import { emit, eventTarget, lastEventId, recentEvents, replayAfter } from "./events.ts";
-import { answerDecision, authRequested, authSettled, type DecisionSend, dismissNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { markRead } from "./reads.ts";
+import { answerDecision, authRequested, authSettled, type DecisionSend, dismissNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, readConversationNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -506,4 +507,26 @@ test("a viewed conversation makes no message item; looking at one reads its item
 	post("ch:78", "다른 대화를 보는 중이에요");
 	expect(items()[0]).toMatchObject({ text: "다른 대화를 보는 중이에요", read: false });
 	expect(setViewing("tab-b", "nope")).toEqual({ ok: false });
+});
+
+test("a notice whose message the owner has seen is no longer unread: by the read position, and when the page shows its conversation", () => {
+	const mine = (key: string) => stored().find(n => n.key === key)!;
+	// a session result whose card lives in lane:seen1; reading that conversation up to it (POST /api/read) reads the notice
+	emit("outbox", { ts: "2026-10-22T01:00:00.000Z", kind: "out", source: "lane:seen1", target: "worklog", text: "[done] 읽은 결과", update_key: "lane:seen1" });
+	expect(mine("lane:seen1")).toMatchObject({ kind: "result", src: "lane:seen1", read: false });
+	const before = unreadCount();
+	const r = markRead({ target: "lane:seen1", ts: "2026-10-22T01:00:00.000Z" });
+	if (r.ok) readConversationNotices(r.target, r.ts);
+	expect(mine("lane:seen1").read).toBe(true);
+	expect(unreadCount()).toBe(before - 1);
+	// a position that is behind the message leaves it unread
+	emit("outbox", { ts: "2026-10-22T02:00:00.000Z", kind: "out", source: "lane:seen2", target: "worklog", text: "[done] 안 읽은 결과", update_key: "lane:seen2" });
+	readConversationNotices("lane:seen2", "2026-10-22T01:30:00.000Z");
+	expect(mine("lane:seen2").read).toBe(false);
+	// read earlier on another device: the next report that this conversation is on screen clears it
+	markRead({ target: "lane:seen2", ts: "2026-10-22T03:00:00.000Z" });
+	expect(mine("lane:seen2").read).toBe(false);
+	setViewing("tab-seen", "lane:seen2", Date.now());
+	expect(mine("lane:seen2").read).toBe(true);
+	setViewing("tab-seen", "", Date.now());
 });

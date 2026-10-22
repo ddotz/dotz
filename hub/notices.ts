@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, parseDecisions } from "./choices.ts";
 import { broadcast, emit, eventTarget, type HubEvent, onEmit } from "./events.ts";
+import { readOf } from "./reads.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 
 // The web notification store: every worklog / alert / session result / watch / schedule post, kept in notices.json so the
@@ -258,7 +259,11 @@ export function setViewing(id: unknown, conv: unknown, nowMs = Date.now()): { ok
 	if (!who || typeof conv !== "string" || (conv !== "" && !CONV_RE.test(conv))) return { ok: false };
 	viewers.set(who, { conv, at: nowMs });
 	const item = conv ? items.find(n => n.key === `msg:${conv}`) : undefined;
-	return { ok: true, unread: item && !item.read ? markNoticesRead({ ids: [item.id] }).unread : unreadCount() };
+	if (item && !item.read) markNoticesRead({ ids: [item.id] });
+	// Items of this conversation that the read position already covers (read on another device, or before this fix) leave the bell too.
+	const seen = conv ? readOf(conv) : null;
+	if (seen) readConversationNotices(conv, seen);
+	return { ok: true, unread: unreadCount() };
 }
 
 // An answer of the assistant or a session (not progress, not a keepalive "ok" / "-") in a conversation nobody is viewing: that
@@ -508,9 +513,10 @@ export function dismissNotice(id: unknown): { ok: boolean; held?: boolean; unrea
 	return { ok: true, unread: unreadCount() };
 }
 
-// The owner read the 알림 / 작업 기록 conversation up to `upTo`: its bell items up to there are read too (an open decision stays open).
-export function readConversationNotices(conv: "alert" | "worklog", upTo: string): void {
-	const ids = items.filter(i => i.kind === conv && !i.read && (i.at ?? i.ts) <= upTo).map(i => i.id);
+// The owner read a conversation up to `upTo`: every bell item whose source message lives there (and the 알림 / 작업 기록 items of
+// those two conversations) up to that point is read too (an open decision stays open until answered).
+export function readConversationNotices(conv: string, upTo: string): void {
+	const ids = items.filter(i => !i.read && !i.dismissed && (i.kind === conv || (i.src ?? i.open) === conv) && (i.at ?? i.ts) <= upTo).map(i => i.id);
 	if (ids.length) markNoticesRead({ ids });
 }
 
