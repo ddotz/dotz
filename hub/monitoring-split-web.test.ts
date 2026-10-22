@@ -33,7 +33,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 	const env: Record<string, unknown> = {
 		intgWatch: () => {}, INTG: { items: integrations }, NT: { items: notices, loaded: true }, CONV: new Map(), MAILS: new Map(),
 		ntById: (id: string) => notices.find(n => n.id === id), ntAt: (n: N) => Date.parse(String(n.updated || n.ts)), ntPlain: (s: unknown) => String(s ?? ""),
-		kstDay: (t: string) => String(t).slice(0, 10), kstHM: (t: string) => String(t).slice(11, 16), dayLabel: () => "어제", ntTime: (t: string) => String(t).slice(11, 16),
+		KST: {}, kstDay: (t: string) => String(t).slice(0, 10), kstHM: (t: string) => String(t).slice(11, 16), dayLabel: () => "어제", ntTime: (t: string) => String(t).slice(11, 16),
 		convPreview: (s: string) => String(s ?? "").split("\n")[0], el, icon: (k: string) => el("i", { class: `ic ${k}` }),
 		msgNode: (e: N) => { drawn.push(e); return el("div", { class: "bm alert" }, el("div", { class: "mt" }, el("span", { class: "mn", text: "알림" }), " · hm"), el("p", { text: e.text })); },
 		cardNode: () => { throw new Error("a fact card is not a conversation message"); },

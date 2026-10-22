@@ -152,8 +152,9 @@ function msgNode(e) {
     case "result": {
       const go = el("button", { class: "btn tonal", type: "button", text: "세션 열기" });
       go.onclick = () => pickTarget(e.open || "main");
-      const lines = text.split("\n").filter(Boolean).slice(0, 3).join("\n");
-      return el("div", { class: "bm" }, el("div", { class: "mt", text: ["세션 결과", hm].filter(Boolean).join(" · ") }),
+      // the preview is plain text: drop the markdown bold and code marks
+      const lines = text.replace(/\*\*|`/g, "").split("\n").filter(Boolean).slice(0, 3).join("\n");
+      return el("div", { class: "bm res" }, el("div", { class: "mt", text: ["세션 결과", hm].filter(Boolean).join(" · ") }),
         el("div", { class: "ccard" }, el("div", { class: "cc-hd" }, el("span", { class: "dot ok" }), el("span", { text: `${e.title || "세션"} 끝났어요` }), e.verified ? el("span", { class: "tag ok", text: "확인됨" }) : null),
           lines ? el("div", { class: "cc-note", text: lines }) : null, el("div", { class: "btns cc-act" }, go)));
     }

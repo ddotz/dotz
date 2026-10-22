@@ -99,7 +99,7 @@ function monRows(items, sel) {
   for (const it of items) {
     if (it.group && it.group !== group) rows.push({ header: it.group });
     group = it.group;
-    rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, when: it.at ? monTime(it.at) : "", unread: it.unread, badge: it.badge || null, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", it.key) });
+    rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, badge: it.badge || null, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", it.key) });
   }
   if (!NM.loaded) rows.push({ header: NM.failed ? "모니터링을 불러오지 못했어요" : "모니터링 불러오는 중…" });
   return rows;
@@ -189,7 +189,7 @@ function renderMonitoring() {
   monRaf = 0;
   if (current !== "monitoring") return;
   const items = monItems(), sel = monSel(items), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");
-  const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.when, r.unread, r.badge, r.header, r.sel])]);
+  const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.badge, r.header, r.sel])]);
   if (sideSig !== MON.side) {
     MON.side = sideSig;
     const top = side.scrollTop;

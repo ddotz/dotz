@@ -83,6 +83,9 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .cmdbox { min-width: 0; }
 /* command answer card (out events with .card, command replies) */
 .ccard { max-width: 560px; padding: 14px 16px; border-radius: var(--r-card); background: var(--card); }
+/* the session-result card sits straight in the timeline column: as wide as the replies and the composer, not the 560px a command answer gets */
+.bm.res > .ccard { max-width: none; }
+@media (max-width: 639px) { .tl-in > .bm.res { padding: 0; } .bm.res > .mt { padding: 0 16px; } }
 .cc-hd { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
 .cc-facts { display: grid; grid-template-columns: fit-content(40%) minmax(0, 1fr); gap: 4px 16px; margin: 10px 0 0; font-size: 14px; line-height: 22px; }
 .cc-facts dt { color: var(--fg-3); overflow-wrap: anywhere; }

@@ -1,4 +1,4 @@
-/* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, status; no preview or time) and the "새 메시지" divider.
+/* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, one-line preview, status; never a time) and the "새 메시지" divider.
    Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
 .cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow-panel); overflow: hidden auto; }
 .cv-side { display: none; }
@@ -30,13 +30,12 @@
 .cv-row.sub .cv-n { font-size: 14px; }
 .cv-gh { padding: 12px 16px 4px; color: var(--fg-3); font: 500 12px/16px var(--font); }
 .cv-m { flex: none; display: flex; align-items: center; gap: 6px; }
-/* a row with a preview line (running sessions, 모니터링): the time sits above the badge on the right */
+/* a row with a preview line (running sessions, 모니터링) */
 .cv-row.pv { align-items: flex-start; padding-block: 10px; }
 .cv-row.pv .cv-p { font-size: 13px; line-height: 18px; }
-.cv-row.pv .cv-m { flex-direction: column; align-items: flex-end; gap: 4px; }
+.cv-row.pv .cv-m { align-self: center; }
 .cv-m2 { display: flex; align-items: center; gap: 6px; }
 .cv-m2:empty { display: none; }
-.cv-t { color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
 .cv-head .cvmenu { margin-left: auto; }
 
 /* the header picker (chips / caret menu) is replaced by the list in 대화; 로그 keeps it */
