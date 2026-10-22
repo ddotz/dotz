@@ -19,7 +19,7 @@ function workAgo(w) {
 const workLine = ws => `뒤에서 작업 중 · ${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · 외 ${ws.length - 1}개` : ""}`;
 // Re-read the state while work runs, so a finished or failed one leaves the line without waiting for another event.
 setInterval(() => { if (!document.hidden && workRunning().length) refreshState(); }, 15000);
-setInterval(() => { if (document.hidden) return; if (current === "lanes") renderWorkGroup(); }, 20000);
+setInterval(() => { if (document.hidden) return; if (current === "lanes") renderLanes(); }, 20000);
 function setSubs(source, items) {
   if (!source) return;
   SUBS[source] = Array.isArray(items) ? items : [];

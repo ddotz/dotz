@@ -53,6 +53,8 @@ function renderBars() {
     return b; };
   const sep = () => el("span", { class: "tsep", "aria-hidden": "true" });
   const menuItem = v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" });
+  const homeOfT = t => { const l = lanes.find(x => `lane:${x.name}` === t); return l ? laneHome(l) : ""; };
+  const sesItem = v => { const l = lanes.find(x => `lane:${x.name}` === v.t); return { ...menuItem(v), indent: true, sub: [l ? sessionStatus(l)[0] : v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · ") }; };
   for (const bar of document.querySelectorAll(".thead")) {
     const mode = bar.dataset.mode, msig = `${sig}|${mode}`;
     if (bar.dataset.sig === msig || (openMenu && bar.contains(openMenu.anchor))) continue;
@@ -72,9 +74,10 @@ function renderBars() {
       icon("drop"));
     drop._items = () => [
       menuItem(A[0]), ...FA.map(menuItem),
-      ...(PA.length ? [{ header: "프로젝트" }, ...PA.map(menuItem)] : []),
-      ...(PA.length && (LA.length || D.length) ? [{ header: "세션" }] : []),
-      ...LA.map(menuItem),
+      // each project followed by its sessions (indented, with the session's status); sessions started from chat close the list
+      ...(PA.length ? [{ header: "프로젝트" }] : []),
+      ...PA.flatMap(p => [menuItem(p), ...LA.filter(v => homeOfT(v.t) === p.t).map(sesItem)]),
+      ...(LA.some(v => !PA.some(p => p.t === homeOfT(v.t))) ? [{ header: "프로젝트 없음" }, ...LA.filter(v => !PA.some(p => p.t === homeOfT(v.t))).map(sesItem)] : []),
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
       ...(D.length ? [{ value: "__ended", label: `종료된 세션 ${D.length}`, sub: "기록 보기 · 재개" }] : [])];
     drop._pick = v => { if (v === "__ended") { endedOpen = true; go("lanes"); } else pickTarget(v); };

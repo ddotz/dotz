@@ -268,6 +268,11 @@ function ntSwipe(item, row, n) {
   row.addEventListener("pointercancel", end);
 }
 
+// An entry that comes from a session names its parent project and status, in the words of sessionRow.
+function ntLaneNote(n) {
+  const name = typeof n.key === "string" && n.key.startsWith("lane:") ? n.key.slice(5) : "", l = name && S && S.lanes.find(x => x.name === name);
+  return l ? `${laneProject(l) || "프로젝트 없음"} · ${sessionStatus(l)[0]}` : "";
+}
 function ntRow(n) {
   if (ntIsDec(n)) return ntDecRow(n);
   const un = !n.read, fl = fileLines(n.text), text = ntPlain(fl.text);
@@ -276,7 +281,7 @@ function ntRow(n) {
     el("span", { class: "nt-b" },
       el("span", { class: "nt-t", text: ntPlain(n.title) || "알림" }),
       text ? el("span", { class: "nt-x", text }) : null,
-      el("span", { class: "nt-m", text: ntWhen(n) })),
+      el("span", { class: "nt-m", text: [ntLaneNote(n), ntWhen(n)].filter(Boolean).join(" · ") })),
     un ? el("span", { class: "nt-un", role: "img", "aria-label": "안 읽음" }) : null);
   const del = el("button", { type: "button", class: "nt-del", "aria-label": "알림 지우기", onclick: () => ntVanish(item, n, 1) });
   del.append(icon("close"));

@@ -17,6 +17,11 @@
 .cv-n { font: 500 15px/22px var(--font); }
 .cv-p { color: var(--fg-3); font: 400 14px/20px var(--font); }
 .cv-row.unread .cv-n { font-weight: 700; }
+/* a session under its project: indented, smaller avatar; the group label for sessions started from chat */
+.cv-row.sub { min-height: 56px; padding-left: 40px; }
+.cv-row.sub .cv-av { width: 32px; height: 32px; }
+.cv-row.sub .cv-n { font-size: 14px; }
+.cv-gh { padding: 12px 16px 4px; color: var(--fg-3); font: 500 12px/16px var(--font); }
 .cv-row.unread .cv-p { color: var(--fg); }
 .cv-m { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 40px; }
 .cv-t { color: var(--fg-3); font: 400 12px/16px var(--font); }

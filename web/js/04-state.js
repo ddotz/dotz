@@ -51,9 +51,9 @@ function endedGroup() {
         el("span", { class: "en", text: l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" }))
     : el("div", { class: "erow" },
         el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
-          el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" })),
+          el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), el("span", { class: "sup", text: [laneProject(l), l.startedAt ? kstDay(l.startedAt) : ""].filter(Boolean).join(" · ") })),
         el("button", { class: "ib edel", type: "button", "aria-label": `${l.name} 삭제`, title: "삭제", onclick: () => deleteEnded([l.name]) }, icon("trash")));
-  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { text: `종료된 세션 ${list.length}` }), tools),
+  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { text: `끝난 세션 ${list.length}` }), tools),
     ...(all ? [all] : []), ...list.map(row));
   d.open = endedOpen;
   d.addEventListener("toggle", () => { endedOpen = d.open; if (!d.open && endedSel) { endedSel = null; refreshEnded(); } });

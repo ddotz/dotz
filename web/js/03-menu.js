@@ -30,7 +30,7 @@ function showMenu(anchor, items, { value, onPick, sheet }) {
       return [b, b];
     }
     const on = it.value === value;
-    const b = el("button", { type: "button", role: "option", class: `mi${on ? " sel-on" : ""}`, "aria-selected": on ? "true" : "false", tabindex: "-1", onclick: () => { closeMenu(); onPick(it.value); } },
+    const b = el("button", { type: "button", role: "option", class: `mi${on ? " sel-on" : ""}${it.indent ? " ind" : ""}`, "aria-selected": on ? "true" : "false", tabindex: "-1", onclick: () => { closeMenu(); onPick(it.value); } },
       on ? icon("check", "ck") : el("span", { class: "ck" }),
       it.tone != null ? el("span", { class: `dot ${it.tone}` }) : null,
       el("span", { class: "ml" }, it.label, it.sub ? el("small", { text: it.sub }) : null),

@@ -86,7 +86,9 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .hc-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin-top: 8px; }
 .hc-row { display: flex; align-items: center; gap: 8px; min-width: 0; font: 400 14px/20px var(--font); }
 .hc-row .nt-dot { margin-top: 0; }
-.hc-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-row .tb { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.hc-row .t, .hc-row .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-row .n { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .hc-row .m { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .hc-mon { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
 .hc-mon .nt-dot { margin-top: 6px; }

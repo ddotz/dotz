@@ -212,11 +212,22 @@ function convTime(iso) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { ...KST, month: "numeric", day: "numeric" }).formatToParts(d).map(x => [x.type, x.value]));
   return `${p.month}/${p.day}`;
 }
-// The main assistant first, then the projects by their newest message (silent ones after, in project order). Sessions stay under 세션.
+// The main assistant first, then the projects by their newest message (silent ones after, in project order), each followed by its live
+// sessions (indented, with the session's status badge); sessions started from chat close the list under "프로젝트 없음".
 function convRows() {
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
-  return [MAIN, "alert", "worklog", ...projects].map(t => ({ t, last: CONV.get(t) || null, name: targetName(t), unread: ts(t).unread }));
+  const mk = t => ({ t, last: CONV.get(t) || null, name: targetName(t), unread: ts(t).unread });
+  const sess = ((S && S.lanes) || []).filter(l => laneAlive(l) || `lane:${l.name}` === target);
+  const sub = l => { const t = `lane:${l.name}`; return { ...mk(t), sub: true, badge: sessionStatus(l), hint: convPreview(l.lastText) }; };
+  const rows = [MAIN, "alert", "worklog"].map(mk), placed = new Set();
+  for (const t of projects) {
+    rows.push(mk(t));
+    for (const l of sess) if (laneHome(l) === t) { placed.add(l.name); rows.push(sub(l)); }
+  }
+  const loose = sess.filter(l => !placed.has(l.name));
+  if (loose.length) rows.push({ header: "프로젝트 없음" }, ...loose.map(sub));
+  return rows;
 }
 const FIXED_DESC = { alert: "경고와 감시 소식, 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
 function convAvatar(t) {
@@ -225,12 +236,13 @@ function convAvatar(t) {
   return el("span", { class: `cv-av${t === MAIN ? " bot" : ""}`, "aria-hidden": "true" }, isLaneT(t) ? icon("lanes") : Array.from(name || "d")[0].toUpperCase());
 }
 function convRow(r) {
+  if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
   const sel = r.t === target && current === "chat";
-  const text = r.last ? `${r.last.from === "owner" ? "나: " : ""}${r.last.text}` : "아직 대화가 없어요";
-  return el("button", { class: `cv-row${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last ? "" : " none"}`, type: "button", "data-t": r.t, "aria-current": sel ? "true" : null, onclick: () => go("chat", r.t) },
+  const text = r.last ? `${r.last.from === "owner" ? "나: " : ""}${r.last.text}` : r.hint || "아직 대화가 없어요";
+  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last ? "" : " none"}`, type: "button", "data-t": r.t, "aria-current": sel ? "true" : null, onclick: () => go("chat", r.t) },
     convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: r.name }), el("span", { class: "cv-p", text })),
-    el("span", { class: "cv-m" }, el("span", { class: "cv-t", text: r.last ? convTime(r.last.ts) : "" }), r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
+    el("span", { class: "cv-m" }, el("span", { class: "cv-t", text: r.last ? convTime(r.last.ts) : "" }), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
 }
 // Phone only (no header bell there): the first row of the list opens the notice hub, with the unread count as its badge.
 const convPhone = matchMedia("(max-width: 639px)");
@@ -262,7 +274,7 @@ function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
   convTitle();
-  const rows = convRows(), note = convNoticeInfo(), sig = JSON.stringify([rows.map(r => [r.t, r.name, r.last, r.unread]), target, note]);
+  const rows = convRows(), note = convNoticeInfo(), sig = JSON.stringify([rows.map(r => [r.t, r.name, r.last, r.unread, r.badge, r.header, r.hint]), target, note]);
   if (sig !== convSig) {
     convSig = sig;
     const top = convSide.scrollTop;

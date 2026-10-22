@@ -33,6 +33,15 @@ export function laneSummary(): Array<Record<string, unknown>> {
 	}));
 }
 
+// The parent project of each session, from the gateway's channel map (docs/layers.md §1): a session started in a work channel
+// has `home: "ch:<id>"` and `project`, the channel's name; one started from chat has neither (a top-level session).
+export function withHomes(rows: Array<Record<string, unknown>>, ch: { homes?: Record<string, string>; work?: Record<string, string> }): Array<Record<string, unknown>> {
+	return rows.map(r => {
+		const id = ch.homes?.[String(r.name)];
+		return id ? { ...r, home: `ch:${id}`, project: ch.work?.[id] ?? "" } : r;
+	});
+}
+
 // The `dotz_lane list` view: the lane summary plus what each lane is doing right now (running task workers with their last
 // tool intent, from the hub's own state) and when its last report went out. The new keys come first because the tool
 // output is cut at a fixed length, and a long lastText must not push the workers out of it.

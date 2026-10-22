@@ -115,7 +115,7 @@ const hcCard = (tab, ...kids) => { const c = tapCard(() => openNotices(tab), ...
 const hcDot = tone => el("span", { class: `nt-dot tone-${tone || "none"}`, "aria-hidden": "true" });
 // A generic title (작업 기록, 알림) says nothing in a 3-row card: the row shows the entry's first line instead.
 const hcLine = n => { const t = ntPlain(n.title); return !t || t === "작업 기록" || t === "알림" ? ntPlain(String(n.text || "").split("\n")[0]) || t || "알림" : t; };
-const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row" }, hcDot(n.tone), el("span", { class: "t", text: hcLine(n) }), el("span", { class: "m", text: ntWhen(n) }))));
+const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row" }, hcDot(n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), el("span", { class: "m", text: ntWhen(n) }))));
 // Gateway restarts are kept in the store (born read) but never shown on 홈 (owner 2026-10-19: restarts are not his news).
 const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
 function homeAlertCard() {
@@ -186,6 +186,7 @@ function homeNowRow(t, label, tone) {
   const i = targetInfo(t), subs = SUBS[sourceOf(t)] || [], done = subs.filter(s => s.status !== "running").length;
   const lane = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null;
   const line = nowLine(t) || modelChipText(t === MAIN ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model) || (i.alive ? statusKo(i.status) : "종료됨");
+  if (lane) return sessionRow(lane, { line, ...(tone === "att" ? { word: label, tone: "warn" } : {}) });   // a session: title, project, status, one tap to its chat
   return el("button", { class: "hr", type: "button", onclick: () => openTarget(t, lastChatView()), "aria-label": `${targetName(t)} · ${label}` },
     el("span", { class: `dot ${tone === "att" ? "att" : statusTone(i.status)}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: targetName(t) })), el("span", { class: "ha", text: line })),
