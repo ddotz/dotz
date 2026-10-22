@@ -3,11 +3,14 @@
 // commits that are not on origin (it names them and never discards anything), then fast-forwards only, runs `bun install`
 // when package.json or the lockfile changed, runs the test suite and goes back to the old commit if the tests fail. The
 // restart itself is main.ts's restart gate (waits for running turns) or, on the owner's word, an immediate restart.
-// A daily check (self_update.auto_check / self_update.at in config.json) only notifies, it never applies.
+// A daily check (self_update.auto_check / self_update.at in config.json) only notifies, unless self_update.auto_apply is on
+// (default off): then a new upstream commit on a clean checkout with nothing ahead of origin goes through the same apply()
+// (ff-only, bun install, tests, revert on failure) and the idle restart gate; a refusal or failure goes to alert with a choice block.
 // Every check and update leaves lines in ~/.dotz/logs/update-YYYYMMDD.log. A non-git install (install.sh tarball)
 // cannot be updated from here; the check says so and names the installer command that upgrades it.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { issueBlock } from "./choices.ts";
 import { CONFIG_FILE, cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { trackTimer } from "./shutdown.ts";
 
@@ -95,6 +98,7 @@ function settings() {
 	const at = typeof o.at === "string" && /^\d{1,2}:\d{2}$/.test(o.at) ? o.at : "10:00";
 	return {
 		auto_check: o.auto_check !== false,
+		auto_apply: o.auto_apply === true,
 		at,
 		remote: typeof o.remote === "string" && o.remote ? o.remote : "origin",
 		branch: typeof o.branch === "string" && o.branch ? o.branch : "main",
@@ -259,7 +263,7 @@ export async function apply(o: Options): Promise<Job> {
 	return end("updated", `${c.version.commit.short} → ${to.slice(0, 7)} 받았어요${summary ? ` (테스트 ${summary})` : ""}. 재시작하면 적용돼요.`);
 }
 
-type State = { lastCheck?: CheckResult; notified?: string };
+type State = { lastCheck?: CheckResult; notified?: string; autoFailed?: string; autoRefused?: string };
 const readState = (): State => {
 	try {
 		return existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : {};
@@ -280,11 +284,56 @@ const settled = (c: CheckResult) => {
 	if (c.ok && c.incomingTotal === 0) resolvedFn?.();
 };
 
-async function autoCheck(o: Options): Promise<void> {
+// What auto_apply needs from main.ts: a worklog post, an alert, and the idle restart gate (never launchctl).
+export type AutoHooks = { worklog: (text: string) => void; alert: (text: string) => void; restartIdle: () => string };
+let autoHooks: AutoHooks | undefined;
+
+const autoChoice = (): string =>
+	issueBlock("dotz 자동 업데이트를 어떻게 할까요?", [
+		{ name: "원인 확인", result: "업데이트 로그와 저장소 상태를 보고 원인과 고칠 방법을 알려드려요." },
+		{ name: "자동 업데이트 끄기", result: "자동 적용을 꺼서 새 버전 알림만 받아요. 설정 → 업데이트에서 직접 적용해요." },
+	]);
+
+// auto_apply: runs only when upstream has something new, the checkout is clean and nothing is ahead of origin (check() lists
+// both as `blocked`). A failed apply is not retried for the same upstream commit; a refusal is re-evaluated daily but alerted once.
+async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks): Promise<void> {
+	const remoteHead = c.remoteHead as string;
+	const { logDir } = resolve(o);
+	const short = remoteHead.slice(0, 7);
+	if (s.autoFailed === remoteHead) return;
+	if (c.blocked.length) {
+		record(logDir, `auto-apply: refused ${short}: ${c.blocked.join(" ")}`);
+		if (s.autoRefused === remoteHead) return;
+		s.autoRefused = remoteHead;
+		hooks.alert(`dotz 자동 업데이트를 하지 않았어요 (새 커밋 ${c.incomingTotal}개, ${short}). ${c.blocked.join(" ")}\n${autoChoice()}`);
+		return;
+	}
+	record(logDir, `auto-apply: applying ${short}`);
+	const j = await apply(o);
+	if (j.status === "running") return;
+	if (j.status === "updated") {
+		delete s.autoRefused;
+		delete s.autoFailed;
+		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${c.version.kind === "git" ? c.version.commit.short : "?"} → ${short}, 커밋 ${c.incomingTotal}개, 테스트 통과). 하던 일이 모두 끝나면 다시 시작해요.`);
+		hooks.restartIdle();
+		return;
+	}
+	if (j.status === "failed") s.autoFailed = remoteHead;
+	if (j.status === "refused") s.autoRefused = remoteHead;
+	if (j.status === "current") return;
+	hooks.alert(`dotz 자동 업데이트를 하지 못했어요 (${short}): ${j.message}\n${autoChoice()}`);
+}
+
+export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoHooks): Promise<void> {
 	const c = await check(o);
 	const s = readState();
 	s.lastCheck = c;
 	settled(c);
+	if (settings().auto_apply && hooks && c.ok && c.incomingTotal > 0 && c.remoteHead) {
+		await autoApply(o, c, s, hooks);
+		saveState(s);
+		return;
+	}
 	if (c.ok && c.incomingTotal > 0 && c.remoteHead && s.notified !== c.remoteHead) {
 		s.notified = c.remoteHead;
 		const text = `dotz 새 버전이 있어요: 커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.`;
@@ -310,15 +359,17 @@ function schedule(o: Options): void {
 	trackTimer("self update check", autoTimer);
 }
 
-export async function startSelfUpdate(notify: (text: string, count: number) => void, o: Options = { dir: REPO_DIR }): Promise<void> {
+export async function startSelfUpdate(notify: (text: string, count: number) => void, o: Options = { dir: REPO_DIR }, auto?: AutoHooks): Promise<void> {
 	notifyFn = notify;
+	autoHooks = auto;
 	running = await version(o).catch(() => undefined);
 	schedule(o);
 }
 
-function setSettings(values: { auto_check?: unknown; at?: unknown }, o: Options = { dir: REPO_DIR }): ReturnType<typeof settings> {
+function setSettings(values: { auto_check?: unknown; auto_apply?: unknown; at?: unknown }, o: Options = { dir: REPO_DIR }): ReturnType<typeof settings> {
 	const next: Record<string, unknown> = {};
 	if (typeof values.auto_check === "boolean") next.auto_check = values.auto_check;
+	if (typeof values.auto_apply === "boolean") next.auto_apply = values.auto_apply;
 	if (values.at !== undefined) {
 		if (typeof values.at !== "string" || !/^([01]?\d|2[0-3]):[0-5]\d$/.test(values.at)) throw new Error("시간은 HH:MM으로 적어 주세요");
 		next.at = values.at;
