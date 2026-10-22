@@ -91,8 +91,8 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .views { min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .view { max-width: 920px; margin: 0 auto; padding: 24px; }
 .view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
-/* wide: a page starts at the left like the top bar (--edge = where the logo starts); its own max-width only limits how far it grows to the right */
-@media (min-width: 1100px) { .view { margin: 0; padding-left: var(--edge); padding-right: var(--edge); } }
+/* wide: only the two-pane 채팅 screens start at the left like the top bar (--edge = where the logo starts); 프로젝트 does it in .views.pp; every other page stays centered */
+@media (min-width: 1100px) { #v-chat, #v-activity { margin: 0; padding-left: var(--edge); padding-right: var(--edge); } }
 @media (max-width: 1099px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding-top: 0; }
   .main { order: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
