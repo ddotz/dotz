@@ -225,6 +225,7 @@ function convRows() {
   const sess = ((S && S.lanes) || []).filter(l => laneAlive(l) || `lane:${l.name}` === target);
   const sub = l => { const t = `lane:${l.name}`; return { ...mk(t), sub: true, badge: sessionStatus(l), hint: convPreview(l.lastText) }; };
   const rows = [MAIN, "alert", "worklog", "monitoring"].map(t => (t === "monitoring" ? monRowInfo() : mk(t))), placed = new Set();
+  rows.push(...intgRows());
   for (const t of projects) {
     rows.push(mk(t));
     for (const l of sess) if (laneHome(l) === t) { placed.add(l.name); rows.push(sub(l)); }
@@ -253,8 +254,9 @@ function convAvatar(t) {
 // which row is open and which icon it wears. A row is { header } for a group label, or { name, badge: [word, tone], unread }.
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
+  if (r.intg) return intgRow(r);
   if (r.mon) {
-    const on = current === "monitoring";
+    const on = current === "monitoring" && !INTG.view;
     return el("button", { class: `cv-row${on ? " on" : ""}`, type: "button", "data-mon": "1", "aria-current": on ? "true" : null, onclick: () => go("monitoring") },
       el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon("activity")),
       el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: r.name })),
@@ -281,7 +283,7 @@ function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
   convTitle();
-  const rows = convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.name, r.last, r.unread, r.badge, r.header, r.hint]), target, current]);
+  const rows = convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint]), target, current, INTG.view]);
   if (sig !== convSig) {
     convSig = sig;
     const top = convSide.scrollTop;
