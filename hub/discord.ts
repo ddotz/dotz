@@ -158,8 +158,11 @@ export async function ensureChannels(): Promise<void> {
 		log(`discord: brief channel ${channels.brief} is gone; the morning brief goes to chat`);
 		delete channels.brief;
 	}
+	const me = await selfInfo().catch(() => undefined);
+	const byId = new Map(all.map(c => [String(c.id), c]));
 	for (const id of Object.keys(channels.work)) {
-		if (!existing.has(id)) {
+		// Gone, or another gateway's (an earlier build adopted anything under a shared category): dropped.
+		if (!existing.has(id) || (me && foreign(byId.get(id), me))) {
 			delete channels.work[id];
 			onGone(id);
 		} else channels.work[id] = existing.get(id)!;
@@ -222,6 +225,21 @@ export const threadInfo = (id: string) => {
 // Work channels: the owner hands out work by channel, so any other text channel under this bot's categories is a work
 // channel with its own context (the server is shared with other bots, so channels elsewhere are never answered).
 const notWork = new Set<string>();
+// This bot's id and its managed role (what other gateways' keepPrivate denies View Channel to), asked once.
+let selfMemo: Promise<{ id: string; role?: string }> | undefined;
+const selfInfo = () => (selfMemo ??= (async () => {
+	const id = String(((await rest("GET", "/users/@me")) as { id: string }).id);
+	const roles = (await rest("GET", `/guilds/${GUILD}/roles`).catch(() => [])) as any[];
+	return { id, role: roles.find(r => r.tags?.bot_id === id)?.id as string | undefined };
+})().catch(e => { selfMemo = undefined; throw e; }));
+// Another gateway's channel: it is tagged with that bot's id in its topic (createWorkChannel), or that gateway hid it from this bot
+// (keepPrivate denied View Channel to our role). Two gateways in one server (MacBook, Mac mini) must not adopt each other's work channels.
+const TOPIC_TAG = "dotz:";
+const foreign = (c: any, me: { id: string; role?: string }): boolean => {
+	const topic = String(c?.topic ?? "");
+	if (topic.startsWith(TOPIC_TAG) && topic.slice(TOPIC_TAG.length).split(/\s/)[0] !== me.id) return true;
+	return !!me.role && (c?.permission_overwrites ?? []).some((o: any) => o.id === me.role && (BigInt(o.deny) & (1n << 10n)) !== 0n);
+};
 async function classify(id: string): Promise<{ work: string } | { thread: string } | undefined> {
 	if (channels.work[id]) return { work: channels.work[id] };
 	if (channels.threads[id]) return { thread: channels.threads[id].name };
@@ -235,7 +253,9 @@ async function classify(id: string): Promise<{ work: string } | { thread: string
 			return { thread: String(c.name) };
 		}
 	}
-	if (!c || c.type !== 0 || !isWorkParent(c.parent_id) || [channels.chat, channels.worklog, channels.alert, channels.brief, ...Object.values(channels.lanes)].includes(id)) {
+	const me = c && c.type === 0 && isWorkParent(c.parent_id) ? await selfInfo().catch(() => undefined) : undefined;
+	if (c && c.type === 0 && isWorkParent(c.parent_id) && !me) return undefined; // cannot tell whose it is yet: not remembered as "not work"
+	if (!c || c.type !== 0 || !isWorkParent(c.parent_id) || (me && foreign(c, me)) || [channels.chat, channels.worklog, channels.alert, channels.brief, ...Object.values(channels.lanes)].includes(id)) {
 		notWork.add(id);
 		return undefined;
 	}
@@ -247,7 +267,8 @@ async function classify(id: string): Promise<{ work: string } | { thread: string
 
 export async function createWorkChannel(name: string): Promise<{ id: string; name: string }> {
 	if (!status.enabled || !channels.workCategory) throw new Error("discord not configured");
-	const c = await rest("POST", `/guilds/${GUILD}/channels`, { name: cleanName(name), type: 0, parent_id: channels.workCategory });
+	const me = await selfInfo().catch(() => undefined);
+	const c = await rest("POST", `/guilds/${GUILD}/channels`, { name: cleanName(name), type: 0, parent_id: channels.workCategory, ...(me ? { topic: `${TOPIC_TAG}${me.id}` } : {}) });
 	channels.work[c.id] = String(c.name);
 	save();
 	return { id: c.id, name: c.name };

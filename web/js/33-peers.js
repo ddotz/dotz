@@ -18,6 +18,8 @@ function prPaint() {
   $("#appbar").classList.toggle("hasp", on);
   chip.hidden = !on;
   if (!on) { prClose(false); return; }
+  // The TLS handshake to the other computer is paid now, not when the owner taps it.
+  for (const p of prOthers()) if (p.online && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
   // el() skips a null child; Node.append() would write it as the text "null" (the chip once read "맥북 null"), so the chip is built with el().
   clear(chip).append(el("span", { class: "pc-n", text: me.name }), el("span", { class: "pc-c" }, icon("chev", "pc-i"), more ? el("span", { class: `pc-d${need ? " need" : ""}`, role: "img", "aria-label": "다른 컴퓨터에 새 알림" }) : null));
@@ -33,6 +35,7 @@ function prUrl(p, extra = "") {
 function prPick(p) {
   if (p.self) { prClose(); return; }
   if (!p.online) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
+  toast(`${p.name}(으)로 넘어가요`);
   location.href = prUrl(p);
 }
 
