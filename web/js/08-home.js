@@ -49,6 +49,8 @@ function homeMenu(anchor, id) {
     if (p && p.can_login) add(isConnected(p) ? "다시 로그인" : "로그인", () => startLogin(p));
     if (p && (p.can_logout ?? p.removable)) add(p.auth === "api_key" ? "키 삭제" : "로그아웃", () => busy(null, () => logoutProvider(p)));
     add("공급자 열기", () => go("providers"));
+  } else if (id.startsWith("custom:")) {
+    for (const a of window.dotzCustom ? dotzCustom.menuActs(id.slice(7)) : []) add(a.label, a.run);
   } else if (id.startsWith("ctx:")) {
     const c = ((C && C.processes) || []).find(x => x.name === id.slice(4));
     if (c && c.running && !(c.compaction && (c.compaction.state === "queued" || c.compaction.state === "compacting"))) add("압축", () => busy(null, async () => {
@@ -231,7 +233,7 @@ function renderHome() {
   renderHomeNow();
   if (openMenu && box.contains(openMenu.anchor)) return;   // a ⋯ menu is open: repaint after it closes
   $("#title").textContent = botName;
-  if (!homeBoard) homeBoard = makeBoard(box, "home");
+  if (!homeBoard) homeBoard = makeBoard(box, "home", { onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
   const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, items = [], seen = new Set();
   const add = (id, node, def, size) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def, ...size }); } };
 
@@ -296,8 +298,10 @@ function renderHome() {
       list.length ? el("div", { class: "glist" }, ...list.map(homeRow)) : el("div", { class: "sup", text: empty })), { w: 4, h: need }, { min: { w: 3, h: need }, max: HOME_GROUP.max });
   }
 
+  // the owner's custom cards (web/custom.js) are board items like the rest
+  for (const it of window.dotzCustom ? dotzCustom.items() : []) if (!seen.has(it.id)) { seen.add(it.id); items.push(it); }
   // cards of data that has not arrived yet keep their saved place
-  homeBoard.set(items, id => id.startsWith("lane:") ? !S : id.startsWith("ctx:") ? !C : id.startsWith("limit:") ? !HQ || !!HQ.error : id.startsWith("prov:") ? !P : false);
+  homeBoard.set(items, id => id.startsWith("custom:") ? !window.dotzCustom || dotzCustom.keep(id) : id.startsWith("lane:") ? !S : id.startsWith("ctx:") ? !C : id.startsWith("limit:") ? !HQ || !!HQ.error : id.startsWith("prov:") ? !P : false);
   window.dotzCustom && dotzCustom.home();
 }
 

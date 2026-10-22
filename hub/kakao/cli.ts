@@ -90,7 +90,7 @@ async function status(args: Record<string, string | true>, ctx: Ctx): Promise<nu
 		return 0;
 	}
 	const st = readState(paths);
-	const setupText = !st ? "-" : st.status === "done" ? "끝" : st.status === "stopped" && st.stoppedAt ? `멈춤: ${stepName(st.stoppedAt.step)} (${st.stoppedAt.reason})` : `진행 중: ${st.current ? stepName(st.current) : "-"}`;
+	const setupText = !st ? "시작 전" : st.status === "done" ? "끝" : st.status === "stopped" && st.stoppedAt ? `멈춤: ${stepName(st.stoppedAt.step)} (${st.stoppedAt.reason})` : st.current ? `진행 중: ${stepName(st.current)}` : "진행 중";
 	const app = await ctx.runner(["pgrep", "-xq", "KakaoTalk"]).catch(() => ({ code: 1 }));
 	let lastRun = "알 수 없어요";
 	try {
