@@ -2,7 +2,7 @@
 // The page, script and styles answer from the cache at once (a tapped notification starts the app without waiting for the
 // network) and are fetched again in the background. When that fetch brings a changed shell, the open pages get a
 // {type:"shell-updated"} message (web/js/23-installable-app-web.js shellUpdated) and reload onto it, so a web change does not wait for the open after next.
-const CACHE = "dotz-shell-v7";
+const CACHE = "dotz-shell-v8";
 // the page and its joined script and styles: cache first, refreshed together in the background; icons are cache-first
 const FRESH = ["/", "/app.js", "/app.css"];
 const SHELL = [...FRESH, "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/badge-96.png"];
