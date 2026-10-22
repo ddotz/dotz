@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { bundle, webSource } from "./webapp.ts";
+import { bundle } from "./webapp.ts";
 
 // The web app marks state with short tone classes added next to a component class ("card tap att", "dot err", "grow att err").
 // A stylesheet rule keyed on a tone class alone styles every component that carries the tone: the file-attachment chip once used
@@ -39,6 +39,6 @@ describe("web stylesheet tone classes", () => {
 
 	test("the attachment chip has its own class", () => {
 		expect(compounds).toContain(".fatt");
-		expect(webSource()).toContain("class: `fatt${");
+		expect(bundle("js").text).toContain("class: `fatt${");
 	});
 });

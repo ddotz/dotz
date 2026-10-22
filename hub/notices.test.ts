@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,7 @@ import { CONFIG_FILE, paths } from "./config.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
-import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -165,7 +165,7 @@ test("a dismissed session result stays gone on quiet progress and returns on a n
 const T0 = new Date().getTime() - 600_000;
 let tick = 0;
 const rts = () => new Date(T0 + ++tick * 1000).toISOString();
-const decision = (title: string) => stored().find(n => n.kind === "decision" && n.title === title)!;
+const decision = (title: string) => stored().findLast(n => n.kind === "decision" && n.title === title)!;
 const laneAsk = (lane: string, text: string) => emit("outbox", { ts: rts(), kind: "out", source: `lane:${lane}`, target: "alert", text });
 const orchAsk = (text: string) => emit("outbox", { ts: rts(), kind: "out", source: "orchestrator", target: "alert", text });
 const laneReport = (lane: string, text: string) => emit("inbox", { ts: rts(), kind: "lane_report", source: `lane:${lane}`, lane, text });
@@ -833,4 +833,9 @@ test("a notice whose message the owner has seen is no longer unread: by the read
 	setViewing("tab-seen", "lane:seen2", Date.now());
 	expect(mine("lane:seen2").read).toBe(true);
 	setViewing("tab-seen", "", Date.now());
+});
+
+// The notice store is one per process: leave no question that still waits behind for the next test file (ignoring needs no clock, unlike resolving).
+afterAll(() => {
+	for (const n of listNotices(NOTICE_CAP).items) if (needsAnswer(n)) ignoreNotice(n.id);
 });
