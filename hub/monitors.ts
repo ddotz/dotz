@@ -34,7 +34,7 @@ export function listMonitors(): Monitor[] {
 	const schedules: Monitor[] = listSchedules().map(s => {
 		// A schedule's text starts with its internal target (ch:<id>, lane:<name>); the owner reads the words.
 		const channel = /^\s*(ch:\d+)/.exec(s.text)?.[1];
-		const name = s.text.replace(/^\s*(?:(?:ch|lane|th):\S+\s*)+/, "").trim().slice(0, 60) || "예약";
+		const name = s.text.replace(/^\s*(?:(?:ch|lane|th):\S+\s*)+/, "").trim().slice(0, 200) || "예약";
 		return {
 			name,
 			kind: "schedule",

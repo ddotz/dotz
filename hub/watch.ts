@@ -36,6 +36,7 @@ export type Watch = {
 	timeout_seconds?: number;
 	retry?: Record<string, number[]>;
 	approval_minutes?: number;
+	once?: boolean; // one-shot: removed after its first change/match report (a recurring watch has no flag and stays)
 	paused?: boolean;
 	state: {
 		hash?: string; fails: number; failAlertAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
@@ -225,6 +226,10 @@ async function runOnce(w: Watch): Promise<void> {
 			w.state.lastChanged = true;
 			notify(w, `matched /${w.pattern}/`, output);
 		}
+		if (w.once && w.state.lastChanged) {
+			log(`watch ${w.name} was one-shot and has reported: removed`);
+			removeWatch(w.id);
+		}
 	} catch (error) {
 		log(`watch ${w.name} could not run: ${error}`);
 	}
@@ -315,7 +320,7 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	}
 	const old = items.findIndex(w => w.name === name);
 	if (old >= 0) removeWatch(items[old].id);
-	const w: Watch = { id: randomBytes(3).toString("hex"), name, command, ...(script ? { script } : {}), ...(input.cwd ? { cwd: String(input.cwd) } : script ? { cwd: dirname(script) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), state: { fails: 0 } };
+	const w: Watch = { id: randomBytes(3).toString("hex"), name, command, ...(script ? { script } : {}), ...(input.cwd ? { cwd: String(input.cwd) } : script ? { cwd: dirname(script) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), ...(input.once === true ? { once: true } : {}), state: { fails: 0 } };
 	items.push(w);
 	save();
 	void run(w);
