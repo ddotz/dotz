@@ -75,6 +75,14 @@ test("over the daily quota budget it is silent and makes no call", async () => {
 	expect(ctx.calls).toHaveLength(0);
 });
 
+test("a 403 quotaExceeded prints one notice for the Pacific day and then stays silent without a call", async () => {
+	const ctx = fakeCtx(env, { routes: { [PLAYLIST]: () => Response.json({ error: { errors: [{ reason: "quotaExceeded" }] } }, { status: 403 }) } });
+	expect(await run(ctx, [])).toEqual({ lines: ["yt-quota-exhausted until=16:00"], code: 0 });
+	const before = ctx.calls.length;
+	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
+	expect(ctx.calls).toHaveLength(before);
+});
+
 test("missing config prints DOTZ_FAIL setup", async () => {
 	rmSync(paths.config());
 	expect((await run(fakeCtx(env), [])).lines[0]).toBe("DOTZ_FAIL setup");

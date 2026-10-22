@@ -1,12 +1,15 @@
 // due watch: a draft is never published, approve schedules at the next posting time, a due job publishes through the fake
 // YouTube upload / Instagram tunnel path and is marked done with its file filed away; aside targets, quota shortage,
-// transient, auth and permanent failures are covered. Fake fetch, fake cloudflared, no timers.
+// transient, auth and permanent failures are covered, plus the upload fingerprint (no second upload after a lost response)
+// and the exhausted-quota state. Fake fetch, fake cloudflared, no timers.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { hooks, publishJob, run } from "../bin/due.ts";
 import { loadConfig, paths, readJson, writeJson } from "../lib/config.ts";
 import { approve, getJob, type Job, newJob } from "../lib/jobs.ts";
+import { can } from "../lib/quota.ts";
+import { TransientError } from "../lib/watchkit.ts";
 import { calls, dropVideo, type FakeCtx, fakeCtx, IG, setupEnv, type TestEnv, YT } from "./helpers.ts";
 
 const YT_UP = "POST https://www.googleapis.com/upload/youtube/v3/videos";
@@ -35,6 +38,7 @@ afterEach(() => {
 });
 
 function serve(ctx: FakeCtx) {
+	ctx.routes[`GET ${YT}/playlistItems`] = () => ({ items: [] });
 	ctx.routes[YT_UP] = () => new Response("{}", { headers: { location: "https://upload.example/s1" } });
 	ctx.routes["PUT https://upload.example/s1"] = () => ({ id: "vid1" });
 	ctx.routes[`POST ${IG}/me/media`] = () => ({ id: "cont1" });
@@ -45,6 +49,11 @@ function serve(ctx: FakeCtx) {
 function upload(ctx: FakeCtx, name = "clip.mp4"): Job {
 	const file = dropVideo(env, name);
 	return newJob(ctx, { kind: "upload", upload: { file, title: "Title", description: "Desc", tags: ["a"], ig_caption: "cap" } });
+}
+
+function youtubeOnly(ctx: FakeCtx): Job {
+	const job = newJob(ctx, { kind: "upload", targets: ["youtube"], upload: { file: dropVideo(env, "clip.mp4"), title: "Title", tags: ["a"] } });
+	return approve(ctx, job.id, { publish_at: "now" });
 }
 
 test("a draft is never published", async () => {
@@ -195,4 +204,80 @@ test("missing config prints DOTZ_FAIL setup", async () => {
 	const res = await run(fakeCtx(env), []);
 	expect(res.code).toBe(1);
 	expect(res.lines[0]).toBe("DOTZ_FAIL setup");
+});
+
+const uploadPosts = (ctx: FakeCtx) => ctx.calls.filter(c => c.method === "POST" && c.url.startsWith("https://www.googleapis.com/upload/youtube/v3/videos")).length;
+
+test("an upload whose response was lost is found by its fingerprint on the next attempt and not uploaded again", async () => {
+	const ctx = fakeCtx(env);
+	const stored = { landed: false, tags: [] as string[] };
+	ctx.routes[YT_UP] = call => {
+		stored.tags = JSON.parse(call.body).snippet.tags;
+		return new Response("{}", { headers: { location: "https://upload.example/s1" } });
+	};
+	ctx.routes["PUT https://upload.example/s1"] = () => {
+		stored.landed = true;
+		throw new TypeError("connection reset");
+	};
+	ctx.routes[`GET ${YT}/playlistItems`] = () => ({ items: stored.landed ? [{ snippet: { title: "Title", publishedAt: "2030-06-15T12:00:00Z", resourceId: { videoId: "vidX" } } }] : [] });
+	ctx.routes[`GET ${YT}/videos`] = () => ({ items: [{ id: "vidX", snippet: { title: "Title", categoryId: "22", tags: stored.tags } }] });
+	const job = youtubeOnly(ctx);
+	const cfg = loadConfig();
+	await expect(publishJob(ctx, cfg, job.id)).rejects.toBeInstanceOf(TransientError);
+	const intent = getJob(job.id)?.upload_intent;
+	expect(intent?.fingerprint).toMatch(/^dz-[0-9a-f]{12}$/);
+	expect(stored.tags).toEqual(["a", intent?.fingerprint ?? ""]);
+	expect(getJob(job.id)?.status).toBe("scheduled");
+	expect(uploadPosts(ctx)).toBe(1);
+
+	expect(await publishJob(ctx, cfg, job.id)).toEqual([`posted ${job.id} youtube=vidX`]);
+	expect(uploadPosts(ctx)).toBe(1);
+	expect(getJob(job.id)).toMatchObject({ status: "done", result: { youtube: "vidX" }, upload_intent: intent });
+	expect(readJson<{ units: number }>(paths.quota())?.units).toBe(1602);
+});
+
+test("when the lookup finds nothing, the retry uploads once with the same fingerprint", async () => {
+	const ctx = fakeCtx(env);
+	serve(ctx);
+	const tags: string[][] = [];
+	let puts = 0;
+	ctx.routes[YT_UP] = call => {
+		tags.push(JSON.parse(call.body).snippet.tags);
+		return new Response("{}", { headers: { location: "https://upload.example/s1" } });
+	};
+	ctx.routes["PUT https://upload.example/s1"] = () => {
+		if (puts++ === 0) throw new TypeError("connection reset");
+		return { id: "vid1" };
+	};
+	ctx.routes[`GET ${YT}/playlistItems`] = () => ({ items: [{ snippet: { title: "Other", publishedAt: "2030-06-14T00:00:00Z", resourceId: { videoId: "other" } } }] });
+	ctx.routes[`GET ${YT}/videos`] = () => ({ items: [{ id: "other", snippet: { title: "Other", categoryId: "22", tags: ["x"] } }] });
+	const job = youtubeOnly(ctx);
+	const cfg = loadConfig();
+	await expect(publishJob(ctx, cfg, job.id)).rejects.toBeInstanceOf(TransientError);
+	expect(calls(ctx, "/playlistItems")).toHaveLength(0);
+	expect(await publishJob(ctx, cfg, job.id)).toEqual([`posted ${job.id} youtube=vid1`]);
+	expect(calls(ctx, "/playlistItems")).toHaveLength(1);
+	expect(calls(ctx, "googleapis.com/youtube/v3/videos?")).toHaveLength(1);
+	expect(uploadPosts(ctx)).toBe(2);
+	expect(tags[1]).toEqual(tags[0]);
+	expect(getJob(job.id)?.status).toBe("done");
+});
+
+test("a 403 quotaExceeded keeps the job scheduled without a failed line, prints one notice per Pacific day and resumes after the reset", async () => {
+	const ctx = fakeCtx(env);
+	serve(ctx);
+	ctx.routes[YT_UP] = () => Response.json({ error: { errors: [{ reason: "quotaExceeded" }] } }, { status: 403 });
+	const job = youtubeOnly(ctx);
+	expect(await run(ctx, [])).toEqual({ lines: ["yt-quota-exhausted until=16:00"], code: 0 });
+	expect(getJob(job.id)?.status).toBe("scheduled");
+	expect(getJob(job.id)?.error).toBeUndefined();
+	expect(can(ctx, loadConfig(), 1)).toBe(false);
+	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
+	expect(uploadPosts(ctx)).toBe(1);
+	expect(await publishJob(ctx, loadConfig(), job.id, true)).toEqual(["yt-quota-exhausted until=16:00"]);
+
+	const next = fakeCtx(env, { now: "2030-06-16T07:01:00Z", routes: ctx.routes });
+	serve(next);
+	expect(await run(next, [])).toEqual({ lines: [`posted ${job.id} youtube=vid1`], code: 0 });
+	expect(getJob(job.id)?.status).toBe("done");
 });
