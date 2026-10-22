@@ -99,8 +99,10 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .sn { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 10px 14px; border-radius: 12px; background: var(--layer); font-size: 14px; line-height: 22px; }
 .sn .st { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 #authbox { position: fixed; z-index: 60; right: 16px; bottom: 16px; width: min(380px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; }
-#authbox .au { padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: 0 8px 28px rgba(0,0,0,.12); display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 20px; }
-#authbox .au { flex: none; }
+/* the card scrolls inside (.abd) and keeps its buttons (.row) pinned; phone: a bottom sheet over the tab bar, see the media query below */
+#authbox { --au-foot: 80px; --au-gap: 32px; }
+#authbox .au { flex: none; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); box-shadow: 0 8px 28px rgba(0,0,0,.12); display: flex; flex-direction: column; font-size: 14px; line-height: 20px; }
+#authbox .au .abd { flex: none; max-height: calc(100dvh - var(--au-gap) - var(--au-foot)); overflow-y: auto; overscroll-behavior: contain; padding: 16px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
 #authbox .au h3 { margin: 0; font-size: 15px; }
 #authbox .au p { margin: 0; color: var(--fg-2); }
 #authbox .au input:not([type=checkbox]) { height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--layer); color: var(--fg); font: 16px var(--font); min-width: 0; width: 100%; box-sizing: border-box; }
@@ -111,8 +113,17 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 #authbox .au input.bad { border-color: var(--danger, #d93025); }
 #authbox .au .ferr { color: var(--danger, #d93025); font-size: 12px; min-height: 0; }
 #authbox .au .rem { display: flex; gap: 8px; align-items: center; color: var(--fg-2); font-size: 13px; }
-#authbox .au .row { display: flex; gap: 8px; justify-content: flex-end; }
+#authbox .au .row { flex: none; display: flex; gap: 8px; justify-content: flex-end; padding: 10px 16px 16px; border-top: 1px solid var(--line); background: var(--bg); }
 #authbox .au .note { color: var(--fg-3); font-size: 12px; }
+@media (max-width: 639px) {
+  #authbox { inset: 0; width: auto; max-height: none; padding: env(safe-area-inset-top) 0 0; gap: 8px; background: rgb(0 0 0 / .5); }
+  #authbox .au:first-child { margin-top: auto; }
+  #authbox { --au-foot: calc(80px + env(safe-area-inset-bottom)); --au-gap: calc(16px + env(safe-area-inset-top)); }
+  #authbox .au { border-width: 1px 0 0; border-radius: 16px 16px 0 0; box-shadow: none; }
+  #authbox .au .abd { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  #authbox .au .row { padding: 10px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  #authbox .au .row .btn { flex: 1; min-height: 44px; }
+}
 .sn .ml-from { font-weight: 600; color: var(--fg); }
 .sn .ml-subj { color: var(--fg); }
 .sn .ml-snip { color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
