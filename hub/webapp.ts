@@ -29,7 +29,8 @@ export function bundle(kind: Kind): { text: string; etag: string } {
 	const key = kind === "js" ? `${filesKey("js")}#${filesKey("css")}` : filesKey(kind);
 	const hit = cache[kind];
 	if (hit && hit.key === key) return hit;
-	const text = kind === "js" ? `const WEB_BUILD = "${webBuild()}";\n${joined("js")}` : joined(kind);
+	// WEB_BUILD goes after the "use strict" directive, which must stay the first statement.
+	const text = kind === "js" ? joined("js").replace('"use strict";', m => `${m}\nconst WEB_BUILD = "${webBuild()}";`) : joined(kind);
 	const next = { key, text, etag: `W/"${createHash("sha1").update(text).digest("hex").slice(0, 16)}"` };
 	cache[kind] = next;
 	return next;
