@@ -259,12 +259,17 @@ syncRoutineSchedules();
 startReflection(text => deliver(text), () => orch.sessionFile);
 startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
 startTokenAudit(alert);
-// Settings → 업데이트: the daily check only announces a new dotz version (push + a toast on open pages + one bell item), never applies it.
+// Settings → 업데이트: the daily check announces a new dotz version (push + a toast on open pages + one bell item); with self_update.auto_apply
+// on it applies it instead (worklog on success, alert with a choice block otherwise) and restarts through the idle restart gate.
 onUpdateResolved(updateResolved);
 void startSelfUpdate(text => {
 	updateAvailable(text);
 	pushNotify({ kind: "update", title: "dotz 업데이트", body: text, url: "/#settings", tag: "update" });
 	broadcast({ ts: now(), kind: "update_available", source: "gateway", text });
+}, undefined, {
+	worklog: text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`self-update worklog post failed: ${e}`)),
+	alert,
+	restartIdle: restartGateway,
 }).catch(e => log(`self-update start failed: ${e}`));
 startWatches((w, reason, output) => {
 	if (w.to === "orchestrator") {
