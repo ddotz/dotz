@@ -7,6 +7,9 @@ let current = "home", prevView = null;
 // Narrow screens: 채팅 shows the chat list (31-conversations.js) until a row is opened; from 1100px the list always sits beside the conversation.
 let chatList = false;
 const narrowChat = () => matchMedia("(max-width: 1099px)").matches;
+// From 1100px 프로젝트 shows the project list beside the open project, as 채팅 does with its list; ppCur is the open project's key.
+const ppWide = () => !narrowChat();
+let ppCur = "";
 const convListing = () => current === "chat" && chatList && narrowChat();
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
 const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["lanes", "세션"], ["settings", "설정"]];
@@ -144,7 +147,6 @@ const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
 const themeNext = () => themeIs() === "dark" ? "라이트" : "다크";
 function toggleTheme() { dotzTheme.toggle(); if (current === "settings") renderSettings(); }
 window.addEventListener("dotz-theme", () => { if (current === "settings") renderSettings(); });
-$("#pal").append(icon("search"));
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
 const setBrand = () => { $("#brand-name").textContent = botName; paintAttn(); };
@@ -156,5 +158,5 @@ function renderSideStatus() {
 }
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
-const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? "projects" : current === "monitoring" ? "chat" : null;
+const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? (ppWide() ? null : "projects") : current === "monitoring" ? "chat" : null;
 $("#back").onclick = () => (convOnPhone() || (current === "monitoring" && narrowChat()) ? openChatList() : go(backTarget() || "home"));

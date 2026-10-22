@@ -41,70 +41,98 @@ button:disabled { opacity: .4; cursor: default; pointer-events: none; }
 kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--layer); color: var(--fg-3); font: 500 11px/16px var(--font); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-/* layout: sidebar (wide) / bottom bar (phone) */
-.app { display: grid; grid-template-columns: 216px minmax(0, 1fr); height: 100vh; height: 100dvh; }
-.side { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px 8px; background: var(--side); border-right: 0; }
+/* layout: from 1100px one top row, below it the phone layout (tabs in a bottom bar). The markup is the same in both: #nav (the five tabs, one component), .sfoot (the status dot), #cmdk (search) and the app bar items.
+   Wide: .side, .main and .appbar are display: contents, so each of their children is a cell of the .app grid and sits in the one row. Below 1100px they are the usual flex boxes. The 1100px edge is also where 채팅 puts its list next to the conversation. */
+.app { display: grid; grid-template-columns: 20px auto auto auto auto auto auto minmax(0, 1fr) auto auto auto auto 12px; grid-template-rows: 48px auto minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); }
+.side, .main, .appbar { display: contents; }
+.brand, .sfoot, .rail, .pchip, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
+.gban { grid-row: 2; grid-column: 1 / -1; }
+.views { grid-row: 3; grid-column: 1 / -1; }
+.brand { grid-column: 2; }
 .brand { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; letter-spacing: -.01em; text-align: left; cursor: pointer; }
 .brand:hover { background: var(--card); }
 .brand span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .logo { position: relative; flex: none; width: 16px; height: 16px; border-radius: 5px; background: var(--fg); }
 .logo::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--bg); }
-.cmdk { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; margin: 8px 0 12px; padding: 0 6px 0 10px; border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); text-align: left; }
-.cmdk:hover { background: var(--card-hover); }
-.cmdk .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rail { display: flex; flex-direction: column; gap: 2px; }
-.ni { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; text-align: left; }
+.brand { width: auto; }
+.sfoot { grid-column: 3; display: flex; align-items: center; gap: 6px; padding: 0 4px; color: var(--fg-3); font-size: 11px; line-height: 16px; white-space: nowrap; }
+.rail { grid-column: 4; display: flex; gap: 2px; margin-left: 12px; }
+.ni { position: relative; display: flex; flex: none; align-items: center; gap: 4px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 .ni:hover { background: var(--hover); color: var(--fg); }
-.ni.on { background: var(--card); color: var(--fg); font-weight: 600; }
+.ni.on { color: var(--fg); font-weight: 700; }
+.ni .ic { display: none; }
 .ni .nl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ni .nnb { margin-left: auto; background: var(--warn); }
-.ni .nub { margin-left: auto; min-width: 0; height: 16px; font-size: 10px; }
+/* the current tab: bold with an accent line under it; the unread count is a plain number after the label, the new-version mark a small dot */
+.ni.on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -4px; height: 2px; border-radius: 1px; background: var(--accent); }
+.ni .nnb { min-width: 0; height: 16px; padding: 0; background: transparent; color: var(--warn); font-size: 12px; line-height: 16px; }
+.ni .nub { width: 6px; min-width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; }
 .ni .nub[hidden] { display: none; }
-.sfoot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 8px; color: var(--fg-2); font-size: 12px; }
-.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.appbar { flex: none; display: flex; align-items: center; gap: 4px; height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0 24px; border-bottom: 0; background: var(--bg); }
-.appbar.back { padding-left: 12px; }
-.appbar { height: calc(60px + env(safe-area-inset-top)); }
-.appbar h1 { flex: 1; min-width: 0; margin: 0; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appbar .cmdk { grid-column: 10; display: flex; align-items: center; gap: 6px; width: auto; height: 28px; margin-left: 8px; padding: 0 4px 0 8px; border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); }
+.cmdk:hover { background: var(--card-hover); }
+.cmdk .tx { display: none; }
+#back { grid-column: 6; margin-left: 8px; }
+.appbar h1 { grid-column: 7; min-width: 0; max-width: 320px; margin: 0 0 0 8px; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* wide: the active tab names the page, so the big title shows only on a page with a back arrow (a project, a settings sub-page) */
+.appbar:not(.back) h1 { display: none; }
+.thead { grid-column: 8; }
+.conn { grid-column: 9; margin-left: 8px; }
+#vtog { grid-column: 11; margin-left: 4px; }
+.ustrip { grid-column: 12; margin-left: 4px; }
+.pchip { grid-column: 5; }
 .conn { flex: none; height: 20px; padding: 0 8px; border-radius: 10px; background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); font-size: 12px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 .ustrip { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; }
 .ustrip:hover { background: var(--hover); color: var(--fg); }
 .ustrip .ubar { width: 48px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
 .ustrip .ubar i { display: block; height: 100%; border-radius: 2px; background: var(--fg-2); }
 .ustrip.warn { color: var(--warn); } .ustrip.warn .ubar i { background: var(--warn); }
+.ustrip.warn .uring { background: conic-gradient(var(--warn) calc(var(--p) * 1%), var(--track) 0); }
 .ustrip .uring, .ustrip .upct { display: none; }
 .ustrip .uring { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--fg-2) calc(var(--p) * 1%), var(--track) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
 .ustrip.warn .uring { background: conic-gradient(var(--warn) calc(var(--p) * 1%), var(--track) 0); }
-.views { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.views { min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .view { max-width: 920px; margin: 0 auto; padding: 24px; }
 .view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
-.only-phone { display: none !important; }
-@media (max-width: 639px) {
-  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .main { order: 1; }
+@media (max-width: 1099px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding-top: 0; }
+  .main { order: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .appbar { display: flex; flex: none; align-items: center; gap: 4px; height: calc(60px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0 24px; background: var(--bg); }
+  .appbar.back { padding-left: 12px; }
+  .appbar h1, .appbar:not(.back) h1 { display: block; flex: 1; max-width: none; margin: 0; }
+  #back, .conn { margin: 0; }
+  #vtog, .ustrip { margin: 0; }
+  .gban, .views { grid-row: auto; grid-column: auto; }
+  .views { flex: 1; }
   /* compact tab bar: a 46px row; the home-indicator inset is trimmed (labels end ~18px above the screen edge, clear of the indicator) */
-  .side { order: 2; flex-direction: row; padding: 0 0 max(2px, calc(env(safe-area-inset-bottom) - 16px)); border-right: 0; border-top: 1px solid var(--line); background: var(--card); }
+  .side { order: 2; display: flex; min-width: 0; min-height: 0; padding: 0 0 max(2px, calc(env(safe-area-inset-bottom) - 16px)); border-top: 1px solid var(--line); background: var(--card); }
+  .brand, .sfoot { display: none; }
+  .rail { flex: 1; min-width: 0; gap: 0; margin: 0; }
+  .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 1px; height: 46px; padding: 0 2px; border-radius: 0; font-size: 10px; line-height: 13px; text-align: center; }
+  .ni:hover { background: transparent; }
+  .ni.on { font-weight: 600; }
+  .ni .ic { display: block; width: 20px; height: 20px; }
+  .ni.on::after { content: none; }
+  .ni .nnb { position: absolute; top: 3px; left: calc(50% + 4px); min-width: 16px; height: 16px; padding: 0 5px; background: var(--warn); color: var(--bg); font-size: 10.5px; }
+  .ni .nub { position: absolute; top: 5px; left: calc(50% + 6px); width: 8px; min-width: 8px; height: 8px; }
+  .ni.on::before { content: ""; position: absolute; top: -1px; left: 25%; right: 25%; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent); }
+  /* search: the one #cmdk button is an icon in the app bar here (its label and key hint are for the top row) */
+  .appbar .cmdk { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; margin: 0; padding: 0; background: transparent; color: var(--fg-2); }
+  .appbar .cmdk:hover { background: var(--hover); color: var(--fg); }
+  .cmdk kbd { display: none; }
+}
+@media (max-width: 1099px) and (pointer: coarse) { .appbar .cmdk { width: 36px; height: 36px; } }
+@media (max-width: 639px) {
   /* typing: the keyboard covers the bar's place, so the bar steps aside instead of floating above the keyboard */
   .app:has(.composer textarea:focus) .side { display: none; }
-  .appbar { height: calc(52px + env(safe-area-inset-top)); }
+  .appbar { height: calc(52px + env(safe-area-inset-top)); padding-left: 16px; }
   .appbar h1 { font-size: 20px; line-height: 28px; }
-  .brand, .cmdk, .sfoot { display: none; }
-  .rail { flex: 1; min-width: 0; flex-direction: row; gap: 0; }
-  .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 1px; height: 46px; padding: 0 2px; border-radius: 0; background: transparent !important; font-size: 10px; line-height: 13px; text-align: center; }
-  .ni .ic { width: 20px; height: 20px; }
   .main .composer { padding-bottom: 8px; }
-  .ni .nnb { position: absolute; top: 3px; left: calc(50% + 4px); margin: 0; }
-  .ni .nub { position: absolute; top: 5px; left: calc(50% + 6px); margin: 0; width: 8px; min-width: 8px; height: 8px; padding: 0; font-size: 0; line-height: 0; }
   .ustrip { gap: 4px; padding: 0 4px; font-size: 11px; }
   .ustrip .ulab, .ustrip .ubar { display: none; }
   .ustrip .uring, .ustrip .upct { display: inline-block; }
-  .ni.on::before { content: ""; position: absolute; top: -1px; left: 25%; right: 25%; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent); }
-  .appbar { padding-left: 16px; }
-  .only-phone { display: inline-grid !important; }
   .view { padding: 16px 12px 24px; }
   .view.fill { padding-bottom: 0; }
 }
-
+@media (max-width: 1099px) and (pointer: coarse) { .app:has(.composer textarea:focus) .side { display: none; } }
 /* buttons */
 .ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); padding: 0; }
 .ib:hover { background: var(--hover); color: var(--fg); }
