@@ -1,9 +1,8 @@
-/* ---------- lanes: multi-pane board ---------- */
-const laneDraft = {};
+/* ---------- 세션 탭: one status briefing card per session; a tap anywhere on it opens that session's chat ---------- */
 let laneSig = "";
-const LANE_TAIL = 300;          // activity rows read per card (this turn's time and commands)
-const LP = {};                  // lane name -> persistent pane (DOM, scroll and tail state survive re-renders)
-let laneBoard = null;
+const LP = {};                  // lane name -> { acts: oldest-first {ts, text} lines in Korean, rev, loaded, loading, failedAt }
+const LANE_TAIL = 40;           // activity rows read per session
+const LANE_ACTS = 12;           // lines kept per session
 const laneKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
 function laneToolLabel(a) {
   const pre = `${a.tool}: `;
@@ -19,54 +18,113 @@ function laneToolLabel(a) {
 // A session's last report or answer (not a progress note), from the conversation events this page has seen.
 const isLaneReport = e => e.kind === "lane_report" || (e.kind === "out" && !e.update_key && typeof e.source === "string" && e.source.startsWith("lane:"));
 const laneReport = name => ts(`lane:${name}`).msgs.findLast(isLaneReport) || null;
-// This turn's start and command count, read from the card's activity feed (the status line's "3분 · 명령 12").
-function laneStat(p, a) {
-  if (a.type === "turn_start") { p.t0 = Date.parse(a.ts) || 0; p.cmds = 0; }
-  else if (a.type === "turn_end") p.t0 = 0;
-  else if (a.type === "tool_call" && kindOf(a.tool) === "명령") p.cmds++;
-}
-function laneStatusLine(p, l) {
-  const parts = [statusKo(l.status)];
-  if (l.status === "working" || l.status === "starting") {
-    if (p.t0) parts.push(fmtDur(Date.now() - p.t0));
-    if (p.cmds) parts.push(`명령 ${p.cmds}`);
-  } else { const r = laneReport(p.name); if (r) parts.push(`마지막 보고 ${kstHM(r.ts)}`); }
-  return parts.join(" · ");
-}
 const openLaneChat = name => { setTarget(`lane:${name}`); go("chat"); };
-function laneRepPaint(p) {
-  const r = laneReport(p.name), sig = r ? `${r.ts}|${String(r.text ?? "").length}` : "";
-  if (p.repSig === sig) return;
-  if (!r && !p.loaded) return;
-  p.repSig = sig; clear(p.rep);
-  if (!r) { p.rep.append(el("div", { class: "lnone", text: "아직 보고가 없어요" })); return; }
-  const { tone, text } = parseTone(noHandoff(String(r.text ?? ""))), lt = tone ? LANE_TONE[tone] : null;
-  const long = text.length > 120 || text.split("\n").length > 4;
-  p.rep.append(el("div", { class: "mt" }, kstHM(r.ts), lt ? el("span", { class: `tag ${lt[0]}`, text: lt[1] }) : null),
-    mdNode(text, `md lclamp${long ? " long" : ""}`));
-  // (DOM append prints a null argument as the text "null", so the button is appended only when there is one)
-  if (long) p.rep.append(el("button", { class: "btn text lmore", type: "button", onclick: ev => { ev.stopPropagation(); openLaneChat(p.name); } }, "더 보기"));
+// The main assistant's background work (S.work): running first, then what ended in the last hour.
+// Tap: the conversation that asked for the work (its waiting message, flashed). Unknown, or gone: the main chat at the time it started.
+async function workGo(w) {
+  const t = w.target && validTarget(w.target) ? w.target : MAIN;
+  if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t).catch(() => {});
+  const asked = w.reply_to ? ts(t).msgs.find(e => e.mid === w.reply_to) : null;
+  ntJump({ src: t, at: asked ? asked.ts : new Date(w.started_at).toISOString() });
 }
-function laneRefresh(p) { laneRepPaint(p); if (p.lane) p.stat.textContent = laneStatusLine(p, p.lane); }
+// A relative time on the KST clock: 방금 / N분 전 / N시간 전 (today) / 어제 오후 3:20 / 10월 20일.
+function agoKo(t) {
+  if (!(t > 0)) return "";
+  const m = Math.floor((Date.now() - t) / 60000), day = x => new Date(x).toLocaleDateString("sv-SE", KST);
+  if (m < 1) return "방금";
+  if (m < 60) return `${m}분 전`;
+  if (day(t) === day(Date.now())) return `${Math.floor(m / 60)}시간 전`;
+  if (day(t) === day(Date.now() - 864e5)) return `어제 ${kstHM(t)}`;
+  return new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric" });
+}
+// One short Korean sentence out of a free-form message: code, links, hashes and markup dropped; English-only lines are not shown.
+function plainKo(text) {
+  const s = String(text ?? "").replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ").replace(/https?:\/\/\S+/g, " ").replace(/\b[0-9a-f]{7,40}\b/gi, " ").replace(/[*_#>\[\]|]/g, " ");
+  const line = s.split("\n").map(oneLine).find(x => /[가-힣]/.test(x));
+  if (!line) return "";
+  const cut = line.match(/^.*?(?:[요다죠음함]\.|[.!?])(?=\s|$)/);
+  const t = (cut ? cut[0] : line).replace(/[.!]$/, "");
+  return t.length > 50 ? `${t.slice(0, 48)}…` : t;
+}
+const LANE_TOOL_KO = { 명령: "명령을 실행했어요", 수정: "파일을 고쳤어요", 읽기: "파일을 읽어봤어요", 검색: "코드를 찾아봤어요" };
+function laneActKo(a) {
+  switch (a.type) {
+    case "tool_call": return LANE_TOOL_KO[kindOf(a.tool)] || "";
+    case "text": return plainKo(parseTone(String(a.text ?? "")).text);
+    case "status": return plainKo(statusLineKo(a.text));
+    case "error": return "오류가 있었어요";
+    case "turn_end": return "이번 작업을 마쳤어요";
+    default: return "";
+  }
+}
+// The newest 3 lines of a session, newest first: its reports and its own activity, same line collapsed to "… (3번)".
+function laneRecent(name) {
+  const p = LP[name], rows = p ? p.acts.slice() : [];
+  for (const e of ts(`lane:${name}`).msgs.filter(isLaneReport).slice(-3)) {
+    const { text } = parseTone(noHandoff(String(e.text ?? "")));
+    rows.push({ ts: Date.parse(e.ts) || 0, text: `보고 · ${plainKo(text) || "내용을 남겼어요"}`, report: true });
+  }
+  rows.sort((x, y) => y.ts - x.ts);
+  const said = new Set(rows.filter(r => r.report).map(r => r.text.slice(5)));
+  const out = [];
+  for (const r of rows) {
+    if (!r.report && said.has(r.text)) continue;
+    const last = out[out.length - 1];
+    if (last && last.text === r.text) { last.n++; continue; }
+    if (out.length < 3) out.push({ ...r, n: 1 });
+  }
+  return out.map(r => ({ ts: r.ts, text: r.n > 1 ? `${r.text} (${r.n}번)` : r.text, report: r.report }));
+}
+// The one-line state of a live session, in plain Korean, and when it happened.
+function laneState(l, recent) {
+  const pa = l.pendingAsk, top = recent[0];
+  if (pa) return ["질문에 답을 기다리고 있어요", Date.parse(pa.at) || 0];
+  if (l.status === "rate-limited") return ["사용 한도에 걸려 잠시 멈췄어요", top ? top.ts : 0];
+  if (l.status === "starting") return ["세션을 시작하는 중이에요", top ? top.ts : 0];
+  if (l.status === "working") return [top ? top.text : "작업을 하고 있어요", top ? top.ts : 0];
+  const rep = recent.find(r => r.report);
+  if (rep) return ["작업을 마치고 보고했어요", rep.ts];
+  return [top ? top.text : "다음 지시를 기다리고 있어요", top ? top.ts : 0];
+}
+function laneCard(l) {
+  const name = l.title || l.name, proj = laneProject(l), [word, tone] = sessionStatus(l), recent = laneRecent(l.name), [state, at] = laneState(l, recent), when = agoKo(at);
+  const k = attnKind(`lane:${l.name}`), card = el("button", { class: `card tap sb-card${k ? " att" : ""}`, type: "button", "data-t": `lane:${l.name}`, onclick: () => openLaneChat(l.name),
+    "aria-label": `${name} · ${proj ? `프로젝트 ${proj}` : "프로젝트 없음"} · ${word} · ${state}${when ? ` · ${when}` : ""} · 대화 열기` },
+    el("div", { class: "sb-top" }, el("span", { class: `dot ${k ? "att" : tone === "warn" ? "att" : statusTone(l.status)}` }), el("span", { class: "sb-title", text: name }),
+      el("span", { class: `tag ${tone}`, text: word }), icon("chev", "chev")),
+    el("div", { class: `sb-proj${proj ? "" : " none"}`, text: proj ? `프로젝트 · ${proj}` : "프로젝트 없음" }),
+    el("div", { class: "sb-state" }, el("span", { class: "t", text: state }), when ? el("span", { class: "w", text: when }) : null));
+  const rest = recent.filter(r => r.text !== state);
+  if (rest.length) card.append(el("div", { class: "sb-recent" }, el("div", { class: "sb-h", text: "최근 내역" }),
+    ...rest.map(r => el("div", { class: "sb-item" }, el("span", { class: "t", text: r.text }), el("span", { class: "w", text: agoKo(r.ts) })))));
+  return card;
+}
+function laneRefresh(p) { p.rev++; laneSoon(); }
+let laneSoonT;
+const laneSoon = () => { clearTimeout(laneSoonT); laneSoonT = setTimeout(() => { if (current === "lanes") { laneSig = ""; renderLanes(); } }, 300); };
 function laneIngest(p, a) {
   const k = laneKey(a);
   if (p.seen.has(k)) return;
-  p.seen.add(k); laneStat(p, a); laneRefresh(p);
+  p.seen.add(k);
+  if (p.seen.size > 200) p.seen = new Set([...p.seen].slice(-100));
+  const text = laneActKo(a);
+  if (text) { p.acts.push({ ts: Date.parse(a.ts) || Date.now(), text }); if (p.acts.length > LANE_ACTS) p.acts.shift(); }
+  laneRefresh(p);
 }
 async function laneLoad(p) {
   p.loading = true; p.queue = [];
   const t = `lane:${p.name}`;
   let r, h;
-  try { [r, h] = await Promise.all([api(`/api/activity?source=${enc(t)}&limit=${LANE_TAIL}`), api(`/api/history?target=${enc(t)}&limit=60`).catch(() => null)]); }
+  try { [r, h] = await Promise.all([api(`/api/activity?source=${enc(t)}&limit=${LANE_TAIL}`), api(`/api/history?target=${enc(t)}&limit=30`).catch(() => null)]); }
   catch { p.loading = false; p.failedAt = Date.now(); return; }
   if (h) { const st = ts(t); for (const e of h.events || []) { const k = msgKey(e); if (!st.mk.has(k)) { st.mk.add(k); st.msgs.push(e); } } st.msgs.sort(byTs); }
-  p.seen = new Set(); p.t0 = 0; p.cmds = 0;
-  for (const a of r.items || []) { p.seen.add(laneKey(a)); laneStat(p, a); }
+  p.seen = new Set(); p.acts = [];
+  for (const a of r.items || []) laneIngest(p, a);
   for (const a of p.queue) laneIngest(p, a);
   p.queue = []; p.loading = false; p.loaded = true;
   laneRefresh(p);
 }
-// SSE "activity": keep every loaded pane live, even while another view is open.
+// SSE "activity": keep every loaded session live, even while another view is open.
 function laneActivity(a) {
   const name = typeof a.source === "string" && a.source.startsWith("lane:") ? a.source.slice(5) : null;
   if (name) { const s = actLine(a); if (s && LAST[name] !== s) { LAST[name] = s; homeSoon(); } }
@@ -79,145 +137,22 @@ function laneTailsStale() {
   for (const p of Object.values(LP)) p.loaded = false;
   if (current === "lanes") { laneSig = ""; renderLanes(); }
 }
-
-function laneSend(p, l) {
-  const text = p.input.value.trim();
-  const alive = laneAlive(l);
-  if (!text && alive) return Promise.resolve();
-  return busy(p.send, async () => {
-    if (alive) await api("/api/message", "POST", { text, lane: p.name });
-    else await api(`/api/lanes/${enc(p.name)}/resume`, "POST", text ? { text } : {});
-    p.input.value = ""; laneDraft[p.name] = "";
-    toast(alive ? "전달했어요" : "재개했어요");
-    refreshState();
-  });
-}
-function laneActions(p, l) {
-  const alive = laneAlive(l);
-  const act = (label, kind, fn) => el("button", { class: `btn ${kind}`, type: "button", onclick: ev => busy(ev.currentTarget, async () => { await fn(); refreshState(); }) }, label);
-  const post = (path, body) => api(`/api/lanes/${enc(p.name)}/${path}`, "POST", body ?? {});
-  if (!alive) return [act("재개", "tonal", async () => { const t = p.input.value.trim(); await post("resume", t ? { text: t } : {}); p.input.value = ""; laneDraft[p.name] = ""; toast("재개했어요"); })];
-  return [
-    el("button", { class: "btn text", type: "button", onclick: () => p.input.focus() }, "메시지"),
-    act("중단", "text", async () => { await post("abort"); toast("작업을 중단했어요"); }),
-    act("재시작", "text", async () => { if (!await ask(`${p.name} 재시작`, "이 세션을 다시 시작할까요?", "재시작", true)) return; await post("restart"); toast("재시작했어요"); }),
-    // Same look as its siblings; the confirm dialog carries the danger styling.
-    act("종료", "text", async () => { if (!await ask(`${p.name} 종료`, "이 세션을 종료할까요?", "종료", true)) return; await api(`/api/lanes/${enc(p.name)}`, "DELETE"); toast("종료했어요"); }),
-  ];
-}
-function lanePane(name) {
-  const p = { name, seen: new Set(), queue: [], t0: 0, cmds: 0, repSig: null, loaded: false, loading: false, failedAt: 0, alive: null };
-  p.dot = el("span", { class: "dot" });
-  p.nameBtn = el("button", { class: "lname", type: "button", title: "대화 열기", onclick: () => openTarget(`lane:${name}`, lastChatView()) });
-  p.tag = el("span", { class: "tag" });
-  p.att = el("span", { class: "tag warn", text: "확인 필요", hidden: true });
-  p.claim = el("span", { class: "tag", hidden: true });
-  p.ask = el("span", { class: "tag warn", text: "질문 대기", hidden: true });
-  p.subs = el("button", { class: "tag pri", type: "button", hidden: true, title: "서브에이전트 보기", onclick: ev => { ev.stopPropagation(); openSubs([`lane:${name}`]); } });
-  p.model = el("div", { class: "lmodel" });
-  p.proj = el("div", { class: "lproj", hidden: true });
-  p.acts = el("div", { class: "lacts" });
-  p.rep = el("div", { class: "lrep", tabindex: "0", role: "region", "aria-label": `${name} 마지막 보고`, onclick: () => { if (!String(getSelection() || "")) openLaneChat(name); } });
-  p.stat = el("div", { class: "lstat" });
-  p.input = input({ type: "text", enterkeyhint: "send", value: laneDraft[name] || "", oninput: ev => { laneDraft[name] = ev.target.value; }, onkeydown: ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); p.send.click(); } } });
-  p.send = el("button", { class: "ib pri", type: "button" }, icon("send"));
-  const head = el("div", { class: "lhead" }, el("div", { class: "ltop" }, p.dot, p.nameBtn, p.att, p.tag, p.claim, p.ask, p.subs), p.proj, p.model, p.acts);
-  p.node = el("section", { class: "lpane", "aria-label": name, "data-t": `lane:${name}` }, head,
-    p.rep, p.stat,
-    el("div", { class: "lcomp" }, p.input, p.send));
-  return p;
-}
-function laneUpdate(p, l, m) {
-  const alive = laneAlive(l), tone = statusTone(l.status);
-  p.lane = l;
-  p.send.onclick = () => laneSend(p, l);
-  const k = attnKind(`lane:${l.name}`);
-  p.dot.className = `dot ${k ? "att" : tone}`;
-  p.att.hidden = !k;
-  p.nameBtn.textContent = l.title || l.name;
-  p.nameBtn.title = l.title ? `${l.name} · 대화 열기` : "대화 열기";
-  const proj = laneProject(l);
-  p.proj.hidden = !proj; p.proj.textContent = proj ? `프로젝트 · ${proj}` : "";
-  p.tag.className = `tag ${tone}`; p.tag.textContent = statusKo(l.status);
-  // "reported" is the lane's own done claim; "verified" only after the orchestrator checked it (dotz_lane verify).
-  const claim = l.claim && l.claim.state;
-  p.claim.hidden = !claim; p.claim.className = `tag ${claim === "verified" ? "ok" : "pri"}`; p.claim.textContent = claim === "verified" ? "확인됨" : "보고됨"; p.claim.title = claim === "verified" ? `${botName}가 확인했어요${l.claim.evidence ? `: ${l.claim.evidence}` : ""}` : "세션이 완료라고 보고했어요 (아직 확인 전)";
-  // A lane's [ask] report waits for the owner's answer until the owner (or the orchestrator) writes to the lane.
-  const pa = l.pendingAsk;
-  p.ask.hidden = !pa; p.ask.title = pa ? `답을 기다리는 질문 (${kstStamp(pa.at)}): ${String(pa.text).slice(0, 500)}` : "";
-  const allSubs = SUBS[`lane:${l.name}`] || [], runSubs = runningSubs(`lane:${l.name}`).length;
-  p.subs.hidden = !allSubs.length; p.subs.className = `tag${runSubs ? " pri" : ""}`;
-  p.subs.textContent = `서브에이전트 ${allSubs.length - runSubs}/${allSubs.length}`; p.subs.title = `서브에이전트 끝난 수 / 전체 · ${runSubs}개 진행 중`;
-  const model = (m && m.model) || l.model;
-  p.model.textContent = model ? `${modelName(model)}${m && m.thinking ? ` · ${m.thinking}` : ""}` : "";
-  p.model.hidden = !model;
-  if (p.alive !== alive) {
-    p.alive = alive;
-    const ph = alive ? "메시지" : "재개 메시지";
-    p.input.placeholder = ph; p.input.setAttribute("aria-label", ph);
-    p.send.setAttribute("aria-label", alive ? "전송" : "재개");
-    p.node.classList.toggle("off", !alive);
-  }
-  p.node.classList.toggle("att", !!k || l.status === "rate-limited");
-  clear(p.acts).append(...laneActions(p, l));
-  laneRefresh(p);
-}
-function laneBoardInit() {
-  const grid = el("div", {});
-  laneBoard = { grid, none: emptyNode("작동 중인 세션이 없어요") };
-  laneBoard.node = el("div", { class: "lboard" }, laneBoard.none, grid);
-  $("#lanes").append(laneBoard.node);
-  // The tail of a pane follows the card height; a resize or move only re-sticks the tails.
-  laneBoard.board = makeBoard(grid, "lanes");
-}
-// Running lanes only: an exited lane leaves the board at once (its history and resume stay reachable from ⌘K).
-// The main assistant's background work (S.work): running first, then what ended in the last hour.
-// Tap: the conversation that asked for the work (its waiting message, flashed). Unknown, or gone: the main chat at the time it started.
-async function workGo(w) {
-  const t = w.target && validTarget(w.target) ? w.target : MAIN;
-  if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t).catch(() => {});
-  const asked = w.reply_to ? ts(t).msgs.find(e => e.mid === w.reply_to) : null;
-  ntJump({ src: t, at: asked ? asked.ts : new Date(w.started_at).toISOString() });
-}
-function workRow(w) {
-  const run = w.status === "running", done = w.status === "done";
-  return el("button", { class: "hr", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${run ? "작업 중" : done ? "완료" : "실패"} · 대화로 가기` },
-    el("span", { class: `dot ${run ? "pri" : done ? "ok" : "err"}` }),
-    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: run ? workElapsed(w) : `${done ? "끝남" : "실패"} · ${workAgo(w)}` })),
-    el("span", { class: `hs ${run ? "pri" : done ? "" : "err"}`, text: run ? "작업 중" : done ? "완료" : "실패" }));
-}
-function renderWorkGroup() {
-  const box = $("#lanes-work");
-  if (!box) return;
-  const all = (S && S.work) || [], run = all.filter(w => w.status === "running").length;
-  box.hidden = !all.length;
-  const sig = JSON.stringify(all.map(w => [w.id, w.status, w.description, w.target, w.reply_to, workElapsed(w), workAgo(w)]));
-  if (box.dataset.sig === sig) return;
-  box.dataset.sig = sig;
-  clear(box).append(
-    el("div", { class: "hn-h" }, el("h2", { text: "진행 중인 작업" }), el("span", { class: "sup", text: run ? `${run}개 작업 중` : "모두 끝남" })),
-    el("div", { class: "hn" }, ...all.map(workRow)));
-}
+// Running and waiting sessions, a question waiting for the owner first, then the ones at work; the ended ones fold below (renderEndedLanes).
 function renderLanes() {
   if (!S) return;
-  renderWorkGroup();
-  if (!laneBoard) laneBoardInit();
   const lanes = S.lanes.filter(laneAlive);
-  const modelOf = n => (M && M.lanes || []).find(l => l.name === n);
-  const sig = JSON.stringify([lanes.map(l => [l.name, l.title, l.home, l.status, l.model, (SUBS[`lane:${l.name}`] || []).map(s => s.status).join(), attnKind(`lane:${l.name}`), l.claim && l.claim.state, l.pendingAsk && l.pendingAsk.at]), prjRev, M && M.lanes, M && M.available && M.available.length]);
-  if (sig === laneSig) return renderEndedLanes();
-  laneSig = sig;
-  const B = laneBoard;
-  for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) { LP[n].node.remove(); delete LP[n]; delete laneDraft[n]; }
-  for (const l of lanes) laneUpdate(LP[l.name] || (LP[l.name] = lanePane(l.name)), l, modelOf(l.name));
-  const ordered = lanes;
-  B.none.hidden = ordered.length > 0;
-  B.grid.hidden = !ordered.length;
-  B.board.bar.hidden = !ordered.length;
-  B.board.set(ordered.map(l => ({ id: `lane:${l.name}`, node: LP[l.name].node, head: ".lhead", def: { w: 4, h: 9 }, min: { w: 3, h: 6 }, max: { w: 12, h: 24 } })));
-  for (const l of ordered) {
-    const p = LP[l.name];
-    if (!p.loaded && !p.loading && Date.now() - p.failedAt > 15000) laneLoad(p);
+  for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) delete LP[n];
+  for (const l of lanes) if (!LP[l.name]) LP[l.name] = { name: l.name, acts: [], seen: new Set(), queue: [], rev: 0, loaded: false, loading: false, failedAt: 0 };
+  const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
+  const recentTs = l => { const r = laneRecent(l.name)[0]; return r ? r.ts : 0; };
+  const sig = JSON.stringify([lanes.map(l => [l.name, l.title, l.home, l.project, l.status, attnKind(`lane:${l.name}`), l.pendingAsk && l.pendingAsk.at, LP[l.name].rev, ts(`lane:${l.name}`).msgs.length]), prjRev, Math.floor(Date.now() / 30000)]);
+  if (sig !== laneSig) {
+    laneSig = sig;
+    const box = $("#lanes");
+    clear(box);
+    if (!lanes.length) box.append(emptyNode("작동 중인 세션이 없어요"));
+    else box.append(el("div", { class: "sb-list" }, ...lanes.map(l => ({ l, r: rank(l), t: recentTs(l) })).sort((x, y) => x.r - y.r || y.t - x.t).map(x => laneCard(x.l))));
+    for (const l of lanes) { const p = LP[l.name]; if (!p.loaded && !p.loading && Date.now() - p.failedAt > 15000) laneLoad(p); }
   }
   renderEndedLanes();
 }
@@ -246,15 +181,34 @@ function prjLoad() {
   });
   return prjFlight;
 }
-// The work channel a session was started in (ch:<id>): the hub's lane list carries no home, the gateway's channel map does.
+// The work channel a session was started in (ch:<id>): the hub's lane list carries it as `home` (hub/laneviews.ts withHomes); the gateway's channel map is the fallback.
 const laneHome = l => l.home || (S && S.channels && S.channels.homes && S.channels.homes[l.name] ? `ch:${S.channels.homes[l.name]}` : "");
-// The project a session belongs to, by name: its home channel (ch:<id>), else the folder project that lists it.
+// The project a session belongs to, by name: its home channel only (docs/layers.md §1). A session started from chat has none (""), even when its folder matches a project.
 function laneProject(l) {
-  const list = (PRJ && PRJ.projects) || [], home = laneHome(l);
-  const p = (home && list.find(x => x.key === home || x.recordKey === home || (x.channel && `ch:${x.channel.id}` === home))) || list.find(x => (x.lanes || []).some(z => z.name === l.name));
+  const home = laneHome(l);
+  if (!home) return "";
+  const p = ((PRJ && PRJ.projects) || []).find(x => x.key === home || x.recordKey === home || (x.channel && `ch:${x.channel.id}` === home));
   if (p) return prjTitle(p);
   const work = (S && S.channels && S.channels.work) || {};
-  return home.startsWith("ch:") ? work[home.slice(3)] || "" : "";
+  return l.project || work[home.slice(3)] || "";
+}
+// The one session row (home, project screen): title, parent project, status word; one tap opens the session's chat.
+function sessionStatus(l) {
+  if (!laneAlive(l)) return ["끝남", ""];
+  if (l.status === "working" || l.status === "starting") return ["작업 중", "pri"];
+  return ["기다림", l.pendingAsk ? "warn" : ""];
+}
+// o.project: the project name when the caller knows it better than the lane's own home; o.line: a short activity line after it;
+// o.word / o.tone: a status the caller knows better ("답변 필요").
+function sessionRow(l, o = {}) {
+  const proj = o.project !== undefined ? o.project : laneProject(l), [word, tone] = o.word ? [o.word, o.tone || ""] : sessionStatus(l), name = l.title || l.name, t = `lane:${l.name}`;
+  const subs = SUBS[t] || [], done = subs.filter(s => s.status !== "running").length;
+  return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: () => openTarget(t, lastChatView()), "aria-label": `${name} · ${proj ? `프로젝트 ${proj}` : "프로젝트 없음"} · ${word} · 대화 열기` },
+    el("span", { class: `dot ${tone === "warn" ? "att" : statusTone(l.status)}` }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: name })),
+      el("span", { class: "ha" }, el("span", { class: `sproj${proj ? "" : " none"}`, text: proj || "프로젝트 없음" }), o.line ? el("span", { class: "sline", text: o.line }) : null)),
+    subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
+    el("span", { class: `hs ${tone}`, text: word }));
 }
 
 // Status dot and word of a project: waiting on the owner > working > a live session or channel > nothing running.

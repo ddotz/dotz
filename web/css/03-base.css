@@ -83,6 +83,7 @@
 .menu.msheet .mi { min-height: 48px; }
 .mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 5px; background: transparent; text-align: left; font-size: 13px; line-height: 20px; }
 .mi:hover, .mi:focus-visible { background: var(--hover); outline: 0; }
+.mi.ind { padding-left: 28px; }
 .mi .ck { flex: none; width: 14px; height: 14px; color: var(--accent); }
 .mi .ml { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow-wrap: anywhere; }
 .mi .ml small { flex: none; margin-left: auto; color: var(--fg-3); font-size: 11px; line-height: 16px; }

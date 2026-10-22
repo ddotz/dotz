@@ -88,11 +88,6 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .hs-chips .chip { height: auto; min-height: 28px; padding: 3px 10px; text-align: left; }
 .hs-chips .chip .tx { white-space: normal; overflow-wrap: anywhere; }
 @media (min-width: 640px) { #harness.hs-open { padding-right: 480px; } }
-.bi > .lpane .lcomp { padding: 8px 12px 12px 8px; }
-.board.narrow .bi > .lpane { height: auto; }
-.board.narrow .lrep { flex: none; }
-.board.narrow .bi > .lpane .lcomp { padding: 8px; }
-.lpane.att .lhead { border-bottom-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
 /* 구성: 기능 보기 (badges on the map, 기능 목록 panel, 상세의 "여기서 작동하는 기능") */
 .btn.tonal[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .hm-bd { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }

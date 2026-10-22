@@ -41,9 +41,10 @@ function pmSessionRows(p, D) {
   const dl = (D && D.lanes) || [], all = (S && S.lanes) || [], names = new Set([...dl.map(l => l.name), ...(p.lanes || []).map(l => l.name)]);
   const chat = prjChat(p);
   if (chat) for (const l of all) if (laneHome(l) === chat) names.add(l.name);
-  return [...names].map(n => {
+  // A project with its own chat lists the sessions assigned to it; a live session of the same folder started from chat belongs to no project.
+  return [...names].filter(n => { const s = all.find(l => l.name === n); return !(chat && s && laneAlive(s) && !laneHome(s)); }).map(n => {
     const s = all.find(l => l.name === n), d = dl.find(l => l.name === n) || (p.lanes || []).find(l => l.name === n) || {};
-    return { at: Date.parse(d.finishedAt || d.lastReportAt || d.startedAt || (s && s.startedAt) || "") || 0, name: n, title: (s && s.title) || d.title || n, live: s ? laneAlive(s) : !!d.live, status: s ? s.status : d.status, waiting: s ? !!s.pendingAsk : !!d.waiting, line: String(d.line || d.lastText || "").slice(0, 140) };
+    return { project: s && laneHome(s) ? laneProject(s) : prjTitle(p), at: Date.parse(d.finishedAt || d.lastReportAt || d.startedAt || (s && s.startedAt) || "") || 0, name: n, title: (s && s.title) || d.title || n, live: s ? laneAlive(s) : !!d.live, status: s ? s.status : d.status, waiting: s ? !!s.pendingAsk : !!d.waiting, line: String(d.line || d.lastText || "").slice(0, 140) };
   }).sort((a, b) => (b.live - a.live) || (b.waiting - a.waiting) || a.title.localeCompare(b.title));
 }
 function pmPaint() {
@@ -240,10 +241,8 @@ function pmRoutine(x) {
   return box;
 }
 
-const pmSessionRow = r => el("button", { class: "li tap", type: "button", onclick: () => openTarget(`lane:${r.name}`, lastChatView()) },
-  el("span", { class: `dot ${r.waiting ? "att" : r.live ? statusTone(r.status) : ""}` }),
-  el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), el("div", { class: "sup", text: [r.live ? statusKo(r.status) : "끝남", r.line].filter(Boolean).join(" · ") })),
-  r.waiting ? el("span", { class: "tag warn", text: "질문 대기" }) : null, icon("chev", "lead"));
+// The same session row as home (sessionRow, 18-lanes.js).
+const pmSessionRow = r => sessionRow({ name: r.name, title: r.title, status: r.status, live: r.live, pendingAsk: r.waiting }, { project: r.project, line: r.line });
 // A background job of the main assistant that belongs to the project (asked in its chat, or briefed for its folder): tap lands on the asking message.
 const pmWorkRow = w => {
   const run = w.status === "running";
@@ -255,7 +254,7 @@ const pmWorkRow = w => {
 // 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.
 function pmDoing(live, running) {
   if (!live.length && !running.length) return emptyNode("지금 돌고 있는 일이 없어요");
-  return el("div", { class: "list" }, ...live.map(pmSessionRow), ...running.map(pmWorkRow));
+  return el("div", { class: "list srows" }, ...live.map(pmSessionRow), ...running.map(pmWorkRow));
 }
 function pmRecent(past, done) {
   const items = [...past.map(r => ({ at: r.at, node: pmSessionRow(r) })), ...done.map(w => ({ at: w.ended_at || w.started_at, node: pmWorkRow(w) }))].sort((a, b) => b.at - a.at).slice(0, 10);
