@@ -165,3 +165,23 @@ test("status when on lists the setup state, the app and the pending draft count;
 	expect(await run(["read", "--chat", "101"], ctx)).toBe(1);
 	expect(log.out.at(-1)).toContain("꺼져 있어요");
 });
+
+test("rooms lists draftable rooms newest first, labels unnamed groups by their members, and --all adds the rest", async () => {
+	const T = Date.parse("2026-10-22T12:00:00");
+	const rooms = [
+		{ ...room("101", "Alex", "direct"), lastAt: T / 1000 - 600, unread: 2 },
+		{ ...room("102", "(unknown)", "group"), lastAt: T / 1000 - 60 },
+		{ ...room("105", "Shop", "channel"), lastAt: T / 1000 },
+		{ ...room("103", "Old", "group"), lastAt: Date.parse("2026-10-20T09:05:00") / 1000 },
+	];
+	const reader: Reader = { rooms: async () => rooms, messages: never, draftable: r => r.kind === "direct" || r.kind === "group", label: async id => (id === "102" ? "Kim, Lee" : undefined) };
+	const { ctx, log } = build({ reader: async () => reader, now: () => T });
+	expect(await run(["rooms"], ctx)).toBe(1);
+	enable(ctx);
+	log.out.length = 0;
+	expect(await run(["rooms"], ctx)).toBe(0);
+	expect(log.out).toEqual(["102  Kim, Lee (이름 없음)  (단체, 11:59)", "101  Alex  (1:1, 안 읽음 2, 11:50)", "103  Old  (단체, 10/20 09:05)", "대화방 3개 / 전체 3개"]);
+	log.out.length = 0;
+	expect(await run(["rooms", "--all", "--limit", "1"], ctx)).toBe(0);
+	expect(log.out).toEqual(["105  Shop  (채널, 12:00)", "대화방 1개 / 전체 4개"]);
+});
