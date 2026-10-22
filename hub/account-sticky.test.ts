@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type AccountSwitch, accountView, decide, dropNoops, MAX_LOG_LINES, onSwitch, PIN_ENV, readPool, resetStickyForTest, stickyAccount, stickyEnv, switchesFile } from "./account-sticky.ts";
+import { type AccountSwitch, accountView, clearSwitches, decide, deleteSwitch, dropNoops, MAX_LOG_LINES, onSwitch, PIN_ENV, readPool, resetStickyForTest, stickyAccount, stickyEnv, switchesFile } from "./account-sticky.ts";
 import { authFile } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
 
@@ -49,7 +49,7 @@ test("a limit moves it, logged with the reason, and it does not drift back when 
 	// The limit is over: default is usable again, second still is, so dotz stays.
 	expect(stickyAccount(T0 + 90 * MIN)).toBe("second");
 	expect(seen).toHaveLength(1);
-	const view = accountView();
+	const view = accountView(MAX_LOG_LINES, T0 + 90 * MIN);
 	expect(view.account).toBe("second");
 	expect(view.switches.map(s => s.kind)).toEqual(["limit", "start"]);
 });
@@ -83,7 +83,7 @@ test("a restart on the same account adds no entry and keeps the account's since 
 	auth(["default", "second"]);
 	slots({ default: { lastSuccessAt: T0 } });
 	expect(stickyAccount(T0)).toBe("default");
-	const since = accountView().since;
+	const since = accountView(MAX_LOG_LINES, T0).since;
 	expect(switchLines()).toHaveLength(1);
 	// restart with account.json: nothing changes
 	resetStickyForTest();
@@ -94,8 +94,8 @@ test("a restart on the same account adds no entry and keeps the account's since 
 	resetStickyForTest();
 	expect(stickyAccount(T0 + 10 * MIN)).toBe("default");
 	expect(switchLines()).toHaveLength(1);
-	expect(accountView().switches).toHaveLength(1);
-	expect(accountView().since).toBeDefined();
+	expect(accountView(MAX_LOG_LINES, T0 + 10 * MIN).switches).toHaveLength(1);
+	expect(accountView(MAX_LOG_LINES, T0 + 10 * MIN).since).toBeDefined();
 	expect(since).toBe(new Date(T0).toISOString());
 });
 
@@ -106,7 +106,50 @@ test("dropNoops removes switches that land on the account already in use; the vi
 	slots({ default: { lastSuccessAt: T0 } });
 	writeFileSync(switchesFile(), `${list.map(s => JSON.stringify(s)).join("\n")}\n`);
 	writeFileSync(join(DATA_DIR, "account.json"), JSON.stringify({ account: "default", since: sw("default").at }));
-	expect(accountView().switches.map(s => s.to)).toEqual(["default", "second", "default"]);
+	expect(accountView(MAX_LOG_LINES, T0 + 10 * MIN).switches.map(s => s.to)).toEqual(["default", "second", "default"]);
+});
+
+const DAY = 24 * 60 * MIN;
+const swAt = (to: string, from: string | undefined, at: number): AccountSwitch => ({ at: new Date(at).toISOString(), ...(from ? { from } : {}), to, kind: from ? "owner" : "start", reason: "r" });
+const seedLog = (list: AccountSwitch[]) => writeFileSync(switchesFile(), `${list.map(s => JSON.stringify(s)).join("\n")}\n`);
+
+test("entries older than 3 days are pruned on read, from the file too, and the newer ones stay", () => {
+	const now = T0 + 10 * DAY;
+	seedLog([swAt("a", undefined, now - 4 * DAY), swAt("b", "a", now - 3 * DAY - MIN), swAt("a", "b", now - 2 * DAY), swAt("b", "a", now - MIN)]);
+	expect(accountView(MAX_LOG_LINES, now).switches.map(s => s.to)).toEqual(["b", "a"]);
+	expect(switchLines()).toHaveLength(2);
+});
+
+test("entries older than 3 days are pruned on the hub's start", () => {
+	const now = T0 + 10 * DAY;
+	auth(["a", "b"]);
+	slots({ a: { lastSuccessAt: now } });
+	seedLog([swAt("b", "a", now - 5 * DAY), swAt("a", "b", now - DAY)]);
+	writeFileSync(join(DATA_DIR, "account.json"), JSON.stringify({ account: "a", since: new Date(now - DAY).toISOString() }));
+	expect(stickyAccount(now)).toBe("a");
+	expect(switchLines().map(s => s.at)).toEqual([new Date(now - DAY).toISOString()]);
+});
+
+test("entries older than 3 days are pruned when a new switch is written", () => {
+	const now = T0 + 10 * DAY;
+	auth(["a", "b"]);
+	slots({ a: { lastSuccessAt: now }, b: { blockReason: "rate_limit", blockedUntil: now + 60 * MIN } });
+	seedLog([swAt("b", "a", now - 5 * DAY), swAt("a", "b", now - DAY)]);
+	writeFileSync(join(DATA_DIR, "account.json"), JSON.stringify({ account: "b", since: new Date(now - 5 * DAY).toISOString() }));
+	expect(stickyAccount(now)).toBe("a");
+	expect(switchLines().map(s => s.kind)).toEqual(["owner", "limit"]);
+	expect(switchLines().every(s => Date.parse(s.at) > now - 3 * DAY)).toBe(true);
+});
+
+test("one entry is deleted by its time, and clear-all empties the history", () => {
+	const now = T0 + MIN * 30;
+	seedLog([swAt("a", undefined, T0), swAt("b", "a", T0 + MIN), swAt("a", "b", T0 + 2 * MIN)]);
+	expect(deleteSwitch(new Date(T0 + MIN).toISOString(), now)).toBe(1);
+	expect(deleteSwitch("2000-01-01T00:00:00.000Z", now)).toBe(0);
+	expect(switchLines().map(s => s.to)).toEqual(["a", "a"]);
+	expect(clearSwitches(now)).toBe(2);
+	expect(accountView(MAX_LOG_LINES, now).switches).toEqual([]);
+	expect(clearSwitches(now)).toBe(0);
 });
 
 test("the switch log keeps its last 20 lines, trimmed on write", () => {

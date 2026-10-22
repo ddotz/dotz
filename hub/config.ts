@@ -22,6 +22,8 @@ export type Config = {
 	ui?: { origin_view?: boolean };
 	// Monthly spend limit (USD) the owner set on the Anthropic platform console; the usage screen shows how much of it is used. Empty = none.
 	api_budget?: { monthly_usd?: number };
+	// Days the account switch history (bottom of the usage screen) is kept; older entries are pruned.
+	accounts?: { history_days?: number };
 	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number };
 	// Model choice and fallback order, one block per target (the web 모델 · 폴백 screen edits exactly this).
 	models?: ModelsConfig;
@@ -138,6 +140,8 @@ export const DEFAULTS = {
 export const HOST = "127.0.0.1";
 // Messages of one channel merge for at most this long after the first (hub/main.ts intake).
 export const COALESCE_MAX_MS = 20_000;
+export const ACCOUNT_HISTORY_DAYS = 3;
+export const accountHistoryDays = () => positive(cfg.accounts?.history_days, ACCOUNT_HISTORY_DAYS);
 export const lanesCompactAt = () => positive(cfg.lanes?.compact_at, LANES_COMPACT_AT);
 export const lanesNightlyCompactAt = () => positive(cfg.lanes?.nightly_compact_at, DEFAULTS.nightly_compact_at);
 export const lanesKeepRecent = () => positive(cfg.lanes?.keep_recent, DEFAULTS.keep_recent);

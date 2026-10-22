@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { evaluate, getScriptOpinion, getUsage, readRules, record, resetRulesForTest, stateStamp } from "./account-rules.ts";
 import { readAliases } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
-import { DATA_DIR, log, writeAtomic } from "./config.ts";
+import { accountHistoryDays, DATA_DIR, log, writeAtomic } from "./config.ts";
 
 export const PIN_ENV = "SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT";
 export type SwitchKind = "start" | "limit" | "owner" | "gone" | "rule" | "script" | "manual";
@@ -43,22 +43,47 @@ export function dropNoops(list: AccountSwitch[]): AccountSwitch[] {
 	return out;
 }
 
-function readSwitches(): AccountSwitch[] {
+const writeSwitches = (list: AccountSwitch[]): void => writeAtomic(switchesFile(), list.length ? `${list.map(x => JSON.stringify(x)).join("\n")}\n` : "");
+
+// Entries older than accountHistoryDays() (default 3) are pruned: dropped from what is read, and the file is rewritten only when
+// something was dropped, so reading (and the hub's start) keeps it small at no cost.
+function readSwitches(now = Date.now()): AccountSwitch[] {
 	let text: string;
 	try {
 		text = readFileSync(switchesFile(), "utf8");
 	} catch {
 		return [];
 	}
-	return dropNoops(
-		text.split("\n").flatMap(l => {
-			try {
-				return l.trim() ? [JSON.parse(l) as AccountSwitch] : [];
-			} catch {
-				return [];
-			}
-		}),
-	);
+	const all = text.split("\n").flatMap(l => {
+		try {
+			return l.trim() ? [JSON.parse(l) as AccountSwitch] : [];
+		} catch {
+			return [];
+		}
+	});
+	const cutoff = now - accountHistoryDays() * 86_400_000;
+	const kept = all.filter(s => Date.parse(s.at) >= cutoff);
+	if (kept.length < all.length) {
+		try {
+			writeSwitches(kept);
+		} catch (e) {
+			log(`account switch log prune failed: ${(e as Error).message}`);
+		}
+	}
+	return dropNoops(kept);
+}
+
+// The owner deletes one entry (by its time) or all of them from the usage screen. Returns how many were removed.
+export function deleteSwitch(at: string, now = Date.now()): number {
+	const list = readSwitches(now);
+	const kept = list.filter(s => s.at !== at);
+	if (kept.length < list.length) writeSwitches(kept);
+	return list.length - kept.length;
+}
+export function clearSwitches(now = Date.now()): number {
+	const n = readSwitches(now).length;
+	if (n) writeSwitches([]);
+	return n;
 }
 
 const readJson = (file: string): any => {
@@ -142,6 +167,7 @@ export function currentAccount(): string | undefined {
 // The account dotz runs on now: the owner's rules, then the automatic pick. Re-checked when auth.json, the pool state, the
 // rules file, the usage numbers or the script's opinion changed, or once a minute (block expiry, time windows).
 export function stickyAccount(now = Date.now()): string | undefined {
+	if (!saved) readSwitches(now); // hub start: prune the old history once
 	saved ??= readJson(stateFile()) ?? {};
 	const file = authFile();
 	const key = `${file}|${stamp(file, join(dirname(file), "credential-pool-state.json"))}|${stateStamp()}|${Math.floor(now / 60_000)}`;
@@ -156,7 +182,7 @@ export function stickyAccount(now = Date.now()): string | undefined {
 	const s: AccountSwitch = { at: new Date(now).toISOString(), ...change };
 	saved = { account, since: s.at, reason: s.reason };
 	writeAtomic(stateFile(), `${JSON.stringify(saved, null, 2)}\n`);
-	writeAtomic(switchesFile(), `${dropNoops([...readSwitches(), s]).slice(-MAX_LOG_LINES).map(x => JSON.stringify(x)).join("\n")}\n`);
+	writeAtomic(switchesFile(), `${dropNoops([...readSwitches(now), s]).slice(-MAX_LOG_LINES).map(x => JSON.stringify(x)).join("\n")}\n`);
 	log(`account ${s.kind}: ${s.from ? `${s.from} -> ` : ""}${s.to} (${s.reason})`);
 	if (s.kind !== "start") for (const fn of listeners) fn(s);
 	return account;
@@ -169,9 +195,9 @@ export function stickyEnv(now = Date.now()): Record<string, string> {
 }
 
 // The usage screen: the account, since when and why, and the latest switches (newest first).
-export function accountView(limit = MAX_LOG_LINES): { account?: string; since?: string; reason?: string; switches: AccountSwitch[] } {
-	const account = stickyAccount();
-	const switches = readSwitches().slice(-limit).reverse();
+export function accountView(limit = MAX_LOG_LINES, now = Date.now()): { account?: string; since?: string; reason?: string; switches: AccountSwitch[] } {
+	const account = stickyAccount(now);
+	const switches = readSwitches(now).slice(-limit).reverse();
 	return { ...(account ? { account } : {}), ...(saved?.since ? { since: saved.since } : {}), ...(saved?.reason ? { reason: saved.reason } : {}), switches };
 }
 

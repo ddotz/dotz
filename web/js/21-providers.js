@@ -165,9 +165,12 @@ async function loadQuota() {
     box.append(el("div", { class: "sec", text: "사용 계정" }));
     // The latest 5 switches (newest first); the older ones (the hub keeps 20) fold behind a toggle.
     const SHOWN = 5, all = A.switches || [];
-    const row = s => el("div", { class: "li", style: "display:block" },
+    // Entries older than 3 days are pruned by the hub; the X deletes one entry, 모두 지우기 (confirmed) all of them (DELETE /api/accounts/switches).
+    const drop = async (at, msg) => { try { await api(`/api/accounts/switches${at ? `?at=${enc(at)}` : ""}`, "DELETE"); toast(msg); loadQuota(); } catch (e) { toast("지우지 못했어요", true); } };
+    const row = s => el("div", { class: "li" }, el("span", { class: "tx" },
       el("div", { class: "hd", text: `${s.from ? `${s.from_label || s.from} → ` : ""}${s.to_label || s.to} · ${s.kind_text || KIND[s.kind] || s.kind}` }),
-      el("div", { class: "sup", text: `${kstStamp(Date.parse(s.at))} · ${s.reason}` }));
+      el("div", { class: "sup", text: `${kstStamp(Date.parse(s.at))} · ${s.reason}` })),
+      el("button", { class: "ib", type: "button", "aria-label": "이 기록 지우기", onclick: () => drop(s.at, "기록을 지웠어요") }, icon("close")));
     const older = all.slice(SHOWN).map(row);
     older.forEach(n => { n.hidden = true; });
     const more = older.length ? el("button", { class: "btn text", type: "button", text: `이전 기록 ${older.length}개 더 보기`, onclick: ev => {
@@ -179,6 +182,7 @@ async function loadQuota() {
       el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: A.account_label || A.account }), el("div", { class: "sup", text: `${A.since ? `${kstStamp(Date.parse(A.since))}부터 · ` : ""}규칙이나 한도로 바뀌기 전까지 이 계정을 계속 써요` })),
       ...all.slice(0, SHOWN).map(row), ...older));
     if (more) box.append(more);
+    if (all.length) box.append(el("button", { class: "btn text danger", type: "button", text: "기록 모두 지우기", onclick: () => dialog({ title: "기록을 모두 지울까요?", body: el("div", { class: "sup", text: `계정 전환 기록 ${all.length}개를 지워요. 되돌릴 수 없어요.` }), actions: [{ label: "취소" , onclick: c => c() }, { label: "모두 지우기", kind: "danger", onclick: c => { c(); drop("", "기록을 모두 지웠어요"); } }] }) }));
   }
   if ((q.unavailable || []).length) {
     box.append(el("div", { class: "sec", text: "정보가 없어요" }));
