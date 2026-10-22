@@ -53,7 +53,7 @@ function inboxBody(e: Record<string, any>): string {
 	const home = e.parent?.startsWith("ch:") ? e.parent : e.channel;
 	const ctx = home?.startsWith("ch:") ? channelContext(home.slice(3)) : "";
 	if (ctx) lines.push(ctx);
-	if (["chat", "dm", "web", "worklog", "alert", "brief"].includes(e.channel)) lines.push(workDirectory());
+	if (["chat", "dm", "web", "web:alert", "web:worklog", "worklog", "alert", "brief"].includes(e.channel)) lines.push(workDirectory());
 	return lines.join("\n");
 }
 
@@ -124,7 +124,7 @@ async function accountChatAnswer(target: string, ask: Parameters<typeof accountA
 // message, a working lane gets it steered in; "steer": into the running turn now; "interrupt": abort, then new prompt.
 // `files` are uploads (files.ts): the chat shows them as chips, the agent gets one [attachment] line per file with its path.
 // `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
-type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; decision?: string };
+type WebSend = { lane?: string; project?: { target: string; name: string }; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; decision?: string };
 export async function sendWeb(s: WebSend): Promise<void> {
 	const mid = newMid();
 	// replyTo: the asking message of a decision answer; decision: its notice, which that answer settles alone (notices.ts ownerReplied).
@@ -152,7 +152,8 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		}
 		return;
 	}
-	const to = s.project?.target ?? s.channel;
+	// conv: asked in the web's 알림 / 작업 기록 conversation; the answer comes back as target "web:<conv>" into the same one.
+	const to = s.project?.target ?? (s.conv ? `web:${s.conv}` : s.channel);
 	const event = { ts: now(), kind: "message", source: s.channel, channel: to, ...(s.project ? { channel_name: s.project.name } : {}), author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
 	emit("inbox", event);
 	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(to, event.text);

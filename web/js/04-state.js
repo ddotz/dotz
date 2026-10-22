@@ -13,7 +13,7 @@ const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], 
 const CHAT_MODE_KEY = "dotz-chat-mode";
 const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : v;
 // 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
-const viewFor = t => { try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
+const viewFor = t => { if (t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
 const SUB = new Set(["models", "providers", "usage", "context", "harness"]);
 const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context", "project", "projects"];

@@ -174,7 +174,7 @@ async function sendChat(how) {
   if (text.startsWith("/")) { sendCommand(text); return; }
   const mode = how || (isWorking(t) ? "steer" : undefined);
   try {
-    const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) });
+    const r = await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) });
     scrollChat(true); scrollTerm(true);
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast("작업이 끝나면 전달할게요"); }
     // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.

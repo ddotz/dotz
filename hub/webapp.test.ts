@@ -224,7 +224,7 @@ describe("service worker shell", () => {
 
 	test("a navigation answers from the cache without waiting for the network, then refreshes the shell in the background", async () => {
 		const caches = fakeCaches();
-		const c = await caches.open("dotz-shell-v5");
+		const c = await caches.open("dotz-shell-v6");
 		await c.put("/", new Response("old page"));
 		const calls: string[] = [];
 		let release!: () => void;
@@ -236,13 +236,13 @@ describe("service worker shell", () => {
 		release();
 		await pending;
 		expect(calls.sort()).toEqual(["/", "/app.css", "/app.js"]);
-		expect(await (await caches.open("dotz-shell-v5")).match("/").then(r => r!.text())).toBe("new /");
-		expect(await (await caches.open("dotz-shell-v5")).match("/app.js").then(r => r!.text())).toBe("new /app.js");
+		expect(await (await caches.open("dotz-shell-v6")).match("/").then(r => r!.text())).toBe("new /");
+		expect(await (await caches.open("dotz-shell-v6")).match("/app.js").then(r => r!.text())).toBe("new /app.js");
 	});
 
 	test("the shell is replaced only when every file of the new version arrived", async () => {
 		const caches = fakeCaches();
-		const c = await caches.open("dotz-shell-v5");
+		const c = await caches.open("dotz-shell-v6");
 		for (const p of ["/", "/app.js", "/app.css"]) await c.put(p, new Response(`old ${p}`));
 		const h = boot(caches, async u => (u === "/app.js" ? new Response("boom", { status: 502 }) : new Response(`new ${u}`)));
 		let pending!: Promise<unknown>;

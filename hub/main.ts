@@ -34,7 +34,7 @@ import { startOmpUpdate } from "./update.ts";
 import { onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
 import { clearChannel, setupChannel } from "./workchannels.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
-import { addWatch, allWatches, approveWatch, startWatches, stopWatches } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, isWatchIssue, startWatches, stopWatches, watchChoice } from "./watch.ts";
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
@@ -257,7 +257,7 @@ startSchedules(s => {
 });
 syncRoutineSchedules();
 startReflection(text => deliver(text), () => orch.sessionFile);
-startOmpUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`omp update post failed: ${e}`)), restartGateway);
+startOmpUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`omp update post failed: ${e}`)), restartGateway, alert);
 startTokenAudit(alert);
 // Settings → 업데이트: the daily check only announces a new dotz version (push + a toast on open pages + one bell item), never applies it.
 onUpdateResolved(updateResolved);
@@ -275,7 +275,9 @@ startWatches((w, reason, output) => {
 		for (const c of others) void out(`ch:${c}`, `[${w.name}] ${reason} (처리는 #${discord.channels.work[first] ?? first}에서)\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(() => undefined);
 		return deliver(inboxText(event), { target: `ch:${first}` });
 	}
-	void out(w.to, `[${w.name}] ${reason}\n${output}`.slice(0, 1900), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
+	const issue = isWatchIssue(reason);
+	void out(issue ? "alert" : w.to, `[${w.name}] ${reason}\n${output}`.slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(w.name)}` : ""), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 syncFeatureWatches();
 startPlugins({

@@ -16,7 +16,7 @@ setLaneTitleResolver(name => (name === "x" ? "로그인 고치기" : undefined))
 test("a worklog post becomes a persisted unread notice", () => {
 	post("worklog", "[run] 첫 번째 작업 기록");
 	const [n] = byText("첫 번째 작업 기록");
-	expect(n).toMatchObject({ kind: "worklog", tone: "run", title: "작업 기록", open: "main", read: false });
+	expect(n).toMatchObject({ kind: "worklog", tone: "run", title: "작업 기록", open: "worklog", read: false });
 	expect(n!.id).toHaveLength(8);
 	expect(unreadCount()).toBeGreaterThan(0);
 });
@@ -62,7 +62,7 @@ test("a done lane report upserts the session result; a watch post for a channel 
 	post("ch:123", "[주간 점검] 새 글이 올라왔어요", { source: "gateway" });
 	expect(byText("새 글이 올라왔어요")[0]).toMatchObject({ kind: "watch", title: "주간 점검", open: "ch:123" });
 	emit("inbox", { ts: ts(), kind: "watch", source: "watch:뉴스", watch: "뉴스", channels: [], reason: "바뀌었어요", text: "내용" });
-	expect(byText("바뀌었어요\n내용")[0]).toMatchObject({ kind: "watch", title: "뉴스", open: "main" });
+	expect(byText("바뀌었어요\n내용")[0]).toMatchObject({ kind: "watch", title: "뉴스", open: "alert" });
 });
 
 test("mark read by id and mark all persist, and the list shows unread first", () => {
@@ -113,7 +113,7 @@ test("a notice links to its source message: the conversation and the event ts", 
 	expect(byText("링크 시험 글")[0]).toMatchObject({ open: "ch:77", src: "ch:77", at });
 	const alertAt = ts();
 	emit("outbox", { ts: alertAt, kind: "out", source: "orchestrator", target: "alert", text: "[fail] 링크 경고" });
-	expect(byText("링크 경고")[0]).toMatchObject({ src: "main", at: alertAt });
+	expect(byText("링크 경고")[0]).toMatchObject({ src: "alert", at: alertAt });
 
 	const card = (laneVerified("x", "[done] 무시"), recentEvents(300).at(-1)!);
 	expect(stored().find(n => n.key === "lane:x")).toMatchObject({ open: "lane:x", src: "main", at: card.ts });
@@ -199,7 +199,7 @@ test("live posts shaped like main.ts out() (gateway worklog, orchestrator alert,
 	const at = ts();
 	emit("outbox", { ts: at, kind: "out", source: "gateway", target: "worklog", text: "계정을 a에서 b로 바꿨어요.", reply_to: null });
 	emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target: "alert", text: "[fail] 라이브 경고 시험", reply_to: null });
-	expect(byText("계정을 a에서 b로 바꿨어요.")[0]).toMatchObject({ kind: "worklog", open: "main", at, read: false });
+	expect(byText("계정을 a에서 b로 바꿨어요.")[0]).toMatchObject({ kind: "worklog", open: "worklog", at, read: false });
 	expect(byText("라이브 경고 시험")[0]).toMatchObject({ kind: "alert", tone: "fail", read: false });
 });
 

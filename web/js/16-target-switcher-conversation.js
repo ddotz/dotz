@@ -33,13 +33,14 @@ function renderBars() {
   // Three groups in this order: the main assistant, 프로젝트 (project orchestrators), 레인. Dragging reorders within a group.
   const projs = byOrder(projTargets()), live = byOrder(lanes.filter(laneAlive).map(l => `lane:${l.name}`)), dead = byOrder(lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`));
   if (isLaneT(target) && !live.includes(target) && !dead.includes(target)) live.push(target);
-  const alive = [MAIN, ...projs, ...live];
+  const alive = [MAIN, "alert", "worklog", ...projs, ...live];
   const view = t => {
     const i = targetInfo(t);
     const k = attnKind(t);
+    if (isFixedT(t)) return { t, name: targetName(t), tone: "", attn: "", status: "", unread: ts(t).unread, subs: 0 };
     return { t, name: targetName(t), tone: k ? "warn" : i.alive ? statusTone(i.status) : "", attn: k, status: i.alive ? statusKo(i.status) : "종료됨", unread: ts(t).unread, subs: runningSubs(sourceOf(t)).length };
   };
-  const A = alive.map(view), D = dead.map(view), PA = A.filter(v => isProjT(v.t)), LA = A.filter(v => isLaneT(v.t));
+  const A = alive.map(view), D = dead.map(view), FA = A.filter(v => isFixedT(v.t)), PA = A.filter(v => isProjT(v.t)), LA = A.filter(v => isLaneT(v.t));
   const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
   const othersAttn = [...A, ...D].filter(v => v.t !== target && v.attn).length;
   const sig = JSON.stringify([A, D, cur, others, target, ORDER]);
@@ -48,7 +49,7 @@ function renderBars() {
     v.attn ? el("span", { class: "sb warn", text: attnLabel(v.attn) }) : null,
     v.subs ? el("span", { class: "sb", title: "서브에이전트", text: `서브 ${v.subs}` }) : null,
     v.unread ? el("span", { class: "nb", text: v.unread > 99 ? "99+" : String(v.unread) }) : null);
-    if (v.t !== MAIN) dragItem(b, v.t, () => (D.some(d => d.t === v.t) ? D : isProjT(v.t) ? PA : LA).map(x => x.t), true);
+    if (v.t !== MAIN && !isFixedT(v.t)) dragItem(b, v.t, () => (D.some(d => d.t === v.t) ? D : isProjT(v.t) ? PA : LA).map(x => x.t), true);
     return b; };
   const sep = () => el("span", { class: "tsep", "aria-hidden": "true" });
   const menuItem = v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" });
@@ -58,7 +59,7 @@ function renderBars() {
     bar.dataset.sig = msig; bar.classList.toggle("lanev", isLaneT(target));
     // Exited lanes are not shown; one opened from the palette shows as a chip only while it is the selected target.
     const shownV = [...A, ...D.filter(v => v.t === target)], laneV = shownV.filter(v => isLaneT(v.t));
-    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, chip(A[0]),
+    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, chip(A[0]), ...FA.map(chip),
       ...(PA.length ? [sep(), ...PA.map(chip)] : []), ...(laneV.length ? [sep(), ...laneV.map(chip)] : []),
       el("button", { type: "button", class: "tchip tmore", hidden: true, "aria-haspopup": "listbox", "aria-expanded": "false" }));
     sw._views = shownV;
@@ -70,7 +71,7 @@ function renderBars() {
         : others ? el("span", { class: "nb", title: "다른 대상의 새 메시지", text: others > 99 ? "99+" : String(others) }) : null,
       icon("drop"));
     drop._items = () => [
-      menuItem(A[0]),
+      menuItem(A[0]), ...FA.map(menuItem),
       ...(PA.length ? [{ header: "프로젝트" }, ...PA.map(menuItem)] : []),
       ...(PA.length && (LA.length || D.length) ? [{ header: "세션" }] : []),
       ...LA.map(menuItem),
@@ -86,7 +87,7 @@ function renderBars() {
     clear(vt).append(...[icon(to), ud ? el("i", { class: "ud" }) : null].filter(Boolean));
     vt.title = vt.ariaLabel = to === "chat" ? "대화 보기" : "로그 보기";
     vt.onclick = () => go(to === "chat" ? "chat" : "activity");
-    vt.hidden = !$("#appbar").classList.contains("tv") || convListing();
+    vt.hidden = !$("#appbar").classList.contains("tv") || convListing() || isFixedT(target);
   }
 }
 // Desktop: target chips that do not fit fold into one "더보기 n" chip at the end (the selected one always stays visible;

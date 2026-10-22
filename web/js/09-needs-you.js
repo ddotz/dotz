@@ -47,6 +47,9 @@ function attnRaw(t) {
 }
 const attnKind = t => watching(t) ? "" : attnRaw(t);
 const attnLabel = k => ({ ask: "답변 필요", limit: "한도 걸림" })[k] || "확인 필요";
+// 알림 and 작업 기록 are conversations too, but they are NOT counted here: every alert / worklog post already makes a bell notice, and the
+// bell count (phone: added below) is the one count for them; adding the two conversations' unread would count each post twice. Reading
+// either conversation also reads its bell items (hub/notices.ts readConversationNotices), so the two never disagree.
 // The 채팅 nav badge and the page title count what the chat list shows and the owner can clear there: the listed conversations (the main
 // chat and the projects) that have unread messages, by the hub's read position (synced across devices). A session lives under 세션; its
 // question, rate limit and finished turn keep their own marks (home, 세션, toasts, the bell) and never hold this badge.
@@ -132,7 +135,10 @@ function eventTarget(e) {
   let lane = typeof e.lane === "string" ? e.lane : "";
   if (!lane) for (const v of [e.source, e.target, e.channel]) if (typeof v === "string" && v.startsWith("lane:")) { lane = v.slice(5); break; }
   if (lane) return `lane:${lane}`;
-  return [e.channel, e.target].find(v => typeof v === "string" && isProjT(v)) || MAIN;
+  const proj = [e.channel, e.target].find(v => typeof v === "string" && isProjT(v));
+  if (proj) return proj;
+  for (const v of [e.channel, e.target]) { const m = typeof v === "string" && /^(?:web:)?(alert|worklog)$/.exec(v); if (m) return m[1]; }
+  return e.kind === "watch" ? "alert" : MAIN;
 }
 
 /* ---------- conversation view (대화) ---------- */

@@ -112,14 +112,22 @@ export function recentEvents(limit = 150): HubEvent[] {
 	return limit > 0 ? recent.slice(-limit) : []; // slice(-0) is the whole list, and the page asks /api/state for limit=0 meaning none
 }
 
-// Which conversation an event belongs to: "main" (owner <-> the assistant) or "lane:<name>". The web app mirrors this rule
-// for live events, so keep the two in step.
+// Which conversation an event belongs to: "main" (owner <-> the assistant), "lane:<name>", a project's "ch:<id>" or one of the two
+// fixed conversations "alert" / "worklog" (the gateway's alerts and watch wake events, and the answers to the owner's questions
+// asked there, sent as target "web:alert" / "web:worklog"). The web app mirrors this rule for live events, so keep the two in step.
+const FIXED_CONV = /^(?:web:)?(alert|worklog)$/;
 export function eventTarget(e: HubEvent): string | undefined {
 	if (e.kind === "activity" || e.kind === "subagents" || e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss" || e.kind === "read") return undefined;
 	const lane = typeof e.lane === "string" ? e.lane : [e.source, e.target, e.channel].find(v => typeof v === "string" && v.startsWith("lane:"))?.slice(5);
 	if (lane) return `lane:${lane}`;
 	// A project's work channel is its own conversation (hub/projectchat.ts): the owner's message there and the answers to it.
-	return [e.channel, e.target].find((v): v is string => typeof v === "string" && /^ch:\d+$/.test(v)) ?? "main";
+	const project = [e.channel, e.target].find((v): v is string => typeof v === "string" && /^ch:\d+$/.test(v));
+	if (project) return project;
+	for (const v of [e.channel, e.target]) {
+		const fixed = typeof v === "string" ? FIXED_CONV.exec(v) : null;
+		if (fixed) return fixed[1];
+	}
+	return e.kind === "watch" ? "alert" : "main";
 }
 
 // Last HISTORY_TAIL bytes of a jsonl file, parsed; a cut first line is dropped.
@@ -183,8 +191,14 @@ export function sentFiles(): ReadonlySet<string> {
 
 // `before` (an ISO ts) pages backwards: the newest `limit` events older than it.
 export function historyEvents(target: string, limit: number, before?: string): HubEvent[] {
-	const all = [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)].filter(e => typeof e.ts === "string" && eventTarget(e) === target && (!before || e.ts < before));
+	let all = [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)].filter(e => typeof e.ts === "string" && eventTarget(e) === target && (!before || e.ts < before));
 	all.sort((a, b) => a.ts.localeCompare(b.ts));
+	// A post edited in place (update_key, e.g. a lane's worklog line) shows once, as its newest version.
+	if (target === "alert" || target === "worklog") {
+		const last = new Map<string, HubEvent>();
+		for (const e of all) if (e.kind === "out" && typeof e.update_key === "string" && e.update_key) last.set(e.update_key, e);
+		all = all.filter(e => !(e.kind === "out" && typeof e.update_key === "string" && e.update_key) || last.get(e.update_key) === e);
+	}
 	return all.slice(-limit);
 }
 
