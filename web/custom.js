@@ -5,14 +5,6 @@
   "use strict";
 
   const CSS = `
-.pins { display: flex; flex-direction: column; flex: 0 1 auto; gap: 2px; min-height: 0; margin-top: 12px; overflow-y: auto; }
-.pins:empty { display: none; }
-.cu-gl { margin: 12px 8px 4px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
-.pins .cu-gl:first-child { margin-top: 0; }
-.pins .ni > .dot, .pins .ni > .ib { margin-left: auto; }
-.pins .ni > .ib { width: 24px; height: 24px; }
-.pins a.ni { text-decoration: none; }
-.pins .ni.on .ib:hover { background: var(--hover); }
 .cu-home .grid { align-items: start; }
 .cu-r { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 10px 16px; border: 0; border-radius: 0; background: var(--card); color: var(--fg); font: 500 15px/22px var(--font); text-align: left; text-decoration: none; }
 button.cu-r, a.cu-r { cursor: pointer; }
@@ -41,7 +33,6 @@ a.cu-li:hover .cu-lt { color: var(--accent); }
 .cu-kv > :first-child { min-width: 0; overflow-wrap: anywhere; }
 .cu-kv > :last-child { flex: none; max-width: 60%; color: var(--fg-2); text-align: right; overflow-wrap: anywhere; }
 .cu-acts .btn:disabled, .pv-acts .btn:disabled { opacity: .4; cursor: default; }
-.pins .pv-cnt { margin-left: auto; }
 .pv-cnt { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12px; line-height: 16px; font-weight: 600; }
 .pv-path { max-width: 100%; color: var(--fg-3); font: 13px/18px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.pv-path { padding: 0; border: 0; background: none; cursor: copy; }
@@ -135,9 +126,7 @@ button.pv-res:hover { background: var(--card-hover); }
   .pv-lane > .pv-acts { margin: 6px 0 0 16px; }
   .pv-lane > .pv-acts:empty { display: none; }
 }
-@media (max-width: 639px) {
-  .pins { display: none; }
-}`;
+`;
   document.head.append(el("style", { text: CSS }));
 
   let DATA = null, loadedAt = 0, flight = null, projKey = "";
@@ -153,7 +142,6 @@ button.pv-res:hover { background: var(--card-hover); }
     return flight;
   }
   function onData() {
-    paintPins();
     if (current === "home") paintHome();
     if (current === "project") paintProject();
   }
@@ -238,38 +226,7 @@ button.pv-res:hover { background: var(--card-hover); }
     }
   }
 
-  /* ---------- pinned rows (sidebar on desktop) ---------- */
   const SCHED = r => !r.schedule ? "" : r.schedule.at ? `매일 ${r.schedule.at}` : r.schedule.every_minutes ? `${r.schedule.every_minutes}분마다` : "";
-  function groups(v) {
-    const D = DATA || {}, side = v === "side", base = side ? "ni" : "cu-r", nm = side ? "nl" : "cu-rn", out = [];
-    const sub = t => !side && t ? el("span", { class: "cu-m", text: t }) : null;
-    const projects = (D.projects || []).map(p => {
-      const on = side && current === "project" && projKey === p.key, ls = p.lanes || [];
-      const running = ls.filter(l => l.live && l.status !== "idle").length, waiting = ls.filter(l => l.waiting).length;
-      const badge = waiting ? el("span", { class: "dot att", title: `답을 기다리는 세션 ${waiting}` }) : running ? el("span", { class: "pv-cnt", title: `작업 중인 세션 ${running}`, text: String(running) }) : null;
-      return el("button", { class: `${base}${on ? " on" : ""}`, type: "button", title: p.path || p.name, onclick: () => go("project", p.key) },
-        icon("projects"), el("span", { class: nm, text: p.name }), badge);
-    });
-    const routines = (D.routines || []).map(r => {
-      const b = el("button", { class: "ib", type: "button", "aria-label": `${r.name} 실행`, title: "지금 실행" }, icon("send"));
-      b.addEventListener("click", () => busy(b, async () => { await api("/api/custom/routine", "POST", { id: r.id }); toast("루틴을 보냈어요"); }));
-      return el("div", { class: base, title: SCHED(r) || r.name }, icon("spark"), el("span", { class: nm, text: r.name }), sub(SCHED(r)), b);
-    });
-    const links = (D.links || []).filter(l => isHttp(l.url)).map(l =>
-      el("a", { class: base, href: l.url, target: "_blank", rel: "noopener noreferrer", title: l.url }, icon("open"), el("span", { class: nm, text: l.name })));
-    if (projects.length) out.push(["프로젝트", projects]);
-    if (routines.length) out.push(["루틴", routines]);
-    if (links.length) out.push(["링크", links]);
-    return out;
-  }
-  function paintPins() {
-    const box = $("#pins");
-    if (!box) return;
-    const g = groups("side");
-    if (same(box, JSON.stringify([DATA && [DATA.projects, DATA.routines, DATA.links], current === "project" ? projKey : ""]))) return;
-    clear(box);
-    for (const [label, rows] of g) box.append(el("div", { class: "cu-gl", text: label }), ...rows);
-  }
 
   /* ---------- 홈 ---------- */
   function paintHome() {
@@ -528,12 +485,10 @@ button.pv-res:hover { background: var(--card-hover); }
     if (name !== "project") return;
     projKey = tgt || "";
     if (detailKey !== projKey) DETAIL = null;
-    paintPins();
     load(5000);
     if (typeof pmPaint !== "function") { paintProject(); loadDetail(5000); }
   }
   function pins() {
-    paintPins();
     return load(55000);
   }
   window.dotzCustom = { home, view, pins };

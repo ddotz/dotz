@@ -27,16 +27,6 @@ async function workGo(w) {
   const asked = w.reply_to ? ts(t).msgs.find(e => e.mid === w.reply_to) : null;
   ntJump({ src: t, at: asked ? asked.ts : new Date(w.started_at).toISOString() });
 }
-// A relative time on the KST clock: 방금 / N분 전 / N시간 전 (today) / 어제 오후 3:20 / 10월 20일.
-function agoKo(t) {
-  if (!(t > 0)) return "";
-  const m = Math.floor((Date.now() - t) / 60000), day = x => new Date(x).toLocaleDateString("sv-SE", KST);
-  if (m < 1) return "방금";
-  if (m < 60) return `${m}분 전`;
-  if (day(t) === day(Date.now())) return `${Math.floor(m / 60)}시간 전`;
-  if (day(t) === day(Date.now() - 864e5)) return `어제 ${kstHM(t)}`;
-  return new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric" });
-}
 // One short Korean sentence out of a free-form message: code, links, hashes and markup dropped; English-only lines are not shown.
 function plainKo(text) {
   const s = String(text ?? "").replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ").replace(/https?:\/\/\S+/g, " ").replace(/\b[0-9a-f]{7,40}\b/gi, " ").replace(/[*_#>\[\]|]/g, " ");
@@ -74,30 +64,6 @@ function laneRecent(name) {
     if (out.length < 3) out.push({ ...r, n: 1 });
   }
   return out.map(r => ({ ts: r.ts, text: r.n > 1 ? `${r.text} (${r.n}번)` : r.text, report: r.report }));
-}
-// The one-line state of a live session, in plain Korean, and when it happened.
-function laneState(l, recent) {
-  const pa = l.pendingAsk, top = recent[0];
-  if (pa) return ["질문에 답을 기다리고 있어요", Date.parse(pa.at) || 0];
-  if (l.status === "rate-limited") return ["사용 한도에 걸려 잠시 멈췄어요", top ? top.ts : 0];
-  if (l.status === "starting") return ["세션을 시작하는 중이에요", top ? top.ts : 0];
-  if (l.status === "working") return [top ? top.text : "작업을 하고 있어요", top ? top.ts : 0];
-  const rep = recent.find(r => r.report);
-  if (rep) return ["작업을 마치고 보고했어요", rep.ts];
-  return [top ? top.text : "다음 지시를 기다리고 있어요", top ? top.ts : 0];
-}
-function laneCard(l) {
-  const name = l.title || l.name, proj = laneProject(l), [word, tone] = sessionStatus(l), recent = laneRecent(l.name), [state, at] = laneState(l, recent), when = agoKo(at);
-  const k = attnKind(`lane:${l.name}`), card = el("button", { class: `card tap sb-card${k ? " att" : ""}`, type: "button", "data-t": `lane:${l.name}`, onclick: () => openLaneChat(l.name),
-    "aria-label": `${name} · ${proj ? `프로젝트 ${proj}` : "프로젝트 없음"} · ${word} · ${state}${when ? ` · ${when}` : ""} · 대화 열기` },
-    el("div", { class: "sb-top" }, el("span", { class: `dot ${k ? "att" : tone === "warn" ? "att" : statusTone(l.status)}` }), el("span", { class: "sb-title", text: name }),
-      el("span", { class: `tag ${tone}`, text: word }), icon("chev", "chev")),
-    el("div", { class: `sb-proj${proj ? "" : " none"}`, text: proj ? `프로젝트 · ${proj}` : "프로젝트 없음" }),
-    el("div", { class: "sb-state" }, el("span", { class: "t", text: state }), when ? el("span", { class: "w", text: when }) : null));
-  const rest = recent.filter(r => r.text !== state);
-  if (rest.length) card.append(el("div", { class: "sb-recent" }, el("div", { class: "sb-h", text: "최근 내역" }),
-    ...rest.map(r => el("div", { class: "sb-item" }, el("span", { class: "t", text: r.text }), el("span", { class: "w", text: agoKo(r.ts) })))));
-  return card;
 }
 function laneRefresh(p) { p.rev++; laneSoon(); }
 let laneSoonT;
@@ -138,20 +104,32 @@ function laneTailsStale() {
   if (current === "lanes") { laneSig = ""; renderLanes(); }
 }
 // Running and waiting sessions, a question waiting for the owner first, then the ones at work; the ended ones fold below (renderEndedLanes).
+// 세션: the live sessions as chat-list rows, grouped under their project (the group with the session that needs the owner most comes first).
+function laneRows(lanes) {
+  const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
+  const recentTs = l => { const r = laneRecent(l.name)[0]; return r ? r.ts : 0; };
+  const groups = new Map();
+  for (const l of lanes.slice().sort((x, y) => rank(x) - rank(y) || recentTs(y) - recentTs(x))) {
+    const p = laneProject(l) || "프로젝트 없음";
+    if (!groups.has(p)) groups.set(p, []);
+    groups.get(p).push(l);
+  }
+  const rows = [];
+  for (const [p, ls] of groups) rows.push({ header: p }, ...ls.map(l => ({ t: `lane:${l.name}`, name: l.title || l.name, badge: sessionStatus(l), unread: ts(`lane:${l.name}`).unread, open: () => openLaneChat(l.name), sel: false })));
+  return rows;
+}
 function renderLanes() {
   if (!S) return;
   const lanes = S.lanes.filter(laneAlive);
   for (const n of Object.keys(LP)) if (!lanes.some(l => l.name === n)) delete LP[n];
   for (const l of lanes) if (!LP[l.name]) LP[l.name] = { name: l.name, acts: [], seen: new Set(), queue: [], rev: 0, loaded: false, loading: false, failedAt: 0 };
-  const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
-  const recentTs = l => { const r = laneRecent(l.name)[0]; return r ? r.ts : 0; };
-  const sig = JSON.stringify([lanes.map(l => [l.name, l.title, l.home, l.project, l.status, attnKind(`lane:${l.name}`), l.pendingAsk && l.pendingAsk.at, LP[l.name].rev, ts(`lane:${l.name}`).msgs.length]), prjRev, Math.floor(Date.now() / 30000)]);
+  const sig = JSON.stringify([lanes.map(l => [l.name, l.title, l.home, l.project, l.status, attnKind(`lane:${l.name}`), l.pendingAsk && l.pendingAsk.at, LP[l.name].rev, ts(`lane:${l.name}`).unread]), prjRev]);
   if (sig !== laneSig) {
     laneSig = sig;
     const box = $("#lanes");
     clear(box);
     if (!lanes.length) box.append(emptyNode("작동 중인 세션이 없어요"));
-    else box.append(el("div", { class: "sb-list" }, ...lanes.map(l => ({ l, r: rank(l), t: recentTs(l) })).sort((x, y) => x.r - y.r || y.t - x.t).map(x => laneCard(x.l))));
+    else box.append(el("div", { class: "cv-list" }, ...laneRows(lanes).map(convRow)));
     for (const l of lanes) { const p = LP[l.name]; if (!p.loaded && !p.loading && Date.now() - p.failedAt > 15000) laneLoad(p); }
   }
   renderEndedLanes();
@@ -175,8 +153,8 @@ function prjLoad() {
   if (prjFlight) return prjFlight;
   prjFlight = api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
     prjFlight = null; prjRev++;
-    if (current === "projects") renderProjects();
-    else if (current === "project") pmPaint();
+    if (current === "project") { if (ppWide()) renderProjects(); pmPaint(); }
+    else if (current === "projects") renderProjects();
     else if (current === "lanes") renderLanes();
   });
   return prjFlight;
@@ -219,28 +197,22 @@ function prjStatus(p) {
   if (ls.some(l => l.live && l.status === "working")) return ["pri", "작업 중"];
   return [ls.some(l => l.live) || p.channel ? "ok" : "", ""];
 }
-function prjCard(p) {
-  if (p.builtin) return el("button", { class: "card tap prj-card", type: "button", onclick: () => go("project", p.key) },
-    el("div", { class: "prj-top" }, el("span", { class: "dot ok" }), el("span", { class: "prj-title", text: p.name }), el("span", { class: "tag", text: "고정" }), icon("chev", "chev")),
-    el("div", { class: "prj-note", text: p.note }), el("div", { class: "prj-meta" }, el("span", { text: "홈 카드 · 루틴 · 규칙 · 말투" })));
-  const [tone, word] = prjStatus(p), ms = prjMiles(p), done = ms.filter(m => m.done).length, ls = p.lanes || [], mon = prjMonitors(p);
-  const pct = ms.length ? Math.round(done / ms.length * 100) : 0;
-  const meta = [ls.length ? `세션 ${ls.filter(l => l.live).length}/${ls.length}` : "세션 없음", mon != null ? `모니터링 ${mon}` : ""].filter(Boolean);
-  return el("button", { class: "card tap prj-card", type: "button", onclick: () => go("project", p.key) },
-    el("div", { class: "prj-top" }, el("span", { class: `dot ${tone}` }), el("span", { class: "prj-title", text: prjTitle(p) }),
-      word ? el("span", { class: `tag ${tone === "att" ? "warn" : tone}`, text: word }) : null, icon("chev", "chev")),
-    // A fresh project (no description, no milestones) keeps the same three rows as a filled one, so cards in the grid line up.
-    el("div", { class: `prj-note${prjPurpose(p) ? "" : " blank"}`, text: prjPurpose(p) || "아직 설명이 없어요" }),
-    el("div", { class: "prj-prog" }, ...(ms.length ? [el("div", { class: "bar", role: "progressbar", "aria-label": "목표 진행", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "sup", text: `${done}/${ms.length}` })] : [el("span", { class: "sup", text: "아직 목표가 없어요" })])),
-    el("div", { class: "prj-meta" }, ...meta.map(t => el("span", { text: t }))));
+// 프로젝트: the projects as chat-list rows (커스텀 first); the open one is marked, and from 1100px its page sits beside the list.
+function projRows(list) {
+  const row = p => {
+    const [tone, word] = p.builtin ? ["", "고정"] : prjStatus(p), chat = prjChat(p);
+    return { name: prjTitle(p), av: el("span", { class: "cv-av", "aria-hidden": "true" }, icon("projects")), badge: word ? [word, tone === "att" ? "warn" : tone] : null, unread: chat ? ts(chat).unread : 0, open: () => go("project", p.key), sel: current === "project" && ppCur === p.key };
+  };
+  const rest = list.filter(p => !p.builtin);
+  return [...list.filter(p => p.builtin).map(row), ...(rest.length ? [{ header: "프로젝트" }, ...rest.map(row)] : [])];
 }
 function renderProjects() {
   const box = $("#v-projects");
   if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
   const list = PRJ.projects || [];
   if (!list.length) { delete box.dataset.sig; clear(box).append(emptyNode("아직 프로젝트가 없어요. 채팅에서 계속 돌아가야 하는 일을 맡기면 여기에 생겨요")); return; }
-  const sig = JSON.stringify(list);
+  const sig = JSON.stringify([list, ppCur, current === "project", list.map(p => { const c = prjChat(p); return c ? ts(c).unread : 0; })]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
-  clear(box).append(el("div", { class: "prj-grid" }, ...list.map(prjCard)));
+  clear(box).append(el("div", { class: "cv-list" }, ...projRows(list).map(convRow)));
 }
