@@ -8,6 +8,7 @@ import { parseCommand, setGatewayRestart } from "./control.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { setAskAnswer } from "./askbuttons.ts";
+import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, startPush } from "./push.ts";
 import { msg } from "./i18n.ts";
 import { broadcast, emit, emitDelivery, sentFiles } from "./events.ts";
@@ -87,6 +88,7 @@ async function ensureServe(bin: string, httpsPort: number, localPort: number): P
 discord.setFileLink(p => (webBase ? `${webBase}/api/file?path=${encodeURIComponent(p)}&dl=1` : undefined));
 // Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
 startPush({ subject: () => webBase ?? "mailto:dotz@example.com" });
+startPeerStreams();
 
 setTrashChannels({ take: discord.takeLaneChannel, put: discord.putLaneChannel, remove: discord.deleteChannel });
 discord.setChannelGoneHandler(id => {

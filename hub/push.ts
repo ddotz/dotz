@@ -208,6 +208,11 @@ async function fanOut(m: PushMessage): Promise<void> {
 	await ask("all");
 }
 
+async function forwardPresence(did: string, active: boolean): Promise<void> {
+	const list = await relayPeers().catch(() => []);
+	await Promise.all(list.filter(f => !f.self).map(f => fetch(`${f.url}/api/push/presence`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ did, active, relayed: true }), signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" }).catch(() => {})));
+}
+
 const RELAY_HASH = /^#[\w:%.\-/]{0,200}$/;
 // A notice another computer relayed, as this computer shows it: the computer's name leads the title, the tap carries ?pc=<its origin>
 // (and the item: ?n= for a decision, ?m= for a message) so the app switches to that computer's view. The sender's id/ts name items on ITS
@@ -308,8 +313,14 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 		save();
 		return json({ ok: true, prefs: s.prefs });
 	}
+	// A page that is open and visible quiets its device's subscriptions here. The same device (`did`) is quieted on the other computers too: the page shows
+	// their notices as toasts (hub/peer-stream.ts), so a push there would be a second alert. The forward carries `relayed` and is never sent on.
 	if (req.method === "POST" && p === "/api/push/presence") {
-		if (typeof b.endpoint === "string") b.active ? presence.set(b.endpoint, Date.now()) : presence.delete(b.endpoint);
+		const mark = (endpoint: string) => (b.active ? presence.set(endpoint, Date.now()) : presence.delete(endpoint));
+		if (typeof b.endpoint === "string") mark(b.endpoint);
+		const did = typeof b.did === "string" && DID.test(b.did) ? b.did : typeof b.endpoint === "string" ? findSub(b.endpoint)?.did : undefined;
+		if (did) for (const s of subs) if (s.did === did) mark(s.endpoint);
+		if (did && b.relayed !== true) void forwardPresence(did, b.active === true);
 		return json({ ok: true });
 	}
 	if (req.method === "POST" && p === "/api/push/test") {

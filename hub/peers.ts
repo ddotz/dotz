@@ -170,6 +170,13 @@ const discovered = cached(DISCOVERY_TTL_MS, () => discover().catch(error => { lo
 export const knownComputers = (): Promise<Found[]> => discovered();
 const countsCache = new Map<string, { at: number; v: { unread: number; need: number } | undefined }>();
 
+// Reads one computer's counts now and keeps them for listPeers. hub/peer-stream.ts calls it when that computer's notices change.
+export async function refreshCounts(url: string, get: Fetcher = getJson): Promise<{ unread: number; need: number } | undefined> {
+	const v = await counts(url, get);
+	countsCache.set(url, { at: Date.now(), v });
+	return v;
+}
+
 // The list for GET /api/peers. One entry or none: the web app hides the switcher (it needs two gateways).
 export async function listPeers(): Promise<Peer[]> {
 	const list = await discovered();
