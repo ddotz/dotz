@@ -1,0 +1,19 @@
+/* result card (11-resultcard.js): a mail or a monitoring result - header, title, labelled sections, the original folded */
+.tl-in > .bm.rc, #mon-tl > .bm.rc { display: flex; flex-direction: column; gap: 12px; }
+.rc-hd { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.rc-src { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-weight: 600; }
+.rc-time { flex: none; margin-left: auto; white-space: nowrap; }
+.rc-title { color: var(--fg); font-size: 16px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.rc-sec { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rc-sh { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 600; }
+.bm.rc .rc-sec .md { font-size: 15px; line-height: 24px; }
+.rc-raw > summary { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 32px; padding: 0 12px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; cursor: pointer; list-style: none; }
+.rc-raw > summary::-webkit-details-marker { display: none; }
+.rc-raw > summary::before { content: ""; flex: none; width: 5px; height: 5px; border-right: 1.5px solid var(--fg-2); border-bottom: 1.5px solid var(--fg-2); transform: rotate(-45deg); transition: transform .15s; }
+.rc-raw[open] > summary::before { transform: rotate(45deg); }
+.rc-raw > summary:hover { background: var(--hover); color: var(--fg); }
+.rc-rawbody { margin-top: 8px; padding: 12px 14px; max-height: 60vh; overflow: auto; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); }
+.bm.rc .rc-rawbody .md { font-size: 14px; line-height: 22px; }
+.rc-rawbody .md .tbl { background: var(--card); }
+.rc-rawbody .md th { background: var(--layer); }
+@media (max-width: 1099px) { .appbar.cvconv h1 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; font-size: 17px; line-height: 22px; overflow-wrap: anywhere; } }
