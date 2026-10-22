@@ -490,7 +490,7 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 }
 
 // A login request (dotz_auth) waits on the owner: approve / cancel here, the form for typed values stays the page's own.
-export function authRequested(a: { id: string; kind: "secret" | "otp" | "approve"; title: string; site: string; purpose: string }): void {
+export function authRequested(a: { id: string; kind: "secret" | "otp" | "approve" | "form"; title: string; site: string; purpose: string }): void {
 	const first: DecisionOpt = a.kind === "approve" ? { n: 1, label: "승인", desc: "", rec: true, action: "approve" } : { n: 1, label: "입력하기", desc: "", rec: true, action: "form" };
 	putDecision({ key: `auth:${a.id}`, title: a.title, detail: `${a.purpose}\n사이트: ${a.site}`.slice(0, TEXT_MAX), to: `auth:${a.id}`, open: "main", options: [first, { n: 2, label: "취소", desc: "", rec: false, action: "cancel" }], group: 1 }, now());
 }

@@ -15,6 +15,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import { FIELD_TYPES } from "../hub/authfields.ts";
 import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
@@ -106,7 +107,7 @@ async function call(path: string, init: RequestInit = {}): Promise<any> {
 	return data;
 }
 
-type AuthParams = { site: string; kind: "secret" | "otp" | "approve"; fields?: string[]; purpose: string; target?: string; timeout_minutes?: number };
+type AuthParams = { site: string; kind: "secret" | "otp" | "approve" | "form"; fields?: string[]; form?: { type: string; label?: string; optional?: boolean; mask?: boolean }[]; remember?: boolean; purpose: string; target?: string; timeout_minutes?: number };
 
 // Web-login credentials from the owner via Discord (buttons + modal). The submitted value goes only to the gateway: the
 // secret kind lands in a 0600 file, the otp kind is fetched once with `take`; this tool never sees or returns a value.
@@ -116,11 +117,13 @@ function authTool(pi: any, lane?: string): void {
 	pi.registerTool({
 		name: "dotz_auth",
 		label: "Dotz auth",
-		description: `Ask the owner for a web-login credential through Discord or the web app: the gateway posts a message with buttons (Discord, when set up) and shows the same form in the web app (always, so it works before Discord is connected, e.g. during the Discord bot setup itself), the owner types the value there, and the value never enters the prompt, logs or chat. Use it when a login needs a password, an OTP code, or a push/FIDO approval, or when the account has no stored credentials. Asking through this tool is the owner's OK for the second factor (still trigger it only once, never retry). kind=secret {fields? [username,password] (default both; or any of username|password|code)}: stored as a JSON object {field: value} in a 0600 file under the secrets dir, whose path is returned. kind=otp: a one-time code you fetch once with the returned command. kind=approve: the owner confirms they approved the push/FIDO prompt on their device. site = a short key [a-z0-9._-] naming the service (the secrets file name). purpose = one line shown to the owner saying what it is for. ${where} timeout_minutes 1-30 (default 10). The call waits until the owner answers, cancels, or it times out; do the login step after it returns.`,
+		description: `Ask the owner for a web-login credential or any personal or security data through Discord or the web app. ALWAYS use this for personal or security data (password, code, card, address, phone, ID or account number, birth date and the like): never ask for it, or accept it, in chat; if the owner pastes such data into chat anyway, do not repeat or store it, say it was not used and ask again through this tool. Ask the owner for a web-login credential: the gateway posts a message with buttons (Discord, when set up) and shows the same form in the web app (always, so it works before Discord is connected, e.g. during the Discord bot setup itself), the owner types the value there, and the value never enters the prompt, logs or chat. Use it when a login needs a password, an OTP code, or a push/FIDO approval, or when the account has no stored credentials. Asking through this tool is the owner's OK for the second factor (still trigger it only once, never retry). kind=secret {fields? [username,password] (default both; or any of username|password|code)}: stored as a JSON object {field: value} in a 0600 file under the secrets dir, whose path is returned. kind=form {form: [{type, label?, optional?, mask?}], remember?}: a personal-data form; type is one of ${FIELD_TYPES.join(", ")} (card_number is checked with Luhn, card_expiry as MM/YY, card_cvc, id_number and account_number are masked; 'other' needs a label; address2 is optional). It is shown only in the web app (the Discord message carries a button that opens it; no value is typed in Discord). Stored as a JSON object {type: value} (an 'other' field is keyed other_<label>) in a 0600 file whose path is returned together with the field names; you never get the values. remember=true (default false; the owner can change it in the form) keeps the file as secrets/<site> for reuse (read it before asking again); otherwise it is one-time under secrets/once: read it, use it, delete it right after, never copy a value into a prompt, brief, report, log or message. kind=otp: a one-time code you fetch once with the returned command. kind=approve: the owner confirms they approved the push/FIDO prompt on their device. site = a short key [a-z0-9._-] naming the service (the secrets file name). purpose = one line shown to the owner saying what it is for. ${where} timeout_minutes 1-30 (default 10). The call waits until the owner answers, cancels, or it times out; do the login step after it returns.`,
 		parameters: z.object({
 			site: z.string(),
-			kind: z.enum(["secret", "otp", "approve"]),
+			kind: z.enum(["secret", "otp", "approve", "form"]),
 			fields: z.array(z.enum(["username", "password", "code"])).optional(),
+			form: z.array(z.object({ type: z.enum(FIELD_TYPES), label: z.string().optional(), optional: z.boolean().optional(), mask: z.boolean().optional() })).optional(),
+			remember: z.boolean().optional(),
 			purpose: z.string(),
 			...(lane ? {} : { target: z.string().optional() }),
 			timeout_minutes: z.number().min(1).max(30).optional(),
@@ -129,6 +132,8 @@ function authTool(pi: any, lane?: string): void {
 			const text = (t: string) => ({ content: [{ type: "text", text: t }] });
 			const body: Record<string, unknown> = { site: p.site, kind: p.kind, purpose: p.purpose, target: lane ? `lane:${lane}` : (p.target ?? "chat") };
 			if (p.fields) body.fields = p.fields;
+			if (p.form) body.form = p.form;
+			if (p.remember !== undefined) body.remember = p.remember;
 			if (p.timeout_minutes) body.timeout_minutes = p.timeout_minutes;
 			const { id }: { id: string } = await call("/api/auth", { method: "POST", body: JSON.stringify(body), signal });
 			const cancel = async () => {
@@ -137,7 +142,7 @@ function authTool(pi: any, lane?: string): void {
 			};
 			for (;;) {
 				if (signal?.aborted) return cancel();
-				let r: { status: string; path?: string; take?: string };
+				let r: { status: string; path?: string; take?: string; keys?: string[]; once?: boolean };
 				try {
 					r = await call(`/api/auth/${id}?wait=50`, { signal });
 				} catch (e: unknown) {
@@ -146,6 +151,9 @@ function authTool(pi: any, lane?: string): void {
 					throw e;
 				}
 				if (r.status === "pending") continue;
+				if (r.status === "entered" && p.kind === "form") {
+					return text(`The owner filled in the ${p.site} form. Stored at ${r.path} as a JSON object {${(r.keys ?? []).join(", ")}}, mode 0600${r.once ? "; one-time: the gateway removes it within an hour, you delete it right after use" : "; kept for reuse"}. Read it at run time; never put the values in prompts, briefs, reports, logs or chat.`);
+				}
 				if (r.status === "entered" && p.kind !== "otp") {
 					const fields = (p.fields ?? (p.kind === "secret" ? ["username", "password"] : [])).join(", ");
 					return text(`The owner entered the ${p.site} credentials. Stored at ${r.path} as a JSON object {${fields}}, mode 0600. Read it at run time; never put the values in prompts, briefs, reports or logs.`);
