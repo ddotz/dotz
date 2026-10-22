@@ -13,6 +13,8 @@ export type Reader = {
 	rooms: () => Promise<Room[]>;
 	messages: (chatId: string, limit: number) => Promise<Msg[]>;
 	draftable: (room: Room) => boolean;
+	// Display label of a room without a name (group rooms named after their members).
+	label?: (chatId: string) => Promise<string | undefined>;
 };
 export type DraftsApi = {
 	create: (input: { chatId: string; roomName: string; text: string; basisLogId: string }) => Promise<{ code: string }>;
@@ -41,9 +43,9 @@ export type Ctx = {
 };
 
 const VALUE_FLAGS = new Set(["to", "chat", "limit", "draft"]);
-const GATED = new Set(["login", "read", "draft", "send"]);
+const GATED = new Set(["login", "rooms", "read", "draft", "send"]);
 const MAX_READ = 50;
-const USAGE = "사용법: cli.ts setup [--to <대상>] [--dry-run] | status [--json] | login | read --chat <id> [--limit 20] | draft --chat <id> | send --draft <코드> | off [--forget]";
+const USAGE = "사용법: cli.ts setup [--to <대상>] [--dry-run] | status [--json] | login | rooms [--all] [--limit 30] | read --chat <id> [--limit 20] | draft --chat <id> | send --draft <코드> | off [--forget]";
 
 function parseArgs(argv: string[]): Record<string, string | true> {
 	const out: Record<string, string | true> = {};
@@ -118,6 +120,26 @@ async function draftableRoom(ctx: Ctx, config: KakaoConfig, chat: string): Promi
 }
 
 const newestIncoming = (list: Msg[]) => list.findLast(m => m.type === 1 && !m.fromMe);
+
+const KIND: Record<Room["kind"], string> = { direct: "1:1", group: "단체", self: "나와의 채팅", channel: "채널", open: "오픈채팅", other: "기타" };
+
+// Newest first; without --all only the rooms drafts can be made for.
+async function rooms(args: Record<string, string | true>, ctx: Ctx, config: KakaoConfig): Promise<number> {
+	const limit = Math.min(Math.max(Math.trunc(Number(str(args.limit) ?? 30)) || 30, 1), 500);
+	const reader = await ctx.reader(config);
+	const all = (await reader.rooms()).filter(r => args.all || reader.draftable(r)).sort((a, b) => b.lastAt - a.lastAt);
+	const today = new Date(ctx.now()).toDateString();
+	const stamp = (at: number) => {
+		const d = new Date(at > 1e11 ? at : at * 1000);
+		return d.toDateString() === today ? clock(at) : `${d.getMonth() + 1}/${d.getDate()} ${clock(at)}`;
+	};
+	for (const r of all.slice(0, limit)) {
+		const name = r.name === "(unknown)" ? `${(await reader.label?.(r.chatId)) ?? "이름 없는 방"} (이름 없음)` : r.name;
+		ctx.out(`${r.chatId}  ${name}  (${KIND[r.kind]}${r.unread > 0 ? `, 안 읽음 ${r.unread}` : ""}, ${stamp(r.lastAt)})`);
+	}
+	ctx.out(`대화방 ${Math.min(limit, all.length)}개 / 전체 ${all.length}개`);
+	return 0;
+}
 
 async function read(args: Record<string, string | true>, ctx: Ctx, config: KakaoConfig): Promise<number> {
 	const chat = str(args.chat);
@@ -204,6 +226,7 @@ export async function run(argv: string[], ctx: Ctx): Promise<number> {
 		ctx.out(r.text);
 		return r.ok ? 0 : 1;
 	}
+	if (cmd === "rooms") return rooms(args, ctx, config);
 	if (cmd === "read") return read(args, ctx, config);
 	if (cmd === "draft") return draft(args, ctx, config);
 	return send(args, ctx, config);
@@ -261,7 +284,7 @@ export function realCtx(paths: KakaoPaths): Ctx {
 		reader: async config => {
 			const m = await dbm();
 			const db = await openDb(config);
-			return { rooms: () => m.rooms(db), messages: (chatId, limit) => m.messages(db, chatId, limit, config.userId ?? ""), draftable: room => m.isDraftCandidate(room, config) };
+			return { rooms: () => m.rooms(db), messages: (chatId, limit) => m.messages(db, chatId, limit, config.userId ?? ""), draftable: room => m.isDraftCandidate(room, config), label: chatId => m.memberLabel(db, chatId, config.userId ?? "") };
 		},
 		drafts: async () => {
 			const s = await load<typeof import("./send.ts")>("send");
