@@ -114,7 +114,33 @@ function editNode(dc, opt, st) {
   const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, "돌아가기");
   return el("div", { class: "dc-edit" }, ta, el("div", { class: "dc-eb" }, back, go));
 }
+// A draft waiting for send approval fills the screen (30-notices.js dkOpen): header = who and what, middle = the draft, sticky footer = the choices.
+// The header (with 무시 and the close button) and the footer stay put; only the draft scrolls.
+function renderDraft(box, dc) {
+  const st = DC.st[dc.key] || "", d = dc.draft, picks = DC.picks[dc.key] || [], edit = DC.edit[dc.key] && !st.startsWith("sent") ? DC.edit[dc.key] : null;
+  const old = $(".dc-dbody", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
+  const oldNote = $(".dc-note", box), refocus = !!oldNote && document.activeElement === oldNote, caret = refocus ? oldNote.selectionStart : 0;
+  const qText = ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "");
+  const head = el("div", { class: "dc-hd dc-dhd" }, el("div", { class: "dc-tt" },
+    el("span", { class: "dc-ey", text: qText || "보내기 전에 확인해요" }),
+    el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
+    d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null),
+    el("div", { class: "dc-hb" },
+      dc.ignore ? el("button", { class: "dc-ign", type: "button", onclick: () => dc.ignore() }, icon("close"), el("span", { text: "무시" })) : null,
+      dc.close ? el("button", { class: "dc-fold", type: "button", "aria-label": "닫기", onclick: () => dc.close() }, icon("close")) : null));
+  const body = el("div", { class: "dc-dbody", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, el("div", { class: "dc-dr-b", text: d.body }));
+  const foot = el("div", { class: "dc-ft" });
+  if (st) foot.append(el("div", { class: "dc-st", role: "status", text: st === "sending" ? "보내는 중…" : "보냈어요 · 답을 기다려요" }));
+  if (edit) foot.append(editNode(dc, edit, st));
+  else foot.append(el("div", { class: "dc-acts" }, ...dc.blocks[0].options.map((o, i) =>
+    el("button", { class: `dc-act${i === 0 ? " main" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label))));
+  clear(box).append(head, body, foot);
+  body.scrollTop = top;
+  const nn = $(".dc-note", box);
+  if (nn && (refocus || (edit && !oldNote))) { nn.focus({ preventScroll: true }); nn.setSelectionRange(caret || nn.value.length, caret || nn.value.length); }
+}
 function renderDecision(box, dc, picks, step) {
+  if (dc.draft) { renderDraft(box, dc); return; }
   const st = DC.st[dc.key] || "", fold = !dc.close && !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   // A draft message starts with its quoted draft, so the question is the block's own title without the draft's id.
   const qText = dc.draft ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
