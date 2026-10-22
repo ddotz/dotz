@@ -56,7 +56,7 @@ function updRestart() {
     updWaitTick();
   };
   if (!working.length) return fire("idle");
-  dialog({ classic: true, title: "재시작", body: el("div", { class: "col" }, el("p", { class: "sup", text: `지금 일하는 중: ${working.join(", ")}` }), el("p", { class: "sup", text: "작업이 끝난 뒤 재시작하거나, 지금 끊고 재시작할 수 있어요. 끊긴 요청은 다시 켜질 때 이어서 보내요." })), actions: [
+  dialog({ classic: true, title: "재시작", body: el("div", { class: "col" }, el("p", { class: "sup", text: `작업 중: ${working.join(", ")}` }), el("p", { class: "sup", text: "작업이 끝난 뒤 재시작하거나, 지금 끊고 재시작할 수 있어요. 끊긴 요청은 다시 켜질 때 이어서 보내요." })), actions: [
     { label: "작업이 끝나면", onclick: c => { c(); fire("idle"); } },
     { label: "지금 재시작", kind: "pri", onclick: c => { c(); fire("now"); } }] });
 }
@@ -96,7 +96,7 @@ function updateSection() {
   }
   if (jobRunning) rows.push(li(`업데이트 중 · ${job.phase}`, job.message, el("span", { class: "dot pri", "aria-hidden": "true" })));
   else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.message })));
-  if (UPD.wait) rows.push(li("재시작 기다리는 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`, el("span", { class: "dot pri", "aria-hidden": "true" })));
+  if (UPD.wait) rows.push(li("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`, el("span", { class: "dot pri", "aria-hidden": "true" })));
   else if (pending) rows.push(li(`새 버전 ${disk.commit.short} 받음`, "재시작하면 적용돼요", el("button", { class: "btn", type: "button", onclick: () => updRestart() }, "재시작")));
   rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "매일 자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알림과 함께 아래 자동 적용이 처리해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
     s.auto_check ? el("input", { class: "upd-at", type: "time", value: s.at, "aria-label": "확인 시각", onchange: ev => updSet({ at: ev.currentTarget.value }) }) : null,

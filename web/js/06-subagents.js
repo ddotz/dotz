@@ -4,7 +4,7 @@ const subKo = { running: "진행 중", done: "완료", failed: "실패", aborted
 const subTone = s => ({ running: "pri", done: "ok", failed: "err", aborted: "warn" })[s] || "";
 const runningSubs = src => (SUBS[src] || []).filter(s => s.status === "running");
 
-/* ---------- 뒤에서 하는 작업: S.work from /api/state (hub/bgwork.ts). A request answered with [later] keeps working after its turn ended. ---------- */
+/* ---------- 백그라운드 작업: S.work from /api/state (hub/bgwork.ts). A request answered with [later] keeps working after its turn ended. ---------- */
 const workRunning = () => ((S && S.work) || []).filter(w => w.status === "running");
 // A chat's own work: what was started for its open message; work no message claimed belongs to the main chat.
 const workOfTarget = t => workRunning().filter(w => (w.target ? (t === MAIN ? w.target === "web" : w.target === t) : t === MAIN));
@@ -16,7 +16,7 @@ function workAgo(w) {
   const m = workMin(workNow() - (w.ended_at || w.started_at));
   return m < 1 ? "방금" : m < 60 ? `${m}분 전` : `${Math.floor(m / 60)}시간 전`;
 }
-const workLine = ws => `뒤에서 작업 중 · ${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · 외 ${ws.length - 1}개` : ""}`;
+const workLine = ws => `백그라운드 작업 중 · ${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · 외 ${ws.length - 1}개` : ""}`;
 // Re-read the state while work runs, so a finished or failed one leaves the line without waiting for another event.
 setInterval(() => { if (!document.hidden && workRunning().length) refreshState(); }, 15000);
 function setSubs(source, items) {

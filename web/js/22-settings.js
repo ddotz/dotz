@@ -80,7 +80,7 @@ function fbEditor(L, F, list, i) {
       selectField("모델", nm, () => modelItems(`fbe:${L.id}`, base, only), base, v => setModel(fbBase(v), level)),
       selectField("추론 강도", level || "기본 모델과 같게", [{ value: "", label: "기본 모델과 같게" }, ...(M.thinking_levels || []).map(lv => ({ value: lv, label: lv }))], level, v => setModel(base, v))),
     seg("사용", [["on", "켜기"], ["off", "끄기"]], d.enabled === false ? "off" : "on", v => { d.enabled = v === "on"; redraw(); }),
-    d.key_file && keyable && L.id !== "workers" ? seg("서브에이전트·세션", [["", "API 키로 안 돌려요"], ["on", "같은 키로 돌려요"]], d.workers ? "on" : "", v => { d.workers = v === "on" ? true : undefined; redraw(); }) : null,
+    d.key_file && keyable && L.id !== "workers" ? seg("서브에이전트·세션", [["", "API 키 사용 안 함"], ["on", "같은 키 사용"]], d.workers ? "on" : "", v => { d.workers = v === "on" ? true : undefined; redraw(); }) : null,
     keyable ? seg("사용 방식", [["login", "구독 (로그인)"], ["key", "API 키"]], d.key_file ? "key" : "login", v => { if (v === "login") { d.key_file = undefined; redraw(); } else pickKey(); }) : null,
     d.key_file && keyable ? el("div", { class: "fbe-key" }, el("span", { class: `sup${kp && !kp.present ? " warn" : ""}`, text: keyText }), el("button", { type: "button", class: "btn text", onclick: pickKey }, "키 바꾸기")) : null,
     cond ? seg("넘어가는 때", [["", "앞 모델이 안 될 때"], ["quota", "한도 소진 시 (429)"], ["error", "제공자 오류 시"]], d.when || "", v => { d.when = v || undefined; redraw(); }) : null,
@@ -198,7 +198,7 @@ function fbParts(L) {
   } }, icon("add"), full ? "더 넣을 수 없어요" : "폴백 모델 추가");
   // The usual case: the subscription ran out, so the same model goes on through an API key (only after a usage limit).
   const addKey = F.conditions && prim && !full && !list.some(x => x.key_file && fbBase(x.model) === prim) ? el("button", { type: "button", class: "fb-add", onclick: () => fbKeyDialog({ model: prim }, file => file && fbSave(L.id, [...list, { model: prim, key_file: file, when: "quota" }])) }, icon("add"), "구독 소진 시 API 키로 계속") : null;
-  const how = L.id === "workers" ? "서브에이전트 폴백은 순서대로 넘어가요. API 키 단계는 세션이 시작될 때 정해져요. 이미 도는 서브에이전트는 모델을 그대로 쓰고, 상한·복귀는 다음 시작부터 반영돼요."
+  const how = L.id === "workers" ? "서브에이전트 폴백은 순서대로 넘어가요. API 키 단계는 세션이 시작될 때 정해져요. 이미 실행 중인 서브에이전트는 모델을 그대로 쓰고, 상한·복귀는 다음 시작부터 반영돼요."
     : F.harness && F.harness.id === "claude" ? "Claude Code는 Anthropic 모델만, 조건 없이 순서대로 넘어가요."
     : "단계를 누르면 바로 수정해요(모델·추론 강도·구독/API 키·넘어가는 때·복귀·상한). 끌거나 화살표로 순서를 바꿔요.";
   return {
