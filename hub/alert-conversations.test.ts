@@ -13,7 +13,7 @@ test("alert and worklog are fixed conversations next to main", () => {
 	expect(eventTarget({ ts: "x", kind: "out", target: "web:alert" })).toBe("alert");
 	expect(eventTarget({ ts: "x", kind: "delivery", target: "web:worklog" })).toBe("worklog");
 	expect(eventTarget({ ts: "x", kind: "message", channel: "web:alert" })).toBe("alert");
-	expect(eventTarget({ ts: "x", kind: "watch", watch: "w", channels: ["1"] })).toBe("alert");
+	expect(eventTarget({ ts: "x", kind: "watch", watch: "w", channels: ["1"] })).toBeUndefined();
 	expect(eventTarget({ ts: "x", kind: "out", target: "web" })).toBe("main");
 	expect(eventTarget({ ts: "x", kind: "out", target: "ch:5" })).toBe("ch:5");
 });

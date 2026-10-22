@@ -5,6 +5,8 @@ import { watchLabel } from "./workchannels.ts";
 // The read-only monitor list for the web (GET /api/monitors): every watch and schedule with the words the owner reads.
 export type Monitor = {
 	name: string;
+	// A watch's own [a-z0-9-] name when `name` is its label: the web matches the watch's notices by it and shows it as small text.
+	watch?: string;
 	kind: "watch" | "schedule";
 	channel?: string;
 	last_run?: string;
@@ -23,6 +25,7 @@ export function listMonitors(): Monitor[] {
 		const next = w.paused || w.state.paused ? undefined : w.state.nextAt ?? Date.parse(last ?? w.created) + w.every_minutes * 60_000;
 		return {
 			name: watchLabel(w.name),
+			watch: w.name,
 			kind: "watch",
 			// watch channels are bare Discord ids; the web opens conversations by ch:<id>
 			...(w.channels?.[0] ? { channel: /^\d+$/.test(w.channels[0]) ? `ch:${w.channels[0]}` : w.channels[0] } : {}),
