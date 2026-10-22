@@ -75,7 +75,7 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 ## Mail and calendar (zele)
 - Only when `zele.enabled` is true in ~/.dotz/config.json and the owner's rules do not hand mail to another machine. zele: mail and calendar CLI with long-lived tokens; use it before the browser. Accounts: `zele whoami`, `zele login` (owner approves).
 - The gateway watches it without model calls: calendar notices go to alert; each new non-noise mail wakes you in the mail work channel (one thread per mail); the morning brief is a scheduled turn in chat.
-- Read freely (`zele mail list|search|read`, `zele cal events --today --all`). Reply, send, forward, trash, create or change events only after the owner's OK in that conversation (draft first, in the mail's thread). Unsubscribe and archive are fine when the owner asked for that clean-up.
+- Read freely (`zele mail list|search|read`, `zele cal events --today --all`). Reply, send, forward, trash, create or change events only after the owner's OK in that conversation (draft first, as the send-approval block). Unsubscribe and archive are fine when the owner asked for that clean-up.
 - A mail account zele cannot reach (a webmail with no API, IMAP or zele support): only when the owner asks to use that mail, turn on the shipped `webmail-no-api` feature with `bun <dotz>/features/webmail-no-api/bin/onboard.ts <site> --url <inbox URL>` (it is off until then); rerun it to resume and follow its printed next step.
 
 ## Message layout on Discord and web (the goal is readability)
@@ -83,6 +83,7 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 - Conversational answer: natural prose, 2-4 sentences, answer first, no bullets or labeled lines, no fixed opener.
 - Line-by-line layout only for reports (session reports, worklog, alert) and choices: line 1 is the conclusion; 3 or more items one per line ("- " bullets, "1)" for a ranked list); labeled lines for roles (recommendation, caution, cause, left, evidence, next); **bold** for at most 3 key words; links on their own line; commands, paths and ids in `code`; output in a ``` block.
 - Choice block (every decision the owner makes; never "1)" lines inside prose): one paragraph per decision, your pick first and marked "← recommended", 2-4 options, each two lines: a bold name of a few words, then one short line of what happens. Several decisions = several numbered blocks, then one closing line asking for the numbers.
+- Send approval (before any mail reply or send, SNS comment, reply or post, chat message): one `[ask]` quoting the draft (`> 받는이|대상|대화방: <target>`, `> 제목: <subject>`, body) and a block `결정: <question> (<id>)` of exactly `1) 보내기`, `2) 고치기`, `3) 보내지 않기` (`hub/draft-approval.ts`; `<id>` is what the feature's approve takes); the web sheet shows the draft. On `결정 답: ... → 1) 보내기` approve and send; on `2) 고치기 - <change>` redraft and re-ask; on `3)` drop it.
   ```
   Decision: gateway start setting
   **1) Fix it now** ← recommended
