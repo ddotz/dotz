@@ -280,9 +280,9 @@ export const ko: Catalog = {
 				schedules: "예약", nextRun: "다음 실행", repeating: "반복 예약",
 			},
 			watch: {
-				label: "감시", summary: (n, failing) => `감시 ${n}개${failing ? ` · 연속 실패 ${failing}개` : ""}`, none: "감시 없음",
+				label: "모니터링", summary: (n, failing) => `모니터링 ${n}개${failing ? ` · 연속 실패 ${failing}개` : ""}`, none: "모니터링 없음",
 				desc: (after, every) => `모델을 깨우지 않고 정해진 간격으로 확인 스크립트를 실행해서, 값이 바뀌었거나 조건에 맞거나 실패했을 때만 알려요. 로그인 유지(만료 확인)도 여기서 해요. ${after}번 연속 실패하면 ${every}에 한 번만 알리고, 복구되면 한 번 알려요.`,
-				watches: "감시", setups: "작업 채널별 설정", failing: "연속 실패 중",
+				watches: "모니터링", setups: "작업 채널별 설정", failing: "연속 실패 중",
 			},
 			mail: {
 				label: "메일·캘린더", summary: (sec, hour) => `${sec}초마다 확인 · 아침 ${hour}시 브리핑`,
@@ -385,7 +385,7 @@ export const ko: Catalog = {
 			discord: "메시지", web: "채팅", terminal: "터미널 입력", schedule: "정해진 시각", watch: "변화 감지", mail: "새 메일·일정",
 			batch: "묶어서 전달", delegate: "작업 위임", parallel: "병렬 실행", mode: "행동 규칙", identity: "이름·말투", rules: "내 규칙", rulesLanes: "세션도 읽음",
 			lessons: "교훈", lessonsWrite: "교훈 기록", snapshot: "스냅샷", review: "회고 요청", outlang: "답장 언어 점검", update: "새 버전 알림", audit: "낭비 알림",
-			providers: "모델·한도", budget: "예산 게이트", hygiene: "야간 정리", memguard: "메모리 감시", guard: "규칙 강제",
+			providers: "모델·한도", budget: "예산 게이트", hygiene: "야간 정리", memguard: "메모리 모니터링", guard: "규칙 강제",
 		},
 		// 프로젝트별 지도 (hub/harnessprojects.ts): 작업 채널이나 홈 채널에 묶인 세션 하나예요.
 		project: {
@@ -396,7 +396,7 @@ export const ko: Catalog = {
 			channel: {
 				summary: (kind, purpose) => (purpose ? `${kind} · ${purpose}` : kind),
 				desc: "이 프로젝트의 세션이 답하는 채널이에요. 여기에 쓴 글은 이 채널의 맥락과 함께 세션의 프로젝트로 가요.",
-				kind: "종류", purpose: "목적", logins: "유지 중인 로그인", monitors: "감시", standing: "상시 처리", updated: "설정 갱신", noSetup: "이 채널에는 아직 설정이 없어요",
+				kind: "종류", purpose: "목적", logins: "유지 중인 로그인", monitors: "모니터링", standing: "상시 처리", updated: "설정 갱신", noSetup: "이 채널에는 아직 설정이 없어요",
 			},
 			lane: {
 				label: name => `세션 ${name}`,
@@ -411,8 +411,8 @@ export const ko: Catalog = {
 			files: { desc: "세션 폴더에서 찾은 프로젝트 지침 파일이에요. 이름·크기·수정 시각·첫 제목만 보여줘요.", size: "크기", modified: "마지막 수정", heading: "첫 제목", bytes: n => `${n}바이트`, folder: "폴더" },
 			features: {
 				label: "프로젝트 기능", summary: n => `${n}개`, none: "이 프로젝트에만 있는 건 아직 없어요",
-				desc: "프로젝트 폴더에 둔 스킬과 이 프로젝트 채널에 묶인 감시예요. 여기서만 적용돼요.",
-				skill: "스킬", watch: "감시", watchValue: (every, on) => `${every}분마다 · ${on} 때`,
+				desc: "프로젝트 폴더에 둔 스킬과 이 프로젝트 채널에 묶인 모니터링이에요. 여기서만 적용돼요.",
+				skill: "스킬", watch: "모니터링", watchValue: (every, on) => `${every}분마다 · ${on} 때`,
 			},
 			deny: { label: "프로젝트 차단 명령", summary: n => `${n}줄`, desc: "프로젝트 지침 파일의 '## Blocked commands' 아래 '- deny:' 줄이에요. 이 프로젝트에만 적힌 규칙이에요." },
 			settings: {

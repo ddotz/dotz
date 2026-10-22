@@ -1,16 +1,25 @@
 /* ---------- computers: switch between this owner's gateways (맥북, 맥미니) ---------- */
 // Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?}]. The chip next to the title shows this computer
 // and appears only with 2 or more, with a dot on its chevron while another computer has something unread (the counts live in the sheet rows); the sheet lists them; choosing one opens that computer's own address (its own PWA, login and push).
-// The bell lists the other computers' unread counts at its top (renderNotices in 30-notices.js calls prBellLines).
-const PR = { list: [], node: null, ov: null, opener: null };
+// The last list that arrived is kept in localStorage and drawn at once: coming back from the other computer the page starts from the service worker's
+// cached shell before the phone's network is up, and a first /api/peers that failed left the chip hidden until the next minute. A failed fetch is retried within seconds.
+const prCached = () => { const l = lsJson("dotz-peers", []); return Array.isArray(l) ? l.filter(p => p && typeof p.name === "string" && typeof p.url === "string") : []; };
+const PR = { list: prCached(), node: null, ov: null, opener: null, tries: 0, timer: 0 };
+const PR_RETRY_MS = [2000, 5000, 15000];
 const prSelf = () => PR.list.find(p => p.self);
 const prOthers = () => PR.list.filter(p => !p.self);
 const prText = p => [p.need > 0 ? `답변 필요 ${p.need}` : "", p.unread > 0 ? `새 알림 ${p.unread}` : ""].filter(Boolean).join(" · ");
 
 async function prLoad() {
-  try { const r = await api("/api/peers"); PR.list = Array.isArray(r) ? r : []; } catch { return; }
+  try {
+    const r = await api("/api/peers"); PR.list = Array.isArray(r) ? r : []; PR.tries = 0;
+    try { localStorage.setItem("dotz-peers", JSON.stringify(PR.list.map(({ name, url, self, online }) => ({ name, url, self, online })))); } catch {}
+  } catch {
+    clearTimeout(PR.timer);
+    if (PR.tries < PR_RETRY_MS.length) PR.timer = setTimeout(prLoad, PR_RETRY_MS[PR.tries++]);
+    return;
+  }
   prPaint();
-  if (NT.open) renderNotices();
 }
 
 function prPaint() {
@@ -69,7 +78,6 @@ function prKey(ev) {
 
 function prOpen() {
   if (PR.node) return;
-  closeNotices(false);
   PR.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   PR.node = el("div", { class: "ds-bd", onpointerdown: ev => { if (ev.target === PR.node) prClose(); } }, el("div", { class: "ds-sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "pr-t" }));
   document.body.append(PR.node);
@@ -91,17 +99,6 @@ function prClose(restore = true) {
   document.removeEventListener("keydown", prKey, true);
   if (restore && PR.opener && PR.opener.isConnected) PR.opener.focus({ preventScroll: true });
   PR.opener = null;
-}
-
-// One line per other computer with something new, at the top of the bell: "맥미니 · 새 알림 3". Tapping it opens that computer's bell.
-function prBellLines() {
-  const rows = prOthers().filter(p => p.online && (p.unread > 0 || p.need > 0));
-  if (!rows.length) return null;
-  return el("section", { class: "nt-grp pr-lines" }, rows.map(p =>
-    el("button", { type: "button", class: "nt-row pr-line", onclick: () => { location.href = `${p.url}/?bell=1`; } },
-      el("span", { class: `nt-dot tone-${p.need > 0 ? "ask" : "none"}`, "aria-hidden": "true" }),
-      el("span", { class: "nt-b" }, el("span", { class: "nt-t", text: `${p.name} · ${prText(p)}` }), el("span", { class: "nt-m", text: "눌러서 그 컴퓨터의 알림 보기" })),
-      icon("chev", "chev"))));
 }
 
 // This computer's own name (settings -> 이 컴퓨터 이름): GET/PUT /api/machine -> {name, custom, default}; empty = the hostname-derived default.
@@ -128,14 +125,7 @@ mnLoad();
 $("#pchip").onclick = prOpen;
 // Tapping 홈 again while on 홈 opens the computer sheet (like the 채팅 tab's re-tap, 04-state.js chatTabTap) and the next tap closes it; with one gateway the tab behaves as before.
 const homeTabTap = () => { if (PR.node) prClose(); else if (current === "home" && PR.list.length >= 2) prOpen(); else go("home"); };
+if (PR.list.length) prPaint();
 prLoad();
 setInterval(() => { if (!document.hidden) prLoad(); }, 60_000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) prLoad(); });
-{
-  const u = new URL(location.href);
-  if (u.searchParams.get("bell")) {
-    u.searchParams.delete("bell");
-    history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-    setTimeout(() => openNotices(), 500);
-  }
-}

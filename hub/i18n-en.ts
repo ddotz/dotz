@@ -295,9 +295,9 @@ Do this, briefly:
 				schedules: "Schedules", nextRun: "Next run", repeating: "Repeating schedules",
 			},
 			watch: {
-				label: "Watches", summary: (n: number, failing: number) => `Watches: ${n}${failing ? ` · failing in a row: ${failing}` : ""}`, none: "No watches",
+				label: "Monitoring", summary: (n: number, failing: number) => `Monitoring: ${n}${failing ? ` · failing in a row: ${failing}` : ""}`, none: "No monitoring",
 				desc: (after: number, every: string) => `Runs a check script at a set interval without waking the model, and tells you only when the value changed, a condition matched, or it failed. Keeping logins alive (expiry checks) is done here too. After ${after} failures in a row it notifies once per ${every}, and once more when it recovers.`,
-				watches: "Watches", setups: "Per-work-channel setups", failing: "Failing in a row",
+				watches: "Monitoring", setups: "Per-work-channel setups", failing: "Failing in a row",
 			},
 			mail: {
 				label: "Mail and calendar", summary: (sec: number, hour: number) => `Checks every ${sec} s · morning briefing at ${hour}:00`,
@@ -400,7 +400,7 @@ Do this, briefly:
 			discord: "Message", web: "Chat", terminal: "Terminal input", schedule: "Scheduled time", watch: "Change detected", mail: "New mail and events",
 			batch: "Passed on merged", delegate: "Delegate work", parallel: "Parallel run", mode: "Behaviour rules", identity: "Name and tone", rules: "My rules", rulesLanes: "Sessions read it too",
 			lessons: "Lessons", lessonsWrite: "Write lessons", snapshot: "Snapshot", review: "Review request", outlang: "Reply language check", update: "New version notice", audit: "Waste alert",
-			providers: "Model and limits", budget: "Budget gate", hygiene: "Nightly cleanup", memguard: "Memory watch", guard: "Enforce rules",
+			providers: "Model and limits", budget: "Budget gate", hygiene: "Nightly cleanup", memguard: "Memory monitoring", guard: "Enforce rules",
 		},
 		// The per-project maps (hub/harnessprojects.ts): one lane tied to a work or home channel.
 		project: {
@@ -426,8 +426,8 @@ Do this, briefly:
 			files: { desc: "A project instruction file found in the session's folder. Only its name, size, modified time and first heading are shown.", size: "Size", modified: "Last modified", heading: "First heading", bytes: (n: string) => `${n} bytes`, folder: "Folder" },
 			features: {
 				label: "Project features", summary: (n: number) => `${n} item${n === 1 ? "" : "s"}`, none: "Nothing project-only found",
-				desc: "Skills kept in the project folder and watches tied to this project's channels. They apply only here.",
-				skill: "Skill", watch: "Watch", watchValue: (every: number, on: string) => `every ${every} min · on ${on}`,
+				desc: "Skills kept in the project folder and monitoring tied to this project's channels. They apply only here.",
+				skill: "Skill", watch: "Monitoring", watchValue: (every: number, on: string) => `every ${every} min · on ${on}`,
 			},
 			deny: { label: "Project blocked commands", summary: (n: number) => `${n} line${n === 1 ? "" : "s"}`, desc: "'- deny:' lines under '## Blocked commands' in the project's instruction files. They are written for this project only." },
 			settings: {

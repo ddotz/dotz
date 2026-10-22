@@ -27,7 +27,7 @@ function hProjCard(p) {
     el("div", { class: "pj-sc" }, el("div", { class: "cl", text: "지침 파일" }),
       p.files.length ? el("div", { class: "pj-chs" }, ...p.files.map(f => el("span", { class: "pj-tg", title: f.dir ? f.name : `${f.name} · ${num(f.bytes)}바이트 · ${kstStamp(f.modified)} 수정${f.heading ? ` · ${f.heading}` : ""}` }, f.name, f.dir ? null : el("span", { class: "kd", text: pjSize(f.bytes) })))) : el("div", { class: "tx dim", text: "없음" })),
     el("div", { class: "pj-sc" }, el("div", { class: "cl", text: "채널 설정" }),
-      s ? [el("div", { class: "tx", text: s.purpose }), el("div", { class: "tx dim", text: `로그인 ${s.logins.length}${s.logins.length ? ` (${s.logins.map(l => l.name).join(", ")})` : ""} · 감시 ${s.monitors.length}${s.standing ? ` · 상시 처리: ${s.standing}` : ""}` })] : el("div", { class: "tx dim", text: "설정 없음" })),
+      s ? [el("div", { class: "tx", text: s.purpose }), el("div", { class: "tx dim", text: `로그인 ${s.logins.length}${s.logins.length ? ` (${s.logins.map(l => l.name).join(", ")})` : ""} · 모니터링 ${s.monitors.length}${s.standing ? ` · 상시 처리: ${s.standing}` : ""}` })] : el("div", { class: "tx dim", text: "설정 없음" })),
     el("div", { class: "pj-sc" }, el("div", { class: "cl", text: "이 프로젝트에만 적용" }), el("div", { class: `tx${feat ? "" : " dim"}`, text: feat || "없음" })));
   b.addEventListener("click", () => hOpenProject(p.id));
   b.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); hOpenProject(p.id); } });

@@ -35,14 +35,14 @@ window.addEventListener("load", sharedIntake);
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}, h = d.open ? new URL(d.open, location.href).hash : ""; if (!h || d.notice) return;   // a decision push (d.notice) opens its sheet over the current screen (30-notices.js), no jump
   if (d.ts) pushOpen(h, d.ts); else if (location.hash !== h) { const p = parseHash(h); go(p.view, p.t); } });
 // A new shell version: sw.js refreshShell posts {type:"shell-updated"} when its background fetch brought a changed page, script or styles.
-// The page reloads onto it at once if nothing would be lost (empty composer, no attachment, sheet, dialog, viewer or bell panel open), else a chip
+// The page reloads onto it at once if nothing would be lost (empty composer, no attachment, sheet, dialog, or viewer open), else a chip
 // offers it. The route is the hash and survives the reload; the scroll place is kept in sessionStorage and put back (chatOpen, shellRestoreViews).
 // One automatic reload per minute at most, so a shell that keeps changing cannot loop.
 const SHELL_KEY = "dotz-shell-reload", SHELL_LOOP_MS = 60000, SHELL_AWAY_MS = 3 * 60000;
 const shellMem = () => { try { return JSON.parse(sessionStorage.getItem(SHELL_KEY) || "null") || {}; } catch { return {}; } };
 let SHELL_RESTORE = (() => { const m = shellMem(); if (!m.at || m.used || Date.now() - m.at > 30000) return null; try { sessionStorage.setItem(SHELL_KEY, JSON.stringify({ ...m, used: true })); } catch {} return m; })();
 if (SHELL_RESTORE) setTimeout(() => { SHELL_RESTORE = null; }, 15000);
-const shellSafe = () => !ta.value.trim() && !ATT.length && !OV.length && !NT.open && !SUBD && !document.querySelector("dialog[open]");
+const shellSafe = () => !ta.value.trim() && !ATT.length && !OV.length && !SUBD && !document.querySelector("dialog[open]");
 function shellApply() {
   const s = { at: Date.now(), hash: location.hash, views: $("#views").scrollTop };
   if (current === "chat" && !convListing()) Object.assign(s, { key: target, stick: chatStick, anchor: chatAnchor() });

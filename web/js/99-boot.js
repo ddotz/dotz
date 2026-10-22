@@ -1,5 +1,5 @@
 // Boot runs after every module file (files join in name order): go() on the first frame already reaches the chat list
-// (31-conversations.js) and the bell (30-notices.js), whose top-level state must exist by then.
+// (31-conversations.js) and the notices (30-notices.js), whose top-level state must exist by then.
 /* ---------- boot ---------- */
 (async () => {
   const h = parseHash();

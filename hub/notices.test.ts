@@ -3,9 +3,9 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CONFIG_FILE, paths } from "./config.ts";
-import { emit, eventTarget, lastEventId, recentEvents, replayAfter } from "./events.ts";
+import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
-import { answerDecision, authRequested, authSettled, type DecisionSend, dismissNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, readConversationNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, type Notice, onDecision, readConversationNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -439,11 +439,22 @@ test("an open decision survives the store's cap and a reload from disk", () => {
 
 const CHOICE = "결정: 정리 세션 시작 전 쌓인 변경 처리\n**1) 먼저 커밋** ← 추천\n지금 상태를 저장해요\n**2) 그대로 진행**\n설명 줄";
 
-test("a choice block without [ask] is a decision: notice, push hook and the answer path work as for [ask]", async () => {
+test("a plain reply with a numbered list is text: no decision, no notice, no push hook", () => {
+	const fresh: Notice[] = [];
+	onDecision(n => fresh.push(n));
+	const at = ["2052-01-01T00:00:01.000Z", "2052-01-01T00:00:02.000Z", "2052-01-01T00:00:03.000Z"];
+	post("web", "설치 방법은 두 가지예요\n1) 브루로 설치\n2) 직접 빌드", { ts: at[0] });
+	post("web", "결정: 다른 질문\n**1) 가나** ← 추천\n설명\n**2) 다라**\n설명", { ts: at[1] });
+	emit("outbox", { ts: at[2], kind: "out", source: "lane:x", target: "lane:x", text: "[done] 끝났어요\n**1) 병합**\n**2) 보류**" });
+	expect(stored().filter(n => n.kind === "decision" && at.includes(n.decision?.reply_to ?? ""))).toHaveLength(0);
+	expect(fresh).toHaveLength(0);
+});
+
+test("an [ask] with a choice block is a decision: notice, push hook and the answer path work", async () => {
 	const fresh: Notice[] = [];
 	onDecision(n => fresh.push(n));
 	const at = ts();
-	post("web", `${CHOICE}\n번호로 답해 주세요`, { ts: at });
+	post("web", `[ask] 어떻게 할까요?\n${CHOICE}\n번호로 답해 주세요`, { ts: at });
 	const [d] = decisions("main").filter(n => n.decision!.reply_to === at);
 	expect(d).toMatchObject({ kind: "decision", read: false, title: "정리 세션 시작 전 쌓인 변경 처리", decision: { state: "open", group: 1 } });
 	expect(d!.decision!.options.map(o => [o.n, o.label, o.rec])).toEqual([[1, "먼저 커밋", true], [2, "그대로 진행", false]]);
@@ -454,13 +465,31 @@ test("a choice block without [ask] is a decision: notice, push hook and the answ
 	const r = await answerDecision(d!.id, { n: 1 }, async x => void sent.push(x));
 	expect(r.status).toBe(200);
 	expect(sent).toEqual([{ to: "main", text: "1) 먼저 커밋", replyTo: at, notice: d!.id, picks: [{ q: "정리 세션 시작 전 쌓인 변경 처리", n: 1, label: "먼저 커밋" }] }]);
-	// a session's message with a block is the same, addressed to that session; a one-option list is not a decision
+	// a session's [ask] with a block is the same, addressed to that session; a one-option list is not a decision
 	const lat = ts();
-	emit("outbox", { ts: lat, kind: "out", source: "lane:x", target: "lane:x", text: "[done] 끝났어요\n**1) 병합**\n**2) 보류**" });
+	emit("outbox", { ts: lat, kind: "out", source: "lane:x", target: "lane:x", text: "[ask] 어떻게 할까요?\n**1) 병합**\n**2) 보류**" });
 	expect(decisions("lane:x").filter(n => n.decision!.reply_to === lat)).toHaveLength(1);
 	const before = stored().filter(n => n.kind === "decision").length;
 	post("web", "순서예요\n**1) 하나뿐인 항목**");
 	expect(stored().filter(n => n.kind === "decision").length).toBe(before);
+});
+
+test("the reply to a choice-button answer is quiet: no message item, no push; an ask or fail reply still speaks", () => {
+	const conv = "ch:4242", items = () => stored().filter(n => n.key === `msg:${conv}`);
+	const button = (at: string) => emit("inbox", { ts: at, kind: "message", source: "web", channel: conv, text: "1) 먼저 커밋", picks: [{ q: "정리", n: 1, label: "먼저 커밋" }] });
+	const reply = (at: string, text: string) => emit("outbox", { ts: at, kind: "out", source: "orchestrator", target: conv, text });
+	button("2051-01-01T00:00:00.000Z");
+	reply("2051-01-01T00:00:01.000Z", "[done] 먼저 커밋했어요");
+	expect(items()).toHaveLength(0);
+	expect(answerReply({ ts: "2051-01-01T00:00:01.000Z", kind: "out", source: "orchestrator", target: conv, text: "x" } as HubEvent)).toBe(true);   // push asks again for the same event
+	reply("2051-01-01T00:00:02.000Z", "이어서 알려드릴게요");   // only the first reply is quiet
+	expect(items()).toHaveLength(1);
+	button("2051-01-01T00:01:00.000Z");
+	reply("2051-01-01T00:01:01.000Z", "[fail] 커밋하지 못했어요");
+	expect(items()[0]!.text).toContain("커밋하지 못했어요");
+	const plain = { ts: "2051-01-01T00:02:00.000Z", kind: "message", source: "web", channel: conv, text: "그냥 말해요" } as HubEvent;
+	answerReply(plain);
+	expect(answerReply({ ts: "2051-01-01T00:02:01.000Z", kind: "out", source: "orchestrator", target: conv, text: "네" } as HubEvent)).toBe(false);   // an ordinary message is not a button answer
 });
 
 test("an answer to a conversation nobody views is one message item, updated in place by the next answer", () => {

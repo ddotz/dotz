@@ -451,7 +451,7 @@ button.pv-res:hover { background: var(--card-hover); }
       out.push(chip("spark", r.name, `루틴${SCHED(r) ? ` · ${SCHED(r)}` : ""}`, b));
     }
     for (const s of L.schedules || []) out.push(chip("bell", s.text, `일정 · ${when(s.at)}${s.every_minutes ? ` · ${s.every_minutes}분마다` : ""}`));
-    for (const w of L.watches || []) out.push(chip("activity", w.name, `감시 · ${w.every_minutes}분마다${w.paused ? " · 쉬는 중" : ""}`));
+    for (const w of L.watches || []) out.push(chip("activity", w.name, `모니터링 · ${w.every_minutes}분마다${w.paused ? " · 쉬는 중" : ""}`));
     return out;
   }
   function moreNode(D) {

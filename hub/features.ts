@@ -17,7 +17,7 @@ import { addWatch, allWatches, removeWatch } from "./watch.ts";
 import { listSetups } from "./workchannels.ts";
 import { activeHarness, EXTENSION_DIRS } from "./runtime/index.ts";
 
-const FORMS = ["글 지시", "차단 명령", "기능 폴더", "스킬", "확장", "예약", "감시", "작업 채널 설정", "게이트웨이 기능", "외부 연동", "웹 맞춤"] as const;
+const FORMS = ["글 지시", "차단 명령", "기능 폴더", "스킬", "확장", "예약", "모니터링", "작업 채널 설정", "게이트웨이 기능", "외부 연동", "웹 맞춤"] as const;
 export { TRIGGERS };
 type Form = (typeof FORMS)[number];
 type Trigger = (typeof TRIGGERS)[number];
@@ -46,7 +46,7 @@ export type Feature = {
 // directory (skills, omp extensions) are personal, unless it is dotz's own checkout (its extension is linked from there);
 // dotz's own code, built-in denies and repo files ship with dotz.
 const originOf = (f: Feature): "shipped" | "personal" =>
-	f.form === "글 지시" || f.form === "예약" || f.form === "감시" || f.form === "작업 채널 설정" || f.form === "웹 맞춤" || f.id.startsWith("deny-") || (f.source.label.startsWith("~") && !inRepo(f.source.label)) ? "personal" : "shipped";
+	f.form === "글 지시" || f.form === "예약" || f.form === "모니터링" || f.form === "작업 채널 설정" || f.form === "웹 맞춤" || f.id.startsWith("deny-") || (f.source.label.startsWith("~") && !inRepo(f.source.label)) ? "personal" : "shipped";
 
 const REPO = join(import.meta.dir, "..");
 const short = (p: string) => (p.startsWith(`${HOME}/`) ? `~${p.slice(HOME.length)}` : p.startsWith(`${REPO}/`) ? p.slice(REPO.length + 1) : p);
@@ -316,7 +316,7 @@ export function extensionFeatures(ids: string[]): Feature[] {
 	return out;
 }
 
-// ---- 예약 · 감시 · 작업 채널 설정 -----------------------------------------------------------------------------------
+// ---- 예약 · 모니터링 · 작업 채널 설정 -----------------------------------------------------------------------------------
 const WHEN_FMT: Intl.DateTimeFormatOptions = { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" };
 const hostOf = (u: string) => {
 	try {
@@ -339,7 +339,7 @@ function watchFeatures(): Feature[] {
 		const on = { change: "값이 바뀌었을 때", match: "조건에 맞을 때", fail: "실패했을 때" }[w.on] ?? w.on;
 		const fails = w.state.fails;
 		return {
-			id: `watch-${w.id}`, form: "감시" as const, name: w.name, what: `${w.every_minutes}분마다 ${login ?? `명령을 실행해서 ${on} 알려요`}${fails >= 2 ? ` · 연속 실패 ${fails}번` : ""}`,
+			id: `watch-${w.id}`, form: "모니터링" as const, name: w.name, what: `${w.every_minutes}분마다 ${login ?? `명령을 실행해서 ${on} 알려요`}${fails >= 2 ? ` · 연속 실패 ${fails}번` : ""}`,
 			trigger: "변화 감지" as const, stage: "watch", strength: "enforced" as const, source: { label: `${short(paths.watches)} · ${w.id}` }, ...(w.state.lastRun ? { lastRun: w.state.lastRun } : {}), enabled: true, toggleable: false,
 		};
 	});
@@ -347,7 +347,7 @@ function watchFeatures(): Feature[] {
 
 function setupFeatures(): Feature[] {
 	return listSetups().map(s => ({
-		id: `setup-${s.channel}`, form: "작업 채널 설정" as const, name: s.name, what: `${clip(s.purpose, 90)} · 로그인 ${s.logins.length}개 · 감시 ${s.monitors.length}개${s.standing ? " · 상시 작업 있음" : ""}`,
+		id: `setup-${s.channel}`, form: "작업 채널 설정" as const, name: s.name, what: `${clip(s.purpose, 90)} · 로그인 ${s.logins.length}개 · 모니터링 ${s.monitors.length}개${s.standing ? " · 상시 작업 있음" : ""}`,
 		trigger: "변화 감지" as const, stage: "watch", strength: "enforced" as const, source: { label: `${short(paths.setups)} · ${s.channel}` }, lastRun: s.updated, enabled: true, toggleable: false,
 	}));
 }
@@ -430,7 +430,7 @@ const CONCEPTS: [RegExp, string][] = [
 	[/메모리|memory|rss/i, "c:메모리"],
 	[/로그인|session|세션 확인/i, "c:로그인"],
 	[/예약|schedule|스케줄/i, "c:예약"],
-	[/감시|watch|모니터/i, "c:감시"],
+	[/감시|watch|모니터/i, "c:모니터링"],
 	[/백업|backup|스냅샷/i, "c:백업"],
 	[/회고|reflect|교훈|lesson/i, "c:회고"],
 	[/다시 ?(쓰|써)|번역|rewrite/i, "c:다시쓰기"],
@@ -469,7 +469,7 @@ const dirId = (id: string) => `dir-${id}`;
 function dirFeatures(nodeIds: Set<string>): Feature[] {
 	const out: Feature[] = [];
 	for (const f of loadFeatureDirs(DATA_DIR, log).features) {
-		const parts = [f.body ? "글 지시" : "", f.deny.length ? `차단 ${f.deny.length}줄` : "", f.watch ? "감시" : "", f.schedule ? "예약 파일은 아직 실행되지 않아요" : ""].filter(Boolean);
+		const parts = [f.body ? "글 지시" : "", f.deny.length ? `차단 ${f.deny.length}줄` : "", f.watch ? "모니터링" : "", f.schedule ? "예약 파일은 아직 실행되지 않아요" : ""].filter(Boolean);
 		const stage = nodeIds.has(f.stage) ? f.stage : "rules";
 		const src = { label: short(f.file) };
 		const enforced = f.deny.length > 0 || Boolean(f.watch);

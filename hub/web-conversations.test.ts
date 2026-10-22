@@ -23,16 +23,18 @@ function page() {
 		isLaneReport: () => false, LP: {}, laneRefresh: () => {}, noteDone: () => {}, targetInfo: () => ({}),
 	};
 	const src = [
+		cut(web("02-basic-markdown.js"), "const TONE_TAGS", "/* ---------- api"),
 		cut(web("08-home.js"), "const isFixedT", "const FIXED_NAME"),
 		cut(web("09-needs-you.js"), "function eventTarget", "/* ---------- conversation view"),
 		cut(web("13-data.js"), "// 알림 / 작업 기록: a post edited", "async function loadTarget"),
 		cut(web("31-conversations.js"), "const CONV_KINDS", "const convIncoming"),
 		cut(web("10-decision-card.js"), "const CH_OPT", "const DC = "),
 	].join("\n");
-	return new Function(...Object.keys(env), `${src}\nreturn { eventTarget, ingestMsg, convReal, parseChoices, isChoiceMsg, isFixedT, TS };`)(...Object.values(env)) as {
+	return new Function(...Object.keys(env), `${src}\nreturn { eventTarget, ingestMsg, convReal, parseChoices, isChoiceMsg, choiceAsks, parseTone, isFixedT, TS };`)(...Object.values(env)) as {
 		eventTarget: (e: any) => string | null; ingestMsg: (e: any) => void; convReal: (e: any) => boolean;
 		parseChoices: (t: string) => { question: string; blocks: { title: string; options: { n: number; label: string; desc: string; rec: boolean }[] }[] };
 		isChoiceMsg: (pc: any) => boolean; isFixedT: (t: string) => boolean;
+		choiceAsks: (e: any, tone: string, pc: any) => boolean; parseTone: (t: string) => { tone: string; text: string };
 	} & { TS: Record<string, any> };
 }
 const T0 = Date.now();
@@ -75,6 +77,30 @@ describe("알림 and 작업 기록 are conversations of their own", () => {
 		expect(p.convReal({ ts: at(4), kind: "out", source: "orchestrator", target: "web", update_key: "progress", text: "x" })).toBe(false);
 		expect(p.convReal({ ts: at(5), kind: "out", source: "lane:a", target: "lane:a", update_key: "k", text: "x" })).toBe(false);
 		expect(p.convReal(out(6, "alert"))).toBe(true);
+	});
+});
+
+describe("buttons only for an [ask] message", () => {
+	const list = "설치 방법은 두 가지예요\n1) 브루로 설치\n2) 직접 빌드";
+	const shown = (e: any) => {
+		const p = page(), { tone, text } = p.parseTone(e.text);
+		return p.choiceAsks(e, tone, p.parseChoices(text));
+	};
+	const reply = (text: string, extra: Record<string, unknown> = {}) => ({ ts: at(1), kind: "out", source: "orchestrator", target: "web", text, ...extra });
+
+	test("a plain reply with a 1) list stays text", () => {
+		expect(page().parseChoices(list).blocks).toHaveLength(1);   // the parser sees the list...
+		expect(shown(reply(list))).toBe(false);   // ...but a message without the marker gets no buttons
+		expect(shown(reply(`**1) 가**\n설명\n**2) 나**\n설명`))).toBe(false);
+		expect(shown(reply(`[done] ${list}`))).toBe(false);
+	});
+
+	test("the [ask] marker (its real outgoing shape) and the gateway's own alert keep their buttons", () => {
+		expect(shown(reply(`[ask] 어떻게 할까요?\n결정: 설치\n**1) 브루** ← 추천\n빠르고 간단해요\n**2) 직접 빌드**\n오래 걸려요`))).toBe(true);
+		expect(shown(reply(`[ask] ${list}`))).toBe(true);
+		const block = issueBlock("어떻게 할까요?", [{ name: "원인 확인", result: "살펴봐요." }, { name: "넘어가요", result: "다음에 봐요." }]);
+		expect(shown(out(2, "alert", { text: `토큰 점검에서 경고 1건\n${block}` }))).toBe(true);
+		expect(shown(reply(`토큰 점검에서 경고 1건\n${block}`, { target: "alert" }))).toBe(false);
 	});
 });
 

@@ -189,7 +189,7 @@ function convFlush() {
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { if (CV.pin) convDwell(); convMaybeRead(); convLoad(); } });
 
-// Which conversation this page shows ("" = hidden or not a chat), so the hub keeps that conversation's answers out of the bell (POST /api/viewing).
+// Which conversation this page shows ("" = hidden or not a chat), so the hub keeps that conversation's answers out of the notices (POST /api/viewing).
 // Sent when it changes and every 20 s while it stays (the hub counts a report older than 60 s as gone).
 const VIEW = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), sent: "", at: 0 };
 function viewReport(unload) {
@@ -220,7 +220,7 @@ function convRows() {
   const mk = t => ({ t, last: CONV.get(t) || null, name: targetName(t), unread: ts(t).unread });
   const sess = ((S && S.lanes) || []).filter(l => laneAlive(l) || `lane:${l.name}` === target);
   const sub = l => { const t = `lane:${l.name}`; return { ...mk(t), sub: true, badge: sessionStatus(l), hint: convPreview(l.lastText) }; };
-  const rows = [MAIN, "alert", "worklog"].map(mk), placed = new Set();
+  const rows = [MAIN, "alert", "worklog", "monitoring"].map(t => (t === "monitoring" ? monRowInfo() : mk(t))), placed = new Set();
   for (const t of projects) {
     rows.push(mk(t));
     for (const l of sess) if (laneHome(l) === t) { placed.add(l.name); rows.push(sub(l)); }
@@ -229,7 +229,12 @@ function convRows() {
   if (loose.length) rows.push({ header: "프로젝트 없음" }, ...loose.map(sub));
   return rows;
 }
-const FIXED_DESC = { alert: "경고와 감시 소식, 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
+const FIXED_DESC = { alert: "경고와 모니터링 소식, 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
+// 모니터링 is a screen, not a conversation: its row sits with 알림 and 작업내역 and opens that screen.
+function monRowInfo() {
+  const bad = NM.items.filter(m => m.last_result === "fail").length;
+  return { mon: true, name: "모니터링", hint: !NM.loaded ? (NM.failed ? "불러오지 못했어요" : "불러오는 중…") : NM.items.length ? `모니터링 ${NM.items.length}개` : "모니터링 중인 것이 없어요", badge: bad ? [`실패 ${bad}`, "err"] : null };
+}
 function convAvatar(t) {
   const name = targetName(t);
   if (isFixedT(t)) return el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon(t === "alert" ? "bell" : "list"));
@@ -237,6 +242,13 @@ function convAvatar(t) {
 }
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
+  if (r.mon) {
+    const on = current === "monitoring";
+    return el("button", { class: `cv-row${on ? " on" : ""}`, type: "button", "data-mon": "1", "aria-current": on ? "true" : null, onclick: () => go("monitoring") },
+      el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon("activity")),
+      el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: r.name }), el("span", { class: "cv-p", text: r.hint })),
+      el("span", { class: "cv-m" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null));
+  }
   const sel = r.t === target && current === "chat";
   const text = r.last ? `${r.last.from === "owner" ? "나: " : ""}${r.last.text}` : r.hint || "아직 대화가 없어요";
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last ? "" : " none"}`, type: "button", "data-t": r.t, "aria-current": sel ? "true" : null, onclick: () => go("chat", r.t) },
@@ -244,21 +256,6 @@ function convRow(r) {
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: r.name }), el("span", { class: "cv-p", text })),
     el("span", { class: "cv-m" }, el("span", { class: "cv-t", text: r.last ? convTime(r.last.ts) : "" }), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
 }
-// Phone only (no header bell there): the first row of the list opens the notice hub, with the unread count as its badge.
-const convPhone = matchMedia("(max-width: 639px)");
-function convNoticeInfo() {
-  if (!convPhone.matches) return null;
-  const un = NT.items.filter(n => !n.read).sort((a, b) => ntAt(b) - ntAt(a))[0];
-  const text = !NT.loaded ? "" : un ? [ntPlain(un.title) || "알림", ntPlain(un.text)].filter(Boolean).join(": ") : "새 알림이 없어요";
-  return { unread: NT.unread, text, at: un ? un.updated || un.ts : "" };
-}
-function convNoticeRow(r) {
-  return el("button", { class: `cv-row cv-nt${r.unread ? " unread" : ""}`, type: "button", "data-nt": "1", onclick: () => openNotices("all") },
-    el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon("bell")),
-    el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "알림 모아보기" }), el("span", { class: "cv-p", text: r.text })),
-    el("span", { class: "cv-m" }, el("span", { class: "cv-t", text: r.at ? convTime(r.at) : "" }), r.unread ? el("span", { class: "nb", "aria-label": `안 읽은 알림 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
-}
-convPhone.addEventListener("change", () => { convSig = ""; convSchedule(); });
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
 const convHead = el("div", { id: "cv-head", class: "cv-head" });
@@ -274,11 +271,11 @@ function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
   convTitle();
-  const rows = convRows(), note = convNoticeInfo(), sig = JSON.stringify([rows.map(r => [r.t, r.name, r.last, r.unread, r.badge, r.header, r.hint]), target, note]);
+  const rows = convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.name, r.last, r.unread, r.badge, r.header, r.hint]), target, current]);
   if (sig !== convSig) {
     convSig = sig;
     const top = convSide.scrollTop;
-    clear(convSide).append(...(note ? [convNoticeRow(note)] : []), ...rows.map(convRow));
+    clear(convSide).append(...rows.map(convRow));
     convSide.scrollTop = top;
   }
   convPaintHead();

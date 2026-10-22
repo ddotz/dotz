@@ -8,6 +8,7 @@ const cut = (src: string, from: string, to: string) => src.slice(src.indexOf(fro
 
 function page(opts: { current?: string; phone?: boolean; notices?: number; badge?: unknown; alertUnread?: number } = {}) {
 	const needs = cut(web("09-needs-you.js"), "const SEEN_KEY", "/* ---------- usage strip");
+	const tone = cut(web("02-basic-markdown.js"), "const TONE_TAGS", "/* ---------- api");
 	const data = web("13-data.js");
 	const intake = cut(data, "// 알림 / 작업 기록: a post edited", "async function loadTarget") + cut(data, "function onActivity", "/* ---------- switching");
 	const MAIN = "web", notes: { title: string; text: string; ts: string }[] = [];
@@ -27,14 +28,14 @@ function page(opts: { current?: string; phone?: boolean; notices?: number; badge
 		eventTarget: () => MAIN, targetOfSource: () => MAIN, isRestart: () => false, paintRestartBanner: () => {}, convNote: () => {},
 		CV: { full: false }, chatPush: () => {}, termPush: () => {}, ownerish: () => false, ownerAct: () => ({}), paintDecision: () => {},
 		isLaneReport: () => false, LP: {}, laneRefresh: () => {}, scheduleState: () => {}, todoActivity: () => {},
-		matchMedia: () => ({ matches: !!opts.phone }), NT: { unread: opts.notices ?? 0 }, botName: "dotz",
+		matchMedia: () => ({ matches: !!opts.phone }), NT: { unread: opts.notices ?? 0 }, botName: "dotz", OWNER: new Set(["message", "lane_message", "_cmd"]),
 	};
 	const S = env.S as { orchestrator: { status: string } };
 	(env as any).targetInfo = () => ({ alive: true, status: S.orchestrator.status });
 	let api: any;
 	// renderBars repaints the badge, and paintAttn's toastAttn runs with it (as in the page).
 	env.renderBars = () => api.toastAttn();
-	api = new Function(...Object.keys(env), `${needs}\n${intake}\nreturn { noteStatus, toastAttn, onActivity, ingestMsg, chatUnreadCount, paintAttn };`)(...Object.values(env));
+	api = new Function(...Object.keys(env), `${tone}\n${needs}\n${intake}\nreturn { noteStatus, toastAttn, onActivity, ingestMsg, chatUnreadCount, paintAttn };`)(...Object.values(env));
 	api.noteStatus(); api.toastAttn();   // page load
 	return { api, S, notes };
 }
@@ -51,21 +52,17 @@ describe("채팅 nav badge", () => {
 		expect(api.chatUnreadCount(["web", "ch:1", "ch:2"], (t: string) => unread[t] ?? 0)).toBe(0);
 	});
 
-	test("an unread alert counts once: its notice is in the badge, the 알림 conversation's own unread is not added on top", () => {
+	test("an unread 알림 conversation counts once, like any listed conversation", () => {
 		const b = { hidden: true, textContent: "", title: "", parentElement: { setAttribute: () => {} } };
-		const { api } = page({ phone: true, notices: 2, badge: b, alertUnread: 3 });
+		const { api } = page({ phone: true, badge: b, alertUnread: 3 });
 		api.paintAttn();
-		expect(b.textContent).toBe("2");
+		expect(b).toMatchObject({ hidden: false, textContent: "1", title: "읽지 않은 대화 1개" });
 	});
 
-	test("on a phone the unread notices (알림 모아보기 lives in the chat list) are part of the badge; on a wide screen the bell keeps them", () => {
-		const badge = (phone: boolean) => {
-			const b = { hidden: true, textContent: "", title: "", parentElement: { setAttribute: () => {} } };
-			page({ phone, notices: 2, badge: b }).api.paintAttn();
-			return b;
-		};
-		expect(badge(true)).toMatchObject({ hidden: false, textContent: "2", title: "안 읽은 알림 2개" });
-		expect(badge(false).hidden).toBe(true);
+	test("the hub's unread notice count (no bell any more) never joins the badge", () => {
+		const b = { hidden: true, textContent: "", title: "", parentElement: { setAttribute: () => {} } };
+		page({ phone: true, notices: 2, badge: b }).api.paintAttn();
+		expect(b.hidden).toBe(true);
 	});
 });
 
@@ -81,6 +78,22 @@ describe("main chat 확인 필요 toast", () => {
 		api.ingestMsg(answer(4));
 		api.onActivity({ ts: at(5), source: "orchestrator", type: "turn_end" });
 		expect(notes.length).toBe(1);
+	});
+
+	test("the answer to a choice-button answer pops nothing; the next answer does", () => {
+		const { api, notes } = page();
+		api.ingestMsg({ ts: at(1), kind: "message", source: "web", text: "1) 바로 해요", picks: [{ q: "무엇을", n: 1, label: "바로 해요" }] });
+		api.ingestMsg(answer(2));
+		expect(notes).toEqual([]);
+		api.ingestMsg(answer(3));
+		expect(notes.map(n => n.ts)).toEqual([at(3)]);
+	});
+
+	test("an ordinary owner message does not silence its answer", () => {
+		const { api, notes } = page();
+		api.ingestMsg({ ts: at(1), kind: "message", source: "web", text: "안녕" });
+		api.ingestMsg(answer(2));
+		expect(notes.map(n => n.ts)).toEqual([at(2)]);
 	});
 
 	test("an answer landing in the chat the owner has open pops nothing", () => {
