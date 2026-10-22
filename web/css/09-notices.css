@@ -107,6 +107,36 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 }
 @media (prefers-reduced-motion: reduce) { .dk-bd, .dk-card { animation: none; } }
 
+/* Draft approval (hub/draft-approval.ts, 10-decision-card.js renderDraft): fills the screen so the draft and the choices both show. Phone: above the tab bar,
+   header and footer fixed, only the draft scrolls. Desktop: a large centered dialog. 30-notices.js dkFit keeps it above the keyboard (.kb). */
+.dk-full-card { --dk-fill: var(--layer); width: min(720px, calc(100% - 48px)); max-width: none; height: min(86dvh, 820px); max-height: none; margin: 0; border-radius: 20px; background: var(--card); }
+.dk-bd.dk-full { align-items: center; }
+.dc-dhd { padding: 16px 8px 12px 24px; }
+.dc-dhd .dc-tt { display: flex; flex-direction: column; gap: 2px; }
+.dc-dh { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 22px; }
+.dc-dh .dc-dr-v { font-size: 16px; word-break: keep-all; }
+.dc-dh .dc-dr-v.sub { font-weight: 500; }
+.dc-dbody { flex: 1; min-height: 0; margin: 0 16px; padding: 16px; border-radius: 12px; background: var(--dk-fill); overflow-y: auto; overscroll-behavior: contain; }
+.dc-dbody:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dc-dbody .dc-dr-b { max-height: none; margin: 0; overflow: visible; font-size: 15px; line-height: 24px; word-break: keep-all; }
+.dc-ft { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 16px; }
+.dc-ft .dc-st { padding: 0 4px; }
+.dc-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dc-act { display: flex; align-items: center; justify-content: center; min-height: 48px; border: 0; border-radius: var(--r-ctl); background: var(--dk-fill); color: var(--fg); font: 600 15px/22px var(--font); }
+.dc-act:active:not(:disabled) { background: var(--active); }
+.dc-act.main { grid-column: 1 / -1; min-height: 52px; background: var(--accent); color: var(--on-accent); }
+.dc-act.main:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, #000); }
+.dc-act:disabled { opacity: .55; }
+.dc-ft .dc-note, .dc-ft .dc-back { background: var(--dk-fill); }
+.dc-ft .dc-note { min-height: 88px; }
+@media (max-width: 639px) {
+  .dk-bd.dk-full { align-items: stretch; background: var(--bg); }
+  .dk-bd.dk-full.kb { bottom: auto; }
+  .dk-full-card { --dk-fill: var(--card); width: 100%; height: 100%; max-height: none; margin: 0; border-radius: 0; background: var(--bg); box-shadow: none; padding-top: env(safe-area-inset-top); }
+  .dc-dhd { padding-left: max(16px, env(safe-area-inset-left)); }
+  .dc-dbody { margin: 0 max(8px, env(safe-area-inset-left)); }
+}
+
 /* x (무시): a question that waits on the owner can be waved off. 44px thumb target on every surface, quiet --fg-3 until pressed. */
 .nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }
 .nt-x:active { background: var(--active); color: var(--fg); }

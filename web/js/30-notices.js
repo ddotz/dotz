@@ -270,8 +270,17 @@ function dkClose(restore = true) {
   DK.node.remove(); DK.node = DK.box = DK.dc = null; DK.nid = DK.ign = "";
   ovDone(DK.ov); DK.ov = null;
   document.removeEventListener("keydown", dkKey, true);
+  if (window.visualViewport) { visualViewport.removeEventListener("resize", dkFit); visualViewport.removeEventListener("scroll", dkFit); }
   if (restore && DK.opener && DK.opener.isConnected) DK.opener.focus({ preventScroll: true });
   DK.opener = null;
+}
+// A draft sheet fills the screen; with the keyboard open the visual viewport is shorter than the page, so the sheet follows it and the footer stays above the keys.
+function dkFit() {
+  const n = DK.node, v = window.visualViewport;
+  if (!n || !v) return;
+  const kb = window.innerHeight - v.height > 120;
+  n.style.top = kb ? `${v.offsetTop}px` : ""; n.style.height = kb ? `${v.height}px` : ""; n.style.bottom = kb ? "auto" : "";
+  n.classList.toggle("kb", kb);
 }
 function dkKey(ev) { if (ev.key === "Escape" && DK.node) { ev.preventDefault(); ev.stopPropagation(); dkClose(); } }
 function dkPaint() {
@@ -297,11 +306,12 @@ function dkOpen(dc, draft, nid, ign) {
   const waits = !!ign && !!ign.id && ntNeeds(ign);
   DK.ign = waits ? String(ign.id) : "";
   DK.dc = { ...dc, close: dkClose, draft: draft || null, ignore: waits ? () => ntIgnore(ign) : null };
-  DK.box = el("section", { class: "dcard dk-card", role: "dialog", "aria-label": "결정이 필요해요", tabindex: "-1" });
-  DK.node = el("div", { class: "dk-bd", onpointerdown: ev => { if (ev.target === DK.node) dkClose(); } }, DK.box);
+  DK.box = el("section", { class: draft ? "dcard dk-card dk-full-card" : "dcard dk-card", role: "dialog", "aria-label": draft ? "보낼 내용 확인" : "결정이 필요해요", tabindex: "-1" });
+  DK.node = el("div", { class: draft ? "dk-bd dk-full" : "dk-bd", onpointerdown: ev => { if (ev.target === DK.node) dkClose(); } }, DK.box);
   document.body.append(DK.node);
   DK.ov = ovOpen(() => dkClose(false));
   document.addEventListener("keydown", dkKey, true);
+  if (draft && window.visualViewport) { visualViewport.addEventListener("resize", dkFit); visualViewport.addEventListener("scroll", dkFit); dkFit(); }
   dkPaint();
   DK.box.focus({ preventScroll: true });   // not a row: a focus ring on the first option would read as a pick
 }
