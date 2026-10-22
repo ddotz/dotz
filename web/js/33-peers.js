@@ -4,7 +4,7 @@
 // The last list that arrived is kept in localStorage and drawn at once: coming back from the other computer the page starts from the service worker's
 // cached shell before the phone's network is up, and a first /api/peers that failed left the chip hidden until the next minute. A failed fetch is retried within seconds.
 const prCached = () => { const l = lsJson("dotz-peers", []); return Array.isArray(l) ? l.filter(p => p && typeof p.name === "string" && typeof p.url === "string") : []; };
-const PR = { list: prCached(), h: null, node: null, tries: 0, timer: 0, fresh: false };
+const PR = { list: prCached(), node: null, ov: null, opener: null, tries: 0, timer: 0, fresh: false };
 const PR_RETRY_MS = [2000, 5000, 15000];
 const prSelf = () => PR.list.find(p => p.self);
 const prOthers = () => PR.list.filter(p => !p.self);
@@ -94,6 +94,8 @@ function prPick(p) {
 }
 
 function prSheet() {
+  const x = el("button", { type: "button", class: "ib", "aria-label": "닫기", onclick: () => prClose() });
+  x.append(icon("close"));
   const rows = PR.list.map(p => {
     // Connection state is the pill on the right (not a second dot next to the accent dot of the computer being viewed), so the subtitle only says "지금 보고 있어요".
     const note = prText(p);
@@ -102,22 +104,47 @@ function prSheet() {
       note ? el("span", { class: `pr-bd${p.need > 0 ? " need" : ""}`, text: note }) : null,
       el("span", { class: `pr-st${p.online ? " ok" : ""}`, text: p.online ? "연결됨" : "연결 안 됨" }));
   });
-  clear(PR.h.box).append(
-    fsHead([el("span", { class: "fs-ey", text: "컴퓨터" })], { close: () => prClose() }),
-    el("div", { class: "fs-body" }, el("h2", { class: "ds-t", id: "pr-t", text: "어느 컴퓨터를 볼까요?" }), el("div", { class: "ds-m", text: "고르면 그 컴퓨터의 화면으로 넘어가요" }), el("div", { class: "pr-list" }, rows)));
+  clear(PR.node.firstElementChild).append(
+    el("div", { class: "ds-hd" }, el("span", { class: "ds-ey pr-ey", text: "컴퓨터" }), x),
+    el("div", { class: "ds-body" }, el("h2", { class: "ds-t", id: "pr-t", text: "어느 컴퓨터를 볼까요?" }), el("div", { class: "ds-m", text: "고르면 그 컴퓨터의 화면으로 넘어가요" }), el("div", { class: "pr-list" }, rows)));
+}
+
+function prKey(ev) {
+  if (!PR.node) return;
+  if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); prClose(); return; }
+  if (ev.key !== "Tab") return;
+  const f = [...PR.node.querySelectorAll("button:not([disabled])")];
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1], at = document.activeElement;
+  if (!PR.node.contains(at)) { ev.preventDefault(); first.focus(); }
+  else if (ev.shiftKey && at === first) { ev.preventDefault(); last.focus(); }
+  else if (!ev.shiftKey && at === last) { ev.preventDefault(); first.focus(); }
 }
 
 function prOpen() {
   if (PR.node) return;
-  const h = fsOpen({ labelledby: "pr-t", onClose: () => { if (PR.h === h) PR.h = PR.node = null; } });
-  PR.h = h; PR.node = h.node;
+  PR.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  PR.node = el("div", { class: "ds-bd", onpointerdown: ev => { if (ev.target === PR.node) prClose(); } }, el("div", { class: "ds-sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "pr-t" }));
+  document.body.append(PR.node);
+  // On the phone the tab bar stays free below the sheet, so tapping 홈 again (homeTabTap) can close it, as the 채팅 tab does with its list.
+  const nr = $("#nav").getBoundingClientRect();
+  if (nr.top > innerHeight / 2 && nr.height < innerHeight / 4) PR.node.style.bottom = `${Math.max(0, innerHeight - nr.top)}px`;
+  PR.ov = ovOpen(() => prClose(false));
+  document.addEventListener("keydown", prKey, true);
   prSheet();
   const cur = PR.node.querySelector(".pr-row.on") || PR.node.querySelector(".pr-row");
   if (cur) cur.focus({ preventScroll: true });
   prLoad();
 }
 
-function prClose(restore = true) { if (PR.h) PR.h.close(restore); }
+function prClose(restore = true) {
+  if (!PR.node) return;
+  PR.node.remove(); PR.node = null;
+  ovDone(PR.ov); PR.ov = null;
+  document.removeEventListener("keydown", prKey, true);
+  if (restore && PR.opener && PR.opener.isConnected) PR.opener.focus({ preventScroll: true });
+  PR.opener = null;
+}
 
 // This computer's own name (settings -> 이 컴퓨터 이름): GET/PUT /api/machine -> {name, custom, default}; empty = the hostname-derived default.
 // The other computers read it from this gateway's public /api/peer-info, so a rename shows up on their switcher within a minute.

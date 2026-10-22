@@ -64,6 +64,17 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .hc-none { margin-top: 8px; color: var(--fg-3); font: 400 14px/22px var(--font); }
 
 /* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option (recommended first). */
+/* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */
+.ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); animation: nt-in .14s ease-out; }
+.ds-sheet { display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: 20px 20px 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); animation: ds-up .18s ease-out; }
+.ds-hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 12px 0 20px; }
+.ds-ey { flex: 1; color: var(--warn); font: 600 13px/20px var(--font); }
+.ds-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 20px 12px; }
+@media (min-width: 700px) {
+  .ds-bd { align-items: center; }
+  .ds-sheet { border-radius: 20px; max-height: min(80vh, 760px); padding-bottom: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .ds-bd, .ds-sheet { animation: none; } }
 .ds-t { margin: 4px 0 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .ds-m { margin: 2px 0 12px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .ds-md { color: var(--fg-2); font: 400 14px/22px var(--font); overflow-wrap: anywhere; }
