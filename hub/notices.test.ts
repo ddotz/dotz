@@ -418,7 +418,7 @@ test("ignoring takes a question and its twin off the count, keeps them in the hi
 	expect(unreadCount()).toBe(before + 1);   // the decision, its twin and the repeat's twin
 	expect(frames()).toHaveLength(3);
 	// it can be answered after the undo
-	expect((await answerDecision(id, { n: 2 }, async () => {})).status).toBe(200);
+	expect((await answerDecision(id, { n: 1 }, async () => {})).status).toBe(200);
 	expect(stat(id).decision!.state).toBe("answered");
 });
 
