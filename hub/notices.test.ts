@@ -995,6 +995,60 @@ test("on load, message and result notices of a session stopped before the stop h
 });
 
 // The notice store is one per process: leave no question that still waits behind for the next test file (ignoring needs no clock, unlike resolving).
+// A session's closing report must not re-open a message notice the owner already read; a running session's new message still does.
+const laneFile = (name: string, rec: Record<string, unknown>) => {
+	mkdirSync(join(paths.lanes, name), { recursive: true });
+	writeFileSync(join(paths.lanes, name, "lane.json"), JSON.stringify({ name, title: name, startedAt: ts(), ...rec }));
+};
+
+test("a closing report of an exited session keeps a read message notice read, while a running session's new message re-opens it", () => {
+	laneFile("fin1", { status: "idle" });
+	const item = () => stored().find(n => n.key === "msg:lane:fin1")!;
+	emit("outbox", { ts: ts(), kind: "out", source: "lane:fin1", target: "lane:fin1", text: "첫 결과예요" });
+	markNoticesRead({ ids: [item().id] });
+	expect(item().read).toBe(true);
+	// still running: a new result re-opens it
+	emit("outbox", { ts: ts(), kind: "out", source: "lane:fin1", target: "lane:fin1", text: "새 결과예요" });
+	expect(item()).toMatchObject({ text: "새 결과예요", read: false });
+	markNoticesRead({ ids: [item().id] });
+	// the session exits, then its closing report arrives: the text updates, the notice stays read
+	laneFile("fin1", { status: "exited" });
+	emit("outbox", { ts: ts(), kind: "out", source: "lane:fin1", target: "lane:fin1", text: "세션을 닫습니다" });
+	expect(item()).toMatchObject({ text: "세션을 닫습니다", read: true });
+	// a closing report with no earlier notice is still a normal unread notice
+	laneFile("fin2", { status: "exited" });
+	emit("outbox", { ts: ts(), kind: "out", source: "lane:fin2", target: "lane:fin2", text: "처음 오는 마지막 보고예요" });
+	expect(stored().find(n => n.key === "msg:lane:fin2")).toMatchObject({ read: false });
+	rmSync(join(paths.lanes, "fin1"), { recursive: true, force: true });
+	rmSync(join(paths.lanes, "fin2"), { recursive: true, force: true });
+});
+
+test("a closing report posted to the session's own channel by the orchestrator keeps the channel notice read", () => {
+	writeFileSync(paths.channels, JSON.stringify({ chat: "1", lanes: { fin3: "9301" } }));
+	const item = () => stored().find(n => n.key === "msg:ch:9301")!;
+	try {
+		laneFile("fin3", { status: "idle" });
+		post("ch:9301", "진행 결과예요");
+		markNoticesRead({ ids: [item().id] });
+		post("ch:9301", "새 질문 결과예요");
+		expect(item().read).toBe(false);
+		markNoticesRead({ ids: [item().id] });
+		laneFile("fin3", { status: "exited" });
+		post("ch:9301", "세션이 닫혔어요");
+		expect(item()).toMatchObject({ text: "세션이 닫혔어요", read: true });
+	} finally {
+		rmSync(paths.channels, { force: true });
+		rmSync(join(paths.lanes, "fin3"), { recursive: true, force: true });
+	}
+});
+
+test("the owner's own message in a conversation (Discord or web) reads that conversation's earlier notices", () => {
+	post("ch:9302", "읽을 답이에요");
+	expect(stored().find(n => n.key === "msg:ch:9302")).toMatchObject({ read: false });
+	emit("inbox", { ts: ts(), kind: "message", source: "discord", channel: "ch:9302", text: "확인했어요" });
+	expect(stored().find(n => n.key === "msg:ch:9302")).toMatchObject({ read: true });
+});
+
 afterAll(() => {
 	for (const n of listNotices(NOTICE_CAP).items) if (needsAnswer(n)) ignoreNotice(n.id);
 });
