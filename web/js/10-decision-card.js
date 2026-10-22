@@ -53,8 +53,10 @@ function decisionOf(t) {
       if (OWNER.has(e.kind)) return null;
       // An alert or worklog post is not part of the conversation: it never cancels a question that still waits (the real case: a token-audit
       // alert and the night worklog landed after a decision, the card went away and the buttons greyed while the bell still held it open).
-      if ((e.kind !== "out" && e.kind !== "lane_report") || e.update_key || e.target === "worklog" || e.target === "alert") continue;
+      if ((e.kind !== "out" && e.kind !== "lane_report") || e.update_key) continue;
       const p = parseTone(noHandoff(String(e.text ?? ""))), choice = isChoiceMsg(parseChoices(p.text));
+      // In 알림 / 작업 기록 an ordinary post is not a reply: it never cancels a question that still waits above it.
+      if (isFixedT(t) && p.tone !== "ask" && !choice) continue;
       // A session's own message in its chat counts only as a choice block; its [ask] is the session's pendingAsk (above).
       if (typeof e.source === "string" && e.source.startsWith("lane:") && !(isLaneT(t) && p.tone !== "ask" && choice)) continue;
       if (p.tone !== "ask" && !choice) return null;
@@ -75,7 +77,7 @@ async function answerDecision(dc, text, opt) {
     // A card with one block whose question is a decision notice answers through the bell's path (30-notices.js), so both stay in step.
     const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
     if (nd) await ntPost(nd, opt.n);
-    const r = nd ? null : await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
+    const r = nd ? null : await api("/api/message", "POST", { text, ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
     DC.st[dc.key] = "sent"; chatStick = true; scrollChat(true);
   } catch (e) { delete DC.st[dc.key]; delete DC.picks[dc.key]; toast(e.message, true); }

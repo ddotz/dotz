@@ -1,13 +1,27 @@
 /* ---------- data: load history, take live events ---------- */
+// 알림 / 작업 기록: a post edited in place (update_key, e.g. a lane's worklog line) is one message, its newest version.
+const keyedOut = e => e.kind === "out" && !!e.update_key;
+function dedupKeyed(s) {
+  const last = new Map();
+  for (const e of s.msgs) if (keyedOut(e)) last.set(e.update_key, e);
+  s.msgs = s.msgs.filter(e => !keyedOut(e) || last.get(e.update_key) === e);
+}
+// The live version of a keyed post replaces the older one; returns the replaced event (so its unread mark is not counted twice).
+function keyedReplace(s, e) {
+  if (!keyedOut(e)) return null;
+  const i = s.msgs.findIndex(o => o !== e && keyedOut(o) && o.update_key === e.update_key);
+  return i < 0 ? null : s.msgs.splice(i, 1)[0];
+}
 function ingestMsg(e) {
   const t = eventTarget(e);
   if (!t) return;
   const s = ts(t), k = msgKey(e);
   if (s.mk.has(k)) return;
   s.mk.add(k); s.msgs.push(e);
+  const was = isFixedT(t) ? keyedReplace(s, e) : null;
   if (s.msgs.length > 400) s.mk.delete(msgKey(s.msgs.shift()));
   if (isRestart(e)) paintRestartBanner();
-  convNote(e, t);
+  convNote(e, t, was);
   if (t === target && s.hLoaded && CV.full) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }   // CV.full: drawn (until then the draw takes it from msgs)
   if (t === target) paintDecision();
   if (isLaneT(t) && isLaneReport(e) && LP[t.slice(5)]) laneRefresh(LP[t.slice(5)]);
@@ -16,7 +30,7 @@ function ingestMsg(e) {
 // The main chat's and a project's finished turn is the orchestrator's answer stored in that chat (not a progress note), never the
 // turn's end: a turn can end with nothing sent yet (answer deferred to a background worker, keepalive, a worker's wake-up run;
 // owner 2026-10-21: the toast came before any message). A lane's finished turn stays its turn_end (its report has its own toast).
-const chatAnswer = (t, e) => !isLaneT(t) && e.kind === "out" && e.source === "orchestrator" && !e.update_key;
+const chatAnswer = (t, e) => !isLaneT(t) && !isFixedT(t) && e.kind === "out" && e.source === "orchestrator" && !e.update_key;
 // The orchestrator's activity is also the log of every loaded project target; a project's 대화 shows only its messages,
 // since the same process also works for the main chat and other channels.
 function ingestAct(a) {
@@ -34,8 +48,8 @@ async function loadTarget(t) {
   if (s.loading) return s.loading;
   s.loading = (async () => {
     await Promise.all([
-      api(`/api/history?target=${enc(t)}&limit=150`).then(r => { for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); s.herr = false; }, () => { s.herr = true; }),
-      api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k)) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
+      api(`/api/history?target=${enc(t)}&limit=150`).then(r => { for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
+      isFixedT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k)) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
     ]);
     s.hLoaded = s.aLoaded = true;
     if (t === MAIN) paintRestartBanner();
@@ -94,7 +108,7 @@ function renderAll0(keepScroll) {
       const m = M[j++];
       chatPush({ m }, true);
       if (ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
-    } else { const a = A[i++]; if (!isProjT(target)) chatPush({ a }, true); termPush(a, true); }
+    } else { const a = A[i++]; if (!isProjT(target) && !isFixedT(target)) chatPush({ a }, true); termPush(a, true); }
   }
   if (!tl.children.length) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));
   if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동이 없어요" }));

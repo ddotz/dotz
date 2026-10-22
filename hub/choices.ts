@@ -7,6 +7,12 @@
 //   ("1 and 2"): there is no single answer to click, so no options are returned. Fewer than 2 options: none.
 // - "← 추천" / "← recommended" anywhere on the option line marks the recommended one.
 // - `question` is the last non-empty line before the first option, without a leading status marker.
+// The choice block a gateway job appends to an issue report on alert: "결정: <question>", then 2-4 options, the first one recommended,
+// each a `**n) name**` line and a one-line consequence. The web's decision buttons and the decision notices read exactly this shape.
+export function issueBlock(question: string, options: { name: string; result: string }[]): string {
+	return [`결정: ${question}`, ...options.flatMap((o, i) => [`**${i + 1}) ${o.name}**${i === 0 ? " ← 추천" : ""}`, o.result])].join("\n");
+}
+
 export type ChoiceOption = { n: number; label: string; recommended: boolean };
 type Choices = { question?: string; options: ChoiceOption[] };
 

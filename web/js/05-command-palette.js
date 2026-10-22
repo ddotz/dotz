@@ -85,6 +85,7 @@ function go(name, tgt) {
   chatList = name === "chat" && tgt === "list" && narrowChat();
   if (name === "chat" && tgt === "list") tgt = undefined;
   if (tgt && name !== "project" && tgt !== target && validTarget(tgt)) setTarget(tgt);
+  if (name === "activity" && isFixedT(target)) name = "chat";   // 알림 / 작업 기록 have no terminal view
   if (name !== current) prevView = current;
   current = name;
   if (convSync()) renderAll();

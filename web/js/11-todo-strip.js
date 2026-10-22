@@ -1,6 +1,7 @@
 /* ---------- todo strip: the target's plan (GET /api/todo), one line above the timeline ---------- */
 const TD = { by: {}, open: {}, timer: 0, calls: new Set() };
 async function loadTodo(t = target) {
+  if (isFixedT(t)) { TD.by[t] = []; if (t === target) { paintTodo(); if (CV.key && !CV.placed) renderAll(); } return; }   // no plan in 알림 / 작업 기록
   let r;
   try { r = await api(`/api/todo?target=${enc(t)}`); } catch { TD.by[t] = TD.by[t] || []; r = null; }
   if (r) TD.by[t] = Array.isArray(r.phases) ? r.phases : [];
@@ -42,7 +43,7 @@ function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; C
 function speakerOf(e) {
   if (e.kind === "message" || e.kind === "lane_message" || e.kind === "_cmd") return `owner|${e.kind === "_cmd" ? "cmd" : e.source ?? ""}`;
   if (e.kind === "lane_report") return `lane|${e.lane ?? ""}`;
-  if (e.kind === "out" && e.target === "alert") return "alert";
+  if (e.kind === "out" && (e.target === "alert" || e.target === "worklog")) return e.target;
   if (e.kind === "out") return "bot";
   return "";
 }
@@ -170,8 +171,6 @@ function msgNode(e) {
     case "schedule": case "watch":
       return el("div", { class: "sn" }, el("span", { class: "tag", text: SYS_LABEL[e.kind] }), el("div", { class: "st" }, mdNode(text), el("div", { class: "mt", text: hm })));
     default: {
-      // Worklog posts are kept in the bell (30-notices.js), not in the chat: a finished session shows as its result card.
-      if (e.kind === "out" && e.target === "worklog") return null;
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
       // A session's report or answer is a full message; only the gateway's progress line (update_key) stays one compact note.
       const laneMsg = e.kind === "lane_report" || (e.kind === "out" && fromLane);
@@ -184,16 +183,17 @@ function msgNode(e) {
         n.onclick = () => { if (!getSelection().toString()) n.classList.toggle("open"); };
         return n;
       }
-      const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : isRestart(e) ? "게이트웨이" : botName;
+      const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : e.target === "worklog" ? "작업 기록" : isRestart(e) ? "게이트웨이" : botName;
       if (e.kind === "out" && e.card && Array.isArray(e.card.facts)) return el("div", { class: "bm" }, el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null), cardNode(e.card));
       const card = e.kind === "lane_report" && !isLaneT(target) ? " rep" : e.target === "alert" ? " alert" : "";
       const lt = laneMsg && tone ? LANE_TONE[tone] : null;
       const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null, lt ? el("span", { class: `tag ${lt[0]}`, text: lt[1] }) : null);
-      if (e.target === "alert") {
+      const pc0 = e.kind === "out" || e.kind === "lane_report" ? parseChoices(parsed) : null, pc = pc0 && (tone === "ask" || isChoiceMsg(pc0)) ? pc0 : null;
+      // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, with its buttons.
+      if (e.target === "alert" && !(pc && pc.blocks.length)) {
         const line = humanAlert(body);
         return el("div", { class: `bm${card}` }, head, mdNode(line), line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
       }
-      const pc0 = e.kind === "out" || e.kind === "lane_report" ? parseChoices(parsed) : null, pc = pc0 && (tone === "ask" || isChoiceMsg(pc0)) ? pc0 : null;
       const fl = fileLines(body), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text), files = pathFiles(md);
       if (e.kind === "out" && !isRestart(e)) streamIn(md, `${e.ts}|${text.length}`, e.ts);
       return el("div", { class: `bm${card}` }, head, md, filesNode(fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
@@ -241,7 +241,7 @@ function chatPush(en, bulk) {
     // One progress note per target+key (newest text at the newest position; a session keeps only its newest note);
     // the answer to that target (or its lane report) drops them.
     if (pkey) { dropProgress(pkey); if (laneT) for (const [k, v] of CS.prog) if (v.target === laneT) dropProgress(k); }
-    else if (e.kind === "lane_report" || e.kind === "out") {
+    else if (!isFixedT(target) && (e.kind === "lane_report" || e.kind === "out")) {
       const t = e.kind === "lane_report" || laneT ? et : String(e.target ?? "");
       for (const [k, v] of CS.prog) if (v.target === t) dropProgress(k);
     }

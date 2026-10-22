@@ -6,17 +6,18 @@ import { join } from "node:path";
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
 const cut = (src: string, from: string, to: string) => src.slice(src.indexOf(from), src.indexOf(to));
 
-function page(opts: { current?: string; phone?: boolean; notices?: number; badge?: unknown } = {}) {
+function page(opts: { current?: string; phone?: boolean; notices?: number; badge?: unknown; alertUnread?: number } = {}) {
 	const needs = cut(web("09-needs-you.js"), "const SEEN_KEY", "/* ---------- usage strip");
 	const data = web("13-data.js");
-	const intake = cut(data, "function ingestMsg", "async function loadTarget") + cut(data, "function onActivity", "/* ---------- switching");
+	const intake = cut(data, "// 알림 / 작업 기록: a post edited", "async function loadTarget") + cut(data, "function onActivity", "/* ---------- switching");
 	const MAIN = "web", notes: { title: string; text: string; ts: string }[] = [];
 	const store = new Map<string, string>();
 	const TS: Record<string, any> = {};
+	if (opts.alertUnread) TS.alert = { msgs: [], mk: new Set(), acts: [], ak: new Set(), unread: opts.alertUnread };
 	const env: Record<string, unknown> = {
 		localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) },
 		document: { visibilityState: "visible" },
-		target: MAIN, current: opts.current ?? "home", MAIN,
+		target: MAIN, current: opts.current ?? "home", MAIN, isFixedT: (t: string) => t === "alert" || t === "worklog",
 		S: { orchestrator: { status: "working" }, lanes: [] as { name: string; status: string }[] },
 		convListing: () => false, projTargets: () => [], liveTargets: () => [MAIN],
 		isProjT: (t: string) => /^ch:\d+$/.test(t), isLaneT: (t: string) => t.startsWith("lane:"),
@@ -48,6 +49,13 @@ describe("채팅 nav badge", () => {
 		expect(api.chatUnreadCount(["web", "ch:1", "ch:2"], (t: string) => unread[t] ?? 0)).toBe(1);
 		unread["ch:1"] = 0;
 		expect(api.chatUnreadCount(["web", "ch:1", "ch:2"], (t: string) => unread[t] ?? 0)).toBe(0);
+	});
+
+	test("an unread alert counts once: its notice is in the badge, the 알림 conversation's own unread is not added on top", () => {
+		const b = { hidden: true, textContent: "", title: "", parentElement: { setAttribute: () => {} } };
+		const { api } = page({ phone: true, notices: 2, badge: b, alertUnread: 3 });
+		api.paintAttn();
+		expect(b.textContent).toBe("2");
 	});
 
 	test("on a phone the unread notices (알림 모아보기 lives in the chat list) are part of the badge; on a wide screen the bell keeps them", () => {

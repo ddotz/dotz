@@ -3,6 +3,14 @@ import { join } from "node:path";
 import { ADDRESS, IDENTITY_FILE, NAME, paths, tzLabel } from "./config.ts";
 import type { Catalog, Leads } from "./i18n-en.ts";
 
+// How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
+// decision buttons and decision notices read (web/js/10-decision-card.js, hub/choices.ts).
+const koIssue = `dotz_send alert로 보고하세요: 문제를 한 줄로 쓰고, 이어서 이 모양의 선택지 블록(2~4개)을 붙이세요.
+결정: <질문>
+**1) <이름>** ← 추천
+<한 줄 결과>
+**2) <이름>**
+<한 줄 결과>`;
 const koLeads: Leads = {
 	youAre: "[dotz gateway] 당신은",
 	replayLead: "[dotz gateway] 게이트웨이가 다시 시작돼서 이 요청에 아직 답하지 못했어요",
@@ -158,8 +166,8 @@ export const ko: Catalog = {
 	laneReportSteer: body => `${koLeads.laneReportLead}. 처리가 필요하면(전달할 결과, 질문, 실패) 지금 처리하세요. dotz_send로 전달하거나 dotz_lane으로 세션에 답한 뒤 하던 일을 이어가세요. 이 보고는 나중에 다시 오지 않아요.\n\n${body}`,
 	liveStatus: (minutes, since, now, lanes, workers) => `[run] ${minutes}분째 작업 중이에요.${since ? `\n그동안: ${since}` : ""}${now ? `\n지금: ${now}` : ""}${lanes ? `\n세션: ${lanes}` : ""}${workers ? `\n서브에이전트: ${workers}` : ""}`,
 	liveMore: n => `외 ${n}`,
-	inboxWatchNoChannel: (watch, reason) => `[dotz inbox] watch ${watch} ${reason} (이 턴을 기다리는 사람이 없어요. 중요할 때만 dotz_send로 오너에게 알리세요):`,
-	inboxWatch: (watch, reason, ch) => `[dotz inbox] watch ${watch} ${reason}, 작업 채널 ch:${ch} (최종 답이 그 채널로 가요. 아무것도 올리지 않으려면 "-" 한 글자만 답하세요):`,
+	inboxWatchNoChannel: (watch, reason) => `[dotz inbox] watch ${watch} ${reason} (이 턴을 기다리는 사람이 없어요). 실패, 이상, 깜빡임이면 ${koIssue}\n문제가 아니면 alert에는 올리지 말고 dotz_send worklog에 한 줄만 올리세요:`,
+	inboxWatch: (watch, reason, ch) => `[dotz inbox] watch ${watch} ${reason}, 작업 채널 ch:${ch} (최종 답이 그 채널로 가요. 아무것도 올리지 않으려면 "-" 한 글자만 답하세요). 실패, 이상, 깜빡임이면 ${koIssue}\n문제가 아니면 alert에는 올리지 말고 dotz_send worklog에 한 줄만 올리세요:`,
 	inboxMail: ch => `[dotz inbox] 작업 채널 ch:${ch}에 새 메일 (최종 답이 그 채널로 가요. 메일마다 스레드를 하나씩 dotz_channel thread로 열되 kind는 발신자, name은 메일 제목으로 하고 거기에 요약을 올리세요. 상대가 오너에게 뭔가 원하면 추천 답장과 함께 알리세요. 읽기와 처리는 zele로 하고, 보내기는 오너가 OK한 뒤에만 하세요. 아무것도 올리지 않으려면 "-" 한 글자만 답하세요):`,
 	inboxSchedule: (id, every, channel) => `[dotz inbox] 예약 항목 (${id}${every ? `, ${every}분마다` : ""}) - 지금 처리하세요. 최종 답은 ${channel}로 가요:`,
 	inboxThread: (thread, parent) => ` (#${parent}의 스레드 "${thread}". 답은 스레드로 가요)`,
@@ -176,9 +184,9 @@ export const ko: Catalog = {
 짧게 이렇게 하세요:
 1. 잘못됐거나 비용이 너무 든 것을 찾으세요: 오너의 정정이나 반복된 요청, 실패했거나 멈춘 세션, 알림, 캐시 재작성.
 2. 진짜 교훈마다 ${lessons}에 날짜가 붙은 줄을 하나 추가하거나 고치세요(30줄 안팎으로 유지하고, 더 이상 맞지 않거나 규칙이 이미 다루는 교훈은 지우세요). 위 오너의 정정이나 반응마다 ${paths.observations}에 출처가 붙은 줄을 하나 남기세요. 오래 갈 오너의 선호나 맥락(분명히 말했거나 거기서 두 번 보인 것)은 ${paths.owner}로, 오너가 직접 한 '하지 마'는 원문 그대로 출처와 함께 ${paths.boundaries}로 옮기세요. 오너가 말하거나 한 것만 적고, 다른 사람에 대해서는 여기에 쓰지 마세요.
-3. RULES.md나 LESSONS.md가 이미 다루는데도 되풀이된 일은 글을 더 쓴다고 나아지지 않아요. 오너에게 (dotz_send alert로) 전달 경로를 고치는 구체적인 방법(어느 파일, 훅, 브리프 footer, 확인을 바꿀지)을 보내세요.
-4. 여기서 RULES.md는 절대 수정하지 마세요. 규칙 변경은 alert로 오너에게 제안하고 답을 기다리세요.
-5. 마지막으로 dotz_send worklog 글 하나를 한국어로, identity의 Notices 문체로 올리세요: 첫 줄은 "야간 정리", 이어서 한 일을 쉬운 말로 "- " 글머리 항목으로(예: "- 배운 점 1개 LESSONS.md에 정리했어요", "- 고칠 거 제안 1건은 알림에 올렸어요"), 최대 4개, 영어로 된 개수 표기는 쓰지 마세요. 그 밖에는 아무것도 보내지 않아요.`,
+3. 문제가 있으면(실패, 이상, 되풀이된 실수, 토큰 누수, RULES.md나 LESSONS.md가 이미 다루는데도 되풀이된 일) alert로 한 번만 ${koIssue}
+4. 여기서 RULES.md는 절대 수정하지 마세요. 규칙 변경은 선택지로 올리고 답을 기다리세요.
+5. 마지막으로 dotz_send worklog에 한 줄만 올리세요(identity의 Notices 문체, "야간 정리: ..."로 시작). 문제가 없었다면 이 한 줄이 전부예요. alert에는 아무것도 보내지 마세요.`,
 
 	staleObservations: stale => `\n\n${paths.observations}에 90일 넘은 줄이 있어요. 지우세요(아직 맞는 패턴은 먼저 owner.md나 LESSONS.md로 옮기기):\n${stale.join("\n")}`,
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,
