@@ -12,10 +12,9 @@ const accMut = (btn, call, msg, close) => busy(btn, async () => { ACC = await ca
 async function accCopy(text) { try { await navigator.clipboard.writeText(text); toast("복사했어요"); } catch { toast("복사하지 못했어요", true); } }
 function accTags(a) {
   const t = [];
+  // a.current: the account requests really use (OmO skips a blocked one); blocked_tag: "한도 걸림 · 01:00까지"
   if (a.current) t.push(["사용 중", "pri"]);
-  if (a.blocked === "rate_limit") t.push(["한도 걸림", "warn"]);
-  else if (a.blocked === "auth_error") t.push(["로그인 풀림", "err"]);
-  else if (a.blocked) t.push(["쓸 수 없음", "err"]);
+  if (a.blocked) t.push([a.blocked_tag || "쓸 수 없음", a.blocked === "rate_limit" ? "warn" : "err"]);
   else if (!a.current) t.push(["쓸 수 있음", "ok"]);
   return t;
 }
@@ -25,21 +24,17 @@ function accountSection() {
   const tx = (hd, ...sup) => el("span", { class: "tx" }, hd ? el("div", { class: "hd", text: hd }) : null, sup.length ? el("div", { class: "sup" }, ...sup) : null);
   const rows = ACC.accounts.map(a => {
     const label = a.label || a.alias || a.name;
-    const sub = [a.name !== label ? a.name : "", a.blocked_until && a.blocked ? `${kstStamp(Date.parse(a.blocked_until))}에 풀려요` : "", a.five_hour_left != null ? `5시간 ${pct(a.five_hour_left)} 남음` : "", a.seven_day_left != null ? `주간 ${pct(a.seven_day_left)} 남음` : ""].filter(Boolean).join(" · ");
+    const sub = [a.name !== label ? a.name : "", a.five_hour_left != null ? `5시간 ${pct(a.five_hour_left)} 남음` : "", a.seven_day_left != null ? `주간 ${pct(a.seven_day_left)} 남음` : ""].filter(Boolean).join(" · ");
     return el("button", { class: "li tap", type: "button", onclick: () => accDialog(a) }, tx(label, sub), ...accTags(a).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t })), icon("chev", "lead"));
   });
-  const who = dec && (dec.label || (dec.account && accLabel(dec.account)));
-  const why = !dec ? "" : dec.reason && dec.source_text && dec.reason.startsWith(dec.source_text) ? dec.reason : [dec.source_text, dec.reason].filter(Boolean).join(" · ");
-  rows.push(el("div", { class: "li" }, tx(who ? `지금은 ${who}` : "지금 쓰는 계정이 없어요", why),
-    dec && dec.source === "manual" ? el("button", { class: "btn text", type: "button", onclick: ev => accMut(ev.currentTarget, () => api("/api/accounts/use", "POST", { account: "auto" }), "자동으로 돌렸어요") }, "자동으로 돌리기") : null));
-  rows.push(el("div", { class: "li" }, tx("전환 규칙"), el("button", { class: "btn tonal", type: "button", onclick: () => rulesDialog() }, "편집")));
-  if (ACC.manual_text) rows.push(el("div", { class: "li" }, tx(ACC.manual_text), el("span", { class: "tag", text: "직접" })));
-  if (lines.length) for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));
-  else if (!ACC.manual_text) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요." }))));
+  // one row for the pick: who, and what really happens (the pick may be blocked and requests go to another account)
+  const ch = ACC.chosen;
+  rows.push(el("div", { class: "li" }, tx(ch ? `고른 계정: ${ch.label}` : "고른 계정이 없어요", ch ? ch.text : ""),
+    ch && ch.source === "manual" ? el("button", { class: "btn text", type: "button", onclick: ev => accMut(ev.currentTarget, () => api("/api/accounts/use", "POST", { account: "auto" }), "자동으로 돌렸어요") }, "자동으로 돌리기") : null));
+  rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), el("button", { class: "btn tonal", type: "button", onclick: () => rulesDialog() }, "편집")));
+  for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));
   const run = sc && [sc.timeout_ms ? `${Math.round(sc.timeout_ms / 1000)}초 안에 끝나요` : "", sc.every_minutes ? `${sc.every_minutes}분마다` : ""].filter(Boolean).join(" · ");
-  rows.push(sc && sc.path
-    ? el("button", { class: "li tap", type: "button", onclick: () => accCopy(sc.path) }, tx("스크립트", el("code", { text: sc.path }), run ? ` · ${run}` : ""))
-    : el("button", { class: "li tap", type: "button", onclick: () => accCopy(ACC.files.rules) }, tx("스크립트 없음", "쓰려면 ", el("code", { text: ACC.files.rules }), "에 스크립트를 넣어요")));
+  if (sc && sc.path) rows.push(el("button", { class: "li tap", type: "button", onclick: () => accCopy(sc.path) }, tx("스크립트", el("code", { text: sc.path }), run ? ` · ${run}` : "")));
   const last = sc && sc.last;
   if (last) rows.push(el("div", { class: "li" }, tx(last.error || last.error_text ? "마지막 실행이 실패했어요" : `마지막 결과 · ${last.label || (last.account ? accLabel(last.account) : "고르지 않음")}`, [last.error_text || last.reason, last.at ? kstStamp(Date.parse(last.at)) : ""].filter(Boolean).join(" · "))));
   return [el("div", { class: "sec", text: "계정" }), el("div", { class: "list" }, ...rows)];

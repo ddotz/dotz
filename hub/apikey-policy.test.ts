@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { allowFile, apiKeyBan, withoutApiKeys } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
-import { Chain, resetFallbackState } from "./fallback.ts";
+import { Chain, entryView, resetFallbackState } from "./fallback.ts";
 
 const pin = (account: string) =>
 	writeFileSync(join(process.env.OMO_CODING_AGENT_DIR!, "auth.json"), JSON.stringify({ "anthropic-subscription": { type: "oauth", pinned: account, accounts: {} }, anthropic: { type: "api_key", key: "sk-test" } }));
@@ -48,4 +48,13 @@ test("the owner's lift file allows API keys under the pin until its expiry, then
 	rmSync(allowFile());
 	expect(apiKeyBan()).toBe("miseol-shared");
 	pin("default");
+});
+
+test("the settings view says an API-key entry is down because of the pin, and not otherwise", () => {
+	resetFallbackState();
+	const entry = { model: "anthropic/claude-opus-5-5", key_file: "anthropic-api-key" };
+	pin("miseol-shared");
+	expect(entryView(entry)).toMatchObject({ down: "error", down_reason: "api_key_ban", down_account: "miseol-shared" });
+	pin("default");
+	expect(entryView(entry).down_reason).toBeUndefined();
 });

@@ -85,8 +85,8 @@ test("accountsBody carries labels, states, decision, rules as text, manual pick,
 	writeRules({ manual: { account: "회사 계정", until: "2026-10-21T18:00:00+09:00" }, rules: [{ name: "근무 시간", when: { days: ["mon", "tue", "wed", "thu", "fri"], from: "09:00", to: "18:00" }, do: { pin: "work" } }], script: { path: "/tmp/pick.sh" } });
 	const b = accountsBody(WED_10);
 	expect(b.accounts).toEqual([
-		{ name: "default", alias: "개인 계정", label: "개인 계정", current: true, blocked: null, blocked_until: null, five_hour_left: 62, seven_day_left: 80 },
-		{ name: "work", alias: "회사 계정", label: "회사 계정", current: false, blocked: "rate_limit", blocked_until: new Date(WED_10 + 3_600_000).toISOString(), five_hour_left: null, seven_day_left: null },
+		{ name: "default", alias: "개인 계정", label: "개인 계정", current: true, blocked: null, blocked_until: null, blocked_tag: null, five_hour_left: 62, seven_day_left: 80 },
+		{ name: "work", alias: "회사 계정", label: "회사 계정", current: false, blocked: "rate_limit", blocked_until: new Date(WED_10 + 3_600_000).toISOString(), blocked_tag: expect.stringContaining("11:00"), five_hour_left: null, seven_day_left: null },
 	]);
 	expect(b.decision).toMatchObject({ account: "default", label: "개인 계정", source: "auto" });
 	expect(b.rules.rules?.[0]?.name).toBe("근무 시간");
@@ -97,7 +97,8 @@ test("accountsBody carries labels, states, decision, rules as text, manual pick,
 	expect(Object.keys(b.files).sort()).toEqual(["aliases", "decisions", "rules"]);
 	for (const f of Object.values(b.files)) expect(f.startsWith("/")).toBe(true);
 	expect(Array.isArray(b.switches)).toBe(true);
-	expect(Object.keys(b).sort()).toEqual(["accounts", "decision", "files", "manual_text", "rules", "rules_text", "script", "switches"]);
+	expect(Object.keys(b).sort()).toEqual(["accounts", "chosen", "decision", "files", "manual_text", "rules", "rules_text", "script", "switches", "used"]);
+	expect(b.chosen).toMatchObject({ name: "work", source: "manual", blocked: "rate_limit", used_instead: { name: "default" } });
 });
 
 test("accountsBody switches carry from_label/to_label/kind_text and labeledAccountView mirrors them", () => {

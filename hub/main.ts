@@ -20,7 +20,7 @@ import { resolveAllowed } from "./files.ts";
 import { approvesBudget, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
 import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
-import { switchNotice } from "./accounts-api.ts";
+import { announceUsedChanges } from "./accounts-api.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { applyAccountChange as holdOrchestratorKeepalive, orch, orchBusy, setIdleHandler as setOrchIdleHandler, start as startOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
 import { queuedTargets } from "./queue.ts";
@@ -253,8 +253,10 @@ if (restarted) {
 onAccountSwitch(s => {
 	forgetAccountUsage(s.to);
 	if (runtimeFor("orchestrator").id === "omo") holdOrchestratorKeepalive();
-	void out(discord.status.enabled ? "worklog" : "web", switchNotice(s), undefined, { source: "gateway" }).catch(e => log(`account switch notice failed: ${e}`));
 });
+// The account requests really use changed (a limit, the OmO pin, a rule): one alert saying from which to which and why; the
+// owner's own pick in the web stays quiet.
+announceUsedChanges();
 setUsageSource(usageSnapshot);
 void accountTick().catch(e => log(`account check failed: ${(e as Error).message}`));
 setInterval(() => void accountTick().catch(e => log(`account check failed: ${(e as Error).message}`)), 60_000);
