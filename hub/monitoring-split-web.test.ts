@@ -35,7 +35,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		ntById: (id: string) => notices.find(n => n.id === id), ntAt: (n: N) => Date.parse(String(n.updated || n.ts)), ntPlain: (s: unknown) => String(s ?? ""),
 		KST: {}, kstDay: (t: string) => String(t).slice(0, 10), kstHM: (t: string) => String(t).slice(11, 16), dayLabel: () => "어제", ntTime: (t: string) => String(t).slice(11, 16),
 		convPreview: (s: string) => String(s ?? "").split("\n")[0], el, icon: (k: string) => el("i", { class: `ic ${k}` }),
-		msgNode: (e: N) => { drawn.push(e); return el("div", { class: "bm alert" }, el("div", { class: "mt" }, el("span", { class: "mn", text: "알림" }), " · hm"), el("p", { text: e.text })); },
+		resultCard: (o: N) => { drawn.push({ text: o.title ?? o.text }); return el("div", { class: "bm alert rc" }, el("span", { class: "rc-src", text: String(o.src) })); },
 		cardNode: () => { throw new Error("a fact card is not a conversation message"); },
 		ts: () => ({ unread: 0 }), narrowChat: () => false, go: (...a: string[]) => went.push(a), current: "monitoring", enc: encodeURIComponent,
 		api: async () => ({}), homeSoon: () => {}, titles: { monitoring: "모니터링" }, ntIsDec: (n: N) => n.kind === "decision" && !!n.decision, ntNeeds: () => false,
@@ -92,14 +92,14 @@ describe("모니터링 lists only what a watch, a schedule or an integration pro
 });
 
 describe("a watch row", () => {
-	test("reads as words: a readable title, the newest result without the name in front, the raw name only in the header", () => {
+	test("reads as words: a readable title, the newest result without the name in front, no raw name anywhere", () => {
 		const m = load(store(), integrations, monitors), row = m.monItems().find(i => i.key === "m:node security updates")!;
 		expect(row.name).toBe("node security updates");
 		expect(row.hint).not.toContain("node-security-updates");
 		expect(row.hint).toBe("실패했어요");
 		const head = m.monHead(row).map(words).join("|");
 		expect(head).toContain("node security updates");
-		expect(head).toContain("node-security-updates");
+		expect(head).not.toContain("node-security-updates");
 	});
 
 	test("a label-less watch name becomes words", () => {
@@ -121,7 +121,7 @@ describe("a watch row", () => {
 		expect(nodes.length).toBe(3);
 		for (const n of nodes) {
 			expect(n.cls.split(" ")).toContain("bm");
-			expect(words(n.querySelector(".mn"))).toBe("node security updates");
+			expect(words(n.querySelector(".rc-src"))).toBe("node security updates");
 		}
 		expect(m.drawn.map(e => String(e.text).split("\n")[0])).toEqual(["결과가 바뀌었어요", "실패했어요", expect.any(String)]);
 	});

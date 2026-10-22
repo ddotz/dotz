@@ -122,16 +122,9 @@ function monDecisionNode(n) {
   return el("div", { class: "bm alert", "data-nid": n.id }, el("div", { class: "mt" }, el("span", { class: "mn", text: ntPlain(n.title) || "답변이 필요해요" }), ` · ${monWhen(n)}`, open ? " " : null, open ? monTag("ask") : null),
     mdNode(fl.text), filesNode(fl.files), el("div", { class: "dcm fx mon-dc" }, ...rows), end);
 }
-// Any other notice is drawn like a message of the 알림 conversation (11-todo-strip.js msgNode), with its own title in place of the speaker.
+// Any other notice is a result card (11-resultcard.js): the monitor's name, the time, the result in words, the original folded.
 // A monitor's own report drops the monitor's name in front of its first line (the card already says whose it is).
-function monCard(name, at, text, tone) {
-  const node = msgNode({ kind: "out", target: "alert", ts: at, text });
-  if (!node) return null;
-  const head = node.querySelector(".mt"), mn = head && head.querySelector(".mn");
-  if (mn) mn.textContent = name;
-  if (head) { const tag = monTag(tone); if (tag) head.append(" ", tag); }
-  return node;
-}
+const monCard = (name, at, text, tone, title) => resultCard({ src: name, at, text, title, tag: monTag(tone) });
 function monNoticeNode(n, names = []) {
   if (ntIsDec(n)) return monDecisionNode(n);
   const node = monCard(ntPlain(names[0] || n.title) || "알림", n.updated || n.ts, monStrip(String(n.text || ""), names), n.tone);
@@ -143,16 +136,15 @@ function monNoticeNode(n, names = []) {
 // A mail or chat of an integration is its own conversation in 채팅: here one line of it and the way in.
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = ts(t).unread;
-  const body = m ? [el("div", { class: "ml-from", text: mailSender(m.from) }), el("div", { class: "ml-subj", text: m.subject })] : [el("div", { text: last ? last.text : "" })];
-  return el("div", { class: "bm alert" }, el("div", { class: "mt" }, el("span", { class: "mn", text: label }), last ? ` · ${monTime(last.ts)}` : null, n ? " " : null, n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : null),
-    ...body, el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => go("chat", t), text: "대화 열기" })));
+  return resultCard({ src: m ? mailSender(m.from) || label : label, at: last ? last.ts : "", title: m ? m.subject : last ? last.text : "", text: "", tag: n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : null,
+    actions: [el("button", { class: "btn tonal", type: "button", onclick: () => go("chat", t), text: m ? "메일 열기" : "대화 열기" })] });
 }
 // A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
 function monRunNode(it) {
   const m = it.mon;
   if (!m.last_run) return null;
   const next = [m.next_run ? `다음 확인 ${monTime(m.next_run)}` : "", m.every || ""].filter(Boolean).join(" · ");
-  const node = monCard(it.name, m.last_run, [`${monRunLine(m)}.`, next].filter(Boolean).join(" "), m.kind === "watch" ? m.last_result : "");
+  const node = monCard(it.name, m.last_run, next, m.kind === "watch" ? m.last_result : "", monRunLine(m));
   if (node && m.channel && isProjT(m.channel)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else openTarget(m.channel, "chat"); }, text: "프로젝트 대화 열기" })));
   return node;
 }
@@ -166,7 +158,7 @@ function monTimeline(it) {
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
   return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];
 }
-const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, it.raw && it.raw !== it.name ? el("span", { class: "cv-id", text: it.raw }) : null), el("span", { class: "cv-p", text: monState(it) }))];
+const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: it.name }), el("span", { class: "cv-p", text: monState(it) }))];
 
 // The owner is looking at an open item: its notices that need no answer count as read after a moment (answers keep theirs unread, like everywhere).
 function monSeen() {
