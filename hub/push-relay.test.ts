@@ -186,7 +186,11 @@ test("only a discovered peer may relay: an unknown gateway, the gateway itself a
 	expect(d.phoneApp.got()).toHaveLength(0);
 	const ok = await post("alpha", GW.gamma.url);
 	expect(ok.status).toBe(200);
-	expect(((await ok.json()) as { served: string[] }).served).toEqual([PHONE]);
+	// the device id plus the endpoint key (what lets a gateway holding the same endpoint without an id stay quiet)
+	const served = ((await ok.json()) as { served: string[] }).served;
+	expect(served).toHaveLength(2);
+	expect(served).toContain(PHONE);
+	expect(served.filter(k => /^ep:[0-9a-f]{24}$/.test(k))).toHaveLength(1);
 	setNoPeers();
 	expect((await post("alpha", GW.gamma.url)).status).toBe(403);
 });
