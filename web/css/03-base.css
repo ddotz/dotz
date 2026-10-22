@@ -34,6 +34,9 @@
 .fbe-act { display: flex; align-items: center; gap: 6px; }
 .fbe-act .sp { flex: 1; }
 @media (max-width: 560px) { .fbe-grid, .fbe-cap { grid-template-columns: 1fr; } }
+.fb-item.off .nm, .fb-item.off .fb-n { opacity: .5; }
+.fb-sw { min-width: 44px; height: 28px; padding: 0 10px; border-radius: 14px; border: 0; font-size: 12px; background: var(--hover); color: var(--fg-3); cursor: pointer; }
+.fb-sw[aria-checked="true"] { background: var(--accent); color: var(--on-accent); }
 .fb-item.in-use { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 .fb-item.drag { position: relative; z-index: 5; cursor: grabbing; box-shadow: var(--float); opacity: .94; }
 .fb-item.over { outline: 2px dashed var(--fg-3); outline-offset: 2px; }

@@ -4,7 +4,7 @@ const FB_LAYERS = [
   { id: "lanes", title: () => "세션 기본값", sub: "새로 시작하는 세션", cur: () => M.lanes_default },
   { id: "workers", title: () => "서브에이전트", sub: "세션이 맡기는 구현·테스트", cur: () => M.workers },
 ];
-const FB_KEYS = ["model", "when", "cap", "revert", "key_file", "base_url", "api"];
+const FB_KEYS = ["model", "when", "cap", "revert", "key_file", "base_url", "api", "enabled", "workers"];
 const FB_WHEN = { quota: "구독 소진 시", error: "오류 시" };
 const fbStored = e => { const o = {}; for (const k of FB_KEYS) if (e[k] != null) o[k] = e[k]; return Object.keys(o).length === 1 ? o.model : o; };
 const fbBase = s => String(s || "").replace(/:(off|minimal|low|medium|high|xhigh|max|auto)$/, "");
@@ -16,6 +16,8 @@ let fbDragging = false;
 function fbTags(e) {
   const t = [];
   if (e.key_file) t.push(el("span", { class: "tag", text: "API 키" }));
+  if (e.enabled === false) t.push(el("span", { class: "tag warn", text: "꺼짐" }));
+  if (e.key_file && e.workers) t.push(el("span", { class: "tag", text: "서브에이전트·세션도 사용" }));
   if (e.when) t.push(el("span", { class: "tag", text: FB_WHEN[e.when] }));
   if (e.cap) t.push(el("span", { class: "tag", text: fbCapText(e.cap) }));
   if (e.revert === false) t.push(el("span", { class: "tag", text: "복귀 안 함" }));
@@ -74,6 +76,8 @@ function fbEditor(L, F, list, i) {
     el("div", { class: "fbe-grid" },
       selectField("모델", nm, () => modelItems(`fbe:${L.id}`, base, only), base, v => setModel(fbBase(v), level)),
       selectField("추론 강도", level || "기본 모델과 같게", [{ value: "", label: "기본 모델과 같게" }, ...(M.thinking_levels || []).map(lv => ({ value: lv, label: lv }))], level, v => setModel(base, v))),
+    seg("사용", [["on", "켜기"], ["off", "끄기"]], d.enabled === false ? "off" : "on", v => { d.enabled = v === "on"; redraw(); }),
+    d.key_file && keyable ? seg("서브에이전트·세션", [["", "API 키로 안 돌려요"], ["on", "같은 키로 돌려요"]], d.workers ? "on" : "", v => { d.workers = v === "on" ? true : undefined; redraw(); }) : null,
     keyable ? seg("사용 방식", [["login", "구독 (로그인)"], ["key", "API 키"]], d.key_file ? "key" : "login", v => { if (v === "login") { d.key_file = undefined; redraw(); } else pickKey(); }) : null,
     d.key_file && keyable ? el("div", { class: "fbe-key" }, el("span", { class: `sup${kp && !kp.present ? " warn" : ""}`, text: keyText }), el("button", { type: "button", class: "btn text", onclick: pickKey }, "키 바꾸기")) : null,
     hub ? seg("넘어가는 때", [["", "앞 모델이 안 될 때"], ["quota", "한도 소진 시 (429)"], ["error", "제공자 오류 시"]], d.when || "", v => { d.when = v || undefined; redraw(); }) : null,
@@ -157,14 +161,16 @@ function fbParts(L) {
   const itemFor = (e, i) => {
     const base = i < 0, model = base ? prim : e.model, nm = modelName(fbBase(model));
     const inUse = base ? used.has(prim) : used.has(fbRunId(e));
+    const on = !base && e.enabled !== false;
     const acts = base ? null : el("div", { class: "fb-acts" },
+      el("button", { type: "button", class: "fb-sw", role: "switch", "aria-checked": String(on), title: on ? "켜짐 · 눌러서 끄기" : "꺼짐 · 눌러서 켜기", "aria-label": `${nm} ${on ? "끄기" : "켜기"}`, onclick: () => fbSave(L.id, list.map((x, j) => (j === i ? { ...x, enabled: !on } : x))) }, on ? "켜짐" : "꺼짐"),
       el("button", { type: "button", class: "up", title: "위로", "aria-label": `${nm} 위로`, disabled: i === 0, onclick: () => move(i, i - 1) }, icon("down")),
       el("button", { type: "button", title: "아래로", "aria-label": `${nm} 아래로`, disabled: i === list.length - 1, onclick: () => move(i, i + 1) }, icon("down")),
       el("button", { type: "button", title: "편집", "aria-label": `${nm} 편집`, "aria-expanded": String(open(i)), onclick: () => fbOpenStep(L.id, list, i) }, icon("more")),
       el("button", { type: "button", title: "빼기", "aria-label": `${nm} 빼기`, onclick: () => fbSave(L.id, list.filter((_, j) => j !== i)) }, icon("close")));
     let tags = base ? null : fbTags(e);
     if (!base && !runs(e)) (tags ||= el("div", { class: "fb-tags" })).append(el("span", { class: "tag warn", text: `${F.harness ? F.harness.name : "이 하네스"}에서 못 써요` }));
-    const node = el("li", { class: `fb-item${inUse ? " in-use" : ""}${base ? " base" : ""}${!base && open(i) ? " open" : ""}`, ...(base ? {} : { "data-i": String(i) }), title: base ? `${fbBase(model)} · 눌러서 모델 바꾸기` : `${fbBase(model)} · 눌러서 편집` },
+    const node = el("li", { class: `fb-item${inUse ? " in-use" : ""}${!base && e.enabled === false ? " off" : ""}${base ? " base" : ""}${!base && open(i) ? " open" : ""}`, ...(base ? {} : { "data-i": String(i) }), title: base ? `${fbBase(model)} · 눌러서 모델 바꾸기` : `${fbBase(model)} · 눌러서 편집` },
       el("span", { class: "fb-n", text: String(i + 2) }),
       el("div", { class: "fb-body" },
         el("div", { class: "fb-top" }, el("span", { class: "nm", text: nm }), base ? el("span", { class: "fb-base", text: "기본" }) : null, inUse ? el("span", { class: "fb-use", text: "사용 중" }) : null),

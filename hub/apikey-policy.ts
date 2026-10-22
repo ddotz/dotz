@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const NO_API_KEY_ACCOUNTS = new Set(["miseol-shared"]);
-const KEY_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_API_KEY", "DOTZ_KEY_PROVIDER", "DOTZ_KEY_VALUE"];
+const KEY_VARS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_API_KEY", "DOTZ_KEY_PROVIDER", "DOTZ_KEY_VALUE", "DOTZ_KEY_FILE", "DOTZ_KEY_WORKERS"];
 export const authFile = () => join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "auth.json");
 
 let cache: { file: string; stamp: string; pinned?: string } | undefined;

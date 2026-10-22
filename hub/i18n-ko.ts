@@ -5,7 +5,7 @@ import type { Catalog, Leads } from "./i18n-en.ts";
 
 // How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
 // decision buttons and decision notices read (web/js/10-decision-card.js, hub/choices.ts).
-const koIssue = `dotz_send alert로 보고하세요: 문제를 한 줄로 쓰고, 이어서 이 모양의 선택지 블록(2~4개)을 붙이세요.
+const koIssue = `dotz_send alert로 보고하세요: 문제를 [ask]로 시작하는 한 줄로 쓰고([ask] 메시지만 버튼이 돼요), 이어서 이 모양의 선택지 블록(2~4개)을 붙이세요.
 결정: <질문>
 **1) <이름>** ← 추천
 <한 줄 결과>
@@ -134,7 +134,7 @@ export const ko: Catalog = {
 	fallbackMove: (from: string, to: string, why: "quota" | "error" | "cap" | "revert") => `${why === "revert" ? "모델 복귀" : "모델 폴백"}: ${from} → ${to} (${{ quota: "사용 한도 도달", error: "제공자 오류", cap: "사용 상한 도달", revert: "한도가 풀렸어요" }[why]})`,
 	fallbackExhausted: (model: string, until: string) => `모델 폴백: ${model}이(가) 사용 상한에 도달했고 넘어갈 모델이 더는 없어요. ${until}까지 멈춰요.`,
 	modelReverted: (model: string) => `원래 모델(${model})로 되돌렸어요`,
-	fallbackFresh: (to, keyed, again) => `\n\n[dotz gateway] 지금부터 ${to}로 새 대화 기록에서 이어가요(모델을 바꾸면서 이전 대화 기록을 그대로 이으면 프롬프트 캐시 전체를 다시 써야 해서요).${keyed ? " API 키 폴백이에요: 구독이 사용 한도에 걸렸어요. 답과 가벼운 일은 직접 하고, 서브에이전트와 세션은 API 키로 돌리지 않으니 무거운 일은 state.json open_tasks에 적고 리셋 뒤에 시작한다고 오너에게 알려주세요. 한도가 풀리면 dotz가 새 대화 기록으로 구독에 되돌려요." : " 구독을 다시 쓸 수 있어요: state.json open_tasks에 미뤄둔 일을 이어가세요."}${again ? " 위의 마지막 오너 요청은 한도 때문에 답하지 못했어요: 지금 답하세요." : ""}`,
+	fallbackFresh: (to, keyed, again, workers = false) => `\n\n[dotz gateway] 지금부터 ${to}로 새 대화 기록에서 이어가요(모델을 바꾸면서 이전 대화 기록을 그대로 이으면 프롬프트 캐시 전체를 다시 써야 해서요).${keyed ? ` API 키 폴백이에요: 구독이 사용 한도에 걸렸어요. ${workers ? "서브에이전트와 세션도 같은 API 키로 돌아가요(요금이 토큰마다 붙고 월 상한을 함께 써요): 무거운 일은 꼭 필요한 만큼만 맡기세요." : "답과 가벼운 일은 직접 하고, 서브에이전트와 세션은 API 키로 돌리지 않으니 무거운 일은 state.json open_tasks에 적고 리셋 뒤에 시작한다고 오너에게 알려주세요."} 한도가 풀리면 dotz가 새 대화 기록으로 구독에 되돌려요.` : " 구독을 다시 쓸 수 있어요: state.json open_tasks에 미뤄둔 일을 이어가세요."}${again ? " 위의 마지막 오너 요청은 한도 때문에 답하지 못했어요: 지금 답하세요." : ""}`,
 	apiStart: model => `API 키 사용 시작: 구독이 사용 한도에 걸려서 오케스트레이터가 ${model}로 답해요. 리셋까지 세션·서브에이전트는 안 돌려요.`,
 	apiEnd: model => `API 키 사용 끝: 오케스트레이터가 ${model}(구독)으로 돌아왔어요.`,
 	modelNoRevert: "이 런타임은 모델을 바꿀 수 없어서 재시작할 때까지 폴백 모델로 가요.",

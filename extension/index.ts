@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
@@ -399,15 +399,37 @@ function terminalClient(pi: any): void {
 // A fallback entry that bills through its own API key runs as a provider of its own (hub/fallback.ts keyEnv): the gateway
 // describes it in DOTZ_KEY_PROVIDER (no secret) and hands the key over in DOTZ_KEY_VALUE. The key is registered as a literal
 // and both variables leave the environment at once, so no tool command or task worker this process starts can read it.
-export function keyProvider(pi: any): void {
+// An entry with `workers` on (DOTZ_KEY_WORKERS) keeps the provider spec and the key's file name (no secret) in the environment
+// for the task workers it starts; a worker's extension (`worker`) registers the provider with the key read from <data dir>/secrets.
+const KEY_FILE_NAME = /^(?!\.)[\w.-]*api[-_]?key[\w.-]*$/i;
+function readSecret(file: string): string | undefined {
+	try {
+		return KEY_FILE_NAME.test(basename(file)) ? readFileSync(join(DATA, "secrets", basename(file)), "utf8").trim() : undefined;
+	} catch {
+		return undefined;
+	}
+}
+export function keyProvider(pi: any, worker = false): void {
 	const raw = process.env.DOTZ_KEY_PROVIDER;
-	const key = process.env.DOTZ_KEY_VALUE;
-	delete process.env.DOTZ_KEY_PROVIDER;
+	const file = process.env.DOTZ_KEY_FILE;
+	const workers = process.env.DOTZ_KEY_WORKERS === "1" && Boolean(file);
+	const key = process.env.DOTZ_KEY_VALUE || (worker && workers ? readSecret(file!) : undefined);
 	delete process.env.DOTZ_KEY_VALUE;
+	if (!workers) for (const k of ["DOTZ_KEY_PROVIDER", "DOTZ_KEY_FILE", "DOTZ_KEY_WORKERS"]) delete process.env[k];
 	if (!raw || !key) return;
 	const { id, baseUrl, api, models } = JSON.parse(raw);
 	pi.registerProvider(id, { baseUrl, api, apiKey: key, models });
-	holdWorkOnApiKey(pi);
+	if (!worker) holdWorkOnApiKey(pi, workers);
+	else reportKeySpend(pi, file!);
+}
+// A worker's requests count against the key's cap and monthly pool, shared with its orchestrator or session (hub/fallback.ts spendOnKey).
+function reportKeySpend(pi: any, file: string): void {
+	pi.on("turn_end", (e: any) => {
+		const u = e?.message?.role === "assistant" ? e.message.usage : undefined;
+		if (!u) return;
+		const tokens = (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) + (u.output ?? 0);
+		if (tokens > 0) void call("/api/fallback-spend", { method: "POST", body: JSON.stringify({ key_file: file, tokens, usd: u.cost?.total }) }).catch(() => {});
+	});
 }
 
 import { isMain } from "./guard-config.ts";
@@ -466,6 +488,7 @@ export default function dotz(host: any) {
 	// WORKER_TASK; OmO sets OMO_SENPI_TASK_DEPTH): the owner's rules, the output caps and the 5-minute cache, none of the
 	// parent's tools or commands (as before, no prompt growth).
 	if ((process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1") && process.env.OMO_SENPI_TASK_DEPTH) {
+		keyProvider(pi, true);
 		enforceRules(pi);
 		installOutputCap(pi);
 		installCompactKept(pi);

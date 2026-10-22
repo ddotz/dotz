@@ -2,6 +2,7 @@
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
 import { join } from "node:path";
 import { ADDRESS, cfg, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
+import { keyFileOk, spendOnKey } from "./fallback.ts";
 import { changeTarget, ControlError, targetView, ForceRequired, looksLikeCommand, parseCommand } from "./control.ts";
 import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
@@ -254,6 +255,14 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 				}
 				return json({ ok: true });
 			}
+		}
+		// A task worker on an API key reports what a request cost, so its entry's cap counts the workers too (extension keyProvider).
+		if (req.method === "POST" && url.pathname === "/api/fallback-spend") {
+			const b = await body(req);
+			const tokens = Number(b.tokens);
+			if (!keyFileOk(String(b.key_file ?? "")) || !(tokens > 0)) return json({ error: "key_file (an existing key file) and tokens are required" }, 400);
+			spendOnKey(String(b.key_file), tokens, Number(b.usd) > 0 ? Number(b.usd) : undefined);
+			return json({ ok: true });
 		}
 		if (req.method === "POST" && url.pathname === "/api/send") {
 			const b = await body(req);

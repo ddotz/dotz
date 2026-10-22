@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { type Block, blocks, failedCall, joined, summary } from "../activity.ts";
 import { DATA_DIR, OMP, parseSelector, splitThinking } from "../config.ts";
 import { isNote } from "../i18n.ts";
+import { keyedWorker } from "../fallback.ts";
 import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
@@ -278,7 +279,9 @@ const nativeChain = (o: Pick<SpawnOpts, "fallback" | "hubSwitches">): string[] |
 // changed chain applies the next time the process starts. No chain, no overlay: the orchestrator then starts with the
 // arguments it always had.
 function orchestratorOverlay(o: SpawnOpts): string[] {
-	const yaml = retryYaml([[parseSelector(o.model).model, nativeChain(o)]]);
+	// On a keyed entry that lets its workers use the key, the task role points at the key provider's copy of the worker model.
+	const onKey = keyedWorker(o.env);
+	const yaml = `${onKey ? `modelRoles:\n  task: ${JSON.stringify(onKey)}\n` : ""}${retryYaml([[parseSelector(o.model).model, nativeChain(o)]])}`;
 	if (!yaml) return [];
 	const file = join(DATA_DIR, "omp-orchestrator-overlay.yml");
 	writeFileSync(file, `# Written by the dotz gateway each time the orchestrator starts; passed to omp as --config.\n${yaml}`);
