@@ -1,7 +1,9 @@
 // Feature folders: <repo>/features/<id>/ (shipped with dotz) and <DATA_DIR>/features/<id>/ (the owner's own), each with
 // feature.md (+ optional watch.json, schedule.json).
 //   feature.md  frontmatter: name, what (one line), trigger (one of TRIGGERS), stage (harness node id), enabled (default true),
-//               applies_to (orchestrator|lanes|workers|all, default all), deny: list of "- <regex> | <reason>".
+//               applies_to (orchestrator|lanes|workers|all, default all), deny: list of "- <regex> | <reason>",
+//               setup (optional, one line: how to turn an off feature on when the owner asks; listed in the prompt while off).
+//               {repo} in setup is replaced by this checkout's absolute path.
 //               The body is advisory text that goes into the prompt after RULES.md.
 //   watch.json / schedule.json  same shape as one watch / one schedule the gateway already accepts.
 // Pure fs + data (no gateway config import) so the omp extension can load it too. Cached per folder by file mtimes.
@@ -21,6 +23,7 @@ type FeatureDir = {
 	appliesTo: Applies;
 	deny: { pattern: string; reason: string; line: number }[];
 	body: string;
+	setup?: string;
 	file: string; // absolute feature.md
 	origin: "shipped" | "personal";
 	watch?: Record<string, any>;
@@ -107,7 +110,9 @@ function loadOne(dir: string, id: string, origin: FeatureDir["origin"]): Feature
 	} catch (e) {
 		return (e as Error).message;
 	}
-	return { id, name: meta.name, what: meta.what, trigger: meta.trigger, stage: meta.stage, enabled: meta.enabled !== "false", appliesTo: applies, deny, body: p.body, file, origin, ...(watch ? { watch } : {}), ...(schedule ? { schedule } : {}) };
+	const repo = (s: string) => s.replaceAll("{repo}", join(SHIPPED_ROOT, ".."));
+	const setup = meta.setup ? repo(meta.setup) : undefined;
+	return { id, name: meta.name, what: meta.what, trigger: meta.trigger, stage: meta.stage, enabled: meta.enabled !== "false", appliesTo: applies, deny, body: repo(p.body), ...(setup ? { setup } : {}), file, origin, ...(watch ? { watch } : {}), ...(schedule ? { schedule } : {}) };
 }
 
 type Entry = { sig: string; feature?: FeatureDir; reason?: string };
@@ -156,11 +161,15 @@ export function loadFeatureDirs(dataDir: string, warn?: (msg: string) => void): 
 const CAP = 12_000;
 // Enabled bodies for one audience, one heading per feature, cut like the RULES.md block (marker names where to read the rest).
 export function featurePrompt(dataDir: string, role: "orchestrator" | "lanes", warn?: (msg: string) => void, max = CAP): string {
-	const mine = loadFeatureDirs(dataDir, warn).features.filter(f => f.enabled && f.body && (f.appliesTo === "all" || f.appliesTo === role || (role === "lanes" && f.appliesTo === "workers")));
-	if (!mine.length) return "";
+	const all = loadFeatureDirs(dataDir, warn).features;
+	const mine = all.filter(f => f.enabled && f.body && (f.appliesTo === "all" || f.appliesTo === role || (role === "lanes" && f.appliesTo === "workers")));
+	// Off features cost one line each, so a request like "connect X" finds its setup without the full body in every prompt.
+	const off = role === "orchestrator" ? all.filter(f => !f.enabled && f.setup) : [];
+	const offText = off.length ? `\n\nOff until the owner asks (then run the setup; it is the whole onboarding):\n${off.map(f => `- ${f.name}: ${f.what} Setup: ${f.setup}`).join("\n")}` : "";
+	if (!mine.length && !offText) return "";
 	const text = mine.map(f => `### ${f.name} (${f.file}${f.appliesTo === "workers" ? "; pass this to your task workers in their briefs" : ""})\n${f.body}`).join("\n\n");
-	const body = text.length > max ? `${text.slice(0, max)}\n[... cut at ${max} characters; read the feature.md named in each heading for the rest]` : text;
-	return `## Features (shipped ones from ${SHIPPED_ROOT}, the owner's own from ${featuresRoot(dataDir)}; same weight as the owner rules above)\n\n${body}`;
+	const body = (text.length > max ? `${text.slice(0, max)}\n[... cut at ${max} characters; read the feature.md named in each heading for the rest]` : text) + offText;
+	return `## Features (shipped ones from ${SHIPPED_ROOT}, the owner's own from ${featuresRoot(dataDir)}; same weight as the owner rules above)\n\n${body.trim()}`;
 }
 
 // Same matching as the RULES.md "- deny:" lines (case-insensitive regex on the whole command).
