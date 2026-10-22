@@ -314,7 +314,7 @@ export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[]
 			F.push({
 				flag: wakeN >= 10 || cost >= 5, kind: "헛깨움", who, tip: "알림을 소스에서 거르기", what: `할 일 없이 깨어난 턴 ${wakeN}회`, amount: `${M(tokens)} tok, ${usd(cost)}`, save: cost,
 				evidence: wakes.sort((a, b) => b[1].cost - a[1].cost).map(([k, w]) => `${k} ${w.n}회 ${usd(w.cost)}`).join(", "),
-				fix: `제안: 반응할 필요 없는 알림(감시 라인·완료 알림 중복)을 소스에서 걸러 세션을 깨우지 않게 - 예상 절감 ~${usd(cost)}. 실제 일을 시키는 이벤트는 그대로라 성능 영향 없음`,
+				fix: `제안: 반응할 필요 없는 알림(모니터링 라인·완료 알림 중복)을 소스에서 걸러 세션을 깨우지 않게 - 예상 절감 ~${usd(cost)}. 실제 일을 시키는 이벤트는 그대로라 성능 영향 없음`,
 			});
 		}
 		if (s.maxErrStreak >= 3) {

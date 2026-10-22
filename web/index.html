@@ -53,13 +53,13 @@
       <button class="ib" id="vtog" type="button" hidden></button>
       <button class="ib only-phone" id="pal" type="button" aria-label="명령"></button>
       <button class="ustrip" id="ustrip" type="button" hidden></button>
-      <button class="ib" id="bell" type="button" aria-label="알림" aria-haspopup="dialog" aria-expanded="false"><span class="bn" id="bell-n" hidden></span></button>
     </header>
     <div class="gban" id="gban" role="status" hidden><span class="dot" id="gban-dot"></span><span class="tx" id="gban-tx"></span><button class="x" id="gban-x" type="button" aria-label="재시작 알림 닫기">×</button></div>
     <div class="views" id="views">
       <section class="view" id="v-home" hidden><div id="home-now"></div><div class="sec" id="home-sec">상태</div><div id="home"></div><div id="home-custom"></div></section>
       <section class="view" id="v-project" hidden></section>
       <section class="view" id="v-projects" hidden></section>
+      <section class="view" id="v-monitoring" hidden></section>
       <section class="view fill" id="v-chat" hidden>
         <div class="subs" hidden></div>
         <div class="todo" id="todo" hidden></div>
@@ -85,6 +85,7 @@
               <button class="cchip" type="button" id="c-effort" aria-haspopup="listbox" hidden></button>
               <span class="cchip cown" id="c-worker" hidden></span>
               <button class="cchip" type="button" id="ctx-ring" hidden></button>
+              <span class="cchip capi" id="c-api" hidden>api사용중</span>
               <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-stop">중단</button></div>
             </div>
             <button class="ib pri" type="submit" aria-label="보내기" id="send-btn"></button>

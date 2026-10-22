@@ -108,34 +108,34 @@ function laneLastFetch(name) {
   }, () => {});
 }
 
-// The 알림 / 작업내역 / 모니터링 cards: data and the panel they open live in 30-notices.js; they repaint from its live frames (homeSoon).
+// The 알림 / 작업내역 / 모니터링 cards: data live in 30-notices.js and 30-monitoring.js; they repaint from its live frames (homeSoon) and open the conversation or screen.
 const HOME_NOTICE = { min: { w: 3, h: 4 }, max: { w: 12, h: 10 } };
 const hcState = () => (NT.loaded ? "" : NT.failed ? "불러오지 못했어요" : "불러오는 중…");
-const hcCard = (tab, ...kids) => { const c = tapCard(() => openNotices(tab), ...kids); c.classList.add("hc"); return c; };
+const hcCard = (open, ...kids) => { const c = tapCard(open, ...kids); c.classList.add("hc"); return c; };
 const hcDot = tone => el("span", { class: `nt-dot tone-${tone || "none"}`, "aria-hidden": "true" });
 // A generic title (작업 기록, 알림) says nothing in a 3-row card: the row shows the entry's first line instead.
-const hcLine = n => { const t = ntPlain(n.title); return !t || t === "작업 기록" || t === "알림" ? ntPlain(String(n.text || "").split("\n")[0]) || t || "알림" : t; };
+const hcLine = n => { const t = ntPlain(n.title); return !t || t === "작업 기록" || t === "작업내역" || t === "알림" ? ntPlain(String(n.text || "").split("\n")[0]) || t || "알림" : t; };
 const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row" }, hcDot(n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), el("span", { class: "m", text: ntWhen(n) }))));
 // Gateway restarts are kept in the store (born read) but never shown on 홈 (owner 2026-10-19: restarts are not his news).
 const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
 function homeAlertCard() {
   const unread = ntUnreadIn("alert"), fresh = hcRecent(n => !n.read && ntTabOf(n) === "alert"), state = hcState();
-  return hcCard("alert", el("div", { class: "ch" }, el("h3", { text: "알림" })),
+  return hcCard(() => openTarget("alert", "chat"), el("div", { class: "ch" }, el("h3", { text: "알림" })),
     el("div", { class: "big", text: state ? "…" : `${unread}개` }), el("div", { class: "sup", text: "안 읽은 알림" }),
     state || !fresh.length ? el("div", { class: "hc-none", text: state || "새 알림이 없어요" }) : hcNotices(fresh));
 }
 function homeWorklogCard() {
   const recent = hcRecent(n => n.kind === "worklog" || n.kind === "result"), state = hcState();
-  return hcCard("worklog", el("div", { class: "ch" }, el("h3", { text: "작업 기록" })),
-    state || !recent.length ? el("div", { class: "hc-none", text: state || "아직 작업 기록이 없어요" }) : hcNotices(recent));
+  return hcCard(() => openTarget("worklog", "chat"), el("div", { class: "ch" }, el("h3", { text: "작업내역" })),
+    state || !recent.length ? el("div", { class: "hc-none", text: state || "아직 작업내역이 없어요" }) : hcNotices(recent));
 }
 function homeMonitorCard() {
   const list = ntMons(), shown = list.slice(0, 4), bad = list.filter(m => m.last_result === "fail").length;
   const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…";
-  return hcCard("watch", el("div", { class: "ch" }, el("h3", { text: "감시" }), bad ? el("span", { class: "tag err", text: `실패 ${bad}` }) : null),
-    state || !list.length ? el("div", { class: "hc-none", text: state || "감시 중인 것이 없어요" }) : el("div", { class: "hc-list" }, ...shown.map(m => {
+  return hcCard(() => go("monitoring"), el("div", { class: "ch" }, el("h3", { text: "모니터링" }), bad ? el("span", { class: "tag err", text: `실패 ${bad}` }) : null),
+    state || !list.length ? el("div", { class: "hc-none", text: state || "모니터링 중인 것이 없어요" }) : el("div", { class: "hc-list" }, ...shown.map(m => {
       const r = m.last_result ? NT_RESULT[m.last_result] : null;
-      return el("div", { class: "hc-mon" }, hcDot(r && r[1]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "감시" }),
+      return el("div", { class: "hc-mon" }, hcDot(r && r[1]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "모니터링" }),
         el("span", { class: "s", text: [ntMonRun(m), r && r[0], ntMonNext(m)].filter(Boolean).join(" · ") })));
     })),
     list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
@@ -304,7 +304,7 @@ const MAIN = "main", TARGET_KEY = "dotz-target";
 const isLaneT = t => t.startsWith("lane:");
 // The two fixed conversations next to the main chat (Discord's alert and worklog channels): the gateway's posts live there, not in the main chat.
 const isFixedT = t => t === "alert" || t === "worklog";
-const FIXED_NAME = { alert: "알림", worklog: "작업 기록" };
+const FIXED_NAME = { alert: "알림", worklog: "작업내역" };
 const laneOf = t => t.slice(5);
 // A project orchestrator (hub/projectchat.ts): the one orchestrator in a project's work channel, target ch:<id>. Its
 // conversation is the channel's messages; its process, model and log are the orchestrator's.

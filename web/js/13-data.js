@@ -25,12 +25,24 @@ function ingestMsg(e) {
   if (t === target && s.hLoaded && CV.full) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }   // CV.full: drawn (until then the draw takes it from msgs)
   if (t === target) paintDecision();
   if (isLaneT(t) && isLaneReport(e) && LP[t.slice(5)]) laneRefresh(LP[t.slice(5)]);
-  if (chatAnswer(t, e)) noteDone(t, e.ts, true);
+  if (chatAnswer(t, e) && !quietReply(s, e)) noteDone(t, e.ts, true);
 }
 // The main chat's and a project's finished turn is the orchestrator's answer stored in that chat (not a progress note), never the
 // turn's end: a turn can end with nothing sent yet (answer deferred to a background worker, keepalive, a worker's wake-up run;
 // owner 2026-10-21: the toast came before any message). A lane's finished turn stays its turn_end (its report has its own toast).
 const chatAnswer = (t, e) => !isLaneT(t) && !isFixedT(t) && e.kind === "out" && e.source === "orchestrator" && !e.update_key;
+// The orchestrator's first answer after a choice-button answer (an owner message with picks / decision, hub/intake.ts) is a quiet reply: no
+// "답을 마쳤어요" toast and no unseen mark (hub/notices.ts answerReply keeps push and the notice list quiet the same way). One that asks or fails still counts.
+function quietReply(s, e) {
+  const tone = parseTone(String(e.text ?? "")).tone;
+  if (tone === "ask" || tone === "fail") return false;
+  for (let k = s.msgs.lastIndexOf(e) - 1; k >= 0; k--) {
+    const p = s.msgs[k];
+    if (OWNER.has(p.kind)) return !!((p.picks && p.picks.length) || p.decision);
+    if (p.kind === "out" && !p.update_key && p.source === "orchestrator") return false;
+  }
+  return false;
+}
 // The orchestrator's activity is also the log of every loaded project target; a project's 대화 shows only its messages,
 // since the same process also works for the main chat and other channels.
 function ingestAct(a) {
@@ -53,12 +65,12 @@ async function loadTarget(t) {
     ]);
     s.hLoaded = s.aLoaded = true;
     if (t === MAIN) paintRestartBanner();
-    { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e)); if (te) noteDone(t, te.ts, false); }
+    { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e) && !quietReply(s, e)); if (te) noteDone(t, te.ts, false); }
   })().finally(() => { s.loading = null; });
   await s.loading;
   if (t === target) renderAll();
 }
-// A tapped push or bell notice names a message the stream may not have delivered (it stalls while the phone sleeps): fetch the
+// A tapped push or notice names a message the stream may not have delivered (it stalls while the phone sleeps): fetch the
 // history until that message is in. loadTarget joins a fetch already in flight, so the second round covers one that began before the message existed.
 async function ensureMsg(t, at) {
   const s = ts(t);

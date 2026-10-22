@@ -23,7 +23,7 @@ export const STEPS = [
 	{ id: "login", name: "로그인" },
 	{ id: "derive", name: "데이터 연결" },
 	{ id: "read", name: "읽기 확인" },
-	{ id: "watch", name: "새 메시지 감시" },
+	{ id: "watch", name: "새 메시지 모니터링" },
 	{ id: "card", name: "상태 카드" },
 	{ id: "enable", name: "켜기" },
 ] as const;
@@ -494,7 +494,7 @@ class Machine {
 				timeout_seconds: 60,
 				retry: { app: [5, 15, 30], fda: [], db: [10, 30] },
 			});
-			if (r.status >= 300) throw new Stop("watch", "새 메시지 감시를 등록하지 못했어요", `잠시 뒤 ${AGAIN}`);
+			if (r.status >= 300) throw new Stop("watch", "새 메시지 모니터링을 등록하지 못했어요", `잠시 뒤 ${AGAIN}`);
 		}
 		this.finish("watch");
 	}

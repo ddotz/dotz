@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { eventTarget, type HubEvent, onEmit } from "./events.ts";
-import { decisionsOf, type Notice, onDecision } from "./notices.ts";
+import { answerReply, decisionsOf, type Notice, onDecision } from "./notices.ts";
 import { parseTone } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
 
@@ -162,7 +162,8 @@ export function startPush(opts: { subject: () => string }): void {
 		if (e.kind === "message" && e.source === "web") ownerAt = Date.parse(String(e.ts)) || Date.now();
 		const m = classify(e, ownerAt ? Date.now() - ownerAt : undefined);
 		// A message that becomes a decision notice (an [ask] or a choice block) is pushed by onDecision below (one push, with the options), not twice.
-		if (m && !decisionsOf(e).length) notify(m);
+		// The reply to a choice-button answer is quiet (notices.ts answerReply).
+		if (m && !decisionsOf(e).length && !answerReply(e)) notify(m);
 	});
 	onDecision(n => notify(decisionPush(n)));
 }

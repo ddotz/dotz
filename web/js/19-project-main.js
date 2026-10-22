@@ -65,7 +65,7 @@ function pmPaint() {
   clear(root).append(pmHead(q),
     el("div", { class: "pmv-cols" },
       el("div", { class: "pmv-col" }, sec(1, "목표와 진행", pmGoal(q, rows)), sec(2, "진행 중", pmDoing(live, work.filter(w => w.status === "running"))), sec(3, "최근 세션", pmRecent(past, work.filter(w => w.status !== "running")))),
-      el("div", { class: "pmv-col" }, sec(4, "최근 결과", pmResults(D)), sec(5, "루틴과 감시", pmRoutines(D)))));
+      el("div", { class: "pmv-col" }, sec(4, "최근 결과", pmResults(D)), sec(5, "루틴과 모니터링", pmRoutines(D)))));
   const add = $(".pmv-add input", root);
   if (add && PM.draft) { add.value = PM.draft; add.dispatchEvent(new Event("input")); if (focused) add.focus(); }
 }
@@ -155,7 +155,7 @@ function pmGoal(q, sessions = []) {
     el("div", { class: "pmv-add" }, addIn, addBtn), note);
 }
 
-const PM_KIND = { monitor: "감시", routine: "루틴", schedule: "예약" };
+const PM_KIND = { monitor: "모니터링", routine: "루틴", schedule: "예약" };
 const pmEvery = n => !(n > 0) ? "" : n % 60 === 0 ? `매 ${n / 60}시간` : `매 ${n}분`;
 // Health dot: ok after a clean run, warn after a failed one, err after three in a row; a paused item has none.
 function pmHealth(x) {
@@ -169,7 +169,7 @@ function pmRoutines(D) {
   if (!D) return emptyNode(PM.fail ? "불러오지 못했어요" : "불러오는 중…");
   const L = D.linked || {};
   const items = [...(D.monitors || L.watches || []).map(x => ({ ...x, kind: "monitor" })), ...(D.routines || L.routines || []).map(x => ({ ...x, kind: "routine" })), ...(D.schedules || L.schedules || []).map(x => ({ ...x, kind: "schedule" }))];
-  return items.length ? el("div", { class: "list" }, ...items.map(pmRoutine)) : emptyNode("아직 루틴이나 감시가 없어요");
+  return items.length ? el("div", { class: "list" }, ...items.map(pmRoutine)) : emptyNode("아직 루틴이나 모니터링이 없어요");
 }
 function pmRoutine(x) {
   const mins = x.every_minutes ?? (x.schedule && x.schedule.every_minutes) ?? 0;

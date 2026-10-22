@@ -205,11 +205,14 @@ describe("web app modules", () => {
 		expect(JSON.parse(gunzipSync(new Uint8Array(await json.arrayBuffer())).toString("utf8")).items).toHaveLength(200);
 	});
 
-	test("the notification bell is in the shell and its module and styles are served", async () => {
+	test("the 모니터링 screen is in the shell, its module and styles are served, and the notification bell is gone", async () => {
 		const html = readFileSync(join(import.meta.dir, "..", "web", "index.html"), "utf8");
-		expect(html).toContain('id="bell"');
-		expect(await (await appAsset(new Request("http://x/app.js"), "/app.js"))?.text()).toContain("function openNotices");
-		expect(await (await appAsset(new Request("http://x/app.css"), "/app.css"))?.text()).toContain(".nt-panel");
+		expect(html).toContain('id="v-monitoring"');
+		expect(html).not.toContain('id="bell"');
+		const js = await (await appAsset(new Request("http://x/app.js"), "/app.js"))?.text();
+		expect(js).toContain("function renderMonitoring");
+		expect(js).not.toContain("function openNotices");
+		expect(await (await appAsset(new Request("http://x/app.css"), "/app.css"))?.text()).toContain(".mon-list");
 	});
 });
 

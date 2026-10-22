@@ -2094,6 +2094,7 @@
     {
      "name": "alpha",
      "model": "anthropic/test-lane:medium",
+     "key_fallback": false,
      "worker_model": "anthropic/test-worker:high",
      "status": "exited",
      "live": false,

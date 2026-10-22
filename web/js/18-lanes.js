@@ -225,7 +225,7 @@ function prjCard(p) {
     el("div", { class: "prj-note", text: p.note }), el("div", { class: "prj-meta" }, el("span", { text: "홈 카드 · 루틴 · 규칙 · 말투" })));
   const [tone, word] = prjStatus(p), ms = prjMiles(p), done = ms.filter(m => m.done).length, ls = p.lanes || [], mon = prjMonitors(p);
   const pct = ms.length ? Math.round(done / ms.length * 100) : 0;
-  const meta = [ls.length ? `세션 ${ls.filter(l => l.live).length}/${ls.length}` : "세션 없음", mon != null ? `감시 ${mon}` : ""].filter(Boolean);
+  const meta = [ls.length ? `세션 ${ls.filter(l => l.live).length}/${ls.length}` : "세션 없음", mon != null ? `모니터링 ${mon}` : ""].filter(Boolean);
   return el("button", { class: "card tap prj-card", type: "button", onclick: () => go("project", p.key) },
     el("div", { class: "prj-top" }, el("span", { class: `dot ${tone}` }), el("span", { class: "prj-title", text: prjTitle(p) }),
       word ? el("span", { class: `tag ${tone === "att" ? "warn" : tone}`, text: word }) : null, icon("chev", "chev")),

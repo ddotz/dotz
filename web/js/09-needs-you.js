@@ -47,19 +47,13 @@ function attnRaw(t) {
 }
 const attnKind = t => watching(t) ? "" : attnRaw(t);
 const attnLabel = k => ({ ask: "답변 필요", limit: "한도 걸림" })[k] || "확인 필요";
-// 알림 and 작업 기록 are conversations too, but they are NOT counted here: every alert / worklog post already makes a bell notice, and the
-// bell count (phone: added below) is the one count for them; adding the two conversations' unread would count each post twice. Reading
-// either conversation also reads its bell items (hub/notices.ts readConversationNotices), so the two never disagree.
 // The 채팅 nav badge and the page title count what the chat list shows and the owner can clear there: the listed conversations (the main
-// chat and the projects) that have unread messages, by the hub's read position (synced across devices). A session lives under 세션; its
-// question, rate limit and finished turn keep their own marks (home, 세션, toasts, the bell) and never hold this badge.
+// chat, 알림, 작업내역 and the projects) that have unread messages, by the hub's read position (synced across devices). A session lives under
+// 세션; its question, rate limit and finished turn keep their own marks (home, 세션, toasts) and never hold this badge.
 const chatUnreadCount = (targets, unreadOf) => targets.filter(t => unreadOf(t) > 0).length;
-// On a phone the bell is hidden and 알림 모아보기 lives in the chat list, so the chat tab badge also counts unread notices.
-const bellInChat = () => matchMedia("(max-width: 639px)").matches;
 function paintAttn() {
-  const c = S ? chatUnreadCount([MAIN, ...projTargets()], t => ts(t).unread) : 0, nt = bellInChat() && typeof NT !== "undefined" ? Math.max(0, NT.unread | 0) : 0;
-  const n = c + nt, b = $("#nav-att");
-  const say = [c ? `읽지 않은 대화 ${c}개` : "", nt ? `안 읽은 알림 ${nt}개` : ""].filter(Boolean).join(", ");
+  const n = S ? chatUnreadCount([MAIN, "alert", "worklog", ...projTargets()], t => ts(t).unread) : 0, b = $("#nav-att");
+  const say = n ? `읽지 않은 대화 ${n}개` : "";
   b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n); b.title = say;
   b.parentElement.setAttribute("aria-label", n ? `채팅, ${say}` : "채팅");
   document.title = n ? `(${n}) ${botName}` : botName;

@@ -201,6 +201,9 @@ details.work.live .wdot { display: block; }
 .cchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 26px; max-width: 100%; padding: 0 10px; border: 0; border-radius: 13px; background: transparent; color: var(--fg-2); font-size: 12.5px; line-height: 16px; font-weight: 500; white-space: nowrap; }
 button.cchip:hover { background: var(--layer); color: var(--fg); }
 .cchip.warn { color: var(--warn); }
+/* 360-390px: the chips pull together while the api label shares the row, so the bar keeps fitting without scrolling. */
+@media (max-width: 600px) { .cbar.api { gap: 2px; } .cbar.api .cchip { padding: 0 6px; } .cbar.api .cchip.capi { font-size: 10.5px; } }
+.cchip.capi { height: 20px; padding: 0 8px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); font-size: 11px; line-height: 16px; font-weight: 600; }
 .cchip.err { color: var(--err); }
 /* whose model and context the chips show (뙃쥐 or a lane), and a lane's worker model: labels, not buttons */
 .cchip.cown { padding: 0 4px; opacity: .65; font-weight: 600; }
@@ -225,11 +228,6 @@ button.cchip:hover { background: var(--layer); color: var(--fg); }
 .term .tmore { display: flex; margin: 0 auto 12px; }
 .term .tdv, .term .lg-note { margin: 10px auto; color: var(--fg-3); font-size: 12.5px; line-height: 18px; text-align: center; }/* attachment chips as buttons (md and text open in the reader) and the reader sheet */
 button.fatt { border: 0; font: inherit; text-align: left; cursor: pointer; }
-.nt-item .mfiles { justify-content: flex-start; padding: 0 12px 10px 32px; }
-.nt-item .mfiles .thumb img { max-width: 200px; max-height: 140px; }
-.nt-item .mfiles .fatt { background: var(--active); }
-.nt-item .mfiles .fatt:hover { background: var(--line); }
-.nt-item .mfiles .fatt.off:hover { background: var(--active); }
 dialog.tbox { width: min(760px, 100vw); height: min(80dvh, 100dvh); max-width: none; max-height: none; margin: auto; padding: 0; border: 0; border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: 0 12px 40px rgb(0 0 0 / .22); overflow: hidden; }
 dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
 .tbox .tv-in { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
@@ -245,4 +243,4 @@ dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
 .tbox .tv-body pre { margin: 0; font: 13px/20px var(--mono); white-space: pre-wrap; }
 .tbox .tv-body .md pre, .tbox .tv-body > .md pre { margin: 8px 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--layer); }
 .tbox .tv-st { color: var(--fg-3); font-size: 13px; line-height: 20px; }
-@media (max-width: 639px) { dialog.tbox { width: 100vw; height: 100dvh; border-radius: 0; } .nt-item .mfiles { padding-left: 28px; } }
+@media (max-width: 639px) { dialog.tbox { width: 100vw; height: 100dvh; border-radius: 0; } }

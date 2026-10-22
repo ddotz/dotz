@@ -11,13 +11,13 @@ const convListing = () => current === "chat" && chatList && narrowChat();
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
 const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["lanes", "세션"], ["settings", "설정"]];
 const CHAT_MODE_KEY = "dotz-chat-mode";
-const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : v;
+const navView = v => v === "activity" || v === "monitoring" ? "chat" : v === "project" ? "projects" : v;
 // 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
 const viewFor = t => { if (t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
 const SUB = new Set(["models", "providers", "usage", "context", "harness"]);
-const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context", "project", "projects"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "세션", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", project: "프로젝트", projects: "프로젝트" };
+const views = ["home", "chat", "activity", "lanes", "harness", "settings", "models", "providers", "usage", "context", "project", "projects", "monitoring"];
+const titles = { home: "홈", chat: "채팅", activity: "채팅", lanes: "세션", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링" };
 // The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
 const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
 const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
@@ -110,7 +110,7 @@ const thinkKo = v => THINK_KO[String(v || "").toLowerCase()] || String(v || "");
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) || []).find(x => x.selector === sel) || ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
 /* ---------- chrome: nav, theme, back ---------- */
-// Narrow screens: tapping 채팅 again while a conversation is open opens the chat list (whose first row is 알림 모아보기); tapping it once more closes the list
+// Narrow screens: tapping 채팅 again while a conversation is open opens the chat list (rows: 대화, 알림, 작업내역, 모니터링, 프로젝트); tapping it once more closes the list
 // and returns to that conversation where it was scrolled (the list sits below it in the history stack, so the conversation is pushed back like a pick); the first tap from elsewhere returns to the last conversation.
 let chatListSnap = null;
 // The place is kept as the first message in view and its distance from the top: the conversation is drawn again on return and its height
@@ -156,5 +156,5 @@ function renderSideStatus() {
 }
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
-const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? "projects" : null;
-$("#back").onclick = () => (convOnPhone() ? openChatList() : go(backTarget() || "home"));
+const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? "projects" : current === "monitoring" ? "chat" : null;
+$("#back").onclick = () => (convOnPhone() || (current === "monitoring" && narrowChat()) ? openChatList() : go(backTarget() || "home"));
