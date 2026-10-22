@@ -157,7 +157,7 @@ async function ntReach(t, at) {
 function ntAlignTop(node) {
   chatUnpin();
   const a = timeline.getBoundingClientRect(), b = node.getBoundingClientRect(), bar = $("#appbar").getBoundingClientRect();
-  const inset = Math.max(0, bar.bottom - a.top) + 6;
+  const inset = Math.max(0, bar.bottom - a.top) + 20;
   const top = Math.max(0, timeline.scrollTop + b.top - a.top - inset);
   timeline.scrollTo({ top, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
