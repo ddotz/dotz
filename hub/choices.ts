@@ -58,7 +58,10 @@ export function parseChoices(text: string): Choices {
 // description line under it. A number that restarts at 1 opens the next block. Mirrors the web card (web/js/10-decision-card.js)
 // so the bell and the chat card agree on what is being asked. Blocks with fewer than two options are not decisions.
 export type DecisionOption = { n: number; label: string; desc: string; rec: boolean };
-type DecisionBlock = { title: string; options: DecisionOption[] };
+// `headed`: the block was opened by a "결정:" line. Any bot message (not only an [ask]) holding a headed block with 2+ options is a decision;
+// a bare numbered list without the "결정:" line is not.
+type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true };
+export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some(b => b.headed);
 const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
 const D_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
@@ -80,7 +83,7 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 		if (fence) continue;
 		const h = D_HEAD.exec(line);
 		if (h) {
-			cur = { title: h[1]!.trim(), options: [] };
+			cur = { title: h[1]!.trim(), options: [], headed: true };
 			blocks.push(cur);
 			continue;
 		}
