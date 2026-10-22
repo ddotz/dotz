@@ -12,6 +12,7 @@ import { RESTART_NOTICE_MS } from "./restart.ts";
 import type { AccountSwitch } from "./account-sticky.ts";
 import type { AccountReport } from "./usage-account.ts";
 import * as discord from "./discord.ts";
+import { keepHome } from "./lanestate.ts";
 import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
 import { abort as abortOrchestrator, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
 import { availableModels, cancelLogin, completeLogin, ControlError, listProviders, loginProviders, logoutProvider, type ModelInfo, pendingLogin, quota, startLogin } from "./providers.ts";
@@ -461,6 +462,7 @@ async function execute(text: string): Promise<CommandCard> {
 		case "stop":
 			if (!first) throw new ControlError("usage: /stop <lane>");
 			stopLane(first);
+			keepHome(lanes.get(first), discord.homeOf(first));
 			void discord.releaseLane(first, lanes.get(first)).catch(e => log(`lane ${first} thread release failed: ${e}`));
 			return card(t.stopping(laneLabel(first)), [], { tone: "busy" });
 		case "resume":
