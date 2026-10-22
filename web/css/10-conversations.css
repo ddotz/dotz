@@ -45,7 +45,7 @@
 
 @media (min-width: 1100px) {
   :root { --cv-w: 240px; }
-  #v-chat { display: grid; max-width: 1360px; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  #v-chat { display: grid; max-width: none; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
   #v-chat > * { grid-column: 2; }
   #v-chat > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 8px; }
   #v-chat > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px 12px; }
@@ -63,9 +63,9 @@
   :is(.cv-side, .cv-list) .cv-av .ic { width: 14px; height: 14px; }
   .cv-list { padding: 8px; }
   /* 프로젝트: the list beside the open project's page, like 채팅 (go() in 05-command-palette.js sets .pp) */
-  .views.pp { display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 16px; overflow: hidden; width: 100%; max-width: 1360px; justify-self: center; padding: 24px 24px 0; }
+  .views.pp { display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 16px; overflow: hidden; width: 100%; padding: 24px var(--edge) 0; }
   .views.pp > .view { min-height: 0; max-width: none; margin: 0; padding: 0 0 24px; overflow-y: auto; }
   .views.pp > #v-projects { grid-column: 1; grid-row: 1; margin-bottom: 16px; padding: 0; background: transparent; }
-  .views.pp > #v-project { grid-column: 2; grid-row: 1; }
+  .views.pp > #v-project { grid-column: 2; grid-row: 1; max-width: none; }
   .cv-head .cv-av { width: 36px; height: 36px; font-size: 15px; }
 }
