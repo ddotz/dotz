@@ -86,7 +86,7 @@ keychain, a browser or the network.
   answers 304 with no body, so there is nothing to parse and no new mail to diff: zero model tokens, minimal bytes.
 - Minimal fields are requested through `list.params` (e.g. a `fields=id,subject,date` selector the site supports).
 - The watch prints one line per new mail and nothing otherwise, so the gateway wakes a model only on real mail.
-- The woken turn may also post each mail with `POST /api/mail` (docs/custom-plugins.md "Posting a mail"), so it becomes its own web conversation.
+- The watch posts each new mail with `POST /api/mail` (docs/custom-plugins.md "Posting a mail", `wake: true`), so it becomes its own thread and web conversation with one orchestrator turn; only a mail the gateway did not take is printed as a line.
 
 ## Send gate (the only write path)
 

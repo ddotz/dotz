@@ -6,6 +6,7 @@ import { keepalive } from "./session.ts";
 import { mapMails, type Mail } from "./adapter.ts";
 import { type SiteSpec } from "./spec.ts";
 import { type Ctx, type SiteConfig } from "./config.ts";
+import { type Gateway } from "./gateway.ts";
 
 export type WatchState = {
 	seeded: boolean;
@@ -31,7 +32,7 @@ export const MAX_MAIL_LINES = 10;
 const oneLine = (s: string, max = 200): string => s.replace(/\s+/g, " ").trim().slice(0, max);
 const mailLine = (m: Mail): string => `mail ${m.id} from=${oneLine(m.from, 80) || "?"}: ${oneLine(m.subject) || "(제목 없음)"}`;
 
-export type PollResult = { lines: string[]; fail?: string; note: string; state: WatchState };
+export type PollResult = { lines: string[]; mails: Mail[]; fail?: string; note: string; state: WatchState };
 
 function diffNew(state: WatchState, mails: Mail[]): { fresh: Mail[]; state: WatchState } {
 	const ids = mails.map((m) => m.id);
@@ -57,24 +58,24 @@ export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, sta
 	const ka = await keepalive(ctx, spec, cookie, { etag: state.etag, lastModified: state.lastModified });
 
 	if (ka.status === "notmodified") {
-		return { lines: [], note: "not modified", state: onAlive(state, ctx.now(), ka.etag, ka.lastModified) };
+		return { lines: [], mails: [], note: "not modified", state: onAlive(state, ctx.now(), ka.etag, ka.lastModified) };
 	}
 
 	if (ka.status === "error") {
 		const fails = state.fails + 1;
-		if (fails >= FAIL_BEFORE_ALERT) return { lines: [], fail: "DOTZ_FAIL network", note: ka.note, state: { ...state, fails } };
-		return { lines: [], note: `transient (${fails}/${FAIL_BEFORE_ALERT}): ${ka.note}`, state: { ...state, fails } };
+		if (fails >= FAIL_BEFORE_ALERT) return { lines: [], mails: [], fail: "DOTZ_FAIL network", note: ka.note, state: { ...state, fails } };
+		return { lines: [], mails: [], note: `transient (${fails}/${FAIL_BEFORE_ALERT}): ${ka.note}`, state: { ...state, fails } };
 	}
 
 	if (ka.status === "loggedout") {
 		if (!state.recoverTried) {
 			const recovered = await recover().catch(() => false);
 			if (recovered) return pollOnce(ctx, spec, config, { ...state, loggedOut: false, recoverTried: true }, recover);
-			if (!state.asked) return { lines: [], fail: "DOTZ_FAIL webmail-login", note: "logged out, recover failed", state: { ...state, loggedOut: true, recoverTried: true, asked: true } };
-			return { lines: [], note: "logged out, waiting", state: { ...state, loggedOut: true, recoverTried: true } };
+			if (!state.asked) return { lines: [], mails: [], fail: "DOTZ_FAIL webmail-login", note: "logged out, recover failed", state: { ...state, loggedOut: true, recoverTried: true, asked: true } };
+			return { lines: [], mails: [], note: "logged out, waiting", state: { ...state, loggedOut: true, recoverTried: true } };
 		}
-		if (!state.asked) return { lines: [], fail: "DOTZ_FAIL webmail-login", note: "logged out", state: { ...state, loggedOut: true, asked: true } };
-		return { lines: [], note: "logged out, waiting", state: { ...state, loggedOut: true } };
+		if (!state.asked) return { lines: [], mails: [], fail: "DOTZ_FAIL webmail-login", note: "logged out", state: { ...state, loggedOut: true, asked: true } };
+		return { lines: [], mails: [], note: "logged out, waiting", state: { ...state, loggedOut: true } };
 	}
 
 	const alive = onAlive(state, ctx.now(), ka.etag, ka.lastModified);
@@ -83,5 +84,22 @@ export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, sta
 	const shown = fresh.slice(-MAX_MAIL_LINES);
 	const more = fresh.length - shown.length;
 	const lines = [...(more > 0 ? [`mail-backlog ${more}: 이전 새 메일 ${more}통은 목록으로만 볼 수 있어요 (mail.ts list)`] : []), ...shown.map(mailLine)];
-	return { lines, note: `ok ${mails.length} new ${fresh.length}`, state: next };
+	return { lines, mails: shown, note: `ok ${mails.length} new ${fresh.length}`, state: next };
+}
+
+// Hands each new mail to the gateway (POST /api/mail, docs/custom-plugins.md "Posting a mail"): the gateway opens its thread
+// and its web conversation `mail:<site>-<id>` and gives the orchestrator one turn for it, so a web reply there is gated like a
+// Discord thread message. A mail the gateway did not take (gateway off, or one without /api/mail) keeps its stdout line, which
+// wakes the orchestrator the old way. Returns the lines still to print.
+export async function postToGateway(gw: Gateway, site: string, res: Pick<PollResult, "lines" | "mails">, log: (s: string) => void): Promise<string[]> {
+	const posted = new Set<string>();
+	for (const m of res.mails) {
+		try {
+			await gw("POST", "/api/mail", { source: site, id: m.id, from: oneLine(m.from, 300), subject: oneLine(m.subject, 300) || "(제목 없음)", wake: true });
+			posted.add(m.id);
+		} catch (error) {
+			log(`watch ${site}: mail ${m.id} not posted to the gateway, waking by line (${(error as Error).message})`);
+		}
+	}
+	return res.lines.filter((l) => !(l.startsWith("mail ") && posted.has(l.slice(5).split(" ")[0])));
 }
