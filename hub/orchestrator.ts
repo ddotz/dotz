@@ -52,7 +52,7 @@ let stopping = false;
 let rotating = false;
 let restarting = false;
 let pendingRestart = false;
-// A model/effort change made while a turn ran: switched in place at turn_end (applyModelChange).
+// A model/effort change made while a turn or a compaction ran: switched in place at turn_end / when the compaction ends (applyModelChange).
 let pendingModel = false;
 let turnsSinceStart = 0;
 let lastTurnEnd = Date.now();
@@ -354,9 +354,14 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					if (orch.status === "idle") rotate();
 					else rotateWhenIdle = true;
 				}
+				// A model/effort change that arrived during the compaction: a set_model mid-compaction cancels it.
+				if (pendingModel && !compacting() && !rotating && orch.status === "idle") {
+					pendingModel = false;
+					if (!switchInPlace()) restart();
+				}
 				// Owner prompts that arrived during the compaction go in now (OmO refuses a prompt while a requested
 				// compaction runs).
-				if (!compacting() && !rotating && orch.status === "idle" && held.length) {
+				if (!compacting() && !rotating && !restarting && orch.status === "idle" && held.length) {
 					log(`orchestrator compaction over; delivering ${held.length} prompt(s) that arrived during it`);
 					for (const h of held.splice(0)) sendOwner(h.text, h.header);
 					armWatchdog();
@@ -715,7 +720,7 @@ export function restart(): void {
 // A process that cannot switch in place (on a fallback entry, or a runtime-owned fallback list) restarts and resumes.
 export function applyModelChange(): "live" | "restarted" | "next-start" {
 	if (!proc) return "next-start";
-	if (orch.status === "working") {
+	if (orch.status === "working" || compacting()) {
 		pendingModel = true;
 		return "next-start";
 	}
