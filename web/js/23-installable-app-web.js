@@ -78,8 +78,10 @@ if (SHELL_RESTORE && !SHELL_RESTORE.key && SHELL_RESTORE.views) for (const ms of
 // A tap that had to start the app carries the message as ?m=<ts>: 99-boot.js opens it once the state is in. A decision carries ?n=<id> (its sheet,
 // 30-notices.js): it stays in the address and never also jumps to a conversation.
 const pushQ = new URLSearchParams(location.search);
-let pushOpenTs = pushQ.has("n") ? "" : pushQ.get("m") || "";
-if (pushQ.has("m")) { pushQ.delete("m"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
+// ?pc=<origin> (a notice relayed from another computer): the page switches to that computer (33-peers.js prFollow), with ?n / ?m as its own item.
+const PUSH_FOLLOW = pushQ.has("pc") ? location.href : "";
+let pushOpenTs = pushQ.has("n") || PUSH_FOLLOW ? "" : pushQ.get("m") || "";
+if (pushQ.has("m") && !PUSH_FOLLOW) { pushQ.delete("m"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
 async function pwaInit() {
   if (!("serviceWorker" in navigator)) return;
   try { PWA.reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" }); } catch (e) { console.warn("service worker", e); return; }
@@ -89,6 +91,10 @@ async function pwaInit() {
 }
 async function pushLoad() {
   try { PWA.info = await api(`/api/push${PWA.sub ? `?endpoint=${enc(PWA.sub.endpoint)}` : ""}`); } catch {}
+  // The installed app's subscription is marked as the app's (hub/push.ts app): the other computers relay their notices to it. Once per subscription.
+  if (PWA.sub && PWA.info && PWA.info.subscribed && !PWA.info.app && isStandalone()) {
+    try { await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), app: true }); PWA.info.app = true; } catch {}
+  }
   if (current === "settings") renderSettings();
 }
 async function pushEnable(btn) {
@@ -97,7 +103,7 @@ async function pushEnable(btn) {
     const reg = PWA.reg || await navigator.serviceWorker.ready;
     const info = PWA.info || await api("/api/push");
     PWA.sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(info.publicKey) });
-    await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON() });
+    await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), app: isStandalone() });
     toast("알림을 켰어요");
   });
   await pushLoad();
