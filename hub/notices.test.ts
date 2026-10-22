@@ -174,9 +174,7 @@ const open = (n: Notice) => n.decision!.state === "open" && !n.read;
 test("a session's own [done] resolves what it asked: answered, read, off the badge, kept in history", () => {
 	laneAsk("sudo1", "[ask] sudo killall trustd 를 터미널에서 실행해 주세요");
 	const d = decision("sudo killall trustd 를 터미널에서 실행해 주세요");
-	// the ask also made an alert notice (twin of the same event)
-	const twin = stored().find(n => n.kind === "alert" && n.tone === "ask" && n.at === d.decision!.reply_to)!;
-	expect(open(d) && !twin.read).toBe(true);
+	expect(open(d)).toBe(true);
 	const before = unreadCount();
 	// a progress line or another session's [done] does not close it
 	laneReport("sudo1", "[run] 기다리는 중이에요");
@@ -187,9 +185,8 @@ test("a session's own [done] resolves what it asked: answered, read, off the bad
 	laneReport("sudo1", "[done] 인증 뒤 작업을 마쳤어요");
 	const after = decision(d.title);
 	expect(after).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
-	expect(stored().find(n => n.id === twin.id)!.read).toBe(true);
 	// the session's result item is news (unread done), the ask is not
-	expect(unreadCount()).toBe(mid + 1 - 2 + 0);
+	expect(unreadCount()).toBe(mid + 1 - 1);
 	expect(stored().some(n => n.id === after.id)).toBe(true);
 });
 
@@ -217,8 +214,6 @@ test("a turn's [done] never resolves an ask posted in that same turn, even for t
 	orchestratorAnswered("[done] 코드 작업을 마쳤어요", "req-same", rts());
 	expect(open(decision("같은 턴에서 물어요"))).toBe(true);
 	expect(open(decision("폰 확인"))).toBe(true);
-	// the ask's alert twin keeps waiting too
-	expect(stored().some(n => n.kind === "alert" && n.tone === "ask" && !n.read && n.text.includes("같은 턴에서 물어요"))).toBe(true);
 });
 
 test("an orchestrator [done] resolves an earlier turn's ask only for the same request, and not an unrelated one", () => {
@@ -265,30 +260,26 @@ test("an ask that is the turn's own final answer stays open", () => {
 	expect(open(decision("어느 쪽으로 할까요?"))).toBe(true);
 });
 
-test("reopenNotices puts a wrongly closed question and its twin back: open, unread, no resolved flag or answer", () => {
+test("reopenNotices puts a wrongly closed question back: open, unread, no resolved flag or answer", () => {
 	orchAskRef(PHONE.replace("폰 확인", "폰 확인 셋"), "req-e");
 	const d = decision("폰 확인 셋");
-	const twin = stored().find(n => n.kind === "alert" && n.tone === "ask" && n.at === d.decision!.reply_to)!;
 	resolveNotices({ ids: [d.id] });
 	expect(stored().find(n => n.id === d.id)!.decision!.state).toBe("answered");
-	const r = reopenNotices([d.id, twin.id, "nope"]);
-	expect(r.reopened.sort()).toEqual([d.id, twin.id].sort());
+	const r = reopenNotices([d.id, "nope"]);
+	expect(r.reopened).toEqual([d.id]);
 	const back = stored().find(n => n.id === d.id)!;
 	expect(back).toMatchObject({ read: false, decision: { state: "open" } });
 	expect(back.decision!.resolved).toBeUndefined();
 	expect(back.decision!.answer).toBeUndefined();
-	expect(stored().find(n => n.id === twin.id)!.read).toBe(false);
 });
 
 test("a monitor passing again resolves its failure alert and is itself born read", () => {
 	const fail = `[uptime] failed 2 times in a row (exit 1)\n출력\n${watchChoice("uptime")}`;
 	emit("outbox", { ts: rts(), kind: "out", source: "gateway", target: "alert", text: fail });
 	const d = stored().find(n => n.kind === "decision" && n.text.startsWith("[uptime]"))!;
-	const alert = stored().find(n => n.kind === "alert" && n.text.startsWith("[uptime]"))!;
-	expect(open(d) && !alert.read).toBe(true);
+	expect(open(d)).toBe(true);
 	emit("outbox", { ts: rts(), kind: "out", source: "gateway", target: "alert", text: "[uptime] recovered\nok" });
 	expect(stored().find(n => n.id === d.id)).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
-	expect(stored().find(n => n.id === alert.id)!.read).toBe(true);
 	expect(stored().find(n => n.kind === "alert" && n.text.startsWith("[uptime] recovered"))!.read).toBe(true);
 });
 
@@ -300,12 +291,11 @@ test("a watch wake event with reason recovered reads that watch's earlier notice
 	expect(stored().filter(n => n.kind === "watch" && n.title === "cron1").every(n => n.read)).toBe(true);
 });
 
-test("the owner answering by any channel still settles the ask and its alert twin", () => {
+test("the owner answering by any channel still settles the ask", () => {
 	laneAsk("own1", "[ask] 이어서 할까요?");
 	const d = decision("이어서 할까요?");
 	emit("inbox", { ts: rts(), kind: "lane_message", source: "web", lane: "own1", text: "네" });
 	expect(stored().find(n => n.id === d.id)).toMatchObject({ read: true, decision: { state: "answered", answer: "네" } });
-	expect(stored().find(n => n.kind === "alert" && n.at === d.decision!.reply_to)!.read).toBe(true);
 	expect(stored().find(n => n.id === d.id)!.decision!.resolved).toBeUndefined();
 });
 
@@ -334,53 +324,46 @@ test("a login request keeps its own end: the bot's resolve never touches it", ()
 });
 
 // ---- what waits on the owner stays unread however it is viewed; the x (무시) takes it off without answering ----
-const waiting = (title: string) => {
-	const d = decision(title);
-	return { id: d.id, twinId: stored().find(n => n.kind === "alert" && n.tone === "ask" && n.at === d.decision!.reply_to)!.id };
-};
+const waiting = (title: string) => ({ id: decision(title).id });
 const stat = (id: string) => stored().find(n => n.id === id)!;
 const FAR = "9999-12-31T00:00:00.000Z";
 
 test("viewing a question that waits never reads it, on any path; a plain notice still clears on view", () => {
 	orchAsk("[ask] 보기만 해서는 남아야 해요\n**1) 예**\n**2) 아니요**");
-	const { id, twinId } = waiting("보기만 해서는 남아야 해요");
-	expect(stat(twinId)).toMatchObject({ kind: "alert", tone: "ask", read: false });
+	const { id } = waiting("보기만 해서는 남아야 해요");
 	post("worklog", "[done] 보면 읽히는 기록이에요");
 	const info = byText("보면 읽히는 기록이에요")[0]!;
-	markNoticesRead({ ids: [id, twinId, info.id] });   // the sheet, the chat scroll, a push click
+	markNoticesRead({ ids: [id, info.id] });   // the sheet, the chat scroll, a push click
 	expect(stat(info.id).read).toBe(true);
 	markNoticesRead({ all: true });   // read all
 	readConversationNotices("alert", FAR);   // the conversation read position
 	setViewing("tab-wait", "alert", Date.now());   // the page shows the conversation
 	setViewing("tab-wait", "", Date.now());
 	expect(stat(id)).toMatchObject({ read: false, decision: { state: "open" } });
-	expect(stat(twinId).read).toBe(false);
-	expect(unreadCount()).toBeGreaterThanOrEqual(2);
+	expect(unreadCount()).toBeGreaterThanOrEqual(1);
 	expect(listNotices().items.slice(0, 1)[0]!.kind).toBe("decision");
 });
 
-test("answering a question that waits removes it and its twin from the unread count", async () => {
+test("answering a question that waits removes it from the unread count", async () => {
 	orchAsk("[ask] 답하면 사라져요\n**1) 예**\n**2) 아니요**");
-	const { id, twinId } = waiting("답하면 사라져요");
+	const { id } = waiting("답하면 사라져요");
 	const before = unreadCount();
 	const r = await answerDecision(id, { n: 1 }, async () => {});
 	expect(r.status).toBe(200);
 	expect(stat(id)).toMatchObject({ read: true, decision: { state: "answered" } });
-	expect(stat(twinId).read).toBe(true);
-	expect(unreadCount()).toBe(before - 2);
+	expect(unreadCount()).toBe(before - 1);
 });
 
 test("a signal that the matter is over still clears a question that waits", () => {
 	orchAsk("[ask] 해결되면 사라져요\n**1) 예**\n**2) 아니요**");
-	const { id, twinId } = waiting("해결되면 사라져요");
+	const { id } = waiting("해결되면 사라져요");
 	resolveNotices({ ids: [id] });
 	expect(stat(id)).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
-	expect(stat(twinId).read).toBe(true);
 });
 
-test("ignoring takes a question and its twin off the count, keeps them in the history, answers nothing, and tells every page; undo brings them back", async () => {
+test("ignoring takes a question off the count, keeps it in the history, answers nothing, and tells every page; undo brings it back", async () => {
 	orchAsk("[ask] 무시해 볼게요\n**1) 예**\n**2) 아니요**");
-	const { id, twinId } = waiting("무시해 볼게요");
+	const { id } = waiting("무시해 볼게요");
 	let since = lastEventId();
 	const frames = () => (replayAfter(since) ?? []).map(f => JSON.parse(/data: (.*)\n/.exec(f)![1]!) as HubEvent).filter(e => e.kind === "notice");
 	const before = unreadCount();
@@ -388,12 +371,10 @@ test("ignoring takes a question and its twin off the count, keeps them in the hi
 	expect(r.status).toBe(200);
 	expect(stat(id)).toMatchObject({ read: true, decision: { state: "ignored" } });
 	expect(stat(id).ignored).toBeString();
-	expect(stat(twinId)).toMatchObject({ read: true });
-	expect(stat(twinId).ignored).toBe(stat(id).ignored);
-	expect(unreadCount()).toBe(before - 2);
+	expect(unreadCount()).toBe(before - 1);
 	// live to every page: one notice frame per changed item, carrying the new count
-	expect(frames().map(e => (e.item as Notice).id).sort()).toEqual([id, twinId].sort());
-	expect(frames().every(e => e.unread === before - 2)).toBe(true);
+	expect(frames().map(e => (e.item as Notice).id)).toEqual([id]);
+	expect(frames().every(e => e.unread === before - 1)).toBe(true);
 	// still listed (history), never an answer: a later owner message does not turn it into an answered one
 	expect(listNotices().items.some(n => n.id === id && n.decision?.state === "ignored")).toBe(true);
 	owner("아무 말");
@@ -402,7 +383,7 @@ test("ignoring takes a question and its twin off the count, keeps them in the hi
 	// the same ask arriving again soon does not bring it back
 	orchAsk("[ask] 무시해 볼게요\n**1) 예**\n**2) 아니요**");
 	expect(stat(id).decision!.state).toBe("ignored");
-	expect(unreadCount()).toBe(before - 2);   // the repeat's own alert is ignored with it
+	expect(unreadCount()).toBe(before - 1);   // the repeat makes no item of its own
 	// ignoring twice is harmless; an answered or plain notice cannot be ignored
 	expect(ignoreNotice(id).body.already).toBe(true);
 	expect(ignoreNotice(byText("보면 읽히는 기록이에요")[0]!.id).status).toBe(409);
@@ -414,19 +395,52 @@ test("ignoring takes a question and its twin off the count, keeps them in the hi
 	expect(unignoreNotice(id).status).toBe(200);
 	expect(stat(id)).toMatchObject({ read: false, decision: { state: "open" } });
 	expect(stat(id).ignored).toBeUndefined();
-	expect(stat(twinId)).toMatchObject({ read: false });
-	expect(unreadCount()).toBe(before + 1);   // the decision, its twin and the repeat's twin
-	expect(frames()).toHaveLength(3);
+	expect(unreadCount()).toBe(before);
+	expect(frames()).toHaveLength(1);
 	// it can be answered after the undo
 	expect((await answerDecision(id, { n: 1 }, async () => {})).status).toBe(200);
 	expect(stat(id).decision!.state).toBe("answered");
 });
 
-test("ignoring the alert twin ignores its decision too", () => {
-	orchAsk("[ask] 알림에서 무시해요\n**1) 예**\n**2) 아니요**");
-	const { id, twinId } = waiting("알림에서 무시해요");
-	expect(ignoreNotice(twinId).status).toBe(200);
-	expect(stat(id)).toMatchObject({ read: true, decision: { state: "ignored" } });
+test("one [ask] with a choice block posted to alert is one notice, and answering it closes that one", async () => {
+	const at = rts();
+	emit("outbox", { ts: at, kind: "out", source: "orchestrator", target: "alert", text: "[ask] 탭을 바꿨어요. 폰에서 봐 주세요.\n\n결정: 폰 탭 하나\n**1) 확인됨** ← 추천\n폰에서도 잘 보여요\n**2) 안 됨 …**\n어디가 이상한지 적어 주세요" });
+	const made = stored().filter(n => n.at === at || n.decision?.reply_to === at);
+	expect(made.map(n => n.kind)).toEqual(["decision"]);
+	const [d] = made;
+	expect(d).toMatchObject({ title: "폰 탭 하나", src: "alert", read: false, decision: { state: "open", reply_to: at } });
+	expect(listNotices(NOTICE_CAP).items.filter(n => n.at === at)).toHaveLength(1);
+	expect((await answerDecision(d!.id, { n: 1 }, async () => {})).status).toBe(200);
+	const after = stored().filter(n => n.at === at || n.decision?.reply_to === at);
+	expect(after).toHaveLength(1);
+	expect(after[0]).toMatchObject({ id: d!.id, read: true, decision: { state: "answered", answer: "1) 확인됨" } });
+	expect(listNotices(NOTICE_CAP).items.filter(n => n.at === at).map(n => n.id)).toEqual([d!.id]);
+});
+
+test("on load, an alert item stored next to the decision of the same message reads back as one notice; nothing else changes", () => {
+	const dir = mkdtempSync(join(tmpdir(), "dotz-pair-"));
+	copyFileSync(CONFIG_FILE, join(dir, "config.json"));
+	const T1 = "2026-10-22T14:07:14.500Z", T2 = "2026-10-22T14:09:00.000Z";
+	const base = { ts: T1, updated: T1, open: "alert", src: "alert", at: T1, read: false };
+	const pair: Notice[] = [
+		{ ...base, id: "dec00001", kind: "decision", tone: "ask", title: "폰 탭 구성 확인", text: "q", key: "dec:alert:x", decision: { options: [{ n: 1, label: "확인됨", desc: "", rec: true }, { n: 2, label: "안 됨", desc: "", rec: false }], to: "alert", reply_to: T1, group: 1, state: "open" } },
+		{ ...base, id: "twin0001", kind: "alert", tone: "ask", title: "알림", text: "q" },
+		{ ...base, id: "msg00001", kind: "message", tone: "", title: "알림", text: "q", key: "msg:alert" },
+		{ ...base, id: "fail0001", kind: "alert", tone: "fail", title: "알림", text: "디스크가 찼어요", ts: T2, updated: T2, at: T2 },
+	];
+	writeFileSync(join(dir, "notices.json"), JSON.stringify(pair));
+	const script = `import { listNotices, unreadCount } from "./hub/notices.ts"; console.log(JSON.stringify({ ids: listNotices(300).items.map(n => n.id), unread: unreadCount() })); process.exit(0);`;
+	const run = Bun.spawnSync([process.execPath, "-e", script], { cwd: join(import.meta.dir, ".."), env: { ...process.env, DOTZ_DIR: dir } });
+	expect(run.exitCode).toBe(0);
+	const out = JSON.parse(run.stdout.toString().trim().split("\n").at(-1)!) as { ids: string[]; unread: number };
+	expect(out.ids.sort()).toEqual(["dec00001", "fail0001", "msg00001"]);
+	expect(out.unread).toBe(3);
+	// kept in the file, only folded away
+	const after = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8")) as Notice[];
+	expect(after).toHaveLength(4);
+	expect(after.find(n => n.id === "twin0001")).toMatchObject({ read: true, dismissed: true });
+	expect(after.find(n => n.id === "dec00001")).toMatchObject({ read: false, decision: { state: "open" } });
+	rmSync(dir, { recursive: true, force: true });
 });
 
 test("the store keeps at most 300 items, dropping read ones first and then the oldest", () => {

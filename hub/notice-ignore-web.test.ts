@@ -54,7 +54,6 @@ describe("the x (무시) in a headless browser", () => {
 		markNoticesRead({ all: true });
 		ask("엑스 확인용 질문이에요");
 		const item = () => stored().find(n => n.kind === "decision" && n.title === "엑스 확인용 질문이에요")! as Notice;
-		const twin = () => stored().find(n => n.kind === "alert" && n.tone === "ask" && n.at === item().decision?.reply_to)! as Notice;
 		expect(item().decision!.state).toBe("open");
 		const before = unreadCount();
 
@@ -76,7 +75,7 @@ describe("the x (무시) in a headless browser", () => {
 		await settled(phone);
 		await Bun.write(`${SNAP}/home-390.png`, await phone.screenshot());
 
-		// surface 2: a row of the 알림 card (the unread [ask] twin)
+		// surface 2: a row of the 알림 card
 		await waitFor(phone, `document.querySelector(".hc-row .nt-x")`);
 		await phone.evaluate(`document.querySelector(".hc-row .nt-x").scrollIntoView({ block: "center" })`);
 		const x2 = await rect(phone, ".hc-row .nt-x");
@@ -100,7 +99,6 @@ describe("the x (무시) in a headless browser", () => {
 
 		// viewing never cleared it
 		expect(item().read).toBe(false);
-		expect(twin().read).toBe(false);
 
 		// ignore from the sheet: leaves 답변 필요 here and on the other page, the toast offers the undo, the hub keeps it as ignored
 		await phone.evaluate(`document.querySelector(".fs-card .fs-ign").click()`);
@@ -109,7 +107,7 @@ describe("the x (무시) in a headless browser", () => {
 		await waitFor(desk, `!document.querySelector(".hn .hrx")`);
 		expect(item().decision!.state).toBe("ignored");
 		expect(item().ignored).toBeString();
-		expect(unreadCount()).toBe(before - 2);
+		expect(unreadCount()).toBe(before - 1);
 		await settled(phone);
 		await Bun.write(`${SNAP}/ignored-toast-390.png`, await phone.screenshot());
 
