@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { issueBlock } from "./choices.ts";
+import { DONE_REPLY } from "./decision-any-marker.fixture.ts";
 import { inboxText } from "./intake.ts";
 import { reflectPrompt } from "./reflect.ts";
 
@@ -80,7 +81,7 @@ describe("알림 and 작업 기록 are conversations of their own", () => {
 	});
 });
 
-describe("buttons only for an [ask] message", () => {
+describe("buttons for an [ask] message or any message with a 결정: choice block", () => {
 	const list = "설치 방법은 두 가지예요\n1) 브루로 설치\n2) 직접 빌드";
 	const shown = (e: any) => {
 		const p = page(), { tone, text } = p.parseTone(e.text);
@@ -100,7 +101,22 @@ describe("buttons only for an [ask] message", () => {
 		expect(shown(reply(`[ask] ${list}`))).toBe(true);
 		const block = issueBlock("어떻게 할까요?", [{ name: "원인 확인", result: "살펴봐요." }, { name: "넘어가요", result: "다음에 봐요." }]);
 		expect(shown(out(2, "alert", { text: `토큰 점검에서 경고 1건\n${block}` }))).toBe(true);
-		expect(shown(reply(`토큰 점검에서 경고 1건\n${block}`, { target: "alert" }))).toBe(false);
+		expect(shown(reply(`토큰 점검에서 경고 1건\n${block}`, { target: "alert" }))).toBe(true);
+	});
+
+	test("a [done] answer, a no-marker answer and a lane report with a 결정: block get buttons; the exact mac mini text too", () => {
+		expect(shown(reply(DONE_REPLY))).toBe(true);
+		expect(shown(reply(DONE_REPLY.replace("[done] ", "")))).toBe(true);
+		expect(shown(reply(DONE_REPLY, { kind: "lane_report", lane: "a" }))).toBe(true);
+		const pc = page().parseChoices(page().parseTone(DONE_REPLY).text);
+		expect(pc.blocks).toHaveLength(1);
+		expect(pc.blocks[0]!.title).toBe("방문 예약");
+		expect(pc.blocks[0]!.options.map(o => [o.n, o.rec])).toEqual([[1, true], [2, false], [3, false]]);
+	});
+
+	test("a bare numbered list or a single option after 결정: stays text under any marker", () => {
+		expect(shown(reply("[done] 두 가지예요\n**1) 가**\n설명\n**2) 나**\n설명"))).toBe(false);
+		expect(shown(reply("[fail] 결정: 하나뿐\n**1) 가**\n설명"))).toBe(false);
 	});
 });
 

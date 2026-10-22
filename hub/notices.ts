@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
-import { type DecisionOption, parseDecisions } from "./choices.ts";
+import { type DecisionOption, hasDecisionHead, parseDecisions } from "./choices.ts";
 import { type DraftApproval, draftActionOf, parseDraftApproval } from "./draft-approval.ts";
 import { broadcast, emit, eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
@@ -379,9 +379,10 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	const p = parseTone(stripHandoff(String(e.text ?? "")));
 	const body = p.text.trim();
 	const pc = parseDecisions(body);
-	// Buttons only for an [ask]; the gateway's own alert (its issue reports end in a choice block, with no marker) is the one exception.
+	// An [ask] is a decision; so is any other message (a [done] answer, a lane report, no marker) holding a "결정:" choice block with 2+
+	// options. A plain numbered list without "결정:" is not. The gateway's own alert keeps its older, looser rule.
 	const gatewayAlert = e.kind === "out" && e.source === "gateway" && e.target === "alert";
-	if (!body || (p.tone !== "ask" && !(gatewayAlert && pc.blocks.length))) return [];
+	if (!body || (p.tone !== "ask" && !hasDecisionHead(pc.blocks) && !(gatewayAlert && pc.blocks.length))) return [];
 	const to = eventTarget(e) ?? "main";
 	const detail = body.slice(0, TEXT_MAX);
 	const line = firstLine(body);
