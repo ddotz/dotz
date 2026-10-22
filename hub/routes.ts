@@ -1,13 +1,14 @@
 // HTTP routing of the hub: the install files, the identity check and the first part of the route chain; the rest is routes-settings.ts and routes-lanes.ts.
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
 import { join } from "node:path";
-import { ADDRESS, cfg, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
+import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
 import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
 import { changeTarget, ControlError, targetView, ForceRequired, looksLikeCommand, parseCommand } from "./control.ts";
 import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
-import { conversationList } from "./conversations.ts";
+import { conversationList, unreadOf } from "./conversations.ts";
+import { integrationContext, integrationItems } from "./integrations.ts";
 import { markRead } from "./reads.ts";
 import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
@@ -18,7 +19,7 @@ import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { answerDecision, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
+import { NOTICE_CAP, answerDecision, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { listSchedules } from "./schedule.ts";
 import { readTodo } from "./todo.ts";
@@ -135,6 +136,10 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
+		if (req.method === "GET" && url.pathname === "/api/integrations") {
+			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
+			return json({ items: integrationItems(integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele"] : []), listNotices(NOTICE_CAP).items, convUnread) });
+		}
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
 		// The bot closes the questions whose matter is over (ids, match text, conv or all): they are answered, read and off 답변 필요.
 		if (req.method === "POST" && url.pathname === "/api/notices/resolve") return json(resolveNotices(await body(req)));
