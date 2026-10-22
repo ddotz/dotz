@@ -5,7 +5,7 @@ import type { SiteSpec } from "../lib/spec.ts";
 
 export type FakeMail = { id: number; from: string; subject: string; date: string; read: boolean; html: string };
 
-export function startFakeServer(initial: FakeMail[] = []) {
+export function startFakeServer(initial: FakeMail[] = [], opts: { xssi?: boolean } = {}) {
 	let mails = [...initial];
 	let loggedOut = false;
 	const etag = () => `W/"${mails.length}-${Math.max(0, ...mails.map((m) => m.id))}"`;
@@ -21,7 +21,8 @@ export function startFakeServer(initial: FakeMail[] = []) {
 			if (/\/mail\/mboxes\/\d+\/mails$/.test(url.pathname) && !url.searchParams.get("q")) {
 				const tag = etag();
 				if (req.headers.get("if-none-match") === tag) return new Response(null, { status: 304, headers: { etag: tag } });
-				return Response.json({ mails: mails.map(({ html, ...m }) => m) }, { headers: { etag: tag } });
+				const json = JSON.stringify({ mails: mails.map(({ html, ...m }) => m) });
+				return new Response(opts.xssi ? `)]}',\n${json}` : json, { headers: { etag: tag, "content-type": "application/json" } });
 			}
 			if (url.pathname.endsWith("/search")) {
 				const q = url.searchParams.get("q")?.toLowerCase() ?? "";
@@ -32,6 +33,11 @@ export function startFakeServer(initial: FakeMail[] = []) {
 			if (detail) {
 				const m = mails.find((x) => x.id === Number(detail[1]));
 				return m ? Response.json({ id: m.id, html: m.html }) : new Response("not found", { status: 404 });
+			}
+			if (url.pathname === "/mail/read" && req.method === "POST") {
+				const id = Number(new URLSearchParams(await req.text()).get("mailId"));
+				const m = mails.find((x) => x.id === id);
+				return m ? Response.json({ data: { content: m.html } }) : new Response("not found", { status: 404 });
 			}
 			if (url.pathname.endsWith("/send") && req.method === "POST") return Response.json({ ok: true });
 			return new Response("not found", { status: 404 });

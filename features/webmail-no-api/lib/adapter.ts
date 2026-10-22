@@ -1,14 +1,14 @@
 // The generic webmail adapter: list, read and search a site, and prepare (never send) a draft, using only the captured
 // SiteSpec and an injected context. It knows nothing about any specific mail site; the spec supplies every URL, field path
 // and header. Minimal fields are requested through `list.params`, and a conditional-request cache lives in the watch state.
-import { endpointUrl, getPath, type SiteSpec } from "./spec.ts";
+import { endpointUrl, getPath, parseJson, requestInit, type Endpoint, type SiteSpec } from "./spec.ts";
 import { headers, fetchList, type LoginState } from "./session.ts";
 import { type Ctx } from "./config.ts";
 
 export type Mail = { id: string; from: string; subject: string; time: string; read: boolean };
 export type Detail = { id: string; body: string; raw: unknown };
 
-const str = (v: unknown): string => (v == null ? "" : typeof v === "string" ? v : String(v));
+const str = (v: unknown): string => (v == null ? "" : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v));
 
 export function mapMails(spec: SiteSpec, body: unknown): Mail[] {
 	const arr = getPath(body, spec.list.listPath);
@@ -19,9 +19,12 @@ export function mapMails(spec: SiteSpec, body: unknown): Mail[] {
 		from: f.from ? str(getPath(item, f.from)) : "",
 		subject: f.subject ? str(getPath(item, f.subject)) : "",
 		time: f.time ? str(getPath(item, f.time)) : "",
-		read: f.read ? Boolean(getPath(item, f.read)) : false,
+		read: f.read ? truthyRead(getPath(item, f.read)) : false,
 	})).filter((m) => m.id);
 }
+
+// Sites encode "read" as booleans, 0/1, or letters ("Y"/"N"); only the clearly-true forms count as read.
+const truthyRead = (v: unknown): boolean => v === true || v === 1 || (typeof v === "string" && /^(1|y|yes|true|read|seen)$/i.test(v.trim()));
 
 export async function list(ctx: Ctx, spec: SiteSpec): Promise<{ state: LoginState; mails: Mail[] }> {
 	const cookie = await ctx.cookieHeader(spec);
@@ -29,35 +32,66 @@ export async function list(ctx: Ctx, spec: SiteSpec): Promise<{ state: LoginStat
 	return { state, mails: state.kind === "ok" ? mapMails(spec, state.body) : [] };
 }
 
-export async function read(ctx: Ctx, spec: SiteSpec, id: string): Promise<Detail> {
+async function getJson(ctx: Ctx, spec: SiteSpec, ep: Endpoint, tokens: Record<string, string | undefined>, what: string): Promise<unknown> {
 	const cookie = await ctx.cookieHeader(spec);
-	const url = endpointUrl(spec.origin, spec.read, { id });
-	const r = await ctx.fetch(url, { method: spec.read.method ?? "GET", headers: headers(spec, cookie, { Accept: "application/json" }), signal: AbortSignal.timeout(30_000) });
+	const { method, body, contentType } = requestInit(ep, tokens);
+	const h = headers(spec, cookie, { Accept: "application/json", ...(contentType ? { "Content-Type": contentType } : {}) });
+	const r = await ctx.fetch(endpointUrl(spec.origin, ep, tokens), { method, headers: h, ...(body !== undefined ? { body } : {}), redirect: "manual", signal: AbortSignal.timeout(30_000) });
+	if (r.status >= 300 && r.status < 400) throw new Error(`${what}: 로그인이 풀린 것 같아요 (HTTP ${r.status})`);
+	if (!r.ok) throw new Error(`${what}: HTTP ${r.status}`);
 	const text = await r.text();
-	let raw: unknown;
 	try {
-		raw = JSON.parse(text);
+		return parseJson(text);
 	} catch {
-		throw new Error(`read ${id}: response was not JSON (session may be lost)`);
+		throw new Error(`${what}: JSON이 아닌 응답이 왔어요 (로그인이 풀렸거나 주소가 달라요)`);
 	}
-	const bodyRaw = str(getPath(raw, spec.read.bodyPath));
-	return { id, body: spec.read.bodyIsHtml ? htmlToText(bodyRaw) : bodyRaw, raw };
+}
+
+export async function read(ctx: Ctx, spec: SiteSpec, id: string): Promise<Detail> {
+	const raw = await getJson(ctx, spec, spec.read, { id, mailbox: spec.list.mailbox }, `메일 ${id} 읽기`);
+	const bodyRaw = getPath(raw, spec.read.bodyPath);
+	if (bodyRaw === undefined) throw new Error(`메일 ${id} 읽기: 응답에 ${spec.read.bodyPath} 필드가 없어요`);
+	const text = str(bodyRaw);
+	return { id, body: spec.read.bodyIsHtml ? htmlToText(text) : text, raw };
+}
+
+// Fallback when capture saw no mail being opened: try likely read endpoints with a real mail id and keep the first one
+// whose JSON holds a body-like field. Each candidate is one GET; nothing is written.
+export async function probeRead(ctx: Ctx, spec: SiteSpec, id: string, candidates: SiteSpec["read"][]): Promise<SiteSpec["read"] | undefined> {
+	for (const c of candidates) {
+		try {
+			const raw = await getJson(ctx, spec, c, { id, mailbox: spec.list.mailbox }, "probe");
+			const bodyPath = c.bodyPath && getPath(raw, c.bodyPath) !== undefined ? c.bodyPath : findTextField(raw);
+			if (bodyPath) return { ...c, bodyPath, bodyIsHtml: true };
+		} catch {
+			continue;
+		}
+	}
+	return undefined;
+}
+
+const BODY_KEY = /^(body|content|contents|html|text|message|mail_?body|bodyhtml|htmlbody)$/i;
+export function findTextField(root: unknown): string | undefined {
+	const queue: { path: string; value: unknown }[] = [{ path: "", value: root }];
+	let best: { path: string; score: number } | undefined;
+	while (queue.length) {
+		const { path, value } = queue.shift()!;
+		if (typeof value === "string" && path) {
+			const key = path.split(".").pop()!;
+			const named = BODY_KEY.test(key), html = /<\/?(p|div|br|span|table)\b/i.test(value);
+			const score = value.length + (named ? 10_000 : 0) + (html ? 5_000 : 0);
+			if ((named || html || value.length >= 20) && (!best || score > best.score)) best = { path, score };
+		}
+		if (value && typeof value === "object" && !Array.isArray(value)) for (const [k, v] of Object.entries(value as Record<string, unknown>)) queue.push({ path: path ? `${path}.${k}` : k, value: v });
+	}
+	return best?.path;
 }
 
 export async function search(ctx: Ctx, spec: SiteSpec, q: string): Promise<Mail[]> {
-	if (!spec.search) throw new Error("이 사이트 스펙에는 검색 엔드포인트가 없어요");
-	const cookie = await ctx.cookieHeader(spec);
-	const hasToken = /\{q\}/.test(spec.search.path);
+	if (!spec.search) throw new Error("이 사이트는 검색 호출을 아직 못 찾았어요. 받은메일함에서 한 번 검색한 뒤 다시 캡처하면 생겨요");
+	const hasToken = /\{q\}/.test(spec.search.path) || /\{q\}/.test(spec.search.body ?? "");
 	const ep = hasToken ? spec.search : { ...spec.search, params: { ...(spec.search.params ?? {}), [spec.search.queryParam]: q } };
-	const url = endpointUrl(spec.origin, ep, { q });
-	const r = await ctx.fetch(url, { method: spec.search.method ?? "GET", headers: headers(spec, cookie, { Accept: "application/json" }), signal: AbortSignal.timeout(30_000) });
-	const text = await r.text();
-	let raw: unknown;
-	try {
-		raw = JSON.parse(text);
-	} catch {
-		throw new Error(`search: response was not JSON (session may be lost)`);
-	}
+	const raw = await getJson(ctx, spec, ep, { q, mailbox: spec.list.mailbox }, "검색");
 	const listPath = spec.search.listPath ?? spec.list.listPath;
 	return mapMails({ ...spec, list: { ...spec.list, listPath } }, raw);
 }
@@ -68,7 +102,7 @@ export type Draft = { id: string; to: string; cc?: string; subject: string; body
 // (bin/mail.ts send, guarded) so nothing leaves the account without an explicit OK.
 export function makeDraft(now: number, input: { to: string; cc?: string; subject: string; body: string }): Draft {
 	const stamp = new Date(now).toISOString().replace(/[-:T]/g, "").slice(0, 12);
-	const rand = Math.floor(now % 0xffff).toString(16).padStart(4, "0");
+	const rand = crypto.getRandomValues(new Uint16Array(1))[0].toString(16).padStart(4, "0");
 	return { id: `d-${stamp}-${rand}`, to: input.to.trim(), ...(input.cc ? { cc: input.cc.trim() } : {}), subject: input.subject, body: input.body, created: new Date(now).toISOString() };
 }
 
