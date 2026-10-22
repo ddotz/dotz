@@ -94,7 +94,7 @@ function decodeRgba(file: Buffer): { w: number; h: number; px: Uint8Array } {
 	return { w, h, px };
 }
 
-test("the push badge is a white-on-transparent alpha mask with a ring-and-dot silhouette, served by the hub", async () => {
+test("the push badge is a white-on-transparent alpha mask of the dotz dot, served by the hub", async () => {
 	const file = readFileSync(join(WEB, "icons", "badge-96.png"));
 	const { w, h, px } = decodeRgba(file);
 	expect([w, h]).toEqual([96, 96]);
@@ -112,8 +112,8 @@ test("the push badge is a white-on-transparent alpha mask with a ring-and-dot si
 	expect(solid / total).toBeGreaterThan(0.15);
 	expect([at(0, 0), at(95, 0), at(0, 95), at(95, 95)]).toEqual([0, 0, 0, 0]); // corners clear
 	expect(at(48, 48)).toBe(255); // dot
-	expect(at(48, 21)).toBe(0); // gap between dot and ring
-	expect(at(48, 10)).toBe(255); // ring
+	expect(at(48, 21)).toBe(255); // inside the dot
+	expect(at(48, 10)).toBe(0); // no ring around it
 	const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
 	const res = await route(new Request("http://x/icons/badge-96.png"));
 	expect([res.status, res.headers.get("content-type")]).toEqual([200, "image/png"]);
@@ -121,4 +121,10 @@ test("the push badge is a white-on-transparent alpha mask with a ring-and-dot si
 	const sw = readFileSync(join(WEB, "sw.js"), "utf8");
 	expect(sw).toMatch(/badge: "\/icons\/badge-96\.png"/);
 	expect(sw).toMatch(/icon: "\/icons\/icon-192\.png"/);
+	const manifest = JSON.parse(readFileSync(join(WEB, "manifest.webmanifest"), "utf8"));
+	for (const size of [192, 512]) {
+		expect(manifest.icons).toContainEqual({ src: `/icons/monochrome-${size}.png`, sizes: `${size}x${size}`, type: "image/png", purpose: "monochrome" });
+		const mono = await route(new Request(`http://x/icons/monochrome-${size}.png`));
+		expect([mono.status, mono.headers.get("content-type")]).toEqual([200, "image/png"]);
+	}
 });
