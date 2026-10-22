@@ -52,7 +52,7 @@ function readSecretFile<T>(file: string, what: string): T {
 	}
 }
 
-function defaultLoopback(): Loopback {
+export function defaultLoopback(): Loopback {
 	let resolve!: (p: URLSearchParams) => void;
 	const redirect = new Promise<URLSearchParams>(r => (resolve = r));
 	const server = Bun.serve({
@@ -124,7 +124,7 @@ function gatewayBase(ctx: Ctx): string {
 	return `http://127.0.0.1:${port}`;
 }
 
-async function gateway(ctx: Ctx, method: string, path: string, body?: unknown): Promise<any> {
+export async function gateway(ctx: Ctx, method: string, path: string, body?: unknown): Promise<any> {
 	const tokenFile = join(secretsDir(), "hub-token");
 	if (!existsSync(tokenFile)) throw new Fail("DOTZ_FAIL gateway no-token");
 	const headers: Record<string, string> = { "x-dotz-token": readFileSync(tokenFile, "utf8").trim() };
@@ -173,7 +173,7 @@ function buildConfig(f: Map<string, string | true>, acc: Accounts): Config {
 	const c: Config = prev && !validateConfig(prev) ? { ...prev } : defaultConfig();
 	if (acc.youtube) {
 		const y = c.youtube;
-		c.youtube = { channel_id: acc.youtube.id, title: acc.youtube.title, base_language: y?.base_language ?? "ko", languages: y?.languages ?? [], privacy: y?.privacy ?? "private", upload_via: y?.upload_via ?? "api" };
+		c.youtube = { channel_id: acc.youtube.id, title: acc.youtube.title, base_language: y?.base_language ?? "ko", languages: y?.languages ?? [], privacy: y?.privacy ?? "private", upload_via: y?.upload_via ?? "aside" };
 	}
 	if (acc.instagram) c.instagram = { user_id: acc.instagram.user_id, username: acc.instagram.username, post_via: c.instagram?.post_via ?? "api" };
 	if (c.youtube) {
