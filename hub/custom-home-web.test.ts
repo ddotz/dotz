@@ -71,7 +71,7 @@ describe("custom cards on 홈", () => {
 			const now = new Date(2026, 9, 22, 15, 0), at = (y, m, d, h, mi) => new Date(y, m, d, h, mi).toISOString();
 			const f = (iso) => dotzCustom.fmt(iso, now);
 			return JSON.stringify([f(at(2026, 9, 22, 14, 31)), f(at(2026, 9, 22, 9, 5)), f(at(2026, 9, 21, 9, 5)), f(at(2026, 0, 2, 9, 5)), f(at(2025, 11, 30, 9, 5)),
-				dotzCustom.show("-"), dotzCustom.show(null), dotzCustom.show("진행 중: -"), dotzCustom.show("확인 " + at(2026, 9, 22, 9, 5) + " (실패 1번)"), dotzCustom.show("켜짐")]);
+				dotzCustom.show("-"), dotzCustom.show(null), dotzCustom.show("진행 중: -"), dotzCustom.show("확인 " + at(2026, 9, 22, 9, 5) + " (실패 1번)", now), dotzCustom.show("켜짐")]);
 		})()`)) as string;
 		expect(JSON.parse(out)).toEqual(["29분 전", "09:05", "어제 09:05", "1월 2일 09:05", "2025년 12월 30일 09:05", "없음", "없음", "진행 중: 없음", "확인 09:05 (실패 1번)", "켜짐"]);
 	});
