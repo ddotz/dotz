@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, parseDecisions } from "./choices.ts";
+import { type DraftApproval, draftActionOf, parseDraftApproval } from "./draft-approval.ts";
 import { broadcast, emit, eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
@@ -47,6 +48,8 @@ export type Decision = {
 	state: "open" | "answered";
 	answer?: string;
 	answered_at?: string;
+	// A draft waiting for send approval (hub/draft-approval.ts): the sheet shows it above the options.
+	draft?: DraftApproval;
 };
 
 export const NOTICE_CAP = 300;
@@ -305,7 +308,7 @@ const firstLine = (text: string) => {
 	return l.length > 80 ? `${l.slice(0, 79)}…` : l;
 };
 
-type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string };
+type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string; draft?: DraftApproval };
 
 // The decisions an event asks of the owner: an [ask] from the assistant or a session, or any message holding a choice block
 // (2+ options), split by its decision blocks.
@@ -322,13 +325,14 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	const to = eventTarget(e) ?? "main";
 	const detail = body.slice(0, TEXT_MAX);
 	const line = firstLine(body);
-	const draft = (title: string, options: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail, options, to, replyTo: e.ts, group, key: `dec:${to}:${hashOf(`${idx}|${title}|${options.map(o => o.label).join("/")}`)}` });
+	const sendDraft = pc.blocks.length === 1 ? parseDraftApproval(body) : undefined;
+	const draft = (title: string, options: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail, options, to, replyTo: e.ts, group, key: `dec:${to}:${hashOf(`${idx}|${title}|${options.map(o => o.label).join("/")}${sendDraft ? `|${sendDraft.to}|${sendDraft.subject ?? ""}|${sendDraft.body}` : ""}`)}`, ...(sendDraft ? { draft: sendDraft } : {}) });
 	if (!pc.blocks.length) return [draft(line || "답변이 필요해요", to.startsWith("lane:") && /\/budget-ok/.test(body) ? BUDGET_OPTIONS : [], 1, 0)];
 	const many = pc.blocks.length > 1;
 	return pc.blocks.map((b, i) => draft(b.title || (many ? `결정 ${i + 1}` : pc.question || line), b.options.map(o => ({ ...o })), pc.blocks.length, i));
 }
 
-function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string }, at: string): void {
+function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval }, at: string): void {
 	const old = items.find(n => n.key === d.key);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
@@ -336,7 +340,7 @@ function putDecision(d: { key: string; title: string; detail: string; to: string
 		if (Date.parse(at) - Date.parse(old.decision.answered_at ?? "") < REASK_MS) return;
 	}
 	const open = d.open ?? d.to;
-	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open" };
+	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(d.draft ? { draft: d.draft } : {}) };
 	let item: Notice;
 	if (old) {
 		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, updated: at, read: false, decision });
@@ -380,7 +384,7 @@ function ownerReplied(e: HubEvent): void {
 export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; picks?: { q: string; n: number; label: string }[] }) => Promise<void>;
 // A button of a decision: `n` is the option's number. The answer goes to the asking chat / session (or the login request) through `send`; only
 // when that worked is the notice answered.
-export async function answerDecision(id: unknown, body: { n?: unknown }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
+export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
 	const item = items.find(i => i.id === String(id));
 	const d = item?.decision;
 	if (!item || !d) return { status: 404, body: { error: "unknown decision" } };
@@ -388,7 +392,10 @@ export async function answerDecision(id: unknown, body: { n?: unknown }, send: D
 	const o = d.options.find(x => x.n === Number(body.n));
 	if (!o || o.action === "form") return { status: 400, body: { error: "unknown option" } };
 	const label = `${o.n}) ${o.label}`;
-	const text = o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label);
+	// 고치기 on a draft carries what to change; it is the only option that takes a note, and it needs one.
+	const note = d.draft && draftActionOf(o.label) === "edit" ? String(body.note ?? "").replace(/\s+/g, " ").trim().slice(0, 500) : "";
+	if (d.draft && draftActionOf(o.label) === "edit" && !note) return { status: 400, body: { error: "무엇을 고칠지 적어 주세요" } };
+	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");
 	sending.set(item.id, label);
 	try {
 		// `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines).

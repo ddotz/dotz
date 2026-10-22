@@ -231,11 +231,11 @@ async function openNotice(n) {
 
 /* ---- decision sheet: the docked decision card (10-decision-card.js) over the current screen ---- */
 // Same card and same answer path as the one above the composer, for the conversation the notice came from; no navigation, no scroll.
-const DK = { node: null, box: null, ov: null, dc: null, seq: 0, opener: null, timer: 0 };
+const DK = { node: null, box: null, ov: null, dc: null, seq: 0, opener: null, timer: 0, nid: "" };
 function dkClose(restore = true) {
   ++DK.seq; clearTimeout(DK.timer); DK.timer = 0;
   if (!DK.node) return;
-  DK.node.remove(); DK.node = DK.box = DK.dc = null;
+  DK.node.remove(); DK.node = DK.box = DK.dc = null; DK.nid = "";
   ovDone(DK.ov); DK.ov = null;
   document.removeEventListener("keydown", dkKey, true);
   if (restore && DK.opener && DK.opener.isConnected) DK.opener.focus({ preventScroll: true });
@@ -244,18 +244,25 @@ function dkClose(restore = true) {
 function dkKey(ev) { if (ev.key === "Escape" && DK.node) { ev.preventDefault(); ev.stopPropagation(); dkClose(); } }
 function dkPaint() {
   if (!DK.node) return;
-  const dc = decisionOf(DK.dc.t);
-  if (!dc || dc.sig !== DK.dc.sig) { dkClose(false); return; }   // answered, here or elsewhere
-  DK.dc = { ...dc, close: dkClose };
+  let dc = DK.dc;
+  if (DK.nid) {   // a draft sheet follows its own notice
+    const n = ntById(DK.nid);
+    if (!n || !ntOpenDec(n)) { const answered = !!n && ntIsDec(n); dkClose(false); if (answered) toast("답을 보냈어요"); return; }
+  } else {
+    dc = decisionOf(DK.dc.t);
+    if (!dc || dc.sig !== DK.dc.sig) { dkClose(false); return; }   // answered, here or elsewhere
+    DK.dc = { ...dc, close: dkClose };
+  }
   const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
   DK.box.dataset.key = dc.key;
   renderDecision(DK.box, DK.dc, picks, step);
   if (DC.st[dc.key] === "sent" && !DK.timer) DK.timer = setTimeout(() => { dkClose(false); toast("답을 보냈어요"); }, 900);
 }
-function dkOpen(dc) {
+function dkOpen(dc, draft, nid) {
   dkClose(false);
   DK.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  DK.dc = { ...dc, close: dkClose };
+  DK.nid = nid || "";
+  DK.dc = { ...dc, close: dkClose, draft: draft || null };
   DK.box = el("section", { class: "dcard dk-card", role: "dialog", "aria-label": "결정이 필요해요", tabindex: "-1" });
   DK.node = el("div", { class: "dk-bd", onpointerdown: ev => { if (ev.target === DK.node) dkClose(); } }, DK.box);
   document.body.append(DK.node);
@@ -277,6 +284,12 @@ async function ntAskSheet(n) {
   if (!dc || !dc.blocks.length || (n.at && dc.at && dc.at !== n.at)) return false;
   dkOpen(dc);
   return true;
+}
+// A draft waiting for send approval (hub/draft-approval.ts): the same sheet, built from the notice itself, with the draft above the three choices.
+function ntDraftSheet(n) {
+  const d = n.decision;
+  closeNotices(false);
+  dkOpen({ key: `dk:${n.id}`, t: d.to, sig: `dk:${n.id}`, at: d.reply_to || n.at || "", question: "", blocks: [{ title: n.title, options: d.options }] }, d.draft, String(n.id));
 }
 // Hook: open a notice by id as if it was tapped (tap + scroll + highlight).
 function noticeOpen(id) { const n = NT.items.find(x => String(x.id) === String(id)); if (n) openNotice(n); return !!n; }
@@ -555,8 +568,8 @@ function ntApply(item, unread) {
   syncInlineChoices();
 }
 // Throws with the hub's reason when the answer could not be delivered.
-async function ntPost(n, num) {
-  const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num });
+async function ntPost(n, num, note) {
+  const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(note ? { note } : {}) });
   ntApply(r.item, r.unread);
 }
 // The open decision that is this chat card's question (a card with one block), so the card and the bell answer through the same path.
@@ -657,6 +670,7 @@ async function noticeSheetOpen(id) {
   if (!n || !ntIsDec(n)) { toast("이 알림은 이미 처리됐어요"); return; }
   if (NS.node && NS.id === String(n.id)) return;
   ntSheetClose(false);
+  if (n.decision.draft && n.decision.state === "open") { ntDraftSheet(n); return; }
   closeNotices(false);
   NS.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   NS.id = String(n.id); NS.busy = false;

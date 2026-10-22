@@ -37,7 +37,9 @@ function parseChoices(text) {
 }
 // A message with a choice block is a decision even without [ask] (same rule as hub/notices.ts decisionsOf): a block of 2+ options.
 const isChoiceMsg = pc => pc.blocks.some(b => b.options.length > 1);
-const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {} };
+const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, note: {} };
+// A draft waiting for send approval (hub/draft-approval.ts): the bell notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
+const DRAFT_EDIT = "고치기";
 const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36); };
 // What the target waits on: a session's pendingAsk, else its last bot message when that is an [ask] with a choice block and no
 // owner message came after it. Null when nothing waits (so the card goes away once the answer lands).
@@ -70,24 +72,25 @@ function decisionOf(t) {
   const sig = hashOf(body.trim());
   return { key: `${t}|${sig}`, t, sig, at, question: pc.question, blocks: pc.blocks };
 }
-async function answerDecision(dc, text, opt) {
+async function answerDecision(dc, text, opt, note) {
   const t = dc.t, lane = isLaneT(t) ? laneOf(t) : "";   // the card's own conversation: the notice sheet may answer for one that is not on screen
   DC.st[dc.key] = "sending"; paintDecision();
   try {
     // A card with one block whose question is a decision notice answers through the bell's path (30-notices.js), so both stay in step.
     const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
-    if (nd) await ntPost(nd, opt.n);
+    if (nd) await ntPost(nd, opt.n, note);
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label }] : []));
     const r = nd ? null : await api("/api/message", "POST", { text, ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
-    DC.st[dc.key] = "sent";
+    DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
     if (t === target) { chatStick = true; scrollChat(true); }
   } catch (e) { delete DC.st[dc.key]; delete DC.picks[dc.key]; toast(e.message, true); }
   paintDecision();
 }
 function pickOption(dc, bi, opt) {
   if (DC.st[dc.key]) return;
+  if (dc.draft && opt.label === DRAFT_EDIT) { DC.edit[dc.key] = opt; paintDecision(); return; }   // what to change is typed first
   const p = DC.picks[dc.key] || [];
   DC.picks[dc.key] = p;
   p[bi] = opt;
@@ -95,17 +98,36 @@ function pickOption(dc, bi, opt) {
   if (next >= 0) { DC.step[dc.key] = next; paintDecision(); return; }
   answerDecision(dc, dc.blocks.length === 1 ? `${opt.n}) ${opt.label}` : `결정 답: ${dc.blocks.map((_, i) => `${p[i].n}) ${p[i].label}`).join(" · ")}`, dc.blocks.length === 1 ? opt : undefined);
 }
+function draftNode(d) {
+  return el("div", { class: "dc-draft" },
+    el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
+    d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
+    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }));
+}
+// 고치기 on a draft: the owner types the change, then the answer goes out with it.
+function editNode(dc, opt, st) {
+  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: "어떻게 고칠까요?", "aria-label": "고칠 내용", disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
+  ta.value = DC.note[dc.key] || "";
+  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) answerDecision(dc, `${opt.n}) ${opt.label} - ${note}`, opt, note); } }, "고칠 내용 보내기");
+  const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, "돌아가기");
+  return el("div", { class: "dc-edit" }, ta, el("div", { class: "dc-eb" }, back, go));
+}
 function renderDecision(box, dc, picks, step) {
   const st = DC.st[dc.key] || "", fold = !dc.close && !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
+  // A draft message starts with its quoted draft, so the question is the block's own title without the draft's id.
+  const qText = dc.draft ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
   const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt" },
     el("span", { class: "dc-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" }),
-    dc.question ? mdNode(dc.question, "md dc-q") : null),
+    qText ? mdNode(qText, "md dc-q") : null),
     // In the notice sheet (30-notices.js, dc.close) the corner button closes it instead of folding the card.
     dc.close ? el("button", { class: "dc-fold", type: "button", "aria-label": "닫기", onclick: () => dc.close() }, icon("close"))
       : el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop")));
   const kids = [head];
   if (!fold) {
     const body = el("div", { class: "dc-body" });
+    if (dc.draft) body.append(draftNode(dc.draft));
+    if (dc.draft && DC.edit[dc.key] && !st.startsWith("sent")) { body.append(editNode(dc, DC.edit[dc.key], st)); kids.push(body); }
+    else {
     if (dc.blocks.length > 1) body.append(el("div", { class: "dc-steps", role: "group", "aria-label": "결정 단계" }, ...dc.blocks.map((b, i) =>
       el("button", { class: `dc-chip${i === step ? " on" : ""}${picks[i] ? " got" : ""}`, type: "button", disabled: !!st, "aria-pressed": String(i === step), onclick: () => { DC.step[dc.key] = i; paintDecision(); } }, `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}`))));
     const blk = dc.blocks[step];
@@ -116,6 +138,7 @@ function renderDecision(box, dc, picks, step) {
         el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
     }
     kids.push(body);
+    }
   }
   if (st) kids.push(el("div", { class: "dc-st", role: "status", text: st === "sending" ? "보내는 중…" : "보냈어요 · 답을 기다려요" }));
   clear(box).append(...kids);

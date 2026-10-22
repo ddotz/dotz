@@ -3,7 +3,7 @@
 // There is no Kakao message API, HTTP or private-protocol path in this module.
 import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
-import { issueBlock } from "../choices.ts";
+import { draftApprovalBlock } from "../draft-approval.ts";
 import { writePrivate } from "./creds.ts";
 import type { KakaoPaths, Runner } from "./types.ts";
 
@@ -57,12 +57,7 @@ export async function createDraft(input: { chatId: string; roomName: string; tex
 }
 
 export function draftBlock(d: Draft): string {
-	const quoted = d.text.split("\n").map(l => `> ${l}`).join("\n");
-	return `${quoted}\n${issueBlock(`카톡 답장 보낼까요? (${d.code})`, [
-		{ name: "보내기", result: `${d.roomName}에 이 글을 그대로 보내요` },
-		{ name: "고치기", result: "글을 고쳐서 다시 물어봐요" },
-		{ name: "보내지 않기", result: "이 초안은 버려요" },
-	])}`;
+	return draftApprovalBlock({ to: d.roomName, toLabel: "대화방", body: d.text, ref: d.code, question: "카톡 답장 보낼까요?" });
 }
 
 type Ev = { ts: string; kind: string; source: string; text: string; picks?: { q?: unknown; label?: unknown }[]; reply_to?: unknown; [k: string]: unknown };
