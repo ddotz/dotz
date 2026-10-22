@@ -1,8 +1,11 @@
 // Model providers as the gateway sees them, all kept in the runtime's own credential store: OAuth logins (`omp login`,
 // started and finished through the gateway), API keys (`omp auth import`), sign-out (`omp auth-broker logout`), plus
 // the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
+import { readFileSync } from "node:fs";
 import { OMP } from "./config.ts";
 import { label } from "./account-alias.ts";
+import { authFile } from "./apikey-policy.ts";
+import { OMO } from "./runtime/omo-hosts.ts";
 import { stickyAccount } from "./account-sticky.ts";
 import { labeledAccountView } from "./accounts-api.ts";
 import { orgLimits } from "./org-limits.ts";
@@ -88,24 +91,92 @@ async function cached<K extends keyof typeof cache>(key: K, load: () => Promise<
 	return value;
 }
 
+// Runtimes keep separate credential stores: omp has its own (`omp auth export`), OmO reads <agent dir>/auth.json. A role that
+// runs on OmO lists what OmO can run, not what omp happens to hold (a fresh OmO machine has an empty omp store).
+const ROLES = ["orchestrator", "lane"] as const;
+const usesOmo = (): boolean => ROLES.some(r => runtimeIdOf(r) === "omo");
+const usesOmp = (): boolean => ROLES.some(r => runtimeIdOf(r) !== "omo");
+
+async function cliText(bin: string, args: string[], timeoutMs = 30_000): Promise<string | undefined> {
+	try {
+		const proc = Bun.spawn([bin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+		const timer = setTimeout(() => proc.kill(), timeoutMs);
+		const text = await new Response(proc.stdout).text();
+		clearTimeout(timer);
+		return (await proc.exited) === 0 ? text : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function omoAuth(): Record<string, unknown> | undefined {
+	try {
+		const j = JSON.parse(readFileSync(authFile(), "utf8"));
+		return j && typeof j === "object" ? j : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+// OmO's `anthropic-subscription` is the Claude login, which dotz (like omp) calls `anthropic`; OmO's own `anthropic` is the
+// API-key provider and stays out of the way while a subscription login exists (hub/runtime/omo.ts omoSelector maps back).
+const SUBSCRIPTION = "anthropic-subscription";
+const dotzProvider = (id: string): string => (id === SUBSCRIPTION ? "anthropic" : id);
+const shadowed = (id: string, auth: Record<string, unknown>): boolean => id === "anthropic" && SUBSCRIPTION in auth;
+
+// Pure: the credentials in OmO's auth.json (provider ids, types, masked key tails; never the secrets).
+export function omoAuthInfos(auth: Record<string, unknown> | undefined): AuthInfo[] {
+	if (!auth) return [];
+	return Object.entries(auth).flatMap(([id, v]): AuthInfo[] => {
+		if (!v || typeof v !== "object" || shadowed(id, auth)) return [];
+		const c = v as Record<string, unknown>;
+		const accounts = Array.isArray(c.accounts) ? (c.accounts as { name?: unknown }[]) : [];
+		const name = typeof c.pinned === "string" ? c.pinned : accounts.find(a => typeof a?.name === "string")?.name;
+		const key = ["key", "apiKey", "api_key"].map(k => c[k]).find((x): x is string => typeof x === "string" && x.length > 0);
+		return [{ provider: dotzProvider(id), type: String(c.type ?? (key ? "api_key" : "oauth")), label: typeof name === "string" ? name : undefined, masked: key ? mask(key) : undefined }];
+	});
+}
+
+// Pure: `omo --list-models` (a table: provider, model, context, max-out, thinking, images) cut down to the providers OmO
+// holds credentials for (auth.json keys, or the provider's API-key env var), under dotz's provider names.
+export function omoModels(table: string, auth: Record<string, unknown> | undefined, env: Record<string, string | undefined>): ModelInfo[] {
+	const a = auth ?? {};
+	const ready = new Set(Object.keys(a).filter(id => !shadowed(id, a)));
+	for (const [id, v] of Object.entries(PROVIDER_ENV)) if (env[v] && !shadowed(id, a)) ready.add(id);
+	return table.split("\n").flatMap((line): ModelInfo[] => {
+		const [provider, model, , , thinking] = line.trim().split(/\s+/);
+		if (!provider || !model || provider === "provider" || !ready.has(provider)) return [];
+		const dotz = dotzProvider(provider);
+		return [{ selector: `${dotz}/${model}`, name: model, provider: dotz, reasoning: thinking === "yes" }];
+	});
+}
+
 export type ModelInfo = { selector: string; name: string; provider: string; reasoning: boolean };
+const ompModels = async (): Promise<ModelInfo[] | undefined> => {
+	const j = await ompJson<{ models?: OmpModel[] }>(["models", "--json"]);
+	return Array.isArray(j?.models) ? j.models.filter(m => m.kind === "chat").map(m => ({ selector: m.selector, name: m.name ?? m.id ?? m.selector, provider: m.provider, reasoning: Boolean(m.reasoning) })) : undefined;
+};
 export const availableModels = async (): Promise<ModelInfo[]> =>
 	(await cached("models", async () => {
-		const j = await ompJson<{ models?: OmpModel[] }>(["models", "--json"]);
-		return Array.isArray(j?.models) ? j.models.filter(m => m.kind === "chat").map(m => ({ selector: m.selector, name: m.name ?? m.id ?? m.selector, provider: m.provider, reasoning: Boolean(m.reasoning) })) : undefined;
+		const [omo, omp] = await Promise.all([usesOmo() ? cliText(OMO, ["--list-models"]).then(t => (t === undefined ? undefined : omoModels(t, omoAuth(), process.env))) : [], usesOmp() ? ompModels() : []]);
+		if (omo === undefined && omp === undefined) return undefined;
+		const seen = new Set<string>();
+		return [...(omo ?? []), ...(omp ?? [])].filter(m => !seen.has(m.selector) && seen.add(m.selector));
 	})) ?? [];
 
 // What omp itself has stored (`omp auth export`): only provider ids, credential types and masked key tails are kept.
 type AuthInfo = { provider: string; type: string; label?: string; masked?: string };
 const authInfos = async (): Promise<AuthInfo[]> =>
 	(await cached("auth", async () => {
+		const own = usesOmo() ? omoAuthInfos(omoAuth()) : [];
+		if (!usesOmp()) return own;
 		const j = await ompJson<{ credentials?: OmpCredential[] }>(["auth", "export"]);
-		if (!Array.isArray(j?.credentials)) return undefined;
-		return j.credentials.map((c): AuthInfo => {
+		if (!Array.isArray(j?.credentials)) return own.length ? own : undefined;
+		return [...own, ...j.credentials.map((c): AuthInfo => {
 			const cred = c.credential ?? {};
 			const key = ["key", "apiKey", "api_key", "token"].map(k => cred[k]).find((v): v is string => typeof v === "string" && v.length > 0);
 			return { provider: c.provider, type: String(cred.type), label: typeof cred.email === "string" ? cred.email : undefined, masked: key ? mask(key) : undefined };
-		});
+		})];
 	})) ?? [];
 
 const usageReports = async (): Promise<OmpUsageReport[]> =>
@@ -158,7 +229,7 @@ const OAUTH_FIRST = new Set(["anthropic"]);
 
 // Pure: merges the runtime's stored credentials, env vars, the login catalog and the model catalog into the configured
 // rows and the not-yet-configured (addable) providers.
-function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string> }): { providers: ProviderRow[]; addable: AddableProvider[] } {
+export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string> }): { providers: ProviderRow[]; addable: AddableProvider[] } {
 	const names = new Map(input.catalog.map(p => [p.id, p.name]));
 	const nameOf = (id: string) => names.get(id) ?? id;
 	const ids = new Set<string>([...input.auth.map(a => a.provider), ...input.models.map(m => m.provider)]);
