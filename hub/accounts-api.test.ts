@@ -114,6 +114,17 @@ test("accountsBody switches carry from_label/to_label/kind_text and labeledAccou
 	expect(v.switches[0]).toMatchObject({ from_label: "개인 계정", to_label: "회사 계정", kind_text: KIND_TEXT.limit });
 });
 
+test("DELETE /api/accounts/switches removes one entry by its time, or all of them without `at`", async () => {
+	const now = Date.now();
+	const list = [1, 2, 3].map(i => sw({ at: new Date(now - i * 60_000).toISOString(), from: i % 2 ? "default" : "work", to: i % 2 ? "work" : "default" }));
+	writeFileSync(switchesFile(), `${list.map(s => JSON.stringify(s)).join("\n")}\n`);
+	const one = await call("DELETE", `/api/accounts/switches?at=${encodeURIComponent(list[1].at)}`);
+	expect(await one!.json()).toEqual({ removed: 1 });
+	expect(accountsBody().switches.map(s => s.at)).toEqual([list[2].at, list[0].at]);
+	expect(await (await call("DELETE", "/api/accounts/switches"))!.json()).toEqual({ removed: 2 });
+	expect(accountsBody().switches).toEqual([]);
+});
+
 test("/account shows the account, why, each account, the rules and the script; ids only on a detail line", async () => {
 	writeAuth(["default", "work"]);
 	writeSlots({ work: { blockReason: "rate_limit", blockedUntil: Date.now() + 3_600_000 } });
