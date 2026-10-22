@@ -31,6 +31,12 @@ function lastQuestion(text: string): string | undefined {
 	return sentences.reverse().find(s => /[?？]\s*$/.test(s) || /(?:까요|나요)\s*$/.test(s));
 }
 
+// A question about sending something that quotes no draft (no line starting with ">"): the owner cannot decide on it alone.
+export function asksSendWithoutDraft(text: string): boolean {
+	const q = lastQuestion(text);
+	return !!q && !OPEN.test(q) && SEND.test(q) && !/^\s*>/m.test(text);
+}
+
 export function askDefaults(text: string): DecisionOption[] {
 	const q = lastQuestion(text);
 	if (!q || OPEN.test(q)) return [];

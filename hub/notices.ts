@@ -3,9 +3,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
-import { type DraftApproval, draftActionOf, parseDraftApproval } from "./draft-approval.ts";
-import { askDefaults } from "./ask-options.ts";
-import { broadcast, emit, eventTarget, type HubEvent, onEmit } from "./events.ts";
+import { type DraftApproval, draftActionOf, parseDraftApproval, quotedDraft } from "./draft-approval.ts";
+import { askDefaults, asksSendWithoutDraft } from "./ask-options.ts";
+import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { humanLabel, scheduleLine, watchLine, watchReasonKo } from "./watchtext.ts";
@@ -409,6 +409,15 @@ const firstLine = (text: string) => {
 
 type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string; by?: string; ref?: string; draft?: DraftApproval; assumed?: true };
 
+// The quoted draft in the newest assistant message of a conversation before `before` (the draft the thread's send question is about).
+function threadDraft(conv: string, before: string): string | undefined {
+	for (const m of historyEvents(conv, 40, before).reverse()) {
+		const q = m.kind === "out" && typeof m.text === "string" ? quotedDraft(m.text) : undefined;
+		if (q) return q;
+	}
+	return undefined;
+}
+
 // The decisions an event asks of the owner: an [ask] from the assistant or a session, or any message holding a choice block
 // (2+ options), split by its decision blocks.
 export function decisionsOf(e: HubEvent): Draft[] {
@@ -425,7 +434,9 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	const gatewayAlert = e.kind === "out" && e.source === "gateway" && e.target === "alert";
 	if (!body || (p.tone !== "ask" && !hasDecisionHead(pc.blocks) && !(gatewayAlert && pc.blocks.length))) return [];
 	const to = eventTarget(e) ?? "main";
-	const detail = body.slice(0, TEXT_MAX);
+	// A mail thread's send question without the draft: the thread's latest drafted quote goes above it, so the owner can decide on it.
+	const quoted = !pc.blocks.length && to.startsWith("mail:") && asksSendWithoutDraft(body) ? threadDraft(to, e.ts) : undefined;
+	const detail = quoted ? `${quoted.slice(0, Math.max(0, TEXT_MAX - body.length - 1))}\n${body}`.slice(0, TEXT_MAX) : body.slice(0, TEXT_MAX);
 	const line = firstLine(body);
 	const sendDraft = pc.blocks.length === 1 ? parseDraftApproval(body) : undefined;
 	const by = authorOf(e), ref = refOf(e);
