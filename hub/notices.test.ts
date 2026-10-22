@@ -6,7 +6,7 @@ import { CONFIG_FILE, paths } from "./config.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
-import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropLaneNotices, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -491,6 +491,9 @@ function runBackfill(dir: string): { count: number; items: Notice[] } {
 test("backfill builds the store once from persisted history: last 7 days, one item per lane key, 24 h split read/unread, no second run", () => {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-backfill-"));
 	copyFileSync(CONFIG_FILE, join(dir, "config.json"));
+	// session aa still exists (a restart retires unread results of sessions that are gone); bb is finished and read
+	mkdirSync(join(dir, "lanes", "aa"), { recursive: true });
+	writeFileSync(join(dir, "lanes", "aa", "lane.json"), JSON.stringify({ name: "aa" }));
 	writeFileSync(
 		join(dir, "outbox.jsonl"),
 		jsonl([
@@ -833,6 +836,89 @@ test("a notice whose message the owner has seen is no longer unread: by the read
 	setViewing("tab-seen", "lane:seen2", Date.now());
 	expect(mine("lane:seen2").read).toBe(true);
 	setViewing("tab-seen", "", Date.now());
+});
+
+// A throwaway data dir for a fresh process: config copy, optional stored notices / read positions, and the sessions that still exist on disk.
+function storeDir(files: { notices?: Notice[]; reads?: Record<string, string>; lanes?: string[] }): string {
+	const dir = mkdtempSync(join(tmpdir(), "dotz-stale-"));
+	copyFileSync(CONFIG_FILE, join(dir, "config.json"));
+	if (files.notices) writeFileSync(join(dir, "notices.json"), JSON.stringify(files.notices));
+	if (files.reads) writeFileSync(join(dir, "reads.json"), JSON.stringify(files.reads));
+	for (const l of files.lanes ?? []) {
+		mkdirSync(join(dir, "lanes", l), { recursive: true });
+		writeFileSync(join(dir, "lanes", l, "lane.json"), JSON.stringify({ title: l }));
+	}
+	return dir;
+}
+function loadIn(dir: string): { items: Notice[]; unread: number } {
+	const script = `import { listNotices, unreadCount } from "./hub/notices.ts"; console.log(JSON.stringify({ items: listNotices(300).items, unread: unreadCount() })); process.exit(0);`;
+	const run = Bun.spawnSync([process.execPath, "-e", script], { cwd: join(import.meta.dir, ".."), env: { ...process.env, DOTZ_DIR: dir } });
+	expect(run.exitCode).toBe(0);
+	return JSON.parse(run.stdout.toString().trim().split("\n").at(-1)!);
+}
+const stale = (id: string, key: string, at: string, extra: Partial<Notice> = {}): Notice => ({ id, ts: at, updated: at, kind: "result", tone: "done", title: "세션", text: `${id} 끝났어요`, open: key, src: key, at, key, read: false, ...extra });
+
+test("deleting a session drops its notices: unread ones leave the badge and list, its open question is resolved, other sessions are untouched", () => {
+	emit("inbox", { ts: ts(), kind: "lane_report", source: "lane:del1", lane: "del1", text: "[done] 지워질 세션의 결과" });
+	emit("inbox", { ts: ts(), kind: "lane_report", source: "lane:keep1", lane: "keep1", text: "[done] 남는 세션의 결과" });
+	emit("inbox", { ts: ts(), kind: "lane_report", source: "lane:del1", lane: "del1", text: "[ask] 어느 쪽으로 할까요?\n**1) 가\n**2) 나" });
+	const open = stored().filter(n => n.decision?.to === "lane:del1" && n.decision.state === "open");
+	expect(open.length).toBeGreaterThan(0);
+	const before = unreadCount();
+	const seen = lastEventId();
+
+	const dropped = dropLaneNotices("del1");
+	expect(dropped).toBeGreaterThan(0);
+	const mine = stored().filter(n => n.key === "lane:del1" || n.decision?.to === "lane:del1");
+	expect(mine.every(n => n.dismissed && n.read)).toBe(true);
+	expect(stored().filter(n => n.decision?.to === "lane:del1").every(n => n.decision!.state !== "open")).toBe(true);
+	expect(listNotices(300).items.some(n => n.key === "lane:del1")).toBe(false);
+	expect(stored().find(n => n.key === "lane:keep1")).toMatchObject({ read: false });
+	expect(unreadCount()).toBeLessThan(before);
+	expect(replayAfter(seen)?.filter(f => f.includes('"kind":"notice_dismiss"')).length).toBe(dropped);
+	expect(dropLaneNotices("del1")).toBe(0);
+});
+
+test("on load, unread and waiting notices of a session that no longer exists are retired; read history and living sessions stay", () => {
+	const at = "2026-10-20T01:00:00.000Z";
+	const asking: Notice = stale("bbbbbbb4", "lane:gone", at, { kind: "decision", tone: "ask", decision: { to: "lane:gone", reply_to: at, options: [{ n: 1, label: "가" }], state: "open" } as Notice["decision"] });
+	const dir = storeDir({
+		lanes: ["alive"],
+		notices: [stale("bbbbbbb1", "lane:gone", at), stale("bbbbbbb2", "lane:alive", at), stale("bbbbbbb3", "lane:old", at, { read: true }), asking],
+	});
+	const fresh = loadIn(dir);
+	expect(fresh.items.map(n => n.id).sort()).toEqual(["bbbbbbb2", "bbbbbbb3"]);
+	expect(fresh.unread).toBe(1);
+	const saved: Notice[] = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8"));
+	expect(saved.find(n => n.id === "bbbbbbb1")).toMatchObject({ dismissed: true, read: true });
+	expect(saved.find(n => n.id === "bbbbbbb4")).toMatchObject({ dismissed: true, read: true, decision: { state: "answered", resolved: true } });
+});
+
+test("read state survives a reload: what the owner read (by position or by id) stays read, what came after stays unread", () => {
+	const early = "2026-10-20T01:00:00.000Z", late = "2026-10-20T05:00:00.000Z";
+	const dir = storeDir({
+		lanes: ["rd"],
+		reads: { "lane:rd": "2026-10-20T02:00:00.000Z" },
+		notices: [stale("ccccccc1", "lane:rd", early), stale("ccccccc2", "lane:rd", late), stale("ccccccc3", "lane:rd", early, { key: "msg:lane:rd", read: true })],
+	});
+	const fresh = loadIn(dir);
+	const by = (id: string) => fresh.items.find(n => n.id === id)!;
+	expect(by("ccccccc1").read).toBe(true);
+	expect(by("ccccccc2").read).toBe(false);
+	expect(by("ccccccc3").read).toBe(true);
+	expect(fresh.unread).toBe(1);
+	// and the corrected state is what the file holds, so a second load agrees
+	const again = loadIn(dir);
+	expect(again.items.filter(n => !n.read).map(n => n.id)).toEqual(["ccccccc2"]);
+	expect((JSON.parse(readFileSync(join(dir, "notices.json"), "utf8")) as Notice[]).find(n => n.id === "ccccccc1")!.read).toBe(true);
+});
+
+test("a notice that arrives after the owner already read that conversation past it is born read; a newer one is unread", () => {
+	markRead({ target: "lane:born1", ts: "2026-10-22T05:00:00.000Z" });
+	emit("outbox", { ts: "2026-10-22T04:00:00.000Z", kind: "out", source: "lane:born1", target: "worklog", text: "[done] 이미 본 결과", update_key: "lane:born1" });
+	expect(stored().find(n => n.key === "lane:born1")).toMatchObject({ read: true });
+	emit("outbox", { ts: "2026-10-22T06:00:00.000Z", kind: "out", source: "lane:born1", target: "worklog", text: "[done] 새 결과", update_key: "lane:born1" });
+	expect(stored().find(n => n.key === "lane:born1")).toMatchObject({ read: false });
 });
 
 // The notice store is one per process: leave no question that still waits behind for the next test file (ignoring needs no clock, unlike resolving).

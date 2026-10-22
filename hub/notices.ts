@@ -193,11 +193,21 @@ function upsert(i: Input): Notice {
 		items.push(item);
 		trim();
 	}
+	// The owner's read position may already cover the message this notice points at (read on another device first): it is born read.
+	if (!item.read && coveredByRead(item)) item.read = true;
 	if (!replaying) {
 		save();
 		broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
 	}
 	return item;
+}
+
+// The read position (reads.json, one per conversation, shared by every device) is the source of truth for "seen": a plain notice whose source message
+// it covers is read. What waits on the owner (needsAnswer) is never read this way.
+function coveredByRead(i: Notice): boolean {
+	if (i.dismissed || needsAnswer(i)) return false;
+	const seen = readOf(i.src ?? i.open);
+	return !!seen && seen >= (i.at ?? i.ts);
 }
 
 const clean = (raw: unknown) => {
@@ -602,6 +612,67 @@ export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unk
 }
 
 onEmit(feed);
+
+/* ---------- stale notices: the session is gone, or the owner already read the message ---------- */
+// The session a notice belongs to: its key, the conversation it points at, or the session its question goes to.
+function laneOfNotice(i: Notice): string | undefined {
+	for (const c of [i.key, i.src, i.open, i.decision?.to]) {
+		const m = /^lane:([\w.-]+)$/.exec(c ?? "");
+		if (m) return m[1];
+	}
+	return undefined;
+}
+const laneExists = (name: string) => existsSync(join(paths.lanes, name, "lane.json"));
+
+// A session that no longer exists answers nobody: its questions are closed as resolved, and its notices are read and leave the list and the badge
+// (kept in notices.json as dismissed). Every open page hears a notice_dismiss per item.
+function retire(list: Notice[], at = now()): void {
+	if (!list.length) return;
+	for (const i of list) {
+		if (isOpenDecision(i)) settleDecision(i, "", at, true);
+		i.read = true;
+		i.dismissed = true;
+	}
+	if (replaying) return;
+	save();
+	const unread = unreadCount();
+	for (const i of list) broadcast({ ts: at, kind: "notice_dismiss", source: "gateway", id: i.id, unread });
+}
+
+// Called when a session is deleted (hub/lanetrash.ts): its notices go with it. Returns how many were retired.
+export function dropLaneNotices(name: string): number {
+	const list = items.filter(i => !i.dismissed && laneOfNotice(i) === name);
+	retire(list);
+	return list.length;
+}
+
+// On load: notices of sessions that no longer exist (deleted, or removed while the hub was down) are retired when they still count (unread or open);
+// read ones stay as history. And a notice whose message the read position already covers is read.
+function reconcileStored(): void {
+	replaying = true;
+	try {
+		const gone = new Map<string, boolean>();
+		const isGone = (name: string) => gone.get(name) ?? (gone.set(name, !laneExists(name)), gone.get(name)!);
+		const stale = items.filter(i => {
+			const lane = laneOfNotice(i);
+			return !i.dismissed && (!i.read || isOpenDecision(i)) && lane !== undefined && isGone(lane);
+		});
+		retire(stale);
+		let read = 0;
+		for (const i of items)
+			if (!i.read && coveredByRead(i)) {
+				i.read = true;
+				read++;
+			}
+		if (stale.length || read) {
+			save();
+			log(`notices reconciled on load: ${stale.length} of gone sessions retired, ${read} read by position`);
+		}
+	} finally {
+		replaying = false;
+	}
+}
+reconcileStored();
 
 export const BACKFILL_DAYS = 7;
 const DAY_MS = 86_400_000;
