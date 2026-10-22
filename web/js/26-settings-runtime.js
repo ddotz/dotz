@@ -9,13 +9,15 @@ async function loadRuntimes(refresh) {
 }
 function rtSection() {
   if (!RT) return [];
-  const rows = RT.runtimes.map(r => {
-    const cur = r.roles.length > 0;
-    const sub = [r.version ? `v${r.version}` : "", r.reason || ""].filter(Boolean).join(" · ");
-    const trail = cur ? el("span", { class: "tag ok", text: r.roles.length === 2 ? "현재" : `현재 · ${RT_ROLE[r.roles[0]]}` }) : r.installed ? icon("chev", "lead") : null;
-    const kids = [el("span", { class: "lead" }, icon(RT_ICON[r.id] || "harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: r.label }), sub ? el("div", { class: "sup", text: sub }) : null), trail];
-    if (!r.installed) return el("div", { class: "li off", "aria-disabled": "true", title: r.reason || "" }, ...kids);
-    return el("button", { class: "li tap", type: "button", "data-runtime": r.id, onclick: () => (cur && r.roles.length === 2 ? toast(`${r.label}를 쓰고 있어요`) : rtFlow(r)) }, ...kids);
+  // Only the running harness is listed (two rows when the assistant and the sessions run on different ones); tapping a row opens the
+  // shared menu with the other installed harnesses, and picking one starts the existing compatibility-check + switch flow.
+  const others = RT.runtimes.filter(r => r.installed).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", r.roles.length ? "현재 쓰는 중" : ""].filter(Boolean).join(" · ") || undefined }));
+  const rows = RT.runtimes.filter(r => r.roles.length > 0).map(r => {
+    const sub = [r.version ? `v${r.version}` : "", r.roles.length === 2 ? "사용 중" : `${r.roles.map(k => RT_ROLE[k]).join("·")} 사용 중`].filter(Boolean).join(" · ");
+    const b = el("button", { class: "li tap", type: "button", "data-runtime": r.id, "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `실행 하네스: ${r.label}. 눌러서 바꾸기` },
+      el("span", { class: "lead" }, icon(RT_ICON[r.id] || "harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: r.label }), el("div", { class: "sup", text: sub })), icon("drop"));
+    b.addEventListener("click", () => showMenu(b, others.filter(o => o.value !== r.id), { onPick: id => rtFlow(RT.runtimes.find(x => x.id === id)) }));
+    return b;
   });
   return [el("div", { class: "sec", text: "실행 하네스" }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: "바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요." })];
 }
