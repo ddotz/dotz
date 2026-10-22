@@ -117,6 +117,7 @@ function renderSettings() {
     row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${om.thinking}` : "", () => openModels("orchestrator")),
     row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
     row("usage", "사용량", "", () => go("usage")),
+    row("key", "API 월 한도", budgetSub(), () => budgetDialog()),
     row("context", "컨텍스트", "", () => go("context")),
     row("harness", "구성", "시스템 지도", () => go("harness")),
     mnRow(),

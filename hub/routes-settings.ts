@@ -12,6 +12,7 @@ import { featureCatalog } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
 import { json, body, terminals } from "./routes-util.ts";
+import { budgetSettings, deleteAdminKey, saveAdminKey, saveMonthlyLimit } from "./api-budget.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
 	const fail = (error: unknown) =>
@@ -122,6 +123,20 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		return json({ source, history: page.items.length > 0, items: [...page.items, ...live], more: page.more });
 	}
 	if (req.method === "GET" && url.pathname === "/api/quota") return json(await quota());
+	// The monthly API limit and the admin key behind the usage screen's spend figure (hub/api-budget.ts): the key is never returned, only its mask.
+	if (url.pathname === "/api/api-budget" && (req.method === "GET" || req.method === "PUT")) {
+		try {
+			if (req.method === "PUT") {
+				const b = await body(req);
+				if ("monthly_usd" in b) saveMonthlyLimit(b.monthly_usd);
+				if (b.clear_admin_key === true) deleteAdminKey();
+				else if (typeof b.admin_key === "string" && b.admin_key.trim()) await saveAdminKey(b.admin_key);
+			}
+			return json(budgetSettings());
+		} catch (error) {
+			return fail(error);
+		}
+	}
 	if (req.method === "POST" && url.pathname === "/api/command") {
 		const text = String((await body(req)).text ?? "").trim();
 		if (!text) return json({ error: "text required" }, 400);

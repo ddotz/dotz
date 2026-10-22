@@ -69,6 +69,12 @@ export function spendOnKey(keyFile: string, tokens: number, usd: number | undefi
 	}
 	save();
 }
+// What one API key spent in the current KST month (zero when none is recorded), and when that month ends. Read-only view for the usage screen.
+export function keySpend(keyFile: string, at = clock.now()): { usd: number; tokens: number; resets_at: number } {
+	const c = load().pools[`key:${keyFile}`]?.month;
+	const now = c && c.key === periodKey("month", at) ? c : undefined;
+	return { usd: now?.usd ?? 0, tokens: now?.tokens ?? 0, resets_at: periodEnd("month", at) };
+}
 const capReached = (e: FallbackEntry, at: number) => {
 	if (!e.cap) return false;
 	const u = usageOf(e, e.cap.period, at);

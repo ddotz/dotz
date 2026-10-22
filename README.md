@@ -292,9 +292,12 @@ The web app (tailnet only) is a phone-first messenger plus status screens.
   format (`hub/draft-approval.ts`). The web opens a bottom sheet with the draft and 보내기 / 고치기 / 보내지 않기; nothing
   is sent before 보내기.
 - *Usage screen*: per-provider limits and windows, the Claude account in use with aliases (`/account`, `GET/PUT /api/accounts`),
-  and Anthropic's limits for the whole organization behind an API key (requests and tokens per minute, read from the
-  `anthropic-ratelimit-*` headers, cached 10 minutes). Usage and cost need an admin key stored as
-  `secrets/anthropic-admin-key`; without it the card says so.
+  and the monthly API spend limit set on the Anthropic platform console: `$ spent / $ limit`, the percentage and the reset
+  (`hub/api-budget.ts`). No API exposes the console limit (the Spend Limits API is Claude Enterprise only), so the limit is a
+  per-install setting (settings -> API 월 한도, `GET/PUT /api/api-budget`, `api_budget.monthly_usd` in `config.json`). The spend
+  comes from the Admin API cost report (cached 10 minutes) when an admin key is stored as `secrets/anthropic-admin-key`
+  (console -> Settings -> Admin keys -> create; paste it in the same settings dialog; stored mode 600, never shown again).
+  Without it the card shows dotz's own month-to-date API spend (recorded tokens x model prices), labeled as an estimate.
 
 **Several gateways on one tailnet.** With two or more dotz gateways of the same Tailscale login, the top bar shows a computer
 chip; its sheet lists them with a connection pill and each one's unread and open-decision counts, and choosing one opens

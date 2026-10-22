@@ -8,7 +8,7 @@ import { authFile } from "./apikey-policy.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
 import { stickyAccount } from "./account-sticky.ts";
 import { labeledAccountView } from "./accounts-api.ts";
-import { orgLimits } from "./org-limits.ts";
+import { apiBudget } from "./api-budget.ts";
 import { type AccountReport, AccountUsage, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 
 // omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
@@ -442,8 +442,8 @@ export async function quota() {
 	const rows = (await listProviders(new Set())).providers;
 	const anthropic = await anthropicUsage();
 	const reports = [...(anthropic ? [anthropic] : []), ...(await usageReports()).filter(r => r.provider !== "anthropic")];
-	const org = await orgLimits().catch(() => undefined);
-	return { fetched_at: Date.now(), ...buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)), ...(org ? { org } : {}), ...(runtimeIdOf("orchestrator") === "omo" ? { account: labeledAccountView() } : {}) };
+	const budget = await apiBudget().catch(() => undefined);
+	return { fetched_at: Date.now(), ...buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)), ...(budget ? { budget } : {}), ...(runtimeIdOf("orchestrator") === "omo" ? { account: labeledAccountView() } : {}) };
 }
 
 // How long a 429 pause lasts. The provider's usage report names the window that ran out and when it resets, so the

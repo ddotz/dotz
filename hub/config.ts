@@ -20,6 +20,8 @@ export type Config = {
 	web: { port: number; tailscale_https_port: number; allow_logins: string[]; machine_name?: string; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[] };
 	orchestrator?: { rotate_tokens?: number; runtime?: string };
 	ui?: { origin_view?: boolean };
+	// Monthly spend limit (USD) the owner set on the Anthropic platform console; the usage screen shows how much of it is used. Empty = none.
+	api_budget?: { monthly_usd?: number };
 	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number };
 	// Model choice and fallback order, one block per target (the web 모델 · 폴백 screen edits exactly this).
 	models?: ModelsConfig;
@@ -192,6 +194,15 @@ export function setMachineName(name: string): void {
 	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
 	if (name) cfg.web.machine_name = name;
 	else delete cfg.web.machine_name;
+}
+// Sets the monthly API spend limit in USD (null clears it), keeping every other key of config.json.
+export function setApiBudgetLimit(usd: number | null): void {
+	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
+	if (usd == null) delete disk.api_budget;
+	else disk.api_budget = { ...disk.api_budget, monthly_usd: usd };
+	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
+	if (usd == null) delete cfg.api_budget;
+	else cfg.api_budget = { ...cfg.api_budget, monthly_usd: usd };
 }
 // The bot's name (onboarding asks for it); every user-facing string and Discord name derives from it.
 export const NAME = cfg.identity?.name?.trim() || "dotz";
