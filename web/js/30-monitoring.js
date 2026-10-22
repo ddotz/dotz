@@ -88,7 +88,8 @@ const monTag = tone => { const t = MON_TONE[tone]; return t ? el("span", { class
 // A decision: the question and the same choice rows a chat message has; an open one is answered here, an answered one shows what was chosen.
 function monDecisionNode(n) {
   const d = n.decision, open = d.state === "open", said = d.state === "answered" ? String(d.answer || "") : "";
-  const fl = fileLines(n.text);
+  // The buttons show the options: the body keeps the lead text and the 결정: line, not the option lines (10-decision-card.js stripChoices).
+  const fl = fileLines(d.options.length ? stripChoices(n.text) : n.text);
   const rows = ntOptsOrdered(d.options).map(o => el("button", { class: `dcm-row${o.rec ? " rec" : ""}${said.startsWith(`${o.n})`) ? " on" : ""}`, type: "button", disabled: !open || dcSending.has(n.id), "data-n": o.n,
     onclick: () => (d.draft || o.action === "form" ? noticeSheetOpen(n.id) : answerInline(n, o)) },
     el("span", { class: "dc-key", text: String(o.n) }),

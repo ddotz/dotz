@@ -222,7 +222,8 @@ function systemTitle(text: string, fallback: string): string {
 	return fallback;
 }
 
-function fromOutbox(e: HubEvent): void {
+// `asks`: the post makes decision items (decisionsOf); an alert post then makes no item of its own, so one message is one notice.
+function fromOutbox(e: HubEvent, asks = false): void {
 	const target = String(e.target ?? "");
 	const key = typeof e.update_key === "string" && e.update_key ? e.update_key : undefined;
 	if (key === "progress") return;
@@ -239,7 +240,7 @@ function fromOutbox(e: HubEvent): void {
 		}
 		return void upsert({ kind: "worklog", tone, title: systemTitle(text, "작업 기록"), text, open: target === "worklog" ? "worklog" : "main", key, read: restart, at: e.ts });
 	}
-	if (target === "alert") return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered), at: e.ts });
+	if (target === "alert") return asks ? undefined : void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered), at: e.ts });
 	const watch = /^ch:\d+$/.test(target) && e.source === "gateway" ? /^\[([^\]\n]+)\]\s*/.exec(text) : null;
 	if (watch) upsert({ kind: "watch", tone, title: watch[1]!, text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts });
 }
@@ -273,8 +274,8 @@ function feed(e: HubEvent): void {
 		resolveByReport(e);
 		if (e.kind === "lane_start") noteLaunch(e);
 		else if (e.kind === "out") {
-			fromOutbox(e);
 			const ds = decisionsOf(e);
+			fromOutbox(e, ds.length > 0);
 			for (const d of ds) putDecision(d, e.ts);
 			// A decision message makes only its decision item; any other answer may become the conversation's unread message item
 			// (not the reply to a button answer: answerReply).
@@ -722,6 +723,14 @@ function reconcileStored(): void {
 			return !i.dismissed && (!i.read || isOpenDecision(i)) && ((lane !== undefined && isGone(lane)) || lostChannel(i) || stoppedBefore(i, lane));
 		});
 		retire(stale);
+		// One message is one notice: an alert item stored next to a decision of the same message (same conversation, same event ts), made before the
+		// alert post stopped making its own, is dismissed: kept in the file, never listed or counted.
+		const asked = new Set(items.filter(d => d.decision?.reply_to).map(d => `${d.src ?? d.open}|${d.decision!.reply_to}`));
+		const twins = items.filter(n => !n.decision && n.kind === "alert" && !n.dismissed && n.at !== undefined && asked.has(`${n.src ?? n.open}|${n.at}`));
+		for (const n of twins) {
+			n.read = true;
+			n.dismissed = true;
+		}
 		// A title that is a raw channel id (made before the name was known) gets its name.
 		let retitled = 0;
 		for (const i of items)
@@ -735,9 +744,9 @@ function reconcileStored(): void {
 				i.read = true;
 				read++;
 			}
-		if (stale.length || read || retitled) {
+		if (stale.length || read || retitled || twins.length) {
 			save();
-			log(`notices reconciled on load: ${stale.length} of gone sessions retired, ${read} read by position`);
+			log(`notices reconciled on load: ${stale.length} of gone sessions retired, ${read} read by position, ${twins.length} duplicate alert items folded`);
 		}
 	} finally {
 		replaying = false;
