@@ -83,7 +83,7 @@ describe("a notice that links to an open decision", () => {
 describe("web build id", () => {
 	test("the script carries the id that /api/state reports, so an open page can tell it is stale", async () => {
 		const { bundle, webBuild } = await import("./webapp.ts");
-		expect(bundle("js").text.startsWith(`const WEB_BUILD = "${webBuild()}";`)).toBe(true);
+		expect(bundle("js").text.startsWith(`"use strict";\nconst WEB_BUILD = "${webBuild()}";`)).toBe(true);   // the directive stays the first statement
 		expect(webBuild()).toMatch(/^[0-9a-f]{12}$/);
 		expect(readFileSync(join(import.meta.dir, "routes.ts"), "utf8")).toContain("web_build: webBuild()");
 		expect(web("js/17-state-refresh.js")).toContain("webBuildCheck(S.web_build)");
