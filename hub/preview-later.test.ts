@@ -112,8 +112,10 @@ test("the push badge is a white-on-transparent alpha mask of the dotz dot, serve
 	expect(solid / total).toBeGreaterThan(0.15);
 	expect([at(0, 0), at(95, 0), at(0, 95), at(95, 95)]).toEqual([0, 0, 0, 0]); // corners clear
 	expect(at(48, 48)).toBe(255); // dot
-	expect(at(48, 21)).toBe(255); // inside the dot
-	expect(at(48, 10)).toBe(0); // no ring around it
+	expect(at(48, 36)).toBe(255); // inside the dot
+	expect(at(48, 21)).toBe(0); // clear gap between the dot and the outline
+	expect(at(48, 7)).toBe(255); // rounded-square outline
+	expect(at(70, 70)).toBe(255); // small dot, lower right
 	const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
 	const res = await route(new Request("http://x/icons/badge-96.png"));
 	expect([res.status, res.headers.get("content-type")]).toEqual([200, "image/png"]);
