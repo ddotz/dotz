@@ -40,19 +40,22 @@ export function runtimeIdOf(role: "orchestrator" | "lane"): string {
 	return id === "omp" || id === "claude" ? id : "omo";
 }
 
-// OmO's subscription account for Anthropic models: the pinned one, else the one dotz keeps its processes on (`prefer`,
-// hub/account-sticky.ts), else the pool's pick (not blocked, latest success).
+// OmO's subscription account for Anthropic models: the one dotz keeps its processes on (`prefer`, hub/account-sticky.ts: a
+// manual pick, a rule or the owner's pin all end up there, and its processes get it as their soft pin), else the pinned one,
+// else the pool's pick (not blocked, latest success). `prefer` wins over auth.json's pin, or a manual switch would keep
+// showing the pinned account's numbers.
 export function subscriptionAccount(file = authFile(), now = Date.now(), prefer?: string): SubscriptionAccount | undefined {
 	const sub = readJson(file)?.["anthropic-subscription"];
 	const accounts: Json[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: Json) => typeof a?.name === "string" && typeof a?.access === "string" && a.access) : [];
 	if (!accounts.length) return undefined;
-	const pinned = typeof sub.pinned === "string" ? accounts.find(a => a.name === sub.pinned) : undefined;
+	const pin = typeof sub.pinned === "string" ? accounts.find(a => a.name === sub.pinned) : undefined;
 	const slots: Json = readJson(join(dirname(file), "credential-pool-state.json"))?.providers?.["anthropic-subscription"]?.lanes?.stored?.slots ?? {};
 	const usable = (a: Json) => !slots[a.name]?.blockReason || (typeof slots[a.name].blockedUntil === "number" && slots[a.name].blockedUntil <= now);
 	const last = (a: Json) => Number(slots[a.name]?.lastSuccessAt ?? 0);
-	const sticky = pinned ? undefined : accounts.find(a => a.name === prefer);
-	const chosen = pinned ?? sticky ?? [...accounts].sort((a, b) => Number(usable(b)) - Number(usable(a)) || last(b) - last(a))[0];
-	return { name: chosen.name, pinned: Boolean(pinned), ...(sticky ? { sticky: true } : {}), token: chosen.access, expiresAt: typeof chosen.expires === "number" ? chosen.expires : null };
+	const preferred = accounts.find(a => a.name === prefer);
+	const chosen = preferred ?? pin ?? [...accounts].sort((a, b) => Number(usable(b)) - Number(usable(a)) || last(b) - last(a))[0];
+	const pinned = chosen === pin;
+	return { name: chosen.name, pinned, ...(preferred && !pinned ? { sticky: true } : {}), token: chosen.access, expiresAt: typeof chosen.expires === "number" ? chosen.expires : null };
 }
 
 // Every subscription account OmO holds, for the per-account usage numbers the owner's rules read (hub/account-rules.ts).
@@ -106,6 +109,11 @@ export class AccountUsage {
 	// per account: when it may be asked again after a 429
 	private backoff = new Map<string, number>();
 	constructor(private readonly fetchFn: (url: string, init: RequestInit) => Promise<Response> = (u, i) => fetch(u, i), private readonly now: () => number = Date.now) {}
+
+	// A switch to this account: its next read goes to the usage endpoint at once, not after the 2-minute hold.
+	forget(name: string): void {
+		this.last.delete(name);
+	}
 
 	async report(acct: SubscriptionAccount, force = false): Promise<AccountReport> {
 		const t = this.now();

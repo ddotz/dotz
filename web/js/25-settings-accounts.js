@@ -8,7 +8,7 @@ async function loadAccounts() {
   if (current === "settings") renderSettings();
 }
 const accLabel = id => { const a = ACC && ACC.accounts.find(x => x.name === id || x.alias === id); return a ? a.label || a.alias || a.name : id; };
-const accMut = (btn, call, msg, close) => busy(btn, async () => { ACC = await call(); if (close) close(); if (msg) toast(msg); renderSettings(); });
+const accMut = (btn, call, msg, close) => busy(btn, async () => { ACC = await call(); if (close) close(); if (msg) toast(msg); renderSettings(); if (current === "usage") loadQuota(); });
 async function accCopy(text) { try { await navigator.clipboard.writeText(text); toast("복사했어요"); } catch { toast("복사하지 못했어요", true); } }
 function accTags(a) {
   const t = [];

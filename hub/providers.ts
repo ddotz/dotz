@@ -185,6 +185,8 @@ const usageReports = async (): Promise<OmpUsageReport[]> =>
 // The Anthropic limits of the account the role really runs on (hub/usage-account.ts): OmO's own subscription account
 // under OmO, else omp's login. `force` asks again sooner (a 429 just happened). Undefined: nothing to read.
 const accountUsage = new AccountUsage();
+// An account switch: the account it lands on is read again at once (main.ts calls this from the switch listener).
+export const forgetAccountUsage = (name: string): void => accountUsage.forget(name);
 export async function anthropicUsage(role: "orchestrator" | "lane" = "orchestrator", force = false): Promise<AccountReport | undefined> {
 	const acct = runtimeIdOf(role) === "omo" ? subscriptionAccount(undefined, undefined, stickyAccount()) : undefined;
 	if (acct) return accountUsage.report(acct, force);
