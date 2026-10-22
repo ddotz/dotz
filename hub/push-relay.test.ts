@@ -49,6 +49,7 @@ beforeEach(() => {
 			relays.push({ to, from: idOfHost(new URL(body.from).host), via: body.via });
 			return (await inst[to].pushRoute(new Request(url, { method: "POST", body: init!.body as string }), url))!;
 		}
+		if (url.pathname === "/api/push/presence") return (await inst[idOfHost(url.host)].pushRoute(new Request(url, { method: "POST", body: init!.body as string }), url))!;
 		pushes.push({ endpoint: String(input), body: init!.body as Uint8Array });
 		return new Response(null, { status: 201 });
 	}) as unknown as typeof fetch;
@@ -214,4 +215,19 @@ test("the relayed message names the gateway, tags per gateway, opens with ?pc= a
 	expect(inst.alpha.relayedMessage(GW.beta, notice())!.url).toStartWith("/?pc=https%3A%2F%2Fbeta.ts.net%3A8445&m=");
 	expect(inst.alpha.relayedMessage(GW.beta, { ...notice(), url: "https://evil.example/x#chat/main" })!.url).toStartWith("/?pc=");
 	expect(inst.alpha.relayedMessage(GW.beta, { ...notice(), url: "/#<script>" })!.url).not.toContain("<");
+});
+
+test("a page open on one gateway quiets its device's subscriptions on the others (it toasts their notices itself), and only that device", async () => {
+	const app = await sub("alpha", PHONE, true), browser = await sub("gamma", PHONE, false), laptop = await sub("beta", LAPTOP, false);
+	const url = new URL("http://x/api/push/presence");
+	const page = (active: boolean) => inst.gamma.pushRoute(new Request(url, { method: "POST", body: JSON.stringify({ endpoint: browser.endpoint, active }) }), url);
+	await page(true);
+	await Bun.sleep(10);
+	await send("beta");
+	expect([app.got().length, browser.got().length, laptop.got().length]).toEqual([0, 0, 1]);
+	await page(false);
+	await Bun.sleep(10);
+	await send("beta");
+	expect([app.got().length, browser.got().length]).toEqual([1, 0]);
+	expect(relays.length).toBeGreaterThan(0);
 });

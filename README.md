@@ -315,6 +315,11 @@ behind the same tailnet check), titled "<computer> · ...", and tapping it opens
 answer is skipped and the device's next subscription fires instead; a relayed notice is never relayed again. To merge a phone's browser
 subscription on one gateway with its app on another, open that gateway once from the app's computer chip; install the app from one gateway only.
 
+*Toasts across gateways.* While you look at computer B's web, a new notice on computer A still toasts there, labeled "<A> · ..."; the
+tap opens A's item (a question opens its sheet). B's hub follows each peer's `GET /api/events` and forwards `peer_notice` / `peer_counts`
+frames into its own stream (`hub/peer-stream.ts`), so the page talks to its own origin only; the computer chip's counts update live. A visible
+page quiets its device's push on every gateway (`/api/push/presence` is forwarded by device id), so the toast and the push never both fire.
+
 ## Integrations (off until you ask)
 
 Shipped integrations are off after install. Ask the orchestrator ("카톡 연결해줘", "유튜브·인스타 연결해줘") and it runs the
