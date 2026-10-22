@@ -183,7 +183,8 @@ function choicesNode(sig, pc, at) {
 function paintDecision() {
   const box = $("#dcard");
   if (!box) return;
-  const dc = decisionOf(target), had = !!DC.cur;
+  // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
+  const dc = isFixedT(target) ? null : decisionOf(target), had = !!DC.cur;
   DC.cur = dc;
   if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; clear(box); }
   else {

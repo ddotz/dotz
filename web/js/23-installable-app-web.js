@@ -75,9 +75,11 @@ async function webBuildCheck(b) {
 }
 // Views other than a conversation have no anchor: put their scroll back once they are drawn.
 if (SHELL_RESTORE && !SHELL_RESTORE.key && SHELL_RESTORE.views) for (const ms of [300, 1200]) setTimeout(() => { const v = $("#views"); if (SHELL_RESTORE && !v.scrollTop) v.scrollTop = SHELL_RESTORE.views; }, ms);
-// A tap that had to start the app carries the message as ?m=<ts>: 99-boot.js opens it once the state is in.
-let pushOpenTs = new URLSearchParams(location.search).get("m") || "";
-if (pushOpenTs) history.replaceState(history.state, "", location.pathname + location.hash);
+// A tap that had to start the app carries the message as ?m=<ts>: 99-boot.js opens it once the state is in. A decision carries ?n=<id> (its sheet,
+// 30-notices.js): it stays in the address and never also jumps to a conversation.
+const pushQ = new URLSearchParams(location.search);
+let pushOpenTs = pushQ.has("n") ? "" : pushQ.get("m") || "";
+if (pushQ.has("m")) { pushQ.delete("m"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
 async function pwaInit() {
   if (!("serviceWorker" in navigator)) return;
   try { PWA.reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" }); } catch (e) { console.warn("service worker", e); return; }
