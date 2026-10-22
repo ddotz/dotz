@@ -51,7 +51,7 @@ export const FAIL_ALERT_AFTER = 2; // failures in a row before the first alert
 // matches and "recovered" are not.
 export const isWatchIssue = (reason: string): boolean => /^(?:failed \d+ times|stopped after|needs the owner)/.test(reason);
 export const watchChoice = (name: string): string =>
-	issueBlock(`감시 ${name}을(를) 어떻게 할까요?`, [{ name: "원인 확인", result: "출력을 보고 원인과 고칠 방법을 알려드려요." }, { name: "감시 끄기", result: "고칠 때까지 이 감시를 멈춰 둬요." }]);
+	issueBlock(`모니터링 ${name}을(를) 어떻게 할까요?`, [{ name: "원인 확인", result: "출력을 보고 원인과 고칠 방법을 알려드려요." }, { name: "모니터링 끄기", result: "고칠 때까지 이 모니터링을 멈춰 둬요." }]);
 const loadItems = (): Watch[] => (existsSync(paths.watches) ? JSON.parse(readFileSync(paths.watches, "utf8")) : []);
 const items: Watch[] = loadItems();
 const SCRIPT_MAX_BYTES = 64 * 1024;

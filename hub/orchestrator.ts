@@ -15,7 +15,7 @@ import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx
 import { anthropicUsage, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { firstAlertForReset } from "./rate-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, type Move, Reverter, revertWhy } from "./fallback.ts";
+import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 
@@ -28,7 +28,6 @@ export const RESTART_WINDOW_MS = 10 * 60_000;
 // activeModel: the selector the session's process ran (a fallback entry's too); apiSince: an API-key episode is on (its
 // start was announced, its end is announced once a turn succeeds on a non-key entry).
 type Saved = { sessionFile?: string; model?: string; runtime?: string; pausedUntil?: string; activeModel?: string; apiSince?: string };
-const keyedSelector = (s: string | undefined) => Boolean(s && /^[^/]+-apikey\//.test(s));
 
 export const orch = {
 	status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",

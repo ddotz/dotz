@@ -214,7 +214,7 @@ function fromInbox(e: HubEvent): void {
 	if (e.kind === "watch") {
 		// The wake event itself is a message of the 알림 conversation (hub/events.ts eventTarget).
 		const body = [e.reason, e.text].filter(v => typeof v === "string" && v.trim()).join("\n");
-		return void upsert({ kind: "watch", tone: "", title: String(e.watch ?? "감시"), text: clean(body).text || "알림이 왔어요", open: "alert", at: e.ts });
+		return void upsert({ kind: "watch", tone: "", title: String(e.watch ?? "모니터링"), text: clean(body).text || "알림이 왔어요", open: "alert", at: e.ts });
 	}
 	if (e.kind === "schedule") {
 		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
@@ -229,9 +229,13 @@ function feed(e: HubEvent): void {
 			fromOutbox(e);
 			const ds = decisionsOf(e);
 			for (const d of ds) putDecision(d, e.ts);
-			// A decision message makes only its decision item; any other answer may become the conversation's unread message item.
-			if (!ds.length) fromAnswer(e);
-		} else if (e.kind === "message" || e.kind === "lane_message") ownerReplied(e);
+			// A decision message makes only its decision item; any other answer may become the conversation's unread message item
+			// (not the reply to a button answer: answerReply).
+			if (!answerReply(e) && !ds.length) fromAnswer(e);
+		} else if (e.kind === "message" || e.kind === "lane_message") {
+			answerReply(e);
+			ownerReplied(e);
+		}
 		else {
 			fromInbox(e);
 			for (const d of decisionsOf(e)) putDecision(d, e.ts);
@@ -267,6 +271,35 @@ export function setViewing(id: unknown, conv: unknown, nowMs = Date.now()): { ok
 	const seen = conv ? readOf(conv) : null;
 	if (seen) readConversationNotices(conv, seen);
 	return { ok: true, unread: unreadCount() };
+}
+
+// The reply to a choice-button answer is a quiet reply: no push, no corner toast, no message item. A button answer is the owner's message
+// carrying `picks` or `decision` (hub/intake.ts sendWeb); the first answer after it in that conversation is its reply. A reply that asks or
+// fails still speaks up, and so does a session's [done] (its result item). Safe to call twice for one event (push and notices both do).
+const QUIET_MS = 10 * 60_000;
+const awaitingReply = new Map<string, number>();
+const quietReplies = new Set<string>();
+export function answerReply(e: HubEvent): boolean {
+	if (e.kind === "message" || e.kind === "lane_message") {
+		const button = (Array.isArray(e.picks) && e.picks.length > 0) || typeof e.decision === "string";
+		const conv = eventTarget(e) ?? "main";
+		if (button && !replaying) awaitingReply.set(conv, Date.parse(e.ts) || Date.now());
+		else awaitingReply.delete(conv);
+		return false;
+	}
+	if (e.kind !== "out" && e.kind !== "lane_report") return false;
+	if (quietReplies.has(e.ts)) return true;
+	const src = String(e.source ?? "");
+	const lane = src.startsWith("lane:") || e.kind === "lane_report";
+	if (e.update_key || e.target === "alert" || e.target === "worklog" || (src !== "orchestrator" && !lane)) return false;
+	const conv = eventTarget(e) ?? "main", since = awaitingReply.get(conv);
+	if (since === undefined) return false;
+	awaitingReply.delete(conv);
+	const { tone } = clean(e.text);
+	if (Date.parse(e.ts) - since > QUIET_MS || tone === "ask" || tone === "fail" || (lane && tone === "done")) return false;
+	quietReplies.add(e.ts);
+	if (quietReplies.size > 200) quietReplies.delete(quietReplies.values().next().value!);
+	return true;
 }
 
 // An answer of the assistant or a session (not progress, not a keepalive "ok" / "-") in a conversation nobody is viewing: that
@@ -321,7 +354,9 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	const p = parseTone(stripHandoff(String(e.text ?? "")));
 	const body = p.text.trim();
 	const pc = parseDecisions(body);
-	if (!body || (p.tone !== "ask" && !pc.blocks.length)) return [];
+	// Buttons only for an [ask]; the gateway's own alert (its issue reports end in a choice block, with no marker) is the one exception.
+	const gatewayAlert = e.kind === "out" && e.source === "gateway" && e.target === "alert";
+	if (!body || (p.tone !== "ask" && !(gatewayAlert && pc.blocks.length))) return [];
 	const to = eventTarget(e) ?? "main";
 	const detail = body.slice(0, TEXT_MAX);
 	const line = firstLine(body);

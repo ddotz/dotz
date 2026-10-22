@@ -1,7 +1,7 @@
 /* ---------- back navigation: the browser history is the app's layer stack (Android back gesture, desktop back/forward) ---------- */
 // Every history entry the app owns carries {dz:1, c, ov, g?}:
 //   c   the chain of routes from 홈 down to the entry's own view, e.g. ["home","chat/list","chat/main"]: back from the last one lands on the one before it
-//   ov  how many overlays (sheet, menu, bell panel, dialog) are open on top of that view; each one is an entry of its own
+//   ov  how many overlays (sheet, menu, dialog) are open on top of that view; each one is an entry of its own
 //   g   the exit guard under 홈 (installed app only): back from 홈 lands on it, shows the toast, and a second back leaves
 // go() computes the chain it wants (H.want) and histSync() makes the real stack match: push to go deeper, replace to move sideways
 // (tab to tab), history.go(-n) to go up. A tab switch therefore never piles up entries, and back always ends at 홈 and then leaves.
@@ -17,6 +17,7 @@ function routeChain(name, hash) {
   if (name === "chat" || name === "activity") return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
   if (name === "harness") return ["home", "settings", hash];
   if (name === "project") return ["home", "projects", hash];
+  if (name === "monitoring") return narrowChat() ? ["home", "chat/list", hash] : ["home", hash];
   if (SUB.has(name)) {
     const bt = backTarget();
     if (bt === "home") return ["home", hash];

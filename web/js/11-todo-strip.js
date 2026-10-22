@@ -47,7 +47,7 @@ function speakerOf(e) {
   if (e.kind === "out") return "bot";
   return "";
 }
-const SYS_LABEL = { schedule: "예약", watch: "감시", mail: "메일" };
+const SYS_LABEL = { schedule: "예약", watch: "모니터링", mail: "메일" };
 // Gateway restart notices: a clean one (nothing was cut off) leaves the chat and only counts toward the top banner.
 const isRestart = e => e.kind === "out" && e.source === "gateway" && /^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(e.text ?? ""));
 const cleanRestart = e => isRestart(e) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
@@ -183,12 +183,12 @@ function msgNode(e) {
         n.onclick = () => { if (!getSelection().toString()) n.classList.toggle("open"); };
         return n;
       }
-      const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : e.target === "worklog" ? "작업 기록" : isRestart(e) ? "게이트웨이" : botName;
+      const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : e.target === "worklog" ? "작업내역" : isRestart(e) ? "게이트웨이" : botName;
       if (e.kind === "out" && e.card && Array.isArray(e.card.facts)) return el("div", { class: "bm" }, el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null), cardNode(e.card));
       const card = e.kind === "lane_report" && !isLaneT(target) ? " rep" : e.target === "alert" ? " alert" : "";
       const lt = laneMsg && tone ? LANE_TONE[tone] : null;
       const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null, lt ? el("span", { class: `tag ${lt[0]}`, text: lt[1] }) : null);
-      const pc0 = e.kind === "out" || e.kind === "lane_report" ? parseChoices(parsed) : null, pc = pc0 && (tone === "ask" || isChoiceMsg(pc0)) ? pc0 : null;
+      const pc0 = e.kind === "out" || e.kind === "lane_report" ? parseChoices(parsed) : null, pc = pc0 && choiceAsks(e, tone, pc0) ? pc0 : null;
       // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, with its buttons.
       if (e.target === "alert" && !(pc && pc.blocks.length)) {
         const line = humanAlert(body);
@@ -247,7 +247,7 @@ function chatPush(en, bulk) {
     }
     const n = msgNode(e);
     if (n) {
-      n.dataset.ts = e.ts;   // the notice bell finds its source message by this (30-notices.js ntFind)
+      n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { CV.divNode = tl.appendChild(convDivider()); CS.who = ""; }
       const who = n.matches(".um, .bm") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000) n.classList.add("cont");

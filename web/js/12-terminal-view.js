@@ -85,7 +85,7 @@ function inboxTitle(head) {
   let m;
   if ((m = head.match(/^(?:레인 (\S+)의 보고|lane report from (\S+))/))) return `세션 보고 · ${m[1] || m[2]}`.replace(/:$/, "");
   if (/^(레인 보고 \d+건|\d+ lane reports|lane report \()/.test(head)) return "세션 보고";
-  if ((m = head.match(/^watch (\S+)/))) return `감시 · ${m[1]}`;
+  if ((m = head.match(/^watch (\S+)/))) return `모니터링 · ${m[1]}`;
   if (/새 메일|new mail/.test(head)) return "새 메일";
   if (/^(예약 항목|scheduled)/.test(head)) return "예약 작업";
   return "";

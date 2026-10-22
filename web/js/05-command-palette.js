@@ -108,6 +108,7 @@ function go(name, tgt) {
   if (name === "home") { renderHome(); loadHomeData(); }
   if (name === "lanes") { laneSig = ""; renderLanes(); prjLoad(); }
   if (name === "projects") { renderProjects(); prjLoad(); }
+  if (name === "monitoring") { renderMonitoring(); loadMonitors(); }
   if (name === "project") pmOpen(tgt);
   if (name === "settings") { loadUpdate(); loadAccounts(); renderSettings(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }

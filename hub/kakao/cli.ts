@@ -95,8 +95,8 @@ async function status(args: Record<string, string | true>, ctx: Ctx): Promise<nu
 		const r = await ctx.hub.get("/api/watches");
 		const list: any[] = Array.isArray(r.json) ? r.json : (r.json?.watches ?? []);
 		const w = list.find(x => x.name === WATCH_NAME);
-		if (w) lastRun = w.paused ? "감시가 멈춰 있어요" : w.lastRun ? `${new Date(w.lastRun).toISOString()}${w.fails > 0 ? ` (실패 ${w.fails}번)` : ""}` : "아직 없어요";
-		else lastRun = "감시가 등록돼 있지 않아요";
+		if (w) lastRun = w.paused ? "모니터링이 멈춰 있어요" : w.lastRun ? `${new Date(w.lastRun).toISOString()}${w.fails > 0 ? ` (실패 ${w.fails}번)` : ""}` : "아직 없어요";
+		else lastRun = "모니터링이 등록돼 있지 않아요";
 	} catch {}
 	const drafts = readJson<{ status?: string }[]>(paths.drafts);
 	const pending = Array.isArray(drafts) ? drafts.filter(d => d?.status === "pending").length : 0;
@@ -186,7 +186,7 @@ async function off(args: Record<string, string | true>, ctx: Ctx): Promise<numbe
 	rmSync(paths.onboard, { force: true });
 	if (args.forget) await ctx.ports.clearCredentials();
 	ctx.out("카톡 연동을 껐어요");
-	if (!watchStopped) ctx.out("새 메시지 감시는 멈추지 못했어요. 게이트웨이가 켜져 있는지 확인하고 다시 꺼 주세요");
+	if (!watchStopped) ctx.out("새 메시지 모니터링은 멈추지 못했어요. 게이트웨이가 켜져 있는지 확인하고 다시 꺼 주세요");
 	return 0;
 }
 

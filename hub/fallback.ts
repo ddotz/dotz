@@ -123,6 +123,8 @@ function modelDef(selector: string): ModelDef | undefined {
 // An entry with a key runs as its own provider ("<provider>-apikey"), because omp prefers a stored login over an API key for
 // the provider's own id. The provider is registered inside the process by the dotz extension from DOTZ_KEY_PROVIDER (no
 // secret); the key travels in DOTZ_KEY_VALUE, which the extension removes from the environment once it has registered it.
+// Whether a model selector is a key entry's own provider (keyedModel below): the process runs on an API key, not the subscription.
+export const keyedSelector = (s: string | undefined): boolean => Boolean(s && /^[^/]+-apikey\//.test(s));
 const keyedModel = (e: FallbackEntry) => {
 	const [provider, ...rest] = e.model.split("/");
 	return `${provider}-apikey/${rest.join("/")}`;

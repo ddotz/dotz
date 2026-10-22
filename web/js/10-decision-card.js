@@ -35,10 +35,12 @@ function parseChoices(text) {
   }
   return { question, blocks: blocks.filter(b => b.options.length) };
 }
-// A message with a choice block is a decision even without [ask] (same rule as hub/notices.ts decisionsOf): a block of 2+ options.
+// Buttons only for a message that carries the [ask] marker (same rule as hub/notices.ts decisionsOf): a plain reply with a "1)" list stays text.
+// The one exception is the gateway's own alert, whose issue reports end in a choice block (2+ options) without a marker.
 const isChoiceMsg = pc => pc.blocks.some(b => b.options.length > 1);
+const choiceAsks = (e, tone, pc) => tone === "ask" || (e.kind === "out" && e.source === "gateway" && e.target === "alert" && isChoiceMsg(pc));
 const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, note: {} };
-// A draft waiting for send approval (hub/draft-approval.ts): the bell notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
+// A draft waiting for send approval (hub/draft-approval.ts): the notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
 const DRAFT_EDIT = "고치기";
 const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36); };
 // What the target waits on: a session's pendingAsk, else its last bot message when that is an [ask] with a choice block and no
@@ -54,9 +56,9 @@ function decisionOf(t) {
       const e = s.msgs[k];
       if (OWNER.has(e.kind)) return null;
       // An alert or worklog post is not part of the conversation: it never cancels a question that still waits (the real case: a token-audit
-      // alert and the night worklog landed after a decision, the card went away and the buttons greyed while the bell still held it open).
+      // alert and the night worklog landed after a decision, the card went away and the buttons greyed while the notice still held it open).
       if ((e.kind !== "out" && e.kind !== "lane_report") || e.update_key) continue;
-      const p = parseTone(noHandoff(String(e.text ?? ""))), choice = isChoiceMsg(parseChoices(p.text));
+      const p = parseTone(noHandoff(String(e.text ?? ""))), choice = choiceAsks(e, p.tone, parseChoices(p.text));
       // In 알림 / 작업 기록 an ordinary post is not a reply: it never cancels a question that still waits above it.
       if (isFixedT(t) && p.tone !== "ask" && !choice) continue;
       // A session's own message in its chat counts only as a choice block; its [ask] is the session's pendingAsk (above).
@@ -76,7 +78,7 @@ async function answerDecision(dc, text, opt, note) {
   const t = dc.t, lane = isLaneT(t) ? laneOf(t) : "";   // the card's own conversation: the notice sheet may answer for one that is not on screen
   DC.st[dc.key] = "sending"; paintDecision();
   try {
-    // A card with one block whose question is a decision notice answers through the bell's path (30-notices.js), so both stay in step.
+    // A card with one block whose question is a decision notice answers through the notice path (30-notices.js), so both stay in step.
     const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
     if (nd) await ntPost(nd, opt.n, note);
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
@@ -146,7 +148,7 @@ function renderDecision(box, dc, picks, step) {
   const nb = $(".dc-body", box); if (nb) nb.scrollTop = top;
 }
 // In-message rows follow the same state: tappable only while their question is the pending one.
-// Otherwise they follow the message's own decision notice in the bell (hub/notices.ts keeps it open until answered, however much was posted
+// Otherwise they follow the message's own decision notice (hub/notices.ts keeps it open until answered, however much was posted
 // after the message): open = tappable, answered = greyed with the chosen row marked.
 const dcNoticeAt = at => (at ? NT.items.find(n => ntIsDec(n) && n.decision.to === target && n.decision.group === 1 && n.decision.reply_to === at) || null : null);
 const dcSending = new Set();
@@ -162,7 +164,7 @@ function syncInlineChoices() {
     }
   }
 }
-// A tap on a message that is no longer the pending card: answered through the bell's path, so the notice and the buttons settle together.
+// A tap on a message that is no longer the pending card: answered through the notice path, so the notice and the buttons settle together.
 async function answerInline(nd, opt) {
   dcSending.add(nd.id); syncInlineChoices();
   try { await ntPost(nd, opt.n); } catch (e) { toast(e.message, true); }
