@@ -326,6 +326,20 @@ export async function rooms(db: KakaoDb): Promise<Room[]> {
 	}));
 }
 
+// A display label for a group room without a name, like KakaoTalk's: the newest other authors of its last 200 messages.
+// Display only: a send never uses it (kmsg finds rooms by their real name).
+export async function memberLabel(db: KakaoDb, chatId: string, userId: string | number): Promise<string | undefined> {
+	const rows = await db.query(
+		`SELECT COALESCE(NULLIF(u.friendNickName, ''), NULLIF(u.displayName, ''), NULLIF(u.nickName, '')) AS name
+		FROM (SELECT authorId, MAX(logId) AS last FROM (SELECT authorId, logId FROM NTChatMessage WHERE chatId = ? ORDER BY logId DESC LIMIT 200)
+			WHERE authorId != ? GROUP BY authorId) a
+		LEFT JOIN NTUser u ON a.authorId = u.userId AND u.linkId = 0 ORDER BY a.last DESC LIMIT 4`,
+		[chatId, String(userId)],
+	);
+	const names = rows.map(r => str(r.name)).filter(Boolean);
+	return names.length ? names.slice(0, 3).join(", ") + (names.length > 3 ? " 외" : "") : undefined;
+}
+
 // Chat id -> room type, without names (the watch needs kinds only).
 export async function roomTypes(db: KakaoDb): Promise<Map<string, number>> {
 	const rows = await db.query("SELECT CAST(chatId AS TEXT) AS chatId, type FROM NTChatRoom");
