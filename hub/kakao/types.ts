@@ -6,7 +6,7 @@
 // - Sending happens only by UI automation of the KakaoTalk app (kmsg, macOS Accessibility). No Kakao message API, no
 //   private protocol, no HTTP to Kakao hosts.
 // - KakaoTalk's database is opened read-only. Watch output carries chat ids, log ids and times only; bodies are read on demand.
-// - The KakaoTalk id and password live in the macOS Keychain (fallback: a 0600 file under <dataDir>/secrets). They never
+// - The KakaoTalk id and password live only in the macOS Keychain; no plaintext copy is kept. They never
 //   appear in argv, logs, prompts or messages.
 import { join } from "node:path";
 
@@ -38,7 +38,7 @@ export type KakaoPaths = {
 	// Draft store (approval flow). <dataDir>/kakao/drafts.json
 	drafts: string;
 	// The gateway's secret flow (POST /api/auth, site "kakao") writes {username,password} here (0600). Setup moves it into the
-	// Keychain and deletes it; when the Keychain is unavailable this file stays as the fallback store. <dataDir>/secrets/kakao
+	// Keychain and deletes it at once, also when the Keychain refuses it. <dataDir>/secrets/kakao
 	secretFile: string;
 	// Onboarding progress (resumable): <dataDir>/kakao/onboard.json
 	onboard: string;

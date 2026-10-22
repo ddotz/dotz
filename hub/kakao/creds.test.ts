@@ -46,8 +46,8 @@ test("a stored id and password go to the Keychain through stdin and never throug
 	const k = fakeSecurity();
 	const deps = { paths, runner: k.runner };
 	const password = 'p"w\\9 zz';
-	expect(await setSecret("id", "tester@example.com", deps)).toBe("keychain");
-	expect(await setSecret("password", password, deps)).toBe("keychain");
+	await setSecret("id", "tester@example.com", deps);
+	await setSecret("password", password, deps);
 	for (const c of k.calls) {
 		expect(c.argv.join(" ")).not.toContain(password);
 		expect(c.argv.join(" ")).not.toContain("tester@example.com");
@@ -59,30 +59,17 @@ test("a stored id and password go to the Keychain through stdin and never throug
 	expect(existsSync(paths.secretFile)).toBe(false);
 });
 
-test("a failing Keychain falls back to a 0600 file in a 0700 directory, and reads come back from it", async () => {
-	const k = fakeSecurity({ failWrites: true });
-	const deps = { paths, runner: k.runner };
-	expect(await setSecret("id", "tester@example.com", deps)).toBe("file");
-	expect(await setSecret("password", "pw-1", deps)).toBe("file");
-	expect(mode(paths.secretFile)).toBe(0o600);
-	expect(mode(join(dir, "secrets"))).toBe(0o700);
-	expect(JSON.parse(readFileSync(paths.secretFile, "utf8"))).toEqual({ username: "tester@example.com", password: "pw-1" });
-	expect(await getSecret("id", deps)).toBe("tester@example.com");
-	expect(await getSecret("password", deps)).toBe("pw-1");
-	for (const c of k.calls) expect(c.argv.join(" ")).not.toContain("pw-1");
-});
-
-test("a value with a line break cannot be quoted for security -i, so it takes the file fallback", async () => {
+test("a failing Keychain write throws without the value and leaves nothing on disk", async () => {
+	for (const runner of [fakeSecurity({ failWrites: true }).runner, async (argv: string[], o?: { stdin?: string }) => (argv[1] === "-i" ? { code: 0, stdout: "", stderr: "" } : fakeSecurity().runner(argv, o))] as Runner[]) {
+		const err = await setSecret("password", "pw-1", { paths, runner }).catch(e => e as Error);
+		expect(err).toBeInstanceOf(Error);
+		expect(String(err)).not.toContain("pw-1");
+		expect(existsSync(paths.secretFile)).toBe(false);
+		expect(await getSecret("password", { paths, runner })).toBeUndefined();
+	}
 	const k = fakeSecurity();
-	expect(await setSecret("dbkey", "a\nb", { paths, runner: k.runner })).toBe("file");
+	await expect(setSecret("dbkey", "a\nb", { paths, runner: k.runner })).rejects.toThrow();
 	expect(k.calls.some(c => c.argv[1] === "-i")).toBe(false);
-	expect(await getSecret("dbkey", { paths, runner: k.runner })).toBe("a\nb");
-});
-
-test("a Keychain write that reports success but does not read back counts as failed", async () => {
-	const k = fakeSecurity();
-	const lying: Runner = async (argv, o) => (argv[1] === "-i" ? { code: 0, stdout: "", stderr: "" } : k.runner(argv, o));
-	expect(await setSecret("id", "x", { paths, runner: lying })).toBe("file");
 });
 
 test("importAuthFile moves username and password into the Keychain and deletes the file only after both succeeded", async () => {
@@ -96,14 +83,14 @@ test("importAuthFile moves username and password into the Keychain and deletes t
 	for (const c of k.calls) expect(c.argv.join(" ")).not.toContain("pw-2");
 });
 
-test("importAuthFile keeps the file when one Keychain write fails, and does nothing without a file", async () => {
+test("importAuthFile deletes the plaintext file even when a Keychain write fails, and does nothing without a file", async () => {
 	expect(await importAuthFile({ paths, runner: fakeSecurity().runner })).toBe(false);
 	mkdirSync(join(dir, "secrets"), { recursive: true });
 	writeFileSync(paths.secretFile, JSON.stringify({ username: "tester@example.com", password: "pw-3" }), { mode: 0o600 });
 	const k = fakeSecurity({ failFor: "password" });
 	expect(await importAuthFile({ paths, runner: k.runner })).toBe(false);
-	expect(existsSync(paths.secretFile)).toBe(true);
-	expect(await getSecret("password", { paths, runner: k.runner })).toBe("pw-3");
+	expect(existsSync(paths.secretFile)).toBe(false);
+	expect(await getSecret("password", { paths, runner: k.runner })).toBeUndefined();
 });
 
 test("clearCredentials removes the Keychain items and the fallback file", async () => {

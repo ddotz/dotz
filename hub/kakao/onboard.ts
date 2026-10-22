@@ -50,7 +50,7 @@ export type Ports = {
 	appInstalled: () => Promise<boolean>;
 	accessibilityGranted: () => Promise<boolean>;
 	hasCredentials: () => Promise<boolean>;
-	// Moves the gateway's secret file into the Keychain (true) or leaves it as the 0600 fallback (false).
+	// Moves the gateway's secret file into the Keychain and deletes it either way; true when the Keychain took it.
 	importAuthFile: () => Promise<boolean>;
 	clearCredentials: () => Promise<void>;
 	login: () => Promise<{ status: LoginStatus }>;
@@ -360,6 +360,8 @@ class Machine {
 	}
 
 	private async credentials() {
+		// An answer left by an earlier run that stopped before storing it goes to the Keychain (or is deleted) first.
+		await this.d.ports.importAuthFile();
 		if (await this.d.ports.hasCredentials()) {
 			if (this.st.authId) await this.d.hub.del(`/api/auth/${this.st.authId}`).catch(() => undefined);
 			this.st.authId = undefined;
