@@ -77,11 +77,14 @@ beforeAll(() => {
 	Bun.spawnSync(["mkdir", "-p", SNAP]);
 	resolveNotices({ ids: listNotices(300).items.filter(n => n.decision?.state === "open").map(n => n.id) });
 	markNoticesRead({ all: true });
-	ask("폰 확인");
+	ask("오버레이 확인");
 });
 afterAll(() => {
 	for (const v of views) v.close();
 	server.stop(true);
+	// the notice store is one per process: leave no open fixture decision behind for the next file
+	resolveNotices({ ids: listNotices(300).items.filter(n => n.decision?.state === "open").map(n => n.id) });
+	markNoticesRead({ all: true });
 });
 
 const coversPhone = async (v: View, w: number, h: number, frame: string) => {
@@ -114,7 +117,7 @@ describe("every overlay opens as the shared full-screen frame", () => {
 	] as const) {
 		test(`phone ${w}px: each kind covers the screen, tab bar included, with a pinned header and footer`, async () => {
 			const phone = await open(w, h);
-			const pid = String(find("폰 확인").id);
+			const pid = String(find("오버레이 확인").id);
 			for (const k of KINDS) {
 				await phone.evaluate(k.open(pid));
 				await waitFor(phone, k.ready);
@@ -133,7 +136,7 @@ describe("every overlay opens as the shared full-screen frame", () => {
 
 	test("the back button closes the notice sheet and the page stays", async () => {
 		const phone = await open(390, 844);
-		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(String(find("폰 확인").id))})`);
+		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(String(find("오버레이 확인").id))})`);
 		await waitFor(phone, `document.querySelector(".fs-card .ds-opt")`);
 		await phone.evaluate(`history.back()`);
 		await waitFor(phone, `!document.querySelector(".fs-bd")`);
@@ -201,7 +204,7 @@ describe("every overlay opens as the shared full-screen frame", () => {
 
 	test("desktop: every kind is a centered dialog, not full screen", async () => {
 		const desk = await open(1280, 800);
-		const pid = String(find("폰 확인").id);
+		const pid = String(find("오버레이 확인").id);
 		for (const k of KINDS) {
 			await desk.evaluate(k.open(pid));
 			await waitFor(desk, k.ready);
