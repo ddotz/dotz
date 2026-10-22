@@ -112,11 +112,11 @@ test("a decision notice pushes as 답변이 필요해요 with its id, the decisi
 	const n = fresh.find(x => x.title === "배포 방식")!;
 	expect(n).toBeDefined();
 	expect(decisionPush(n)).toEqual({ kind: "ask", title: "답변이 필요해요", body: "배포 방식", url: "/#chat/main", tag: `decision:${n.id}`, ts: n.at, id: n.id, actions: [{ action: "opt:1", title: "1) 지금 바로" }, { action: "opt:2", title: "2) 밤에" }] });
-	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "lane:fix-ui", target: "lane:fix-ui", text: "[ask] 이대로 이어갈까요?" });
-	const lane = fresh.find(x => x.title === "이대로 이어갈까요?")!;
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "lane:fix-ui", target: "lane:fix-ui", text: "[ask] 어느 쪽으로 이어갈까요?" });
+	const lane = fresh.find(x => x.title === "어느 쪽으로 이어갈까요?")!;
 	const m = decisionPush(lane);
 	expect(m).toMatchObject({ title: "답변이 필요해요", url: "/#chat/lane:fix-ui", id: lane.id });
-	expect(m.actions).toBeUndefined();   // no options: a tap opens the detail
+	expect(m.actions).toBeUndefined();   // an open question has no options (a yes / no one gets 1) 네 2) 아니요, ask-options.ts): a tap opens the detail
 	// the store is shared with other test files: answer both so no pinned decision is left behind
 	emit("inbox", { ts: new Date().toISOString(), kind: "message", source: "web", channel: "web", text: "1" });
 	emit("inbox", { ts: new Date().toISOString(), kind: "lane_message", source: "web", lane: "fix-ui", text: "네" });
