@@ -184,7 +184,7 @@ export const en = {
 	inboxBurst: (n: number) => `(sent as ${n} messages in a row; read them together as one request)`,
 	replyingTo: (author: string, content: string) => `(replying to ${author}: "${content}")`,
 	// A decision answer: each block's question with the chosen option, and the start of the message that asked (hub/intake.ts).
-	decisionAnswer: (picks: { q: string; n: number; label: string }[]) => `Decision answer: ${picks.map((p, i) => `${i + 1}) ${p.q || "-"} -> ${p.n}) ${p.label}`).join("; ")}`,
+	decisionAnswer: (picks: { q: string; n: number; label: string }[]) => `Decision answer: ${picks.map((p, i) => `${picks.length > 1 ? `${i + 1}) ` : ""}${p.q || "-"} -> ${p.n}) ${p.label}`).join("; ")}`,
 	decisionAsked: (quote: string) => `(this answers your question: "${quote}")`,
 	workChannels: (list: string[]) => `(work channel list, not this message's channel: ${list.length ? list.join("; ") : "none yet"})`,
 	// Discord channel names the gateway creates, and the done marker of a lane thread.
