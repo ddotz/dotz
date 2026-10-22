@@ -1,4 +1,4 @@
-/* Computers (33-peers.js): the chip next to the title, the switch sheet (the full-screen overlay of 14-overlay.css) and the bell's other-computer lines. */
+/* Computers (33-peers.js): the chip next to the title, the switch sheet (uses the .ds-* sheet of 09-notices.css) and the bell's other-computer lines. */
 .pchip { display: none; flex: none; align-items: center; gap: 6px; height: 32px; max-width: 168px; margin: 0 auto 0 8px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg); font: 600 14px/18px var(--font); }
 .pchip:hover { background: var(--card-hover); }
 .pchip:active { background: var(--active); }

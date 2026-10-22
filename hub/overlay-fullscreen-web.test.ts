@@ -66,12 +66,6 @@ const KINDS: { name: string; open: (id: string) => string; ready: string; frame:
 		frame: ".fs-card",
 	},
 	{
-		name: "computer sheet",
-		open: () => `(() => { prLoad = async () => {}; PR.list = [{ name: "맥미니", self: true, online: true, need: 0 }, { name: "노트북", online: false, need: 2 }]; prOpen(); })()`,
-		ready: `document.querySelector(".fs-card .pr-row")`,
-		frame: ".fs-card",
-	},
-	{
 		name: "generic dialog",
 		open: () => `dialog({ title: "삭제할까요?", body: el("p", { text: "되돌릴 수 없어요" }), actions: [{ label: "취소", onclick: c => c() }, { label: "삭제", kind: "pri", onclick: c => c() }] })`,
 		ready: `document.querySelector("dialog.fs-card[open] .dact .btn")`,
@@ -144,6 +138,22 @@ describe("every overlay opens as the shared full-screen frame", () => {
 		await phone.evaluate(`history.back()`);
 		await waitFor(phone, `!document.querySelector(".fs-bd")`);
 		expect(await phone.evaluate(`!!document.querySelector(".hn")`)).toBe(true);
+	}, 30_000);
+
+	test("the computer switcher stays the original bottom sheet, not the full-screen frame", async () => {
+		const phone = await open(390, 844);
+		await phone.evaluate(`(() => { prLoad = async () => {}; PR.list = [{ name: "맥미니", self: true, online: true, need: 0 }, { name: "노트북", online: false, need: 2 }]; prOpen(); })()`);
+		await waitFor(phone, `document.querySelector(".ds-bd .ds-sheet .pr-row")`);
+		await settled(phone);
+		expect(await phone.evaluate(`!document.querySelector(".fs-bd, .fs-card")`)).toBe(true);
+		const sheet = (await box(phone, ".ds-sheet"))!;
+		expect(sheet.w).toBe(390);
+		expect(sheet.t).toBeGreaterThan(0);
+		expect(sheet.h).toBeLessThan(844);
+		expect(await phone.evaluate(`getComputedStyle(document.querySelector(".ds-sheet")).borderTopLeftRadius`)).toBe("20px");
+		await Bun.write(`${SNAP}/computer-switcher-390.png`, await phone.screenshot());
+		await phone.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`);
+		await waitFor(phone, `!document.querySelector(".ds-bd")`);
 	}, 30_000);
 
 	test("a login request form is full screen: fields scroll between a pinned header and footer", async () => {
