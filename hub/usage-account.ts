@@ -40,6 +40,21 @@ export function runtimeIdOf(role: "orchestrator" | "lane"): string {
 	return id === "omp" || id === "claude" ? id : "omo";
 }
 
+// Whether OmO skips an account now, and until when. OmO records a block in two places: on the account entry in auth.json
+// (blockedUntil/blockReason, which its account selection reads: isAccountBlocked) and in credential-pool-state.json (a slot).
+// Reading only the pool state missed a block that exists only in auth.json, so dotz showed and pinned an account OmO then
+// skipped (2026-10-22: default blocked until 16:00Z, shown as the connected account while requests ran on miseol-shared).
+// Both are honoured; a block without an expiry (an auth block) lasts until the owner logs in again.
+export function blockOf(account: Json | undefined, slot: Json | undefined, now: number): { until?: number; reason: string } | undefined {
+	const found: { until?: number; reason: string }[] = [];
+	if (slot?.blockReason) {
+		const until = typeof slot.blockedUntil === "number" ? slot.blockedUntil : undefined;
+		if (until === undefined || until > now) found.push({ ...(until !== undefined ? { until } : {}), reason: String(slot.blockReason) });
+	}
+	if (typeof account?.blockedUntil === "number" && account.blockedUntil > now) found.push({ until: account.blockedUntil, reason: String(account.blockReason ?? "rate_limit") });
+	return found.sort((a, b) => (b.until ?? Number.POSITIVE_INFINITY) - (a.until ?? Number.POSITIVE_INFINITY))[0];
+}
+
 // OmO's subscription account for Anthropic models: the one dotz keeps its processes on (`prefer`, hub/account-sticky.ts: a
 // manual pick, a rule or the owner's pin all end up there, and its processes get it as their soft pin), else the pinned one,
 // else the pool's pick (not blocked, latest success). `prefer` wins over auth.json's pin, or a manual switch would keep
@@ -50,7 +65,7 @@ export function subscriptionAccount(file = authFile(), now = Date.now(), prefer?
 	if (!accounts.length) return undefined;
 	const pin = typeof sub.pinned === "string" ? accounts.find(a => a.name === sub.pinned) : undefined;
 	const slots: Json = readJson(join(dirname(file), "credential-pool-state.json"))?.providers?.["anthropic-subscription"]?.lanes?.stored?.slots ?? {};
-	const usable = (a: Json) => !slots[a.name]?.blockReason || (typeof slots[a.name].blockedUntil === "number" && slots[a.name].blockedUntil <= now);
+	const usable = (a: Json) => !blockOf(a, slots[a.name], now);
 	const last = (a: Json) => Number(slots[a.name]?.lastSuccessAt ?? 0);
 	const preferred = accounts.find(a => a.name === prefer);
 	const chosen = preferred ?? pin ?? [...accounts].sort((a, b) => Number(usable(b)) - Number(usable(a)) || last(b) - last(a))[0];

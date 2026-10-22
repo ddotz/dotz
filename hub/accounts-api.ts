@@ -4,7 +4,7 @@
 // the raw id appears only in API fields named `name`/`key` and on "-# " detail lines.
 import { aliasesFile, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
 import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, validateRules, writeRules } from "./account-rules.ts";
-import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, MAX_LOG_LINES, readPool, stickyAccount, type SwitchKind } from "./account-sticky.ts";
+import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, MAX_LOG_LINES, type Pool, readPool, stickyAccount, type SwitchKind } from "./account-sticky.ts";
 import { TZ } from "./config.ts";
 import { type AccountReport, limitsText } from "./usage-account.ts";
 
@@ -94,11 +94,18 @@ export function labeledAccountView(limit = MAX_LOG_LINES) {
 	return { ...v, ...(v.account ? { account_label: label(v.account, undefined, aliases) } : {}), switches: v.switches.map(s => labeledSwitch(s, aliases)) };
 }
 
-const manualText = (m: Manual | undefined, now: number, names: string[], aliases: Record<string, string>): string | null => {
+// A manual pick whose account is blocked is skipped (evaluate()), so the text says so plainly, with the resume time in local
+// time and the account requests really use; otherwise the pick would read as active while it is not.
+const manualText = (m: Manual | undefined, now: number, names: string[], aliases: Record<string, string>, pool?: Pool, current?: string): string | null => {
 	if (!m || (m.until && Date.parse(m.until) <= now)) return null;
 	const id = resolveAccount(m.account, names, aliases);
 	const l = id ? label(id, undefined, aliases) : m.account;
-	return `${l}${josa(l, "으로", "로")} 직접 고정${m.until ? ` · ${clockText(Date.parse(m.until), now)}까지` : ""}`;
+	const base = `${l}${josa(l, "으로", "로")} 직접 고정${m.until ? ` · ${clockText(Date.parse(m.until), now)}까지` : ""}`;
+	const b = id ? pool?.blocked[id] : undefined;
+	if (!id || !b || current === id) return base;
+	const by = blockedKind(b.reason) === "auth_error" ? "로그인이 풀려서" : "한도에 걸려서";
+	const cur = current ? label(current, undefined, aliases) : undefined;
+	return `${base} · ${by} ${b.until ? `${clockText(b.until, now)}까지` : "지금은"} 못 써요${cur ? `, 지금은 ${cur}${josa(cur, "으로", "로")} 요청해요` : ""}`;
 };
 
 export function accountsBody(now = Date.now()) {
@@ -140,7 +147,7 @@ export function accountsBody(now = Date.now()) {
 		},
 		rules,
 		rules_text: (rules.rules ?? []).map((r, index) => ({ index, text: describeRule(r, labAny) })),
-		manual_text: manualText(rules.manual, now, names, aliases),
+		manual_text: manualText(rules.manual, now, names, aliases, pool, current),
 		script: {
 			path: rules.script?.path ?? null,
 			timeout_ms: rules.script?.timeout_ms ?? DEFAULT_SCRIPT_TIMEOUT_MS,

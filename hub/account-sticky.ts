@@ -18,6 +18,7 @@ import { evaluate, getScriptOpinion, getUsage, readRules, record, resetRulesForT
 import { readAliases } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
 import { accountHistoryDays, DATA_DIR, log, writeAtomic } from "./config.ts";
+import { blockOf } from "./usage-account.ts";
 
 export const PIN_ENV = "SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT";
 export type SwitchKind = "start" | "limit" | "owner" | "gone" | "rule" | "script" | "manual";
@@ -97,7 +98,8 @@ const readJson = (file: string): any => {
 // OmO's pool for Anthropic models, names and states only (tokens are never read into it).
 export function readPool(file = authFile(), now = Date.now()): Pool | undefined {
 	const sub = readJson(file)?.["anthropic-subscription"];
-	const names: string[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: any) => typeof a?.name === "string" && a.access).map((a: any) => a.name) : [];
+	const entries: any[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: any) => typeof a?.name === "string" && a.access) : [];
+	const names: string[] = entries.map(a => a.name);
 	if (!names.length) return undefined;
 	const slots = readJson(join(dirname(file), "credential-pool-state.json"))?.providers?.["anthropic-subscription"]?.lanes?.stored?.slots ?? {};
 	const blocked: Pool["blocked"] = {};
@@ -105,10 +107,9 @@ export function readPool(file = authFile(), now = Date.now()): Pool | undefined 
 	for (const n of names) {
 		const s = slots[n];
 		if (typeof s?.lastSuccessAt === "number") lastSuccess[n] = s.lastSuccessAt;
-		if (!s?.blockReason) continue;
-		const until = typeof s.blockedUntil === "number" ? s.blockedUntil : undefined;
-		// An auth block without an expiry lasts until the owner logs in again; an elapsed block is over.
-		if (until === undefined || until > now) blocked[n] = { ...(until !== undefined ? { until } : {}), reason: String(s.blockReason) };
+		// auth.json's account entry and the pool state both record blocks (blockOf); an elapsed block is over.
+		const b = blockOf(entries.find(a => a.name === n), s, now);
+		if (b) blocked[n] = b;
 	}
 	return { names, ...(typeof sub.pinned === "string" && names.includes(sub.pinned) ? { pinned: sub.pinned } : {}), blocked, lastSuccess };
 }
