@@ -6,7 +6,6 @@ export const API_KEY_HOLD =
 	"dotz: you are on the API-key fallback (the subscription hit its usage limit). Task subagents and sessions (dotz_lane launch/send/handover/verify) do not run on the API key. Answer and do light work yourself; put heavier work in state.json open_tasks and tell the owner it starts when the subscription resets (dotz then moves you back in a fresh conversation).";
 const HELD_LANE_ACTIONS = new Set(["launch", "send", "handover", "verify"]);
 let held = false;
-export const onApiKey = (): boolean => held;
 
 // `workers`: the entry lets task workers and sessions run on the key, so nothing is held.
 export function holdWorkOnApiKey(pi: any, workers = false): void {
