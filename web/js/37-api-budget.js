@@ -45,6 +45,7 @@ async function budgetDialog() {
     return send(c, btn, body, "저장했어요");
   } });
   dialog({
+    classic: true,
     title: "API 월 한도",
     body: el("div", { class: "col" },
       el("p", { class: "sup", text: "Anthropic 콘솔에서 정한 월 한도(달러)예요. API로는 읽을 수 없어서 직접 입력해요. 비우면 한도 없이 사용액만 보여줘요." }),
