@@ -5,7 +5,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { beforeEach, expect, test } from "bun:test";
 import { DATA_DIR } from "./config.ts";
-import { type CustomDeps, customRoute, type DetailInput, projectDetailView, projectsView, readCards, readPins, reportHead, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
+import { saveProject } from "./projects.ts";
+import { BUILTIN_KEY, type CustomDeps, customRoute, type DetailInput, projectDetailView, projectsView, readCards, readPins, reportHead, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import { addSchedule, listSchedules, removeSchedule } from "./schedule.ts";
 
@@ -46,8 +47,30 @@ test("a valid card keeps its fields and defaults", async () => {
 	expect(res.errors).toEqual([]);
 });
 
-test("a missing custom folder is an empty layer", async () => {
-	expect(await json(await call("GET", "/api/custom"))).toMatchObject({ cards: [], projects: [], routines: [], links: [], errors: [] });
+test("a missing custom folder is an empty layer, apart from the built-in 커스텀 project", async () => {
+	const res = await json(await call("GET", "/api/custom"));
+	expect(res).toMatchObject({ cards: [], routines: [], links: [], errors: [] });
+	expect(res.projects.map((p: any) => [p.key, p.name, p.pinned, p.builtin, p.channel])).toEqual([[BUILTIN_KEY, "커스텀", true, true, undefined]]);
+});
+
+test("커스텀 is listed first on an install with projects, survives hide_projects and cannot be saved over", async () => {
+	pins({ projects: [{ name: "내 일", path: "~/Code/mine" }], hide_projects: [BUILTIN_KEY, "dir:~/Code/mine"] });
+	const keys = (await json(await call("GET", "/api/custom"))).projects.map((p: any) => p.key);
+	expect(keys).toEqual([BUILTIN_KEY, "dir:~/Code/mine"]);
+	expect(() => saveProject({ key: BUILTIN_KEY, title: "바꾼 이름" })).toThrow();
+});
+
+test("GET /api/custom/project?key=builtin:custom shows what is customized, each group with plain empty text on a fresh install", async () => {
+	const empty = await json(await call("GET", `/api/custom/project?key=${BUILTIN_KEY}`));
+	expect(empty.builtin).toBe(true);
+	expect(empty.groups.map((g: any) => [g.id, g.items.length])).toEqual([["cards", 0], ["pins", 0], ["routines", 0], ["rules", 0], ["features", 0], ["identity", empty.groups[5].items.length]]);
+	card("disk", { title: "디스크", note: "맥 내장", text: "1T" });
+	pins({ projects: [{ name: "내 일", path: "~/Code/mine", note: "직접 만든 프로젝트" }], links: [{ name: "클라우드플레어", url: "https://dash.cloudflare.com" }], routines: [{ id: "morning", name: "아침 점검", prompt: "x", target: "main", schedule: { at: "09:00" } }] });
+	const full = await json(await call("GET", `/api/custom/project?key=${BUILTIN_KEY}`));
+	const by = (id: string) => full.groups.find((g: any) => g.id === id).items;
+	expect(by("cards")).toEqual([{ title: "디스크", line: "맥 내장" }]);
+	expect(by("pins").map((i: any) => i.title)).toEqual(["내 일", "클라우드플레어"]);
+	expect(by("routines")).toEqual([{ title: "아침 점검", line: "매일 09:00에 해요" }]);
 });
 
 test("broken JSON, a bad id and a missing title come back as {id,file,error}", async () => {
@@ -217,7 +240,7 @@ test("a pins.json that does not parse gives one error and empty pins; auto proje
 	expect(res.errors).toHaveLength(1);
 	expect(res.errors[0].file).toBe("pins.json");
 	expect([res.routines, res.links]).toEqual([[], []]);
-	expect(res.projects.map((p: any) => p.name)).toEqual(["auto"]);
+	expect(res.projects.map((p: any) => p.name)).toEqual(["커스텀", "auto"]);
 });
 
 // ---- projects ----
