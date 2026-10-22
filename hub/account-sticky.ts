@@ -17,6 +17,7 @@ import { dirname, join } from "node:path";
 import { blockedKind, evaluate, getScriptOpinion, getUsage, readRules, record, resetRulesForTest, stateStamp } from "./account-rules.ts";
 import { readAliases } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
+import { ownPin } from "./omo-pin.ts";
 import { accountHistoryDays, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { blockOf, usedAccount } from "./usage-account.ts";
 
@@ -194,7 +195,7 @@ export function stickyAccount(now = Date.now()): string | undefined {
 	if (key === checkedStamp) return saved?.account;
 	checkedStamp = key;
 	const pool = readPool(file, now);
-	const { change, ...decision } = evaluate({ now, pool, current: saved?.account, usage: getUsage(), rules: readRules(), script: getScriptOpinion(), aliases: readAliases() });
+	const { change, ...decision } = evaluate({ now, pool: pool && pool.pinned && pool.pinned === ownPin() ? { ...pool, pinned: undefined } : pool, current: saved?.account, usage: getUsage(), rules: readRules(), script: getScriptOpinion(), aliases: readAliases() });
 	const account = decision.account;
 	if (pool) record(decision);
 	const used = pool ? usedAccount(account, pool.names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0) : undefined;
