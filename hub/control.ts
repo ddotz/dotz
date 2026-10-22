@@ -35,13 +35,13 @@ const FALLBACK_NOTE = "어시스턴트와 세션의 폴백 순서는 저장하�
 // so the settings tab can highlight the one in use.
 // Harness-aware: `harness` names the runtime that walks the chain; `conditions` says whether entries may carry conditions,
 // caps, revert or a key (the hub drives OmO and omp chains; Claude Code takes a plain --fallback-model list and the task
-// workers' chain is bare models only); `providers` limits the models that runtime can run (Claude Code: anthropic only).
+// workers' chain is bare models plus API-key entries); `providers` limits the models that runtime can run (Claude Code: anthropic only).
 function fallbacksView() {
 	const running = laneModels().filter(l => l.running);
 	const ids = (list: Array<string | undefined>) => [...new Set(list.filter((s): s is string => Boolean(s)).map(s => parseSelector(s).model))];
 	const harness = (role: "orchestrator" | "lane", target: FallbackTarget) => {
 		const id = runtimeFor(role).id;
-		return { harness: { id, name: HARNESS_NAMES[id] ?? id }, conditions: target !== "workers" && id !== "claude", ...(id === "claude" ? { providers: ["anthropic"] } : {}) };
+		return { harness: { id, name: HARNESS_NAMES[id] ?? id }, conditions: id !== "claude", ...(id === "claude" ? { providers: ["anthropic"] } : {}) };
 	};
 	return {
 		max: FALLBACK_MAX,
@@ -231,7 +231,8 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 
 // Replaces one layer's fallback chain (applies the next time a process of that layer starts). Entries are checked against
 // the model catalog like a model switch is; an entry may carry a thinking suffix, otherwise it inherits the failing turn's.
-// Conditions, caps, revert and API keys are the hub's own switching (orchestrator and lanes); the task workers' chain is omp's, bare models only.
+// Conditions, caps, revert and API keys are the hub's own switching (orchestrator and lanes). The task workers' chain is omp's bare
+// models plus API-key entries, which the hub applies when a process starts (hub/fallback.ts workerKeyEnv).
 export async function setFallback(target: string, chain: unknown[]) {
 	if (target !== "orchestrator" && target !== "lanes" && target !== "workers") throw new ControlError(`target must be "orchestrator", "lanes" or "workers" (got "${target}")`);
 	if (chain.length > FALLBACK_MAX) throw new ControlError(`at most ${FALLBACK_MAX} fallback models per chain (got ${chain.length})`);
@@ -248,7 +249,9 @@ export async function setFallback(target: string, chain: unknown[]) {
 		if (split.thinking && !(THINKING_LEVELS as readonly string[]).includes(split.thinking)) throw new ControlError(`thinking must be one of ${THINKING_LEVELS.join(", ")}`);
 		const model = resolveModel(split.model, available);
 		const next: FallbackEntry = { ...entry, model: split.thinking ? `${model}:${split.thinking}` : model };
-		if (target === "workers" && !isPlain(next)) throw new ControlError("the task workers' chain takes bare models only (conditions, caps, revert and API keys apply to the orchestrator and the lanes)");
+		if (target === "workers" && !next.key_file && !isPlain(next)) throw new ControlError("the task workers' chain takes bare models and API-key entries only (a condition, cap or revert needs a key_file there)");
+		// `workers` (share the key with the workers) is meaningless on the workers' own chain.
+		if (target === "workers") delete next.workers;
 		if (claudeRuns && !isPlain(next)) throw new ControlError("Claude Code takes a plain fallback list: no conditions, caps, revert or API keys");
 		if (claudeRuns && !model.startsWith("anthropic/")) throw new ControlError(`Claude Code runs anthropic models only (got ${model})`);
 		if (next.key_file && !keyFileOk(next.key_file)) throw new ControlError(`key_file "${next.key_file}" must name an existing file in <data dir>/secrets/ whose name contains "api-key" or "api_key" (for example anthropic-api-key)`);

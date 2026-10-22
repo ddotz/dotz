@@ -170,6 +170,25 @@ export function keyedWorker(env: Record<string, string | undefined>): string | u
 	return spec.worker ? `${spec.id}/${spec.worker.id}${spec.worker.thinking ? `:${spec.worker.thinking}` : ""}` : undefined;
 }
 
+// The task workers' own chain may end in an API-key entry. omp and OmO resolve a chain entry through their live model registry
+// and skip a provider they hold no login for, and the `<provider>-apikey` provider exists only in a process that registered it
+// with a key, so the native chain cannot carry the key entry. It is applied at spawn, as the lanes' and the orchestrator's key
+// entries are: when the first usable entry of the workers' chain (primary model, then the entries by `when`, cap and `enabled`)
+// is a key entry, the process gets the provider spec and the key's file name for its workers (never the key: a worker's extension
+// reads the file itself) and keeps its own subscription model. Nothing is given while a subscription entry is usable; a worker
+// already running keeps its model, so a cap or a revert applies at the next process start.
+export function workerKeyEnv(workerSelector: string, entries: FallbackEntry[]): Record<string, string> {
+	if (!entries.some(e => e.key_file)) return {};
+	const primary = parseSelector(workerSelector);
+	const chain = new Chain(primary.model, entries, primary.thinking);
+	const at = chain.initial();
+	const e = chain.list[at];
+	if (!e.key_file || chain.down(at)) return {};
+	const own = parseSelector(e.model);
+	const { DOTZ_KEY_VALUE: _key, ...env } = keyEnv(e, `${own.model}:${e.model === own.model ? primary.thinking : own.thinking}`);
+	return env;
+}
+
 // ---- the chain ------------------------------------------------------------------------------------------------------
 export const REVERT_PROBE_MS = 10 * 60_000;
 // Consecutive failed turns (any cause) after which automatic retries, failovers and keepalives stop until a turn succeeds;

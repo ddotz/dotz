@@ -2,7 +2,7 @@ import { type Lane, setStatus, dir, laneWorkerModel, ownerNotes, hooks, pendingF
 import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import { msg } from "./i18n.ts";
 import { log, chainAfter, fallbackChain, parseSelector, lanesCompactAt, lanesKeepRecent } from "./config.ts";
-import { hubChain, Chain, keyedWorker, Reverter } from "./fallback.ts";
+import { hubChain, Chain, keyedWorker, Reverter, workerKeyEnv } from "./fallback.ts";
 import { pauseExhausted } from "./lanefailover.ts";
 import { statusActivity, endSubagents } from "./activity.ts";
 import { readEvents } from "./laneevents.ts";
@@ -73,6 +73,8 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		spawnModel = lane.chain.selector(lane.chain.active);
 		Object.assign(env, lane.chain.env(lane.chain.active, laneWorkerModel(lane)));
 	}
+	// The workers' own chain may stand on an API-key entry; a process already on a key follows that entry's `workers` switch instead.
+	if (!env.DOTZ_KEY_PROVIDER) Object.assign(env, workerKeyEnv(laneWorkerModel(lane), fallbackChain("workers")));
 	// On a keyed entry that lets workers use the key, the lane's task workers run on the key provider's copy of the worker model.
 	const keyedWorkers = keyedWorker(env);
 	const workerModel = keyedWorkers ?? laneWorkerModel(lane);
@@ -88,7 +90,7 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		// The omp-side orchestrator-guard blocks Fable / max-effort worker spawns unless the owner asked for them.
 		env,
 		// Rewritten at every spawn so changed lanes.* settings apply the next time the lane starts or resumes.
-		lane: { name: lane.name, dir: dir(lane.name), workerModel, workerFallback: keyedWorkers ? [] : chainAfter(laneWorkerModel(lane), fallbackChain("workers")).map(e => e.model), compactAt: lanesCompactAt(), keepRecent: lanesKeepRecent(), workerSlots: lane.workerSlots },
+		lane: { name: lane.name, dir: dir(lane.name), workerModel, workerFallback: keyedWorkers ? [] : chainAfter(laneWorkerModel(lane), fallbackChain("workers")).filter(e => !e.key_file).map(e => e.model), compactAt: lanesCompactAt(), keepRecent: lanesKeepRecent(), workerSlots: lane.workerSlots },
 	});
 	lane.activeModel = spawnModel;
 	lane.startedModel = spawnModel;

@@ -15,7 +15,7 @@ import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx
 import { anthropicUsage, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { firstAlertForReset } from "./rate-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, Reverter, revertWhy } from "./fallback.ts";
+import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, Reverter, revertWhy, workerKeyEnv } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
@@ -545,6 +545,8 @@ export function start(): void {
 	usable = undefined;
 	const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1" };
 	if (chain) Object.assign(env, chain.env(chain.active, workerModel()));
+	// The workers' own chain may stand on an API-key entry; a process already on a key follows that entry's `workers` switch instead.
+	if (!env.DOTZ_KEY_PROVIDER) Object.assign(env, workerKeyEnv(workerModel(), fallbackChain("workers")));
 	const switchNote = switched && chain ? msg().fallbackFresh(chain.label(chain.active), Boolean(chain.list[chain.active].key_file), switched.again, Boolean(chain.list[chain.active].workers)) : "";
 	startedModel = spawnModel;
 	reverter.reset();
