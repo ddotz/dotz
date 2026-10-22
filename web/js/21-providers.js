@@ -156,6 +156,23 @@ async function loadQuota() {
     if (!(p.limits || []).length) card.append(el("div", { class: "sup", text: "없어요" }));
     grid.append(card);
   }
+  // Anthropic's limits for the whole organization (hub/org-limits.ts), not for one key; what needs an admin key says so.
+  if (q.org) {
+    const O = q.org, card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: "Anthropic 조직 전체" })));
+    for (const l of O.limits || []) {
+      card.append(el("div", { class: "lim" },
+        el("div", { class: "kv" }, el("span", { class: "k", text: l.label }), el("span", { style: "font-weight:500", text: pctText(l) })),
+        bar(l),
+        el("div", { class: "v", style: "margin-top:4px", text: l.limit != null ? `${l.window} 한도 ${l.limit.toLocaleString()}${l.unit}` : l.window })));
+    }
+    if (O.admin) {
+      const A = O.admin, costText = A.cost_usd == null ? "비용 정보 없음" : `비용 $${A.cost_usd.toFixed(2)}`;
+      card.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: "최근 7일 사용량" }), el("span", { style: "font-weight:500", text: costText })),
+        el("div", { class: "v", text: `입력 ${A.input_tokens.toLocaleString()} · 출력 ${A.output_tokens.toLocaleString()} 토큰` })));
+    }
+    for (const u of O.unavailable || []) card.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: u.item }), el("span", { class: "v", text: u.reason }))));
+    grid.prepend(card);
+  }
   if (grid.children.length) box.append(grid);
   // The one Claude account the assistant and its lanes run on, and every switch with its reason (hub/account-sticky.ts).
   if (q.account && q.account.account) {
