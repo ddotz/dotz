@@ -24,7 +24,7 @@ import { readTodo } from "./todo.ts";
 import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
-import { appAsset, indexPage, webBuild } from "./webapp.ts";
+import { appAsset, committedText, indexPage, webBuild } from "./webapp.ts";
 import { listPeers } from "./peers.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { hostname } from "node:os";
@@ -64,7 +64,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow }: Restar
 		// or OS fetch that carries no tailnet identity (icon or manifest fetch, SW update check) must still get them, or the
 		// phone falls back to a plain shortcut. Everything else stays behind the identity check.
 		const appFile = req.method === "GET" || req.method === "HEAD" ? APP_FILES[url.pathname] : undefined;
-		if (appFile) return new Response(req.method === "HEAD" ? null : Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
+		if (appFile) return new Response(req.method === "HEAD" ? null : committedText(appFile[0]) ?? Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
 		// The other gateways read this computer's chosen name here (hub/peers.ts); it is a display name, no secret, so it is public like the manifest.
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer-info") return json({ name: resolveName(cfg.web?.machine_name, hostname()) });
 		if (!authorized(req)) return new Response("forbidden", { status: 403 });
