@@ -138,7 +138,7 @@ export const en = {
 	// The one worklog / lane line when a fallback chain moves a process (or one of its task workers) to its next model.
 	modelFallback: (from: string, to: string, reason?: string, worker?: boolean) => `${worker ? "Task subagent model fallback" : "Model fallback"}: ${from} → ${to}${reason ? ` (${reason.replace(/\s+/g, " ").trim().slice(0, 120)})` : ""}`,
 	// Hub-driven chain (conditional entries): a switch, a return to an earlier entry, and every entry spent.
-	fallbackMove: (from: string, to: string, why: "quota" | "error" | "cap" | "revert") => `${why === "revert" ? "Model back" : "Model fallback"}: ${from} → ${to} (${{ quota: "usage limit reached", error: "provider error", cap: "spend cap reached", revert: "limit reset" }[why]})`,
+	fallbackMove: (from: string, to: string, why: "quota" | "error" | "cap" | "revert", back?: string) => `${why === "revert" ? "Model back" : "Model fallback"}: ${from} → ${to} (${{ quota: "usage limit reached", error: "provider error", cap: "spend cap reached", revert: "limit reset" }[why]}${back ? `; back on the subscription around ${back}` : ""})`,
 	fallbackExhausted: (model: string, until: string) => `Model fallback: ${model} reached its spend cap and no fallback model is left. Paused until ${until}.`,
 	// The runtime's own fallback walk is undone: the process goes back to its configured model (or this runtime cannot).
 	modelReverted: (model: string) => `Back on the original model (${model})`,

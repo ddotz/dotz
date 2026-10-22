@@ -6,7 +6,7 @@ import { report, withHeld, scheduleReport } from "./lanereport.ts";
 import { prompt } from "./laneprompt.ts";
 import { msg } from "./i18n.ts";
 import { type AgentError } from "./runtime/types.ts";
-import { failsOver, failureReason, type Move, Chain, atTime } from "./fallback.ts";
+import { failsOver, failureReason, type Move, Chain, atTime, quotaResetAt } from "./fallback.ts";
 import { rmSync } from "node:fs";
 import { runningSubagents } from "./activity.ts";
 import { resumeLane } from "./lanerun.ts";
@@ -75,7 +75,7 @@ async function failOver(lane: Lane, e: AgentError): Promise<boolean> {
 	const active = lane.chain;
 	if (!active) return false;
 	const reason = failureReason({ kind: e.kind, text: e.text });
-	const until = reason === "quota" ? Date.now() + (await rateLimitDelay(e.text, active.selector(active.active), "lane")).ms : undefined;
+	const until = reason === "quota" ? await quotaResetAt(e.text, active.selector(active.active), "lane") : undefined;
 	// The restart resumes the session, so it must be known; a first request that failed at once may not have reported it yet.
 	for (let i = 0; i < 20 && !lane.sessionFile && lane.proc; i++) {
 		if (i === 0) lane.proc.refreshSession();
