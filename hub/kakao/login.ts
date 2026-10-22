@@ -138,6 +138,7 @@ export async function login(deps: LoginDeps): Promise<LoginResult> {
 			rememberRejected(deps, id, password);
 			return { status: "bad_credentials", detail: "카카오톡이 아이디나 비밀번호를 거절했어요" };
 		}
+		// "Already logged in / logged in on another computer": its OK (which logs the other computer out) is pressed, never cancel.
 		if (s.state === "login" && s.detail === "notice") await ask(deps, { action: "ack" });
 		else if (!submitted && (s.state === "login" || s.state === "locked" || s.state === "error")) {
 			submitted = true;

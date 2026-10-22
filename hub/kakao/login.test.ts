@@ -266,3 +266,38 @@ test("JXA: focus and submit on a logged-in app change nothing", () => {
 		expect(r.wins[0].kids[1].focusedSet).toBe(0);
 	}
 });
+
+test("a 'logged in on another computer' notice after the submit is confirmed and the login ends ok", async () => {
+	storeCreds();
+	const m = fakeMachine({ states: [{ state: "login" }], afterSubmit: [{ state: "login", detail: "notice" }, { state: "main" }] });
+	expect((await login(deps(m.runner))).status).toBe("ok");
+	expect(m.calls.filter(c => c.stdin?.includes('"action":"ack"'))).toHaveLength(1);
+	expect(submits(m.calls)).toHaveLength(1);
+});
+
+test("JXA: the another-device and forced-logout notices are detected and only their OK is pressed, never cancel", () => {
+	const notice: Spec = {
+		role: "AXWindow",
+		title: "카카오톡",
+		kids: [
+			{ role: "AXStaticText", value: "다른 기기에서 로그인 중입니다." },
+			{ role: "AXStaticText", value: "강제 로그아웃하고, 현재 기기에서 로그인 하시겠습니까?" },
+			{ role: "AXButton", title: "취소" },
+			{ role: "AXButton", title: "확인" },
+		],
+	};
+	expect(runJxa([notice], { action: "state" }).json).toEqual({ state: "login", detail: "notice" });
+	const r = runJxa([notice], { action: "ack" });
+	expect(r.json).toEqual({ state: "login", detail: "notice_handled" });
+	expect(r.wins[0].kids[2].pressed).toBe(0);
+	expect(r.wins[0].kids[3].pressed).toBe(1);
+	const onlyCancel: Spec = { ...notice, kids: notice.kids!.slice(0, 3) };
+	const u = runJxa([onlyCancel], { action: "ack" });
+	expect(u.json.detail).toBe("notice_unhandled");
+	expect(u.wins[0].kids[2].pressed).toBe(0);
+	// Seen on a real screen: the forced-logout notice laid over the login form.
+	const loggedOut: Spec = { ...loginWindow, title: "로그인", kids: [...loginWindow.kids!, { role: "AXStaticText", value: "로그아웃 되었습니다." }, { role: "AXStaticText", value: "다른 기기에서 로그인해 로그아웃 되었습니다." }, { role: "AXButton", title: "확인" }] };
+	expect(runJxa([loggedOut], { action: "state" }).json).toEqual({ state: "login", detail: "notice" });
+	expect(runJxa([loggedOut], { action: "ack" }).wins[0].kids[6].pressed).toBe(1);
+	expect(runJxa([loginWindow], { action: "state" }).json).toEqual({ state: "login" });
+});
