@@ -39,6 +39,33 @@ function prTryFollow() {
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (typeof d.follow === "string") { prFollowHref = d.follow; prTryFollow(); } });
 
+// Frames this gateway forwards from the other computers' event streams (hub/peer-stream.ts), so the page hears them without leaving its own origin:
+// peer_counts updates that computer's chip numbers at once; peer_notice is a new notice there. It toasts (tap = that computer, at the item, like a
+// push tap) only while this page is visible: a hidden page gets the push instead, and the hub quiets the push while the page is open (hub/push.ts presence).
+const prSeen = new Set();
+function prLive(e) {
+  const p = PR.list.find(x => !x.self && x.url === (e.kind === "peer_counts" ? e.url : e.peer && e.peer.url));
+  if (e.kind === "peer_counts") {
+    if (!p) return;
+    p.online = e.online !== false; p.unread = e.unread; p.need = e.need;
+    prPaint();
+    return;
+  }
+  if (!p || document.hidden) return;
+  const key = `${p.url}|${e.key || e.id}`;
+  if (prSeen.has(key)) return;
+  prSeen.add(key);
+  p.online = true;
+  const ask = e.notice === "decision" || e.tone === "ask";
+  const text = e.title ? (ask ? `답변이 필요해요 · ${e.title}` : e.title) : ask ? "답변이 필요해요" : "새 알림";
+  toast(`${p.name} · ${text}`, false, { label: "열기", onclick: () => prOpenItem(p, e.id) }, 8000);
+}
+// The same hand-over as a tapped push: ?pc= names the computer, ?n= the notice, which opens there by its kind (a decision opens its sheet).
+function prOpenItem(p, id) {
+  prFollowHref = `${location.origin}/?pc=${enc(p.url)}&n=${enc(id)}`;
+  prTryFollow();
+}
+
 function prPaint() {
   prTryFollow();
   const chip = $("#pchip"), me = prSelf(), on = !!me && PR.list.length >= 2;
