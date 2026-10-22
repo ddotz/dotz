@@ -105,6 +105,31 @@ function settings() {
 	};
 }
 
+// bun prints a failing test's error block (source excerpt, `error:`/expect lines, stack) right before its `(fail) name` line, after the
+// previous `(pass)`/`(fail)` line or the file header. Keeps each block, capped per block, per run and in count, so the assertion survives the tail cut.
+const FAIL_BLOCK_LINES = 40, FAIL_BLOCK_CHARS = 3000, FAIL_BLOCKS = 15, FAIL_TOTAL_CHARS = 20_000;
+export function failureBlocks(out: string): string {
+	const lines = out.split("\n");
+	const blocks: string[] = [];
+	let start = 0, total = 0, failed = 0;
+	for (let i = 0; i < lines.length; i++) {
+		const l = lines[i]!;
+		if (/^\((pass|skip|todo)\) /.test(l) || /^\S+\.test\.[cm]?[jt]sx?:\s*$/.test(l)) { start = i + 1; continue; }
+		if (!/^\(fail\) /.test(l)) continue;
+		failed++;
+		const body = lines.slice(start, i).join("\n").trim().split("\n");
+		start = i + 1;
+		if (blocks.length >= FAIL_BLOCKS || total >= FAIL_TOTAL_CHARS) continue;
+		let text = body.slice(-FAIL_BLOCK_LINES).join("\n");
+		if (text.length > FAIL_BLOCK_CHARS) text = text.slice(-FAIL_BLOCK_CHARS);
+		text = `${text}\n${l}`.trim();
+		total += text.length;
+		blocks.push(text);
+	}
+	if (!blocks.length) return "";
+	return `${blocks.join("\n--\n")}${failed > blocks.length ? `\n… ${failed - blocks.length} more failure(s) not kept` : ""}`;
+}
+
 const today = () => new Date().toISOString().slice(0, 10).replace(/-/g, "");
 function record(logDir: string, text: string): void {
 	try {
@@ -257,6 +282,8 @@ export async function apply(o: Options): Promise<Job> {
 	const t = await exec(testCmd, dir, 20 * 60_000);
 	const summary = t.out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
 	if (t.code !== 0) {
+		const blocks = failureBlocks(t.out);
+		if (blocks) record(logDir, `update #${j.id}: failed tests\n${blocks}`);
 		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
 		return back(`테스트 실패${summary ? ` (${summary})` : ` (exit ${t.code})`}`, deps);
 	}
