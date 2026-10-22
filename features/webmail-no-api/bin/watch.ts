@@ -1,5 +1,6 @@
-// One-shot webmail watch: the gateway runs it every poll_minutes. It makes one conditional request, prints one line per new
-// mail (the orchestrator opens a thread per line) and nothing when the inbox is unchanged, so an idle inbox costs no tokens.
+// One-shot webmail watch: the gateway runs it every poll_minutes. It makes one conditional request, posts each new mail to the
+// gateway (POST /api/mail: its own thread and web conversation, one orchestrator turn), prints a line only for a mail the
+// gateway did not take (the orchestrator then opens the thread itself) and nothing when the inbox is unchanged, so an idle inbox costs no tokens.
 // Logout is recovered once with a silent background tab load, then reported to the owner; `DOTZ_FAIL webmail-login` /
 // `DOTZ_FAIL network` make the gateway raise it as an issue. State lives in the per-watch dir the gateway sets.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -7,7 +8,8 @@ import { join } from "node:path";
 import { loadConfig, loadSpec, liveCtx, paths, writeJson } from "../lib/config.ts";
 import { cookieHeaderFromAside } from "../lib/cookies.ts";
 import { endpointUrl } from "../lib/spec.ts";
-import { initialState, pollOnce, type WatchState } from "../lib/watchkit.ts";
+import { liveGateway } from "../lib/gateway.ts";
+import { initialState, pollOnce, postToGateway, type WatchState } from "../lib/watchkit.ts";
 
 const SITE = process.env.WEBMAIL_SITE ?? process.argv[2] ?? "";
 
@@ -46,9 +48,9 @@ async function main(): Promise<number> {
 	const recover = () => recoverViaAside(spec.origin);
 	const res = await pollOnce(ctx, spec, config, state, recover);
 	saveState(f, res.state);
-	const newCount = res.lines.filter((l) => l.startsWith("mail ")).length;
+	const newCount = res.mails.length;
 	writeJson(paths.status(SITE), { lastRun: new Date(ctx.now()).toISOString(), lastOk: res.state.lastOk, loggedOut: res.state.loggedOut, failing: res.fail ?? null, ...(newCount ? { lastNewAt: new Date(ctx.now()).toISOString(), lastNewCount: newCount } : {}) }, 0o644);
-	for (const line of res.lines) console.log(line);
+	for (const line of await postToGateway(liveGateway, SITE, res, ctx.log)) console.log(line);
 	ctx.log(`watch ${SITE}: ${res.note} (${endpointUrl(spec.origin, spec.list, { mailbox: spec.list.mailbox })})`);
 	if (res.fail) {
 		console.log(res.fail);

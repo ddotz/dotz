@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { defaultConfig, type Ctx } from "../lib/config.ts";
-import { initialState, pollOnce } from "../lib/watchkit.ts";
+import { initialState, pollOnce, postToGateway } from "../lib/watchkit.ts";
 import { startFakeServer, mkMail } from "./fakeserver.ts";
 
 const config = defaultConfig("fake");
@@ -32,6 +32,38 @@ test("first run seeds silently, then reports only genuinely new mail", async () 
 
 		r = await pollOnce(ctx, srv.spec, config, s, noRecover);
 		expect(r.lines).toEqual([]);
+	} finally {
+		srv.close();
+	}
+});
+
+test("new mail goes to the gateway as a woken mail conversation; only a mail it did not take keeps its line", async () => {
+	const srv = startFakeServer([mkMail(1)]);
+	try {
+		const ctx = ctxFor(srv);
+		const s = (await pollOnce(ctx, srv.spec, config, initialState(), noRecover)).state;
+		srv.addMail(mkMail(2, "budget"));
+		srv.addMail(mkMail(3, "meeting"));
+		const r = await pollOnce(ctx, srv.spec, config, s, noRecover);
+		expect(r.mails.map((m) => m.id)).toEqual(["2", "3"]);
+
+		const calls: { method: string; path: string; body: any }[] = [];
+		const gw = async (method: string, path: string, body?: unknown) => {
+			calls.push({ method, path, body });
+			if ((body as any).id === "3") throw new Error("HTTP 404");
+			return { ok: true };
+		};
+		const left = await postToGateway(gw, "fake", r, () => {});
+		expect(calls.map((c) => [c.method, c.path, c.body.source, c.body.id, c.body.wake])).toEqual([
+			["POST", "/api/mail", "fake", "2", true],
+			["POST", "/api/mail", "fake", "3", true],
+		]);
+		expect(calls[0].body.subject).toContain("budget");
+		expect(left.length).toBe(1);
+		expect(left[0]).toContain("mail 3");
+
+		const down = await postToGateway(async () => { throw new Error("게이트웨이에 연결하지 못했어요"); }, "fake", r, () => {});
+		expect(down).toEqual(r.lines);
 	} finally {
 		srv.close();
 	}
