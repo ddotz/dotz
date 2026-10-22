@@ -55,3 +55,20 @@ test("a stored open question without options gets the same defaults on load, and
 	expect(JSON.parse(run.stdout.toString().trim().split("\n").pop()!)).toEqual([["네", "아니요"]]);
 	expect(readFileSync(join(dir, "notices.json"), "utf8")).toBe(stored);
 });
+
+test("a mail thread's send question without the draft gets the thread's latest drafted quote in the notice", () => {
+	const dir = mkdtempSync(join(tmpdir(), "dotz-askdraft-"));
+	copyFileSync(CONFIG_FILE, join(dir, "config.json"));
+	const out = (ts: string, text: string) => JSON.stringify(ev(text, { ts, conv: "mail:site-1" }));
+	const older = out("2050-06-01T00:00:01.000Z", "[done] 원문 요약이에요.\n> 받는이: someone@example.com\n> 제목: 이전 초안\n>\n> 오래된 본문");
+	const draft = out("2050-06-01T00:00:02.000Z", "[done] 초안을 만들었어요.\n> 받는이: buyer@example.com\n> 제목: 감사합니다\n>\n> 안녕하세요.\n>\n> 주문 감사합니다.\n\n확인하고 알려 주세요.");
+	const other = JSON.stringify(ev("[done] 다른 대화의 초안\n> 받는이: x@example.com\n> 제목: 다른\n>\n> 다른 본문", { ts: "2050-06-01T00:00:03.000Z", conv: "mail:site-2" }));
+	writeFileSync(join(dir, "outbox.jsonl"), [older, draft, other].join("\n") + "\n");
+	const ask = JSON.stringify(ev("[ask] 감사 답장 초안이에요. 보내도 될까요?", { ts: "2050-06-01T00:00:04.000Z", conv: "mail:site-1" }));
+	const bare = JSON.stringify(ev("[ask] 감사 답장 초안이에요. 보내도 될까요?", { ts: "2050-06-01T00:00:05.000Z", conv: "mail:site-3" }));
+	const run = Bun.spawnSync([process.execPath, "-e", `const m = await import("./hub/notices.ts"); const e = JSON.parse(process.env.ASK!); const b = JSON.parse(process.env.BARE!); console.log(JSON.stringify([m.decisionsOf(e)[0].detail, m.decisionsOf(b)[0].detail])); process.exit(0);`], { cwd: join(import.meta.dir, ".."), env: { ...process.env, DOTZ_DIR: dir, ASK: ask, BARE: bare } });
+	expect(run.exitCode).toBe(0);
+	const [detail, none] = JSON.parse(run.stdout.toString().trim().split("\n").pop()!) as string[];
+	expect(detail).toBe("> 받는이: buyer@example.com\n> 제목: 감사합니다\n>\n> 안녕하세요.\n>\n> 주문 감사합니다.\n감사 답장 초안이에요. 보내도 될까요?");
+	expect(none).toBe("감사 답장 초안이에요. 보내도 될까요?");
+});
