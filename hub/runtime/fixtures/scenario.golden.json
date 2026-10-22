@@ -753,7 +753,15 @@
    2,
    {
     "type": "prompt",
-    "message": "#otaid3wx2zkn [dotz gateway] You are tester, the dotz orchestrator hosted …"
+    "message": "#1gokich7hd94x [dotz gateway] You are tester, the dotz orchestrator hosted …"
+   }
+  ],
+  [
+   "stdin",
+   2,
+   {
+    "type": "steer",
+    "message": "#d5k4j7dic9zo \n\n[handover] The previous conversation (<DATA>/orch-session.…"
    }
   ],
   [
