@@ -1,17 +1,17 @@
-/* 채팅 (web/js/31-conversations.js): the chat list and the "새 메시지" divider.
+/* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, status; no preview or time) and the "새 메시지" divider.
    Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
 .cv-side { display: none; background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
 .cv-head { display: none; }
 #v-chat.cv-listing > .cv-side { display: block; }
 #v-chat.cv-listing > :not(.cv-side) { display: none; }
 
-.cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 68px; padding: 10px 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
+.cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 48px; padding: 6px 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
 .cv-row + .cv-row { border-top: 1px solid var(--line); }
 /* the open conversation: a small accent dot in the row's left padding (the slot every row already has, so text never shifts) */
 .cv-row { position: relative; }
 .cv-row.on::before { content: ""; position: absolute; top: 50%; left: 5px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); }
 .cv-row:hover { background: var(--card-hover); }
-.cv-av { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 700 17px/24px var(--font); }
+.cv-av { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 700 15px/24px var(--font); }
 .cv-av .ic { width: 20px; height: 20px; }
 .cv-av.bot { background: var(--fg); color: var(--bg); }
 .cv-av.nt { background: var(--layer); color: var(--fg); }
@@ -21,13 +21,11 @@
 .cv-p { color: var(--fg-3); font: 400 14px/20px var(--font); }
 .cv-row.unread .cv-n { font-weight: 700; }
 /* a session under its project: indented, smaller avatar; the group label for sessions started from chat */
-.cv-row.sub { min-height: 56px; padding-left: 40px; }
-.cv-row.sub .cv-av { width: 32px; height: 32px; }
+.cv-row.sub { min-height: 44px; padding-left: 32px; }
+.cv-row.sub .cv-av { width: 28px; height: 28px; }
 .cv-row.sub .cv-n { font-size: 14px; }
 .cv-gh { padding: 12px 16px 4px; color: var(--fg-3); font: 500 12px/16px var(--font); }
-.cv-row.unread .cv-p { color: var(--fg); }
-.cv-m { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 40px; }
-.cv-t { color: var(--fg-3); font: 400 12px/16px var(--font); }
+.cv-m { flex: none; display: flex; align-items: center; gap: 6px; }
 
 /* the header picker (chips / caret menu) is replaced by the list in 대화; 로그 keeps it */
 .thead[data-mode="chat"] :is(.tsw, .tdrop) { display: none !important; }
@@ -43,7 +41,7 @@
 }
 
 @media (min-width: 1100px) {
-  :root { --cv-w: 296px; }
+  :root { --cv-w: 240px; }
   #v-chat { display: grid; max-width: 1360px; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
   #v-chat > * { grid-column: 2; }
   #v-chat > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 8px; }
@@ -52,12 +50,13 @@
   #v-chat > .todo { grid-row: 3; }
   #v-chat > .chatbox { grid-row: 4; }
   #v-chat > .composer { grid-row: 5; }
-  .cv-row { min-height: 60px; padding: 8px 10px; gap: 10px; border-radius: var(--r-ctl); }
+  .cv-row { min-height: 36px; padding: 4px 10px; gap: 8px; border-radius: var(--r-ctl); }
+  .cv-row.sub { min-height: 36px; padding-left: 20px; }
+  .cv-row .cv-n, .cv-row.sub .cv-n { font-size: 14px; line-height: 20px; }
   .cv-row + .cv-row { margin-top: 2px; border-top: 0; }
   .cv-row.on { background: var(--layer); }
   .cv-row.on::before { left: 2px; }
-  .cv-side .cv-av { width: 40px; height: 40px; font-size: 16px; }
+  .cv-side .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
+  .cv-side .cv-av .ic { width: 14px; height: 14px; }
   .cv-head .cv-av { width: 36px; height: 36px; font-size: 15px; }
-  .cv-side .cv-m { min-width: 32px; }
 }
-@media (min-width: 1280px) { :root { --cv-w: 320px; } }
