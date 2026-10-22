@@ -151,6 +151,7 @@ function scrollChat(force, top) {
   if (!force && !chatStick) return;
   if (force) chatUnpin();   // an explicit jump to the bottom ends the opening's anchor (31-conversations.js)
   requestAnimationFrame(() => {
+    if (CV.pin && CV.pin !== "bottom") return;   // a place chosen after this call (the divider, a jump target) wins; the owner letting go clears the pin first
     if (!force && !chatStick) return;   // an earlier message of this frame already put the view at its top
     if (!force && top && top.isConnected && fullHeight(top) > timeline.clientHeight - 24) {
       chatUnpin();
@@ -179,7 +180,7 @@ let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
 // pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),
 // "bottom", or "" once the owner took over; placed = the opening has been positioned; seen = the pin held still long enough to count as read.
-const CV = { key: "", div: "", divNode: null, landed: false, loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", seen: false, openAt: 0, dwellT: 0, gateT: 0 };
+const CV = { key: "", div: "", divNode: null, jump: "", loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", seen: false, openAt: 0, dwellT: 0, gateT: 0 };
 // 31-conversations.js state; declared here because the boot code calls go() before that file has run.
 const CONV = new Map(), READ = {}, convPend = new Map();
 let convRaf = 0, convSig = "", convHeadSig = "", convRetry = 0, convReadT = 0, convPendT = 0;

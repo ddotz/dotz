@@ -87,7 +87,7 @@ function convSync() {
   const key = current === "chat" && !convListing() ? target : "";
   if (key === CV.key) return false;
   chatUnpin(); clearTimeout(CV.gateT);
-  Object.assign(CV, { key, div: "", divNode: null, landed: false, captured: false, failed: false, placed: false, full: false, snap: null, openAt: performance.now() });
+  Object.assign(CV, { key, div: "", divNode: null, jump: "", captured: false, failed: false, placed: false, full: false, snap: null, openAt: performance.now() });
   convCapture();
   return !!key;   // the caller draws the conversation: the divider is in it from the first paint
 }
@@ -120,8 +120,11 @@ function chatOpen() {
   if (!CV.key) { scrollChat(true); return; }
   if (!CV.placed) {
     CV.placed = true;
-    if (CV.landed) { chatUnpin(); scrollChat(true); return; }   // the notice jump lands on its own message
-    CV.landed = true;
+    if (CV.jump) {   // a jump target wins over the divider (ntJump)
+      const m = ntFind(CV.jump);
+      if (m) { chatJump(m); return; }
+      chatUnpin(); scrollChat(true); return;
+    }
     // reloaded onto a new shell (23-installable-app-web.js): the place the owner was at, unless they were at the bottom
     const r = SHELL_RESTORE;
     if (r && r.key === CV.key && !r.stick && r.anchor) { SHELL_RESTORE = null; CV.pinTs = r.anchor.ts; CV.pinOff = r.anchor.off; chatPin("at"); return; }
@@ -131,6 +134,13 @@ function chatOpen() {
   if (CV.pin) chatPlace();
   else if (snap && !snap.stick) { timeline.scrollTop = snap.top; chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; }
   else scrollChat(true);
+}
+// A jump target (notice, toast, push, 답변 필요, ?m=) sits with its top just under the app bar, wherever the divider is, and stays there while
+// images and code blocks settle (the pin re-places it before paint) until the owner touches the timeline.
+function chatJump(node) {
+  const a = timeline.getBoundingClientRect(), bar = $("#appbar").getBoundingClientRect();
+  CV.pinTs = node.dataset.ts; CV.pinOff = Math.max(0, bar.bottom - a.top) + 20;
+  chatPin("at");
 }
 function chatPin(kind) { CV.pin = kind; chatPlace(); }
 function chatUnpin() { CV.pin = ""; clearTimeout(CV.dwellT); }
