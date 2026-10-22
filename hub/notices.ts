@@ -282,6 +282,8 @@ function feed(e: HubEvent): void {
 		} else if (e.kind === "message" || e.kind === "lane_message") {
 			answerReply(e);
 			ownerReplied(e);
+			// The owner writing in a conversation (on Discord too, which reports no read position) has seen what came before it.
+			if (!replaying) readConversationNotices(eventTarget(e) ?? "main", e.ts);
 		}
 		else {
 			fromInbox(e);
@@ -361,8 +363,11 @@ function fromAnswer(e: HubEvent): void {
 	const conv = eventTarget(e) ?? "main";
 	if (isViewing(conv)) return;
 	const preview = text.replace(/\s+/g, " ");
+	// A closing report (its session already exited) may update the text of a notice the owner has read, but not re-open it.
+	const owner = conv.startsWith("lane:") ? conv.slice(5) : conv.startsWith("ch:") ? channelLanes().get(conv) : undefined;
+	const closing = [owner, lane ? src.slice(5) : undefined].some(name => name !== undefined && stoppedSince(name) !== undefined);
 	const title = conv.startsWith("lane:") ? laneTitle(conv.slice(5)) : conv === "alert" ? "알림" : conv === "worklog" ? "작업 기록" : channelTitle(conv);
-	upsert({ kind: "message", tone: "", title, text: preview.length > MESSAGE_PREVIEW ? `${preview.slice(0, MESSAGE_PREVIEW - 1)}…` : preview, open: conv, key: `msg:${conv}`, unread: true, src: conv, at: e.ts });
+	upsert({ kind: "message", tone: "", title, text: preview.length > MESSAGE_PREVIEW ? `${preview.slice(0, MESSAGE_PREVIEW - 1)}…` : preview, open: conv, key: `msg:${conv}`, unread: true, src: conv, at: e.ts, read: closing && items.find(n => n.key === `msg:${conv}`)?.read === true });
 }
 
 // The name of a conversation for a notice title; never a raw id: a project, then the session that owns the channel, then a plain label.
