@@ -235,11 +235,18 @@ async function runOnce(w: Watch): Promise<void> {
 	}
 }
 
-// The next run: at the retry time a failure kind set, else every_minutes after this one.
-function arm(w: Watch): void {
+// What is left of the interval since the last run; 0 when it is overdue or never ran.
+const dueIn = (w: Watch): number => {
+	const last = w.state.lastRun ? Date.parse(w.state.lastRun) : Number.NaN;
+	return Number.isFinite(last) ? Math.max(0, last + w.every_minutes * 60_000 - Date.now()) : 0;
+};
+
+// The next run: at the retry time a failure kind set, else every_minutes after this one. At boot (a restart has no run in
+// flight) the interval counts from the last run, so an overdue watch runs at once and a restart never pushes a run back.
+function arm(w: Watch, boot = false): void {
 	clearTimeout(timers.get(w.id));
 	if (w.paused) return;
-	const wait = w.state.nextAt ? Math.max(0, w.state.nextAt - Date.now()) : w.every_minutes * 60_000;
+	const wait = w.state.nextAt ? Math.max(0, w.state.nextAt - Date.now()) : boot ? dueIn(w) : w.every_minutes * 60_000;
 	timers.set(w.id, setTimeout(() => void run(w), wait));
 }
 
@@ -271,7 +278,7 @@ export function approveWatch(idOrName: string): Watch {
 
 export function startWatches(handler: typeof notify): void {
 	notify = handler;
-	for (const w of items) arm(w);
+	for (const w of items) arm(w, true);
 }
 
 // What a gateway restart does: the watches come back from watches.json (their state folders stay on disk) and are armed again.
@@ -279,7 +286,7 @@ export function reloadWatches(): void {
 	for (const t of timers.values()) clearTimeout(t);
 	timers.clear();
 	items.splice(0, items.length, ...loadItems());
-	for (const w of items) arm(w);
+	for (const w of items) arm(w, true);
 }
 
 export function addWatch(input: Record<string, any>, rulesText: string): Watch {
