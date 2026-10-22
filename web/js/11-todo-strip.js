@@ -145,7 +145,7 @@ function msgNode(e) {
       const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? "더 보기" : "접기"; } }, "더 보기") : null;
       const base = [hm, via].filter(Boolean).join(" · "), mt = el("div", { class: "mt", text: base }), mid = e.mid || e.message_id || "";
       if (mid) { DELIV.nodes.set(mid, { mt, base }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
-      return el("div", { class: "um" }, filesNode(e.files), text ? ub : null, more, mt);
+      return el("div", { class: "um" }, filesNode(e.files), rpQuote(e), text ? ub : null, more, mt);
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, e.card ? cardNode(e.card) : el("pre", { text }), el("div", { class: "mt", text: hm }));
     case "notice": case "notice_read": return null;
@@ -248,6 +248,7 @@ function chatPush(en, bulk) {
     const n = msgNode(e);
     if (n) {
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
+      rpMark(n, e);
       if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { CV.divNode = tl.appendChild(convDivider()); CS.who = ""; }
       const who = n.matches(".um, .bm") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000) n.classList.add("cont");

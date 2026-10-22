@@ -1,0 +1,23 @@
+/* ---------- reply: quoted message above the composer, the swipe pull and the desktop hover button (web/js/39-reply.js) ---------- */
+[data-rid] { position: relative; touch-action: pan-y; }
+[data-rid].rp-pull, [data-rid].rp-snap { transform: translateX(var(--rp-x, 0px)); }
+[data-rid].rp-snap { transition: transform .18s cubic-bezier(.2, .8, .2, 1); }
+[data-rid].rp-pull { user-select: none; -webkit-user-select: none; }
+.rp-ind { position: absolute; top: 50%; left: calc(var(--rp-x, 0px) * -1 + 6px); width: 28px; height: 28px; margin-top: -14px; display: grid; place-items: center; border-radius: 50%; background: var(--hover); color: var(--fg-3); opacity: var(--rp-p, 0); transform: scale(calc(.6 + .4 * var(--rp-p, 0))); transition: background .12s, color .12s; pointer-events: none; }
+.rp-hit > .rp-ind { background: var(--accent); color: var(--on-accent); transform: scale(1.12); }
+@keyframes rp-flash { from { background: color-mix(in srgb, var(--accent) 16%, transparent); } to { background: transparent; } }
+[data-rid].rp-flash { animation: rp-flash 1.2s ease-out; border-radius: var(--r-ctl); }
+.rp-btn { position: absolute; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: var(--hover); color: var(--fg-2); opacity: 0; pointer-events: none; transition: opacity .12s; }
+.rp-btn:hover { background: var(--active); color: var(--fg); }
+.um > .rp-btn { right: 100%; margin-right: 6px; bottom: 0; }
+.bm > .rp-btn { top: 0; right: 0; }
+@media (hover: hover) and (pointer: fine) { [data-rid]:hover > .rp-btn, .rp-btn:focus-visible { opacity: 1; pointer-events: auto; } }
+@media (hover: none), (pointer: coarse) { .rp-btn { display: none; } }
+.rpbar { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 0 6px; padding: 4px 4px 4px 12px; border-left: 3px solid var(--accent); border-radius: var(--r-ctl); background: var(--hover); color: var(--fg-2); font-size: 13px; line-height: 20px; }
+.rpbar[hidden] { display: none; }
+.rpbar .rp-ic { color: var(--accent); }
+.rp-tx { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.rp-au { font-weight: 700; color: var(--fg); }
+.rp-ct, .rpq-ct { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rpq { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; padding: 4px 10px; border: 0; border-left: 3px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, var(--bg)); color: var(--fg-2); font: inherit; font-size: 13px; line-height: 18px; text-align: left; cursor: pointer; }
+.rpq-au { font-weight: 700; color: var(--fg); }
