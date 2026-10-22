@@ -74,9 +74,9 @@ function rulesDialog() {
     r.do = r.do || { auto: true };
     const w = r.when || {}, cond = ACC_COND.find(([k]) => k && k in w), ck = cond ? cond[0] : "";
     const set = (k, v) => { r.when = r.when || {}; if (v === "" || v == null) delete r.when[k]; else r.when[k] = v; };
-    const nm = el("input", { class: "fi", type: "text", value: r.name || "", maxlength: "40", placeholder: `규칙 ${i + 1} 이름 (선택)`, "aria-label": "규칙 이름" });
+    const nm = el("input", { class: "fi", type: "text", style: "flex:1 1 200px", value: r.name || "", maxlength: "40", placeholder: `규칙 ${i + 1} 이름 (선택)`, "aria-label": "규칙 이름" });
     nm.addEventListener("input", () => { r.name = nm.value; });
-    const time = (k, label) => { const t = el("input", { class: "fi", type: "time", value: w[k] || "", "aria-label": label, style: "flex:1;min-width:110px" }); t.addEventListener("change", () => set(k, t.value)); return t; };
+    const time = (k, label) => { const t = el("input", { class: "fi", type: "time", value: w[k] || "", "aria-label": label, style: "flex:1;min-width:96px" }); t.addEventListener("change", () => set(k, t.value)); return t; };
     const days = ACC_DAYS.map(([k, t]) => { const on = (w.days || []).includes(k); return el("button", { type: "button", class: `chip${on ? " on" : ""}`, "aria-pressed": String(on), text: t, onclick: () => { const s = new Set(w.days || []); on ? s.delete(k) : s.add(k); set("days", ACC_DAYS.map(([x]) => x).filter(x => s.has(x))); if (!(r.when.days || []).length) delete r.when.days; paint(); } }); });
     const condCtl = [select(ACC_COND, ck, "조건", v => {
       if (ck) delete r.when[ck];
@@ -99,7 +99,7 @@ function rulesDialog() {
     }
     const many = Object.keys(w).filter(k => ACC_COND.some(([c]) => c === k)).length > 1;
     return el("div", { class: "list" }, el("div", { class: "li", style: "flex-direction:column;align-items:stretch;gap:12px" },
-      el("div", { class: "row" }, nm,
+      el("div", { class: "row", style: "flex-wrap:wrap" }, nm,
         el("button", { type: "button", class: "btn text", disabled: i === 0, onclick: () => move(i, i - 1) }, "위로"),
         el("button", { type: "button", class: "btn text", disabled: i === n - 1, onclick: () => move(i, i + 1) }, "아래로"),
         el("button", { type: "button", class: "btn danger", onclick: () => { list().splice(i, 1); paint(); } }, "삭제")),
