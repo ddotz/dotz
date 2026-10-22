@@ -188,7 +188,7 @@ function updateComposerMeta() {
   const gone = isLaneT(target) && info.known && !info.alive;
   const off = gone && !info.resumable;
   ta.disabled = off; $("#send-btn").disabled = off;
-  ta.placeholder = off ? "종료된 세션이에요" : DC.cur ? "번호를 누르거나 직접 입력해 주세요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기" : isTerm ? "메시지 또는 /명령" : isProjT(target) ? `${targetName(target)} 프로젝트의 ${botName}에게 메시지 · /명령` : `${targetName(target)}에게 메시지 · /명령`;
+  ta.placeholder = off ? "종료된 세션이에요" : DC.cur ? "번호를 누르거나 직접 입력해 주세요" : gone ? "재개하면서 보내기" : isWorking(target) ? "작업 중에 끼어들기" : isTerm ? "메시지 또는 /명령" : isProjT(target) ? `${targetName(target)} 프로젝트의 ${botName}에게 메시지 · /명령` : isMailT(target) ? `이 메일 답장·전달은 ${botName}에게 · /명령` : `${targetName(target)}에게 메시지 · /명령`;
   $("#composer").classList.toggle("tmode", isTerm);
   rpPaint();
 }
