@@ -361,8 +361,17 @@ function fromAnswer(e: HubEvent): void {
 	const conv = eventTarget(e) ?? "main";
 	if (isViewing(conv)) return;
 	const preview = text.replace(/\s+/g, " ");
-	const title = conv.startsWith("lane:") ? laneTitle(conv.slice(5)) : conv === "alert" ? "알림" : conv === "worklog" ? "작업 기록" : convNameOf(conv) || (conv === "main" ? "대화" : conv);
+	const title = conv.startsWith("lane:") ? laneTitle(conv.slice(5)) : conv === "alert" ? "알림" : conv === "worklog" ? "작업 기록" : channelTitle(conv);
 	upsert({ kind: "message", tone: "", title, text: preview.length > MESSAGE_PREVIEW ? `${preview.slice(0, MESSAGE_PREVIEW - 1)}…` : preview, open: conv, key: `msg:${conv}`, unread: true, src: conv, at: e.ts });
+}
+
+// The name of a conversation for a notice title; never a raw id: a project, then the session that owns the channel, then a plain label.
+function channelTitle(conv: string): string {
+	const named = convNameOf(conv)?.trim();
+	if (named) return named;
+	const lane = conv.startsWith("ch:") ? channelLanes().get(conv) : undefined;
+	if (lane) return laneTitle(lane);
+	return conv.startsWith("ch:") ? "채널" : "대화";
 }
 
 /* ---------- decisions: every question that waits on the owner is its own pinned notice ---------- */
@@ -615,13 +624,32 @@ onEmit(feed);
 
 /* ---------- stale notices: the session is gone, or the owner already read the message ---------- */
 // The session a notice belongs to: its key, the conversation it points at, or the session its question goes to.
-function laneOfNotice(i: Notice): string | undefined {
+function laneOfNotice(i: Notice, byChannel?: Map<string, string>): string | undefined {
 	for (const c of [i.key, i.src, i.open, i.decision?.to]) {
 		const m = /^lane:([\w.-]+)$/.exec(c ?? "");
 		if (m) return m[1];
 	}
-	return undefined;
+	// A session's own channel belongs to that session (a notice of its channel goes with it).
+	const ch = [i.src, i.open].find(c => c && /^ch:\d+$/.test(c));
+	return ch ? byChannel?.get(ch) : undefined;
 }
+
+// What the gateway still has, read from its channel map (channels.json): every id a conversation can be, and the session each own channel
+// belongs to. null when there is no map (no Discord): then no channel counts as gone.
+type ChannelMap = { known: Set<string>; lanes: Map<string, string> };
+function readChannelMap(): ChannelMap | null {
+	try {
+		const c = JSON.parse(readFileSync(paths.channels, "utf8"));
+		if (!c?.chat) return null;
+		const lanes = new Map<string, string>(Object.entries<string>(c.lanes ?? {}).map(([lane, id]) => [`ch:${id}`, lane]));
+		const fixed = [c.chat, c.worklog, c.alert, c.brief, c.dm, c.category, c.workCategory, ...Object.values<string>(c.homes ?? {})];
+		const ids = [...fixed, ...Object.keys(c.work ?? {}), ...Object.keys(c.threads ?? {}), ...lanes.keys()].filter(Boolean).map(String);
+		return { known: new Set(ids.map(id => id.replace(/^ch:/, ""))), lanes };
+	} catch {
+		return null;
+	}
+}
+const channelLanes = () => readChannelMap()?.lanes ?? new Map<string, string>();
 const laneExists = (name: string) => existsSync(join(paths.lanes, name, "lane.json"));
 
 // A session that no longer exists answers nobody: its questions are closed as resolved, and its notices are read and leave the list and the badge
@@ -641,7 +669,16 @@ function retire(list: Notice[], at = now()): void {
 
 // Called when a session is deleted (hub/lanetrash.ts): its notices go with it. Returns how many were retired.
 export function dropLaneNotices(name: string): number {
-	const list = items.filter(i => !i.dismissed && laneOfNotice(i) === name);
+	const byChannel = channelLanes();
+	const list = items.filter(i => !i.dismissed && laneOfNotice(i, byChannel) === name);
+	retire(list);
+	return list.length;
+}
+
+// Called when a channel is deleted, or when its session stops (`messagesOnly`: the channel stays, only its unread-message items go).
+// Returns how many were retired.
+export function dropChannelNotices(conv: string, messagesOnly = false): number {
+	const list = items.filter(i => !i.dismissed && (i.src ?? i.open) === conv && (!messagesOnly || i.kind === "message"));
 	retire(list);
 	return list.length;
 }
@@ -653,18 +690,31 @@ function reconcileStored(): void {
 	try {
 		const gone = new Map<string, boolean>();
 		const isGone = (name: string) => gone.get(name) ?? (gone.set(name, !laneExists(name)), gone.get(name)!);
+		const map = readChannelMap();
+		// A channel the gateway no longer has (deleted, or its session closed) answers nobody either.
+		const lostChannel = (i: Notice) => {
+			const ch = [i.src, i.open].find(c => c && /^ch:\d+$/.test(c));
+			return !!map && !!ch && !map.known.has(ch.slice(3));
+		};
 		const stale = items.filter(i => {
-			const lane = laneOfNotice(i);
-			return !i.dismissed && (!i.read || isOpenDecision(i)) && lane !== undefined && isGone(lane);
+			const lane = laneOfNotice(i, map?.lanes);
+			return !i.dismissed && (!i.read || isOpenDecision(i)) && ((lane !== undefined && isGone(lane)) || lostChannel(i));
 		});
 		retire(stale);
+		// A title that is a raw channel id (made before the name was known) gets its name.
+		let retitled = 0;
+		for (const i of items)
+			if (/^ch:\d+$/.test(i.title)) {
+				i.title = channelTitle(i.title);
+				retitled++;
+			}
 		let read = 0;
 		for (const i of items)
 			if (!i.read && coveredByRead(i)) {
 				i.read = true;
 				read++;
 			}
-		if (stale.length || read) {
+		if (stale.length || read || retitled) {
 			save();
 			log(`notices reconciled on load: ${stale.length} of gone sessions retired, ${read} read by position`);
 		}

@@ -16,7 +16,7 @@ import { DATA_DIR, log, paths, writeAtomic } from "./config.ts";
 import { newCtx } from "./context.ts";
 import { broadcast } from "./events.ts";
 import { type Lane, laneRunning, lanes } from "./lanes.ts";
-import { dropLaneNotices } from "./notices.ts";
+import { dropChannelNotices, dropLaneNotices } from "./notices.ts";
 
 export const TRASH_DIR = join(DATA_DIR, "trash");
 export const TRASH_KEEP_MS = 7 * 86_400_000;
@@ -152,6 +152,7 @@ function deleteLane(name: string, now = Date.now()): DeleteResult {
 	lanes.delete(name);
 	// Its notices go with it: questions closed, the rest read and off the badge.
 	dropLaneNotices(name);
+	if (ch) dropChannelNotices(`ch:${ch.id}`);
 	if (m.channel && !m.channel.home) timers.set(id, setTimeout(() => deleteChannelNow(m), CHANNEL_DELAY_MS));
 	log(`lane delete: ${name} -> trash/${id}${notes.length ? ` (${notes.join("; ")})` : ""}`);
 	return { name, ok: true, id, notes };
