@@ -98,6 +98,21 @@ export function createEngine(deps: EngineDeps) {
 		return run(c, src).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요" }));
 	}
 
+	// A draft written outside the model (an old script of the owner): same pending draft, same gate. `extra` is what else the script does when it is
+	// approved (e.g. a mail with attachments); it is shown to the owner as a note, so the draft is never "clean" and no rule sends it alone.
+	function addDraft(commentId: string, text: string, extra?: string): Step {
+		const c = find(commentId);
+		const src = c && sourceOf(c.source);
+		if (!c || !src) return { ok: false, reason: "원댓글을 찾지 못했어요" };
+		if (c.mine) return { ok: false, reason: "내가 쓴 댓글에는 답글 초안을 만들지 않아요" };
+		const notes = extra ? [`함께 할 일: ${extra}`] : [];
+		for (const d of store.drafts()) if (d.commentId === c.id && d.status === "pending") store.setDraftStatus(d.code, "stale");
+		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text, status: "pending", created: deps.now(), changes: [], clean: !notes.length, notes };
+		store.putDraft(draft);
+		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
+		return { ok: true, draft };
+	}
+
 	function send(codeOrId: string, opts: { text?: string; by: "owner" | "rule" }): GateResult {
 		const r = dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}) }, gate);
 		if (r.ok) {
@@ -261,6 +276,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, collect, makeDraft, revise, drop, send, update, threads, threadView, markRead, needs, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, collect, makeDraft, revise, drop, send, update, threads, threadView, markRead, addDraft, needs, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

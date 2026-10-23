@@ -5,6 +5,7 @@ import type { Engine } from "./engine.ts";
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const OFF = { error: "댓글 연동이 꺼져 있어요" };
 const MAX_TEXT = 2000;
+const MAX_EXTRA = 500;
 
 export type WebDeps = { engine: Engine; broadcast: (event: Record<string, unknown>) => void };
 
@@ -83,6 +84,14 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 			const c = engine.store.comments().find(x => x.id === id);
 			if (!c || !cfg.sources[c.source]) return json({ error: "원댓글을 찾지 못했어요" }, 404);
 			if (drafting.has(id)) return json({ error: "이 댓글은 초안을 만드는 중이에요" }, 409);
+			// `{ text, extra? }`: a draft written outside (a script of the owner), no model call; it still waits for the owner's 보내기.
+			const b = await body();
+			if (b.text !== undefined || b.extra !== undefined) {
+				if (typeof b.text !== "string" || !b.text.trim() || [...b.text].length > MAX_TEXT) return json({ error: `text: 1자에서 ${MAX_TEXT}자 사이여야 해요` }, 400);
+				if (b.extra !== undefined && (typeof b.extra !== "string" || [...b.extra].length > MAX_EXTRA)) return json({ error: `extra: ${MAX_EXTRA}자 이하 글이어야 해요` }, 400);
+				const s = engine.addDraft(id, b.text, b.extra?.trim() || undefined);
+				return s.ok ? json({ code: s.draft.code, state: "pending" }) : json({ error: s.reason }, 409);
+			}
 			drafting.add(id);
 			track(
 				engine
