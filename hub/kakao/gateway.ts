@@ -6,7 +6,7 @@ import { loadStyle, recordCorrection } from "../../features/reply-drafts/lib/set
 import { cfg, DATA_DIR, log } from "../config.ts";
 import { broadcast, subscriberCount } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
-import { peerHeaders } from "../peer-auth.ts";
+import { peerHeaders, peerTokenFor } from "../peer-auth.ts";
 import { knownComputers } from "../peers.ts";
 import { claimLease, postLease } from "../send-lease.ts";
 import { getSecret } from "./creds.ts";
@@ -59,7 +59,7 @@ const LEASE_MS = 60_000;
 const HELD = (holder?: string) => `${holder ?? "다른 컴퓨터"}에서 이 대화방으로 보내는 중이라 보내지 않았어요`;
 const lease = async (chatId: string) => {
 	const peers = (await knownComputers()).filter(c => !c.self);
-	const r = await claimLease({ key: `kakao:${chatId}`, self: machine, ttlMs: LEASE_MS, peers, now: Date.now, post: (p, path, body) => postLease(p.url, path, body, peerHeaders()) });
+	const r = await claimLease({ key: `kakao:${chatId}`, self: machine, ttlMs: LEASE_MS, peers, now: Date.now, post: (p, path, body) => postLease(p.url, path, body, peerHeaders(peerTokenFor(p.url))) });
 	return r.ok ? { ok: true as const } : { ok: false as const, reason: r.reason === "held" ? HELD(r.holder) : "이 대화방으로 보낼 수 있는지 확인하지 못해서 보내지 않았어요" };
 };
 
