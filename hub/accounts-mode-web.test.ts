@@ -51,6 +51,8 @@ function card(acc: object) {
 }
 
 const switchOf = (nodes: any) => find(nodes, n => n.attrs.role === "switch")[0]!;
+const mainOf = (row: any) => find(row, n => n.attrs.class === "acc-main")[0]!;
+const gripOf = (row: any) => find(row, n => n.attrs.class === "acc-grip")[0]!;
 const rowsOf = (nodes: any) => find(nodes, n => String(n.attrs.class ?? "").startsWith("li acc"));
 const AUTO_HELP = "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가요.";
 
@@ -109,27 +111,36 @@ test("the switch writes PUT /api/accounts/mode: on -> 고정, off -> 자동 전�
 
 test("고정: tapping another account row fixes it, tapping the fixed one does nothing; 자동 전환 rows open the details instead", () => {
 	const pinned = card(body("pinned"));
-	const [fixed, other] = rowsOf(pinned.nodes).map(r => r.kids[0]);
+	const [fixed, other] = rowsOf(pinned.nodes).map(mainOf);
 	fixed.attrs.onclick({ currentTarget: {} });
 	expect(pinned.calls).toEqual([]);
 	other.attrs.onclick({ currentTarget: {} });
 	expect(pinned.calls).toEqual([["/api/accounts/mode", "PUT", { mode: "pinned", account: "miseol-shared" }]]);
 
 	const auto = card(body("auto"));
-	rowsOf(auto.nodes)[1]!.kids[0].attrs.onclick({ currentTarget: {} });
+	mainOf(rowsOf(auto.nodes)[1]!).attrs.onclick({ currentTarget: {} });
 	expect(auto.calls).toEqual([]);
 	expect(auto.dialogs).toEqual(["miseol-shared"]);
 });
 
-test("자동 전환: every account row has its number and up/down buttons; the end ones are disabled and a move writes PUT /api/accounts/order", () => {
-	const auto = card(body("auto", { accounts: [account("default", { order: 1, current: true }), account("miseol-shared", { order: 2 }), account("third", { order: 3 })] }));
-	const rows = rowsOf(auto.nodes);
-	expect(rows.map(r => text(find(r, n => String(n.attrs.class).includes("acc-no"))).trim())).toEqual(["1", "2", "3"]);
-	const mv = rows.map(r => find(r, n => n.attrs.class === "acc-mv"));
-	expect(mv.map(b => b.map(x => !!x.attrs.disabled))).toEqual([[true, false], [false, false], [false, true]]);
-	mv[1]![0]!.attrs.onclick({ currentTarget: {} });
+test("every account row has its number and a grip; no arrow buttons; ArrowUp/ArrowDown on a grip write PUT /api/accounts/order, the ends do nothing", () => {
+	const three = [account("default", { order: 1, current: true }), account("miseol-shared", { order: 2 }), account("third", { order: 3 })];
+	for (const mode of ["auto", "pinned"] as const) {
+		const c = card(body(mode, { accounts: three }));
+		const rows = rowsOf(c.nodes);
+		expect(rows.map(r => text(find(r, n => String(n.attrs.class).includes("acc-no"))).trim())).toEqual(["1", "2", "3"]);
+		expect(rows.map(r => gripOf(r).attrs["data-acc"])).toEqual(["default", "miseol-shared", "third"]);
+		expect(find(c.nodes, n => String(n.attrs.class).includes("acc-mvs"))).toHaveLength(0);
+		expect(text(c.nodes)).not.toMatch(/[↑↓]/);
+	}
+	const auto = card(body("auto", { accounts: three }));
+	const keys = (i: number, key: string) => gripOf(rowsOf(auto.nodes)[i]!).attrs.onkeydown({ key, currentTarget: {}, preventDefault() {} });
+	keys(0, "ArrowUp");
+	keys(2, "ArrowDown");
+	keys(1, "Enter");
+	expect(auto.calls).toEqual([]);
+	keys(1, "ArrowUp");
 	expect(auto.calls).toEqual([["/api/accounts/order", "PUT", { order: ["miseol-shared", "default", "third"] }]]);
-	mv[1]![1]!.attrs.onclick({ currentTarget: {} });
+	keys(1, "ArrowDown");
 	expect(auto.calls.at(-1)).toEqual(["/api/accounts/order", "PUT", { order: ["default", "third", "miseol-shared"] }]);
-	expect(find(card(body("pinned")).nodes, n => String(n.attrs.class) === "acc-mvs")).toHaveLength(0);
 });

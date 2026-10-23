@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { appAsset, indexPage } from "./webapp.ts";
 
 // The 계정 card in a headless Bun.WebView against a stub gateway that holds five accounts: the 자동 전환 switch, the order numbers, the
-// move buttons and the tap-to-fix rows work through the real page, and the card fits 390px without sideways scrolling.
+// drag-to-reorder grips (synthetic pointer events) and the tap-to-fix rows work through the real page, and the card fits 390px without sideways scrolling.
 // Screenshots are written only when ACCOUNTS_SHOTS names a folder.
 const SHOTS = process.env.ACCOUNTS_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
@@ -129,7 +129,7 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1440, 900]] as con
 		expect(f.sw).toBe("true");
 		expect(f.over).toEqual([]);
 		expect(f.doc).toBeLessThanOrEqual(f.vw);
-		expect(await q(v, `return document.querySelectorAll(".li.acc .acc-mv").length`)).toBe(10);
+		expect(await q(v, `return [document.querySelectorAll(".li.acc .acc-grip").length, document.querySelectorAll(".acc-mv").length]`)).toEqual([5, 0]);
 		await shot(v, `accounts-auto-${w}.png`);
 		await run(v, `document.querySelector('.hs-sw[aria-label="자동 전환"]').click()`);
 		await waitFor(v, `document.querySelector('.hs-sw[aria-label="자동 전환"]').getAttribute("aria-checked") === "false"`);
@@ -143,27 +143,66 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1440, 900]] as con
 	});
 }
 
-test("the move buttons write the new order, the numbers follow, and 고정 rows fix the tapped account", async () => {
+const fire = (v: View, type: string, target: string, y: number, pointerType = "mouse") =>
+	run(v, `const t = ${target}, r = t.getBoundingClientRect ? t.getBoundingClientRect() : null; if (r) window.__px = r.left + r.width / 2; t.dispatchEvent(new PointerEvent(${JSON.stringify(type)}, { pointerId: 7, pointerType: ${JSON.stringify(pointerType)}, isPrimary: true, button: 0, buttons: 1, clientX: window.__px, clientY: ${y}, bubbles: true, cancelable: true }))`);
+const rowRect = (v: View, i: number) => q<{ top: number; bottom: number; mid: number }>(v, `const r = document.querySelectorAll(".li.acc")[${i}].getBoundingClientRect(); return { top: r.top, bottom: r.bottom, mid: (r.top + r.bottom) / 2 }`);
+const rowEl = (i: number, sel = "") => `document.querySelectorAll(".li.acc")[${i}]${sel ? `.querySelector("${sel}")` : ""}`;
+const firstName = (v: View) => q<string>(v, `return document.querySelector(".li.acc .acc-grip").dataset.acc`);
+
+for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1440, 900]] as const) {
+	test(`${label} ${w}px: dragging a grip moves the row, the others shift, and the drop saves the new order`, async () => {
+		reset();
+		const v = open(w, h);
+		await boot(v);
+		const [r0, r2] = [await rowRect(v, 0), await rowRect(v, 2)];
+		await fire(v, "pointerdown", rowEl(2, ".acc-grip"), r2.mid);
+		// the row lifts only after it moved more than a few pixels
+		expect(await q(v, `return document.querySelectorAll(".li.acc.drag").length`)).toBe(0);
+		await fire(v, "pointermove", "document", r2.mid + 2);
+		expect(await q(v, `return document.querySelectorAll(".li.acc.drag").length`)).toBe(0);
+		await fire(v, "pointermove", "document", r0.top + 1);
+		expect(await q(v, `return [document.querySelectorAll(".li.acc.drag").length, [...document.querySelectorAll(".li.acc")].map(r => r.style.transform !== "")]`)).toEqual([1, [true, true, true, false, false]]);
+		await fire(v, "pointerup", "document", r0.top + 1);
+		await waitFor(v, `document.querySelector(".li.acc .acc-grip").dataset.acc === "work-long-account-name@example.com"`);
+		expect(calls.at(-1)).toEqual(["/api/accounts/order", { order: ["work-long-account-name@example.com", "default", "miseol-shared", "backup", "team"] }]);
+		const f = await fit(v);
+		expect(f.nums).toEqual(["1", "2", "3", "4", "5"]);
+		expect(f.over).toEqual([]);
+		expect(await q(v, `return document.querySelectorAll(".li.acc.drag, .acc-dragging, .li.acc[style]").length`)).toBe(0);
+		await shot(v, `accounts-dragged-${w}.png`);
+	});
+}
+
+test("touch: a long press on a row lifts it and a drag saves the order; a tap and a click right after a drop do not pick", async () => {
 	reset();
 	const v = open(390, 844);
 	await boot(v);
-	// the first row cannot move up, the last cannot move down
-	expect(await q(v, `const r = [...document.querySelectorAll(".li.acc")]; return [r[0].querySelectorAll(".acc-mv")[0].disabled, r[4].querySelectorAll(".acc-mv")[1].disabled]`)).toEqual([true, true]);
-	await run(v, `document.querySelectorAll(".li.acc")[1].querySelectorAll(".acc-mv")[0].click()`);
-	await waitFor(v, `document.querySelector(".li.acc .acc-main").textContent.includes("미설 공용 계정")`);
-	expect(calls.at(-1)).toEqual(["/api/accounts/order", { order: ["miseol-shared", "default", "work-long-account-name@example.com", "backup", "team"] }]);
-	expect((await fit(v)).nums).toEqual(["1", "2", "3", "4", "5"]);
-	// 고정: tapping a row fixes it; the badge moves; tapping the fixed one again does nothing
+	const r3 = await rowRect(v, 3), r4 = await rowRect(v, 4);
+	await fire(v, "pointerdown", rowEl(4, ".acc-main"), r4.mid, "touch");
+	await waitFor(v, `document.querySelectorAll(".li.acc")[4].classList.contains("drag")`);
+	await fire(v, "pointermove", "document", r3.top + 1, "touch");
+	await fire(v, "pointerup", "document", r3.top + 1, "touch");
+	await waitFor(v, `[...document.querySelectorAll(".li.acc .acc-grip")].at(-1).dataset.acc === "backup"`);
+	expect(calls.at(-1)).toEqual(["/api/accounts/order", { order: ["default", "miseol-shared", "work-long-account-name@example.com", "team", "backup"] }]);
+	// 고정: a quick touch tap never starts a drag and still picks the row
 	await run(v, `document.querySelector('.hs-sw[aria-label="자동 전환"]').click()`);
 	await waitFor(v, `document.querySelector(".li.acc.on")`);
-	expect(await q(v, `return document.querySelectorAll(".li.acc .acc-mv").length`)).toBe(5);
+	const r1 = await rowRect(v, 1);
+	await fire(v, "pointerdown", rowEl(1, ".acc-main"), r1.mid, "touch");
+	await fire(v, "pointerup", "document", r1.mid, "touch");
+	expect(await q(v, `return document.querySelectorAll(".li.acc.drag").length`)).toBe(0);
+	await run(v, `${rowEl(1, ".acc-main")}.click()`);
+	await waitFor(v, `document.querySelector(".li.acc.on .acc-grip").dataset.acc === "miseol-shared"`);
+	expect(calls.at(-1)).toEqual(["/api/accounts/mode", { mode: "pinned", account: "miseol-shared" }]);
+	// a drag in 고정 mode reorders without picking, and the click that follows the drop is ignored
+	const [a, b] = [await rowRect(v, 3), await rowRect(v, 0)];
+	await fire(v, "pointerdown", rowEl(3, ".acc-main"), a.mid, "touch");
+	await waitFor(v, `document.querySelectorAll(".li.acc")[3].classList.contains("drag")`);
+	await fire(v, "pointermove", "document", b.top + 1, "touch");
+	await fire(v, "pointerup", "document", b.top + 1, "touch");
+	await waitFor(v, `document.querySelector(".li.acc .acc-grip").dataset.acc === "team"`);
 	const n = calls.length;
-	await run(v, `[...document.querySelectorAll(".li.acc")].find(r => r.textContent.includes("팀")).querySelector(".acc-main").click()`);
-	await waitFor(v, `document.querySelector(".li.acc.on")?.textContent.includes("팀")`);
-	expect(calls.at(-1)).toEqual(["/api/accounts/mode", { mode: "pinned", account: "team" }]);
-	await run(v, `document.querySelector(".li.acc.on .acc-main").click()`);
-	expect(calls).toHaveLength(n + 1);
-	await run(v, `document.querySelector('.hs-sw[aria-label="자동 전환"]').click()`);
-	await waitFor(v, `document.querySelector('.hs-sw[aria-label="자동 전환"]').getAttribute("aria-checked") === "true"`);
-	expect(calls.at(-1)).toEqual(["/api/accounts/mode", { mode: "auto" }]);
+	await run(v, `${rowEl(2, ".acc-main")}.click()`);
+	expect(calls).toHaveLength(n);
+	expect(calls.at(-1)?.[0]).toBe("/api/accounts/order");
 });
