@@ -3,8 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
-import { type DraftApproval, draftActionOf, parseDraftApproval, quotedDraft } from "./draft-approval.ts";
-import { askDefaults, asksSendWithoutDraft } from "./ask-options.ts";
+import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, parseDraftApproval, quotedDraft } from "./draft-approval.ts";
+import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
@@ -497,9 +497,11 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	const quoted = !pc.blocks.length && to.startsWith("mail:") && asksSendWithoutDraft(body) ? threadDraft(to, e.ts) : undefined;
 	const detail = quoted ? `${quoted.slice(0, Math.max(0, TEXT_MAX - body.length - 1))}\n${body}`.slice(0, TEXT_MAX) : body.slice(0, TEXT_MAX);
 	const line = firstLine(body);
-	const sendDraft = pc.blocks.length === 1 ? parseDraftApproval(body) : undefined;
+	// A send question that quotes its draft is a draft approval even without the choice block: it gets the draft and the draft options.
+	const askDraft = !pc.blocks.length ? askedDraft(detail) : undefined;
+	const sendDraft = pc.blocks.length === 1 ? parseDraftApproval(body) : askDraft;
 	const by = authorOf(e), ref = refOf(e);
-	const draft = (title: string, options: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail, options, to, replyTo: e.ts, group, ...(by ? { by } : {}), ...(ref ? { ref } : {}), key: `dec:${to}:${hashOf(`${idx}|${title}|${options.map(o => o.label).join("/")}${sendDraft ? `|${sendDraft.to}|${sendDraft.subject ?? ""}|${sendDraft.body}` : ""}`)}`, ...(sendDraft ? { draft: sendDraft } : {}) });
+	const draft = (title: string, given: DecisionOpt[], group: number, idx: number): Draft => ({ title, detail, options: askDraft ? DRAFT_OPTIONS.map(o => ({ ...o })) : given, to, replyTo: e.ts, group, ...(by ? { by } : {}), ...(ref ? { ref } : {}), key: `dec:${to}:${hashOf(`${idx}|${title}|${(askDraft ? DRAFT_OPTIONS : given).map(o => o.label).join("/")}${sendDraft ? `|${sendDraft.to}|${sendDraft.subject ?? ""}|${sendDraft.body}` : ""}`)}`, ...(sendDraft ? { draft: sendDraft } : {}) });
 	// No choice block (a plain question, often in a mail or work thread): the budget question's buttons, else yes / no or send defaults (ask-options.ts).
 	if (!pc.blocks.length) {
 		if (to.startsWith("lane:") && /\/budget-ok/.test(body)) return [draft(line || "답변이 필요해요", BUDGET_OPTIONS, 1, 0)];
@@ -593,7 +595,7 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	// a button with its own `say` / `action` (login request, fixed yes / no) never does.
 	const draftEdit = !!d.draft && draftActionOf(o.label) === "edit";
 	const asksDetail = !d.draft && !o.say && !o.action && detailOf(o);
-	const note = draftEdit || asksDetail ? String(body.note ?? "").replace(/\s+/g, " ").trim().slice(0, 500) : "";
+	const note = draftEdit || asksDetail ? String(body.note ?? "").replace(/\s+/g, " ").trim().slice(0, draftEdit ? DRAFT_BODY_MAX : 500) : "";
 	if (draftEdit && !note) return { status: 400, body: { error: "무엇을 고칠지 적어 주세요" } };
 	if (asksDetail && !note) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");

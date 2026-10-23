@@ -50,6 +50,14 @@ export function parseDraftApproval(text: string): DraftApproval | undefined {
 	const pc = parseDecisions(text);
 	const block = pc.blocks.length === 1 ? pc.blocks[0]! : undefined;
 	if (!block || block.options.map(o => o.label).join("|") !== [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|")) return undefined;
+	const draft = parseQuotedDraft(text);
+	const ref = REF.exec(block.title)?.[1];
+	return draft && ref ? { ...draft, ref } : draft;
+}
+
+// The quoted draft of a message as a draft (recipient line, optional subject, body), whatever the options below it are; undefined when the
+// message quotes none. Blank lines in the body are collapsed to one (a mail quoted with doubled breaks reads as normal paragraphs).
+export function parseQuotedDraft(text: string): DraftApproval | undefined {
 	let fence = false;
 	const quoted: string[] = [];
 	for (const line of text.split("\n")) {
@@ -73,10 +81,9 @@ export function parseDraftApproval(text: string): DraftApproval | undefined {
 		} else if (s && subject === undefined) subject = s[1]!.trim();
 		else break;
 	}
-	const body = quoted.slice(i).join("\n").replace(/^\n+|\s+$/g, "");
+	const body = quoted.slice(i).join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\s+$/g, "");
 	if (!body) return undefined;
-	const ref = REF.exec(block.title)?.[1];
-	return { toLabel, to, ...(subject ? { subject } : {}), body: body.slice(0, DRAFT_BODY_MAX), ...(ref ? { ref } : {}) };
+	return { toLabel, to, ...(subject ? { subject } : {}), body: body.slice(0, DRAFT_BODY_MAX) };
 }
 
 // The quoted draft of a message (recipient line first, as draftApprovalBlock writes it), as standard "> " lines; undefined when the message
