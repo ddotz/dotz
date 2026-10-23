@@ -7,7 +7,7 @@
 // Open limits (seen 2026-10): kmsg has no way to open a room by the database chat id (its chat_id is a hash of the list row), and the
 // final `kmsg send --chat-id` opens the same row again; the window it opens cannot be read before Enter.
 import jxa from "./room.jxa.js" with { type: "text" };
-import type { Room, Runner } from "./types.ts";
+import { KAKAO_BUNDLE, type Room, type Runner } from "./types.ts";
 
 export type RoomFact = { chatId: string; name: string; kind?: Room["kind"]; members?: number };
 export type ListRow = { chatId: string; title: string };
@@ -59,9 +59,10 @@ export function windowMatches(w: WindowFacts, room: RoomFact, shared: boolean): 
 	return !shared;
 }
 
-async function readWindow(runner: Runner): Promise<WindowFacts | undefined> {
+// `name`: only the window of that title counts (other chat windows may be open); without it the one chat window open.
+export async function readWindow(runner: Runner, deep = false, name?: string): Promise<WindowFacts | undefined> {
 	try {
-		const r = await osascript(runner, { action: "probe" });
+		const r = await osascript(runner, { action: "probe", deep, ...(name === undefined ? {} : { name }) });
 		const out = JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "");
 		if (r.code !== 0 || out?.ok !== true || !Array.isArray(out.windows) || out.windows.length !== 1) return undefined;
 		const w = out.windows[0];
@@ -76,11 +77,47 @@ async function readWindow(runner: Runner): Promise<WindowFacts | undefined> {
 	}
 }
 
-export const closeWindow = async (runner: Runner) => {
+// `name`: only the chat window of that title; without it every chat window.
+export const closeWindow = async (runner: Runner, name?: string) => {
 	try {
-		await osascript(runner, { action: "close" });
+		await osascript(runner, { action: "close", ...(name === undefined ? {} : { name }) });
 	} catch {}
 };
+
+// Types the text into the open window of the room and presses 전송, by Accessibility only (room.jxa.js send). The text goes on stdin,
+// never on a command line. `pressed` without `ok`: the button was pressed but the send is not confirmed, so it must not be retried.
+export async function axSend(name: string, text: string, runner: Runner): Promise<{ ok: boolean; pressed?: boolean; why?: string }> {
+	try {
+		const r = await osascript(runner, { action: "send", name, text });
+		const out = JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "");
+		if (out?.ok === true) return { ok: true };
+		return { ok: false, pressed: out?.pressed === true, why: typeof out?.why === "string" ? out.why : "failed" };
+	} catch {
+		return { ok: false, why: "failed" };
+	}
+}
+
+// Background open (measured 2026-10-23: about 1-2 s, against 17-46 s for `kmsg send|read --chat-id`, which scans 200 rows and needs an Enter key
+// with KakaoTalk in front): the one row titled exactly like the room among the first QUICK_LIMIT rows is opened by Accessibility
+// actions (room.jxa.js open), with KakaoTalk left in the background. The list window is brought up with `open -g` when it is not
+// shown. Other chat windows stay open. The caller still checks the open window against the database room; anything but "ok" leaves
+// the slow, checked path to it.
+export async function openListRow(name: string, runner: Runner): Promise<string> {
+	const run = async () => {
+		try {
+			const r = await osascript(runner, { action: "open", name, rows: QUICK_LIMIT });
+			return JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "") as { ok?: boolean; why?: string };
+		} catch {
+			return {};
+		}
+	};
+	let out = await run();
+	if (out.why === "no_list") {
+		await runner(["open", "-g", "-b", KAKAO_BUNDLE], { timeoutMs: 5_000 }).catch(() => undefined);
+		out = await run();
+	}
+	return out.ok === true ? "ok" : (out.why ?? "failed");
+}
 
 // Picks the one list row that is this database room. `all` lists every database room (for same-name detection).
 export async function pickRoom(room: RoomFact, all: RoomFact[], deps: { kmsg: string; runner: Runner }): Promise<Pick> {
@@ -99,7 +136,7 @@ export async function pickRoom(room: RoomFact, all: RoomFact[], deps: { kmsg: st
 		// A cold first window often fails to open (seen with the memo chat); one retry with deep window recovery, as the send does.
 		let opened = await open(false);
 		if (opened?.code !== 0) opened = await open(true);
-		const w = opened?.code === 0 ? await readWindow(deps.runner) : undefined;
+		const w = opened?.code === 0 ? await readWindow(deps.runner, shared) : undefined;
 		await closeWindow(deps.runner);
 		if (!w) unreadable = true;
 		else if (windowMatches(w, room, shared)) matched.push(c.chatId);
