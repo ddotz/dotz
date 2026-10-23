@@ -186,6 +186,8 @@ function noticeKindAction(n, mons = NM.items) {
   if (n.tone === "ask") return "ask";
   if (n.kind === "alert" && n.tone === "fail") return "detail";
   if (n.kind === "result" || String(n.src || n.open || "").startsWith("lane:")) return "session";
+  if (String(n.src || n.open || "").startsWith("settings:")) return "app";   // a monitor's or app's settings conversation: it lives in 모니터링, not in 채팅
+  if ((n.src || n.open) === "settings") return "settings";   // an account / update alert: 설정
   if (n.kind === "worklog") return "worklog";
   if (n.kind === "watch") return "monitor";
   return "message";
@@ -193,13 +195,15 @@ function noticeKindAction(n, mons = NM.items) {
 async function noticeOpen(n) {
   if (!n) return;
   const a = noticeKindAction(n);
-  if (a === "detail" || a === "session" || a === "monitor") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
+  if (a === "detail" || a === "session" || a === "monitor" || a === "settings" || a === "app") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
   switch (a) {
     case "sheet": return noticeSheetOpen((ntLinkedDec(n) || n).id);
     case "ask": if (await ntAskSheet(n)) return; return ntJump(n);   // answered or gone: the conversation
     case "detail": return ntDetailOpen(n);
     case "session": return ntSession(n);
     case "monitor": return monOpen(n);
+    case "app": return ntApp(n);
+    case "settings": return void go("settings");
     default: return ntJump(n);
   }
 }
@@ -234,6 +238,11 @@ function ntSession(n) {
   else ntJump(n);   // the session is gone: its result card in the main chat
 }
 const monOpen = n => go("monitoring", monKeyOf(n));
+// A settings conversation: opened inside 모니터링 (go's "c:" form); a target the page cannot open lands on 홈.
+function ntApp(n) {
+  const t = n.src || n.open;
+  go(...(validTarget(t) ? ["monitoring", `c:${t}`] : ["home"]));
+}
 // A message tapped in the 알림 / 작업내역 conversations opens like its notice does (capture phase: the choice rows inside it do not answer in place there).
 timeline.addEventListener("click", ev => {
   if (current !== "chat" || !isFixedT(target) || !(ev.target instanceof Element)) return;
