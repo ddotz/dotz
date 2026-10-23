@@ -229,6 +229,15 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.op === "run") return ask("POST", `/api/watches/${name}/run`, {}, login);
 				return bad("op must be pause, resume or run");
 			}
+			// KakaoTalk rooms (hub/kakao/web.ts): the owning gateway sends through its own single send door, lease included.
+			case "kakao": {
+				const id = encodeURIComponent(String(a.chatId ?? a.code ?? ""));
+				if (!id) return bad("chatId or code required");
+				if (a.op === "send" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/send`, { text: a.text }, login);
+				if (a.op === "read" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/read`, { logId: a.logId }, login);
+				if ((a.op === "draft-send" || a.op === "draft-drop") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
+				return bad("op must be send, read, draft-send or draft-drop");
+			}
 			default:
 				return bad("unknown action");
 		}
