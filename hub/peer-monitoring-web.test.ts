@@ -18,6 +18,8 @@ const LAST = { ts: at(20), text: "회의 일정", from: "bot" };
 const MAIL_APP = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], unread: 1, notices: [], needs: { drafts: 1, unread: 1, sentToday: 0 } };
 const KAKAO_APP = { key: "kakao", label: "카카오톡", icon: "chat", kind: "app", conv: ["kakao:"], unread: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } };
 const hits: string[] = [];
+// Rows the Mac mini stores in room c1 after the page opened it (the page learns of them only by polling the room's head).
+const c1More: Record<string, unknown>[] = [];
 const acts: { action: string; args: Record<string, unknown> }[] = [];
 const peers = [
 	{
@@ -44,10 +46,13 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 	if (p.startsWith("/api/history")) return json({ events: [{ ts: at(20), kind: "mail", subject: MAIL.subject, from: MAIL.from, mail: "abc", conv: "mail:abc", html: true, attachments: MAIL.attachments, text: "민수 · 회의 일정\n\n내일 3시 회의예요" }] });
 	if (p.startsWith("/api/mail/abc/body")) return new Response("<p>본문 <b>굵게</b> 입니다</p>", { headers: { "content-type": "text/html" } });
 	if (p === "/api/kakao/rooms") return json({ on: true, rooms: [{ chatId: "c1", name: "가족", kind: "group", watched: true, autoDraft: false, unread: 0, lastAt: Date.parse(at(25)) }] });
+	if (p === "/api/kakao/chat/c1/head") return json({ logId: String((c1More.at(-1) ?? { logId: "101" }).logId) });
 	if (p.startsWith("/api/kakao/chat/c1")) {
-		return json({ room: { chatId: "c1", name: "가족", kind: "group", group: true }, read: null, drafts: [], sends: [], kakaoUnread: 0, messages: [
+		const after = new URL(p, "http://x").searchParams.get("after");
+		const all = [
 			{ logId: "100", sentAt: Date.parse(at(24)), fromMe: false, sender: "엄마", authorId: "a1", type: 1, text: "저녁 뭐 먹을래?" },
-			{ logId: "101", sentAt: Date.parse(at(25)), fromMe: true, type: 1, text: "김치찌개" }] });
+			{ logId: "101", sentAt: Date.parse(at(25)), fromMe: true, type: 1, text: "김치찌개" }, ...c1More];
+		return json({ room: { chatId: "c1", name: "가족", kind: "group", group: true }, read: null, drafts: [], sends: [], kakaoUnread: 0, messages: after ? all.filter(m => Number(m.logId) > Number(after)) : all });
 	}
 	return json({});
 }
@@ -161,6 +166,31 @@ describe("merged 모니터링", () => {
 		expect(acts.filter(a => a.args.op === "send")).toEqual([{ action: "kakao", args: { op: "send", chatId: "c1", text: "좋아요" } }]);
 	});
 
+	test("a row the other computer stored shows up with the ~2 s head poll, once, without a stream event; leaving the pane stops the asking", async () => {
+		const v = await boot(1280, 800);
+		await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|i:kakao`)}), 0)`);
+		await waitFor(v, `$("#kk-rooms .kk-row")`);
+		await v.evaluate(`($("#kk-rooms .kk-row").click(), 0)`);
+		await waitFor(v, `$("#kk-in .kk-m.me .kk-bub") && KK.peerT !== 0`);
+		const heads = () => hits.filter(h => h === "/api/kakao/chat/c1/head").length;
+		const afters = () => hits.filter(h => h.startsWith("/api/kakao/chat/c1?") && h.includes("after=")).length;
+		const h0 = heads();
+		c1More.push({ logId: "102", sentAt: Date.parse(at(26)), fromMe: false, sender: "엄마", authorId: "a1", type: 1, text: "다른 컴퓨터에 저장된 새 메시지" });
+		await waitFor(v, `document.querySelector('#kk-tl [data-log="102"]')`, 6000);
+		expect(heads()).toBeGreaterThan(h0);
+		expect(await text(v, `String(document.querySelectorAll('#kk-tl [data-log="102"]').length)`)).toBe("1");
+		// Nothing moved: the next poll asks for the head only, not for rows.
+		await waitFor(v, `KK.peerHead === "c1:102" && !KK.peerBusy`, 6000);
+		const a = afters(), h = heads();
+		await v.evaluate(`kkPeerPoll()`);
+		expect(heads()).toBe(h + 1);
+		expect(afters()).toBe(a);
+		// The pane is left: no poll runs.
+		await v.evaluate(`(go("monitoring", "notice"), 0)`);
+		await waitFor(v, `!KK.vis`);
+		await v.evaluate(`kkPeerPoll()`);
+		expect(heads()).toBe(h + 1);
+	}, 20_000);
 });
 
 for (const [name, w, h] of [["390", 390, 844], ["desktop", 1280, 800]] as const) {

@@ -29,7 +29,7 @@ const openDb = async (config: KakaoConfig): Promise<KakaoDb> => {
 	return opened.db;
 };
 
-const live = createLive({ paths, readConfig: () => readConfig(paths), openDb, subscribers: subscriberCount, broadcast, log });
+const live = createLive({ paths, readConfig: () => readConfig(paths), openDb, subscribers: subscriberCount, broadcast, log, statPollMs: 500 });
 // The one model call of a draft request (subscription only: outlang.ts never falls back to an API key). The model is the reply-drafts
 // setting `model` (what the mail drafts use) when it is a real non-mini model, else sonnet-class: never Haiku, mini or the omp @tiny role.
 const draftModel: DraftModel = async (system, user) => {

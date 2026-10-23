@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
@@ -175,6 +175,26 @@ describe("read counters", () => {
 		const plain = setup();
 		expect((await plain.call("GET", `/api/kakao/chat/${DIRECT}`)).json.messages.map((m: any) => m.unread)).toEqual([0, 0, 0, 0]);
 		plain.close();
+	});
+
+	test("/head answers the room's newest logId and runs no query while the database files stay the same", async () => {
+		let inner: ReturnType<typeof sqliteDb> | undefined;
+		let queries = 0;
+		const t = setup({}, undefined, { openDb: async () => ((inner ??= sqliteDb(join(dir, "k.sqlite"))), { query: (sql, params) => (queries++, inner!.query(sql, params)) }) });
+		expect(await t.call("GET", `/api/kakao/chat/${DIRECT}/head`)).toEqual({ status: 200, json: { logId: id(4) } });
+		const after = queries;
+		expect(after).toBeGreaterThan(0);
+		for (let i = 0; i < 5; i++) expect((await t.call("GET", `/api/kakao/chat/${DIRECT}/head`)).json).toEqual({ logId: id(4) });
+		expect(queries).toBe(after);
+		const w = new (await import("bun:sqlite")).Database(join(dir, "k.sqlite"));
+		addMessage(w, { logId: BASE_LOG + 9n, chatId: ROOM.direct, authorId: 2001, message: "later", sentAt: BASE_TIME + 99 });
+		w.close();
+		utimesSync(join(dir, "k.sqlite"), new Date(NOW + 5000), new Date(NOW + 5000));
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}/head`)).json).toEqual({ logId: id(9) });
+		expect(queries).toBe(after + 1);
+		expect((await t.call("GET", `/api/kakao/chat/${GROUP}/head`)).status).toBe(403);
+		t.close();
+		inner?.close();
 	});
 
 	test("/reads?from= answers counters only (no bodies) for messages from that logId on, and follows new read positions", async () => {

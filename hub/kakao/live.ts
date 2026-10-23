@@ -1,7 +1,9 @@
-// Live updates for the per-room KakaoTalk web view. No polling: fs.watch on the KakaoTalk database folder (db and -wal files) and on
-// drafts.json, a ~250 ms debounce, and at most one query in flight, for the watched rooms only. Events carry ids only.
+// Live updates for the per-room KakaoTalk web view: fs.watch on the KakaoTalk database folder (db and -wal files) and on drafts.json,
+// a ~250 ms debounce, and at most one query in flight, for the watched rooms only. Events carry ids only.
+// Measured 2026-10-23: fs.watch gets no event at all for KakaoTalk's container files (the -wal file grows and its mtime moves, nothing is delivered),
+// so while a page is connected a cheap stat of the db and -wal files (two syscalls, no query) every statPollMs tells the same thing; a query runs only when they changed.
 // With no web page connected the query is skipped and the last seen logId stays where it was, so the next query catches up.
-import { mkdirSync, readFileSync, watch } from "node:fs";
+import { mkdirSync, readFileSync, statSync, watch } from "node:fs";
 import { basename, dirname } from "node:path";
 import { type KakaoDb, maxLogId, newInChats, watermarkSignatures } from "./db.ts";
 import type { KakaoConfig, KakaoPaths } from "./types.ts";
@@ -16,8 +18,26 @@ export type LiveDeps = {
 	watchDir?: (dir: string, onFile: (name: string | null) => void) => Watcher;
 	timers?: { set: (fn: () => void, ms: number) => unknown; clear: (handle: unknown) => void };
 	debounceMs?: number;
+	// Stat polling of the database files while a page is connected (off when undefined). Idle (no page) it only re-checks for a page every STAT_IDLE_MS.
+	statPollMs?: number;
+	statSig?: (files: string[]) => string;
+	statTimers?: { set: (fn: () => void, ms: number) => unknown; clear: (handle: unknown) => void };
 	log?: (line: string) => void;
 };
+
+const STAT_IDLE_MS = 5000;
+
+const fileSig = (files: string[]) =>
+	files
+		.map(f => {
+			try {
+				const s = statSync(f);
+				return `${s.size}:${s.mtimeMs}`;
+			} catch {
+				return "-";
+			}
+		})
+		.join(",");
 
 const PAGE = 500;
 
@@ -31,6 +51,8 @@ export function createLive(deps: LiveDeps) {
 	const watchDir = deps.watchDir ?? fsWatchDir;
 	const timers = deps.timers ?? { set: (fn: () => void, ms: number) => setTimeout(fn, ms), clear: (h: unknown) => clearTimeout(h as ReturnType<typeof setTimeout>) };
 	const debounceMs = deps.debounceMs ?? 250;
+	const statSig = deps.statSig ?? fileSig;
+	const statTimers = deps.statTimers ?? { set: (fn: () => void, ms: number) => { const h = setTimeout(fn, ms); h.unref?.(); return h; }, clear: (h: unknown) => clearTimeout(h as ReturnType<typeof setTimeout>) };
 	let key = "";
 	let chats: string[] = [];
 	let config: KakaoConfig | undefined;
@@ -40,6 +62,8 @@ export function createLive(deps: LiveDeps) {
 	let watchers: Watcher[] = [];
 	let dbTimer: unknown;
 	let draftTimer: unknown;
+	let statTimer: unknown;
+	let dbSig: string | undefined;
 	let draftSigs = new Map<string, string>();
 	// Per watched room, the raw read positions of its members (NTChatRoom.watermarkValues); a change = someone read more.
 	let markSigs: Map<string, string> | undefined;
@@ -59,6 +83,26 @@ export function createLive(deps: LiveDeps) {
 		if (dbTimer !== undefined) timers.clear(dbTimer);
 		if (draftTimer !== undefined) timers.clear(draftTimer);
 		dbTimer = draftTimer = undefined;
+		if (statTimer !== undefined) statTimers.clear(statTimer);
+		statTimer = undefined;
+		dbSig = undefined;
+	};
+
+	// One stat look: with a page connected and the files changed since the last look, query now (the 500 ms tick is the debounce).
+	const statTick = () => {
+		statTimer = undefined;
+		if (!config?.dbPath || !deps.statPollMs) return;
+		let next = STAT_IDLE_MS;
+		if (deps.subscribers() > 0) {
+			next = deps.statPollMs;
+			const sig = statSig([config.dbPath, `${config.dbPath}-wal`]);
+			// The first look after a page connected also queries: rows may have landed while nobody listened.
+			if (sig !== dbSig) {
+				dbSig = sig;
+				void poll();
+			}
+		} else dbSig = undefined;
+		statTimer = statTimers.set(statTick, next);
 	};
 
 	// The new rows of the watched rooms since the last seen logId; one event per room with its newest logId.
@@ -177,6 +221,7 @@ export function createLive(deps: LiveDeps) {
 		} catch (e) {
 			deps.log?.(`kakao live: could not watch (${(e as Error).message.slice(0, 80)})`);
 		}
+		if (deps.statPollMs) statTimer = statTimers.set(statTick, deps.statPollMs);
 		try {
 			const db = await deps.openDb(next);
 			last = await maxLogId(db);
@@ -186,5 +231,5 @@ export function createLive(deps: LiveDeps) {
 		}
 	};
 
-	return { sync, stop, poll, pollDrafts, onDbFile, onDraftFile };
+	return { sync, stop, poll, pollDrafts, onDbFile, onDraftFile, statTick };
 }
