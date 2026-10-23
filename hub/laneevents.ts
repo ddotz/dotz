@@ -43,6 +43,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				if (ev.stop !== "error") lane.transientTries = 0;
 				if (ev.text) {
 					lane.lastText = ev.text;
+					lane.unreported = true;
 					// A text that ends in a tool call, after an owner message, is the lane's short answer to it (the footer asks for one).
 					if (ev.stop !== "error") ownerNotes.text(lane.name, ev.text, ev.stop !== "other");
 				}
@@ -83,7 +84,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				break;
 			}
 			case "compaction":
-				if (ev.state === "error") recover(lane, `컨텍스트 압축이 실패했어요 (${ev.error.slice(0, 120)})`, wasWorking);
+				if (ev.state === "error") recover(lane, "컨텍스트 압축이 실패했어요", wasWorking);
 				else {
 					lane.retainNext = true;
 					if (lane.status === "idle" && lane.held?.length) {

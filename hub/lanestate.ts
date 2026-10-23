@@ -24,6 +24,9 @@ export type Lane = Record_ & {
 	// the lane channel leaves it false, so that reply is not relayed (lanerelay.ts); unknown (a restored lane) relays.
 	orchAsked?: boolean;
 	lastText: string;
+	// lastText was written by a turn and no report has carried it yet: a turn that ends without new text (aborted, empty)
+	// must not report the previous answer again (mail-reply-drafts 2026-10-23 00:45:11, the same answer twice).
+	unreported?: boolean;
 	proc?: AgentProcess;
 	timer?: ReturnType<typeof setTimeout>;
 	watchdog?: ReturnType<typeof setTimeout>;

@@ -170,7 +170,8 @@ export function recover(lane: Lane, why: string, wasWorking: boolean): void {
 	rmSync(pendingFile(lane), { force: true });
 	if (lane.lastText.startsWith("[lane error]")) lane.lastText = "";
 	log(`lane ${lane.name} recovering: ${why}`);
-	hooks.report(lane, `[lane recovery] ${why}. 진행 중이던 요청을 중단하고 같은 대화 기록으로 다시 이어서 시작해요 (${lane.recoveries.length}/${RECOVERY_MAX}).`);
+	// Bookkeeping: not a chat message and not an orchestrator turn. Only the final "[lane stuck]" above is reported.
+	log(`lane ${lane.name} recovery ${lane.recoveries.length}/${RECOVERY_MAX}: restarting on the same session`);
 	lane.revive = { text: wasWorking ? msg().laneStopped : undefined };
 	lane.proc.kill(true);
 }
