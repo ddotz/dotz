@@ -4,6 +4,9 @@
 // conversations (chat list), 모니터링 is its own screen (30-monitoring.js); what waits on the owner shows on 홈 and in the decision sheet below.
 const ntTabOf = n => n.kind === "worklog" ? "worklog" : n.kind === "watch" ? "watch" : "alert";
 const NT = { items: [], unread: 0, loaded: false, failed: false };
+// The 홈 알림 card lists alerts only: a reply in a conversation or a session's report (kind message / result) is not a notice there; it is
+// unread in its own conversation, which the 채팅 tab and the session list lead to (owner 2026-10-23).
+const ntHomeAlert = n => ntTabOf(n) === "alert" && n.kind !== "message" && n.kind !== "result";
 const ntUnreadIn = tab => NT.items.reduce((c, n) => c + (!n.read && (tab === "all" || ntTabOf(n) === tab) ? 1 : 0), 0);
 
 const ntAt = n => Date.parse(n.updated || n.ts) || 0;
