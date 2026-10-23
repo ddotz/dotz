@@ -9,16 +9,20 @@ export type FakeRow = { id: string; title: string; count?: number; noise?: strin
 const norm = (s: string) => s.normalize("NFC").replace(/[\u200b-\u200f\u2060\ufeff]/g, "").trim();
 export const rowTexts = (r: FakeRow) => [r.title, ...(r.count === undefined ? [] : [String(r.count)]), "오후 4:58", ...(r.noise ?? [])];
 
-// `listShown`: the list window of KakaoTalk exists (rows reads it); off, rows says no_list.
+// `listShown`: the list window of KakaoTalk exists (rows reads it); off, rows says no_list until `openlist` succeeds.
+// `openlist`: what the openlist action does while no list window exists: "ok" shows the list (KakaoTalk took the focus and the previous app
+// was put back), "fail" leaves it closed (menu step fails). Default "fail".
 // `openFail`: the row open fails at this step (room.jxa.js open: menu, press, window).
 // `axSend`: the JSON room.jxa.js send prints (default {ok:true}); its sends are recorded as ["ax-send", name, text].
-export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?: boolean; listShown?: boolean; openFail?: { step: string; why: string }; axSend?: () => object } = {}) {
+export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?: boolean; listShown?: boolean; openlist?: "ok" | "fail"; openFail?: { step: string; why: string }; axSend?: () => object } = {}) {
 	const opened: string[] = [];
 	const sends: string[][] = [];
 	const focus: string[][] = [];
 	const rowCalls: Record<string, unknown>[] = [];
 	const other: string[][] = [];
 	const order: string[] = [];
+	let listShown = opts.listShown !== false;
+	const listCalls: number[] = [];
 	let menus = 0;
 	let closes = 0;
 	let current: string | undefined;
@@ -41,7 +45,7 @@ export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?:
 		const req = JSON.parse((o?.stdin ?? "{}").trim());
 		if (req.action === "rows") {
 			rowCalls.push(req);
-			if (opts.listShown === false) return out({ ok: false, step: "list", why: "no_list" });
+			if (!listShown) return out({ ok: false, step: "list", why: "no_list" });
 			const open = rows.find(r => r.id === current);
 			if (open && open.title === req.name) return out({ ok: true, opened: true });
 			const read: string[][] = [];
@@ -54,6 +58,14 @@ export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?:
 				}
 			}
 			return out({ ok: true, rows: read, stopped, ms: { table: 1, read: 1 } });
+		}
+		if (req.action === "openlist") {
+			listCalls.push(1);
+			order.push("openlist");
+			if (listShown) return out({ ok: true, ms: {}, focus: { took: false, restored: false } });
+			if (opts.openlist !== "ok") return out({ ok: false, step: "menu", why: "no_item" });
+			listShown = true;
+			return out({ ok: true, ms: { press: 2, window: 3, restore: 1 }, focus: { from: opts.front ?? "com.example.Editor", took: true, restored: true } });
 		}
 		if (req.action === "open") {
 			const row = rows[req.row];
@@ -79,5 +91,5 @@ export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?:
 		if (w === "unreadable" || w === undefined) return out({ ok: false });
 		return out({ ok: true, windows: [w] });
 	};
-	return { runner, opened, sends, focus, rowCalls, other, order, menus: () => menus, closes: () => closes };
+	return { runner, opened, sends, focus, rowCalls, other, order, listCalls, menus: () => menus, closes: () => closes };
 }

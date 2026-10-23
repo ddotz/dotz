@@ -14,7 +14,10 @@ import type { Room, Runner } from "./types.ts";
 export type RoomFact = { chatId: string; name: string; kind?: Room["kind"]; members?: number };
 export type WindowFacts = { title: string; members?: number; self?: boolean };
 export type AxStep = { step: string; ms: number; ok: boolean; why?: string };
-export type Opened = { ok: true; steps: AxStep[] } | { ok: false; reason: string; steps: AxStep[] };
+// Focus: set only when the list window had to be opened. `from`: bundle id of the app in front before; `took`: KakaoTalk came to the front
+// when its list window showed; `restored`: the app in front before was put back at once.
+export type Focus = { from?: string; took: boolean; restored: boolean };
+export type Opened = { ok: true; steps: AxStep[]; focus?: Focus } | { ok: false; reason: string; steps: AxStep[]; focus?: Focus };
 
 const READ_ROWS = 60;
 const OPEN_CAP_MS = 5_000;
@@ -25,7 +28,7 @@ const osascript = (runner: Runner, req: object, timeoutMs = 30_000) => runner(["
 export const REFUSE = {
 	notListed: "방을 찾지 못했어요",
 	mismatch: "방 이름이나 인원이 달라요",
-	noList: "카카오톡 대화 목록 창이 닫혀 있어요. 창을 열어 두면 보낼 수 있어요",
+	noList: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요",
 	openFailed: "방을 열지 못했어요",
 	timeout: "방을 여는 데 5초가 넘게 걸려서 멈췄어요",
 } as const;
@@ -106,7 +109,7 @@ export async function axSend(name: string, text: string, runner: Runner): Promis
 	}
 }
 
-type Out = { ok?: boolean; opened?: boolean; rows?: unknown; stopped?: string; step?: string; why?: string; err?: string; ms?: Record<string, number> };
+type Out = { focus?: { from?: unknown; took?: unknown; restored?: unknown }; ok?: boolean; opened?: boolean; rows?: unknown; stopped?: string; step?: string; why?: string; err?: string; ms?: Record<string, number> };
 
 async function call(runner: Runner, req: object, timeoutMs: number): Promise<{ out: Out; ms: number; timedOut: boolean }> {
 	const t = performance.now();
@@ -128,9 +131,24 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner):
 	const t0 = performance.now();
 	const left = () => OPEN_CAP_MS - (performance.now() - t0);
 	const shared = all.some(r => r.chatId !== room.chatId && normalizeTitle(r.name) === normalizeTitle(room.name));
-	const stop = (reason: string): Opened => ({ ok: false, reason, steps });
+	let focus: Focus | undefined;
+	const stop = (reason: string): Opened => ({ ok: false, reason, steps, ...(focus ? { focus } : {}) });
+	const rowsReq = { action: "rows", name: room.name, max: READ_ROWS, budgetMs: ROWS_BUDGET_MS, first: !shared };
 
-	const listed = await call(runner, { action: "rows", name: room.name, max: READ_ROWS, budgetMs: ROWS_BUDGET_MS, first: !shared }, Math.min(left(), 4_000));
+	let listed = await call(runner, rowsReq, Math.min(left(), 4_000));
+	// No list window (KakaoTalk runs from the menu bar): open it once through its menu 창 > 채팅. KakaoTalk then comes to the front for
+	// a moment; the app in front before is put back inside that call, and the change is kept on the send record.
+	if (listed.out.ok !== true && listed.out.why === "no_list") {
+		steps.push({ step: "rows", ms: listed.ms, ok: false, why: "no_list" });
+		const opening = await call(runner, { action: "openlist" }, Math.min(Math.max(1_500, left()), 4_000));
+		const f = opening.out.focus;
+		if (f) focus = { ...(typeof f.from === "string" && f.from ? { from: f.from } : {}), took: f.took === true, restored: f.restored === true };
+		const phases = Object.entries(opening.out.ms ?? {}).map(([k, v]) => `${k}=${v}`).join(",");
+		steps.push({ step: "openlist", ms: opening.ms, ok: opening.out.ok === true, why: opening.out.ok === true ? phases : `${opening.timedOut ? "timeout" : failWhy(opening.out)}${phases ? `:${phases}` : ""}` });
+		if (opening.out.ok !== true) return stop(opening.timedOut ? REFUSE.timeout : REFUSE.noList);
+		if (left() < 1_000) return stop(REFUSE.timeout);
+		listed = await call(runner, rowsReq, Math.min(left(), 4_000));
+	}
 	if (listed.out.ok !== true) {
 		steps.push({ step: "rows", ms: listed.ms, ok: false, why: listed.timedOut ? "timeout" : failWhy(listed.out) });
 		return stop(listed.out.why === "no_list" ? REFUSE.noList : listed.timedOut ? REFUSE.timeout : REFUSE.openFailed);
@@ -158,5 +176,5 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner):
 		await closeWindow(runner, room.name);
 		return stop(w ? REFUSE.mismatch : REFUSE.openFailed);
 	}
-	return { ok: true, steps };
+	return { ok: true, steps, ...(focus ? { focus } : {}) };
 }

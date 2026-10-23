@@ -3,6 +3,7 @@
 // probe prints {ok:true, windows:[{title, members?, self?}]} for every window that is not the main window; room.ts accepts the room only when
 // exactly one chat window is open. `members` is read only from a static text that names itself a count (identifier or description with
 // count/member/참여/명); `self` is true only when the window shows the words 나와의 채팅. A missing field means "not shown", never "no".
+// openlist opens the chat list window when it is closed (see openList): needed when KakaoTalk has no window at all.
 // close presses the close button of every non-main window. Nothing is typed and no key is sent.
 // rows reads the static texts of the chat list rows, in order, until `max` rows, `budgetMs` or (first) the first row titled `name`: one
 // Accessibility read per row (~0.07 s, measured 2026-10-23; the whole 290-row list takes 20 s), nothing is clicked or opened. Prints
@@ -146,6 +147,67 @@ function until(fn, seconds) {
 // in room.ts. A row is one Accessibility read; the title is in the name of the static text (its value is empty for some rows).
 function rowTexts(rows, i) {
 	return rows[i].uiElements[0].staticTexts.name().map(function (t) { return t === null || t === undefined ? "" : String(t); });
+}
+
+// openlist brings the chat list window back when KakaoTalk runs with no window (menu bar only): AXPress on the menu item 채팅 of the
+// menu 창 (no activation call, no key). KakaoTalk raises itself when that window shows (measured 2026-10-23: it became the front app), so
+// the app that was in front before is put back at once, only when KakaoTalk is the front app by then. Prints {ok:true, ms:{press, window,
+// restore}, focus:{from, took, restored}} or {ok:false, step:"menu"|"window", why, err?}. `from` is the bundle id of the app in front before.
+function openList() {
+	var se = Application("System Events");
+	var procs = se.processes.whose({ bundleIdentifier: BUNDLE })();
+	if (!procs.length) return { ok: false, step: "menu", why: "not_running" };
+	var proc = procs[0];
+	if (proc.windows.whose({ name: "카카오톡" })().length) return { ok: true, ms: {}, focus: { took: false, restored: false } };
+	var from = "";
+	try {
+		from = String(se.processes.whose({ frontmost: true })()[0].bundleIdentifier());
+	} catch (e) {}
+	var t0 = Date.now();
+	var ms = {};
+	var item = null;
+	try {
+		var bar = proc.menuBars[0].menuBarItems();
+		for (var i = 0; i < bar.length && !item; i++) {
+			if (!/^(창|Window)$/.test(attr(bar[i], "name"))) continue;
+			var items = bar[i].menus[0].menuItems();
+			for (var k = 0; k < items.length && !item; k++) if (/^(채팅|Chats?)$/.test(attr(items[k], "name"))) item = items[k];
+		}
+	} catch (e) {
+		return { ok: false, step: "menu", why: "menu_error", err: String(e).slice(0, 100) };
+	}
+	if (!item) return { ok: false, step: "menu", why: "no_item" };
+	if (attr(item, "enabled") === "false") return { ok: false, step: "menu", why: "disabled" };
+	try {
+		item.actions.byName("AXPress").perform();
+	} catch (e) {
+		return { ok: false, step: "press", why: "press_error", err: String(e).slice(0, 100) };
+	}
+	ms.press = Date.now() - t0;
+	t0 = Date.now();
+	var shown = until(function () {
+		try {
+			return proc.windows.whose({ name: "카카오톡" })().length > 0;
+		} catch (e) {
+			return false;
+		}
+	}, 1.5);
+	ms.window = Date.now() - t0;
+	t0 = Date.now();
+	var took = false;
+	try {
+		took = proc.frontmost() === true;
+	} catch (e) {}
+	var restored = false;
+	if (took && from && from !== BUNDLE) {
+		try {
+			se.processes.whose({ bundleIdentifier: from })()[0].frontmost = true;
+			restored = true;
+		} catch (e) {}
+	}
+	ms.restore = Date.now() - t0;
+	if (!shown) return { ok: false, step: "window", why: "no_window", ms: ms, focus: { from: from, took: took, restored: restored } };
+	return { ok: true, ms: ms, focus: { from: from, took: took, restored: restored } };
 }
 
 function readRows(name, max, budgetMs, first) {
@@ -301,6 +363,7 @@ function run() {
 			return JSON.stringify({ ok: true, windows: wins.map(function (w) { return facts(w, req.deep === true); }) });
 		}
 		if (req.action === "close") return JSON.stringify(closeAll(req.name));
+		if (req.action === "openlist") return JSON.stringify(openList());
 		if (req.action === "send" && typeof req.name === "string" && req.name && typeof req.text === "string" && req.text) return JSON.stringify(sendInto(req.name, req.text));
 		if (req.action === "rows" && typeof req.name === "string" && req.name) return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 4000), req.first === true));
 		if (req.action === "open" && typeof req.name === "string" && req.name && Number.isInteger(req.row) && req.row >= 0) return JSON.stringify(openRowAt(req.row, req.name));
