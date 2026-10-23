@@ -48,6 +48,8 @@ type Rec = {
 export const FINISHED_KEEP_MS = 3600_000;
 // A worker spawned this much before the message it serves was delivered (clock rounding) still belongs to it.
 const SPAWN_SLACK_MS = 5_000;
+// A running record with no pid and no update for this long is a leftover, not a worker (seen: records from 2026-10-19 still "running").
+const NO_PID_STALE_MS = 3 * 3600_000;
 const RUNNING = new Set(["running", "queued", "pending"]);
 const DONE = new Set(["completed", "done", "succeeded"]);
 
@@ -128,6 +130,9 @@ export function createBgWork(deps: BgWorkDeps) {
 		if (status === "running" && typeof r.pid === "number" && !alive(r.pid) && stamp(r.recovery_deadline_at) <= now()) {
 			status = "failed";
 			ended = stamp(r.updated_at) || started;
+		} else if (status === "running" && typeof r.pid !== "number" && now() - (stamp(r.updated_at) || started) > NO_PID_STALE_MS) {
+			status = "failed";
+			ended = stamp(r.updated_at) || started;
 		}
 		const description = scrub(String(r.description || r.task_summary || r.category || r.task_id)).replace(/\s+/g, " ").trim().slice(0, 120);
 		const folder = folderOf(r);
@@ -160,5 +165,18 @@ export function createBgWork(deps: BgWorkDeps) {
 		return [...running, ...finished];
 	}
 
-	return { list };
+	/**
+	 * How many workers still run under one OmO session (default: the orchestrator's). The gateway restart gate reads this: the
+	 * same task store as list(), so a worker counts whether or not a deferred message waits for it. OmO sends no worker
+	 * frames, so the live subagent map (activity.ts runningSubagents) is always 0 for it.
+	 */
+	function running(file = deps.sessionFile()): number {
+		return file ? records(file).map(toWork).filter(w => w.status === "running").length : 0;
+	}
+
+	return { list, running };
 }
+
+const anySession = createBgWork({ sessionFile: () => undefined, deferred: () => [] });
+/** Running OmO workers under one session file (a lane's, say); 0 for no session. */
+export const runningOmoWorkers = (sessionFile: string | undefined): number => anySession.running(sessionFile);

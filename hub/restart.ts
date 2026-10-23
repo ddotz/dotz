@@ -23,6 +23,7 @@ export function createRestartGate(deps: RestartGateDeps) {
 	let since: number | undefined;
 	let requests = 0;
 	let noticed = false;
+	let lastStill = 0;
 
 	const earliest = () => deps.startedAt + deps.minGapMs;
 	const tick = () => {
@@ -32,6 +33,11 @@ export function createRestartGate(deps: RestartGateDeps) {
 				noticed = true;
 				deps.notice(`게이트웨이 재시작을 기다리는 중이에요: ${busy.join(", ")} 작업이 끝나면 다시 시작해요 (강제로 끊지 않아요).`);
 			}
+			// Past the notice time the wait only grows: say so in the log every period, and keep waiting (only the owner's "restart now" cuts it).
+			if (busy.length && Date.now() - since! >= deps.noticeAfterMs && Date.now() - lastStill >= deps.noticeAfterMs) {
+				lastStill = Date.now();
+				deps.log(`gateway restart still waiting after ${Math.round((Date.now() - since!) / 60_000)} min for: ${busy.join(", ")}; not killing it`);
+			}
 			return void setTimeout(tick, tickMs);
 		}
 		deps.log(`gateway restart (${requests} request(s) coalesced, waited ${Math.round((Date.now() - since!) / 1000)}s)`);
@@ -40,12 +46,13 @@ export function createRestartGate(deps: RestartGateDeps) {
 
 	function request(): string {
 		requests++;
-		if (since !== undefined) return `gateway restart is already waiting (${requests} requests coalesced)`;
+		const busy = deps.busy();
+		if (since !== undefined) return `gateway restart is already waiting (${requests} requests coalesced${busy.length ? `; waiting for: ${busy.join(", ")}` : ""})`;
 		since = Date.now();
 		setTimeout(tick, tickMs);
-		const busy = deps.busy();
 		const gap = Math.max(0, earliest() - Date.now());
 		const why = [busy.length ? `waiting for: ${busy.join(", ")}` : "", gap ? `coalescing for ${Math.ceil(gap / 1000)}s` : ""].filter(Boolean);
+		if (why.length) deps.log(`gateway restart requested; ${why.join("; ")}`);
 		return why.length ? `gateway restarts when idle (${why.join("; ")}; a busy lane is never killed)` : "gateway restarting";
 	}
 
