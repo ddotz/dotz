@@ -95,6 +95,17 @@ export function recordMail(r: MailRecord): void {
 	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
 }
 
+// A derived summary is written a moment later, in one write however many mails the start-up fills in.
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
+function persistSoon(): void {
+	if (flushTimer) return;
+	flushTimer = setTimeout(() => {
+		flushTimer = undefined;
+		writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	}, 200);
+	flushTimer.unref?.();
+}
+
 const str = (v: unknown, name: string, max: number, required: boolean): string | undefined => {
 	if (v === undefined || v === null || (!required && v === "")) {
 		if (required) throw new MailError(`${name} is required`);
@@ -187,6 +198,51 @@ function saveAttachments(key: string, inputs: AttachmentInput[] | undefined): Ma
 export function mailPreview(body: string | undefined): string {
 	const lines = (body ?? "").split(/\r?\n/).map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean);
 	return lines.slice(0, 3).join("\n").slice(0, PREVIEW_MAX);
+}
+
+const BRIEF_LABELS = new Set(["요약", "할 일", "할일", "다음 할 일", "핵심", "결과", "변경", "참고", "상세", "확인할 것"]);
+// "요약", "## 요약", "**할 일**", "할 일:" -> the label; any other line -> "" (web/js/11-resultcard.js rcLabel).
+const briefLabel = (line: string): string => {
+	const m = line.trim().match(/^(?:#{1,6}\s*)?(?:\*\*)?\s*([^*#:\n]{1,12}?)\s*:?\s*(?:\*\*)?\s*:?$/);
+	return m && BRIEF_LABELS.has(m[1]!.trim()) ? m[1]!.trim() : "";
+};
+
+/**
+ * The row text of a mail that came without a summary, from a conversation message (the web does the same, web/js/30-monitoring.js mailFromMsg):
+ * up to 3 lines of its "요약" section, else the first 3 lines of its original (the text after a "원문" line). Lines that only repeat the
+ * sender or the subject do not count; "" when nothing is left.
+ */
+export function mailBriefOf(text: string, from: string, subject: string): string {
+	const plain = (s: string) => s.replace(/^\s*#{1,6}\s*/, "").replace(/\*\*/g, "").replace(/^(?:[-*•]|\d+[.)])\s+/, "").replace(/\s+/g, " ").trim();
+	const name = plain(from.replace(/<[^>]*>/g, "").replace(/["']/g, "")) || plain(from);
+	const skip = new Set([plain(subject), plain(`${from} · ${subject}`), plain(from), name].filter(Boolean));
+	const lines = (s: string[]) => s.map(plain).filter(l => l && !briefLabel(l) && !skip.has(l)).slice(0, 3);
+	const t = text.replace(/\r/g, "").trim();
+	const cut = /(?:^|\n)원문[ \t]*\n([\s\S]*)$/.exec(t);
+	const head = (cut ? t.slice(0, cut.index) : t).split("\n");
+	const start = head.findIndex(l => briefLabel(l) === "요약");
+	let section: string[] = [];
+	if (start >= 0) {
+		const rest = head.slice(start + 1);
+		const end = rest.findIndex(l => briefLabel(l));
+		section = rest.slice(0, end < 0 ? undefined : end);
+	}
+	const own = lines(section);
+	return (own.length ? own : lines(cut ? cut[1]!.split("\n") : [])).join("\n").slice(0, PREVIEW_MAX);
+}
+
+/**
+ * Gives a recorded mail that has neither summary nor preview the brief of one conversation message (called for each message that is not the
+ * owner's, oldest first, until one yields text; hub/conversations.ts). Stored once, so the list never reads a conversation. True when stored.
+ */
+export function briefMail(key: string, text: string): boolean {
+	const r = byKey.get(key);
+	if (!r || r.summary || r.preview) return false;
+	const brief = mailBriefOf(text, r.from, r.subject);
+	if (!brief) return false;
+	r.summary = brief;
+	persistSoon();
+	return true;
 }
 
 const BODY_FILE = (key: string) => join(MAIL_FILES, key, "body.html");
