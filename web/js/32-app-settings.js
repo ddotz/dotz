@@ -78,14 +78,13 @@ function asAddPaint() {
   const off = asOffApps();
   for (const a of off) if (a.iconPath && !ICONS[a.icon]) ICONS[a.icon] = a.iconPath;
   clear(h.box).append(
-    fsHead([el("h2", { class: "fs-t", id: "as-add-t", text: "앱 추가" })], { close: () => h.close() }),
+    fsHead([el("h2", { class: "fs-t", id: "as-add-t", text: "앱 관리" })], { close: () => h.close() }),
     el("div", { class: "fs-body" },
       ...(off.length ? [el("div", { class: "as-sec", text: "꺼 둔 앱" }), ...off.map(a => el("div", { class: "as-row", "data-app": a.key },
         el("span", { class: "as-ic", "aria-hidden": "true" }, icon(a.icon)),
         el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.label }), el("span", { class: "as-h", text: a.machine ? `${a.machine} · 꺼져 있어요` : "꺼져 있어요" })),
         el("button", { class: "btn tonal", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기")))] : []),
       el("div", { class: "as-sec", text: "새로 추가하기" }),
-      el("div", { class: "as-h as-lead", text: "원하는 앱을 말로 만들어요. 채팅 입력칸에 활성화 요청이 채워지고, 보내기 전에 고칠 수 있어요." }),
       el("div", { class: "as-tpls" }, ...AT.items.map(t => el("button", { class: "as-tpl", type: "button", "data-tpl": t.key, onclick: () => asNewApp(t.key) }, t.label))),
       el("button", { class: "btn", type: "button", "data-k": "new", disabled: !AT.items.length, onclick: () => asNewApp("custom") }, "새로 추가하기")));
 }
