@@ -2,12 +2,16 @@
 // Data: GET /api/integrations (hub/integrations.ts) -> {items: [{key, label, icon, iconPath?, conv, unread, notices}]}: only the integrations enabled on
 // this install, with the ids of their notices and the unread count. The registry lives in the hub; the 모니터링 tab (30-monitoring.js) lists
 // whatever it returns beside the dotz_watch monitors and 알림.
-const INTG = { items: [], sig: "", timer: 0 };
+const INTG = { items: [], available: [], sig: "", timer: 0 };
+// An app switched off on this install keeps its mails here (data is kept): a peer's copy of the same mail must still show (34-peer-monitoring.js pqMail).
+const intgHidden = t => INTG.available.some(a => a.off && (a.conv || []).some(p => String(t).startsWith(p)));
 
 async function loadIntegrations() {
   try {
     const r = await api("/api/integrations");
     INTG.items = Array.isArray(r.items) ? r.items : [];
+    INTG.available = Array.isArray(r.available) ? r.available : [];
+    for (const it of INTG.available) if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;
     for (const it of INTG.items) if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;
   } catch { return; }
   monSchedule();

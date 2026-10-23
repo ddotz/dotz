@@ -232,6 +232,15 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.op === "settings") return ask("PATCH", `/api/watches/${name}/settings`, { values: a.values }, login);
 				return bad("op must be pause, resume, run or settings");
 			}
+			// An app's switch, settings, 제거 and 앱 추가 on the machine that owns the app (hub/app-off.ts): off and remove are per machine, so the web sends them here, never to its own gateway.
+			case "app": {
+				const app = encodeURIComponent(String(a.app ?? ""));
+				if (!a.app) return bad("app required");
+				if (a.op === "settings") return ask("PATCH", `/api/integrations/${app}/settings`, { values: a.values }, login);
+				if (a.op === "remove") return ask("POST", `/api/integrations/${app}/remove`, { deleteData: a.deleteData === true }, login);
+				if (a.op === "add") return ask("POST", `/api/integrations/${app}/add`, {}, login);
+				return bad("op must be settings, remove or add");
+			}
 			// KakaoTalk rooms (hub/kakao/web.ts): the owning gateway sends through its own single send door, lease included.
 			case "kakao": {
 				const id = encodeURIComponent(String(a.chatId ?? a.code ?? ""));

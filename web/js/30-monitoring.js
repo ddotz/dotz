@@ -128,6 +128,7 @@ function monRows(items, sel) {
     group = it.group;
     rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", it.key) });
   }
+  if (INTG.available.length) rows.push({ k: "add-app", name: "앱 추가", av: monIcon("add"), hint: INTG.available.map(a => a.label).join(" · "), sel: false, open: ev => asAddMenu(ev.currentTarget) });
   if (!NM.loaded) rows.push({ header: NM.failed ? "모니터링을 불러오지 못했어요" : "모니터링 불러오는 중…" });
   return rows;
 }

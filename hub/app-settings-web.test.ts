@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readSettings, writeSettings } from "./app-settings.ts";
+import { removalPlan, removeApp } from "./app-off.ts";
+import { integrationContext, integrationItems, readAppOff } from "./integrations.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
 // 모니터링 > 앱 > 설정 (web/js/32-app-settings.js) as shipped, in a headless Bun.WebView against a stub gateway whose settings routes call the real
@@ -21,6 +23,7 @@ const history = (target: string) => target === "settings:mail" ? [
 
 const sent: Record<string, unknown>[] = [];
 const patches: Record<string, unknown>[] = [];
+const removes: Record<string, unknown>[] = [];
 const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
 let streamWaiters: (() => void)[] = [];
 const te = new TextEncoder();
@@ -48,7 +51,24 @@ const server = Bun.serve({
 		if (p === "/api/conversations") return json({ items: [] });
 		if (p === "/api/notices") return json({ unread: 0, items: [] });
 		if (p === "/api/monitors") return json({ items: [] });
-		if (p === "/api/integrations") return json({ items: ["mail", "kakao", "youtube"].map(key => ({ key, label: { mail: "메일", kakao: "카카오톡", youtube: "유튜브" }[key], icon: key === "kakao" ? "chat" : key, kind: "app", conv: key === "mail" ? ["mail:"] : [], notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } })) });
+		if (p === "/api/integrations") {
+			const all = ["mail", "kakao", "youtube"].map(key => ({ key, label: { mail: "메일", kakao: "카카오톡", youtube: "유튜브" }[key]!, icon: key === "kakao" ? "chat" : key, kind: "app", conv: key === "mail" ? ["mail:"] : [], notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } }));
+			const off = readAppOff(data);
+			return json({ items: all.filter(i => !off.has(i.key)), available: [...all.filter(i => off.has(i.key)).map(i => ({ ...i, off: true })), { key: "instagram", label: "인스타그램", icon: "instagram", off: false, conv: [] }] });
+		}
+		const life = /^\/api\/integrations\/([a-z0-9-]+)\/(remove|add)$/.exec(p);
+		if (life) {
+			const app = life[1]!;
+			if (life[2] === "remove" && req.method === "GET") return json(removalPlan(data, app, ["kakao-new"]));
+			if (life[2] === "remove") {
+				const b = (await req.json()) as { deleteData?: boolean };
+				removes.push({ app, deleteData: b.deleteData });
+				removeApp(data, app, { deleteStored: b.deleteData === true }, { watchNames: () => ["kakao-new"], removeWatch: () => {} });
+				return json({ ok: true });
+			}
+			writeSettings(data, app, { use_here: true });
+			return json({ ok: true, ready: integrationItems(integrationContext(data, ["zele"]), [], {}).some(i => i.key === app) });
+		}
 		if (p === "/api/kakao/rooms") return json({ on: true, rooms: [] });
 		const m = /^\/api\/integrations\/([a-z0-9-]+)\/settings$/.exec(p);
 		if (m) {
@@ -166,5 +186,89 @@ describe("설정 대화 at phone width (390x844)", () => {
 		expect(fit.sw).toBeLessThanOrEqual(fit.vw);
 		expect(fit.card).toBeLessThanOrEqual(fit.vw);
 		await shot(v, "04-phone-settings-conversation.png");
+	});
+});
+
+describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844)", () => {
+	const v = open(390, 844);
+	const rows = (sel: string) => q<string[]>(v, `return [...document.querySelectorAll(${JSON.stringify(sel)})].map(e => e.textContent.trim())`);
+
+	test("the first switch of the panel is 이 기기에서 쓰기 and it is on", async () => {
+		await boot(v, "c:settings:mail");
+		await waitFor(v, `target === "settings:mail" && document.querySelector('#app-sw [data-k="auto_draft"]')`);
+		expect(await q(v, `return document.querySelector("#app-sw").firstElementChild.querySelector('[data-k="use_here"]') !== null`)).toBe(true);
+		expect(await q(v, `return document.querySelector('#app-sw [data-k="use_here"]').getAttribute("aria-checked")`)).toBe("true");
+		expect((await rows("#app-sw .as-row .as-n"))[0]).toBe("이 기기에서 쓰기");
+		await shot(v, "05-phone-switch-and-remove.png");
+	});
+
+	test("제거 shows plainly what goes, with the data kept by default, before anything is removed", async () => {
+		writeSettings(data, "kakao", { enabled: true });
+		await run(v, `go("monitoring", "c:settings:kakao")`);
+		await waitFor(v, `target === "settings:kakao" && document.querySelector('#app-sw [data-k="enabled"]') && document.querySelector('#app-sw [data-as-rm="ask"]')`);
+		await run(v, `document.querySelector('#app-sw [data-as-rm="ask"]').click()`);
+		await waitFor(v, `document.querySelector("#app-sw .as-rm")`);
+		const text = (await rows("#app-sw .as-rm li")).join("|");
+		expect(text).toContain("알림과 푸시를 멈춰요");
+		expect(text).toContain("kakao-new");
+		expect(await q(v, `return document.querySelector('#app-sw [data-k="delete-data"]').checked`)).toBe(false);
+		expect(removes).toEqual([]);
+		const fit = await q<{ w: number; vw: number }>(v, `return { w: document.querySelector("#app-sw").scrollWidth, vw: innerWidth }`);
+		expect(fit.w).toBeLessThanOrEqual(fit.vw);
+		await shot(v, "06-phone-remove-confirm.png");
+	});
+
+	test("취소 closes the confirm; 제거 확인 with the box unticked removes the app and keeps its data", async () => {
+		await run(v, `document.querySelector('#app-sw [data-as-rm="cancel"]').click()`);
+		await waitFor(v, `!document.querySelector("#app-sw .as-rm")`);
+		await run(v, `document.querySelector('#app-sw [data-as-rm="ask"]').click()`);
+		await waitFor(v, `document.querySelector('#app-sw [data-as-rm="go"]')`);
+		await run(v, `document.querySelector('#app-sw [data-as-rm="go"]').click()`);
+		await waitFor(v, `INTG.available.some(a => a.key === "kakao" && a.off)`);
+		expect(removes).toEqual([{ app: "kakao", deleteData: false }]);
+		expect(readAppOff(data).has("kakao")).toBe(true);
+		expect(existsSync(cfgFile("custom/kakao/config.json"))).toBe(true);
+	});
+
+	test("앱 추가 lists the apps that are off; one with nothing set up starts its setup in the chat", async () => {
+		await run(v, `go("monitoring")`);
+		await waitFor(v, `document.querySelector('#mon-side [data-k="add-app"]')`);
+		expect(await q(v, `return document.querySelector('#mon-side [data-k="i:kakao"]')`)).toBe(null);
+		await shot(v, "07-phone-add-app-row.png");
+		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
+		await waitFor(v, `document.querySelector(".menu .mi")`);
+		expect(await rows(".menu .mi")).toEqual(["카카오톡꺼져 있어요. 다시 켜요", "인스타그램아직 연결 안 했어요"]);
+		sent.length = 0;
+		await run(v, `[...document.querySelectorAll(".menu .mi")].find(b => b.textContent.includes("카카오톡")).click()`);
+		const deadline = Date.now() + 3000;
+		while (!sent.length && Date.now() < deadline) await Bun.sleep(25);
+		expect(sent[0]).toMatchObject({ text: "카카오톡 연결을 시작해 주세요" });
+		expect(readAppOff(data).has("kakao")).toBe(false);
+	});
+
+	test("the switch turns an app off here; 앱 추가 turns it back on and opens it", async () => {
+		await run(v, `go("monitoring", "c:settings:mail")`);
+		await waitFor(v, `target === "settings:mail" && document.querySelector('#app-sw [data-k="auto_draft"]')`);
+		await run(v, `document.querySelector('#app-sw [data-k="use_here"]').click()`);
+		await waitFor(v, `INTG.available.some(a => a.key === "mail" && a.off)`);
+		expect(patches.at(-1)).toEqual({ app: "mail", values: { use_here: false } });
+		await run(v, `go("monitoring")`);
+		await waitFor(v, `document.querySelector('#mon-side [data-k="add-app"]') && !document.querySelector('#mon-side [data-k="i:mail"]')`);
+		await run(v, `asAdd("mail")`);
+		await waitFor(v, `INTG.items.some(i => i.key === "mail") && !INTG.available.some(a => a.key === "mail")`);
+		expect(readAppOff(data).has("mail")).toBe(false);
+	});
+
+	test("a peer's mail stays in the list while this computer's own mail is off, labeled with the machine", async () => {
+		const peer = (off: boolean) => q<{ apps: number; mails: number; pc: string }>(v, `
+			INTG.available = ${off ? '[{ key: "mail", label: "메일", off: true, conv: ["mail:"] }]' : "[]"};
+			CONV.set("mail:shared-1", { ts: "2026-10-23T03:00:00.000Z", text: "견적 문의" });
+			PQ.of.delete("mail:shared-1");
+			PQ.list = [{ name: "Mac mini", url: "http://mini.example", online: true, items: { monitors: [], notices: [], conversations: [{ target: "mail:shared-1", unread: 1, read: null, last: { ts: "2026-10-23T03:00:00.000Z", text: "견적 문의" }, mail: { subject: "견적 문의", from: "a@example.com" } }],
+				integrations: [{ key: "mail", label: "메일", icon: "mail", conv: ["mail:"], unread: 1, notices: [], needs: { drafts: 0, unread: 1, sentToday: 0 } }] } }];
+			const it = pqMerge([]).find(i => i.pc && i.app);
+			return { apps: it ? 1 : 0, mails: it ? it.mails.length : 0, pc: it ? it.pc.name : "" };`);
+		expect(await peer(true)).toEqual({ apps: 1, mails: 1, pc: "Mac mini" });
+		expect(await peer(false)).toEqual({ apps: 1, mails: 0, pc: "Mac mini" });
 	});
 });

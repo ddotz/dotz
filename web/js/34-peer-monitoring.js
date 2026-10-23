@@ -66,7 +66,7 @@ setInterval(() => { if ((current === "monitoring" || monCtx) && !document.hidden
 // A peer's mail as the local stores hold a mail (MAILS, CONV, the unread count), so monConvNode and the chat view draw it. A mail this computer has itself stays local.
 function pqMail(c, pc, itemKey) {
   const t = String(c.target);
-  if (!PQ.of.has(t) && CONV.has(t)) return null;
+  if (!PQ.of.has(t) && CONV.has(t) && !intgHidden(t)) return null;
   PQ.of.set(t, { pc, key: itemKey });
   if (c.mail) MAILS.set(t, c.mail);
   if (c.last) CONV.set(t, c.last);
