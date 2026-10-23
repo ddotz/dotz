@@ -10,33 +10,39 @@ async function loadAccounts() {
 const accLabel = id => { const a = ACC && ACC.accounts.find(x => x.name === id || x.alias === id); return a ? a.label || a.alias || a.name : id; };
 const accMut = (btn, call, msg, close) => busy(btn, async () => { ACC = await call(); if (close) close(); if (msg) toast(msg); renderSettings(); if (current === "usage") loadQuota(); });
 async function accCopy(text) { try { await navigator.clipboard.writeText(text); toast("복사했어요"); } catch { toast("복사하지 못했어요", true); } }
-function accTags(a) {
+function accTags(a, pin) {
   const t = [];
   // a.current: the account requests really use (OmO skips a blocked one); blocked_tag: "한도 걸림 · 01:00까지"
-  if (a.current) t.push(["사용 중", "pri"]);
+  // 고정: the fixed account (pin) carries the badge instead
+  if (pin ? a.name === pin : a.current) t.push([pin ? "사용 중 · 고정" : "사용 중", "pri"]);
   if (a.blocked) t.push([a.blocked_tag || "쓸 수 없음", a.blocked === "rate_limit" ? "warn" : "err"]);
-  else if (!a.current) t.push(["쓸 수 있음", "ok"]);
+  else if (!(pin ? a.name === pin : a.current)) t.push(["쓸 수 있음", "ok"]);
   return t;
 }
 function accountSection() {
   if (!ACC) return [];
   const dec = ACC.decision, sc = ACC.script, lines = ACC.rules_text || [], pct = n => `${Math.round(n)}%`;
   const tx = (hd, ...sup) => el("span", { class: "tx" }, hd ? el("div", { class: "hd", text: hd }) : null, sup.length ? el("div", { class: "sup" }, ...sup) : null);
-  const rows = ACC.accounts.map(a => {
+  // two modes: 자동 전환 (rules, and a switch when the account is blocked) or 고정 (one account, requests never move to another)
+  const pinned = ACC.mode === "pinned", ch = ACC.chosen, pin = pinned && ch ? ch.name : "";
+  const setMode = (btn, body, msg) => accMut(btn, () => api("/api/accounts/mode", "PUT", body), msg);
+  // the order is the fallback order of 자동 전환: the first usable account by number takes over when the current one is blocked
+  const move = (btn, i, d) => { const names = ACC.accounts.map(x => x.name); [names[i], names[i + d]] = [names[i + d], names[i]]; accMut(btn, () => api("/api/accounts/order", "PUT", { order: names })); };
+  const rows = ACC.accounts.map((a, i, all) => {
     const label = a.label || a.alias || a.name;
     const sub = [a.name !== label ? a.name : "", a.five_hour_left != null ? `5시간 ${pct(a.five_hour_left)} 남음` : "", a.seven_day_left != null ? `주간 ${pct(a.seven_day_left)} 남음` : ""].filter(Boolean).join(" · ");
-    return el("button", { class: "li tap", type: "button", onclick: () => accDialog(a) }, tx(label, sub), ...accTags(a).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t })), icon("chev", "lead"));
+    // 고정: tapping a row fixes that account; 자동 전환: tapping it opens its name and details
+    const onclick = ev => pinned ? (a.name !== pin && setMode(ev.currentTarget, { mode: "pinned", account: a.name }, "고정 계정을 바꿨어요")) : accDialog(a);
+    const mv = (d, t, name) => el("button", { class: "acc-mv", type: "button", "aria-label": `${label} ${name}`, disabled: i + d < 0 || i + d >= all.length, onclick: ev => move(ev.currentTarget, i, d), text: t });
+    return el("div", { class: `li acc${pinned && a.name === pin ? " on" : ""}` },
+      el("button", { class: "acc-main", type: "button", ...(pinned ? { role: "radio", "aria-checked": String(a.name === pin) } : {}), onclick },
+        el("span", { class: "lead acc-no", text: String(a.order || i + 1) }), tx(label, sub), ...accTags(a, pin).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t }))),
+      pinned ? el("button", { class: "acc-mv", type: "button", "aria-label": `${label} 이름 바꾸기`, onclick: () => accDialog(a) }, icon("chev", "lead")) : el("span", { class: "acc-mvs" }, mv(-1, "↑", "위로"), mv(1, "↓", "아래로")));
   });
-  // two modes: 자동 전환 (rules, and a switch when the account is blocked) or 고정 (one account, requests never move to another)
-  const pinned = ACC.mode === "pinned", ch = ACC.chosen;
-  const setMode = (btn, body, msg) => accMut(btn, () => api("/api/accounts/mode", "PUT", body), msg);
-  const modeBtn = (v, t) => el("button", { type: "button", role: "radio", "aria-checked": String((v === "pinned") === pinned), class: (v === "pinned") === pinned ? "on" : "", onclick: ev => { if ((v === "pinned") !== pinned) setMode(ev.currentTarget, { mode: v }, v === "pinned" ? "고정했어요" : "자동 전환으로 바꿨어요"); } }, t);
-  const pick = pinned ? el("select", { class: "fi", "aria-label": "고정할 계정" }, ...ACC.accounts.map(a => el("option", { value: a.name, text: a.label || a.alias || a.name, selected: ch && a.name === ch.name }))) : null;
-  if (pick) pick.addEventListener("change", () => setMode(pick, { mode: "pinned", account: pick.value }, "고정 계정을 바꿨어요"));
   const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 풀릴 때까지 멈추고, 다른 계정으로 넘어가지 않아요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가요.";
-  rows.unshift(el("div", { class: "li", style: "flex-direction:column;align-items:stretch;gap:10px" },
-    el("div", { class: "seg", role: "radiogroup", "aria-label": "계정 선택 방식" }, modeBtn("auto", "자동 전환"), modeBtn("pinned", "고정")),
-    pick, el("div", { class: "sup", text: caption })));
+  // on = 자동 전환, off = 고정 (the account to fix is the row tapped below)
+  rows.unshift(el("div", { class: "li" }, tx("자동 전환", caption),
+    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!pinned), "aria-label": "자동 전환", onclick: ev => setMode(ev.currentTarget, { mode: pinned ? "auto" : "pinned" }, pinned ? "자동 전환으로 바꿨어요" : "고정했어요") })));
   if (!pinned) {
     rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), el("button", { class: "btn tonal", type: "button", onclick: () => rulesDialog() }, "편집")));
     for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));

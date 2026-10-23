@@ -86,8 +86,8 @@ test("accountsBody carries labels, states, decision, rules as text, manual pick,
 	writeRules({ manual: { account: "회사 계정", until: "2026-10-21T18:00:00+09:00" }, rules: [{ name: "근무 시간", when: { days: ["mon", "tue", "wed", "thu", "fri"], from: "09:00", to: "18:00" }, do: { pin: "work" } }], script: { path: "/tmp/pick.sh" } });
 	const b = accountsBody(WED_10);
 	expect(b.accounts).toEqual([
-		{ name: "default", alias: "개인 계정", label: "개인 계정", current: false, blocked: null, blocked_until: null, blocked_tag: null, five_hour_left: 62, seven_day_left: 80 },
-		{ name: "work", alias: "회사 계정", label: "회사 계정", current: true, blocked: "rate_limit", blocked_until: new Date(WED_10 + 3_600_000).toISOString(), blocked_tag: expect.stringContaining("11:00"), five_hour_left: null, seven_day_left: null },
+		{ name: "default", order: 1, alias: "개인 계정", label: "개인 계정", current: false, blocked: null, blocked_until: null, blocked_tag: null, five_hour_left: 62, seven_day_left: 80 },
+		{ name: "work", order: 2, alias: "회사 계정", label: "회사 계정", current: true, blocked: "rate_limit", blocked_until: new Date(WED_10 + 3_600_000).toISOString(), blocked_tag: expect.stringContaining("11:00"), five_hour_left: null, seven_day_left: null },
 	]);
 	// the owner's pick (고정) holds although it is blocked
 	expect(b.decision).toMatchObject({ account: "work", label: "회사 계정", source: "manual", hard: true });
@@ -313,6 +313,31 @@ test("계정 선택 방식: PUT /mode writes the setting; 고정 never changes a
 	const same = await call("PUT", "/api/accounts/mode", { mode: "pinned" });
 	expect(((await same!.json()) as any).chosen).toMatchObject({ name: "work", source: "manual" });
 	expect((await call("PUT", "/api/accounts/mode", { mode: "nope" }))?.status).toBe(400);
+});
+
+test("계정 순서: PUT /order is kept in rules.json beside the other settings, numbers the accounts, and 자동 전환 falls back by it", async () => {
+	writeAuth(["a", "b", "c", "d", "e"]);
+	writeSlots({ a: { lastSuccessAt: Date.now() } });
+	writeRules({ rules: [{ do: { auto: true } }] });
+	const order = ["c", "d", "a", "b", "e"];
+	const res = await call("PUT", "/api/accounts/order", { order });
+	expect(res?.status).toBe(200);
+	const body = (await res!.json()) as any;
+	expect(body.accounts.map((a: any) => [a.name, a.order])).toEqual(order.map((n, i) => [n, i + 1]));
+	// persisted in the accounts settings file (not auth.json), other settings untouched, still there after a restart
+	resetStickyForTest();
+	expect(readRules()).toEqual({ rules: [{ do: { auto: true } }], order });
+	expect(accountsBody().accounts.map(a => a.name)).toEqual(order);
+	// the first pick and every fallback follow the order, not the account that answered last (a)
+	expect(stickyAccount()).toBe("c");
+	writeSlots({ a: { lastSuccessAt: Date.now() }, c: { blockReason: "rate_limit", blockedUntil: Date.now() + 3_600_000 } });
+	expect(stickyAccount()).toBe("d");
+	writeSlots({ a: { lastSuccessAt: Date.now() }, c: { blockReason: "rate_limit", blockedUntil: Date.now() + 3_600_000 }, d: { blockReason: "rate_limit", blockedUntil: Date.now() + 3_600_000 } });
+	expect(stickyAccount()).toBe("a");
+	// an account that is not in the pool is refused and nothing changes
+	expect((await call("PUT", "/api/accounts/order", { order: ["a", "zzz"] }))?.status).toBe(400);
+	expect((await call("PUT", "/api/accounts/order", { order: "a" }))?.status).toBe(400);
+	expect(readRules().order).toEqual(order);
 });
 
 test("고정 account at its limit: the alert says which account and until when, and offers 자동 전환으로 바꾸기 (answered by the gateway)", async () => {
