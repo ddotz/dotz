@@ -312,6 +312,30 @@ export function mailFileRoute(req: Request, url: URL, key: string, index: string
 	}
 }
 
+/** POST /api/mail/compose: the mail app lists a new-mail draft like a reply draft (a row with its draft chip); `state: "sent"` flips the chip. Never wakes the bot or offers a draft. */
+export function composeMail(raw: unknown, deps: Pick<MailDeps, "emit" | "now">): { ok: true; key: string } {
+	const b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+	const ref = str(b.ref, "ref", 64, true)!;
+	if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/.test(ref)) throw new MailError("ref is not a draft id");
+	const source = str(b.source, "source", 100, true)!;
+	const key = mailKey(source, `compose-${ref.toLowerCase()}`);
+	const known = byKey.get(key);
+	if (b.state === "sent") {
+		if (!known?.suggest) throw Object.assign(new MailError("no such draft mail"), { status: 404 });
+		setMailSuggest(key, { ...known.suggest, state: "sent" });
+		return { ok: true, key };
+	}
+	if (known) return { ok: true, key };
+	const to = str(b.to, "to", 500, true)!;
+	const subject = str(b.subject, "subject", 300, true)!;
+	const origin = str(b.origin, "origin", 100, false);
+	const at = deps.now?.() ?? new Date().toISOString();
+	const summary = `새 메일 초안 · ${to}${origin ? ` · ${origin}` : ""}`;
+	recordMail({ key, source, id: `compose-${ref}`, subject, from: "", at, summary, suggest: { kind: "reply-draft", label: "메일 초안", ref, state: "draft" } });
+	deps.emit({ ts: at, kind: "mail", source, channel: mailTarget(key), conv: mailTarget(key), mail: key, subject, from: "", summary, text: summary });
+	return { ok: true, key };
+}
+
 export function mailText(m: Pick<MailInput, "from" | "subject" | "summary" | "body">): string {
 	return [m.from ? `${m.from} · ${m.subject}` : m.subject, m.summary ?? "", m.body ? `원문\n${m.body}` : ""].filter(Boolean).join("\n\n");
 }

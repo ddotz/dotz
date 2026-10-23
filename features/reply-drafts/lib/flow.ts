@@ -55,10 +55,10 @@ export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): P
 }
 
 // The [ask] message of one draft; the notes line carries lint warnings and what only the user can decide.
-export function askText(rec: DraftRec, warnings: string[], headline = "답장 초안을 만들었어요"): string {
+export function askText(rec: DraftRec, warnings: string[], headline = rec.compose ? "새 메일 초안을 만들었어요" : "답장 초안을 만들었어요"): string {
 	const notes = [...warnings.map(w => `확인: ${w}`), ...rec.questions.map(q => `정해 주세요: ${q}`)].map(n => n.replace(/\s+/g, " ")).join(" / ");
 	const attachments = stagedFiles(rec.id).map(f => ({ name: f.name, size: f.size }));
-	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: "이 답장 보낼까요?", ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}) });
+	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}) });
 	return [`[ask] ${headline}`, ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
