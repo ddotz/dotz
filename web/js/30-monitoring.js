@@ -70,6 +70,15 @@ const monUnread = list => list.reduce((c, n) => c + (n.read ? 0 : 1), 0);
 // What is watched, in list order: 감시 소식 (reports no row below owns), then the 앱 group (the integrations), then the 일반 모니터링 group (the monitors). Each item carries what
 // its row and its conversation show.
 const MON_FEED = "감시 소식";
+// An app's row says what waits on the owner, never the latest item's title. `needs` = {drafts, unread, sentToday} from GET /api/integrations (hub/integrations.ts):
+// at most two parts, the most important first; the badge is the count that waits on him (drafts first, else unread).
+function monNeedLine(n) {
+  const parts = [];
+  if (n.drafts) parts.push(`답장 확인 ${n.drafts}건`);
+  if (n.unread) parts.push(`안 읽음 ${n.unread}`);
+  if (n.sentToday) parts.push(`오늘 자동 답장 ${n.sentToday}건 보냄`);
+  return parts.slice(0, 2).join(" · ") || "확인할 것 없어요";
+}
 function monItems() {
   intgWatch();
   const mons = ntMons(), shown = new Set(), items = [];
@@ -77,7 +86,8 @@ function monItems() {
     const notices = (it.notices || []).map(ntById).filter(n => n && monMine(n, it)), mails = [...CONV.keys()].filter(t => (it.conv || []).some(p => t.startsWith(p)));
     for (const n of notices) shown.add(n.id);
     const cands = [...notices.map(n => ({ at: monNoticeAt(n), text: monLine(n) })), ...mails.filter(t => CONV.get(t)).map(t => ({ at: CONV.get(t).ts, text: (MAILS.get(t) || {}).subject || CONV.get(t).text }))].sort((a, b) => b.at.localeCompare(a.at));
-    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, unread: monUnread(notices) + mails.reduce((c, t) => c + (ts(t).unread | 0), 0), hint: cands[0] ? cands[0].text : `${it.label} 소식이 아직 없어요`, at: cands[0] ? cands[0].at : "" });
+    const needs = it.needs || { drafts: 0, unread: monUnread(notices) + mails.reduce((c, t) => c + (ts(t).unread | 0), 0), sentToday: 0 };
+    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, unread: needs.drafts || needs.unread, hint: monNeedLine(needs), at: cands[0] ? cands[0].at : "" });
   }
   for (const m of mons) {
     const notices = NT.items.filter(n => monHas(m, n)), last = monNewest(notices), names = monNames(m);
@@ -98,7 +108,7 @@ const monName = () => { const it = monItems().find(i => i.key === MON.sel); retu
 function monState(it) {
   if (it.mon) { const res = it.mon.last_result ? NT_RESULT[it.mon.last_result] : null; return [res && res[0], ntMonRun(it.mon), ntMonNext(it.mon)].filter(Boolean).join(" · "); }
   if (it.key === "notice") return it.unread ? `안 읽은 소식 ${it.unread}개` : "감시와 예약 결과";
-  return it.unread ? `안 읽음 ${it.unread}개` : "연결돼 있어요";
+  return it.app ? it.hint : it.unread ? `안 읽음 ${it.unread}개` : "연결돼 있어요";
 }
 
 /* ---- the list ---- */

@@ -12,7 +12,7 @@ import { integrationContext, integrationItems } from "./integrations.ts";
 import { markRead } from "./reads.ts";
 import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
-import { MailError, attachmentList, mailBodyRoute, mailByKey, mailFileRoute, mailTargets, postMail, type MailDeps } from "./mail.ts";
+import { MailError, attachmentList, mailBodyRoute, mailByKey, mailFileRoute, mailSuggests, mailTargets, postMail, type MailDeps } from "./mail.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
@@ -140,7 +140,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		if (req.method === "GET" && url.pathname === "/api/integrations") {
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
-			return json({ items: integrationItems(integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele"] : []), listNotices(NOTICE_CAP).items, convUnread) });
+			return json({ items: integrationItems(integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele"] : []), listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests()) });
 		}
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
 		// The bot closes the questions whose matter is over (ids, match text, conv or all): they are answered, read and off 답변 필요.
