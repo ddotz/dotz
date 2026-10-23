@@ -5,12 +5,13 @@
 // Nothing is ever sent without a click: a typed message, a draft's 보내기 or an edited draft's 보내기 is the owner's own action.
 // Message text only ever goes through el({text}) / textContent, never innerHTML.
 const KK_KEY = "i:kakao";
+const kkItem = it => !!it && (it.key === KK_KEY || !!it.kk);   // a peer's Kakao item (34-peer-monitoring.js) shows this same pane, its rooms read through the proxy (KK.pc)
 const KK_PAGE = 80;
 const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, pick: null,   // pick: null = open while no room is chosen
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", draftT: 0, tailing: false, again: false,
-  typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0,
+  typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null,
 };
 
 /* ---- small helpers ---- */
@@ -155,7 +156,7 @@ function kkPaintRooms() {
     if (watched.length) list.append(...watched.map(kkRow));
     else list.append(el("div", { class: "kk-note", id: "kk-empty", text: "지켜볼 대화방을 골라 주세요" }));
   }
-  clear(kkRooms).append(...[asPinnedRow("kakao"), pick, list].filter(Boolean));
+  clear(kkRooms).append(...[KK.pc ? null : asPinnedRow("kakao"), pick, list].filter(Boolean));
   kkRooms.scrollTop = top;
 }
 
@@ -470,6 +471,7 @@ function kkBump(chatId) {
 }
 // The event stream (99-boot.js): ids only, so the bodies are fetched here.
 function kkLive(e) {
+  if (KK.pc) return;   // the stream is this computer's; a peer's room is refreshed by the timer
   if (e.kind === "kakao_rooms") { if (KK.vis) kkLoadRooms(); kkIntgSoon(); return; }
   kkIntgSoon();
   if (!KK.vis) return;
@@ -490,7 +492,12 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 /* ---- the 모니터링 item ---- */
 // renderMonitoring (30-monitoring.js): `item` = the kakao item is the selected one; `shown` = its pane is on screen (not behind the phone's list).
-function kkMode(item, shown) {
+function kkMode(item, shown, pc) {
+  if (KK.vis && (KK.pc ? KK.pc.url : "") !== (pc ? pc.url : "")) {   // the other computer's rooms: start from an empty pane
+    Object.assign(KK, { vis: false, open: "", rooms: [], loaded: false, failed: false, error: "", roomErr: "", room: null, msgs: [], drafts: [], sends: [], pick: null, rseq: KK.rseq + 1 });
+    KK.seq++; clearInterval(KK.timer);
+  }
+  KK.pc = item ? pc || null : null;
   $("#v-monitoring").classList.toggle("kk-on", item);
   kkPane.hidden = !item;
   if (shown && !KK.vis) {

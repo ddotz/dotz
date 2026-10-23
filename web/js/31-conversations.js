@@ -267,7 +267,7 @@ function convPaintHead() {
   const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
-  clear(convHead).append(...[convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), monCtx ? pqLabel() : null), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null].filter(Boolean));
+  clear(convHead).append(...[convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), monCtx ? pqLabel({ pc: pqPc(target) }) : null), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null].filter(Boolean));
 }
 // A session's actions (stop, restart, model) are the home card's ⋯ menu (08-home.js homeMenu), here in the conversation's header: in the head on wide screens, in the app bar on a phone.
 const cvMenuBtn = () => el("button", { class: "ib cvmenu", type: "button", "aria-label": "세션 메뉴", title: "세션 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, target, true) }, icon("more"));

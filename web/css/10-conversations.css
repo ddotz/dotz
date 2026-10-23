@@ -23,9 +23,6 @@
 .cv-n { font: 500 15px/22px var(--font); }
 .cv-p { color: var(--fg-3); font: 400 14px/20px var(--font); }
 .mon-pc { margin-left: 8px; color: var(--fg-3); font: 400 11px/16px var(--font); }
-.pm-reply { display: flex; gap: 8px; align-items: flex-end; padding: 8px 16px; }
-.pm-ta { flex: 1; min-width: 0; resize: none; }
-.pm-back { align-self: flex-start; margin: 8px 16px; }
 .cv-id { margin-left: 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .cv-row.unread .cv-n { font-weight: 700; }
 /* a session under its project: indented, smaller avatar; the group label for sessions started from chat */

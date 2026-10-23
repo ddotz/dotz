@@ -23,6 +23,7 @@ const monItemOf = t => {
     const a = settingsApp(t), m = a.startsWith("w:") ? NM.items.find(x => x.watch === a.slice(2)) : null;
     return m ? `m:${m.name}` : `i:${a}`;
   }
+  if (PQ.of.has(t)) return PQ.of.get(t).key;   // a peer's mail sits under that computer's item
   const it = INTG.items.find(x => (x.conv || []).some(p => String(t).startsWith(p)));
   return `i:${it ? it.key : "mail"}`;
 };
@@ -88,7 +89,7 @@ function monItems() {
   intgWatch();
   const mons = ntMons(), shown = new Set(), items = [];
   for (const it of INTG.items) {
-    const notices = (it.notices || []).map(ntById).filter(n => n && monMine(n, it)), mails = [...CONV.keys()].filter(t => (it.conv || []).some(p => t.startsWith(p)));
+    const notices = (it.notices || []).map(ntById).filter(n => n && monMine(n, it)), mails = [...CONV.keys()].filter(t => !PQ.of.has(t) && (it.conv || []).some(p => t.startsWith(p)));
     for (const n of notices) shown.add(n.id);
     const cands = [...notices.map(n => ({ at: monNoticeAt(n), text: monLine(n) })), ...mails.filter(t => CONV.get(t)).map(t => ({ at: CONV.get(t).ts, text: (MAILS.get(t) || {}).subject || CONV.get(t).text }))].sort((a, b) => b.at.localeCompare(a.at));
     const needs = it.needs || { drafts: 0, unread: monUnread(notices) + mails.reduce((c, t) => c + (ts(t).unread | 0), 0), sentToday: 0 };
@@ -110,7 +111,7 @@ function monItems() {
 }
 // The open item: the one picked, else on a wide screen the first (a phone shows its list until one is picked).
 const monSel = items => items.find(i => i.key === MON.sel) || (narrowChat() ? null : items[0] || null);
-const monName = () => { const it = monItems().find(i => i.key === MON.sel); return it && it.key === KK_KEY && KK.open && KK.room ? KK.room.name : it ? it.name : titles.monitoring; };
+const monName = () => { const it = monItems().find(i => i.key === MON.sel); return kkItem(it) && KK.open && KK.room ? KK.room.name : it ? it.name : titles.monitoring; };
 function monState(it) {
   if (it.off) return "연결 안 됨";
   if (it.mon) { const res = it.mon.last_result ? NT_RESULT[it.mon.last_result] : null; return [res && res[0], ntMonRun(it.mon), ntMonNext(it.mon)].filter(Boolean).join(" · "); }
@@ -218,13 +219,13 @@ function monItemNode(n) {
   if (raw) { const d = rcRawFold(raw); d.addEventListener("click", e => e.stopPropagation()); node.append(d); }
   return node;
 }
-  if (ntIsDec(n)) return monDecisionNode(n);
+  if (ntIsDec(n) && !n.pc) return monDecisionNode(n);   // a peer's question is answered on that computer: here it is a plain report
   const node = monCard(ntPlain(names[0] || n.title) || "알림", n.updated || n.ts, monStrip(String(n.text || ""), [...names, ntPlain(n.title)]), n.tone);
   const card = n.item ? monItemNode(n) : null;
   if (card) { card.dataset.nid = n.id; return card; }
   if (!node) return null;
   node.dataset.nid = n.id;
-  if (ntNeeds(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
+  if (ntNeeds(n) && !n.pc) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
   return node;
 }
 // A mail's short text for its row: the poster's summary, else the first lines of its body (hub/mail.ts keeps both), else the same taken from
@@ -249,7 +250,7 @@ const mailBrief = (m, t) => {
 };
 const mailSize = b => b >= 1048576 ? `${(b / 1048576).toFixed(1)}MB` : b >= 1024 ? `${Math.round(b / 1024)}KB` : b > 0 ? `${b}B` : "";
 // The authenticated hub route of one attached file (hub/mail.ts mailFileRoute); dl=1 answers with Content-Disposition: attachment.
-const mailFileUrl = (key, i, dl) => `/api/mail/${enc(key)}/files/${i}${dl ? "?dl=1" : ""}`;
+const mailFileUrl = (key, i, dl) => pqLink(`/api/mail/${enc(key)}/files/${i}${dl ? "?dl=1" : ""}`);
 // The attachments of a mail in its original view: one row per file (name, size); the row itself is the download link, so it also saves
 // in an installed app / on a phone, where a new tab would not.
 function mailFilesNode(key, files) {
@@ -295,12 +296,11 @@ function monRunNode(it) {
 // An item reads like a chat: its reports and mails oldest to newest, a monitor's latest run last. The 감시 소식 feed is a list, not a chat: newest on top.
 const monFeed = it => it.key === "notice";
 function monTimeline(it) {
-  const pm = it.pc ? pqTimeline(it) : null;
-  if (pm) return pm;
+  if (it.off) return [el("div", { class: "empty", text: "연결 안 됨" })];
   const names = it.mon ? monNames(it.mon) : [];
-  const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => n.pc ? pqNoticeNode(n) : monNoticeNode(n, names) })), ...(it.convs || []).map(c => ({ at: Date.parse((c.last || {}).ts) || 0, node: () => pqConvNode(it, c) })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
+  const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => { const x = monNoticeNode(n, names), src = x && n.pc && monFeed(it) && x.querySelector(".rc-src"); if (src) src.after(el("span", { class: "tag", text: n.pc.name })); return x; } })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
-  const pin = it.app ? asPinnedRow(it.key.slice(2)) : it.mon && it.mon.kind === "watch" && it.mon.watch && !it.pc ? asPinnedRow(`w:${it.mon.watch}`) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
+  const pin = it.app && !it.pc ? asPinnedRow(it.key.slice(2)) : it.mon && it.mon.kind === "watch" && it.mon.watch && !it.pc ? asPinnedRow(`w:${it.mon.watch}`) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
   if (pin) nodes.unshift(pin);
   if (nodes.length) return nodes;
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
@@ -336,9 +336,9 @@ function renderMonitoring() {
     clear(side).append(...rows.map(convRow));
     side.scrollTop = top;
   }
-  const kakao = !!sel && sel.key === KK_KEY;
+  const kakao = kkItem(sel);
   const cm = !kakao && sel ? cmAppOf(sel.key) : "";
-  kkMode(kakao, kakao && !(narrowChat() && MON.list));
+  kkMode(kakao, kakao && !(narrowChat() && MON.list), kakao ? sel.pc : null);
   cmMode(cm, !!cm && !(narrowChat() && MON.list));
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one

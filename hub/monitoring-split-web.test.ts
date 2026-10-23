@@ -32,7 +32,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 	const drawn: N[] = [], went: string[][] = [];
 	const env: Record<string, unknown> = {
 		// No other computers here (web/js/34-peer-monitoring.js): the local list as is.
-		pqMerge: (items: N[]) => items, pqTimeline: () => null, pqLabel: () => null, pqSig: () => 0, pqOpen: () => {},
+		pqMerge: (items: N[]) => items, pqLabel: () => null, pqSig: () => 0, pqOpen: () => {}, pqLink: (p: string) => p, kkItem: () => false, PQ: { of: new Map() },
 		intgWatch: () => {}, INTG: { items: integrations }, NT: { items: notices, loaded: true }, CONV: new Map(), MAILS: new Map(),
 		ntById: (id: string) => notices.find(n => n.id === id), ntAt: (n: N) => Date.parse(String(n.updated || n.ts)), ntPlain: (s: unknown) => String(s ?? ""),
 		KST: {}, kstDay: (t: string) => String(t).slice(0, 10), kstHM: (t: string) => String(t).slice(11, 16), dayLabel: () => "어제", ntTime: (t: string) => String(t).slice(11, 16),

@@ -25,7 +25,17 @@ gateway that owns the item. That gateway executes it and records it.
 - `GET /api/peer/monitoring` returns one snapshot: `{ name, rev, monitors, notices, integrations, conversations }`. The
   lists use the same shapes as `/api/monitors`, `/api/notices`, `/api/integrations` and the `mail:` / `kakao:`
   rows of `/api/conversations`. It sends an `ETag` (`rev`) and answers `304` to `If-None-Match`.
-- Detail reads go through the existing read-only GETs (`/api/history`, `/api/mail/<k>/body`, `/api/kakao/...`).
+- Detail reads go through the existing read-only GETs (`/api/history`, `/api/mail/<k>/body`, `/api/mail/<k>/files/<n>`, `/api/kakao/...`).
+
+## One rendering path (web)
+
+- A peer item has the same data shape as a local one, so it goes through the same renderers: the mail row (`monConvNode`), the notice card,
+  the chat view with the mail original and files, and the Kakao pane (rooms, bubbles, composer). Only the machine label is peer-only.
+- `pqMail` (`web/js/34-peer-monitoring.js`) puts a peer's mail into `MAILS`, `CONV` and the unread count. `api()` runs each request through
+  `pqRoute`: a read of a peer's mail, history or Kakao room becomes `/api/peer/proxy?pc=..&p=<path>`; `pqLink(path)` does the same for `fetch`
+  and download links. A POST that belongs to a peer (`/api/message` for its mail, `/api/read`, `/api/kakao/...` send, read, draft, draft send and drop)
+  becomes `/api/peer/act`. A new route that a peer item uses needs a line in `pqFor` (read) or `pqAct` (action) and in `PEER_GET` (`hub/peer-auth.ts`).
+- A mail that this computer also holds stays a local row.
 
 ## Local hub side (the browser keeps one origin and one auth)
 
@@ -40,7 +50,7 @@ gateway that owns the item. That gateway executes it and records it.
 
 - `POST /api/peer/act {action, args, from}` on the owning gateway. The actions are `message` (a reply or a confirmed draft
   in a conversation), `answer` (a decision), `read` (mark read), `watch` (pause, resume or run a watch) and `kakao`
-  (`op` send, read, draft-send or draft-drop on the owner's `/api/kakao/...` routes). The owner runs
+  (`op` send, read, draft, draft-send or draft-drop on the owner's `/api/kakao/...` routes). The owner runs
   the same handler as its own web app. It records the event with `via: <from machine name>`. Its own web and history show
   the action the same as a local action, with a small 'from <machine>' note. The other gateway keeps no copy beyond its cache.
 

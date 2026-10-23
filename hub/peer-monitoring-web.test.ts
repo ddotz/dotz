@@ -12,13 +12,20 @@ const localNote = { id: "ln1", kind: "watch", tone: "ok", title: "orphan report"
 const peerMon = { name: "peer-backup", watch: "peer-backup", kind: "watch", last_run: at(30), last_result: "changed", next_run: at(50), every: "1시간" };
 const peerNote = { id: "pn1", kind: "watch", tone: "changed", title: "peer backup", text: "백업이 바뀌었어요", ts: at(30), read: false };
 const peerFeed = { id: "pn2", kind: "watch", tone: "ok", title: "peer orphan", text: "피어 소식이에요", ts: at(31), read: false };
+// One mail as both computers hold it: the native row and the peer's row must come out the same.
+const MAIL = { subject: "회의 일정", from: "민수 <m@example.com>", source: "mail", at: at(20), summary: "내일 3시 회의예요", attachments: [{ name: "안건.pdf", size: 2048 }], html: true, suggest: { kind: "reply-draft", label: "답장 초안", ref: "d1", state: "draft" } };
+const LAST = { ts: at(20), text: "회의 일정", from: "bot" };
+const MAIL_APP = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], unread: 1, notices: [], needs: { drafts: 1, unread: 1, sentToday: 0 } };
+const KAKAO_APP = { key: "kakao", label: "카카오톡", icon: "chat", kind: "app", conv: ["kakao:"], unread: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } };
+const hits: string[] = [];
+const acts: { action: string; args: Record<string, unknown> }[] = [];
 const peers = [
 	{
 		name: "맥미니", url: MINI, online: true, stale: false,
 		items: {
 			name: "맥미니", rev: "r1", monitors: [peerMon], notices: [peerNote, peerFeed],
-			integrations: [{ key: "mail", label: "메일", icon: "mail", conv: ["mail:"], unread: 1, notices: [] }],
-			conversations: [{ target: "mail:abc", unread: 1, mail: { subject: "회의 일정", from: "민수 <m@example.com>", at: at(20) }, last: { ts: at(20), text: "회의 일정" } }],
+			integrations: [MAIL_APP, KAKAO_APP],
+			conversations: [{ target: "mail:abc", unread: 1, read: null, mail: MAIL, last: LAST }],
 		},
 	},
 	{ name: "서재", url: "http://study.test", online: false, stale: true, items: { name: "서재", rev: "r2", monitors: [{ name: "study-disk", kind: "watch", last_run: at(2), last_result: "ok" }], notices: [], integrations: [], conversations: [] } },
@@ -26,6 +33,24 @@ const peers = [
 ];
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
+// What the Mac mini answers behind /api/peer/proxy: the same shapes its own web app reads.
+async function proxy(req: Request, url: URL): Promise<Response> {
+	const p = url.searchParams.get("p") ?? "";
+	if (req.method === "POST") {
+		acts.push((await req.json()) as (typeof acts)[number]);
+		return json({ id: "s1", state: "sending" });
+	}
+	hits.push(p);
+	if (p.startsWith("/api/history")) return json({ events: [{ ts: at(20), kind: "mail", subject: MAIL.subject, from: MAIL.from, mail: "abc", conv: "mail:abc", html: true, attachments: MAIL.attachments, text: "민수 · 회의 일정\n\n내일 3시 회의예요" }] });
+	if (p.startsWith("/api/mail/abc/body")) return new Response("<p>본문 <b>굵게</b> 입니다</p>", { headers: { "content-type": "text/html" } });
+	if (p === "/api/kakao/rooms") return json({ on: true, rooms: [{ chatId: "c1", name: "가족", kind: "group", watched: true, autoDraft: false, unread: 0, lastAt: Date.parse(at(25)) }] });
+	if (p.startsWith("/api/kakao/chat/c1")) {
+		return json({ room: { chatId: "c1", name: "가족", kind: "group", group: true }, read: null, drafts: [], sends: [], kakaoUnread: 0, messages: [
+			{ logId: "100", sentAt: Date.parse(at(24)), fromMe: false, sender: "엄마", authorId: "a1", type: 1, text: "저녁 뭐 먹을래?" },
+			{ logId: "101", sentAt: Date.parse(at(25)), fromMe: true, type: 1, text: "김치찌개" }] });
+	}
+	return json({});
+}
 const server = Bun.serve({
 	port: 0,
 	hostname: "127.0.0.1",
@@ -41,12 +66,10 @@ const server = Bun.serve({
 		if (url.pathname === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
 		if (url.pathname === "/api/monitors") return json({ items: [localMon] });
 		if (url.pathname === "/api/notices") return json({ unread: 1, items: [localNote] });
-		if (url.pathname === "/api/integrations" || url.pathname === "/api/conversations") return json({ items: [] });
+		if (url.pathname === "/api/integrations") return json({ items: [MAIL_APP] });
+		if (url.pathname === "/api/conversations") return json({ items: [{ target: "mail:loc", unread: 1, read: null, mail: MAIL, last: LAST }] });
 		if (url.pathname === "/api/monitoring/peers") return json(peers);
-		if (url.pathname === "/api/peer/proxy") {
-			if (req.method === "POST") return json({ error: "peering is off" }, 503);
-			return json({ events: [{ ts: at(20), kind: "mail", text: "내일 3시에 만나요", from: "민수" }] });
-		}
+		if (url.pathname === "/api/peer/proxy") return proxy(req, url);
 		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
@@ -103,19 +126,41 @@ describe("merged 모니터링", () => {
 		expect(await text(v, `$("#mon-head .mon-pc").textContent`)).toBe("맥북");
 	});
 
-	test("a peer conversation reads through the proxy and a reply the peer refuses shows a toast", async () => {
+	test("a peer mail row is the native mail row, and its original opens with HTML and files through the proxy", async () => {
 		const v = await boot(1280, 800);
-		const key = `p:${MINI}|i:mail`;
-		await v.evaluate(`(go("monitoring", ${JSON.stringify(key)}), 0)`);
-		await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-tl .rc .btn")`);
-		expect(await text(v, `$("#mon-head .mon-pc").textContent`)).toBe("맥미니");
-		await v.evaluate(`($("#mon-tl .rc .btn").click(), 0)`);
-		await waitFor(v, `$("#mon-tl .pm-msg")`);
-		expect(await text(v, `$("#mon-tl .pm-msg").textContent`)).toContain("내일 3시에 만나요");
-		await v.evaluate(`($("#mon-tl .pm-ta").value = "네, 갈게요", $("#mon-tl .pm-ta").dispatchEvent(new Event("input")), $("#mon-tl .pm-reply .btn").click(), 0)`);
-		await waitFor(v, `$(".snack")`);
-		expect(await text(v, `$(".snack").textContent`)).toBe("이 컴퓨터에서는 읽기만 돼요");
+		await waitFor(v, `CONV.has("mail:loc") && INTG.items.length`);
+		await v.evaluate(`(go("monitoring", "i:mail"), 0)`);
+		await waitFor(v, `$("#mon-tl .mr")`);
+		const local = await text(v, `$("#mon-tl .mr").outerHTML`);
+		expect(local).toContain("mr-clip");
+		expect(local).toContain("mr-sum");
+		expect(local).toContain("답장 초안 있음");
+		await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|i:mail`)}), 0)`);
+		await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-head .mon-pc").textContent === "맥미니" && $("#mon-tl .mr")`);
+		expect(await text(v, `$("#mon-tl .mr").outerHTML`)).toBe(local);
+		await v.evaluate(`($("#mon-tl .mr").click(), 0)`);
+		await waitFor(v, `$(".mr-file")`);
+		expect(await text(v, `$(".mr-fname").textContent`)).toBe("안건.pdf");
+		expect(await text(v, `$(".mr-file").getAttribute("href")`)).toContain("/api/peer/proxy?pc=");
+		expect(await text(v, `decodeURIComponent($(".mr-file").getAttribute("href"))`)).toContain("/api/mail/abc/files/0?dl=1");
+		await waitFor(v, `$("#tl iframe.mb-frame") && $("#tl iframe.mb-frame").srcdoc.includes("굵게")`);
+		expect(hits.some(h => h.startsWith("/api/mail/abc/body"))).toBe(true);
+		expect(hits.some(h => h.startsWith("/api/history?target=mail%3Aabc"))).toBe(true);
+	}, 20_000);
+
+	test("a peer KakaoTalk room opens in the bubble view with the composer, and a send goes to /api/peer/act", async () => {
+		const v = await boot(1280, 800);
+		await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|i:kakao`)}), 0)`);
+		await waitFor(v, `$("#kk-rooms .kk-row")`);
+		await v.evaluate(`($("#kk-rooms .kk-row").click(), 0)`);
+		await waitFor(v, `$("#kk-in .kk-m.in .kk-bub") && $("#kk-form") && !$("#kk-foot").hidden`);
+		expect(await text(v, `$("#kk-in .kk-m.in .kk-bub").textContent`)).toBe("저녁 뭐 먹을래?");
+		expect(await text(v, `$("#kk-in .kk-m.me .kk-bub").textContent`)).toBe("김치찌개");
+		await v.evaluate(`(kkTa.value = "좋아요", kkSend(), 0)`);
+		await waitFor(v, `$("#kk-in .kk-m.pend")`);
+		expect(acts.filter(a => a.args.op === "send")).toEqual([{ action: "kakao", args: { op: "send", chatId: "c1", text: "좋아요" } }]);
 	});
+
 });
 
 for (const [name, w, h] of [["390", 390, 844], ["desktop", 1280, 800]] as const) {
