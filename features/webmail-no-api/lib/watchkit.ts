@@ -3,7 +3,7 @@
 // there is none, so an idle inbox wakes no model and spends no tokens. All I/O is injected (ctx.fetch, ctx.cookieHeader,
 // recover), so the test suite drives the whole flow against a fake mail server with no browser and no network.
 import { keepalive } from "./session.ts";
-import { mapMails, type Mail } from "./adapter.ts";
+import { mapMails, type Mail, type PostedFile } from "./adapter.ts";
 import { type SiteSpec } from "./spec.ts";
 import { type Ctx, type SiteConfig } from "./config.ts";
 import { type Gateway } from "./gateway.ts";
@@ -91,11 +91,12 @@ export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, sta
 // and its web conversation `mail:<site>-<id>` and gives the orchestrator one turn for it, so a web reply there is gated like a
 // Discord thread message. A mail the gateway did not take (gateway off, or one without /api/mail) keeps its stdout line, which
 // wakes the orchestrator the old way. Returns the lines still to print.
-export async function postToGateway(gw: Gateway, site: string, res: Pick<PollResult, "lines" | "mails">, log: (s: string) => void): Promise<string[]> {
+export async function postToGateway(gw: Gateway, site: string, res: Pick<PollResult, "lines" | "mails">, log: (s: string) => void, describe?: (m: Mail) => Promise<{ body?: string; attachments?: PostedFile[] }>): Promise<string[]> {
 	const posted = new Set<string>();
 	for (const m of res.mails) {
 		try {
-			await gw("POST", "/api/mail", { source: site, id: m.id, from: oneLine(m.from, 300), subject: oneLine(m.subject, 300) || "(제목 없음)", wake: true });
+			const more = describe ? await describe(m).catch((error) => (log(`watch ${site}: mail ${m.id} body and files not read (${(error as Error).message})`), {})) : {};
+			await gw("POST", "/api/mail", { source: site, id: m.id, from: oneLine(m.from, 300), subject: oneLine(m.subject, 300) || "(제목 없음)", ...more, wake: true });
 			posted.add(m.id);
 		} catch (error) {
 			log(`watch ${site}: mail ${m.id} not posted to the gateway, waking by line (${(error as Error).message})`);
