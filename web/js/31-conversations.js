@@ -84,7 +84,7 @@ function convOnRead(e) {
 
 /* ---- read position of the open conversation ---- */
 // Which conversation is on screen right now, and what was already read when it was opened: the "새 메시지" divider goes before the
-// first unread message of that moment and stays until the owner leaves. Opening again after reading shows no divider.
+// first unread message of that moment and stays until the owner leaves. A mail without a divider opens at its top, not at the bottom. Opening again after reading shows no divider.
 function convSync() {
   const key = current === "chat" && !convListing() ? target : "";
   if (key === CV.key) return false;
@@ -130,7 +130,7 @@ function chatOpen() {
     // reloaded onto a new shell (23-installable-app-web.js): the place the owner was at, unless they were at the bottom
     const r = SHELL_RESTORE;
     if (r && r.key === CV.key && !r.stick && r.anchor) { SHELL_RESTORE = null; CV.pinTs = r.anchor.ts; CV.pinOff = r.anchor.off; chatPin("at"); return; }
-    chatPin(CV.divNode ? "div" : "bottom");
+    chatPin(CV.divNode ? "div" : isMailT(CV.key) ? "top" : "bottom");   // a mail reads top-down: the first unread, else the start of the mail
     return;
   }
   if (CV.pin) chatPlace();
@@ -151,7 +151,8 @@ function chatUnpin() { CV.pin = ""; clearTimeout(CV.dwellT); }
 function chatPlace() {
   if (!CV.pin || !timeline.clientHeight) return;   // the view is hidden: the observer places it once it shows
   let want = timeline.scrollHeight;
-  if (CV.pin === "div") {
+  if (CV.pin === "top") want = 0;
+  else if (CV.pin === "div") {
     if (!CV.divNode || !CV.divNode.isConnected) return;
     want = timeline.scrollTop + CV.divNode.getBoundingClientRect().top - timeline.getBoundingClientRect().top - 12;
   } else if (CV.pin === "at") {   // a message found again by its ts (the timeline is redrawn, so no node is held), at its old distance from the top
