@@ -29,6 +29,11 @@ export class InstagramError extends Error {
 export type IgMedia = { id: string; caption?: string; comments_count: number; timestamp: string };
 export type IgComment = { id: string; text: string; username: string; timestamp: string; replies: { username: string; text: string }[] };
 
+type IgFrom = { id?: string; username?: string };
+const UNKNOWN_USER = "알 수 없는 사용자";
+// Some comments (left, restricted or deleted accounts) come without `username`; fall back to `from`, then to a fixed label.
+const authorOf = (c: { username?: string; from?: IgFrom }): string => c.username || c.from?.username || c.from?.id || UNKNOWN_USER;
+
 type GraphError = { error?: { code?: number; message?: string; type?: string } };
 
 function secret(): InstagramSecret {
@@ -68,12 +73,13 @@ export async function mediaWithCounts(ctx: Ctx, limit = 50): Promise<IgMedia[]> 
 }
 
 export async function commentsFor(ctx: Ctx, mediaId: string): Promise<IgComment[]> {
-	const d = await graph<{ data?: { id: string; text?: string; username: string; timestamp: string; replies?: { data?: { username: string; text?: string }[] } }[] }>(
+	type Raw = { username?: string; from?: IgFrom; text?: string };
+	const d = await graph<{ data?: (Raw & { id: string; timestamp: string; replies?: { data?: Raw[] } })[] }>(
 		ctx,
-		`${BASE}/${encodeURIComponent(mediaId)}/comments?${new URLSearchParams({ fields: "id,text,username,timestamp,replies{username,text}", limit: "50" })}`,
+		`${BASE}/${encodeURIComponent(mediaId)}/comments?${new URLSearchParams({ fields: "id,text,username,from{id,username},timestamp,replies{username,from{id,username},text}", limit: "50" })}`,
 		secret().access_token,
 	);
-	return (d.data ?? []).map(c => ({ id: c.id, text: c.text ?? "", username: c.username, timestamp: c.timestamp, replies: (c.replies?.data ?? []).map(r => ({ username: r.username, text: r.text ?? "" })) }));
+	return (d.data ?? []).map(c => ({ id: c.id, text: c.text ?? "", username: authorOf(c), timestamp: c.timestamp, replies: (c.replies?.data ?? []).map(r => ({ username: authorOf(r), text: r.text ?? "" })) }));
 }
 
 export async function reply(ctx: Ctx, commentId: string, text: string): Promise<string> {
