@@ -11,7 +11,10 @@ import { FileError, safeName, serveFile } from "./files.ts";
 export type MailAttachment = { name: string; type: string; size: number; file: string };
 /** What a poster sends: the bytes inline (`data`, base64) or a file it already put in the mail files folder (`path`, absolute or relative to it). */
 export type AttachmentInput = { name: string; type?: string; data?: string; path?: string };
-export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[] };
+// A suggested next action the web shows in the mail's row and conversation slot (only when present): `reply-draft` = a reply draft
+// was offered as a send-approval [ask] whose question ends in "(<ref>)" (features/reply-drafts).
+export type MailSuggest = { kind: "reply-draft"; label: string; ref: string };
+export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; suggest?: MailSuggest };
 export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; thread?: string; wake?: boolean; attachments?: AttachmentInput[] };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean };
 export type MailDeps = {
@@ -71,6 +74,15 @@ try {
 const byKey = new Map(records.map(r => [r.key, r]));
 
 export const mailByKey = (key: string): MailRecord | undefined => byKey.get(key);
+
+// Sets (or clears) the suggested action of a known mail; false when the mail is not recorded.
+export function setMailSuggest(key: string, suggest: MailSuggest | undefined): boolean {
+	const r = byKey.get(key);
+	if (!r) return false;
+	const { suggest: _old, ...rest } = r;
+	recordMail(suggest ? { ...rest, suggest } : rest);
+	return true;
+}
 export const mailByThread = (thread: string): MailRecord | undefined => records.find(r => r.thread === thread);
 export const mailTargets = (): string[] => [...records].sort((a, b) => b.at.localeCompare(a.at)).map(r => mailTarget(r.key));
 
