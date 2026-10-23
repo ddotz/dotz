@@ -137,7 +137,7 @@ async function api(path, method = "GET", body) {
   } else res = await read(await go());
   let data = null;
   try { data = JSON.parse(res.text); } catch {}
-  if (!res.ok) throw Object.assign(new Error(res.status === 503 && path.startsWith("/api/peer/proxy") ? "이 컴퓨터에서는 읽기만 돼요" : (data && data.error) || `HTTP ${res.status}`), { data });
+  if (!res.ok) throw Object.assign(new Error(res.status === 503 && path.startsWith("/api/peer/proxy") ? (data && data.reason) || "이 컴퓨터에서는 읽기만 돼요" : (data && data.error) || `HTTP ${res.status}`), { data });
   return data;
 }
 async function busy(btn, fn) {

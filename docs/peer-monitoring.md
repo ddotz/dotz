@@ -11,6 +11,11 @@ gateway that owns the item. That gateway executes it and records it.
 - Peer auth: `hub/peer-auth.ts`. A peer request must pass two gates. The request comes through `tailscale serve`, so it
   carries `Tailscale-User-Login`. The request also carries the shared token as `x-dotz-peer`. The token is in
   `<data dir>/secrets/peer-token` and is the same value on every gateway. It is never written to config, prompts or logs.
+- Auto pairing: `hub/peer-pair.ts`. No setup is needed between two nodes of one tailscale login. A gateway asks a discovered peer
+  (`POST /api/peer/pair`); the peer issues a token only when the request carries `Tailscale-User-Login` equal to the login it runs as
+  (a tagged node, a different user or a request outside the tailnet is refused with a Korean reason). Tokens are 0600 files in
+  `secrets/peer-pairs/in` (accepted) and `out` (sent). The pairing starts on discovery or the first action and renews itself on a 403.
+  The manual `peer-token` keeps working.
   A request that carries `x-dotz-peer` can reach only the read-only GET list and two POSTs: `/api/peer/act` and
   `/api/peer/lease`.
 - Setup (`setup.ts`) makes the key on the first computer. On another computer, setup asks for that key (or takes
