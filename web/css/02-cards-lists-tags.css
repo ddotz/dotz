@@ -63,14 +63,17 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .li.on { background: var(--active); }
 .li.off, .li.off:hover { background: transparent; cursor: default; }
 .li.off .hd, .li.off .lead { color: var(--fg-3); }
-/* 계정 card rows (web/js/25-settings-accounts.js): order number, the tap area, and the move buttons */
-.li.acc { gap: 4px; padding-right: 8px; }
-.acc-main { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
+/* 계정 card rows (web/js/25-settings-accounts.js): grip, order number, the tap area; a dragged row lifts and the rows it passes shift */
+.li.acc { gap: 4px; padding-left: 6px; padding-right: 8px; }
+.acc-main { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 .acc-no { justify-content: center; min-width: 20px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.acc-mvs { flex: none; display: inline-flex; }
+.acc-grip { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 40px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3); cursor: grab; touch-action: none; }
+.acc-grip::before { content: ""; width: 10px; height: 16px; background: radial-gradient(circle, currentColor 1.4px, transparent 1.7px) 0 0 / 5px 5.34px; }
+.acc-grip:hover { background: var(--card-hover); color: var(--fg-2); }
 .acc-mv { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-2); font-size: 16px; }
 .acc-mv:hover:not(:disabled) { background: var(--card-hover); color: var(--fg); }
-.acc-mv:disabled { opacity: .3; }
+.acc-dragging .li.acc { transition: transform .15s; }
+.acc-dragging .li.acc.drag { position: relative; z-index: 2; transition: none; background: var(--card); box-shadow: 0 6px 20px rgb(0 0 0 / .18); cursor: grabbing; }
 .rt-roles { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .rt-roles .seg { flex: none; flex-wrap: nowrap; }
 .rt-roles .seg button { flex: none; padding: 0 10px; }

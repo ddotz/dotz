@@ -19,6 +19,47 @@ function accTags(a, pin) {
   else if (!(pin ? a.name === pin : a.current)) t.push(["쓸 수 있음", "ok"]);
   return t;
 }
+// Drag a 계정 row to reorder: from its grip at once (after a 4px move), or after a long press on the row (touch; a move before that is a scroll).
+// The row lifts, the rows it passes shift, and the drop calls onDrop(newIndex). The listeners live on the document, so a pointer that leaves the row keeps dragging.
+let accSwallow = false; // the click that follows a drop must not pick the row; the next pointerdown clears it
+function accDrag(ev, row, longPress, onDrop) {
+  if (!row || !ev.isPrimary || (ev.pointerType === "mouse" && ev.button !== 0)) return;
+  const list = row.parentNode, rows = [...list.querySelectorAll(":scope > .li.acc")], from = rows.indexOf(row);
+  const rects = rows.map(r => r.getBoundingClientRect()), h = rects[from].height, y0 = ev.clientY, id = ev.pointerId;
+  let to = from, dragging = false, timer = 0;
+  const shift = (r, dy) => { r.style.transform = dy ? `translateY(${dy}px)` : ""; };
+  const begin = () => { dragging = true; row.classList.add("drag"); list.classList.add("acc-dragging"); };
+  const move = e => {
+    if (e.pointerId !== id) return;
+    const dy = e.clientY - y0;
+    if (!dragging) {
+      if (Math.abs(dy) < (longPress ? 8 : 4) && Math.abs(e.clientX - ev.clientX) < (longPress ? 8 : 4)) return;
+      if (longPress) return end(false);
+      begin();
+    }
+    const c = rects[from].top + h / 2 + dy;
+    to = rects.filter((r, i) => i !== from && r.top + r.height / 2 < c).length;
+    shift(row, dy);
+    rows.forEach((r, i) => { if (i !== from) shift(r, from < to && i > from && i <= to ? -h : from > to && i < from && i >= to ? h : 0); });
+  };
+  const touch = e => { if (dragging) e.preventDefault(); };
+  const key = e => { if (e.key === "Escape") end(false); };
+  function end(drop) {
+    clearTimeout(timer);
+    for (const [t, fn, o] of [["pointermove", move], ["pointerup", up], ["pointercancel", cancel], ["touchmove", touch, { passive: false }], ["keydown", key]]) document.removeEventListener(t, fn, o);
+    if (dragging) { accSwallow = true; document.addEventListener("pointerdown", () => { accSwallow = false; }, { capture: true, once: true }); rows.forEach(r => shift(r, 0)); row.classList.remove("drag"); list.classList.remove("acc-dragging"); }
+    if (dragging && drop && to !== from) onDrop(to);
+  }
+  function up(e) { if (e.pointerId === id) end(true); }
+  function cancel(e) { if (e.pointerId === id) end(false); }
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
+  document.addEventListener("pointercancel", cancel);
+  document.addEventListener("touchmove", touch, { passive: false });
+  document.addEventListener("keydown", key);
+  if (longPress) timer = setTimeout(begin, 450);
+  else ev.preventDefault();
+}
 function accountSection() {
   if (!ACC) return [];
   const dec = ACC.decision, sc = ACC.script, lines = ACC.rules_text || [], pct = n => `${Math.round(n)}%`;
@@ -27,17 +68,27 @@ function accountSection() {
   const pinned = ACC.mode === "pinned", ch = ACC.chosen, pin = pinned && ch ? ch.name : "";
   const setMode = (btn, body, msg) => accMut(btn, () => api("/api/accounts/mode", "PUT", body), msg);
   // the order is the fallback order of 자동 전환: the first usable account by number takes over when the current one is blocked
-  const move = (btn, i, d) => { const names = ACC.accounts.map(x => x.name); [names[i], names[i + d]] = [names[i + d], names[i]]; accMut(btn, () => api("/api/accounts/order", "PUT", { order: names })); };
-  const rows = ACC.accounts.map((a, i, all) => {
+  const reorder = (btn, from, to) => { const names = ACC.accounts.map(x => x.name); names.splice(to, 0, names.splice(from, 1)[0]); return accMut(btn, () => api("/api/accounts/order", "PUT", { order: names })); };
+  const rows = ACC.accounts.map((a, i) => {
     const label = a.label || a.alias || a.name;
     const sub = [a.name !== label ? a.name : "", a.five_hour_left != null ? `5시간 ${pct(a.five_hour_left)} 남음` : "", a.seven_day_left != null ? `주간 ${pct(a.seven_day_left)} 남음` : ""].filter(Boolean).join(" · ");
-    // 고정: tapping a row fixes that account; 자동 전환: tapping it opens its name and details
-    const onclick = ev => pinned ? (a.name !== pin && setMode(ev.currentTarget, { mode: "pinned", account: a.name }, "고정 계정을 바꿨어요")) : accDialog(a);
-    const mv = (d, t, name) => el("button", { class: "acc-mv", type: "button", "aria-label": `${label} ${name}`, disabled: i + d < 0 || i + d >= all.length, onclick: ev => move(ev.currentTarget, i, d), text: t });
-    return el("div", { class: `li acc${pinned && a.name === pin ? " on" : ""}` },
-      el("button", { class: "acc-main", type: "button", ...(pinned ? { role: "radio", "aria-checked": String(a.name === pin) } : {}), onclick },
+    // 고정: tapping a row fixes that account; 자동 전환: tapping it opens its name and details (not the click right after a drag)
+    const onclick = ev => { if (accSwallow) { accSwallow = false; return; } if (pinned) { if (a.name !== pin) setMode(ev.currentTarget, { mode: "pinned", account: a.name }, "고정 계정을 바꿨어요"); } else accDialog(a); };
+    const rowOf = ev => ev.currentTarget.closest(".li.acc");
+    // the grip drags at once; a long press on the row drags too (touch); ArrowUp/ArrowDown on the focused grip moves it one place
+    const grip = el("button", { class: "acc-grip", type: "button", "data-acc": a.name, "aria-label": `${label} 순서 바꾸기. 끌거나 위아래 화살표를 눌러요`, "aria-keyshortcuts": "ArrowUp ArrowDown",
+      onpointerdown: ev => accDrag(ev, rowOf(ev), false, to => reorder(ev.target.closest(".acc-grip"), i, to)),
+      onkeydown: ev => {
+        const to = i + (ev.key === "ArrowUp" ? -1 : ev.key === "ArrowDown" ? 1 : 0);
+        if (to === i || to < 0 || to >= ACC.accounts.length) return;
+        ev.preventDefault();
+        Promise.resolve(reorder(ev.currentTarget, i, to)).then(() => globalThis.document?.querySelector(`.acc-grip[data-acc="${CSS.escape(a.name)}"]`)?.focus());
+      } });
+    return el("div", { class: `li acc${pinned && a.name === pin ? " on" : ""}` }, grip,
+      el("button", { class: "acc-main", type: "button", ...(pinned ? { role: "radio", "aria-checked": String(a.name === pin) } : {}), onclick,
+        onpointerdown: ev => { if (ev.pointerType !== "mouse") accDrag(ev, rowOf(ev), true, to => reorder(ev.target.closest(".acc-main"), i, to)); } },
         el("span", { class: "lead acc-no", text: String(a.order || i + 1) }), tx(label, sub), ...accTags(a, pin).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t }))),
-      pinned ? el("button", { class: "acc-mv", type: "button", "aria-label": `${label} 이름 바꾸기`, onclick: () => accDialog(a) }, icon("chev", "lead")) : el("span", { class: "acc-mvs" }, mv(-1, "↑", "위로"), mv(1, "↓", "아래로")));
+      pinned ? el("button", { class: "acc-mv", type: "button", "aria-label": `${label} 이름 바꾸기`, onclick: () => accDialog(a) }, icon("chev", "lead")) : null);
   });
   const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 풀릴 때까지 멈추고, 다른 계정으로 넘어가지 않아요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가요.";
   // on = 자동 전환, off = 고정 (the account to fix is the row tapped below)
