@@ -20,6 +20,8 @@ function pqFor(path) {
   if (m) return pqPc(`mail:${decodeURIComponent(m[1])}`);
   m = /^\/api\/history\?(?:[^#]*&)?target=([^&]+)/.exec(path);
   if (m) return pqPc(decodeURIComponent(m[1]));
+  m = /^\/api\/watches\/([a-z0-9-]+)\/settings/.exec(path);
+  if (m) return pqPc(`settings:w:${m[1]}`);
   return path.startsWith("/api/kakao/") ? KK.pc : null;
 }
 function pqLink(path) { const pc = pqFor(path); return pc ? pqProxy(pc, path) : path; }
@@ -27,6 +29,10 @@ function pqLink(path) { const pc = pqFor(path); return pc ? pqProxy(pc, path) : 
 function pqAct(path, body) {
   const b = body || {}, k = /^\/api\/kakao\/(chat|drafts)\/([^/]+)\/(send|read|draft|drop)$/.exec(path);
   if (path === "/api/message" && b.mail) { const { mail, lane, project, via, ...rest } = b; return { pc: pqPc(`mail:${mail}`), action: "message", args: { target: `mail:${mail}`, ...rest } }; }
+  // A monitor's conversation and switches go to the computer that owns the watch: the same message and the same settings PATCH, forwarded.
+  const sp = /^\/api\/watches\/([a-z0-9-]+)\/settings$/.exec(path);
+  if (sp && pqPc(`settings:w:${sp[1]}`)) return { pc: pqPc(`settings:w:${sp[1]}`), action: "watch", args: { op: "settings", name: sp[1], values: b.values } };
+  if (path === "/api/message" && b.settings && pqPc(`settings:${b.settings}`)) { const { settings, lane, project, mail, via, ...rest } = b; return { pc: pqPc(`settings:${settings}`), action: "message", args: { target: `settings:${settings}`, ...rest } }; }
   if (path === "/api/read") return { pc: pqPc(b.target), action: "read", args: { target: b.target, ts: b.ts } };
   if (!path.startsWith("/api/kakao/") || !KK.pc) return null;
   const id = k && decodeURIComponent(k[2]);
@@ -63,6 +69,9 @@ const pqSoon = () => { clearTimeout(PQ.t); PQ.t = setTimeout(pqLoad, 1000); };
 const pqOpen = () => { if (Date.now() - PQ.at > 5000) pqLoad(); };
 setInterval(() => { if ((current === "monitoring" || monCtx) && !document.hidden) pqLoad(); }, 60_000);
 
+// The answer to a message sent to a peer's monitor is written on that computer and never reaches this stream: the open conversation re-reads its history through the proxy.
+setInterval(() => { if (isSettingsT(target) && pqPc(target) && !document.hidden) loadTarget(target); }, 4000);
+
 // A peer's mail as the local stores hold a mail (MAILS, CONV, the unread count), so monConvNode and the chat view draw it. A mail this computer has itself stays local.
 function pqMail(c, pc, itemKey) {
   const t = String(c.target);
@@ -97,6 +106,8 @@ function pqMerge(items) {
     for (const m of mons) {
       const notices = sn.filter(n => monHas(m, n)), last = monNewest(notices);
       for (const n of notices) shown.add(n.id);
+      // A peer's watch has the same settings conversation as a local one; it lives on that computer (a watch name this computer has itself stays local).
+      if (m.kind === "watch" && m.watch && !NM.items.some(x => x.watch === m.watch)) PQ.of.set(`settings:w:${m.watch}`, { pc, key: key(`m:${m.name}`), mon: m });
       const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
       plain.push({ key: key(`m:${m.name}`), group: MON_GROUP.plain, name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: 0,
         hint: fresh ? monStrip(monLine(last), monNames(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),

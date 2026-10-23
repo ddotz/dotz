@@ -185,6 +185,28 @@ function asPaint() {
 function asSync() {
   if (isSettingsT(target)) asLoad(settingsApp(target));
   asPaint();
+  asChipPaint();
+}
+
+/* ---- a failing monitor's quick actions: chips that only fill the composer of its conversation (the owner reads and sends) ---- */
+const asMon = app => { const pe = PQ.of.get(`settings:${app}`); return pe ? pe.mon : NM.items.find(x => x.watch === app.slice(2)); };
+const asChipTexts = m => m && m.last_result === "fail" ? [...(m.keeper ? ["다시 로그인해 줘"] : []), "원인 찾아 줘", "일시정지"] : [];
+function asFill(text) { ta.value = text; saveDraft(); autosize(); updateHints(); ta.focus({ preventScroll: true }); }
+function asAsk(app, text) {
+  const t = `settings:${app}`;
+  if (target !== t || current !== "monitoring") go("monitoring", `c:${t}`);
+  asFill(text);
+}
+function asChipPaint() {
+  const app = isSettingsT(target) ? settingsApp(target) : "", texts = app.startsWith("w:") ? asChipTexts(asMon(app)) : [];
+  let row = $("#mon-chips");
+  if (!texts.length) { if (row) row.hidden = true; return; }
+  if (!row) { row = el("div", { class: "tplrow", id: "mon-chips", role: "group", "aria-label": "빠른 지시" }); $("#composer").insertBefore(row, $("#hints")); }
+  row.hidden = false;
+  const sig = JSON.stringify([app, texts]);
+  if (row.dataset.sig === sig) return;
+  row.dataset.sig = sig;
+  clear(row).append(...texts.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asFill(t) }, t)));
 }
 
 /* ---- the pinned row of an app's list ---- */
