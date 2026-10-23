@@ -36,14 +36,133 @@ function kkAvatar(name, cls = "") {
   return n;
 }
 // What a message that is not plain text says (KakaoTalk's type codes). A reply (26) carries its own text.
-const KK_TYPE = { 2: "(사진)", 27: "(사진)", 3: "(동영상)", 4: "(음성 메시지)", 5: "(음성 메시지)", 12: "(이모티콘)", 20: "(이모티콘)", 25: "(이모티콘)", 18: "(파일)", 16: "(파일)" };
+const KK_TYPE = { 2: "(사진)", 27: "(사진)", 3: "(동영상)", 4: "(음성 메시지)", 5: "(음성 메시지)", 12: "(이모티콘)", 20: "(이모티콘)", 25: "(이모티콘)", 18: "(파일)", 16: "(위치)" };
+// The text of a message (the server sends it for text, replies, feed lines and unknown types); else the placeholder of its type.
 function kkBody(m) {
   const type = Number(m.type), text = String(m.text ?? "");
-  if (type === 1 || (type === 26 && text)) return { text, ph: false };
+  if (text) return { text, ph: false };
   return { text: KK_TYPE[type] || "(기타 메시지)", ph: true };
 }
+const kkSys = m => Number(m.type) === 0;
+
+/* ---- photos, videos, voice, files, replies, locations: built from m.media (the server sends no URL; bytes come from /api/kakao/media/...) ---- */
+const KK_GONE = "기간이 지나 볼 수 없어요";
+const kkMediaUrl = (m, i, v) => `/api/kakao/media/${enc(KK.open)}/${enc(m.logId)}?i=${i | 0}&v=${v}`;
+const kkFileUrl = m => `/api/kakao/media/${enc(KK.open)}/${enc(m.logId)}/file`;
+const kkNum = v => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : 0);
+function kkSize(n) {
+  n = kkNum(n);
+  if (!n) return "";
+  return n < 1024 ? `${n}B` : n < 1048576 ? `${Math.round(n / 1024)}KB` : `${(n / 1048576).toFixed(1)}MB`;
+}
+function kkDur(sec) {
+  sec = Math.round(kkNum(sec) / (kkNum(sec) > 3600 * 10 ? 1000 : 1));
+  return sec ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}` : "";
+}
+const kkGoneCard = () => el("div", { class: "kk-bub card gone", role: "status", text: KK_GONE });
+// A lazy image from the media route; when it cannot be fetched (expired, gone) its box says so.
+function kkImg(m, i, v, alt, box) {
+  return el("img", { src: kkMediaUrl(m, i, v), alt, loading: "lazy", decoding: "async", draggable: "false", onerror: ev => {
+    ev.currentTarget.remove();
+    box.classList.add("gone");
+    if (v === "thumb" && box.dataset.k === "video") return;
+    box.append(el("span", { class: "kk-gonet", text: KK_GONE }));
+  } });
+}
+function kkRatio(box, w, h, max) {
+  w = kkNum(w) || 4; h = kkNum(h) || 3;
+  box.style.setProperty("--ar", `${w} / ${h}`);
+  box.style.setProperty("--pw", `${Math.min(kkNum(w) > 20 ? w : max, max)}px`);
+}
+function kkPhotoBtn(m, md, i, alt) {
+  const b = el("button", { class: "kk-photo", type: "button", "data-k": "photo", "aria-label": `${alt} 크게 보기`, onclick: () => kkViewer(m, md, i) });
+  b.append(kkImg(m, i, "thumb", alt, b));
+  return b;
+}
+function kkPhotoNode(m, md) {
+  if (md.expired) return kkGoneCard();
+  const count = Math.max(1, md.count | 0);
+  if (count === 1) {
+    const b = kkPhotoBtn(m, md, 0, "사진");
+    kkRatio(b, md.w, md.h, 240);
+    return el("div", { class: "kk-media" }, b);
+  }
+  const cols = count >= 5 ? 3 : 2, shown = Math.min(count, 6), grid = el("div", { class: `kk-media kk-album c${cols}`, "data-count": String(count) });
+  for (let i = 0; i < shown; i++) {
+    const b = kkPhotoBtn(m, md, i, `사진 ${i + 1}`);
+    if (i === shown - 1 && count > shown) b.append(el("span", { class: "kk-more-n", text: `+${count - shown + 1}` }));
+    grid.append(b);
+  }
+  return grid;
+}
+function kkVideoNode(m, md) {
+  if (md.expired) return kkGoneCard();
+  const b = el("button", { class: "kk-photo kk-video", type: "button", "data-k": "video", "aria-label": "동영상 재생", onclick: () => kkViewer(m, md, 0) });
+  kkRatio(b, md.w, md.h, 240);
+  b.append(kkImg(m, 0, "thumb", "동영상", b), el("span", { class: "kk-play", "aria-hidden": "true" }));
+  if (kkDur(md.d)) b.append(el("span", { class: "kk-dur", text: kkDur(md.d) }));
+  return el("div", { class: "kk-media" }, b);
+}
+function kkVoiceNode(m, md) {
+  if (md.expired) return kkGoneCard();
+  return el("div", { class: "kk-bub card voice" },
+    el("audio", { controls: true, preload: "none", src: kkMediaUrl(m, 0, "full") }),
+    kkDur(md.d) ? el("span", { class: "kk-sub", text: kkDur(md.d) }) : null);
+}
+function kkFileNode(m, md) {
+  const sub = [kkSize(md.size), md.local ? "" : md.expired ? KK_GONE : ""].filter(Boolean).join(" · ");
+  return el("div", { class: `kk-bub card file${md.local ? "" : " off"}` },
+    icon("file", "kk-fi"),
+    el("span", { class: "kk-fb" }, el("span", { class: "kk-fn", title: md.name, text: md.name }), sub ? el("span", { class: "kk-sub", text: sub }) : null),
+    md.local ? el("a", { class: "btn tonal kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: "열기" }) : el("span", { class: "kk-sub kk-nopc", text: "PC에 없음" }));
+}
+function kkReplyNode(m, md) {
+  const { text } = kkBody(m);
+  return el("div", { class: "kk-bub reply" },
+    el("div", { class: "kk-quote" }, md.quoteSender ? el("span", { class: "kk-qn", text: md.quoteSender }) : null, el("span", { class: "kk-qt", text: md.quote })),
+    el("div", { class: "kk-rt", text }));
+}
+function kkLocationNode(md) {
+  const href = `https://map.kakao.com/link/map/${enc(md.label)},${Number(md.lat)},${Number(md.lng)}`;
+  return el("a", { class: "kk-bub card loc", href, target: "_blank", rel: "noopener" }, el("span", { class: "kk-fn", text: `위치: ${md.label}` }), el("span", { class: "kk-sub", text: "지도에서 보기" }));
+}
+function kkMediaNode(m, md) {
+  switch (md.kind) {
+    case "photo": return kkPhotoNode(m, md);
+    case "video": return kkVideoNode(m, md);
+    case "voice": return kkVoiceNode(m, md);
+    case "file": return kkFileNode(m, md);
+    case "emoticon": return el("div", { class: "kk-bub ph", text: md.alt });
+    case "reply": return kkReplyNode(m, md);
+    case "location": return kkLocationNode(md);
+    default: return null;
+  }
+}
+// The full-screen viewer (the lightbox dialog of 15-attachments.js): a photo (an album pages with the arrows) or a video with controls.
+function kkViewer(m, md, start) {
+  const count = md.kind === "photo" ? Math.max(1, md.count | 0) : 1;
+  let i = Math.min(Math.max(start | 0, 0), count - 1);
+  const title = el("span", { class: "lb-n" }), body = el("div", { class: "lb-img kk-vw", tabindex: "-1", autofocus: true, onclick: ev => { if (ev.target === ev.currentTarget) d.close(); } });
+  const prev = el("button", { class: "x", type: "button", "data-k": "prev", "aria-label": "이전 사진", onclick: () => go(i - 1) }, icon("back"));
+  const next = el("button", { class: "x", type: "button", "data-k": "next", "aria-label": "다음 사진", onclick: () => go(i + 1) }, icon("chev"));
+  const d = el("dialog", { class: "lbox kk-vwd", "aria-label": md.kind === "video" ? "동영상 보기" : "사진 보기" },
+    el("div", { class: "lb-in" }, el("div", { class: "lb-bar" }, title, prev, next, el("button", { class: "x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))), body));
+  const gone = ev => ev.currentTarget.replaceWith(el("p", { class: "tv-st", role: "status", text: KK_GONE }));
+  const paint = () => {
+    title.textContent = md.kind === "video" ? "동영상" : count > 1 ? `사진 ${i + 1} / ${count}` : "사진";
+    prev.hidden = i <= 0; next.hidden = i >= count - 1;
+    const src = kkMediaUrl(m, i, "full");
+    clear(body).append(md.kind === "video" ? el("video", { src, controls: true, autoplay: true, playsinline: true, onerror: gone }) : el("img", { src, alt: title.textContent, onerror: gone }));
+  };
+  const go = n => { if (n >= 0 && n < count) { i = n; paint(); } };
+  d.addEventListener("keydown", ev => { if (ev.key === "ArrowLeft") go(i - 1); else if (ev.key === "ArrowRight") go(i + 1); });
+  d.addEventListener("close", () => d.remove());
+  paint();
+  document.body.append(d); d.showModal(); dialogHist(d);
+  return d;
+}
 const kkWho = m => (m.fromMe ? "me" : String(m.authorId ?? m.sender ?? ""));
-const kkSame = (a, b) => kkWho(a) === kkWho(b) && Math.floor(a.sentAt / 60000) === Math.floor(b.sentAt / 60000);
+const kkSame = (a, b) => !kkSys(a) && !kkSys(b) && kkWho(a) === kkWho(b) && Math.floor(a.sentAt / 60000) === Math.floor(b.sentAt / 60000);
 const kkKindLine = r => (r.kind === "group" || r.kind === "multi" ? "단체 대화방" : r.kind === "direct" || r.kind === "dm" ? "1:1 대화" : "");
 const kkRoom = id => KK.rooms.find(r => r.chatId === id) || null;
 // Room search: a case-insensitive substring of the name; a query made only of consonants (ㄱㄴㄷ…) also matches the name's initial consonants.
@@ -201,8 +320,9 @@ function kkPaintChat() {
 const kkDateNode = t => el("div", { class: "kk-date", text: kkDate(t) });
 const kkMarkNode = () => el("div", { class: "kk-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "여기까지 읽었어요" }));
 function kkMsgNode(m, first, last) {
+  if (kkSys(m)) return String(m.text ?? "").trim() ? el("div", { class: "kk-sys", role: "note", "data-log": m.logId, text: String(m.text).trim() }) : null;
   const group = !!(KK.room && KK.room.group), { text, ph } = kkBody(m);
-  const bub = el("div", { class: `kk-bub${ph ? " ph" : ""}`, text });
+  const bub = (m.media && kkMediaNode(m, m.media)) || el("div", { class: `kk-bub${ph ? " ph" : ""}`, text });
   // On the time side of the bubble: KakaoTalk's yellow number (members who have not read it yet) above the time; nothing when 0.
   const n = m.unread | 0, meta = n > 0 || last ? el("span", { class: "kk-meta" }, n > 0 ? el("span", { class: "kk-rd", "aria-label": `아직 안 읽은 사람 ${n}명`, text: String(n) }) : null, last ? el("span", { class: "kk-time", text: kkTime(m.sentAt) }) : null) : null;
   if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, meta, bub));
@@ -236,9 +356,10 @@ function kkTimeline() {
     if (newDay) out.push(kkDateNode(m.sentAt));
     if (mark) out.push(kkMarkNode());
     // Name and avatar once per run of one sender (like KakaoTalk); the time once per same-minute run.
-    const cont = !!prev && !newDay && !mark && kkWho(prev) === kkWho(m);
+    const cont = !!prev && !newDay && !mark && !kkSys(prev) && kkWho(prev) === kkWho(m);
     const nextCont = !!next && kkDay(next.sentAt) === kkDay(m.sentAt) && !(KK.div && next.logId === KK.div) && kkSame(m, next);
-    out.push(kkMsgNode(m, !cont, !nextCont));
+    const node = kkMsgNode(m, !cont, !nextCont);
+    if (node) out.push(node);
     prev = m;
   });
   out.push(...kkPending().map(kkSendNode));

@@ -21,6 +21,28 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
   not read it yet. It comes from `NTChatRoom.watermarkKeys` / `watermarkValues` (binary plists, each an array of int64: member user
   ids and, in the same order, each member's last-read logId). Rule: members whose id is neither the message's author nor the owner
   and whose last-read logId is below the message's logId. `0` = nothing to show (also when the room has no readable watermarks).
+- Photos, files and other non-text messages: a message has `media` only when its type carries something to show; the web never gets
+  a URL, a local path or the raw `NTChatMessage.attachment` JSON. `text` is sent for text (1), replies (26), feed lines (0) and unknown
+  types (e.g. 71); for photo / video / voice / file / emoticon / location types it is `""` and `media` says what to draw:
+  - `{ kind: "photo", w?, h?, count, expired }` types 2 and 27 (album: `count` = number of images; `w`/`h` = the thumbnail size of the first)
+  - `{ kind: "video", w?, h?, d?, expired }` type 3 (`d` = seconds)  - `{ kind: "voice", d?, expired }` types 4 and 5
+  - `{ kind: "file", name, size?, local, expired }` type 18; `local` = the owner downloaded it and it still exists on this computer
+  - `{ kind: "emoticon", alt }` types 12, 20, 25 (`alt` like `(이모티콘) 하트`, no image)
+  - `{ kind: "reply", quote, quoteSender? }` type 26 (`quote` = the replied-to text, clipped to 80 characters; `quoteSender` when that author is
+    among the senders of the same page, `나` for the owner); `text` is the reply itself
+  - `{ kind: "location", label, lat, lng }` type 16 (`label` = address, else title)
+  `expired` = the attachment's `expire` (epoch seconds) is in the past (a file the owner downloaded is never expired).
+- `GET /api/kakao/media/<chatId>/<logId>?i=<index>&v=thumb|full` (default `i=0`, `v=full`; `i` = the album image) -> the bytes of a
+  photo (thumb = the stored thumbnail URL), video (thumb = a stored thumbnail URL when there is one, else 404; full = the video) or
+  voice message. The gateway fetches the URL stored in the database itself with a plain GET: https only, host must end in
+  `.kakaocdn.net`, no cookies or auth headers, redirects followed by hand (at most 3) with the same host check, 25 MB cap (413 when
+  declared larger; a stream that grows past it is cut off), 20 s timeout, nothing cached on disk. The answer keeps the upstream
+  `Content-Type` only when it is `image/*`, `video/*` or `audio/*` (else 502), with `Cache-Control: private, max-age=86400`,
+  `nosniff` and a sandboxing CSP. Errors are `{ error }`: 403 room not watched, 409 integration off, 400 bad ids / index, 404 no such
+  message in that room (or nothing to show), 410 `기간이 지나 볼 수 없어요` (expired, or upstream 403 / 404 / 410), 413 too big,
+  502 the fetch failed or the URL is not an allowed one. This is the only HTTP the integration makes to Kakao hosts.
+- `GET /api/kakao/media/<chatId>/<logId>/file` -> the file of a type 18 message from its `localFilePath` (only when it exists on this
+  computer) as `Content-Disposition: attachment` with an RFC 5987 `filename*`; else 404 `{ error: "이 컴퓨터에 내려받은 파일이 없어요" }`.
 - `GET /api/kakao/chat/<chatId>/reads?from=<logId>` -> `{ counts: { [logId]: number } }` for the room's messages with logId >= `from`
   (oldest first, at most 500), zeros included, no bodies. 403 when the room is not watched, 400 when `from` is not a logId. The client
   calls it with the oldest shown logId to refresh the counters after a `kakao_read` event.

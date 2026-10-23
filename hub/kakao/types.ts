@@ -4,7 +4,8 @@
 //
 // Hard rules carried by every module:
 // - Sending happens only by UI automation of the KakaoTalk app (kmsg, macOS Accessibility). No Kakao message API, no
-//   private protocol, no HTTP to Kakao hosts.
+//   private protocol; sending never uses HTTP. The only HTTP to Kakao hosts is the read-only GET of media URLs (https, *.kakaocdn.net,
+//   no cookies or auth) that are already stored in the database (hub/kakao/media.ts, served by GET /api/kakao/media/...).
 // - KakaoTalk's database is opened read-only. Watch output carries chat ids, log ids and times only; bodies are read on demand.
 // - The KakaoTalk id and password live only in the macOS Keychain; no plaintext copy is kept. They never
 //   appear in argv, logs, prompts or messages.
@@ -89,7 +90,8 @@ export type HubFull = Hub & {
 
 // A room as the reader returns it. `kind` is the classification the draft filter uses.
 export type Room = { chatId: string; name: string; type: number; kind: "direct" | "group" | "self" | "channel" | "open" | "other"; unread: number; lastAt: number; members?: number };
-export type Msg = { logId: string; chatId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean };
+// `attachment` (the JSON text of NTChatMessage.attachment) and `localFilePath` stay on the server: the web gets a safe `media` object only (media.ts).
+export type Msg = { logId: string; chatId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean; attachment?: string; localFilePath?: string };
 
 // Result of one login attempt by UI automation. `confirm` = KakaoTalk waits for a device confirmation or a code on the phone.
 export type LoginStatus = "ok" | "confirm" | "bad_credentials" | "no_credentials" | "no_accessibility" | "not_installed" | "failed";

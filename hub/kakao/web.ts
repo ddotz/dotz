@@ -7,8 +7,9 @@ import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
-import { type KakaoDb, memberLabel, messages, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
+import { type KakaoDb, memberLabel, messageById, messages, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, type DraftModel, estimateTokens, ownSamples, parseDraftReply, type StyleHint, sinceOwnLast } from "./draft.ts";
+import { fetchMedia, mediaOf, mediaTarget, serveLocalFile, showsText } from "./media.ts";
 import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 
@@ -29,6 +30,8 @@ export type WebDeps = {
 	draftModel?: DraftModel;
 	// The reply-drafts tone profile of a room (optional extra for the prompt).
 	draftStyle?: (chatId: string) => StyleHint | undefined;
+	// The fetch behind GET /api/kakao/media/... (read-only GET of kakaocdn.net media URLs from the database). Default: the global fetch.
+	fetch?: typeof fetch;
 };
 
 export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string };
@@ -243,10 +246,15 @@ export function createKakaoWeb(deps: WebDeps) {
 					const list = await messages(await getDb(config!), chatId, limit, config!.userId ?? "", after !== undefined ? { after } : before !== undefined ? { before } : {});
 					const since = now() - SEND_WINDOW_MS;
 					const marks = await watermarks(await getDb(config!), chatId);
+					const names = new Map<string, string>([[String(config!.userId ?? ""), "나"]]);
+					for (const m of list) if (m.sender && !m.fromMe) names.set(m.authorId, m.sender);
 					return json({
 						room: { chatId, name: roomsCache?.names.get(chatId) ?? room.name, kind: room.kind, group: room.kind === "group" },
-						// Only text bodies are shown; the body of a photo or file message is an attachment record, not text.
-						messages: list.map(m => ({ id: messageId(m), collector, logId: m.logId, authorId: m.authorId, sender: m.sender, text: m.type === TEXT_TYPE ? m.text : "", type: m.type, sentAt: sentAtMs(m.sentAt), fromMe: m.fromMe, unread: unreadCount(marks, m.logId, m.authorId, config!.userId ?? "") })),
+						// The body of a photo or file message is an attachment record, not text: it goes out as a safe `media` object (no URL, no local path).
+						messages: list.map(m => {
+							const media = mediaOf(m, now(), names);
+							return { id: messageId(m), collector, logId: m.logId, authorId: m.authorId, sender: m.sender, text: showsText(m.type) ? m.text : "", type: m.type, sentAt: sentAtMs(m.sentAt), fromMe: m.fromMe, unread: unreadCount(marks, m.logId, m.authorId, config!.userId ?? ""), ...(media ? { media } : {}) };
+						}),
 						read: readJsonFile<Record<string, string>>(readsFile, {})[chatId] ?? null,
 						kakaoUnread: room.unread,
 						drafts: (await listDrafts({ paths, runner: deps.runner }))
@@ -317,6 +325,27 @@ export function createKakaoWeb(deps: WebDeps) {
 				return json({ state: "drafting" }, 202);
 			}
 			return undefined;
+		}
+
+		// Media of a message of a watched room: /media/<chatId>/<logId>?i=<index>&v=thumb|full proxies the stored kakaocdn.net URL, /media/<chatId>/<logId>/file serves the downloaded file.
+		if (area === "media" && (parts.length === 5 || (parts.length === 6 && parts[5] === "file")) && method === "GET") {
+			if (!on) return json(OFF, 409);
+			const chatId = decodeURIComponent(parts[3]!), logId = decodeURIComponent(parts[4]!);
+			if (!watched.has(chatId)) return json({ error: "이 대화방은 보고 있지 않아요" }, 403);
+			if (!digits(chatId) || !digits(logId)) return json({ error: "chatId / logId must be numbers" }, 400);
+			let msg;
+			try {
+				msg = await messageById(await getDb(config!), chatId, logId, config!.userId ?? "");
+			} catch {
+				return json({ error: "카톡 데이터를 읽지 못했어요" }, 502);
+			}
+			if (!msg) return json({ error: "그 메시지를 찾지 못했어요" }, 404);
+			if (parts.length === 6) return serveLocalFile(msg);
+			const i = Number(url.searchParams.get("i") ?? 0), v = url.searchParams.get("v") === "thumb" ? "thumb" : "full";
+			if (!Number.isInteger(i) || i < 0 || i > 999) return json({ error: "i must be an index" }, 400);
+			const target = mediaTarget(msg, i, v, now());
+			if (!target.ok) return json({ error: target.error }, target.status);
+			return fetchMedia(target.url, deps.fetch ?? fetch);
 		}
 
 		if (area === "drafts" && parts.length === 5 && method === "POST" && (parts[4] === "send" || parts[4] === "drop")) {

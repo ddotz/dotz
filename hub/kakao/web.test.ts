@@ -34,6 +34,8 @@ function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void) 
 	writeFileSync(paths.config, JSON.stringify(full));
 	const events: Record<string, unknown>[] = [];
 	const state = { failSend: false, changes: 0, leaseRefusal: undefined as string | undefined };
+	const fetched: { url: string; init: RequestInit | undefined }[] = [];
+	const upstream = { reply: (_url: string): Response | Promise<Response> => new Response("no upstream", { status: 500 }) };
 	const model = {
 		calls: [] as { system: string; user: string }[],
 		reply: async (): Promise<ModelReply> => ({ text: JSON.stringify({ action: "draft", body: "내일 좋아", summary: "점심 약속을 잡는 중" }), inputTokens: 1200, outputTokens: 30 }),
@@ -42,16 +44,20 @@ function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void) 
 	const runner: Runner = screen.runner;
 	const calls = screen.sends;
 	const db = sqliteDb(dbPath);
-	const web = createKakaoWeb({ paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, kmsg: "/fake/kmsg", collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()) });
+	const web = createKakaoWeb({ paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, kmsg: "/fake/kmsg", collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()), fetch: (async (input: unknown, init?: RequestInit) => (fetched.push({ url: String(input), init }), upstream.reply(String(input)))) as unknown as typeof fetch });
 	const call = async (method: string, path: string, body?: unknown) => {
 		const url = new URL(`http://local${path}`);
 		const res = await web.route(new Request(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), url, url.pathname.split("/").filter(Boolean));
 		return { status: res!.status, json: (await res!.json()) as any };
 	};
+	const raw = (method: string, path: string) => {
+		const url = new URL(`http://local${path}`);
+		return web.route(new Request(url, { method }), url, url.pathname.split("/").filter(Boolean)) as Promise<Response>;
+	};
 	const draft = (over: Partial<{ chatId: string; text: string; basisLogId: string }> = {}) =>
 		createDraft({ chatId: DIRECT, roomName: "Alex", text: "see you", basisLogId: id(3), ...over }, { paths, runner, now: () => NOW });
 	const config$ = () => JSON.parse(readFileSync(paths.config, "utf8")) as KakaoConfig;
-	return { web, call, events, calls, state, model, draft, config$, close: () => db.close() };
+	return { web, call, raw, fetched, upstream, events, calls, state, model, draft, config$, close: () => db.close() };
 }
 
 describe("rooms", () => {
@@ -541,6 +547,188 @@ describe("sends go through dispatchSend", () => {
 		const sends = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
 		expect(sends.map((s: any) => [s.state, s.reason])).toEqual([["failed", t.state.leaseRefusal], ["failed", t.state.leaseRefusal]]);
 		expect((await storedDrafts())[0]!.status).toBe("pending");
+		t.close();
+	});
+});
+
+describe("media", () => {
+	const FUTURE = Math.floor(NOW / 1000) + 86_400;
+	const PAST = Math.floor(NOW / 1000) - 60;
+	const cdn = (p: string) => `https://talk.kakaocdn.net/${p}`;
+	const att = (o: Record<string, unknown>) => JSON.stringify(o);
+	const at = (n: number) => BASE_TIME + n * 10;
+	const row = (n: number, type: number, attachment: string, extra: { message?: string; localFilePath?: string; chat?: number; author?: number } = {}) => ({ logId: BASE_LOG + BigInt(n), chatId: extra.chat ?? ROOM.direct, authorId: extra.author ?? 2001, message: extra.message ?? "", type, sentAt: at(n), attachment, ...(extra.localFilePath ? { localFilePath: extra.localFilePath } : {}) });
+	const photo = (n: number, over: Record<string, unknown> = {}) => row(n, 2, att({ url: cdn("p/full.jpg"), thumbnailUrl: cdn("p/thumb.jpg"), thumbnailWidth: 320, thumbnailHeight: 240, w: 1600, h: 1200, expire: FUTURE, ...over }));
+	const png = () => new Response("PNGBYTES", { headers: { "Content-Type": "image/png" } });
+
+	test("each message maps to a safe media object; no raw URL, no local path and no attachment JSON reach the web", async () => {
+		const real = join(dir, "내 파일 (1).pdf");
+		writeFileSync(real, "pdf-bytes");
+		const t = setup({}, w => {
+			addMessage(w, photo(20));
+			addMessage(w, row(21, 27, att({ imageUrls: [cdn("a/1.jpg"), cdn("a/2.jpg"), cdn("a/3.jpg")], thumbnailUrls: [cdn("a/t1.jpg"), cdn("a/t2.jpg"), cdn("a/t3.jpg")], thumbnailWidths: [200, 200, 200], thumbnailHeights: [300, 300, 300], expire: FUTURE })));
+			addMessage(w, row(22, 3, att({ url: cdn("v/1.mp4"), w: 640, h: 360, d: 75, expire: PAST })));
+			addMessage(w, row(23, 5, att({ url: cdn("s/1.m4a"), d: 8, expire: FUTURE })));
+			addMessage(w, row(24, 18, att({ name: "내 파일 (1).pdf", size: 2048, url: cdn("f/1"), expire: PAST }), { localFilePath: real }));
+			addMessage(w, row(25, 18, att({ name: "gone.zip", size: 10, url: cdn("f/2"), expire: PAST }), { localFilePath: join(dir, "missing.zip") }));
+			addMessage(w, row(26, 20, att({ name: "x", type: "emoji", path: "p", alt: "하트" })));
+			addMessage(w, row(27, 26, att({ src_message: "점심 뭐 먹을까\n" + "길".repeat(200), src_type: 1, src_userId: 2001, src_logId: 1 }), { message: "나는 국밥", author: OWNER }));
+			addMessage(w, row(28, 16, att({ lat: 37.5, lng: 127.03, a: "서울 강남구", t: "회사" })));
+			addMessage(w, row(29, 71, "", { message: "쇼핑 안내" }));
+			addMessage(w, row(30, 0, "", { message: "Sam님이 들어왔어요" }));
+			addMessage(w, row(31, 99, ""));
+		});
+		const r = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
+		const by = (n: number) => r.json.messages.find((m: any) => m.logId === id(n));
+		expect(by(20)).toMatchObject({ type: 2, text: "", media: { kind: "photo", w: 320, h: 240, count: 1, expired: false } });
+		expect(by(21).media).toEqual({ kind: "photo", w: 200, h: 300, count: 3, expired: false });
+		expect(by(22).media).toEqual({ kind: "video", w: 640, h: 360, d: 75, expired: true });
+		expect(by(23).media).toEqual({ kind: "voice", d: 8, expired: false });
+		expect(by(24).media).toEqual({ kind: "file", name: "내 파일 (1).pdf", size: 2048, local: true, expired: false });
+		expect(by(25).media).toEqual({ kind: "file", name: "gone.zip", size: 10, local: false, expired: true });
+		expect(by(26).media).toEqual({ kind: "emoticon", alt: "(이모티콘) 하트" });
+		expect(by(27)).toMatchObject({ text: "나는 국밥", media: { kind: "reply", quoteSender: "Alex" } });
+		expect([...by(27).media.quote].length).toBeLessThanOrEqual(81);
+		expect(by(27).media.quote.startsWith("점심 뭐 먹을까 ")).toBe(true);
+		expect(by(28).media).toEqual({ kind: "location", label: "서울 강남구", lat: 37.5, lng: 127.03 });
+		expect(by(29)).toMatchObject({ text: "쇼핑 안내" });
+		expect(by(29).media).toBeUndefined();
+		expect(by(30)).toMatchObject({ type: 0, text: "Sam님이 들어왔어요" });
+		expect(by(31)).toMatchObject({ type: 99, text: "" });
+		const body = JSON.stringify(r.json);
+		for (const leak of ["kakaocdn", "https://", "http://", dir, "localFilePath", "attachment", "thumbnailUrl"]) expect(body).not.toContain(leak);
+		t.close();
+	});
+
+	test("the media route fetches the stored URL server-side, without cookies or auth, and streams only image/video/audio back", async () => {
+		const t = setup({}, w => {
+			addMessage(w, photo(20));
+			addMessage(w, row(21, 27, att({ imageUrls: [cdn("a/1.jpg"), cdn("a/2.jpg")], thumbnailUrls: [cdn("a/t1.jpg"), cdn("a/t2.jpg")], expire: FUTURE })));
+			addMessage(w, row(22, 3, att({ url: cdn("v/1.mp4"), expire: FUTURE })));
+			addMessage(w, row(23, 5, att({ url: cdn("s/1.m4a"), expire: FUTURE })));
+		});
+		t.upstream.reply = () => png();
+		const thumb = await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(20)}?v=thumb`);
+		expect(thumb.status).toBe(200);
+		expect(thumb.headers.get("content-type")).toBe("image/png");
+		expect(thumb.headers.get("cache-control")).toBe("private, max-age=86400");
+		expect(await thumb.text()).toBe("PNGBYTES");
+		expect(t.fetched[0]!.url).toBe(cdn("p/thumb.jpg"));
+		const sent = t.fetched[0]!.init!;
+		expect(sent.method).toBe("GET");
+		expect(sent.redirect).toBe("manual");
+		expect(sent.credentials).toBe("omit");
+		expect(sent.headers).toEqual({});
+		expect(sent.signal).toBeInstanceOf(AbortSignal);
+
+		await (await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(20)}`)).arrayBuffer();
+		expect(t.fetched[1]!.url).toBe(cdn("p/full.jpg"));
+		await (await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(21)}?i=1&v=thumb`)).arrayBuffer();
+		await (await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(21)}?i=1&v=full`)).arrayBuffer();
+		expect(t.fetched.slice(2).map(f => f.url)).toEqual([cdn("a/t2.jpg"), cdn("a/2.jpg")]);
+		t.upstream.reply = () => new Response("MOVIE", { headers: { "Content-Type": "video/mp4" } });
+		expect((await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(22)}`)).headers.get("content-type")).toBe("video/mp4");
+		t.upstream.reply = () => new Response("VOICE", { headers: { "Content-Type": "audio/mp4" } });
+		expect(await (await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(23)}`)).text()).toBe("VOICE");
+
+		t.upstream.reply = () => new Response("<script>alert(1)</script>", { headers: { "Content-Type": "text/html" } });
+		const html = await t.call("GET", `/api/kakao/media/${DIRECT}/${id(20)}`);
+		expect(html.status).toBe(502);
+		t.close();
+	});
+
+	test("only https URLs on *.kakaocdn.net are fetched: other hosts, http, look-alike hosts and redirects off the host are refused", async () => {
+		const bad = ["https://evil.example/x.jpg", "http://talk.kakaocdn.net/x.jpg", "https://kakaocdn.net.evil.example/x.jpg", "https://evilkakaocdn.net/x.jpg", "https://talk.kakaocdn.net@evil.example/x.jpg", "https://kakaocdn.net/x.jpg", "ftp://talk.kakaocdn.net/x.jpg", "not a url"];
+		const t = setup({}, w => {
+			bad.forEach((u, i) => addMessage(w, row(40 + i, 2, att({ url: u, thumbnailUrl: u, expire: FUTURE }))));
+			addMessage(w, photo(60));
+		});
+		t.upstream.reply = () => png();
+		for (let i = 0; i < bad.length; i++) {
+			const r = await t.call("GET", `/api/kakao/media/${DIRECT}/${id(40 + i)}`);
+			expect([r.status, bad[i]]).toEqual([502, bad[i]]);
+		}
+		expect(t.fetched).toEqual([]);
+		t.upstream.reply = () => new Response(null, { status: 302, headers: { Location: "https://evil.example/steal.jpg" } });
+		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(60)}`)).status).toBe(502);
+		expect(t.fetched.map(f => f.url)).toEqual([cdn("p/full.jpg")]);
+		t.fetched.length = 0;
+		let hops = 0;
+		t.upstream.reply = () => (hops++ === 0 ? new Response(null, { status: 302, headers: { Location: "https://img.kakaocdn.net/other.png" } }) : png());
+		expect((await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(60)}`)).status).toBe(200);
+		expect(t.fetched.map(f => f.url)).toEqual([cdn("p/full.jpg"), "https://img.kakaocdn.net/other.png"]);
+		t.close();
+	});
+
+	test("an expired message or an upstream 403 / 404 answers 410; a fetch error is a plain 502", async () => {
+		const t = setup({}, w => {
+			addMessage(w, photo(20, { expire: PAST }));
+			addMessage(w, photo(21));
+		});
+		t.upstream.reply = () => png();
+		const old = await t.call("GET", `/api/kakao/media/${DIRECT}/${id(20)}`);
+		expect(old).toEqual({ status: 410, json: { error: "기간이 지나 볼 수 없어요" } });
+		expect(t.fetched).toEqual([]);
+		for (const status of [403, 404]) {
+			t.upstream.reply = () => new Response("no", { status });
+			expect(await t.call("GET", `/api/kakao/media/${DIRECT}/${id(21)}`)).toEqual({ status: 410, json: { error: "기간이 지나 볼 수 없어요" } });
+		}
+		t.upstream.reply = () => Promise.reject(new Error("offline"));
+		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(21)}`)).status).toBe(502);
+		t.close();
+	});
+
+	test("the 25 MB cap: a declared size over it is refused (413), an undeclared stream that grows past it is cut off", async () => {
+		const t = setup({}, w => addMessage(w, photo(20)));
+		t.upstream.reply = () => new Response("x", { headers: { "Content-Type": "image/jpeg", "Content-Length": String(26 * 1024 * 1024) } });
+		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(20)}`)).status).toBe(413);
+		const chunk = new Uint8Array(1024 * 1024);
+		let sent = 0;
+		t.upstream.reply = () =>
+			new Response(new ReadableStream<Uint8Array>({ pull(c) { if (sent++ < 30) c.enqueue(chunk); else c.close(); } }), { headers: { "Content-Type": "image/jpeg" } });
+		const res = await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(20)}`);
+		expect(res.status).toBe(200);
+		await expect(res.arrayBuffer()).rejects.toThrow();
+		expect(sent).toBeLessThan(30);
+		t.close();
+	});
+
+	test("the file route serves the downloaded file as an attachment (RFC 5987 name) and 404s when it is not on this computer", async () => {
+		const real = join(dir, "dl.bin");
+		writeFileSync(real, "file-bytes");
+		const t = setup({}, w => {
+			addMessage(w, row(20, 18, att({ name: "보고서 (최종).pdf", size: 10, url: cdn("f/1"), expire: PAST }), { localFilePath: real }));
+			addMessage(w, row(21, 18, att({ name: "none.zip", url: cdn("f/2") }), { localFilePath: join(dir, "missing.zip") }));
+			addMessage(w, row(22, 18, att({ name: "never.zip", url: cdn("f/3") })));
+			addMessage(w, photo(23));
+		});
+		const ok = await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(20)}/file`);
+		expect(ok.status).toBe(200);
+		const cd = ok.headers.get("content-disposition")!;
+		expect(cd.startsWith("attachment;")).toBe(true);
+		expect(cd).toContain("filename*=UTF-8''" + encodeURIComponent("보고서 ").concat("%28%EC%B5%9C%EC%A2%85%29.pdf"));
+		expect(await ok.text()).toBe("file-bytes");
+		for (const n of [21, 22, 23]) expect(await t.call("GET", `/api/kakao/media/${DIRECT}/${id(n)}/file`)).toEqual({ status: 404, json: { error: "이 컴퓨터에 내려받은 파일이 없어요" } });
+		expect(t.fetched).toEqual([]);
+		t.close();
+	});
+
+	test("unwatched rooms (403), a message of another room or a missing one (404), bad parameters (400) and the integration off (409) are refused", async () => {
+		const t = setup({ watch_chats: [DIRECT] }, w => {
+			addMessage(w, photo(20));
+			addMessage(w, row(21, 2, att({ url: cdn("g/1.jpg"), expire: FUTURE }), { chat: ROOM.group, author: 2002 }));
+		});
+		t.upstream.reply = () => png();
+		expect((await t.call("GET", `/api/kakao/media/${GROUP}/${id(21)}`)).status).toBe(403);
+		expect((await t.call("GET", `/api/kakao/media/${GROUP}/${id(21)}/file`)).status).toBe(403);
+		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(21)}`)).status).toBe(404);
+		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(99)}`)).status).toBe(404);
+		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/abc`)).status).toBe(400);
+		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(20)}?i=-1`)).status).toBe(400);
+		expect((await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(20)}?i=5`)).status).toBe(200);
+		expect(t.fetched.length).toBe(1);
+		writeFileSync(paths.config, JSON.stringify({ enabled: false }));
+		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(20)}`)).status).toBe(409);
 		t.close();
 	});
 });

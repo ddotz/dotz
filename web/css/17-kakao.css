@@ -90,6 +90,50 @@
 .kk-m.pend.failed .kk-st { color: var(--err); }
 .kk-m.pend.failed .kk-bub { box-shadow: 0 0 0 1.5px var(--err); }
 
+/* media (30-kakao.js kkMediaNode): photos and videos sit in the timeline without a colored bubble; files, voice and locations are white cards */
+.kk-chat { --kk-maxw: 240px; }
+@media (max-width: 639px) { .kk-chat { --kk-maxw: 200px; } }
+.kk-media { min-width: 0; max-width: 100%; }
+.kk-photo { position: relative; display: block; padding: 0; border: 0; border-radius: 12px; overflow: hidden; background: var(--kk-chip); cursor: pointer; }
+.kk-media > .kk-photo { width: min(var(--pw, var(--kk-maxw)), var(--kk-maxw)); aspect-ratio: var(--ar, 4 / 3); max-height: 320px; }
+.kk-photo img { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
+.kk-media > .kk-photo.gone:not(.kk-video) { display: grid; place-items: center; width: auto; min-width: 160px; aspect-ratio: auto; background: var(--kk-in); cursor: default; }
+.kk-gonet, .kk-bub.gone { color: var(--kk-time); font: 400 12px/18px var(--font); text-align: center; }
+.kk-gonet { padding: 6px; }
+.kk-bub.card.gone { background: var(--kk-in) !important; color: var(--kk-time) !important; }
+.kk-album { display: grid; gap: 3px; width: var(--kk-maxw); max-width: 100%; border-radius: 12px; overflow: hidden; }
+.kk-album.c2 { grid-template-columns: repeat(2, 1fr); }
+.kk-album.c3 { grid-template-columns: repeat(3, 1fr); }
+.kk-album > .kk-photo { width: auto; max-height: none; aspect-ratio: 1; border-radius: 0; }
+.kk-album > .kk-photo.gone { display: grid; place-items: center; background: var(--kk-in); }
+.kk-more-n { position: absolute; inset: 0; display: grid; place-items: center; background: rgb(0 0 0 / .5); color: #fff; font: 600 18px/1 var(--font); }
+.kk-video { background: #1b1f26; }
+.kk-play { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); border-radius: 50%; background: rgb(0 0 0 / .55); }
+.kk-play::after { content: ""; position: absolute; left: 17px; top: 12px; border-style: solid; border-width: 10px 0 10px 16px; border-color: transparent transparent transparent #fff; }
+.kk-dur { position: absolute; right: 6px; bottom: 6px; padding: 1px 6px; border-radius: 8px; background: rgb(0 0 0 / .55); color: #fff; font: 500 11px/16px var(--font); }
+.kk-bub.card { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; white-space: normal; }
+.kk-m.me .kk-bub.card { background: var(--kk-in); color: var(--kk-in-fg); }
+.kk-bub.card.voice { flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 8px; }
+.kk-bub.card audio { width: min(240px, 100%); height: 36px; }
+.kk-bub.card.file { width: 260px; max-width: 100%; }
+.kk-fi { flex: none; width: 28px; height: 28px; color: var(--fg-2); }
+.kk-fb { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.kk-fn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px/20px var(--font); }
+.kk-sub { color: var(--kk-time); font: 400 12px/16px var(--font); }
+.kk-open { flex: none; height: 32px; padding: 0 12px; font-size: 13px; }
+.kk-bub.card.file.off .kk-fn { opacity: .7; }
+.kk-nopc { flex: none; }
+.kk-bub.card.loc { flex-direction: column; align-items: flex-start; gap: 0; max-width: 260px; text-decoration: none; color: var(--kk-in-fg); }
+.kk-bub.card.loc .kk-fn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.kk-bub.reply { display: flex; flex-direction: column; gap: 4px; }
+.kk-quote { display: flex; flex-direction: column; padding: 2px 0 2px 8px; border-left: 3px solid color-mix(in srgb, currentColor 30%, transparent); font: 400 12px/17px var(--font); opacity: .8; }
+.kk-qn { font-weight: 600; }
+.kk-qt { overflow-wrap: anywhere; }
+.kk-rt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.kk-sys { align-self: center; max-width: 86%; margin: 10px 0 4px; padding: 3px 12px; border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 400 12px/17px var(--font); text-align: center; overflow-wrap: anywhere; white-space: pre-wrap; }
+.kk-vw video, .kk-vw img { max-width: 100%; max-height: 100%; }
+.kk-vw video { background: #000; }
+
 /* composer: the chat composer's look (.composer, .sendrow), a draft card above it */
 .kk-chat > .kk-composer { max-width: none; margin: 0; padding: 8px 12px max(12px, env(safe-area-inset-bottom)); }
 @media (max-width: 639px) { .kk-chat > .kk-composer { padding-bottom: 8px; } }
