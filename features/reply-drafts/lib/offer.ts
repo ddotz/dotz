@@ -45,7 +45,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps): Promise<"offered" | "ski
 		item.text = (m.body ?? (await deps.readBody?.(m.source, m.id).catch(e => (log(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), undefined))) ?? m.summary ?? "").trim().slice(0, BODY_MAX) || m.subject;
 		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
 		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key }, { call: deps.call });
-		if (built.action === "skip") {
+		if (built.action !== "draft") {
 			markDrafted(m.key);
 			return "skipped";
 		}

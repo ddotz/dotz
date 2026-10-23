@@ -13,6 +13,39 @@ export function issueBlock(question: string, options: { name: string; result: st
 	return [`결정: ${question}`, ...options.flatMap((o, i) => [`**${i + 1}) ${o.name}**${i === 0 ? " ← 추천" : ""}`, o.result])].join("\n");
 }
 
+// KakaoTalk reply drafts: when the incoming message needs a decision only the owner can make, the draft model returns 2-4 short choices
+// instead of a draft. Pure helpers shared by the web draft API, the CLI (features/reply-drafts/bin/draft.ts) and the model prompts.
+export const OWN_CHOICE = "직접 쓸게";
+export const MAX_REPLY_CHOICES = 4;
+export const MAX_REPLY_CHOICE_CHARS = 24;
+export const MAX_ASK_CHARS = 80;
+
+const flat = (s: string) => s.replace(/\s+/g, " ").trim();
+
+// The model's choices: trimmed strings of at most 24 characters, deduped, the "직접 쓸게" option removed (the UI adds it), at most 4.
+// Fewer than 2 usable choices is not a question: an empty list.
+export function cleanChoices(v: unknown): string[] {
+	const out: string[] = [];
+	for (const x of Array.isArray(v) ? v : []) {
+		if (typeof x !== "string") continue;
+		const c = flat(x.replace(/[*\n]/g, " "));
+		if (!c || [...c].length > MAX_REPLY_CHOICE_CHARS || c === OWN_CHOICE || out.includes(c)) continue;
+		out.push(c);
+	}
+	return out.length >= 2 ? out.slice(0, MAX_REPLY_CHOICES) : [];
+}
+
+export const cleanQuestion = (v: unknown): string => {
+	const q = typeof v === "string" ? flat(v) : "";
+	return [...q].length > MAX_ASK_CHARS ? `${[...q].slice(0, MAX_ASK_CHARS - 1).join("")}…` : q;
+};
+
+// The choice block the orchestrator posts unchanged (the issue-report shape: "결정: <question>", `**n) name**` lines, one description line each;
+// the last option is "직접 쓸게 …": the trailing mark makes the answer carry the owner's own text).
+export function replyChoiceBlock(question: string, choices: string[]): string {
+	return [`결정: ${question}`, ...choices.flatMap((c, i) => [`**${i + 1}) ${c}**`, "고른 대로 답장을 써요"]), `**${choices.length + 1}) ${OWN_CHOICE} …**`, "적은 글을 답장으로 써요"].join("\n");
+}
+
 export type ChoiceOption = { n: number; label: string; recommended: boolean; detail?: true };
 type Choices = { question?: string; options: ChoiceOption[] };
 
