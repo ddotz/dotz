@@ -10,7 +10,7 @@ const MB_CSS = "html{color-scheme:light}body{margin:0;padding:14px 16px;backgrou
 const mbPut = (k, v) => { MB.cache.delete(k); MB.cache.set(k, v); while (MB.cache.size > MB.max) MB.cache.delete(MB.cache.keys().next().value); return v; };
 
 async function mbDataUrl(src) {
-  const r = await fetch(src, { cache: "force-cache" });
+  const r = await fetch(pqLink(src), { cache: "force-cache" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const b = await r.blob();
   if (b.size > MB.imgBytes || !/^image\//.test(b.type)) throw new Error("not an image");
@@ -66,7 +66,7 @@ function mailHtmlNode(key) {
     if (!w) return;
     try {
       if (st.html === null) {
-        const r = await fetch(`/api/mail/${enc(key)}/body`, { cache: "no-store" });
+        const r = await fetch(pqLink(`/api/mail/${enc(key)}/body`), { cache: "no-store" });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         st.html = await r.text();
       }
