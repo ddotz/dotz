@@ -27,6 +27,9 @@ export type Lane = Record_ & {
 	// lastText was written by a turn and no report has carried it yet: a turn that ends without new text (aborted, empty)
 	// must not report the previous answer again (mail-reply-drafts 2026-10-23 00:45:11, the same answer twice).
 	unreported?: boolean;
+	// The text the lane last reported since its last turn_start: the same text again before a new turn starts is one event
+	// delivered twice (two error frames of one failed request, tailnet-monitoring 2026-10-23 02:58 and 03:03), not a new report.
+	reportedThisTurn?: string;
 	proc?: AgentProcess;
 	timer?: ReturnType<typeof setTimeout>;
 	watchdog?: ReturnType<typeof setTimeout>;

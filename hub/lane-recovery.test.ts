@@ -139,6 +139,24 @@ test("a turn that ends with no text of its own does not report the previous answ
 	await advance(300);
 });
 
+test("the same report twice before a new turn starts goes out once; after a turn_start it goes out again", async () => {
+	reports.length = 0;
+	const { lane, agent } = await working("report-twice");
+	const { report } = await import("./lanereport.ts");
+	const err = "[lane error] Provider stream start timed out";
+	report(lane, err, true);
+	report(lane, err, true);
+	expect(reports).toEqual([err]);
+	report(lane, "[lane error] another failure", true);
+	expect(reports).toHaveLength(2);
+	agent.push({ type: "turn_start" });
+	await flush();
+	report(lane, err, true);
+	expect(reports).toEqual([err, "[lane error] another failure", err]);
+	l.stopLane("report-twice");
+	await advance(300);
+});
+
 test(`the "For ${NAME}:" and "${NAME} 몫:" lines are dropped from the owner's text, nothing else`, () => {
 	expect(dropForLine(`[done] 끝났어요.\n\n${NAME} 몫: 없음`)).toBe("[done] 끝났어요.");
 	expect(dropForLine(`[done] 끝났어요.\n근거: 테스트 통과\n- For ${NAME}: 머지 확인\n`)).toBe("[done] 끝났어요.\n근거: 테스트 통과");
