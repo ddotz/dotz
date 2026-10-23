@@ -1,0 +1,139 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { draftApprovalBlock } from "./draft-approval.ts";
+import { draftFileRoute, stageDraftFiles } from "./draft-files.ts";
+import { emit, sseResponse } from "./events.ts";
+import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount } from "./notices.ts";
+import { appAsset, indexPage } from "./webapp.ts";
+
+// The send sheet and the mail draft card show which files go out (web/js/10-decision-card.js draftFilesNode): a row per attachment with a
+// type icon, name and size that opens the staged file, `첨부 없음` when the original's files are not carried, and a warning when the text
+// says it attaches something but no file is set. Headless browser against the real notice store; nothing is sent.
+const SNAP = "/tmp/dotz-draft-attachments";
+const root = mkdtempSync(join(tmpdir(), "dotz-draft-atts-"));
+const src = mkdtempSync(join(tmpdir(), "dotz-draft-atts-src-"));
+writeFileSync(join(src, "견적서 최종.pdf"), "%PDF-1.4 fixture-bytes");
+writeFileSync(join(src, "현장사진.jpg"), "jpg-fixture-bytes");
+const staged = stageDraftFiles("RATT0001", [join(src, "견적서 최종.pdf"), join(src, "현장사진.jpg")], root);
+
+const json = (v: unknown, status = 200) => Response.json(v, { status });
+const server = Bun.serve({
+	port: 0,
+	hostname: "127.0.0.1",
+	idleTimeout: 0,
+	async fetch(req) {
+		const url = new URL(req.url);
+		if (url.pathname === "/") return indexPage(req);
+		const asset = appAsset(req, url.pathname);
+		if (asset) return asset;
+		const file = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
+		if (file) return draftFileRoute(req, url, file[1]!, file[2]!, root);
+		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: unreadCount() });
+		if (url.pathname === "/api/notices" && req.method === "GET") return json(listNotices(100));
+		if (url.pathname === "/api/notices/read") return json(markNoticesRead(await req.json()));
+		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
+	},
+});
+const base = `http://127.0.0.1:${server.port}/`;
+type View = InstanceType<typeof Bun.WebView>;
+const views: View[] = [];
+const open = async (width: number, height: number): Promise<View> => {
+	const v = new Bun.WebView({ width, height });
+	views.push(v);
+	await v.navigate(base);
+	return v;
+};
+const waitFor = (v: View, expr: string, ms = 10_000) =>
+	v.evaluate(
+		`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document, { subtree: true, childList: true, attributes: true, characterData: true }); done(); })`,
+	);
+const settled = (v: View) => v.evaluate(`Promise.all(document.getAnimations().map(a => a.finished.catch(() => 0))).then(() => true)`);
+type Box = { l: number; t: number; r: number; b: number; w: number; h: number };
+const box = async (v: View, sel: string): Promise<Box | null> =>
+	JSON.parse(await v.evaluate(`JSON.stringify((() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const r = e.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; })())`));
+const texts = async (v: View, sel: string): Promise<string[]> => JSON.parse(await v.evaluate(`JSON.stringify([...document.querySelectorAll(${JSON.stringify(sel)})].map(e => e.textContent.trim()))`));
+const stored = () => listNotices(300).items;
+const find = (ref: string) => stored().find(n => n.kind === "decision" && n.decision?.state === "open" && n.decision.draft?.ref === ref)! as Notice;
+const ask = (ref: string, extra: object, body = "안녕하세요.\n\n요청하신 견적서와 현장사진을 보내 드립니다.\n확인 후 편하게 말씀해 주세요.") =>
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${draftApprovalBlock({ to: "kim@example.com", subject: "견적서와 현장사진 회신", body, ref, ...extra })}` });
+const openSheet = async (v: View, id: string) => {
+	await waitFor(v, `typeof noticeSheetOpen === "function" && document.querySelector(".hn")`);
+	await v.evaluate(`noticeSheetOpen(${JSON.stringify(String(id))})`);
+	await waitFor(v, `document.querySelector(".fs-bd .fs-card .dc-act")`);
+	await settled(v);
+};
+
+beforeAll(() => {
+	Bun.spawnSync(["mkdir", "-p", SNAP]);
+	resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });
+	markNoticesRead({ all: true });
+	ask("RATT0001", { attachments: staged });
+	ask("RATT0002", { attachmentsNone: true }, "안녕하세요.\n\n요청하신 견적서를 첨부합니다.");
+	ask("RATT0003", { attachmentsNone: true }, "안녕하세요.\n\n확인했어요. 회신은 내일 드릴게요.");
+});
+afterAll(() => {
+	for (const v of views) v.close();
+	server.stop(true);
+	rmSync(root, { recursive: true, force: true });
+	rmSync(src, { recursive: true, force: true });
+});
+
+describe("attachments in the send sheet", () => {
+	for (const [name, w, h] of [["390", 390, 844], ["1280", 1280, 800]] as const) {
+		test(`${name}px: two attachments are rows with icon, name and size inside the sheet, and a tap opens the staged file`, async () => {
+			const dn = find("RATT0001");
+			expect(dn.decision!.draft!.attachments).toEqual([{ name: "견적서 최종.pdf", size: "22B" }, { name: "현장사진.jpg", size: "17B" }]);
+			const v = await open(w, h);
+			await openSheet(v, String(dn.id));
+			await waitFor(v, `document.querySelectorAll(".fs-body a.dr-att").length === 2`);
+			expect(await texts(v, ".fs-body .dr-fn")).toEqual(["견적서 최종.pdf", "현장사진.jpg"]);
+			expect(await texts(v, ".fs-body .dr-fm")).toEqual(["PDF · 22B", "JPG · 17B"]);
+			expect(await texts(v, ".fs-body .dr-fh")).toEqual(["첨부 2개"]);
+			expect(await v.evaluate(`[...document.querySelectorAll(".fs-body .dr-fi svg")].length`)).toBe(2);
+			expect(await v.evaluate(`document.querySelector(".fs-body .dr-att:nth-child(3) .dr-fi svg path").getAttribute("d") !== document.querySelector(".fs-body .dr-att:nth-child(2) .dr-fi svg path").getAttribute("d")`)).toBe(true);
+			expect(await v.evaluate(`!!document.querySelector(".fs-body .dr-warn, .fs-body .dr-none")`)).toBe(false);
+			const card = (await box(v, ".fs-card"))!;
+			for (const sel of [".fs-body a.dr-att:nth-of-type(1)", ".fs-body a.dr-att:nth-of-type(2)"]) {
+				const b = (await box(v, sel))!;
+				expect(b.h).toBeGreaterThanOrEqual(44);
+				expect(b.l).toBeGreaterThanOrEqual(card.l);
+				expect(b.r).toBeLessThanOrEqual(card.r);
+				expect(b.b).toBeLessThanOrEqual((await box(v, ".fs-ft"))!.t);
+			}
+			expect(await v.evaluate(`[...document.querySelectorAll(".fs-body a.dr-att")].map(a => a.getAttribute("href")).join(" ")`)).toBe("/api/drafts/RATT0001/files/0 /api/drafts/RATT0001/files/1");
+			expect(await v.evaluate(`fetch(document.querySelector(".fs-body a.dr-att").getAttribute("href")).then(r => r.text())`)).toBe("%PDF-1.4 fixture-bytes");
+			expect(await v.evaluate(`document.querySelector(".fs-body a.dr-att").target`)).toBe("_blank");
+			await Bun.write(`${SNAP}/sheet-${name}.png`, await v.screenshot());
+		});
+	}
+
+	test("none carried: 첨부 없음 row, and the claim in the text raises the warning; a plain reply shows only 첨부 없음", async () => {
+		const v = await open(390, 844);
+		await openSheet(v, String(find("RATT0002").id));
+		await waitFor(v, `document.querySelector(".fs-body .dr-none")`);
+		expect(await texts(v, ".fs-body .dr-none")).toEqual(["첨부 없음 · 받은 메일의 첨부파일은 들어가지 않아요"]);
+		expect(await texts(v, ".fs-body .dr-warn")).toEqual(["본문에 첨부라고 썼지만 첨부파일이 없어요"]);
+		expect(await v.evaluate(`document.querySelectorAll(".fs-body .dr-att").length`)).toBe(0);
+		expect(await v.evaluate(`document.querySelector(".fs-body .dr-warn").getAttribute("role")`)).toBe("alert");
+		await Bun.write(`${SNAP}/sheet-warning-390.png`, await v.screenshot());
+		const w2 = await open(390, 844);
+		await openSheet(w2, String(find("RATT0003").id));
+		await waitFor(w2, `document.querySelector(".fs-body .dr-none")`);
+		expect(await w2.evaluate(`!!document.querySelector(".fs-body .dr-warn")`)).toBe(false);
+	});
+});
+
+describe("attachments in the mail draft card", () => {
+	test("the card shows the same rows, and a draft without files draws nothing extra", async () => {
+		const v = await open(390, 900);
+		await waitFor(v, `typeof draftCardNode === "function" && typeof draftFilesNode === "function"`);
+		const n = find("RATT0001");
+		const html = await v.evaluate(`(() => { const n = ${JSON.stringify(n)}; const c = draftCardNode(n); document.body.append(c); return c.querySelectorAll("a.dr-att").length + "|" + [...c.querySelectorAll(".dr-fn")].map(e => e.textContent).join(",") + "|" + c.querySelector("a.dr-att").getAttribute("href"); })()`);
+		expect(html).toBe("2|견적서 최종.pdf,현장사진.jpg|/api/drafts/RATT0001/files/0");
+		const plain = await v.evaluate(`(() => { const n = ${JSON.stringify({ ...n, decision: { ...n.decision, draft: { toLabel: "받는이", to: "a@b.c", body: "안녕하세요." } } })}; return draftFilesNode(n.decision.draft) === null && draftCardNode(n).querySelector(".dr-files") === null; })()`);
+		expect(plain).toBe(true);
+	});
+});

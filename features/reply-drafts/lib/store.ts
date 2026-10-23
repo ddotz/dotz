@@ -14,6 +14,7 @@ export type DraftRec = {
 	source: string; // "zele" | "webmail:<site>" | anything else (cannot be sent from here)
 	mailId: string; // the id the source knows the mail by
 	ref: string; // the gateway's mail key
+	origAttachments?: number; // files the mail it answers has; the senders carry none of them along, which the approval says
 	to: string;
 	subject?: string;
 	body: string;
