@@ -96,11 +96,11 @@ function pqMerge(items) {
     for (const it of s.integrations || []) {
       if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;
       const notices = (it.notices || []).map(id => sn.find(n => String(n.id) === String(id))).filter(n => n && monMine(n, it));
-      const mails = (s.conversations || []).filter(c => isMailT(String(c.target)) && (it.conv || []).some(x => String(c.target).startsWith(x))).map(c => pqMail(c, pc, key(`i:${it.key}`))).filter(Boolean);
+      const mails = (s.conversations || []).filter(c => isMailT(String(c.target)) && intgHas(it, c.target)).map(c => pqMail(c, pc, key(`i:${it.key}`))).filter(Boolean);
       for (const n of notices) shown.add(n.id);
       const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 };
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";
-      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, unread: needs.drafts || needs.unread, hint: monNeedLine(needs), at, pc, chips });
+      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, hint: monNeedLine(needs), at, pc, chips });
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {

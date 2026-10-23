@@ -61,6 +61,38 @@ const asOffApps = () => {
   return [...INTG.available.map(a => ({ ...a, pc: null, machine: me })),
     ...peers.flatMap(p => ((p.items && p.items.available) || []).map(a => ({ ...a, pc: { name: p.name, url: p.url }, machine: p.name })))];
 };
+// 삭제: an off instance is deleted for good (DELETE /api/apps/<id>, hub/app-off.ts deleteApp). AD.del = the row with its confirm open: {key, pcUrl, label, machine, plan, data, busy}.
+const AD = { del: null };
+const asDelOpen = a => AD.del && AD.del.key === a.key && AD.del.pcUrl === (a.pc ? a.pc.url : "");
+async function asDelAsk(a) {
+  const d = AD.del = { key: a.key, pcUrl: a.pc ? a.pc.url : "", label: a.label, machine: a.machine, plan: null, data: false, busy: false };
+  asAddPaint();
+  if (a.pc) return;   // what the other computer would delete is read there only when it runs
+  try { d.plan = await api(`/api/integrations/${enc(a.key)}/remove`); } catch { /* the confirm still lists the general parts */ }
+  asAddPaint();
+}
+async function asDelGo(a) {
+  const d = AD.del;
+  if (!d || d.busy) return;
+  d.busy = true;
+  try {
+    if (a.pc) await api(pqProxy(a.pc, "/api/peer/act"), "POST", { action: "app", args: { op: "delete", app: a.key, deleteData: d.data } });
+    else await api(`/api/apps/${enc(a.key)}${d.data ? "?data=1" : ""}`, "DELETE");
+    toast(`${a.label}을(를) 삭제했어요`);
+    AD.del = null; AS.load[a.key] = null;
+    if (a.pc) await pqLoad(); else await loadIntegrations();
+  } catch (e) { d.busy = false; toast(e.message || "삭제하지 못했어요", true); }
+  asAddPaint();
+}
+function asDelNode(a) {
+  const d = AD.del, p = d.plan, cb = el("input", { type: "checkbox", "data-k": "delete-data", onchange: () => { d.data = cb.checked; } });
+  cb.checked = d.data;
+  const lines = [`${d.machine ? `${d.machine}에서 ` : ""}${a.label}을(를) 완전히 지워요. 되돌릴 수 없어요`, "이름과 설정을 지우고, 앱 목록에서 빠져요", p ? (p.watches.length ? `감시 ${p.watches.length}개를 지워요: ${p.watches.join(", ")}` : "지울 감시는 없어요") : "이 앱의 감시도 함께 지워요"];
+  return el("div", { class: "as-rm", "data-k": "del-confirm" },
+    el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
+    !p || p.data.length ? el("label", { class: "as-del" }, cb, el("span", { text: p ? `저장된 데이터(${p.data.join(", ")})도 지우기. 체크하지 않으면 남겨요` : "저장된 데이터도 지우기. 체크하지 않으면 남겨요" })) : null,
+    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-k": "del-go", disabled: d.busy, onclick: () => asDelGo(a) }, "삭제 확인"), el("button", { class: "btn tonal", type: "button", "data-k": "del-cancel", onclick: () => { AD.del = null; asAddPaint(); } }, "취소")));
+}
 const asAddHint = () => asOffApps().map(a => a.label).join(" · ") || "새로 추가하기";
 async function asTplLoad() {
   try { AT.items = (await api("/api/app-templates")).items || []; } catch { AT.items = []; }
@@ -80,11 +112,13 @@ function asAddPaint() {
   clear(h.box).append(
     fsHead([el("h2", { class: "fs-t", id: "as-add-t", text: "앱 관리" })], { close: () => h.close() }),
     el("div", { class: "fs-body" },
-      ...(off.length ? [el("div", { class: "as-sec", text: "꺼 둔 앱" }), ...off.map(a => el("div", { class: "as-row", "data-app": a.key },
+      ...(off.length ? [el("div", { class: "as-sec", text: "꺼 둔 앱" }), ...off.flatMap(a => [el("div", { class: "as-row", "data-app": a.key },
         el("span", { class: "as-ic", "aria-hidden": "true" }, icon(a.icon)),
         el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.label }), el("span", { class: "as-h", text: a.machine ? `${a.machine} · 꺼져 있어요` : "꺼져 있어요" })),
-        el("button", { class: "btn tonal", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기")))] : []),
-      el("div", { class: "as-sec", text: "새로 추가하기" }),
+        el("span", { class: "as-btns" },
+          el("button", { class: "btn tonal", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기"),
+          el("button", { class: "btn tonal", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
+        ...(asDelOpen(a) ? [asDelNode(a)] : [])])] : []),
       el("button", { class: "btn", type: "button", "data-k": "new", disabled: !AT.items.length, onclick: () => asNewApp("custom") }, "새로 추가하기")));
 }
 async function asNewApp(key) {
@@ -208,11 +242,24 @@ function asChipPaint() {
   clear(row).append(...texts.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asFill(t) }, t)));
 }
 
+/* ---- a peer app's name: no settings panel for it here, so the pinned row of its list is a name field that sends the label through the peer's own settings route ---- */
+function asPeerNameRow(it) {
+  const inp = el("input", { class: "fi as-in", type: "text", maxlength: "30", "aria-label": "앱 이름", "data-k": "label", value: it.name });
+  const save = async () => {
+    const v = inp.value.trim();
+    if (v === it.name) return;
+    try { await api(pqProxy(it.pc, "/api/peer/act"), "POST", { action: "app", args: { op: "settings", app: it.inst, values: { label: v } } }); toast(`${it.pc.name}의 앱 이름을 바꿨어요`); await pqLoad(); }
+    catch (e) { toast(e.message || "이름을 바꾸지 못했어요", true); }
+  };
+  inp.addEventListener("keydown", ev => { if (ev.key === "Enter") save(); });
+  return el("div", { class: "as-row as-name" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 이름" }), el("span", { class: "as-h", text: `${it.pc.name}의 앱이에요` })), inp, el("button", { class: "btn tonal", type: "button", "data-k": "label-save", onclick: save }, "저장"));
+}
+
 /* ---- the pinned row of an app's list ---- */
 function asPinnedRow(app) {
   if (!AS.load[app]) asLoad(app);
   if (!AS.by[app]) return null;
-  const sw = AS.by[app].filter(f => f.switch && f.key !== "use_here"), hint = sw.length ? sw.map(f => `${f.label} ${asFmt(f, f.value)}`).join(" · ") : "말로 설정을 바꿔요";
+  const sw = AS.by[app].filter(f => f.switch && f.key !== "use_here" && f.key !== "label"), hint = sw.length ? sw.map(f => `${f.label} ${asFmt(f, f.value)}`).join(" · ") : "말로 설정을 바꿔요";
   return el("button", { class: "cv-row pv as-pin", type: "button", onclick: () => go("monitoring", `c:settings:${app}`) },
     el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon("settings")),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "설정" }), el("span", { class: "cv-p", text: hint })));

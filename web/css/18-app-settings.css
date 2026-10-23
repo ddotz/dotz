@@ -47,3 +47,7 @@
 .as-tpl[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 .as-tpl-x { width: 32px; padding: 0; }
 .as-tpl-x svg { width: 14px; height: 14px; }
+.as-btns { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.as-name .as-in { flex: 1 1 120px; min-width: 0; }
+.fs-body .as-rm { padding: 8px 0 12px; border-top: 0; }
+.fs-body .as-row ~ .btn { margin-top: 16px; }

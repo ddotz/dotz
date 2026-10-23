@@ -6,6 +6,7 @@
 // request, so a peer gateway can be handed the same plain HTTP call. Pure fs: no import of hub/config.ts, the data dir is a parameter.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { INTEGRATIONS } from "./integrations.ts";
 
 export type FieldType = "bool" | "enum" | "list" | "text" | "number";
 export type SettingField = {
@@ -19,7 +20,7 @@ export type SettingField = {
 	options?: string[];
 	/** Words the owner reads for each option (enum). */
 	labels?: Record<string, string>;
-	/** Whole-number range (number). */
+	/** Whole-number range (number); the longest text (text, default 500). */
 	min?: number;
 	max?: number;
 	def?: boolean | string | string[];
@@ -39,6 +40,9 @@ const approval: SettingField = { key: "approval", label: "게시 승인 방식",
 
 // Every app has this switch first: custom/apps.json {"<app>":{"off":true}} (hub/app-off.ts). Off wins over every rule that turned the app on here.
 const deviceSwitch = (app: string): SettingField => ({ key: "use_here", label: "이 기기에서 쓰기", type: "bool", help: "끄면 이 컴퓨터의 앱 목록에서 빠지고 감시와 알림이 멈춰요. 데이터는 그대로 남아요", store: "custom/apps.json", path: `${app}.off`, def: true, switch: true, invert: true });
+
+// The instance's name (hub/integrations.ts appEntries): shown in the list, the title and the notices; empty = the app's own name.
+const nameField = (app: string): SettingField => ({ key: "label", label: "앱 이름", type: "text", help: "목록과 제목에 보이는 이름이에요. 비우면 기본 이름으로 돌아가요", store: "custom/apps.json", path: `${app}.label`, max: 30, def: INTEGRATIONS.find(e => e.key === app.split("-")[0])?.label ?? "", switch: true });
 
 export const APP_SETTINGS: Record<string, SettingField[]> = {
 	site: [],
@@ -63,7 +67,11 @@ export class SettingsError extends Error {
 	}
 }
 
-export const fieldsOf = (app: string): SettingField[] => (Object.hasOwn(APP_SETTINGS, app) ? [deviceSwitch(app), ...APP_SETTINGS[app]!] : []);
+// An app key or an instance id (`mail-2`): the schema is the app's, the switch and the name are the instance's.
+export const fieldsOf = (app: string): SettingField[] => {
+	const base = app.split("-")[0]!;
+	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), ...APP_SETTINGS[base]!] : [];
+};
 
 const readJson = (file: string): Record<string, any> => {
 	try {
@@ -95,7 +103,7 @@ function clean(f: SettingField, v: unknown): SettingValue {
 		return v;
 	}
 	if (f.type === "text") {
-		if (typeof v !== "string" || v.length > 500) throw new SettingsError(`${f.key}: 500자 이하 글이어야 해요`);
+		if (typeof v !== "string" || v.length > (f.max ?? 500)) throw new SettingsError(`${f.key}: ${f.max ?? 500}자 이하 글이어야 해요`);
 		return v.trim();
 	}
 	if (!Array.isArray(v) || v.length > 200 || v.some(x => typeof x !== "string" || !x.trim() || x.length > 200)) throw new SettingsError(`${f.key}: 글 목록(200개 이하)이어야 해요`);

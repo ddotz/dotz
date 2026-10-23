@@ -8,8 +8,8 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
-import { readAppOff, integrationAvailable, integrationContext, integrationItems } from "./integrations.ts";
-import { removalPlan, removeApp } from "./app-off.ts";
+import { appEntries, readAppOff, integrationAvailable, integrationContext, integrationItems } from "./integrations.ts";
+import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, removeWatch } from "./watch.ts";
 import { fieldsOf, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
@@ -183,7 +183,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (appLife) {
 			const [, app, op] = appLife;
 			try {
-				if (!fieldsOf(app!).length) throw new SettingsError(`${app}: 알 수 없는 앱이에요`, 404);
+				if (!appEntries(DATA_DIR).some(e => e.key === app && !e.gone)) throw new SettingsError(`${app}: 알 수 없는 앱이에요`, 404);
 				const names = () => allWatches().map(w => w.name);
 				if (op === "remove" && req.method === "GET") return json(removalPlan(DATA_DIR, app!, names()));
 				if (op === "remove" && req.method === "POST") return json({ ok: true, removed: removeApp(DATA_DIR, app!, { deleteStored: (await body(req)).deleteData === true }, { watchNames: names, removeWatch }) });
@@ -195,12 +195,23 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);
 			}
 		}
+		// App instances (hub/app-off.ts): POST /api/apps {app, label?, filter?, id?} registers another instance of an app (the orchestrator or a feature's onboard
+		// script calls it), DELETE /api/apps/<id>[?data=1] deletes an OFF instance for good (data=1 also deletes its stored data).
+		const appDel = /^\/api\/apps\/([a-z0-9-]+)$/.exec(url.pathname);
+		if (url.pathname === "/api/apps" && req.method === "POST" || appDel && req.method === "DELETE") {
+			try {
+				if (appDel) return json({ ok: true, removed: deleteApp(DATA_DIR, appDel[1]!, { deleteStored: url.searchParams.get("data") === "1" }, { watchNames: () => allWatches().map(w => w.name), removeWatch }) });
+				return json({ ok: true, ...createApp(DATA_DIR, await body(req)) });
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);
+			}
+		}
 		// Per-app settings (hub/app-settings.ts): GET reads, PATCH is the one write path (the web's switches and a change card's 적용 both call it).
 		const appSettings = /^\/api\/integrations\/([a-z0-9-]+)\/settings$/.exec(url.pathname);
 		if (appSettings && (req.method === "GET" || req.method === "PATCH")) {
 			const app = appSettings[1]!;
 			try {
-				if (!fieldsOf(app).length) throw new SettingsError(`${app}: 바꿀 수 있는 설정이 없어요`, 404);
+				if (!fieldsOf(app).length || !appEntries(DATA_DIR).some(e => e.key === app && !e.gone)) throw new SettingsError(`${app}: 바꿀 수 있는 설정이 없어요`, 404);
 				return json({ key: app, fields: req.method === "GET" ? readSettings(DATA_DIR, app) : writeSettings(DATA_DIR, app, (await body(req)).values) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);

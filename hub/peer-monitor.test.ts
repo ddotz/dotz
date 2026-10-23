@@ -52,6 +52,18 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: `project:${decodeURIComponent(path.split("/")[3]!)}`, text: JSON.stringify(await req.json()) });
 			return Response.json({ ok: true, channel: decodeURIComponent(path.split("/")[3]!), name: "유튜브" });
 		}
+		if (req.method === "PATCH" && /^\/api\/integrations\/[a-z0-9-]+\/settings$/.test(path)) {
+			events.push({ target: `app:${path.split("/")[3]}`, text: JSON.stringify(((await req.json()) as { values: unknown }).values) });
+			return Response.json({ ok: true });
+		}
+		if (req.method === "POST" && path === "/api/apps") {
+			events.push({ target: "app:new", text: JSON.stringify(await req.json()) });
+			return Response.json({ ok: true, id: "mail-2" });
+		}
+		if (req.method === "DELETE" && /^\/api\/apps\/[a-z0-9-]+$/.test(path)) {
+			events.push({ target: `app:${path.split("/")[3]}`, text: `delete${new URL(req.url).search}` });
+			return Response.json({ ok: true });
+		}
 		if (path === "/api/monitors") return Response.json({ items: [{ name: `${name} 감시`, kind: "watch" }] });
 		if (path === "/api/notices") return Response.json({ items: [{ id: `n-${name}`, title: `${name} 알림`, read: false }], unread: 1 });
 		if (path === "/api/integrations") return Response.json({ items: [{ key: "mail", unread: events.length }] });
@@ -230,6 +242,24 @@ test("a monitor settings change from a peer is a plain PATCH on the owner, once;
 	expect(A.events).toEqual([]);
 	const read = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/watches/disk-check/settings")}`));
 	expect(read.status).toBe(404);   // allowed through to B (this fake has no such route); a path outside the peer read list would be 400
+});
+
+test("an app instance's rename, create and delete from a peer are the owner's own plain calls, once each", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const act = (args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "app", args }) }));
+	expect((await act({ op: "settings", app: "mail-2", values: { label: "개인" } })).status).toBe(200);
+	expect((await act({ op: "create", app: "mail", label: "개인", filter: { conv: ["mail:naver-"] } })).status).toBe(200);
+	expect((await act({ op: "delete", app: "mail-2", deleteData: true })).status).toBe(200);
+	expect((await act({ op: "delete", app: "mail-3" })).status).toBe(200);
+	expect(B.events).toEqual([
+		{ target: "app:mail-2", text: JSON.stringify({ label: "개인" }) },
+		{ target: "app:new", text: JSON.stringify({ app: "mail", label: "개인", filter: { conv: ["mail:naver-"] } }) },
+		{ target: "app:mail-2", text: "delete?data=1" },
+		{ target: "app:mail-3", text: "delete" },
+	]);
+	expect(A.events).toEqual([]);
+	expect((await act({ op: "rm", app: "mail-2" })).status).toBe(400);
 });
 
 test("a KakaoTalk reply from a peer runs on the owner's own kakao send route, once", async () => {

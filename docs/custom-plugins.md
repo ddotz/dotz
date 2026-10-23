@@ -45,3 +45,17 @@ curl -s -X POST http://127.0.0.1:<web.port>/api/mail \
 - `thread`: the Discord thread id when the poster already put the mail on Discord. The gateway records it and posts nothing; without it the gateway opens the thread itself (Discord on) or keeps the mail web-only.
 - `wake: true` gives the orchestrator one turn for the mail (zele does this). Leave it off when the poster already summarised it.
 - The owner's reply in that web conversation reaches the orchestrator as a message in the mail's thread: your plugin's `thread` hook runs and its `note` goes into the turn, so an OK recorded there gates `deny` exactly as on Discord. A mail with no plugin note gets a built-in note: draft first, send only after the owner's OK there.
+
+## Registering a mail reader as a mail instance
+
+A mail reader of one install (a company webmail with no API, read by a plugin) is another instance of the 메일 app: it gets its own row in 모니터링, settings panel, name, off/제거/삭제, its own watches and only its own source's mails, with the same reply-draft and summary options. Once the plugin posts mails with a fixed `source`, register the instance once (same auth as `POST /api/mail`):
+
+```sh
+curl -s -X POST http://127.0.0.1:<web.port>/api/apps -H "x-dotz-token: <hub token>" -H "Content-Type: application/json" \
+  -d '{"app":"mail","label":"회사 메일","filter":{"source":"work","watches":["work-login","work-mail"]}}'
+# {"ok":true,"id":"mail-2","label":"회사 메일"}
+```
+
+- `filter.source` = the `source` the plugin posts; the instance owns the mails `mail:<source>-…` (a source must not be the start of another one joined with a hyphen). `filter.watches` = the plugin's watch names (a name ending in `-` is a prefix): they pause when the instance is off and go with 제거 and 삭제, and the default 메일 instance stops claiming them.
+- The default 메일 instance keeps every mail no other instance claims, so existing installs look the same. By hand, `custom/apps.json` takes the same shape (`{"mail-2":{"app":"mail","label":"…","filter":{…}}}`) and `{"mail":{"watches":["kdb-login"]}}` adds watch names to an instance without a filter.
+- The owner renames an instance in its settings panel (`label`) and deletes an off one in 앱 관리; `DELETE /api/apps/<id>[?data=1]` is the same call.

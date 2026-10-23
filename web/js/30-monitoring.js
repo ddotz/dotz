@@ -25,7 +25,7 @@ const monItemOf = t => {
     return m ? `m:${m.name}` : `i:${a}`;
   }
   if (PQ.of.has(t)) return PQ.of.get(t).key;   // a peer's mail sits under that computer's item
-  const it = INTG.items.find(x => (x.conv || []).some(p => String(t).startsWith(p)));
+  const it = INTG.items.find(x => intgHas(x, t));
   return `i:${it ? it.key : "mail"}`;
 };
 // go("monitoring", key) opens that item; without one a phone shows the list and a wide screen keeps the open item.
@@ -58,7 +58,7 @@ const monTitle = m => monWords(ntPlain(m.name)) || MON_KIND[m.kind] || "모니�
 const monNames = m => [...new Set([monTitle(m), String(m.name || ""), monRaw(m), monWords(monRaw(m))].filter(Boolean))];
 const monHas = (m, n) => n.kind === "watch" && monNames(m).includes(String(n.title || ""));
 // 모니터링's own notices: a watch's or a schedule's report (kind "watch"), or a notice living in an integration's own conversation (a mail).
-const monMine = (n, it) => n.kind === "watch" || (!!it && (it.conv || []).some(p => String(n.src || n.open || "").startsWith(p)));
+const monMine = (n, it) => n.kind === "watch" || (!!it && intgHas(it, n.src || n.open || ""));
 // Where a notice tap lands in 모니터링 (30-notices.js monOpen): its monitor, else 감시 소식.
 function monKeyOf(n) { const m = NM.items.find(x => monHas(x, n)); return m ? `m:${m.name}` : "notice"; }
 // The words of a report without the monitor's name in front ("node security updates: 결과가 바뀌었어요" -> "결과가 바뀌었어요").
@@ -90,7 +90,7 @@ function monItems() {
   intgWatch();
   const mons = ntMons(), shown = new Set(), items = [];
   for (const it of INTG.items) {
-    const notices = (it.notices || []).map(ntById).filter(n => n && monMine(n, it)), mails = [...CONV.keys()].filter(t => !PQ.of.has(t) && (it.conv || []).some(p => t.startsWith(p)));
+    const notices = (it.notices || []).map(ntById).filter(n => n && monMine(n, it)), mails = [...CONV.keys()].filter(t => !PQ.of.has(t) && intgHas(it, t));
     for (const n of notices) shown.add(n.id);
     const cands = [...notices.map(n => ({ at: monNoticeAt(n), text: monLine(n) })), ...mails.filter(t => CONV.get(t)).map(t => ({ at: CONV.get(t).ts, text: (MAILS.get(t) || {}).subject || CONV.get(t).text }))].sort((a, b) => b.at.localeCompare(a.at));
     const needs = it.needs || { drafts: 0, unread: monUnread(notices) + mails.reduce((c, t) => c + (ts(t).unread | 0), 0), sentToday: 0 };
@@ -310,7 +310,7 @@ function monTimeline(it) {
   const names = it.mon ? monNames(it.mon) : [];
   const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => { const x = monNoticeNode(n, names), src = x && n.pc && monFeed(it) && x.querySelector(".rc-src"); if (src) src.after(el("span", { class: "tag", text: n.pc.name })); return x; } })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
-  const pin = it.app && !it.pc ? asPinnedRow(it.key.slice(2)) : it.mon && it.mon.kind === "watch" && it.mon.watch ? asPinnedRow(`w:${it.mon.watch}`) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
+  const pin = it.app && it.pc ? asPeerNameRow(it) : it.app ? asPinnedRow(it.key.slice(2)) : it.mon && it.mon.kind === "watch" && it.mon.watch ? asPinnedRow(`w:${it.mon.watch}`) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
   if (pin) nodes.unshift(pin);
   if (nodes.length) return nodes;
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
