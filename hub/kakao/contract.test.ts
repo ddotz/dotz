@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { addOnce, type DispatchDeps, dispatchSend, type Lease, mergeMessages, messageId } from "./contract.ts";
 import { createDraft, listDrafts } from "./send.ts";
 import { kakaoPaths, type Runner } from "./types.ts";
+import { fakeScreen } from "./ui.fixture.ts";
 
 let dir: string;
 let paths: ReturnType<typeof kakaoPaths>;
@@ -57,28 +58,23 @@ describe("mergeMessages / addOnce", () => {
 });
 
 function rig() {
-	const calls: string[][] = [];
-	const runner: Runner = async argv => {
-		if (argv[0] === "osascript") return { code: 0, stdout: "com.example.Editor\n", stderr: "" };
-		if (argv[0] === "open") return { code: 0, stdout: "", stderr: "" };
-		calls.push(argv);
-		if (argv.includes("--dry-run")) return { code: 0, stdout: `Recipient: ${argv[argv.indexOf("--") + 1]}\nMessage: ${argv[argv.length - 1]}\n`, stderr: "" };
-		return { code: 0, stdout: "", stderr: "" };
-	};
+	const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { sendOut: () => ({ code: 0, stdout: "" }) });
+	const runner: Runner = screen.runner;
+	const calls = screen.sends;
 	const deps = (lease?: Lease): DispatchDeps => ({ paths, runner, now: () => 1, kmsg: "/fake/kmsg", latestIncoming: async () => undefined, ...(lease ? { lease } : {}) });
 	return { calls, deps };
 }
 
 const refuse: Lease = async () => ({ ok: false, reason: "다른 맥이 이 대화방을 맡고 있어요" });
 const allow: Lease = async () => ({ ok: true });
-const SEND = ["/fake/kmsg", "send", "--", "Alex", "hello"];
+const SEND = ["/fake/kmsg", "send", "--chat-id", "chat_alex", "--", "hello"];
 
 describe("dispatchSend", () => {
 	test("a typed send runs kmsg (dry run, then send) when there is no lease hook or the lease allows", async () => {
 		for (const lease of [undefined, allow]) {
 			const r = rig();
 			expect(await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(lease))).toEqual({ ok: true });
-			expect(r.calls).toEqual([["/fake/kmsg", "send", "--dry-run", "--", "Alex", "hello"], SEND]);
+			expect(r.calls).toEqual([SEND]);
 		}
 	});
 

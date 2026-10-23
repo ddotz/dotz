@@ -311,7 +311,7 @@ const num = (v: unknown) => Number(v ?? 0);
 
 export async function rooms(db: KakaoDb): Promise<Room[]> {
 	const rows = await db.query(
-		`SELECT CAST(r.chatId AS TEXT) AS chatId, r.type AS type, r.chatName AS chatName, r.countOfNewMessage AS unread, r.lastUpdatedAt AS lastAt,
+		`SELECT CAST(r.chatId AS TEXT) AS chatId, r.type AS type, r.chatName AS chatName, r.countOfNewMessage AS unread, r.lastUpdatedAt AS lastAt, r.activeMembersCount AS members,
 			COALESCE(NULLIF(u.friendNickName, ''), NULLIF(u.displayName, ''), NULLIF(u.nickName, '')) AS peer,
 			(SELECT COALESCE(NULLIF(mt.groupNickname, ''), NULLIF(mt.content, '')) FROM NTChatMeta mt WHERE mt.chatId = r.chatId AND mt.type = 3 LIMIT 1) AS title
 		FROM NTChatRoom r LEFT JOIN NTUser u ON r.directChatMemberUserId = u.userId AND u.linkId = 0
@@ -325,6 +325,7 @@ export async function rooms(db: KakaoDb): Promise<Room[]> {
 		kind: roomKind(num(r.type)),
 		unread: num(r.unread),
 		lastAt: num(r.lastAt),
+		...(r.members === null || r.members === undefined ? {} : { members: num(r.members) }),
 	}));
 }
 

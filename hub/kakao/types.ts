@@ -88,7 +88,7 @@ export type HubFull = Hub & {
 };
 
 // A room as the reader returns it. `kind` is the classification the draft filter uses.
-export type Room = { chatId: string; name: string; type: number; kind: "direct" | "group" | "self" | "channel" | "open" | "other"; unread: number; lastAt: number };
+export type Room = { chatId: string; name: string; type: number; kind: "direct" | "group" | "self" | "channel" | "open" | "other"; unread: number; lastAt: number; members?: number };
 export type Msg = { logId: string; chatId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean };
 
 // Result of one login attempt by UI automation. `confirm` = KakaoTalk waits for a device confirmation or a code on the phone.
