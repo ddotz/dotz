@@ -17,7 +17,8 @@ setup: bun {repo}/features/reply-drafts/bin/onboard.ts on --to <asking target>
 
 사용자가 이미 있는 메일에 답장 초안을 부탁하면(`이 메일 답장 써줘`): 메일 본문을 stdin으로 넘겨 `bun {repo}/features/reply-drafts/bin/draft.ts new --mail <메일 키> --from <보낸 사람 주소> --subject "<제목>" [--app mail] [--source zele|webmail:<사이트> --id <메일 id>]`를 실행하고, 찍힌 `[ask]` 블록을 그대로 올려요.
 
-댓글 답글 초안은 같은 엔진이에요(`draft.ts new --mail <댓글 키> --kind comment --app youtube|instagram --from <작성자>`, 댓글을 stdin으로). 출력은 답글 글만이고(확인 메모는 stderr), 승인은 `sns.ts job`이 그대로 맡아요. 앱 프로필에 예시가 아직 없으면 기존 `custom/sns/tone.md`의 `## 예시`를 써요.
+유튜브·인스타 댓글 답글도 같은 엔진이고, 앱마다 따로 켜요. 처음엔 모두 꺼져 있어요. 사용자가 "인스타 댓글 답글 켜 줘"처럼 부탁하면 `bun {repo}/features/reply-drafts/bin/onboard.ts on --app instagram`(유튜브는 `--app youtube`, 끄기는 `off --app <앱>`)을 실행해요. 유튜브·인스타 연결이 안 되어 있으면 종료 코드 3과 연결 명령이 찍히고 아무것도 켜지지 않아요. 켜면 그 플랫폼에 사용자가 쓴 지난 답글로 `tone/youtube.md`·`tone/instagram.md`를 따로 배워요.
+켜 둔 앱은 `sns-` 댓글 감시가 새 댓글마다 초안과 `sns.ts` 답글 job을 만들고 `[ask]`를 직접 내보내요(`features/youtube-instagram/playbook.md`). 그 `[ask]`는 고치지 말고 그대로 올려요. `1) 보내기`는 `sns.ts approve <jobId>`, `2) 고치기 - ...`는 `sns.ts revise <jobId> --change "<내용>"`, `3) 보내지 않기`는 `sns.ts reject <jobId>`예요. `approve`는 그 job에 `1) 보내기`를 고른 기록이 없으면 거부해요. 꺼 둔 앱의 댓글은 예전처럼 줄 그대로 와요. 댓글 한 건만 손으로 부탁받으면 `draft.ts new --mail <댓글 키> --kind comment --app youtube|instagram --from <작성자>`(댓글을 stdin으로)가 답글 글만 찍어요.
 
 카톡 대화방 답장도 같은 엔진이에요(`draft.ts new --app kakao --room <방 id> --kind chat`, 최근 대화를 stdin으로). 출력은 답장 글만이고 `features/kakao/feature.md`가 이어서 맡아요. 그 방의 말투 프로필이 비어 있으면 그 방에서 사용자가 보낸 말로 처음 한 번 배워요. 방마다 말투가 따로예요. 카톡 답장을 고쳤을 때는 `draft.ts correct --app kakao --room <방 id> --change "<내용>"`으로 그 방 프로필에 기록해요.
 

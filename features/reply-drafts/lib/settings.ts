@@ -28,7 +28,9 @@ export function writeAtomic(file: string, text: string, mode = 0o600): void {
 	renameSync(tmp, file);
 }
 
-export type Settings = { enabled: boolean; auto: boolean; senders: { only: string[]; skip: string[] }; model?: string };
+// `enabled` is the feature switch; `apps` has one switch per source (mail, youtube, instagram, ...), every source off until turned on.
+// A config from before `apps` existed has no apps.mail: mail then follows the top-level `auto` (kept valid, and kept in sync by setApp).
+export type Settings = { enabled: boolean; auto: boolean; apps: Record<string, { auto: boolean }>; senders: { only: string[]; skip: string[] }; model?: string };
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map(x => x.trim()) : []);
 
@@ -38,11 +40,14 @@ export function loadSettings(): Settings {
 	try {
 		raw = JSON.parse(readFileSync(paths.config(), "utf8")) ?? {};
 	} catch {
-		return { enabled: false, auto: true, senders: { only: [], skip: [] } };
+		return { enabled: false, auto: true, apps: {}, senders: { only: [], skip: [] } };
 	}
+	const apps: Settings["apps"] = {};
+	for (const [app, v] of Object.entries(raw.apps && typeof raw.apps === "object" ? (raw.apps as Record<string, any>) : {})) if (validApp(app)) apps[app] = { auto: v?.auto === true };
 	return {
 		enabled: raw.enabled === true,
 		auto: raw.auto !== false,
+		apps,
 		senders: { only: strings(raw.senders?.only), skip: strings(raw.senders?.skip) },
 		...(typeof raw.model === "string" && raw.model.trim() ? { model: raw.model.trim() } : {}),
 	};
@@ -52,6 +57,17 @@ export function saveSettings(patch: Partial<Settings>): Settings {
 	const next = { ...loadSettings(), ...patch };
 	writeAtomic(paths.config(), `${JSON.stringify(next, null, 2)}\n`, 0o644);
 	return next;
+}
+
+// Whether a source drafts on its own: the feature is on and that source's own switch is on.
+export const appOn = (s: Settings, app: string): boolean => s.enabled && (s.apps[app]?.auto ?? (app === "mail" ? s.auto : false));
+
+// Turns one source on or off. Mail's current state is written down first, so switching another source on never switches mail on by
+// way of the old top-level `auto`; turning a source on also turns the feature switch on.
+export function setApp(app: string, auto: boolean): Settings {
+	const s = loadSettings();
+	const apps = { ...s.apps, mail: { auto: appOn(s, "mail") }, [app]: { auto } };
+	return saveSettings({ apps, ...(app === "mail" ? { auto } : {}), ...(auto ? { enabled: true } : {}) });
 }
 
 export const HEADINGS = { rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지" } as const;

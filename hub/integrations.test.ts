@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { commentAsk, type CommentAdapter } from "../features/reply-drafts/lib/comments.ts";
 import { belongsTo, INTEGRATIONS, integrationContext, integrationItems, integrationOn } from "./integrations.ts";
 
 const dirs: string[] = [];
@@ -146,5 +147,18 @@ describe("the registry itself", () => {
 	test("an entry with nothing enabled stays off", () => {
 		const off = integrationContext(install([]), []);
 		expect(INTEGRATIONS.some(e => integrationOn(e, off))).toBe(false);
+	});
+});
+
+describe("comment reply asks of the reply-drafts adapter", () => {
+	const adapter = (label: string) => ({ app: "x", label }) as CommentAdapter;
+	const ask = (label: string) => notice("k", { text: commentAsk(adapter(label), { id: "c1", author: "Bob", text: "hi", context: "" }, "고마워요", "j-203006151200-ab12", []), decision: { to: "main" } });
+	test("a 대상 ask lands under its own app only", () => {
+		expect(belongsTo(by("youtube"), ask("유튜브"))).toBe(true);
+		expect(belongsTo(by("instagram"), ask("유튜브"))).toBe(false);
+		expect(belongsTo(by("instagram"), ask("인스타"))).toBe(true);
+		expect(belongsTo(by("youtube"), ask("인스타"))).toBe(false);
+		expect(belongsTo(by("mail"), ask("유튜브"))).toBe(false);
+		expect(belongsTo(by("kakao"), ask("인스타"))).toBe(false);
 	});
 });

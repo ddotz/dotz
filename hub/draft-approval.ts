@@ -58,6 +58,8 @@ export function parseDraftApproval(text: string): DraftApproval | undefined {
 		if (m) quoted.push(m[1]!);
 	}
 	if (!quoted.length) return undefined;
+	const first = quoted.findIndex(l => HEADER.test(l));
+	if (first > 0) quoted.splice(0, first); // a quote above the draft (the comment being answered) is not part of it
 	let toLabel = "받는이";
 	let to = "";
 	let subject: string | undefined;

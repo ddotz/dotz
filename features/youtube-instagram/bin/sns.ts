@@ -4,12 +4,17 @@
 // browser). Prints plain status lines; nothing public happens from a job that was not approved.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { draftVerdict } from "../../../hub/draft-approval.ts";
+import { reviseComment } from "../../reply-drafts/lib/comments.ts";
+import type { FlowDeps } from "../../reply-drafts/lib/flow.ts";
+import { paths as replyPaths } from "../../reply-drafts/lib/settings.ts";
+import { getDraft, setStatus } from "../../reply-drafts/lib/store.ts";
 import { type Ctx, loadConfig, paths, SetupError } from "../lib/config.ts";
-import { commentsFor, mediaWithCounts } from "../lib/instagram.ts";
 import { approve, getJob, type Job, type JobKind, listJobs, newJob, type NewJobInput, OPEN, PUBLISHABLE, recordResult, reject } from "../lib/jobs.ts";
 import { COSTS, can } from "../lib/quota.ts";
+import { cleanExample, ownReplyTexts, snsAdapter } from "../lib/reply-adapter.ts";
 import { AuthError, failFrom, main, oneLine, type Platform, type RunResult, TransientError } from "../lib/watchkit.ts";
-import { ownReplies, restoreVideo } from "../lib/youtube.ts";
+import { restoreVideo } from "../lib/youtube.ts";
 import { finishIfComplete, publishJob } from "./due.ts";
 
 const HEADING = "## 예시";
@@ -31,7 +36,7 @@ function positionals(args: string[]): string[] {
 }
 
 const ok = (...lines: string[]): RunResult => ({ lines, code: 0 });
-const usage = (): RunResult => ({ lines: ["usage: sns.ts job new --kind upload|reply|metadata --json <file> | approve <id> [--at ISO|now] | reject <id> | publish <id> | status | tone-sample [--limit N] | restore <videoId> | mark-done <id> <platform> [ref]"], code: 2 });
+const usage = (): RunResult => ({ lines: ["usage: sns.ts job new --kind upload|reply|metadata --json <file> | approve <id> [--at ISO|now] | revise <replyJobId> --change <text> | reject <id> | publish <id> | status | tone-sample [--limit N] | restore <videoId> | mark-done <id> <platform> [ref]"], code: 2 });
 
 function summary(j: Job): string {
 	if (j.upload) return oneLine(j.upload.title, 60);
@@ -50,20 +55,13 @@ export function mergeExamples(existing: string, examples: string[]): string {
 	return `${lines.slice(0, start).join("\n")}${start ? "\n" : ""}${section}${tail}`;
 }
 
-export const cleanExample = (s: string): string => oneLine(s.replace(/@\S+/g, ""), 200);
+export { cleanExample };
 
 async function toneSample(ctx: Ctx, args: string[]): Promise<RunResult> {
 	const cfg = loadConfig();
 	const limit = Math.min(100, Math.max(1, Number(flag(args, "--limit") ?? 30) || 30));
 	const texts: string[] = [];
-	if (cfg.youtube && can(ctx, cfg, COSTS.list * 3)) texts.push(...(await ownReplies(ctx, cfg.youtube.channel_id, limit)));
-	if (cfg.instagram) {
-		const owner = cfg.instagram.username.toLowerCase();
-		for (const m of (await mediaWithCounts(ctx)).filter(x => x.comments_count > 0).slice(0, 10)) {
-			for (const c of await commentsFor(ctx, m.id)) for (const r of c.replies) if (r.username.toLowerCase() === owner) texts.push(r.text);
-			if (texts.length >= limit) break;
-		}
-	}
+	for (const platform of PLATFORMS) texts.push(...(await ownReplyTexts(ctx, cfg, platform, limit)));
 	const examples = [...new Set(texts.map(cleanExample).filter(Boolean))].slice(0, limit);
 	if (!examples.length) return ok("tone-sample 0");
 	mkdirSync(dirname(paths.tone()), { recursive: true });
@@ -71,7 +69,16 @@ async function toneSample(ctx: Ctx, args: string[]): Promise<RunResult> {
 	return ok(`tone-sample ${examples.length}`);
 }
 
-async function dispatch(ctx: Ctx, args: string[]): Promise<RunResult> {
+// A reply goes public only on the owner's own 1) 보내기 pick for exactly this job, made after the job was created (hub/draft-approval.ts).
+function requirePick(j: Job): void {
+	const v = draftVerdict(replyPaths.inbox(), j.id, Date.parse(j.created));
+	if (v.verdict === "send") return;
+	if (v.verdict === "edit") throw new Error(`고치기를 골랐어요${v.detail ? ` (${v.detail})` : ""}. sns.ts revise ${j.id} --change "<내용>"로 고친 뒤 다시 물어봐 주세요`);
+	if (v.verdict === "drop") throw new Error(`보내지 않기로 한 답글이에요. sns.ts reject ${j.id}`);
+	throw new Error("아직 보내도 된다는 답을 받지 못했어요");
+}
+
+async function dispatch(ctx: Ctx, args: string[], deps: FlowDeps): Promise<RunResult> {
 	const [cmd, ...rest] = args;
 	const pos = positionals(rest);
 	switch (cmd) {
@@ -86,12 +93,22 @@ async function dispatch(ctx: Ctx, args: string[]): Promise<RunResult> {
 		}
 		case "approve": {
 			if (!pos[0]) return usage();
+			const before = getJob(pos[0]);
+			if (before?.kind === "reply") requirePick(before);
 			const j = approve(ctx, pos[0], { publish_at: flag(rest, "--at") });
 			return ok(`approved ${j.id} ${j.status} at=${j.publish_at}`);
 		}
+		case "revise": {
+			const j = pos[0] ? getJob(pos[0]) : undefined;
+			if (!j?.reply || j.status !== "draft") return usage();
+			const r = await reviseComment(snsAdapter(ctx, j.reply.platform), j.id, flag(rest, "--change") ?? "", deps);
+			return { lines: [r.text], code: r.ok ? 0 : 1 };
+		}
 		case "reject": {
 			if (!pos[0]) return usage();
-			return ok(`rejected ${reject(pos[0]).id}`);
+			const j = reject(pos[0]);
+			if (j.kind === "reply" && getDraft(j.id)?.status === "pending") setStatus(j.id, "dropped");
+			return ok(`rejected ${j.id}`);
 		}
 		case "publish": {
 			if (!pos[0]) return usage();
@@ -128,9 +145,9 @@ async function dispatch(ctx: Ctx, args: string[]): Promise<RunResult> {
 	}
 }
 
-export async function run(ctx: Ctx, args: string[]): Promise<RunResult> {
+export async function run(ctx: Ctx, args: string[], deps: FlowDeps = {}): Promise<RunResult> {
 	try {
-		return await dispatch(ctx, args);
+		return await dispatch(ctx, args, deps);
 	} catch (e) {
 		if (e instanceof AuthError || e instanceof SetupError || e instanceof TransientError) return failFrom(e);
 		return { lines: [`error: ${oneLine(e instanceof Error ? e.message : "unexpected failure", 200)}`], code: 1 };

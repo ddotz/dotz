@@ -4,15 +4,18 @@
 // do not reach the baseline an extra `yt-comment-overflow` line says older new comments were not listed.
 import type { Ctx } from "../lib/config.ts";
 import { SetupError } from "../lib/config.ts";
+import type { CommentDeps } from "../../reply-drafts/lib/comments.ts";
 import { COSTS, can } from "../lib/quota.ts";
+import { withReplyDrafts } from "../lib/reply-adapter.ts";
 import { main, oneLine, type RunResult, runWatch } from "../lib/watchkit.ts";
 import { commentThreadsSince } from "../lib/youtube.ts";
 
 const MAX_PAGES = 3;
 type State = { since: string };
 
-export async function run(ctx: Ctx, _args: string[] = []): Promise<RunResult> {
-	return runWatch<State>(ctx, {
+// With the reply-drafts switch for youtube on, the comment lines come out as ready approval [ask] messages (reply-drafts/lib/comments.ts).
+export async function run(ctx: Ctx, _args: string[] = [], deps?: CommentDeps): Promise<RunResult> {
+	const res = await runWatch<State>(ctx, {
 		quiet: true,
 		body: async (cfg, prev) => {
 			if (!cfg.youtube) throw new SetupError("youtube is not connected");
@@ -24,6 +27,7 @@ export async function run(ctx: Ctx, _args: string[] = []): Promise<RunResult> {
 			return { lines, state: { since } };
 		},
 	});
+	return withReplyDrafts(ctx, "youtube", res, deps);
 }
 
 if (import.meta.main) await main(run);

@@ -248,8 +248,8 @@ function mergePins(channel?: string): void {
 }
 
 const WATCHES = [
-	{ name: "sns-yt-comments", script: "yt-comments.ts", every: 30, platform: "youtube", on: "match", timeout: 120 },
-	{ name: "sns-ig-comments", script: "ig-comments.ts", every: 60, platform: "instagram", on: "match", timeout: 120 },
+	{ name: "sns-yt-comments", script: "yt-comments.ts", every: 30, platform: "youtube", on: "match", timeout: 300 },
+	{ name: "sns-ig-comments", script: "ig-comments.ts", every: 60, platform: "instagram", on: "match", timeout: 300 },
 	{ name: "sns-inbox", script: "inbox.ts", every: 5, platform: "any", on: "match", timeout: 120 },
 	{ name: "sns-due", script: "due.ts", every: 5, platform: "any", on: "match", timeout: 900 },
 	{ name: "sns-tokens", script: "tokens.ts", every: 720, platform: "any", on: "change", timeout: 120 },
