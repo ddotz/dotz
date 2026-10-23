@@ -8,14 +8,8 @@ const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&a
 type Blocks = { isShellBlock: (lang: string, text: string) => boolean; shellCommand: (text: string) => string; codeBlockHtml: (lang: string, code: string) => string };
 const blocks = new Function("esc", "document", "el", "navigator", "window", `${web("35-code-blocks.js")}\nreturn { isShellBlock, shellCommand, codeBlockHtml };`)(esc, { addEventListener() {} }, () => null, {}, {}) as Blocks;
 
-type Shell = {
-	isPasswordPrompt: (line: string) => boolean;
-	termNew: () => unknown;
-	termFeed: (m: unknown, text: string) => void;
-	termText: (m: unknown) => string;
-};
-const shell = new Function("ICONS", `${web("36-shell.js")}\nreturn { isPasswordPrompt, termNew, termFeed, termText };`)({}) as Shell;
-const screen = (...chunks: string[]) => { const m = shell.termNew(); for (const c of chunks) shell.termFeed(m, c); return shell.termText(m); };
+type Shell = { isPasswordPrompt: (line: string) => boolean };
+const shell = new Function("ICONS", `${web("36-shell.js")}\nreturn { isPasswordPrompt };`)({}) as Shell;
 
 describe("shell-like code block detection", () => {
 	test.each([
@@ -95,32 +89,5 @@ describe("password prompt detection", () => {
 
 	test.each(["", "$ ", "hyuns@mac ~ % ls", "Password updated.", "the password is rotated daily", "Last login: Thu Oct 22", "x".repeat(300) + " password:"])("%j is not", line => {
 		expect(shell.isPasswordPrompt(line)).toBe(false);
-	});
-});
-
-describe("terminal screen model", () => {
-	test("a line editor's redraw (backspace, cursor moves, colors, OSC) ends as the typed line", () => {
-		expect(screen("\x1b]1337;CurrentDir=/Users/h\x07$ e\becho hi\b\b\b\b\b\b\b\x1b[32mecho\x1b[39m\x1b[3C\r\n")).toBe("$ echo hi\n");
-	});
-
-	test("carriage return overwrites the line; CR LF starts the next", () => {
-		expect(screen("abc\rX")).toBe("Xbc");
-		expect(screen("one\r\ntwo\r\n[sudo] password for h: ")).toBe("one\ntwo\n[sudo] password for h:");
-	});
-
-	test("an escape sequence split across two chunks is not shown", () => {
-		expect(screen("a\x1b[3", "1mb\x1b", "[0mc")).toBe("abc");
-		expect(screen("x\x1b]0;title", "\x07y")).toBe("xy");
-	});
-
-	test("erase to end of line and clear screen", () => {
-		expect(screen("hello\r\x1b[K")).toBe("");
-		expect(screen("hello\x1b[2Jbye")).toBe("bye");
-	});
-
-	test("the last line is what the prompt detector reads", () => {
-		const m = shell.termNew();
-		shell.termFeed(m, "$ sudo killall trustd\r\n[sudo] password for test: ");
-		expect(shell.isPasswordPrompt(shell.termText(m).split("\n").at(-1)!)).toBe(true);
 	});
 });

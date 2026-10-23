@@ -65,3 +65,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## xterm.js
+
+- Source: https://github.com/xtermjs/xterm.js (npm `@xterm/xterm` 6.0.0, `@xterm/addon-fit` 0.11.0)
+- Copyright (c) 2017-2019, The xterm.js authors; (c) 2014-2016, SourceLair Private Company; (c) 2012-2013, Christopher Jeffrey
+- License: MIT (`web/vendor/xterm-LICENSE.txt`)
+- Vendored unchanged as `web/vendor/xterm.js`, `xterm.css` and `addon-fit.js` (source maps dropped); the web terminal (`web/js/36-shell.js`) loads them on first open.

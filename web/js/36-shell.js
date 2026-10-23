@@ -1,119 +1,85 @@
 /* ---------- web terminal (셸): the shell of the computer this page is served from ---------- */
-// Output: GET /api/pty/stream (SSE). Input: POST /api/pty/input. Each computer serves its own page, so "the computer whose
-// chat this is" is simply the origin; there is no host to pick. Nothing typed here is stored: the command box is cleared
-// when sent, and a password is cleared from its field before the request leaves.
+// A real terminal emulator (xterm.js, web/vendor): the owner types in the terminal itself and every keystroke goes straight to
+// the PTY. Output: GET /api/pty/stream (SSE). Input: POST /api/pty/input (in order, batched while a request is in flight).
+// Size: POST /api/pty/resize whenever the box changes. Each computer serves its own page, so "the computer whose chat this is"
+// is simply the origin; there is no host to pick. Nothing typed here is stored; a password goes by the 암호 box, which is
+// cleared before its request leaves.
 ICONS.shell = "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM7 10l3 2-3 2M12 15h5";
 
 // A password prompt: the last line of output ends in a colon and names a password, passphrase or 암호.
 const SH_PW_RE = /(?:password|passphrase|암호|비밀번호|패스워드)[^\n]{0,60}[:：]\s*$/i;
 const isPasswordPrompt = line => { const t = String(line ?? "").replace(/\s+$/, ""); return t.length > 0 && t.length <= 160 && SH_PW_RE.test(t); };
 
-// Terminal screen model: the text a PTY prints, with the cursor moves a line editor uses (\r, \b, ESC[nC/D/G/K/J) applied to
-// the current line and every other escape sequence dropped.
-const SH_MAX_LINES = 2000;
-const termNew = () => ({ lines: [""], col: 0, pend: "" });
-function termPut(m, ch) {
-  let line = m.lines[m.lines.length - 1];
-  if (m.col > line.length) line = line.padEnd(m.col, " ");
-  m.lines[m.lines.length - 1] = line.slice(0, m.col) + ch + line.slice(m.col + 1);
-  m.col++;
-}
-function termCsi(m, final, params) {
-  const n = parseInt(params, 10), last = m.lines.length - 1, line = m.lines[last];
-  if (/^[?>=]/.test(params)) return;
-  if (final === "C") m.col += n || 1;
-  else if (final === "D") m.col = Math.max(0, m.col - (n || 1));
-  else if (final === "G") m.col = Math.max(0, (n || 1) - 1);
-  else if (final === "K") m.lines[last] = n === 2 ? "" : n === 1 ? " ".repeat(Math.min(m.col, line.length)) + line.slice(m.col) : line.slice(0, m.col);
-  else if (final === "J") { if (n === 2 || n === 3) { m.lines = [""]; m.col = 0; } else m.lines[last] = line.slice(0, m.col); }
-}
-function termFeed(m, text) {
-  const s = m.pend + String(text); m.pend = "";
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (c === "\x1b") {
-      const rest = s.slice(i + 1);
-      if (!rest) { m.pend = "\x1b"; break; }
-      if (rest[0] === "[") {
-        const mm = /^\[([0-?]*)[ -\/]*([@-~])/.exec(rest);
-        if (!mm) { if (rest.length < 40) { m.pend = s.slice(i); break; } continue; }
-        termCsi(m, mm[2], mm[1]);
-        i += mm[0].length;
-      } else if (rest[0] === "]") {
-        const end = /\x07|\x1b\\/.exec(rest);
-        if (!end) { if (rest.length < 600) { m.pend = s.slice(i); break; } continue; }
-        i += end.index + end[0].length;
-      } else i += /[()*+#]/.test(rest[0]) ? 2 : 1;
-    } else if (c === "\r") m.col = 0;
-    else if (c === "\n") { m.lines.push(""); m.col = 0; if (m.lines.length > SH_MAX_LINES) m.lines.splice(0, SH_MAX_LINES / 4); }
-    else if (c === "\b") m.col = Math.max(0, m.col - 1);
-    else if (c === "\t") { for (let k = 8 - (m.col % 8); k > 0; k--) termPut(m, " "); }
-    else if (c >= " " && c !== "\x7f") termPut(m, c);
-  }
-}
-const termText = m => m.lines.map(l => l.replace(/\s+$/, "")).join("\n");
-const termLast = m => m.lines[m.lines.length - 1];
-
 /* ---------- ui ---------- */
-const SH_KEYS = [["Ctrl+C", "\x03"], ["Ctrl+D", "\x04"], ["Tab", "\t"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["Esc", "\x1b"]];
-const SH = { dlg: null, model: termNew(), ctl: null, alive: false, pwKey: "", pwDismiss: "", pwAuto: false, raf: 0, ui: null };
+// The slim key row for a touch screen, which has no Ctrl, Esc, Tab or arrow keys. Ctrl is sticky: it turns the next letter into its control code.
+const SH_KEYS = [["Esc", "\x1b"], ["Tab", "\t"], ["Ctrl", "ctrl"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["←", "\x1b[D"], ["→", "\x1b[C"], ["^C", "\x03"], ["^D", "\x04"]];
+const SH = { dlg: null, term: null, fit: null, ro: null, ctl: null, alive: false, ctrl: false, pend: "", sendBuf: "", sending: false, pwRaf: 0, ui: null };
+const shTouch = () => !!(window.matchMedia && matchMedia("(pointer: coarse)").matches);
 
-function shShowPw(on, auto) {
+let shLibP = null;
+// xterm.js loads when the terminal first opens, not with the app.
+function shLib() {
+  if (window.Terminal && window.FitAddon) return Promise.resolve();
+  const add = (tag, attrs) => new Promise((res, rej) => { const n = el(tag, { ...attrs, onload: res, onerror: () => rej(new Error("터미널 구성요소를 불러오지 못했어요")) }); document.head.append(n); });
+  return (shLibP ||= (async () => {
+    if (!document.querySelector("link[data-sh]")) document.head.append(el("link", { rel: "stylesheet", href: "/vendor/xterm.css", "data-sh": "1" }));
+    await add("script", { src: "/vendor/xterm.js" });
+    await add("script", { src: "/vendor/addon-fit.js" });
+  })().catch(e => { shLibP = null; throw e; }));
+}
+const shCss = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+function shTheme() {
+  return { background: shCss("--tb") || "#101012", foreground: shCss("--tf") || "#e6e6ea", cursor: shCss("--tac") || "#a9a9ff", cursorAccent: shCss("--tb") || "#101012", selectionBackground: "rgba(169,169,255,.35)",
+    black: "#2b2b30", red: "#ff7b7b", green: "#4ade80", yellow: "#f5c451", blue: "#7aa2ff", magenta: "#d7a3ff", cyan: "#5ed3e0", white: "#d4d4da",
+    brightBlack: "#6b6b75", brightRed: "#ff9d9d", brightGreen: "#7ef0a3", brightYellow: "#ffd97a", brightBlue: "#a3bdff", brightMagenta: "#e6c2ff", brightCyan: "#8fe6ef", brightWhite: "#ffffff" };
+}
+
+function shShowPw(on) {
   const u = SH.ui;
   if (!u) return;
   u.pw.hidden = !on;
-  SH.pwAuto = on && !!auto;
-  if (!on) u.pwIn.value = "";
-  else u.pwIn.focus({ preventScroll: true });
+  if (!on) { u.pwIn.value = ""; if (SH.term) SH.term.focus(); } else u.pwIn.focus({ preventScroll: true });
 }
-function shPaint() {
-  SH.raf = 0;
-  const u = SH.ui;
-  if (!u) return;
-  const near = u.out.scrollHeight - u.out.scrollTop - u.out.clientHeight < 48;
-  u.out.textContent = termText(SH.model);
-  if (near) u.out.scrollTop = u.out.scrollHeight;
-  const last = termLast(SH.model), key = `${SH.model.lines.length}:${last}`;
-  if (SH.alive && isPasswordPrompt(last)) {
-    if (key !== SH.pwDismiss && u.pw.hidden) shShowPw(true, true);
-    SH.pwKey = key;
-  } else if (SH.pwAuto && !u.pw.hidden) shShowPw(false);
-}
-const shSchedule = () => { if (!SH.raf) SH.raf = requestAnimationFrame(shPaint); };
 function shStatus(text, tone) {
   const u = SH.ui;
   if (!u) return;
   u.st.textContent = text;
   u.st.dataset.tone = tone || "";
-  u.run.textContent = SH.alive ? "실행" : "다시 시작";
 }
+// The prompt line under the cursor: a password prompt lights the 암호 button (the box itself is the owner's to open).
+function shWatchPw() {
+  SH.pwRaf = 0;
+  const t = SH.term, u = SH.ui;
+  if (!t || !u) return;
+  const b = t.buffer.active, line = b.getLine(b.baseY + b.cursorY);
+  u.pwBtn.classList.toggle("hot", !!(SH.alive && line && isPasswordPrompt(line.translateToString(true))));
+}
+const shSchedulePw = () => { if (!SH.pwRaf) SH.pwRaf = requestAnimationFrame(shWatchPw); };
+function shNote(text) { if (SH.term) SH.term.write(`\r\n\x1b[2m${text}\x1b[0m\r\n`); }
 function shFrame(raw) {
   let ev = "", data = "";
   for (const l of raw.split("\n")) { if (l.startsWith("event:")) ev = l.slice(6).trim(); else if (l.startsWith("data:")) data += l.slice(5).trim(); }
-  if (!ev || !data) return;
+  if (!ev || !data || !SH.term) return;
   let d;
   try { d = JSON.parse(data); } catch { return; }
-  if (ev === "reset") { SH.model = termNew(); termFeed(SH.model, d.data || ""); SH.alive = d.alive !== false; shStatus(SH.alive ? "연결됨" : "셸이 꺼져 있어요", SH.alive ? "ok" : "err"); }
-  else if (ev === "out") termFeed(SH.model, d.data || "");
-  else if (ev === "exit") { SH.alive = false; shShowPw(false); shStatus("셸이 끝났어요", "err"); }
-  shSchedule();
-}
-function shCharBox(out) {
-  const probe = el("span", { class: "sh-probe", text: "M".repeat(20) });
-  out.append(probe);
-  const w = probe.getBoundingClientRect().width / 20 || 8;
-  probe.remove();
-  return { cols: Math.max(20, Math.floor((out.clientWidth - 24) / w)), rows: Math.max(8, Math.floor(out.clientHeight / 18)) };
+  if (ev === "reset") {
+    SH.term.reset(); SH.term.write(d.data || "", shSchedulePw);
+    SH.alive = d.alive !== false;
+    shStatus(SH.alive ? "연결됨" : "셸이 꺼져 있어요", SH.alive ? "ok" : "err");
+    if (!SH.alive) shNote("셸이 꺼져 있어요. Enter를 누르면 다시 시작해요.");
+    else if (SH.pend) { const c = SH.pend; SH.pend = ""; shSend(c); }
+  } else if (ev === "out") SH.term.write(d.data || "", shSchedulePw);
+  else if (ev === "exit") { SH.alive = false; shShowPw(false); shStatus("셸이 끝났어요", "err"); shNote("셸이 끝났어요. Enter를 누르면 다시 시작해요."); }
 }
 async function shConnect() {
   shDisconnect();
-  const u = SH.ui;
-  if (!u) return;
-  const ctl = new AbortController(), { cols, rows } = shCharBox(u.out);
+  const t = SH.term;
+  if (!t) return;
+  const ctl = new AbortController();
   SH.ctl = ctl;
   shStatus("연결 중…");
   try {
-    const r = await fetch(`/api/pty/stream?cols=${cols}&rows=${rows}`, { signal: ctl.signal, cache: "no-store" });
+    const r = await fetch(`/api/pty/stream?cols=${t.cols}&rows=${t.rows}`, { signal: ctl.signal, cache: "no-store" });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const rd = r.body.getReader(), dec = new TextDecoder();
     let buf = "";
@@ -123,77 +89,107 @@ async function shConnect() {
       buf += dec.decode(value, { stream: true });
       for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) { shFrame(buf.slice(0, i)); buf = buf.slice(i + 2); }
     }
-    if (SH.ctl === ctl) { SH.alive = false; shStatus("연결이 끊겼어요", "err"); }
+    if (SH.ctl === ctl) { SH.alive = false; shStatus("연결이 끊겼어요", "err"); shNote("연결이 끊겼어요. Enter를 누르면 다시 연결해요."); }
   } catch (e) {
-    if (SH.ctl === ctl && e.name !== "AbortError") { SH.alive = false; shStatus("연결하지 못했어요", "err"); }
+    if (SH.ctl === ctl && e.name !== "AbortError") { SH.alive = false; shStatus("연결하지 못했어요", "err"); shNote("연결하지 못했어요. Enter를 누르면 다시 연결해요."); }
   }
 }
 function shDisconnect() { if (SH.ctl) { SH.ctl.abort(); SH.ctl = null; } }
 
-async function shSend(data, secret) {
+// Keystrokes leave in order: while one request is in flight the next ones wait and go out together.
+const SH_CHUNK = 16000;
+async function shPost(data, secret) {
   try { await api("/api/pty/input", "POST", secret ? { data, secret: true } : { data }); return true; }
   catch (e) { toast(e.message, true); return false; }
+}
+async function shSend(data) {
+  SH.sendBuf += data;
+  if (SH.sending) return;
+  SH.sending = true;
+  try {
+    while (SH.sendBuf) { const part = SH.sendBuf.slice(0, SH_CHUNK); SH.sendBuf = SH.sendBuf.slice(part.length); if (!(await shPost(part))) SH.sendBuf = ""; }
+  } finally { SH.sending = false; }
 }
 async function shRestart() {
   try { await api("/api/pty/restart", "POST", {}); } catch (e) { toast(e.message, true); return; }
   shConnect();
 }
-async function shRun() {
-  const u = SH.ui;
-  if (!u) return;
-  if (!SH.alive) { shConnect(); return; }
-  const text = u.cmd.value.replace(/\n+$/, "");
-  u.cmd.value = ""; shAutosize(); u.hint.hidden = true;
-  await shSend(text.replace(/\r?\n/g, "\r") + "\r");
+// What the terminal produced from the keyboard, paste or the key row.
+function shInput(data) {
+  if (!SH.alive) { if (/[\r\n]/.test(data)) shConnect(); return; }
+  if (SH.ctrl) {
+    SH.ctrl = false; shCtrlPaint();
+    const c = data.length === 1 ? data.toUpperCase().charCodeAt(0) : 0;
+    if (c >= 64 && c <= 95) { shSend(String.fromCharCode(c - 64)); return; }
+  }
+  shSend(data);
 }
+function shCtrlPaint() { const b = SH.ui && SH.ui.keys && SH.ui.keys.querySelector("[data-k=ctrl]"); if (b) { b.classList.toggle("on", SH.ctrl); b.setAttribute("aria-pressed", String(SH.ctrl)); } }
 async function shSendPw() {
   const u = SH.ui;
   if (!u || !u.pwIn.value) return;
   const secret = u.pwIn.value;
   u.pwIn.value = "";
-  SH.pwDismiss = SH.pwKey;
   shShowPw(false);
-  await shSend(secret, true);
+  await shPost(secret, true);
 }
-function shAutosize() {
-  const t = SH.ui && SH.ui.cmd;
-  if (!t) return;
-  t.style.height = "auto";
-  t.style.height = `${Math.min(t.scrollHeight, 140)}px`;
+// The size of the box goes to the PTY, so full-screen programs (vim, htop) and line wrapping match what the owner sees.
+function shResize() {
+  if (!SH.term || !SH.ui || !SH.ui.host.clientWidth) return;
+  try { SH.fit.fit(); } catch {}
 }
 function shSetCommand(command) {
-  const u = SH.ui;
-  if (!u || command == null) return;
-  u.cmd.value = command;
-  shAutosize();
-  u.hint.hidden = !command;
-  u.cmd.scrollIntoView({ block: "nearest" });
+  if (command == null || command === "") return;
+  if (SH.alive) shSend(command); else SH.pend = command;
+  toast("명령을 입력해 뒀어요. Enter를 누르면 실행돼요");
+  if (SH.term) SH.term.focus();
 }
 
-function openShell({ command } = {}) {
+async function openShell({ command } = {}) {
   if (SH.dlg && SH.dlg.node.isConnected) { shSetCommand(command); return; }
-  const out = el("pre", { class: "sh-out", tabindex: "0", "aria-label": "터미널 출력" });
+  const host = el("div", { class: "sh-term", "aria-label": "터미널" });
   const st = el("span", { class: "sh-st", role: "status", "aria-live": "polite" });
-  const hint = el("div", { class: "sh-hint", text: "명령을 확인하고 ‘실행’을 눌러요. 자동으로 실행되지 않아요.", hidden: true });
-  const cmd = el("textarea", { class: "sh-cmd", rows: 1, placeholder: "명령어", autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": "터미널 명령" });
-  const run = el("button", { type: "button", class: "btn sh-run", onclick: shRun }, "실행");
   const pwIn = el("input", { class: "sh-pw-in", type: "password", name: "dz-shell-secret", autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": "암호", placeholder: "암호", "data-lpignore": "true", "data-1p-ignore": "true", "data-bwignore": "true", "data-form-type": "other" });
-  const pwSend = el("button", { type: "button", class: "btn sh-pw-send", onclick: shSendPw }, "암호 보내기");
   const pw = el("div", { class: "sh-pw", hidden: true },
     el("div", { class: "sh-pw-t", text: "암호를 입력해요. 화면에 보이지도, 저장되지도 않아요." }),
-    el("div", { class: "sh-pw-r" }, pwIn, pwSend, el("button", { type: "button", class: "btn text", onclick: () => { SH.pwDismiss = SH.pwKey; shShowPw(false); } }, "닫기")));
-  const keys = el("div", { class: "sh-keys" },
-    el("button", { type: "button", class: "btn tonal sh-k sh-k-pw", onclick: () => shShowPw(pw.hidden, false) }, icon("shell"), "암호"),
-    ...SH_KEYS.map(([label, seq]) => el("button", { type: "button", class: "btn tonal sh-k", onclick: () => shSend(seq) }, label)),
-    el("button", { type: "button", class: "btn tonal sh-k", onclick: shRestart }, "셸 다시 시작"));
-  const body = el("div", { class: "sh-wrap" }, el("div", { class: "sh-top" }, st), out, pw, hint, el("div", { class: "sh-in" }, cmd, run), keys);
+    el("div", { class: "sh-pw-r" }, pwIn, el("button", { type: "button", class: "btn sh-pw-send", onclick: shSendPw }, "보내기"), el("button", { type: "button", class: "btn text", onclick: () => shShowPw(false) }, "닫기")));
+  const keys = shTouch() ? el("div", { class: "sh-keys", role: "toolbar", "aria-label": "특수 키" },
+    ...SH_KEYS.map(([label, seq]) => el("button", { type: "button", class: "btn tonal sh-k", "data-k": seq === "ctrl" ? "ctrl" : seq,
+      // pointerdown keeps the terminal focused, so the soft keyboard stays up while a key is pressed
+      onpointerdown: ev => ev.preventDefault(),
+      onclick: () => { if (seq === "ctrl") { SH.ctrl = !SH.ctrl; shCtrlPaint(); } else { shInput(seq); } if (SH.term) SH.term.focus(); } }, label))) : null;
+  const body = el("div", { class: "sh-wrap" }, host, pw, keys);
   const name = (typeof prSelf === "function" && prSelf() && prSelf().name) || "이 컴퓨터";
-  const h = dialog({ title: `터미널 · ${name}`, body, wide: true, onclose: () => { shDisconnect(); SH.dlg = null; SH.ui = null; SH.pwDismiss = ""; shShowPw(false); } });
+  const h = dialog({ title: `터미널 · ${name}`, body, wide: true, onclose: () => {
+    shDisconnect(); if (SH.ro) SH.ro.disconnect();
+    if (SH.term) SH.term.dispose();
+    Object.assign(SH, { dlg: null, term: null, fit: null, ro: null, ui: null, ctrl: false, pend: "", sendBuf: "", alive: false });
+  } });
   h.node.classList.add("shell");
-  SH.dlg = h; SH.ui = { out, st, hint, cmd, run, pw, pwIn };
-  cmd.addEventListener("input", () => { shAutosize(); hint.hidden = true; });
-  cmd.addEventListener("keydown", ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); shRun(); } });
+  // header: connection state, the small 암호 action, and the menu that holds 셸 다시 시작
+  const pwBtn = el("button", { type: "button", class: "ib sh-k-pw", title: "암호 입력", "aria-label": "암호 입력", onclick: () => shShowPw(pw.hidden) }, icon("shell"), el("span", { class: "sh-k-t", text: "암호" }));
+  const more = el("button", { type: "button", class: "ib sh-more", title: "더 보기", "aria-label": "더 보기", text: "⋯" });
+  more.onclick = () => showMenu(more, [{ value: "restart", label: "셸 다시 시작" }], { onPick: v => { if (v === "restart") shRestart(); } });
+  const hb = h.node.querySelector(".fs-hb");
+  if (hb) hb.prepend(st, pwBtn, more);
+  SH.dlg = h; SH.ui = { host, st, pw, pwIn, pwBtn, keys };
   pwIn.addEventListener("keydown", ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === "Enter") { ev.preventDefault(); shSendPw(); } });
-  shSetCommand(command);
+  shStatus("불러오는 중…");
+  try { await shLib(); } catch (e) { shStatus(e.message, "err"); return; }
+  if (SH.dlg !== h) return;
+  const touch = shTouch();
+  const t = new Terminal({ cursorBlink: true, scrollback: 5000, fontFamily: shCss("--mono") || "monospace", fontSize: touch ? 14 : 13, lineHeight: 1.2, theme: shTheme(), allowProposedApi: false, macOptionIsMeta: true });
+  const fit = new FitAddon.FitAddon();
+  t.loadAddon(fit);
+  t.open(host);
+  SH.term = t; SH.fit = fit;
+  fit.fit();
+  t.onData(shInput);
+  t.onResize(({ cols, rows }) => { if (SH.alive) api("/api/pty/resize", "POST", { cols, rows }).catch(() => {}); });
+  SH.ro = new ResizeObserver(() => shResize());
+  SH.ro.observe(host);
+  host.addEventListener("pointerdown", () => { if (!pw.hidden) return; t.focus(); });
+  if (command) SH.pend = command;
+  t.focus();
   shConnect();
 }
