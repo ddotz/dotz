@@ -10,12 +10,12 @@ export const MAX_CHAT_CHARS = 2500;
 export const MAX_CONTEXT_LINES = 4;
 export const MAX_SAMPLES = 18;
 export const MAX_SAMPLE_CHARS = 120;
-export const MAX_PAIRS = 18;
-export const MIN_PAIRS = 8;
+export const MAX_PAIRS = 14;
+export const MIN_PAIRS = 6;
 export const MAX_PAIR_OTHER_CHARS = 80;
 export const MAX_SUMMARY_CHARS = 600;
 // system + user together: about 3K tokens. Measured with the real model: 3264 characters of Korean+English prompt = ~2.5K tokens.
-export const MAX_PROMPT_CHARS = 4000;
+export const MAX_PROMPT_CHARS = 4400;
 const MAX_RULES = 14;
 const MAX_CORRECTIONS = 4;
 const MAX_FORBIDDEN = 6;
@@ -31,6 +31,10 @@ export type VoiceSource = {
 	chatId: string;
 	ownCounts: (chatIds: string[]) => Promise<Map<string, number>>;
 	ownTexts: (chatId: string, limit: number) => Promise<string[]>;
+	// The last messages of the room, both sides, oldest first (the one-time room learn reads them).
+	messages: (chatId: string, limit: number) => Promise<Msg[]>;
+	// The draft model: the first draft of a room asks it to write the room's voice profile once.
+	ask?: DraftModel;
 	recentRooms: () => Promise<string[]>;
 };
 
@@ -79,7 +83,7 @@ export const ownSamples = (list: Msg[]): string[] =>
 
 // How the owner answers: (what the other side said -> the owner's reply), from the turns of the recent messages. Oldest first.
 export type Pair = { other: string[]; own: string[] };
-export function ownPairs(recent: Msg[]): Pair[] {
+export function ownPairs(recent: Msg[], max = MAX_PAIRS): Pair[] {
 	const turns: { me: boolean; lines: string[] }[] = [];
 	for (const m of recent) {
 		const text = m.type === TEXT_TYPE ? m.text.replace(/\s+/g, " ").trim() : m.fromMe ? "" : "(사진·파일)";
@@ -93,7 +97,7 @@ export function ownPairs(recent: Msg[]): Pair[] {
 		const prev = turns[i - 1];
 		if (t.me && prev && !prev.me) pairs.push({ other: prev.lines.slice(-2).map(l => clip(l, MAX_PAIR_OTHER_CHARS)), own: t.lines.slice(0, 3).map(l => clip(l, MAX_SAMPLE_CHARS)) });
 	});
-	return pairs.slice(-MAX_PAIRS);
+	return pairs.slice(-max);
 }
 
 // 반말 / 존댓말 of the owner's own lines (a trailing ㅋㅎㅠㅜ, ~, !, ?, ., emoji do not count). Undefined with fewer than 3 judgeable lines.
