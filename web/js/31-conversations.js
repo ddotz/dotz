@@ -255,7 +255,7 @@ function convRow(r) {
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, el("span", { class: "cv-m2" }, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null)));
+    el("span", { class: "cv-m" }, el("span", { class: "cv-m2" }, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -264,10 +264,10 @@ $("#v-chat").prepend(convSide, convHead);
 
 function convPaintHead() {
   asSync();
-  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", sig = `${target}|${targetName(target)}|${state}`;
+  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
-  clear(convHead).append(...[convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: targetName(target) }), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null].filter(Boolean));
+  clear(convHead).append(...[convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), monCtx ? pqLabel() : null), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null].filter(Boolean));
 }
 // A session's actions (stop, restart, model) are the home card's ⋯ menu (08-home.js homeMenu), here in the conversation's header: in the head on wide screens, in the app bar on a phone.
 const cvMenuBtn = () => el("button", { class: "ib cvmenu", type: "button", "aria-label": "세션 메뉴", title: "세션 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, target, true) }, icon("more"));
@@ -296,6 +296,8 @@ function convOnPhone() { return current === "chat" && narrowChat() && !chatList;
 function convTitle() {
   if (current === "chat") $("#title").textContent = convOnPhone() ? targetName(target) : monCtx ? titles.monitoring : titles.chat;
   else if (current === "monitoring") $("#title").textContent = monConv() ? monName() : titles.monitoring;
+  const tag = (current === "chat" && monCtx && convOnPhone()) || (current === "monitoring" && monConv()) ? pqLabel(monItems().find(i => i.key === MON.sel)) : null;
+  if (tag) $("#title").append(tag);
   cvAppMenu.hidden = !(convOnPhone() && isLaneT(target));
 }
 function convChrome() {

@@ -44,6 +44,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("mess
 // push tap) only while this page is visible: a hidden page gets the push instead, and the hub quiets the push while the page is open (hub/push.ts presence).
 const prSeen = new Set();
 function prLive(e) {
+  pqSoon();
   const p = PR.list.find(x => !x.self && x.url === (e.kind === "peer_counts" ? e.url : e.peer && e.peer.url));
   if (e.kind === "peer_counts") {
     if (!p) return;

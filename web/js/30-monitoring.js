@@ -25,6 +25,7 @@ const monItemOf = t => {
 };
 // go("monitoring", key) opens that item; without one a phone shows the list and a wide screen keeps the open item.
 function monRoute(tgt) {
+  pqOpen();
   if (tgt && tgt !== "list") { MON.sel = tgt; MON.list = false; }
   else MON.list = narrowChat();
 }
@@ -102,12 +103,13 @@ function monItems() {
   // A report the hub marked as an app's (n.app, hub/notices.ts) is never here, even before the app list below has loaded.
   const feed = NT.items.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), last = monNewest(feed);
   items.unshift({ key: "notice", group: "", name: MON_FEED, ic: "list", notices: feed, mails: [], unread: monUnread(feed), hint: last ? monLine(last) : "새 감시 소식이 없어요", at: last ? monNoticeAt(last) : "" });
-  return items;
+  return pqMerge(items);
 }
 // The open item: the one picked, else on a wide screen the first (a phone shows its list until one is picked).
 const monSel = items => items.find(i => i.key === MON.sel) || (narrowChat() ? null : items[0] || null);
 const monName = () => { const it = monItems().find(i => i.key === MON.sel); return it && it.key === KK_KEY && KK.open && KK.room ? KK.room.name : it ? it.name : titles.monitoring; };
 function monState(it) {
+  if (it.off) return "연결 안 됨";
   if (it.mon) { const res = it.mon.last_result ? NT_RESULT[it.mon.last_result] : null; return [res && res[0], ntMonRun(it.mon), ntMonNext(it.mon)].filter(Boolean).join(" · "); }
   if (it.key === "notice") return it.unread ? `안 읽은 소식 ${it.unread}개` : "감시와 예약 결과";
   return it.app ? it.hint : it.unread ? `안 읽음 ${it.unread}개` : "연결돼 있어요";
@@ -120,7 +122,7 @@ function monRows(items, sel) {
   for (const it of items) {
     if (it.group && it.group !== group) rows.push({ header: it.group });
     group = it.group;
-    rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, badge: it.badge || null, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", it.key) });
+    rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", it.key) });
   }
   if (!NM.loaded) rows.push({ header: NM.failed ? "모니터링을 불러오지 못했어요" : "모니터링 불러오는 중…" });
   return rows;
@@ -284,14 +286,16 @@ function monRunNode(it) {
   if (!m.last_run) return null;
   const next = [m.next_run ? `다음 확인 ${monTime(m.next_run)}` : "", m.every || ""].filter(Boolean).join(" · ");
   const node = monCard(it.name, m.last_run, next, m.kind === "watch" ? m.last_result : "", monRunLine(m));
-  if (node && m.channel && isProjT(m.channel)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else go("monitoring", `c:${m.channel}`); }, text: "프로젝트 대화 열기" })));
+  if (node && m.channel && !it.pc && isProjT(m.channel)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else go("monitoring", `c:${m.channel}`); }, text: "프로젝트 대화 열기" })));
   return node;
 }
 // An item reads like a chat: its reports and mails oldest to newest, a monitor's latest run last. The 감시 소식 feed is a list, not a chat: newest on top.
 const monFeed = it => it.key === "notice";
 function monTimeline(it) {
+  const pm = it.pc ? pqTimeline(it) : null;
+  if (pm) return pm;
   const names = it.mon ? monNames(it.mon) : [];
-  const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => monNoticeNode(n, names) })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
+  const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => n.pc ? pqNoticeNode(n) : monNoticeNode(n, names) })), ...(it.convs || []).map(c => ({ at: Date.parse((c.last || {}).ts) || 0, node: () => pqConvNode(it, c) })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
   const pin = it.app ? asPinnedRow(it.key.slice(2)) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
   if (pin) nodes.unshift(pin);
@@ -299,7 +303,7 @@ function monTimeline(it) {
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
   return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];
 }
-const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: it.name }), el("span", { class: "cv-p", text: monState(it) }))];
+const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), el("span", { class: "cv-p", text: monState(it) }))];
 
 // The owner is looking at an open item: its notices that need no answer count as read after a moment (answers keep theirs unread, like everywhere).
 function monSeen() {
@@ -307,7 +311,7 @@ function monSeen() {
   MON.seenT = setTimeout(() => {
     if (current !== "monitoring" || MON.list && narrowChat() || document.visibilityState !== "visible") return;
     const it = monSel(monItems());
-    const fresh = it ? it.notices.filter(n => n.id && !n.read && !ntNeeds(n) && ntById(n.id)) : [];
+    const fresh = it && !it.pc ? it.notices.filter(n => n.id && !n.read && !ntNeeds(n) && ntById(n.id)) : [];
     if (!fresh.length) return;
     for (const n of fresh) n.read = true;
     NT.unread = Math.max(0, NT.unread - fresh.length);
@@ -322,7 +326,7 @@ function renderMonitoring() {
   monRaf = 0;
   if (current !== "monitoring") { if (monCtx && current === "chat") convSchedule(); return; }
   const items = monItems(), sel = monSel(items), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");
-  const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.badge, r.header, r.sel])]);
+  const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.badge, r.header, r.sel, r.chips])]);
   if (sideSig !== MON.side) {
     MON.side = sideSig;
     const top = side.scrollTop;
@@ -342,7 +346,7 @@ function renderMonitoring() {
     return;
   }
   MON.kkHead = "";
-  const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone, n.item, n.item && n.item.key ? MAILS.get(`mail:${n.item.key}`) : null]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t), MAILS.has(t) ? mailBrief(MAILS.get(t), t) : ""]), sel.mon, NM.loaded, NT.loaded]);
+  const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone, n.item, n.item && n.item.key ? MAILS.get(`mail:${n.item.key}`) : null]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t), MAILS.has(t) ? mailBrief(MAILS.get(t), t) : ""]), sel.mon, NM.loaded, NT.loaded, pqSig(sel)]);
   if (sig !== MON.sig) {
     MON.sig = sig;
     const again = MON.shown === sel.key, keep = box.scrollTop, stick = !again || box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
