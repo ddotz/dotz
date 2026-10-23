@@ -61,3 +61,10 @@
 .as-name .as-in { flex: 1 1 120px; min-width: 0; }
 .fs-body .as-rm { padding: 8px 0 12px; border-top: 0; }
 .fs-body .as-row ~ .btn { margin-top: 16px; }
+.as-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--fg-3); }
+.as-dot.ok { background: var(--ok); }
+.as-dot.fail { background: var(--err); }
+.as-why { color: var(--err); overflow-wrap: anywhere; }
+.as-appr .as-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.app-sw > .as-sec { margin: 16px 0 0; padding: 0 16px; }
+.app-sw > .as-sec:first-child { margin-top: 0; padding-top: 14px; }

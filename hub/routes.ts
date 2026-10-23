@@ -11,7 +11,8 @@ import { conversationList, unreadOf } from "./conversations.ts";
 import { appEntries, readAppOff, integrationAvailable, integrationContext, integrationItems } from "./integrations.ts";
 import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
-import { allWatches, removeWatch } from "./watch.ts";
+import { allWatches, removeWatch, runWatch } from "./watch.ts";
+import { featuresOf, ownedWatches, retryInternal, setFeature } from "./app-features.ts";
 import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
 import { refreshReplyModelChoices } from "./reply-model-choices.ts";
 import { watchOfSubject } from "./watch-settings.ts";
@@ -181,7 +182,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const integrationView = () => {
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
 			const ctx = integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags());
-			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds());
+			const own = ownedWatches(DATA_DIR, allWatches());
+			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds()).map(i => ({ ...i, own: own.get(i.key) ?? [] }));
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
@@ -211,6 +213,22 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			try {
 				if (appDel) return json({ ok: true, removed: deleteApp(DATA_DIR, appDel[1]!, { deleteStored: url.searchParams.get("data") === "1" }, { watchNames: () => allWatches().map(w => w.name), removeWatch }) });
 				return json({ ok: true, ...createApp(DATA_DIR, await body(req)) });
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);
+			}
+		}
+		// An app's features, internal functions (login keeper, sync) and approvals (hub/app-features.ts); 다시 시도 runs one owned watch now.
+		const appFeat = /^\/api\/integrations\/([a-z0-9-]+)\/(features|retry)$/.exec(url.pathname);
+		if (appFeat) {
+			const [, app, op] = appFeat;
+			try {
+				if (op === "features" && req.method === "PATCH") {
+					const b = await body(req);
+					setFeature(DATA_DIR, app!, b.id, b.on);
+				}
+				if (op === "retry" && req.method === "POST") await retryInternal(DATA_DIR, app!, (await body(req)).watch, allWatches(), runWatch);
+				else if (op === "retry" || (req.method !== "GET" && req.method !== "PATCH")) return json({ error: "not found" }, 404);
+				return json(featuresOf(DATA_DIR, app!, allWatches(), listNotices(NOTICE_CAP).items));
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);
 			}

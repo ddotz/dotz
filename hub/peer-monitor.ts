@@ -266,9 +266,12 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.op === "create") return ask("POST", "/api/apps", { app: a.app, label: a.label, filter: a.filter, id: a.id }, login);
 				if (a.op === "delete") return ask("DELETE", `/api/apps/${app}${a.deleteData === true ? "?data=1" : ""}`, undefined, login);
 				if (a.op === "settings") return ask("PATCH", `/api/integrations/${app}/settings`, { values: a.values }, login);
+				// A feature switch and a retry of an internal function (hub/app-features.ts).
+				if (a.op === "features") return ask("PATCH", `/api/integrations/${app}/features`, { id: a.id, on: a.on }, login);
+				if (a.op === "retry") return ask("POST", `/api/integrations/${app}/retry`, { watch: a.watch }, login);
 				if (a.op === "remove") return ask("POST", `/api/integrations/${app}/remove`, { deleteData: a.deleteData === true }, login);
 				if (a.op === "add") return ask("POST", `/api/integrations/${app}/add`, {}, login);
-				return bad("op must be settings, remove, add, create or delete");
+				return bad("op must be settings, features, retry, remove, add, create or delete");
 			}
 			// KakaoTalk rooms (hub/kakao/web.ts): the owning gateway sends through its own single send door, lease included.
 			case "kakao": {

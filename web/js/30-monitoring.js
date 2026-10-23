@@ -89,7 +89,8 @@ function monNeedLine(n) {
 // A watch an app owns (it.watches / it.watchesNot of GET /api/integrations, hub/integrations.ts) belongs to that app: no row of its own in 일반 모니터링,
 // its status is in the app's panel and a failing one marks the app's row.
 const monNamed = (list, w) => (list || []).some(x => x.endsWith("-") ? w.startsWith(x) : w === x);
-const monOwner = (apps, m) => m.kind === "watch" && m.watch ? apps.find(a => monNamed(a.watches, m.watch) && !monNamed(a.watchesNot, m.watch)) : undefined;
+// `own` = the watch names the hub resolved for the app (names, instance filters and the site a login keeper keeps, hub/app-features.ts); the name rules answer for an older hub.
+const monOwner = (apps, m) => m.kind === "watch" && m.watch ? apps.find(a => Array.isArray(a.own) ? a.own.includes(m.watch) : monNamed(a.watches, m.watch) && !monNamed(a.watchesNot, m.watch)) : undefined;
 const monOwnedBy = (apps, mons) => { const by = new Map(); for (const m of mons) { const o = monOwner(apps, m); if (o) by.set(o.key, [...(by.get(o.key) || []), m]); } return by; };
 const monFail = owned => owned.some(m => m.last_result === "fail") ? ["실패", "err"] : null;
 function monItems() {

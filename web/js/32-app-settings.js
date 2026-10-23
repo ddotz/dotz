@@ -3,7 +3,7 @@
 // conversation the common settings are switches that PATCH /api/integrations/<app>/settings straight away (no model call). The owner's words
 // go to the orchestrator, which answers with a ```dotz-settings block; it is drawn as a change card (before -> after) and only 적용 sends the same PATCH.
 const AS_KEY = "dotz.settings.cards";
-const AS = { by: {}, none: {}, load: {}, busy: {}, rm: {}, done: (() => { try { return JSON.parse(localStorage.getItem(AS_KEY)) || {}; } catch { return {}; } })() };
+const AS = { by: {}, none: {}, load: {}, busy: {}, rm: {}, feat: {}, done: (() => { try { return JSON.parse(localStorage.getItem(AS_KEY)) || {}; } catch { return {}; } })() };
 const asSave = () => { try { localStorage.setItem(AS_KEY, JSON.stringify(AS.done)); } catch { /* storage full or blocked: the card state lasts until reload */ } };
 
 // An app is "mail", "kakao"...; a monitor is "w:<watch name>" (hub/watch-settings.ts): same schema, same card, a different URL.
@@ -19,6 +19,48 @@ function asLoad(app, again) {
     if (typeof KK !== "undefined" && KK.loaded && app === "kakao") kkPaintAll();
     if (monCtx) convSchedule();
   })();
+}
+/* ---- 기능 and 내부 기능 (hub/app-features.ts): the app's features with switches, its approvals, and the login keepers and syncs it owns ---- */
+const asFeatUrl = (app, op) => `/api/integrations/${enc(app)}/${op}`;
+async function asFeatLoad(app) {
+  try { asFeatSave(app, await api(asFeatUrl(app, "features"))); } catch { /* an older hub has no features route: the screen shows no 기능 section */ }
+  asPaint();
+}
+const asFeatSave = (app, v) => { if (v && Array.isArray(v.features) && Array.isArray(v.internal) && Array.isArray(v.approvals)) AS.feat[app] = v; };
+async function asFeatSet(app, id, on) {
+  if (AS.busy[app]) return;
+  AS.busy[app] = true;
+  try { asFeatSave(app, await api(asFeatUrl(app, "features"), "PATCH", { id, on })); asLoad(app, true); } catch (e) { toast(e.message || "기능을 바꾸지 못했어요", true); }
+  AS.busy[app] = false; asPaint();
+}
+async function asRetry(app, watch) {
+  if (AS.busy[app]) return;
+  AS.busy[app] = true;
+  try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast("다시 확인했어요"); } catch (e) { toast(e.message || "다시 시도하지 못했어요", true); }
+  AS.busy[app] = false; MON.sig = ""; monSchedule(); asPaint();
+}
+function asApprovalNode(app, a) {
+  const n = typeof ntById === "function" ? ntById(a.id) : null, opts = n && n.decision ? n.decision.options.filter(o => o.label !== "고치기") : [];
+  return el("div", { class: "as-row as-appr", "data-approval": a.id },
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.title || "승인 요청" }), el("span", { class: "as-h", text: a.at ? `승인 대기 · ${monTime(a.at)}` : "승인 대기" })),
+    el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal", type: "button", "data-k": `appr:${o.label}`, onclick: () => answerInline(n, o) }, o.label)),
+      el("button", { class: "btn text", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", `i:${app.split("~")[0]}`); } }, "자세히")));
+}
+function asInternalNode(app, i) {
+  const lines = [i.status, i.last_run ? `마지막 확인 ${monTime(i.last_run)}` : ""].filter(Boolean).join(" · ");
+  return el("div", { class: "as-row as-int", "data-internal": i.id, "data-kind": i.kind },
+    el("span", { class: `as-dot ${i.dot}`, "aria-hidden": "true" }),
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: i.name }), el("span", { class: "as-h", text: lines }), ...(i.reason ? [el("span", { class: "as-h as-why", text: `이유: ${i.reason}` })] : [])),
+    el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id) }, "다시 시도"));
+}
+function asFeatNodes(app, v) {
+  return [
+    ...(v.features.length ? [el("div", { class: "as-sec", text: "기능" }), ...v.features.map(f => el("div", { class: "as-row as-feat", "data-feature": f.id },
+      el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.name }), el("span", { class: "as-h", text: f.status })),
+      kkSwitch(f.on, f.name, `feat:${f.id}`, on => asFeatSet(app, f.id, on))))] : []),
+    ...(v.approvals.length ? [el("div", { class: "as-sec", text: "승인 대기" }), ...v.approvals.map(a => asApprovalNode(app, a))] : []),
+    ...(v.internal.length ? [el("div", { class: "as-sec", text: "내부 기능" }), ...v.internal.map(i => asInternalNode(app, i))] : []),
+    ...(v.features.length || v.approvals.length || v.internal.length ? [el("div", { class: "as-sec", text: "설정" })] : [])];
 }
 async function asPatch(app, values) {
   const r = await api(asUrl(app), "PATCH", { values });
@@ -205,12 +247,14 @@ function asPaint() {
     if (box.dataset.sig !== sig) { box.dataset.sig = sig; clear(box).append(el("div", { class: "as-row" }, el("span", { class: "as-h", text: AS.none[app] ? "설정을 불러오지 못했어요" : "불러오는 중…" }))); }
     return;
   }
-  const stat = monStatMons(app), sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], stat]);
+  const feat = app.startsWith("w:") ? null : AS.feat[app] || null, stat = feat ? [] : monStatMons(app);
+  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], stat, feat]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   const sw = fields.filter(f => f.switch), other = fields.filter(f => !f.switch);
   clear(box).append(
     ...stat.map(monStatNode),
+    ...(feat ? asFeatNodes(app, feat) : []),
     ...sw.map(f => el("div", { class: "as-row" },
       el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), el("span", { class: "as-h", text: f.help })),
       asControl(f, async v => {
@@ -230,6 +274,7 @@ function asScreen(app) {
   asLoad(app);
   const h = ASC.h = fsOpen({ labelledby: "as-scr-t", cls: "tall as-screen", onClose: () => { if (ASC.h === h) { ASC.h = null; ASC.app = ""; } } });
   ASC.app = app;
+  if (!app.startsWith("w:")) asFeatLoad(app);
   clear(h.box).append(
     el("div", { class: "fs-hd" }, el("button", { class: "ib fs-x as-back", type: "button", "aria-label": "뒤로", "data-k": "as-back", onclick: () => h.close() }, icon("back")),
       el("div", { class: "fs-tt" }, el("span", { class: "fs-ey", text: "설정" }), el("h2", { class: "fs-t", id: "as-scr-t", text: monSettingsName(`settings:${app}`) }))),
