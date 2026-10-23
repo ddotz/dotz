@@ -25,7 +25,7 @@ function pqFor(path) {
   if (m) return pqPc(decodeURIComponent(m[1]));
   m = /^\/api\/watches\/([a-z0-9-]+)\/settings/.exec(path);
   if (m) return pqPc(`settings:w:${m[1]}`);
-  m = /^\/api\/integrations\/[a-z0-9._-]+~([a-z0-9]+)\/(?:settings|remove)/.exec(path);
+  m = /^\/api\/integrations\/[a-z0-9._-]+~([a-z0-9]+)\/(?:settings|remove|features|retry)/.exec(path);
   if (m) return PQ.apps.get(m[1]) || null;
   return path.startsWith("/api/kakao/") ? KK.pc : null;
 }
@@ -38,6 +38,8 @@ function pqAct(path, body) {
   const sp = /^\/api\/watches\/([a-z0-9-]+)\/settings$/.exec(path);
   if (sp && pqPc(`settings:w:${sp[1]}`)) return { pc: pqPc(`settings:w:${sp[1]}`), action: "watch", args: { op: "settings", name: sp[1], values: b.values } };
   // A peer app's switches, name and removal: the app's own routes on the computer that has it.
+  const fp = /^\/api\/integrations\/([a-z0-9._-]+~[a-z0-9]+)\/(features|retry)$/.exec(path);
+  if (fp && pqFor(path)) return { pc: pqFor(path), action: "app", args: fp[2] === "features" ? { op: "features", app: pqBare(fp[1]), id: b.id, on: b.on } : { op: "retry", app: pqBare(fp[1]), watch: b.watch } };
   const ip = /^\/api\/integrations\/([a-z0-9._-]+~[a-z0-9]+)\/(settings|remove)$/.exec(path);
   if (ip && pqFor(path)) return { pc: pqFor(path), action: "app", args: ip[2] === "settings" ? { op: "settings", app: pqBare(ip[1]), values: b.values } : { op: "remove", app: pqBare(ip[1]), deleteData: b.deleteData === true } };
   const rn = /^\/api\/watches\/([a-z0-9-]+)\/run$/.exec(path);

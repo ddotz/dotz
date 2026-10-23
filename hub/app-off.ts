@@ -7,6 +7,7 @@
 // (DELETE /api/apps/<id>) with the same removal as 제거, and a deleted default instance stays as {off, deleted} so nothing brings it back by itself.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { watchOwner } from "./app-features.ts";
 import { SettingsError, writeSettings } from "./app-settings.ts";
 import { loadFeatureDirs } from "./featuredirs.ts";
 import { type AppFilter, type AppRaw, APPS_FILE, appEntries, appLabel, type IntegrationEntry, inConv, INTEGRATIONS, readAppOff, readAppsFile, srcKey, whereOf } from "./integrations.ts";
@@ -16,9 +17,11 @@ const named = (list: readonly string[], watch: string): boolean => list.some(w =
 const owns = (e: IntegrationEntry, watch: string): boolean => named(e.watches ?? [], watch) && !named(e.not?.watches ?? [], watch);
 
 /** True when the watch belongs to an app this install switched off: the runner skips it. */
-export const watchOff = (dataDir: string, watch: string): boolean => {
+export const watchOff = (dataDir: string, watch: string, session?: { url: string }): boolean => {
 	const off = readAppOff(dataDir);
-	return off.size > 0 && appEntries(dataDir).some(e => off.has(e.key) && owns(e, watch));
+	if (!off.size) return false;
+	const owner = watchOwner(appEntries(dataDir), { name: watch, session });
+	return owner !== undefined && off.has(owner);
 };
 
 type Blockable = { app?: string; src?: string; open?: string; decision?: { to?: string } };

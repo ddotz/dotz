@@ -1,0 +1,164 @@
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { featuresOf, ownedWatches, retryInternal, setFeature } from "./app-features.ts";
+import { readSettings, writeSettings } from "./app-settings.ts";
+import type { Watch } from "./watch.ts";
+import { appAsset, indexPage } from "./webapp.ts";
+
+// The instagram app's ⋯ settings screen in a headless Bun.WebView against a stub gateway whose feature routes call the real hub code: 기능 with switches
+// above 설정, 내부 기능 with a status dot and 다시 시도, and none of the app's watches as a row of 일반 모니터링. Screenshots are written only when
+// SETTINGS_SHOTS names a folder. Names are placeholders.
+const SHOTS = process.env.SETTINGS_SHOTS;
+if (SHOTS) mkdirSync(SHOTS, { recursive: true });
+const data = mkdtempSync(join(tmpdir(), "af-web-"));
+mkdirSync(join(data, "custom/sns"), { recursive: true });
+writeFileSync(join(data, "custom/sns/config.json"), JSON.stringify({ instagram: {} }));
+
+const RUN = "2026-10-23T03:00:00.000Z";
+const watch = (name: string, extra: Partial<Watch> = {}, state: Partial<Watch["state"]> = {}): Watch => ({ name, command: "true", every_minutes: 60, state: { fails: 0, lastRun: RUN, ...state }, ...extra }) as unknown as Watch;
+const WATCHES = [
+	watch("sns-ig-comments"),
+	watch("ig-site-login", { session: { url: "https://www.instagram.com/", refresh_hours: 6 } }, { fails: 2, last: "session expired", kind: "auth" }),
+	watch("plain-disk-check"),
+];
+const LABEL: Record<string, string> = { "sns-ig-comments": "댓글 확인", "ig-site-login": "사이트 로그인", "plain-disk-check": "디스크 점검" };
+const monitors = WATCHES.map(w => ({ name: LABEL[w.name], watch: w.name, kind: "watch", every: "60분마다", last_run: RUN, last_result: w.state.fails ? "fail" : "ok", fails: w.state.fails, ...(w.session ? { keeper: true } : {}) }));
+const NOTICES = [{ id: "n-ig", title: "릴스 올리기 승인 (j-1)", text: "인스타 릴스 영상이에요", ts: RUN, decision: { state: "open", to: "main", draft: { to: "x", body: "b" } } }];
+
+const featPatches: Record<string, unknown>[] = [];
+const retries: string[] = [];
+let onRetry: (() => void) | undefined;
+const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
+let streamWaiters: (() => void)[] = [];
+const te = new TextEncoder();
+const json = (v: unknown, status = 200) => Response.json(v, { status });
+const server = Bun.serve({
+	port: 0,
+	hostname: "127.0.0.1",
+	idleTimeout: 0,
+	async fetch(req) {
+		const url = new URL(req.url), p = url.pathname;
+		if (p === "/") return indexPage(req);
+		const asset = appAsset(req, p);
+		if (asset) return asset;
+		if (p === "/api/events") {
+			let ctl: ReadableStreamDefaultController<Uint8Array>;
+			const body = new ReadableStream<Uint8Array>({
+				start(c) { ctl = c; streams.add(c); c.enqueue(te.encode(": open\n\n")); const w = streamWaiters; streamWaiters = []; for (const f of w) f(); },
+				cancel() { streams.delete(ctl); },
+			});
+			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+		}
+		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
+		if (p === "/api/activity") return json({ items: [], more: false, history: false });
+		if (p === "/api/conversations") return json({ items: [] });
+		if (p === "/api/notices") return json({ unread: 0, items: [] });
+		if (p === "/api/monitors") return json({ items: monitors });
+		if (p === "/api/integrations") {
+			const own = ownedWatches(data, WATCHES);
+			return json({ items: [{ key: "instagram", label: "인스타그램", icon: "instagram", kind: "app", conv: [], notices: [], needs: { drafts: 1, unread: 0, sentToday: 0 }, watches: ["sns-ig-"], own: own.get("instagram") ?? [] }], available: [] });
+		}
+		const f = /^\/api\/integrations\/([a-z0-9-]+)\/(features|retry)$/.exec(p);
+		if (f) {
+			try {
+				if (f[2] === "features" && req.method === "PATCH") {
+					const b = (await req.json()) as { id: string; on: boolean };
+					featPatches.push(b);
+					setFeature(data, f[1]!, b.id, b.on);
+				}
+				if (f[2] === "retry") {
+					const b = (await req.json()) as { watch: string };
+					await retryInternal(data, f[1]!, b.watch, WATCHES, async n => { retries.push(n); onRetry?.(); });
+				}
+				return json(featuresOf(data, f[1]!, WATCHES, NOTICES));
+			} catch (e) {
+				return json({ error: (e as Error).message }, 400);
+			}
+		}
+		const m = /^\/api\/integrations\/([a-z0-9-]+)\/settings$/.exec(p);
+		if (m) {
+			if (req.method === "PATCH") return json({ key: m[1], fields: writeSettings(data, m[1]!, ((await req.json()) as { values: unknown }).values) });
+			return json({ key: m[1], fields: readSettings(data, m[1]!) });
+		}
+		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
+	},
+});
+
+type View = InstanceType<typeof Bun.WebView>;
+const views: View[] = [];
+const open = (width: number, height: number): View => { const v = new Bun.WebView({ width, height }); views.push(v); return v; };
+afterAll(() => { for (const v of views) v.close(); for (const c of streams) { try { c.close(); } catch { /* already closed */ } } server.stop(true); rmSync(data, { recursive: true, force: true }); });
+
+const waitFor = (v: View, expr: string, ms = 4000) =>
+	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
+const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
+const shot = async (v: View, name: string) => { if (SHOTS) await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`); if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
+const boot = async (v: View, route: string) => {
+	const opened = new Promise<void>(r => streamWaiters.push(r));
+	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	await opened;
+	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S`);
+	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
+	await run(v, `go("monitoring", ${JSON.stringify(route)})`);
+};
+const openScreen = async (v: View) => {
+	const more = `[...document.querySelectorAll('[data-as-more="instagram"]')].find(b => b.offsetParent && !b.hidden)`;
+	await waitFor(v, more);
+	await run(v, `${more}.click()`);
+	await waitFor(v, `document.querySelector("#app-sw [data-feature]") && document.querySelector("#app-sw [data-internal]")`);
+};
+
+const suite = (label: string, width: number, height: number, tag: string) => describe(`instagram ⋯ settings at ${label}`, () => {
+	const v = open(width, height);
+
+	test("the app's watches are not rows of 일반 모니터링; the unrelated one is", async () => {
+		await boot(v, "i:instagram");
+		await waitFor(v, `monItems().some(i => i.key === "i:instagram")`);
+		expect(await q(v, `return monItems().filter(i => i.group === MON_GROUP.plain).map(i => i.name)`)).toEqual(["디스크 점검"]);
+		expect(await q(v, `return monItems().find(i => i.key === "i:instagram").owned.map(m => m.watch).sort()`)).toEqual(["ig-site-login", "sns-ig-comments"]);
+		expect(await q(v, `return monItems().find(i => i.key === "i:instagram").badge`)).toEqual(["실패", "err"]);
+	});
+
+	test("기능 with switches comes first, 내부 기능 follows, 설정 last; 숨긴 기능 are not drawn", async () => {
+		await openScreen(v);
+		expect(await q(v, `return [...document.querySelectorAll("#app-sw .as-sec")].map(e => e.textContent)`)).toEqual(["기능", "승인 대기", "내부 기능", "설정"]);
+		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => [e.dataset.feature, e.querySelector(".as-n").textContent])`)).toEqual([["comment_reply", "댓글 답글"], ["reels_approval", "릴스(쇼츠) 올리기 승인"]]);
+		expect(await q(v, `return document.querySelector('#app-sw [data-feature="reels_approval"] .as-h').textContent`)).toBe("승인 대기 1건");
+		expect(await q(v, `return document.body.textContent.includes("DM 답장") || document.body.textContent.includes("게시물 정보 수정")`)).toBe(false);
+		expect(await q(v, `const sec = [...document.querySelectorAll("#app-sw .as-sec")].pop(); return sec.nextElementSibling.querySelector('[data-k="use_here"]') !== null`)).toBe(true);
+		await shot(v, `${tag}-settings-top.png`);
+	});
+
+	test("the login keeper and the sync are internal rows: dot, last run, the failure in Korean, 다시 시도", async () => {
+		const rows = await q<{ id: string; kind: string; dot: string; text: string }[]>(v, `return [...document.querySelectorAll("#app-sw [data-internal]")].map(e => ({ id: e.dataset.internal, kind: e.dataset.kind, dot: e.querySelector(".as-dot").className.replace("as-dot ", ""), text: e.textContent }))`);
+		expect(rows.map(r => [r.id, r.kind, r.dot])).toEqual([["sns-ig-comments", "sync", "ok"], ["ig-site-login", "login", "fail"]]);
+		expect(rows[1]!.text).toContain("로그인 유지");
+		expect(rows[1]!.text).toContain("마지막 확인");
+		expect(rows[1]!.text).toContain("이유:");
+		const before = retries.length, ran = new Promise<void>(r => (onRetry = r));
+		await run(v, `document.querySelector('#app-sw [data-k="retry:ig-site-login"]').click()`);
+		await ran;
+		expect(retries.slice(before)).toEqual(["ig-site-login"]);
+		await run(v, `document.querySelector("#app-sw [data-internal='ig-site-login']").scrollIntoView({ block: "center" })`);
+		await shot(v, `${tag}-settings-internal.png`);
+	});
+
+	test("a feature switch PATCHes the features route and persists in custom/apps.json", async () => {
+		const before = featPatches.length;
+		await waitFor(v, `!AS.busy.instagram`);
+		await run(v, `document.querySelector('#app-sw [data-k="feat:reels_approval"]').click()`);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="feat:reels_approval"]').getAttribute("aria-checked") === "false"`);
+		expect(featPatches.slice(before)).toEqual([{ id: "reels_approval", on: false }]);
+		expect(JSON.parse(readFileSync(join(data, "custom/apps.json"), "utf8")).instagram.features).toEqual({ reels_approval: false });
+		expect(await q(v, `return document.querySelector('#app-sw [data-feature="reels_approval"] .as-h').textContent`)).toBe("꺼져 있어요");
+		await run(v, `document.querySelector('#app-sw [data-k="feat:reels_approval"]').click()`);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="feat:reels_approval"]').getAttribute("aria-checked") === "true"`);
+	});
+});
+
+suite("390px", 390, 844, "phone");
+suite("1280px", 1280, 800, "desktop");
