@@ -64,12 +64,14 @@ to be 보내기. Without a pick, with a pick for another id, after 고치기 or 
 
 ## Sources
 
+Comments of YouTube, Instagram and websites also have their own source contract, shared collection (script only), a per-source chosen-posts list, a web view and one send gate: `features/comments` + `hub/comments/` (docs/comments-api.md). It takes its tone profile (`tone/<source>.md`), lint and `[ask]` shape from this engine; when it is on for a platform the old `sns-*-comments` watch is paused so a comment is handled once.
+
 | Source | State | Adapter |
 |---|---|---|
 | mail (zele, webmail-no-api) | done | gateway hook `lib/offer.ts` |
 | youtube comments | done | `features/youtube-instagram/lib/reply-adapter.ts` |
 | instagram comments | done | the same file (one implementation for both platforms) |
-| website / blog comments | next | a generic adapter for a site's comment section through a browser login, like webmail-no-api |
+| website / blog comments | done | `features/comments` (generic website adapter: RSS/JSON/script to read, webhook/script to post; docs/comments-api.md) |
 
 A comment source plugs into `lib/comments.ts` with a `CommentAdapter` and its watch prints one line per new comment:
 `{app, label, parse(line) -> {id, author, text, context}, stage(comment, reply) -> pendingId, discard(pendingId)}`.
