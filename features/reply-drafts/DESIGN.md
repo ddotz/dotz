@@ -43,6 +43,23 @@ to be 보내기. Without a pick, with a pick for another id, after 고치기 or 
 
 ## How a new install's tone is learned
 
+The base is a deep first sweep, the details come from use (owner 2026-10-23; method generalised from the reference install, whose
+mail agent drafted from an extract of the whole sent mailbox, a per-situation reply template in the user's own sentences, and verbatim
+corrections turned into a checklist). `lib/persona.ts`:
+
+- First sweep, once per profile (`learnFirst`, recorded in `learned.json`; a source with nothing to read yet is asked again): up to
+  `SWEEP_LIMIT` (200) sent texts, each with the start of what it answered, are kept in `sent/<profile>.md` and analysed in one model
+  call into `## 정체성` (6-12 bullets: register, structure, exact greeting and sign-off, emoticons, recurring requests, how the user
+  declines, asks and thanks, what they never write) and `## 답장 틀` (`<situation> => <sentence> | <sentence>`: how the user answers each
+  situation seen at least twice, in their own sentences with `{slots}`, conditional lines marked `[...]`). Lines with an e-mail, a URL
+  or a phone number are dropped; names are asked as `{slots}`.
+- The draft prompt opens with the identity and the reply templates: a fitting template is filled, otherwise the user's own sentences
+  are preferred over new ones; samples, rules and corrections refine it.
+- Every `REFINE_EVERY` (5) corrections of a profile, one call folds them into its identity and templates (`maybeRefine`).
+- Where it runs: mail before the first offered draft (`offer.ts`, gateway passes zele's sent mail when zele is on), a comment source
+  before its first draft (`CommentAdapter.ownTexts`), a KakaoTalk room on its first draft (`ensureKakaoRoom`), and `onboard.ts on|learn`.
+  Without an injected `analyze` call (tests, library use) nothing is analysed.
+
 1. `onboard.ts on`: the `mail` profile from the user's sent mail when zele is on (`zele mail list --folder sent`, then `zele mail read <id>`).
    Comment tone needs no step: `custom/sns/tone.md` examples are read for `youtube` and `instagram` until those apps have their own.
 2. `onboard.ts learn [--app <app|install>] [--room <id>] [--from-file <f>]`: sentences of a file into a chosen profile (default `mail`).

@@ -2,12 +2,14 @@
 // deduped, at most 40 -> the "## 예시" section of ONE tone profile (settings.ts: install, app or app+room). The sources are injected
 // (a command runner for the sent-mail reader, a file, ready-made texts such as one messenger room's own lines), so tests never touch mail.
 import { readFileSync } from "node:fs";
-import { writeExamples, type ToneKey } from "./settings.ts";
+import { dataDir, writeExamples, type ToneKey } from "./settings.ts";
+import { join } from "node:path";
 
 export type RunResult = { code: number; stdout: string; stderr: string };
 export type Runner = (argv: string[]) => Promise<RunResult>;
 
 export const MAX_EXAMPLES = 40;
+export const SWEEP_LIMIT = 200; // sent texts the first sweep reads for the identity (persona.ts)
 const MIN_LEN = 3;
 const MAX_LEN = 120;
 
@@ -43,6 +45,14 @@ export function ownText(mail: string): string {
 		out.push(line);
 	}
 	return out.join("\n");
+}
+
+// What the user's mail answered: the quoted lines and the history after the first marker (the reply's context for the identity sweep).
+export function quotedText(mail: string): string {
+	const lines = mail.replace(/\r\n?/g, "\n").split("\n");
+	const at = lines.findIndex((l, i) => i > 0 && HISTORY.some(r => r.test(l)));
+	const after = at < 0 ? [] : lines.slice(at + 1);
+	return [...lines.filter(l => /^\s*>/.test(l)), ...after].map(l => l.replace(/^\s*>+\s?/, "")).join("\n").trim();
 }
 
 export function sentencesOf(text: string): string[] {
@@ -88,8 +98,17 @@ export function zeleEnabled(config: Record<string, any> | undefined): boolean {
 	return config?.zele?.enabled === true && !!Bun.which("zele");
 }
 
+// The install's sent mail for the identity sweep: read with zele only when this install's config.json turned zele on, else nothing.
+export async function installSentMail(run: Runner): Promise<string[]> {
+	let config: Record<string, any> | undefined;
+	try {
+		config = JSON.parse(readFileSync(join(dataDir(), "config.json"), "utf8"));
+	} catch {}
+	return zeleEnabled(config) ? sentMailTexts(run, SWEEP_LIMIT) : [];
+}
+
 export type LearnOpts = { fromFile?: string; run?: Runner; zeleOn?: boolean; texts?: string[]; textsLabel?: string };
-export type LearnResult = { examples: string[]; from: string[]; warning?: string };
+export type LearnResult = { examples: string[]; from: string[]; texts: string[]; warning?: string };
 
 // The sent-mail source (zele) belongs to the mail app only; any key can take a file or ready-made texts.
 export async function learnTone(key: ToneKey | "install", opts: LearnOpts): Promise<LearnResult> {
@@ -106,7 +125,7 @@ export async function learnTone(key: ToneKey | "install", opts: LearnOpts): Prom
 	let warning: string | undefined;
 	if (opts.zeleOn && opts.run && key !== "install" && key.app === "mail" && key.room === undefined) {
 		try {
-			const mails = await sentMailTexts(opts.run);
+			const mails = await sentMailTexts(opts.run, SWEEP_LIMIT);
 			texts.push(...mails);
 			if (mails.length) from.push(`보낸 메일 ${mails.length}통`);
 		} catch (e) {
@@ -115,7 +134,7 @@ export async function learnTone(key: ToneKey | "install", opts: LearnOpts): Prom
 	}
 	const examples = pickExamples(texts);
 	if (examples.length) writeExamples(key, examples);
-	return { examples, from, ...(warning ? { warning } : {}) };
+	return { examples, from, texts, ...(warning ? { warning } : {}) };
 }
 
 export const toneSummary = (r: LearnResult): string =>

@@ -15,6 +15,8 @@ export const paths = {
 	legacyStyle: () => join(root(), "style.md"), // layout of the first version: read as the mail app profile until tone/mail.md exists
 	toneDir: () => join(root(), "tone"),
 	drafts: () => join(root(), "drafts.json"),
+	learned: () => join(root(), "learned.json"), // tone profiles whose first sweep already ran: { "<profile>": iso }
+	corpusDir: () => join(root(), "sent"), // the first sweep's extract of the user's sent texts, one file per profile (re-analysis reads it)
 	snsTone: () => join(dataDir(), "custom", "sns", "tone.md"),
 	inbox: () => join(dataDir(), "inbox.jsonl"),
 	personalFeature: () => join(dataDir(), "features", "reply-drafts", "feature.md"),
@@ -108,7 +110,7 @@ export function setApp(app: string, auto: boolean): Settings {
 
 // `learned` = style features measured from the user's own messages (kakao-voice.ts), kept apart from `rules` so a relearn never overwrites what the user wrote;
 // `profile` = the short Korean room profile the draft model wrote from reading the room; `record` = what the last learning was based on.
-export const HEADINGS = { rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지", learned: "## 학습한 말투", profile: "## 대화 이해", record: "## 학습 기록" } as const;
+export const HEADINGS = { identity: "## 정체성", templates: "## 답장 틀", rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지", learned: "## 학습한 말투", profile: "## 대화 이해", record: "## 학습 기록" } as const;
 
 export function bullets(md: string, heading: string): string[] {
 	const lines = md.split("\n");
@@ -168,6 +170,9 @@ function profile(key: ToneKey | "install"): string {
 }
 
 export const hasSamples = (key: ToneKey | "install"): boolean => bullets(profile(key), HEADINGS.samples).length > 0;
+export const hasIdentity = (key: ToneKey | "install"): boolean => bullets(profile(key), HEADINGS.identity).length > 0;
+export const identityOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.identity);
+export const correctionsOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.corrections);
 
 // Samples come from the narrowest profile that has any (room -> app -> install; for the youtube and instagram apps the old
 // custom/sns/tone.md examples sit between app and install); rules, corrections and forbidden expressions are merged from every level,
@@ -191,7 +196,10 @@ export function loadStyle(key: ToneKey): LoadedStyle {
 		}
 	}
 	const merged = (...headings: string[]) => unique([install, app, room ?? ""].flatMap(md => headings.flatMap(h => bullets(md, h))));
-	return { samples, samplesFrom, rules: merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
+	// The identity (who the user is as a writer) comes from the narrowest profile that has one, like the samples.
+	const narrowest = (heading: string) => [room, app, install].map(md => (md === undefined ? [] : bullets(md, heading))).find(xs => xs.length) ?? [];
+	const identity = narrowest(HEADINGS.identity);
+	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
 }
 
 // Writes into exactly that profile (a legacy style.md is carried over first when the mail profile is written for the first time).
@@ -205,6 +213,12 @@ export function writeSections(key: ToneKey | "install", sections: [heading: stri
 }
 
 export const profileBullets = (key: ToneKey | "install", heading: string): string[] => bullets(profile(key), heading);
+
+export function writeIdentity(key: ToneKey | "install", lines: string[], templates?: string[]): void {
+	const md = setSection(profile(key), HEADINGS.identity, lines);
+	writeAtomic(toneFile(key), templates?.length ? setSection(md, HEADINGS.templates, templates) : md);
+}
+export const templatesOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.templates);
 
 // The user's change request, verbatim and dated, in the profile of the draft that was revised, so every later draft there follows it.
 export function recordCorrection(key: ToneKey, change: string, now: Date): void {

@@ -10,7 +10,10 @@ import { loadConfig, realCtx } from "../../youtube-instagram/lib/config.ts";
 import { cleanExample, ownReplyTexts, snsConnected } from "../../youtube-instagram/lib/reply-adapter.ts";
 import type { Platform } from "../../youtube-instagram/lib/watchkit.ts";
 import { appOn, dataDir, listProfiles, loadSettings, paths, REPO_FEATURE, saveSettings, setApp, validApp, type ToneKey } from "../lib/settings.ts";
-import { learnTone, realRunner, toneSummary, zeleEnabled, type Runner } from "../lib/tone.ts";
+import type { ModelCall } from "../../../hub/reply-draft.ts";
+import { defaultCall } from "../lib/flow.ts";
+import { sweep } from "../lib/persona.ts";
+import { learnTone, realRunner, SWEEP_LIMIT, toneSummary, zeleEnabled, type Runner } from "../lib/tone.ts";
 
 type Out = { lines: string[]; code: number };
 export type SnsAccess = { connected: (p: Platform) => boolean; ownTexts: (p: Platform) => Promise<string[]> };
@@ -21,7 +24,7 @@ const SNS_ONBOARD = join(REPO_FEATURE, "..", "youtube-instagram", "bin", "onboar
 
 export const realSns: SnsAccess = {
 	connected: snsConnected,
-	ownTexts: async p => (await ownReplyTexts(realCtx(), loadConfig(), p, 30)).map(cleanExample).filter(Boolean),
+	ownTexts: async p => (await ownReplyTexts(realCtx(), loadConfig(), p, SWEEP_LIMIT)).map(cleanExample).filter(Boolean),
 };
 
 function installConfig(): Record<string, any> | undefined {
@@ -38,15 +41,22 @@ function writeSwitch(): void {
 	writeFileSync(paths.personalFeature(), shipped.replace(/^enabled:\s*false\s*$/m, "enabled: true"));
 }
 
-async function learn(key: ToneKey, opts: Parameters<typeof learnTone>[1]): Promise<string> {
+// Examples from the user's sent texts, then (with a model call) the identity analysed from the same whole batch (persona.ts).
+async function learn(key: ToneKey, opts: Parameters<typeof learnTone>[1], analyze?: ModelCall, where = key.app): Promise<string> {
 	try {
-		return toneSummary(await learnTone(key, opts));
+		const r = await learnTone(key, opts);
+		let identity = "";
+		if (analyze && r.texts.length) {
+			const a = await sweep(key, r.texts, where, analyze).catch(e => ((r.warning ??= `문체 분석 실패: ${(e as Error).message}`), undefined));
+			if (a?.identity) identity = ` 보낸 글 ${r.texts.length}개를 분석해 문체와 성격 ${a.identity}가지를 정체성으로 잡고, 자주 오는 상황별 답장 틀 ${a.templates}개를 만들었어요.`;
+		}
+		return `${toneSummary(r)}${identity}`;
 	} catch (e) {
 		return `말투를 배우지 못했어요: ${(e as Error).message}. 정중한 기본 말투로 시작해요.`;
 	}
 }
 
-export async function runOnboard(args: string[], run: Runner = realRunner, zeleOn: boolean = zeleEnabled(installConfig()), sns: SnsAccess = realSns): Promise<Out> {
+export async function runOnboard(args: string[], run: Runner = realRunner, zeleOn: boolean = zeleEnabled(installConfig()), sns: SnsAccess = realSns, analyze?: ModelCall): Promise<Out> {
 	const [cmd] = args;
 	const app = flag(args, "--app");
 	switch (cmd) {
@@ -54,7 +64,7 @@ export async function runOnboard(args: string[], run: Runner = realRunner, zeleO
 			if (app === undefined || app === "mail") {
 				setApp("mail", true);
 				writeSwitch();
-				return { lines: [`답장 초안을 켰어요. 새 메일 중 답장이 필요한 건 초안을 만들어 물어봐요. ${await learn({ app: "mail" }, { run, zeleOn })}`], code: 0 };
+				return { lines: [`답장 초안을 켰어요. 새 메일 중 답장이 필요한 건 초안을 만들어 물어봐요. ${await learn({ app: "mail" }, { run, zeleOn }, analyze, "메일 (보낸 메일함)")}`], code: 0 };
 			}
 			if (!(app in SNS)) return { lines: [`켤 수 있는 곳은 mail, youtube, instagram이에요: ${app}`], code: 2 };
 			const platform = app as Platform;
@@ -71,7 +81,7 @@ export async function runOnboard(args: string[], run: Runner = realRunner, zeleO
 			} catch (e) {
 				warning = `${SNS[app]}에서 지난 답글을 읽지 못했어요: ${(e as Error).message}`;
 			}
-			const tone = await learn({ app }, { texts, textsLabel: `${SNS[app]}에 쓴 답글 ${texts.length}개` });
+			const tone = await learn({ app }, { texts, textsLabel: `${SNS[app]}에 쓴 답글 ${texts.length}개` }, analyze, `${SNS[app]} 댓글 답글`);
 			return { lines: [`${SNS[app]} 댓글 답글 초안을 켰어요. 새 댓글 중 답이 필요한 건 초안을 만들어 물어봐요. ${tone}${warning ? ` (${warning})` : ""}`], code: 0 };
 		}
 		case "off": {
@@ -90,7 +100,7 @@ export async function runOnboard(args: string[], run: Runner = realRunner, zeleO
 			const room = flag(args, "--room");
 			if (learnApp !== "install" && !validApp(learnApp)) return { lines: [`앱 이름은 영문 소문자·숫자·-만 쓸 수 있어요: ${learnApp}`], code: 1 };
 			if (file && !existsSync(file)) return { lines: [`파일을 찾지 못했어요: ${file}`], code: 1 };
-			return { lines: [await learn({ app: learnApp, ...(room !== undefined ? { room } : {}) }, { fromFile: file, run, zeleOn })], code: 0 };
+			return { lines: [await learn({ app: learnApp, ...(room !== undefined ? { room } : {}) }, { fromFile: file, run, zeleOn }, analyze)], code: 0 };
 		}
 		case "status": {
 			const s = loadSettings();
@@ -103,7 +113,7 @@ export async function runOnboard(args: string[], run: Runner = realRunner, zeleO
 }
 
 if (import.meta.main) {
-	const out = await runOnboard(process.argv.slice(2));
+	const out = await runOnboard(process.argv.slice(2), realRunner, zeleEnabled(installConfig()), realSns, defaultCall(loadSettings().model));
 	for (const l of out.lines) (out.code === 0 ? console.log : console.error)(l);
 	process.exit(out.code);
 }

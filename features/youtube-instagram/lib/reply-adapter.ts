@@ -2,6 +2,9 @@
 // `yt-comment <id> video=.. by=..: text` / `ig-comment <id> media=.. by=..: text`, the pending reply job behind an ask, and the
 // owner's own past replies a tone is learned from. One implementation for both platforms.
 import { type CommentAdapter, type CommentDeps, draftComments } from "../../reply-drafts/lib/comments.ts";
+import { defaultCall } from "../../reply-drafts/lib/flow.ts";
+import { loadSettings } from "../../reply-drafts/lib/settings.ts";
+import { SWEEP_LIMIT } from "../../reply-drafts/lib/tone.ts";
 import { type Config, type Ctx, loadConfig, SetupError } from "./config.ts";
 import { commentsFor, mediaWithCounts } from "./instagram.ts";
 import { newJob, reject } from "./jobs.ts";
@@ -26,12 +29,18 @@ export function snsAdapter(ctx: Ctx, platform: Platform): CommentAdapter {
 		},
 		stage: async (c, reply) => newJob(ctx, { kind: "reply", reply: { platform, comment_id: c.id, text: reply } }).id,
 		discard: async id => void reject(id),
+		ownTexts: async () => (await ownReplyTexts(ctx, loadConfig(), platform, SWEEP_LIMIT)).map(cleanExample).filter(Boolean),
 	};
 }
 
 export async function withReplyDrafts(ctx: Ctx, platform: Platform, res: RunResult, deps?: CommentDeps): Promise<RunResult> {
 	if (res.code !== 0 || !res.lines.length) return res;
 	return { ...res, lines: await draftComments(snsAdapter(ctx, platform), res.lines, deps) };
+}
+
+// The deps of a real watch run: the identity sweep uses the same subscription model call as the drafts (reply-drafts/lib/persona.ts).
+export function realReplyDeps(): CommentDeps {
+	return { analyze: defaultCall(loadSettings().model) };
 }
 
 export function snsConnected(platform: Platform): boolean {

@@ -5,7 +5,7 @@ import type { Ctx } from "../lib/config.ts";
 import { SetupError } from "../lib/config.ts";
 import type { CommentDeps } from "../../reply-drafts/lib/comments.ts";
 import { commentsFor, mediaWithCounts } from "../lib/instagram.ts";
-import { withReplyDrafts } from "../lib/reply-adapter.ts";
+import { realReplyDeps, withReplyDrafts } from "../lib/reply-adapter.ts";
 import { main, oneLine, type RunResult, runWatch } from "../lib/watchkit.ts";
 
 type State = { counts: Record<string, number>; since: string };
@@ -39,4 +39,4 @@ export async function run(ctx: Ctx, _args: string[] = [], deps?: CommentDeps): P
 	return withReplyDrafts(ctx, "instagram", res, deps);
 }
 
-if (import.meta.main) await main(run);
+if (import.meta.main) await main((ctx, args) => run(ctx, args, realReplyDeps()));
