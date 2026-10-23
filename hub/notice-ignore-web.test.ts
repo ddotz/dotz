@@ -127,7 +127,7 @@ describe("the x (무시) in a headless browser", () => {
 		// its history entry says it was ignored
 		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(item().id)})`);
 		await waitFor(phone, `document.querySelector(".fs-ey.ign")`);
-		expect(await phone.evaluate(`document.querySelector(".fs-ey").textContent`)).toBe("무시했어요");
+		expect(await phone.evaluate(`document.querySelector(".fs-ey").textContent`)).toBe("알림 · 무시함");
 		await settled(phone);
 		await Bun.write(`${SNAP}/history-390.png`, await phone.screenshot());
 		await desk.evaluate(`document.querySelectorAll(".snack").forEach(n => n.remove())`);
