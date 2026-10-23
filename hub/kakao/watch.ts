@@ -4,7 +4,7 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isDraftCandidate, maxLogId, newSince, ownUserId, roomKind, roomTypes, sentAtMs, sqlcipherDb, TEXT_TYPE, type KakaoDb } from "./db.ts";
+import { isDraftCandidate, isEmoticon, maxLogId, newSince, ownUserId, roomKind, roomTypes, sentAtMs, sqlcipherDb, TEXT_TYPE, type KakaoDb } from "./db.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
 
 export type WatchDeps = {
@@ -84,7 +84,7 @@ export async function runWatch(deps: WatchDeps): Promise<WatchResult> {
 		return id > lastId || (heldFrom !== undefined && id >= BigInt(heldFrom));
 	});
 
-	let rows = candidates.filter((r) => r.type === TEXT_TYPE && auto.has(r.chatId) && now() - sentAtMs(r.sentAt) <= MAX_AGE_MS);
+	let rows = candidates.filter((r) => (r.type === TEXT_TYPE || (isEmoticon(r.type) && r.hasText)) && auto.has(r.chatId) && now() - sentAtMs(r.sentAt) <= MAX_AGE_MS);
 	if (rows.length > 0) {
 		const me = config.userId !== undefined ? String(config.userId) : await ownUserId(db);
 		rows = rows.filter((r) => r.authorId !== me);

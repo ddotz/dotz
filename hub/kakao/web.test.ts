@@ -577,6 +577,8 @@ describe("media", () => {
 			addMessage(w, row(29, 71, "", { message: "쇼핑 안내" }));
 			addMessage(w, row(30, 0, "", { message: "Sam님이 들어왔어요" }));
 			addMessage(w, row(31, 99, ""));
+			addMessage(w, row(32, 12, att({ name: "x", path: "p", alt: "카카오 이모티콘" }), { message: "고마워 :)" }));
+			addMessage(w, row(33, 25, att({ name: "x", path: "p", alt: "하트" }), { message: "  " }));
 		});
 		const r = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
 		const by = (n: number) => r.json.messages.find((m: any) => m.logId === id(n));
@@ -587,6 +589,9 @@ describe("media", () => {
 		expect(by(24).media).toEqual({ kind: "file", name: "내 파일 (1).pdf", size: 2048, local: true, expired: false });
 		expect(by(25).media).toEqual({ kind: "file", name: "gone.zip", size: 10, local: false, expired: true });
 		expect(by(26).media).toEqual({ kind: "emoticon", alt: "(이모티콘) 하트" });
+		// the text written with a sticker rides in media.text (the text field stays empty, as for every media type); blank text is none
+		expect(by(32)).toMatchObject({ type: 12, text: "", media: { kind: "emoticon", alt: "(이모티콘) 카카오 이모티콘", text: "고마워 :)" } });
+		expect(by(33).media).toEqual({ kind: "emoticon", alt: "(이모티콘) 하트" });
 		expect(by(27)).toMatchObject({ text: "나는 국밥", media: { kind: "reply", quoteSender: "Alex" } });
 		expect([...by(27).media.quote].length).toBeLessThanOrEqual(81);
 		expect(by(27).media.quote.startsWith("점심 뭐 먹을까 ")).toBe(true);

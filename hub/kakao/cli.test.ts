@@ -57,6 +57,15 @@ function build(over: Partial<Ctx> = {}) {
 
 const enable = (ctx: Ctx, extra: Partial<KakaoConfig> = {}) => atomicWrite(ctx.paths.config, JSON.stringify({ enabled: true, userId: 1000, ...extra }));
 
+test("read includes the text written with an emoticon as (이모티콘) <text>; a sticker alone and a photo stay out", async () => {
+	const list = [msg(1, "hello"), msg(2, "고마워", { type: 12 }), msg(3, "", { type: 20 }), msg(4, "photo", { type: 2 }), msg(5, "내일 봐", { type: 25, authorId: "1000", sender: "Owner", fromMe: true })];
+	const reader: Reader = { rooms: async () => [room("101", "Alex", "direct")], messages: async () => list, draftable: () => true };
+	const { ctx, log } = build({ reader: async () => reader });
+	enable(ctx);
+	expect(await run(["read", "--chat", "101"], ctx)).toBe(0);
+	expect(log.out).toEqual([`[${hhmm(1_700_000_060)}] Alex: hello`, `[${hhmm(1_700_000_120)}] Alex: (이모티콘) 고마워`, `[${hhmm(1_700_000_300)}] 나: (이모티콘) 내일 봐`]);
+});
+
 test("setup --dry-run prints every step and the commands, with zero runner and gateway calls", async () => {
 	const { ctx, log } = build();
 	expect(await run(["setup", "--dry-run"], ctx)).toBe(0);

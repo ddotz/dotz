@@ -535,6 +535,7 @@ const MEDIA = (): Msg[] => [
 	mk("5012", "가나", "다라님이 들어왔어요", at(23, 3, 10), 0),
 	mk("5013", "가나", "알림 메시지", at(23, 3, 11), 71),
 	mk("5014", "다라", "", at(23, 3, 12), 99),
+	mk("5015", "가나", "", at(23, 3, 13), 12, { kind: "emoticon", alt: "(이모티콘) 카카오 이모티콘", text: "고마워 <b>x</b>" }),
 ];
 const useMedia = () => { reset(); msgs = MEDIA(); drafts = []; };
 
@@ -620,6 +621,10 @@ describe("카카오톡 media at desktop width", () => {
 				loc: [loc.textContent, loc.getAttribute("href"), loc.getAttribute("target"), loc.getAttribute("rel")], sys: [sys.textContent, Math.abs((r.left + r.right) / 2 - (tl.left + tl.right) / 2) < 20, !!t("5012").querySelector(".kk-bub")],
 				n71: t("5013").querySelector(".kk-bub").textContent, n99: t("5014").querySelector(".kk-bub").textContent }`);
 		expect(s.emo).toBe("(이모티콘) 하트");
+		// a sticker with text: the sticker placeholder on top, the text (as text, not markup) in its own bubble under it; a bare sticker has one bubble
+		const e = await q<Record<string, any>>(v, `const t = id => document.querySelector('[data-log="' + id + '"]'), b = [...t("5015").querySelectorAll(".kk-emo .kk-bub")], bare = t("5009").querySelectorAll(".kk-bub");
+			return { texts: b.map(x => x.textContent), cls: b.map(x => x.classList.contains("ph")), under: b.length === 2 && b[0].getBoundingClientRect().bottom <= b[1].getBoundingClientRect().top + 1, markup: !!t("5015").querySelector("b"), bare: bare.length, bareEmo: !!t("5009").querySelector(".kk-emo") }`);
+		expect(e).toEqual({ texts: ["(이모티콘) 카카오 이모티콘", "고마워 <b>x</b>"], cls: [true, false], under: true, markup: false, bare: 1, bareEmo: false });
 		expect([s.qn, s.qt, s.rt]).toEqual(["가나", "점심 뭐 먹을까", "나도 좋아"]);
 		expect(s.loc[0]).toContain("위치: 서울 강남구");
 		expect(s.loc[1]).toBe("https://map.kakao.com/link/map/" + encodeURIComponent("서울 강남구") + ",37.5,127.03");

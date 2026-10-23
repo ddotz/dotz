@@ -27,7 +27,7 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
   - `{ kind: "photo", w?, h?, count, expired }` types 2 and 27 (album: `count` = number of images; `w`/`h` = the thumbnail size of the first)
   - `{ kind: "video", w?, h?, d?, expired }` type 3 (`d` = seconds)  - `{ kind: "voice", d?, expired }` types 4 and 5
   - `{ kind: "file", name, size?, local, expired }` type 18; `local` = the owner downloaded it and it still exists on this computer
-  - `{ kind: "emoticon", alt }` types 12, 20, 25 (`alt` like `(이모티콘) 하트`, no image)
+  - `{ kind: "emoticon", alt, text? }` types 12, 20, 25 (`alt` like `(이모티콘) 하트`, no image; `text` is the message written with the sticker, absent when it went out alone)
   - `{ kind: "reply", quote, quoteSender? }` type 26 (`quote` = the replied-to text, clipped to 80 characters; `quoteSender` when that author is
     among the senders of the same page, `나` for the owner); `text` is the reply itself
   - `{ kind: "location", label, lat, lng }` type 16 (`label` = address, else title)

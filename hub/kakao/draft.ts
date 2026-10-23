@@ -1,7 +1,7 @@
 // Input and output of the one on-demand model call behind POST /api/kakao/chat/<id>/draft (docs/kakao-rooms-api.md).
 // Pure: no fs, no model, no database. web.ts reads the room, calls the injected model and stores the result.
 // Budget: system + user stay within MAX_PROMPT_CHARS (about 3K tokens); chat lines at most 30 of 300 characters and 2500 in total.
-import { TEXT_TYPE } from "./db.ts";
+import { hasWords, readText, TEXT_TYPE } from "./db.ts";
 import type { Msg } from "./types.ts";
 
 export const MAX_LINES = 30;
@@ -59,9 +59,9 @@ export function sinceOwnLast(list: Msg[], self: boolean): Msg[] {
 }
 
 // The newest text message of the other side (any text in a memo room): the draft is stale when something newer comes in.
-export const basisOf = (window: Msg[], self: boolean): string | undefined => window.findLast(m => m.type === TEXT_TYPE && (self || !m.fromMe))?.logId;
+export const basisOf = (window: Msg[], self: boolean): string | undefined => window.findLast(m => hasWords(m) && (self || !m.fromMe))?.logId;
 
-const lineOf = (m: Msg) => `${m.fromMe ? "나" : m.sender || "상대"}: ${m.type === TEXT_TYPE ? clip(m.text, MAX_LINE_CHARS) : "(사진·파일)"}`;
+const lineOf = (m: Msg) => `${m.fromMe ? "나" : m.sender || "상대"}: ${clip(readText(m), MAX_LINE_CHARS)}`;
 
 // The chat lines of the prompt: newest 30, 300 characters each, oldest dropped further until the total fits.
 export function chatLines(window: Msg[]): string[] {
@@ -86,7 +86,7 @@ export type Pair = { other: string[]; own: string[] };
 export function ownPairs(recent: Msg[], max = MAX_PAIRS): Pair[] {
 	const turns: { me: boolean; lines: string[] }[] = [];
 	for (const m of recent) {
-		const text = m.type === TEXT_TYPE ? m.text.replace(/\s+/g, " ").trim() : m.fromMe ? "" : "(사진·파일)";
+		const text = hasWords(m) || !m.fromMe ? readText(m).replace(/\s+/g, " ").trim() : "";
 		if (!text) continue;
 		const last = turns.at(-1);
 		if (last && last.me === m.fromMe) last.lines.push(text);

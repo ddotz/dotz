@@ -303,6 +303,20 @@ export function roomKind(type: number): Room["kind"] {
 // Text messages are type 1 (kakaocli Models/Message.swift).
 export const TEXT_TYPE = 1;
 
+// Emoticon (sticker) messages: types 12, 20 and 25 in the local database. The sticker is in the attachment JSON; the text the sender wrote
+// with it, if any, is in the message column (empty when the sticker went out alone).
+export const EMOTICON_TYPES = [12, 20, 25];
+export const isEmoticon = (type: number) => EMOTICON_TYPES.includes(type);
+// A message that says something in words: a text message, or an emoticon that came with text.
+export const hasWords = (m: { type: number; text: string }) => m.type === TEXT_TYPE || (isEmoticon(m.type) && m.text.trim() !== "");
+// What a reader (draft prompt, cli read) sees for a message: its text, "(이모티콘) <text>" for an emoticon with text, else a placeholder.
+export const readText = (m: { type: number; text: string }): string => {
+	if (m.type === TEXT_TYPE) return m.text;
+	if (!isEmoticon(m.type)) return "(사진·파일)";
+	const t = m.text.trim();
+	return t ? `(이모티콘) ${t}` : "(이모티콘)";
+};
+
 // Other tooling stores sentAt in seconds (kakaocli kakaoDate); a millisecond value is accepted too.
 export const sentAtMs = (sentAt: number) => (sentAt > 1e11 ? sentAt : sentAt * 1000);
 
@@ -395,16 +409,16 @@ export async function messageById(db: KakaoDb, chatId: string, logId: string, us
 	return m?.logId === logId ? m : undefined;
 }
 
-export type NewRow = { logId: string; chatId: string; authorId: string; type: number; sentAt: number };
+export type NewRow = { logId: string; chatId: string; authorId: string; type: number; sentAt: number; hasText: boolean };
 
-// Metadata only, no bodies. logId is 64-bit: it stays a string end to end (compare with BigInt).
+// Metadata only, no bodies (hasText: the message column is not empty, which tells an emoticon with text from a bare one). logId is 64-bit: it stays a string end to end (compare with BigInt).
 export async function newSince(db: KakaoDb, lastLogId: string, limit: number): Promise<NewRow[]> {
 	const rows = await db.query(
-		`SELECT CAST(logId AS TEXT) AS logId, CAST(chatId AS TEXT) AS chatId, CAST(authorId AS TEXT) AS authorId, type, sentAt
+		`SELECT CAST(logId AS TEXT) AS logId, CAST(chatId AS TEXT) AS chatId, CAST(authorId AS TEXT) AS authorId, type, sentAt, (message IS NOT NULL AND TRIM(message) <> '') AS hasText
 		FROM NTChatMessage WHERE logId > ? ORDER BY logId ASC LIMIT ?`,
 		[lastLogId, Math.max(1, Math.trunc(limit))],
 	);
-	return rows.map((r) => ({ logId: str(r.logId), chatId: str(r.chatId), authorId: str(r.authorId), type: num(r.type), sentAt: num(r.sentAt) }));
+	return rows.map((r) => ({ logId: str(r.logId), chatId: str(r.chatId), authorId: str(r.authorId), type: num(r.type), sentAt: num(r.sentAt), hasText: num(r.hasText) === 1 }));
 }
 
 // Metadata only: the new rows of the given rooms (watched ones), oldest first.

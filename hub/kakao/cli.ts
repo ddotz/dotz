@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { atomicWrite, cardFile, featureFile, isOn, OFF_LINE, type Deps, pidAlive, type Ports, readJson, readState, RUNNING_LINE, runDry, runLoginOnly, runOnboarding, stepName, WATCH_NAME } from "./onboard.ts";
 import { createHub } from "./hub.ts";
+import { hasWords, readText } from "./db.ts";
 import type { RoomFact } from "./room.ts";
 import { listBlock } from "../listblock.ts";
 import { defaultRunner, type HubFull, type KakaoConfig, type KakaoPaths, kakaoPaths, type Msg, type Room, type Runner } from "./types.ts";
@@ -121,7 +122,7 @@ async function draftableRoom(ctx: Ctx, config: KakaoConfig, chat: string): Promi
 	return room && reader.draftable(room) ? { reader, room } : undefined;
 }
 
-const newestIncoming = (list: Msg[]) => list.findLast(m => m.type === 1 && !m.fromMe);
+const newestIncoming = (list: Msg[]) => list.findLast(m => hasWords(m) && !m.fromMe);
 
 const KIND: Record<Room["kind"], string> = { direct: "1:1", group: "단체", self: "나와의 채팅", channel: "채널", open: "오픈채팅", other: "기타" };
 
@@ -155,9 +156,9 @@ async function read(args: Record<string, string | true>, ctx: Ctx, config: Kakao
 	const limit = Math.min(Math.max(Math.trunc(Number(str(args.limit) ?? 20)) || 20, 1), MAX_READ);
 	const hit = await draftableRoom(ctx, config, chat);
 	if (!hit) return ctx.out("이 대화방은 읽을 수 없어요. 답장 초안 대상이 아니에요"), 1;
-	const texts = (await hit.reader.messages(chat, MAX_READ)).filter(m => m.type === 1).slice(-limit);
+	const texts = (await hit.reader.messages(chat, MAX_READ)).filter(hasWords).slice(-limit);
 	if (!texts.length) ctx.out("읽을 텍스트 메시지가 없어요");
-	for (const m of texts) ctx.out(`[${clock(m.sentAt)}] ${m.fromMe ? "나" : m.sender || "상대"}: ${m.text.replaceAll("\n", "\n  ")}`);
+	for (const m of texts) ctx.out(`[${clock(m.sentAt)}] ${m.fromMe ? "나" : m.sender || "상대"}: ${readText(m).replaceAll("\n", "\n  ")}`);
 	return 0;
 }
 

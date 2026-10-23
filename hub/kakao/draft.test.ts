@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildDraftPrompt, DRAFT_MODEL, MAX_PAIRS, MAX_PROMPT_CHARS, ownPairs, pickDraftModel, registerOf } from "./draft.ts";
+import { basisOf, buildDraftPrompt, chatLines, DRAFT_MODEL, MAX_PAIRS, MAX_PROMPT_CHARS, ownPairs, pickDraftModel, registerOf } from "./draft.ts";
 import type { Msg } from "./types.ts";
 
 let n = 0;
@@ -30,6 +30,22 @@ describe("ownPairs", () => {
 		const pairs = ownPairs(long);
 		expect(pairs).toHaveLength(MAX_PAIRS);
 		expect(pairs.at(-1)).toEqual({ other: ["q29"], own: ["a29"] });
+	});
+});
+
+describe("emoticon with text", () => {
+	test("the chat lines and pairs keep the text written with a sticker; a bare sticker or a photo stays a placeholder", () => {
+		const list = [m(false, "고마워", 12), m(false, "", 20), m(false, "pic", 2), m(true, "나도", 25), m(false, "ㅋㅋ", 20), m(true, "", 20), m(true, "응")];
+		expect(chatLines(list)).toEqual(["Alex: (이모티콘) 고마워", "Alex: (이모티콘)", "Alex: (사진·파일)", "나: (이모티콘) 나도", "Alex: (이모티콘) ㅋㅋ", "나: (이모티콘)", "나: 응"]);
+		expect(ownPairs(list)).toEqual([
+			{ other: ["(이모티콘)", "(사진·파일)"], own: ["(이모티콘) 나도"] },
+			{ other: ["(이모티콘) ㅋㅋ"], own: ["응"] },
+		]);
+	});
+	test("the basis is the newest incoming message that has words: a sticker with text counts, a bare one does not", () => {
+		const withText = [m(false, "안녕"), m(false, "고마워", 12)], bare = [m(false, "안녕"), m(false, "", 12)];
+		expect(basisOf(withText, false)).toBe(withText[1]!.logId);
+		expect(basisOf(bare, false)).toBe(bare[0]!.logId);
 	});
 });
 

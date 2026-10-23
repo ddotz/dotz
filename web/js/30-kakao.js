@@ -123,6 +123,12 @@ function kkReplyNode(m, md) {
     el("div", { class: "kk-quote" }, md.quoteSender ? el("span", { class: "kk-qn", text: md.quoteSender }) : null, el("span", { class: "kk-qt", text: md.quote })),
     el("div", { class: "kk-rt", text }));
 }
+// A sticker with the text written with it: the sticker on top, its text in a bubble under it (a bare sticker is the one placeholder bubble).
+function kkEmoticonNode(md) {
+  const sticker = el("div", { class: "kk-bub ph", text: md.alt });
+  const words = String(md.text ?? "").trim();
+  return words ? el("div", { class: "kk-emo" }, sticker, el("div", { class: "kk-bub kk-emo-t", text: words })) : sticker;
+}
 function kkLocationNode(md) {
   const href = `https://map.kakao.com/link/map/${enc(md.label)},${Number(md.lat)},${Number(md.lng)}`;
   return el("a", { class: "kk-bub card loc", href, target: "_blank", rel: "noopener" }, el("span", { class: "kk-fn", text: `위치: ${md.label}` }), el("span", { class: "kk-sub", text: "지도에서 보기" }));
@@ -133,7 +139,7 @@ function kkMediaNode(m, md) {
     case "video": return kkVideoNode(m, md);
     case "voice": return kkVoiceNode(m, md);
     case "file": return kkFileNode(m, md);
-    case "emoticon": return el("div", { class: "kk-bub ph", text: md.alt });
+    case "emoticon": return kkEmoticonNode(md);
     case "reply": return kkReplyNode(m, md);
     case "location": return kkLocationNode(md);
     default: return null;

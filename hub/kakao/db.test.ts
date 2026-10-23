@@ -13,12 +13,14 @@ import {
 	findUserId,
 	hashedDeviceUUID,
 	inlineParams,
+	hasWords,
 	isDraftCandidate,
 	maxLogId,
 	messages,
 	newInChats,
 	newSince,
 	ownUserId,
+	readText,
 	parseXmlPlist,
 	platformUUID,
 	preferencesPath,
@@ -33,7 +35,7 @@ import {
 	watermarks,
 	watermarkSignatures,
 } from "./db.ts";
-import { BASE_LOG, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
+import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import type { RunOpts, Runner, RunResult } from "./types.ts";
 
 let dir: string;
@@ -308,11 +310,28 @@ describe("typed reads on the fixture", () => {
 		db.close();
 	});
 
+	test("emoticon types 12, 20 and 25 keep the text written with the sticker; a bare sticker and a photo placeholder have none to read", async () => {
+		const path = join(dir, "emoticon.sqlite");
+		const w = makeFixtureDb(path);
+		const at = BASE_TIME + 5000;
+		const att = JSON.stringify({ name: "(emoticon)", path: "a.emot_001.png", alt: "카카오 이모티콘" });
+		const rows: [number, number, string][] = [[12, 12, "고마워"], [13, 20, "  "], [14, 25, "내일 봐"], [15, 20, ""], [16, 2, "사진"]];
+		for (const [n, type, message] of rows) addMessage(w, { logId: BASE_LOG + BigInt(100 + n), chatId: ROOM.direct, authorId: 2001, message, type, sentAt: at + n, attachment: att });
+		w.close();
+		const db = sqliteDb(path);
+		const list = (await messages(db, String(ROOM.direct), 50, OWNER)).filter(m => m.logId > String(BASE_LOG + 100n));
+		expect(list.map(m => [m.type, m.text])).toEqual([[12, "고마워"], [20, "  "], [25, "내일 봐"], [20, ""], [2, "사진"]]);
+		expect(list.map(hasWords)).toEqual([true, false, true, false, false]);
+		expect(list.map(readText)).toEqual(["(이모티콘) 고마워", "(이모티콘)", "(이모티콘) 내일 봐", "(이모티콘)", "(사진·파일)"]);
+		expect((await newSince(db, String(BASE_LOG + 100n), 20)).map(r => [r.type, r.hasText])).toEqual([[12, true], [20, false], [25, true], [20, false], [2, true]]);
+		db.close();
+	});
+
 	test("newSince returns metadata only, ascending, and keeps 64-bit ids exact", async () => {
 		const db = open();
 		const rows = await newSince(db, String(BASE_LOG + 5n), 100);
 		expect(rows.map((r) => r.logId)).toEqual([String(BASE_LOG + 6n), String(BASE_LOG + 7n), String(BASE_LOG + 8n)]);
-		expect(Object.keys(rows[0] ?? {}).sort()).toEqual(["authorId", "chatId", "logId", "sentAt", "type"]);
+		expect(Object.keys(rows[0] ?? {}).sort()).toEqual(["authorId", "chatId", "hasText", "logId", "sentAt", "type"]);
 		expect(await newSince(db, String(BASE_LOG), 2)).toHaveLength(2);
 		expect(await newSince(db, String(BASE_LOG + 8n), 10)).toEqual([]);
 		db.close();
