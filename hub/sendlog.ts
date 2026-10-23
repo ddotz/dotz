@@ -5,8 +5,8 @@
 // the send succeeded.
 import { existsSync, readFileSync } from "node:fs";
 
-export type SendItem = { id: string; target: string; text: string; replyRef?: string; answers?: string; parts: number; at: number };
-export type SendOpts = { nonce: string; skip: number; onPart: (index: number) => void };
+export type SendItem = { id: string; target: string; text: string; replyRef?: string; answers?: string; ping?: boolean; parts: number; at: number };
+export type SendOpts = { nonce: string; skip: number; onPart: (index: number) => void; ping?: boolean };
 type SendResult = { delivered: boolean; reason?: string };
 
 type SendLedgerDeps = {
@@ -49,6 +49,7 @@ export function createSendLedger(deps: SendLedgerDeps) {
 				const r = await deps.send(item.target, item.text, item.replyRef, {
 					nonce: item.id,
 					skip: item.parts,
+					...(item.ping ? { ping: true } : {}),
 					onPart: index => {
 						item.parts = index + 1;
 						save();
@@ -84,10 +85,10 @@ export function createSendLedger(deps: SendLedgerDeps) {
 	}
 
 	/** Sends `text` to `target`, retrying until Discord accepts it; resolves once delivered or given up. */
-	function submit(target: string, text: string, replyRef?: string, answers?: string): Promise<SendResult> {
+	function submit(target: string, text: string, replyRef?: string, answers?: string, ping?: boolean): Promise<SendResult> {
 		// Discord nonces are at most 25 chars; the part index is appended to this id.
 		const id = `${Date.now().toString(36)}${(seq++ % 1296).toString(36).padStart(2, "0")}${Math.random().toString(36).slice(2, 8)}`;
-		const item: SendItem = { id, target, text, parts: 0, at: Date.now(), ...(replyRef ? { replyRef } : {}), ...(answers ? { answers } : {}) };
+		const item: SendItem = { id, target, text, parts: 0, at: Date.now(), ...(replyRef ? { replyRef } : {}), ...(answers ? { answers } : {}), ...(ping ? { ping } : {}) };
 		items.push(item);
 		save();
 		return run(item);

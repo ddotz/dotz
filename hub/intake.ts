@@ -16,7 +16,7 @@ import { drain, restore } from "./queue.ts";
 import { anthropicUsage } from "./providers.ts";
 import { withTurnLanguage } from "./outlang.ts";
 import { channelContext, listSetups } from "./workchannels.ts";
-import { deliver, awaiting, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice } from "./outbound.ts";
+import { deliver, awaiting, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice } from "./outbound.ts";
 import { mailTarget, type MailRecord } from "./mail.ts";
 import { settingsTarget } from "./app-settings.ts";
 import { settingsNote } from "./settings-turn.ts";
@@ -112,6 +112,7 @@ export function intake(event: Record<string, any>, target: string, replyTo?: str
 	clearTimeout(b.timer);
 	b.events.push(event);
 	b.replyTo = replyTo ?? b.replyTo;
+	if (replyTo) lastOwner.set(target, replyTo);
 	b.timer = setTimeout(() => flush(target), Math.max(0, Math.min(COALESCE_MS, b.first + COALESCE_MAX_MS - Date.now())));
 }
 
@@ -132,7 +133,7 @@ export function flush(target: string): void {
 	expectReply(target);
 	const refs = b.events.flatMap(e => refOf(e) ?? []);
 	for (const ref of refs) emitDelivery(target, ref, how);
-	if (refs.length) awaiting.set(target, [...(awaiting.get(target) ?? []), ...refs]);
+	if (refs.length) awaiting.set(target, [...(awaiting.get(target) ?? []), ...refs.map(ref => ({ ref, by: b.replyTo }))]);
 	// A project's web chat gets the same receipt and progress line as its Discord channel.
 	if (b.events.some(e => e.source === "web") && target.startsWith("ch:")) {
 		livestatus.begin(target, "orchestrator", true);
@@ -222,7 +223,8 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		deliver(inboxText(turn), { target: to, replyTo: mid, owner: true });
 		expectReply(to);
 		emitDelivery(to, mid, "steered");
-		awaiting.set(to, [...(awaiting.get(to) ?? []), mid]);
+		awaiting.set(to, [...(awaiting.get(to) ?? []), { ref: mid, by: mid }]);
+		lastOwner.set(to, mid);
 	} else {
 		if (s.mode === "interrupt" && orch.status === "working") abortOrchestrator();
 		intake(turn, to, mid);

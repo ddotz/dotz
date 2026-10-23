@@ -51,11 +51,21 @@ function rpJump(id) {
   n.classList.add("rp-flash");
   n.addEventListener("animationend", () => n.classList.remove("rp-flash"), { once: true });
 }
-// The quote above a sent message (its reply field, hub/intake.ts): tap to jump to the quoted message when it is still drawn.
+// The owner message a bot message (kind "out") answers: the hub sends it as `reply` (hub/outbound.ts); an older event only has reply_to,
+// then it is looked up among the messages loaded for this conversation.
+function rpAsked(e) {
+  if (e.reply) return e.reply;
+  if (e.kind !== "out" || !e.reply_to || typeof ts !== "function") return null;
+  const o = ts(target).msgs.find(m => (m.mid || m.message_id) === e.reply_to);
+  const content = o ? rpText(o).slice(0, RP_QUOTE) : "";
+  return content ? { id: e.reply_to, author: o.author || "", content } : null;
+}
+// The quote above a sent message (its reply field, hub/intake.ts) or above a bot message that answers one: tap to jump to the quoted
+// message when it is still drawn.
 function rpQuote(e) {
-  const r = e.reply;
+  const r = rpAsked(e);
   if (!r || !r.content) return null;
-  return el("button", { class: "rpq", type: "button", onclick: () => rpJump(r.id) }, el("span", { class: "rpq-au", text: r.author === e.author ? "나" : r.author }), el("span", { class: "rpq-ct", text: r.content }));
+  return el("button", { class: "rpq", type: "button", onclick: () => rpJump(r.id) }, el("span", { class: "rpq-au", text: e.kind === "out" || r.author === e.author ? "나" : r.author }), el("span", { class: "rpq-ct", text: r.content }));
 }
 // Swipe a message from right to left (touch / pen; a mouse uses the hover button). The row follows the finger with a rubber band to the
 // left and the reply icon shows on the right; it snaps at RP_PULL. A vertical drag (scroll) or a start at a screen edge (the system back

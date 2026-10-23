@@ -8,7 +8,8 @@ import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { isNote, msg } from "./i18n.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
-import { answeredIds, answeredSince, emit, emitDelivery, recentOwnerMessages } from "./events.ts";
+import { answeredIds, answeredSince, emit, emitDelivery, ownerMessage, recentOwnerMessages } from "./events.ts";
+import { settleWaiting, type Waiting } from "./awaiting.ts";
 import { outEvent } from "./projectchat.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
 import { allowedRoots } from "./files.ts";
@@ -20,7 +21,7 @@ import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { splitTone, stripHandoff } from "./tone.ts";
-import { replyRef } from "./threads.ts";
+import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { orchestratorAnswered } from "./notices.ts";
 
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
@@ -82,7 +83,7 @@ const threadMail = (thread: string): string | undefined => {
 // The newest owner message per target (threads.ts replyRef: a thread answer carries a reply reference only when it is not to that one).
 export const lastOwner = new Map<string, string>();
 // Delivery state of owner messages (hub/events.ts emitDelivery): the owner events' ids per orchestrator target, until its answer.
-export const awaiting = new Map<string, string[]>();
+export const awaiting = new Map<string, Waiting[]>();
 export const refOf = (e: Record<string, any>): string | undefined => e.mid ?? e.message_id ?? undefined;
 export const newMid = () => randomUUID().slice(0, 8);
 // Web has no message to edit: the receipt and progress line are one "out" note per conversation (the page keeps the newest).
@@ -100,16 +101,38 @@ export function laneFailed(target: string, lane: string, ref: string | undefined
 }
 type OutJob = { target: string; text: string; replyTo?: string; extra: Record<string, unknown> };
 const jobAnswers = (j: OutJob) => (j.extra.source === undefined || j.extra.source === "orchestrator" ? j.replyTo : undefined);
-const emitOut = (j: OutJob, t: string) => emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target: j.target, text: t, reply_to: j.replyTo ?? null, ...j.extra }, threadHome, threadMail));
+// The web draws a bot message that replies to an owner message with that message quoted, as it does for the owner's own replies.
+const replyQuote = (id?: string) => {
+	const m = id ? ownerMessage(id) : undefined;
+	return id && m?.text.trim() ? { reply: { id, author: m.author ?? "", content: m.text.trim().slice(0, 300) } } : {};
+};
+const emitOut = (j: OutJob, t: string) => emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target: j.target, text: t, reply_to: j.replyTo ?? null, ...replyQuote(j.replyTo), ...j.extra }, threadHome, threadMail));
+const askedAtMs = (id: string): number | undefined => {
+	if (isSnowflake(id)) return snowflakeTime(id);
+	const at = Date.parse(ownerMessage(id)?.ts ?? "");
+	return Number.isNaN(at) ? undefined : at;
+};
+const lateFor = (target: string, replyTo: string | undefined) => isLate(replyTo, lastOwner.get(target), replyTo ? askedAtMs(replyTo) : undefined);
+const lateRequest = (target: string) => lateRequestId(target, queue.current(), queue.deferredOpen(), lastOwner.get(target), askedAtMs);
 // Everything after the text is final: the delivery states, then the web is done or the send ledger (kept on disk) takes over.
 function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason?: string }> {
 	// An answer (not a progress note, not a gateway notice) settles the owner messages waiting in this conversation.
-	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key) for (const ref of awaiting.get(j.target)?.splice(0) ?? []) emitDelivery(j.target, ref, "answered");
+	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key) {
+		const { done, keep } = settleWaiting(awaiting.get(j.target) ?? [], j.replyTo, isLocal(j.target));
+		awaiting.set(j.target, keep);
+		for (const w of done) emitDelivery(j.target, w.ref, "answered");
+	}
 	if (isLocal(j.target)) {
 		queue.markAnswered(jobAnswers(j));
 		return Promise.resolve({ delivered: true });
 	}
-	return sends.submit(j.target, sent, replyRef(j.target, j.replyTo, lastOwner.get(j.target)), jobAnswers(j));
+	// Late: the owner wrote something newer meanwhile or the request is old. Discord shows it as a reply that pings him; a web
+	// message has no Discord message to reference, so the request is quoted in the text instead.
+	const answers = jobAnswers(j);
+	const late = answers !== undefined && lateFor(j.target, answers);
+	const original = late && answers && !isSnowflake(answers) ? ownerMessage(answers) : undefined;
+	const text = original ? withQuote(sent, lateQuote(original, TZ)) : sent;
+	return sends.submit(j.target, text, replyRef(j.target, j.replyTo, lastOwner.get(j.target), late), answers, late);
 }
 // Posts still in the output-language rewrite: the restart gate waits for them, shutdown lands what is left with the original text.
 export const replies = createInflight<OutJob>(j => {
@@ -119,7 +142,8 @@ export const replies = createInflight<OutJob>(j => {
 });
 export async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
-	const job: OutJob = { target, text: stripHandoff(text), replyTo, extra };
+	const answersOwner = extra.source === undefined || extra.source === "orchestrator";
+	const job: OutJob = { target, text: stripHandoff(text), replyTo: replyTo ?? (answersOwner && !extra.update_key ? lateRequest(target) : undefined), extra };
 	let landed = false;
 	replies.begin(job);
 	let sent: string;
