@@ -33,6 +33,11 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: b.mail ? `mail:${b.mail}` : `lane:${b.lane}`, text: b.text, ...(b.via ? { via: b.via } : {}) });
 			return Response.json({ ok: true });
 		}
+		if (req.method === "POST" && path.startsWith("/api/kakao/chat/")) {
+			const b = (await req.json()) as { text: string };
+			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: b.text });
+			return Response.json({ ok: true });
+		}
 		if (path === "/api/monitors") return Response.json({ items: [{ name: `${name} 감시`, kind: "watch" }] });
 		if (path === "/api/notices") return Response.json({ items: [{ id: `n-${name}`, title: `${name} 알림`, read: false }], unread: 1 });
 		if (path === "/api/integrations") return Response.json({ items: [{ key: "mail", unread: events.length }] });
@@ -189,4 +194,14 @@ test("act: unknown action, unknown target and a missing sender are refused", asy
 	expect((await act({ action: "message", args: { target: "kakao:room", text: "hi" }, from: "노트북" })).status).toBe(400);
 	expect((await act({ action: "message", args: { target: "mail:inbox", text: "hi" } })).status).toBe(400);
 	expect(B.events).toEqual([]);
+});
+
+test("a KakaoTalk reply from a peer runs on the owner's own kakao send route, once", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const r = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "send", chatId: "123", text: "네" } }) }));
+	expect(r.status).toBe(200);
+	expect(B.events).toEqual([{ target: "kakao:123", text: "네" }]);
+	expect(A.events).toEqual([]);
+	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "rm", chatId: "123" } }) }))).status).toBe(400);
 });

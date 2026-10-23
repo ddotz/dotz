@@ -5,6 +5,9 @@ import { loadSettings, loadStyle } from "../../features/reply-drafts/lib/setting
 import { cfg, DATA_DIR, log } from "../config.ts";
 import { broadcast, subscriberCount } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
+import { peerHeaders } from "../peer-auth.ts";
+import { knownComputers } from "../peers.ts";
+import { claimLease, postLease } from "../send-lease.ts";
 import { getSecret } from "./creds.ts";
 import { type KakaoDb, sqlcipherDb } from "./db.ts";
 import type { DraftModel, StyleHint } from "./draft.ts";
@@ -38,6 +41,17 @@ const draftStyle = (chatId: string): StyleHint => {
 	return { rules: s.rules, corrections: s.corrections, forbidden: s.forbidden, samples: s.samples };
 };
 
+const machine = resolveName(cfg.web?.machine_name, hostname());
+// One sender per room across this owner's computers (docs/peer-monitoring.md): before a send, this gateway claims the room's lease here
+// and on every other gateway; a computer that holds it refuses, and the send does not run.
+const LEASE_MS = 60_000;
+const HELD = (holder?: string) => `${holder ?? "다른 컴퓨터"}에서 이 대화방으로 보내는 중이라 보내지 않았어요`;
+const lease = async (chatId: string) => {
+	const peers = (await knownComputers()).filter(c => !c.self);
+	const r = await claimLease({ key: `kakao:${chatId}`, self: machine, ttlMs: LEASE_MS, peers, now: Date.now, post: (p, path, body) => postLease(p.url, path, body, peerHeaders()) });
+	return r.ok ? { ok: true as const } : { ok: false as const, reason: r.reason === "held" ? HELD(r.holder) : "이 대화방으로 보낼 수 있는지 확인하지 못해서 보내지 않았어요" };
+};
+
 const web = createKakaoWeb({
 	paths,
 	runner: defaultRunner,
@@ -45,7 +59,8 @@ const web = createKakaoWeb({
 	openDb,
 	broadcast,
 	onWatchChange: () => void live.sync(),
-	collector: resolveName(cfg.web?.machine_name, hostname()),
+	collector: machine,
+	lease,
 	draftModel,
 	draftStyle,
 });

@@ -42,7 +42,7 @@ export function handleLease(req: LeaseReq, now: number, path: string = leasePath
 	const held = cur && cur.until > now && cur.holder !== req.holder ? cur : undefined;
 	let reply: LeaseReply;
 	if (req.op === "claim") {
-		if (req.id !== undefined && s.sent[req.key]?.includes(req.id)) return { ok: false, reason: "already_sent" };
+		if (req.id && s.sent[req.key]?.includes(req.id)) return { ok: false, reason: "already_sent" };
 		if (held) return { ok: false, holder: held.holder, reason: "held" };
 		const until = Math.min(typeof req.until === "number" && Number.isFinite(req.until) ? req.until : now + DEFAULT_LEASE_MS, now + MAX_LEASE_MS);
 		s.leases[req.key] = { holder: req.holder, until };
@@ -75,6 +75,7 @@ export type SendOnceOpts<P, T> = {
 	requireAllPeers?: boolean;
 	path?: string; // lease store file; default <data dir>/state/send-leases.json
 	timeoutMs?: number;
+	keep?: boolean; // claimLease: keep the granted lease until it expires instead of releasing it after send
 };
 export type SendOnceResult<T> = { ok: true; result: T } | { ok: false; reason: "held"; holder?: string } | { ok: false; reason: "already_sent" } | { ok: false; reason: "unreachable" } | { ok: false; reason: "error"; error: string };
 
@@ -120,8 +121,24 @@ export async function sendOnce<P, T>(o: SendOnceOpts<P, T>): Promise<SendOnceRes
 		await release();
 		return { ok: false, reason: "error", error: (error as Error).message };
 	}
+	if (o.keep) return { ok: true, result };
 	local(lease("sent", { id }));
 	await Promise.all(claimed.map(p => ask(p, lease("sent", { id }))));
 	await release();
 	return { ok: true, result };
+}
+
+// The claim half of sendOnce for a sender that has its own send path (KakaoTalk's dispatchSend lease hook): claim here and on every online
+// peer, release on any refusal. A granted lease is kept until it expires, so the other computer cannot send into that room meanwhile.
+export async function claimLease<P>(o: Omit<SendOnceOpts<P, void>, "send" | "id"> & { id?: string }): Promise<{ ok: true } | { ok: false; reason: string; holder?: string }> {
+	const r = await sendOnce({ ...o, id: o.id ?? "", send: async () => {}, keep: true });
+	return r.ok ? { ok: true } : { ok: false, reason: r.reason, ...(r.reason === "held" ? { holder: r.holder } : {}) };
+}
+
+// Posts a lease request to a peer gateway with the shared peer token (hub/peer-auth.ts); rejects when it cannot be reached or refuses the token.
+export async function postLease(url: string, path: string, body: LeaseReq, headers: Record<string, string> | undefined, timeoutMs = POST_TIMEOUT_MS): Promise<LeaseReply> {
+	if (!headers) throw new Error("no peer token");
+	const r = await fetch(`${url}${path}`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
+	if (!r.ok) throw new Error(`HTTP ${r.status}`);
+	return (await r.json()) as LeaseReply;
 }
