@@ -29,6 +29,8 @@ import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
 import { appAsset, committedText, indexPage, webBuild } from "./webapp.ts";
 import { listPeers } from "./peers.ts";
+import { checkPeer } from "./peer-auth.ts";
+import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { hostname } from "node:os";
 import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
@@ -67,8 +69,10 @@ function authorized(req: Request): boolean {
 
 type RestartHooks = { busyNow: () => string[]; restartGateway: () => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps };
 const isMailTarget = (t: string) => /^mail:[a-z0-9._-]+$/.test(t);
+// Where a forwarded action came from (a machine name), as one short line; the event it makes carries it as `via`.
+const viaOf = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 40) || undefined : undefined);
 export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps }: RestartHooks): (req: Request) => Promise<Response> {
-	return async (req: Request): Promise<Response> => {
+	const route = async (req: Request): Promise<Response> => {
 		const url = new URL(req.url);
 		// The install files (manifest, service worker, icons) are public and secret-free, like any app store listing: a browser
 		// or OS fetch that carries no tailnet identity (icon or manifest fetch, SW update check) must still get them, or the
@@ -77,7 +81,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (appFile) return new Response(req.method === "HEAD" ? null : committedText(appFile[0]) ?? Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
 		// The other gateways read this computer's chosen name here (hub/peers.ts); it is a display name, no secret, so it is public like the manifest.
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer-info") return json({ name: resolveName(cfg.web?.machine_name, hostname()) });
-		if (!authorized(req)) return new Response("forbidden", { status: 403 });
+		// A request with the peer header gets only the peer paths (hub/peer-auth.ts); a good one skips the owner check, a bad one never reaches it.
+		const peer = checkPeer(req);
+		if (peer === "denied") return new Response("forbidden", { status: 403 });
+		if (peer === "none" && !authorized(req)) return new Response("forbidden", { status: 403 });
+		const peerResponse = await peers.route(req, url);
+		if (peerResponse) return peerResponse;
 		const parts = url.pathname.split("/").filter(Boolean);
 		const authResponse = authRoute(req, url);
 		if (authResponse) return authResponse;
@@ -181,7 +190,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const decide = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/answer$/.exec(url.pathname) : null;
 		if (decide) {
 			const login = req.headers.get("tailscale-user-login") ?? "local";
-			const r = await answerDecision(decodeURIComponent(decide[1]!), await body(req), async a => {
+			const answer = await body(req);
+			const via = viaOf(answer.via);
+			const r = await answerDecision(decodeURIComponent(decide[1]!), answer, async a => {
 				if (a.to.startsWith("auth:")) {
 					const path = `/api/auth/${a.to.slice(5)}`;
 					const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));
@@ -193,7 +204,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				const conv = a.to === "alert" || a.to === "worklog" ? a.to : undefined;
 				const mail = a.to.startsWith("mail:") ? mailByKey(a.to.slice(5)) : undefined;
 				if (a.to.startsWith("mail:") && !mail) throw new Error("이 메일 대화를 찾을 수 없어요");
-				await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice, picks: a.picks });
+				await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, via });
 			});
 			return json(r.body, r.status);
 		}
@@ -295,7 +306,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			try {
 				// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
 				const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
-				await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}) });
+				await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}
@@ -360,4 +371,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (laneResponse) return laneResponse;
 		return new Response("not found", { status: 404 });
 	};
+	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, hostname()), local: route, localHeaders: { "x-dotz-token": HUB_TOKEN } });
+	activatePeerMonitor(peers);
+	return route;
 }
