@@ -9,8 +9,9 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, IDENTITY_FILE } from "./config.ts";
 import { baseLanguage, detectLanguage, languageName } from "./language.ts";
-import { en, type Catalog, type Leads } from "./i18n-en.ts";
+import { en, enLeads, type Catalog, type Leads } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
+import { applyTexts, reportTexts } from "./texts.ts";
 
 export type LaneFooterArgs = { lane: string; mode: string; workerModel: string; slots: number; worktree: string };
 export type WorktreeArgs = { path: string; repo: string; branch: string; base: string };
@@ -38,8 +39,15 @@ function detectedLanguage(): string {
 // The identity's language code: identity.language when set, else detected (see hub/language.ts).
 export const lang = (): string => cfg.identity?.language?.trim() || detectedLanguage();
 
-// Catalog in the identity's language; English for a language without originals.
-export const msg = (): Catalog => CATALOGS[baseLanguage(lang())] ?? en;
+// The leads the gateway matches later (isNote) stay as shipped; every other top-level text can be overridden (hub/texts.ts).
+export const LOCKED_TEXTS: ReadonlySet<string> = new Set(Object.keys(enLeads));
+const shipped = (): Catalog => CATALOGS[baseLanguage(lang())] ?? en;
+
+// Catalog in the identity's language (English for a language without originals), with this install's overrides from <data dir>/custom/texts.json.
+export const msg = (): Catalog => applyTexts(shipped(), DATA_DIR, LOCKED_TEXTS);
+
+// Overrides that no longer fit the shipped catalog and were not reported yet, one line each (see reportTexts).
+export const textsToReport = (): string[] => reportTexts(shipped(), DATA_DIR, LOCKED_TEXTS);
 
 // The reply-language line for a prompt that carries instructions; empty when the instructions are already in that language.
 function replyLine(): string {

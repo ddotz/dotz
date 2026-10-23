@@ -10,7 +10,7 @@ import * as livestatus from "./livestatus.ts";
 import { setAskAnswer } from "./askbuttons.ts";
 import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, startPush } from "./push.ts";
-import { msg } from "./i18n.ts";
+import { msg, textsToReport } from "./i18n.ts";
 import { broadcast, emit, emitDelivery, sentFiles } from "./events.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startLaneIdleStop } from "./laneidle.ts";
@@ -35,7 +35,8 @@ import { startSchedules, stopSchedules } from "./schedule.ts";
 import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
 import { runMigrations } from "./migrations.ts";
-import { onLocalSaved, onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
+import { defaultExec, onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
+import { pendingBackups } from "./carryover.ts";
 import { clearChannel, nameWatches, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
 import { watchLine } from "./watchtext.ts";
 import { createWatchSummarizer } from "./watchsummary.ts";
@@ -280,6 +281,21 @@ if (restarted) {
 	if (picked.length) void out(discord.status.enabled ? "worklog" : "web", `게이트웨이를 다시 시작했어요 (${at} ${tzLabel()}).\n- ${picked.join("\n- ")}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
 	else log(`restart at ${at}: nothing interrupted, worklog notice skipped`);
 }
+// After an update and restart: local changes the updater backed up (dotz-local/<stamp>) and text overrides that no longer fit this version
+// each wake the orchestrator once (hub/carryover.ts, hub/texts.ts), so the bot ports them to the custom layer.
+function wakeOnce(id: string, text: string) {
+	const channel = discord.status.enabled ? "chat" : "web";
+	const event = { ts: now(), kind: "schedule", source: "gateway", channel, id, text };
+	emit("inbox", event);
+	deliver(inboxText(event), { target: channel });
+}
+if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
+	const lines = textsToReport();
+	if (lines.length) wakeOnce("texts-override", msg().textsReport(lines.join("\n")));
+	void pendingBackups(defaultExec, join(import.meta.dir, ".."), join(DATA_DIR, "logs"), DATA_DIR)
+		.then(list => list.forEach(b => wakeOnce("self-update-local", msg().carryOver(b.where, b.read, b.stat, b.files))))
+		.catch(e => log(`carry-over check failed: ${e}`));
+}
 // One Claude account for the orchestrator and its lanes (hub/account-sticky.ts, the owner's rules in hub/account-rules.ts).
 // A switch needs no restart: every running OmO process (workers included) asks POST /api/accounts/check at the start of its
 // next turn and pins the answer in its own environment. Checked each minute, so a limit or a rule's time window is followed
@@ -318,17 +334,10 @@ startTokenAudit(alert);
 // Settings → 업데이트: the daily check announces a new dotz version (push + a toast on open pages + one bell item); with self_update.auto_apply
 // on it applies it instead (worklog on success, alert with a choice block otherwise) and restarts through the idle restart gate.
 onUpdateResolved(updateResolved);
-// Local commits saved by an update: one orchestrator turn asks the bot to re-create the personal ones in the custom layer.
 // 이어서 할 일 (hub/followup.ts): one orchestrator turn with the rule and the item ids after an approved reply was posted or sent.
 setFollowupWake(text => {
 	const channel = discord.status.enabled ? "chat" : "web";
 	const event = { ts: now(), kind: "schedule", source: "followup", channel, id: "followup", text };
-	emit("inbox", event);
-	deliver(inboxText(event), { target: channel });
-});
-onLocalSaved(({ turn }) => {
-	const channel = discord.status.enabled ? "chat" : "web";
-	const event = { ts: now(), kind: "schedule", source: "gateway", channel, id: "self-update-local", text: turn };
 	emit("inbox", event);
 	deliver(inboxText(event), { target: channel });
 });
