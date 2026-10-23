@@ -63,6 +63,9 @@ const stateDir = (w: Watch) => join(DATA_DIR, "watches", w.id);
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const running = new Map<string, Promise<void>>();
 let stopped = false;
+// An app the owner switched off on this install keeps its watches registered but they do not run (hub/app-off.ts); main.ts sets the check.
+let offGate: (name: string) => boolean = () => false;
+export const setWatchGate = (fn: (name: string) => boolean) => void (offGate = fn);
 const save = () => writeAtomic(paths.watches, `${JSON.stringify(items, null, 2)}\n`);
 let notify: (w: Watch, reason: string, output: string, prev?: string) => void = () => {};
 
@@ -174,7 +177,7 @@ function run(w: Watch): Promise<void> {
 
 async function runOnce(w: Watch): Promise<void> {
 	try {
-		if (w.paused) return;
+		if (w.paused || offGate(w.name)) return;
 		const ok = approved(w);
 		if (w.state.paused && !ok) return;
 		if (w.state.paused) w.state.paused = undefined;

@@ -35,7 +35,9 @@ gateway that owns the item. That gateway executes it and records it.
   `pqRoute`: a read of a peer's mail, history or Kakao room becomes `/api/peer/proxy?pc=..&p=<path>`; `pqLink(path)` does the same for `fetch`
   and download links. A POST that belongs to a peer (`/api/message` for its mail, `/api/read`, `/api/kakao/...` send, read, draft, draft send and drop)
   becomes `/api/peer/act`. A new route that a peer item uses needs a line in `pqFor` (read) or `pqAct` (action) and in `PEER_GET` (`hub/peer-auth.ts`).
-- A mail that this computer also holds stays a local row.
+- A mail that this computer also holds stays a local row, unless this computer switched the mail app off (`available[].off` of `/api/integrations`): then the peer's copy shows.
+- 이 기기에서 쓰기 (off) and 제거 are per machine (`custom/apps.json`, `hub/app-off.ts`). Turning mail off here never hides what a peer shows. An app's switch,
+  settings, 제거 and 앱 추가 for a peer's app go to the owning machine with `/api/peer/act` action `app` (`op`: settings with `values`, remove with `deleteData`, add).
 
 ## Local hub side (the browser keeps one origin and one auth)
 

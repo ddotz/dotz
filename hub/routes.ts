@@ -8,7 +8,9 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
-import { integrationContext, integrationItems } from "./integrations.ts";
+import { readAppOff, integrationAvailable, integrationContext, integrationItems } from "./integrations.ts";
+import { removalPlan, removeApp } from "./app-off.ts";
+import { allWatches, removeWatch } from "./watch.ts";
 import { fieldsOf, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
@@ -154,9 +156,29 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
-		if (req.method === "GET" && url.pathname === "/api/integrations") {
+		const integrationView = () => {
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
-			return json({ items: integrationItems(integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags()), listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds()) });
+			const ctx = integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags());
+			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds());
+			return { items, available: integrationAvailable(items, ctx) };
+		};
+		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
+		// 제거 / 앱 추가 on this install only (hub/app-off.ts): GET remove = what will be removed, POST remove = do it ({deleteData}), POST add = switch it back on.
+		const appLife = /^\/api\/integrations\/([a-z0-9-]+)\/(remove|add)$/.exec(url.pathname);
+		if (appLife) {
+			const [, app, op] = appLife;
+			try {
+				if (!fieldsOf(app!).length) throw new SettingsError(`${app}: 알 수 없는 앱이에요`, 404);
+				const names = () => allWatches().map(w => w.name);
+				if (op === "remove" && req.method === "GET") return json(removalPlan(DATA_DIR, app!, names()));
+				if (op === "remove" && req.method === "POST") return json({ ok: true, removed: removeApp(DATA_DIR, app!, { deleteStored: (await body(req)).deleteData === true }, { watchNames: names, removeWatch }) });
+				if (op === "add" && req.method === "POST") {
+					writeSettings(DATA_DIR, app!, { use_here: true });
+					return json({ ok: true, ready: integrationView().items.some(i => i.key === app) });
+				}
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);
+			}
 		}
 		// Per-app settings (hub/app-settings.ts): GET reads, PATCH is the one write path (the web's switches and a change card's 적용 both call it).
 		const appSettings = /^\/api\/integrations\/([a-z0-9-]+)\/settings$/.exec(url.pathname);
@@ -233,6 +255,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// A mail from an outside poster (a webmail watcher, a custom plugin): one conversation per mail (hub/mail.ts, docs/custom-plugins.md).
 		if (req.method === "POST" && url.pathname === "/api/mail") {
 			if (!mailDeps) return json({ error: "mail is not wired in this process" }, 503);
+			if (readAppOff(DATA_DIR).has("mail")) return json({ error: "mail is off on this install" }, 409);
 			try {
 				return json(await postMail(await body(req), mailDeps()));
 			} catch (error) {

@@ -96,7 +96,7 @@ const launchTitles = new Map<string, string>();
 let replaying = false;
 
 const save = () => writeAtomic(paths.notices, `${JSON.stringify(items, null, 1)}\n`);
-export const unreadCount = () => items.reduce((n, i) => n + (i.read || i.dismissed ? 0 : 1), 0);
+export const unreadCount = () => items.reduce((n, i) => n + (i.read || i.dismissed || appBlocked(i) ? 0 : 1), 0);
 
 // The 감시 소식 feed stays small: each watch keeps its newest WATCH_KEEP reports and none older than WATCH_DAYS, dropped when a report is written and
 // when the file loads, so notices.json and the payload never grow with the age of the install. An open decision is never dropped.
@@ -133,6 +133,9 @@ let orchestratorUp: () => boolean = () => true;
 export const setWatchLabelResolver = (fn: (name: string) => string) => void (watchLabelOf = fn);
 let appOf: (n: Notice) => string | undefined = () => undefined;
 export const setAppResolver = (fn: (n: Notice) => string | undefined) => void (appOf = fn);
+// A notice of an app the owner switched off on this install (hub/app-off.ts): not kept when new, not listed and not counted when old.
+let appBlocked: (n: { app?: string; src?: string; open?: string }) => boolean = () => false;
+export const setAppBlocker = (fn: typeof appBlocked) => void (appBlocked = fn);
 function stampApp(n: Notice): boolean {
 	const app = n.item ? undefined : appOf(n);
 	if (app === n.app) return false;
@@ -222,6 +225,8 @@ type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; 
 function upsert(i: Input): Notice {
 	const at = i.at ?? now();
 	const old = i.key ? items.find(n => n.key === i.key) : undefined;
+	const quiet = appBlocked({ app: i.kind === "watch" ? appOf(i as unknown as Notice) : undefined, src: i.src ?? i.open, open: i.open });
+	if (quiet && old) return old;
 	let item: Notice;
 	if (old) {
 		const reopened = (LOUD.has(i.tone) && i.tone !== old.tone) || (i.kind === "result" && i.text !== old.text) || i.unread === true;
@@ -245,9 +250,12 @@ function upsert(i: Input): Notice {
 		item = old;
 	} else {
 		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: i.kind, tone: i.tone, title: i.title, text: i.text, open: i.open, src: i.src ?? i.open, at, ...(i.key ? { key: i.key } : {}), ...(i.by ? { by: i.by } : {}), ...(i.ref ? { ref: i.ref } : {}), ...(i.item ? { item: i.item } : {}), read: i.read === true };
-		items.push(item);
-		trim();
+		if (!quiet) {
+			items.push(item);
+			trim();
+		}
 	}
+	if (quiet) return item;
 	// The owner's read position may already cover the message this notice points at (read on another device first): it is born read.
 	if (!item.read && coveredByRead(item)) item.read = true;
 	if (item.kind === "watch") stampApp(item);
@@ -954,7 +962,7 @@ function readable(n: Notice): Notice {
 // Unread first, then the most recently updated.
 export function listNotices(limit = 100): { items: Notice[]; unread: number } {
 	const n = Math.max(1, Math.min(Math.floor(limit) || 100, NOTICE_CAP));
-	const shown = items.filter(i => !i.dismissed);
+	const shown = items.filter(i => !i.dismissed && !appBlocked(i));
 	const order = new Map(shown.map((i, idx) => [i, idx]));
 	const sorted = [...shown].sort((a, b) => Number(isOpenDecision(b)) - Number(isOpenDecision(a)) || Number(a.read) - Number(b.read) || b.updated.localeCompare(a.updated) || order.get(b)! - order.get(a)!);
 	return { items: sorted.slice(0, n).map(readable), unread: unreadCount() };
