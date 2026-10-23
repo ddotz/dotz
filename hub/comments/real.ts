@@ -6,8 +6,9 @@ import { loadStyle, recordCorrection } from "../../features/reply-drafts/lib/set
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
 import { commentsFor, mediaWithCounts, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
 import { commentThreadsSince, ownReplies, recentUploads, replyToComment } from "../../features/youtube-instagram/lib/youtube.ts";
+import { appEntries, commentOwner } from "../integrations.ts";
 import { callReplyModel } from "../reply-model.ts";
-import { type DraftModel, createEngine, type Engine } from "./engine.ts";
+import { appOf, type DraftModel, createEngine, type Engine } from "./engine.ts";
 import { instagramAdapter, youtubeAdapter } from "./adapters/google-meta.ts";
 import { bunExec, websiteAdapter } from "./adapters/website.ts";
 import { commentsDir } from "./store.ts";
@@ -36,6 +37,8 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		now: Date.now,
 		collector: opts.collector ?? hostname(),
 		model: opts.model ?? realModel,
+		// custom/apps.json is read live: a site added as its own app instance owns its threads, its needs and its reply model setting.
+		owner: src => commentOwner(appEntries(dataDir), appOf(src), src.key),
 		broadcast: opts.broadcast,
 		style: src => loadStyle({ app: src.key }),
 		learn: (src, change) => recordCorrection({ app: src.key }, change, new Date()),

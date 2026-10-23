@@ -34,7 +34,7 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 			const cursors = engine.store.cursors();
 			return json({
 				on: true,
-				sources: Object.values(cfg.sources).map(s => ({ key: s.key, kind: s.kind, label: s.label, watch: s.watch, autoDraft: s.autoDraft, autoSend: s.autoSend?.on === true, error: cursors[s.key]?.error ?? null, ranAt: cursors[s.key]?.ranAt ?? null })),
+				sources: Object.values(cfg.sources).map(s => ({ key: s.key, kind: s.kind, app: engine.ownerOf(s), label: s.label, watch: s.watch, autoDraft: s.autoDraft, autoSend: s.autoSend?.on === true, error: cursors[s.key]?.error ?? null, ranAt: cursors[s.key]?.ranAt ?? null })),
 			});
 		}
 		if (area === "sources" && parts.length >= 4) {

@@ -27,7 +27,7 @@ the comment stream, the post title and at most 5 of the owner's past replies (`t
 ## Web
 
 `GET /api/comments/sources`, `PUT /api/comments/sources/<key>` `{watch?, autoDraft?}`, `GET /api/comments/sources/<key>/posts`,
-`GET /api/comments/threads?app=youtube|instagram|site`, `GET /api/comments/thread/<source>/<thread>`,
+`GET /api/comments/threads?app=<app instance id>` (youtube, instagram, site, or a site added as its own app: `site-<name>`, custom/apps.json `{"app":"site","filter":{"source":"<name>"}}`; each source lists the instance that owns it as `app`), `GET /api/comments/thread/<source>/<thread>`,
 `POST .../thread/<source>/<thread>/read`, `POST /api/comments/comment/<id>/draft`, `POST /api/comments/drafts/<code>/send|drop|revise`.
 Events (ids only): `comment`, `comment_draft`, `comment_send`, `comment_sources`.
 모니터링 > 앱 has one entry per platform (유튜브, 인스타그램, 웹사이트 댓글) with the status line `답장 확인 N건 · 안 읽음 N`.
