@@ -232,10 +232,7 @@ function convRows() {
   if (projects.length) rows.push({ header: "프로젝트" }, ...projects.map(mk));
   const open = all.find(l => !laneAlive(l) && `lane:${l.name}` === target);
   if (open) rows.push(sess(open));
-  // 메일: one conversation per mail (hub/mail.ts), newest first, the 30 newest shown.
-  const mailAt = t => at(t) || (MAILS.get(t) || {}).at || "";
-  const mails = [...MAILS.keys()].sort((a, b) => mailAt(b).localeCompare(mailAt(a))).slice(0, 30);
-  if (mails.length) rows.push({ header: "메일" }, ...mails.map(mk));
+  // Mails are not listed here: each is a conversation under 모니터링's 앱 group (30-monitoring.js).
   const ended = endedLanes();
   if (ended.length) rows.push({ ended: true, key: `${ended.map(l => l.name).join("|")}|${endedOpen}` });
   return rows;
