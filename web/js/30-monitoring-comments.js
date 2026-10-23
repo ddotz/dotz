@@ -3,11 +3,21 @@
 // app (CM.apps). It reuses the KakaoTalk pane's layout and classes (30-kakao.js, 17-kakao.css). Live updates: comment / comment_draft /
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
-const CM_KEYS = { "i:youtube": "youtube", "i:instagram": "instagram", "i:site": "site" };
+// CM.app = the open view: "<app>" (every source of the app) or "<app>:<key,...>" for an entry that shows only its own sources (hub/integrations.ts:
+// with two or more website sources each is an app of its own). CM.apps = the keys of the sources that follow something.
+const CM_APPS = new Set(["youtube", "instagram", "site"]);
 const CM = { apps: new Set(), sources: [], vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
   drafting: new Set(), revising: "", pick: null, posts: new Map(), timer: 0, intgT: 0, readSent: "" };
-const cmAppOf = key => (CM_KEYS[key] && CM.apps.has(CM_KEYS[key]) ? CM_KEYS[key] : "");
 const cmAppOfKind = k => (k === "website" ? "site" : k);
+const cmView = (v = CM.app) => { const i = v.indexOf(":"); return i < 0 ? { app: v, only: null } : { app: v.slice(0, i), only: v.slice(i + 1).split(",") }; };
+const cmMine = (s, v = CM.app) => { const { app, only } = cmView(v); return cmAppOfKind(s.kind) === app && (!only || only.includes(s.key)); };
+// The comment view of a 모니터링 item ("i:<key>"), "" = none: an app entry of a comment app while one of its sources follows something.
+const cmAppOf = key => {
+  const it = String(key).startsWith("i:") ? INTG.items.find(x => x.key === key.slice(2)) : null, app = it ? it.app || it.key : "";
+  if (!CM_APPS.has(app)) return "";
+  const v = Array.isArray(it.sources) && it.sources.length ? `${app}:${it.sources.join(",")}` : app;
+  return CM.sources.some(s => cmMine(s, v) && CM.apps.has(s.key)) ? v : "";
+};
 
 const cmRooms = el("div", { class: "kk-rooms", id: "cm-rooms", "aria-label": "댓글을 지켜보는 글" });
 const cmHead = el("div", { class: "kk-head", id: "cm-head" });
@@ -20,14 +30,14 @@ const cmPane = el("div", { class: "kk cm", id: "cm", hidden: true }, cmRooms, cm
 $("#v-monitoring").append(cmPane);
 
 const cmIntgSoon = () => { clearTimeout(CM.intgT); CM.intgT = setTimeout(loadIntegrations, 500); };
-const cmSources = () => CM.sources.filter(s => cmAppOfKind(s.kind) === CM.app);
+const cmSources = () => CM.sources.filter(s => cmMine(s));
 
 async function cmLoadSources() {
   try {
     const r = await api("/api/comments/sources");
     CM.sources = r.on === false ? [] : Array.isArray(r.sources) ? r.sources : [];
   } catch { return; }
-  const apps = new Set(CM.sources.filter(s => (s.watch || []).length).map(s => cmAppOfKind(s.kind)));
+  const apps = new Set(CM.sources.filter(s => (s.watch || []).length).map(s => s.key));
   const changed = apps.size !== CM.apps.size || [...apps].some(a => !CM.apps.has(a));
   CM.apps = apps;
   if (changed && typeof monSchedule === "function") monSchedule();
@@ -37,7 +47,8 @@ async function cmLoad() {
   const seq = ++CM.rseq;
   await cmLoadSources();
   try {
-    const r = await api(`/api/comments/threads?app=${enc(CM.app)}`);
+    const { app, only } = cmView();
+    const r = await api(`/api/comments/threads?app=${enc(app)}${only ? `&source=${enc(only.join(","))}` : ""}`);
     if (seq !== CM.rseq) return;
     CM.threads = Array.isArray(r.threads) ? r.threads : []; CM.error = ""; CM.loaded = true;
   } catch (e) {

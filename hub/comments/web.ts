@@ -60,7 +60,8 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 		}
 		if (area === "threads" && parts.length === 3 && method === "GET") {
 			if (!cfg.enabled) return json(OFF, 409);
-			return json({ threads: engine.threads(url.searchParams.get("app") ?? "") });
+			const only = url.searchParams.get("source");
+			return json({ threads: engine.threads(url.searchParams.get("app") ?? "", only ? only.split(",").filter(Boolean) : undefined) });
 		}
 		if (area === "thread" && parts.length >= 5) {
 			if (!cfg.enabled) return json(OFF, 409);

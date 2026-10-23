@@ -194,6 +194,43 @@ describe("a custom mail reader", () => {
 	});
 });
 
+describe("website comment sources (custom/comments/config.json)", () => {
+	const sites = (n: number, first: object = {}, enabled = true) => put("custom/comments/config.json", JSON.stringify({ enabled, sources: Object.fromEntries([
+		["youtube", { key: "youtube", kind: "youtube", label: "유튜브", watch: [] }],
+		...Array.from({ length: n }, (_, i) => [`site-s${i + 1}`, { key: `site-s${i + 1}`, kind: "website", label: `사이트 ${i + 1}`, watch: ["*"], ...(i ? {} : first) }]),
+	]) }));
+	const site = () => appEntries(dir).filter(e => e.app === "site").map(e => [e.key, e.label, e.sources ?? null, e.watches ?? null]);
+	const needs = { site: { drafts: 1, unread: 5 }, "src:site-s1": { drafts: 1, unread: 2 }, "src:site-s2": { drafts: 0, unread: 3 } };
+
+	test("one source keeps the one 웹사이트 댓글 app, with the watches the source names", () => {
+		sites(1, { watches: ["site-login"] });
+		expect(site()).toEqual([["site", "웹사이트 댓글", null, ["site-login"]]]);
+		const got = integrationItems(integrationContext(dir, ["comments-site"]), [], {}, 100, undefined, [], Date.now(), needs);
+		expect(got.map(i => [i.key, i.needs.drafts, i.needs.unread])).toEqual([["site", 1, 5]]);
+	});
+
+	test("two sources are two apps: own id, label, source, watches and counts", () => {
+		sites(2, { watches: ["site-login"] });
+		expect(site()).toEqual([["site-s1", "사이트 1", ["site-s1"], ["site-login"]], ["site-s2", "사이트 2", ["site-s2"], null]]);
+		const got = integrationItems(integrationContext(dir, ["comments-site"]), [], {}, 100, undefined, [], Date.now(), needs);
+		expect(got.map(i => [i.key, i.app, i.sources, i.needs.drafts, i.needs.unread])).toEqual([["site-s1", "site", ["site-s1"], 1, 2], ["site-s2", "site", ["site-s2"], 0, 3]]);
+	});
+
+	test("apps.json renames, switches off and deletes each by its id; its watches go with it; comments off brings back the one app", () => {
+		sites(2, { watches: ["site-login"] });
+		apps({ "site-s1": { label: "블로그", off: true } });
+		expect(site().map(([k, l]) => [k, l])).toEqual([["site-s1", "블로그"], ["site-s2", "사이트 2"]]);
+		expect(integrationItems(integrationContext(dir, ["comments-site"]), []).map(i => i.key)).toEqual(["site-s2"]);
+		expect(watchOff(dir, "site-login")).toBe(true);
+		expect(removalPlan(dir, "site-s1", ["site-login", "other"])!.watches).toEqual(["site-login"]);
+		deleteApp(dir, "site-s1", {}, { watchNames: () => [], removeWatch: () => {} });
+		expect(readApps()["site-s1"]).toEqual({ off: true, deleted: true });
+		expect(integrationContext(dir).entries!.filter(e => e.app === "site").map(e => e.key)).toEqual(["site-s2"]);
+		sites(2, {}, false);
+		expect(site()).toEqual([["site", "웹사이트 댓글", null, null]]);
+	});
+});
+
 describe("the hub routes", () => {
 	const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
 	const call = (method: string, path: string, body?: object) => route(new Request(`http://hub.test${path}`, { method, headers: { "x-dotz-token": HUB_TOKEN, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) }));

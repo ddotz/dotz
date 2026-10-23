@@ -10,6 +10,11 @@ const SHOTS = process.env.COMMENTS_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 type Req = { method: string; path: string; body: Record<string, unknown> | null };
+// Two website comment sources, each its own app (hub/integrations.ts: `site-<slug>`, `sources` = [its key]).
+const SITES = [
+	{ key: "site-alpha", label: "알파 게시판", thread: "a1", title: "알파 공지", text: "알파 글에 단 댓글이에요" },
+	{ key: "site-beta", label: "베타 카페", thread: "b1", title: "베타 모임 후기", text: "베타 글에 단 댓글이에요" },
+];
 const at = (d: number, h: number, m: number) => Date.UTC(2026, 9, d, h, m);
 const COMMENTS = [
 	{ id: "cm:youtube:c1", parent: null, author: "가나", text: "영상 잘 봤어요! 자막은 언제 나와요?", at: at(22, 1, 0), mine: false, needsReply: true },
@@ -60,10 +65,18 @@ const server = Bun.serve({
 		if (p === "/api/conversations") return json({ items: [] });
 		if (p === "/api/notices") return json({ unread: 0, items: [] });
 		if (p === "/api/monitors") return json({ items: [] });
-		if (p === "/api/integrations") return json({ items: [{ key: "youtube", label: "유튜브", icon: "youtube", kind: "app", conv: [], notices: [], unread: 2, needs: { drafts: drafts.length, unread: 2, sentToday: 0 } }] });
-		if (p === "/api/comments/sources") return json({ on: true, sources: [{ key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false, autoSend: false, error: null, ranAt: at(22, 3, 0) }] });
-		if (p === "/api/comments/threads") return json({ threads: [{ source: "youtube", thread: "v1", title: "첫 번째 영상", link: "https://video.example/v1", lastAt: at(22, 2, 0), lastText: "다음 주에 올릴게요", lastAuthor: "나", unread: 2, drafts: drafts.length }] });
+		if (p === "/api/integrations") return json({ items: [{ key: "youtube", label: "유튜브", icon: "youtube", kind: "app", conv: [], notices: [], unread: 2, needs: { drafts: drafts.length, unread: 2, sentToday: 0 } }, ...SITES.map(s => ({ key: s.key, app: "site", sources: [s.key], label: s.label, icon: "comment", kind: "app", conv: [], notices: [], unread: 1, needs: { drafts: 0, unread: 1, sentToday: 0 } }))] });
+		if (p === "/api/comments/sources") return json({ on: true, sources: [{ key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false, autoSend: false, error: null, ranAt: at(22, 3, 0) }, ...SITES.map(s => ({ key: s.key, kind: "website", label: s.label, watch: ["*"], autoDraft: false, autoSend: false, error: null, ranAt: at(22, 3, 0) }))] });
+		if (p === "/api/comments/threads") {
+			record({ method: "GET", path: `${p}${url.search}`, body: null });
+			if (url.searchParams.get("app") === "site") return json({ threads: SITES.filter(s => (url.searchParams.get("source") ?? s.key).split(",").includes(s.key)).map(s => ({ source: s.key, thread: s.thread, title: s.title, link: null, lastAt: at(22, 4, 0), lastText: s.text, lastAuthor: "손님", unread: 1, drafts: 0 })) });
+			return json({ threads: [{ source: "youtube", thread: "v1", title: "첫 번째 영상", link: "https://video.example/v1", lastAt: at(22, 2, 0), lastText: "다음 주에 올릴게요", lastAuthor: "나", unread: 2, drafts: drafts.length }] });
+		}
+		const site = SITES.find(s => p === `/api/comments/thread/${s.key}/${s.thread}`);
+		if (site && req.method === "GET")
+			return json({ source: { key: site.key, kind: "website", label: site.label }, thread: { id: site.thread, title: site.title, link: null }, comments: [{ id: `cm:${site.key}:1`, parent: null, author: "손님", text: site.text, at: at(22, 4, 0), mine: false, needsReply: true }], read: null, drafts: [], sends: [] });
 		const body = req.method === "GET" ? null : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
+		if (site) { record({ method: req.method, path: p, body }); return json({ ok: true }); }
 		if (p === "/api/comments/thread/youtube/v1" && req.method === "GET")
 			return json({ source: { key: "youtube", kind: "youtube", label: "유튜브 댓글" }, thread: { id: "v1", title: "첫 번째 영상", link: "https://video.example/v1" }, comments: COMMENTS, read: null, drafts, sends });
 		if (p === "/api/comments/thread/youtube/v1/read") { record({ method: "POST", path: p, body }); return json({ ok: true }); }
@@ -100,6 +113,30 @@ const boot = async (v: View) => {
 	await run(v, `go("monitoring", "i:youtube")`);
 	await waitFor(v, `!$("#cm").hidden && CM.loaded && document.querySelector("#cm .kk-row")`);
 };
+
+describe("two website comment apps on a wide screen (1280x800)", () => {
+	const v = open(1280, 800);
+
+	test("each website app is its own list row and opens only its own source's posts", async () => {
+		await boot(v);
+		await waitFor(v, `CM.apps.has("site-alpha") && CM.apps.has("site-beta")`);
+		const rows = await q<string[]>(v, `return [...document.querySelectorAll("#mon-side .cv-n")].map(n => n.textContent)`);
+		expect(rows).toEqual(expect.arrayContaining(["알파 게시판", "베타 카페"]));
+		for (const s of SITES) {
+			await run(v, `go("monitoring", "i:${s.key}")`);
+			await waitFor(v, `CM.app === "site:${s.key}" && CM.loaded && document.querySelector('#cm .kk-row[data-thread="${s.thread}"]')`);
+			await expectReq(r => r.path === `/api/comments/threads?app=site&source=${s.key}`);
+			await run(v, `document.querySelector("#cm-pick-btn").click()`);
+			await waitFor(v, `document.querySelector("#cm .kk-pick-src")`);
+			const list = await q<{ rows: string[]; picks: string[] }>(v, `return { rows: [...document.querySelectorAll("#cm .kk-row .cv-n")].map(n => n.textContent), picks: [...document.querySelectorAll("#cm .kk-pick-src")].map(n => n.dataset.src) }`);
+			expect(list).toEqual({ rows: [s.title], picks: [s.key] });
+			await run(v, `document.querySelector("#cm .kk-row").click()`);
+			await waitFor(v, `CM.open && !CM.loading && CM.view && document.querySelector("#cm .kk-bub")`);
+			expect(await q<string>(v, `return document.querySelector("#cm .kk-bub").textContent`)).toBe(s.text);
+			await shot(v, `comments-${s.key}-1280.png`);
+		}
+	});
+});
 
 describe("댓글 on a phone (390x844)", () => {
 	const v = open(390, 844);

@@ -265,6 +265,23 @@ describe("web routes", () => {
 		expect((await call("GET", "/api/comments/thread/youtube/p404")).status).toBe(404);
 	});
 
+	test("one website app per source: threads and counts narrow to the sources asked for", async () => {
+		const t = setup([src({ key: "site-a", kind: "website", label: "A" }), src({ key: "site-b", kind: "website", label: "B" })]);
+		t.state.pages = [[raw("a1", { thread: "pa" })], [raw("b1", { thread: "pb" }), raw("b2", { thread: "pb" })]];
+		await t.engine.collect({ force: true });
+		const web = createCommentsWeb({ engine: t.engine, broadcast: () => {} });
+		const threads = async (q: string) => {
+			const url = new URL(`http://x/api/comments/threads?${q}`);
+			const res = await web.route(new Request(url), url, ["api", "comments", "threads"]);
+			return ((await res!.json()) as { threads: { source: string; thread: string }[] }).threads.map(x => `${x.source}/${x.thread}`).sort();
+		};
+		expect(await threads("app=site")).toEqual(["site-a/pa", "site-b/pb"]);
+		expect(await threads("app=site&source=site-b")).toEqual(["site-b/pb"]);
+		expect(await threads("app=site&source=site-a,site-b")).toEqual(["site-a/pa", "site-b/pb"]);
+		expect(t.engine.needs()).toEqual({ site: { drafts: 0, unread: 3 } });
+		expect(t.engine.sourceNeeds()).toEqual({ "site-a": { drafts: 0, unread: 1 }, "site-b": { drafts: 0, unread: 2 } });
+	});
+
 	test("everything is refused while the feature is off", async () => {
 		const t = setup([src()]);
 		t.engine.store.saveConfig({ enabled: false, sources: { youtube: src() } });

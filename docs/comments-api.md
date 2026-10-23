@@ -27,10 +27,15 @@ the comment stream, the post title and at most 5 of the owner's past replies (`t
 ## Web
 
 `GET /api/comments/sources`, `PUT /api/comments/sources/<key>` `{watch?, autoDraft?}`, `GET /api/comments/sources/<key>/posts`,
-`GET /api/comments/threads?app=youtube|instagram|site`, `GET /api/comments/thread/<source>/<thread>`,
+`GET /api/comments/threads?app=youtube|instagram|site[&source=<key>,...]`, `GET /api/comments/thread/<source>/<thread>`,
 `POST .../thread/<source>/<thread>/read`, `POST /api/comments/comment/<id>/draft`, `POST /api/comments/drafts/<code>/send|drop|revise`.
 Events (ids only): `comment`, `comment_draft`, `comment_send`, `comment_sources`.
 모니터링 > 앱 has one entry per platform (유튜브, 인스타그램, 웹사이트 댓글) with the status line `답장 확인 N건 · 안 읽음 N`.
+With two or more `website` sources, each source is an app of its own instead of the one 웹사이트 댓글 entry (hub/integrations.ts
+`appEntries`): id `site-<source key slug>` (a key `site-blog` stays `site-blog`), label = the source's `label`, its comment pane lists only
+that source's posts (`threads?app=site&source=<key>`) and its status line counts only that source. A source may name the gateway watches
+that are its own (`"watches": ["<name>", "<prefix>-"]`): they pause while that app is off and go with its 제거. `custom/apps.json` renames,
+switches off or deletes each by its id. With one website source the 웹사이트 댓글 entry (`site`) stays as it was.
 
 ## Plugging in a website
 

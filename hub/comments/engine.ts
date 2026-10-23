@@ -184,9 +184,10 @@ export function createEngine(deps: EngineDeps) {
 
 	const unreadOf = (c: Comment, reads: Record<string, number>) => !c.mine && c.at > (reads[threadKey(c.source, c.thread)] ?? 0);
 
-	function threads(app: string) {
+	// The threads of one app ("youtube", "instagram", "site"), narrowed to `sources` (config keys) when given: one website app per source.
+	function threads(app: string, sources?: readonly string[]) {
 		const cfg = store.config();
-		const mine = new Set(Object.values(cfg.sources).filter(s => appOf(s) === app).map(s => s.key));
+		const mine = new Set(Object.values(cfg.sources).filter(s => appOf(s) === app && (!sources || sources.includes(s.key))).map(s => s.key));
 		const reads = store.reads();
 		const pendingDrafts = store.drafts().filter(d => d.status === "pending");
 		const by = new Map<string, Comment[]>();
@@ -222,22 +223,24 @@ export function createEngine(deps: EngineDeps) {
 	}
 
 	// What waits on the owner per app (the 모니터링 status line): pending drafts and unread comments of the sources he chose.
-	function needs(): Record<string, { drafts: number; unread: number }> {
+	// `by` = appOf (per app, the default) or the source key (sourceNeeds: one website app per source).
+	function needs(by: (src: SourceConfig) => string = appOf): Record<string, { drafts: number; unread: number }> {
 		const cfg = store.config();
 		const out: Record<string, { drafts: number; unread: number }> = {};
 		if (!cfg.enabled) return out;
 		const reads = store.reads();
-		for (const src of Object.values(cfg.sources)) out[appOf(src)] ??= { drafts: 0, unread: 0 };
+		for (const src of Object.values(cfg.sources)) out[by(src)] ??= { drafts: 0, unread: 0 };
 		for (const d of store.drafts()) {
 			const s = cfg.sources[d.source];
-			if (s && d.status === "pending") out[appOf(s)]!.drafts++;
+			if (s && d.status === "pending") out[by(s)]!.drafts++;
 		}
 		for (const c of store.comments()) {
 			const s = cfg.sources[c.source];
-			if (s && watches(s, c.thread) && unreadOf(c, reads)) out[appOf(s)]!.unread++;
+			if (s && watches(s, c.thread) && unreadOf(c, reads)) out[by(s)]!.unread++;
 		}
 		return out;
 	}
+	const sourceNeeds = () => needs(s => s.key);
 
 	function tokenStats(): { drafts: number; avgIn: number; avgOut: number } {
 		const measured = store.drafts().filter(d => d.tokens);
@@ -258,6 +261,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, collect, makeDraft, revise, drop, send, update, threads, threadView, markRead, needs, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, collect, makeDraft, revise, drop, send, update, threads, threadView, markRead, needs: () => needs(), sourceNeeds, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

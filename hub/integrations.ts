@@ -18,6 +18,9 @@
 // custom/apps.json {"mail":{"label":"회사"},"mail-2":{"app":"mail","label":"개인","filter":{"conv":["mail:naver-"],"watches":["webmail-naver"]}}}.
 // An instance id is `<app key>` or `<app key>-<slug>` (so an app key has no hyphen). `filter` says what is the instance's: conversation prefixes,
 // watch names/prefixes, text patterns and stored data. The default instance owns what no sibling's filter claims (appEntries below).
+// Website comments (hub/comments, docs/comments-api.md): with two or more `website` sources in custom/comments/config.json, every source is an
+// app of its own (`site-<slug of the source key>`, label = the source's label, `sources` = [its key], `watches` = the source's own `watches`),
+// replacing the one "site" entry; with one source the "site" entry stays as it is. apps.json can rename, switch off or delete each by its id.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { loadFeatureDirs } from "./featuredirs.ts";
@@ -37,6 +40,8 @@ export type IntegrationEntry = {
 	created?: boolean;
 	gone?: boolean;
 	not?: { conv: string[]; watches: string[] };
+	/** The comment sources (hub/comments config keys) this entry shows; none = every source of its app. */
+	sources?: string[];
 };
 
 export const INTEGRATIONS: IntegrationEntry[] = [
@@ -81,7 +86,7 @@ type NoticeLike = { id: string; title?: string; text?: string; open?: string; sr
 // What waits on the owner in one app, counted here so the web scans nothing: `drafts` = reply drafts that wait for his 보내기 (open send-approval
 // [ask]s), `unread` = unread notices and conversation messages (the draft asks are not counted twice), `sentToday` = replies sent by themselves today.
 export type IntegrationNeeds = { drafts: number; unread: number; sentToday: number };
-export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "kind" | "icon" | "iconPath"> & { app: string; conv: string[]; convNot?: string[]; unread: number; notices: string[]; needs: IntegrationNeeds };
+export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "kind" | "icon" | "iconPath" | "sources"> & { app: string; conv: string[]; convNot?: string[]; unread: number; notices: string[]; needs: IntegrationNeeds };
 // A mail's suggested reply state (hub/mail.ts MailSuggest) with the time the state was set (or the mail's own time): the "sent today" count reads these.
 export type SuggestLike = { target: string; state?: string; at?: string };
 
@@ -125,19 +130,61 @@ export const instanceIdOf = (app: string, id: string): boolean => id === app || 
 /** The app key an instance id belongs to (ids are `<app>` or `<app>-<slug>`). */
 export const appBase = (id: string): string => id.split("-")[0]!;
 
+// The website comment sources of this install (custom/comments/config.json, only while comments are enabled), cached like apps.json.
+export type SiteSource = { key: string; label: string; watches: string[] };
+const SITE_FILE = "custom/comments/config.json";
+const siteCache = new Map<string, { sig: string; list: SiteSource[] }>();
+export function siteSources(dataDir: string): SiteSource[] {
+	const file = join(dataDir, SITE_FILE);
+	try {
+		const st = statSync(file), sig = `${st.mtimeMs}:${st.size}`, hit = siteCache.get(file);
+		if (hit?.sig === sig) return hit.list;
+		const v = JSON.parse(readFileSync(file, "utf8"));
+		const all: [string, Record<string, unknown>][] = v?.enabled === true && v.sources && typeof v.sources === "object" ? Object.entries(v.sources) : [];
+		const list = all.filter(([, s]) => s && typeof s === "object" && s.kind === "website").map(([k, s]) => {
+			const key = typeof s.key === "string" && s.key ? s.key : k;
+			return { key, label: appLabel(s.label) ?? key, watches: strs(s.watches) };
+		});
+		siteCache.set(file, { sig, list });
+		return list;
+	} catch {
+		return [];
+	}
+}
+// One instance id per source: `site-<slug>` (a key that already starts with "site-" keeps its slug), unique within the list.
+export function siteIds(list: readonly SiteSource[]): string[] {
+	const seen = new Set<string>();
+	return list.map((s, i) => {
+		const slug = s.key.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/^site-(?=.)/, "");
+		let id = `site-${slug || i + 1}`;
+		while (seen.has(id)) id = `${id}-${i + 1}`;
+		seen.add(id);
+		return id;
+	});
+}
+
 /** Every instance as a registry-shaped entry, deleted defaults included (`gone`): a registry entry is the default instance of its app, then come the added
  *  ones (`created`, shown whenever they are on). A label replaces the registry's. An added instance matches only its own filter; the default keeps the registry
  *  rules minus what the added ones claim (`not`), unless it has a filter of its own. */
 export function appEntries(dataDir: string): IntegrationEntry[] {
 	const raw = readAppsFile(dataDir), out: IntegrationEntry[] = [];
 	for (const reg of INTEGRATIONS) {
-		const kids = Object.entries(raw).filter(([id, r]) => id !== reg.key && instanceIdOf(reg.key, id) && r && typeof r === "object" && !r.deleted);
+		const sites = reg.key === "site" ? siteSources(dataDir) : [], perSite = sites.length > 1 ? siteIds(sites) : [];
+		const kids = Object.entries(raw).filter(([id, r]) => id !== reg.key && instanceIdOf(reg.key, id) && !perSite.includes(id) && r && typeof r === "object" && !r.deleted);
 		const mine = raw[reg.key] && typeof raw[reg.key] === "object" ? raw[reg.key]! : {}, own = convPrefixes(reg, mine.filter);
 		const theirs = (r: AppRaw) => [...strs(r.filter?.watches), ...strs(r.watches)];
-		out.push({ ...reg, app: reg.key, label: appLabel(mine.label) ?? reg.label, ...(mine.deleted ? { gone: true } : {}),
-			match: own.length ? { ...reg.match, conv: own } : reg.match,
-			...(strs(mine.watches).length ? { watches: [...(reg.watches ?? []), ...strs(mine.watches)] } : {}),
-			not: { conv: own.length ? [] : kids.flatMap(([, r]) => convPrefixes(reg, r.filter)), watches: kids.flatMap(([, r]) => theirs(r)) } });
+		const extra = [...strs(mine.watches), ...(sites.length === 1 ? sites[0]!.watches : [])];
+		if (perSite.length)
+			sites.forEach((s, i) => {
+				const id = perSite[i]!, r: AppRaw = raw[id] && typeof raw[id] === "object" ? raw[id]! : {}, w = [...s.watches, ...strs(r.watches)];
+				out.push({ key: id, app: reg.key, label: appLabel(r.label) ?? s.label, kind: reg.kind, icon: reg.icon, ...(reg.iconPath ? { iconPath: reg.iconPath } : {}),
+					on: reg.on, match: { text: [] }, sources: [s.key], ...(w.length ? { watches: w } : {}), ...(r.deleted ? { gone: true } : {}) });
+			});
+		else
+			out.push({ ...reg, app: reg.key, label: appLabel(mine.label) ?? reg.label, ...(mine.deleted ? { gone: true } : {}),
+				match: own.length ? { ...reg.match, conv: own } : reg.match,
+				...(extra.length ? { watches: [...(reg.watches ?? []), ...extra] } : {}),
+				not: { conv: own.length ? [] : kids.flatMap(([, r]) => convPrefixes(reg, r.filter)), watches: kids.flatMap(([, r]) => theirs(r)) } });
 		for (const [id, r] of kids)
 			out.push({ key: id, app: reg.key, created: true, label: appLabel(r.label) ?? reg.label, kind: reg.kind, icon: reg.icon, ...(reg.iconPath ? { iconPath: reg.iconPath } : {}),
 				on: reg.on, match: { conv: convPrefixes(reg, r.filter), text: strs(r.filter?.text) }, watches: theirs(r), data: strs(r.filter?.data) });
@@ -206,9 +253,10 @@ export function integrationItems(ctx: IntegrationContext, notices: readonly Noti
 		const fromConvs = Object.entries(convUnread).reduce((c, [t, n]) => c + (inConv(e, t) ? n : 0), 0);
 		const waits = (n: NoticeLike) => n.decision?.state === "open" && !!n.decision.draft && !n.ignored;
 		const sentToday = suggests.filter(s => s.state === "sent" && inConv(e, s.target) && s.at && new Date(s.at).toDateString() === today).length;
-		const cm = comments[e.key] ?? { drafts: 0, unread: 0 };
+		// A per-source entry adds up its sources (`src:<key>`, hub/comments/gateway.ts commentNeeds); any other entry reads its own key.
+		const cm = e.sources ? e.sources.map(s => comments[`src:${s}`]).reduce((a, b) => ({ drafts: a.drafts + (b?.drafts ?? 0), unread: a.unread + (b?.unread ?? 0) }), { drafts: 0, unread: 0 }) : (comments[e.key] ?? { drafts: 0, unread: 0 });
 		const needs = { drafts: mine.filter(waits).length + cm.drafts, unread: mine.filter(n => !n.read && !waits(n)).length + fromConvs + cm.unread, sentToday };
-		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, notices: mine.slice(0, cap).map(n => n.id), needs };
+		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), ...(e.sources ? { sources: e.sources } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, notices: mine.slice(0, cap).map(n => n.id), needs };
 	});
 }
 
