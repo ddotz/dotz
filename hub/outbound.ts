@@ -69,7 +69,7 @@ export function deliver(text: string, reply?: { target: string; replyTo?: string
 
 // "web:alert" / "web:worklog": the answer to a question the owner asked in that web conversation (hub/intake.ts sendWeb).
 // "mail:<key>": a mail with no Discord thread (hub/mail.ts) lives in the web only.
-const isLocal = (target: string) => target === "web" || target === "terminal" || target === "web:alert" || target === "web:worklog" || target.startsWith("mail:");
+const isLocal = (target: string) => target === "web" || target === "terminal" || target === "web:alert" || target === "web:worklog" || target.startsWith("mail:") || target.startsWith("settings:");
 // The work channel a Discord thread hangs from: its sends show in that project's web chat (projectchat.ts outEvent).
 const threadHome = (thread: string): string | undefined => {
 	const parent = discord.channels.threads[thread]?.parent;

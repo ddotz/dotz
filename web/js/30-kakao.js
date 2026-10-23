@@ -155,7 +155,7 @@ function kkPaintRooms() {
     if (watched.length) list.append(...watched.map(kkRow));
     else list.append(el("div", { class: "kk-note", id: "kk-empty", text: "지켜볼 대화방을 골라 주세요" }));
   }
-  clear(kkRooms).append(pick, list);
+  clear(kkRooms).append(...[asPinnedRow("kakao"), pick, list].filter(Boolean));
   kkRooms.scrollTop = top;
 }
 

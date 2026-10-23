@@ -16,9 +16,10 @@ const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0 };
 const monConv = () => current === "monitoring" && narrowChat() && !MON.list;
 const monHash = () => (!MON.list && MON.sel ? `monitoring/${enc(MON.sel)}` : "monitoring");
 // A mail is a conversation of 모니터링 (go() in 05-command-palette.js draws it with the chat view while the tab stays 모니터링); monItemOf: the list item it sits under.
-const monOwned = t => isMailT(String(t || ""));
+const monOwned = t => isMailT(String(t || "")) || isSettingsT(String(t || ""));
 const monItemOf = t => {
   if (!monOwned(t)) return "";
+  if (isSettingsT(t)) return `i:${settingsApp(t)}`;
   const it = INTG.items.find(x => (x.conv || []).some(p => String(t).startsWith(p)));
   return `i:${it ? it.key : "mail"}`;
 };
@@ -292,7 +293,8 @@ function monTimeline(it) {
   const names = it.mon ? monNames(it.mon) : [];
   const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => monNoticeNode(n, names) })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
-  const nodes = msgs.map(x => x.node()).filter(Boolean);
+  const pin = it.app ? asPinnedRow(it.key.slice(2)) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
+  if (pin) nodes.unshift(pin);
   if (nodes.length) return nodes;
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
   return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];

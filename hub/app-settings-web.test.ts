@@ -1,0 +1,170 @@
+import { afterAll, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { readSettings, writeSettings } from "./app-settings.ts";
+import { appAsset, indexPage } from "./webapp.ts";
+
+// 모니터링 > 앱 > 설정 (web/js/32-app-settings.js) as shipped, in a headless Bun.WebView against a stub gateway whose settings routes call the real
+// hub/app-settings.ts on a temp data dir. Screenshots are written only when SETTINGS_SHOTS names a folder. Names and ids are placeholders.
+const SHOTS = process.env.SETTINGS_SHOTS;
+if (SHOTS) mkdirSync(SHOTS, { recursive: true });
+const data = mkdtempSync(join(tmpdir(), "as-web-"));
+const cfgFile = (rel: string) => join(data, rel);
+
+const ts = (m: number) => new Date(Date.UTC(2026, 9, 23, 3, m)).toISOString();
+const PROPOSAL = { app: "mail", changes: { skip_senders: ["promo@shop.example"], auto_draft: true } };
+const history = (target: string) => target === "settings:mail" ? [
+	{ ts: ts(1), kind: "message", source: "web", channel: target, author: "local", text: "광고 메일은 답장 초안에서 빼 주고 자동 초안은 켜 줘" },
+	{ ts: ts(2), kind: "out", source: "orchestrator", target, text: `광고 보내는 곳 하나를 빼고 자동 초안을 켜는 변경이에요.\n\`\`\`dotz-settings\n${JSON.stringify(PROPOSAL)}\n\`\`\`` },
+] : [];
+
+const sent: Record<string, unknown>[] = [];
+const patches: Record<string, unknown>[] = [];
+const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
+let streamWaiters: (() => void)[] = [];
+const te = new TextEncoder();
+const json = (v: unknown, status = 200) => Response.json(v, { status });
+const server = Bun.serve({
+	port: 0,
+	hostname: "127.0.0.1",
+	idleTimeout: 0,
+	async fetch(req) {
+		const url = new URL(req.url), p = url.pathname;
+		if (p === "/") return indexPage(req);
+		const asset = appAsset(req, p);
+		if (asset) return asset;
+		if (p === "/api/events") {
+			let ctl: ReadableStreamDefaultController<Uint8Array>;
+			const body = new ReadableStream<Uint8Array>({
+				start(c) { ctl = c; streams.add(c); c.enqueue(te.encode(": open\n\n")); const w = streamWaiters; streamWaiters = []; for (const f of w) f(); },
+				cancel() { streams.delete(ctl); },
+			});
+			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+		}
+		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: history(url.searchParams.get("target") ?? "") });
+		if (p === "/api/activity") return json({ items: [], more: false, history: false });
+		if (p === "/api/conversations") return json({ items: [] });
+		if (p === "/api/notices") return json({ unread: 0, items: [] });
+		if (p === "/api/monitors") return json({ items: [] });
+		if (p === "/api/integrations") return json({ items: ["mail", "kakao", "youtube"].map(key => ({ key, label: { mail: "메일", kakao: "카카오톡", youtube: "유튜브" }[key], icon: key === "kakao" ? "chat" : key, kind: "app", conv: key === "mail" ? ["mail:"] : [], notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } })) });
+		if (p === "/api/kakao/rooms") return json({ on: true, rooms: [] });
+		const m = /^\/api\/integrations\/([a-z0-9-]+)\/settings$/.exec(p);
+		if (m) {
+			try {
+				if (req.method === "PATCH") {
+					const b = (await req.json()) as { values: unknown };
+					patches.push({ app: m[1], values: b.values });
+					return json({ key: m[1], fields: writeSettings(data, m[1]!, b.values) });
+				}
+				return json({ key: m[1], fields: readSettings(data, m[1]!) });
+			} catch (e) {
+				return json({ error: (e as Error).message }, 400);
+			}
+		}
+		if (p === "/api/message") { sent.push((await req.json()) as Record<string, unknown>); return json({ ok: true }); }
+		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
+	},
+});
+
+type View = InstanceType<typeof Bun.WebView>;
+const views: View[] = [];
+const open = (width: number, height: number): View => { const v = new Bun.WebView({ width, height }); views.push(v); return v; };
+afterAll(() => { for (const v of views) v.close(); for (const c of streams) { try { c.close(); } catch { /* already closed */ } } server.stop(true); rmSync(data, { recursive: true, force: true }); });
+
+const waitFor = (v: View, expr: string, ms = 4000) =>
+	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
+const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
+const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
+const boot = async (v: View, route: string) => {
+	const opened = new Promise<void>(r => streamWaiters.push(r));
+	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	await opened;
+	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S`);
+	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
+	await run(v, `go("monitoring", ${JSON.stringify(route)})`);
+};
+
+describe("설정 대화 at desktop width (1280x800)", () => {
+	const v = open(1280, 800);
+
+	test("the mail list pins a 설정 row at the top that opens the settings conversation", async () => {
+		await boot(v, "i:mail");
+		await waitFor(v, `document.querySelector("#mon-tl .as-pin")`);
+		expect(await q(v, `return document.querySelector("#mon-tl").firstElementChild.classList.contains("as-pin")`)).toBe(true);
+		await shot(v, "01-desktop-pinned-row.png");
+		await run(v, `document.querySelector(".as-pin").click()`);
+		await waitFor(v, `target === "settings:mail" && document.querySelector("#app-sw .as-row")`);
+	});
+
+	test("the switch PATCHes the same route with no message to the bot, and writes the custom file", async () => {
+		await run(v, `document.querySelector('#app-sw [data-k="auto_draft"]').click()`);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="auto_draft"]').getAttribute("aria-checked") === "true"`);
+		expect(patches).toEqual([{ app: "mail", values: { auto_draft: true } }]);
+		expect(sent).toEqual([]);
+		expect(JSON.parse(readFileSync(cfgFile("custom/reply-drafts/config.json"), "utf8")).apps.mail.auto).toBe(true);
+		await run(v, `document.querySelector('#app-sw [data-k="auto_draft"]').click()`);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="auto_draft"]').getAttribute("aria-checked") === "false"`);
+		expect(patches.length).toBe(2);
+	});
+
+	test("an answer with a dotz-settings block is a change card; nothing is written until 적용", async () => {
+		await waitFor(v, `document.querySelector("#tl .as-card")`);
+		const card = await q<{ rows: string[]; buttons: string[] }>(v, `const c = document.querySelector("#tl .as-card"); return { rows: [...c.querySelectorAll(".as-cr")].map(r => r.textContent), buttons: [...c.querySelectorAll("button")].map(b => b.textContent) }`);
+		expect(card.buttons).toEqual(["적용", "취소"]);
+		expect(card.rows.some(r => r.includes("자동 초안") && r.includes("꺼짐 → 켜짐"))).toBe(true);
+		expect(card.rows.some(r => r.includes("추가 promo@shop.example"))).toBe(true);
+		expect(patches.length).toBe(2);
+		expect(JSON.parse(readFileSync(cfgFile("custom/reply-drafts/config.json"), "utf8")).senders).toBeUndefined();
+		await shot(v, "02-desktop-settings-conversation.png");
+		await run(v, `document.querySelector('#tl .as-card [data-as="apply"]').click()`);
+		await waitFor(v, `document.querySelector("#tl .as-done.applied")`);
+		expect(patches[2]).toEqual({ app: "mail", values: PROPOSAL.changes });
+		expect(JSON.parse(readFileSync(cfgFile("custom/reply-drafts/config.json"), "utf8")).senders.skip).toEqual(["promo@shop.example"]);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="auto_draft"]').getAttribute("aria-checked") === "true"`);
+	});
+
+	test("the composer sends settings:<app> to the orchestrator", async () => {
+		await run(v, `ta.value = "답장 말투 더 짧게"; sendChat()`);
+		const deadline = Date.now() + 3000;
+		while (!sent.length && Date.now() < deadline) await Bun.sleep(25);
+		expect(sent[0]).toMatchObject({ text: "답장 말투 더 짧게", settings: "mail" });
+	});
+
+	test("a card the owner cancels writes nothing", async () => {
+		const before = patches.length;
+		await run(v, `localStorage.removeItem("dotz.settings.cards"); AS.done = {}; renderAll()`);
+		await waitFor(v, `document.querySelector('#tl .as-card [data-as="cancel"]')`);
+		await run(v, `document.querySelector('#tl .as-card [data-as="cancel"]').click()`);
+		await waitFor(v, `document.querySelector("#tl .as-done.cancelled")`);
+		expect(patches.length).toBe(before);
+	});
+
+	test("kakao: the pinned row sits on top of the room list, and its conversation has the 감시 switch", async () => {
+		await run(v, `go("monitoring", "i:kakao")`);
+		await waitFor(v, `document.querySelector(".kk-rooms .as-pin")`);
+		expect(await q(v, `return document.querySelector(".kk-rooms").firstElementChild.classList.contains("as-pin")`)).toBe(true);
+		await run(v, `document.querySelector(".kk-rooms .as-pin").click()`);
+		await waitFor(v, `target === "settings:kakao" && document.querySelector('#app-sw [data-k="enabled"]')`);
+		await shot(v, "03-desktop-kakao-settings.png");
+		expect(existsSync(cfgFile("custom/kakao/config.json"))).toBe(false);
+	});
+});
+
+describe("설정 대화 at phone width (390x844)", () => {
+	const v = open(390, 844);
+
+	test("switches above the conversation and the change card fit the screen", async () => {
+		writeSettings(data, "mail", { auto_draft: false, skip_senders: [] });
+		await boot(v, "c:settings:mail");
+		await waitFor(v, `target === "settings:mail" && document.querySelector("#app-sw .as-row") && document.querySelector("#tl .as-card")`);
+		await run(v, `localStorage.removeItem("dotz.settings.cards"); AS.done = {}; renderAll()`);
+		await waitFor(v, `document.querySelector('#tl .as-card [data-as="apply"]')`);
+		const fit = await q<{ sw: number; card: number; vw: number }>(v, `return { sw: document.querySelector("#app-sw").scrollWidth, card: document.querySelector("#tl .as-card").scrollWidth, vw: innerWidth }`);
+		expect(fit.sw).toBeLessThanOrEqual(fit.vw);
+		expect(fit.card).toBeLessThanOrEqual(fit.vw);
+		await shot(v, "04-phone-settings-conversation.png");
+	});
+});

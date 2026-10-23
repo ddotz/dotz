@@ -136,6 +136,8 @@ export function eventTarget(e: HubEvent): string | undefined {
 	// A mail is its own conversation (hub/mail.ts): stamped `conv` on its thread's messages, or the web-only target itself.
 	const mail = [e.conv, e.channel, e.target].find((v): v is string => typeof v === "string" && v.startsWith("mail:"));
 	if (mail) return mail;
+	const settings = [e.conv, e.channel, e.target].find((v): v is string => typeof v === "string" && v.startsWith("settings:"));
+	if (settings) return settings;
 	const lane = typeof e.lane === "string" ? e.lane : [e.source, e.target, e.channel].find(v => typeof v === "string" && v.startsWith("lane:"))?.slice(5);
 	if (lane) return `lane:${lane}`;
 	// A project's work channel is its own conversation (hub/projectchat.ts): the owner's message there and the answers to it.

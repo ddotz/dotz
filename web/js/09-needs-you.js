@@ -127,6 +127,8 @@ function eventTarget(e) {
   if (e.kind === "activity" || e.kind === "subagents" || e.kind === "notice" || e.kind === "notice_read" || e.kind === "read") return null;
   const mail = [e.conv, e.channel, e.target].find(v => typeof v === "string" && v.startsWith("mail:"));
   if (mail) return mail;
+  const settings = [e.conv, e.channel, e.target].find(v => typeof v === "string" && v.startsWith("settings:"));
+  if (settings) return settings;
   let lane = typeof e.lane === "string" ? e.lane : "";
   if (!lane) for (const v of [e.source, e.target, e.channel]) if (typeof v === "string" && v.startsWith("lane:")) { lane = v.slice(5); break; }
   if (lane) return `lane:${lane}`;
