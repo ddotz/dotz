@@ -136,19 +136,25 @@ test("quota -> API-key entry -> reset returns to the subscription -> monthly cap
 	expect(current().opts.resume).toBeUndefined();
 	expect(current().agent.texts[0]).toContain("This is the API-key fallback");
 	expect(current().agent.texts[0]).toContain("answer it now");
-	expect(notices.at(-1)).toBe("Model fallback: anthropic/test-orch → anthropic/test-orch (API key) (usage limit reached)");
+	// The fall-back notice names when the subscription limit ends (KST), see 93a5c45.
+	expect(notices.at(-1)).toMatch(/^Model fallback: anthropic\/test-orch → anthropic\/test-orch \(API key\) \(usage limit reached; back on the subscription around .+ \(KST\)\)$/);
 	log(`step 1  fake quota exhaustion -> ${current().opts.model} (key from secrets/test-api-key, fresh session)\n        worklog: ${notices.at(-1)}`);
 	// The key reaches the process only through its environment: never the overlay, the notices, the alerts or the usage file.
 	expect(JSON.stringify([notices, alerts, readFileSync(join(DATA, "fallback-usage.json"), "utf8")])).not.toContain(KEY);
 
-	// Step 2: the subscription's window resets (the recorded pause ends) -> back to it at the next idle moment.
+	// Step 2: the subscription's window resets (no reset is named, so the recorded pause is 30 min, see 93a5c45) -> back to it at
+	// the next idle moment, and the "Model back" notice comes with the first turn that works there, not with the switch.
 	await current().agent.push({ type: "session", ref: join(DATA, "fake-session.jsonl") });
 	await current().agent.push(...turn({ type: "assistant", text: "done on the key", stop: "stop" }));
 	await advance(12 * 60_000);
+	expect(started).toHaveLength(2);
+	await advance(20 * 60_000);
 	expect(started).toHaveLength(3);
 	expect(current().opts.model).toBe("anthropic/test-orch:low");
+	expect(notices.at(-1)).toContain("usage limit reached");
+	await current().agent.push(...turn({ type: "assistant", text: "back on the subscription", stop: "stop" }));
 	expect(notices.at(-1)).toBe("Model back: anthropic/test-orch (API key) → anthropic/test-orch (limit reset)");
-	log(`step 2  fake reset (12 min later) -> ${current().opts.model}\n        worklog: ${notices.at(-1)}`);
+	log(`step 2  fake reset (32 min later) -> ${current().opts.model}\n        worklog: ${notices.at(-1)}`);
 
 	// Step 3: the limit again -> API key; then its spend reaches the monthly $50 cap -> next entry, after the running turn.
 	await current().agent.push({ type: "session", ref: join(DATA, "fake-session.jsonl") });
