@@ -175,11 +175,11 @@ describe("needs: what waits on the owner per app", () => {
 
 	test("2 waiting drafts + 3 unread: drafts are not counted twice as unread", () => {
 		const m = mail([draft("d1"), draft("d2")], { "mail:a": 2, "mail:b": 1 });
-		expect(m.needs).toEqual({ drafts: 2, unread: 3, sentToday: 0 });
+		expect(m.needs).toEqual({ drafts: 2, unread: 3, sentToday: 0, unreplied: 0 });
 	});
 	test("answered, ignored or dismissed drafts do not wait; no item: all zero", () => {
 		const items = [draft("d1", { read: true, decision: { to: "main", state: "answered", draft: {} } }), draft("d2", { read: true, ignored: "x" }), draft("d3", { read: true, dismissed: true })];
-		expect(mail(items, { "mail:a": 0 }).needs).toEqual({ drafts: 0, unread: 0, sentToday: 0 });
+		expect(mail(items, { "mail:a": 0 }).needs).toEqual({ drafts: 0, unread: 0, sentToday: 0, unreplied: 0 });
 	});
 	test("sentToday counts the sent replies of this app set today (local day), not older ones or drafts", () => {
 		const m = mail([], { "mail:a": 0 }, [

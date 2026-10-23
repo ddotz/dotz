@@ -89,7 +89,7 @@ function cmRow(t) {
   return el("button", { class: `cv-row pv kk-row${n ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-thread": t.thread, "aria-current": on ? "true" : null, onclick: () => cmOpen(t) },
     kkAvatar(t.title),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: t.title, text: t.title }), el("span", { class: "cv-p", text: `${t.lastAuthor}: ${t.lastText}` })),
-    el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), n ? el("span", { class: "nb", "aria-label": t.drafts ? `답장 확인 ${t.drafts}건` : `읽지 않은 댓글 ${t.unread}개`, text: t.drafts ? `초안 ${t.drafts}` : String(t.unread > 99 ? "99+" : t.unread) }) : null));
+    el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), n ? el("span", { class: "nb", "aria-label": t.drafts ? `답장 확인 ${t.drafts}건` : `읽지 않은 댓글 ${t.unread}개`, text: t.drafts ? `초안 ${t.drafts}` : String(t.unread > 99 ? "99+" : t.unread) }) : null, t.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${t.unreplied}개`, text: `미답장 ${t.unreplied}` }) : null));
 }
 function cmPaintRooms() {
   if (!CM.vis) return;
@@ -155,7 +155,7 @@ function cmCommentNode(c, by, first) {
     text: CM.drafting.has(c.id) ? "초안 만드는 중…" : "답글 초안" }) : null;
   if (c.mine) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-id": c.id }, el("div", { class: "kk-line" }, el("span", { class: "kk-time", text: kkTime(c.at) }), bub));
   return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-id": c.id }, first ? kkAvatar(c.author) : el("span", { class: "kk-av sp", "aria-hidden": "true" }),
-    el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: c.author }) : null, el("div", { class: "kk-line" }, bub, el("span", { class: "kk-time", text: kkTime(c.at) })), mark));
+    el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: c.author }) : null, el("div", { class: "kk-line" }, bub, el("span", { class: "kk-time", text: kkTime(c.at) })), mark, c.unreplied ? el("div", { class: "kk-line" }, unrepPill(), unrepNo(`/api/comments/comment/${encodeURIComponent(c.id)}/no-reply`)) : null));
 }
 function cmSendNode(s) {
   const failed = s.state === "failed", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";

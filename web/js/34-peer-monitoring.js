@@ -51,8 +51,12 @@ function pqAct(path, body) {
   if (path === "/api/message" && b.settings && pqPc(`settings:${b.settings}`)) { const { settings, lane, project, mail, via, ...rest } = b; return { pc: pqPc(`settings:${settings}`), action: "message", args: { target: `settings:${pqBare(settings)}`, ...rest } }; }
   const df = /^\/api\/drafts\/([^/?]+)\/files$/.exec(path), dref = df && decodeURIComponent(df[1]);
   if (dref && DRF.pc[dref]) return { pc: DRF.pc[dref], action: "draft-files", args: { ref: dref, ...b } };
+  const nm = /^\/api\/mail\/([^/?]+)\/no-reply$/.exec(path);
+  if (nm && pqPc(`mail:${decodeURIComponent(nm[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(nm[1])}`), action: "no-reply", args: { kind: "mail", key: decodeURIComponent(nm[1]) } };
   if (path === "/api/read") return { pc: pqPc(b.target), action: "read", args: { target: pqBare(b.target), ts: b.ts } };
   if (!path.startsWith("/api/kakao/") || !KK.pc) return null;
+  const nk = /^\/api\/kakao\/chat\/([^/]+)\/no-reply$/.exec(path);
+  if (nk) return { pc: KK.pc, action: "no-reply", args: { kind: "kakao", chatId: decodeURIComponent(nk[1]) } };
   const id = k && decodeURIComponent(k[2]);
   if (k && k[1] === "chat" && k[3] === "send") return { pc: KK.pc, action: "kakao", args: { op: "send", chatId: id, text: b.text } };
   if (k && k[1] === "chat" && k[3] === "read") return { pc: KK.pc, action: "kakao", args: { op: "read", chatId: id, logId: b.logId } };
@@ -128,7 +132,7 @@ function pqMerge(items) {
       const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 };
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";
       PQ.of.set(`settings:${pqApp(it.key, pc)}`, { pc, key: key(`i:${it.key}`), app: true, label: it.label });   // the app's settings conversation lives on that computer
-      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, hint: monNeedLine(needs), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
+      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: monNeedLine(needs), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {

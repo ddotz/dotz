@@ -101,7 +101,7 @@ function monItems() {
     for (const n of notices) shown.add(n.id);
     const cands = [...notices.map(n => ({ at: monNoticeAt(n), text: monLine(n) })), ...mails.filter(t => CONV.get(t)).map(t => ({ at: CONV.get(t).ts, text: (MAILS.get(t) || {}).subject || CONV.get(t).text }))].sort((a, b) => b.at.localeCompare(a.at));
     const needs = it.needs || { drafts: 0, unread: monUnread(notices) + mails.reduce((c, t) => c + (ts(t).unread | 0), 0), sentToday: 0 };
-    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, unread: needs.drafts || needs.unread, hint: monNeedLine(needs), at: cands[0] ? cands[0].at : "", owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
+    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: monNeedLine(needs), at: cands[0] ? cands[0].at : "", owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
   }
   const ownedNames = new Set([...owned.values()].flat());
   for (const m of mons) {
@@ -140,7 +140,7 @@ function monRows(items, sel) {
     if (it.group === MON_GROUP.plain && !added) { rows.push({ header: MON_GROUP.app }); addRow(); }
     if (it.group && it.group !== group) rows.push({ header: it.group });
     group = it.group;
-    rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", it.key) });
+    rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, unreplied: it.unreplied | 0, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", it.key) });
   }
   if (!added) { if (group !== MON_GROUP.app) rows.push({ header: MON_GROUP.app }); addRow(); }
   if (!NM.loaded) rows.push({ header: NM.failed ? "모니터링을 불러오지 못했어요" : "모니터링 불러오는 중…" });
@@ -293,15 +293,15 @@ const mailReplyChip = sg => {
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = ts(t).unread, open = () => go("monitoring", `c:${t}`);
   const tag = n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : !m && ntHasDecision(t) ? el("span", { class: "tag warn", text: "답변 필요" }) : null;
-  const files = m ? m.attachments || [] : [], brief = m ? mailBrief(m, t) : "", when = rcWhen(last ? last.ts : m && m.at), chip = m ? mailReplyChip(m.suggest) : null;
+  const files = m ? m.attachments || [] : [], brief = m ? mailBrief(m, t) : "", when = rcWhen(last ? last.ts : m && m.at), chip = m ? mailReplyChip(m.suggest) : null, owed = !!(m && m.unreplied);
   const title = m ? m.subject || "(제목 없음)" : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
   return el("div", { class: "bm alert rc mr", role: "button", tabindex: "0", "aria-label": `${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
-    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? mailSender(m.from) || label : label }), tag, clip, when ? el("span", { class: "rc-time", text: when }) : null),
+    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? mailSender(m.from) || label : label }), tag, owed ? unrepPill() : null, clip, when ? el("span", { class: "rc-time", text: when }) : null),
     el("div", { class: "rc-title", text: title }),
     brief ? el("div", { class: "mr-sum", text: brief }) : null,
-    chip ? el("div", { class: "mr-slot" }, chip) : null);
+    chip || owed ? el("div", { class: "mr-slot" }, chip, owed ? unrepNo(`/api/mail/${t.slice(5)}/no-reply`, () => { m.unreplied = false; monSchedule(); if (pqPc(t)) pqSoon(); }) : null) : null);
 }
 // A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
 function monRunNode(it) {
@@ -354,7 +354,7 @@ function monStatNode(m) {
 // A peer's app is `<its key>~<computer hash>`: the same key may exist on this computer too (34-peer-monitoring.js pqApp).
 const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.app && it.pc ? pqApp(it.inst, it.pc) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : "";
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
-const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), el("span", { class: "cv-p", text: monState(it) })), ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), el("span", { class: "cv-p", text: monState(it) })), it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
 // The settings app of the detail open now (an item, or a conversation sitting under one), for the phone's app bar.
 function monDetailApp() {
   if (current === "monitoring") return monConv() ? monSettingsApp(monSel(monItems())) : "";
@@ -384,7 +384,7 @@ function renderMonitoring() {
   monRaf = 0;
   if (current !== "monitoring") { if (monCtx && current === "chat") convSchedule(); return; }
   const items = monItems(), sel = monSel(items), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");
-  const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.badge, r.header, r.sel, r.chips])]);
+  const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.unreplied, r.badge, r.header, r.sel, r.chips])]);
   if (sideSig !== MON.side) {
     MON.side = sideSig;
     const top = side.scrollTop;
@@ -397,14 +397,14 @@ function renderMonitoring() {
   cmMode(cm, !!cm && !(narrowChat() && MON.list));
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
-    const head = JSON.stringify([sel.name, monState(sel), !!AS.by[monSettingsApp(sel)], !!KK.open]);
+    const head = JSON.stringify([sel.name, monState(sel), sel.unreplied | 0, !!AS.by[monSettingsApp(sel)], !!KK.open]);
     if (head !== MON.kkHead) { MON.kkHead = head; clear($("#mon-head")).append(...monHead(sel)); }
     MON.sig = ""; MON.shown = sel.key;
     convTitle();
     return;
   }
   MON.kkHead = "";
-  const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone, n.item, n.item && n.item.key ? MAILS.get(`mail:${n.item.key}`) : null]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t), MAILS.has(t) ? mailBrief(MAILS.get(t), t) : ""]), sel.mon, NM.loaded, NT.loaded, pqSig(sel)]);
+  const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.unreplied | 0, sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone, n.item, n.item && n.item.key ? MAILS.get(`mail:${n.item.key}`) : null]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t), MAILS.has(t) ? mailBrief(MAILS.get(t), t) : ""]), sel.mon, NM.loaded, NT.loaded, pqSig(sel)]);
   if (sig !== MON.sig) {
     MON.sig = sig;
     const again = MON.shown === sel.key, keep = box.scrollTop, stick = !again || box.scrollTop + box.clientHeight >= box.scrollHeight - 40;

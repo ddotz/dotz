@@ -7,6 +7,7 @@ import { isAbsolute, join, sep } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
 import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
+import { mailUnreplied } from "./unreplied.ts";
 
 /** One attached file of a mail. `file` is relative to the mail files folder (`<key>/<n>/<name>`); it never leaves that folder. */
 export type MailAttachment = { name: string; type: string; size: number; file: string; cid?: string };
@@ -16,8 +17,8 @@ export type AttachmentInput = { name: string; type?: string; data?: string; path
 // was offered as a send-approval [ask] whose question ends in "(<ref>)" (features/reply-drafts). `state` is the reply state the row shows
 // (web 30-monitoring.js mailReplyChip): "draft" (default) a draft waits for approval, "sent" the reply went out, "waiting" a reply is expected.
 export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; state?: "draft" | "sent" | "waiting"; at?: string };
-export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest };
-export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; attachments?: AttachmentInput[] };
+export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; needsReply?: true; noReply?: true };
+export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[] };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true };
 export type MailDeps = {
 	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
@@ -90,6 +91,15 @@ export function setMailSuggest(key: string, suggest: MailSuggest | undefined): b
 	return true;
 }
 export const mailByThread = (thread: string): MailRecord | undefined => records.find(r => r.thread === thread);
+// 미답장 (hub/unreplied.ts): the mails still waiting for a reply, given the keys whose reply draft was sent. 답장 안 함 (`noReply`) is the owner's own mark.
+export const unrepliedMails = (sentRefs: ReadonlySet<string>, now = Date.now()): MailRecord[] => records.filter(r => mailUnreplied(r, sentRefs, now));
+export function setMailNoReply(key: string, on: boolean): boolean {
+	const r = byKey.get(key);
+	if (!r) return false;
+	const { noReply: _old, ...rest } = r;
+	recordMail(on ? { ...rest, noReply: true } : rest);
+	return true;
+}
 // The reply states of the mails (the 모니터링 app lines count them: hub/integrations.ts).
 export const mailSuggests = (): Array<{ target: string; state?: string; at: string }> => records.flatMap(r => r.suggest ? [{ target: mailTarget(r.key), state: r.suggest.state ?? "draft", at: r.suggest.at ?? r.at }] : []);
 export const mailTargets = (): string[] => [...records].sort((a, b) => b.at.localeCompare(a.at)).map(r => mailTarget(r.key));
@@ -153,6 +163,7 @@ export function parseMail(raw: unknown): MailInput {
 		html: str(b.html, "html", MAIL_HTML_MAX, false),
 		thread,
 		wake: b.wake === true,
+		needsReply: b.needsReply === true,
 		attachments: parseAttachments(b.attachments),
 	};
 }
@@ -282,7 +293,7 @@ export function mailBodyRoute(key: string): Response {
 export const attachmentList = (m: Pick<MailRecord, "attachments">) => (m.attachments ?? []).map(({ name, type, size }) => ({ name, type, size }));
 
 /** What the web draws a mail row from (GET /api/conversations `mail`, and a watch report that points at the mail): no stored paths. */
-export const mailCard = (m: MailRecord) => ({ subject: m.subject, from: m.from, source: m.source, at: m.at, ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.html ? { html: true as const } : {}), ...(m.suggest ? { suggest: m.suggest } : {}) });
+export const mailCard = (m: MailRecord, unreplied = false) => ({ subject: m.subject, from: m.from, source: m.source, at: m.at, ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.html ? { html: true as const } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), ...(unreplied ? { unreplied: true as const } : {}) });
 
 /** GET/HEAD /api/mail/<key>/files/<n>[?dl=1]: main.ts adds the web auth in front. Only files of a known mail, only inside MAIL_FILES. */
 export function mailFileRoute(req: Request, url: URL, key: string, index: string): Response {
@@ -347,7 +358,7 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps): 
 	const html = await saveHtml(key, m.html, attachments);
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
-	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}) });
+	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(m.needsReply ? { needsReply: true as const } : {}) });
 	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);

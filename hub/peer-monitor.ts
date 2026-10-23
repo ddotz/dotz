@@ -289,6 +289,13 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if ((a.op === "draft-send" || a.op === "draft-drop") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
 				return bad("op must be send, send-delete, read, draft, ask-drop, draft-send or draft-drop");
 			}
+			// 답장 안 함 (hub/unreplied.ts) on the computer that holds the mail or the room, or taking it back (on false).
+			case "no-reply": {
+				const verb = a.on === false ? "DELETE" : "POST";
+				if (a.kind === "mail" && typeof a.key === "string" && a.key) return ask(verb, `/api/mail/${encodeURIComponent(a.key)}/no-reply`, verb === "POST" ? {} : undefined, login);
+				if (a.kind === "kakao" && typeof a.chatId === "string" && a.chatId) return ask(verb, `/api/kakao/chat/${encodeURIComponent(a.chatId)}/no-reply`, verb === "POST" ? {} : undefined, login);
+				return bad("kind must be mail or kakao");
+			}
 			// A mail reply draft's files (hub/draft-attach.ts): added from the library folder or as bytes, or taken off, on the computer that owns the draft.
 			case "draft-files": {
 				const ref = encodeURIComponent(String(a.ref ?? ""));

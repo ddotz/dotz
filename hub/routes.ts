@@ -17,11 +17,12 @@ import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings 
 import { refreshReplyModelChoices } from "./reply-model-choices.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
-import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { broadcast, historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { draftFileRoute } from "./draft-files.ts";
-import { MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTargets, postMail, type MailDeps } from "./mail.ts";
+import { MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailNoReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
@@ -51,7 +52,7 @@ import { ptyRoute } from "./pty.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
 import { commentFlags, commentNeeds, commentsRoute } from "./comments/gateway.ts";
-import { kakaoRoute } from "./kakao/gateway.ts";
+import { kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
 
 const BOOT_ID = Date.now().toString(36);
 // Installable-app files next to index.html: manifest, service worker (never cached by HTTP, so an update is seen at once), icons.
@@ -180,11 +181,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
+		const unrepliedMailList = () => unrepliedMails(new Set(listDrafts().filter(d => d.status === "sent").map(d => d.ref)));
 		const integrationView = () => {
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
 			const ctx = integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags());
 			const own = ownedWatches(DATA_DIR, allWatches());
-			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds()).map(i => ({ ...i, own: own.get(i.key) ?? [] }));
+			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => ({ ...i, own: own.get(i.key) ?? [] }));
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
@@ -296,9 +298,10 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json(r, r.ok ? 200 : 400);
 		}
 		if (req.method === "GET" && url.pathname === "/api/conversations") {
+			const owed = new Set(unrepliedMailList().map(m => m.key));
 			const items = conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).map(c => {
 				const m = c.target.startsWith("mail:") ? mailByKey(c.target.slice(5)) : undefined;
-				return m ? { ...c, mail: mailCard(m) } : c;
+				return m ? { ...c, mail: mailCard(m, owed.has(m.key)) } : c;
 			});
 			return json({ items });
 		}
@@ -311,6 +314,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
 		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library)$/.exec(url.pathname);
 		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
+		// 답장 안 함 on a mail (POST) or taking it back (DELETE): the owner's mark that this mail needs no reply (hub/unreplied.ts).
+		const mailNoReply = (req.method === "POST" || req.method === "DELETE") && /^\/api\/mail\/([a-z0-9._-]+)\/no-reply$/.exec(url.pathname);
+		if (mailNoReply) {
+			if (!setMailNoReply(mailNoReply[1]!, req.method === "POST")) return json({ error: "이 메일을 찾지 못했어요" }, 404);
+			broadcast({ kind: "mail_unreplied", target: mailTarget(mailNoReply[1]!) });
+			return json({ ok: true });
+		}
 		const mailBody = req.method === "GET" && /^\/api\/mail\/([a-z0-9._-]+)\/body$/.exec(url.pathname);
 		if (mailBody) return mailBodyRoute(mailBody[1]!);
 		// A mail from an outside poster (a webmail watcher, a custom plugin): one conversation per mail (hub/mail.ts, docs/custom-plugins.md).

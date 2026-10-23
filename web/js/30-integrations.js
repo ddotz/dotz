@@ -8,6 +8,10 @@ const INTG = { items: [], available: [], sig: "", timer: 0 };
 const intgHas = (it, t) => (it.conv || []).some(p => String(t).startsWith(p)) && !(it.convNot || []).some(p => String(t).startsWith(p));
 const intgHidden = t => INTG.available.some(a => a.off && intgHas(a, t));
 
+// 미답장 (hub/unreplied.ts): the orange pill, and the small 답장 안 함 action that clears it (reading never does). `after` repaints the caller.
+const unrepPill = (text = "미답장") => el("span", { class: "tag unreplied", text });
+const unrepNo = (path, after) => el("button", { class: "cchip unrep-no", type: "button", text: "답장 안 함", onclick: ev => { ev.stopPropagation(); api(path, "POST", {}).then(() => { toast("답장 안 함으로 표시했어요"); if (after) after(); loadIntegrations(); }, e => toast(e.message, true)); } });
+
 async function loadIntegrations() {
   try {
     const r = await api("/api/integrations");
@@ -17,10 +21,11 @@ async function loadIntegrations() {
     for (const it of INTG.items) if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;
   } catch { return; }
   monSchedule();
+  homeSoon();
 }
 // Refetch when the notices or a conversation's unread count changed (cheap signature, checked on every list build).
 function intgWatch() {
-  const sig = `${NT.items.length}:${NT.unread}:${[...CONV.keys()].map(t => ts(t).unread).join(",")}`;
+  const sig = `${NT.items.length}:${NT.unread}:${[...CONV.keys()].map(t => ts(t).unread).join(",")}:${[...MAILS.values()].filter(m => m && m.unreplied).length}`;
   if (sig === INTG.sig) return;
   INTG.sig = sig;
   clearTimeout(INTG.timer);

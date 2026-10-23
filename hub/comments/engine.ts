@@ -3,6 +3,7 @@
 import { generateReply, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
 import { createStore, type Draft, type Reply, type Tokens } from "./store.ts";
+import { unrepliedFresh } from "../unreplied.ts";
 
 export type ModelReply = { text: string; inputTokens?: number; outputTokens?: number };
 export type DraftModel = (system: string, user: string, app?: string) => Promise<ModelReply>;
@@ -52,6 +53,12 @@ export function createEngine(deps: EngineDeps) {
 	// A comment needs the owner's reply when it starts a stream, is not his own, and nobody of his (or a sent reply) answered it yet.
 	const needsReply = (c: Comment): boolean =>
 		!c.mine && !c.parent && !stream(c).some(x => x.mine && x.parent === c.native) && !store.replies().some(r => r.commentId === c.id && r.state !== "failed") && !store.drafts().some(d => d.commentId === c.id && d.status === "pending");
+
+	// 미답장 (hub/unreplied.ts): someone else's comment stays open until a reply was sent for it, a comment of his own came after it in the same
+	// stream (he answered on the platform), or he tapped 답장 안 함. Reading it changes nothing.
+	const unrepliedWith = (c: Comment, replies: Reply[], dismissed: Record<string, number>): boolean =>
+		!c.mine && unrepliedFresh(c.at, deps.now()) && !dismissed[c.id] && !replies.some(r => r.commentId === c.id && r.state !== "failed") && !stream(c).some(x => x.mine && x.at >= c.at);
+	const unreplied = (c: Comment): boolean => unrepliedWith(c, store.replies(), store.dismissed());
 
 	const contextOf = (c: Comment): string => {
 		const lines = stream(c).slice(-CONTEXT_COMMENTS).map(x => `- ${x.mine ? "나" : x.author}: ${clip(x.text)}`);
@@ -213,12 +220,13 @@ export function createEngine(deps: EngineDeps) {
 		const mine = new Set(Object.values(cfg.sources).filter(s => ownerOf(s) === app).map(s => s.key));
 		const reads = store.reads();
 		const pendingDrafts = store.drafts().filter(d => d.status === "pending");
+		const replies = store.replies(), dismissed = store.dismissed();
 		const by = new Map<string, Comment[]>();
 		for (const c of store.comments()) if (mine.has(c.source) && watches(cfg.sources[c.source]!, c.thread)) by.set(threadKey(c.source, c.thread), [...(by.get(threadKey(c.source, c.thread)) ?? []), c]);
 		return [...by.values()]
 			.map(list => {
 				const last = list[list.length - 1]!;
-				return { source: last.source, thread: last.thread, title: last.postTitle, link: last.postLink ?? null, lastAt: last.at, lastText: clip(last.text, 80), lastAuthor: last.mine ? "나" : last.author, unread: list.filter(c => unreadOf(c, reads)).length, drafts: pendingDrafts.filter(d => d.source === last.source && d.thread === last.thread).length };
+				return { source: last.source, thread: last.thread, title: last.postTitle, link: last.postLink ?? null, lastAt: last.at, lastText: clip(last.text, 80), lastAuthor: last.mine ? "나" : last.author, unread: list.filter(c => unreadOf(c, reads)).length, drafts: pendingDrafts.filter(d => d.source === last.source && d.thread === last.thread).length, unreplied: list.filter(c => unrepliedWith(c, replies, dismissed)).length };
 			})
 			.sort((a, b) => b.lastAt - a.lastAt);
 	}
@@ -233,7 +241,7 @@ export function createEngine(deps: EngineDeps) {
 		return {
 			source: { key: src.key, kind: src.kind, label: src.label },
 			thread: { id: thread, title: first.postTitle, link: first.postLink ?? null },
-			comments: list.map(c => ({ id: c.id, parent: c.parent ?? null, author: c.author, text: c.text, at: c.at, mine: c.mine, needsReply: needsReply(c) })),
+			comments: list.map(c => ({ id: c.id, parent: c.parent ?? null, author: c.author, text: c.text, at: c.at, mine: c.mine, needsReply: needsReply(c), unreplied: unreplied(c) })),
 			read: store.reads()[threadKey(source, thread)] ?? null,
 			drafts: store.drafts().filter(d => d.source === source && d.thread === thread && d.status === "pending").map(d => ({ code: d.code, commentId: d.commentId, text: d.text, notes: d.notes, clean: d.clean, created: d.created, ...(d.tokens ? { tokens: d.tokens } : {}) })),
 			sends: store.replies().filter(r => r.source === source && r.thread === thread && r.at >= since).map(({ id, commentId, text, state, reason, at, via }) => ({ id, commentId, text, state, ...(reason ? { reason } : {}), at, via })),
@@ -246,12 +254,12 @@ export function createEngine(deps: EngineDeps) {
 	}
 
 	// What waits on the owner per app (the 모니터링 status line): pending drafts and unread comments of the sources he chose.
-	function needs(): Record<string, { drafts: number; unread: number }> {
+	function needs(): Record<string, { drafts: number; unread: number; unreplied: number }> {
 		const cfg = store.config();
-		const out: Record<string, { drafts: number; unread: number }> = {};
+		const out: Record<string, { drafts: number; unread: number; unreplied: number }> = {};
 		if (!cfg.enabled) return out;
-		const reads = store.reads();
-		for (const src of Object.values(cfg.sources)) out[ownerOf(src)] ??= { drafts: 0, unread: 0 };
+		const reads = store.reads(), replies = store.replies(), dismissed = store.dismissed();
+		for (const src of Object.values(cfg.sources)) out[ownerOf(src)] ??= { drafts: 0, unread: 0, unreplied: 0 };
 		for (const d of store.drafts()) {
 			const s = cfg.sources[d.source];
 			if (s && d.status === "pending") out[ownerOf(s)]!.drafts++;
@@ -259,8 +267,18 @@ export function createEngine(deps: EngineDeps) {
 		for (const c of store.comments()) {
 			const s = cfg.sources[c.source];
 			if (s && watches(s, c.thread) && unreadOf(c, reads)) out[ownerOf(s)]!.unread++;
+			if (s && watches(s, c.thread) && unrepliedWith(c, replies, dismissed)) out[ownerOf(s)]!.unreplied++;
 		}
 		return out;
+	}
+
+	// 답장 안 함 (or undone with `on` false): the owner's mark that this comment needs no reply. false = no such comment.
+	function noReply(id: string, on = true): boolean {
+		const c = find(id);
+		if (!c || !sourceOf(c.source)) return false;
+		store.dismiss(id, deps.now(), on);
+		emit({ kind: "comment", source: c.source, thread: c.thread });
+		return true;
 	}
 
 	function tokenStats(): { drafts: number; avgIn: number; avgOut: number } {
@@ -282,6 +300,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, collect, makeDraft, revise, drop, send, update, threads, threadView, markRead, addDraft, needs, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, collect, makeDraft, revise, drop, send, update, threads, threadView, markRead, addDraft, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

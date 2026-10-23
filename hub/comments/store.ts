@@ -1,5 +1,5 @@
 // Files of the comment feature, all under <dataDir>/custom/comments/ (per install, never in the repo): config.json (the owner's choices),
-// comments.json, drafts.json, replies.json (send records), cursors.json, reads.json. Every write is atomic and private (0600).
+// comments.json, drafts.json, replies.json (send records), cursors.json, reads.json, dismissed.json (comment id -> time of 답장 안 함). Every write is atomic and private (0600).
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Comment, CommentsConfig, SourceConfig } from "./contract.ts";
@@ -44,6 +44,7 @@ export function createStore(dir: string) {
 	const replies = (): Reply[] => readJson<Reply[]>(f("replies.json"), []);
 	const cursors = (): Record<string, Cursor> => readJson<Record<string, Cursor>>(f("cursors.json"), {});
 	const reads = (): Record<string, number> => readJson<Record<string, number>>(f("reads.json"), {});
+	const dismissed = (): Record<string, number> => readJson<Record<string, number>>(f("dismissed.json"), {});
 	const upsert = <T extends { [k: string]: any }>(list: T[], item: T, key: keyof T, cap: number): T[] => [...list.filter(x => x[key] !== item[key]), item].slice(-cap);
 	return {
 		dir,
@@ -71,6 +72,11 @@ export function createStore(dir: string) {
 		putReply: (r: Reply) => writeAtomic(f("replies.json"), upsert(replies(), r, "id", MAX_REPLIES)),
 		cursors,
 		setCursor: (key: string, c: Cursor) => writeAtomic(f("cursors.json"), { ...cursors(), [key]: c }),
+		dismissed,
+		dismiss: (id: string, at: number, on = true) => {
+			const { [id]: _old, ...rest } = dismissed();
+			writeAtomic(f("dismissed.json"), on ? { ...rest, [id]: at } : rest);
+		},
 		reads,
 		markRead: (key: string, at: number) => {
 			const r = reads();

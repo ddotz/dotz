@@ -6,6 +6,7 @@ async function loadHomeData() {
     api("/api/quota").then(q => { HQ = q; noteQuota(q); }, () => { HQ = { error: true }; }),
     loadProviderData().catch(() => {}),
     loadMonitors(),
+    typeof pqLoad === "function" ? pqLoad().catch(() => {}) : null,
   ]);
   if (current === "home") { renderHome(); homeTimer = setTimeout(loadHomeData, 60000); }
 }
@@ -221,6 +222,12 @@ function homeNowRow(t, label, tone) {
     subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
     el("span", { class: `hs ${tone === "att" ? "warn" : statusTone(i.status)}`, text: label }));
 }
+// 미답장 (hub/unreplied.ts): the apps whose items still wait for the owner's reply, each one row, apart from the read/unread counts.
+function homeOwedRow(it) {
+  return el("button", { class: "hr", type: "button", onclick: () => go("monitoring", it.key), "aria-label": `${it.name} · 미답장 ${it.unreplied}건` },
+    el("span", { class: "dot unreplied" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: it.name })), el("span", { class: "ha", text: "답장을 기다리는 것이 있어요" })),
+    el("span", { class: "hs unreplied", text: `미답장 ${it.unreplied}` }));
+}
 function renderHomeNow() {
   const box = $("#home-now");
   if (!box) return;
@@ -228,14 +235,15 @@ function renderHomeNow() {
   const dec = ntDecisions();   // 30-notices.js: open decisions, each its own row; a session question already among them is not listed twice
   const need = all.map(t => ({ t, k: askOf(t) ? "ask" : attnKind(t) })).filter(x => x.k && !(x.k === "ask" && ntHasDecision(x.t)));
   const loose = ntLooseAsks().filter(n => !need.some(x => x.k === "ask" && x.t === (n.src || n.open)));   // [ask] notices without a decision wait here too, not only in the 알림 card
-  const waiting = dec.length + loose.length + need.length;
+  const owed = monItems().filter(i => i.app && i.unreplied), owedN = owed.reduce((c, i) => c + i.unreplied, 0);
+  const waiting = dec.length + loose.length + need.length + owed.length;
   const NEED = { ask: "답변 필요", done: "결과 확인", limit: "한도 걸림" };
   const rank = t => ({ working: 0, starting: 1, "rate-limited": 2 })[targetInfo(t).status] ?? 3;
   const run = [...all].sort((a, b) => rank(a) - rank(b));
   const bg = workRunning(), working = run.filter(t => rank(t) < 2).length + bg.length;
   clear(box).append(
-    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
-    el("div", { class: "hn" }, ...dec.map(ntHomeRow), ...loose.map(ntHomeRow), ...need.map(x => homeNowRow(x.t, NEED[x.k], "att")), ...(waiting ? [] : [el("div", { class: "empty", text: "답변할 항목이 없어요" })])),
+    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, owedN ? unrepPill(`미답장 ${owedN}`) : null),
+    el("div", { class: "hn" }, ...dec.map(ntHomeRow), ...loose.map(ntHomeRow), ...need.map(x => homeNowRow(x.t, NEED[x.k], "att")), ...owed.map(homeOwedRow), ...(waiting ? [] : [el("div", { class: "empty", text: "답변할 항목이 없어요" })])),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
     el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", "")), ...bg.map(workRow)),
     endedGroup() || "");

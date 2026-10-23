@@ -14,6 +14,7 @@ import { fetchMedia, mediaOf, mediaTarget, serveLocalFile, showsText } from "./m
 import type { AxStep, Focus } from "./room.ts";
 import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
+import { kakaoUnreplied } from "../unreplied.ts";
 
 export type WebDeps = {
 	paths: KakaoPaths;
@@ -161,6 +162,40 @@ export function createKakaoWeb(deps: WebDeps) {
 		storedSends().map(s => (s.state !== "sending" ? s : !inflight.has(s.id) ? { ...s, state: "failed", reason: LOST } : now() - s.at > STUCK_MS ? { ...s, state: "failed", reason: STUCK } : s));
 	const saveSends = (list: SendRecord[]) => writePrivate(sendsFile, `${JSON.stringify(list.slice(-MAX_SENDS), null, 1)}\n`);
 
+	// 미답장 (hub/unreplied.ts): per watched room the logId of the newest message from someone else that no reply followed (his own message in the
+	// database, or a send of ours that finished after it, ends it). 답장 안 함 keeps the logId he waved off in kakao/unreplied.json. Cached like the room list.
+	const unrepliedFile = join(paths.dataDir, "kakao", "unreplied.json");
+	const waved = () => readJsonFile<Record<string, string>>(unrepliedFile, {});
+	let waiting: { at: number; rooms: Map<string, string> } | undefined;
+	const waitingRooms = async (config: KakaoConfig, fresh = false): Promise<Map<string, string>> => {
+		if (!fresh && waiting && now() - waiting.at < ROOMS_TTL_MS) return waiting.rooms;
+		const out = new Map<string, string>();
+		const db = await getDb(config);
+		const sends = sendList().filter(s => s.state === "sent");
+		const dismissed = waved();
+		for (const chatId of config.watch_chats ?? []) {
+			const newest = (await messages(db, chatId, 10, config.userId ?? "")).findLast(hasWords);
+			if (!newest) continue;
+			const sentAt = sentAtMs(newest.sentAt);
+			if (sends.some(s => s.chatId === chatId && s.at >= sentAt)) continue;
+			if (kakaoUnreplied({ logId: newest.logId, fromMe: newest.fromMe, sentAt }, dismissed[chatId], now())) out.set(chatId, newest.logId);
+		}
+		waiting = { at: now(), rooms: out };
+		return out;
+	};
+	let lastCount = 0;
+	// The count the app row shows: answered from the last look so the integration list never waits on the database; a stale look refreshes in the background.
+	const unrepliedCount = (): number => {
+		const config = readConfig(paths);
+		if (config?.enabled !== true) return 0;
+		if (!waiting || now() - waiting.at >= ROOMS_TTL_MS)
+			void waitingRooms(config, true).then(r => {
+				if (r.size !== lastCount) deps.broadcast({ kind: "kakao_unreplied" });
+				lastCount = r.size;
+			}, () => {});
+		return waiting ? waiting.rooms.size : lastCount;
+	};
+
 	const latestIncoming = async (config: KakaoConfig, chatId: string) =>
 		(await messages(await getDb(config), chatId, 50, config.userId ?? "")).findLast(m => hasWords(m) && !m.fromMe)?.logId;
 
@@ -276,9 +311,10 @@ export function createKakaoWeb(deps: WebDeps) {
 			if (!on) return json({ on: false, rooms: [] });
 			try {
 				const cache = await allRooms(config!);
+				const owed = await waitingRooms(config!).catch(() => new Map<string, string>());
 				const list = eligible(cache.all)
 					.sort((a, b) => b.lastAt - a.lastAt)
-					.map(r => ({ chatId: r.chatId, name: cache.names.get(r.chatId) ?? r.name, kind: r.kind, watched: watched.has(r.chatId), autoDraft: watched.has(r.chatId) && auto.has(r.chatId), unread: r.unread, lastAt: sentAtMs(r.lastAt) }));
+					.map(r => ({ chatId: r.chatId, name: cache.names.get(r.chatId) ?? r.name, kind: r.kind, watched: watched.has(r.chatId), autoDraft: watched.has(r.chatId) && auto.has(r.chatId), unread: r.unread, unreplied: owed.has(r.chatId), lastAt: sentAtMs(r.lastAt) }));
 				return json({ on: true, rooms: list });
 			} catch {
 				return json({ on: true, rooms: [], error: "카톡 데이터를 읽지 못했어요. 전체 디스크 접근 권한과 카카오톡 로그인을 확인해 주세요" });
@@ -377,6 +413,15 @@ export function createKakaoWeb(deps: WebDeps) {
 				if (!digits(b.logId)) return json({ error: "logId is required" }, 400);
 				const reads = readJsonFile<Record<string, string>>(readsFile, {});
 				if (!reads[chatId] || BigInt(b.logId) > BigInt(reads[chatId])) writePrivate(readsFile, `${JSON.stringify({ ...reads, [chatId]: b.logId }, null, 1)}\n`);
+				return json({ ok: true });
+			}
+
+			if (sub === "no-reply" && parts.length === 5 && (method === "POST" || method === "DELETE")) {
+				const { [chatId]: _old, ...rest } = waved();
+				const logId = method === "POST" ? (await waitingRooms(config!, true).catch(() => new Map<string, string>())).get(chatId) : undefined;
+				writePrivate(unrepliedFile, `${JSON.stringify(logId ? { ...rest, [chatId]: logId } : rest, null, 1)}\n`);
+				waiting = undefined;
+				deps.broadcast({ kind: "kakao_unreplied" });
 				return json({ ok: true });
 			}
 
@@ -515,5 +560,5 @@ export function createKakaoWeb(deps: WebDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { route, idle };
+	return { route, idle, unrepliedCount };
 }
