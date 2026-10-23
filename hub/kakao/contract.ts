@@ -6,7 +6,7 @@
 //    addOnce() records a send once per send id.
 // 3. One door out: dispatchSend() is the only function a KakaoTalk send goes through, typed reply and confirmed draft alike.
 //    Its optional `lease` hook says whether THIS machine may send into that chat right now (e.g. the other Mac holds it); a
-//    refused lease is a failed send with that reason and kmsg is never run.
+//    refused lease is a failed send with that reason and KakaoTalk is never touched.
 import { createHash } from "node:crypto";
 import { sentAtMs } from "./db.ts";
 import type { RoomFact } from "./room.ts";

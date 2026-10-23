@@ -1,13 +1,17 @@
 // Reads and closes the open KakaoTalk chat window by Accessibility (System Events), run as `osascript -l JavaScript` with ONE JSON line on stdin:
-//   {action:"probe", deep?, name?} | {action:"close", name?} | {action:"open", name, rows} | {action:"send", name, text}
+//   {action:"probe", deep?, name?} | {action:"close", name?} | {action:"rows", name, max, budgetMs, first} | {action:"open", name, row} | {action:"send", name, text}
 // probe prints {ok:true, windows:[{title, members?, self?}]} for every window that is not the main window; room.ts accepts the room only when
 // exactly one chat window is open. `members` is read only from a static text that names itself a count (identifier or description with
 // count/member/참여/명); `self` is true only when the window shows the words 나와의 채팅. A missing field means "not shown", never "no".
 // close presses the close button of every non-main window. Nothing is typed and no key is sent.
-// open finds the chat list row titled exactly `name` among the first `rows` rows and opens it by Accessibility actions only: the row
-// cell's AXShowMenu, then AXPress on its "채팅방 열기" item (list rows have no AXPress/AXOpen; kmsg selects the row and posts an Enter
-// key, which needs KakaoTalk in front). KakaoTalk is not activated and the owner's front app and focus stay (measured 2026-10-23).
-// A window of the name already open is used as it is (row -1). Prints {ok:true, row} or {ok:false, why:"no_list"|"none"|"no_menu"|"no_window"}.
+// rows reads the static texts of the chat list rows, in order, until `max` rows, `budgetMs` or (first) the first row titled `name`: one
+// Accessibility read per row (~0.07 s, measured 2026-10-23; the whole 290-row list takes 20 s), nothing is clicked or opened. Prints
+// {ok:true, rows:[[title, count?, time, unread?]], stopped:"found"|"budget"|"end", ms:{table, read}}, or {ok:true, opened:true} when a
+// window of the name is open already, or {ok:false, step:"list", why:"no_list"}.
+// open opens list row number `row` by Accessibility actions only: its title is read again (a list that moved is refused), then the row
+// cell's AXShowMenu once, then AXPress on its "채팅방 열기" item (list rows have no AXPress/AXOpen; kmsg selects the row and posts an Enter
+// key, which needs KakaoTalk in front). KakaoTalk is not activated and the owner's front app and focus stay (measured 2026-10-23). At most
+// one context menu per call. Prints {ok:true, ms} or {ok:false, step:"list"|"recheck"|"menu"|"press"|"window", why, err?, ms}.
 // send puts `text` into the input of the one window titled `name` (AXValue) and presses its 전송 button (AXPress): no key event, no
 // activation. Setting AXValue enables the button (measured 2026-10-23). A non-empty input is the owner's own unsent text and is left
 // alone ("busy"). Prints {ok:true} once the input is empty again, or {ok:false, why, pressed?}: pressed means the button was pressed
@@ -26,6 +30,11 @@ function attr(el, name) {
 	} catch (e) {
 		return "";
 	}
+}
+
+// The same rule as normalizeTitle in room.ts: NFC, no zero-width marks, trimmed.
+function norm(s) {
+	return String(s === null || s === undefined ? "" : s).normalize("NFC").replace(/[\u200b-\u200f\u2060\ufeff]/g, "").trim();
 }
 
 function chatWindows() {
@@ -133,26 +142,71 @@ function until(fn, seconds) {
 	}
 }
 
-function openRow(name, max) {
-	if (windowNamed(name)) return { ok: true, row: -1 };
+// The title is the first static text of a row cell, its member count (groups only) the second when it is all digits; both are told apart
+// in room.ts. A row is one Accessibility read; the title is in the name of the static text (its value is empty for some rows).
+function rowTexts(rows, i) {
+	return rows[i].uiElements[0].staticTexts.name().map(function (t) { return t === null || t === undefined ? "" : String(t); });
+}
+
+function readRows(name, max, budgetMs, first) {
+	var t0 = Date.now();
+	if (windowNamed(name)) return { ok: true, opened: true };
 	var list = listTable();
-	if (!list) return { ok: false, why: "no_list" };
+	if (!list) return { ok: false, step: "list", why: "no_list", ms: { table: Date.now() - t0 } };
+	var tableMs = Date.now() - t0;
 	var rows = list.table.rows;
-	var hit = -1;
-	// Rows are read by index and the first row of the title is taken: only a name no other database room has comes here, and the window
-	// it opens is checked against the room after. Counting `rows` would fetch every row of the list (7 s for 290); a row read is ~0.1 s.
-	for (var i = 0; i < max && hit < 0; i++) {
-		var title;
+	var out = [];
+	var stopped = "end";
+	var want = norm(name);
+	for (var i = 0; i < max; i++) {
+		if (Date.now() - t0 > budgetMs) {
+			stopped = "budget";
+			break;
+		}
+		var texts;
 		try {
-			title = rows[i].uiElements[0].staticTexts[0].value();
+			texts = rowTexts(rows, i);
 		} catch (e) {
 			break;
 		}
-		if (title === name) hit = i;
+		out.push(texts);
+		if (first && norm(texts[0]) === want) {
+			stopped = "found";
+			break;
+		}
 	}
-	if (hit < 0) return { ok: false, why: "none" };
-	var cell = rows[hit].uiElements[0];
-	cell.actions.byName("AXShowMenu").perform();
+	return { ok: true, rows: out, stopped: stopped, ms: { table: tableMs, read: Date.now() - t0 - tableMs } };
+}
+
+function openRowAt(index, name) {
+	var t0 = Date.now();
+	var ms = {};
+	var lap = function (key) {
+		ms[key] = Date.now() - t0;
+		t0 = Date.now();
+	};
+	var fail = function (step, why, err) {
+		lap(step);
+		var r = { ok: false, step: step, why: why, ms: ms };
+		if (err) r.err = String(err).slice(0, 100);
+		return r;
+	};
+	var list = listTable();
+	if (!list) return fail("list", "no_list");
+	lap("list");
+	var cell;
+	try {
+		cell = list.table.rows[index].uiElements[0];
+		if (norm(cell.staticTexts.name()[0]) !== norm(name)) return fail("recheck", "moved");
+	} catch (e) {
+		return fail("recheck", "gone", e);
+	}
+	lap("recheck");
+	try {
+		cell.actions.byName("AXShowMenu").perform();
+	} catch (e) {
+		return fail("menu", "show_menu_error", e);
+	}
 	var menu = until(function () {
 		try {
 			var m = cell.menus();
@@ -160,22 +214,35 @@ function openRow(name, max) {
 		} catch (e) {
 			return null;
 		}
-	}, 1);
-	if (!menu) return { ok: false, why: "no_menu" };
+	}, 0.8);
+	if (!menu) return fail("menu", "no_menu");
 	var items = menu.menuItems();
 	var item = null;
-	for (var k = 0; k < items.length && !item; k++) if (/채팅방 열기|^open/i.test(attr(items[k], "name"))) item = items[k];
+	var labels = [];
+	for (var k = 0; k < items.length && !item; k++) {
+		var label = attr(items[k], "name");
+		labels.push(label);
+		if (/채팅방 열기|^open/i.test(label)) item = items[k];
+	}
 	if (!item) {
 		try {
 			menu.actions.byName("AXCancel").perform();
 		} catch (e) {}
-		return { ok: false, why: "no_menu" };
+		return fail("menu", "no_item", labels.join("|"));
 	}
-	item.actions.byName("AXPress").perform();
+	lap("menu");
+	try {
+		item.actions.byName("AXPress").perform();
+	} catch (e) {
+		return fail("press", "press_error", e);
+	}
+	lap("press");
 	var shown = until(function () {
 		return windowNamed(name);
-	}, 3);
-	return shown ? { ok: true, row: hit } : { ok: false, why: "no_window" };
+	}, 1.2);
+	if (!shown) return fail("window", "no_window");
+	lap("window");
+	return { ok: true, ms: ms };
 }
 
 function sendInto(name, text) {
@@ -235,7 +302,8 @@ function run() {
 		}
 		if (req.action === "close") return JSON.stringify(closeAll(req.name));
 		if (req.action === "send" && typeof req.name === "string" && req.name && typeof req.text === "string" && req.text) return JSON.stringify(sendInto(req.name, req.text));
-		if (req.action === "open" && typeof req.name === "string" && req.name) return JSON.stringify(openRow(req.name, Math.min(Math.max(1, req.rows | 0), 300)));
+		if (req.action === "rows" && typeof req.name === "string" && req.name) return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 4000), req.first === true));
+		if (req.action === "open" && typeof req.name === "string" && req.name && Number.isInteger(req.row) && req.row >= 0) return JSON.stringify(openRowAt(req.row, req.name));
 		return JSON.stringify({ ok: false });
 	} catch (e) {
 		return JSON.stringify({ ok: false, why: "error", error: String(e).slice(0, 120) });
