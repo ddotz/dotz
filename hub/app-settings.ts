@@ -6,7 +6,8 @@
 // request, so a peer gateway can be handed the same plain HTTP call. Pure fs: no import of hub/config.ts, the data dir is a parameter.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { INTEGRATIONS } from "./integrations.ts";
+import { appEntries, INTEGRATIONS, readAppsFile } from "./integrations.ts";
+import { instanceOf } from "./reply-model.ts";
 
 export type FieldType = "bool" | "enum" | "list" | "text" | "number";
 export type SettingField = {
@@ -51,6 +52,14 @@ let replyChoices: ReplyModelChoices = { options: [""], labels: { "": "기본값"
 export const setReplyModelChoices = (c: ReplyModelChoices): void => {
 	replyChoices = c;
 };
+// 디스코드에도 올리기: custom/apps.json {"<mail instance>":{"discord":true}} (off when missing). Drawn only while Discord is connected; main.ts installs the probe.
+let discordConnected = (): boolean => false;
+export const setDiscordProbe = (probe: () => boolean): void => {
+	discordConnected = probe;
+};
+/** Whether the mail app instance that owns mail `<key>` (matched by its source like the other instance filters) has 디스코드에도 올리기 on. */
+export const mailDiscordOn = (dataDir: string, key: string): boolean => readAppsFile(dataDir)[instanceOf(appEntries(dataDir), "mail", `mail:${key}`)]?.discord === true;
+const discordField = (app: string): SettingField => ({ key: "discord", label: "디스코드에도 올리기", type: "bool", help: "새 메일마다 디스코드 메일 채널에 스레드를 만들어요", store: "custom/apps.json", path: `${app}.discord`, def: false, switch: true });
 const REPLY_APPS = new Set(["mail", "kakao", "instagram", "youtube", "site"]);
 const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "답장 초안을 쓸 모델이에요", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "" });
 
@@ -80,7 +89,7 @@ export class SettingsError extends Error {
 // An app key or an instance id (`mail-2`): the schema is the app's, the switch and the name are the instance's.
 export const fieldsOf = (app: string): SettingField[] => {
 	const base = app.split("-")[0]!;
-	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), ...APP_SETTINGS[base]!, ...(REPLY_APPS.has(base) ? [replyModelField(app)] : [])] : [];
+	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app)] : [])] : [];
 };
 
 const readJson = (file: string): Record<string, any> => {

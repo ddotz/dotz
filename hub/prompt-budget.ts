@@ -18,8 +18,8 @@
 // +72 / +66 bytes, caps raised by exactly that (rounded up to 10).
 // 2026-10-22: watch-check details left to the dotz_watch description, the thread table to one line (hub/threads.ts applies it),
 // the personal-data bullet to a pointer at dotz_auth: 25395 -> 24566 / 29834 -> 28965 bytes; caps lowered to match.
-export const MODE_MD_MAX_BYTES = 25608; // measured 25608 (non-developer install: never edit the code, report instead: +188; app instances: POST /api/apps, +291; the settings:<app> routing rule: +145; the no routing line / handoff block rule: +144; 2026-10-22: each mail is a web conversation, POST /api/mail: +93 bytes; the 목록 list-block rule, owner request: +174)
-export const MODE_KO_MD_MAX_BYTES = 30177; // measured 30177 (non-developer install: never edit the code, report instead: +266; app instances: POST /api/apps, +370; the settings:<app> routing rule: +183; the no routing line / handoff block rule: +195; the 목록 list-block rule: +198)
+export const MODE_MD_MAX_BYTES = 25661; // measured 25661 (new mail is web only unless 디스코드에도 올리기 is on: +53; non-developer install: never edit the code, report instead: +188; app instances: POST /api/apps, +291; the settings:<app> routing rule: +145; the no routing line / handoff block rule: +144; 2026-10-22: each mail is a web conversation, POST /api/mail: +93 bytes; the 목록 list-block rule, owner request: +174)
+export const MODE_KO_MD_MAX_BYTES = 30277; // measured 30277 (new mail is web only unless 디스코드에도 올리기 is on: +100; non-developer install: never edit the code, report instead: +266; app instances: POST /api/apps, +370; the settings:<app> routing rule: +183; the no routing line / handoff block rule: +195; the 목록 list-block rule: +198)
 export const RULES_TEMPLATE_MAX_BYTES = 780; // measured 703
 export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 // The owner card and boundaries go into the orchestrator's start prompt (observations.md does not).
