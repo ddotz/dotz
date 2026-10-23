@@ -77,7 +77,7 @@ test("/api/accounts: current is the account really used; a blocked 고정 pick k
 	expect(ok.chosen).toMatchObject({ name: "default", used_instead: null, blocked: null });
 });
 
-test("a change of the account used, not made by the owner in the web, posts exactly one alert", async () => {
+test("a change of the account used is no notice (owner 2026-10-23: not needed), whoever made it", async () => {
 	announceUsedChanges();
 	const now = Date.now();
 	auth(["default", "miseol-shared"]);
@@ -88,15 +88,11 @@ test("a change of the account used, not made by the owner in the web, posts exac
 
 	slots({ default: limited(now + 600 * MIN), "miseol-shared": { lastSuccessAt: now } });
 	stickyAccount(now + MIN);
-	stickyAccount(now + 2 * MIN); // nothing moved since: no second alert
-	const posted = usedNotices().slice(before);
-	expect(posted).toHaveLength(1);
-	expect(posted[0]).toMatchObject({ kind: "alert" });
-	expect(posted[0]!.text).toContain("default");
-	expect(posted[0]!.text).toContain("miseol-shared");
+	stickyAccount(now + 2 * MIN);
+	expect(stickyAccount(now + 3 * MIN)).toBe("miseol-shared");
+	expect(usedNotices().length).toBe(before);
 
-	// the owner's own pick in the web stays quiet
 	const res = await accountsRoute(new Request("http://x/api/accounts/use", { method: "POST", body: JSON.stringify({ account: "default" }) }), new URL("http://x/api/accounts/use"));
 	expect(res?.status).toBe(200);
-	expect(usedNotices().length).toBe(before + 1);
+	expect(usedNotices().length).toBe(before);
 });

@@ -123,7 +123,7 @@ const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("d
 // Gateway restarts are kept in the store (born read) but never shown on 홈 (owner 2026-10-19: restarts are not his news).
 const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
 function homeAlertCard() {
-  const unread = ntUnreadIn("alert"), fresh = hcRecent(n => !n.read && ntTabOf(n) === "alert"), state = hcState();
+  const unread = NT.items.filter(n => !n.read && ntHomeAlert(n)).length, fresh = hcRecent(n => !n.read && ntHomeAlert(n)), state = hcState();
   return hcCard(() => openTarget("alert", "chat"), el("div", { class: "ch" }, el("h3", { text: "알림" })),
     el("div", { class: "big", text: state ? "…" : `${unread}개` }), el("div", { class: "sup", text: "안 읽은 알림" }),
     state || !fresh.length ? el("div", { class: "hc-none", text: state || "새 알림이 없어요" }) : hcNotices(fresh));
