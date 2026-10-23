@@ -5,6 +5,16 @@ import { run } from "../bin/yt-comments.ts";
 import { paths, readJson } from "../lib/config.ts";
 import { videoInfos } from "../lib/youtube.ts";
 import { calls, fakeCtx, setupEnv, type TestEnv, YT, ytThread } from "./helpers.ts";
+import { InnerTubeError } from "../lib/innertube.ts";
+import { hooks as readHooks } from "../lib/yt-read.ts";
+beforeEach(() => {
+	readHooks.read = async () => {
+		throw new InnerTubeError("off");
+	};
+});
+afterEach(() => {
+	readHooks.read = undefined;
+});
 
 const VIDEOS = `GET ${YT}/videos`;
 let env: TestEnv;

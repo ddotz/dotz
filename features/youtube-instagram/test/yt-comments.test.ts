@@ -6,6 +6,16 @@ import { join } from "node:path";
 import { run } from "../bin/yt-comments.ts";
 import { paths, writeJson } from "../lib/config.ts";
 import { CHANNEL, fakeCtx, readState, setupEnv, type TestEnv, ytThread, YT } from "./helpers.ts";
+import { InnerTubeError } from "../lib/innertube.ts";
+import { hooks as readHooks } from "../lib/yt-read.ts";
+beforeEach(() => {
+	readHooks.read = async () => {
+		throw new InnerTubeError("off");
+	};
+});
+afterEach(() => {
+	readHooks.read = undefined;
+});
 
 const KEY = `GET ${YT}/commentThreads`;
 let env: TestEnv;

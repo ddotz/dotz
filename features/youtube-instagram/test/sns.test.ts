@@ -16,6 +16,7 @@ beforeEach(() => {
 });
 afterEach(() => {
 	hooks.reader = undefined;
+	hooks.aside = undefined;
 	hooks.tunnel = undefined;
 	env.cleanup();
 });
@@ -122,11 +123,12 @@ test("mark-done records an `aside` target and finishes the job when every target
 	env = setupEnv(c => {
 		if (c.youtube) c.youtube.upload_via = "aside";
 	});
+	hooks.aside = { repl: async () => ({ state: "owner", note: "로그인 화면이 나왔어요" }) };
 	const ctx = fakeCtx(env);
 	serveUploads(ctx);
 	const id = await newUpload(ctx);
 	await run(ctx, ["approve", id, "--at", "now"]);
-	expect((await due(ctx, [])).lines).toEqual([`aside-needed ${id} youtube`, `posted ${id} instagram=media9`]);
+	expect((await due(ctx, [])).lines).toEqual([`aside-needed ${id} youtube 로그인 화면이 나왔어요`, `posted ${id} instagram=media9`]);
 	expect(await run(ctx, ["mark-done", id, "youtube", "vid7"])).toEqual({ lines: [`marked ${id} youtube`, `done ${id}`], code: 0 });
 	expect(getJob(id)?.result.youtube).toBe("vid7");
 	expect(existsSync(join(paths.inbox(), "done", "clip.mp4"))).toBe(true);

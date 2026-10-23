@@ -9,15 +9,38 @@ import { basename, join } from "node:path";
 import type { Config, Ctx } from "../lib/config.ts";
 import { PUBLISH_MISSING_KO, publishState } from "../lib/ig-publish.ts";
 import { PublishPermissionError, publishReel, reply as igReply } from "../lib/instagram.ts";
-import { dueJobs, getJob, jobFeatureOn, type Job, markDone, markFailed, markNotified, markPosting, recordResult, release, saveUploadIntent, setError } from "../lib/jobs.ts";
+import { dueJobs, getJob, jobFeatureOn, type Job, markDone, markFailed, markNotified, markPosting, recordResult, release, saveUploadIntent, setError, setStudio } from "../lib/jobs.ts";
 import { announceExhausted, COSTS, can, exhaustedLine, isExhausted } from "../lib/quota.ts";
+import { type Aside, realStudioAside, uploadViaStudio } from "../lib/studio.ts";
 import { type TunnelOpts, withTunnel } from "../lib/tunnel.ts";
 import { AuthError, main, oneLine, type Platform, QuotaError, type RunResult, runWatch, TransientError } from "../lib/watchkit.ts";
 import { findUploadByTag, insertVideo, replyToComment, updateVideo, type VideoReader, videosWithLocalizations } from "../lib/youtube.ts";
 
-export const hooks: { reader?: VideoReader; tunnel?: TunnelOpts } = {};
+export const hooks: { reader?: VideoReader; tunnel?: TunnelOpts; aside?: Aside } = {};
 
-const via = (cfg: Config, job: Job, platform: Platform): "api" | "aside" => (job.kind === "upload" ? (platform === "youtube" ? cfg.youtube?.upload_via : cfg.instagram?.post_via) : "api") ?? "api";
+const STUDIO_TRIES = 3;
+
+// A YouTube upload goes through the API only for an audited Google project (an unaudited one locks API uploads to private and cannot
+// set a related video); everything else uses YouTube Studio.
+export const youtubeUploadVia = (cfg: Config): "api" | "aside" => (cfg.youtube?.upload_via === "api" && cfg.youtube.audited === true ? "api" : "aside");
+
+const via = (cfg: Config, job: Job, platform: Platform): "api" | "aside" => (job.kind === "upload" ? (platform === "youtube" ? youtubeUploadVia(cfg) : cfg.instagram?.post_via) : "api") ?? "api";
+
+// Runs the fixed Studio script for a YouTube upload. A login or code page, or the last allowed failure, hands the job to the
+// orchestrator (aside-needed with the reason); an earlier failure just waits for the next run.
+async function studioUpload(ctx: Ctx, cfg: Config, job: Job): Promise<{ ref?: string; handOff?: string }> {
+	const u = job.upload as NonNullable<Job["upload"]>;
+	if (!existsSync(u.file)) return { handOff: "file is missing" };
+	const aside = hooks.aside ?? (await realStudioAside(ctx));
+	markPosting(job.id, ctx.now());
+	const r = await uploadViaStudio(aside, (cfg.youtube as NonNullable<Config["youtube"]>).channel_id, { file: u.file, title: u.title, description: u.description, visibility: u.privacy, related: u.related }, job.studio?.video_id, id => setStudio(job.id, { video_id: id }));
+	release(job.id);
+	if (r.state === "ok" && r.videoId) return { ref: r.videoId };
+	const tries = (job.studio?.tries ?? 0) + 1;
+	setStudio(job.id, { tries, ...(r.videoId ? { video_id: r.videoId } : {}) });
+	const owner = r.state === "owner" || r.state === "code";
+	return tries >= STUDIO_TRIES || owner ? { handOff: oneLine(r.note || r.state, 100) } : {};
+}
 
 function youtubeCost(job: Job): number {
 	if (job.kind === "upload") return COSTS.videoInsert;
@@ -85,11 +108,25 @@ export async function publishJob(ctx: Ctx, cfg: Config, id: string, explicit = f
 	// A platform whose approval feature is switched off is not published: the job stays as it is until the owner turns it on (or rejects it).
 	const remaining = job.targets.filter(t => !job.result[t] && jobFeatureOn(job.kind, t));
 	for (const t of remaining.filter(x => via(cfg, job, x) === "aside" && !job.notified?.includes(x))) {
+		let why = "";
+		if (t === "youtube" && job.kind === "upload") {
+			const s = await studioUpload(ctx, cfg, job);
+			if (s.ref) {
+				recordResult(id, t, s.ref);
+				lines.push(`posted ${id} ${t}=${s.ref}`);
+				continue;
+			}
+			if (!s.handOff) continue;
+			why = ` ${s.handOff}`;
+		}
 		markNotified(id, t);
-		lines.push(`aside-needed ${id} ${t}`);
+		lines.push(`aside-needed ${id} ${t}${why}`);
 	}
 	const api = remaining.filter(t => via(cfg, job, t) === "api");
-	if (!api.length) return lines;
+	if (!api.length) {
+		finishIfComplete(ctx, cfg, id);
+		return lines;
+	}
 	const exhausted = api.includes("youtube") && isExhausted(ctx);
 	const quotaShort = api.includes("youtube") && !exhausted && !can(ctx, cfg, youtubeCost(job));
 	// A Reels upload waits (stays scheduled, nothing is sent to Meta) while the token is known to lack instagram_business_content_publish.

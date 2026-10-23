@@ -33,6 +33,7 @@ beforeEach(() => {
 });
 afterEach(() => {
 	hooks.reader = undefined;
+	hooks.aside = undefined;
 	hooks.tunnel = undefined;
 	env.cleanup();
 });
@@ -106,11 +107,12 @@ test("an `aside` target is announced once and the job stays scheduled for the or
 	env = setupEnv(c => {
 		if (c.youtube) c.youtube.upload_via = "aside";
 	});
+	hooks.aside = { repl: async () => ({ state: "owner", note: "로그인 화면이 나왔어요" }) };
 	const ctx = fakeCtx(env);
 	serve(ctx);
 	const job = upload(ctx);
 	approve(ctx, job.id, { publish_at: "now" });
-	expect(await run(ctx, [])).toEqual({ lines: [`aside-needed ${job.id} youtube`, `posted ${job.id} instagram=media9`], code: 0 });
+	expect(await run(ctx, [])).toEqual({ lines: [`aside-needed ${job.id} youtube 로그인 화면이 나왔어요`, `posted ${job.id} instagram=media9`], code: 0 });
 	expect(getJob(job.id)?.status).toBe("scheduled");
 	expect(getJob(job.id)?.result).toEqual({ instagram: "media9" });
 	expect(existsSync(join(paths.inbox(), "clip.mp4"))).toBe(true);

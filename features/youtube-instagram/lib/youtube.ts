@@ -30,7 +30,7 @@ export class YoutubeError extends Error {
 
 export type YtLoc = { title: string; description: string };
 export type YtVideo = { id: string; title: string; description: string; categoryId: string; tags?: string[]; defaultLanguage?: string; publishedAt?: string; localizations: Record<Lang, YtLoc> };
-export type YtComment = { id: string; videoId: string; author: string; authorChannelId?: string; text: string; publishedAt: string; replied: boolean };
+export type YtComment = { id: string; videoId: string; videoTitle?: string; author: string; authorChannelId?: string; text: string; publishedAt: string; replied: boolean };
 export type VideoSource = { size: number; body: () => BodyInit };
 export type VideoReader = (path: string) => VideoSource;
 
@@ -318,4 +318,20 @@ export async function replyToComment(ctx: Ctx, parentId: string, text: string): 
 	const t = await accessToken(ctx);
 	const d = await api<{ id: string }>(ctx, t, "POST", "comments", { part: "snippet" }, COSTS.insertComment, { snippet: { parentId, textOriginal: text } });
 	return d.id;
+}
+
+// Ids of the channel's public uploads, newest first: the uploads playlist with its privacy status, 1 unit per page of 50.
+export async function publicUploadIds(ctx: Ctx, channelId: string, maxPages = 40): Promise<string[]> {
+	const t = await accessToken(ctx);
+	const ids: string[] = [];
+	let pageToken: string | undefined;
+	for (let i = 0; i < maxPages; i++) {
+		const params: Record<string, string> = { part: "snippet,status", playlistId: `UU${channelId.slice(2)}`, maxResults: "50" };
+		if (pageToken) params.pageToken = pageToken;
+		const d = await api<{ items?: { snippet: { resourceId: { videoId: string } }; status?: { privacyStatus?: string } }[]; nextPageToken?: string }>(ctx, t, "GET", "playlistItems", params, COSTS.list);
+		for (const it of d.items ?? []) if (it.status?.privacyStatus === "public") ids.push(it.snippet.resourceId.videoId);
+		pageToken = d.nextPageToken;
+		if (!pageToken) break;
+	}
+	return ids;
 }
