@@ -54,7 +54,8 @@ import { defaultCall } from "../features/reply-drafts/lib/flow.ts";
 import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
-import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies } from "./outbound.ts";
+import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies, bgWork } from "./outbound.ts";
+import { runningOmoWorkers } from "./bgwork.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
@@ -395,9 +396,20 @@ function shutdown(): Promise<never> {
 // workers included, then exit; launchd (KeepAlive) starts the new code. Called during an orchestrator turn, it waits for
 // that turn to end, so the answer goes out first. restart.ts: a busy lane is never killed, requests are coalesced.
 function busyNow(): string[] {
-	// The orchestrator's background task workers die with its process: a request deferred to one ([later]) holds the restart.
-	const workers = queue.waitingOnWorkers() ? "orchestrator background workers" : "";
-	return [orchBusy() ?? "", workers, replies.size() ? "reply" : "", ...[...lanes.values()].filter(laneBusy).map(l => `lane ${l.name}`)].filter(Boolean);
+	// The orchestrator's background task workers die with its process. OmO sends no worker frames, so they are counted from its
+	// task store (hub/bgwork.ts), for the orchestrator and every lane; a request deferred to one ([later]) also holds the restart.
+	const running = bgWork.running();
+	const workers = running ? `orchestrator background workers (${running})` : queue.waitingOnWorkers() ? "orchestrator background workers" : "";
+	const laneWorkers = (l: { sessionFile?: string }) => runningOmoWorkers(l.sessionFile);
+	return [
+		orchBusy() ?? "",
+		workers,
+		replies.size() ? "reply" : "",
+		...[...lanes.values()].flatMap(l => {
+			const n = laneWorkers(l);
+			return laneBusy(l) ? [`lane ${l.name}${n ? ` (${n} background workers)` : ""}`] : n ? [`lane ${l.name} background workers (${n})`] : [];
+		}),
+	].filter(Boolean);
 }
 const restartGate = createRestartGate({
 	busy: busyNow,
