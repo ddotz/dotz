@@ -35,6 +35,8 @@ export type CommentAdapter = {
 	// The title, link and thumbnail of these posts (ids = Comment.thread), for stored comments that were collected without a title. Posts it cannot name are left out.
 	retitle?(src: SourceConfig, threads: string[]): Promise<Record<string, PostInfo>>;
 	ownReplies?(src: SourceConfig, limit: number): Promise<string[]>;
+	// An answer of the owner that is no comment of his in the same stream (Instagram: he @mentioned the author under the post). `mine` = his stored comments of that thread.
+	answered?(c: Comment, mine: Comment[]): boolean;
 };
 
 export const commentId = (source: string, native: string): string => `cm:${source}:${native}`;

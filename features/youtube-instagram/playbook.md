@@ -35,6 +35,8 @@
 - `posted <jobId> ...`, `failed <jobId> <이유>`, `aside-needed ...`: 프로젝트 채널에 알려요. `aside-needed`는 `aside repl`로 직접 올려요.
 - `yt-quota-exhausted until=<시각>`: 유튜브 하루 쿼터를 다 썼어요. "유튜브 하루 쿼터를 다 써서 <시각>에 다시 이어서 해요" 한 줄로만 알려요. 선택 블록은 필요 없어요.
 - `yt-comment-overflow ...`: 새 댓글이 너무 많아 오래된 건 목록에서 빠졌다고 알려요.
+- `ig-publish-blocked <jobId>: <한 줄>`: 인스타 토큰에 릴스 올리기 권한이 없어요. 줄의 한국어 문장을 그대로 알리고, 릴스 올리기 승인 카드에도 "아직 릴스를 올릴 수 없어요"를 적어요. 새 토큰이 들어오면 job이 알아서 이어져요.
+- `DOTZ_FAIL token-source`: 토큰 원본(파일이나 명령)이 두 번 연달아 안 읽혔거나 갱신되지 않았어요. `docs/youtube-instagram.md`의 원본 연결 부분을 보고 알려요.
 - `DOTZ_FAIL youtube-auth`, `DOTZ_FAIL instagram-auth`: 로그인이 풀렸어요. `onboard.ts reset youtube-auth`(또는 `instagram-token`) 뒤 `onboard.ts run`으로 다시 연결해요. `DOTZ_FAIL network`는 스크립트가 이미 두 번 참았다는 뜻이니 알려요.
 
 ## 승인 규칙 (예외 없음)

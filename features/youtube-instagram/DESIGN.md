@@ -151,11 +151,20 @@ Only the watches for the connected platforms are added. Commands use `command` (
 - Base `https://graph.instagram.com/v23.0` (Instagram API with Instagram Login). Token in `secrets/instagram.json`.
 - Comments: `GET /me/media?fields=id,caption,comments_count,timestamp&limit=50` (one call); compare `comments_count` with
   the baseline map; for changed media only `GET /<media>/comments?fields=id,text,username,timestamp,replies{username}`.
-  New = newer than baseline, username != owner, no reply by owner. First run: baseline only.
+  New = newer than baseline, not the owner's, and not answered by him. Replies carry no author, so "answered" (lib/ig-owner.ts) is: a reply id
+  that is one of the owner's own comments (the media list has `from.id`), or the owner @mentioning that commenter under the same media. The hub
+  comments adapter (hub/comments) marks the owner's replies `mine` the same way, which clears the 미답장 badge. Replies always go to a comment id.
+  First run: baseline only.
 - Reply: `POST /<comment>/replies?message=`. Reels: `POST /me/media` (media_type=REELS, video_url, caption) ->
   poll `GET /<container>?fields=status_code` until FINISHED (bounded, injected sleep) -> `POST /me/media_publish`.
 - Token refresh: `GET https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=` when
   older than 7 days or expiring within 20 days (a token must be >= 24 h old to refresh).
+- External token source (`instagram.token_source` / `youtube.token_source` = `{file}` or `{command}`, lib/token-source.ts, docs/youtube-instagram.md):
+  the same schedule decides when `tokens.ts` reads it; the token is taken after `GET /me` accepted it for the same account, and the 2nd failed
+  run in a row prints `DOTZ_FAIL token-source`. `setup.ts apply --ig-token-file|--yt-token-file <path|off>` also adds `sns-ig-tokens` / `sns-yt-tokens`.
+- Reels need `instagram_business_content_publish`; API code 10 on publish sets `cache/ig-publish.json` (lib/ig-publish.ts) until a new token
+  arrives. While set, `due.ts` does not publish a Reel (`ig-publish-blocked <job>: <Korean line>` once), `sns.ts job new` and the home card carry the
+  same line, and the hub approval row says it cannot publish yet.
 
 ## Jobs and approval (lib/jobs.ts)
 

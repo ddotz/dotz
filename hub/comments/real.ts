@@ -57,6 +57,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 			})),
 			instagram: instagramAdapter(() => ({
 				username: () => requireInstagram().username,
+				userId: () => requireInstagram().user_id,
 				media: () => mediaWithCounts(realCtx(), 50),
 				comments: id => commentsFor(realCtx(), id),
 				reply: (id, text) => igReply(realCtx(), id, text),

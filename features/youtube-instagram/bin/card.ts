@@ -3,6 +3,7 @@
 // Always exits 0 and never prints a secret.
 import { existsSync } from "node:fs";
 import { type Config, type Ctx, loadConfig, paths, readJson, realCtx, writeJson } from "../lib/config.ts";
+import { PUBLISH_BLOCKED_CARD, publishState } from "../lib/ig-publish.ts";
 import { me } from "../lib/instagram.ts";
 import { listJobs } from "../lib/jobs.ts";
 import { channelStats, myChannel } from "../lib/youtube.ts";
@@ -75,6 +76,7 @@ export async function run(ctx: Ctx, _args: string[] = []): Promise<Result> {
 		if (config.instagram) {
 			out["인스타 팔로워"] = shown(got.instagram?.followers, cachedIg);
 			out["인스타 게시물"] = shown(got.instagram?.media, cachedIg);
+			if (publishState().missing) out["릴스 올리기"] = PUBLISH_BLOCKED_CARD;
 		} else missing.push("인스타");
 		const jobs = await jobCounts();
 		out["답 기다리는 초안"] = jobs ? `${jobs.draft}개` : "(확인하지 못했어요)";

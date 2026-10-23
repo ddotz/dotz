@@ -96,7 +96,8 @@ const LONG_ID = /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 // What a `DOTZ_FAIL <kind>` line means to the owner. A kind that is not here reads as the plain failure phrase.
 const FAIL_KO: Record<string, string> = {
 	login: "로그인이 풀렸어요", session: "로그인이 풀렸어요", auth: "로그인이 풀렸어요", expired: "로그인이 풀렸어요",
-	approval: "승인이 필요해요", fetch: "내용을 가져오지 못했어요", network: "네트워크에 연결하지 못했어요", timeout: "시간이 너무 오래 걸렸어요",
+	approval: "승인이 필요해요", "token-source": "토큰 원본을 읽지 못했어요",
+ fetch: "내용을 가져오지 못했어요", network: "네트워크에 연결하지 못했어요", timeout: "시간이 너무 오래 걸렸어요",
 	captcha: "보안 확인(캡차)이 필요해요", off: "연동이 꺼져 있어요", app: "앱이 꺼져 있어요", browser: "브라우저를 열지 못했어요",
 	parse: "화면 구조가 바뀌어 읽지 못했어요", rate: "요청이 너무 잦아 잠시 막혔어요", limit: "요청이 너무 잦아 잠시 막혔어요",
 };

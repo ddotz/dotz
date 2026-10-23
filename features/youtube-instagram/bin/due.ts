@@ -7,7 +7,8 @@
 import { copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { Config, Ctx } from "../lib/config.ts";
-import { publishReel, reply as igReply } from "../lib/instagram.ts";
+import { PUBLISH_MISSING_KO, publishState } from "../lib/ig-publish.ts";
+import { PublishPermissionError, publishReel, reply as igReply } from "../lib/instagram.ts";
 import { dueJobs, getJob, jobFeatureOn, type Job, markDone, markFailed, markNotified, markPosting, recordResult, release, saveUploadIntent, setError } from "../lib/jobs.ts";
 import { announceExhausted, COSTS, can, exhaustedLine, isExhausted } from "../lib/quota.ts";
 import { type TunnelOpts, withTunnel } from "../lib/tunnel.ts";
@@ -91,9 +92,15 @@ export async function publishJob(ctx: Ctx, cfg: Config, id: string, explicit = f
 	if (!api.length) return lines;
 	const exhausted = api.includes("youtube") && isExhausted(ctx);
 	const quotaShort = api.includes("youtube") && !exhausted && !can(ctx, cfg, youtubeCost(job));
-	const todo = exhausted || quotaShort ? api.filter(t => t !== "youtube") : api;
+	// A Reels upload waits (stays scheduled, nothing is sent to Meta) while the token is known to lack instagram_business_content_publish.
+	const igBlocked = job.kind === "upload" && api.includes("instagram") && publishState().missing;
+	const todo = (exhausted || quotaShort ? api.filter(t => t !== "youtube") : api).filter(t => !(igBlocked && t === "instagram"));
 	const notice = exhausted && explicit ? exhaustedLine(ctx, cfg) : undefined;
 	if (notice) lines.push(notice);
+	if (igBlocked && (explicit || !job.notified?.includes("instagram"))) {
+		markNotified(id, "instagram");
+		lines.push(`ig-publish-blocked ${id}: ${PUBLISH_MISSING_KO}`);
+	}
 	if (quotaShort) {
 		if (explicit || job.error !== "quota") lines.push(`failed ${id} quota`);
 		setError(id, "quota");
@@ -108,6 +115,11 @@ export async function publishJob(ctx: Ctx, cfg: Config, id: string, explicit = f
 		} catch (e) {
 			if (e instanceof QuotaError) {
 				lines.push(...(await announceExhausted(ctx, cfg)));
+				continue;
+			}
+			if (e instanceof PublishPermissionError) {
+				markNotified(id, "instagram");
+				lines.push(`ig-publish-blocked ${id}: ${PUBLISH_MISSING_KO}`);
 				continue;
 			}
 			if (e instanceof AuthError || e instanceof TransientError) {

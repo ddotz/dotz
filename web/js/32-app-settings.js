@@ -55,7 +55,7 @@ async function asApprove(app, a, o) {
 function asApprovalNode(app, a) {
   const opts = a.options || [], when = a.at ? `승인 대기 · ${monTime(a.at)}` : "승인 대기";
   return el("div", { class: "as-row as-appr", "data-approval": a.id },
-    el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.title || "승인 요청" }), el("span", { class: "as-h", text: a.kind ? `${a.kind} · ${when}` : when })),
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.title || "승인 요청" }), el("span", { class: "as-h", text: a.kind ? `${a.kind} · ${when}` : when }), ...(a.note ? [el("span", { class: "as-h as-warn", "data-note": "blocked", text: a.note })] : [])),
     el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal", type: "button", "data-k": `appr:${o.label}`, onclick: () => asApprove(app, a, o) }, o.label)),
       el("button", { class: "btn text", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", `i:${app.split("~")[0]}`); } }, "자세히")));
 }

@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Config, type Ctx, dataDir, defaultConfig, HHMM, type InstagramSecret, paths, readJson, realCtx, secretsDir, snsDir, validateConfig, writeJson, type YoutubeOauth } from "../lib/config.ts";
+import { clearPublishMissing } from "../lib/ig-publish.ts";
 import { me } from "../lib/instagram.ts";
 import { AuthError, TransientError } from "../lib/watchkit.ts";
 import { accessToken, myChannel } from "../lib/youtube.ts";
@@ -113,6 +114,7 @@ async function instagramToken(ctx: Ctx, flags: Map<string, string | true>, out: 
 	const acc = await me(ctx, token);
 	const secret: InstagramSecret = { access_token: token, user_id: acc.user_id, username: acc.username, obtained_at: ctx.now().toISOString() };
 	writeJson(paths.instagram(), secret, true);
+	clearPublishMissing();
 	out(`instagram-connected ${acc.user_id} ${acc.username}`);
 }
 
@@ -173,9 +175,9 @@ function buildConfig(f: Map<string, string | true>, acc: Accounts): Config {
 	const c: Config = prev && !validateConfig(prev) ? { ...prev } : defaultConfig();
 	if (acc.youtube) {
 		const y = c.youtube;
-		c.youtube = { channel_id: acc.youtube.id, title: acc.youtube.title, base_language: y?.base_language ?? "ko", languages: y?.languages ?? [], privacy: y?.privacy ?? "private", upload_via: y?.upload_via ?? "aside" };
+		c.youtube = { channel_id: acc.youtube.id, title: acc.youtube.title, base_language: y?.base_language ?? "ko", languages: y?.languages ?? [], privacy: y?.privacy ?? "private", upload_via: y?.upload_via ?? "aside", ...(y?.token_source ? { token_source: y.token_source } : {}) };
 	}
-	if (acc.instagram) c.instagram = { user_id: acc.instagram.user_id, username: acc.instagram.username, post_via: c.instagram?.post_via ?? "api" };
+	if (acc.instagram) c.instagram = { user_id: acc.instagram.user_id, username: acc.instagram.username, post_via: c.instagram?.post_via ?? "api", ...(c.instagram?.token_source ? { token_source: c.instagram.token_source } : {}) };
 	if (c.youtube) {
 		if (str("languages")) c.youtube.languages = str("languages") === "off" ? [] : csv(str("languages")!);
 		if (str("base")) c.youtube.base_language = str("base")!;
@@ -183,6 +185,13 @@ function buildConfig(f: Map<string, string | true>, acc: Accounts): Config {
 		if (str("youtube-via")) c.youtube.upload_via = str("youtube-via") as any;
 	}
 	if (c.instagram && str("instagram-via")) c.instagram.post_via = str("instagram-via") as any;
+	// An external token source (docs/youtube-instagram.md): a file the owner keeps up to date, or `off` to drop it.
+	for (const [flag, app] of [["yt-token-file", c.youtube], ["ig-token-file", c.instagram]] as const) {
+		const v = str(flag);
+		if (!app || !v) continue;
+		if (v === "off") delete app.token_source;
+		else app.token_source = { file: v.replace(/^~(?=\/|$)/, homedir()) };
+	}
 	if (str("times")) c.posting_times = csv(str("times")!);
 	if (str("approval")) c.approval = str("approval") as any;
 	if (str("timezone")) c.timezone = str("timezone")!;
@@ -255,6 +264,9 @@ const WATCHES = [
 	{ name: "sns-due", script: "due.ts", every: 5, platform: "any", on: "match", timeout: 900 },
 	{ name: "sns-tokens", script: "tokens.ts", every: 720, platform: "any", on: "change", timeout: 120 },
 	{ name: "sns-yt-metadata", script: "yt-metadata.ts", every: 1440, platform: "youtube", on: "match", timeout: 120 },
+	// Only with an external token source: the same upkeep as sns-tokens for one app, so a failed source shows under that app (내부 기능).
+	{ name: "sns-yt-tokens", script: "tokens.ts", args: "youtube", every: 720, platform: "youtube", on: "change", timeout: 120 },
+	{ name: "sns-ig-tokens", script: "tokens.ts", args: "instagram", every: 720, platform: "instagram", on: "change", timeout: 120 },
 ] as const;
 
 function projectBody(key: string, c: Config, watchesOn: boolean) {
@@ -293,7 +305,7 @@ async function apply(ctx: Ctx, flags: Map<string, string | true>, out: (l: strin
 	out(`project ${key}`);
 
 	const translating = Boolean(config.youtube?.languages.length);
-	const mine = WATCHES.filter(w => (w.name === "sns-yt-metadata" ? translating : w.platform === "any" || (w.platform === "youtube" ? config.youtube : config.instagram)));
+	const mine = WATCHES.filter(w => (w.name === "sns-yt-metadata" ? translating : w.name.endsWith("-tokens") && w.name !== "sns-tokens" ? Boolean(config[w.platform as "youtube" | "instagram"]?.token_source) : w.platform === "any" || (w.platform === "youtube" ? config.youtube : config.instagram)));
 	// A watch tied to a work channel cannot be deleted through the API (409), so turning translations off pauses it; a
 	// later --languages re-adds it by name, which replaces the paused one.
 	if (flags.get("languages") === "off") {
@@ -307,7 +319,7 @@ async function apply(ctx: Ctx, flags: Map<string, string | true>, out: (l: strin
 	for (const w of mine) {
 		await gateway(ctx, "POST", "/api/watches", {
 			name: w.name,
-			command: `bun ${shq(join(BIN, w.script))}`,
+			command: `bun ${shq(join(BIN, w.script))}${"args" in w ? ` ${w.args}` : ""}`,
 			every_minutes: w.every,
 			on: w.on,
 			...(w.on === "match" ? { pattern: "." } : {}),
