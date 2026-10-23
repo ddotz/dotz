@@ -436,6 +436,12 @@ export async function maxLogId(db: KakaoDb): Promise<string> {
 	return str(rows[0]?.maxId) || "0";
 }
 
+// The newest logId of one room (one small query); "" when the room has no message.
+export async function roomHead(db: KakaoDb, chatId: string): Promise<string> {
+	const rows = await db.query("SELECT CAST(MAX(logId) AS TEXT) AS maxId FROM NTChatMessage WHERE chatId = ?", [chatId]);
+	return str(rows[0]?.maxId);
+}
+
 export async function ownUserId(db: KakaoDb): Promise<string | undefined> {
 	const rows = await db.query("SELECT CAST(userId AS TEXT) AS userId FROM NTChatContext LIMIT 1");
 	return str(rows[0]?.userId) || undefined;

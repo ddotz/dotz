@@ -22,7 +22,7 @@ const drain = async () => {
 	for (let i = 0; i < 100; i++) await Promise.resolve();
 };
 
-function setup(over: Partial<KakaoConfig> = {}) {
+function setup(over: Partial<KakaoConfig> = {}, stat = false) {
 	const paths = kakaoPaths(dir, dir);
 	const dbPath = join(dir, "k.sqlite");
 	const w = makeFixtureDb(dbPath);
@@ -47,7 +47,11 @@ function setup(over: Partial<KakaoConfig> = {}) {
 	const timers = new Map<number, { fn: () => void; ms: number }>();
 	let handle = 0;
 	const sub = { n: 1 };
+	// The stat tick (fs.watch gets no event for KakaoTalk's files): its own fake timers and a fake file signature.
+	const st = { sig: "a", calls: 0, timers: new Map<number, { fn: () => void; ms: number }>() };
+	let statHandle = 0;
 	const live = createLive({
+		...(stat ? { statPollMs: 500, statSig: () => (st.calls++, st.sig), statTimers: { set: (fn: () => void, ms: number) => (st.timers.set(++statHandle, { fn, ms }), statHandle), clear: (h: unknown) => void st.timers.delete(h as number) } } : {}),
 		paths,
 		readConfig: () => config,
 		openDb: async () => db,
@@ -81,6 +85,13 @@ function setup(over: Partial<KakaoConfig> = {}) {
 			await drain();
 		},
 		open: () => watchers.filter(x => !x.closed),
+		st,
+		fireStat: async () => {
+			const due = [...st.timers.values()];
+			st.timers.clear();
+			for (const x of due) x.fn();
+			await drain();
+		},
 	};
 }
 
@@ -117,6 +128,47 @@ describe("live watcher", () => {
 		const count = t.events.length;
 		await t.live.poll();
 		expect(t.events).toHaveLength(count);
+	});
+
+	test("the stat tick queries only when the database files changed and announces each new row once, with fs.watch silent", async () => {
+		const t = setup({ watch_chats: [DIRECT] }, true);
+		await t.live.sync();
+		expect([...t.st.timers.values()].map(x => x.ms)).toEqual([500]);
+		await t.fireStat();
+		expect(t.events).toEqual([]);
+		const q0 = t.stats.queries;
+		await t.fireStat();
+		await t.fireStat();
+		expect(t.stats.queries).toBe(q0);
+		t.add(9, ROOM.direct);
+		t.st.sig = "b";
+		await t.fireStat();
+		expect(t.events).toEqual([{ kind: "kakao", chatId: DIRECT, logId: id(9) }]);
+		await t.fireStat();
+		expect(t.events).toHaveLength(1);
+		t.add(10, ROOM.direct);
+		t.st.sig = "c";
+		await t.fireStat();
+		expect(t.events.map(e => e.logId)).toEqual([id(9), id(10)]);
+		expect(JSON.stringify(t.events)).not.toContain(BODY);
+		t.live.stop();
+		expect(t.st.timers.size).toBe(0);
+	});
+
+	test("with no page connected the stat tick stats nothing and queries nothing; a page that connects later gets the missed row", async () => {
+		const t = setup({ watch_chats: [DIRECT] }, true);
+		await t.live.sync();
+		const q0 = t.stats.queries;
+		t.sub.n = 0;
+		t.add(9, ROOM.direct);
+		t.st.sig = "b";
+		for (let i = 0; i < 3; i++) await t.fireStat();
+		expect(t.st.calls).toBe(0);
+		expect(t.stats.queries).toBe(q0);
+		expect([...t.st.timers.values()].map(x => x.ms)).toEqual([5000]);
+		t.sub.n = 1;
+		await t.fireStat();
+		expect(t.events).toEqual([{ kind: "kakao", chatId: DIRECT, logId: id(9) }]);
 	});
 
 	test("with no page connected nothing is queried, and the next query catches up from the same baseline", async () => {

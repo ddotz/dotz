@@ -13,6 +13,7 @@ const KK = {
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", draftT: 0, tailing: false, again: false,
   typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
+  peerT: 0, peerBusy: false, peerHead: "",
 };
 
 /* ---- small helpers ---- */
@@ -664,6 +665,21 @@ function kkLive(e) {
     kkTail();
   }
 }
+// A peer's room gets no stream events here (the stream is this computer's): while it is open, ask its owner for the room's newest logId every ~2 s
+// (GET .../head: one small read, none while the owner's database files do not change) and fetch rows only when that moved. An owner without /head: tail directly.
+const KK_PEER_MS = 2000;
+async function kkPeerPoll() {
+  const id = KK.open;
+  if (!KK.pc || !KK.vis || !id || KK.loading || KK.roomErr || KK.peerBusy || document.visibilityState !== "visible") return;
+  KK.peerBusy = true;
+  try {
+    const d = await api(`/api/kakao/chat/${enc(id)}/head`);
+    if (KK.open !== id) return;
+    const head = d && d.logId ? String(d.logId) : "", last = KK.msgs.length ? KK.msgs[KK.msgs.length - 1].logId : "";
+    if (head && `${id}:${head}` !== KK.peerHead && (!last || kkGt(head, last))) await kkTail();
+    if (KK.open === id) KK.peerHead = `${id}:${head}`;
+  } catch { await kkTail(); } finally { KK.peerBusy = false; }
+}
 // After a stream reconnect or coming back to the page: ask again.
 function kkResync() { if (!KK.vis) return; kkLoadRooms(); kkTail(); kkReads(); kkMaybeRead(); }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") kkResync(); });
@@ -673,7 +689,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 function kkMode(item, shown, pc) {
   if (KK.vis && (KK.pc ? KK.pc.url : "") !== (pc ? pc.url : "")) {   // the other computer's rooms: start from an empty pane
     Object.assign(KK, { vis: false, open: "", rooms: [], loaded: false, failed: false, error: "", roomErr: "", room: null, msgs: [], drafts: [], sends: [], pick: null, rseq: KK.rseq + 1 });
-    KK.seq++; clearInterval(KK.timer);
+    KK.seq++; clearInterval(KK.timer); clearInterval(KK.peerT);
   }
   KK.pc = item ? pc || null : null;
   $("#v-monitoring").classList.toggle("kk-on", item);
@@ -684,7 +700,9 @@ function kkMode(item, shown, pc) {
     kkLoadRooms();
     clearInterval(KK.timer);
     KK.timer = setInterval(() => { if (document.visibilityState === "visible") kkResync(); }, 60000);
+    clearInterval(KK.peerT);
+    if (KK.pc) KK.peerT = setInterval(kkPeerPoll, KK_PEER_MS);
   } else if (!shown && KK.vis) {
-    KK.vis = false; KK.open = ""; KK.seq++; clearInterval(KK.timer);
+    KK.vis = false; KK.open = ""; KK.seq++; clearInterval(KK.timer); clearInterval(KK.peerT);
   }
 }
