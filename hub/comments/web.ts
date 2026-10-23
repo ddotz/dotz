@@ -6,6 +6,12 @@ const json = (data: unknown, status = 200) => Response.json(data, { status });
 const OFF = { error: "댓글 연동이 꺼져 있어요" };
 const MAX_TEXT = 2000;
 const MAX_EXTRA = 500;
+const MAX_MAIL_BODY = 6000;
+
+const validMail = (m: any): boolean =>
+	!!m && typeof m === "object" && ["app", "to", "subject", "body"].every(k => typeof m[k] === "string" && m[k].trim()) && [...m.body].length <= MAX_MAIL_BODY && m.subject.length <= 200
+	&& (m.attach === undefined || (Array.isArray(m.attach) && m.attach.length <= 10 && m.attach.every((p: unknown) => typeof p === "string" && p)))
+	&& (m.fromLibrary === undefined || typeof m.fromLibrary === "string");
 
 export type WebDeps = { engine: Engine; broadcast: (event: Record<string, unknown>) => void };
 
@@ -89,11 +95,18 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 			if (!c || !cfg.sources[c.source]) return json({ error: "원댓글을 찾지 못했어요" }, 404);
 			if (drafting.has(id)) return json({ error: "이 댓글은 초안을 만드는 중이에요" }, 409);
 			// `{ text, extra? }`: a draft written outside (a script of the owner), no model call; it still waits for the owner's 보내기.
+			// `extra` is a note (text) or `{ note?, mail: { app, to, subject, body, attach?, fromLibrary? } }`: with a mail the card shows the reply and then the mail,
+			// and one 보내기 posts the reply and sends the mail (a failed mail is told in the comment_send event: `mail: "failed"`, `mailReason`).
 			const b = await body();
 			if (b.text !== undefined || b.extra !== undefined) {
 				if (typeof b.text !== "string" || !b.text.trim() || [...b.text].length > MAX_TEXT) return json({ error: `text: 1자에서 ${MAX_TEXT}자 사이여야 해요` }, 400);
-				if (b.extra !== undefined && (typeof b.extra !== "string" || [...b.extra].length > MAX_EXTRA)) return json({ error: `extra: ${MAX_EXTRA}자 이하 글이어야 해요` }, 400);
-				const s = engine.addDraft(id, b.text, b.extra?.trim() || undefined);
+				const x = b.extra;
+				const mail = x && typeof x === "object" ? x.mail : undefined;
+				const note = x && typeof x === "object" ? x.note : x;
+				if (note !== undefined && (typeof note !== "string" || [...note].length > MAX_EXTRA)) return json({ error: `extra: ${MAX_EXTRA}자 이하 글이어야 해요` }, 400);
+				if (x !== undefined && typeof x === "object" && (x === null || Array.isArray(x) || !mail)) return json({ error: "extra: 글이거나 { note?, mail } 이어야 해요" }, 400);
+				if (mail !== undefined && !validMail(mail)) return json({ error: `extra.mail: app, to, subject, body(${MAX_MAIL_BODY}자 이하)가 글이어야 하고 attach는 경로 글 목록이어야 해요` }, 400);
+				const s = await engine.addDraft(id, b.text, note?.trim() || undefined, mail ? { app: mail.app, to: mail.to, subject: mail.subject, body: mail.body, ...(mail.attach ? { attach: mail.attach } : {}), ...(mail.fromLibrary ? { fromLibrary: mail.fromLibrary } : {}) } : undefined);
 				return s.ok ? json({ code: s.draft.code, state: "pending" }) : json({ error: s.reason }, 409);
 			}
 			drafting.add(id);
@@ -117,8 +130,9 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 				return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
 			}
 			if (parts[4] === "revise") {
-				const change = String((await body()).change ?? "");
-				const step = await engine.revise(code, change);
+				const b = await body();
+				if (b.part !== undefined && b.part !== "reply" && b.part !== "mail") return json({ error: "part: reply 또는 mail이어야 해요" }, 400);
+				const step = await engine.revise(code, String(b.change ?? ""), b.part);
 				return step.ok ? json({ ok: true, code: step.draft.code }) : json({ error: step.reason }, 409);
 			}
 			if (parts[4] === "send") {

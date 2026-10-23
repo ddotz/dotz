@@ -9,7 +9,8 @@ import { commentThreadsSince, ownReplies, recentUploads, replyToComment, videoIn
 import { appBase, appEntries, commentOwner } from "../integrations.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { callReplyModel } from "../reply-model.ts";
-import { appOf, type DraftModel, createEngine, type Engine, type EngineDeps } from "./engine.ts";
+import { appOf, type DraftModel, createEngine, type Engine, type EngineDeps, type MailLink } from "./engine.ts";
+import { realMailLink } from "./mail-link.ts";
 import { instagramAdapter, youtubeAdapter } from "./adapters/google-meta.ts";
 import { bunExec, websiteAdapter } from "./adapters/website.ts";
 import { commentsDir } from "./store.ts";
@@ -30,7 +31,7 @@ export const realModel: DraftModel = async (system, user, app) => {
 	return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens };
 };
 
-export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"] } = {}): Engine {
+export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"]; mail?: MailLink } = {}): Engine {
 	const dir = commentsDir(dataDir);
 	const secretsDir = join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "secrets");
 	return createEngine({
@@ -38,6 +39,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		now: Date.now,
 		collector: opts.collector ?? hostname(),
 		model: opts.model ?? realModel,
+		mail: opts.mail ?? realMailLink(),
 		// custom/apps.json is read live: a site added as its own app instance owns its threads, its needs and its reply model setting.
 		owner: src => commentOwner(appEntries(dataDir), appOf(src), src.key),
 		broadcast: opts.broadcast,

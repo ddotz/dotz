@@ -1,6 +1,10 @@
 // `bun hub/mail-cli.ts compose|send`: a NEW mail the bot writes (not an answer to a received one), with the same owner approval as every reply.
-//   compose --app <mail instance> --to <addr> --subject <s> [--attach <path>]... [--from-library <keywords>] [--origin comment|mail|kakao:<id>] (body on stdin)
+//   compose --app <mail instance> --to <addr> --subject <s> [--attach <path>]... [--from-library <keywords>] [--origin comment|mail|kakao:<id>] [--with-comment <comment draft code>] (body on stdin)
 //     stages the files, records a draft and prints the shared approval block (hub/draft-approval.ts) to post unchanged as an [ask].
+//     --with-comment: the mail rides on that pending comment reply draft (hub/comments): the printed block is ONE card with the reply and then the
+//     mail, and the owner's 보내기 posts the reply and sends the mail (features/comments/bin/comments.ts send).
+//   ask --draft <code>
+//     prints the approval block of a pending mail draft again (e.g. the mail of a comment reply that was posted but whose mail failed).
 //   send --draft <code>
 //     sends only after the owner picked 1) 보내기 for exactly that draft (features/reply-drafts/lib/flow.ts sendDraft, the same check as the reply path).
 // Attachments go out through the reply path's sender (zele `--attach`); a mail source that cannot send a new mail is refused at compose time.
@@ -8,6 +12,8 @@ import { existsSync, statSync } from "node:fs";
 import { addressesOf, lintReply } from "./reply-draft.ts";
 import { appEntries, instanceIdOf, readAppsFile } from "./integrations.ts";
 import { type HubLike, notifyGateway } from "./followup.ts";
+import { commentAsk } from "./comments/ask.ts";
+import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
 import { askText, sendDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX } from "../features/reply-drafts/lib/library.ts";
@@ -18,7 +24,7 @@ import { addDraft, getDraft, newId, type DraftRec } from "../features/reply-draf
 export type MailCliDeps = FlowDeps & { hub?: HubLike };
 type Out = { lines: string[]; code: number; notes?: string[] };
 
-const USAGE = "usage: mail-cli.ts compose --app <mail app> --to <addr> --subject <s> [--attach <path>]... [--from-library <keywords>] [--origin comment|mail|kakao:<id>] (body on stdin) | send --draft <code>";
+const USAGE = "usage: mail-cli.ts compose --app <mail app> --to <addr> --subject <s> [--attach <path>]... [--from-library <keywords>] [--origin comment|mail|kakao:<id>] [--with-comment <comment draft code>] (body on stdin) | send --draft <code> | ask --draft <code>";
 const MULTI = new Set(["--attach"]);
 const WEBMAIL = /^webmail[:/-]([a-z0-9-]+)$/;
 
@@ -62,6 +68,48 @@ function originOf(spec: string | undefined): DraftRec["origin"] | { error: strin
 	return { kind, id, text: kind === "mail" ? "메일 답장에 이어서" : "카카오톡 메시지에 이어서" };
 }
 
+export type ComposeInput = { app: string; to: string[]; subject: string; body: string; attach?: string[]; fromLibrary?: string; origin?: DraftRec["origin"]; /** false = not listed in the web mail app (the mail rides on a comment reply's card). */ notify?: boolean };
+export type Composed = { ok: true; rec: DraftRec; notes: string[] } | { ok: false; error: string; code: number };
+
+// A new mail draft: stages the files, lints, records it as pending and (unless `notify` is false) tells the gateway. Sends nothing.
+export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Promise<Composed> {
+	const fail = (error: string, code = 2): Composed => ({ ok: false, error, code });
+	const { app, subject, body, to, origin } = i;
+	const via = sourceOf(app);
+	if ("error" in via) return fail(via.error);
+	const paths: string[] = [];
+	for (const p of i.attach ?? []) {
+		if (!existsSync(p) || !statSync(p).isFile()) return fail(`첨부파일을 찾지 못했어요: ${p}`);
+		paths.push(p);
+	}
+	const notes: string[] = [];
+	let libraryMiss = false;
+	const keywords = i.fromLibrary;
+	if (keywords) {
+		const folder = loadSettings().attachFolders?.[app];
+		if (!folder) return fail(`${app}에 첨부 파일 폴더가 정해져 있지 않아요 (설정 > 첨부 파일 폴더)`);
+		const found = rankLibrary(listLibrary(folder), { subject: keywords, text: keywords }).filter(r => r.score > 0).slice(0, LIBRARY_PICK_MAX);
+		for (const r of found) if (!paths.includes(r.file.path)) paths.push(r.file.path);
+		if (!found.length) {
+			libraryMiss = true;
+			notes.push(`확인: 첨부 파일 폴더에서 '${keywords}'에 맞는 파일을 찾지 못했어요`);
+		}
+	}
+	if (paths.length > STAGED_MAX) return fail(`첨부파일은 ${STAGED_MAX}개까지 붙일 수 있어요`);
+
+	const item = { kind: "mail" as const, app, from: to.join(", "), text: body };
+	const draft = { to: to.join(", "), subject, body };
+	const failures = lintReply(draft, item, loadStyle(toneKey({ app })));
+	if (failures.length) return fail(`초안 검사에서 걸렸어요: ${failures.join("; ")}`, 1);
+
+	const id = newId();
+	for (const p of paths) addStagedFile(id, p);
+	const rec: DraftRec = { id, kind: "mail", app, source: via.source, mailId: `compose-${id}`, ref: `compose-${id.toLowerCase()}`, compose: true, ...(libraryMiss ? { libraryMiss: true } : {}), ...(origin ? { origin } : {}), ...draft, status: "pending", created: (deps.now ?? (() => new Date()))().toISOString(), changes: [], questions: [], item };
+	addDraft(rec);
+	if (i.notify !== false) await notifyGateway({ path: "/api/mail/compose", body: { ref: id, source: via.source, app, to: draft.to, subject, ...(origin ? { origin: origin.text } : {}) } }, deps.hub);
+	return { ok: true, rec, notes };
+}
+
 export async function runMailCli(args: string[], stdin: string, deps: MailCliDeps = {}): Promise<Out> {
 	const [cmd, ...more] = args;
 	const { flags } = parse(more);
@@ -75,6 +123,12 @@ export async function runMailCli(args: string[], stdin: string, deps: MailCliDep
 		if (r.ok && rec) await notifyGateway({ path: "/api/mail/compose", body: { ref: rec.id, source: rec.source, state: "sent" } }, deps.hub);
 		return { lines: [r.text], code: r.ok ? 0 : 1 };
 	}
+	if (cmd === "ask") {
+		const rec = getDraft(one("--draft") ?? "");
+		if (!rec?.compose || rec.status !== "pending") return { lines: ["그런 메일 초안이 없거나 이미 처리됐어요"], code: 2 };
+		const card = linkedComment(rec.id);
+		return card ? { lines: [`이 메일은 댓글 답글(${card})과 한 장으로 승인해요`], code: 2 } : { lines: [askText(rec, [])], code: 0 };
+	}
 	if (cmd !== "compose") return { lines: [USAGE], code: 2 };
 
 	const app = one("--app");
@@ -82,42 +136,22 @@ export async function runMailCli(args: string[], stdin: string, deps: MailCliDep
 	const to = addressesOf(flags["--to"]?.[0]);
 	const body = stdin.replace(/\r\n?/g, "\n").trim();
 	if (!app || !subject || !to.length || !body) return { lines: [USAGE], code: 2 };
-	const via = sourceOf(app);
-	if ("error" in via) return { lines: [via.error], code: 2 };
 	const origin = originOf(one("--origin"));
 	if (origin && "error" in origin) return { lines: [origin.error], code: 2 };
+	const withComment = one("--with-comment");
+	const store = withComment ? createStore(commentsDir(dataDir())) : undefined;
+	const reply = withComment ? store!.drafts().find(d => d.code === withComment) : undefined;
+	if (withComment && reply?.status !== "pending") return { lines: [`댓글 답글 초안 ${withComment}이(가) 없거나 이미 처리됐어요`], code: 2 };
 
-	const paths: string[] = [];
-	for (const p of flags["--attach"] ?? []) {
-		if (!existsSync(p) || !statSync(p).isFile()) return { lines: [`첨부파일을 찾지 못했어요: ${p}`], code: 2 };
-		paths.push(p);
-	}
-	const notes: string[] = [];
-	let libraryMiss = false;
-	const keywords = one("--from-library");
-	if (keywords) {
-		const folder = loadSettings().attachFolders?.[app];
-		if (!folder) return { lines: [`${app}에 첨부 파일 폴더가 정해져 있지 않아요 (설정 > 첨부 파일 폴더)`], code: 2 };
-		const found = rankLibrary(listLibrary(folder), { subject: keywords, text: keywords }).filter(r => r.score > 0).slice(0, LIBRARY_PICK_MAX);
-		for (const r of found) if (!paths.includes(r.file.path)) paths.push(r.file.path);
-		if (!found.length) {
-			libraryMiss = true;
-			notes.push(`확인: 첨부 파일 폴더에서 '${keywords}'에 맞는 파일을 찾지 못했어요`);
-		}
-	}
-	if (paths.length > STAGED_MAX) return { lines: [`첨부파일은 ${STAGED_MAX}개까지 붙일 수 있어요`], code: 2 };
-
-	const item = { kind: "mail" as const, app, from: to.join(", "), text: body };
-	const draft = { to: to.join(", "), subject, body };
-	const failures = lintReply(draft, item, loadStyle(toneKey({ app })));
-	if (failures.length) return { lines: [`초안 검사에서 걸렸어요: ${failures.join("; ")}`], code: 1 };
-
-	const id = newId();
-	for (const p of paths) addStagedFile(id, p);
-	const rec: DraftRec = { id, kind: "mail", app, source: via.source, mailId: `compose-${id}`, ref: `compose-${id.toLowerCase()}`, compose: true, ...(libraryMiss ? { libraryMiss: true } : {}), ...(origin ? { origin } : {}), ...draft, status: "pending", created: (deps.now ?? (() => new Date()))().toISOString(), changes: [], questions: [], item };
-	addDraft(rec);
-	await notifyGateway({ path: "/api/mail/compose", body: { ref: id, source: via.source, app, to: draft.to, subject, ...(origin ? { origin: origin.text } : {}) } }, deps.hub);
-	return { lines: [askText(rec, [])], code: 0, notes };
+	const made = await composeMail({ app, to, subject, body, attach: flags["--attach"], fromLibrary: one("--from-library"), ...(origin ? { origin } : {}), notify: !withComment }, deps);
+	if (!made.ok) return { lines: [made.error], code: made.code };
+	if (!reply) return { lines: [askText(made.rec, [])], code: 0, notes: made.notes };
+	const now = (deps.now ?? (() => new Date()))().getTime();
+	const linked = attachMail(store!, reply.code, made.rec.id, now);
+	const c = store!.comments().find(x => x.id === linked.commentId);
+	const src = store!.config().sources[linked.source];
+	if (!c || !src) return { lines: ["원댓글을 찾지 못했어요"], code: 2 };
+	return { lines: [commentAsk(src, c, linked, "댓글 답글과 이어서 보낼 메일 초안을 만들었어요", mailPartOf(made.rec))], code: 0, notes: made.notes };
 }
 
 if (import.meta.main) {

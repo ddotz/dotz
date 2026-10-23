@@ -16,7 +16,7 @@ export async function run(dir = dataDir(), engine = realEngine(dir), notify: (th
 		.flatMap(d => {
 			const c = engine.store.comments().find(x => x.id === d.commentId);
 			const src = cfg.sources[d.source];
-			return c && src ? [commentAsk(src, c, d)] : [];
+			return c && src ? [commentAsk(src, c, d, undefined, engine.mailView(d))] : [];
 		});
 }
 
