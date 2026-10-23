@@ -3,7 +3,8 @@
 //   { "manual": { "account", "until"?, "reason"? },
 //     "rules":  [ { "name"?, "when"?: { days, from, to, five_hour_left_below, seven_day_left_below, rate_limited, auth_error, unavailable },
 //                   "do": { "pin": X } | { "prefer": [X, Y] } | { "auto": true } } ],
-//     "script": { "path", "timeout_ms"?, "every_minutes"? } }
+//     "script": { "path", "timeout_ms"?, "every_minutes"? },
+//     "order": [X, Y, Z] }   the owner's account order: the fallback order of 자동 전환 (usableFirst in account-sticky.ts)
 // Precedence: manual (not expired) > the script's opinion > the first matching rule > automatic (decide() in account-sticky.ts).
 // The manual pick is the owner's 고정 mode: it holds while blocked (no other account takes over; the work pauses). A layer's
 // account that is blocked (OmO's rate_limit/auth block, not expired) or not in OmO's pool is skipped: script and pin fall
@@ -29,7 +30,7 @@ export type Action = { pin: string } | { prefer: string[] } | { auto: true };
 type Rule = { name?: string; when?: When; do: Action };
 export type Manual = { account: string; until?: string; reason?: string };
 type ScriptConfig = { path: string; timeout_ms?: number; every_minutes?: number };
-export type Rules = { manual?: Manual; rules?: Rule[]; script?: ScriptConfig };
+export type Rules = { manual?: Manual; rules?: Rule[]; script?: ScriptConfig; order?: string[] };
 export type Usage = Record<string, { five_hour_left?: number; seven_day_left?: number }>;
 export type ScriptErrorKind = "timeout" | "exit" | "spawn" | "unknown_account";
 type ScriptOpinion = { account?: string; reason?: string; error?: ScriptErrorKind; at: string };
@@ -130,6 +131,10 @@ export function validateRules(raw: unknown): Rules {
 		};
 		out.script = { path: nonEmpty("script.path", s.path), ...(s.timeout_ms !== undefined ? { timeout_ms: positive("timeout_ms", s.timeout_ms) } : {}), ...(s.every_minutes !== undefined ? { every_minutes: positive("every_minutes", s.every_minutes) } : {}) };
 	}
+	if (r.order !== undefined) {
+		if (!Array.isArray(r.order)) bad("order", "계정 이름 목록이어야 해요");
+		out.order = [...new Set<string>(r.order.map((x: unknown, n: number) => nonEmpty(`order[${n}]`, x)))];
+	}
 	return out;
 }
 
@@ -158,6 +163,11 @@ export function writeRules(r: unknown, file = rulesFile()): Rules {
 	mkdirSync(accountsDir(), { recursive: true });
 	writeAtomic(file, `${JSON.stringify(clean, null, 2)}\n`);
 	return clean;
+}
+
+// The owner's account order saved; other parts of the file stay as they are.
+export function setOrder(order: string[]): Rules {
+	return writeRules({ ...readRules(), order });
 }
 
 // The manual pick set, or cleared with undefined; other parts of the file stay as they are.
@@ -257,7 +267,7 @@ export function evaluate(i: EvaluateInput): Evaluated {
 		}
 		// an unusable pin/prefer (or an explicit auto) falls through to the automatic layer
 	}
-	const auto = decide(current, pool, i.now);
+	const auto = decide(current, { ...pool, order: rules.order }, i.now);
 	return { ...(auto.account ? { account: auto.account } : {}), source: "auto", reason: auto.change?.reason ?? (current ? `${current} 계정을 계속 써요` : "OmO 계정 풀"), at, ...(auto.change ? { change: auto.change } : {}) };
 }
 
