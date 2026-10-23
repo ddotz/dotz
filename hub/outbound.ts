@@ -187,12 +187,16 @@ export const fileRoots = () => allowedRoots([...lanes.values()].flatMap(l => [l.
 // Returns how many prompts were replayed.
 export function replayPending(): number {
 	const open = unanswered;
+const replayWrap = (text: string) => (isNote(text, "replayLead") ? text : `${msg().replay}\n${text}`);
 	unanswered = [];
-	return queue.replay(open, text => (isNote(text, "replayLead") ? text : `${msg().replay}\n${text}`));
+	return queue.replay(open, replayWrap);
 }
 
 // Registrations main.ts makes at the same point of its start (kept out of import time).
 export function installDelivery(): void {
+// After an orchestrator restart (orchestrator.ts): the prompts still open in this process go in again, once, oldest first.
+export const replayOpen = () => queue.reopen(replayWrap);
+
 	livestatus.setWebProgress(webNote);
 	// The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
 	setAnswerHandlers(

@@ -20,6 +20,7 @@ import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
+import { type OrchError, plainError } from "./orch-error.ts";
 import { isLater, LATER_LINE } from "./tone.ts";
 
 const STATE = join(DATA_DIR, "orchestrator.json");
@@ -43,6 +44,8 @@ export const orch = {
 	lastText: "",
 	rateLimitedUntil: "",
 	restarts: [] as number[],
+	// Set when the automatic retries gave up (markError); cleared by the next successful turn. The web banner reads it.
+	error: undefined as OrchError | undefined,
 	ctx: newCtx(),
 };
 let proc: AgentProcess | undefined;
@@ -128,6 +131,37 @@ export function setNoticeHandler(fn: (text: string) => void): void {
 let onAlert: (text: string) => void = () => {};
 export function setAlertHandler(fn: (text: string) => void): void {
 	onAlert = fn;
+}
+// An error episode begins: the owner is asked once (main.ts posts the [ask]).
+let onError: (e: OrchError) => void = () => {};
+export function setErrorHandler(fn: (e: OrchError) => void): void {
+	onError = fn;
+}
+// After any orchestrator restart: the owner's open prompts go in again (outbound.ts replayOpen); returns how many, and the
+// texts it took over (a held copy of those must not be sent a second time).
+let onRestarted: () => { replayed: number; texts: string[] } = () => ({ replayed: 0, texts: [] });
+export function setRestartedHandler(fn: () => { replayed: number; texts: string[] }): void {
+	onRestarted = fn;
+}
+let replayAfterStart = false;
+let probeAfterStart = false;
+function markError(raw: string): void {
+	if (orch.error) return;
+	orch.error = { since: new Date().toISOString(), ...plainError(raw), raw: raw.replace(/\s+/g, " ").slice(0, 200) };
+	log(`orchestrator error episode begins: ${orch.error.kind} (${orch.error.raw.slice(0, 120)})`);
+	onError(orch.error);
+}
+function clearError(): void {
+	if (!orch.error) return;
+	log("orchestrator error episode over: a turn succeeded");
+	orch.error = undefined;
+}
+// The tiny turn that tests a resumed orchestrator when no owner request was open to replay; it answers "-" (never posted).
+export const PROBE_TEXT = "[dotz gateway] 연결 확인입니다. 아무 작업도 하지 말고 '-' 한 글자로만 답하세요.";
+// One automatic resume: restart, and with no open request to replay, one tiny probe turn.
+export function resumeAfterError(): void {
+	probeAfterStart = true;
+	restart();
 }
 
 // Called when a turn ended and the orchestrator is idle again; main.ts sends the web messages queued for it.
@@ -327,6 +361,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					transientTries = 0;
 					errorStreak.ok();
 					streakAlerted = false;
+					clearError();
 				} else if (inKeepalive && keepaliveErrorDropped(ev.error.kind)) {
 					log(`keepalive failed (${ev.error.text.replace(/\s+/g, " ").slice(0, 120)}); not retried, the next message is the next try`);
 				} else if (ev.error.kind !== "rate" && ev.error.kind !== "owner" && errorStreak.fail() !== "go") {
@@ -335,7 +370,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					if (errorStreak.stopped && !streakAlerted) {
 						streakAlerted = true;
 						log(`orchestrator ${ERROR_STREAK_STOP} failed turns in a row; automatic retries stop until a turn succeeds`);
-						onAlert(`${NAME}: 모델 오류가 ${ERROR_STREAK_STOP}번 연속이라 자동 재시도·전환을 멈췄어요(${ev.error.text.replace(/\s+/g, " ").slice(0, 160)}). 다음 메시지부터 다시 시도해요.`);
+						markError(ev.error.text);
 					}
 				} else if (chained) {
 					const failed = ev.error;
@@ -477,7 +512,7 @@ function retryTransient(err: string): void {
 	if (transientTimer) return;
 	if (transientTries >= TRANSIENT_RETRIES) {
 		transientTries = 0;
-		onAlert(`${NAME}: 모델 제공자 오류(${err.replace(/\s+/g, " ").slice(0, 160)})가 ${TRANSIENT_RETRIES}번 재시도해도 계속돼서 멈췄어요. 다음 메시지부터 다시 시도해요.`);
+		markError(err);
 		return;
 	}
 	const wait = transientBackoff(transientTries++);
@@ -605,13 +640,14 @@ export function start(): void {
 		log(`orchestrator exited (${code})`);
 		statusActivity("orchestrator", `orchestrator exited (code ${code})`);
 		if (stopping) return;
+		if (!rotating) replayAfterStart = true;
 		if (restarting) {
 			restarting = false;
 			return start();
 		}
 		if (rotating) return start();
 		orch.restarts = orch.restarts.filter(t => Date.now() - t < RESTART_WINDOW_MS);
-		if (orch.restarts.length >= MAX_RESTARTS) return onAlert(`${NAME}: 어시스턴트가 10분 안에 ${MAX_RESTARTS}번 죽어서 재시작을 멈췄어요. hub.log를 확인해 주세요.`);
+		if (orch.restarts.length >= MAX_RESTARTS) return markError(`the assistant process exited repeatedly (${MAX_RESTARTS} times in 10 minutes)`);
 		orch.restarts.push(Date.now());
 		setTimeout(start, 10_000);
 	});
@@ -634,6 +670,19 @@ export function start(): void {
 		armWatchdog();
 	}
 	continueAfterSwitch = false;
+	// A restart lost the turn in flight and what the process had not started: every open prompt goes in again once; the held
+	// copies of those are dropped rather than sent twice (a held text the queue does not know still goes out below).
+	let replayed = 0;
+	if (replayAfterStart) {
+		replayAfterStart = false;
+		const r = onRestarted();
+		replayed = r.replayed;
+		for (let i = held.length - 1; i >= 0; i--) if (r.texts.includes(held[i]!.text)) held.splice(i, 1);
+	}
+	if (probeAfterStart) {
+		probeAfterStart = false;
+		if (!replayed && orch.error) proc.send(PROBE_TEXT, "followUp");
+	}
 	for (const h of held.splice(0)) sendOwner(h.text, h.header);
 	setTimeout(() => proc?.refreshSession(), 4000);
 	log(`orchestrator ${resume ? `resumed ${prior}` : rotate ? "rotated to a fresh session" : "started"} (${model})`);
@@ -732,6 +781,10 @@ export function stop(): void {
 // saved (start() then begins a fresh session with a handover, the model-change rule above). Prompts arriving
 // meanwhile are held and delivered by the new process.
 export function restart(): void {
+	errorStreak.ok();
+	streakAlerted = false;
+	transientTries = 0;
+	orch.restarts.length = 0;
 	if (!proc) return start();
 	restarting = true;
 	clearTimeout(watchdog);
