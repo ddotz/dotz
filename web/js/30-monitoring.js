@@ -124,7 +124,7 @@ function monRows(items, sel) {
   const rows = [];
   let group = null, added = false;
   // 앱 추가 is the last row of the 앱 group, right under the apps; with no app yet it is the group's only row.
-  const addRow = () => { added = true; rows.push({ k: "add-app", name: "앱 추가", av: monIcon("add"), hint: asAddHint(), sel: false, open: () => asAddSheet() }); };
+  const addRow = () => { added = true; rows.push({ k: "add-app", name: "앱 관리", av: monIcon("add"), hint: asAddHint(), sel: false, open: () => asAddSheet() }); };
   for (const it of items) {
     if (group === MON_GROUP.app && it.group !== group && !added) addRow();
     if (it.group === MON_GROUP.plain && !added) { rows.push({ header: MON_GROUP.app }); addRow(); }
