@@ -25,6 +25,10 @@ export type Endpoint = {
 	bodyType?: "json" | "form";
 };
 
+// Where a mail's attached files sit in the read response (JSON paths relative to one attachment). A file is fetched either
+// from its own `url` (same origin only) or from `SiteSpec.download` with {id} = the mail and {att} = this file's `id`.
+export type AttachmentMap = { listPath: string; name: string; id?: string; url?: string; size?: string; type?: string };
+
 export type SiteSpec = {
 	version: 1;
 	site: string; // slug, [a-z0-9][a-z0-9-]{0,39}
@@ -39,7 +43,9 @@ export type SiteSpec = {
 	read: Endpoint & {
 		bodyPath: string; // JSON path to the mail body in the detail response
 		bodyIsHtml?: boolean; // body is HTML and should be rendered to text
+		attachments?: AttachmentMap; // without it the watcher posts mails without files
 	};
+	download?: Endpoint; // one attached file, for sites that serve it by id instead of a url in the read response
 	search?: Endpoint & {
 		queryParam: string; // query-string parameter that carries the search text (filled from {q} if path has it, else added)
 		listPath?: string; // defaults to list.listPath
@@ -130,6 +136,9 @@ export function validateSpec(s: any): string | undefined {
 	if (!s.list.fields || typeof s.list.fields.id !== "string" || !s.list.fields.id) return "list.fields.id가 비어 있어요";
 	if (!s.read || typeof s.read.path !== "string" || !s.read.path) return "read.path가 비어 있어요";
 	if (typeof s.read.bodyPath !== "string" || !s.read.bodyPath) return "read.bodyPath가 비어 있어요";
+	const at = s.read.attachments;
+	if (at && (typeof at.listPath !== "string" || !at.listPath || typeof at.name !== "string" || !at.name || (!at.url && !at.id))) return "read.attachments에는 listPath, name, 그리고 url이나 id가 필요해요";
+	if (at && at.id && !(s.download && typeof s.download.path === "string")) return "read.attachments가 id만 쓰면 download.path도 필요해요";
 	if (s.search && (typeof s.search.path !== "string" || typeof s.search.queryParam !== "string")) return "search에는 path와 queryParam이 필요해요";
 	if (s.send && !s.send.draftOnly) return "send에는 draftOnly: true가 있어야 해요 (전송은 승인 단계에서만)";
 	return undefined;

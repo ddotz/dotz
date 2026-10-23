@@ -7,6 +7,12 @@ import { type Ctx } from "./config.ts";
 
 export type Mail = { id: string; from: string; subject: string; time: string; read: boolean };
 export type Detail = { id: string; body: string; raw: unknown };
+export type MailFile = { name: string; id?: string; url?: string; size?: number; type?: string };
+export type PostedFile = { name: string; type?: string; data: string };
+
+export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const MAX_FILES = 10;
+const BODY_POST_MAX = 8000;
 
 const str = (v: unknown): string => (v == null ? "" : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v));
 
@@ -53,6 +59,58 @@ export async function read(ctx: Ctx, spec: SiteSpec, id: string): Promise<Detail
 	if (bodyRaw === undefined) throw new Error(`메일 ${id} 읽기: 응답에 ${spec.read.bodyPath} 필드가 없어요`);
 	const text = str(bodyRaw);
 	return { id, body: spec.read.bodyIsHtml ? htmlToText(text) : text, raw };
+}
+
+// The attached files a read response lists, per spec.read.attachments. Empty when the spec maps none.
+export function attachmentsOf(spec: SiteSpec, raw: unknown): MailFile[] {
+	const m = spec.read.attachments;
+	const arr = m && getPath(raw, m.listPath);
+	if (!m || !Array.isArray(arr)) return [];
+	const size = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
+	const at = (item: unknown, path?: string) => (path ? str(getPath(item, path)) : "");
+	return arr.map((item) => {
+		const [id, url, type, sz] = [at(item, m.id), at(item, m.url), at(item, m.type), size(m.size ? getPath(item, m.size) : undefined)];
+		return { name: at(item, m.name), ...(id ? { id } : {}), ...(url ? { url } : {}), ...(sz ? { size: sz } : {}), ...(type ? { type } : {}) };
+	}).filter((f) => f.name && (f.url || f.id));
+}
+
+// One attached file's bytes. A url is followed only on the site's own origin (the session cookie never goes anywhere else).
+export async function fetchAttachment(ctx: Ctx, spec: SiteSpec, mailId: string, f: MailFile): Promise<Uint8Array> {
+	const cookie = await ctx.cookieHeader(spec);
+	let url: string;
+	let method = "GET";
+	let body: string | undefined;
+	let contentType: string | undefined;
+	if (f.url) {
+		const u = new URL(f.url, spec.origin);
+		if (u.origin !== new URL(spec.origin).origin) throw new Error(`첨부 ${f.name}: 다른 주소라서 받지 않았어요`);
+		url = u.toString();
+	} else {
+		if (!spec.download) throw new Error(`첨부 ${f.name}: 받는 주소(download)가 스펙에 없어요`);
+		const tokens = { id: mailId, att: f.id, mailbox: spec.list.mailbox };
+		({ method, body, contentType } = requestInit(spec.download!, tokens));
+		url = endpointUrl(spec.origin, spec.download!, tokens);
+	}
+	const r = await ctx.fetch(url, { method, headers: headers(spec, cookie, { Accept: "*/*", ...(contentType ? { "Content-Type": contentType } : {}) }), ...(body !== undefined ? { body } : {}), redirect: "manual", signal: AbortSignal.timeout(60_000) });
+	if (!r.ok) throw new Error(`첨부 ${f.name}: HTTP ${r.status}`);
+	const bytes = new Uint8Array(await r.arrayBuffer());
+	if (!bytes.length || bytes.length > MAX_FILE_BYTES) throw new Error(`첨부 ${f.name}: 크기가 맞지 않아 건너뛰었어요 (${bytes.length}B)`);
+	return bytes;
+}
+
+// What a new mail adds to its gateway post: the body text and the attached files as base64. A part that cannot be fetched is
+// left out (logged), so the mail itself is always posted.
+export async function describeMail(ctx: Ctx, spec: SiteSpec, id: string): Promise<{ body?: string; attachments?: PostedFile[] }> {
+	const d = await read(ctx, spec, id);
+	const files: PostedFile[] = [];
+	for (const f of attachmentsOf(spec, d.raw).slice(0, MAX_FILES)) {
+		try {
+			files.push({ name: f.name, ...(f.type ? { type: f.type } : {}), data: Buffer.from(await fetchAttachment(ctx, spec, id, f)).toString("base64") });
+		} catch (error) {
+			ctx.log(`mail ${id}: ${(error as Error).message}`);
+		}
+	}
+	return { ...(d.body ? { body: d.body.slice(0, BODY_POST_MAX) } : {}), ...(files.length ? { attachments: files } : {}) };
 }
 
 // Fallback when capture saw no mail being opened: try likely read endpoints with a real mail id and keep the first one

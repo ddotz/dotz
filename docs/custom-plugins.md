@@ -39,6 +39,8 @@ curl -s -X POST http://127.0.0.1:<web.port>/api/mail \
 ```
 
 - Required: `source`, `id`, `subject`. Optional: `from`, `to`, `summary` (up to 2000 chars), `body` (up to 20000), `thread`, `wake`.
+- `attachments` (up to 10): `[{"name":"quote.pdf","type":"application/pdf","data":"<base64>"}]`, or `{"name":...,"path":"<file>"}` for a file the poster already put under `<data dir>/mail-files/` (any other path is refused). Each file is limited to 25 MB and stored as `mail-files/<key>/<n>/<name>`. The mail row in 모니터링 then shows a 첨부 button, and the file is served by `GET /api/mail/<key>/files/<n>` (`?dl=1` to download) with the same auth as every `/api` route, never from outside that folder.
+- A mail without `summary` shows the first lines of `body` in the list.
 - The key is `<source>-<id>`, lowercased and limited to `[a-z0-9._-]`. Posting the same key again changes nothing and answers `"duplicate": true`, so a retry is safe.
 - `thread`: the Discord thread id when the poster already put the mail on Discord. The gateway records it and posts nothing; without it the gateway opens the thread itself (Discord on) or keeps the mail web-only.
 - `wake: true` gives the orchestrator one turn for the mail (zele does this). Leave it off when the poster already summarised it.

@@ -135,11 +135,41 @@ function monNoticeNode(n, names = []) {
   if (ntNeeds(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
   return node;
 }
-// A mail or chat of an integration is its own conversation in 채팅: here one line of it and the way in.
+// A mail's short text for its row: the poster's summary, else the first lines of its body, else the answer already in its conversation.
+const mailBrief = (m, last) => {
+  const s = String(m.summary || m.preview || (last && last.from === "bot" ? last.text : "") || "");
+  return s.split("\n").map(l => rcPlain(l)).filter(l => l && !rcLabel(l)).join(" ");
+};
+const mailSize = b => b >= 1048576 ? `${(b / 1048576).toFixed(1)}MB` : b >= 1024 ? `${Math.round(b / 1024)}KB` : b > 0 ? `${b}B` : "";
+const mailFileUrl = (t, i, dl) => `/api/mail/${enc(mailOf(t))}/files/${i}${dl ? "?dl=1" : ""}`;
+// The attachments of a mail, opened in a new tab (images, pdf and text show in the browser) or saved with the arrow.
+function mailFilesNode(t, files) {
+  return el("div", { class: "mr-files" }, ...files.map((f, i) => el("div", { class: "mr-file" },
+    el("a", { class: "mr-fn", href: mailFileUrl(t, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` }, icon("file"), el("span", { class: "mr-fname", text: f.name }), f.size ? el("span", { class: "mr-fsize", text: mailSize(f.size) }) : null),
+    el("a", { class: "mr-dl", href: mailFileUrl(t, i, true), download: f.name, title: `${f.name} 저장`, "aria-label": `${f.name} 저장` }, icon("download")))));
+}
+// A mail or chat of an integration is its own conversation in 채팅. A mail is a compact result-card row: sender and time on one line,
+// the subject, a short summary; 본문 (its conversation) and 첨부 (its files, only when it has some) are icon buttons on the right.
+// Slot for a suggested action: when the mail's data carries `suggest: { label }` (the reply-draft lane sets it), a button with that
+// label shows under the summary and opens the conversation, where the draft waits. Without it nothing is drawn.
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = ts(t).unread;
-  return resultCard({ src: m ? mailSender(m.from) || label : label, at: last ? last.ts : "", title: m ? m.subject : last ? last.text : "", text: "", tag: n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : null,
-    actions: [el("button", { class: "btn tonal", type: "button", onclick: () => go("chat", t), text: m ? "메일 열기" : "대화 열기" })] });
+  const tag = n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : null;
+  if (!m) return resultCard({ src: label, at: last ? last.ts : "", title: last ? last.text : "", text: "", tag, actions: [el("button", { class: "btn tonal", type: "button", onclick: () => go("chat", t), text: "대화 열기" })] });
+  const files = m.attachments || [], brief = mailBrief(m, last), when = rcWhen(last ? last.ts : m.at);
+  const btn = (ic, text, title, onclick, count) => el("button", { class: "mr-btn", type: "button", title, "aria-label": title, onclick }, icon(ic), el("span", { class: "mr-bl", text }), count ? el("span", { class: "mr-n", text: String(count) }) : null);
+  const node = el("div", { class: "bm alert rc mr" }, el("div", { class: "mr-main" },
+    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: mailSender(m.from) || label }), tag, when ? el("span", { class: "rc-time", text: when }) : null),
+    el("div", { class: "rc-title", text: m.subject || "(제목 없음)" }),
+    brief ? el("div", { class: "mr-sum", text: brief }) : null,
+    m.suggest && m.suggest.label ? el("div", { class: "mr-slot", "data-slot": "suggest" }, el("button", { class: "btn tonal", type: "button", onclick: () => go("chat", t), text: m.suggest.label })) : null),
+    el("div", { class: "mr-act" },
+      btn("mail", "본문", "메일 본문과 대화 열기", () => go("chat", t)),
+      files.length ? btn("clip", "첨부", `첨부파일 ${files.length}개 보기`, e => {
+        const open = node.querySelector(".mr-files");
+        if (open) { open.remove(); e.currentTarget.setAttribute("aria-expanded", "false"); } else { node.append(mailFilesNode(t, files)); e.currentTarget.setAttribute("aria-expanded", "true"); }
+      }, files.length) : null));
+  return node;
 }
 // A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
 function monRunNode(it) {
@@ -191,7 +221,7 @@ function renderMonitoring() {
     side.scrollTop = top;
   }
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
-  const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread]), sel.mon, NM.loaded, NT.loaded]);
+  const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t)]), sel.mon, NM.loaded, NT.loaded]);
   if (sig !== MON.sig) {
     MON.sig = sig;
     const again = MON.shown === sel.key, keep = box.scrollTop, stick = !again || box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
