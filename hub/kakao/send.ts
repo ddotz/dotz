@@ -1,23 +1,23 @@
 // Approval-gated KakaoTalk reply. A reply is a draft the owner approves in the gateway; only then is it sent, and only by UI automation
-// of the KakaoTalk app through the installed kmsg CLI (MIT, see THIRD_PARTY_NOTICES.md).
+// of the KakaoTalk app by macOS Accessibility (room.jxa.js).
 // There is no Kakao message API, HTTP or private-protocol path in this module.
 import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { draftApprovalBlock } from "../draft-approval.ts";
 import { writePrivate } from "./creds.ts";
-import { axSend, closeWindow, openListRow, pickRoom, readWindow, type RoomFact, windowMatches } from "./room.ts";
-import { KAKAO_BUNDLE, type KakaoPaths, type RunResult, type Runner } from "./types.ts";
+import { type AxStep, axSend, closeWindow, openRoom, type RoomFact } from "./room.ts";
+import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
 // tokens: what the one model call behind the draft used (estimated = counted from characters, not reported by the model).
 export type DraftTokens = { in: number; out: number; estimated?: true };
 export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens };
 // `later`: how the idle close of a kept window is scheduled (tests pass their own; the default is an unref'd timer).
-export type SendDeps = { paths: KakaoPaths; runner: Runner; now?: () => number; kmsg?: string; later?: (fn: () => void, ms: number) => void };
-// ms: wall time of each phase of one send, kept on the send record (sends.json) so a slow send can be read from data.
-export type SendMs = { front: number; pick: number; send: number; refocus: number; total: number; keep?: true };
-export type SendResult = { ok: boolean; reason?: string; ms?: SendMs };
+export type SendDeps = { paths: KakaoPaths; runner: Runner; now?: () => number; later?: (fn: () => void, ms: number) => void };
+// ms: wall time of each phase of one send; ax: every Accessibility step of it (room.ts AxStep) with its time and, where it failed, the exact
+// failing step. Both are kept on the send record (sends.json), so a slow or failed send can be read from data.
+export type SendMs = { front: number; pick: number; send: number; total: number; keep?: true };
+export type SendResult = { ok: boolean; reason?: string; ms?: SendMs; ax?: AxStep[] };
 
 const MAX_TEXT = 1000;
 const MAX_DRAFTS = 200;
@@ -154,7 +154,7 @@ export const newer = (latest: string, basis: string) => (/^\d+$/.test(latest) &&
 const sending = new Set<string>();
 const refuse = (reason: string): SendResult => ({ ok: false, reason });
 
-// Every send of the gateway (typed, draft, CLI) goes through this chain: one at a time, because kmsg drives the one KakaoTalk window.
+// Every send of the gateway (typed, draft, CLI) goes through this chain: one at a time, because they drive the one KakaoTalk list.
 let sendChain: Promise<unknown> = Promise.resolve();
 const oneAtATime = <T>(job: () => Promise<T>): Promise<T> => {
 	const run = sendChain.then(job, job);
@@ -189,7 +189,7 @@ async function frontState(runner: Runner): Promise<Front> {
 	return out;
 }
 
-// A send that kept its chat window open (`kmsg send --keep-window`) makes the next send of that room skip the window open and search.
+// A send that kept its chat window open makes the next send of that room skip the row open (the open window is only verified).
 // The window is closed again after KEEP_IDLE_MS without a send, in the send queue so it never closes a window under a send.
 const KEEP_IDLE_MS = 5 * 60_000;
 let warm: { id: string; epoch: number; runner: Runner } | undefined;
@@ -215,34 +215,19 @@ function keepWarm(id: string, deps: SendDeps, name?: string) {
 // `roomNames` lists every room of the database with its type and member count (kind, members); the send is checked against them.
 type RoomNames = () => Promise<RoomFact[]>;
 
-// The last plain line kmsg wrote on stderr, as a short reason (no message text, no room name).
-const kmsgWhy = (stderr: string) => {
-	const line = stderr.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("[trace")).at(-1);
-	return line ? ` (${line.slice(0, 80)})` : "";
+const INPUT_WHY: Record<string, string> = {
+	busy: "카카오톡 입력창에 보내지 않은 글이 있어서 보내지 않았어요",
+	no_window: "열린 대화창을 찾지 못해서 보내지 않았어요",
 };
-
-// The list row a room was checked to be (room.ts), by database room id: the next send of the room goes straight to that row, which
-// saves the chat list scan and the check window (seen 2026-10: 4-60 s together). It is used only while the room keeps its name and no
-// other database room has that name; kmsg names a row by a hash of its title, so an unknown id is refused by kmsg and the room is checked again.
-type Picked = Record<string, { id: string; name: string }>;
-const pickedFile = (paths: KakaoPaths) => join(paths.dataDir, "kakao", "picked.json");
-function readPicked(paths: KakaoPaths): Picked {
-	try {
-		const v = JSON.parse(readFileSync(pickedFile(paths), "utf8"));
-		return v && typeof v === "object" && !Array.isArray(v) ? v : {};
-	} catch {
-		return {};
-	}
-}
-const savePicked = (paths: KakaoPaths, v: Picked) => writePrivate(pickedFile(paths), `${JSON.stringify(v, null, 1)}\n`);
 
 const sendTextNow = async (input: { chatId: string; roomName: string; text: string }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => {
 	if (input.roomName.trim() === "(unknown)") return refuse("이름을 알 수 없는 대화방이라 화면 자동화로 찾을 수 없어요");
 	const t0 = performance.now();
-	// The frontmost lookup runs beside the room list and the send; it is waited for only where its answer is needed.
+	// The frontmost lookup runs beside the room open and the send; it is waited for only where its answer is needed.
 	const frontP = frontState(deps.runner);
-	const ms: SendMs = { front: 0, pick: 0, send: 0, refocus: 0, total: 0 };
-	const fin = (r: SendResult): SendResult => ({ ...r, ms: { ...ms, total: Math.round(performance.now() - t0) } });
+	const ms: SendMs = { front: 0, pick: 0, send: 0, total: 0 };
+	let ax: AxStep[] = [];
+	const fin = (r: SendResult): SendResult => ({ ...r, ms: { ...ms, total: Math.round(performance.now() - t0) }, ax });
 	let all: RoomFact[] = [];
 	if (deps.roomNames) {
 		try {
@@ -251,97 +236,44 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 			return fin(refuse("대화방 목록을 확인하지 못해서 보내지 않았어요"));
 		}
 	}
-	const kmsg = deps.kmsg ?? Bun.which("kmsg") ?? "/opt/homebrew/bin/kmsg";
-	let keep = false;
-	const timed = async (phase: "pick" | "send" | "refocus", job: () => Promise<RunResult>) => {
-		const t = performance.now();
-		try {
-			return await job();
-		} finally {
-			ms[phase] += Math.round(performance.now() - t);
-		}
-	};
-	// kmsg prints "Message sent" once Enter went through; a later failure (closing the window) is still a sent message. Without that
-	// line nothing was sent, so one retry with deep window recovery is safe (a cold first window often fails).
-	const wentOut = (r: { code: number; stdout: string }) => r.code === 0 || /Message sent/i.test(r.stdout);
-	// The window is kept open only for a room kept before (still within the idle time) or when the owner has KakaoTalk showing already.
-	const sendBy = async (id: string, deep = false) => {
-		keep = warm?.id === id || (await frontP).kakaoShown;
-		return timed("send", () => deps.runner([kmsg, "send", "--chat-id", id, ...(keep ? ["--keep-window"] : []), ...(deep ? ["--deep-recovery"] : []), "--", input.text], { timeoutMs: 90_000 }));
-	};
-	const back = async () => {
-		const f = await frontP;
-		ms.front = f.ms;
-		if (f.id && f.id !== KAKAO_BUNDLE) await timed("refocus", () => deps.runner(["open", "-b", f.id!], { timeoutMs: 5_000 }).catch(() => ({ code: 1, stdout: "", stderr: "" })));
-	};
-	const shared = all.some(r => r.chatId !== input.chatId && r.name === input.roomName);
 	const known = all.find(r => r.chatId === input.chatId);
-	// Background path (room.ts openListRow, axSend): the room's one list row opened by Accessibility actions, its window checked against the
-	// database room, the text put into its input and the 전송 button pressed, all by Accessibility: KakaoTalk never comes to the front, no key
-	// event is sent and the owner's app keeps the focus, so there is no refocus either. Only for a name no other database room has. An
-	// outcome where nothing was pressed goes on to the checked kmsg path below; a press without a confirmed send stops (never sent twice).
-	if (!shared) {
-		const t = performance.now();
-		const axKey = `ax:${input.chatId}`;
-		const opened = await openListRow(input.roomName, deps.runner);
-		const w = opened === "ok" ? await readWindow(deps.runner, false, input.roomName) : undefined;
-		ms.pick = Math.round(performance.now() - t);
-		if (w && windowMatches(w, { ...known, chatId: input.chatId, name: input.roomName }, false)) {
-			const s = performance.now();
-			const r = await axSend(input.roomName, input.text, deps.runner);
-			ms.send = Math.round(performance.now() - s);
-			ms.front = (await frontP).ms;
-			if (r.ok || r.pressed) {
-				keep = warm?.id === axKey || (await frontP).kakaoShown;
-				if (keep) {
-					keepWarm(axKey, deps, input.roomName);
-					ms.keep = true;
-				} else {
-					if (warm?.id === axKey) forgetWarm();
-					await closeWindow(deps.runner, input.roomName);
-				}
-				return fin(r.ok ? { ok: true } : refuse("카카오톡 전송 버튼은 눌렀지만 보내졌는지 확인하지 못했어요. 다시 보내지 않았으니 카카오톡에서 확인해 주세요"));
-			}
-		}
-		if (opened === "ok") {
-			await closeWindow(deps.runner, input.roomName);
+	const axKey = `ax:${input.chatId}`;
+	// The room's one list row opened by Accessibility actions (room.ts openRoom: at most one context menu, 5 s cap), its window checked
+	// against the database room (title and member count), the text put into its input and the 전송 button pressed, all by Accessibility:
+	// KakaoTalk never comes to the front, no key event is sent and the owner's app keeps the focus. There is no other path: a failure at any
+	// step is a failed send with its reason, never a scan of the list by another tool.
+	const p = performance.now();
+	const opened = await openRoom({ ...known, chatId: input.chatId, name: input.roomName }, all, deps.runner);
+	ms.pick = Math.round(performance.now() - p);
+	ax = opened.steps;
+	if (!opened.ok) {
+		if (warm?.id === axKey) forgetWarm();
+		ms.front = (await frontP).ms;
+		return fin(refuse(opened.reason));
+	}
+	const s = performance.now();
+	const r = await axSend(input.roomName, input.text, deps.runner);
+	ms.send = Math.round(performance.now() - s);
+	ax = [...ax, { step: "input", ms: ms.send, ok: r.ok, ...(r.ok ? {} : { why: r.why ?? "failed" }) }];
+	const front = await frontP;
+	ms.front = front.ms;
+	if (r.ok || r.pressed) {
+		const keep = warm?.id === axKey || front.kakaoShown;
+		if (keep) {
+			keepWarm(axKey, deps, input.roomName);
+			ms.keep = true;
+		} else {
 			if (warm?.id === axKey) forgetWarm();
+			await closeWindow(deps.runner, input.roomName);
 		}
+		return fin(r.ok ? { ok: true } : refuse("카카오톡 전송 버튼은 눌렀지만 보내졌는지 확인하지 못했어요. 다시 보내지 않았으니 카카오톡에서 확인해 주세요"));
 	}
-	const memo = readPicked(deps.paths);
-	const kept = memo[input.chatId];
-	let id = !shared && kept?.name === input.roomName ? kept.id : undefined;
-	let sent = id ? await sendBy(id) : undefined;
-	if (id && sent && !wentOut(sent) && /Unknown chat_id/i.test(sent.stdout + sent.stderr)) id = undefined;
-	if (!id) {
-		// The room is a list row opened by id and checked against the database room (room.ts); a name search never picks it.
-		// The check opens and closes windows itself, so a kept window is gone.
-		forgetWarm();
-		const t = performance.now();
-		const picked = await pickRoom({ ...known, chatId: input.chatId, name: input.roomName }, all, { kmsg, runner: deps.runner });
-		ms.pick += Math.round(performance.now() - t);
-		if (!picked.ok) {
-			if (kept) {
-				delete memo[input.chatId];
-				savePicked(deps.paths, memo);
-			}
-			await back();
-			return fin(refuse(picked.reason));
-		}
-		id = picked.id;
-		if (!shared) savePicked(deps.paths, { ...memo, [input.chatId]: { id, name: input.roomName } });
-		sent = await sendBy(id);
-	}
-	if (!wentOut(sent!)) sent = await sendBy(id, true);
-	if (keep && wentOut(sent!)) keepWarm(id, deps);
-	else if (warm?.id === id) forgetWarm();
-	await back();
-	if (keep) ms.keep = true;
-	if (!wentOut(sent!)) return fin(refuse(`카카오톡에서 보내지 못했어요${kmsgWhy(sent!.stderr)}`));
-	return fin({ ok: true });
+	await closeWindow(deps.runner, input.roomName);
+	if (warm?.id === axKey) forgetWarm();
+	return fin(refuse(INPUT_WHY[r.why ?? ""] ?? `카카오톡 입력창에 글을 넣지 못했어요 (${r.why ?? "failed"})`));
 };
 
-// The kmsg path shared by every send: the exact list row is picked and its window verified (room.ts), the real send by that row's id, then the owner's previous app is back in front.
+// The one path of every send: the exact list row is opened and its window verified (room.ts), then the text goes in by Accessibility.
 export const sendText = (input: { chatId: string; roomName: string; text: string }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => oneAtATime(() => sendTextNow(input, deps));
 
 // A pending draft whose room got a newer incoming message can no longer be sent.
