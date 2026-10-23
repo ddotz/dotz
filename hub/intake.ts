@@ -1,5 +1,5 @@
 // Inbound path of the hub: inbox text, burst coalescing (intake/flush), web sends and the queued-message sweep. Split out of main.ts.
-import { cfg, COALESCE_MAX_MS, DEFAULTS, log, now } from "./config.ts";
+import { cfg, COALESCE_MAX_MS, DATA_DIR, DEFAULTS, log, now } from "./config.ts";
 import { limitsCard, looksLikeCommand, parseCommand, runCommand } from "./control.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
@@ -11,6 +11,7 @@ import { accountView, readPool } from "./account-sticky.ts";
 import { readAliases } from "./account-alias.ts";
 import { accountAnswer, accountAsk } from "./accounts-api.ts";
 import { abort as abortOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
+import { legacyAnswer } from "./migrations.ts";
 import { errorAnswer } from "./orch-error.ts";
 import { drain, restore } from "./queue.ts";
 import { anthropicUsage } from "./providers.ts";
@@ -124,6 +125,8 @@ export function flush(target: string): void {
 	const head = b.events[0];
 	const errAnswer = orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
 	if (errAnswer) return void answerOrchError(target, errAnswer, b.replyTo);
+	const legacy = b.events.length === 1 ? legacyAnswer(DATA_DIR, String(head.text ?? "")) : undefined;
+	if (legacy) return void out(target, legacy, b.replyTo, { source: "gateway" }).catch(e => log(`legacy import reply failed: ${e}`));
 	if (b.events.length === 1 && LIMITS_ASK.test(String(head.text)) && !head.attachments?.length) return void limitsAnswer(target, b.replyTo);
 	const ask = b.events.length === 1 && !head.attachments?.length ? accountAsk(String(head.text ?? ""), readPool()?.names ?? [], readAliases()) : undefined;
 	if (ask) return void accountChatAnswer(target, ask, b.replyTo);

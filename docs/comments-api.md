@@ -36,6 +36,7 @@ Events (ids only): `comment`, `comment_draft`, `comment_send`, `comment_sources`
 
 Turn it on with one request; the agent runs
 `bun features/comments/bin/onboard.ts on --app site --name <short-name> --read-kind rss|json|script --read <url|command> --post-kind webhook|script --post <url|command> [--secret <file>] [--owner <name>]`.
+After an update the gateway makes the app instance of every site already configured here by itself (`hub/migrations.ts`, once per install); the command above stays for turning on a new site.
 The same settings can be written by hand into the source's `site` object in `~/.dotz/custom/comments/config.json`.
 
 Reading (`site.read`):
