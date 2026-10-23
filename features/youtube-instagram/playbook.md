@@ -24,7 +24,8 @@
 
 ## 감시가 깨울 때
 출력 한 줄이 항목 하나예요. 말투는 `~/.dotz/custom/sns/tone.md`를 따르고, 비어 있으면 `sns.ts tone-sample`을 한 번 실행해요.
-- `yt-comment <id> video=.. by=..: 글`, `ig-comment <id> media=.. by=..: 글`: 오너 말투로 답글 초안을 쓰고 `sns.ts job new`로 등록해요. 광고나 욕설은 건너뛰고 이유만 알려요. `reply-drafts` 기능이 켜져 있으면 초안 글은 같은 엔진으로 받아요: 댓글을 stdin으로 넣어 `bun <dotz 체크아웃>/features/reply-drafts/bin/draft.ts new --mail <댓글 id> --kind comment --from <작성자>`를 실행하면 답글 글만 찍혀요. 그 글로 `job new`를 하고 승인은 그대로 `sns.ts`가 맡아요.
+- `[ask] ...`로 시작하는 줄(댓글 답글 초안): `reply-drafts`에서 그 앱(유튜브 또는 인스타)을 켜 둔 상태예요. 감시 스크립트가 이미 초안을 만들고 `sns.ts` 답글 job까지 등록했으니, 이 줄은 고치지 말고 **그대로** 이 채널에 올려요. 직접 초안을 쓰지 않아요.
+- `yt-comment <id> video=.. by=..: 글`, `ig-comment <id> media=.. by=..: 글`: 그 앱을 켜지 않았거나 초안을 못 만든 댓글이에요. 오너 말투로 답글 초안을 쓰고 `sns.ts job new`로 등록해요. 광고나 욕설은 건너뛰고 이유만 알려요. 사용자가 "인스타 댓글 답글 켜 줘"처럼 부탁하면 `bun <dotz 체크아웃>/features/reply-drafts/bin/onboard.ts on --app instagram`(유튜브는 `--app youtube`)을 실행해요. 연결이 안 되어 있으면 종료 코드 3과 함께 연결 명령이 찍히니 그 순서대로 해요. 끄려면 `onboard.ts off --app <앱>`이에요.
 - `new-video <경로> <초>s <WxH> <vertical|landscape> <ok|too-long|not-vertical>`: `ok`면 기본 언어(번역을 켰다면 설정된 언어도)로 제목, 설명, 태그와 인스타 캡션 초안을 쓰고 올리기 job을 만들어요. `too-long`, `not-vertical`은 오너에게 먼저 알려요.
 - `needs-translation <videoId> missing=<언어>: 제목`: 빠진 언어의 제목과 설명을 번역해 메타데이터 job을 만들어요. 원래 설명은 건드리지 않고 언어별 구간만 덧붙여요.
 - `posted <jobId> ...`, `failed <jobId> <이유>`, `aside-needed ...`: 프로젝트 채널에 알려요. `aside-needed`는 `aside exec`로 직접 올려요.
@@ -35,6 +36,8 @@
 ## 승인 규칙 (예외 없음)
 - 오너가 OK하기 전에는 아무것도 공개하지 않아요. 자동 게시 모드는 없어요.
 - 초안은 MODE.md의 발송 승인 블록(`hub/draft-approval.ts`, `<id>`=jobId, 대상 줄은 `> 대상:`)으로 물어요: `1) 보내기` ← 추천, `2) 고치기`, `3) 보내지 않기`. 웹에서는 알림 종 → 아래 시트에 초안이 보여요. 묶어서(batch) 설정이면 블록 하나에 초안을 모두 담고 1번이 전부 승인이에요.
-- `결정 답: ... → 1) 보내기`가 오면 `sns.ts approve <jobId>`를 실행해요. 다음 올리는 시각에 예약되고, 오너가 지금 올리라고 했을 때만 `--at now`를 붙여요. `2) 고치기 - ...`는 고친 뒤 다시 물어요. `3) 보내지 않기`는 `sns.ts reject <jobId>`예요.
+- `결정 답: ... → 1) 보내기`가 오면 `sns.ts approve <jobId>`를 실행해요. 다음 올리는 시각에 예약되고, 오너가 지금 올리라고 했을 때만 `--at now`를 붙여요. 답글 job은 사용자가 그 job에 `1) 보내기`를 고른 기록이 없으면 `approve`가 거부해요. 거부 이유를 그대로 알리고 다시 시도하지 않아요.
+- `2) 고치기 - ...`: 답글이면 `sns.ts revise <jobId> --change "<내용>"`을 실행해요. 고친 내용은 그 앱의 말투 프로필에 기록되고, 옛 job은 취소되고, 새 `[ask]`가 찍히니 그대로 올려요. 그 밖의 job은 고친 뒤 다시 물어요.
+- `3) 보내지 않기`는 `sns.ts reject <jobId>`예요.
 - 기존 영상의 제목과 설명은 처음 바꾸기 전에 백업돼요. 되돌리기(`sns.ts restore <videoId>`)는 오너가 되돌려 달라고 했을 때만 해요.
 - 업로드가 중간에 끊겨도 다시 올리기 전에 이미 올라간 영상을 찾아서, 같은 영상이 두 번 올라가지 않아요.

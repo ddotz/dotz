@@ -24,7 +24,9 @@ to be 보내기. Without a pick, with a pick for another id, after 고치기 or 
 
 ## Files (`<DATA_DIR>/custom/reply-drafts/`)
 
-- `config.json` `{enabled, auto, senders: {only, skip}, model?}`; a missing file means off.
+- `config.json` `{enabled, auto, apps: {mail|youtube|instagram|...: {auto}}, senders: {only, skip}, model?}`; a missing file means off. `enabled` is the feature
+  switch, `apps.<app>.auto` is the switch of one source (every source off until turned on; `onboard.ts on|off --app <app>`). An old config without
+  `apps.mail` drives mail by the top-level `auto`; `setApp` writes mail's state down before another source is switched on.
 - `tone/` the tone store, one markdown file per profile, each with the sections `## 말투`, `## 예시`, `## 고친 점`, `## 금지` (bullets):
   - `tone/install.md` the whole install (fallback of everything);
   - `tone/<app>.md` one app: `mail`, `youtube`, `instagram`, `blog`, `kakao`, ... (app id `[a-z0-9-]`; `install` is reserved);
@@ -57,3 +59,25 @@ to be 보내기. Without a pick, with a pick for another id, after 고치기 or 
   reply is reported as a stale draft to redraft. Or a webmail-no-api site's draft/approve/send; anything else is refused ("직접 보내야 해요").
   `readMailBody(source, id, run)` gives the gateway offer the mail text (zele read, or the site's `mail.ts <site> read <id>`).
 - The model call is injected; the default is `hub/outlang.ts callModel` (subscription only, never an API key).
+
+## Sources
+
+| Source | State | Adapter |
+|---|---|---|
+| mail (zele, webmail-no-api) | done | gateway hook `lib/offer.ts` |
+| youtube comments | done | `features/youtube-instagram/lib/reply-adapter.ts` |
+| instagram comments | done | the same file (one implementation for both platforms) |
+| website / blog comments | next | a generic adapter for a site's comment section through a browser login, like webmail-no-api |
+
+A comment source plugs into `lib/comments.ts` with a `CommentAdapter` and its watch prints one line per new comment:
+`{app, label, parse(line) -> {id, author, text, context}, stage(comment, reply) -> pendingId, discard(pendingId)}`.
+`draftComments(adapter, lines)` does the rest: source off -> every line passes through unchanged; on -> drafts once per comment id
+(`drafts.json` keys), a skip makes no ask, a failure or the time budget (90 s) leaves the raw line for the orchestrator. `stage` only
+creates a pending reply (YouTube/Instagram: an `sns.ts` reply job), never posts; the source's own approve command refuses without the user's
+`1) 보내기` pick for exactly that pending id (`draftVerdict`). `reviseComment` is the 고치기 path: change recorded in the app's tone profile, new
+pending reply and ask, old one discarded. The ask is `[ask]` + a quoted `> 원댓글 <작성자>: <글>` + `draftApprovalBlock` (label `대상`, ref = pending id);
+the source's label (유튜브, 인스타) is in it, which is how 모니터링 files it under its app.
+What a website adapter still needs: a watch that lists new comments of one site (browser login, session kept like webmail-no-api, quiet hours
+and baseline state like `watchkit`), `parse`, a `stage` that keeps the reply as a pending item, a posting script that runs only after approval,
+`onboard.ts on --app <site>` with its own connection check and tone learning from the owner's past replies on that site, and an
+`integrations.ts` entry whose text patterns match its asks.
