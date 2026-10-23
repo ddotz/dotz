@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { draftApprovalBlock } from "../draft-approval.ts";
 import { writePrivate } from "./creds.ts";
-import { type AxStep, axSend, closeWindow, openRoom, type RoomFact } from "./room.ts";
+import { type AxStep, axSend, closeWindow, type Focus, openRoom, type RoomFact } from "./room.ts";
 import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
@@ -17,7 +17,8 @@ export type SendDeps = { paths: KakaoPaths; runner: Runner; now?: () => number; 
 // ms: wall time of each phase of one send; ax: every Accessibility step of it (room.ts AxStep) with its time and, where it failed, the exact
 // failing step. Both are kept on the send record (sends.json), so a slow or failed send can be read from data.
 export type SendMs = { front: number; pick: number; send: number; total: number; keep?: true };
-export type SendResult = { ok: boolean; reason?: string; ms?: SendMs; ax?: AxStep[] };
+// focus: kept on the send record only when the send had to open the KakaoTalk list window (room.ts Focus).
+export type SendResult = { ok: boolean; reason?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus };
 
 const MAX_TEXT = 1000;
 const MAX_DRAFTS = 200;
@@ -227,7 +228,8 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	const frontP = frontState(deps.runner);
 	const ms: SendMs = { front: 0, pick: 0, send: 0, total: 0 };
 	let ax: AxStep[] = [];
-	const fin = (r: SendResult): SendResult => ({ ...r, ms: { ...ms, total: Math.round(performance.now() - t0) }, ax });
+	let focus: Focus | undefined;
+	const fin = (r: SendResult): SendResult => ({ ...r, ms: { ...ms, total: Math.round(performance.now() - t0) }, ax, ...(focus ? { focus } : {}) });
 	let all: RoomFact[] = [];
 	if (deps.roomNames) {
 		try {
@@ -240,12 +242,14 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	const axKey = `ax:${input.chatId}`;
 	// The room's one list row opened by Accessibility actions (room.ts openRoom: at most one context menu, 5 s cap), its window checked
 	// against the database room (title and member count), the text put into its input and the 전송 button pressed, all by Accessibility:
-	// KakaoTalk never comes to the front, no key event is sent and the owner's app keeps the focus. There is no other path: a failure at any
+	// KakaoTalk does not come to the front, no key event is sent and the owner's app keeps the focus. Only when KakaoTalk has no list window
+// is it opened through its menu, which raises KakaoTalk for a moment: the app in front before is put back then (Focus). There is no other path: a failure at any
 	// step is a failed send with its reason, never a scan of the list by another tool.
 	const p = performance.now();
 	const opened = await openRoom({ ...known, chatId: input.chatId, name: input.roomName }, all, deps.runner);
 	ms.pick = Math.round(performance.now() - p);
 	ax = opened.steps;
+	focus = opened.focus;
 	if (!opened.ok) {
 		if (warm?.id === axKey) forgetWarm();
 		ms.front = (await frontP).ms;

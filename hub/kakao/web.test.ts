@@ -256,6 +256,29 @@ describe("typed send", () => {
 		t.close();
 	});
 
+	test("KakaoTalk with no window: the send ends failed with the Korean reason and its steps, never left sending", async () => {
+		const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { listShown: false });
+		const t = setup({}, undefined, { runner: screen.runner });
+		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
+		await t.web.idle();
+		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_send", id: r.json.id, state: "failed", reason: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요" });
+		const stored = JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"));
+		expect(stored[0]).toMatchObject({ id: r.json.id, state: "failed", reason: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요" });
+		expect(stored[0].ax.map((s: { step: string }) => s.step)).toEqual(["rows", "openlist"]);
+		expect(screen.sends).toHaveLength(0);
+		t.close();
+	});
+
+	test("a list opened for the send keeps its focus change on the send record", async () => {
+		const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { listShown: false, openlist: "ok", front: "com.example.Editor" });
+		const t = setup({}, undefined, { runner: screen.runner });
+		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
+		await t.web.idle();
+		const stored = JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"));
+		expect(stored[0]).toMatchObject({ id: r.json.id, state: "sent", focus: { from: "com.example.Editor", took: true, restored: true } });
+		t.close();
+	});
+
 	test("deleting a failed send removes it from the room and the store, announces it once, and never retries it", async () => {
 		const t = setup();
 		t.state.failSend = true;

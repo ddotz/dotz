@@ -10,7 +10,7 @@ import { writePrivate } from "./creds.ts";
 import { hasWords, type KakaoDb, memberLabel, messageById, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
 import { fetchMedia, mediaOf, mediaTarget, serveLocalFile, showsText } from "./media.ts";
-import type { AxStep } from "./room.ts";
+import type { AxStep, Focus } from "./room.ts";
 import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 
@@ -41,7 +41,7 @@ export type WebDeps = {
 	fetch?: typeof fetch;
 };
 
-export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string; ms?: SendMs; ax?: AxStep[] };
+export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus };
 
 const ROOMS_TTL_MS = 30_000;
 const MAX_TEXT = 1000;
@@ -181,7 +181,7 @@ export function createKakaoWeb(deps: WebDeps) {
 			inflight.delete(rec.id);
 			const state = r.ok ? "sent" : "failed";
 			const reason = r.ok ? undefined : (r.reason ?? "보내지 못했어요");
-			saveSends(storedSends().map(s => (s.id === rec.id ? { ...s, state, ...(reason ? { reason } : {}), ...(r.ms ? { ms: r.ms } : {}), ...(r.ax ? { ax: r.ax } : {}) } : s)));
+			saveSends(storedSends().map(s => (s.id === rec.id ? { ...s, state, ...(reason ? { reason } : {}), ...(r.ms ? { ms: r.ms } : {}), ...(r.ax ? { ax: r.ax } : {}), ...(r.focus ? { focus: r.focus } : {}) } : s)));
 			deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state, ...(reason ? { reason } : {}) });
 			if (rec.draft) deps.broadcast({ kind: "kakao_draft", chatId: rec.chatId });
 		})();

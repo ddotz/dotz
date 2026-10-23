@@ -137,7 +137,11 @@ test("at most one context menu per send, and a failing open is not retried: the 
 test("there is no other path: no kmsg, no open or activate of KakaoTalk, also when the list window is not shown", async () => {
 	const { r, screen } = await send([familyRow], family, [family], { listShown: false });
 	expect(r).toMatchObject({ ok: false, reason: REFUSE.noList });
-	expect(r.ax).toEqual([{ step: "rows", ms: expect.any(Number), ok: false, why: "no_list" }]);
+	expect(r.ax).toEqual([
+		{ step: "rows", ms: expect.any(Number), ok: false, why: "no_list" },
+		{ step: "openlist", ms: expect.any(Number), ok: false, why: "no_item" },
+	]);
+	expect(r.focus).toBeUndefined();
 	expect(screen.other).toEqual([]);
 	expect(screen.focus.filter(a => a[0] === "open")).toEqual([]);
 	expect(screen.menus()).toBe(0);
@@ -145,6 +149,32 @@ test("there is no other path: no kmsg, no open or activate of KakaoTalk, also wh
 	expect(good.r).toMatchObject({ ok: true });
 	expect(good.screen.other).toEqual([]);
 	expect(good.screen.focus.filter(a => a[0] === "open")).toEqual([]);
+});
+
+test("no KakaoTalk window: the list is opened once by its menu, the previous front app is put back, and the focus change is on the result", async () => {
+	const { r, screen } = await send([familyRow], family, [family], { listShown: false, openlist: "ok", front: "com.example.Editor" });
+	expect(r).toMatchObject({ ok: true, focus: { from: "com.example.Editor", took: true, restored: true } });
+	expect(r.ax!.map(s => s.step)).toEqual(["rows", "openlist", "rows", "open", "verify", "input"]);
+	expect(r.ax![0]).toMatchObject({ step: "rows", ok: false, why: "no_list" });
+	expect(r.ax![1]).toMatchObject({ step: "openlist", ok: true, why: "press=2,window=3,restore=1" });
+	expect(screen.order.filter(o => o === "openlist" || o === "ax-open")).toEqual(["openlist", "ax-open"]);
+	expect(screen.listCalls).toHaveLength(1);
+	expect(screen.menus()).toBe(1);
+	expect(screen.sends).toEqual([["ax-send", "가족방", "안녕"]]);
+	expect(screen.other).toEqual([]);
+	expect(screen.focus.filter(a => a[0] === "open")).toEqual([]);
+	// A list that is shown never opens the menu and leaves no focus record.
+	const shown = await send([familyRow], family, [family], { openlist: "ok" });
+	expect(shown.r.focus).toBeUndefined();
+	expect(shown.screen.listCalls).toHaveLength(0);
+});
+
+test("no KakaoTalk window and the list does not show after the menu: the send is refused with the Korean reason and nothing is typed", async () => {
+	const { r, screen } = await send([familyRow], family, [family], { listShown: false });
+	expect(r.ok).toBe(false);
+	expect(r.reason).toBe("카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요");
+	expect(screen.sends).toHaveLength(0);
+	expect(screen.menus()).toBe(0);
 });
 
 test("every AX phase is on the result with its time: rows read, row open, verify, input; the open phase is capped at 5 s", async () => {
