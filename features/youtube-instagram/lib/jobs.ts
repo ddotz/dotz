@@ -5,7 +5,8 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { type Config, type Ctx, type Lang, loadConfig, paths, readJson, writeJson } from "./config.ts";
+import { featureEnabled } from "../../../hub/app-feature-flags.ts";
+import { type Config, type Ctx, dataDir, type Lang, loadConfig, paths, readJson, writeJson } from "./config.ts";
 import { type Platform, zonedParts, zonedToDate } from "./watchkit.ts";
 import type { YtLoc } from "./youtube.ts";
 
@@ -37,6 +38,13 @@ export type NewJobInput = { kind: JobKind; targets?: Platform[]; upload?: Partia
 
 const ID = /^j-\d{12}-[0-9a-f]{4}$/;
 const PLATFORMS: Platform[] = ["youtube", "instagram"];
+// The app feature (hub/app-feature-flags.ts) that lets a job of this kind reach this platform: 릴스(쇼츠) 올리기 승인, 쇼츠·영상 올리기 승인, 메타데이터.
+// A reply job is not here: comment replies follow the reply-drafts switch (features/reply-drafts).
+const JOB_FEATURE = { upload: { youtube: ["youtube", "upload_approval"], instagram: ["instagram", "reels_approval"] }, metadata: { youtube: ["youtube", "metadata"] } } as const;
+export function jobFeatureOn(kind: JobKind, platform: Platform): boolean {
+	const f = (JOB_FEATURE as Record<string, Partial<Record<Platform, readonly [string, string]>>>)[kind]?.[platform];
+	return !f || featureEnabled(dataDir(), f[0], f[1]);
+}
 export const PUBLISHABLE: JobStatus[] = ["approved", "scheduled"];
 export const OPEN: JobStatus[] = ["draft", "approved", "scheduled", "posting"];
 const STALE_POSTING_MS = 30 * 60_000;
@@ -91,8 +99,9 @@ export function newJob(ctx: Ctx, input: NewJobInput): Job {
 		const u = input.upload;
 		if (!u || !str(u.file) || !u.file?.startsWith("/")) throw new Error("upload.file must be an absolute path");
 		if (!str(u.title)) throw new Error("upload.title is required");
-		job.targets = input.targets?.length ? input.targets : connected;
+		job.targets = input.targets?.length ? input.targets : connected.filter(t => jobFeatureOn("upload", t));
 		if (!job.targets.every(t => connected.includes(t))) throw new Error("a target platform is not connected");
+		if (!job.targets.length || !job.targets.every(t => jobFeatureOn("upload", t))) throw new Error("올리기 승인이 꺼져 있어요. 앱 설정에서 켜 주세요");
 		job.upload = { file: u.file, title: u.title as string, description: u.description ?? "", tags: u.tags ?? [], localizations: u.localizations ?? {}, privacy: u.privacy ?? cfg.youtube?.privacy ?? "private", ig_caption: u.ig_caption };
 	} else if (input.kind === "reply") {
 		const r = input.reply;
@@ -104,6 +113,7 @@ export function newJob(ctx: Ctx, input: NewJobInput): Job {
 		const m = input.metadata;
 		if (!m || !str(m.video_id)) throw new Error("metadata.video_id is required");
 		if (!cfg.youtube) throw new Error("a target platform is not connected");
+		if (!jobFeatureOn("metadata", "youtube")) throw new Error("메타데이터가 꺼져 있어요. 앱 설정에서 켜 주세요");
 		job.targets = ["youtube"];
 		job.metadata = { video_id: m.video_id as string, append: m.append ?? {}, localizations: m.localizations ?? {} };
 	} else {

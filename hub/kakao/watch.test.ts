@@ -43,8 +43,8 @@ function setup(over: Partial<KakaoConfig> = {}) {
 		},
 		touch: () => writeFileSync(sigFile, `${readFileSync(sigFile, "utf8")}x`),
 		add: (n: number, chat: number, author: number, type = 1, sentAt = BASE_TIME + n * 10) => addMessage(w, { logId: BASE_LOG + BigInt(n), chatId: chat, authorId: author, message: BODY, type, sentAt }),
-		run: (opts: { config?: KakaoConfig | undefined } = {}) =>
-			runWatch({ db, config: "config" in opts ? opts.config : config, stateDir, now: () => clock, dbFiles: [sigFile] }),
+		run: (opts: { config?: KakaoConfig | undefined; replyDraftOff?: boolean } = {}) =>
+			runWatch({ db, config: "config" in opts ? opts.config : config, stateDir, now: () => clock, dbFiles: [sigFile], ...(opts.replyDraftOff ? { replyDraftOff: true } : {}) }),
 		state: (name: string) => readFileSync(join(stateDir, name), "utf8"),
 	};
 }
@@ -277,5 +277,18 @@ describe("watch_chats: only the rooms the owner chose", () => {
 		t.touch();
 		expect(await t.run()).toEqual({ lines: [], code: 0 });
 		expect(t.queries).toBe(baseline);
+	});
+});
+
+describe("답장 초안 switch (hub/app-feature-flags.ts)", () => {
+	test("off: no room wakes the bot and the database is not read; on again, the new messages are noticed", async () => {
+		const t = setup();
+		await t.run();
+		t.add(9, ROOM.direct, 2001);
+		t.touch();
+		const before = t.queries;
+		expect(await t.run({ replyDraftOff: true })).toEqual({ lines: [], code: 0 });
+		expect(t.queries).toBe(before);
+		expect((await t.run()).lines).toHaveLength(1);
 	});
 });

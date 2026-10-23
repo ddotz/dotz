@@ -18,7 +18,7 @@ export type AttachmentInput = { name: string; type?: string; data?: string; path
 export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; state?: "draft" | "sent" | "waiting"; at?: string };
 export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest };
 export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; attachments?: AttachmentInput[] };
-export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean };
+export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true };
 export type MailDeps = {
 	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
 	createThread: (parent: string, name: string, starter: string) => Promise<{ id: string }>;
@@ -29,6 +29,8 @@ export type MailDeps = {
 	discordOn: boolean;
 	/** Whether the app instance of this mail has 디스코드에도 올리기 on; missing = off (web conversation only, no mail channel made). */
 	threadOn?: (source: string, key: string) => boolean;
+	/** Whether the app instance of this mail has 새 메일 (hub/app-feature-flags.ts) on; off = the mail is not posted at all. Missing = on. */
+	newMailOn?: (source: string, key: string) => boolean;
 	emit: (event: Record<string, any>) => void;
 	/** One orchestrator turn for the mail event, its answer going to `target`. */
 	wake: (event: Record<string, any>, target: string) => void;
@@ -310,6 +312,7 @@ export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult
 	const m = parseMail(raw);
 	const key = mailKey(m.source, m.id);
 	const target = mailTarget(key);
+	if (deps.newMailOn && !deps.newMailOn(m.source, key)) return { ok: true, key, target, skipped: true };
 	const known = byKey.get(key);
 	if (known) return { ok: true, key, target, ...(known.thread ? { thread: known.thread } : {}), duplicate: true };
 	const running = inflight.get(key);

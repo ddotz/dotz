@@ -6,7 +6,8 @@ import { loadStyle, recordCorrection } from "../../features/reply-drafts/lib/set
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
 import { commentsFor, mediaWithCounts, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
 import { commentThreadsSince, ownReplies, recentUploads, replyToComment } from "../../features/youtube-instagram/lib/youtube.ts";
-import { appEntries, commentOwner } from "../integrations.ts";
+import { appBase, appEntries, commentOwner } from "../integrations.ts";
+import { featureEnabled } from "../app-feature-flags.ts";
 import { callReplyModel } from "../reply-model.ts";
 import { appOf, type DraftModel, createEngine, type Engine } from "./engine.ts";
 import { instagramAdapter, youtubeAdapter } from "./adapters/google-meta.ts";
@@ -40,6 +41,8 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		// custom/apps.json is read live: a site added as its own app instance owns its threads, its needs and its reply model setting.
 		owner: src => commentOwner(appEntries(dataDir), appOf(src), src.key),
 		broadcast: opts.broadcast,
+		// Only the website app (or an instance of it) has its own 댓글 답글 switch; YouTube and Instagram follow their 자동 초안 setting, which the reply-drafts flow reads (appOn).
+		featureOn: (app, id) => appBase(app) !== "site" || featureEnabled(dataDir, app, id),
 		style: src => loadStyle({ app: src.key }),
 		learn: (src, change) => recordCorrection({ app: src.key }, change, new Date()),
 		adapters: {

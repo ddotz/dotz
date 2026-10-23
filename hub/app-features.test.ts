@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { APP_FEATURES, featureEnabled, featuresOf, ownedWatches, retryInternal, setFeature, watchOwner } from "./app-features.ts";
+import { APP_FEATURES, featureEnabled, featuresOf, internalOf, ownedWatches, retryInternal, setFeature, watchOwner } from "./app-features.ts";
 import { watchOff } from "./app-off.ts";
 import { readSettings } from "./app-settings.ts";
 import { appEntries } from "./integrations.ts";
@@ -135,5 +135,42 @@ describe("a peer gets the same through /api/peer/proxy and /api/peer/act", () =>
 			{ method: "PATCH", path: "/api/integrations/instagram/features", body: { id: "reels_approval", on: false } },
 			{ method: "POST", path: "/api/integrations/instagram/retry", body: { watch: "ig-site-login" } },
 		]);
+	});
+});
+
+describe("owner-facing text has no internal key or id", () => {
+	const RAW = /[a-z]+-[0-9]|_|\b(?:sns|ig|yt|site|each|batch|comments|login)\b/;
+	const view = featuresOf(data, "instagram", W, [
+		{ id: "a1", title: "릴스 올리기 승인 (j-1)", text: "인스타 릴스", decision: { state: "open", to: "main", draft: { to: "x", subject: "", body: "주말 여행 릴스예요 #여행 길게 길게 길게 길게 길게 길게 길게 길게 길게 길게 길게 길게 길게 길게" }, options: [{ n: 1, label: "올리기" }, { n: 2, label: "고치기" }, { n: 3, label: "그만두기" }] } },
+		{ id: "a2", title: "릴스 올리기 승인 (j-2)", text: "인스타", decision: { state: "open", to: "main", draft: { to: "x", subject: "", body: "" } } },
+	]);
+	test("internal rows are named from the watch label or what the watch does, never its key", () => {
+		expect(view.internal.map(i => i.name)).toEqual(["동기화 · 댓글 가져오기", "로그인 유지 · 인스타그램 로그인"]);
+		const own = internalOf(watch("sns-ig-comments", { label: "댓글 확인" }), "인스타그램");
+		expect(own.name).toBe("동기화 · 댓글 확인");
+		expect(internalOf(watch("sns-ig-comments", { label: "ig site 로그인" } as Partial<Watch>), "인스타그램").name).toBe("동기화 · 댓글 가져오기");
+		expect(internalOf(watch("odd-thing"), "인스타그램").name).toBe("동기화 · 인스타그램 새 소식 확인");
+	});
+	test("an approval is titled by its item (caption start, no id) and carries the answers except 고치기", () => {
+		expect(view.approvals[0]!.title.startsWith("주말 여행 릴스예요")).toBe(true);
+		expect(view.approvals[0]!.title.length).toBeLessThanOrEqual(60);
+		expect(view.approvals[0]!.options).toEqual([{ n: 1, label: "올리기" }, { n: 3, label: "그만두기" }]);
+		expect(view.approvals[1]!.title).toBe("릴스 올리기 승인");
+	});
+	test("everything the rows say passes the raw-key check; the approval-mode setting reads 하나씩 승인", () => {
+		const said = [...view.features.flatMap(f => [f.name, f.status]), ...view.internal.flatMap(i => [i.name, i.status]), ...view.approvals.flatMap(a => [a.title, a.kind ?? "", ...a.options.map(o => o.label)])];
+		for (const s of said) expect(s).not.toMatch(RAW);
+		const f = readSettings(data, "instagram").find(s => s.key === "approval")!;
+		expect(f.labels).toEqual({ each: "하나씩 승인", batch: "모아서 승인" });
+		expect(f.help).not.toMatch(RAW);
+	});
+});
+
+describe("a peer approval is answered with the peer's own decision", () => {
+	test("/api/peer/act answer goes to that computer's notice answer route", async () => {
+		const seen: { method: string; path: string; body: unknown }[] = [];
+		const pm = createPeerMonitor({ name: () => "A", computers: async () => [], local: async req => (seen.push({ method: req.method, path: new URL(req.url).pathname, body: await req.json() }), Response.json({ ok: true })) });
+		await pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action: "answer", from: "B", args: { id: "a1", n: 3 } }) }), new URL("http://local/api/peer/act"));
+		expect(seen).toEqual([{ method: "POST", path: "/api/notices/a1/answer", body: { n: 3, via: "B" } }]);
 	});
 });

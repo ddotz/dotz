@@ -8,64 +8,13 @@
 //   GET   /api/integrations/<app>/features        -> {features, internal, approvals}
 //   PATCH /api/integrations/<app>/features        -> {id, on}: a feature bound to a setting writes that setting, else custom/apps.json <app>.features.<id>
 //   POST  /api/integrations/<app>/retry           -> {watch}: runs one owned watch now (다시 시도)
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readSettings, SettingsError, writeSettings } from "./app-settings.ts";
+import { APP_FEATURES, declOf, type FeatureDecl, featureOn, readApps } from "./app-feature-flags.ts";
 import { APPS_FILE, appBase, appEntries, belongsTo, type IntegrationEntry } from "./integrations.ts";
 import { watchFacts } from "./monitors.ts";
 import type { Watch } from "./watch.ts";
-import { watchLabel } from "./workchannels.ts";
-
-export type FeatureDecl = {
-	id: string;
-	name: string;
-	/** The one line under the name while it is on. */
-	hint: string;
-	/** False: not implemented (the API does not allow it, or the feature folder has no code for it). Declared, never listed. */
-	ready?: boolean;
-	/** The key of a setting of hub/app-settings.ts that is this feature's switch (the setting is the one source of truth). */
-	setting?: string;
-	/** Patterns on an approval's title and text: the approvals of this feature. "." takes every approval no other feature claims. */
-	approves?: string[];
-};
-export type AppDecl = { features: FeatureDecl[]; /** Hosts whose login this app keeps: a login keeper of such a site is the app's. */ sites?: string[] };
-
-export const APP_FEATURES: Record<string, AppDecl> = {
-	mail: {
-		features: [
-			{ id: "new_mail", name: "새 메일", hint: "새 메일이 오면 알려 줘요" },
-			{ id: "reply_draft", name: "답장 초안", hint: "답할 메일에 초안을 만들고 보내기 전에 물어요", setting: "auto_draft", approves: ["."] },
-		],
-		sites: ["mail.naver.com", "mail.google.com", "outlook.live.com", "outlook.office.com"],
-	},
-	kakao: {
-		features: [
-			{ id: "watch_rooms", name: "방 감시", hint: "정한 채팅방의 새 메시지를 지켜봐요", setting: "enabled" },
-			{ id: "reply_draft", name: "답장 초안", hint: "새 메시지에 초안을 만들고 보내기 전에 물어요", approves: ["."] },
-		],
-		sites: ["kakao.com"],
-	},
-	instagram: {
-		features: [
-			{ id: "comment_reply", name: "댓글 답글", hint: "댓글에 답글 초안을 만들고 달기 전에 물어요", setting: "auto_draft" },
-			{ id: "reels_approval", name: "릴스(쇼츠) 올리기 승인", hint: "릴스를 올리기 전에 오너 승인을 받아요", approves: ["."] },
-			{ id: "post_edit", name: "게시물 정보 수정", hint: "올린 게시물의 설명을 고쳐요", ready: false },
-			{ id: "dm", name: "DM 답장", hint: "다이렉트 메시지에 답해요", ready: false },
-		],
-		sites: ["instagram.com"],
-	},
-	youtube: {
-		features: [
-			{ id: "comment_reply", name: "댓글 답글", hint: "댓글에 답글 초안을 만들고 달기 전에 물어요", setting: "auto_draft" },
-			{ id: "metadata", name: "메타데이터", hint: "올린 영상의 제목과 설명을 언어별로 고치기 전에 물어요", approves: ["메타|metadata|번역|언어"] },
-			{ id: "upload_approval", name: "쇼츠·영상 올리기 승인", hint: "쇼츠와 영상을 올리기 전에 오너 승인을 받아요", approves: ["."] },
-		],
-		sites: ["youtube.com", "studio.youtube.com"],
-	},
-	site: {
-		features: [{ id: "comment_reply", name: "댓글 답글", hint: "웹사이트 댓글에 답글 초안을 만들고 달기 전에 물어요", approves: ["."] }],
-	},
-};
 
 const named = (list: readonly string[], watch: string): boolean => list.some(w => (w.endsWith("-") ? watch.startsWith(w) : watch === w));
 type WatchLike = { name: string; session?: { url: string } };
@@ -98,35 +47,49 @@ export function ownedWatches(dataDir: string, watches: readonly WatchLike[]): Ma
 	return out;
 }
 
+export { APP_FEATURES, type AppDecl, type FeatureDecl, featureEnabled } from "./app-feature-flags.ts";
+
 export type FeatureView = { id: string; name: string; status: string; on: boolean };
+export type ApprovalOption = { n: number; label: string };
 export type InternalView = { id: string; kind: "login" | "sync"; name: string; dot: "ok" | "fail" | "idle"; status: string; last_run?: string; reason?: string };
-export type ApprovalView = { id: string; title: string; feature?: string; state: string; at?: string };
+/** An approval row: `title` is the item (post title or the start of the caption), `kind` what is approved, `options` the answers the owner can give from the row (고치기 needs a text, so it stays in the sheet). */
+export type ApprovalView = { id: string; title: string; kind?: string; feature?: string; state: string; at?: string; options: ApprovalOption[] };
 export type FeaturesView = { app: string; features: FeatureView[]; internal: InternalView[]; approvals: ApprovalView[] };
-type NoticeLike = { id: string; title?: string; text?: string; src?: string; open?: string; ts?: string; updated?: string; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: unknown } };
+type NoticeLike = { id: string; title?: string; text?: string; src?: string; open?: string; ts?: string; updated?: string; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: { subject?: string; body?: string } | unknown; options?: { n: number; label: string }[] } };
 
 const KIND_KO = { login: "로그인 유지", sync: "동기화" } as const;
-
-function readApps(dataDir: string): Record<string, any> {
-	try {
-		const v = JSON.parse(readFileSync(join(dataDir, APPS_FILE), "utf8"));
-		return v && typeof v === "object" && !Array.isArray(v) ? v : {};
-	} catch {
-		return {};
-	}
+const HANGUL = /[가-힣]/;
+const oneLine = (s: unknown, max: number): string => {
+	const t = String(s ?? "").replace(/\s+/g, " ").trim();
+	return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+};
+// A name written for people has Hangul and no bare lowercase key word ("ig site 로그인" is a key in words, "카카오 로그인 유지" is a name).
+const readableName = (s: string): boolean => HANGUL.test(s) && !/(?:^|\s)[a-z][a-z0-9]*(?:\s|$)/.test(s);
+// What a sync does, from the words of its watch name; the owner never reads the key ("sns-ig-comments").
+const SYNC_NAMES: [RegExp, string][] = [[/comment/, "댓글 가져오기"], [/due|publish|job|upload/, "올릴 글 확인"], [/mail|inbox/, "새 메일 가져오기"], [/kakao|chat|msg/, "새 메시지 가져오기"]];
+/** The name of an owned watch for the owner: its own label when it is words, else derived from what it does (a login keeper: "<앱> 로그인"). */
+export function internalName(w: Pick<Watch, "name" | "label" | "session">, appLabel: string): string {
+	const own = (w.label ?? "").trim();
+	if (own && readableName(own)) return own;
+	if (w.session) return `${appLabel} 로그인`;
+	return SYNC_NAMES.find(([re]) => re.test(w.name))?.[1] ?? `${appLabel} 새 소식 확인`;
 }
-const declOf = (app: string): FeatureDecl[] => (APP_FEATURES[appBase(app)]?.features ?? []).filter(f => f.ready !== false);
-
-function featureOn(dataDir: string, app: string, f: FeatureDecl, settings: ReadonlyMap<string, unknown>): boolean {
-	if (f.setting) return settings.get(f.setting) === true;
-	return readApps(dataDir)[app]?.features?.[f.id] !== false;
+// The item an approval is about: the start of the post title or caption it carries, never the question's id ("(j-1)").
+const ID_TAIL = /\s*\(([A-Za-z0-9][\w.:-]*)\)\s*$/;
+const KEY_WORD = /\b[a-z]+-\d+\b/gi;
+function approvalTitle(n: NoticeLike): string {
+	const d = n.decision?.draft as { subject?: string; body?: string } | undefined;
+	const item = oneLine(d?.subject, 60) || oneLine(d?.body, 60);
+	if (item) return item;
+	return oneLine((n.title ?? "").replace(ID_TAIL, "").replace(KEY_WORD, ""), 60) || "승인 요청";
 }
 
 /** One internal row of a watch the app owns. The reason is the words the watch's own failure carries (hub/watchtext.ts), never the raw output. */
-export function internalOf(w: Watch): InternalView {
+export function internalOf(w: Watch, appLabel = "앱"): InternalView {
 	const f = watchFacts(w), kind = w.session ? "login" : "sync", last = w.state.lastRun;
 	const dot = f.fails ? "fail" : !last || w.paused || w.state.paused ? "idle" : "ok";
 	const status = dot === "fail" ? `${f.fails}번 연달아 실패했어요` : dot === "idle" ? (w.paused || w.state.paused ? "멈춰 있어요" : "아직 확인 전이에요") : "정상이에요";
-	return { id: w.name, kind, name: `${KIND_KO[kind]} · ${watchLabel(w.name)}`, dot, status, ...(last ? { last_run: last } : {}), ...(dot === "fail" ? { reason: f.last_output || "확인에 실패했어요" } : {}) };
+	return { id: w.name, kind, name: `${KIND_KO[kind]} · ${internalName(w, appLabel)}`, dot, status, ...(last ? { last_run: last } : {}), ...(dot === "fail" ? { reason: f.last_output || "확인에 실패했어요" } : {}) };
 }
 
 export function featuresOf(dataDir: string, app: string, watches: readonly Watch[], notices: readonly NoticeLike[]): FeaturesView {
@@ -141,12 +104,12 @@ export function featuresOf(dataDir: string, app: string, watches: readonly Watch
 		const hit = (f: FeatureDecl, any: boolean) => (f.approves ?? []).some(p => (p === "." ? any : new RegExp(p, "i").test(hay)));
 		return decls.find(f => hit(f, false)) ?? decls.find(f => hit(f, true));
 	};
-	const approvals = open.map(n => ({ id: n.id, title: (n.title ?? "").replace(/\s+/g, " ").trim().slice(0, 120), ...(featureOfNotice(n) ? { feature: featureOfNotice(n)!.id } : {}), state: "open", ...(n.updated ?? n.ts ? { at: n.updated ?? n.ts } : {}) }));
+	const approvals: ApprovalView[] = open.map(n => ({ id: n.id, title: approvalTitle(n), ...(featureOfNotice(n) ? { feature: featureOfNotice(n)!.id, kind: featureOfNotice(n)!.name } : {}), state: "open", ...(n.updated ?? n.ts ? { at: n.updated ?? n.ts } : {}), options: (n.decision?.options ?? []).filter(o => !o.label.startsWith("고치기")).map(o => ({ n: o.n, label: o.label })) }));
 	const features = decls.map(f => {
 		const on = featureOn(dataDir, app, f, settings), waiting = approvals.filter(a => a.feature === f.id).length;
 		return { id: f.id, name: f.name, on, status: !on ? "꺼져 있어요" : waiting ? `승인 대기 ${waiting}건` : f.hint };
 	});
-	const internal = watches.filter(w => mine.has(w.name)).map(internalOf);
+	const internal = watches.filter(w => mine.has(w.name)).map(w => internalOf(w, entry.label));
 	return { app, features, internal, approvals };
 }
 
@@ -168,13 +131,6 @@ export function setFeature(dataDir: string, app: string, id: unknown, on: unknow
 	mkdirSync(dirname(file), { recursive: true });
 	writeFileSync(tmp, `${JSON.stringify(doc, null, 2)}\n`, { mode: 0o644 });
 	renameSync(tmp, file);
-}
-
-/** A flag the app's own code can ask: is this feature on for this instance? (A feature that is not declared is on.) */
-export function featureEnabled(dataDir: string, app: string, id: string): boolean {
-	const f = declOf(app).find(x => x.id === id);
-	if (!f) return true;
-	return featureOn(dataDir, app, f, new Map(readSettings(dataDir, app).map(s => [s.key, s.value])));
 }
 
 /** Runs one watch the app owns (다시 시도). Not the app's = 404. */
