@@ -264,16 +264,6 @@ function monConvNode(t, label) {
     brief ? el("div", { class: "mr-sum", text: brief }) : null,
     chip ? el("div", { class: "mr-slot" }, chip) : null);
 }
-  const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
-  return el("div", { class: "bm alert rc mr", role: "button", tabindex: "0", "aria-label": `${m.subject || "메일"} 원문 열기`, onclick: open,
-  const card = n.item ? monItemNode(n) : null;
-  if (card) { card.dataset.nid = n.id; return card; }
-    onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
-    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: mailSender(m.from) || label }), tag, clip, when ? el("span", { class: "rc-time", text: when }) : null),
-    el("div", { class: "rc-title", text: m.subject || "(제목 없음)" }),
-    brief ? el("div", { class: "mr-sum", text: brief }) : null,
-    chip ? el("div", { class: "mr-slot" }, chip) : null);
-}
 // A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
 function monRunNode(it) {
   const m = it.mon;
