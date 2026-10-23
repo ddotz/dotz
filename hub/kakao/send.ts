@@ -6,7 +6,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import { join } from "node:path";
 import { draftApprovalBlock } from "../draft-approval.ts";
 import { writePrivate } from "./creds.ts";
-import { closeWindow, pickRoom, type RoomFact } from "./room.ts";
+import { axSend, closeWindow, openListRow, pickRoom, readWindow, type RoomFact, windowMatches } from "./room.ts";
 import { KAKAO_BUNDLE, type KakaoPaths, type RunResult, type Runner } from "./types.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
@@ -198,14 +198,14 @@ export const forgetWarm = () => {
 	warm = undefined;
 	warmEpoch++;
 };
-function keepWarm(id: string, deps: SendDeps) {
+function keepWarm(id: string, deps: SendDeps, name?: string) {
 	const epoch = ++warmEpoch;
 	warm = { id, epoch, runner: deps.runner };
 	const fire = () => {
 		void oneAtATime(async () => {
 			if (warm?.epoch !== epoch) return;
 			warm = undefined;
-			await closeWindow(deps.runner);
+			await closeWindow(deps.runner, name);
 		});
 	};
 	if (deps.later) deps.later(fire, KEEP_IDLE_MS);
@@ -274,20 +274,52 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 		ms.front = f.ms;
 		if (f.id && f.id !== KAKAO_BUNDLE) await timed("refocus", () => deps.runner(["open", "-b", f.id!], { timeoutMs: 5_000 }).catch(() => ({ code: 1, stdout: "", stderr: "" })));
 	};
-	const memo = readPicked(deps.paths);
 	const shared = all.some(r => r.chatId !== input.chatId && r.name === input.roomName);
+	const known = all.find(r => r.chatId === input.chatId);
+	// Background path (room.ts openListRow, axSend): the room's one list row opened by Accessibility actions, its window checked against the
+	// database room, the text put into its input and the 전송 button pressed, all by Accessibility: KakaoTalk never comes to the front, no key
+	// event is sent and the owner's app keeps the focus, so there is no refocus either. Only for a name no other database room has. An
+	// outcome where nothing was pressed goes on to the checked kmsg path below; a press without a confirmed send stops (never sent twice).
+	if (!shared) {
+		const t = performance.now();
+		const axKey = `ax:${input.chatId}`;
+		const opened = await openListRow(input.roomName, deps.runner);
+		const w = opened === "ok" ? await readWindow(deps.runner, false, input.roomName) : undefined;
+		ms.pick = Math.round(performance.now() - t);
+		if (w && windowMatches(w, { ...known, chatId: input.chatId, name: input.roomName }, false)) {
+			const s = performance.now();
+			const r = await axSend(input.roomName, input.text, deps.runner);
+			ms.send = Math.round(performance.now() - s);
+			ms.front = (await frontP).ms;
+			if (r.ok || r.pressed) {
+				keep = warm?.id === axKey || (await frontP).kakaoShown;
+				if (keep) {
+					keepWarm(axKey, deps, input.roomName);
+					ms.keep = true;
+				} else {
+					if (warm?.id === axKey) forgetWarm();
+					await closeWindow(deps.runner, input.roomName);
+				}
+				return fin(r.ok ? { ok: true } : refuse("카카오톡 전송 버튼은 눌렀지만 보내졌는지 확인하지 못했어요. 다시 보내지 않았으니 카카오톡에서 확인해 주세요"));
+			}
+		}
+		if (opened === "ok") {
+			await closeWindow(deps.runner, input.roomName);
+			if (warm?.id === axKey) forgetWarm();
+		}
+	}
+	const memo = readPicked(deps.paths);
 	const kept = memo[input.chatId];
 	let id = !shared && kept?.name === input.roomName ? kept.id : undefined;
 	let sent = id ? await sendBy(id) : undefined;
 	if (id && sent && !wentOut(sent) && /Unknown chat_id/i.test(sent.stdout + sent.stderr)) id = undefined;
 	if (!id) {
 		// The room is a list row opened by id and checked against the database room (room.ts); a name search never picks it.
-		const known = all.find(r => r.chatId === input.chatId);
 		// The check opens and closes windows itself, so a kept window is gone.
 		forgetWarm();
 		const t = performance.now();
 		const picked = await pickRoom({ ...known, chatId: input.chatId, name: input.roomName }, all, { kmsg, runner: deps.runner });
-		ms.pick = Math.round(performance.now() - t);
+		ms.pick += Math.round(performance.now() - t);
 		if (!picked.ok) {
 			if (kept) {
 				delete memo[input.chatId];
