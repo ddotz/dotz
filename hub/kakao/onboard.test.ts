@@ -166,7 +166,7 @@ test("happy path: installs only what is missing, batches the ask, opens one pane
 	expect(last.split("\n")).toHaveLength(4);
 	expect(last.startsWith("[done] 카톡 연결이 끝났어요")).toBe(true);
 
-	expect(readJson<KakaoConfig>(w.paths.config)).toEqual({ enabled: true, dbPath: "/fake/KakaoTalk/db", userId: 42, settle_seconds: 20, max_per_run: 10, exclude_chats: [], watch_chats: [] });
+	expect(readJson<KakaoConfig>(w.paths.config)).toEqual({ enabled: true, dbPath: "/fake/KakaoTalk/db", userId: 42, settle_seconds: 20, max_per_run: 10, exclude_chats: [], watch_chats: [], auto_draft_chats: [] });
 	expect(readState(w.paths)).toMatchObject({ status: "done", target: "chat", counts: { rooms: 3, draftable: 2 } });
 
 	const script = watchScriptPath(w.paths);

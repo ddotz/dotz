@@ -3,10 +3,13 @@
 // Events carry ids only: never a body or a room name. Sends go only through send.ts (kmsg UI automation).
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
 import { type KakaoDb, memberLabel, messages, rooms, sentAtMs, TEXT_TYPE } from "./db.ts";
-import { dropDraft, type Draft, listDrafts, markStale, newer, sendDraft, sendText, type SendResult } from "./send.ts";
+import { basisOf, buildDraftPrompt, chatLines, type DraftModel, estimateTokens, ownSamples, parseDraftReply, type StyleHint, sinceOwnLast } from "./draft.ts";
+import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 
 export type WebDeps = {
@@ -18,9 +21,17 @@ export type WebDeps = {
 	// The watched list changed (live.ts re-reads the config).
 	onWatchChange?: () => void;
 	kmsg?: string;
+	// This machine's name, stamped on every message and send record (default: the host name).
+	collector?: string;
+	// Whether this machine may send into a chat right now (contract.ts dispatchSend). Default: always.
+	lease?: Lease;
+	// The one cheap model call behind POST /api/kakao/chat/<id>/draft. Without it the route answers 503.
+	draftModel?: DraftModel;
+	// The reply-drafts tone profile of a room (optional extra for the prompt).
+	draftStyle?: (chatId: string) => StyleHint | undefined;
 };
 
-export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string };
+export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string };
 
 const ROOMS_TTL_MS = 30_000;
 const MAX_TEXT = 1000;
@@ -28,6 +39,9 @@ const MAX_SENDS = 200;
 const SEND_WINDOW_MS = 24 * 3600 * 1000;
 const OFF = { error: "카톡 연동이 꺼져 있어요" };
 const LOST = "게이트웨이가 다시 시작돼서 결과를 확인하지 못했어요";
+const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
+const DRAFT_FAILED = "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요";
+const DRAFT_READ = 200;
 
 export function readConfig(paths: KakaoPaths): KakaoConfig | undefined {
 	try {
@@ -52,11 +66,22 @@ const readJsonFile = <T>(file: string, fallback: T): T => {
 	}
 };
 
+const readJsonText = (file: string): string | undefined => {
+	try {
+		return readFileSync(file, "utf8");
+	} catch {
+		return undefined;
+	}
+};
+
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const digits = (v: unknown): v is string => typeof v === "string" && /^\d+$/.test(v);
 
 export function createKakaoWeb(deps: WebDeps) {
 	const { paths, now } = deps;
+	const collector = deps.collector ?? hostname();
+	const summaryFile = (chatId: string) => join(paths.dataDir, "kakao", "summaries", `${chatId}.md`);
+	const drafting = new Set<string>();
 	const sendsFile = join(paths.dataDir, "kakao", "sends.json");
 	const readsFile = join(paths.dataDir, "kakao", "reads.json");
 	const pending = new Set<Promise<unknown>>();
@@ -84,7 +109,7 @@ export function createKakaoWeb(deps: WebDeps) {
 		}
 		return (roomsCache = { at: now(), all, names });
 	};
-	const eligible = (all: Room[]) => all.filter(r => r.kind === "direct" || r.kind === "group");
+	const eligible = (all: Room[]) => all.filter(r => r.kind === "direct" || r.kind === "group" || r.kind === "self");
 
 	const storedSends = () => readJsonFile<SendRecord[]>(sendsFile, []);
 	// A "sending" record nobody is working on (the gateway restarted meanwhile) is shown as failed.
@@ -96,7 +121,7 @@ export function createKakaoWeb(deps: WebDeps) {
 
 	// Runs a send in the background (the gateway-wide queue lives in send.ts) and records sending -> sent | failed.
 	const start = (rec: SendRecord, job: () => Promise<SendResult>) => {
-		saveSends([...storedSends(), rec]);
+		saveSends(addOnce(storedSends(), rec));
 		deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state: "sending" });
 		inflight.add(rec.id);
 		const run = (async () => {
@@ -116,13 +141,48 @@ export function createKakaoWeb(deps: WebDeps) {
 		pending.add(run);
 		void run.finally(() => pending.delete(run));
 	};
-	const newRecord = (chatId: string, text: string, draft?: string): SendRecord => ({ id: `S${now().toString(36)}${randomBytes(3).toString("hex")}`, chatId, text, state: "sending", at: now(), ...(draft ? { draft } : {}) });
+	const newRecord = (chatId: string, text: string, draft?: string): SendRecord => ({ id: `S${now().toString(36)}${randomBytes(3).toString("hex")}`, chatId, text, state: "sending", at: now(), collector, ...(draft ? { draft } : {}) });
+
+	// The one model call of a draft request (never per incoming message). Never rejects: every outcome is a kakao_draft event.
+	async function makeDraft(config: KakaoConfig, chatId: string): Promise<void> {
+		const done = (error?: string) => deps.broadcast({ kind: "kakao_draft", chatId, ...(error ? { error } : {}) });
+		try {
+			const room = eligible((await allRooms(config, true)).all).find(r => r.chatId === chatId);
+			if (!room) return done("대화방을 찾지 못했어요");
+			const recent = await messages(await getDb(config), chatId, DRAFT_READ, config.userId ?? "");
+			const self = room.kind === "self";
+			const window = sinceOwnLast(recent, self);
+			const basis = basisOf(window, self);
+			if (!basis) return done(NO_REPLY);
+			let style: StyleHint | undefined;
+			try {
+				style = deps.draftStyle?.(chatId);
+			} catch {}
+			const { system, user } = buildDraftPrompt({ lines: chatLines(window), summary: readJsonText(summaryFile(chatId)), samples: ownSamples(recent), style });
+			const reply = await deps.draftModel!(system, user);
+			const parsed = parseDraftReply(reply.text);
+			if (!parsed) return done(DRAFT_FAILED);
+			if (parsed.action === "skip" || !parsed.body) return done(NO_REPLY);
+			const reported = (reply.inputTokens ?? 0) > 0 || (reply.outputTokens ?? 0) > 0;
+			const tokens = reported ? { in: reply.inputTokens ?? 0, out: reply.outputTokens ?? 0 } : { in: estimateTokens(system.length + user.length), out: estimateTokens(reply.text.length), estimated: true as const };
+			try {
+				await createDraft({ chatId, roomName: room.name, text: parsed.body, basisLogId: basis, tokens }, { paths, runner: deps.runner, now });
+			} catch (e) {
+				return done(e instanceof Error ? e.message : DRAFT_FAILED);
+			}
+			if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
+			done();
+		} catch {
+			done(DRAFT_FAILED);
+		}
+	}
 
 	async function route(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
 		if (parts[0] !== "api" || parts[1] !== "kakao") return undefined;
 		const config = readConfig(paths);
 		const on = config?.enabled === true;
 		const watched = new Set(config?.watch_chats ?? []);
+		const auto = new Set(config?.auto_draft_chats ?? []);
 		const area = parts[2];
 		const method = req.method;
 		const body = async (): Promise<Record<string, any>> => ((await req.json().catch(() => ({}))) as Record<string, any>) ?? {};
@@ -133,7 +193,7 @@ export function createKakaoWeb(deps: WebDeps) {
 				const cache = await allRooms(config!);
 				const list = eligible(cache.all)
 					.sort((a, b) => b.lastAt - a.lastAt)
-					.map(r => ({ chatId: r.chatId, name: cache.names.get(r.chatId) ?? r.name, kind: r.kind, watched: watched.has(r.chatId), unread: r.unread, lastAt: sentAtMs(r.lastAt) }));
+					.map(r => ({ chatId: r.chatId, name: cache.names.get(r.chatId) ?? r.name, kind: r.kind, watched: watched.has(r.chatId), autoDraft: watched.has(r.chatId) && auto.has(r.chatId), unread: r.unread, lastAt: sentAtMs(r.lastAt) }));
 				return json({ on: true, rooms: list });
 			} catch {
 				return json({ on: true, rooms: [], error: "카톡 데이터를 읽지 못했어요. 전체 디스크 접근 권한과 카카오톡 로그인을 확인해 주세요" });
@@ -143,13 +203,19 @@ export function createKakaoWeb(deps: WebDeps) {
 			if (!on) return json(OFF, 409);
 			const chatId = decodeURIComponent(parts[3]!);
 			const b = await body();
-			if (!digits(chatId) || typeof b.watched !== "boolean") return json({ error: "watched (true/false) is required" }, 400);
+			const bad = (v: unknown) => v !== undefined && typeof v !== "boolean";
+			if (!digits(chatId) || (b.watched === undefined && b.autoDraft === undefined) || bad(b.watched) || bad(b.autoDraft)) return json({ error: "watched / autoDraft (true/false) is required" }, 400);
 			const current = config!.watch_chats ?? [];
-			const next = b.watched ? [...new Set([...current, chatId])] : current.filter(c => c !== chatId);
-			writeConfig(paths, { ...config!, watch_chats: next });
+			const next = b.watched === undefined ? current : b.watched ? [...new Set([...current, chatId])] : current.filter(c => c !== chatId);
+			let nextAuto = (config!.auto_draft_chats ?? []).filter(c => b.watched !== false || c !== chatId);
+			if (b.autoDraft === true) {
+				if (!next.includes(chatId)) return json({ error: "먼저 이 대화방을 보기로 켜 주세요" }, 409);
+				nextAuto = [...new Set([...nextAuto, chatId])];
+			} else if (b.autoDraft === false) nextAuto = nextAuto.filter(c => c !== chatId);
+			writeConfig(paths, { ...config!, watch_chats: next, auto_draft_chats: nextAuto });
 			deps.broadcast({ kind: "kakao_rooms" });
-			deps.onWatchChange?.();
-			return json({ ok: true, watched: next });
+			if (b.watched !== undefined) deps.onWatchChange?.();
+			return json({ ok: true, watched: next, autoDraft: nextAuto });
 		}
 
 		if (area === "chat" && parts.length >= 4) {
@@ -171,7 +237,7 @@ export function createKakaoWeb(deps: WebDeps) {
 					return json({
 						room: { chatId, name: roomsCache?.names.get(chatId) ?? room.name, kind: room.kind, group: room.kind === "group" },
 						// Only text bodies are shown; the body of a photo or file message is an attachment record, not text.
-						messages: list.map(m => ({ logId: m.logId, authorId: m.authorId, sender: m.sender, text: m.type === TEXT_TYPE ? m.text : "", type: m.type, sentAt: sentAtMs(m.sentAt), fromMe: m.fromMe })),
+						messages: list.map(m => ({ id: messageId(m), collector, logId: m.logId, authorId: m.authorId, sender: m.sender, text: m.type === TEXT_TYPE ? m.text : "", type: m.type, sentAt: sentAtMs(m.sentAt), fromMe: m.fromMe })),
 						read: readJsonFile<Record<string, string>>(readsFile, {})[chatId] ?? null,
 						kakaoUnread: room.unread,
 						drafts: (await listDrafts({ paths, runner: deps.runner }))
@@ -179,7 +245,7 @@ export function createKakaoWeb(deps: WebDeps) {
 							.map(d => ({ code: d.code, text: d.text, basisLogId: d.basisLogId, created: d.created })),
 						sends: sendList()
 							.filter(s => s.chatId === chatId && s.at >= since)
-							.map(({ id, text, state, reason, at, draft }) => ({ id, text, state, ...(reason ? { reason } : {}), at, ...(draft ? { draft } : {}) })),
+							.map(({ id, text, state, reason, at, draft, collector: by }) => ({ id, text, state, ...(reason ? { reason } : {}), at, ...(draft ? { draft } : {}), ...(by ? { collector: by } : {}) })),
 					});
 				} catch {
 					return json({ error: "카톡 데이터를 읽지 못했어요" }, 502);
@@ -202,9 +268,19 @@ export function createKakaoWeb(deps: WebDeps) {
 					const cache = await allRooms(config!, true);
 					const room = cache.all.find(r => r.chatId === chatId);
 					if (!room) return { ok: false, reason: "대화방을 찾지 못했어요" };
-					return sendText({ chatId, roomName: room.name, text }, { paths, runner: deps.runner, now, kmsg: deps.kmsg, roomNames: async () => cache.all.map(({ chatId, name }) => ({ chatId, name })) });
+					return dispatchSend({ kind: "text", chatId, roomName: room.name, text }, { paths, runner: deps.runner, now, kmsg: deps.kmsg, lease: deps.lease, roomNames: async () => cache.all.map(({ chatId, name }) => ({ chatId, name })) });
 				});
 				return json({ id: rec.id, state: "sending" }, 202);
+			}
+
+			if (sub === "draft" && parts.length === 5 && method === "POST") {
+				if (!deps.draftModel) return json({ error: "초안 만들기를 쓸 수 없어요" }, 503);
+				if (drafting.has(chatId)) return json({ error: "이 대화방은 초안을 만드는 중이에요" }, 409);
+				drafting.add(chatId);
+				const run = makeDraft(config!, chatId).finally(() => drafting.delete(chatId));
+				pending.add(run);
+				void run.finally(() => pending.delete(run));
+				return json({ state: "drafting" }, 202);
 			}
 			return undefined;
 		}
@@ -238,13 +314,12 @@ export function createKakaoWeb(deps: WebDeps) {
 			const rec = newRecord(draft.chatId, edited ?? draft.text, code);
 			start(rec, async () => {
 				const cache = await allRooms(config!, true);
-				return sendDraft(code, {
+				return dispatchSend({ kind: "draft", code, ownerApproved: true, ...(edited !== undefined ? { text: edited } : {}) }, {
 					paths,
 					runner: deps.runner,
 					now,
 					kmsg: deps.kmsg,
-					ownerApproved: true,
-					...(edited !== undefined ? { text: edited } : {}),
+					lease: deps.lease,
 					latestIncoming: id => latestIncoming(config!, id),
 					roomNames: async () => cache.all.map(({ chatId, name }) => ({ chatId, name })),
 				});

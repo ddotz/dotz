@@ -17,6 +17,8 @@ export type WatchDeps = {
 export type WatchResult = { lines: string[]; code: number };
 
 const FETCH_LIMIT = 500;
+// A message older than this is never reported: a room switched to 자동 초안 later must not wake the bot for old talk.
+const MAX_AGE_MS = 30 * 60 * 1000;
 
 const readText = (file: string) => {
 	try {
@@ -65,8 +67,9 @@ export async function runWatch(deps: WatchDeps): Promise<WatchResult> {
 		return { lines: [], code: 0 };
 	}
 
-	// No chosen room: nothing can wake the bot, so the database is not read at all.
-	if (!config.watch_chats?.length) return { lines: [], code: 0 };
+	// Only rooms that are chosen AND on 자동 초안 can wake the bot; with none, the database is not read at all.
+	const auto = new Set((config.auto_draft_chats ?? []).filter((c) => config.watch_chats?.includes(c)));
+	if (auto.size === 0) return { lines: [], code: 0 };
 
 	const lastId = BigInt(lastText);
 	const heldFirst = Object.values(held).map((v) => BigInt(v));
@@ -81,7 +84,7 @@ export async function runWatch(deps: WatchDeps): Promise<WatchResult> {
 		return id > lastId || (heldFrom !== undefined && id >= BigInt(heldFrom));
 	});
 
-	let rows = candidates.filter((r) => r.type === TEXT_TYPE);
+	let rows = candidates.filter((r) => r.type === TEXT_TYPE && auto.has(r.chatId) && now() - sentAtMs(r.sentAt) <= MAX_AGE_MS);
 	if (rows.length > 0) {
 		const me = config.userId !== undefined ? String(config.userId) : await ownUserId(db);
 		rows = rows.filter((r) => r.authorId !== me);
