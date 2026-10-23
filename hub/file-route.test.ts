@@ -98,7 +98,7 @@ test("a peer gateway's sent [file] image is served through the whole route, and 
 test("a notice sheet keeps the files of its [file] lines as chips next to the text", () => {
 	const js = bundle("js").text;
 	const grab = (re: RegExp) => re.exec(js)?.[0] ?? "";
-	const fn = new Function("mdNode", "filesNode", `${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/function ntBody\(n\) \{[\s\S]*?\n\}\n/)}\nreturn ntBody;`)((t: string) => ({ md: t }), (f: { path: string }[]) => (f.length ? { files: f.map(x => x.path) } : null));
+	const fn = new Function("mdNode", "filesNode", `${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/function ntBody\(n, text\) \{[\s\S]*?\n\}\n/)}\n${grab(/function ntCode\(text\) \{[\s\S]*?\n\}\n/)}\nreturn ntBody;`)((t: string) => ({ md: t }), (f: { path: string }[]) => (f.length ? { files: f.map(x => x.path) } : null));
 	expect(fn({ text: "맥미니 결과\n[file] /Users/x/shot.png\n[file] /Users/x/report.pdf" })).toEqual([{ md: "맥미니 결과" }, { files: ["/Users/x/shot.png", "/Users/x/report.pdf"] }]);
 	expect(fn({ text: "파일 없음" })).toEqual([{ md: "파일 없음" }, null]);
 });
