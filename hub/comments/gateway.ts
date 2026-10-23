@@ -4,10 +4,16 @@ import { hostname } from "node:os";
 import { cfg, DATA_DIR } from "../config.ts";
 import { broadcast } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
+import { triggerFollowup } from "../followup.ts";
 import { realEngine } from "./real.ts";
 import { createCommentsWeb } from "./web.ts";
 
-const engine = realEngine(DATA_DIR, { broadcast, collector: resolveName(cfg.web?.machine_name, hostname()) });
+// An approved reply that was posted starts the app's 이어서 할 일 check (hub/followup.ts), once per send record.
+const engine = realEngine(DATA_DIR, {
+	broadcast,
+	collector: resolveName(cfg.web?.machine_name, hostname()),
+	sent: (app, r) => triggerFollowup({ app, kind: "comment", key: r.id, ids: { comment: r.commentId, source: r.source, thread: r.thread.replace(/\s+/g, "_"), draft: r.draft } }),
+});
 const web = createCommentsWeb({ engine, broadcast });
 
 export const commentsRoute = web.route;

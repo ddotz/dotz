@@ -197,10 +197,17 @@ function draftFilesNode(d, o = {}) {
   if (ref && o.edit !== false && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
   return box;
 }
+// "댓글 답글에 이어서" (+ the comment's link): a draft made as the follow-up of an approved action says where it came from (hub/draft-approval.ts 이어서).
+function draftOriginNode(d) {
+  const o = d.origin;
+  if (!o || !o.text) return null;
+  return el("div", { class: "dr-origin" }, icon("open"), o.link ? el("a", { href: o.link, target: "_blank", rel: "noopener", text: o.text }) : el("span", { text: o.text }));
+}
 function draftNode(d, o) {
   return el("div", { class: "dc-draft" },
     el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
+    draftOriginNode(d),
     el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d, o));
 }
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
@@ -229,7 +236,7 @@ function renderSheet(box, dc, picks, step) {
     d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }))
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   const foot = el("div", { class: "fs-ft" });
   foot.append(warnBox);

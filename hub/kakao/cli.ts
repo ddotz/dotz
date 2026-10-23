@@ -190,6 +190,8 @@ async function send(args: Record<string, string | true>, ctx: Ctx, config: Kakao
 		roomNames: async () => (await (await open()).rooms()).map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })),
 	});
 	ctx.out(r.ok ? "보냈어요" : `보내지 않았어요: ${r.reason ?? "이유를 알 수 없어요"}`);
+	// An approved message went out: the gateway wakes the bot once when the kakao app has a 이어서 할 일 rule (hub/followup.ts).
+	if (r.ok) await ctx.hub.post("/api/followup", { app: "kakao", kind: "kakao", key: code, ids: { draft: code } }).catch(() => undefined);
 	return r.ok ? 0 : 1;
 }
 

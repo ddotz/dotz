@@ -15,6 +15,8 @@ const MANUAL = "이 메일은 여기서 보낼 수 없어서 직접 보내야 �
 
 // zele refuses a reply unless `zele mail read <id>` ran first and showed the latest message of the thread; --to overrides the recipients.
 export const readArgv = (mailId: string): string[] => ["zele", "mail", "read", mailId];
+// A new mail (hub/mail-cli.ts compose): no mail to answer, so no `mail read` first.
+export const sendArgv = (to: string, subject: string, body: string, files: string[] = []): string[] => ["zele", "mail", "send", "--to", to, "--subject", subject, "--body", body, ...files.flatMap(f => ["--attach", f])];
 export const replyArgv = (mailId: string, to: string, body: string, files: string[] = []): string[] => ["zele", "mail", "reply", mailId, "--to", to, "--body", body, ...files.flatMap(f => ["--attach", f])];
 
 const webmailSite = (source: string): string | undefined => /^webmail[:/]([a-z0-9-]+)$/.exec(source)?.[1];
@@ -40,6 +42,10 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	const files = stagedFiles(rec.id);
 	if (rec.source !== "zele" && !webmailSite(rec.source) && !pluginsLoaded()) await loadPlugins(dataDir());
 	if (files.length && !canAttach(rec.source)) return fail("이 메일은 첨부파일을 보낼 수 없어서 보내지 않았어요. 첨부를 빼거나 직접 보내야 해요");
+	if (rec.compose && rec.source === "zele") {
+		const r = await run(sendArgv(rec.to, rec.subject ?? "", rec.body, files.map(f => f.path)));
+		return r.code === 0 ? { ok: true, message: `${rec.to}에게 메일을 보냈어요` } : fail(`보내지 못했어요: ${tail(r)}`);
+	}
 	if (rec.source === "zele") {
 		const seen = await run(readArgv(rec.mailId));
 		if (seen.code !== 0) return fail(`보내기 전에 메일을 읽지 못해서 보내지 않았어요: ${tail(seen)}`);
@@ -49,6 +55,7 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	}
 	const site = webmailSite(rec.source);
 	if (!site) {
+		if (rec.compose) return fail(MANUAL);
 		const sent = await pluginReply({ source: rec.source, id: rec.mailId, to: rec.to, ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: files.map(f => ({ name: f.name, path: f.path, size: f.size })) });
 		return sent ?? fail(MANUAL);
 	}

@@ -33,7 +33,7 @@ export function writeAtomic(file: string, text: string, mode = 0o600): void {
 // `enabled` is the feature switch; `apps` has one switch per source (mail, youtube, instagram, ...), every source off until turned on.
 // A config from before `apps` existed has no apps.mail: mail then follows the top-level `auto` (kept valid, and kept in sync by setApp).
 // `decided` = the config file says enabled true or false (the user or onboarding chose); without it each source follows its monitoring.
-export type Settings = { enabled: boolean; decided: boolean; auto: boolean; apps: Record<string, { auto: boolean }>; senders: { only: string[]; skip: string[] }; model?: string; models?: Record<string, string>; attachFolders?: Record<string, string> };
+export type Settings = { enabled: boolean; decided: boolean; auto: boolean; apps: Record<string, { auto: boolean }>; senders: { only: string[]; skip: string[] }; model?: string; models?: Record<string, string>; attachFolders?: Record<string, string>; followups?: Record<string, string> };
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map(x => x.trim()) : []);
 
@@ -53,6 +53,9 @@ export function loadSettings(): Settings {
 	// `attachFolders`: the 첨부 파일 폴더 of one mail app instance (a folder path on this machine; hub/app-settings.ts attach_folder).
 	const attachFolders: Record<string, string> = {};
 	for (const [app, v] of Object.entries(raw.attachFolders && typeof raw.attachFolders === "object" ? (raw.attachFolders as Record<string, any>) : {})) if (validApp(app) && typeof v === "string" && v.trim()) attachFolders[app] = v.trim();
+	// `followups`: the 이어서 할 일 rule of one app instance (hub/followup.ts); free text, empty = none.
+	const followups: Record<string, string> = {};
+	for (const [app, v] of Object.entries(raw.followups && typeof raw.followups === "object" ? (raw.followups as Record<string, any>) : {})) if (validApp(app) && typeof v === "string" && v.trim()) followups[app] = v.trim();
 	return {
 		enabled: raw.enabled === true,
 		decided: typeof raw.enabled === "boolean",
@@ -62,6 +65,7 @@ export function loadSettings(): Settings {
 		...(typeof raw.model === "string" && raw.model.trim() ? { model: raw.model.trim() } : {}),
 		...(Object.keys(models).length ? { models } : {}),
 		...(Object.keys(attachFolders).length ? { attachFolders } : {}),
+		...(Object.keys(followups).length ? { followups } : {}),
 	};
 }
 

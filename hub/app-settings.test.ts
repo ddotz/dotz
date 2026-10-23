@@ -28,7 +28,7 @@ describe("schema validation", () => {
 	});
 	test("an app without a schema has no settings", () => {
 		expect(fieldsOf("nope")).toEqual([]);
-		expect(fieldsOf("site").map(f => f.key)).toEqual(["use_here", "label", "reply_model"]);
+		expect(fieldsOf("site").map(f => f.key)).toEqual(["use_here", "label", "reply_model", "followup"]);
 		expect(() => validate("nope", { a: 1 })).toThrow(SettingsError);
 		expect(() => validate("__proto__", { a: 1 })).toThrow(SettingsError);
 	});
