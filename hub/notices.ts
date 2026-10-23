@@ -925,9 +925,10 @@ export function updateAvailable(text: string): void {
 	upsert({ kind: "alert", tone: "", title: "dotz 새 버전", text: clean(text).text, open: "settings", key: UPDATE_NOTICE_KEY, unread: true });
 }
 
-// The Claude account requests really use changed without the owner's pick in the web: one alert per change (its own key), opening 설정.
+// The Claude account requests really use changed without the owner's pick in the web: only logged. It is no notice (owner 2026-10-23:
+// not needed); 설정's account list shows which account is in use.
 export function accountUsedChanged(text: string, key: string): void {
-	upsert({ kind: "alert", tone: "", title: "요청 계정이 바뀌었어요", text: clean(text).text, open: "settings", key, unread: true });
+	log(`account used changed (${key}): ${clean(text).text}`);
 }
 
 // The update was applied or the checkout is current again: the item stays in the list but is read.
