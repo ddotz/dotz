@@ -1,4 +1,4 @@
-/* 모니터링 > 앱 > 설정 대화 (web/js/32-app-settings.js): the switches above the conversation, the pinned 설정 row and the change card.
+/* 모니터링 > 앱 > 설정 대화 (web/js/32-app-settings.js): the switches above the conversation, the 설정 button of a detail's title bar and the change card.
    The switch itself is the kakao one (.kk-sw, 17-kakao.css). */
 .app-sw { display: flex; flex-direction: column; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto 8px; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
 .app-sw[hidden] { display: none; }
@@ -15,7 +15,9 @@
 .as-del { display: flex; align-items: flex-start; gap: 8px; font: 400 13px/20px var(--font); }
 .as-del input { flex: none; margin-top: 3px; }
 .as-rm .as-act { margin-top: 4px; }
-.as-pin { position: sticky; top: 0; z-index: 1; background: var(--card); }
+/* the gear in a detail's title bar: at the right end of the head */
+:is(.cv-head, .kk-head) .as-hd { flex: none; margin-left: auto; }
+.as-hd[hidden] { display: none; }
 
 .as-card { margin: 4px 0; padding: 12px 16px; border-radius: var(--r-card); background: var(--layer); }
 .as-ct { margin-bottom: 8px; font: 600 14px/20px var(--font); }
