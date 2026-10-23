@@ -1,22 +1,42 @@
 /* ---------- command palette: jump to a view or run a /command ---------- */
+// A command's answer (the card /api/command returns) in the app's own components: a status line, the facts as list rows,
+// a note, and buttons that run the next command in the palette. Never a text dump.
+const PAL_TONE = { ok: "완료", busy: "진행 중", warn: "주의", err: "실패" };
+const PAL_LINE = /^(\/\S+)\s{2,}(.+)$/;
+function palFact(f) {
+  const lines = String(f.value ?? "").split("\n").filter(l => l !== "");
+  const multi = lines.length > 1;
+  const val = el("div", { class: "pal-v" }, ...lines.map(l => { const m = PAL_LINE.exec(l); return m ? el("div", { class: "pal-vl" }, el("code", { text: m[1] }), el("span", { text: m[2] })) : el("div", { class: "pal-vl", text: l }); }));
+  return el("div", { class: `li pal-f${multi ? " multi" : ""}` }, el("div", { class: "tx" }, el("div", { class: "hd", text: f.label }), multi ? val : null), multi ? null : val);
+}
+function palResult(c, run) {
+  const tone = c.tone || "";
+  const head = el("div", { class: "pal-rh" }, el("span", { class: `dot${tone ? ` ${tone === "busy" ? "pri" : tone}` : ""}` }), el("span", { class: "pal-rt", text: c.title }), PAL_TONE[tone] ? el("span", { class: `tag ${tone === "busy" ? "pri" : tone}`, text: PAL_TONE[tone] }) : null);
+  const facts = c.facts || [], acts = c.actions || [];
+  return el("div", { class: `pal-res${tone === "err" ? " err" : ""}`, role: "status" }, head,
+    facts.length ? el("div", { class: "list pal-facts" }, ...facts.map(palFact)) : null,
+    c.note ? el("div", { class: "cc-note", text: c.note }) : null,
+    acts.length ? el("div", { class: "btns cc-act" }, ...acts.map(a => el("button", { type: "button", class: "btn tonal", title: a.send, text: a.label, onclick: () => run(a.send) }))) : null);
+}
 function openPalette() {
   if (document.querySelector("dialog.pal")) return;
   closeMenu(false);
-  const inp = el("input", { class: "pal-in", type: "text", placeholder: "명령 또는 이동", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "명령" });
+  const inp = el("input", { class: "pal-in", type: "text", placeholder: "도구 또는 명령", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "명령" });
   const list = el("div", { class: "pal-list", role: "listbox" });
-  const out = el("pre", { class: "pal-out", hidden: true });
+  const out = el("div", { class: "pal-out", hidden: true });
   const d = el("dialog", { class: "pal", "aria-label": "명령" }, el("div", { class: "pal-head" }, icon("search"), inp, el("kbd", { text: "esc" })), list, out);
   let items = [], idx = 0;
   const mark = () => {
     [...list.querySelectorAll(".pal-i")].forEach((n, i) => { n.classList.toggle("on", i === idx); n.setAttribute("aria-selected", i === idx ? "true" : "false"); if (i === idx) n.scrollIntoView({ block: "nearest" }); });
   };
   const runCmd = async text => {
-    list.hidden = true; out.hidden = false; out.className = "pal-out"; out.textContent = "…";
+    list.hidden = true; out.hidden = false;
+    clear(out).append(el("div", { class: "pal-res", role: "status" }, el("div", { class: "pal-rh" }, el("span", { class: "dot pri" }), el("span", { class: "pal-rt", text: "실행 중" }))));
     try {
       const r = await api("/api/command", "POST", { text });
-      out.textContent = String(r.output ?? "") || "✓";
+      clear(out).append(palResult(r.card || { title: firstLine(String(r.output ?? "")) || "완료", tone: "ok", facts: [], note: String(r.output ?? "").split("\n").slice(1).join("\n").trim() }, runCmd));
       if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
-    } catch (e) { out.className = "pal-out err"; out.textContent = e.message; }
+    } catch (e) { clear(out).append(palResult(e.data && e.data.card ? e.data.card : { title: "실패", tone: "err", facts: [], note: e.message }, runCmd)); }
   };
   const exec = it => { if (it.kind === "nav") { d.close(); go(it.go); } else if (it.kind === "act") { d.close(); it.act(); } else runCmd(it.run); };
   const build = () => {
@@ -35,11 +55,13 @@ function openPalette() {
       if (!v || "셸 터미널 명령줄 shell terminal".includes(v)) items.push({ kind: "act", ic: "shell", label: "셸 터미널 열기", act: () => openShell() });
       if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
     }
+    const rank = { nav: 0, act: 1, cmd: 2 };   // 도구 first, 명령 last; the arrow keys walk the list in this order
+    items.sort((a, b) => rank[a.kind] - rank[b.kind]);
     idx = 0;
     clear(list);
     let last = "";
     items.forEach((it, i) => {
-      const g = it.kind === "nav" ? "이동" : it.kind === "act" ? "화면" : "명령";
+      const g = it.kind === "nav" ? "도구" : it.kind === "act" ? "화면" : "명령";
       if (g !== last) { list.append(el("div", { class: "ph", role: "presentation", text: g })); last = g; }
       list.append(el("button", { type: "button", role: "option", tabindex: "-1", class: `pal-i${it.kind === "cmd" ? " cmd" : ""}`, onmouseenter: () => { idx = i; mark(); }, onclick: () => exec(it) },
         icon(it.ic), el("span", { class: "nm", text: it.label }), it.desc ? el("span", { class: "pd", text: it.desc }) : null));
