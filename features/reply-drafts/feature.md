@@ -7,7 +7,7 @@ enabled: false
 applies_to: orchestrator
 setup: bun {repo}/features/reply-drafts/bin/onboard.ts on --to <asking target>
 ---
-설치마다 켜는 기능이고, 처음엔 꺼져 있어요. 켜면 사용자가 실제로 보낸 글에서 말투를 배워 `~/.dotz/custom/reply-drafts/tone/`에 두고(앱마다 `<앱>.md`, 메신저는 대화방마다 `<앱>/<방>.md`, 없으면 `install.md`), 답장이 필요한 새 메일마다 그 말투로 초안을 만들어 발송 승인 블록(`hub/draft-approval.ts`)으로 물어봐요. 사용자가 `1) 보내기`를 고르기 전에는 아무것도 보내지 않아요.
+설치마다 켜는 기능이고, 처음엔 꺼져 있어요. 사용자가 직접 켠 모니터링(zele 메일, 웹메일 사이트, 유튜브·인스타 연결)에는 따로 켜지 않아도 새 항목마다 초안을 먼저 제안해요. `onboard.ts off [--app <앱>]`으로 끄면 그 결정이 우선해요. 켜면 사용자가 실제로 보낸 글에서 말투를 배워 `~/.dotz/custom/reply-drafts/tone/`에 두고(앱마다 `<앱>.md`, 메신저는 대화방마다 `<앱>/<방>.md`, 없으면 `install.md`), 답장이 필요한 새 메일마다 그 말투로 초안을 만들어 발송 승인 블록(`hub/draft-approval.ts`)으로 물어봐요. 사용자가 `1) 보내기`를 고르기 전에는 아무것도 보내지 않아요.
 
 새 메일 초안은 게이트웨이가 알아서 만들어 해당 메일 스레드에 올려요. 그래서 새 메일마다 초안을 직접 쓰지 말고, 이 기능이 올린 `[ask]`에는 아래처럼만 답해요. `<id>`는 질문 끝 괄호의 초안 id예요.
 - `결정 답: ... → 1) 보내기`: `bun {repo}/features/reply-drafts/bin/draft.ts send <id>`. 메일이 그 사이 새 답을 받았으면 보내지 못하고 초안이 낡았다고 알려요. 그러면 `draft.ts new`로 다시 초안을 만들어요.

@@ -40,7 +40,7 @@ import { addWatch, allWatches, approveWatch, isWatchIssue, startWatches, stopWat
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
-import { mailByKey, mailByThread, mailTarget, postMail, type MailDeps } from "./mail.ts";
+import { mailByKey, mailByThread, mailTarget, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
 import { offerMailDraft } from "../features/reply-drafts/lib/offer.ts";
 import { readMailBody } from "../features/reply-drafts/lib/senders.ts";
 import { realRunner } from "../features/reply-drafts/lib/tone.ts";
@@ -187,7 +187,7 @@ const mailDeps = (): MailDeps => ({
 	emit: event => emit("inbox", event as Parameters<typeof emit>[1]),
 	wake: (event, target) => deliver(inboxText(event), { target }),
 	offerDraft: m =>
-		void offerMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
+		void offerMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log, suggest: (key, s) => void setMailSuggest(key, s) }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
 });
 
 void startZele({

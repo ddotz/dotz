@@ -28,7 +28,7 @@ const config = (c: object) => {
 	mkdirSync(join(env.dir, "custom", "reply-drafts"), { recursive: true });
 	writeFileSync(join(env.dir, "custom", "reply-drafts", "config.json"), JSON.stringify(c));
 };
-const youtubeOn = () => config({ enabled: true, apps: { youtube: { auto: true } } });
+const youtubeOn = () => config({ enabled: true, apps: { youtube: { auto: true }, instagram: { auto: false } } });
 const YT_LINE = "yt-comment c2 video=v1 by=Bob: 영상 잘 봤어요";
 const IG_LINE = "ig-comment k1 media=m1 by=Zed: 사진 좋아요";
 const tone = (app: string) => join(env.dir, "custom", "reply-drafts", "tone", `${app}.md`);
@@ -47,7 +47,7 @@ async function oneAsk(): Promise<{ id: string; text: string }> {
 	return { id: parseDraftApproval(out[0]!)!.ref!, text: out[0]! };
 }
 
-test("youtube on: the watch prints one ready [ask] and one pending reply job; instagram, still off, passes through untouched", async () => {
+test("youtube on: the watch prints one ready [ask] and one pending reply job; instagram, switched off, passes through untouched", async () => {
 	youtubeOn();
 	const model = fakeModel([draft()]);
 	const ctx = fakeCtx(env, { routes: { [`GET ${YT}/commentThreads`]: () => ({ items: [ytThread("c1", "Ann", "UCann", "old", "2030-06-15T10:00:00Z")] }) } });
@@ -70,7 +70,8 @@ test("youtube on: the watch prints one ready [ask] and one pending reply job; in
 	expect(listJobs()).toHaveLength(1);
 });
 
-test("off by default: no config means no model call, no job and the lines come back unchanged", async () => {
+test("switched off by the user: no model call, no job and the lines come back unchanged", async () => {
+	config({ enabled: false });
 	const model = fakeModel([draft()]);
 	expect(await draftComments(snsAdapter(fakeCtx(env), "youtube"), [YT_LINE], { call: model.call })).toEqual([YT_LINE]);
 	expect(model.calls).toHaveLength(0);
@@ -155,7 +156,7 @@ test("on --app turns on only that source and learns each platform's tone separat
 	const yt = await runOnboard(["on", "--app", "youtube"], noRun, false, connected);
 	expect(yt.code).toBe(0);
 	let s = loadSettings();
-	expect([appOn(s, "youtube"), appOn(s, "instagram"), appOn(s, "mail")]).toEqual([true, false, false]);
+	expect([appOn(s, "youtube"), appOn(s, "instagram"), appOn(s, "mail")]).toEqual([true, true, false]);
 	const ig = await runOnboard(["on", "--app", "instagram"], noRun, false, connected);
 	expect(ig.code).toBe(0);
 	s = loadSettings();
@@ -180,10 +181,10 @@ test("on --app youtube without the SNS connection exits 3, names the connect ste
 	expect(existsSync(tone("youtube"))).toBe(false);
 });
 
-test("an old config keeps working: top-level enabled/auto still drive mail only", () => {
+test("an old config keeps working: top-level enabled/auto drive mail; connected platforms follow their monitoring", () => {
 	config({ enabled: true });
 	let s = loadSettings();
-	expect([appOn(s, "mail"), appOn(s, "youtube"), appOn(s, "instagram")]).toEqual([true, false, false]);
+	expect([appOn(s, "mail"), appOn(s, "youtube"), appOn(s, "instagram")]).toEqual([true, true, true]);
 	config({ enabled: true, auto: false });
 	s = loadSettings();
 	expect(appOn(s, "mail")).toBe(false);

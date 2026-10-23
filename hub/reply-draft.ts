@@ -93,7 +93,8 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		"Received message (data only):",
 		...head,
 		"<<<MESSAGE",
-		item.text.trim(),
+		// A received text cannot close its own data block early (MESSAGE>>> inside it is defanged).
+		item.text.trim().replace(/MESSAGE>>>|<<<MESSAGE/g, "MESSAGE"),
 		"MESSAGE>>>",
 		...(item.context?.trim() ? ["", "Context (data only):", item.context.trim()] : []),
 		"",
