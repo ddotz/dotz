@@ -26,7 +26,7 @@ export class InstagramError extends Error {
 	}
 }
 
-export type IgMedia = { id: string; caption?: string; comments_count: number; timestamp: string };
+export type IgMedia = { id: string; caption?: string; comments_count: number; timestamp: string; permalink?: string; thumb?: string };
 export type IgComment = { id: string; text: string; username: string; timestamp: string; replies: { username: string; text: string }[] };
 
 type IgFrom = { id?: string; username?: string };
@@ -68,8 +68,48 @@ export async function me(ctx: Ctx, token?: string): Promise<{ user_id: string; u
 }
 
 export async function mediaWithCounts(ctx: Ctx, limit = 50): Promise<IgMedia[]> {
-	const d = await graph<{ data?: IgMedia[] }>(ctx, `${BASE}/me/media?${new URLSearchParams({ fields: "id,caption,comments_count,timestamp", limit: String(limit) })}`, secret().access_token);
-	return (d.data ?? []).map(m => ({ ...m, comments_count: m.comments_count ?? 0 }));
+	type Raw = { id: string; caption?: string; comments_count?: number; timestamp: string; permalink?: string; media_type?: string; media_url?: string; thumbnail_url?: string };
+	const d = await graph<{ data?: Raw[] }>(ctx, `${BASE}/me/media?${new URLSearchParams({ fields: "id,caption,comments_count,timestamp,permalink,media_type,media_url,thumbnail_url", limit: String(limit) })}`, secret().access_token);
+	// The picture to show: a video's own media_url is the video file, so only its thumbnail_url counts.
+	return (d.data ?? []).map(m => {
+		const thumb = m.media_type === "VIDEO" ? m.thumbnail_url : (m.media_url ?? m.thumbnail_url);
+		return { id: m.id, caption: m.caption, comments_count: m.comments_count ?? 0, timestamp: m.timestamp, ...(m.permalink ? { permalink: m.permalink } : {}), ...(thumb ? { thumb } : {}) };
+	});
+}
+
+// ---- direct messages (read only) --------------------------------------------------------------------------------------
+// Instagram API with Instagram Login, Conversations API (graph.instagram.com): GET /me/conversations?platform=instagram and
+// GET /<conversation-id>?fields=messages{...}. Permission: instagram_business_manage_messages (+ instagram_business_basic). Nothing here sends.
+// Docs: developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/conversations-api
+export const DM_PERMISSION = "instagram_business_manage_messages";
+export type IgConversation = { id: string; updated_time: string };
+export type IgDmParty = { id?: string; username?: string };
+export type IgDmMessage = { id: string; text: string; from: IgDmParty; to: IgDmParty[]; created_time: string; attachments: { kind: "image" | "video" | "audio" | "file"; name?: string }[] };
+
+// Meta answers a missing permission with OAuthException code 10 ("requires the instagram_business_manage_messages permission") or a code in 200-299.
+export const isPermissionError = (e: unknown): boolean => e instanceof InstagramError && e.code !== undefined && (e.code === 10 || (e.code >= 200 && e.code <= 299));
+
+export async function conversations(ctx: Ctx, limit = 50): Promise<IgConversation[]> {
+	const d = await graph<{ data?: IgConversation[] }>(ctx, `${BASE}/me/conversations?${new URLSearchParams({ platform: "instagram", fields: "id,updated_time", limit: String(limit) })}`, secret().access_token);
+	return (d.data ?? []).filter(c => c?.id);
+}
+
+// Details exist only for the 20 most recent messages of a conversation (Meta limit), newest first as the API lists them.
+export async function conversationMessages(ctx: Ctx, conversationId: string): Promise<IgDmMessage[]> {
+	type Raw = { id: string; message?: string; created_time: string; from?: IgDmParty; to?: { data?: IgDmParty[] }; attachments?: { data?: { mime_type?: string; name?: string; image_data?: unknown; video_data?: unknown }[] } };
+	const d = await graph<{ messages?: { data?: Raw[] } }>(ctx, `${BASE}/${encodeURIComponent(conversationId)}?${new URLSearchParams({ fields: "messages.limit(20){message,from,to,created_time,attachments}" })}`, secret().access_token);
+	return (d.messages?.data ?? []).map(m => ({
+		id: m.id,
+		text: m.message ?? "",
+		from: m.from ?? {},
+		to: m.to?.data ?? [],
+		created_time: m.created_time,
+		attachments: (m.attachments?.data ?? []).map(a => {
+			const mime = a.mime_type ?? "";
+			const kind = a.image_data || mime.startsWith("image/") ? "image" : a.video_data || mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : "file";
+			return { kind, ...(a.name ? { name: a.name } : {}) };
+		}),
+	}));
 }
 
 export async function commentsFor(ctx: Ctx, mediaId: string): Promise<IgComment[]> {

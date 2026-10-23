@@ -134,7 +134,7 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 	test("기능 with switches comes first, 내부 기능 follows, 설정 last; 숨긴 기능 are not drawn", async () => {
 		await openScreen(v);
 		expect(await q(v, `return [...document.querySelectorAll("#app-sw .as-sec")].map(e => e.textContent)`)).toEqual(["기능", "승인 대기", "내부 기능", "설정"]);
-		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => [e.dataset.feature, e.querySelector(".as-n").textContent])`)).toEqual([["comment_reply", "댓글 답글"], ["reels_approval", "릴스(쇼츠) 올리기 승인"]]);
+		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => [e.dataset.feature, e.querySelector(".as-n").textContent])`)).toEqual([["comment_reply", "댓글 답글"], ["reels_approval", "릴스(쇼츠) 올리기 승인"], ["dm_read", "DM 읽기"]]);
 		expect(await q(v, `return document.querySelector('#app-sw [data-feature="reels_approval"] .as-h').textContent`)).toBe("승인 대기 1건");
 		expect(await q(v, `return document.body.textContent.includes("DM 답장") || document.body.textContent.includes("게시물 정보 수정")`)).toBe(false);
 		expect(await q(v, `const sec = [...document.querySelectorAll("#app-sw .as-sec")].pop(); return sec.nextElementSibling.querySelector('[data-k="use_here"]') !== null`)).toBe(true);

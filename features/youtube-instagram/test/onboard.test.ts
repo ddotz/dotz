@@ -114,7 +114,7 @@ test("a work channel given as --target owns the config, project and watches", as
 	expect(r.code).toBe(0);
 	expect(read(paths.config()).channel).toBe("ch:55");
 	const named = h.f.watches.filter(w => w.name);
-	expect(named.length).toBe(5);
+	expect(named.length).toBe(6);
 	for (const w of named) expect(w).toMatchObject({ channels: ["55"] });
 });
 
@@ -123,14 +123,14 @@ test("a full run connects both platforms: every step done, watches, card and pro
 	const r = await run(h.deps, ["run", "--target", "discord:dm:7"]);
 
 	expect(r.code).toBe(0);
-	expect(r.lines).toHaveLength(14);
+	expect(r.lines).toHaveLength(15);
 	expect(ok(r.lines)).toBe(true);
 	expect(h.log.steps).toEqual(["gcp-project", "gcp-api", "gcp-consent", "gcp-publish", "youtube-client", "youtube-auth", "instagram-account", "meta-app", "instagram-token"]);
 	for (const argv of h.execs) expect(argv.join(" ")).not.toMatch(/^aside\b/);
 	expect(r.lines[0]).toBe("✅ 준비물 확인 - ffmpeg, cloudflared를 설치했어요");
 	expect(h.execs).toContainEqual(["brew", "install", "ffmpeg", "cloudflared"]);
 
-	expect(h.f.watches.filter(w => w.name).map(w => w.name)).toEqual(["sns-yt-comments", "sns-ig-comments", "sns-inbox", "sns-due", "sns-tokens"]);
+	expect(h.f.watches.filter(w => w.name).map(w => w.name)).toEqual(["sns-yt-comments", "sns-ig-comments", "sns-ig-dm", "sns-inbox", "sns-due", "sns-tokens"]);
 	expect(h.f.gateway().filter(c => c.method === "PUT" && c.url.endsWith("/api/projects"))).toHaveLength(2);
 	expect(existsSync(join(dir, "custom", "cards", "sns-channels", "card.json"))).toBe(true);
 	expect(read(paths.config())).toMatchObject({ youtube: { channel_id: "UCabcdefghij1234", upload_via: "aside" }, instagram: { username: "owner" }, posting_times: ["18:00"], approval: "each" });
@@ -157,7 +157,7 @@ test("a full run connects both platforms: every step done, watches, card and pro
 	for (const argv of h.execs) for (const s of Object.values(SECRETS)) expect(argv.join(" ")).not.toContain(s);
 
 	const status = await run(h.deps, ["status"]);
-	expect(status.lines).toHaveLength(14);
+	expect(status.lines).toHaveLength(15);
 	expect(ok(status.lines)).toBe(true);
 	const again = await run(h.deps, ["run"]);
 	expect(again.code).toBe(0);
@@ -190,7 +190,7 @@ test("two steps that need the owner produce ONE ask block and exit 3; the indepe
 	expect(h.log.steps.filter(s => s === "gcp-project")).toHaveLength(1);
 	expect(h.loopbacks).toHaveLength(1);
 	expect(h.execs.filter(a => a[0] === "brew" && a[1] === "install")).toHaveLength(1);
-	expect(h.f.watches.filter(w => w.name)).toHaveLength(5);
+	expect(h.f.watches.filter(w => w.name)).toHaveLength(6);
 });
 
 test("interrupted after youtube-auth (the runner throws), the next run resumes at instagram-account without redoing done steps", async () => {
@@ -271,7 +271,7 @@ test("status before any run and the reset command", async () => {
 	expect(existsSync(paths.ytOauth())).toBe(false);
 	expect(existsSync(join(secretsDir(), "youtube-client.json"))).toBe(true);
 	const status = await run(h.deps, ["status"]);
-	expect(status.lines.map(l => l[0])).toEqual(["✅", "✅", "✅", "✅", "✅", "✅", "⏳", "✅", "✅", "✅", "⏳", "⏳", "⏳", "⏳"]);
+	expect(status.lines.map(l => l[0])).toEqual(["✅", "✅", "✅", "✅", "✅", "✅", "⏳", "✅", "✅", "✅", "✅", "⏳", "⏳", "⏳", "⏳"]);
 
 	const again = await run(h.deps, ["run"]);
 	expect(again.code).toBe(0);

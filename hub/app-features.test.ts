@@ -63,7 +63,7 @@ describe("ownership: a watch belongs to one app", () => {
 describe("features view", () => {
 	test("lists only what the API and the feature folder do; the rest is declared, hidden", () => {
 		const v = featuresOf(data, "instagram", W, []);
-		expect(v.features.map(f => f.id)).toEqual(["comment_reply", "reels_approval"]);
+		expect(v.features.map(f => f.id)).toEqual(["comment_reply", "reels_approval", "dm_read"]);
 		expect(APP_FEATURES.instagram!.features.filter(f => f.ready === false).map(f => f.id)).toEqual(["post_edit", "dm"]);
 		expect(featuresOf(data, "youtube", W, []).features.map(f => f.name)).toEqual(["댓글 답글", "메타데이터", "쇼츠·영상 올리기 승인"]);
 	});

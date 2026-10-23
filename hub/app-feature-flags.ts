@@ -41,6 +41,7 @@ export const APP_FEATURES: Record<string, AppDecl> = {
 			{ id: "comment_reply", name: "댓글 답글", hint: "댓글에 답글 초안을 만들고 달기 전에 물어요", setting: "auto_draft" },
 			{ id: "reels_approval", name: "릴스(쇼츠) 올리기 승인", hint: "릴스를 올리기 전에 오너 승인을 받아요", approves: ["."] },
 			{ id: "post_edit", name: "게시물 정보 수정", hint: "올린 게시물의 설명을 고쳐요", ready: false },
+			{ id: "dm_read", name: "DM 읽기", hint: "받은 DM을 읽기만 해요. 답장은 보내지 않아요" },
 			{ id: "dm", name: "DM 답장", hint: "다이렉트 메시지에 답해요", ready: false },
 		],
 		sites: ["instagram.com"],

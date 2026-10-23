@@ -16,9 +16,13 @@ export type SiteConfig = {
 export type SourceConfig = { key: string; kind: SourceKind; label: string; watch: string[]; autoDraft: boolean; everyMin?: number; autoSince?: number; autoSend?: AutoSend; site?: SiteConfig };
 export type CommentsConfig = { enabled: boolean; sources: Record<string, SourceConfig> };
 
-export type RawComment = { native: string; thread: string; parent?: string; author: string; text: string; postTitle: string; postLink?: string; at: number; mine?: boolean };
+export type RawComment = { native: string; thread: string; parent?: string; author: string; text: string; postTitle: string; postLink?: string; thumb?: string; at: number; mine?: boolean };
 export type Comment = Omit<RawComment, "native" | "mine"> & { id: string; source: string; native: string; mine: boolean; collector: string };
-export type Post = { id: string; title: string; link?: string };
+export type Post = { id: string; title: string; link?: string; thumb?: string };
+// What an adapter shows for a post whose title it could not read yet. A stored comment with one of these gets its real title on a later poll (adapter.retitle).
+export const FALLBACK_TITLE = { youtube: "유튜브 영상", instagram: "인스타 게시물" } as const;
+export const isUntitled = (c: { postTitle: string }): boolean => !c.postTitle || c.postTitle === FALLBACK_TITLE.youtube || c.postTitle === FALLBACK_TITLE.instagram;
+export type PostInfo = { title: string; link?: string; thumb?: string };
 
 export type ReplyOutcome = { ok: true; ref?: string } | { ok: false; reason: string };
 export type CommentAdapter = {
@@ -28,6 +32,8 @@ export type CommentAdapter = {
 	reply(src: SourceConfig, c: Comment, text: string, sendId: string): Promise<ReplyOutcome>;
 	// The posts the owner can choose to follow, and his own past replies (tone examples).
 	posts?(src: SourceConfig): Promise<Post[]>;
+	// The title, link and thumbnail of these posts (ids = Comment.thread), for stored comments that were collected without a title. Posts it cannot name are left out.
+	retitle?(src: SourceConfig, threads: string[]): Promise<Record<string, PostInfo>>;
 	ownReplies?(src: SourceConfig, limit: number): Promise<string[]>;
 };
 

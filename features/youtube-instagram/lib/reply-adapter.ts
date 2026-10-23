@@ -13,19 +13,33 @@ import { oneLine, type Platform, type RunResult } from "./watchkit.ts";
 import { ownReplies } from "./youtube.ts";
 
 const LINE = {
-	youtube: { tag: "yt-comment", where: "video", label: "유튜브", context: "YouTube video" },
-	instagram: { tag: "ig-comment", where: "media", label: "인스타", context: "Instagram post" },
+	youtube: { tag: "yt-comment", where: "video", label: "유튜브", post: "영상", context: "YouTube video" },
+	instagram: { tag: "ig-comment", where: "media", label: "인스타", post: "게시물", context: "Instagram post" },
 } as const;
+
+// The optional ` title="..."` of a watch line is the post's title as a JSON string.
+const titleOf = (quoted: string | undefined): string | undefined => {
+	if (!quoted) return undefined;
+	try {
+		return String(JSON.parse(quoted)) || undefined;
+	} catch {
+		return undefined;
+	}
+};
+export const titleArg = (title: string | undefined): string => (title ? ` title=${JSON.stringify(oneLine(title, 80))}` : "");
 
 export function snsAdapter(ctx: Ctx, platform: Platform): CommentAdapter {
 	const l = LINE[platform];
-	const re = new RegExp(`^${l.tag} (\\S+) ${l.where}=(\\S+) by=(.*?): (.*)$`);
+	const re = new RegExp(`^${l.tag} (\\S+) ${l.where}=(\\S+)(?: title=("(?:[^"\\\\]|\\\\.)*"))? by=(.*?): (.*)$`);
 	return {
 		app: platform,
 		label: l.label,
+		postLabel: l.post,
 		parse: line => {
 			const m = re.exec(line);
-			return m ? { id: m[1]!, author: m[3]!.trim(), text: m[4]!, context: `${l.context} ${m[2]}` } : undefined;
+			if (!m) return undefined;
+			const post = titleOf(m[3]);
+			return { id: m[1]!, author: m[4]!.trim(), text: m[5]!, context: post ? `${l.context} "${post}" (${m[2]})` : `${l.context} ${m[2]}`, ...(post ? { post } : {}) };
 		},
 		stage: async (c, reply) => newJob(ctx, { kind: "reply", reply: { platform, comment_id: c.id, text: reply } }).id,
 		discard: async id => void reject(id),

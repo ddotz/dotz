@@ -11,7 +11,9 @@ import { join } from "node:path";
 import { asideReason } from "../../../hub/aside-errors.ts";
 import { legacyGate } from "../lib/legacy.ts";
 import { type Config, type Ctx, loadConfig, paths, readJson, realCtx, secretsDir, snsDir, validateConfig, writeJson } from "../lib/config.ts";
+import { PERMISSION_LINE, syncDms } from "../lib/ig-dm.ts";
 import { me } from "../lib/instagram.ts";
+import { dmEnabled } from "./ig-dm.ts";
 import { MESSAGES_DB, MessagesAccessError, type OtpService, probeMessages, waitForCode } from "../lib/otp.ts";
 import { CODE_HOSTS, codeBody, gcpApi, gcpApiUrl, gcpClient, gcpClientUrl, gcpConsent, gcpConsentFlow, gcpConsentUrl, GCP_PROJECT_URL, gcpProject, gcpPublish, gcpPublishUrl, IG_ACCOUNT_URL, igAccount, igToken, igTokenUrl, META_APPS_URL, metaApp, type PageResult, pageBody } from "../lib/pages.ts";
 import { serveOnce, startReceiver } from "../lib/receiver.ts";
@@ -26,7 +28,7 @@ export type OtpSource = { probe: () => void; wait: (service: OtpService, since: 
 export type Deps = { ctx: Ctx; aside: Aside; otp: OtpSource; loopback?: () => Loopback };
 
 type Platform = "youtube" | "instagram";
-type StepId = "deps" | "gcp-project" | "gcp-api" | "gcp-consent" | "gcp-publish" | "youtube-client" | "youtube-auth" | "instagram-account" | "meta-app" | "instagram-token" | "detect" | "apply" | "test-read" | "done";
+type StepId = "deps" | "gcp-project" | "gcp-api" | "gcp-consent" | "gcp-publish" | "youtube-client" | "youtube-auth" | "instagram-account" | "meta-app" | "instagram-token" | "instagram-dm" | "detect" | "apply" | "test-read" | "done";
 type Status = "pending" | "done" | "needs-owner" | "failed";
 type StepState = { status: Status; at: string; note: string; soft?: boolean };
 type State = { steps: Partial<Record<StepId, StepState>>; platforms: Platform[]; asks: string[]; ids: { projectId?: string; appId?: string } };
@@ -266,6 +268,16 @@ async function stepInstagramToken(r: Run): Promise<Out> {
 	}
 }
 
+// Reads the DM list once with the new token. A token without instagram_business_manage_messages is not a failure: the rest of the setup goes on
+// (soft) and the owner is asked for that permission, once, until it is granted. A step that is done is never asked again.
+async function stepInstagramDm(r: Run): Promise<Out> {
+	if (!dmEnabled()) return { status: "done", note: "DM 읽기는 꺼 두었어요" };
+	const a = await me(r.d.ctx);
+	const res = await syncDms(r.d.ctx, { enabled: () => true, own: { id: a.user_id, username: a.username }, force: true });
+	if (res.perm === "missing") return { status: "needs-owner", soft: true, note: "DM 읽기 권한이 없어요", ask: PERMISSION_LINE };
+	return { status: "done", note: "DM을 읽을 수 있어요" };
+}
+
 async function stepDetect(r: Run): Promise<Out> {
 	const parts: string[] = [];
 	if (r.platforms.includes("youtube")) {
@@ -310,6 +322,7 @@ const STEPS: StepDef[] = [
 	{ id: "instagram-account", label: "인스타 계정 종류 확인", platform: "instagram", requires: [], run: stepInstagramAccount },
 	{ id: "meta-app", label: "메타 앱 만들기", platform: "instagram", requires: ["instagram-account"], run: stepMetaApp },
 	{ id: "instagram-token", label: "인스타 토큰 받기", platform: "instagram", requires: ["meta-app"], run: stepInstagramToken },
+	{ id: "instagram-dm", label: "인스타 DM 읽기 권한", platform: "instagram", requires: ["instagram-token"], run: stepInstagramDm },
 	{ id: "detect", label: "계정 확인", requires: ["youtube-auth", "instagram-token"], run: stepDetect },
 	{ id: "apply", label: "설정과 감시 켜기", requires: ["detect"], run: stepApply },
 	{ id: "test-read", label: "읽기 시험", requires: ["apply"], run: stepTestRead },
