@@ -16,6 +16,7 @@ import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCle
 import { startLaneIdleStop } from "./laneidle.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { setTrashChannels } from "./lanetrash.ts";
+import { laneSpot, rememberSpot } from "./lanestate.ts";
 import { resolveAllowed } from "./files.ts";
 import { approvesBudget, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
 import { setUsageSource, tick as accountTick } from "./account-rules.ts";
@@ -110,6 +111,7 @@ discord.setFileLink(p => (webBase ? `${webBase}/api/file?path=${encodeURICompone
 startPush({ subject: () => webBase ?? "mailto:dotz@example.com" });
 startPeerStreams();
 
+discord.setLaneRecords({ read: laneSpot, remember: rememberSpot });
 setTrashChannels({ take: discord.takeLaneChannel, put: discord.putLaneChannel, remove: discord.deleteChannel });
 discord.setLaneReleaseHandler((id, deleted) => void dropChannelNotices(`ch:${id}`, !deleted));
 discord.setChannelGoneHandler(id => {
@@ -252,6 +254,7 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 }
 sends.resume();
 const resumedLanes = restoreLanes();
+discord.recordLaneChannels();
 for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 재시작돼서 멈췄던 작업을 이어서 하고 있어요.").catch(e => log(`lane resume notice failed: ${e}`));
 // A restart that picked work back up says so in worklog (a self-run system event, not a chat answer); a quiet one
 // (nothing replayed, no lane resumed) stays in hub.log and the web restart banner, since back-to-back code restarts
