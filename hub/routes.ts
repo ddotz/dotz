@@ -12,7 +12,7 @@ import { integrationContext, integrationItems } from "./integrations.ts";
 import { markRead } from "./reads.ts";
 import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
-import { MailError, attachmentList, mailBodyRoute, mailByKey, mailFileRoute, mailSuggests, mailTargets, postMail, type MailDeps } from "./mail.ts";
+import { MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTargets, postMail, type MailDeps } from "./mail.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
@@ -194,7 +194,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "GET" && url.pathname === "/api/conversations") {
 			const items = conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).map(c => {
 				const m = c.target.startsWith("mail:") ? mailByKey(c.target.slice(5)) : undefined;
-				return m ? { ...c, mail: { subject: m.subject, from: m.from, source: m.source, at: m.at, ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.html ? { html: true } : {}), ...(m.suggest ? { suggest: m.suggest } : {}) } } : c;
+				return m ? { ...c, mail: mailCard(m) } : c;
 			});
 			return json({ items });
 		}
