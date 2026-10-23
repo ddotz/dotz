@@ -6,7 +6,9 @@ import type { Runner } from "./types.ts";
 export type FakeRow = { id: string; title: string; window?: WindowFacts | "unreadable" };
 type SendOut = { code: number; stdout: string; stderr?: string };
 
-export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?: boolean; sendOut?: (argv: string[]) => SendOut } = {}) {
+// `axOpen`: the list rows can be opened by Accessibility (room.jxa.js open); off, the open reports no list window, as before that path.
+// `axSend`: the JSON room.jxa.js send prints (default {ok:true}); its sends are recorded as ["ax-send", name, text].
+export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?: boolean; axOpen?: boolean; axSend?: () => object; sendOut?: (argv: string[]) => SendOut } = {}) {
 	const opened: string[] = [];
 	const sends: string[][] = [];
 	const focus: string[][] = [];
@@ -26,7 +28,22 @@ export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?:
 			return { code: 0, stdout: `${opts.front ?? "com.example.Editor"} ${opts.kakaoShown ? 1 : 0}\n`, stderr: "" };
 		}
 		if (argv[0] === "osascript") {
-			if (JSON.parse((o?.stdin ?? "{}").trim()).action === "close") {
+			const req = JSON.parse((o?.stdin ?? "{}").trim());
+			if (req.action === "open") {
+				if (!opts.axOpen) return { code: 0, stdout: '{"ok":false,"why":"none"}\n', stderr: "" };
+				const hits = rows.slice(0, req.rows).filter(r => r.title === req.name);
+				if (hits.length !== 1) return { code: 0, stdout: `${JSON.stringify({ ok: false, why: hits.length ? "many" : "none" })}\n`, stderr: "" };
+				current = hits[0]!.id;
+				opened.push(`ax:${current}`);
+				order.push("ax-open");
+				return { code: 0, stdout: '{"ok":true,"row":0}\n', stderr: "" };
+			}
+			if (req.action === "send") {
+				sends.push(["ax-send", req.name, req.text]);
+				order.push("send");
+				return { code: 0, stdout: `${JSON.stringify(opts.axSend?.() ?? { ok: true })}\n`, stderr: "" };
+			}
+			if (req.action === "close") {
 				closes++;
 				current = undefined;
 				return { code: 0, stdout: '{"ok":true}\n', stderr: "" };
