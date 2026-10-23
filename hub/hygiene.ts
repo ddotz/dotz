@@ -10,6 +10,7 @@ import { closeDeadLaneTasks, pruneArchives, pruneTempSessions, pruneUploads, rot
 import { DATA_DIR, lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OMP, paths, writeAtomic } from "./config.ts";
 import { describeCtx } from "./context.ts";
 import { UPLOADS } from "./files.ts";
+import { sweepSnapshots } from "./filesnap.ts";
 import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
 import { purgeTrash } from "./lanetrash.ts";
 import { nightlyHandover, orchestratorPid } from "./orchestrator.ts";
@@ -314,7 +315,10 @@ export function runDataCleanup(now = Date.now()): string[] {
 }
 
 export function startDataCleanup(): void {
-	const run = () => void runDataCleanup();
+	const run = () => {
+		void runDataCleanup();
+		void sweepSnapshots(); // async single scan of files/, never blocks a send
+	};
 	trackTimer("data cleanup", setTimeout(() => {
 		run();
 		trackTimer("data cleanup", setInterval(run, DATA_CLEANUP_EVERY_MS));
