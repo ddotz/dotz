@@ -33,6 +33,8 @@ export type Notice = {
 	by?: string;
 	// The owner message (or earlier post) the asking post replied to: what lets a later [done] to that same request tell it is about the same matter.
 	ref?: string;
+	// kind "watch": the key of the app integration (hub/integrations.ts) the report belongs to. It stays in that app's view and out of 감시 소식.
+	app?: string;
 	read: boolean;
 	// Swiped away / x in the bell: kept (so a session's next progress line does not bring it back) but never listed or counted.
 	dismissed?: boolean;
@@ -124,6 +126,8 @@ export const setLaneTitleResolver = (fn: (name: string) => string | undefined) =
 let watchLabelOf: (name: string) => string = name => name;
 let orchestratorUp: () => boolean = () => true;
 export const setWatchLabelResolver = (fn: (name: string) => string) => void (watchLabelOf = fn);
+let appOf: (n: Notice) => string | undefined = () => undefined;
+export const setAppResolver = (fn: (n: Notice) => string | undefined) => void (appOf = fn);
 // One small-model sentence for a change the rules could not put in words (hub/watchsummary.ts); unset = rules only. The notice shows the rules' text
 // (the raw output folded) at once and the sentence replaces it when it arrives.
 let summarizeWatch: ((output: string) => Promise<string | undefined>) | undefined;
@@ -227,6 +231,11 @@ function upsert(i: Input): Notice {
 	}
 	// The owner's read position may already cover the message this notice points at (read on another device first): it is born read.
 	if (!item.read && coveredByRead(item)) item.read = true;
+	if (item.kind === "watch") {
+		const app = appOf(item);
+		if (app) item.app = app;
+		else delete item.app;
+	}
 	if (i.kind === "watch") pruneWatch();
 	if (!replaying) {
 		save();
