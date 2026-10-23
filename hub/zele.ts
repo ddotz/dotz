@@ -1,7 +1,7 @@
 // Mail and calendar through zele (Gmail API, IMAP/SMTP, Google Calendar with long-lived tokens, so nothing depends on a
 // browser login), ported from 오모냥's zele-watch.ts. The gateway polls; calendar notices go straight to the alert
-// channel with no model call, new mail becomes a mail conversation (hub/mail.ts postMail: web, plus a thread in the mail
-// channel with Discord on) and wakes the orchestrator there, and the
+// channel with no model call, new mail becomes a mail conversation (hub/mail.ts postMail: web only; a thread in the mail
+// channel too when the owner turned on 디스코드에도 올리기 in the mail app settings) and wakes the orchestrator there, and the
 // morning brief is one orchestrator turn in chat. First run only records what exists, so old mail is never replayed.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";

@@ -1,5 +1,5 @@
-// Mail as conversations: each mail (zele, a webmail watcher, a custom plugin) is one web conversation `mail:<key>`, and, with
-// Discord on, one thread in the mail channel. A web message in that conversation reaches the orchestrator the way a message in
+// Mail as conversations: each mail (zele, a webmail watcher, a custom plugin) is one web conversation `mail:<key>`, and, only when the
+// owner turned on 디스코드에도 올리기 for the mail's app instance (MailDeps.threadOn), one thread in the mail channel. A web message in that conversation reaches the orchestrator the way a message in
 // the mail's Discord thread does (hub/intake.ts sendWeb `mail`). Posters come in through POST /api/mail (docs/custom-plugins.md).
 // Discord and the event bus are injected (MailDeps), so this module has no hub imports beyond config.
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
@@ -27,6 +27,8 @@ export type MailDeps = {
 	/** The mail work channel id, made when missing; undefined without Discord. */
 	mailChannel: () => Promise<string | undefined>;
 	discordOn: boolean;
+	/** Whether the app instance of this mail has 디스코드에도 올리기 on; missing = off (web conversation only, no mail channel made). */
+	threadOn?: (source: string, key: string) => boolean;
 	emit: (event: Record<string, any>) => void;
 	/** One orchestrator turn for the mail event, its answer going to `target`. */
 	wake: (event: Record<string, any>, target: string) => void;
@@ -324,7 +326,7 @@ export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult
 async function post(m: MailInput, key: string, target: string, deps: MailDeps): Promise<MailResult> {
 	let thread = m.thread;
 	let parent: string | undefined;
-	if (!thread && deps.discordOn) {
+	if (!thread && deps.discordOn && deps.threadOn?.(m.source, key)) {
 		try {
 			const channel = await deps.mailChannel();
 			if (channel) {

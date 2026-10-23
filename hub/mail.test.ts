@@ -6,8 +6,8 @@ import { emit, eventTarget, type HubEvent } from "./events.ts";
 import { MailError, mailBriefOf, mailByKey, mailByThread, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
 import { outEvent } from "./projectchat.ts";
 
-function fakes(discordOn: boolean, channel: string | undefined = "1561565203714408448") {
-	const calls = { threads: [] as [string, string, string][], sends: [] as [string, string][], events: [] as Record<string, any>[], wakes: [] as [Record<string, any>, string][] };
+function fakes(discordOn: boolean, channel: string | undefined = "1561565203714408448", threadOn: MailDeps["threadOn"] = () => true) {
+	const calls = { channels: 0, threads: [] as [string, string, string][], sends: [] as [string, string][], events: [] as Record<string, any>[], wakes: [] as [Record<string, any>, string][] };
 	let n = 0;
 	const deps: MailDeps = {
 		createThread: async (parent, name, starter) => {
@@ -15,8 +15,12 @@ function fakes(discordOn: boolean, channel: string | undefined = "15615652037144
 			return { id: `14300000000000000${++n}` };
 		},
 		send: async (target, text) => void calls.sends.push([target, text]),
-		mailChannel: async () => channel,
+		mailChannel: async () => {
+			calls.channels++;
+			return channel;
+		},
 		discordOn,
+		threadOn,
 		emit: e => void calls.events.push(e),
 		wake: (e, target) => void calls.wakes.push([e, target]),
 	};
@@ -75,6 +79,29 @@ describe("postMail", () => {
 		expect(r.thread).toBeUndefined();
 		expect(r.target).toBe(`mail:${r.key}`);
 		expect(calls.events[0]).toMatchObject({ channel: r.target, conv: r.target });
+	});
+
+	test("Discord connected but 디스코드에도 올리기 not set (the default): web conversation only, no mail channel made, the wake goes to the web conversation", async () => {
+		for (const threadOn of [undefined, () => false]) {
+			const { deps, calls } = fakes(true, undefined, threadOn);
+			if (!threadOn) delete deps.threadOn;
+			const r = await postMail({ source: "zele", id: uid("off"), subject: "웹만", body: "본문", wake: true }, deps);
+			expect(calls.channels).toBe(0);
+			expect(calls.threads).toEqual([]);
+			expect(calls.sends).toEqual([]);
+			expect(r.thread).toBeUndefined();
+			expect(calls.wakes.map(w => w[1])).toEqual([r.target]);
+		}
+	});
+
+	test("디스코드에도 올리기 is per mail: it gets the source and key of each mail, so one instance can open threads while another stays on the web", async () => {
+		const { deps, calls } = fakes(true, "1561565203714408448", source => source === "naver");
+		const on = await postMail({ source: "naver", id: uid("i"), subject: "켜진 계정", wake: true }, deps);
+		const off = await postMail({ source: "zele", id: uid("i"), subject: "꺼진 계정", wake: true }, deps);
+		expect(on.thread).toBeDefined();
+		expect(off.thread).toBeUndefined();
+		expect(calls.threads.map(t => t[1])).toEqual(["켜진 계정"]);
+		expect(calls.wakes.map(w => w[1])).toEqual([`th:${on.thread}`, off.target]);
 	});
 
 	test("the same mail posted again is a duplicate: nothing emitted, no second thread", async () => {
