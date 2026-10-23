@@ -194,6 +194,43 @@ All routes sit behind the same auth as every other `/api` route.
 
 구성 lists every card, routine and the pins file under the form `웹 맞춤`.
 
+## Surviving updates
+
+Changes made in the dotz source of an install are lost or conflict when an update lands. Everything an install changes on purpose lives
+in the data folder instead, which an update never touches.
+
+### Text overrides: `~/.dotz/custom/texts.json`
+
+The texts the bot receives (wake prompts such as the new-mail prompt, notice templates) come from the message catalog
+(`hub/i18n-ko.ts`, `hub/i18n-en.ts`). Any top-level string or function key of it can be overridden per install, read at use time (no
+restart; the file is re-read when it changes):
+
+```json
+{ "inboxMail": { "text": "[dotz inbox] new mail ... ({1})", "default": "3fa91c02" } }
+```
+
+- The key is the catalog key. A key whose shipped value is a function takes its arguments as `{1}`, `{2}` ... in order.
+- `default` is the hash of the shipped text when the override was written. `bun hub/texts-cli.ts show <key>` prints the shipped text and
+  its hash, `set <key> <text>|--file <path>` writes the override with the right hash, `list` shows each override and whether it still
+  fits, `remove <key>` deletes it. A plain string value works too, without the check.
+- The leads the gateway matches later (`youAre`, `replayLead`, ... in `enLeads`) cannot be overridden.
+- If a key no longer exists, or its shipped text changed since the override was written, the override still applies and the gateway
+  wakes the bot once at start with the list (`texts-reported.json` in the data folder remembers what was reported). The bot compares the
+  new shipped text with its override and rewrites or removes it.
+
+### Carry-over of local changes
+
+If the updater had to back up local commits or uncommitted changes (branch `dotz-local/<YYYYMMDD-HHMM>`, or a patch and copy folder
+`dotz-local-<stamp>-dirty` in `<data dir>/logs`), the gateway wakes the bot once after the restart with the backup name, the changed files
+and a short stat, not the diff. Backups older than 30 days, empty ones and all but the newest 3 are skipped. The backup is marked handled when
+the wake is made (`<data dir>/self-update/carryover-handled.json`), so it is not repeated. The bot then:
+
+1. reads the diff;
+2. ports each change to the custom layer where it fits: texts to `texts.json`, features to `~/.dotz/features`, rules to `RULES.md`;
+3. for a change that only makes sense in core, writes a short Korean report for the dotz maintainer in the worklog (no secrets or personal data)
+   and offers to open a GitHub issue on `ddotz/dotz`;
+4. tells the owner in one message what was carried over and what was not.
+
 ## Rule for the bot
 
 Anything this layer can express goes to `~/.dotz/custom`, and the bot checks it with `GET /api/custom` (`errors` is
