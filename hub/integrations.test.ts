@@ -126,6 +126,7 @@ describe("the registry itself", () => {
 		for (const e of INTEGRATIONS) {
 			expect(e.key).toMatch(/^[a-z0-9-]+$/);
 			expect(e.label.length).toBeGreaterThan(0);
+			expect(e.kind).toBe("app");
 			expect(e.icon.length).toBeGreaterThan(0);
 			expect(e.iconPath).toMatch(/^M[\d .,a-zA-Z-]+$/);
 			expect(Object.values(e.on).some(v => v && v.length)).toBe(true);

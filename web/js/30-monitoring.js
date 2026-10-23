@@ -9,6 +9,8 @@
 const NM = { items: [], loaded: false, failed: false };
 const NT_RESULT = { ok: ["정상", "done"], changed: ["바뀜", "ask"], fail: ["실패", "fail"] };
 const MON_KIND = { watch: "모니터링", schedule: "예약" };
+// The list's groups after 감시 소식: app-type integrations (hub/integrations.ts kind "app"), then the plain monitors.
+const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
 // sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: a phone shows the list instead of the conversation.
 const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0 };
 const monConv = () => current === "monitoring" && narrowChat() && !MON.list;
@@ -58,7 +60,7 @@ const monLine = n => convPreview(n.text) || ntPlain(n.title);
 const monIcon = ic => el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon(ic));
 const monUnread = list => list.reduce((c, n) => c + (n.read ? 0 : 1), 0);
 
-// What is watched, in list order: 감시 소식 (reports no row below owns), then the integrations, then the monitors. Each item carries what
+// What is watched, in list order: 감시 소식 (reports no row below owns), then the 앱 group (the integrations), then the 일반 모니터링 group (the monitors). Each item carries what
 // its row and its conversation show.
 const MON_FEED = "감시 소식";
 function monItems() {
@@ -68,14 +70,14 @@ function monItems() {
     const notices = (it.notices || []).map(ntById).filter(n => n && monMine(n, it)), mails = [...CONV.keys()].filter(t => (it.conv || []).some(p => t.startsWith(p)));
     for (const n of notices) shown.add(n.id);
     const cands = [...notices.map(n => ({ at: monNoticeAt(n), text: monLine(n) })), ...mails.filter(t => CONV.get(t)).map(t => ({ at: CONV.get(t).ts, text: (MAILS.get(t) || {}).subject || CONV.get(t).text }))].sort((a, b) => b.at.localeCompare(a.at));
-    items.push({ key: `i:${it.key}`, group: "서비스", name: it.label, ic: it.icon, notices, mails, unread: monUnread(notices) + mails.reduce((c, t) => c + (ts(t).unread | 0), 0), hint: cands[0] ? cands[0].text : `${it.label} 소식이 아직 없어요`, at: cands[0] ? cands[0].at : "" });
+    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, unread: monUnread(notices) + mails.reduce((c, t) => c + (ts(t).unread | 0), 0), hint: cands[0] ? cands[0].text : `${it.label} 소식이 아직 없어요`, at: cands[0] ? cands[0].at : "" });
   }
   for (const m of mons) {
     const notices = NT.items.filter(n => monHas(m, n)), last = monNewest(notices), names = monNames(m);
     for (const n of notices) shown.add(n.id);
     // The row says the newest result in words: the newest report, unless a later run said nothing (an "ok" run posts no report).
     const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
-    items.push({ key: `m:${m.name}`, group: "모니터링", name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices),
+    items.push({ key: `m:${m.name}`, group: MON_GROUP.plain, name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices),
       hint: fresh ? monStrip(monLine(last), names) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       badge: m.last_result === "fail" ? ["실패", "err"] : m.kind === "schedule" ? [MON_KIND.schedule, ""] : null });
   }

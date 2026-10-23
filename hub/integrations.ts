@@ -4,6 +4,7 @@
 //
 //   key        stable id, [a-z0-9-]
 //   label      the Korean name in the list
+//   kind       "app": an interactive (app-type) source the owner talks to; 모니터링 lists these as the 앱 group, between 감시 소식 and the plain monitors
 //   icon       an icon name of web/js/01-core.js ICONS; `iconPath` (24x24 stroke path) registers it when the web has none yet
 //   on         shown only when one of these holds on this install: a feature folder that is enabled (feature.md `enabled`), a data file
 //              that exists ("dir/file.json", or "dir/file.json#key" = the file has that key), or a named runtime flag set by the caller
@@ -16,6 +17,7 @@ import { loadFeatureDirs } from "./featuredirs.ts";
 export type IntegrationEntry = {
 	key: string;
 	label: string;
+	kind: "app";
 	icon: string;
 	iconPath?: string;
 	on: { features?: string[]; files?: string[]; flags?: string[] };
@@ -24,25 +26,25 @@ export type IntegrationEntry = {
 
 export const INTEGRATIONS: IntegrationEntry[] = [
 	{
-		key: "mail", label: "메일", icon: "mail",
+		key: "mail", label: "메일", kind: "app", icon: "mail",
 		iconPath: "M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM3.5 7.5l8.5 6 8.5-6",
 		on: { features: ["webmail-no-api"], flags: ["zele"] },
 		match: { conv: ["mail:"], draft: ["받는이"], text: ["메일"] },
 	},
 	{
-		key: "kakao", label: "카카오톡", icon: "kakao",
+		key: "kakao", label: "카카오톡", kind: "app", icon: "kakao",
 		iconPath: "M12 4c4.7 0 8.5 2.9 8.5 6.5S16.7 17 12 17c-.8 0-1.6-.1-2.3-.3L5.5 19.5l1-3.6C4.7 14.6 3.5 12.7 3.5 10.5 3.5 6.9 7.3 4 12 4z",
 		on: { features: ["kakao"] },
 		match: { draft: ["대화방"], text: ["카카오톡", "카톡", "kakao"] },
 	},
 	{
-		key: "instagram", label: "인스타그램", icon: "instagram",
+		key: "instagram", label: "인스타그램", kind: "app", icon: "instagram",
 		iconPath: "M7 3.5h10A3.5 3.5 0 0 1 20.5 7v10a3.5 3.5 0 0 1-3.5 3.5H7A3.5 3.5 0 0 1 3.5 17V7A3.5 3.5 0 0 1 7 3.5zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0M17 7h.01",
 		on: { files: ["custom/sns/config.json#instagram"] },
 		match: { text: ["인스타", "instagram"] },
 	},
 	{
-		key: "youtube", label: "유튜브", icon: "youtube",
+		key: "youtube", label: "유튜브", kind: "app", icon: "youtube",
 		iconPath: "M4 6.5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zM10 9.5v5l4.5-2.5z",
 		on: { files: ["custom/sns/config.json#youtube"] },
 		match: { text: ["유튜브", "youtube"] },
@@ -51,7 +53,7 @@ export const INTEGRATIONS: IntegrationEntry[] = [
 
 export type IntegrationContext = { features: ReadonlySet<string>; files: (spec: string) => boolean; flags: ReadonlySet<string> };
 type NoticeLike = { id: string; title?: string; text?: string; open?: string; src?: string; read?: boolean; dismissed?: boolean; decision?: { to?: string } };
-export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "icon" | "iconPath"> & { conv: string[]; unread: number; notices: string[] };
+export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "kind" | "icon" | "iconPath"> & { conv: string[]; unread: number; notices: string[] };
 
 // What is on at this install, read from disk: enabled feature folders (a personal copy of a shipped folder wins), data files, and the flags the caller knows.
 export function integrationContext(dataDir: string, flags: Iterable<string> = []): IntegrationContext {
@@ -91,6 +93,6 @@ export function integrationItems(ctx: IntegrationContext, notices: readonly Noti
 		const mine = notices.filter(n => !n.dismissed && belongsTo(e, n));
 		const convs = e.match.conv ?? [];
 		const fromConvs = Object.entries(convUnread).reduce((c, [t, n]) => c + (convs.some(p => t.startsWith(p)) ? n : 0), 0);
-		return { key: e.key, label: e.label, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, unread: mine.filter(n => !n.read).length + fromConvs, notices: mine.slice(0, cap).map(n => n.id) };
+		return { key: e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, unread: mine.filter(n => !n.read).length + fromConvs, notices: mine.slice(0, cap).map(n => n.id) };
 	});
 }

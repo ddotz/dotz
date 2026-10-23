@@ -66,7 +66,7 @@ const store = (): N[] => [
 	{ id: "mail", kind: "message", tone: "", title: "메일", text: "새 메일: 김팀장", open: "mail:1", src: "mail:1", ts: `${T}07:00Z`, read: false },
 	{ id: "kakao-alert", kind: "alert", tone: "", title: "알림", text: "카톡 답장 보냈어요", open: "alert", src: "alert", ts: `${T}08:00Z`, read: false },
 ];
-const integrations = [{ key: "mail", label: "메일", icon: "mail", conv: ["mail:"], notices: ["mail"] }, { key: "kakao", label: "카카오톡", icon: "chat", conv: [], notices: ["kakao-alert"] }];
+const integrations = [{ key: "mail", label: "메일", kind: "app", icon: "mail", conv: ["mail:"], notices: ["mail"] }, { key: "kakao", label: "카카오톡", kind: "app", icon: "chat", conv: [], notices: ["kakao-alert"] }];
 const monitors = [{ name: "node security updates", watch: "node-security-updates", kind: "watch", channel: "ch:9", last_run: `${T}05:30Z`, last_result: "fail", next_run: `${T}35:30Z`, every: "30분마다" }];
 const CHAT = ["alert", "dec", "msg", "res", "kakao-alert"];
 
@@ -88,6 +88,19 @@ describe("모니터링 lists only what a watch, a schedule or an integration pro
 		const m = load(store(), integrations, monitors);
 		expect(m.monKeyOf({ kind: "watch", title: "node-security-updates" })).toBe("m:node security updates");
 		expect(m.monKeyOf({ kind: "watch", title: "예약" })).toBe("notice");
+	});
+});
+
+describe("모니터링 list order", () => {
+	test("감시 소식 first, then the 앱 group (the integrations), then the 일반 모니터링 group (the monitors)", () => {
+		const m = load(store(), integrations, monitors), rows = m.monRows(m.monItems(), null);
+		const order = rows.map(r => (r.header ? `#${r.header}` : String(r.k)));
+		expect(order).toEqual(["notice", "#앱", "i:mail", "i:kakao", "#일반 모니터링", "m:node security updates"]);
+	});
+
+	test("an integration without a kind is an app; no 앱 header when none is enabled", () => {
+		const m = load([], [], monitors);
+		expect(m.monRows(m.monItems(), null).map(r => (r.header ? `#${r.header}` : String(r.k)))).toEqual(["notice", "#일반 모니터링", "m:node security updates"]);
 	});
 });
 
