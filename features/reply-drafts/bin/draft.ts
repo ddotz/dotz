@@ -1,13 +1,16 @@
 // Action CLI the orchestrator runs: `new --mail <key>`, `revise <id> --change <text>`, `send <id>`, `drop <id>`, `status`.
 // `new` and `revise` print the [ask] block to post unchanged (comment and chat drafts print the reply text only, notes go to stderr);
 // `send` refuses unless the user picked 1) 보내기 for that exact id. Stdin of `new` is the text to answer.
+import { replyChoiceBlock } from "../../../hub/choices.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
 import { askText, buildDraft, defaultCall, dropDraft, kindOf, refineAfterCorrection, reviseDraft, sendDraft, type FlowDeps } from "../lib/flow.ts";
 import { INSTALL, loadSettings, recordCorrection, validApp } from "../lib/settings.ts";
 import { addDraft, listDrafts } from "../lib/store.ts";
 
-const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app> [--room <id>] --change <text> | status\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
+// Exit code of `new --kind chat` when the message needs the owner's own decision: stdout is the choice block to post as an [ask] (hub/choices.ts replyChoiceBlock).
+export const ASK_EXIT = 4;
+const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app> [--room <id>] --change <text> | status\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
 
 type Out = { lines: string[]; code: number; notes?: string[] };
 export type DraftDeps = FlowDeps & { kakaoReader?: (chatId: string) => Promise<OwnerReader> };
@@ -52,8 +55,10 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 					notes.push(`확인: 이 대화방 말투를 못 배웠어요 (${(e as Error).message})`);
 				}
 			}
-			const item: ReplyItem = { kind, app, ...(room !== undefined ? { room } : {}), from, subject: flag(rest, "--subject"), text: stdin, context: flag(rest, "--context") };
+			const choice = flag(rest, "--choice")?.trim();
+			const item: ReplyItem = { kind, app, ...(room !== undefined ? { room } : {}), from, subject: flag(rest, "--subject"), text: stdin, context: flag(rest, "--context"), ...(kind === "chat" && choice ? { choice } : {}) };
 			const built = await buildDraft(item, { source: flag(rest, "--source") ?? "manual", mailId: flag(rest, "--id") ?? key, ref: key }, deps);
+			if (built.action === "ask") return { lines: [replyChoiceBlock(built.question, built.choices)], code: ASK_EXIT, notes };
 			if (built.action === "skip") return { lines: [`답장이 필요 없어 보여요: ${built.reason}`], code: kind === "chat" ? 3 : 0, notes };
 			if (kind === "comment" || kind === "chat") return { lines: [built.rec.body], code: 0, notes: [...notes, ...built.warnings.map(w => `확인: ${w}`)] };
 			addDraft(built.rec);
@@ -93,7 +98,7 @@ if (import.meta.main) {
 	try {
 		const out = await runDraft(args, stdin, { analyze: defaultCall(loadSettings().model) });
 		// stdout is only ever something to post or pipe on: on a non-zero exit the lines are explanations and go to stderr.
-		for (const l of out.lines) (out.code === 0 ? console.log : console.error)(l);
+		for (const l of out.lines) (out.code === 0 || out.code === ASK_EXIT ? console.log : console.error)(l);
 		for (const n of out.notes ?? []) console.error(n);
 		process.exit(out.code);
 	} catch (e) {

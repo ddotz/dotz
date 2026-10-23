@@ -4,6 +4,8 @@
 // the user's own sent texts and corrections. The script, never the model, posts and sends.
 // Pure: no fs, no network, no config import.
 
+import { cleanChoices, cleanQuestion } from "./choices.ts";
+
 export type ModelCall = (system: string, user: string) => Promise<string>;
 export type ReplyKind = "mail" | "comment" | "chat";
 
@@ -18,6 +20,7 @@ export type ReplyItem = {
 	subject?: string;
 	text: string;
 	context?: string;
+	choice?: string; // chat: the user's pick for the open question of an earlier "ask" result; the draft then carries it out
 };
 
 export type ReplyStyle = {
@@ -34,10 +37,12 @@ export type DraftOut = { to: string; subject?: string; body: string };
 export type ReplyResult =
 	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; tries: number }
 	| { action: "skip"; reason: string };
+// chat only (generateChatReply): the message needs a decision only the user can make; 2-4 short choices come back instead of a draft
+export type AskResult = { action: "ask"; question: string; choices: string[] };
 
 export type SenderFilter = { only: string[]; skip: string[] };
 export type PromptExtras = { previous?: DraftOut; change?: string; failures?: string[] };
-export type ModelJson = { action: "skip" | "draft"; reason: string; to: string; subject?: string; body: string; questions: string[] };
+export type ModelJson = { action: "skip" | "draft" | "ask"; reason: string; to: string; subject?: string; body: string; questions: string[]; question?: string; choices?: string[] };
 
 const DEFAULT_MAX: Record<ReplyKind, number> = { mail: 1200, comment: 300, chat: 300 };
 const AUTOMATED = /^(no[-_.]?reply|do[-_.]?not[-_.]?reply|mailer[-_.]?daemon|postmaster|bounces?|notifications?|notify|alerts?|auto[-_.]?(reply|mailer|confirm)|newsletter)([-_.+].*)?$/i;
@@ -81,6 +86,12 @@ Output exactly one JSON object in a \`\`\`json block and nothing after it:
 {"action":"skip"|"draft","reason":"one short sentence","to":"recipient","subject":"subject","body":"the reply text","questions":["what the user must decide"]}
 "to" must be the sender or an address already on the thread (for a comment or chat message: the author's handle). For a skip, leave to/subject/body empty.`;
 
+// Chat only. The same single model call first decides whether the message needs the user's own decision.
+const CHAT_ASK = `
+First check the LAST received chat message: if it asks the user for a decision, preference or fact that only he knows and the samples, rules and context do not settle (yes or no, which option, a date or time, cancel or not, go or not), do NOT write a draft and do NOT decide for him. Output {"action":"ask","reason":"one short sentence","question":"the open question in one short Korean sentence","choices":["2 to 4 answers he could pick, a few words each, written as his own decision"],"to":"","body":"","questions":[]} instead.`;
+const CHAT_PICK = `
+The user has ALREADY decided what to answer (his pick is given below). Write the reply that carries out exactly that decision, nothing more: no new decision, date or promise. Never output action "ask".`;
+
 const list = (title: string, xs: string[], empty: string) => `${title}\n${xs.length ? xs.map(x => `- ${x}`).join("\n") : empty}`;
 
 export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExtras = {}): { system: string; user: string } {
@@ -112,12 +123,13 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		"",
 		list("Forbidden expressions:", style.forbidden, "(none)"),
 		"",
+		...(item.kind === "chat" && item.choice ? [`The user's decision (his own words, data): "${item.choice.replace(/\s+/g, " ").trim().slice(0, 60).replace(/"/g, "'")}"`, ""] : []),
 		`Keep the body within ${style.maxChars ?? DEFAULT_MAX[item.kind]} characters.`,
 	];
 	if (extra.previous) parts.push("", "Previous draft:", `to: ${extra.previous.to}`, ...(extra.previous.subject ? [`subject: ${extra.previous.subject}`] : []), "<<<DRAFT", extra.previous.body, "DRAFT>>>");
 	if (extra.change) parts.push("", "The user asked for this change to the previous draft (apply it, keep the rest):", extra.change.trim());
 	if (extra.failures?.length) parts.push("", "Your last output failed these checks; fix every one:", ...extra.failures.map(f => `- ${f}`));
-	return { system: SYSTEM, user: parts.join("\n") };
+	return { system: item.kind === "chat" ? SYSTEM + (item.choice ? CHAT_PICK : CHAT_ASK) : SYSTEM, user: parts.join("\n") };
 }
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map(x => x.trim()) : []);
@@ -131,9 +143,10 @@ function toJson(raw: string): ModelJson | undefined {
 	}
 	if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
 	const o = v as Record<string, unknown>;
-	if (o.action !== "skip" && o.action !== "draft") return undefined;
+	if (o.action !== "skip" && o.action !== "draft" && o.action !== "ask") return undefined;
 	const str = (x: unknown) => (typeof x === "string" ? x : "");
-	return { action: o.action, reason: str(o.reason).trim(), to: str(o.to).trim(), ...(str(o.subject).trim() ? { subject: str(o.subject).trim() } : {}), body: str(o.body).trim(), questions: strings(o.questions) };
+	const ask = o.action === "ask" ? { question: cleanQuestion(o.question), choices: cleanChoices(o.choices) } : undefined;
+	return { action: o.action, reason: str(o.reason).trim(), ...(ask ? { question: ask.question, choices: ask.choices } : {}), to: str(o.to).trim(), ...(str(o.subject).trim() ? { subject: str(o.subject).trim() } : {}), body: str(o.body).trim(), questions: strings(o.questions) };
 }
 
 // The model's one JSON object: the last ```json block, else the last line that is a {...} object, else the whole text.
@@ -187,7 +200,7 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle): 
 const defaultTo = (item: ReplyItem) => (item.kind === "mail" ? addressesOf(item.replyTo)[0] ?? addressesOf(item.from)[0] ?? item.from : item.from);
 const defaultSubject = (item: ReplyItem) => (item.kind === "mail" && item.subject?.trim() ? (/^re\s*:/i.test(item.subject.trim()) ? item.subject.trim() : `Re: ${item.subject.trim()}`) : undefined);
 
-async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: PromptExtras): Promise<ReplyResult> {
+async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: PromptExtras): Promise<ReplyResult | AskResult> {
 	let failures: string[] | undefined;
 	let first: { draft: DraftOut; questions: string[]; warnings: string[] } | undefined;
 	for (let tries = 1; tries <= 2; tries++) {
@@ -198,6 +211,12 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 			continue;
 		}
 		if (parsed.action === "skip") return { action: "skip", reason: parsed.reason || "no reply needed" };
+		if (parsed.action === "ask") {
+			// Only a chat message without a pick may ask, and only with a question and 2+ usable choices.
+			if (item.kind === "chat" && !item.choice && parsed.question && parsed.choices?.length) return { action: "ask", question: parsed.question, choices: parsed.choices };
+			failures = [item.choice ? "the user already decided: action must be draft" : "action ask needs a chat message, a question and 2 to 4 choices"];
+			continue;
+		}
 		const draft: DraftOut = { to: parsed.to || defaultTo(item), subject: parsed.subject ?? defaultSubject(item), body: parsed.body };
 		if (!draft.subject) delete draft.subject;
 		const found = lintReply(draft, item, style);
@@ -211,7 +230,15 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 }
 
 // One model call; when the lint fails, ONE retry with the failures listed; what still fails comes back as warnings with the draft.
-export const generateReply = (item: ReplyItem, style: ReplyStyle, call: ModelCall): Promise<ReplyResult> => run(item, style, call, {});
+const noAsk = async (p: Promise<ReplyResult | AskResult>): Promise<ReplyResult> => {
+	const r = await p;
+	if (r.action === "ask") throw new Error("unexpected ask");
+	return r;
+};
+export const generateReply = (item: ReplyItem, style: ReplyStyle, call: ModelCall): Promise<ReplyResult> => noAsk(run(item, style, call, {}));
+
+// A chat message: the same single call may return an ask (the message needs the user's own decision) instead of a draft; with `item.choice` it always drafts.
+export const generateChatReply = (item: ReplyItem, style: ReplyStyle, call: ModelCall): Promise<ReplyResult | AskResult> => run(item, style, call, {});
 
 // The same, applying the user's requested change to a previous draft.
-export const reviseReply = (item: ReplyItem, style: ReplyStyle, previous: DraftOut, change: string, call: ModelCall): Promise<ReplyResult> => run(item, style, call, { previous, change });
+export const reviseReply = (item: ReplyItem, style: ReplyStyle, previous: DraftOut, change: string, call: ModelCall): Promise<ReplyResult> => noAsk(run(item, style, call, { previous, change }));

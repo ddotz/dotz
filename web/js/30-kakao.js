@@ -10,7 +10,7 @@ const kkItem = it => !!it && (it.key === KK_KEY || !!it.kk);   // a peer's Kakao
 const KK_PAGE = 80;
 const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, pick: null,   // pick: null = open while no room is chosen
-  open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], hidden: new Set(),
+  open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", draftT: 0, tailing: false, again: false,
   typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
   peerT: 0, peerBusy: false, peerHead: "",
@@ -411,7 +411,7 @@ async function kkOpen(id) {
   if (!r) return;
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
   const seq = ++KK.seq;
-  Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" }, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], hidden: new Set(),
+  Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" }, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
     loading: true, roomErr: "", pill: false, stick: true, pin: "", placed: false, readSent: "", edit: null, drafting: "" });
   kkTa.value = KK.typed.get(id) || ""; kkAutosize();
   kkPaintAll(); convTitle();
@@ -419,7 +419,7 @@ async function kkOpen(id) {
     const d = await api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}`);
     if (seq !== KK.seq) return;
     KK.room = d.room || KK.room; KK.msgs = Array.isArray(d.messages) ? d.messages : []; KK.read = d.read ?? null;
-    KK.drafts = Array.isArray(d.drafts) ? d.drafts : []; KK.sends = Array.isArray(d.sends) ? d.sends : [];
+    KK.ask = kkAskOf(d); KK.drafts = Array.isArray(d.drafts) ? d.drafts : []; KK.sends = Array.isArray(d.sends) ? d.sends : [];
     KK.more = KK.msgs.length >= KK_PAGE; KK.div = kkMarker(KK.msgs, KK.read, d.kakaoUnread | 0);
     KK.loading = false; KK.pin = "bottom";
     kkPaintAll(); convTitle();
@@ -480,7 +480,7 @@ async function kkTail() {
 }
 function kkApply(d) {
   const have = new Set(KK.msgs.map(m => m.logId)), fresh = (Array.isArray(d.messages) ? d.messages : []).filter(m => !have.has(m.logId));
-  if (Array.isArray(d.drafts)) KK.drafts = d.drafts;
+  if (Array.isArray(d.drafts)) { KK.drafts = d.drafts; KK.ask = kkAskOf(d); }
   if (Array.isArray(d.sends)) KK.sends = d.sends;
   if (d.room) KK.room = d.room;
   if (fresh.length) KK.msgs = [...KK.msgs, ...fresh].sort((a, b) => (kkGt(a.logId, b.logId) ? 1 : kkGt(b.logId, a.logId) ? -1 : 0));
@@ -581,6 +581,25 @@ async function kkSendEvent(e) {
 }
 
 /* ---- drafts ---- */
+// The room's open question (the draft model found that the last message needs the owner's decision): { question, choices } or null.
+const kkAskOf = d => (d && d.ask && typeof d.ask.question === "string" && Array.isArray(d.ask.choices) && d.ask.choices.length ? d.ask : null);
+// The question with one button per choice: a pick makes the draft for it (one model call, then the normal 보내기 / 고치기 / 버리기 card); 직접 쓸게 forgets the question and opens the composer.
+function kkAskCard() {
+  const a = KK.ask, id = KK.open;
+  if (!a || KK.drafting === id) return null;
+  const own = async ev => {
+    ev.currentTarget.disabled = true;
+    try { await api(`/api/kakao/chat/${enc(id)}/ask/drop`, "POST", {}); } catch (e) { toast(e.message, true); }
+    if (KK.open !== id) return;
+    KK.ask = null; kkPaintFoot(); kkTa.focus();
+  };
+  return el("div", { class: "kk-draft kk-ask" },
+    el("div", { class: "kk-dh", text: "답장 전에 골라 주세요" }),
+    el("div", { class: "kk-dt", text: a.question }),
+    el("div", { class: "btns kk-choices" },
+      ...a.choices.map((c, i) => el("button", { class: "btn tonal", type: "button", "data-k": "pick", "data-i": String(i), text: c, onclick: () => kkMakeDraft(c) })),
+      el("button", { class: "btn text", type: "button", "data-k": "own", text: "직접 쓸게", onclick: own })));
+}
 function kkDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); kkTail(); } finally { btn.disabled = false; } };
   return el("div", { class: "kk-draft", "data-code": d.code },
@@ -615,7 +634,8 @@ function kkEditCancel() {
 function kkPaintFoot() {
   const edit = KK.edit && KK.drafts.some(d => d.code === KK.edit.code) ? KK.edit : null;
   if (KK.edit && !edit) KK.edit = null;
-  clear(kkDrafts).append(...KK.drafts.filter(d => !edit || d.code !== edit.code).map(kkDraftCard));
+  const ask = kkAskCard();
+  clear(kkDrafts).append(...(ask ? [ask] : []), ...KK.drafts.filter(d => !edit || d.code !== edit.code).map(kkDraftCard));
   kkDrafts.hidden = !kkDrafts.firstChild;
   kkEditBar.hidden = !edit;
   const making = !!KK.open && KK.drafting === KK.open;
@@ -623,14 +643,14 @@ function kkPaintFoot() {
   kkDraftBtn.lastChild.textContent = making ? "초안 만드는 중…" : "답장 초안";
 }
 // Drafts are made only on demand (or by a room's 자동 초안): the request starts it, and the kakao_draft event for this room says it is done.
-async function kkMakeDraft() {
+async function kkMakeDraft(choice) {
   const id = KK.open;
   if (!id || KK.drafting === id) return;
   KK.drafting = id; kkPaintFoot();
   clearTimeout(KK.draftT);
   KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast("초안이 아직 오지 않았어요", true); } }, 120000);
   try {
-    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", {});
+    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", choice ? { choice } : {});
     if (r && typeof r.error === "string" && r.error) throw new Error(r.error);
   } catch (e) {
     clearTimeout(KK.draftT);
@@ -688,7 +708,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 // renderMonitoring (30-monitoring.js): `item` = the kakao item is the selected one; `shown` = its pane is on screen (not behind the phone's list).
 function kkMode(item, shown, pc) {
   if (KK.vis && (KK.pc ? KK.pc.url : "") !== (pc ? pc.url : "")) {   // the other computer's rooms: start from an empty pane
-    Object.assign(KK, { vis: false, open: "", rooms: [], loaded: false, failed: false, error: "", roomErr: "", room: null, msgs: [], drafts: [], sends: [], pick: null, rseq: KK.rseq + 1 });
+    Object.assign(KK, { vis: false, open: "", rooms: [], loaded: false, failed: false, error: "", roomErr: "", room: null, msgs: [], drafts: [], ask: null, sends: [], pick: null, rseq: KK.rseq + 1 });
     KK.seq++; clearInterval(KK.timer); clearInterval(KK.peerT);
   }
   KK.pc = item ? pc || null : null;

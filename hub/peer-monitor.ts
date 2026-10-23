@@ -251,9 +251,10 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.op === "send" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/send`, { text: a.text }, login);
 				if (a.op === "send-delete" && a.chatId && a.sendId) return ask("DELETE", `/api/kakao/chat/${id}/send/${encodeURIComponent(String(a.sendId))}`, undefined, login);
 				if (a.op === "read" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/read`, { logId: a.logId }, login);
-				if (a.op === "draft" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/draft`, {}, login);
+				if (a.op === "draft" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/draft`, typeof a.choice === "string" ? { choice: a.choice } : {}, login);
+				if (a.op === "ask-drop" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/ask/drop`, {}, login);
 				if ((a.op === "draft-send" || a.op === "draft-drop") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
-				return bad("op must be send, send-delete, read, draft, draft-send or draft-drop");
+				return bad("op must be send, send-delete, read, draft, ask-drop, draft-send or draft-drop");
 			}
 			// A project on this machine (hub/projectdelete.ts): what deleting it removes, and the delete itself.
 			case "project": {
