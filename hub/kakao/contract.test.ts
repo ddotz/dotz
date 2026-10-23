@@ -58,19 +58,19 @@ describe("mergeMessages / addOnce", () => {
 });
 
 function rig() {
-	const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { sendOut: () => ({ code: 0, stdout: "" }) });
+	const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }]);
 	const runner: Runner = screen.runner;
 	const calls = screen.sends;
-	const deps = (lease?: Lease): DispatchDeps => ({ paths, runner, now: () => 1, kmsg: "/fake/kmsg", latestIncoming: async () => undefined, ...(lease ? { lease } : {}) });
+	const deps = (lease?: Lease): DispatchDeps => ({ paths, runner, now: () => 1, latestIncoming: async () => undefined, ...(lease ? { lease } : {}) });
 	return { calls, deps };
 }
 
 const refuse: Lease = async () => ({ ok: false, reason: "다른 맥이 이 대화방을 맡고 있어요" });
 const allow: Lease = async () => ({ ok: true });
-const SEND = ["/fake/kmsg", "send", "--chat-id", "chat_alex", "--", "hello"];
+const SEND = ["ax-send", "Alex", "hello"];
 
 describe("dispatchSend", () => {
-	test("a typed send runs kmsg (dry run, then send) when there is no lease hook or the lease allows", async () => {
+	test("a typed send goes in by Accessibility when there is no lease hook or the lease allows", async () => {
 		for (const lease of [undefined, allow]) {
 			const r = rig();
 			expect(await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(lease))).toMatchObject({ ok: true });
@@ -78,7 +78,7 @@ describe("dispatchSend", () => {
 		}
 	});
 
-	test("a refused lease, or one that cannot be checked, is a failed send and kmsg never runs", async () => {
+	test("a refused lease, or one that cannot be checked, is a failed send and KakaoTalk is never touched", async () => {
 		const r = rig();
 		expect(await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(refuse))).toMatchObject({ ok: false, reason: "다른 맥이 이 대화방을 맡고 있어요" });
 		const broken = await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(async () => Promise.reject(new Error("net"))));
@@ -102,7 +102,7 @@ describe("dispatchSend", () => {
 		expect((await listDrafts(r.deps()))[0]!.status).toBe("sent");
 	});
 
-	test("an unknown draft code is refused before the lease or kmsg", async () => {
+	test("an unknown draft code is refused before the lease or any send", async () => {
 		const r = rig();
 		let asked = false;
 		const result = await dispatchSend({ kind: "draft", code: "KNOPE", ownerApproved: true }, r.deps(async () => ((asked = true), { ok: true })));

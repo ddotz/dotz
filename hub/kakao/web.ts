@@ -1,6 +1,6 @@
 // Web side of the per-room KakaoTalk integration (contract: docs/kakao-rooms-api.md). Only rooms the owner chose (config watch_chats)
 // are readable, sendable and shown. Everything is injected (database, runner, clock, paths, broadcast) so tests run without the app.
-// Events carry ids only: never a body or a room name. Sends go only through send.ts (kmsg UI automation).
+// Events carry ids only: never a body or a room name. Sends go only through send.ts (Accessibility UI automation).
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
@@ -10,6 +10,7 @@ import { writePrivate } from "./creds.ts";
 import { hasWords, type KakaoDb, memberLabel, messageById, messages, ownTextCounts, ownTexts, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
 import { fetchMedia, mediaOf, mediaTarget, serveLocalFile, showsText } from "./media.ts";
+import type { AxStep } from "./room.ts";
 import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 
@@ -21,7 +22,8 @@ export type WebDeps = {
 	broadcast: (event: Record<string, unknown>) => void;
 	// The watched list changed (live.ts re-reads the config).
 	onWatchChange?: () => void;
-	kmsg?: string;
+	// How a send watchdog is scheduled (tests pass their own; the default is an unref'd timer).
+	later?: (fn: () => void, ms: number) => void;
 	// This machine's name, stamped on every message and send record (default: the host name).
 	collector?: string;
 	// Whether this machine may send into a chat right now (contract.ts dispatchSend). Default: always.
@@ -39,7 +41,7 @@ export type WebDeps = {
 	fetch?: typeof fetch;
 };
 
-export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string; ms?: SendMs };
+export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string; ms?: SendMs; ax?: AxStep[] };
 
 const ROOMS_TTL_MS = 30_000;
 const MAX_TEXT = 1000;
@@ -47,6 +49,8 @@ const MAX_SENDS = 200;
 const SEND_WINDOW_MS = 24 * 3600 * 1000;
 const OFF = { error: "카톡 연동이 꺼져 있어요" };
 const LOST = "게이트웨이가 다시 시작돼서 결과를 확인하지 못했어요";
+const STUCK_MS = 60_000;
+const STUCK = "60초가 지나도 끝나지 않아서 실패로 처리했어요";
 const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
 const DRAFT_FAILED = "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요";
 const DRAFT_READ = 300;
@@ -89,6 +93,7 @@ const digits = (v: unknown): v is string => typeof v === "string" && /^\d+$/.tes
 
 export function createKakaoWeb(deps: WebDeps) {
 	const { paths, now } = deps;
+	const later = deps.later ?? ((fn: () => void, ms: number) => (setTimeout(fn, ms) as { unref?: () => void }).unref?.());
 	const collector = deps.collector ?? hostname();
 	const summaryFile = (chatId: string) => join(paths.dataDir, "kakao", "summaries", `${chatId}.md`);
 	const drafting = new Set<string>();
@@ -130,7 +135,9 @@ export function createKakaoWeb(deps: WebDeps) {
 
 	const storedSends = () => readJsonFile<SendRecord[]>(sendsFile, []);
 	// A "sending" record nobody is working on (the gateway restarted meanwhile) is shown as failed.
-	const sendList = (): SendRecord[] => storedSends().map(s => (s.state === "sending" && !inflight.has(s.id) ? { ...s, state: "failed", reason: LOST } : s));
+	// A "sending" record older than the watchdog time is shown as failed even when the timer is gone.
+	const sendList = (): SendRecord[] =>
+		storedSends().map(s => (s.state !== "sending" ? s : !inflight.has(s.id) ? { ...s, state: "failed", reason: LOST } : now() - s.at > STUCK_MS ? { ...s, state: "failed", reason: STUCK } : s));
 	const saveSends = (list: SendRecord[]) => writePrivate(sendsFile, `${JSON.stringify(list.slice(-MAX_SENDS), null, 1)}\n`);
 
 	const latestIncoming = async (config: KakaoConfig, chatId: string) =>
@@ -141,6 +148,12 @@ export function createKakaoWeb(deps: WebDeps) {
 		saveSends(addOnce(storedSends(), rec));
 		deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state: "sending" });
 		inflight.add(rec.id);
+		// Watchdog: a send still "sending" after STUCK_MS is failed for the owner (a late result of the job still replaces it).
+		later(() => {
+			if (storedSends().find(s => s.id === rec.id)?.state !== "sending") return;
+			saveSends(storedSends().map(s => (s.id === rec.id ? { ...s, state: "failed", reason: STUCK } : s)));
+			deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state: "failed", reason: STUCK });
+		}, STUCK_MS);
 		const run = (async () => {
 			let r: SendResult;
 			try {
@@ -151,7 +164,7 @@ export function createKakaoWeb(deps: WebDeps) {
 			inflight.delete(rec.id);
 			const state = r.ok ? "sent" : "failed";
 			const reason = r.ok ? undefined : (r.reason ?? "보내지 못했어요");
-			saveSends(storedSends().map(s => (s.id === rec.id ? { ...s, state, ...(reason ? { reason } : {}), ...(r.ms ? { ms: r.ms } : {}) } : s)));
+			saveSends(storedSends().map(s => (s.id === rec.id ? { ...s, state, ...(reason ? { reason } : {}), ...(r.ms ? { ms: r.ms } : {}), ...(r.ax ? { ax: r.ax } : {}) } : s)));
 			deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state, ...(reason ? { reason } : {}) });
 			if (rec.draft) deps.broadcast({ kind: "kakao_draft", chatId: rec.chatId });
 		})();
@@ -316,7 +329,7 @@ export function createKakaoWeb(deps: WebDeps) {
 					const cache = await allRooms(config!, true);
 					const room = cache.all.find(r => r.chatId === chatId);
 					if (!room) return { ok: false, reason: "대화방을 찾지 못했어요" };
-					return dispatchSend({ kind: "text", chatId, roomName: room.name, text }, { paths, runner: deps.runner, now, kmsg: deps.kmsg, lease: deps.lease, roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })) });
+					return dispatchSend({ kind: "text", chatId, roomName: room.name, text }, { paths, runner: deps.runner, now, lease: deps.lease, roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })) });
 				});
 				return json({ id: rec.id, state: "sending" }, 202);
 			}
@@ -403,7 +416,6 @@ export function createKakaoWeb(deps: WebDeps) {
 					paths,
 					runner: deps.runner,
 					now,
-					kmsg: deps.kmsg,
 					lease: deps.lease,
 					latestIncoming: id => latestIncoming(config!, id),
 					roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })),

@@ -40,11 +40,11 @@ function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void, 
 		calls: [] as { system: string; user: string }[],
 		reply: async (): Promise<ModelReply> => ({ text: JSON.stringify({ action: "draft", body: "내일 좋아", summary: "점심 약속을 잡는 중" }), inputTokens: 1200, outputTokens: 30 }),
 	};
-	const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { sendOut: () => ({ code: state.failSend ? 1 : 0, stdout: "" }) });
+	const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { axSend: () => (state.failSend ? { ok: false, why: "busy" } : { ok: true }) });
 	const runner: Runner = screen.runner;
 	const calls = screen.sends;
 	const db = sqliteDb(dbPath);
-	const web = createKakaoWeb({ paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, kmsg: "/fake/kmsg", collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()), fetch: (async (input: unknown, init?: RequestInit) => (fetched.push({ url: String(input), init }), upstream.reply(String(input)))) as unknown as typeof fetch, ...extra });
+	const web = createKakaoWeb({ paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()), fetch: (async (input: unknown, init?: RequestInit) => (fetched.push({ url: String(input), init }), upstream.reply(String(input)))) as unknown as typeof fetch, ...extra });
 	const call = async (method: string, path: string, body?: unknown) => {
 		const url = new URL(`http://local${path}`);
 		const res = await web.route(new Request(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), url, url.pathname.split("/").filter(Boolean));
@@ -207,14 +207,14 @@ describe("read counters", () => {
 });
 
 describe("typed send", () => {
-	test("goes through the stubbed kmsg without an approval step: sending -> sent, then listed in the room's sends", async () => {
+	test("goes through the stubbed screen without an approval step: sending -> sent, then listed in the room's sends", async () => {
 		const t = setup();
 		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
 		expect(r.status).toBe(202);
 		expect(r.json.state).toBe("sending");
 		await t.web.idle();
 		expect(t.events.map(e => [e.kind, e.id, e.state])).toEqual([["kakao_send", r.json.id, "sending"], ["kakao_send", r.json.id, "sent"]]);
-		expect(t.calls).toEqual([["/fake/kmsg", "send", "--chat-id", "chat_alex", "--", "hello there"]]);
+		expect(t.calls).toEqual([["ax-send", "Alex", "hello there"]]);
 		const sends = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
 		expect(sends).toEqual([{ id: r.json.id, text: "hello there", state: "sent", at: NOW, collector: "mac-a" }]);
 		expect(statSync(join(dir, "kakao", "sends.json")).mode & 0o777).toBe(0o600);
@@ -258,6 +258,45 @@ describe("typed send", () => {
 		t.close();
 	});
 
+	test("watchdog: a send still sending after 60 s is failed, announced and kept as failed in the store", async () => {
+		let clock = NOW;
+		const timers: { fn: () => void; ms: number }[] = [];
+		let release!: () => void;
+		const hold = new Promise<void>(r => (release = r));
+		const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }]);
+		const runner: Runner = async (argv, o) => {
+			if (argv[1] === "-l" && JSON.parse(o!.stdin!.trim()).action === "rows") await hold;
+			return screen.runner(argv, o);
+		};
+		const t = setup({}, undefined, { runner, now: () => clock, later: (fn, ms) => void timers.push({ fn, ms }) });
+		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
+		expect(timers.map(x => x.ms)).toEqual([60_000]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends[0].state).toBe("sending");
+		clock = NOW + 61_000;
+		timers[0]!.fn();
+		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_send", id: r.json.id, state: "failed" });
+		expect(typeof t.events.at(-1)!.reason).toBe("string");
+		expect(JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"))[0]).toMatchObject({ id: r.json.id, state: "failed" });
+		const failedEvents = t.events.filter(e => e.state === "failed").length;
+		timers[0]!.fn();
+		expect(t.events.filter(e => e.state === "failed")).toHaveLength(failedEvents);
+		release();
+		await t.web.idle();
+		t.close();
+	});
+
+	test("a send older than 60 s that is still sending is listed as failed even when no timer ran", async () => {
+		const t = setup();
+		const file = join(dir, "kakao", "sends.json");
+		const probe = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "x" });
+		await t.web.idle();
+		writeFileSync(file, JSON.stringify([{ id: "Sold", chatId: DIRECT, text: "old", state: "sending", at: NOW - 61_000 }]));
+		const list = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
+		expect(list.map((s: any) => [s.id, s.state])).toEqual([["Sold", "failed"]]);
+		expect(probe.status).toBe(202);
+		t.close();
+	});
+
 	test("a lost send (gateway restarted) can be deleted; a sent one or another room's id cannot", async () => {
 		const t = setup();
 		const ok = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "done" });
@@ -292,7 +331,7 @@ describe("drafts", () => {
 		const r = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
 		expect(r.status).toBe(202);
 		await t.web.idle();
-		expect(t.calls.at(-1)).toEqual(["/fake/kmsg", "send", "--chat-id", "chat_alex", "--", "see you"]);
+		expect(t.calls.at(-1)).toEqual(["ax-send", "Alex", "see you"]);
 		expect((await listDrafts({ paths, runner: async () => ({ code: 0, stdout: "", stderr: "" }) }))[0]!.status).toBe("sent");
 		expect(t.events.map(e => e.kind)).toEqual(["kakao_send", "kakao_send", "kakao_draft"]);
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([]);
@@ -306,7 +345,7 @@ describe("drafts", () => {
 		const r = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, { text: "고친 글" });
 		expect(r.status).toBe(202);
 		await t.web.idle();
-		expect(t.calls.at(-1)).toEqual(["/fake/kmsg", "send", "--chat-id", "chat_alex", "--", "고친 글"]);
+		expect(t.calls.at(-1)).toEqual(["ax-send", "Alex", "고친 글"]);
 		expect((await t.call("POST", `/api/kakao/drafts/${(await t.draft()).code}/send`, { text: "  " })).status).toBe(400);
 		t.close();
 	});
@@ -535,7 +574,7 @@ describe("on-demand draft", () => {
 });
 
 describe("sends go through dispatchSend", () => {
-	test("a refused lease fails a typed send and a confirmed draft with its reason, and kmsg never runs", async () => {
+	test("a refused lease fails a typed send and a confirmed draft with its reason, and nothing is sent", async () => {
 		const t = setup();
 		t.state.leaseRefusal = "다른 맥이 이 대화방을 맡고 있어요";
 		const typed = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hi" });
