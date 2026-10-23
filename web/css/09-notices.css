@@ -10,7 +10,6 @@
 .nt-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .nt-t { font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
 .nt-row.un .nt-t { font-weight: 600; }
-.nt-x { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; color: var(--fg-2); font: 400 14px/20px var(--font); overflow-wrap: anywhere; }
 .nt-m { color: var(--fg-3); font: 400 12px/16px var(--font); }
 /* The message a notice led to (ntFlash in 30-notices.js marks the element with .nt-hl). The effect sits on the content, never on the row:
    - a card or bubble (.ub, .ccard, .sn, .pn) is lit inside its own rounded shape: a faint tint of itself plus a soft accent ring (the overlay copies the host's radius);
@@ -41,8 +40,8 @@ button.nt-mon .chev { flex: none; align-self: center; color: var(--fg-3); }
 div.nt-mon:hover, div.nt-mon:active { background: transparent; }
 div.nt-mon .nt-dot { margin-top: 7px; }
 
-/* Home cards: 알림 / 작업내역 / 모니터링 (fixed height on the board, so every list is clipped, never stretched). */
-.card.hc { display: flex; flex-direction: column; overflow: hidden; }
+/* Home cards: 알림 / 작업내역 / 모니터링 (fixed height on the board). No overflow here: the board's own rule (.bi > .card, 05-log.css) lets a card shorter than its rows scroll instead of cutting the last ones off. */
+.card.hc { display: flex; flex-direction: column; }
 .hc .ch .tag { flex: none; }
 .hc-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin-top: 8px; }
 .hc-row { display: flex; align-items: center; gap: 8px; min-width: 0; font: 400 14px/20px var(--font); }
@@ -117,7 +116,9 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .hr.hrx { gap: 0; padding: 0; }
 .hrx-m { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 4px 12px 16px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
 .hrx .nt-x { margin-right: 8px; }
-.hc-row:has(.nt-x) { min-height: 44px; }
-.hc-row .nt-x { margin-right: -6px; }
+/* The x keeps its 44px target but takes no row height (it overhangs into the row padding and the list gap), so a row with an x is as tall as one without. */
+.hc-row .nt-x { margin-block: -12px; margin-right: -6px; }
+/* A row without an x keeps the x's slot (44px minus the -6px overhang) when its list has one, so the times line up in one column. */
+.hc-list:has(.nt-x) > .hc-row:not(:has(.nt-x))::after { content: ""; flex: none; width: 38px; }
 .ds-rl.ign { color: var(--fg-3); }
 .dc-hb { flex: none; display: flex; align-items: center; gap: 2px; }
