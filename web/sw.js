@@ -2,10 +2,12 @@
 // The page, script and styles answer from the cache at once (a tapped notification starts the app without waiting for the
 // network) and are fetched again in the background. When that fetch brings a changed shell, the open pages get a
 // {type:"shell-updated"} message (web/js/23-installable-app-web.js shellUpdated) and reload onto it, so a web change does not wait for the open after next.
-const CACHE = "dotz-shell-v9";
-// the page and its joined script and styles: cache first, refreshed together in the background; icons are cache-first
+const CACHE = "dotz-shell-v10";
+// the page and its joined script and styles: cache first, refreshed together in the background
 const FRESH = ["/", "/app.js", "/app.css"];
-const SHELL = [...FRESH, "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/badge-96.png"];
+// icons: cache first too, but each is fetched again in the same background refresh (no ETag test, no reload), so a changed icon never needs a CACHE bump
+const ICONS = ["/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/badge-96.png"];
+const SHELL = [...FRESH, ...ICONS];
 // Web Share Target (manifest share_target): the phone's share sheet POSTs photos to /share-target. The worker keeps them in this
 // cache and redirects to the chat, where the page (web/js/23-installable-app-web.js sharedIntake) takes them into the composer.
 const SHARE = "dotz-share";
@@ -39,11 +41,13 @@ let refreshing = null;
 function refreshShell() {
   if (!refreshing) {
     refreshing = (async () => {
+      // Icons are stored one by one (a missing icon must not block a shell update) and never trigger a reload.
+      const icons = Promise.all(ICONS.map(async p => { try { const r = await fetch(p, { cache: "no-cache" }); if (r.ok) await (await caches.open(CACHE)).put(p, r); } catch {} }));
       const res = await Promise.all(FRESH.map(p => fetch(p, { cache: "no-cache" })));
-      if (!res.every(r => r.ok)) return;
+      if (!res.every(r => r.ok)) { await icons; return; }
       const c = await caches.open(CACHE);
       const diff = await Promise.all(FRESH.map(async (p, i) => changed(await c.match(p), res[i])));
-      await Promise.all(FRESH.map((p, i) => c.put(p, res[i])));
+      await Promise.all([icons, ...FRESH.map((p, i) => c.put(p, res[i]))]);
       if (diff.some(Boolean)) for (const w of await self.clients.matchAll({ type: "window", includeUncontrolled: true })) w.postMessage({ type: "shell-updated" });
     })().catch(() => {}).finally(() => { refreshing = null; });
   }

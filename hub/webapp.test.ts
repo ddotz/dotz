@@ -101,6 +101,26 @@ describe("shell update", () => {
 		handlers.message!({ data: { type: "other" }, waitUntil: () => { throw new Error("not a refresh"); } });
 	});
 
+	test("every cached icon is fetched again in the background refresh, so a changed icon reaches the phone without a CACHE bump and without a reload", async () => {
+		const sw = web("sw.js");
+		const icons = [...new Set([...sw.matchAll(/"(\/icons\/[^"]+)"/g)].map(m => m[1]!))];
+		expect(icons).toContain("/icons/badge-96.png");
+		const caches = fakeCaches();
+		const handlers: Record<string, (ev: unknown) => void> = {};
+		const got: unknown[] = [];
+		const self = { addEventListener: (t: string, h: (ev: unknown) => void) => { handlers[t] = h; }, clients: { matchAll: async () => [{ postMessage: (m: unknown) => got.push(m) }] } };
+		let icon = "old";
+		const fetchShell = async (p: string) => (p.startsWith("/icons/") ? new Response(`${p}@${icon}`) : new Response(p, { headers: { ETag: "same" } }));
+		new Function("self", "caches", "location", "Response", "URL", "fetch", sw)(self, caches, { origin: "https://dotz.test" }, Response, URL, fetchShell);
+		const refresh = async () => { let p: Promise<unknown> = Promise.resolve(); handlers.message!({ data: { type: "refresh-shell" }, waitUntil: (x: Promise<unknown>) => { p = x; } }); await p; };
+		await refresh();
+		for (const p of icons) expect(await (await caches.match(p))!.text()).toBe(`${p}@old`);
+		icon = "new";
+		await refresh();
+		for (const p of icons) expect(await (await caches.match(p))!.text()).toBe(`${p}@new`);
+		expect(got).toEqual([]);   // an icon change alone does not reload the open pages
+	});
+
 	test("the page reloads only while hidden and nothing is open, otherwise offers a chip, never loops, and asks the worker after a long absence", () => {
 		const src = web("js/23-installable-app-web.js");
 		const block = src.slice(src.indexOf("const SHELL_KEY"), src.indexOf("// A tap that had to start the app"));
@@ -231,7 +251,7 @@ describe("service worker shell", () => {
 
 	test("a navigation answers from the cache without waiting for the network, then refreshes the shell in the background", async () => {
 		const caches = fakeCaches();
-		const c = await caches.open("dotz-shell-v9");
+		const c = await caches.open("dotz-shell-v10");
 		await c.put("/", new Response("old page"));
 		const calls: string[] = [];
 		let release!: () => void;
@@ -242,14 +262,14 @@ describe("service worker shell", () => {
 		expect(await (await answer).text()).toBe("old page");
 		release();
 		await pending;
-		expect(calls.sort()).toEqual(["/", "/app.css", "/app.js"]);
-		expect(await (await caches.open("dotz-shell-v9")).match("/").then(r => r!.text())).toBe("new /");
-		expect(await (await caches.open("dotz-shell-v9")).match("/app.js").then(r => r!.text())).toBe("new /app.js");
+		expect(calls.sort()).toEqual(["/", "/app.css", "/app.js", "/icons/apple-touch-icon.png", "/icons/badge-96.png", "/icons/icon-192.png", "/icons/icon-512.png"]);
+		expect(await (await caches.open("dotz-shell-v10")).match("/").then(r => r!.text())).toBe("new /");
+		expect(await (await caches.open("dotz-shell-v10")).match("/app.js").then(r => r!.text())).toBe("new /app.js");
 	});
 
 	test("the shell is replaced only when every file of the new version arrived", async () => {
 		const caches = fakeCaches();
-		const c = await caches.open("dotz-shell-v9");
+		const c = await caches.open("dotz-shell-v10");
 		for (const p of ["/", "/app.js", "/app.css"]) await c.put(p, new Response(`old ${p}`));
 		const h = boot(caches, async u => (u === "/app.js" ? new Response("boom", { status: 502 }) : new Response(`new ${u}`)));
 		let pending!: Promise<unknown>;
