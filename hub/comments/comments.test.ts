@@ -266,6 +266,31 @@ describe("web routes", () => {
 		expect((await call("GET", "/api/comments/thread/youtube/p404")).status).toBe(404);
 	});
 
+	test("a draft written outside is stored as pending with its note, and a bad body is refused", async () => {
+		const t = setup([src()]);
+		t.state.pages = [[raw("c1"), raw("c2", { mine: true })]];
+		await t.engine.collect({ force: true });
+		const web = createCommentsWeb({ engine: t.engine, broadcast: e => t.events.push(e) });
+		const call = async (path: string, body: object) => {
+			const url = new URL(`http://x${path}`);
+			const res = await web.route(new Request(url, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } }), url, url.pathname.split("/").filter(Boolean));
+			return { status: res!.status, json: (await res!.json()) as any };
+		};
+		const path = (n: string) => `/api/comments/comment/${encodeURIComponent(commentId("youtube", n))}/draft`;
+		const ok = await call(path("c1"), { text: "악보를 메일로 보냈어요", extra: "메일로 악보 첨부" });
+		expect(ok.status).toBe(200);
+		expect(t.prompts).toHaveLength(0);
+		expect(t.engine.store.drafts()).toMatchObject([{ code: ok.json.code, status: "pending", text: "악보를 메일로 보냈어요", clean: false, notes: ["함께 할 일: 메일로 악보 첨부"] }]);
+		const again = await call(path("c1"), { text: "다시 썼어요" });
+		expect(t.engine.store.drafts().map(d => d.status)).toEqual(["stale", "pending"]);
+		expect(t.engine.store.drafts()[1]).toMatchObject({ clean: true, notes: [] });
+		expect(again.status).toBe(200);
+		expect((await call(path("c1"), { text: "  " })).status).toBe(400);
+		expect((await call(path("c1"), { extra: "글 없이" })).status).toBe(400);
+		expect((await call(path("c2"), { text: "내 댓글" })).status).toBe(409);
+		expect((await call(path("zz"), { text: "없는 댓글" })).status).toBe(404);
+	});
+
 	test("everything is refused while the feature is off", async () => {
 		const t = setup([src()]);
 		t.engine.store.saveConfig({ enabled: false, sources: { youtube: src() } });
