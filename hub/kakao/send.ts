@@ -8,7 +8,9 @@ import { writePrivate } from "./creds.ts";
 import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
-export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string };
+// tokens: what the one model call behind the draft used (estimated = counted from characters, not reported by the model).
+export type DraftTokens = { in: number; out: number; estimated?: true };
+export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens };
 export type SendDeps = { paths: KakaoPaths; runner: Runner; now?: () => number; kmsg?: string };
 export type SendResult = { ok: boolean; reason?: string };
 
@@ -44,7 +46,7 @@ function newCode(taken: Set<string>): string {
 	}
 }
 
-export async function createDraft(input: { chatId: string; roomName: string; text: string; basisLogId: string }, deps: SendDeps): Promise<Draft> {
+export async function createDraft(input: { chatId: string; roomName: string; text: string; basisLogId: string; tokens?: DraftTokens }, deps: SendDeps): Promise<Draft> {
 	const length = [...input.text].length;
 	if (!input.text.trim() || length > MAX_TEXT) throw new Error(`답장 글은 1자에서 ${MAX_TEXT}자 사이여야 해요`);
 	if (!input.chatId || !input.roomName.trim()) throw new Error("대화방 정보가 비어 있어요");
