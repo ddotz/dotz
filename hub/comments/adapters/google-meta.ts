@@ -56,6 +56,8 @@ export type InstagramApi = {
 	reply: (commentId: string, text: string) => Promise<string>;
 };
 
+const igAuthor = (username: string | undefined): string => username || "알 수 없는 사용자";
+
 type IgCursor = { t?: string; counts?: Record<string, number> };
 
 // A media is read again only when its comment count moved since the last run (the count comes with the media list), so a quiet
@@ -74,8 +76,12 @@ export function instagramAdapter(api: () => InstagramApi): CommentAdapter {
 				if (!m.comments_count || (!src.watch.includes("*") && !src.watch.includes(m.id)) || prev.counts?.[m.id] === m.comments_count) continue;
 				const title = (m.caption ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || "인스타 게시물";
 				for (const c of await a.comments(m.id)) {
-					raw.push({ native: c.id, thread: m.id, author: c.username, text: c.text, postTitle: title, at: Date.parse(c.timestamp) || 0, mine: c.username.toLowerCase() === owner });
-					c.replies.forEach((r, i) => raw.push({ native: `${c.id}.${i}`, thread: m.id, parent: c.id, author: r.username, text: r.text, postTitle: title, at: (Date.parse(c.timestamp) || 0) + 1 + i, mine: r.username.toLowerCase() === owner }));
+					// One malformed comment must not fail the whole read.
+					try {
+						const at = Date.parse(c.timestamp) || 0;
+						raw.push({ native: c.id, thread: m.id, author: igAuthor(c.username), text: c.text ?? "", postTitle: title, at, mine: (c.username ?? "").toLowerCase() === owner });
+						(c.replies ?? []).forEach((r, i) => raw.push({ native: `${c.id}.${i}`, thread: m.id, parent: c.id, author: igAuthor(r.username), text: r.text ?? "", postTitle: title, at: at + 1 + i, mine: (r.username ?? "").toLowerCase() === owner }));
+					} catch {}
 				}
 			}
 			const t = raw.reduce((max, r) => (r.at > Date.parse(max) ? new Date(r.at).toISOString() : max), prev.t ?? new Date(0).toISOString());

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
 import { type Comment, type CommentAdapter, commentId, mergeComments, type RawComment, type SourceConfig } from "./contract.ts";
 import { createEngine, type DraftModel } from "./engine.ts";
+import { instagramAdapter } from "./adapters/google-meta.ts";
 import { bunExec, parseRss, websiteAdapter } from "./adapters/website.ts";
 import { createCommentsWeb } from "./web.ts";
 
@@ -339,5 +340,27 @@ console.log(JSON.stringify({ comments: all.filter(c => Number(c.id) > since), cu
 		const hook = seen.find(x => x.url.endsWith("/hook"))!;
 		expect(hook.auth).toBe("Bearer tok123");
 		expect(JSON.parse(hook.body)).toMatchObject({ sendId: "send:x", commentId: "5", text: "감사합니다" });
+	});
+});
+
+describe("instagram adapter", () => {
+	test("a comment without username does not fail the read", async () => {
+		const bad = { id: "k2", text: "x", timestamp: "2030-06-02T00:00:00+0000", replies: [{ text: "y" }] } as never;
+		const adapter = instagramAdapter(() => ({
+			username: () => "Owner_IG",
+			media: async () => [{ id: "m1", caption: "c", comments_count: 4, timestamp: "2030-06-01T00:00:00+0000" }],
+			comments: async () => [
+				{ id: "k1", text: "hi", username: "fan", timestamp: "2030-06-02T00:00:00+0000", replies: [{ username: "owner_ig", text: "yo" }] },
+				bad as never,
+				{ id: "k3", text: "z", timestamp: "2030-06-03T00:00:00+0000" } as never,
+			],
+			reply: async () => "r1",
+		}));
+		const out = await adapter.list(src({ key: "instagram", kind: "instagram" }), undefined);
+		const byNative = Object.fromEntries(out.comments.map(c => [c.native, c]));
+		expect(Object.keys(byNative).sort()).toEqual(["k1", "k1.0", "k2", "k2.0", "k3"]);
+		expect(byNative["k1.0"].mine).toBe(true);
+		expect(byNative.k2.author).toBe("알 수 없는 사용자");
+		expect(byNative.k3.mine).toBe(false);
 	});
 });
