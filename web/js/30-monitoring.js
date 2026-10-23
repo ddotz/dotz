@@ -301,8 +301,15 @@ function monRunNode(it) {
   const chips = m.kind === "watch" && m.watch ? asChipTexts(m) : [];
   if (node && chips.length) node.append(el("div", { class: "btns cc-act mon-chips" }, ...chips.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asAsk(`w:${m.watch}`, t) }, t))));
   if (node && m.channel && !it.pc && isProjT(m.channel)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else go("monitoring", `c:${m.channel}`); }, text: "프로젝트 대화 열기" })));
+  if (node && m.kind === "watch" && m.watch) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", "data-run": m.watch, onclick: ev => monRunNow(ev.currentTarget, m), text: "지금 확인" })));
   return node;
 }
+// Runs the monitor once now, on the computer that owns it (a peer's through /api/peer/act); the list re-reads a moment later for the result.
+const monRunNow = (btn, m) => busy(btn, async () => {
+  await api(`/api/watches/${enc(m.watch)}/run`, "POST", {});
+  toast("지금 확인해요");
+  setTimeout(() => { loadMonitors(); pqSoon(); }, 5000);
+});
 // An item reads like a chat: its reports and mails oldest to newest, a monitor's latest run last. The 감시 소식 feed is a list, not a chat: newest on top.
 const monFeed = it => it.key === "notice";
 function monTimeline(it) {

@@ -216,7 +216,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				const fields = targetFields(a.target);
 				if (!fields) return bad("unknown target");
 				const pick = (k: string) => (a[k] === undefined ? {} : { [k]: a[k] });
-				return ask("POST", "/api/message", { ...fields, ...pick("text"), ...pick("mode"), ...pick("reply"), ...pick("reply_to"), ...pick("picks"), via: from }, login);
+				return ask("POST", "/api/message", { ...fields, ...(fields.project ? pick("settings") : {}), ...pick("text"), ...pick("mode"), ...pick("reply"), ...pick("reply_to"), ...pick("picks"), via: from }, login);
 			}
 			case "answer":
 				if (typeof a.id !== "string" || !a.id) return bad("id required");

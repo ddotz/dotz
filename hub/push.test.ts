@@ -4,7 +4,7 @@ import { createECDH } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { paths } from "./config.ts";
 import { emit, lastEventId, recentEvents, replayAfter } from "./events.ts";
-import { type Notice, onDecision } from "./notices.ts";
+import { type Notice, onDecision, setWatchLabelResolver } from "./notices.ts";
 import { classify, decisionPush, LONG_TURN_MS, pushRoute, startPush } from "./push.ts";
 import { b64u } from "./webpush.ts";
 
@@ -120,4 +120,15 @@ test("a decision notice pushes as 답변이 필요해요 with its id, the decisi
 	// the store is shared with other test files: answer both so no pinned decision is left behind
 	emit("inbox", { ts: new Date().toISOString(), kind: "message", source: "web", channel: "web", text: "1" });
 	emit("inbox", { ts: new Date().toISOString(), kind: "lane_message", source: "web", lane: "fix-ui", text: "네" });
+});
+
+test("an answer in a monitor's or app's settings conversation notifies like any answer, titled with its label and opening that conversation", () => {
+	setWatchLabelResolver(name => (name === "login-cartier-com" ? "까르띠에 로그인 유지" : name));
+	const conv = "settings:w:login-cartier-com";
+	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), 5_000)).toBeUndefined();
+	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: "까르띠에 로그인 유지 · 완료", url: `/#chat/${conv}`, tag: `answer:${conv}` });
+	expect(classify(ev({ target: conv, text: "[fail] 다시 로그인하지 못했어요" }), 5_000)).toMatchObject({ kind: "answer", title: "까르띠에 로그인 유지 · 실패" });
+	expect(classify(ev({ target: conv, text: "[ask] 다시 로그인할까요?" }))).toMatchObject({ kind: "ask", title: "까르띠에 로그인 유지 · 확인 필요" });
+	expect(classify(ev({ source: "gateway", target: conv, text: "받았어요" }), LONG_TURN_MS)).toBeUndefined();
+	setWatchLabelResolver(name => name);
 });

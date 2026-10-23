@@ -461,6 +461,8 @@ function channelTitle(conv: string): string {
 	if (lane) return laneTitle(lane);
 	return conv.startsWith("ch:") ? "채널" : conv.startsWith("settings:") ? "설정" : "대화";
 }
+// The same name for a push: a settings conversation is titled with its monitor's or app's label.
+export const conversationTitle = channelTitle;
 
 /* ---------- decisions: every question that waits on the owner is its own pinned notice ---------- */
 // Created from an [ask] of the assistant or a session (one notice per "결정:" block of the message, one for a plain question), a

@@ -20,6 +20,7 @@ import { deliver, awaiting, lastOwner, refOf, newMid, laneFailed, out, expectRep
 import { mailTarget, type MailRecord } from "./mail.ts";
 import { settingsTarget } from "./app-settings.ts";
 import { settingsNote } from "./settings-turn.ts";
+import { watchAsked } from "./watch-recheck.ts";
 import { pluginThread } from "./plugins.ts";
 
 // Chat is the hub over every work channel: each chat turn carries a short directory so the orchestrator can route the
@@ -207,14 +208,16 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	}
 	// conv: asked in the web's 알림 / 작업 기록 conversation; the answer comes back as target "web:<conv>" into the same one.
 	const thread = s.mail?.thread && (discord.channels.threads[s.mail.thread] || discord.status.enabled) ? s.mail.thread : undefined;
-	const to = s.settings ? settingsTarget(s.settings) : s.mail ? (thread ? `th:${thread}` : mailTarget(s.mail.key)) : (s.project?.target ?? (s.conv ? `web:${s.conv}` : s.channel));
+	// A monitor of a project is talked about in the project's own conversation: `settings` then only names the monitor whose note the turn carries.
+	const to = s.project ? s.project.target : s.settings ? settingsTarget(s.settings) : s.mail ? (thread ? `th:${thread}` : mailTarget(s.mail.key)) : s.conv ? `web:${s.conv}` : s.channel;
 	const hook = thread ? pluginThread({ thread, text: s.text }) : undefined;
 	const info = thread ? discord.threadInfo(thread) : undefined;
 	// A web-only mail has no thread: its turn names the conversation (the mail note carries the subject), not a thread.
 	const where = s.mail ? { conv: mailTarget(s.mail.key), ...(thread ? { thread_name: s.mail.subject, ...(info ? { parent: info.parentTarget } : {}), parent_name: hook?.parentName ?? info?.parentName ?? msg().channelNames.mail } : {}) } : s.project ? { channel_name: s.project.name } : {};
 	const event = { ts: now(), kind: "message", source: s.channel, channel: to, ...where, author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
 	emit("inbox", event);
-	const note = s.settings ? settingsNote(s.settings) : s.mail ? (hook?.note ?? msg().mailNote(s.mail.source, s.mail.id, s.mail.subject)) : undefined;
+	if (s.settings) watchAsked(to, s.settings);
+	const note = s.settings ? settingsNote(s.settings, to) : s.mail ? (hook?.note ?? msg().mailNote(s.mail.source, s.mail.id, s.mail.subject)) : undefined;
 	const turn = note ? { ...event, plugin_note: note } : event;
 	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(to, event.text);
 	else if (s.mode === "steer" && orch.status === "working") {

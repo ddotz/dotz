@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
-import { answerReply, decisionsOf, type Notice, onDecision } from "./notices.ts";
+import { answerReply, conversationTitle, decisionsOf, type Notice, onDecision } from "./notices.ts";
 import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
@@ -109,12 +109,14 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 		return undefined;
 	}
 	// The main chat's answers and a project's (work channel or one of its threads) are the same kind of message: one rule, each opening its own chat.
-	const chat = e.kind === "out" && e.source === "orchestrator" ? (e.target === "web" ? "main" : eventTarget(e)?.startsWith("ch:") ? eventTarget(e) : undefined) : undefined;
+	const chat = e.kind === "out" && e.source === "orchestrator" ? (e.target === "web" ? "main" : /^(?:ch:|settings:)/.test(eventTarget(e) ?? "") ? eventTarget(e) : undefined) : undefined;
 	if (chat) {
 		const url = `/#chat/${chat}`, sfx = chat === "main" ? "" : `:${chat}`;
-		if (tone === "ask") return { kind: "ask", title: "dotz · 확인 필요", body: plain(rest), url, tag: `ask:${chat}` };
-		if (tone === "fail") return { kind: "answer", title: "dotz · 실패", body: plain(rest), url, tag: `answer${sfx}` };
-		if (tone === "done" || (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: "dotz · 완료", body: plain(rest), url, tag: `answer${sfx}` };
+		// A monitor's or app's settings conversation is titled with its label, like its notice in the bell.
+		const name = chat.startsWith("settings:") ? conversationTitle(chat) : "dotz";
+		if (tone === "ask") return { kind: "ask", title: `${name} · 확인 필요`, body: plain(rest), url, tag: `ask:${chat}` };
+		if (tone === "fail") return { kind: "answer", title: `${name} · 실패`, body: plain(rest), url, tag: `answer${sfx}` };
+		if (tone === "done" || (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: `${name} · 완료`, body: plain(rest), url, tag: `answer${sfx}` };
 		return undefined;
 	}
 	return undefined;

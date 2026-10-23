@@ -3,6 +3,8 @@ import { onEmit, type HubEvent } from "./events.ts";
 import { bursts, inboxText, sendWeb } from "./intake.ts";
 import { listMonitors } from "./monitors.ts";
 import { addWatch, allWatches, removeWatch, startWatches } from "./watch.ts";
+import { recheckAnswered, setRecheckRunner } from "./watch-recheck.ts";
+import { out } from "./outbound.ts";
 
 // A message in a monitor's conversation is an inbox turn on this gateway, tagged with the monitor (name, label, type, state, last output),
 // so the orchestrator has the context without asking. Drives the real web send path (hub/intake.ts sendWeb) up to the burst it queues.
@@ -31,4 +33,42 @@ test("a message to the monitor's conversation becomes an inbox turn tagged with 
 	expect(inbox.findLast(e => e.text === "다시 로그인해 줘")!.channel).toBe("settings:w:login-cartier-com");
 	const turn = inboxText(b.events[0]!);
 	for (const s of ["login-cartier-com", "까르띠에 로그인 유지", "로그인 유지", "실패 3번 연속", "로그인이 풀렸어요", "[settings:w:login-cartier-com]", "다시 로그인해 줘"]) expect(turn).toContain(s);
+});
+
+test("a monitor of a project is asked about in the project's own conversation, with the monitor's note on the turn", async () => {
+	const PROJECT = "ch:1562723146669490227";
+	await sendWeb({ settings: "w:login-cartier-com", project: { target: PROJECT, name: "까르띠에-재고-구매" }, channel: "web", text: "원인 찾아 줘", mode: "default", login: "hyuns" });
+	const [target, b] = [...bursts].find(([, x]) => x.events.some(e => e.text === "원인 찾아 줘"))!;
+	clearTimeout(b.timer);
+	bursts.delete(target);
+	expect(target).toBe(PROJECT);
+	expect(b.events[0]!.channel).toBe(PROJECT);
+	const turn = inboxText(b.events[0]!);
+	for (const s of ["login-cartier-com", "까르띠에 로그인 유지", "실패 3번 연속", "[settings:w:login-cartier-com]", "원인 찾아 줘"]) expect(turn).toContain(s);
+	setRecheckRunner(async () => {});
+	expect(recheckAnswered(PROJECT)).toBe("login-cartier-com");
+	recheckAnswered("settings:w:login-cartier-com");
+});
+
+test("after the answer of a settings chat about a watch (its own conversation or its project's) that watch runs once now", async () => {
+	const ran: string[] = [];
+	setRecheckRunner(async name => void ran.push(name));
+	for (const conv of ["settings:w:login-cartier-com", "ch:1562723146669490227"]) {
+		await sendWeb({ settings: "w:login-cartier-com", ...(conv.startsWith("ch:") ? { project: { target: conv, name: "p" } } : {}), channel: "web", text: "다시 로그인해 줘", mode: "default", login: "hyuns" });
+		for (const [t, x] of [...bursts]) { clearTimeout(x.timer); bursts.delete(t); }
+		await out(conv, "[progress] 로그인하는 중", undefined, { update_key: "progress" });
+		expect(ran).toEqual([]);
+		await out(conv, "다시 로그인했어요. 다음 확인 때 정상으로 바뀌는지 볼게요.", undefined, { auto: true });
+		expect(ran).toEqual(["login-cartier-com"]);
+		await out(conv, "한 번 더 확인했어요.", undefined, { auto: true });
+		expect(ran).toEqual(["login-cartier-com"]);
+		ran.length = 0;
+	}
+});
+
+test("a question about an app that is not a watch never runs a watch", () => {
+	const ran: string[] = [];
+	setRecheckRunner(async name => void ran.push(name));
+	expect(recheckAnswered("settings:mail")).toBeUndefined();
+	expect(ran).toEqual([]);
 });

@@ -95,18 +95,17 @@ describe("a failing peer monitor", () => {
 		expect(await q(v, `return [...document.querySelectorAll("#mon-side .cv-row")].find(r => r.dataset.k === ${JSON.stringify(PEER_KEY)}).textContent`)).toContain("실패");
 	});
 
-	test("a chip fills the composer of the peer's conversation, the switches are the peer's, a message is forwarded and the answer shows", async () => {
+	test("a chip sends its instruction at once to the peer's conversation, the switches are the peer's, the message is forwarded and the answer shows", async () => {
 		const v = await boot(1280, 800, PEER_KEY);
 		await waitFor(v, `document.querySelector("#mon-tl [data-chip]")`);
 		await run(v, `document.querySelector('#mon-tl [data-chip="다시 로그인해 줘"]').click()`);
 		await waitFor(v, `target === "${PEER_T}" && document.querySelector('#app-sw [data-k="enabled"]') && document.querySelector("#mon-chips [data-chip]")`);
-		expect(await q(v, `return ta.value`)).toBe("다시 로그인해 줘");
+		expect(await q(v, `return ta.value`)).toBe("");
 		expect(await q(v, `return [...document.querySelectorAll("#mon-chips [data-chip]")].map(b => b.dataset.chip)`)).toEqual(CHIPS);
 		await run(v, `document.querySelector('#app-sw [data-k="enabled"]').click()`);
 		const deadline = Date.now() + 5000;
 		while (!acts.some(a => a.action === "watch") && Date.now() < deadline) await Bun.sleep(25);
 		expect(acts.find(a => a.action === "watch")).toEqual({ action: "watch", args: { op: "settings", name: "login-cartier-com", values: { enabled: false } } });
-		await run(v, `sendChat()`);
 		const d2 = Date.now() + 5000;
 		while (!acts.some(a => a.action === "message") && Date.now() < d2) await Bun.sleep(25);
 		expect(acts.find(a => a.action === "message")).toMatchObject({ args: { target: PEER_T, text: "다시 로그인해 줘" } });
@@ -123,16 +122,21 @@ describe("a failing peer monitor", () => {
 });
 
 describe("a failing local monitor", () => {
-	test("shows the same chips and a message goes to this gateway's orchestrator as the monitor's settings target; a healthy one has no chips", async () => {
+	test("shows the same chips; a chip sends at once to this gateway's orchestrator as the monitor's settings target and keeps the typed draft; a healthy one has no chips", async () => {
 		const v = await boot(1280, 800, "m:로컬 로그인 유지");
 		await waitFor(v, `document.querySelector("#mon-tl [data-chip]")`);
 		expect(await q(v, `return [...document.querySelectorAll("#mon-tl [data-chip]")].map(b => b.dataset.chip)`)).toEqual(CHIPS);
 		await run(v, `document.querySelector('#mon-tl [data-chip="원인 찾아 줘"]').click()`);
-		await waitFor(v, `target === "settings:w:login-local" && ta.value === "원인 찾아 줘"`);
-		await run(v, `sendChat()`);
+		await waitFor(v, `target === "settings:w:login-local" && document.querySelector("#mon-chips [data-chip]")`);
 		const deadline = Date.now() + 5000;
 		while (!sent.length && Date.now() < deadline) await Bun.sleep(25);
 		expect(sent[0]).toMatchObject({ text: "원인 찾아 줘", settings: "w:login-local" });
+		expect(await q(v, `return ta.value`)).toBe("");
+		await run(v, `ta.value = "쓰던 글"; document.querySelector('#mon-chips [data-chip="일시정지"]').click()`);
+		const d2 = Date.now() + 5000;
+		while (sent.length < 2 && Date.now() < d2) await Bun.sleep(25);
+		expect(sent[1]).toMatchObject({ text: "일시정지", settings: "w:login-local" });
+		expect(await q(v, `return ta.value`)).toBe("쓰던 글");
 		await run(v, `go("monitoring", "m:정상 감시")`);
 		await waitFor(v, `document.querySelector("#mon-tl .rc")`);
 		expect(await q(v, `return document.querySelectorAll("#mon-tl [data-chip]").length`)).toBe(0);

@@ -29,8 +29,8 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 	const local = async (req: Request): Promise<Response> => {
 		const path = new URL(req.url).pathname;
 		if (req.method === "POST" && path === "/api/message") {
-			const b = (await req.json()) as { mail?: string; lane?: string; settings?: string; text: string; via?: string };
-			events.push({ target: b.settings ? `settings:${b.settings}` : b.mail ? `mail:${b.mail}` : `lane:${b.lane}`, text: b.text, ...(b.via ? { via: b.via } : {}) });
+			const b = (await req.json()) as { mail?: string; lane?: string; project?: string; settings?: string; text: string; via?: string };
+			events.push({ target: b.project ?? (b.settings ? `settings:${b.settings}` : b.mail ? `mail:${b.mail}` : `lane:${b.lane}`), text: b.text, ...(b.project && b.settings ? { settings: b.settings } : {}), ...(b.via ? { via: b.via } : {}) });
 			return Response.json({ ok: true });
 		}
 		if (req.method === "DELETE" && path.startsWith("/api/kakao/chat/")) {
@@ -295,4 +295,14 @@ test("a message to a peer's monitor conversation is forwarded as the settings ta
 	expect(r.status).toBe(200);
 	expect(B.events).toEqual([{ target: "settings:w:login-cartier-com", text: "다시 로그인해 줘", via: "노트북" }]);
 	expect(A.events).toEqual([]);
+});
+
+test("a message to a peer monitor that belongs to a project goes to that project's conversation with the monitor named; a settings conversation target ignores the monitor name", async () => {
+	const { A, B } = pair();
+	const pc = encodeURIComponent(URL_B), p = encodeURIComponent("/api/peer/act");
+	const post = (body: unknown) => A.handle(req(`/api/peer/proxy?pc=${pc}&p=${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+	expect((await post({ action: "message", args: { target: "ch:1562723146669490227", settings: "w:login-cartier-com", text: "원인 찾아 줘" } })).status).toBe(200);
+	expect(B.events).toEqual([{ target: "ch:1562723146669490227", settings: "w:login-cartier-com", text: "원인 찾아 줘", via: "노트북" }]);
+	expect((await post({ action: "message", args: { target: "settings:w:login-cartier-com", settings: "w:other", text: "x" } })).status).toBe(200);
+	expect(B.events[1]).toEqual({ target: "settings:w:login-cartier-com", text: "x", via: "노트북" });
 });

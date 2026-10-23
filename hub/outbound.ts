@@ -23,6 +23,7 @@ import { inOrder, localize } from "./outlang.ts";
 import { splitTone, stripHandoff } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { orchestratorAnswered } from "./notices.ts";
+import { recheckAnswered } from "./watch-recheck.ts";
 
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
 const PENDING = join(DATA_DIR, "pending.json");
@@ -121,6 +122,7 @@ function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason
 		const { done, keep } = settleWaiting(awaiting.get(j.target) ?? [], j.replyTo, isLocal(j.target));
 		awaiting.set(j.target, keep);
 		for (const w of done) emitDelivery(j.target, w.ref, "answered");
+		recheckAnswered(j.target);
 	}
 	if (isLocal(j.target)) {
 		queue.markAnswered(jobAnswers(j));

@@ -218,6 +218,7 @@ function asPaint() {
 // Called when the conversation head is drawn (31-conversations.js convPaintHead).
 function asSync() {
   if (isSettingsT(target)) asLoad(settingsApp(target));
+  else if (asAbout(target)) asLoad(asAbout(target));   // a project conversation about a monitor: its change card needs the fields too
   asPaint();
   asChipPaint();
 }
@@ -225,14 +226,32 @@ function asSync() {
 /* ---- a failing monitor's quick actions: chips that only fill the composer of its conversation (the owner reads and sends) ---- */
 const asMon = app => { const pe = PQ.of.get(`settings:${app}`); return pe ? pe.mon : NM.items.find(x => x.watch === app.slice(2)); };
 const asChipTexts = m => m && m.last_result === "fail" ? [...(m.keeper ? ["다시 로그인해 줘"] : []), "원인 찾아 줘", "일시정지"] : [];
-function asFill(text) { ta.value = text; saveDraft(); autosize(); updateHints(); ta.focus({ preventScroll: true }); }
+// A monitor that belongs to a project talks in that project's conversation (its history shows there); the others have the settings conversation.
+function asConv(app) {
+  const m = app.startsWith("w:") ? asMon(app) : null, ch = m && m.channel;
+  return ch && isProjT(ch) && (PQ.of.has(ch) || !S || projTargets().includes(ch)) ? ch : `settings:${app}`;
+}
+// The monitor a project conversation is open for in 모니터링 ("w:<watch>"): its note rides along with the owner's message there.
+function asAbout(t) {
+  if (!isProjT(t) || monCtx !== t) return "";
+  const it = monItems().find(i => i.key === MON.sel), m = it && it.mon;
+  return m && m.kind === "watch" && m.watch && m.channel === t ? `w:${m.watch}` : "";
+}
+// A quick instruction is sent as it is; whatever the owner had typed stays in the box.
+function asSend(text) {
+  const draft = ta.value;
+  ta.value = text;
+  sendChat();
+  ta.value = draft;
+  saveDraft(); autosize(); updateHints();
+}
 function asAsk(app, text) {
-  const t = `settings:${app}`;
+  const t = asConv(app);
   if (target !== t || current !== "monitoring") go("monitoring", `c:${t}`);
-  asFill(text);
+  asSend(text);
 }
 function asChipPaint() {
-  const app = isSettingsT(target) ? settingsApp(target) : "", texts = app.startsWith("w:") ? asChipTexts(asMon(app)) : [];
+  const app = isSettingsT(target) ? settingsApp(target) : asAbout(target), texts = app.startsWith("w:") ? asChipTexts(asMon(app)) : [];
   let row = $("#mon-chips");
   if (!texts.length) { if (row) row.hidden = true; return; }
   if (!row) { row = el("div", { class: "tplrow", id: "mon-chips", role: "group", "aria-label": "빠른 지시" }); $("#composer").insertBefore(row, $("#hints")); }
@@ -240,7 +259,7 @@ function asChipPaint() {
   const sig = JSON.stringify([app, texts]);
   if (row.dataset.sig === sig) return;
   row.dataset.sig = sig;
-  clear(row).append(...texts.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asFill(t) }, t)));
+  clear(row).append(...texts.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asSend(t) }, t)));
 }
 
 /* ---- a peer app's name: no settings panel for it here, so the pinned row of its list is a name field that sends the label through the peer's own settings route ---- */
@@ -257,7 +276,7 @@ function asPeerNameRow(it) {
 }
 
 /* ---- the settings entry of a detail: one gear button in its title bar (the head on a wide screen, the app bar on a phone) ---- */
-function asOpen(ev) { go("monitoring", `c:settings:${ev.currentTarget.dataset.asOpen}`); }
+function asOpen(ev) { go("monitoring", `c:${asConv(ev.currentTarget.dataset.asOpen)}`); }
 const asBtn = app => el("button", { class: "ib as-hd", type: "button", "aria-label": "설정", title: "설정", "data-as-open": app, onclick: asOpen }, icon("settings"));
 // The button of the settings conversation `app` ("mail", "w:<watch>"), or null while its settings are not loaded (an app without any shows no button).
 function asEntry(app) {

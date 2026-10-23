@@ -285,10 +285,19 @@ export function createPrompts(deps: PromptDeps) {
 		if (recentSent.some(s => s.target === to.target && Date.now() - s.at <= ORPHAN_MAX_AGE_MS && s.text.includes(t))) return;
 		deps.log(`an answer had no prompt; sent to the owner's newest message in ${to.target} (${t.length} chars): ${t.slice(0, 80)}`);
 		recentSent.push({ target: to.target, text: t, at: Date.now() });
+		// The message this answers is settled wherever it is still listed (the owner's list, a deferred wait, a steered note), so its
+		// working / waiting state ends with the answer and a restart does not replay it.
 		if (to.prompt) to.prompt.done = true;
+		for (const d of deferred) if (d.target === to.target && d.replyTo !== undefined && d.replyTo === to.replyTo) d.done = true;
+		if (to.replyTo) settleSteered(to.target, to.replyTo);
+		save();
 		void deps
 			.post(to.target, t, to.replyTo)
-			.then(r => (r.delivered ? deps.clearProgress(to.target) : undefined))
+			.then(r => {
+				if (!r.delivered) return;
+				markAnswered(to.replyTo);
+				deps.clearProgress(to.target);
+			})
 			.catch(e => deps.log(`reply to ${to.target} failed: ${e}`));
 	}
 

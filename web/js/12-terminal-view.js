@@ -154,7 +154,7 @@ function termNode(a) {
       const st = LG.steps || logSteps(g, a), kind = a.type === "thinking" ? "생각" : kindOf(a.tool);
       if (t > st.t1) st.t1 = t;
       st.n.set(kind, (st.n.get(kind) || 0) + 1);
-      const rec = logRow(a, kind, a.type === "thinking" ? oneLine(a.text ?? "").slice(0, 120) : toolLabel(a) || capName(a.tool));
+      const rec = logRow(a, kind, a.type === "thinking" ? thinkLine(a.text, 120) : toolLabel(a) || capName(a.tool));
       if (a.type === "thinking") { rec.dot.className = "dot"; rec.out.append(mdNode(a.text)); }
       else if (a.call_id) LG.calls.set(a.call_id, { rec, st });
       st.rows.append(rec.node); st.paint();

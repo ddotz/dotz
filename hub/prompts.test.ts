@@ -460,3 +460,32 @@ test("a worker spawned in turn B belongs to B's message, not to the earlier turn
 		Date.now = real;
 	}
 });
+
+test("an answer that came without a prompt settles the deferred settings request it went to: nothing stays open or waiting, and a restart does not replay it", async () => {
+	const SETTINGS = "settings:w:login-cartier-com";
+	const { q, state, open, startTurn } = setup();
+	startTurn("원인 찾아 줘", { target: SETTINGS, replyTo: "m1" });
+	q.onAnswer("[later]");
+	q.settleTurn();
+	expect(q.deferredOpen()).toEqual([expect.objectContaining({ target: SETTINGS, replyTo: "m1" })]);
+	expect(open().map(p => p.target)).toEqual([SETTINGS]);
+
+	// A run a worker's result woke answers with no prompt of ours: it goes to the owner's message, which is then answered.
+	q.onAnswer("원인을 찾았어요. 로그인 화면이 바뀌었어요.");
+	await Bun.sleep(0);
+	expect(state.posts).toEqual([{ target: SETTINGS, text: "원인을 찾았어요. 로그인 화면이 바뀌었어요.", replyTo: "m1" }]);
+	expect(q.isAnswered("m1")).toBe(true);
+	expect(q.deferredOpen()).toEqual([]);
+	expect(open()).toEqual([]);
+	expect(q.waitingOnWorkers()).toBe(0);
+});
+
+test("the newest-message path (no deferred prompt) marks that owner message answered too", async () => {
+	const SETTINGS = "settings:w:login-cartier-com";
+	const { q, state, open } = setup([], [{ target: SETTINGS, replyTo: "m7", at: Date.now() - 60_000 }]);
+	q.onAnswer("다시 로그인했어요. 다음 확인 때 정상으로 바뀌는지 볼게요.");
+	await Bun.sleep(0);
+	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([[SETTINGS, "m7"]]);
+	expect(q.isAnswered("m7")).toBe(true);
+	expect(open()).toEqual([]);
+});
