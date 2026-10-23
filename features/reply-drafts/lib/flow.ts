@@ -4,10 +4,18 @@ import { draftApprovalBlock, draftVerdict } from "../../../hub/draft-approval.ts
 import { generateReply, lintReply, reviseReply, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
 import { sendWith, type SendOutcome } from "./senders.ts";
 import { loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
+import { maybeRefine } from "./persona.ts";
 import { addDraft, getDraft, newId, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 
-export type FlowDeps = { call?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome> };
+// `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
+export type FlowDeps = { call?: ModelCall; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome> };
+
+// After a recorded correction: every few corrections fold into the profile's identity. A failed refinement keeps the old identity.
+export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promise<void> {
+	if (!deps.analyze) return;
+	await maybeRefine(key, deps.analyze).catch(e => console.error(`reply draft: identity of ${key.app} not refined: ${(e as Error).message}`));
+}
 
 // The tone profile an item or draft belongs to: its room when it has one, else its app (mail unless the item says otherwise).
 export const toneKey = (x: { app?: string; room?: string }): ToneKey => ({ app: x.app ?? "mail", ...(x.room !== undefined ? { room: x.room } : {}) });
@@ -50,6 +58,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	if (old.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${old.status} 상태라 고칠 수 없어요` };
 	if (!change.trim()) return { ok: false, text: "무엇을 고칠지 적어 주세요 (--change)" };
 	recordCorrection(toneKey(old), change, nowOf(deps));
+	await refineAfterCorrection(toneKey(old), deps);
 	const r = await reviseReply(old.item, loadStyle(toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
 	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref }, r, [...old.changes, change], deps);

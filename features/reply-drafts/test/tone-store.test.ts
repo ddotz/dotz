@@ -197,7 +197,7 @@ test("sent mail is listed with --folder sent then read by id; readMailBody reads
 		return argv[2] === "list" ? { code: 0, stdout: "items:\n  - id: m1\n    snippet: s\n", stderr: "" } : { code: 0, stdout: "확인했어요. 내일 연락드릴게요.", stderr: "" };
 	};
 	await learnTone({ app: "mail" }, { run, zeleOn: true });
-	expect(argvs[0]).toEqual(["zele", "mail", "list", "--folder", "sent", "--limit", "40"]);
+	expect(argvs[0]).toEqual(["zele", "mail", "list", "--folder", "sent", "--limit", "200"]);
 	expect(argvs[1]).toEqual(["zele", "mail", "read", "m1"]);
 	argvs.length = 0;
 	expect(await readMailBody("zele", "m1", run)).toContain("확인했어요");

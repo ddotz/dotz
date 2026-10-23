@@ -6,8 +6,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { draftVerdict } from "../../../hub/draft-approval.ts";
 import { reviseComment } from "../../reply-drafts/lib/comments.ts";
-import type { FlowDeps } from "../../reply-drafts/lib/flow.ts";
-import { paths as replyPaths } from "../../reply-drafts/lib/settings.ts";
+import { defaultCall, type FlowDeps } from "../../reply-drafts/lib/flow.ts";
+import { loadSettings as replySettings, paths as replyPaths } from "../../reply-drafts/lib/settings.ts";
 import { getDraft, setStatus } from "../../reply-drafts/lib/store.ts";
 import { type Ctx, loadConfig, paths, SetupError } from "../lib/config.ts";
 import { approve, getJob, type Job, type JobKind, listJobs, newJob, type NewJobInput, OPEN, PUBLISHABLE, recordResult, reject } from "../lib/jobs.ts";
@@ -145,7 +145,8 @@ async function dispatch(ctx: Ctx, args: string[], deps: FlowDeps): Promise<RunRe
 	}
 }
 
-export async function run(ctx: Ctx, args: string[], deps: FlowDeps = {}): Promise<RunResult> {
+// The real CLI refines the tone identity after a 고치기 with the same subscription model call as the drafts (reply-drafts/lib/persona.ts).
+export async function run(ctx: Ctx, args: string[], deps: FlowDeps = { analyze: defaultCall(replySettings().model) }): Promise<RunResult> {
 	try {
 		return await dispatch(ctx, args, deps);
 	} catch (e) {

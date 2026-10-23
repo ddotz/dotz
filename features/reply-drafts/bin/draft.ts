@@ -3,7 +3,7 @@
 // `send` refuses unless the user picked 1) 보내기 for that exact id. Stdin of `new` is the text to answer.
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
-import { askText, buildDraft, dropDraft, kindOf, reviseDraft, sendDraft, type FlowDeps } from "../lib/flow.ts";
+import { askText, buildDraft, defaultCall, dropDraft, kindOf, refineAfterCorrection, reviseDraft, sendDraft, type FlowDeps } from "../lib/flow.ts";
 import { INSTALL, loadSettings, recordCorrection, validApp } from "../lib/settings.ts";
 import { addDraft, listDrafts } from "../lib/store.ts";
 
@@ -47,7 +47,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const notes: string[] = [];
 			if (app === KAKAO_APP && room) {
 				try {
-					await ensureKakaoRoom(room, () => (deps.kakaoReader ?? defaultKakaoReader)(room));
+					await ensureKakaoRoom(room, () => (deps.kakaoReader ?? defaultKakaoReader)(room), deps.analyze);
 				} catch (e) {
 					notes.push(`확인: 이 대화방 말투를 못 배웠어요 (${(e as Error).message})`);
 				}
@@ -72,6 +72,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const room = flag(rest, "--room");
 			if (!app || !change || !validApp(app)) return { lines: [USAGE], code: 2 };
 			recordCorrection({ app, ...(room !== undefined ? { room } : {}) }, change, (deps.now ?? (() => new Date()))());
+			await refineAfterCorrection({ app, ...(room !== undefined ? { room } : {}) }, deps);
 			return { lines: [`고친 점을 ${room !== undefined ? `${app} 대화방` : app} 말투에 기록했어요`], code: 0 };
 		}
 		case "drop":
@@ -90,7 +91,7 @@ if (import.meta.main) {
 	const args = process.argv.slice(2);
 	const stdin = args[0] === "new" ? await Bun.stdin.text() : "";
 	try {
-		const out = await runDraft(args, stdin);
+		const out = await runDraft(args, stdin, { analyze: defaultCall(loadSettings().model) });
 		// stdout is only ever something to post or pipe on: on a non-zero exit the lines are explanations and go to stderr.
 		for (const l of out.lines) (out.code === 0 ? console.log : console.error)(l);
 		for (const n of out.notes ?? []) console.error(n);

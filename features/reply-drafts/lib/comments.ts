@@ -4,7 +4,8 @@
 // Nothing is posted here: the adapter only stages a pending reply, and the source's own approve command checks the user's pick.
 import { draftApprovalBlock } from "../../../hub/draft-approval.ts";
 import { precheck, reviseReply, type ReplyItem } from "../../../hub/reply-draft.ts";
-import { buildDraft, defaultCall, type FlowDeps, toneKey } from "./flow.ts";
+import { buildDraft, defaultCall, type FlowDeps, refineAfterCorrection, toneKey } from "./flow.ts";
+import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings, loadStyle, recordCorrection } from "./settings.ts";
 import { addDraft, getDraft, isDrafted, markDrafted, setStatus } from "./store.ts";
 
@@ -16,6 +17,7 @@ export type CommentAdapter = {
 	parse: (line: string) => CommentInput | undefined; // a watch line of this source, else undefined (left untouched)
 	stage: (c: CommentInput, reply: string) => Promise<string>; // makes the pending reply (never posts it); returns its id
 	discard: (id: string) => Promise<void>; // rejects a pending reply
+	ownTexts?: () => Promise<string[]>; // the user's own past replies on this source, for the first identity sweep (persona.ts)
 };
 
 const keyOf = (a: CommentAdapter, id: string) => `comment:${a.app}:${id}`;
@@ -36,6 +38,8 @@ export async function draftComments(a: CommentAdapter, lines: string[], deps: Co
 	const settings = loadSettings();
 	if (!appOn(settings, a.app)) return lines;
 	const started = Date.now();
+	if (deps.analyze && a.ownTexts && lines.some(l => a.parse(l)))
+		await learnFirst({ app: a.app }, a.ownTexts, `${a.label} 댓글 답글`, deps.analyze).catch(e => console.error(`reply draft: ${a.app} identity not learned: ${(e as Error).message}`));
 	const out: string[] = [];
 	for (const line of lines) {
 		const c = a.parse(line);
@@ -83,6 +87,7 @@ export async function reviseComment(a: CommentAdapter, id: string, change: strin
 	if (!change.trim()) return { ok: false, text: "무엇을 고칠지 적어 주세요 (--change)" };
 	const now = (deps.now ?? (() => new Date()))();
 	recordCorrection(toneKey(old), change, now);
+	await refineAfterCorrection(toneKey(old), deps);
 	const call = deps.call ?? defaultCall(loadSettings().model);
 	const r = await reviseReply(old.item, loadStyle(toneKey(old)), { to: old.to, body: old.body }, change, call);
 	if (r.action === "skip") return { ok: false, text: `고친 답글을 만들지 못했어요: ${r.reason}` };
