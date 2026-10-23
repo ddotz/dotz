@@ -27,8 +27,9 @@ describe("schema validation", () => {
 		expect(json("custom/kakao/config.json")).toEqual({ enabled: false });
 	});
 	test("an app without a schema has no settings", () => {
-		expect(fieldsOf("site")).toEqual([]);
-		expect(() => validate("site", { a: 1 })).toThrow(SettingsError);
+		expect(fieldsOf("nope")).toEqual([]);
+		expect(fieldsOf("site").map(f => f.key)).toEqual(["use_here"]);
+		expect(() => validate("nope", { a: 1 })).toThrow(SettingsError);
 		expect(() => validate("__proto__", { a: 1 })).toThrow(SettingsError);
 	});
 });

@@ -27,6 +27,8 @@ export type SettingField = {
 	switch?: boolean;
 	/** Dotted paths in the same file that are set true together with this switch turned on. */
 	alsoOn?: string[];
+	/** The stored boolean is the opposite of the value shown (the file says `off`, the switch says 쓰기). */
+	invert?: boolean;
 };
 export type SettingValue = boolean | string | string[] | number;
 
@@ -35,7 +37,11 @@ const SNS = "custom/sns/config.json";
 const draftSwitch = (app: string, label: string): SettingField => ({ key: "auto_draft", label: "자동 초안", type: "bool", help: `${label}에 답할 거리가 오면 초안을 알아서 만들어요`, store: DRAFTS, path: `apps.${app}.auto`, def: false, switch: true, alsoOn: ["enabled"] });
 const approval: SettingField = { key: "approval", label: "게시 승인 방식", type: "enum", help: "each = 하나씩 확인, batch = 모아서 한 번에 확인", store: SNS, path: "approval", options: ["each", "batch"], def: "each" };
 
+// Every app has this switch first: custom/apps.json {"<app>":{"off":true}} (hub/app-off.ts). Off wins over every rule that turned the app on here.
+const deviceSwitch = (app: string): SettingField => ({ key: "use_here", label: "이 기기에서 쓰기", type: "bool", help: "끄면 이 컴퓨터의 앱 목록에서 빠지고 감시와 알림이 멈춰요. 데이터는 그대로 남아요", store: "custom/apps.json", path: `${app}.off`, def: true, switch: true, invert: true });
+
 export const APP_SETTINGS: Record<string, SettingField[]> = {
+	site: [],
 	mail: [
 		draftSwitch("mail", "메일"),
 		{ key: "skip_senders", label: "초안 제외 발신자", type: "list", help: "이 발신자(주소나 이름)의 메일에는 초안을 만들지 않아요", store: DRAFTS, path: "senders.skip", def: [] },
@@ -57,7 +63,7 @@ export class SettingsError extends Error {
 	}
 }
 
-export const fieldsOf = (app: string): SettingField[] => (Object.hasOwn(APP_SETTINGS, app) ? APP_SETTINGS[app]! : []);
+export const fieldsOf = (app: string): SettingField[] => (Object.hasOwn(APP_SETTINGS, app) ? [deviceSwitch(app), ...APP_SETTINGS[app]!] : []);
 
 const readJson = (file: string): Record<string, any> => {
 	try {
@@ -123,7 +129,7 @@ export function readSettings(dataDir: string, app: string): SettingView[] {
 		const raw = getPath(cache.get(f.store)!, f.path);
 		let value: SettingValue;
 		try {
-			value = raw === undefined ? (f.def ?? (f.type === "list" ? [] : f.type === "bool" ? false : "")) : clean(f, raw);
+			value = raw === undefined ? (f.def ?? (f.type === "list" ? [] : f.type === "bool" ? false : "")) : f.invert ? !clean(f, raw) : clean(f, raw);
 		} catch {
 			value = f.def ?? "";
 		}
@@ -139,7 +145,7 @@ export function writeSettings(dataDir: string, app: string, values: unknown): Se
 		const f = fieldsOf(app).find(x => x.key === k)!;
 		if (!byStore.has(f.store)) byStore.set(f.store, readJson(join(dataDir, f.store)));
 		const doc = byStore.get(f.store)!;
-		setPath(doc, f.path, v);
+		setPath(doc, f.path, f.invert ? !v : v);
 		if (v === true) for (const p of f.alsoOn ?? []) setPath(doc, p, true);
 	}
 	for (const [store, doc] of byStore) {

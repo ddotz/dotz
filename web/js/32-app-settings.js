@@ -3,7 +3,7 @@
 // conversation the common settings are switches that PATCH /api/integrations/<app>/settings straight away (no model call). The owner's words
 // go to the orchestrator, which answers with a ```dotz-settings block; it is drawn as a change card (before -> after) and only 적용 sends the same PATCH.
 const AS_KEY = "dotz.settings.cards";
-const AS = { by: {}, none: {}, load: {}, busy: {}, done: (() => { try { return JSON.parse(localStorage.getItem(AS_KEY)) || {}; } catch { return {}; } })() };
+const AS = { by: {}, none: {}, load: {}, busy: {}, rm: {}, done: (() => { try { return JSON.parse(localStorage.getItem(AS_KEY)) || {}; } catch { return {}; } })() };
 const asSave = () => { try { localStorage.setItem(AS_KEY, JSON.stringify(AS.done)); } catch { /* storage full or blocked: the card state lasts until reload */ } };
 
 // An app is "mail", "kakao"...; a monitor is "w:<watch name>" (hub/watch-settings.ts): same schema, same card, a different URL.
@@ -24,7 +24,49 @@ async function asPatch(app, values) {
   AS.by[app] = r.fields || [];
   asPaint();
   MON.sig = ""; monSchedule();
+  loadIntegrations();
   return r;
+}
+
+/* ---- 제거 (this install only) and 앱 추가 ---- */
+async function asRemoveAsk(app) {
+  try { AS.rm[app] = { plan: await api(`/api/integrations/${enc(app)}/remove`), del: false }; } catch (e) { return toast(e.message || "제거할 내용을 읽지 못했어요", true); }
+  asPaint();
+}
+async function asRemoveGo(app) {
+  const rm = AS.rm[app];
+  if (!rm || AS.busy[app]) return;
+  AS.busy[app] = true;
+  try { await api(`/api/integrations/${enc(app)}/remove`, "POST", { deleteData: rm.del }); toast(`${rm.plan.label}을(를) 이 기기에서 제거했어요`); AS.rm[app] = null; AS.load[app] = null; await loadIntegrations(); go("monitoring"); }
+  catch (e) { toast(e.message || "제거하지 못했어요", true); }
+  AS.busy[app] = false; asPaint();
+}
+function asRemoveNode(app) {
+  const rm = AS.rm[app];
+  if (!rm) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 제거" }), el("span", { class: "as-h", text: "이 기기에서만 지워요. 다른 컴퓨터는 그대로예요" })), el("button", { class: "btn tonal", type: "button", "data-as-rm": "ask", onclick: () => asRemoveAsk(app) }, "제거"));
+  const p = rm.plan, cb = el("input", { type: "checkbox", "data-k": "delete-data", onchange: () => { rm.del = cb.checked; } });
+  const lines = ["이 기기의 앱 목록에서 빼고, 알림과 푸시를 멈춰요", p.watches.length ? `감시 ${p.watches.length}개를 지워요: ${p.watches.join(", ")}` : "지울 감시는 없어요", p.features.length ? `기능을 이 기기에서 꺼요: ${p.features.join(", ")}` : "끌 기능은 없어요", "다른 컴퓨터의 같은 앱은 그대로예요"];
+  return el("div", { class: "as-rm" },
+    el("div", { class: "as-n", text: `${p.label}을(를) 이 기기에서 제거할까요?` }),
+    el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
+    p.data.length ? el("label", { class: "as-del" }, cb, el("span", { text: `저장된 데이터(${p.data.join(", ")})도 지우기. 체크하지 않으면 남겨요` })) : null,
+    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-as-rm": "go", onclick: () => asRemoveGo(app) }, "제거 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
+}
+// 앱 추가: the apps that are off here (or never set up). Turning one on again restores it; one that has nothing set up starts its setup in the main chat.
+function asAddMenu(anchor) {
+  showMenu(anchor, INTG.available.map(a => ({ value: a.key, label: a.label, sub: a.off ? "꺼져 있어요. 다시 켜요" : "아직 연결 안 했어요" })), { onPick: asAdd });
+}
+async function asAdd(key) {
+  const a = INTG.available.find(x => x.key === key);
+  if (!a) return;
+  try {
+    const r = await api(`/api/integrations/${enc(key)}/add`, "POST", {});
+    AS.load[key] = null;
+    await loadIntegrations();
+    if (r.ready) { toast(`${a.label}을(를) 다시 켰어요`); go("monitoring", `i:${key}`); return; }
+    await api("/api/message", "POST", { text: `${a.label} 연결을 시작해 주세요` });
+    toast(`${a.label} 연결을 시작하도록 요청했어요`); go("chat", "main");
+  } catch (e) { toast(e.message || "앱을 추가하지 못했어요", true); }
 }
 
 const asYes = v => v ? "켜짐" : "꺼짐";
@@ -56,7 +98,7 @@ function asPaint() {
   if (!box) return;
   const app = isSettingsT(target) ? settingsApp(target) : "", fields = app ? AS.by[app] : null;
   if (!fields) { box.hidden = true; delete box.dataset.sig; clear(box); return; }
-  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app]]);
+  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app]]);
   box.hidden = false;
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
@@ -70,7 +112,8 @@ function asPaint() {
         try { await asPatch(app, { [f.key]: v }); } catch (e) { toast(e.message || "설정을 바꾸지 못했어요"); }
         AS.busy[app] = false; delete box.dataset.sig; asPaint();
       }))),
-    ...(other.length ? [el("div", { class: "as-sum" }, ...other.map(f => el("span", { class: "as-chip", title: f.help, text: `${f.label} ${asFmt(f, f.value)}` })))] : []));
+    ...(other.length ? [el("div", { class: "as-sum" }, ...other.map(f => el("span", { class: "as-chip", title: f.help, text: `${f.label} ${asFmt(f, f.value)}` })))] : []),
+    ...(app.startsWith("w:") ? [] : [asRemoveNode(app)]));
 }
 // Called when the conversation head is drawn (31-conversations.js convPaintHead).
 function asSync() {
@@ -82,7 +125,7 @@ function asSync() {
 function asPinnedRow(app) {
   if (!AS.load[app]) asLoad(app);
   if (!AS.by[app]) return null;
-  const sw = AS.by[app].filter(f => f.switch), hint = sw.length ? sw.map(f => `${f.label} ${asFmt(f, f.value)}`).join(" · ") : "말로 설정을 바꿔요";
+  const sw = AS.by[app].filter(f => f.switch && f.key !== "use_here"), hint = sw.length ? sw.map(f => `${f.label} ${asFmt(f, f.value)}`).join(" · ") : "말로 설정을 바꿔요";
   return el("button", { class: "cv-row pv as-pin", type: "button", onclick: () => go("monitoring", `c:settings:${app}`) },
     el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon("settings")),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "설정" }), el("span", { class: "cv-p", text: hint })));
