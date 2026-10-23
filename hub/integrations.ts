@@ -94,12 +94,16 @@ const whereOf = (n: NoticeLike): string[] => [n.src, n.open, n.decision?.to].fil
 const hasConvs = (e: IntegrationEntry, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>>): boolean =>
 	(e.match.conv ?? []).some(p => Object.keys(convUnread).some(t => t.startsWith(p)) || notices.some(n => whereOf(n).some(w => w.startsWith(p))));
 
+const SESSION_SRC = /^(?:lane:|ch:|worklog$|main$)/;
+
 export function belongsTo(e: IntegrationEntry, n: NoticeLike): boolean {
 	const { conv = [], draft = [], text = [] } = e.match;
 	const where = whereOf(n);
 	if (conv.some(p => where.some(w => w.startsWith(p)))) return true;
 	const body = n.text ?? "";
 	if (n.decision && draft.some(l => body.includes(`> ${l}:`))) return true;
+	// A work session's or channel's own report ("카톡 보내기를 고쳤어요") talks about the app; it is not a notice of the app.
+	if (SESSION_SRC.test(n.src ?? "")) return false;
 	const hay = `${n.title ?? ""}\n${body}`.toLowerCase();
 	return text.some(t => hay.includes(t.toLowerCase()));
 }
