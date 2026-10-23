@@ -1,7 +1,7 @@
 // The options an asking message gets when it holds no choice block (hub/notices.ts decisionsOf, and stored decisions on load), so a
 // question on the bell and the 'needs you' list is not left with only "직접 답하기" (2026-10-22: mail-thread and work-channel [ask]s
 // such as "감사 답장 한 통만 남았어요. 보내도 될까요?" came without options).
-//   a send question with a known draft id  -> 1) 보내기  2) 고치기 …  3) 보내지 않기   (hub/draft-approval.ts labels)
+//   a send question with a known draft id, or any in a mail thread -> 1) 보내기  2) 고치기 …  3) 보내지 않기   (hub/draft-approval.ts labels)
 //   any other yes / no question            -> 1) 네  2) 아니요 …
 //   an open question (what, which, tell me) -> none: no fixed answer fits, the owner answers in words
 import type { DecisionOption } from "./choices.ts";
@@ -37,11 +37,12 @@ export function asksSendWithoutDraft(text: string): boolean {
 	return !!q && !OPEN.test(q) && SEND.test(q) && !/^\s*>/m.test(text);
 }
 
-export function askDefaults(text: string): DecisionOption[] {
+// mail: the ask is in a mail thread, where a send question always gets the send options, with or without an approval id.
+export function askDefaults(text: string, mail = false): DecisionOption[] {
 	const q = lastQuestion(text);
 	if (!q || OPEN.test(q)) return [];
 	const ref = SEND.test(q) ? (REF_END.exec(q) ?? REF_ANY.exec(text))?.[1] : undefined;
-	if (ref)
+	if (ref || (mail && SEND.test(q)))
 		return [
 			{ n: 1, label: DRAFT_SEND, desc: "그대로 보내요", rec: true },
 			{ n: 2, label: DRAFT_EDIT, desc: "무엇을 고칠지 알려 주면 고쳐서 다시 물어봐요", rec: false, detail: true },

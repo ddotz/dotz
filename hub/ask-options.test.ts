@@ -72,3 +72,17 @@ test("a mail thread's send question without the draft gets the thread's latest d
 	expect(detail).toBe("> 받는이: buyer@example.com\n> 제목: 감사합니다\n>\n> 안녕하세요.\n>\n> 주문 감사합니다.\n감사 답장 초안이에요. 보내도 될까요?");
 	expect(none).toBe("감사 답장 초안이에요. 보내도 될까요?");
 });
+
+test("a mail thread's bare send question gets 1) 보내기 2) 고치기 3) 보내지 않기, other threads keep 네 / 아니요", () => {
+	const q = "[ask] 감사 답장 초안이에요. 보내도 될까요?";
+	expect(labels(decisionsOf(ev(q, { conv: "mail:abc" }))[0]!.options)).toEqual([
+		[1, "보내기", true],
+		[2, "고치기", false],
+		[3, "보내지 않기", false],
+	]);
+	expect(labels(decisionsOf(ev(q))[0]!.options)).toEqual([
+		[1, "네", true],
+		[2, "아니요", false],
+	]);
+	expect(askDefaults("메일 정리해도 될까요?", true).map(o => o.label)).toEqual(["네", "아니요"]);
+});
