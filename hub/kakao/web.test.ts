@@ -65,7 +65,7 @@ describe("rooms", () => {
 		expect(list.json.on).toBe(true);
 		expect(list.json.rooms.map((r: any) => [r.chatId, r.name, r.kind, r.watched, r.autoDraft])).toEqual([
 			[String(ROOM.excluded), "Quiet Group", "group", false, false],
-			[String(ROOM.self), "(unknown)", "self", false, false],
+			[String(ROOM.self), "나와의 채팅", "self", false, false],
 			[GROUP, "Study Group", "group", false, false],
 			[DIRECT, "Alex", "direct", true, false],
 		]);

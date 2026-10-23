@@ -191,6 +191,12 @@ export const uniqueRoomName = (room: string, chatId: string, all: { chatId: stri
 
 type RoomNames = () => Promise<{ chatId: string; name: string }[]>;
 
+// The last plain line kmsg wrote on stderr, as a short reason (no message text, no room name).
+const kmsgWhy = (stderr: string) => {
+	const line = stderr.split("\n").map(l => l.trim()).filter(l => l && !l.startsWith("[trace")).at(-1);
+	return line ? ` (${line.slice(0, 80)})` : "";
+};
+
 const sendTextNow = async (input: { chatId: string; roomName: string; text: string }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => {
 	if (input.roomName.trim() === "(unknown)") return refuse("이름을 알 수 없는 대화방이라 화면 자동화로 찾을 수 없어요");
 	if (deps.roomNames) {
@@ -206,9 +212,13 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	const dry = await deps.runner([kmsg, "send", "--dry-run", "--", input.roomName, input.text], { timeoutMs: 20_000 });
 	if (dry.code !== 0 || !resolvesRoom(dry.stdout, input.roomName)) return refuse("대화방을 하나로 확정하지 못해서 보내지 않았어요");
 	const front = await frontmostApp(deps.runner);
-	const sent = await deps.runner([kmsg, "send", "--", input.roomName, input.text], { timeoutMs: 90_000 });
+	// kmsg prints "Message sent" once Enter went through; a later failure (closing the window) is still a sent message. Without that
+	// line nothing was sent, so one retry with deep window recovery is safe (a cold first window often fails).
+	const wentOut = (r: { code: number; stdout: string }) => r.code === 0 || /Message sent/i.test(r.stdout);
+	let sent = await deps.runner([kmsg, "send", "--", input.roomName, input.text], { timeoutMs: 90_000 });
+	if (!wentOut(sent)) sent = await deps.runner([kmsg, "send", "--deep-recovery", "--", input.roomName, input.text], { timeoutMs: 90_000 });
 	await refocus(deps.runner, front);
-	if (sent.code !== 0) return refuse("카카오톡에서 보내지 못했어요");
+	if (!wentOut(sent)) return refuse(`카카오톡에서 보내지 못했어요${kmsgWhy(sent.stderr)}`);
 	return { ok: true };
 };
 
