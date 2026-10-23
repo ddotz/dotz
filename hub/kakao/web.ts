@@ -216,7 +216,7 @@ export function createKakaoWeb(deps: WebDeps) {
 			} catch {}
 			const ownLines = recent.filter(m => m.fromMe && m.type === TEXT_TYPE).map(m => m.text);
 			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context: contextLines(recent, window), summary: readJsonText(summaryFile(chatId)), pairs: ownPairs(recent), samples: ownSamples(recent), register: registerOf(ownLines.slice(-80)), style });
-			const reply = await deps.draftModel!(system, user);
+			const reply = await deps.draftModel!(system, user, chatId);
 			const parsed = parseDraftReply(reply.text);
 			if (!parsed) return done(DRAFT_FAILED);
 			if (parsed.action === "skip" || !parsed.body) return done(NO_REPLY);

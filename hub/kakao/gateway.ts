@@ -2,7 +2,7 @@
 // Tests build createKakaoWeb / createLive with fakes instead.
 import { hostname } from "node:os";
 import { enableKakaoApp, ensureKakaoVoice } from "../../features/reply-drafts/lib/kakao-voice.ts";
-import { loadSettings, loadStyle, recordCorrection } from "../../features/reply-drafts/lib/settings.ts";
+import { loadStyle, recordCorrection } from "../../features/reply-drafts/lib/settings.ts";
 import { cfg, DATA_DIR, log } from "../config.ts";
 import { broadcast, subscriberCount } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
@@ -11,7 +11,8 @@ import { knownComputers } from "../peers.ts";
 import { claimLease, postLease } from "../send-lease.ts";
 import { getSecret } from "./creds.ts";
 import { type KakaoDb, sqlcipherDb } from "./db.ts";
-import { type DraftModel, pickDraftModel, type StyleHint, type VoiceSource } from "./draft.ts";
+import { callReplyModel } from "../reply-model.ts";
+import { type DraftModel, type StyleHint, type VoiceSource } from "./draft.ts";
 import { createLive } from "./live.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
 import { createKakaoWeb, readConfig } from "./web.ts";
@@ -30,11 +31,10 @@ const openDb = async (config: KakaoConfig): Promise<KakaoDb> => {
 };
 
 const live = createLive({ paths, readConfig: () => readConfig(paths), openDb, subscribers: subscriberCount, broadcast, log, statPollMs: 500 });
-// The one model call of a draft request (subscription only: outlang.ts never falls back to an API key). The model is the reply-drafts
-// setting `model` (what the mail drafts use) when it is a real non-mini model, else sonnet-class: never Haiku, mini or the omp @tiny role.
-const draftModel: DraftModel = async (system, user) => {
-	const { callModel } = await import("../outlang.ts");
-	const r = await callModel(system, user, { model: pickDraftModel(loadSettings().model), timeoutMs: 120_000 });
+// The one model call of a draft request (subscription only: outlang.ts never falls back to an API key). The model is the room's app setting
+// 답장 모델, else the reply-drafts `model`, else the subagent model (hub/reply-model.ts); never Haiku, mini or the omp @tiny role.
+const draftModel: DraftModel = async (system, user, chatId) => {
+	const r = await callReplyModel("kakao", chatId ? `kakao:${chatId}` : undefined, system, user);
 	return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens };
 };
 const draftStyle = (chatId: string): StyleHint => {

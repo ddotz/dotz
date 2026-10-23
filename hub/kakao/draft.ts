@@ -22,7 +22,7 @@ const MAX_FORBIDDEN = 6;
 const MAX_STYLE_CHARS = 160;
 
 export type ModelReply = { text: string; inputTokens?: number; outputTokens?: number };
-export type DraftModel = (system: string, user: string) => Promise<ModelReply>;
+export type DraftModel = (system: string, user: string, chatId?: string) => Promise<ModelReply>;
 // Optional help from the reply-drafts feature (its tone profile for app kakao / this room).
 export type StyleHint = { rules: string[]; corrections: string[]; forbidden: string[]; samples: string[] };
 export type DraftReply = { action: "skip" | "draft"; body: string; summary: string };
