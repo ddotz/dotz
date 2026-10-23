@@ -161,7 +161,12 @@ function msgNode(e) {
     case "lane_start": return el("div", { class: "a-div", text: `세션 시작 · ${hm}` });
     case "mail": {
       // A mail conversation's first message (hub/mail.ts postMail): sender, subject, then the summary and the body (원문).
-      if (e.subject) return resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim() });
+      if (e.subject) {
+        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim() });
+        const key = e.mail || (isMailT(e.conv || "") ? mailOf(e.conv) : "");
+        if (card && key && Array.isArray(e.attachments) && e.attachments.length) card.append(mailFilesNode(key, e.attachments));
+        return card;
+      }
       const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
       const subj = f("subject"), acct = (text.match(/^new mail \(([^)]*)\)/m) || [])[1] || "";
       const snip = (text.match(/^snippet: ?([\s\S]*)$/m) || [])[1] || "";

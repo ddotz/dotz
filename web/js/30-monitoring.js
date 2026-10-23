@@ -135,41 +135,48 @@ function monNoticeNode(n, names = []) {
   if (ntNeeds(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
   return node;
 }
-// A mail's short text for its row: the poster's summary, else the first lines of its body, else the answer already in its conversation.
-const mailBrief = (m, last) => {
-  const s = String(m.summary || m.preview || (last && last.from === "bot" ? last.text : "") || "");
-  return s.split("\n").map(l => rcPlain(l)).filter(l => l && !rcLabel(l)).join(" ");
+// A mail's short text for its row: the poster's summary, else the first lines of its body (hub/mail.ts keeps both), else nothing.
+// It never repeats the sender or the subject: with no summary and no body the row shows no third line.
+const mailBrief = m => {
+  const subj = rcPlain(m.subject), head = rcPlain(`${m.from} · ${m.subject}`);
+  const lines = String(m.summary || m.preview || "").split("\n").map(l => rcPlain(l)).filter(l => l && !rcLabel(l) && l !== subj && l !== head);
+  return lines.join(" ");
 };
 const mailSize = b => b >= 1048576 ? `${(b / 1048576).toFixed(1)}MB` : b >= 1024 ? `${Math.round(b / 1024)}KB` : b > 0 ? `${b}B` : "";
-const mailFileUrl = (t, i, dl) => `/api/mail/${enc(mailOf(t))}/files/${i}${dl ? "?dl=1" : ""}`;
-// The attachments of a mail, opened in a new tab (images, pdf and text show in the browser) or saved with the arrow.
-function mailFilesNode(t, files) {
-  return el("div", { class: "mr-files" }, ...files.map((f, i) => el("div", { class: "mr-file" },
-    el("a", { class: "mr-fn", href: mailFileUrl(t, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` }, icon("file"), el("span", { class: "mr-fname", text: f.name }), f.size ? el("span", { class: "mr-fsize", text: mailSize(f.size) }) : null),
-    el("a", { class: "mr-dl", href: mailFileUrl(t, i, true), download: f.name, title: `${f.name} 저장`, "aria-label": `${f.name} 저장` }, icon("download")))));
+// The authenticated hub route of one attached file (hub/mail.ts mailFileRoute); dl=1 answers with Content-Disposition: attachment.
+const mailFileUrl = (key, i, dl) => `/api/mail/${enc(key)}/files/${i}${dl ? "?dl=1" : ""}`;
+// The attachments of a mail in its original view: one row per file (name, size); the row itself is the download link, so it also saves
+// in an installed app / on a phone, where a new tab would not.
+function mailFilesNode(key, files) {
+  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: `첨부파일 ${files.length}개` }), ...files.map((f, i) =>
+    el("a", { class: "mr-file", href: mailFileUrl(key, i, true), download: f.name, title: `${f.name} 내려받기`, "aria-label": `${f.name} 내려받기${f.size ? ` (${mailSize(f.size)})` : ""}` },
+      icon("file"), el("span", { class: "mr-fname", text: f.name }), f.size ? el("span", { class: "mr-fsize", text: mailSize(f.size) }) : null, icon("download"))));
 }
-// A mail or chat of an integration is its own conversation in 채팅. A mail is a compact result-card row: sender and time on one line,
-// the subject, a short summary; 본문 (its conversation) and 첨부 (its files, only when it has some) are icon buttons on the right.
-// Slot for a suggested action: when the mail's data carries `suggest: { label }` (the reply-draft lane sets it), a button with that
-// label shows under the summary and opens the conversation, where the draft waits. Without it nothing is drawn.
+// The reply state of a mail's row. `m.suggest` is written by the reply-draft lane (hub/mail.ts setMailSuggest; stays absent while the install's
+// reply-draft option is off or nothing was offered): { kind: "reply-draft", label, ref, state? }, `ref` = the draft id and `state` =
+// "draft" (default: a draft waits for approval) | "sent" (the reply went out by itself) | "waiting" (a reply is expected, no draft yet).
+// Without suggest nothing is drawn.
+const MAIL_REPLY = { draft: ["답장 초안 있음", "pri"], sent: ["자동 답장 보냄", "ok"], waiting: ["답장 대기", ""] };
+const mailReplyChip = sg => {
+  if (!sg || typeof sg !== "object" || (sg.kind && sg.kind !== "reply-draft")) return null;
+  const [text, tone] = MAIL_REPLY[sg.state || "draft"] || [];
+  return text ? el("span", { class: `tag mr-reply${tone ? ` ${tone}` : ""}`, "data-slot": "suggest", text }) : null;
+};
+// A mail or chat of an integration is its own conversation in 채팅. A mail is a compact result-card row: sender and time on one line (with
+// a paperclip and the file count when it has files), the subject, a summary of up to 3 lines and, at the bottom, the reply state. The
+// whole card is the way in: it opens the mail's conversation, where the original and its files are (11-todo-strip.js "mail").
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = ts(t).unread;
   const tag = n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : null;
   if (!m) return resultCard({ src: label, at: last ? last.ts : "", title: last ? last.text : "", text: "", tag, actions: [el("button", { class: "btn tonal", type: "button", onclick: () => go("chat", t), text: "대화 열기" })] });
-  const files = m.attachments || [], brief = mailBrief(m, last), when = rcWhen(last ? last.ts : m.at);
-  const btn = (ic, text, title, onclick, count) => el("button", { class: "mr-btn", type: "button", title, "aria-label": title, onclick }, icon(ic), el("span", { class: "mr-bl", text }), count ? el("span", { class: "mr-n", text: String(count) }) : null);
-  const node = el("div", { class: "bm alert rc mr" }, el("div", { class: "mr-main" },
-    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: mailSender(m.from) || label }), tag, when ? el("span", { class: "rc-time", text: when }) : null),
+  const files = m.attachments || [], brief = mailBrief(m), when = rcWhen(last ? last.ts : m.at), chip = mailReplyChip(m.suggest), open = () => go("chat", t);
+  const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
+  return el("div", { class: "bm alert rc mr", role: "button", tabindex: "0", "aria-label": `${m.subject || "메일"} 원문 열기`, onclick: open,
+    onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
+    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: mailSender(m.from) || label }), tag, clip, when ? el("span", { class: "rc-time", text: when }) : null),
     el("div", { class: "rc-title", text: m.subject || "(제목 없음)" }),
     brief ? el("div", { class: "mr-sum", text: brief }) : null,
-    m.suggest && m.suggest.label ? el("div", { class: "mr-slot", "data-slot": "suggest" }, el("button", { class: "btn tonal", type: "button", onclick: () => go("chat", t), text: m.suggest.label })) : null),
-    el("div", { class: "mr-act" },
-      btn("mail", "본문", "메일 본문과 대화 열기", () => go("chat", t)),
-      files.length ? btn("clip", "첨부", `첨부파일 ${files.length}개 보기`, e => {
-        const open = node.querySelector(".mr-files");
-        if (open) { open.remove(); e.currentTarget.setAttribute("aria-expanded", "false"); } else { node.append(mailFilesNode(t, files)); e.currentTarget.setAttribute("aria-expanded", "true"); }
-      }, files.length) : null));
-  return node;
+    chip ? el("div", { class: "mr-slot" }, chip) : null);
 }
 // A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
 function monRunNode(it) {
