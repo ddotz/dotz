@@ -246,14 +246,14 @@ describe("web routes", () => {
 		};
 		const threads = await call("GET", "/api/comments/threads?app=youtube");
 		expect(threads.json.threads.map((x: any) => [x.thread, x.unread]).sort()).toEqual([["p1", 1], ["p2", 1]]);
-		expect(t.engine.needs()).toEqual({ youtube: { drafts: 0, unread: 2 } });
+		expect(t.engine.needs()).toEqual({ youtube: { drafts: 0, unread: 2, unreplied: 2 } });
 
 		const id = commentId("youtube", "c1");
 		expect((await call("POST", `/api/comments/comment/${encodeURIComponent(id)}/draft`)).status).toBe(202);
 		await web.idle();
 		const view = await call("GET", "/api/comments/thread/youtube/p1");
 		expect(view.json.drafts).toHaveLength(1);
-		expect(t.engine.needs().youtube).toEqual({ drafts: 1, unread: 2 });
+		expect(t.engine.needs().youtube).toEqual({ drafts: 1, unread: 2, unreplied: 2 });
 		const code = view.json.drafts[0].code;
 		const sent = await call("POST", `/api/comments/drafts/${code}/send`, { text: "고친 글이에요" });
 		expect(sent.status).toBe(202);

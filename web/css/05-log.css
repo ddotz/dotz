@@ -132,6 +132,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hr .hn1 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hr .ha { min-width: 0; color: var(--fg-2); font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hr .hp { flex: none; color: var(--fg-3); font-size: 12.5px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.hr .hs.unreplied { color: var(--unreplied); font-weight: 600; }
 .hr .hs { flex: none; min-width: 44px; text-align: right; color: var(--fg-2); font-size: 13px; font-weight: 500; }
 .hr .hs.pri { color: var(--accent); } .hr .hs.warn { color: var(--warn); } .hr .hs.err { color: var(--err); }
 /* a session row (sessionRow in 18-lanes.js): the parent project leads the second line, the activity trails it */
