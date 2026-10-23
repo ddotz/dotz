@@ -489,3 +489,85 @@ test("the newest-message path (no deferred prompt) marks that owner message answ
 	expect(q.isAnswered("m7")).toBe(true);
 	expect(open()).toEqual([]);
 });
+
+// 2026-10-23: three answered web messages came back after a restart. The outbox showed them answered, but no `out` carried their
+// own id as reply_to (the answer named the last message of a burst), so neither the deferred set nor pending.json nor the replay knew.
+const deliveryAnswered = (target: string, ref: string) => emit("outbox", { ts: new Date().toISOString(), kind: "delivery", source: "gateway", target, ref, state: "answered", text: "" });
+
+test("a message the outbox shows as answered is read back as answered and skipped on replay, with a log line", () => {
+	deliveryAnswered("web", "burst-first");
+	const logs: string[] = [];
+	const { q, state } = setup(answeredIds(), [], { log: m => logs.push(m) });
+	const n = q.replay(
+		[
+			{ text: "answered by the burst", at: Date.now(), target: "web", replyTo: "burst-first" },
+			{ text: "never answered", at: Date.now(), target: "web", replyTo: "burst-open" },
+		],
+		t => `replay ${t}`,
+	);
+	expect(n).toBe(1);
+	expect(state.delivered).toEqual(["replay never answered"]);
+	expect(logs.some(l => l.includes("burst-first") && l.includes("already answered"))).toBe(true);
+});
+
+test("a batch answer that settles every message of a burst leaves none in the deferred set or pending.json", () => {
+	const { q, open, startTurn } = setup();
+	startTurn("first", web("b1"));
+	q.onAnswer("[later]");
+	q.deliver("second", web("b2"));
+	q.settleTurn();
+	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["b1"]);
+	// handOver: the answer named b2, the delivery state settled b1 and b2 (hub/outbound.ts).
+	for (const ref of ["b1", "b2"]) q.markAnswered(ref);
+	expect(q.deferredOpen()).toEqual([]);
+	expect(open()).toEqual([]);
+	const { q: after, state } = setup(["b1", "b2"]);
+	expect(after.replay(open(), t => t)).toBe(0);
+	expect(state.delivered).toEqual([]);
+});
+
+test("a dotz_send reply_to to a deferred prompt leaves nothing to replay", () => {
+	const { q, open, startTurn } = setup();
+	startTurn("work", chat("d1"));
+	q.onAnswer("[later]");
+	q.settleTurn();
+	expect(open().map(p => p.replyTo)).toEqual(["d1"]);
+	q.sent("chat", "result", "d1");
+	expect(q.deferredOpen()).toEqual([]);
+	expect(open()).toEqual([]);
+});
+
+test("an answer without a prompt that went to the newest message leaves no earlier answered message to replay", async () => {
+	const { q, open, startTurn } = setup();
+	startTurn("one", web("n1"));
+	q.onAnswer("[later]");
+	q.settleTurn();
+	q.deliver("two", web("n2"));
+	q.onPrompt("two");
+	q.onAnswer("[later]");
+	q.settleTurn();
+	q.onAnswer("the worker finished: everything is done");
+	await Promise.resolve();
+	// the outbox shows both as answered (the answer named n1; n2 was in the same web conversation)
+	q.markAnswered("n2");
+	expect(open()).toEqual([]);
+});
+
+test("a lane report a turn already took is not replayed after a restart, an unanswered owner prompt and a report no turn took still are", () => {
+	const logs: string[] = [];
+	const { q, state, open } = setup([], [], { log: m => logs.push(m) });
+	q.deliver("[dotz inbox] session report 1: [done] old result", undefined);
+	q.deliver("owner asks", web("o1"));
+	// omp ran the report first (its text was changed on the way, so it never paired), then the owner's prompt.
+	q.onPrompt("owner asks");
+	expect(open().map(p => p.text)).toEqual(["owner asks"]);
+	expect(logs.some(l => l.includes("consumed by a turn"))).toBe(true);
+	const { q: after, state: s2 } = setup();
+	expect(after.replay(open(), t => `replay ${t}`)).toBe(1);
+	expect(s2.delivered).toEqual(["replay owner asks"]);
+	// a report no turn started yet is still open
+	const lone = setup();
+	lone.q.deliver("[dotz inbox] session report 1: [done] fresh", undefined);
+	expect(lone.open().map(p => p.text)).toEqual(["[dotz inbox] session report 1: [done] fresh"]);
+	expect(state.delivered.length).toBe(2);
+});
