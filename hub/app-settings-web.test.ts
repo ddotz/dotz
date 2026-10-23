@@ -247,9 +247,9 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 
 	test("the sheet lists only the apps that are off, never an app that was not set up, and 다시 켜기 turns one on", async () => {
 		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-		await waitFor(v, `document.querySelector(".fs-card [data-tpl]")`);
+		await waitFor(v, `document.querySelector('.fs-card [data-k="new"]:not([disabled])')`);
 		expect(await q<string[]>(v, `return [...document.querySelectorAll(".fs-card [data-app]")].map(e => e.dataset.app)`)).toEqual(["kakao"]);
-		expect(await rows(".fs-card [data-tpl]")).toEqual(TPL);
+		expect(await q(v, `return document.querySelectorAll(".fs-card [data-tpl]").length`)).toBe(0);
 		const fit = await q<{ w: number; vw: number }>(v, `return { w: document.querySelector(".fs-card").scrollWidth, vw: innerWidth }`);
 		expect(fit.w).toBeLessThanOrEqual(fit.vw);
 		await shot(v, "08-phone-add-sheet.png");
@@ -264,7 +264,7 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 		await run(v, `ta.value = ""; asTplEnd(); go("monitoring")`);
 		await waitFor(v, `INTG.available.length === 0 && document.querySelector('#mon-side [data-k="add-app"]')`);
 		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-		await waitFor(v, `document.querySelector(".fs-card [data-tpl]")`);
+		await waitFor(v, `document.querySelector('.fs-card [data-k="new"]:not([disabled])')`);
 		expect(await q(v, `return document.querySelectorAll(".fs-card [data-app]").length`)).toBe(0);
 		const all = readAppTemplates(data);
 		await run(v, `document.querySelector('.fs-card [data-k="new"]').click()`);
@@ -290,9 +290,11 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 			await run(v, `asTplEnd(); go("monitoring")`);
 			await waitFor(v, `document.querySelector('#mon-side [data-k="add-app"]')`);
 			await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-			await waitFor(v, `document.querySelector('.fs-card [data-tpl="mine"]')`);
-			expect(await rows(".fs-card [data-tpl]")).toEqual([...TPL, "내 앱"]);
-			await run(v, `document.querySelector('.fs-card [data-tpl="mail"]').click()`);
+			await waitFor(v, `AT.items.some(t => t.key === "mine") && document.querySelector('.fs-card [data-k="new"]:not([disabled])')`);
+			await run(v, `document.querySelector('.fs-card [data-k="new"]').click()`);
+			await waitFor(v, `document.querySelector('#app-tpl [data-tpl="mine"]')`);
+			expect(await rows("#app-tpl [data-tpl]")).toEqual([...TPL, "내 앱"]);
+			await run(v, `document.querySelector('#app-tpl [data-tpl="mail"]').click()`);
 			await waitFor(v, `!AT.h && ta.value.startsWith("내 메일 요청")`);
 			expect(await q<string>(v, `return ta.value`)).toBe(readAppTemplates(data).find(t => t.key === "mail")!.text);
 			expect(await q<string>(v, `return ta.value`)).toContain("보안 입력 양식(dotz_auth)");
