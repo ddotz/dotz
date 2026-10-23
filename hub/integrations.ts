@@ -98,6 +98,12 @@ export function belongsTo(e: IntegrationEntry, n: NoticeLike): boolean {
 	return text.some(t => hay.includes(t.toLowerCase()));
 }
 
+// The key of the app (an entry on at this install, or one whose conversation the notice lives in) the notice belongs to; none = the owner's own monitor.
+export function appKeyOf(n: NoticeLike, ctx: IntegrationContext, entries: readonly IntegrationEntry[] = INTEGRATIONS): string | undefined {
+	const where = whereOf(n);
+	return entries.find(e => belongsTo(e, n) && (integrationOn(e, ctx) || (e.match.conv ?? []).some(p => where.some(w => w.startsWith(p)))))?.key;
+}
+
 // The enabled entries with their notices (newest first as given, at most `cap`) and the unread count: unread notices plus the unread messages
 // of the conversations under the entry's `conv` prefixes (`convUnread`: target -> unread messages). `suggests` = the mails' reply states, `now` = the clock.
 export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now()): IntegrationItem[] {

@@ -26,7 +26,7 @@ import { applyAccountChange as holdOrchestratorKeepalive, orch, orchBusy, setIdl
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { forgetAccountUsage, usageSnapshot } from "./providers.ts";
-import { backfillNotices, dropChannelNotices, setConvNameResolver, setLaneTitleResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, updateAvailable, updateResolved } from "./notices.ts";
+import { backfillNotices, dropChannelNotices, setConvNameResolver, setLaneTitleResolver, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
@@ -52,11 +52,13 @@ import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { makeRoute } from "./routes.ts";
+import { appKeyOf, integrationContext } from "./integrations.ts";
 import { setFormLink } from "./auth.ts";
 
 installDelivery();
 setLaneTitleResolver(name => lanes.get(name)?.title);
 setWatchLabelResolver(watchLabel);
+setAppResolver(n => appKeyOf(n, integrationContext(DATA_DIR, cfg.zele?.enabled !== false && Bun.which("zele") ? ["zele"] : [])));
 setOrchestratorAvailable(() => orch.status !== "stopped" && orch.status !== "rate-limited");
 setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] ?? discord.channels.threads[conv.slice(3)]?.name : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).

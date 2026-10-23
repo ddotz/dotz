@@ -10,6 +10,8 @@ const NOTICES = [
 	report("b", 30, "샘플 가 감시", "샘플 가 감시: 결과가 바뀌었어요\n새로 생겼어요: 둘째"),
 	report("c", 90, "샘플 나 감시", "샘플 나 감시: 결과가 바뀌었어요\n새로 생겼어요: 셋째"),
 	report("a", 5, "샘플 다 감시", "샘플 다 감시: 결과가 바뀌었어요\n새로 생겼어요: 첫째"),
+	// An app's report (the hub stamps `app`) is newest of all but never in the feed.
+	{ ...report("z", 1, "샘플 앱 감시", "샘플 앱 감시: 결과가 바뀌었어요"), app: "mail" },
 ];
 
 const json = (v: unknown) => Response.json(v);
