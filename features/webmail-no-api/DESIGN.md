@@ -35,7 +35,7 @@ secrets, and the owner's own launchd jobs. Each install captures its own `spec.j
 | step | does | owner touch |
 |---|---|---|
 | preflight | mail handed to another machine? (a personal deny on zele), https URL, Aside present (started hidden) | none |
-| login | background tab: password field? then `aside exec` signs in with the browser's saved password | one batched ask: save the password / approve the 2nd factor; `--approve` resumes |
+| login | background tab: password field? then `aside repl` submits the form the browser's saved password autofilled (`lib/login.ts`; no password is typed or read, no Aside agent) | one batched ask: save the password / approve the 2nd factor; `--approve` resumes |
 | capture | records the client's calls (load-time calls replayed from Performance entries, fetch/XHR hooked, one mail opened by clicking a listed subject); a second, deep pass if the first finds no list | none; HTML-only sites get a Korean fallback (IMAP/zele, or `--har`) |
 | test | live list + read; if no mail was opened, probes likely read endpoints with a real id; a lost login goes back to login once | none |
 | apply | config, home card, sidebar project, this install's feature switch | none |

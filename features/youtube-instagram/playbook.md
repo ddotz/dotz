@@ -28,7 +28,7 @@
 - `yt-comment <id> video=.. by=..: 글`, `ig-comment <id> media=.. by=..: 글`: 그 앱을 켜지 않았거나 초안을 못 만든 댓글이에요. 오너 말투로 답글 초안을 쓰고 `sns.ts job new`로 등록해요. 광고나 욕설은 건너뛰고 이유만 알려요. 사용자가 "인스타 댓글 답글 켜 줘"처럼 부탁하면 `bun <dotz 체크아웃>/features/reply-drafts/bin/onboard.ts on --app instagram`(유튜브는 `--app youtube`)을 실행해요. 연결이 안 되어 있으면 종료 코드 3과 함께 연결 명령이 찍히니 그 순서대로 해요. 끄려면 `onboard.ts off --app <앱>`이에요.
 - `new-video <경로> <초>s <WxH> <vertical|landscape> <ok|too-long|not-vertical>`: `ok`면 기본 언어(번역을 켰다면 설정된 언어도)로 제목, 설명, 태그와 인스타 캡션 초안을 쓰고 올리기 job을 만들어요. `too-long`, `not-vertical`은 오너에게 먼저 알려요.
 - `needs-translation <videoId> missing=<언어>: 제목`: 빠진 언어의 제목과 설명을 번역해 메타데이터 job을 만들어요. 원래 설명은 건드리지 않고 언어별 구간만 덧붙여요.
-- `posted <jobId> ...`, `failed <jobId> <이유>`, `aside-needed ...`: 프로젝트 채널에 알려요. `aside-needed`는 `aside exec`로 직접 올려요.
+- `posted <jobId> ...`, `failed <jobId> <이유>`, `aside-needed ...`: 프로젝트 채널에 알려요. `aside-needed`는 `aside repl`로 직접 올려요.
 - `yt-quota-exhausted until=<시각>`: 유튜브 하루 쿼터를 다 썼어요. "유튜브 하루 쿼터를 다 써서 <시각>에 다시 이어서 해요" 한 줄로만 알려요. 선택 블록은 필요 없어요.
 - `yt-comment-overflow ...`: 새 댓글이 너무 많아 오래된 건 목록에서 빠졌다고 알려요.
 - `DOTZ_FAIL youtube-auth`, `DOTZ_FAIL instagram-auth`: 로그인이 풀렸어요. `onboard.ts reset youtube-auth`(또는 `instagram-token`) 뒤 `onboard.ts run`으로 다시 연결해요. `DOTZ_FAIL network`는 스크립트가 이미 두 번 참았다는 뜻이니 알려요.

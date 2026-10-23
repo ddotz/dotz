@@ -87,7 +87,7 @@ and exits with the code. Tests call `run` with a fake ctx.
 ```
 
 - `youtube` / `instagram` are optional (an owner may run only one).
-- `upload_via` / `post_via`: `api` (default) or `aside` (browser fallback, done by the orchestrator through `aside exec`;
+- `upload_via` / `post_via`: `api` (default) or `aside` (browser fallback, done by the orchestrator through `aside repl`;
   scripts then only prepare the job and print what to do). Note: Google locks videos uploaded through an unaudited API
   project to private; until the project passes the audit, public uploads go through `aside` (YouTube Studio).
 - `approval`: `each` (one decision block per item) or `batch` (one decision block per batch). Both ask before anything
@@ -195,7 +195,7 @@ Only the watches for the connected platforms are added. Commands use `command` (
   for it later (then `setup.ts apply --languages <codes>`).
 - Credential order (contract login order): official API with a long-lived token first. YouTube: Google Cloud OAuth
   desktop client -> `dotz_auth` kind secret into `~/.dotz/secrets/youtube-client.json` -> `setup.ts youtube-auth --client <file>`
-  -> open the printed URL with `aside exec` in a background tab. Instagram: long-lived token from the Meta app dashboard
+  -> open the printed URL with `aside repl` in a background tab. Instagram: long-lived token from the Meta app dashboard
   via `dotz_auth` -> `setup.ts instagram-token --from <file>`. Fallback: the Aside browser login (channel `logins` for
   studio.youtube.com / instagram.com). Never echo a secret.
 - Then create the work channel (`dotz_channel create`, plain title like 유튜브·인스타), run `setup.ts apply ... --channel ch:<id>`,
@@ -205,7 +205,7 @@ Only the watches for the connected platforms are added. Commands use `command` (
   `sns.ts tone-sample` once if it is empty), `sns.ts job new`, show them as ONE choice-block message (올리기 ← 추천 /
   고쳐서 올리기 / 올리지 않기; batch mode: one block for all). `new-video` -> draft title/description/tags in the base and
   configured languages + IG caption, upload job, ask. `needs-translation` -> draft localizations, metadata job, ask.
-  `posted`/`failed`/`aside-needed` -> report in the project channel (aside-needed: do the upload with `aside exec`).
+  `posted`/`failed`/`aside-needed` -> report in the project channel (aside-needed: do the upload with `aside repl`).
 - Only after the owner picks OK: `sns.ts approve <id>` (next posting time unless the owner said now). Nothing public
   before that, ever. Commands are `bun <dotz checkout>/features/youtube-instagram/bin/<script>.ts`.
 
@@ -247,18 +247,22 @@ Steps, in order (each skips itself when already satisfied, e.g. a valid secret f
 1. `deps`: bun, aside CLI answering, ffprobe, cloudflared (Instagram only), Messages database readable (for codes).
    Missing brew packages are installed with `brew install ffmpeg cloudflared` (no prompt). Messages unreadable ->
    needs-owner (Full Disk Access for bun), codes fall back to asking.
-2. `youtube-client`: Google Cloud through `aside exec` (background tab): create or reuse project "dotz-youtube", enable
-   YouTube Data API v3, OAuth consent screen External + app name + owner email, publish the app to Production (Testing
-   would expire refresh tokens after 7 days), create an OAuth client of type Desktop. client_id/secret are read from the
-   page with `aside repl` and POSTed to a one-shot localhost receiver (`lib/receiver.ts`) that writes
-   `secrets/youtube-client.json` 0600; no secret passes through a model or argv.
-3. `youtube-auth`: the loopback flow of setup.ts; the consent URL opens in an Aside background tab and `aside exec`
-   picks the account, accepts the unverified-app screen ("고급 -> 이동") and allows; the redirect completes on its own.
-4. `instagram-account`: `aside exec` checks the account is professional (creator/business); if not, switches it to
-   creator (owner default) on instagram.com settings.
-5. `instagram-token`: Meta for Developers through `aside exec`: register as developer if needed, create app (use case
-   Instagram API with Instagram Login), add the account, generate the long-lived token; the token is read with
-   `aside repl` and POSTed to the receiver -> `secrets/instagram-token-new.json`, then `setup.ts instagram-token`.
+2. Google Cloud, one `aside repl` step each (background tab, `lib/pages.ts`; never the Aside agent, which spends Aside's
+   own rate limit). Every script checks the page state before and after each action and ends `ok`, `owner` (login page),
+   `code` (verification prompt) or `unexpected` (unknown page); the last two non-ok kinds stop the step with an owner ask
+   (exit 3), nothing is guessed. `gcp-project` creates or reuses "dotz-youtube" (its ID is kept in onboard.json `ids`),
+   `gcp-api` enables YouTube Data API v3, `gcp-consent` makes the consent screen (External, app "dotz", the signed-in
+   account as contact), `gcp-publish` publishes it to Production (Testing would expire refresh tokens after 7 days),
+   `youtube-client` creates a Desktop OAuth client. In the same run client_id/secret are read from the dialog and POSTed
+   to a one-shot localhost receiver (`lib/receiver.ts`) that writes `secrets/youtube-client.json` 0600; no secret passes
+   through a model or argv. All five skip themselves once the client file exists.
+3. `youtube-auth`: the loopback flow of setup.ts; the consent URL opens in an Aside background tab and an `aside repl`
+   script picks the account, accepts the unverified-app screen ("고급 -> 이동") and allows; the redirect completes on its own.
+4. `instagram-account`: an `aside repl` script checks the account is professional (creator/business); if not, switches
+   it to creator (owner default) on instagram.com settings and re-checks.
+5. `meta-app` creates or reuses the Meta app "dotz-instagram" (use case Instagram; app id kept in `ids`);
+   `instagram-token` opens its Instagram API setup page, generates the long-lived token (the account must already be
+   added to the app) and POSTs it to the receiver -> `secrets/instagram-token-new.json`, then `setup.ts instagram-token`.
 6. `detect`: myChannel / me() fill channel and account (no questions).
 7. `apply`: `setup.ts apply` with defaults, no questions: posting 18:00, approval each, quiet 00:00-08:00, privacy
    private for API uploads, `upload_via aside` until the Google project passes the audit (public uploads), languages off.
@@ -275,5 +279,5 @@ Steps, in order (each skips itself when already satisfied, e.g. a valid secret f
   (dotz_auth approve/secret where a value is needed) and re-runs `run` after the owner answers.
 - Progress: `run` updates one evolving message through the gateway (`POST /api/send` with
   `update_key: "sns-onboarding"`, target = `--target` or `chat`): a checklist line per step (✅ ⏳ ❓ ❌).
-- Every external effect (aside exec, aside repl, brew, gateway, API) goes through injected runners; `--dry-run` uses a
+- Every external effect (aside repl, brew, gateway, API) goes through injected runners; `--dry-run` uses a
   scripted runner set, and the test drives the whole flow, an interruption, and the resume.
