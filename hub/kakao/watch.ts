@@ -65,6 +65,9 @@ export async function runWatch(deps: WatchDeps): Promise<WatchResult> {
 		return { lines: [], code: 0 };
 	}
 
+	// No chosen room: nothing can wake the bot, so the database is not read at all.
+	if (!config.watch_chats?.length) return { lines: [], code: 0 };
+
 	const lastId = BigInt(lastText);
 	const heldFirst = Object.values(held).map((v) => BigInt(v));
 	const fetchFrom = heldFirst.reduce((lo, v) => (v - 1n < lo ? v - 1n : lo), lastId);

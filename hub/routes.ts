@@ -36,6 +36,7 @@ import { json, body, terminals } from "./routes-util.ts";
 import { ptyRoute } from "./pty.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
+import { kakaoRoute } from "./kakao/gateway.ts";
 
 const BOOT_ID = Date.now().toString(36);
 // Installable-app files next to index.html: manifest, service worker (never cached by HTTP, so an update is seen at once), icons.
@@ -335,6 +336,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				return json({ delivered: false, reason: (error as Error).message }, 502);
 			}
 		}
+		const kakaoResponse = await kakaoRoute(req, url, parts);
+		if (kakaoResponse) return kakaoResponse;
 		const settingsResponse = await routeSettings(req, url, parts);
 		if (settingsResponse) return settingsResponse;
 		const laneResponse = await routeLanes(req, url, parts);

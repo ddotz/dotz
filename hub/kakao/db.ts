@@ -348,18 +348,20 @@ export async function roomTypes(db: KakaoDb): Promise<Map<string, number>> {
 	return new Map(rows.map((r) => [str(r.chatId), num(r.type)]));
 }
 
-// Oldest first.
-export async function messages(db: KakaoDb, chatId: string, limit: number, userId: string | number): Promise<Msg[]> {
+// Oldest first. Without `opts`: the newest `limit`. `before`: the newest `limit` older than that logId. `after`: the oldest `limit` newer than it.
+export async function messages(db: KakaoDb, chatId: string, limit: number, userId: string | number, opts: { before?: string; after?: string } = {}): Promise<Msg[]> {
+	const after = opts.after !== undefined;
+	const bound = opts.after ?? opts.before;
 	const rows = await db.query(
 		`SELECT CAST(m.logId AS TEXT) AS logId, CAST(m.chatId AS TEXT) AS chatId, CAST(m.authorId AS TEXT) AS authorId,
 			COALESCE(NULLIF(u.friendNickName, ''), NULLIF(u.displayName, ''), NULLIF(u.nickName, '')) AS sender,
 			m.message AS text, m.type AS type, m.sentAt AS sentAt
 		FROM NTChatMessage m LEFT JOIN NTUser u ON m.authorId = u.userId AND u.linkId = 0
-		WHERE m.chatId = ? ORDER BY m.logId DESC LIMIT ?`,
-		[chatId, Math.max(1, Math.trunc(limit))],
+		WHERE m.chatId = ?${bound === undefined ? "" : ` AND m.logId ${after ? ">" : "<"} ?`} ORDER BY m.logId ${after ? "ASC" : "DESC"} LIMIT ?`,
+		[chatId, ...(bound === undefined ? [] : [bound]), Math.max(1, Math.trunc(limit))],
 	);
 	const me = String(userId);
-	return rows.reverse().map((r) => ({
+	return (after ? rows : rows.reverse()).map((r) => ({
 		logId: str(r.logId),
 		chatId: str(r.chatId),
 		authorId: str(r.authorId),
@@ -383,6 +385,16 @@ export async function newSince(db: KakaoDb, lastLogId: string, limit: number): P
 	return rows.map((r) => ({ logId: str(r.logId), chatId: str(r.chatId), authorId: str(r.authorId), type: num(r.type), sentAt: num(r.sentAt) }));
 }
 
+// Metadata only: the new rows of the given rooms (watched ones), oldest first.
+export async function newInChats(db: KakaoDb, lastLogId: string, chatIds: string[], limit: number): Promise<{ logId: string; chatId: string }[]> {
+	if (!chatIds.length) return [];
+	const rows = await db.query(
+		`SELECT CAST(logId AS TEXT) AS logId, CAST(chatId AS TEXT) AS chatId FROM NTChatMessage WHERE logId > ? AND chatId IN (${chatIds.map(() => "?").join(",")}) ORDER BY logId ASC LIMIT ?`,
+		[lastLogId, ...chatIds, Math.max(1, Math.trunc(limit))],
+	);
+	return rows.map((r) => ({ logId: str(r.logId), chatId: str(r.chatId) }));
+}
+
 export async function maxLogId(db: KakaoDb): Promise<string> {
 	const rows = await db.query("SELECT CAST(MAX(logId) AS TEXT) AS maxId FROM NTChatMessage");
 	return str(rows[0]?.maxId) || "0";
@@ -393,7 +405,8 @@ export async function ownUserId(db: KakaoDb): Promise<string | undefined> {
 	return str(rows[0]?.userId) || undefined;
 }
 
-// KakaoTalk has no per-room mute column in the reader sources, so "muted" is the owner's exclude_chats list.
-export function isDraftCandidate(room: Pick<Room, "chatId" | "kind">, config: Pick<KakaoConfig, "exclude_chats">): boolean {
-	return (room.kind === "direct" || room.kind === "group") && !(config.exclude_chats ?? []).includes(room.chatId);
+// A room counts only when the owner chose it (watch_chats). KakaoTalk has no per-room mute column in the reader sources,
+// so "muted" is the owner's exclude_chats list.
+export function isDraftCandidate(room: Pick<Room, "chatId" | "kind">, config: Pick<KakaoConfig, "exclude_chats" | "watch_chats">): boolean {
+	return (room.kind === "direct" || room.kind === "group") && (config.watch_chats ?? []).includes(room.chatId) && !(config.exclude_chats ?? []).includes(room.chatId);
 }
