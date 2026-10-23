@@ -260,9 +260,11 @@ function renderMonitoring() {
     side.scrollTop = top;
   }
   const kakao = !!sel && sel.key === KK_KEY;
+  const cm = !kakao && sel ? cmAppOf(sel.key) : "";
   kkMode(kakao, kakao && !(narrowChat() && MON.list));
+  cmMode(cm, !!cm && !(narrowChat() && MON.list));
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
-  if (kakao) {   // 30-kakao.js draws this item's pane (rooms and chat); only the head is the usual one
+  if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
     const head = JSON.stringify([sel.name, monState(sel)]);
     if (head !== MON.kkHead) { MON.kkHead = head; clear($("#mon-head")).append(...monHead(sel)); }
     MON.sig = ""; MON.shown = sel.key;

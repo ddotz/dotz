@@ -36,6 +36,7 @@ import { json, body, terminals } from "./routes-util.ts";
 import { ptyRoute } from "./pty.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
+import { commentFlags, commentNeeds, commentsRoute } from "./comments/gateway.ts";
 import { kakaoRoute } from "./kakao/gateway.ts";
 
 const BOOT_ID = Date.now().toString(36);
@@ -141,7 +142,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		if (req.method === "GET" && url.pathname === "/api/integrations") {
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
-			return json({ items: integrationItems(integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele"] : []), listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests()) });
+			return json({ items: integrationItems(integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags()), listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds()) });
 		}
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
 		// The bot closes the questions whose matter is over (ids, match text, conv or all): they are answered, read and off 답변 필요.
@@ -336,6 +337,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				return json({ delivered: false, reason: (error as Error).message }, 502);
 			}
 		}
+		const commentsResponse = await commentsRoute(req, url, parts);
+		if (commentsResponse) return commentsResponse;
 		const kakaoResponse = await kakaoRoute(req, url, parts);
 		if (kakaoResponse) return kakaoResponse;
 		const settingsResponse = await routeSettings(req, url, parts);
