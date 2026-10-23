@@ -92,13 +92,30 @@ const boot = async (v: View, route: string) => {
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	await run(v, `go("monitoring", ${JSON.stringify(route)})`);
 };
-// The panel above the conversation and the conversation column: same left edge and width.
-const frame = (v: View) => q<{ sw: number; tl: number; swL: number; tlL: number; vw: number }>(v, `const a = document.querySelector("#app-sw").getBoundingClientRect(), b = document.querySelector("#tl").getBoundingClientRect(); return { sw: a.width, tl: b.width, swL: a.left, tlL: b.left, vw: innerWidth }`);
-const expectSameColumn = async (v: View) => {
+// The options live in the settings screen the conversation's ⋯ button pushes; `#app-sw` exists only while it is open.
+const openScreen = async (v: View, app = "") => {
+	const more = `[...document.querySelectorAll("[data-as-more]")].find(b => b.offsetParent && !b.hidden && (!${JSON.stringify(app)} || b.dataset.asMore === ${JSON.stringify(app)}))`;
+	await waitFor(v, more);
+	await run(v, `${more}.click()`);
+	await waitFor(v, `document.querySelector("#app-sw .as-row")`);
+};
+const closeScreen = async (v: View) => {
+	await run(v, `const b = document.querySelector('[data-k="as-back"]'); if (b) b.click()`);
+	await waitFor(v, `!document.querySelector("#app-sw")`);
+};
+// The conversation is chat only; the panel in the open screen fits the viewport.
+const frame = (v: View) => q<{ sw: number; tl: number; swL: number; vw: number; inScreen: boolean }>(v, `const a = document.querySelector("#app-sw").getBoundingClientRect(), b = document.querySelector("#tl").getBoundingClientRect(); return { sw: a.width, tl: b.width, swL: a.left, vw: innerWidth, inScreen: !!document.querySelector(".as-screen #app-sw") }`);
+const expectScreenFits = async (v: View) => {
+	expect(await q(v, `return document.querySelector("#app-sw")`)).toBe(null);
+	await openScreen(v);
 	const f = await frame(v);
-	expect(Math.abs(f.sw - f.tl)).toBeLessThanOrEqual(1);
-	expect(Math.abs(f.swL - f.tlL)).toBeLessThanOrEqual(1);
+	expect(f.inScreen).toBe(true);
+	expect(f.swL).toBeGreaterThanOrEqual(0);
+	expect(f.sw).toBeGreaterThan(0);
 	expect(f.sw).toBeLessThanOrEqual(f.vw);
+	expect(await q<number>(v, `return document.querySelector("#app-sw").scrollWidth`)).toBeLessThanOrEqual(f.vw);
+	await closeScreen(v);
+	return f;
 };
 
 describe("the control panel has the conversation's width (app and monitor settings)", () => {
@@ -106,13 +123,17 @@ describe("the control panel has the conversation's width (app and monitor settin
 		test(`${label} ${w}px`, async () => {
 			const v = open(w, h);
 			await boot(v, "c:settings:mail");
-			await waitFor(v, `target === "settings:mail" && document.querySelector("#app-sw .as-row") && document.querySelector("#tl")`);
-			await expectSameColumn(v);
+			await waitFor(v, `target === "settings:mail" && document.querySelector("#tl")`);
+			await expectScreenFits(v);
 			await run(v, `go("monitoring", "c:settings:w:t-web")`);
-			await waitFor(v, `target === "settings:w:t-web" && document.querySelector('#app-sw [data-k="every_minutes"]') && document.querySelector("#tl .as-card")`);
-			await expectSameColumn(v);
-			expect((await frame(v)).tl).toBeGreaterThan(300);
+			await waitFor(v, `target === "settings:w:t-web" && document.querySelector("#tl .as-card")`);
+			const tl = await q<number>(v, `return document.querySelector("#tl").getBoundingClientRect().width`);
+			expect(tl).toBeGreaterThan(300);
+			await expectScreenFits(v);
+			await openScreen(v);
+			await waitFor(v, `document.querySelector('#app-sw [data-k="every_minutes"]')`);
 			await shot(v, `monitor-settings-${label}-${w}.png`);
+			await closeScreen(v);
 		});
 	}
 });
@@ -126,7 +147,9 @@ describe("monitor settings at desktop width", () => {
 		expect(await q(v, `return document.querySelectorAll(".as-pin").length`)).toBe(0);
 		await shot(v, "monitor-pinned-row-desktop.png");
 		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
-		await waitFor(v, `target === "settings:w:t-web" && document.querySelector('#app-sw [data-k="enabled"]')`);
+		await waitFor(v, `target === "settings:w:t-web"`);
+		await openScreen(v);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]')`);
 		const names = await q<string[]>(v, `return [...document.querySelectorAll("#app-sw .as-row:not(.as-stat) .as-n")].map(n => n.textContent)`);
 		expect(names).toEqual(["켜기", "확인 간격(분)", "알림 방식", "이름"]);
 	});
@@ -151,6 +174,7 @@ describe("monitor settings at desktop width", () => {
 		await run(v, `const i = document.querySelector('#app-sw [data-k="every_minutes"]'); i.value = "0"; i.dispatchEvent(new Event("change"))`);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="every_minutes"]').value === "${before}"`);
 		expect(stored().every_minutes).toBe(before);
+		await closeScreen(v);
 	});
 
 	test("an answer with a dotz-settings block is a change card; nothing is written until 적용", async () => {

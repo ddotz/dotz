@@ -70,6 +70,17 @@ const waitFor = (v: View, expr: string, ms = 10_000) =>
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
+// The options live in the settings screen the conversation's ⋯ button pushes; `#app-sw` exists only while it is open.
+const openScreen = async (v: View) => {
+	const more = `[...document.querySelectorAll("[data-as-more]")].find(b => b.offsetParent && !b.hidden)`;
+	await waitFor(v, more);
+	await run(v, `${more}.click()`);
+	await waitFor(v, `document.querySelector("#app-sw .as-row")`);
+};
+const closeScreen = async (v: View) => {
+	await run(v, `const b = document.querySelector('[data-k="as-back"]'); if (b) b.click()`);
+	await waitFor(v, `!document.querySelector("#app-sw")`);
+};
 const PEER_KEY = `p:${MINI}|m:까르띠에 로그인 유지`;
 const boot = async (width: number, height: number, key: string) => {
 	const v = new Bun.WebView({ width, height });
@@ -99,9 +110,12 @@ describe("a failing peer monitor", () => {
 		const v = await boot(1280, 800, PEER_KEY);
 		await waitFor(v, `document.querySelector("#mon-tl [data-chip]")`);
 		await run(v, `document.querySelector('#mon-tl [data-chip="다시 로그인해 줘"]').click()`);
-		await waitFor(v, `target === "${PEER_T}" && document.querySelector('#app-sw [data-k="enabled"]') && document.querySelector("#mon-chips [data-chip]")`);
+		await waitFor(v, `target === "${PEER_T}" && document.querySelector("#mon-chips [data-chip]")`);
+		expect(await q(v, `return document.querySelector("#app-sw")`)).toBe(null);
 		expect(await q(v, `return ta.value`)).toBe("");
 		expect(await q(v, `return [...document.querySelectorAll("#mon-chips [data-chip]")].map(b => b.dataset.chip)`)).toEqual(CHIPS);
+		await openScreen(v);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]')`);
 		await run(v, `document.querySelector('#app-sw [data-k="enabled"]').click()`);
 		const deadline = Date.now() + 5000;
 		while (!acts.some(a => a.action === "watch") && Date.now() < deadline) await Bun.sleep(25);
@@ -110,6 +124,7 @@ describe("a failing peer monitor", () => {
 		while (!acts.some(a => a.action === "message") && Date.now() < d2) await Bun.sleep(25);
 		expect(acts.find(a => a.action === "message")).toMatchObject({ args: { target: PEER_T, text: "다시 로그인해 줘" } });
 		expect(sent).toEqual([]);
+		await closeScreen(v);
 		await waitFor(v, `document.querySelector("#tl").textContent.includes("맥미니에서 다시 로그인했어요")`, 15_000);
 	});
 

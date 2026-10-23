@@ -4,7 +4,7 @@ import { broadcast } from "./events.ts";
 
 // Where the owner has read up to in each conversation (Discord-style), kept in reads.json {target: lastReadTs} so every
 // device agrees. A position only moves forward. The unread count itself is derived in hub/conversations.ts.
-const READ_TARGET = /^(?:main|alert|worklog|ch:\d+|lane:\S+|mail:[a-z0-9._-]+)$/;
+const READ_TARGET = /^(?:main|alert|worklog|ch:\d+|lane:\S+|mail:[a-z0-9._-]+|settings:(?:w:)?[a-z0-9][a-z0-9._-]*)$/;
 
 const load = (): Record<string, string> => {
 	if (!existsSync(paths.reads)) return {};
@@ -37,7 +37,7 @@ type ReadResult = { ok: true; target: string; ts: string; moved: boolean } | { o
 // POST /api/read {target, ts}: moves the position forward (an older or equal ts changes nothing) and tells every device.
 export function markRead(input: { target?: unknown; ts?: unknown }): ReadResult {
 	const target = typeof input.target === "string" ? input.target : "";
-	if (!READ_TARGET.test(target)) return { ok: false, error: "target must be main, alert, worklog, ch:<id>, lane:<name> or mail:<key>" };
+	if (!READ_TARGET.test(target)) return { ok: false, error: "target must be main, alert, worklog, ch:<id>, lane:<name>, mail:<key> or settings:<app>" };
 	const at = typeof input.ts === "string" ? Date.parse(input.ts) : Number.NaN;
 	if (!Number.isFinite(at)) return { ok: false, error: "ts must be an ISO timestamp" };
 	const ts = new Date(at).toISOString();

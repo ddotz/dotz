@@ -25,20 +25,21 @@ async function asPatch(app, values) {
   AS.by[app] = r.fields || [];
   asPaint();
   MON.sig = ""; monSchedule();
-  loadIntegrations();
+  if (app.includes("~")) pqSoon(); else loadIntegrations();   // a peer app's name and switches are read back from that computer
   return r;
 }
 
 /* ---- 제거 (this install only) and 앱 추가 ---- */
 async function asRemoveAsk(app) {
-  try { AS.rm[app] = { plan: await api(`/api/integrations/${enc(app)}/remove`), del: false }; } catch (e) { return toast(e.message || "제거할 내용을 읽지 못했어요", true); }
+  // What a peer's app would remove is read there only when it runs (the peer's read list has no remove plan).
+  try { AS.rm[app] = { plan: app.includes("~") ? null : await api(`/api/integrations/${enc(app)}/remove`), del: false }; } catch (e) { return toast(e.message || "제거할 내용을 읽지 못했어요", true); }
   asPaint();
 }
 async function asRemoveGo(app) {
   const rm = AS.rm[app];
   if (!rm || AS.busy[app]) return;
   AS.busy[app] = true;
-  try { await api(`/api/integrations/${enc(app)}/remove`, "POST", { deleteData: rm.del }); toast(`${rm.plan.label}을(를) 이 기기에서 제거했어요`); AS.rm[app] = null; AS.load[app] = null; await loadIntegrations(); go("monitoring"); }
+  try { await api(`/api/integrations/${enc(app)}/remove`, "POST", { deleteData: rm.del }); toast(`${rm.plan ? rm.plan.label : monSettingsName(`settings:${app}`)}을(를) ${rm.plan ? "이 기기에서" : "그 컴퓨터에서"} 제거했어요`); AS.rm[app] = null; AS.load[app] = null; if (app.includes("~")) await pqLoad(); else await loadIntegrations(); if (ASC.h) ASC.h.close(false); go("monitoring"); }
   catch (e) { toast(e.message || "제거하지 못했어요", true); }
   AS.busy[app] = false; asPaint();
 }
@@ -46,11 +47,12 @@ function asRemoveNode(app) {
   const rm = AS.rm[app];
   if (!rm) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 제거" }), el("span", { class: "as-h", text: "이 기기에서만 지워요. 다른 컴퓨터는 그대로예요" })), el("button", { class: "btn tonal", type: "button", "data-as-rm": "ask", onclick: () => asRemoveAsk(app) }, "제거"));
   const p = rm.plan, cb = el("input", { type: "checkbox", "data-k": "delete-data", onchange: () => { rm.del = cb.checked; } });
-  const lines = ["이 기기의 앱 목록에서 빼고, 알림과 푸시를 멈춰요", p.watches.length ? `감시 ${p.watches.length}개를 지워요: ${p.watches.join(", ")}` : "지울 감시는 없어요", p.features.length ? `기능을 이 기기에서 꺼요: ${p.features.join(", ")}` : "끌 기능은 없어요", "다른 컴퓨터의 같은 앱은 그대로예요"];
+  const lines = p ? ["이 기기의 앱 목록에서 빼고, 알림과 푸시를 멈춰요", p.watches.length ? `감시 ${p.watches.length}개를 지워요: ${p.watches.join(", ")}` : "지울 감시는 없어요", p.features.length ? `기능을 이 기기에서 꺼요: ${p.features.join(", ")}` : "끌 기능은 없어요", "다른 컴퓨터의 같은 앱은 그대로예요"]
+    : ["그 컴퓨터의 앱 목록에서 빼고, 알림과 푸시를 멈춰요", "이 앱의 감시도 함께 꺼요", "이 컴퓨터와 다른 컴퓨터의 같은 앱은 그대로예요"];
   return el("div", { class: "as-rm" },
-    el("div", { class: "as-n", text: `${p.label}을(를) 이 기기에서 제거할까요?` }),
+    el("div", { class: "as-n", text: p ? `${p.label}을(를) 이 기기에서 제거할까요?` : "이 앱을 그 컴퓨터에서 제거할까요?" }),
     el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
-    p.data.length ? el("label", { class: "as-del" }, cb, el("span", { text: `저장된 데이터(${p.data.join(", ")})도 지우기. 체크하지 않으면 남겨요` })) : null,
+    !p || p.data.length ? el("label", { class: "as-del" }, cb, el("span", { text: p ? `저장된 데이터(${p.data.join(", ")})도 지우기. 체크하지 않으면 남겨요` : "저장된 데이터도 지우기. 체크하지 않으면 남겨요" })) : null,
     el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-as-rm": "go", onclick: () => asRemoveGo(app) }, "제거 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
 // 앱 추가: the last row of the 앱 group opens a sheet. It lists only the apps this computer (and each other computer, labeled with its name) had and
@@ -193,13 +195,17 @@ function asControl(f, set) {
   c.value = String(f.value);
   return c;
 }
+// The options and the status of the settings screen (asScreen) - never of the conversation, which is chat only.
 function asPaint() {
-  const box = $("#app-sw");
-  if (!box) return;
-  const app = isSettingsT(target) ? settingsApp(target) : "", fields = app ? AS.by[app] : null;
-  if (!fields) { box.hidden = true; delete box.dataset.sig; clear(box); return; }
+  const box = $("#app-sw"), app = ASC.app;
+  if (!box || !app) return;
+  const fields = AS.by[app];
+  if (!fields) {
+    const sig = AS.none[app] ? "none" : "load";
+    if (box.dataset.sig !== sig) { box.dataset.sig = sig; clear(box).append(el("div", { class: "as-row" }, el("span", { class: "as-h", text: AS.none[app] ? "설정을 불러오지 못했어요" : "불러오는 중…" }))); }
+    return;
+  }
   const stat = monStatMons(app), sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], stat]);
-  box.hidden = false;
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   const sw = fields.filter(f => f.switch), other = fields.filter(f => !f.switch);
@@ -216,10 +222,23 @@ function asPaint() {
     ...(other.length ? [el("div", { class: "as-sum" }, ...other.map(f => el("span", { class: "as-chip", title: f.help, text: `${f.label} ${asFmt(f, f.value)}` })))] : []),
     ...(app.startsWith("w:") ? [] : [asRemoveNode(app)]));
 }
+// The settings screen: a view pushed over the conversation (back button on a phone and on a wide screen) with the status card and every option row.
+// The conversation keeps only the chat; its header's ⋯ button opens this.
+const ASC = { app: "", h: null };
+function asScreen(app) {
+  if (ASC.h || !app) return;
+  asLoad(app);
+  const h = ASC.h = fsOpen({ labelledby: "as-scr-t", cls: "tall as-screen", onClose: () => { if (ASC.h === h) { ASC.h = null; ASC.app = ""; } } });
+  ASC.app = app;
+  clear(h.box).append(
+    el("div", { class: "fs-hd" }, el("button", { class: "ib fs-x as-back", type: "button", "aria-label": "뒤로", "data-k": "as-back", onclick: () => h.close() }, icon("back")),
+      el("div", { class: "fs-tt" }, el("span", { class: "fs-ey", text: "설정" }), el("h2", { class: "fs-t", id: "as-scr-t", text: monSettingsName(`settings:${app}`) }))),
+    el("div", { class: "fs-body" }, el("div", { class: "app-sw", id: "app-sw" })));
+  asPaint();
+}
 // Called when the conversation head is drawn (31-conversations.js convPaintHead).
 function asSync() {
   if (isSettingsT(target)) asLoad(settingsApp(target));
-  else if (asAbout(target)) asLoad(asAbout(target));   // a project conversation about a monitor: its change card needs the fields too
   asPaint();
   asChipPaint();
 }
@@ -227,17 +246,8 @@ function asSync() {
 /* ---- a failing monitor's quick actions: chips that only fill the composer of its conversation (the owner reads and sends) ---- */
 const asMon = app => { const pe = PQ.of.get(`settings:${app}`); return pe ? pe.mon : NM.items.find(x => x.watch === app.slice(2)); };
 const asChipTexts = m => m && m.last_result === "fail" ? [...(m.keeper ? ["다시 로그인해 줘"] : []), "원인 찾아 줘", "일시정지"] : [];
-// A monitor that belongs to a project talks in that project's conversation (its history shows there); the others have the settings conversation.
-function asConv(app) {
-  const m = app.startsWith("w:") ? asMon(app) : null, ch = m && m.channel;
-  return ch && isProjT(ch) && (PQ.of.has(ch) || !S || projTargets().includes(ch)) ? ch : `settings:${app}`;
-}
-// The monitor a project conversation is open for in 모니터링 ("w:<watch>"): its note rides along with the owner's message there.
-function asAbout(t) {
-  if (!isProjT(t) || monCtx !== t) return "";
-  const it = monItems().find(i => i.key === MON.sel), m = it && it.mon;
-  return m && m.kind === "watch" && m.watch && m.channel === t ? `w:${m.watch}` : "";
-}
+// Every monitor and app has its own settings conversation, also a monitor a project created (it is not the project's).
+const asConv = app => `settings:${app}`;
 // A quick instruction is sent as it is; whatever the owner had typed stays in the box.
 function asSend(text) {
   const draft = ta.value;
@@ -252,7 +262,7 @@ function asAsk(app, text) {
   asSend(text);
 }
 function asChipPaint() {
-  const app = isSettingsT(target) ? settingsApp(target) : asAbout(target), texts = app.startsWith("w:") ? asChipTexts(asMon(app)) : [];
+  const app = isSettingsT(target) ? settingsApp(target) : "", texts = app.startsWith("w:") ? asChipTexts(asMon(app)) : [];
   let row = $("#mon-chips");
   if (!texts.length) { if (row) row.hidden = true; return; }
   if (!row) { row = el("div", { class: "tplrow", id: "mon-chips", role: "group", "aria-label": "빠른 지시" }); $("#composer").insertBefore(row, $("#hints")); }
@@ -261,19 +271,6 @@ function asChipPaint() {
   if (row.dataset.sig === sig) return;
   row.dataset.sig = sig;
   clear(row).append(...texts.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asSend(t) }, t)));
-}
-
-/* ---- a peer app's name: no settings panel for it here, so the pinned row of its list is a name field that sends the label through the peer's own settings route ---- */
-function asPeerNameRow(it) {
-  const inp = el("input", { class: "fi as-in", type: "text", maxlength: "30", "aria-label": "앱 이름", "data-k": "label", value: it.name });
-  const save = async () => {
-    const v = inp.value.trim();
-    if (v === it.name) return;
-    try { await api(pqProxy(it.pc, "/api/peer/act"), "POST", { action: "app", args: { op: "settings", app: it.inst, values: { label: v } } }); toast(`${it.pc.name}의 앱 이름을 바꿨어요`); await pqLoad(); }
-    catch (e) { toast(e.message || "이름을 바꾸지 못했어요", true); }
-  };
-  inp.addEventListener("keydown", ev => { if (ev.key === "Enter") save(); });
-  return el("div", { class: "as-row as-name" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 이름" }), el("span", { class: "as-h", text: `${it.pc.name}의 앱이에요` })), inp, el("button", { class: "btn tonal", type: "button", "data-k": "label-save", onclick: save }, "저장"));
 }
 
 /* ---- the settings entry of a detail: one gear button in its title bar (the head on a wide screen, the app bar on a phone) ---- */
@@ -289,6 +286,15 @@ function asEntry(app) {
 var asBar = asBtn("");   // var: the app bar is drawn (31-conversations.js convTitle) before this file runs
 asBar.id = "as-bar"; asBar.hidden = true;
 $("#vtog").before(asBar);
+// The conversation's own button: ⋯ opens the settings screen (head on a wide screen, app bar on a phone).
+const asMoreBtn = app => el("button", { class: "ib as-hd as-more", type: "button", "aria-label": "설정 열기", title: "설정 열기", "data-as-more": app, onclick: ev => asScreen(ev.currentTarget.dataset.asMore) }, icon("more"));
+var asMoreBar = asMoreBtn("");   // var: convTitle runs before this file
+asMoreBar.id = "as-more-bar"; asMoreBar.hidden = true;
+$("#vtog").before(asMoreBar);
+function asMoreSync(app) {
+  asMoreBar.hidden = !app;
+  if (app) asMoreBar.dataset.asMore = app;
+}
 function asBarSync(app) {
   const on = !!app && !!asEntry(app);
   asBar.hidden = !on;

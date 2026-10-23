@@ -14,6 +14,9 @@ const pqSig = sel => [pqSelf(), sel.pc ? sel.pc.name : ""];
 // Function declarations (hoisted): api() calls pqRoute before this file's top level has run.
 function pqPc(t) { return (PQ.of.get(String(t)) || {}).pc || null; }
 function pqProxy(pc, path) { return `/api/peer/proxy?pc=${enc(pc.url)}&p=${enc(path)}`; }
+// An app of another computer is named `<key>~<hash of that computer>` here (its key may also be an app of this one); the computer gets the plain key.
+function pqApp(inst, pc) { const h = asId(pc.url); PQ.apps.set(h, pc); return `${inst}~${h}`; }
+const pqBare = s => String(s).replace(/~[a-z0-9]+(?![a-z0-9])/g, "");
 // The computer a read belongs to: the mail routes and a history of a peer's conversation by their target, a Kakao route while the pane shows a peer's.
 function pqFor(path) {
   let m = /^\/api\/mail\/([^/?]+)\/(?:body|files\/)/.exec(path);
@@ -22,9 +25,11 @@ function pqFor(path) {
   if (m) return pqPc(decodeURIComponent(m[1]));
   m = /^\/api\/watches\/([a-z0-9-]+)\/settings/.exec(path);
   if (m) return pqPc(`settings:w:${m[1]}`);
+  m = /^\/api\/integrations\/[a-z0-9._-]+~([a-z0-9]+)\/(?:settings|remove)/.exec(path);
+  if (m) return PQ.apps.get(m[1]) || null;
   return path.startsWith("/api/kakao/") ? KK.pc : null;
 }
-function pqLink(path) { const pc = pqFor(path); return pc ? pqProxy(pc, path) : path; }
+function pqLink(path) { const pc = pqFor(path); return pc ? pqProxy(pc, pqBare(path)) : path; }
 // The action a POST of the page means on the computer that owns the item (hub/peer-monitor.ts act), or null for a local one.
 function pqAct(path, body) {
   const b = body || {}, k = /^\/api\/kakao\/(chat|drafts)\/([^/]+)\/(send|read|draft|drop|ask\/drop)$/.exec(path);
@@ -32,12 +37,13 @@ function pqAct(path, body) {
   // A monitor's conversation and switches go to the computer that owns the watch: the same message and the same settings PATCH, forwarded.
   const sp = /^\/api\/watches\/([a-z0-9-]+)\/settings$/.exec(path);
   if (sp && pqPc(`settings:w:${sp[1]}`)) return { pc: pqPc(`settings:w:${sp[1]}`), action: "watch", args: { op: "settings", name: sp[1], values: b.values } };
-  // A peer monitor of a project: its conversation is that project's on the owning computer, with the monitor's note attached.
-  if (path === "/api/message" && b.project && b.settings && pqPc(`settings:${b.settings}`)) { const { settings, project, lane, mail, via, ...rest } = b; return { pc: pqPc(`settings:${settings}`), action: "message", args: { target: /^ch:/.test(project) ? project : `ch:${project}`, settings, ...rest } }; }
+  // A peer app's switches, name and removal: the app's own routes on the computer that has it.
+  const ip = /^\/api\/integrations\/([a-z0-9._-]+~[a-z0-9]+)\/(settings|remove)$/.exec(path);
+  if (ip && pqFor(path)) return { pc: pqFor(path), action: "app", args: ip[2] === "settings" ? { op: "settings", app: pqBare(ip[1]), values: b.values } : { op: "remove", app: pqBare(ip[1]), deleteData: b.deleteData === true } };
   const rn = /^\/api\/watches\/([a-z0-9-]+)\/run$/.exec(path);
   if (rn && pqPc(`settings:w:${rn[1]}`)) return { pc: pqPc(`settings:w:${rn[1]}`), action: "watch", args: { op: "run", name: rn[1] } };
-  if (path === "/api/message" && b.settings && pqPc(`settings:${b.settings}`)) { const { settings, lane, project, mail, via, ...rest } = b; return { pc: pqPc(`settings:${settings}`), action: "message", args: { target: `settings:${settings}`, ...rest } }; }
-  if (path === "/api/read") return { pc: pqPc(b.target), action: "read", args: { target: b.target, ts: b.ts } };
+  if (path === "/api/message" && b.settings && pqPc(`settings:${b.settings}`)) { const { settings, lane, project, mail, via, ...rest } = b; return { pc: pqPc(`settings:${settings}`), action: "message", args: { target: `settings:${pqBare(settings)}`, ...rest } }; }
+  if (path === "/api/read") return { pc: pqPc(b.target), action: "read", args: { target: pqBare(b.target), ts: b.ts } };
   if (!path.startsWith("/api/kakao/") || !KK.pc) return null;
   const id = k && decodeURIComponent(k[2]);
   if (k && k[1] === "chat" && k[3] === "send") return { pc: KK.pc, action: "kakao", args: { op: "send", chatId: id, text: b.text } };
@@ -75,7 +81,7 @@ const pqOpen = () => { if (Date.now() - PQ.at > 5000) pqLoad(); };
 setInterval(() => { if ((current === "monitoring" || monCtx) && !document.hidden) pqLoad(); }, 60_000);
 
 // The answer to a message sent to a peer's monitor is written on that computer and never reaches this stream: the open conversation re-reads its history through the proxy.
-setInterval(() => { if ((isSettingsT(target) || isProjT(target)) && pqPc(target) && !document.hidden) loadTarget(target); }, 4000);
+setInterval(() => { if (isSettingsT(target) && pqPc(target) && !document.hidden) loadTarget(target); }, 4000);
 
 // A peer's mail as the local stores hold a mail (MAILS, CONV, the unread count), so monConvNode and the chat view draw it. A mail this computer has itself stays local.
 function pqMail(c, pc, itemKey) {
@@ -106,6 +112,7 @@ function pqMerge(items) {
       for (const n of notices) shown.add(n.id);
       const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 };
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";
+      PQ.of.set(`settings:${pqApp(it.key, pc)}`, { pc, key: key(`i:${it.key}`), app: true, label: it.label });   // the app's settings conversation lives on that computer
       apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, hint: monNeedLine(needs), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
@@ -115,8 +122,6 @@ function pqMerge(items) {
       if (ownedNames.has(m)) continue;
       // A peer's watch has the same settings conversation as a local one; it lives on that computer (a watch name this computer has itself stays local).
       if (m.kind === "watch" && m.watch && !NM.items.some(x => x.watch === m.watch)) PQ.of.set(`settings:w:${m.watch}`, { pc, key: key(`m:${m.name}`), mon: m });
-      // A peer monitor of a project talks in that project's conversation, which lives on that computer (a project this computer has itself stays local).
-      if (m.kind === "watch" && m.watch && m.channel && isProjT(m.channel) && !(S && projTargets().includes(m.channel))) PQ.of.set(m.channel, { pc, key: key(`m:${m.name}`), mon: m });
       const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
       plain.push({ key: key(`m:${m.name}`), group: MON_GROUP.plain, name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: 0,
         hint: fresh ? monStrip(monLine(last), monNames(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),

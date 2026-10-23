@@ -100,7 +100,13 @@ describe("the 설정 button of a monitoring detail sits in its title bar", () =>
 				if (w >= 1100) expect(s.bar).toBe(true);
 				if (["mail", "kakao room", "general monitor"].includes(k.name)) await shot(v, `settings-header-${k.name.replace(" ", "-")}-${w}.png`);
 				await run(v, `document.querySelector(${JSON.stringify(btn)}).click()`);
-				await waitFor(v, `target === "settings:${k.app}" && !document.querySelector("#app-sw").hidden`);
+				await waitFor(v, `target === "settings:${k.app}"`);
+				// The conversation is chat only; its ⋯ button opens the screen that holds the options.
+				const more = `[...document.querySelectorAll("[data-as-more]")].find(b => b.offsetParent && !b.hidden)`;
+				await waitFor(v, more);
+				expect(await q(v, `return document.querySelector("#app-sw")`)).toBe(null);
+				await run(v, `${more}.click()`);
+				await waitFor(v, `document.querySelector(".as-screen #app-sw .as-row")`);
 			});
 		}
 	}

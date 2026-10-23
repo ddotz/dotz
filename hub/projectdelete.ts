@@ -1,5 +1,6 @@
 // Deleting a project (owner 2026-10-23): one path for the web, a peer's /api/peer/act and the orchestrator's dotz_channel delete.
-// A project is a work channel; it goes with its setup (monitors, kept logins, standing), its notices, its record and the Discord channel.
+// A project is a work channel; it goes with its setup (standing), its notices, its record and the Discord channel. Its monitors and kept logins are
+// not part of it: they stay as standalone monitors (hub/workchannels.ts clearChannel only drops their link to the channel).
 // The conversation log stays as a small archive file under the data dir unless the caller asks for none.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -70,7 +71,7 @@ export function planDelete(key: string, deps: DeleteDeps = defaultDeps): DeleteP
 	const setup = getSetup(id);
 	const watches = allWatches();
 	const logins = (setup?.logins ?? []).map(n => ({ name: n, shared: (watches.find(w => w.name === n)?.channels ?? []).some(c => c !== id) }));
-	const monitors = watches.filter(w => w.channels?.includes(id) && !(setup?.logins ?? []).includes(w.name) && w.channels.length === 1).map(w => watchLabel(w.name));
+	const monitors = watches.filter(w => w.channels?.includes(id) && !(setup?.logins ?? []).includes(w.name)).map(w => watchLabel(w.name));
 	return {
 		key: `ch:${id}`, channel: `ch:${id}`, name, monitors, logins,
 		...(setup?.standing ? { standing: setup.standing } : {}),
@@ -81,7 +82,7 @@ export function planDelete(key: string, deps: DeleteDeps = defaultDeps): DeleteP
 	};
 }
 
-export type DeleteResult = { ok: true; channel: string; name: string; removed: { monitors: number; logins: number; notices: number }; archive: string | null; discord: { ok: boolean; error?: string } };
+export type DeleteResult = { ok: true; channel: string; name: string; removed: { notices: number }; kept: { monitors: number; logins: number }; archive: string | null; discord: { ok: boolean; error?: string } };
 
 // Refuses a built-in channel and a channel with a running session (naming it); then removes everything. A Discord failure does not stop it:
 // the project is gone here, and the result says the channel is still there.
@@ -103,5 +104,5 @@ export async function deleteProject(key: string, opts: { archive?: boolean } = {
 	await deps.removeChannel(id).catch(e => {
 		result = { ok: false, error: (e as Error).message };
 	});
-	return { ok: true, channel: plan.channel, name: plan.name, removed: { monitors: plan.monitors.length, logins: plan.logins.filter(l => !l.shared).length, notices }, archive, discord: result };
+	return { ok: true, channel: plan.channel, name: plan.name, removed: { notices }, kept: { monitors: plan.monitors.length, logins: plan.logins.length }, archive, discord: result };
 }

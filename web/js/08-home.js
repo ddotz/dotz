@@ -352,7 +352,7 @@ const isMailT = t => t.startsWith("mail:");
 const mailOf = t => t.slice(5);
 const MAILS = new Map();
 // The other computers' items (34-peer-monitoring.js). of: conversation target -> {pc, key: the list item it sits under}; seen: unread/read pair last taken from a snapshot.
-const PQ = { list: [], loaded: false, busy: false, again: false, at: 0, t: 0, of: new Map(), seen: new Map() };
+const PQ = { list: [], loaded: false, busy: false, again: false, at: 0, t: 0, of: new Map(), apps: new Map(), seen: new Map() };
 // An app's settings conversation (hub/app-settings.ts, 32-app-settings.js): target settings:<app>, answered by the orchestrator.
 const isSettingsT = t => t.startsWith("settings:");
 const settingsApp = t => t.slice(9);
