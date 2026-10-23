@@ -109,8 +109,56 @@ function pmHead(q) {
       pmEditable({ value: prjTitle(q), label: "프로젝트 이름", required: true, cls: "pmv-title", save: v => pmWrite({ title: v }) }),
       pmEditable({ value: prjPurpose(q), label: "프로젝트 설명", placeholder: "무엇을 하는 프로젝트인지 적어 주세요", multiline: true, cls: "pmv-purpose", save: v => pmWrite({ purpose: v }) })),
     // No work channel, nothing to chat with: the button is left out instead of showing a dead one.
-    can ? el("div", { class: "pmv-hact" },
-      el("button", { class: "btn", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" })) : null);
+    chat ? el("div", { class: "pmv-hact" }, el("div", { class: "pmv-hrow" },
+      can ? el("button", { class: "btn", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }) : null,
+      pmMenuButton(q))) : null);
+}
+
+// 프로젝트 삭제 (hub/projectdelete.ts): the ⋯ menu opens a sheet that lists what goes; 삭제 sends DELETE /api/projects/<ch:id>,
+// or POST /api/peer/act {action:"project"} for a project of another computer (q.pc = {name, url}).
+function pmMenuButton(q) {
+  const b = el("button", { class: "ib pmv-more", type: "button", "aria-label": "프로젝트 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false" }, icon("more"));
+  b.addEventListener("click", () => showMenu(b, [{ value: "delete", label: "프로젝트 삭제" }], { onPick: () => pmDeleteAsk(q) }));
+  return b;
+}
+function pmDeleteCall(q, op, args = {}) {
+  const key = prjChat(q);
+  if (q.pc) return api(pqProxy(q.pc, "/api/peer/act"), "POST", { action: "project", args: { op, key, ...args } });
+  return op === "delete-plan" ? api(`/api/projects/${enc(key)}/delete-plan`) : api(`/api/projects/${enc(key)}`, "DELETE", args);
+}
+const pmDeleteLines = p => [
+  `#${p.name} 채널을 Discord에서 지워요`,
+  p.monitors.length ? `모니터링 ${p.monitors.length}개를 지워요: ${p.monitors.join(", ")}` : "지울 모니터링은 없어요",
+  p.logins.length ? `로그인 유지 ${p.logins.length}개를 멈춰요: ${p.logins.map(l => l.shared ? `${l.name}(다른 채널도 써서 남겨요)` : l.name).join(", ")}` : "멈출 로그인 유지는 없어요",
+  p.standing ? `자동 처리 설정을 지워요: ${p.standing}` : "",
+  `알림 ${p.notices}개를 치워요`,
+  `대화 ${p.messages}개는 보관 파일로 남겨요`].filter(Boolean);
+async function pmDeleteAsk(q) {
+  let p;
+  try { p = await pmDeleteCall(q, "delete-plan"); } catch (e) { return toast(e.message || "지울 내용을 읽지 못했어요", true); }
+  const st = { drop: false, busy: false }, err = el("div", { class: "note err" });
+  const h = fsOpen({ labelledby: "pmd-t" });
+  const cb = el("input", { type: "checkbox", "data-k": "drop-archive", onchange: () => { st.drop = cb.checked; } });
+  const go1 = el("button", { class: "btn danger fill", type: "button", "data-k": "delete", disabled: p.running.length > 0, onclick: async () => {
+    if (st.busy) return;
+    st.busy = true; go1.disabled = true; err.textContent = "";
+    try {
+      const r = await pmDeleteCall(q, "delete", { archive: !st.drop });
+      h.close(false);
+      toast(r.discord && !r.discord.ok ? `프로젝트는 지웠지만 Discord 채널은 남아 있어요 · ${r.discord.error}` : `${r.name} 프로젝트를 지웠어요`, !!(r.discord && !r.discord.ok));
+      PM = { key: "", D: null, fail: false, open: 0, flight: null, draft: "" };
+      go("projects"); prjLoad();
+    } catch (e) { err.textContent = e.message || "지우지 못했어요"; st.busy = false; go1.disabled = false; }
+  } }, "삭제");
+  clear(h.box).append(
+    fsHead([el("h2", { class: "fs-t", id: "pmd-t", text: `${p.name} 프로젝트를 삭제할까요?` })], { close: () => h.close() }),
+    el("div", { class: "fs-body pmd" },
+      p.running.length ? el("div", { class: "note err", text: `실행 중인 세션이 있어서 지울 수 없어요: ${p.running.join(", ")}` }) : null,
+      el("ul", { class: "as-rml" }, ...pmDeleteLines(p).map(t => el("li", { text: t }))),
+      el("label", { class: "as-del" }, cb, el("span", { text: "보관 파일도 같이 지우기. 체크하지 않으면 남겨요" })),
+      el("div", { class: "as-h", text: `보관 파일: ${p.archive}` }),
+      err),
+    el("div", { class: "fs-ft row" }, el("button", { class: "btn text", type: "button", onclick: () => h.close() }, "취소"), go1));
 }
 
 // At a glance, in plain words (owner 2026-10-21: the old '열린 할 일' list of internal open tasks was not readable): what runs

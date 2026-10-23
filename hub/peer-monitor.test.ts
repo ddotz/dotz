@@ -47,6 +47,11 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: `settings:${path.split("/")[3]}`, text: JSON.stringify(((await req.json()) as { values: unknown }).values) });
 			return Response.json({ ok: true });
 		}
+		if (req.method === "GET" && /^\/api\/projects\/[^/]+\/delete-plan$/.test(path)) return Response.json({ channel: decodeURIComponent(path.split("/")[3]!), name: "유튜브", monitors: [], logins: [], notices: 2, messages: 0, running: [], archive: "/data/archive" });
+		if (req.method === "DELETE" && /^\/api\/projects\/[^/]+$/.test(path)) {
+			events.push({ target: `project:${decodeURIComponent(path.split("/")[3]!)}`, text: JSON.stringify(await req.json()) });
+			return Response.json({ ok: true, channel: decodeURIComponent(path.split("/")[3]!), name: "유튜브" });
+		}
 		if (path === "/api/monitors") return Response.json({ items: [{ name: `${name} 감시`, kind: "watch" }] });
 		if (path === "/api/notices") return Response.json({ items: [{ id: `n-${name}`, title: `${name} 알림`, read: false }], unread: 1 });
 		if (path === "/api/integrations") return Response.json({ items: [{ key: "mail", unread: events.length }] });
@@ -235,4 +240,20 @@ test("a KakaoTalk reply from a peer runs on the owner's own kakao send route, on
 	expect(B.events).toEqual([{ target: "kakao:123", text: "네" }]);
 	expect(A.events).toEqual([]);
 	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "rm", chatId: "123" } }) }))).status).toBe(400);
+});
+
+test("a project delete from a peer reads its plan and runs the owner's own DELETE route, once", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const post = (args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "project", args }) }));
+	const plan = await post({ op: "delete-plan", key: "ch:77" });
+	expect(plan.status).toBe(200);
+	expect(await plan.json()).toMatchObject({ channel: "ch:77", notices: 2 });
+	expect(B.events).toEqual([]);
+	const r = await post({ op: "delete", key: "ch:77", archive: false });
+	expect(r.status).toBe(200);
+	expect(B.events).toEqual([{ target: "project:ch:77", text: JSON.stringify({ archive: false }) }]);
+	expect(A.events).toEqual([]);
+	expect((await post({ op: "delete" })).status).toBe(400);
+	expect((await post({ op: "rm", key: "ch:77" })).status).toBe(400);
 });
