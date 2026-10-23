@@ -73,14 +73,14 @@ describe("dispatchSend", () => {
 	test("a typed send runs kmsg (dry run, then send) when there is no lease hook or the lease allows", async () => {
 		for (const lease of [undefined, allow]) {
 			const r = rig();
-			expect(await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(lease))).toEqual({ ok: true });
+			expect(await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(lease))).toMatchObject({ ok: true });
 			expect(r.calls).toEqual([SEND]);
 		}
 	});
 
 	test("a refused lease, or one that cannot be checked, is a failed send and kmsg never runs", async () => {
 		const r = rig();
-		expect(await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(refuse))).toEqual({ ok: false, reason: "다른 맥이 이 대화방을 맡고 있어요" });
+		expect(await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(refuse))).toMatchObject({ ok: false, reason: "다른 맥이 이 대화방을 맡고 있어요" });
 		const broken = await dispatchSend({ kind: "text", chatId: "101", roomName: "Alex", text: "hello" }, r.deps(async () => Promise.reject(new Error("net"))));
 		expect(broken.ok).toBe(false);
 		expect(typeof broken.reason).toBe("string");
@@ -92,12 +92,12 @@ describe("dispatchSend", () => {
 		const d = await createDraft({ chatId: "101", roomName: "Alex", text: "hello", basisLogId: "5" }, { paths, runner: r.deps().runner });
 		const asked: string[] = [];
 		const result = await dispatchSend({ kind: "draft", code: d.code, ownerApproved: true }, r.deps(async chatId => (asked.push(chatId), { ok: false, reason: "막힘" })));
-		expect(result).toEqual({ ok: false, reason: "막힘" });
+		expect(result).toMatchObject({ ok: false, reason: "막힘" });
 		expect(asked).toEqual(["101"]);
 		expect(r.calls).toEqual([]);
 		expect((await listDrafts(r.deps()))[0]!.status).toBe("pending");
 
-		expect(await dispatchSend({ kind: "draft", code: d.code, ownerApproved: true }, r.deps(allow))).toEqual({ ok: true });
+		expect(await dispatchSend({ kind: "draft", code: d.code, ownerApproved: true }, r.deps(allow))).toMatchObject({ ok: true });
 		expect(r.calls.at(-1)).toEqual(SEND);
 		expect((await listDrafts(r.deps()))[0]!.status).toBe("sent");
 	});
