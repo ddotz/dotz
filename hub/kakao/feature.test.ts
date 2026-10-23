@@ -29,7 +29,7 @@ test("a personal copy with enabled: true injects the body and blocks a direct km
 	const orch = featurePrompt(data, "orchestrator");
 	expect(orch).toContain("kakao chat=<id>");
 	expect(orch).toContain(`bun ${REPO}/hub/kakao/cli.ts send --draft`);
-	expect(orch).not.toContain("Off until the owner asks");
+	expect(orch).not.toContain(`bun ${REPO}/hub/kakao/cli.ts setup`);
 	expect(blockedByFeatures(data, "kmsg send room hello")?.id).toBe("kakao");
 	expect(blockedByFeatures(data, "echo x; kakaocli send room hi")?.id).toBe("kakao");
 	expect(blockedByFeatures(data, `bun ${REPO}/hub/kakao/cli.ts send --draft KABCD`)).toBeUndefined();

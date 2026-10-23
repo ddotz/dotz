@@ -15,6 +15,7 @@
 // Discord modal ask for the change first, and the answer is "2) 고치기 - <change>".
 // The answer comes back as the owner's own inbox message with picks [{q: "<question> (<ref>)", n, label}] (hub/notices.ts answerDecision),
 // which is what the per-feature approval checks read (hub/kakao/send.ts verdict, orchestrator turn "결정 답: ... → 1) 보내기").
+import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { issueBlock, parseDecisions } from "./choices.ts";
 
 export const DRAFT_SEND = "보내기";
@@ -97,4 +98,45 @@ export function quotedDraft(text: string): string | undefined {
 // What a picked label means; anything else (a label outside the three) is not a draft answer.
 export function draftActionOf(label: string): DraftAction | undefined {
 	return label === DRAFT_SEND ? "send" : label === DRAFT_EDIT ? "edit" : label === DRAFT_DROP ? "drop" : undefined;
+}
+
+export type DraftVerdict = { verdict: DraftAction | "none"; detail?: string };
+const OWNER_SOURCES = new Set(["web", "discord", "terminal"]);
+const TAIL_BYTES = 2 * 1024 * 1024;
+
+// What the owner picked for the draft `ref` (the id in the question's trailing "(<ref>)") after `sinceMs`, read from the inbox log.
+// Only the owner's own messages count (web, discord, terminal; not a session's lane_message) and the latest pick wins. For 고치기 the
+// detail is the change the owner typed ("2) 고치기 - <change>").
+export function draftVerdict(inboxPath: string, ref: string, sinceMs: number): DraftVerdict {
+	if (!existsSync(inboxPath)) return { verdict: "none" };
+	const size = statSync(inboxPath).size;
+	const start = Math.max(0, size - TAIL_BYTES);
+	const buf = Buffer.alloc(size - start);
+	const fd = openSync(inboxPath, "r");
+	try {
+		readSync(fd, buf, 0, buf.length, start);
+	} finally {
+		closeSync(fd);
+	}
+	const lines = buf.toString("utf8").split("\n");
+	if (start > 0) lines.shift();
+	const tag = `(${ref})`;
+	let out: DraftVerdict = { verdict: "none" };
+	for (const line of lines) {
+		let e: { ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; picks?: unknown };
+		try {
+			e = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs)) continue;
+		for (const p of Array.isArray(e.picks) ? (e.picks as { q?: unknown; label?: unknown }[]) : []) {
+			if (typeof p?.q !== "string" || !p.q.includes(tag) || typeof p.label !== "string") continue;
+			const verdict = draftActionOf(p.label);
+			if (!verdict) continue;
+			const detail = verdict === "edit" && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
+			out = { verdict, ...(detail ? { detail } : {}) };
+		}
+	}
+	return out;
 }

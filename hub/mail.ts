@@ -25,6 +25,8 @@ export type MailDeps = {
 	emit: (event: Record<string, any>) => void;
 	/** One orchestrator turn for the mail event, its answer going to `target`. */
 	wake: (event: Record<string, any>, target: string) => void;
+	/** Offered every new mail (never a duplicate), fire-and-forget: a throw is logged and never breaks postMail. features/reply-drafts offers an [ask] reply draft here. */
+	offerDraft?: (m: { key: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string }) => void;
 	now?: () => string;
 };
 
@@ -237,5 +239,10 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps): 
 	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), text: mailText(m) };
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);
+	try {
+		deps.offerDraft?.({ key, target, ...(thread ? { thread } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}) });
+	} catch (error) {
+		log(`mail ${key}: reply draft offer failed: ${(error as Error).message}`);
+	}
 	return { ok: true, key, target, ...(thread ? { thread } : {}) };
 }
