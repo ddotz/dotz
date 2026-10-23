@@ -52,6 +52,7 @@ import { readMailBody } from "../features/reply-drafts/lib/senders.ts";
 import { installSentMail, realRunner } from "../features/reply-drafts/lib/tone.ts";
 import { defaultCall } from "../features/reply-drafts/lib/flow.ts";
 import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
+import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
 import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies, bgWork } from "./outbound.ts";
@@ -318,6 +319,13 @@ startTokenAudit(alert);
 // on it applies it instead (worklog on success, alert with a choice block otherwise) and restarts through the idle restart gate.
 onUpdateResolved(updateResolved);
 // Local commits saved by an update: one orchestrator turn asks the bot to re-create the personal ones in the custom layer.
+// 이어서 할 일 (hub/followup.ts): one orchestrator turn with the rule and the item ids after an approved reply was posted or sent.
+setFollowupWake(text => {
+	const channel = discord.status.enabled ? "chat" : "web";
+	const event = { ts: now(), kind: "schedule", source: "followup", channel, id: "followup", text };
+	emit("inbox", event);
+	deliver(inboxText(event), { target: channel });
+});
 onLocalSaved(({ turn }) => {
 	const channel = discord.status.enabled ? "chat" : "web";
 	const event = { ts: now(), kind: "schedule", source: "gateway", channel, id: "self-update-local", text: turn };

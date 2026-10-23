@@ -20,8 +20,9 @@ import { markRead } from "./reads.ts";
 import { broadcast, historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
+import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
-import { MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailNoReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { composeMail, MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailNoReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
@@ -325,6 +326,19 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const mailBody = req.method === "GET" && /^\/api\/mail\/([a-z0-9._-]+)\/body$/.exec(url.pathname);
 		if (mailBody) return mailBodyRoute(mailBody[1]!);
 		// A mail from an outside poster (a webmail watcher, a custom plugin): one conversation per mail (hub/mail.ts, docs/custom-plugins.md).
+		// The reply and KakaoTalk CLIs report an approved send here; the gateway wakes the bot once when that app has a 이어서 할 일 rule (hub/followup.ts).
+		if (req.method === "POST" && url.pathname === "/api/followup") {
+			const input = parseFollowup(await body(req));
+			return input ? json({ ok: true, result: triggerFollowup(input) }) : json({ error: "app, kind (comment|mail|kakao), key required" }, 400);
+		}
+		if (req.method === "POST" && url.pathname === "/api/mail/compose") {
+			if (!mailDeps) return json({ error: "mail is not wired in this process" }, 503);
+			try {
+				return json(composeMail(await body(req), mailDeps()));
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof MailError ? error.status : 500);
+			}
+		}
 		if (req.method === "POST" && url.pathname === "/api/mail") {
 			if (!mailDeps) return json({ error: "mail is not wired in this process" }, 503);
 			if (readAppOff(DATA_DIR).has("mail")) return json({ error: "mail is off on this install" }, 409);

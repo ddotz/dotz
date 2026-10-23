@@ -41,8 +41,9 @@ function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: 
 	const prompts: { system: string; user: string }[] = [];
 	const model: DraftModel = opts.model ?? (async (system, user) => (prompts.push({ system, user }), { text: reply("고마워요, 곧 알려 드릴게요."), inputTokens: 900, outputTokens: 40 }));
 	const events: Record<string, unknown>[] = [];
-	const engine = createEngine({ dir, now: opts.clock ?? (() => NOW), collector: opts.collector ?? "mac-a", adapters: { youtube: adapter, website: adapter }, model, broadcast: e => events.push(e), featureOn: opts.featureOn });
-	return { engine, state, prompts, events };
+	const sent: { app: string; id: string }[] = [];
+	const engine = createEngine({ dir, now: opts.clock ?? (() => NOW), collector: opts.collector ?? "mac-a", adapters: { youtube: adapter, website: adapter }, model, broadcast: e => events.push(e), featureOn: opts.featureOn, sent: (app, r) => sent.push({ app, id: r.id }) });
+	return { engine, state, prompts, events, sent };
 }
 
 describe("comment ids and collection", () => {
@@ -168,6 +169,22 @@ describe("the send gate", () => {
 		expect(t.engine.send(t.code, { by: "owner" }).ok).toBe(false);
 		expect(t.state.posted).toHaveLength(1);
 		expect(t.events.some(e => e.kind === "comment_send" && e.state === "sent")).toBe(true);
+	});
+
+	test("the follow-up hook fires once per posted reply, not for a draft, a refusal or a failed post", async () => {
+		const t = await drafted();
+		expect(t.sent).toEqual([]);
+		expect(t.engine.send(t.code, { by: "rule" }).ok).toBe(false);
+		expect(t.sent).toEqual([]);
+		t.state.failReply = "403 forbidden";
+		const failed = t.engine.send(t.code, { by: "owner" });
+		if (failed.ok) await failed.done;
+		expect(t.sent).toEqual([]);
+		t.state.failReply = undefined;
+		const first = t.engine.send(t.code, { by: "owner" });
+		if (first.ok) await first.done;
+		expect(t.engine.send(t.code, { by: "owner" }).ok).toBe(false);
+		expect(t.sent).toEqual([{ app: "youtube", id: expect.any(String) }]);
 	});
 
 	test("a failed post shows the reason and may be tried again once", async () => {

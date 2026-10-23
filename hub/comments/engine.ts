@@ -16,6 +16,8 @@ export type EngineDeps = {
 	style?: (src: SourceConfig) => ReplyStyle;
 	learn?: (src: SourceConfig, change: string) => void;
 	broadcast?: (event: Record<string, unknown>) => void;
+	/** A reply was posted (owner's 보내기 or an owner-enabled rule): the app instance and the send record. hub/followup.ts wakes the bot from here. */
+	sent?: (app: string, reply: Reply) => void;
 	/** The app instance (custom/apps.json id) a source belongs to: its threads, needs and reply model are the instance's. Default = the app (`appOf`). */
 	owner?: (src: SourceConfig) => string;
 	/** Whether an app feature is on (hub/app-feature-flags.ts featureEnabled); off = the engine drafts nothing for that app. Missing = on. */
@@ -41,7 +43,11 @@ export function createEngine(deps: EngineDeps) {
 	const pending = new Set<Promise<unknown>>();
 	const emit = (e: Record<string, unknown>) => deps.broadcast?.(e);
 	const replyOn = (src: SourceConfig): boolean => deps.featureOn?.(ownerOf(src), "comment_reply") ?? true;
-	const gate = { store, adapters: deps.adapters, now: deps.now, collector: deps.collector, inflight, onState: (r: Reply) => emit({ kind: "comment_send", source: r.source, thread: r.thread, id: r.id, state: r.state, ...(r.reason ? { reason: r.reason } : {}) }) };
+	const gate = { store, adapters: deps.adapters, now: deps.now, collector: deps.collector, inflight, onState: (r: Reply) => {
+		emit({ kind: "comment_send", source: r.source, thread: r.thread, id: r.id, state: r.state, ...(r.reason ? { reason: r.reason } : {}) });
+		const src = store.config().sources[r.source];
+		if (r.state === "sent" && src) deps.sent?.(ownerOf(src), r);
+	} };
 
 	const ownerOf = (src: SourceConfig): string => deps.owner?.(src) ?? appOf(src);
 	const sourceOf = (id: string): SourceConfig | undefined => store.config().sources[id];

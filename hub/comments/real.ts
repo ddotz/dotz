@@ -9,7 +9,7 @@ import { commentThreadsSince, ownReplies, recentUploads, replyToComment, videoIn
 import { appBase, appEntries, commentOwner } from "../integrations.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { callReplyModel } from "../reply-model.ts";
-import { appOf, type DraftModel, createEngine, type Engine } from "./engine.ts";
+import { appOf, type DraftModel, createEngine, type Engine, type EngineDeps } from "./engine.ts";
 import { instagramAdapter, youtubeAdapter } from "./adapters/google-meta.ts";
 import { bunExec, websiteAdapter } from "./adapters/website.ts";
 import { commentsDir } from "./store.ts";
@@ -30,7 +30,7 @@ export const realModel: DraftModel = async (system, user, app) => {
 	return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens };
 };
 
-export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel } = {}): Engine {
+export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"] } = {}): Engine {
 	const dir = commentsDir(dataDir);
 	const secretsDir = join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "secrets");
 	return createEngine({
@@ -43,6 +43,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		broadcast: opts.broadcast,
 		// Only the website app (or an instance of it) has its own 댓글 답글 switch; YouTube and Instagram follow their 자동 초안 setting, which the reply-drafts flow reads (appOn).
 		featureOn: (app, id) => appBase(app) !== "site" || featureEnabled(dataDir, app, id),
+		...(opts.sent ? { sent: opts.sent } : {}),
 		style: src => loadStyle({ app: src.key }),
 		learn: (src, change) => recordCorrection({ app: src.key }, change, new Date()),
 		adapters: {

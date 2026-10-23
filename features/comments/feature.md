@@ -16,3 +16,4 @@ deny:
 - 댓글 한 건 초안: `bun {repo}/features/comments/bin/comments.ts draft <댓글 id>`가 `[ask]` 블록을 찍으면 그대로 올려요. 댓글 id는 `bin/comments.ts status`나 웹이 알려 줘요.
 - `[ask]`에 대한 `결정 답: ... → 1) 보내기`: `bun {repo}/features/comments/bin/comments.ts send <id>`. `→ 2) 고치기 - <내용>`: `comments.ts revise <id> --change "<내용>"`(찍힌 `[ask]`를 그대로 올려요). `→ 3) 보내지 않기`: `comments.ts drop <id>`. `<id>`는 질문 끝 괄호의 초안 id예요. `send`가 거부하면 이유를 그대로 알리고 다시 시도하지 않아요.
 - 끄기: `bun {repo}/features/comments/bin/onboard.ts off --app <youtube|instagram|site-이름>`. 읽고 있는 상태 확인: `onboard.ts status`, `comments.ts status`.
+- 이어서 할 일: 답글을 올린 뒤(`1) 보내기`로 게시된 때만) 그 앱에 '이어서 할 일' 규칙이 있으면 게이트웨이가 `[followup:<앱>]` 턴을 한 번 보내요. 규칙·댓글 id가 담겨 있어요. 먼저 그 댓글이 규칙의 조건에 맞는지 `comments.ts`로 읽어 보고, 맞지 않으면 아무것도 만들지도 묻지도 않아요. 맞으면 `bun {repo}/hub/mail-cli.ts compose ... --origin comment:<댓글 id>`로 메일 초안(첨부 포함)을 만들어 [ask]로 올리고, 사용자가 `1) 보내기`를 고르면 `mail-cli.ts send --draft <코드>`로 보내요. 자세한 단계는 `features/reply-drafts/feature.md`예요.

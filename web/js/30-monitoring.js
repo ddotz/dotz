@@ -183,6 +183,7 @@ function draftCardNode(n) {
   const mailBox = el("div", { class: "dr-mail" },
     el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || "받는이" }), el("span", { class: "dr-chip", text: dr.to || "-" })),
     dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
+    draftOriginNode(dr),
     man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
     draftFilesNode(dr, { t: d.to, edit: open }));
   if (editing && !man) mailBox.append(el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), ta);
