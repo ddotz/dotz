@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: string; clock?: () => number } = {}) {
+function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: string; clock?: () => number; featureOn?: (app: string, id: string) => boolean } = {}) {
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: Object.fromEntries(sources.map(s => [s.key, s])) }));
 	const state = { pages: [] as RawComment[][], listCalls: 0, posted: [] as { id: string; text: string }[], failReply: undefined as string | undefined, hold: undefined as Promise<void> | undefined };
@@ -41,7 +41,7 @@ function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: 
 	const prompts: { system: string; user: string }[] = [];
 	const model: DraftModel = opts.model ?? (async (system, user) => (prompts.push({ system, user }), { text: reply("고마워요, 곧 알려 드릴게요."), inputTokens: 900, outputTokens: 40 }));
 	const events: Record<string, unknown>[] = [];
-	const engine = createEngine({ dir, now: opts.clock ?? (() => NOW), collector: opts.collector ?? "mac-a", adapters: { youtube: adapter, website: adapter }, model, broadcast: e => events.push(e) });
+	const engine = createEngine({ dir, now: opts.clock ?? (() => NOW), collector: opts.collector ?? "mac-a", adapters: { youtube: adapter, website: adapter }, model, broadcast: e => events.push(e), featureOn: opts.featureOn });
 	return { engine, state, prompts, events };
 }
 
@@ -387,5 +387,22 @@ describe("instagram adapter", () => {
 		expect(byNative["k1.0"].mine).toBe(true);
 		expect(byNative.k2.author).toBe("알 수 없는 사용자");
 		expect(byNative.k3.mine).toBe(false);
+	});
+});
+
+describe("댓글 답글 switch (hub/app-feature-flags.ts)", () => {
+	test("off: auto draft makes none, a manual draft and a revise say why, the model is never called; on again it drafts", async () => {
+		let on = false;
+		const t = setup([src({ kind: "website", key: "site", autoDraft: true, autoSince: 0 })], { featureOn: (app, id) => (app === "site" && id === "comment_reply" ? on : true) });
+		t.state.pages = [[raw("c1")], [raw("c1")]];
+		const first = await t.engine.collect({ force: true });
+		expect(first.added).toHaveLength(1);
+		expect(t.prompts).toHaveLength(0);
+		expect(t.engine.store.drafts()).toHaveLength(0);
+		expect(await t.engine.makeDraft(first.added[0]!.id)).toEqual({ ok: false, reason: "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요" });
+		expect(t.prompts).toHaveLength(0);
+		on = true;
+		expect((await t.engine.makeDraft(first.added[0]!.id)).ok).toBe(true);
+		expect(t.prompts).toHaveLength(1);
 	});
 });

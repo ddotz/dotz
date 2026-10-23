@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { featureEnabled } from "../app-feature-flags.ts";
 import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
 import { hasWords, type KakaoDb, memberLabel, messageById, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
@@ -412,6 +413,7 @@ export function createKakaoWeb(deps: WebDeps) {
 
 			if (sub === "draft" && parts.length === 5 && method === "POST") {
 				if (!deps.draftModel) return json({ error: "초안 만들기를 쓸 수 없어요" }, 503);
+				if (!featureEnabled(paths.dataDir, "kakao", "reply_draft")) return json({ error: "카카오톡 답장 초안이 꺼져 있어요. 카카오톡 설정에서 켜 주세요" }, 409);
 				if (drafting.has(chatId)) return json({ error: "이 대화방은 초안을 만드는 중이에요" }, 409);
 				// A pick of the room's open question (web card button): only one of the stored choices.
 				const draftBody = await body();

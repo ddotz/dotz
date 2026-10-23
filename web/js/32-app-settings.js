@@ -39,11 +39,24 @@ async function asRetry(app, watch) {
   try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast("다시 확인했어요"); } catch (e) { toast(e.message || "다시 시도하지 못했어요", true); }
   AS.busy[app] = false; MON.sig = ""; monSchedule(); asPaint();
 }
+// An answer from the row: the notice's own answer route on this computer, or - for a peer's app - the same answer sent to that computer (/api/peer/act, 34-peer-monitoring.js).
+async function asApprove(app, a, o) {
+  if (AS.busy[app]) return;
+  AS.busy[app] = true; asPaint();
+  try {
+    const n = !app.includes("~") && typeof ntById === "function" ? ntById(a.id) : null;
+    if (n) await ntPost(n, o.n);
+    else await api(app.includes("~") ? `/api/integrations/${enc(app)}/approve` : `/api/notices/${enc(a.id)}/answer`, "POST", app.includes("~") ? { id: a.id, n: o.n } : { n: o.n });
+    toast(`${o.label}(으)로 답했어요`);
+    await asFeatLoad(app);
+  } catch (e) { toast(e.message || "답하지 못했어요", true); }
+  AS.busy[app] = false; asPaint();
+}
 function asApprovalNode(app, a) {
-  const n = typeof ntById === "function" ? ntById(a.id) : null, opts = n && n.decision ? n.decision.options.filter(o => o.label !== "고치기") : [];
+  const opts = a.options || [], when = a.at ? `승인 대기 · ${monTime(a.at)}` : "승인 대기";
   return el("div", { class: "as-row as-appr", "data-approval": a.id },
-    el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.title || "승인 요청" }), el("span", { class: "as-h", text: a.at ? `승인 대기 · ${monTime(a.at)}` : "승인 대기" })),
-    el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal", type: "button", "data-k": `appr:${o.label}`, onclick: () => answerInline(n, o) }, o.label)),
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.title || "승인 요청" }), el("span", { class: "as-h", text: a.kind ? `${a.kind} · ${when}` : when })),
+    el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal", type: "button", "data-k": `appr:${o.label}`, onclick: () => asApprove(app, a, o) }, o.label)),
       el("button", { class: "btn text", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", `i:${app.split("~")[0]}`); } }, "자세히")));
 }
 function asInternalNode(app, i) {
@@ -255,15 +268,15 @@ function asPaint() {
   clear(box).append(
     ...stat.map(monStatNode),
     ...(feat ? asFeatNodes(app, feat) : []),
-    ...sw.map(f => el("div", { class: "as-row" },
+    ...[...sw, ...other].map(f => el("div", { class: "as-row", "data-setting": f.key },
       el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), el("span", { class: "as-h", text: f.help })),
-      asControl(f, async v => {
+      // A list is edited in the conversation (a change card); here it only says how many.
+      f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : asControl(f, async v => {
         if (AS.busy[app]) return;
         AS.busy[app] = true;
         try { await asPatch(app, { [f.key]: v }); } catch (e) { toast(e.message || "설정을 바꾸지 못했어요"); }
         AS.busy[app] = false; delete box.dataset.sig; asPaint();
       }))),
-    ...(other.length ? [el("div", { class: "as-sum" }, ...other.map(f => el("span", { class: "as-chip", title: f.help, text: `${f.label} ${asFmt(f, f.value)}` })))] : []),
     ...(app.startsWith("w:") ? [] : [asRemoveNode(app)]));
 }
 // The settings screen: a view pushed over the conversation (back button on a phone and on a wide screen) with the status card and every option row.
