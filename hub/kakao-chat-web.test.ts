@@ -119,10 +119,12 @@ const server = Bun.serve({
 			if (req.method === "GET") {
 				record({ method: "GET", path: `${p}${url.search}`, body: null });
 				const after = url.searchParams.get("after");
-				const list = after ? msgs.filter(x => BigInt(x.logId) > BigInt(after)) : msgs;
+				const sorted = [...msgs].sort((a, b) => (BigInt(a.logId) > BigInt(b.logId) ? 1 : -1)), lim = Number(url.searchParams.get("limit") ?? 80);
+				const list = after ? sorted.filter(x => BigInt(x.logId) > BigInt(after)).slice(0, lim) : sorted.slice(-lim);
 				return json({ room: { chatId: room.chatId, name: room.name, kind: room.kind, group: room.kind === "group" }, messages: list, read: after ? undefined : "3007", kakaoUnread: 30, drafts, sends });
 			}
 			record({ method: "POST", path: p, body });
+			if (c[2] === "read") room.unread = 0;
 			if (c[2] === "send") { const s = { id: `s${sends.length + 1}`, text: String(body!.text), state: "sending", at: Date.now() }; sends.push(s); return json({ id: s.id, state: "sending" }, 202); }
 			return json({ ok: true });
 		}
@@ -166,6 +168,10 @@ const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(
 const dark = (v: View) => run(v, `if (dotzTheme.get() !== "dark") dotzTheme.toggle()`);
 const light = (v: View) => run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 
+// The newest message is wholly inside the timeline, which ends at or above the composer, and the timeline is scrolled to its end.
+const newestInSight = (v: View, logId: string) =>
+	q<boolean>(v, `const t = document.querySelector("#kk-tl"), tr = t.getBoundingClientRect(), m = document.querySelector('[data-log="${logId}"]').getBoundingClientRect(), f = document.querySelector("#kk-foot").getBoundingClientRect();
+		return m.bottom <= tr.bottom + 1 && m.top >= tr.top && tr.bottom <= f.top + 1 && t.scrollHeight - t.scrollTop - t.clientHeight <= 1`);
 type Geo = { markTop: number; scrollTop: number; stick: boolean; markNext: string | null };
 const geo = (v: View) => q<Geo>(v, `const m = document.querySelector(".kk-new"), t = document.querySelector("#kk-tl"); return { markTop: m ? Math.round(m.getBoundingClientRect().top - t.getBoundingClientRect().top) : -999, scrollTop: Math.round(t.scrollTop), stick: KK.stick, markNext: m && m.nextElementSibling ? m.nextElementSibling.dataset.log : null }`);
 
@@ -205,6 +211,7 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		await openRoom(v);
 		const g = await geo(v);
 		expect(g.markNext).toBe("4001");
+		expect((await expectReq(isReq("POST", "/api/kakao/chat/100/read"))).body).toEqual({ logId: "4030" });
 		const lay = await q<Record<string, number>>(v, `
 			const r = s => document.querySelector(s).getBoundingClientRect(), t = r("#kk-tl");
 			return { inL: r('[data-log="3001"] .kk-bub').left, inR: r('[data-log="3001"] .kk-bub').right, meL: r('[data-log="3003"] .kk-bub').left, meR: r('[data-log="3003"] .kk-bub').right, tl: t.left, tr: t.right, longR: r('[data-log="3007"] .kk-bub').right, hScroll: document.querySelector("#kk-tl").scrollWidth - document.querySelector("#kk-tl").clientWidth }`);
@@ -227,16 +234,12 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		await shot(v, "02-desktop-unread.png");
 	});
 
-	test("the view opens at the first unread, nothing is marked read until the bottom is seen, then /read carries the last logId", async () => {
+	test("the room opens at the newest message, fully above the composer; /read carries the last logId; the unread line stays in the list", async () => {
 		const g = await geo(v);
-		expect(g.markTop).toBeGreaterThanOrEqual(0);
-		expect(g.markTop).toBeLessThanOrEqual(40);
+		expect(g.stick).toBe(true);
 		expect(g.scrollTop).toBeGreaterThan(0);
-		expect(g.stick).toBe(false);
-		expect(reqs.some(r => r.path.endsWith("/read"))).toBe(false);
-		await run(v, `document.querySelector("#kk-tl").scrollTop = 1e9`);
-		const read = await expectReq(isReq("POST", "/api/kakao/chat/100/read"));
-		expect(read.body).toEqual({ logId: "4030" });
+		expect(g.markTop).toBeLessThan(0);
+		expect(await newestInSight(v, "4030")).toBe(true);
 		await waitFor(v, `!document.querySelector('.kk-row[data-chat="100"] .nb')`);
 	});
 
@@ -256,6 +259,24 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		msgs.push(mk("4032", "다라", "맨 아래에 있을 때 온 메시지", at(22, 2, 1)));
 		emit({ kind: "kakao", chatId: "100", logId: "4032" });
 		await waitFor(v, `document.querySelector('[data-log="4032"]') && KK.stick && document.querySelector("#kk-tl").scrollTop + document.querySelector("#kk-tl").clientHeight >= document.querySelector("#kk-tl").scrollHeight - 4`);
+	});
+
+	test("a row that lands below the newest logId we hold (a late sync) is merged in logId order, not skipped", async () => {
+		msgs.push(mk("3500", "다라", "늦게 들어온 메시지", at(21, 5, 0)));
+		emit({ kind: "kakao", chatId: "100", logId: "4032" });
+		await waitFor(v, `document.querySelector('[data-log="3500"]')`);
+		const order = await q<string[]>(v, `return [...document.querySelectorAll("#kk-tl [data-log]")].map(n => n.dataset.log)`);
+		expect(order.indexOf("3500")).toBe(order.indexOf("3007") + 1);
+		expect(order.indexOf("3500")).toBe(order.lastIndexOf("3500"));
+		expect(await newestInSight(v, "4032")).toBe(true);
+	});
+
+	test("a burst of more than one page after the last held row is read to the end and the view stays pinned", async () => {
+		for (let i = 0; i < 150; i++) msgs.push(mk(String(5001 + i), "다라", `몰려온 메시지 ${i}`, at(22, 3, 0, i)));
+		emit({ kind: "kakao", chatId: "100", logId: "5150" });
+		await waitFor(v, `document.querySelector('[data-log="5150"]')`);
+		expect(await q<number>(v, `return document.querySelectorAll('#kk-tl [data-log]').length`)).toBe(69 + 1 + 150);
+		expect(await newestInSight(v, "5150")).toBe(true);
 	});
 
 	test("a message in another room adds to its unread badge", async () => {
@@ -378,11 +399,9 @@ describe("카카오톡 on a phone (390x844)", () => {
 		expect(await q(v, `return [${disp(".kk-rooms")}, ${disp(".kk-chat")}, document.querySelector("#title").textContent, !document.querySelector("#back").hidden]`)).toEqual(["none", "flex", "가나다 모임", true]);
 		const g = await geo(v);
 		expect(g.markNext).toBe("4001");
-		expect(g.markTop).toBeGreaterThanOrEqual(0);
-		expect(g.markTop).toBeLessThanOrEqual(40);
+		expect(g.stick).toBe(true);
+		expect(await newestInSight(v, "4030")).toBe(true);
 		await shot(v, "11-mobile-unread.png");
-		await run(v, `document.querySelector("#kk-tl").scrollTop = 1e9`);
-		await waitFor(v, `KK.stick`);
 		await shot(v, "12-mobile-drafts.png");
 		const foot = await q<{ bottom: number; h: number; right: number; w: number }>(v, `const f = document.querySelector("#kk-foot").getBoundingClientRect(); return { bottom: f.bottom, h: innerHeight, right: f.right, w: innerWidth }`);
 		expect(foot.bottom).toBeLessThanOrEqual(foot.h);
