@@ -119,6 +119,25 @@ describe("postMail", () => {
 		expect(quiet.calls.wakes).toEqual([]);
 	});
 
+	test("offerDraft: called once for a new mail with its key, target, thread and body; never for the duplicate; a throw does not break postMail", async () => {
+		const { deps, calls } = fakes(true);
+		const offers: Record<string, any>[] = [];
+		deps.offerDraft = m => void offers.push(m);
+		const input = { source: "zele", id: uid("o"), subject: "회의 일정 문의", from: "kim@example.com", body: "목요일 가능할까요?" };
+		const a = await postMail(input, deps);
+		await postMail(input, deps);
+		expect(offers).toHaveLength(1);
+		expect(offers[0]).toMatchObject({ key: a.key, target: a.target, thread: a.thread, source: "zele", id: input.id, subject: "회의 일정 문의", from: "kim@example.com", body: "목요일 가능할까요?" });
+		expect(calls.events).toHaveLength(1);
+		deps.offerDraft = () => {
+			throw new Error("boom");
+		};
+		const r = await postMail({ source: "zele", id: uid("o"), subject: "던짐" }, deps);
+		expect(r.duplicate).toBeUndefined();
+		expect(mailByKey(r.key)).toBeDefined();
+		expect(calls.events).toHaveLength(2);
+	});
+
 	test("a thread that cannot be opened leaves the mail web-only", async () => {
 		const { deps, calls } = fakes(true);
 		deps.createThread = async () => {

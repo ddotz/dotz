@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseDecisions } from "./choices.ts";
 import { paths } from "./config.ts";
-import { draftActionOf, draftApprovalBlock, parseDraftApproval } from "./draft-approval.ts";
+import { draftActionOf, draftApprovalBlock, draftVerdict, parseDraftApproval } from "./draft-approval.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
 import { approval, createDraft, draftBlock } from "./kakao/send.ts";
@@ -78,6 +78,26 @@ test("mail and SNS: the orchestrator's answer turn names the id and 보내기, t
 		expect([`결정 답: ${q} → 1) 보내기`, `Decision answer: ${q} -> 1) 보내기`].some(x => line.includes(x))).toBe(true);
 		expect(draftActionOf("보내기")).toBe("send");
 	}
+});
+
+test("draftVerdict: the owner's latest pick for one ref after the cutoff; sessions, other refs and older picks do not count", async () => {
+	const since = Date.parse(ts()) - 1000;
+	const refs = ["RAAAAAA", "RBBBBBB", "RCCCCCC", "RDDDDDD"];
+	for (const ref of refs) ask(draftApprovalBlock({ ...mail, ref, question: `답장 보낼까요? #${ref}` }));
+	const key = (ref: string) => noticeFor(`#${ref}`).id;
+	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "none" });
+	await answerDecision(key(refs[0]!), { n: 1 }, web);
+	await answerDecision(key(refs[1]!), { n: 2, note: "3시 말고 4시 - 하이픈으로" }, web);
+	await answerDecision(key(refs[2]!), { n: 3 }, web);
+	const lane: DecisionSend = async a => void emit("inbox", { ts: ts(), kind: "lane_message", source: "web", lane: "x", text: a.text, picks: a.picks });
+	await answerDecision(key(refs[3]!), { n: 1 }, lane);
+	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "send" });
+	expect(draftVerdict(paths.inbox, refs[1]!, since)).toEqual({ verdict: "edit", detail: "3시 말고 4시 - 하이픈으로" });
+	expect(draftVerdict(paths.inbox, refs[2]!, since)).toEqual({ verdict: "drop" });
+	expect(draftVerdict(paths.inbox, refs[3]!, since)).toEqual({ verdict: "none" });
+	expect(draftVerdict(paths.inbox, refs[0]!, Date.parse(ts()) + 60_000)).toEqual({ verdict: "none" });
+	emit("inbox", { ts: ts(), kind: "message", source: "terminal", text: "3) 보내지 않기", picks: [{ q: `답장 보낼까요? #${refs[0]} (${refs[0]})`, n: 3, label: "보내지 않기" }] });
+	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "drop" });
 });
 
 test("kakao: the web sheet's 보내기 is an owner message the approval check accepts; 보내지 않기 and a session's answer are not", async () => {
