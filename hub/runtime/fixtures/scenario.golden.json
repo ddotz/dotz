@@ -1390,11 +1390,6 @@
    }
   ],
   [
-   "report",
-   "alpha",
-   "finished: all green"
-  ],
-  [
    "idle",
    "alpha"
   ],
@@ -1426,7 +1421,7 @@
    ],
    true,
    null,
-   3,
+   2,
    "rate"
   ],
   [
@@ -1446,7 +1441,7 @@
    [
     "while paused"
    ],
-   3,
+   2,
    "rate"
   ],
   [
@@ -1474,7 +1469,7 @@
    [
     "while paused"
    ],
-   3,
+   2,
    "rate"
   ],
   [
@@ -1499,7 +1494,7 @@
    ],
    true,
    null,
-   3,
+   2,
    "rate"
   ],
   [
@@ -1626,7 +1621,7 @@
    ],
    true,
    null,
-   5,
+   4,
    "rate"
   ],
   [
@@ -1636,11 +1631,6 @@
     "type": "prompt",
     "message": "compaction trouble\n(Answer the owner in English.)"
    }
-  ],
-  [
-   "report",
-   "alpha",
-   "[lane recovery] 컨텍스트 압축이 실패했어요 (auto compaction failed: provider error). 진행 중이던 요청을 중단하고 같은 대화 기록으로 다시 이어서 시작해요 (#/#)."
   ],
   [
    "kill",
@@ -1662,7 +1652,7 @@
    ],
    true,
    null,
-   5,
+   4,
    "rate"
   ],
   [
@@ -1719,7 +1709,7 @@
    ],
    true,
    null,
-   5,
+   4,
    "rate"
   ],
   [
@@ -1744,13 +1734,8 @@
    ],
    true,
    null,
-   5,
+   4,
    "rate"
-  ],
-  [
-   "report",
-   "alpha",
-   "[lane recovery] #분 넘게 아무 응답이 없어요. 진행 중이던 요청을 중단하고 같은 대화 기록으로 다시 이어서 시작해요 (#/#)."
   ],
   [
    "kill",
@@ -1772,7 +1757,7 @@
    ],
    true,
    null,
-   5,
+   4,
    "rate"
   ],
   [
@@ -1888,7 +1873,7 @@
    ],
    true,
    null,
-   6,
+   5,
    "rate"
   ],
   [
@@ -1955,7 +1940,7 @@
    ],
    true,
    null,
-   6,
+   5,
    "rate"
   ],
   [
@@ -1991,13 +1976,8 @@
    ],
    true,
    null,
-   6,
+   5,
    "rate"
-  ],
-  [
-   "report",
-   "alpha",
-   "[lane recovery] 컨텍스트 압축이 실패했어요 (Compaction failed while summarising). 진행 중이던 요청을 중단하고 같은 대화 기록으로 다시 이어서 시작해요 (#/#)."
   ],
   [
    "kill",
@@ -2019,7 +1999,7 @@
    ],
    true,
    null,
-   6,
+   5,
    "rate"
   ],
   [
@@ -2093,7 +2073,7 @@
    ],
    false,
    null,
-   6,
+   5,
    "rate"
   ],
   [
@@ -2106,7 +2086,7 @@
      "worker_model": "anthropic/test-worker:high",
      "status": "exited",
      "live": false,
-     "reports": 6,
+     "reports": 5,
      "resumable": true,
      "lastText": "worked again",
      "context": {

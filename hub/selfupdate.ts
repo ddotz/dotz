@@ -217,6 +217,19 @@ export async function check(o: Options): Promise<CheckResult> {
 	return r;
 }
 
+// The names of the failing tests (at most `max`, once each: bun prints every `(fail)` line again in its closing summary), for the
+// owner-facing message; the counts alone do not say what broke.
+export function failedTestNames(out: string, max = 3): string[] {
+	const names: string[] = [];
+	for (const l of out.split("\n")) {
+		const m = /^\(fail\) (.+?)(?: \[[\d.]+m?s\])?$/.exec(l);
+		const name = m?.[1]?.trim();
+		if (name && !names.includes(name)) names.push(name.length > 90 ? `${name.slice(0, 89)}…` : name);
+		if (names.length >= max) break;
+	}
+	return names;
+}
+
 let jobSeq = 0;
 let job: Job | undefined;
 
@@ -285,7 +298,8 @@ export async function apply(o: Options): Promise<Job> {
 		const blocks = failureBlocks(t.out);
 		if (blocks) record(logDir, `update #${j.id}: failed tests\n${blocks}`);
 		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
-		return back(`테스트 실패${summary ? ` (${summary})` : ` (exit ${t.code})`}`, deps);
+		const names = failedTestNames(t.out);
+		return back(`테스트 실패${summary ? ` (${summary})` : ` (exit ${t.code})`}${names.length ? `: ${names.join(" / ")}` : ""}`, deps);
 	}
 	return end("updated", `${c.version.commit.short} → ${to.slice(0, 7)} 받았어요${summary ? ` (테스트 ${summary})` : ""}. 재시작하면 적용돼요.`);
 }

@@ -52,6 +52,10 @@ async function open(width: number) {
 	await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), true)`);
 	await v.navigate(`http://127.0.0.1:${server.port}/?light#monitoring/notice`);
 	await v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("page not ready")), 10000); const done = () => { if (typeof go === "function" && current !== "monitoring") go("monitoring", "notice"); if (document.querySelector("#mon-tl") && NT.loaded && NM.loaded) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.documentElement, { subtree: true, childList: true }); done(); })`);
+	// The page loads its lists (integrations, conversations, notices) in the background and redraws #mon-tl when each lands. The test
+	// draws its own nodes there, so the page stops redrawing the timeline. Frames queued before (they hold the old function, and
+	// go() resets monRaf without cancelling its frame) run in the next two frames, before the test draws.
+	await v.evaluate(`new Promise(res => { renderMonitoring = () => {}; requestAnimationFrame(() => requestAnimationFrame(() => res(true))); })`);
 	return v;
 }
 
