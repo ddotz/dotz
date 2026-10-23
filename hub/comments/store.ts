@@ -65,6 +65,12 @@ export function createStore(dir: string) {
 			if (fresh.length) writeAtomic(f("comments.json"), [...have, ...fresh].sort((a, b) => a.at - b.at).slice(-MAX_COMMENTS));
 			return fresh;
 		},
+		// Gives the stored comments of one post their title / link / thumbnail (the only change ever made to a stored comment).
+		retitle: (source: string, thread: string, p: { postTitle: string; postLink?: string; thumb?: string }) => {
+			const have = comments();
+			if (!have.some(c => c.source === source && c.thread === thread)) return;
+			writeAtomic(f("comments.json"), have.map(c => (c.source === source && c.thread === thread ? { ...c, postTitle: p.postTitle, ...(p.postLink ? { postLink: p.postLink } : {}), ...(p.thumb ? { thumb: p.thumb } : {}) } : c)));
+		},
 		drafts,
 		putDraft: (d: Draft) => writeAtomic(f("drafts.json"), upsert(drafts(), d, "code", MAX_DRAFTS)),
 		setDraftStatus: (code: string, status: DraftStatus) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, status } : d))),

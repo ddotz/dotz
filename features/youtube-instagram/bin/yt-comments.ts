@@ -6,9 +6,9 @@ import type { Ctx } from "../lib/config.ts";
 import { SetupError } from "../lib/config.ts";
 import type { CommentDeps } from "../../reply-drafts/lib/comments.ts";
 import { COSTS, can } from "../lib/quota.ts";
-import { realReplyDeps, withReplyDrafts } from "../lib/reply-adapter.ts";
+import { realReplyDeps, titleArg, withReplyDrafts } from "../lib/reply-adapter.ts";
 import { main, oneLine, type RunResult, runWatch } from "../lib/watchkit.ts";
-import { commentThreadsSince } from "../lib/youtube.ts";
+import { commentThreadsSince, videoInfos } from "../lib/youtube.ts";
 
 const MAX_PAGES = 3;
 type State = { since: string };
@@ -22,7 +22,8 @@ export async function run(ctx: Ctx, _args: string[] = [], deps?: CommentDeps): P
 			if (!can(ctx, cfg, COSTS.list * MAX_PAGES)) return "skip";
 			const { comments, newest, overflow } = await commentThreadsSince(ctx, cfg.youtube.channel_id, prev?.since, MAX_PAGES);
 			const since = newest && (!prev || Date.parse(newest) > Date.parse(prev.since)) ? newest : (prev?.since ?? ctx.now().toISOString());
-			const lines = comments.reverse().map(c => `yt-comment ${c.id} video=${c.videoId} by=${oneLine(c.author, 60)}: ${oneLine(c.text, 200)}`);
+			const info = comments.length ? await videoInfos(ctx, comments.map(c => c.videoId)) : {};
+			const lines = comments.reverse().map(c => `yt-comment ${c.id} video=${c.videoId}${titleArg(info[c.videoId]?.title)} by=${oneLine(c.author, 60)}: ${oneLine(c.text, 200)}`);
 			if (overflow) lines.push(`yt-comment-overflow more than ${comments.length} new comments; older ones not listed`);
 			return { lines, state: { since } };
 		},

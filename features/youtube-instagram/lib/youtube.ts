@@ -170,6 +170,58 @@ export async function commentThreadsSince(ctx: Ctx, channelId: string, since: st
 	return { comments, newest, overflow };
 }
 
+export type VideoInfo = { title: string; thumb?: string };
+type VideoCache = Record<string, VideoInfo & { at: string }>;
+const TITLE_TTL_MS = 7 * 86_400_000;
+const MISSING_TTL_MS = 86_400_000;
+const BATCH = 50;
+export const videoThumb = (id: string): string => `https://i.ytimg.com/vi/${encodeURIComponent(id)}/mqdefault.jpg`;
+
+function readVideoCache(): VideoCache {
+	try {
+		return readJson<VideoCache>(paths.videos()) ?? {};
+	} catch {
+		return {};
+	}
+}
+
+// Title (and thumbnail) of the videos a comment sits on. The cache in the feature's state dir answers first; the ids it lacks or holds stale
+// (a title for 7 days, a missing video for 1 day) go out together in ONE videos.list?part=snippet call per 50 ids (1 quota unit), never one call
+// per comment. When the call fails (quota, network, login) the cache still answers, so a poll never fails because of titles. Ids without a title
+// (deleted or private video) are left out of the result.
+export async function videoInfos(ctx: Ctx, ids: string[]): Promise<Record<string, VideoInfo>> {
+	const want = [...new Set(ids.filter(Boolean))];
+	const cache = readVideoCache();
+	const now = ctx.now().getTime();
+	const fresh = (id: string) => {
+		const e = cache[id];
+		return e !== undefined && now - Date.parse(e.at) < (e.title ? TITLE_TTL_MS : MISSING_TTL_MS);
+	};
+	const missing = want.filter(id => !fresh(id));
+	if (missing.length) {
+		try {
+			const t = await accessToken(ctx);
+			const at = ctx.now().toISOString();
+			for (let i = 0; i < missing.length; i += BATCH) {
+				const batch = missing.slice(i, i + BATCH);
+				const d = await api<{ items?: { id: string; snippet: { title: string; thumbnails?: Record<string, { url?: string }> } }[] }>(ctx, t, "GET", "videos", { part: "snippet", id: batch.join(",") }, COSTS.list);
+				const found = new Map((d.items ?? []).map(v => [v.id, v]));
+				for (const id of batch) {
+					const v = found.get(id);
+					cache[id] = v ? { title: v.snippet.title, thumb: v.snippet.thumbnails?.medium?.url ?? v.snippet.thumbnails?.default?.url ?? videoThumb(id), at } : { title: "", at };
+				}
+			}
+			writeJson(paths.videos(), cache);
+		} catch {}
+	}
+	const out: Record<string, VideoInfo> = {};
+	for (const id of want) {
+		const e = cache[id];
+		if (e?.title) out[id] = { title: e.title, ...(e.thumb ? { thumb: e.thumb } : {}) };
+	}
+	return out;
+}
+
 // The channel's own replies (texts only) from the newest threads, for tone-sample.
 export async function ownReplies(ctx: Ctx, channelId: string, limit: number, maxPages = 3): Promise<string[]> {
 	const token = await accessToken(ctx);

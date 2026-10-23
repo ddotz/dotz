@@ -281,3 +281,24 @@ Steps, in order (each skips itself when already satisfied, e.g. a valid secret f
   `update_key: "sns-onboarding"`, target = `--target` or `chat`): a checklist line per step (✅ ⏳ ❓ ❌).
 - Every external effect (aside repl, brew, gateway, API) goes through injected runners; `--dry-run` uses a
   scripted runner set, and the test drives the whole flow, an interruption, and the resume.
+
+## Video titles and Instagram DMs (owner 2026-10-23)
+
+### Video titles
+- A YouTube comment carries `videoId`, the video `title` and a thumbnail. Titles come from ONE `videos.list?part=snippet&id=a,b,c` call per poll (1 quota
+  unit, 50 ids per call), never one call per comment. `cache/videos.json` keeps them by id: a title 7 days, a video that has none (deleted or private) 1 day.
+  When the call fails the cache still answers, so a poll never fails because of titles (`lib/youtube.ts` videoInfos).
+- The `yt-comment` watch line gets ` title="<JSON string>"` after `video=`; `ig-comment` gets the caption start the same way. The 모니터링 comment
+  engine names the post the same way (hub/comments). A stored comment that was collected without a title (`유튜브 영상` / `인스타 게시물`) is renamed on the
+  next poll (`adapter.retitle`), so old items are backfilled.
+
+### Instagram DMs (read only)
+- API: Instagram API with Instagram Login, Conversations API (graph.instagram.com). `GET /me/conversations?platform=instagram` lists conversations;
+  `GET /<conversation-id>?fields=messages{message,from,to,created_time,attachments}` lists the latest 20 messages. Permission:
+  `instagram_business_manage_messages` (with `instagram_business_basic`). Docs: https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/conversations-api
+  (checked 2026-10-23). Nothing here sends a message.
+- Watch `sns-ig-dm` (every 10 min, silent) runs `bin/ig-dm.ts`: one conversation-list call, and the messages only of the conversations whose
+  `updated_time` moved. The result is `cache/ig-dm.json`; the 모니터링 > 인스타그램 > DM tab reads it (docs/ig-dm-api.md).
+- The feature row "DM 읽기" (hub/app-features.ts, id `dm_read`) is the switch (`featureEnabled`). Off: the watch makes no request and deletes the stored DMs.
+- A missing permission (OAuthException code 10 or 200-299) is stored as `perm: "missing"` and re-checked only after a new token or 6 hours. Onboarding
+  (`instagram-dm` step) reads the list once with the new token and asks for the permission only when it is missing.

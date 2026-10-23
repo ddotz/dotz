@@ -125,7 +125,7 @@ test("apply --dry-run writes a valid config, card, pins and project, and makes n
 	expect(pins.pins.projects).toEqual([{ name: "유튜브·인스타 관리", path: snsDir(), channel: "123", note: "유튜브와 인스타 올리기, 댓글, 통계를 맡아요" }]);
 
 	expect(r.lines.slice(0, 3)).toEqual([`config ${paths.config()}`, "card sns-channels", "project ch:123"]);
-	expect(r.lines.slice(3)).toEqual(["watch sns-yt-comments every 30m", "watch sns-ig-comments every 60m", "watch sns-inbox every 5m", "watch sns-due every 5m", "watch sns-tokens every 720m", "watch sns-yt-metadata every 1440m", "ok"]);
+	expect(r.lines.slice(3)).toEqual(["watch sns-yt-comments every 30m", "watch sns-ig-comments every 60m", "watch sns-ig-dm every 10m", "watch sns-inbox every 5m", "watch sns-due every 5m", "watch sns-tokens every 720m", "watch sns-yt-metadata every 1440m", "ok"]);
 	for (const g of f.gateway()) {
 		expect(g.url.startsWith(GATEWAY)).toBe(true);
 		expect(g.hubToken).toBe(SECRETS.hub);
@@ -139,6 +139,7 @@ test("apply posts the watches of DESIGN, woken in the project channel, and only 
 	expect(f.watches.map(w => ({ ...w, timeout_seconds: undefined }))).toMatchObject([
 		want("sns-yt-comments", "yt-comments.ts", 30, "match"),
 		want("sns-ig-comments", "ig-comments.ts", 60, "match"),
+		want("sns-ig-dm", "ig-dm.ts", 10, "match"),
 		want("sns-inbox", "inbox.ts", 5, "match"),
 		want("sns-due", "due.ts", 5, "match"),
 		want("sns-tokens", "tokens.ts", 720, "change"),
@@ -148,7 +149,7 @@ test("apply posts the watches of DESIGN, woken in the project channel, and only 
 	resetCustom();
 	const ig = fakeCtx();
 	await run(ig.ctx, ["apply", "--dry-run", "--ig-user", "1784", "--ig-username", "owner"]);
-	expect(ig.watches.map(w => w.name)).toEqual(["sns-ig-comments", "sns-inbox", "sns-due", "sns-tokens"]);
+	expect(ig.watches.map(w => w.name)).toEqual(["sns-ig-comments", "sns-ig-dm", "sns-inbox", "sns-due", "sns-tokens"]);
 	expect(ig.watches[0]).toMatchObject({ to: "orchestrator" });
 	expect(ig.watches[0]).not.toHaveProperty("channels");
 	expect(ig.gateway()[0]).toMatchObject({ method: "PUT", body: { key: `dir:${snsDir()}`, title: "유튜브·인스타 관리" } });
@@ -225,7 +226,7 @@ test("apply uses the connected accounts, keeps secrets 0600 and prints none of t
 
 	expect(r.code).toBe(0);
 	expect(read(paths.config())).toMatchObject({ youtube: { channel_id: YT_ID, title: "My Channel" }, instagram: { user_id: "1784", username: "owner" } });
-	expect(f.watches).toHaveLength(5);
+	expect(f.watches).toHaveLength(6);
 	expect(mode(paths.ytOauth())).toBe(0o600);
 	expect(mode(paths.instagram())).toBe(0o600);
 	for (const s of Object.values(SECRETS)) {
@@ -285,7 +286,7 @@ test("status prints one Korean line per part, before and after setup", async () 
 	expect(after.lines).toHaveLength(4);
 	expect(after.lines[1]).toContain("My Channel");
 	expect(after.lines[2]).toContain("@owner");
-	expect(after.lines[3]).toContain("5개");
+	expect(after.lines[3]).toContain("6개");
 	for (const l of after.lines) expect(l).toMatch(/요(\)|\.)?$|요 \(/);
 	expect(readJson(paths.config())).toBeDefined();
 });

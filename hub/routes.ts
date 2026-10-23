@@ -52,6 +52,7 @@ import { ptyRoute } from "./pty.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
 import { commentFlags, commentNeeds, commentsRoute } from "./comments/gateway.ts";
+import { igDmRoute } from "./ig-dm-gateway.ts";
 import { kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
 
 const BOOT_ID = Date.now().toString(36);
@@ -461,6 +462,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		const commentsResponse = await commentsRoute(req, url, parts);
 		if (commentsResponse) return commentsResponse;
+		const igDmResponse = await igDmRoute(req, url, parts);
+		if (igDmResponse) return igDmResponse;
 		const kakaoResponse = await kakaoRoute(req, url, parts);
 		if (kakaoResponse) return kakaoResponse;
 		const settingsResponse = await routeSettings(req, url, parts);

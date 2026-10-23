@@ -9,10 +9,11 @@ import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings, loadStyle, recordCorrection } from "./settings.ts";
 import { addDraft, getDraft, isDrafted, markDrafted, setStatus } from "./store.ts";
 
-export type CommentInput = { id: string; author: string; text: string; context: string };
+export type CommentInput = { id: string; author: string; text: string; context: string; post?: string };
 
 export type CommentAdapter = {
 	app: string; // settings key and tone profile: youtube, instagram, blog, ...
+	postLabel?: string; // what a post of this source is called (영상, 게시물); the ask names the post by its title under this word
 	label: string; // the source in the owner's words; it is in the ask, which is how 모니터링 files it under its app
 	parse: (line: string) => CommentInput | undefined; // a watch line of this source, else undefined (left untouched)
 	stage: (c: CommentInput, reply: string) => Promise<string>; // makes the pending reply (never posts it); returns its id
@@ -27,7 +28,8 @@ const one = (s: string) => s.replace(/\s+/g, " ").trim();
 export function commentAsk(a: CommentAdapter, c: CommentInput, reply: string, ref: string, notes: string[], headline = `${a.label} 댓글 답글 초안을 만들었어요`): string {
 	const note = notes.map(one).join(" / ");
 	const block = draftApprovalBlock({ to: `${c.author} 댓글`, toLabel: "대상", body: reply, ref, question: "이 답글 올릴까요?", sendResult: "이 글을 답글로 올려요" });
-	return [`[ask] ${headline}`, ...(note ? [`-# ${note}`] : []), `> 원댓글 ${one(c.author)}: ${one(c.text)}`, block].join("\n");
+	const post = c.post ? [`> ${a.postLabel ?? "글"} ${one(c.post)}`] : [];
+	return [`[ask] ${headline}`, ...(note ? [`-# ${note}`] : []), ...post, `> 원댓글 ${one(c.author)}: ${one(c.text)}`, block].join("\n");
 }
 
 export type CommentDeps = FlowDeps & { budgetMs?: number };
