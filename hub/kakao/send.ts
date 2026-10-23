@@ -3,6 +3,7 @@
 // There is no Kakao message API, HTTP or private-protocol path in this module.
 import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { draftApprovalBlock } from "../draft-approval.ts";
 import { writePrivate } from "./creds.ts";
 import { pickRoom, type RoomFact } from "./room.ts";
@@ -185,6 +186,21 @@ const kmsgWhy = (stderr: string) => {
 	return line ? ` (${line.slice(0, 80)})` : "";
 };
 
+// The list row a room was checked to be (room.ts), by database room id: the next send of the room goes straight to that row, which
+// saves the chat list scan and the check window (seen 2026-10: 4-60 s together). It is used only while the room keeps its name and no
+// other database room has that name; kmsg names a row by a hash of its title, so an unknown id is refused by kmsg and the room is checked again.
+type Picked = Record<string, { id: string; name: string }>;
+const pickedFile = (paths: KakaoPaths) => join(paths.dataDir, "kakao", "picked.json");
+function readPicked(paths: KakaoPaths): Picked {
+	try {
+		const v = JSON.parse(readFileSync(pickedFile(paths), "utf8"));
+		return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+	} catch {
+		return {};
+	}
+}
+const savePicked = (paths: KakaoPaths, v: Picked) => writePrivate(pickedFile(paths), `${JSON.stringify(v, null, 1)}\n`);
+
 const sendTextNow = async (input: { chatId: string; roomName: string; text: string }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => {
 	if (input.roomName.trim() === "(unknown)") return refuse("이름을 알 수 없는 대화방이라 화면 자동화로 찾을 수 없어요");
 	let all: RoomFact[] = [];
@@ -197,20 +213,35 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	}
 	const kmsg = deps.kmsg ?? Bun.which("kmsg") ?? "/opt/homebrew/bin/kmsg";
 	const front = await frontmostApp(deps.runner);
-	// The room is a list row opened by id and checked against the database room (room.ts); a name search never picks it.
-	const known = all.find(r => r.chatId === input.chatId);
-	const picked = await pickRoom({ ...known, chatId: input.chatId, name: input.roomName }, all, { kmsg, runner: deps.runner });
-	if (!picked.ok) {
-		await refocus(deps.runner, front);
-		return refuse(picked.reason);
-	}
 	// kmsg prints "Message sent" once Enter went through; a later failure (closing the window) is still a sent message. Without that
 	// line nothing was sent, so one retry with deep window recovery is safe (a cold first window often fails).
 	const wentOut = (r: { code: number; stdout: string }) => r.code === 0 || /Message sent/i.test(r.stdout);
-	let sent = await deps.runner([kmsg, "send", "--chat-id", picked.id, "--", input.text], { timeoutMs: 90_000 });
-	if (!wentOut(sent)) sent = await deps.runner([kmsg, "send", "--chat-id", picked.id, "--deep-recovery", "--", input.text], { timeoutMs: 90_000 });
+	const sendBy = (id: string, deep = false) => deps.runner([kmsg, "send", "--chat-id", id, ...(deep ? ["--deep-recovery"] : []), "--", input.text], { timeoutMs: 90_000 });
+	const memo = readPicked(deps.paths);
+	const shared = all.some(r => r.chatId !== input.chatId && r.name === input.roomName);
+	const kept = memo[input.chatId];
+	let id = !shared && kept?.name === input.roomName ? kept.id : undefined;
+	let sent = id ? await sendBy(id) : undefined;
+	if (id && sent && !wentOut(sent) && /Unknown chat_id/i.test(sent.stdout + sent.stderr)) id = undefined;
+	if (!id) {
+		// The room is a list row opened by id and checked against the database room (room.ts); a name search never picks it.
+		const known = all.find(r => r.chatId === input.chatId);
+		const picked = await pickRoom({ ...known, chatId: input.chatId, name: input.roomName }, all, { kmsg, runner: deps.runner });
+		if (!picked.ok) {
+			if (kept) {
+				delete memo[input.chatId];
+				savePicked(deps.paths, memo);
+			}
+			await refocus(deps.runner, front);
+			return refuse(picked.reason);
+		}
+		id = picked.id;
+		if (!shared) savePicked(deps.paths, { ...memo, [input.chatId]: { id, name: input.roomName } });
+		sent = await sendBy(id);
+	}
+	if (!wentOut(sent!)) sent = await sendBy(id, true);
 	await refocus(deps.runner, front);
-	if (!wentOut(sent)) return refuse(`카카오톡에서 보내지 못했어요${kmsgWhy(sent.stderr)}`);
+	if (!wentOut(sent!)) return refuse(`카카오톡에서 보내지 못했어요${kmsgWhy(sent!.stderr)}`);
 	return { ok: true };
 };
 

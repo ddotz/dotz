@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseDecisions } from "../choices.ts";
@@ -14,6 +14,7 @@ let paths: ReturnType<typeof kakaoPaths>;
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "kk-send-"));
 	paths = kakaoPaths(dir, dir);
+	mkdirSync(join(dir, "kakao"), { recursive: true });
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -290,4 +291,40 @@ test("sendText retries once with deep recovery only when kmsg never reached Ente
 	expect(r.ok).toBe(false);
 	expect(r.reason).toContain("chat window not found");
 	expect(dead.sends.length).toBe(2);
+});
+
+// A room checked once is remembered: the next send goes to the same row with no list scan and no check window.
+test("a checked room is sent to again without the list and the check window, until its name changes or another room takes it", async () => {
+	const screen = fakeScreen([row("가나"), row("가나다")]);
+	const facts = [{ chatId: "100", name: "가나" }, { chatId: "200", name: "가나다" }];
+	const deps = { paths, runner: screen.runner, kmsg: "/fake/kmsg", roomNames: async () => facts };
+	expect(await sendText({ chatId: "100", roomName: "가나", text: "하나" }, deps)).toEqual({ ok: true });
+	expect(screen.opened).toEqual(["chat_가나"]);
+	expect((statSync(join(dir, "kakao", "picked.json")).mode & 0o777).toString(8)).toBe("600");
+	expect(await sendText({ chatId: "100", roomName: "가나", text: "둘" }, deps)).toEqual({ ok: true });
+	expect(screen.opened).toEqual(["chat_가나"]);
+	expect(screen.sends.map(a => a.at(-1))).toEqual(["하나", "둘"]);
+	expect(screen.sends[1]).toContain("chat_가나");
+	// A renamed room is checked again.
+	expect(await sendText({ chatId: "100", roomName: "가나다", text: "셋" }, { ...deps, roomNames: async () => [{ chatId: "100", name: "가나다" }] })).toEqual({ ok: true });
+	expect(screen.opened).toEqual(["chat_가나", "chat_가나다"]);
+	// Another database room of the same name: the remembered row is not used.
+	facts.splice(0, 2, { chatId: "100", name: "가나다" }, { chatId: "200", name: "가나다" });
+	await sendText({ chatId: "100", roomName: "가나다", text: "넷" }, deps);
+	expect(screen.opened.length).toBe(3);
+});
+
+test("a remembered row kmsg no longer knows is checked again; a failed check forgets it", async () => {
+	let unknown = true;
+	const screen = fakeScreen([row("가나")], { sendOut: argv => (argv.includes("chat_old") && unknown ? { code: 1, stdout: "", stderr: "Error: Unknown chat_id 'chat_old'\n" } : { code: 0, stdout: "sent\n" }) });
+	writeFileSync(join(dir, "kakao", "picked.json"), JSON.stringify({ "100": { id: "chat_old", name: "가나" } }));
+	const deps = { paths, runner: screen.runner, kmsg: "/fake/kmsg", roomNames: async () => [{ chatId: "100", name: "가나" }] };
+	expect(await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, deps)).toEqual({ ok: true });
+	expect(screen.sends.map(a => a[a.indexOf("--chat-id") + 1])).toEqual(["chat_old", "chat_가나"]);
+	expect(JSON.parse(readFileSync(join(dir, "kakao", "picked.json"), "utf8"))["100"].id).toBe("chat_가나");
+
+	writeFileSync(join(dir, "kakao", "picked.json"), JSON.stringify({ "100": { id: "chat_old", name: "가나" } }));
+	const r = await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, { ...deps, runner: fakeScreen([], { sendOut: () => ({ code: 1, stdout: "", stderr: "Unknown chat_id\n" }) }).runner });
+	expect(r.ok).toBe(false);
+	expect(JSON.parse(readFileSync(join(dir, "kakao", "picked.json"), "utf8"))["100"]).toBeUndefined();
 });

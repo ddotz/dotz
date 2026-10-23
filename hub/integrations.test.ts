@@ -90,6 +90,9 @@ describe("which notices belong to an integration", () => {
 		expect(belongsTo(by("youtube"), notice("f", { text: "New YouTube comment" }))).toBe(true);
 		expect(belongsTo(by("instagram"), notice("g", { text: "인스타 댓글" }))).toBe(true);
 		for (const e of INTEGRATIONS) expect(belongsTo(e, notice("h", { title: "디스크 경고", text: "90% 찼어요" }))).toBe(false);
+		// A work session's report about the app is not a notice of the app.
+		for (const src of ["lane:kakao-rooms", "ch:123", "worklog", "main"]) expect(belongsTo(by("kakao"), notice("i", { src, title: "카톡 보내기를 고쳤어요" }))).toBe(false);
+		expect(belongsTo(by("kakao"), notice("j", { src: "alert", title: "카톡 새 메시지" }))).toBe(true);
 	});
 });
 

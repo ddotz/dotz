@@ -90,7 +90,10 @@ export async function pickRoom(room: RoomFact, all: RoomFact[], deps: { kmsg: st
 	const matched: string[] = [];
 	let unreadable = false;
 	for (const c of candidates) {
-		const opened = await deps.runner([deps.kmsg, "read", "--chat-id", c.chatId, "--limit", "1", "--keep-window"], { timeoutMs: 90_000 }).catch(() => undefined);
+		const open = (deep: boolean) => deps.runner([deps.kmsg, "read", "--chat-id", c.chatId, "--limit", "1", "--keep-window", ...(deep ? ["--deep-recovery"] : [])], { timeoutMs: 90_000 }).catch(() => undefined);
+		// A cold first window often fails to open (seen with the memo chat); one retry with deep window recovery, as the send does.
+		let opened = await open(false);
+		if (opened?.code !== 0) opened = await open(true);
 		const w = opened?.code === 0 ? await readWindow(deps.runner) : undefined;
 		await closeWindow(deps.runner);
 		if (!w) unreadable = true;
