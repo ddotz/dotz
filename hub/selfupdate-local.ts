@@ -38,6 +38,18 @@ export function keepsLocal(dir: string, flag: unknown, env: Record<string, strin
 	return real(dir) !== real(env.DOTZ_HOME || join(homedir(), ".local", "share", "dotz"));
 }
 
+// The code folder of this install when the bot must not change it (not a developer checkout, same rule as above), else undefined.
+// Shared by the guards (hub/codeguard.ts): reads self_update.keep_local from <dataDir>/config.json itself, so it runs in any process.
+export function lockedCodeDir(dataDir: string, dir = join(import.meta.dir, ".."), env: Record<string, string | undefined> = process.env): string | undefined {
+	let flag: unknown;
+	try {
+		flag = JSON.parse(readFileSync(join(dataDir, "config.json"), "utf8")).self_update?.keep_local;
+	} catch {
+		flag = undefined;
+	}
+	return keepsLocal(dir, flag, env) ? undefined : resolve(dir);
+}
+
 // Local commits split into those upstream already has (same patch-id per `git cherry`) and the rest, oldest first.
 export async function splitEquivalent(exec: Exec, dir: string, upstream: string): Promise<{ dropped: Commit[]; rest: Commit[] }> {
 	const [all, cherry] = await Promise.all([exec(["git", "log", "--reverse", "--topo-order", FORMAT, `${upstream}..HEAD`], dir, 30_000), exec(["git", "cherry", upstream, "HEAD"], dir, 30_000)]);
@@ -157,6 +169,23 @@ export function savedNote(s: Saved, upstream: string): string {
 	const where = [s.branch && `브랜치 ${s.branch}`, s.patch && `패치 ${s.patch}`, s.filesDir && `사본 폴더 ${s.filesDir}`].filter(Boolean).join(", ");
 	const back = s.branch ? `\`git cherry-pick ${upstream}..${s.branch}\`` : s.dirtyPatch ? `\`git apply ${s.dirtyPatch}\`` : "";
 	return `내 수정은 ${where}에 보관했고, 터미널에서 ${back}를 실행하면 다시 얹을 수 있어요.`;
+}
+
+// A short Korean summary per saved commit (files, gist), written to <dataDir>/self-update/ so the bot can re-create the personal parts
+// in the custom layer. Returns the file and its text.
+export async function writeSavedSummary(exec: Exec, dir: string, dataDir: string, commits: Commit[], saved: Saved): Promise<{ file: string; text: string; turn: string }> {
+	const items: string[] = [];
+	for (const c of commits) {
+		const files = lines((await exec(["git", "-c", "core.quotepath=off", "show", "--format=", "--name-only", c.sha], dir, 15_000)).out);
+		items.push(`- ${c.short} ${c.subject.slice(0, 80)}: 파일 ${files.length}개 (${files.slice(0, 5).join(", ")}${files.length > 5 ? " 외" : ""})`);
+	}
+	const text = `보관한 로컬 커밋 ${commits.length}개${saved.branch ? ` (브랜치 ${saved.branch}${saved.patch ? `, 패치 ${saved.patch}` : ""})` : ""}\n${items.join("\n")}\n`;
+	const folder = join(dataDir, "self-update");
+	mkdirSync(folder, { recursive: true });
+	const file = join(folder, `local-${saved.tag}.md`);
+	writeFileSync(file, text);
+	const turn = `[dotz 업데이트] 이 설치에서 dotz 코드가 직접 고쳐져 있어서, 업데이트 전에 로컬 커밋을 보관하고 새 버전으로 바꿨어요. 요약은 ${file}에 있어요.\n${text}\n개인 설정에 해당하는 것은 ~/.dotz/custom, features, RULES.md에 다시 만들어 주세요. 개인 몰인지 분명하지 않은 것은 오너에게 물어보세요. 모두에게 필요한 수정은 짧은 보고(작업로그)로 남기세요. dotz 코드는 고치지 마세요.`;
+	return { file, text, turn };
 }
 
 export function keepLine(commits: Commit[], dirty: number, why?: string): string {
