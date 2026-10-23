@@ -6,12 +6,13 @@ room is watched (default for a new install; onboarding asks the owner to pick ro
 
 All routes are under the gateway's normal owner check. Times are epoch milliseconds. logId values are strings (64-bit).
 
-- `GET /api/kakao/rooms` -> `{ on: boolean, rooms: [{ chatId, name, kind, watched, unread, lastAt }], error?: string }`
+- `GET /api/kakao/rooms` -> `{ on: boolean, rooms: [{ chatId, name, kind, watched, autoDraft, unread, lastAt }], error?: string }`
   `on` = integration enabled. `rooms` comes from the KakaoTalk database (cached up to 30 s); kinds `channel` and `open` are left
-  out. `error` is a plain Korean line when the database could not be read (rooms is then []).
-- `PUT /api/kakao/rooms/<chatId>` body `{ watched: boolean }` -> `{ ok: true, watched: string[] }`. Broadcasts `{kind:"kakao_rooms"}`.
+  out, the owner's own memo chat (`self`) is listed. `error` is a plain Korean line when the database could not be read (rooms is then []).
+- `PUT /api/kakao/rooms/<chatId>` body `{ watched?: boolean, autoDraft?: boolean }` (at least one) -> `{ ok: true, watched: string[], autoDraft: string[] }`.
+  Turning `watched` off also turns `autoDraft` off; `autoDraft: true` on a room that is not watched is refused (409). Broadcasts `{kind:"kakao_rooms"}`.
 - `GET /api/kakao/chat/<chatId>?limit=80&before=<logId>&after=<logId>` -> 403 `{error}` when the room is not watched, else
-  `{ room: { chatId, name, kind, group }, messages: [{ logId, authorId, sender, text, type, sentAt, fromMe }], read: <logId|null>,
+  `{ room: { chatId, name, kind, group }, messages: [{ id, collector, logId, authorId, sender, text, type, sentAt, fromMe }], read: <logId|null>,
   kakaoUnread: number, drafts: [{ code, text, basisLogId, created }], sends: [{ id, text, state, reason?, at, draft? }] }`.
   Messages oldest first. `read` = the owner's read position in the web app for this room (null = never opened; the client then
   uses `kakaoUnread`, KakaoTalk's own unread count, to place the marker). `drafts` = pending drafts of this room only. `sends` =
@@ -33,7 +34,16 @@ the bot for that room; rooms without it never wake the bot.
   reply in the room (cap 30 lines, ~2K tokens), the room's short summary file `<dataDir>/kakao/summaries/<chatId>.md`
   (refreshed by the same call, only when a draft is made), and up to 5 of the owner's own past lines in that room as style
   samples. No whole-history reads. The stored draft records `tokens: { in, out }`.
-- `PUT /api/kakao/rooms/<chatId>` also accepts `{ autoDraft: boolean }`; `GET /api/kakao/rooms` rows carry `autoDraft`.
+- `autoDraft` is stored in config `auto_draft_chats` (a subset of `watch_chats`). The dotz watch reports only rooms in both lists and
+  never a message older than 30 minutes; with the list empty it reads no database at all.
+- The draft route answers 403 for a room that is not watched and 409 while a draft of that room is still being made. A skip or a
+  failure comes as `{kind:"kakao_draft", chatId, error}` (plain Korean). In the memo room (`self`) every message counts as incoming.
+
+Two Macs (cross-machine contract, `hub/kakao/contract.ts`): `id` of a message is `k:<chatId>:<logId>` (KakaoTalk's ids come from
+the Kakao server, so they match on every Mac), or `h:<chatId>:<hash of author, time and text>` when there is no logId.
+`collector` is the name of the Mac that read it (also on send records). `mergeMessages` joins lists of several collectors by id,
+idempotently. Every send, typed or confirmed draft, goes through `dispatchSend`, whose optional `lease(chatId)` hook can refuse
+the send (a failed send with its reason) before kmsg runs.
 
 Server-sent events on `/api/events` (ids only, never bodies or names):
 - `{ kind: "kakao", chatId, logId }` a new message in a watched room (the client fetches `?after=`).

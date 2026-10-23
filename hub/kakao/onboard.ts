@@ -442,7 +442,7 @@ class Machine {
 			throw new Stop("derive", "카톡 데이터 위치를 찾지 못했어요", `카카오톡이 로그인된 채로 켜져 있는지 확인한 뒤 ${AGAIN}`);
 		}
 		const old = readJson<KakaoConfig>(this.d.paths.config) ?? ({} as KakaoConfig);
-		const config: KakaoConfig = { enabled: true, dbPath: info.dbPath, userId: info.userId, settle_seconds: old.settle_seconds ?? 20, max_per_run: old.max_per_run ?? 10, exclude_chats: old.exclude_chats ?? [], watch_chats: old.watch_chats ?? [] };
+		const config: KakaoConfig = { enabled: true, dbPath: info.dbPath, userId: info.userId, settle_seconds: old.settle_seconds ?? 20, max_per_run: old.max_per_run ?? 10, exclude_chats: old.exclude_chats ?? [], watch_chats: old.watch_chats ?? [], auto_draft_chats: old.auto_draft_chats ?? [] };
 		atomicWrite(this.d.paths.config, `${JSON.stringify(config, null, 1)}\n`);
 		this.finish("derive");
 	}
