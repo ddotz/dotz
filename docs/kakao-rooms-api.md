@@ -46,6 +46,9 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
 - `GET /api/kakao/chat/<chatId>/reads?from=<logId>` -> `{ counts: { [logId]: number } }` for the room's messages with logId >= `from`
   (oldest first, at most 500), zeros included, no bodies. 403 when the room is not watched, 400 when `from` is not a logId. The client
   calls it with the oldest shown logId to refresh the counters after a `kakao_read` event.
+- `GET /api/kakao/chat/<chatId>/head` -> `{ logId }`, the newest logId of the room (`""` when it has no message), nothing else. While the database
+  files (db and -wal) do not change it is answered from memory (no query). A page showing another computer's room asks it every ~2 s
+  through `/api/peer/proxy` (that room's events are not on this computer's stream) and fetches `?after=` only when it moved.
 - `POST /api/kakao/chat/<chatId>/read` body `{ logId }` -> `{ ok: true }` (moves forward only).
 - `POST /api/kakao/chat/<chatId>/send` body `{ text }` -> 202 `{ id, state: "sending" }`. The owner typed it: no approval step.
   The send runs in the background, one at a time for the whole gateway.
@@ -80,7 +83,8 @@ idempotently. Every send, typed or confirmed draft, goes through `dispatchSend`,
 the send (a failed send with its reason) before kmsg runs.
 
 Server-sent events on `/api/events` (ids only, never bodies or names):
-- `{ kind: "kakao", chatId, logId }` a new message in a watched room (the client fetches `?after=`).
+- `{ kind: "kakao", chatId, logId }` a new message in a watched room (the client fetches `?after=`). fs.watch gets no event for KakaoTalk's files,
+  so while a page is connected the gateway stats the db and -wal files every 500 ms and queries only when they changed.
 - `{ kind: "kakao_read", chatId }` somebody read more in a watched room (its read positions changed): the client refreshes the
   counters with `/reads`. Like `kakao`, it is only looked for while a page is connected.
 - `{ kind: "kakao_send", chatId, id, state, reason? }` a send changed state.

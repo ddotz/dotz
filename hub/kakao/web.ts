@@ -2,12 +2,12 @@
 // are readable, sendable and shown. Everything is injected (database, runner, clock, paths, broadcast) so tests run without the app.
 // Events carry ids only: never a body or a room name. Sends go only through send.ts (Accessibility UI automation).
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
-import { hasWords, type KakaoDb, memberLabel, messageById, messages, ownTextCounts, ownTexts, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
+import { hasWords, type KakaoDb, memberLabel, messageById, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
 import { fetchMedia, mediaOf, mediaTarget, serveLocalFile, showsText } from "./media.ts";
 import type { AxStep } from "./room.ts";
@@ -56,6 +56,20 @@ const DRAFT_FAILED = "초안을 만들지 못했어요. 잠시 뒤에 다시 눌
 const DRAFT_READ = 300;
 const VOICE_ROOMS = 8;
 const READS_MAX = 500;
+// A cached room head is trusted this long even when the database files look unchanged.
+const HEAD_TTL_MS = 10_000;
+
+const fileSig = (files: string[]) =>
+	files
+		.map(f => {
+			try {
+				const s = statSync(f);
+				return `${s.size}:${s.mtimeMs}`;
+			} catch {
+				return "-";
+			}
+		})
+		.join(",");
 
 export function readConfig(paths: KakaoPaths): KakaoConfig | undefined {
 	try {
@@ -103,6 +117,8 @@ export function createKakaoWeb(deps: WebDeps) {
 	const inflight = new Set<string>();
 	let dbCache: { path: string; db: KakaoDb } | undefined;
 	let roomsCache: { at: number; all: Room[]; names: Map<string, string> } | undefined;
+	// Newest logId per room for GET .../head (a peer's viewer asks every ~2 s). While the database files do not change, the answer comes from here and no query runs.
+	let headCache: { sig: string; at: number; heads: Map<string, string> } | undefined;
 
 	const getDb = async (config: KakaoConfig) => {
 		if (!config.dbPath) throw new Error("no database path");
@@ -308,6 +324,19 @@ export function createKakaoWeb(deps: WebDeps) {
 					const list = await messages(db, chatId, READS_MAX, config!.userId ?? "", { after: String(BigInt(from) - 1n) });
 					const marks = await watermarks(db, chatId);
 					return json({ counts: Object.fromEntries(list.map(m => [m.logId, unreadCount(marks, m.logId, m.authorId, config!.userId ?? "")])) });
+				} catch {
+					return json({ error: "카톡 데이터를 읽지 못했어요" }, 502);
+				}
+			}
+
+			// The newest logId of the room, nothing else: what a viewer on another computer polls to learn whether to fetch rows.
+			if (sub === "head" && parts.length === 5 && method === "GET") {
+				try {
+					const sig = fileSig([config!.dbPath ?? "", `${config!.dbPath ?? ""}-wal`]);
+					if (headCache?.sig !== sig || now() - headCache.at >= HEAD_TTL_MS) headCache = { sig, at: now(), heads: new Map() };
+					let logId = headCache.heads.get(chatId);
+					if (logId === undefined) headCache.heads.set(chatId, (logId = await roomHead(await getDb(config!), chatId)));
+					return json({ logId });
 				} catch {
 					return json({ error: "카톡 데이터를 읽지 못했어요" }, 502);
 				}
