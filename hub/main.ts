@@ -26,15 +26,16 @@ import { applyAccountChange as holdOrchestratorKeepalive, orch, orchBusy, setIdl
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { forgetAccountUsage, usageSnapshot } from "./providers.ts";
-import { backfillNotices, dropChannelNotices, setConvNameResolver, setLaneTitleResolver, setOrchestratorAvailable, setWatchLabelResolver, updateAvailable, updateResolved } from "./notices.ts";
+import { backfillNotices, dropChannelNotices, setConvNameResolver, setLaneTitleResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
 import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
 import { onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
-import { clearChannel, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
+import { clearChannel, nameWatches, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
 import { watchLine } from "./watchtext.ts";
+import { createWatchSummarizer } from "./watchsummary.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
 import { addWatch, allWatches, approveWatch, isWatchIssue, startWatches, stopWatches, watchChoice } from "./watch.ts";
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
@@ -298,19 +299,21 @@ void startSelfUpdate(text => {
 	alert,
 	restartIdle: restartGateway,
 }).catch(e => log(`self-update start failed: ${e}`));
-startWatches((w, reason, output) => {
+setWatchSummarizer(createWatchSummarizer());
+nameWatches();
+startWatches((w, reason, output, prev) => {
 	if (w.to === "orchestrator") {
-		const event = watchWakeEvent(w, reason, output);
+		const event = watchWakeEvent(w, reason, output, prev);
 		emit("inbox", event);
 		if (!w.channels?.length) return deliver(inboxText(event));
 		const [first, ...others] = w.channels;
-		for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)` }).slice(0, 1900), undefined, { source: "gateway" }).catch(() => undefined);
+		for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev }).slice(0, 1900), undefined, { source: "gateway" }).catch(() => undefined);
 		return deliver(inboxText(event), { target: `ch:${first}` });
 	}
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);
 	const label = watchLabel(w.name);
-	void out(issue ? "alert" : w.to, watchLine(label, reason, output).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label)}` : ""), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	void out(issue ? "alert" : w.to, watchLine(label, reason, output, { prev }).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label)}` : ""), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 syncFeatureWatches();
 startPlugins({

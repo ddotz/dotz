@@ -136,7 +136,7 @@ function monDecisionNode(n) {
 const monCard = (name, at, text, tone, title) => resultCard({ src: name, at, text, title, tag: monTag(tone) });
 function monNoticeNode(n, names = []) {
   if (ntIsDec(n)) return monDecisionNode(n);
-  const node = monCard(ntPlain(names[0] || n.title) || "알림", n.updated || n.ts, monStrip(String(n.text || ""), names), n.tone);
+  const node = monCard(ntPlain(names[0] || n.title) || "알림", n.updated || n.ts, monStrip(String(n.text || ""), [...names, ntPlain(n.title)]), n.tone);
   if (!node) return null;
   node.dataset.nid = n.id;
   if (ntNeeds(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));

@@ -1,8 +1,8 @@
 import { afterAll, expect, test } from "bun:test";
 import { emit } from "./events.ts";
 import { listNotices, setOrchestratorAvailable, setWatchLabelResolver } from "./notices.ts";
-import { watchLine, watchReasonKo } from "./watchtext.ts";
-import { allWatches, removeWatch } from "./watch.ts";
+import { rawFence, watchLine, watchReasonKo } from "./watchtext.ts";
+import { addWatch, allWatches, relabelWatches, removeWatch } from "./watch.ts";
 import { clearChannel, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
 
 setWatchLabelResolver(watchLabel);
@@ -57,7 +57,7 @@ test("with the orchestrator unavailable the same event is a Korean notice titled
 		setOrchestratorAvailable(() => true);
 	}
 	const [n] = noticesFor(`${NAME} 감시 2`);
-	expect(n).toMatchObject({ kind: "watch", open: "alert", text: `${NAME} 감시 2: 결과가 바뀌었어요` });
+	expect(n).toMatchObject({ kind: "watch", open: "alert", text: `${NAME} 감시 2: 결과가 바뀌었어요\n${rawFence("cartier_mails=1")}` });
 });
 
 test("events routed to alert or chat, or an orchestrator event without a channel, keep their notice", () => {
@@ -65,9 +65,9 @@ test("events routed to alert or chat, or an orchestrator event without a channel
 	emit("inbox", watchWakeEvent({ ...base, name: "plain-alert", to: "alert" }, "output changed", "a=1"));
 	emit("inbox", watchWakeEvent({ ...base, name: "plain-chat", to: "chat" }, "match", "b=2"));
 	emit("inbox", watchWakeEvent({ ...base, name: "no-channel", channels: undefined }, "fail", "c=3"));
-	expect(noticesFor("plain alert")[0]!.text).toBe("plain alert: 결과가 바뀌었어요");
-	expect(noticesFor("plain chat")[0]!.text).toBe("plain chat: 찾던 내용이 나왔어요");
-	expect(noticesFor("no channel")[0]!.text).toBe("no channel: 점검에 실패했어요");
+	expect(noticesFor("plain alert")[0]!.text).toBe(`plain alert: 결과가 바뀌었어요\n${rawFence("a=1")}`);
+	expect(noticesFor("plain chat")[0]!.text).toBe(`plain chat: 찾던 내용이 나왔어요\n${rawFence("b=2")}`);
+	expect(noticesFor("no channel")[0]!.text).toBe(`no channel: 점검에 실패했어요\n${rawFence("c=3")}`);
 });
 
 test("a notice stored with the raw watch name and English reason renders with the label and Korean", () => {
@@ -80,4 +80,20 @@ test("a notice stored with the raw watch name and English reason renders with th
 test("cleanup removes the test watches", () => {
 	for (const w of allWatches().filter(x => x.channels?.includes(CH) || x.channels?.includes(CH2))) removeWatch(w.id);
 	expect(allWatches().some(x => x.channels?.includes(CH))).toBe(false);
+});
+
+test("a watch added without a label is named in Korean once, and a key-shaped label is replaced at boot", () => {
+	const a = addWatch({ name: "sample-stock-check", command: "echo a=1" }, "");
+	const b = addWatch({ name: "ch-9-3", command: "echo a=1" }, "");
+	const c = addWatch({ name: "sample-keep", command: "echo a=1", label: "sample keep" }, "");
+	try {
+		expect(a.label).toBe("sample 재고 확인");
+		expect(b.label).toBe("프로젝트 감시 3");
+		expect(relabelWatches(() => "샘플")).toBe(1);
+		expect(allWatches().find(w => w.id === c.id)!.label).toBe("샘플 sample keep");
+		expect(watchLabel("ch-9-3")).toBe("프로젝트 감시 3");
+		expect(watchLabel("ch ch 2")).toBe("프로젝트 감시 2");
+	} finally {
+		for (const w of [a, b, c]) removeWatch(w.id);
+	}
 });

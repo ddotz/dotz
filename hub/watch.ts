@@ -19,11 +19,12 @@ import { ensureAside, replInTab } from "./aside.ts";
 import { issueBlock } from "./choices.ts";
 import { DATA_DIR, log, now, paths, writeAtomic } from "./config.ts";
 import { blockedByFeatures } from "./featuredirs.ts";
+import { deriveLabel, isKeyLabel } from "./watchtext.ts";
 
 export type Watch = {
 	id: string;
 	name: string;
-	label?: string; // what the owner reads instead of the [a-z0-9-] name (hub/workchannels.ts watchLabel)
+	label?: string; // what the owner reads instead of the [a-z0-9-] name: given, else derived once (deriveLabel) and kept
 	command: string;
 	script?: string;
 	cwd?: string;
@@ -40,7 +41,7 @@ export type Watch = {
 	once?: boolean; // one-shot: removed after its first change/match report (a recurring watch has no flag and stays)
 	paused?: boolean;
 	state: {
-		hash?: string; fails: number; failAlertAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
+		hash?: string; last?: string; fails: number; failAlertAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
 		kind?: string; kindFails?: number; nextAt?: number; paused?: string; approvalAskedAt?: number;
 	};
 };
@@ -57,12 +58,13 @@ export const watchChoice = (name: string): string =>
 const loadItems = (): Watch[] => (existsSync(paths.watches) ? JSON.parse(readFileSync(paths.watches, "utf8")) : []);
 const items: Watch[] = loadItems();
 const SCRIPT_MAX_BYTES = 64 * 1024;
+const LAST_MAX = 2000; // the last output is kept so the next change can be told as what was added or gone
 const stateDir = (w: Watch) => join(DATA_DIR, "watches", w.id);
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const running = new Map<string, Promise<void>>();
 let stopped = false;
 const save = () => writeAtomic(paths.watches, `${JSON.stringify(items, null, 2)}\n`);
-let notify: (w: Watch, reason: string, output: string) => void = () => {};
+let notify: (w: Watch, reason: string, output: string, prev?: string) => void = () => {};
 
 // The check gets its own process group and the deadline SIGKILLs the whole group: killing only the shell left a
 // grandchild holding the output pipe, so the read waited for it (measured: `sleep 3 &` held a 0.5 s kill for 3 s).
@@ -217,15 +219,17 @@ async function runOnce(w: Watch): Promise<void> {
 		w.state.lastOk = now();
 		const hash = createHash("sha256").update(output).digest("hex").slice(0, 16);
 		const changed = w.state.hash !== undefined && hash !== w.state.hash;
+		const prev = w.state.last;
 		w.state.hash = hash;
+		w.state.last = output.slice(0, LAST_MAX);
 		w.state.lastChanged = false;
 		if (w.on === "change" && changed) {
 			w.state.lastChanged = true;
-			notify(w, "output changed", output);
+			notify(w, "output changed", output, prev);
 		}
 		if (w.on === "match" && changed && new RegExp(w.pattern!, "i").test(output)) {
 			w.state.lastChanged = true;
-			notify(w, `matched /${w.pattern}/`, output);
+			notify(w, `matched /${w.pattern}/`, output, prev);
 		}
 		if (w.once && w.state.lastChanged) {
 			log(`watch ${w.name} was one-shot and has reported: removed`);
@@ -290,6 +294,32 @@ export function reloadWatches(): void {
 	for (const w of items) arm(w, true);
 }
 
+// The first comment line of a script ("# 재고 확인"), which says what the check is for; "" when there is none.
+function scriptHeader(path: string): string {
+	try {
+		if (!path.startsWith("/") || /\s/.test(path)) return "";
+		for (const l of readFileSync(path, "utf8").slice(0, 2000).split("\n").slice(0, 12)) if (/^\s*(?:#|\/\/)(?!!)\s*\S/.test(l)) return l.replace(/^\s*(?:#|\/\/)\s*/, "");
+	} catch {
+		// unreadable: no header
+	}
+	return "";
+}
+
+// Gives the watches that have no readable name one, once: the name is stored, so every list, notice and bell reads the same words.
+// `projectOf` is the project (channel) name a watch belongs to. Returns how many were named.
+export function relabelWatches(projectOf: (w: Watch) => string | undefined): number {
+	let n = 0;
+	for (const w of items) {
+		if (w.label && !isKeyLabel(w.label)) continue;
+		const site = w.session ? new URL(w.session.url).hostname.replace(/^www\./, "") : undefined;
+		const index = Number(/^ch-\d+-(\d+)$/.exec(w.name)?.[1]) || undefined;
+		w.label = deriveLabel({ name: w.name, project: projectOf(w), header: scriptHeader(w.script ?? w.command), site, index });
+		n++;
+	}
+	if (n) save();
+	return n;
+}
+
 export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	const name = String(input.name ?? "").trim();
 	if (!/^[a-z0-9-]{1,40}$/.test(name)) throw new Error("name must be [a-z0-9-], up to 40 chars");
@@ -328,7 +358,8 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	}
 	const old = items.findIndex(w => w.name === name);
 	if (old >= 0) removeWatch(items[old].id);
-	const label = String(input.label ?? "").trim().slice(0, 60);
+	const site = session ? new URL(session.url).hostname.replace(/^www\./, "") : undefined;
+	const label = String(input.label ?? "").trim().slice(0, 60) || deriveLabel({ name, header: scriptHeader(script), site });
 	const w: Watch = { id: randomBytes(3).toString("hex"), name, ...(label ? { label } : {}), command, ...(script ? { script } : {}), ...(input.cwd ? { cwd: String(input.cwd) } : script ? { cwd: dirname(script) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), ...(input.once === true ? { once: true } : {}), state: { fails: 0 } };
 	items.push(w);
 	save();
