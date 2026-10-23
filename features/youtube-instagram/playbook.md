@@ -24,7 +24,7 @@
 
 ## 감시가 깨울 때
 출력 한 줄이 항목 하나예요. 말투는 `~/.dotz/custom/sns/tone.md`를 따르고, 비어 있으면 `sns.ts tone-sample`을 한 번 실행해요.
-- `yt-comment <id> video=.. by=..: 글`, `ig-comment <id> media=.. by=..: 글`: 오너 말투로 답글 초안을 쓰고 `sns.ts job new`로 등록해요. 광고나 욕설은 건너뛰고 이유만 알려요.
+- `yt-comment <id> video=.. by=..: 글`, `ig-comment <id> media=.. by=..: 글`: 오너 말투로 답글 초안을 쓰고 `sns.ts job new`로 등록해요. 광고나 욕설은 건너뛰고 이유만 알려요. `reply-drafts` 기능이 켜져 있으면 초안 글은 같은 엔진으로 받아요: 댓글을 stdin으로 넣어 `bun <dotz 체크아웃>/features/reply-drafts/bin/draft.ts new --mail <댓글 id> --kind comment --from <작성자>`를 실행하면 답글 글만 찍혀요. 그 글로 `job new`를 하고 승인은 그대로 `sns.ts`가 맡아요.
 - `new-video <경로> <초>s <WxH> <vertical|landscape> <ok|too-long|not-vertical>`: `ok`면 기본 언어(번역을 켰다면 설정된 언어도)로 제목, 설명, 태그와 인스타 캡션 초안을 쓰고 올리기 job을 만들어요. `too-long`, `not-vertical`은 오너에게 먼저 알려요.
 - `needs-translation <videoId> missing=<언어>: 제목`: 빠진 언어의 제목과 설명을 번역해 메타데이터 job을 만들어요. 원래 설명은 건드리지 않고 언어별 구간만 덧붙여요.
 - `posted <jobId> ...`, `failed <jobId> <이유>`, `aside-needed ...`: 프로젝트 채널에 알려요. `aside-needed`는 `aside exec`로 직접 올려요.
