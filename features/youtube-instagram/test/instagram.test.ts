@@ -28,7 +28,24 @@ test("mediaWithCounts and commentsFor map the Graph payloads", async () => {
 	const comments = await commentsFor(ctx, "m1");
 	expect(comments[0]).toEqual({ id: "k1", text: "hi", username: "fan", timestamp: "2030-06-02T00:00:00+0000", replies: [{ username: "owner_ig", text: "yo" }] });
 	expect(comments[1]).toMatchObject({ text: "", replies: [] });
-	expect(new URL(ctx.calls[1].url).searchParams.get("fields")).toContain("replies{username,text}");
+	expect(new URL(ctx.calls[1].url).searchParams.get("fields")).toContain("replies{username,from{id,username},text}");
+});
+
+test("commentsFor keeps comments without username: from.username, from.id, then a fixed label", async () => {
+	const ctx = fakeCtx(env, {
+		routes: {
+			[`GET ${IG}/m1/comments`]: () => ({
+				data: [
+					{ id: "k1", text: "a", from: { id: "9", username: "from_user" }, timestamp: "2030-06-02T00:00:00+0000" },
+					{ id: "k2", text: "b", from: { id: "10" }, timestamp: "2030-06-02T00:00:00+0000", replies: { data: [{ text: "r" }] } },
+					{ id: "k3", text: "c", timestamp: "2030-06-02T00:00:00+0000" },
+				],
+			}),
+		},
+	});
+	const comments = await commentsFor(ctx, "m1");
+	expect(comments.map(c => c.username)).toEqual(["from_user", "10", "알 수 없는 사용자"]);
+	expect(comments[1].replies).toEqual([{ username: "알 수 없는 사용자", text: "r" }]);
 });
 
 test("reply posts the message in the body, not the URL", async () => {
