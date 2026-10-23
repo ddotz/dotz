@@ -110,6 +110,37 @@ for (const width of [1440, 390]) {
 		expect(opened).toEqual(["monitoring:c:mail:fx-1", "monitoring:c:mail:fx-1", "monitoring:c:mail:fx-2", "monitoring:c:mail:fx-3"]);
 	}, 30_000);
 
+	// a plugin posts only sender and subject: the row takes its summary from the conversation's first message the page holds (요약 section, else the original)
+	test(`mail rows at ${width}px without a summary of their own take it from the conversation`, async () => {
+		const v = await open(width);
+		const sender = "Alex Sender <sender@example.com>";
+		const fx = [
+			{ t: "mail:fx-5", subject: "월간 점검 보고서", msgs: [`${sender} · 월간 점검 보고서`, `${sender} · 월간 점검 보고서\n\n요약\n- 점검이 끝났어요.\n- 스팸 차단은 정상이에요.\n- 금요일까지 확인이 필요해요.\n\n할 일\n- 회신\n\n원문\n안녕하세요.`] },
+			{ t: "mail:fx-6", subject: "회의 일정 변경", msgs: [`${sender} · 회의 일정 변경\n\n원문\n회의 일정 변경\nAlex Sender\n목요일 회의를 금요일로 옮깁니다.\n가능한지 알려 주세요.`] },
+			{ t: "mail:fx-7", subject: "본문이 없는 메일", msgs: [`${sender} · 본문이 없는 메일`] },
+		];
+		const draw2 = `(() => {
+			cancelAnimationFrame(monRaf); window.renderMonitoring = () => {};
+			window.go = () => {};
+			const rows = ${JSON.stringify(fx)}.map(({ t, subject, msgs }) => {
+				MAILS.set(t, { subject, from: ${JSON.stringify(sender)}, source: "fx", at: ${JSON.stringify(now)} });
+				CONV.set(t, { ts: ${JSON.stringify(now)}, text: subject, from: "bot" });
+				ts(t).msgs = msgs.map((text, i) => ({ kind: i === 0 ? "mail" : "out", ts: ${JSON.stringify(now)}, source: "fx", target: t, text }));
+				return monConvNode(t, "메일");
+			});
+			document.querySelector("#mon-tl").replaceChildren(...rows);
+			return true;
+		})()`;
+		const got = JSON.parse((await v.evaluate(`(${draw2}, JSON.stringify([...document.querySelectorAll("#mon-tl > .bm.rc.mr")].map(r => [r.querySelector(".mr-sum")?.textContent ?? null, r.querySelector(".mr-sum")?.getBoundingClientRect().height ?? 0])))`)) as string) as [string | null, number][];
+		expect(got.map(g => g[0])).toEqual(["점검이 끝났어요. 스팸 차단은 정상이에요. 금요일까지 확인이 필요해요.", "목요일 회의를 금요일로 옮깁니다. 가능한지 알려 주세요.", null]);
+		for (const g of got.slice(0, 2)) expect(g[1]).toBeLessThanOrEqual(60);
+		if (SHOTS) {
+			mkdirSync(SHOTS, { recursive: true });
+			await v.evaluate(draw2);
+			await Bun.write(`${SHOTS}/mail-list-derived-${width}.png`, await v.screenshot());
+		}
+	}, 30_000);
+
 	test(`the original view at ${width}px lists the attachments with name and size as download links`, async () => {
 		const v = await open(width);
 		const text = ["Alex Sender <sender@example.com> · 월간 점검 보고서", "", "요약", "점검이 끝났어요.", "", "원문", "안녕하세요. 점검 결과를 보냅니다.", "감사합니다."].join("\n");
