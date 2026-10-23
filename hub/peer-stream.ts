@@ -7,6 +7,7 @@
 // Frames from a peer are never re-emitted as notices, and a peer's own peer_* frames are ignored here, so nothing loops between N computers.
 import { log } from "./config.ts";
 import { broadcast } from "./events.ts";
+import { invalidatePeer } from "./peer-monitor.ts";
 import { type Found, knownComputers, refreshCounts } from "./peers.ts";
 
 type Computer = Pick<Found, "name" | "url" | "self">;
@@ -67,6 +68,7 @@ export function startPeerStreams(opts: Opts = {}): () => void {
 		if (!f) return;
 		const c = await refreshCounts(url);
 		if (stopped || follows.get(url) !== f) return;
+		invalidatePeer(url);   // the merged 모니터링 cache reads this peer again (hub/peer-monitor.ts)
 		broadcast({ ts: new Date().toISOString(), kind: "peer_counts", source: "gateway", url, name: f.name, online: c !== undefined, unread: c?.unread ?? 0, need: c?.need ?? 0 });
 	};
 	const countsSoon = (url: string): void => {
