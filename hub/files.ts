@@ -2,8 +2,10 @@
 // (read-only preview/download). Uploads land under <data dir>/uploads/<day>/; the message carries their absolute paths.
 // Serving is read-only and limited to allowed roots, resolved through realpath so `..` and symlinks cannot leave them.
 import { existsSync, mkdirSync, realpathSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, extname, join, sep } from "node:path";
 import { cfg, DATA_DIR, HOME } from "./config.ts";
+import { FILES, queueSnapshots, snapshotFor } from "./filesnap.ts";
 
 export const UPLOADS = join(DATA_DIR, "uploads");
 const UPLOAD_MAX_BYTES = Math.max(1, Number((cfg as any).web?.upload_max_mb ?? 50)) * 1024 * 1024;
@@ -57,7 +59,7 @@ export async function uploadsFrom(req: Request, dir = UPLOADS, max = UPLOAD_MAX_
 }
 
 // Names that never leave the machine through this route, even inside an allowed root.
-const DENY = /(^|\/)(secrets?|\.ssh|\.gnupg|\.aws|\.git)(\/|$)|(^|\/)\.env(\.|$)|api[-_]?key|token|password|credential|id_(rsa|ed25519|ecdsa)|\.(pem|key|p12|keychain|db|sqlite)$|(^|\/)\.(netrc|npmrc|zsh_history|bash_history)$/i;
+const DENY = /(^|\/)(secrets?|\.ssh|\.gnupg|\.aws|\.git)(\/|$)|(^|\/)\.env(\.|$)|api[-_]?key|token|password|credential|id_(rsa|ed25519|ecdsa)|\.(pem|key|p12|pfx|keychain|keychain-db|db|sqlite)$|(^|\/)(Keychains|\.kube)(\/|$)|(^|\/)\.(netrc|npmrc|zsh_history|bash_history)$/i;
 
 const real = (p: string): string | undefined => {
 	try {
@@ -94,31 +96,67 @@ export function fileLinePaths(text: string): string[] {
 }
 
 // Inside the data dir only uploads, the lanes' report folders, qa/ (QA shots and findings) and projects/ (work-channel result files) may leave through a listed file.
-const listedDataDirs = () => [UPLOADS, join(DATA_DIR, "lanes"), join(DATA_DIR, "qa"), join(DATA_DIR, "projects")].map(d => real(d) ?? d);
+const listedDataDirs = () => [UPLOADS, FILES, join(DATA_DIR, "lanes"), join(DATA_DIR, "qa"), join(DATA_DIR, "projects")].map(d => real(d) ?? d);
 
+export const LOST = "파일이 지워졌어요";
+
+// Where an unlisted file may still be served from (old messages, files an agent only named in text): the owner's home and the temp dirs.
+const looseRoots = () => [...new Set([HOME, "/tmp", tmpdir()].map(d => real(d) ?? d))];
+const under = (r: string, root: string) => r.startsWith(root + sep);
+const expand = (input: string) => (input.startsWith("~/") ? join(HOME, input.slice(2)) : input);
 // The real path of `input` when it is a regular file inside one of `roots`, or when it is `listed`: written, exactly like
 // this, in a [file] line of a message the gateway sent (events.ts sentFiles). A listed file still has to be a regular file,
 // off the secret deny-list and outside the data dir (except uploads, lanes, qa/ and projects/); a listed relative path is looked up
 // under the data dir and the roots. Otherwise a FileError (400/403/404).
 export function resolveAllowed(input: string, roots: string[], listed: ReadonlySet<string> = new Set()): string {
 	if (!input || input.includes("\0")) throw new FileError("path required", 400);
+	const copy = snapshotFor(expand(input));
+	if (copy.path) return copy.path;
+	try {
+		return resolveLive(input, roots, listed);
+	} catch (error) {
+		if (error instanceof FileError && error.status === 404 && copy.tooBig) throw new FileError(`${LOST} (${Math.round(copy.tooBig / 1048576)}MB라서 복사해 두지 않았어요)`, 404);
+		throw error;
+	}
+}
+
+// The original file only (no stored copy). The chip must open for any regular file under the home folder or a temp dir, so those are served
+// unlisted too; the secret deny-list and the data dir (except files/) stay shut.
+function resolveLive(input: string, roots: string[], listed: ReadonlySet<string>): string {
 	const isListed = listed.has(input);
-	let p = input.startsWith("~/") ? join(HOME, input.slice(2)) : input;
+	let p = expand(input);
 	if (!p.startsWith("/")) {
 		if (!isListed || p.split("/").includes("..")) throw new FileError("absolute path required", 400);
 		const rel = p;
 		p = [DATA_DIR, ...roots].map(base => join(base, rel)).find(c => existsSync(c)) ?? join(DATA_DIR, rel);
 	}
-	if (!existsSync(p)) throw new FileError("파일이 없어요", 404);
-	const r = real(p);
-	if (!r) throw new FileError("파일이 없어요", 404);
-	if (!roots.some(root => r === root || r.startsWith(root + sep))) {
+	const r = existsSync(p) ? real(p) : undefined;
+	if (!r) throw new FileError(LOST, 404);
+	if (!roots.some(root => r === root || under(r, root))) {
 		const data = real(DATA_DIR) ?? DATA_DIR;
-		if (!isListed || ((r === data || r.startsWith(data + sep)) && !listedDataDirs().some(d => r.startsWith(d + sep)))) throw new FileError("열 수 없는 위치예요", 403);
+		const inData = r === data || under(r, data);
+		const inStore = listedDataDirs().some(d => under(r, d));
+		const fine = (isListed && (!inData || inStore)) || (looseRoots().some(root => under(r, root)) && (!inData || under(r, real(FILES) ?? FILES)));
+		if (!fine) throw new FileError("열 수 없는 파일이에요", 403);
 	}
 	if (DENY.test(r)) throw new FileError("열 수 없는 파일이에요", 403);
 	if (!statSync(r).isFile()) throw new FileError("파일이 아니에요", 400);
 	return r;
+}
+
+// Copies the files named in the [file] lines of a message just sent into the data dir's files/ (filesnap.ts), in the background.
+export function snapshotSent(text: string): void {
+	const paths = fileLinePaths(text).map(expand).filter(p => p.startsWith("/"));
+	if (!paths.length) return;
+	const kept = [UPLOADS, FILES].map(d => real(d) ?? d);
+	queueSnapshots(paths, p => {
+		try {
+			const r = resolveLive(p, allowedRoots(), new Set([p]));
+			return kept.some(d => under(r, d)) ? undefined : r;
+		} catch {
+			return undefined;
+		}
+	});
 }
 
 // Shown in the browser (images, pdf, text); every other type is offered as a download.
@@ -163,7 +201,8 @@ export function fileRoute(req: Request, url: URL, roots: string[], listed: Reado
 		const res = serveFile(resolveAllowed(url.searchParams.get("path") ?? "", roots, listed), req, url.searchParams.get("dl") === "1" || url.searchParams.get("download") === "1");
 		return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
 	} catch (error) {
-		return Response.json({ error: (error as Error).message }, { status: error instanceof FileError ? error.status : 400 });
+		const message = (error as Error).message;
+		return Response.json({ error: message }, { status: error instanceof FileError ? error.status : 400, headers: { "X-File-Note": encodeURIComponent(message) } });
 	}
 }
 

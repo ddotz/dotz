@@ -63,6 +63,7 @@ ta.addEventListener("paste", ev => {
 // one-click download (Content-Disposition: attachment, so iOS Safari saves it too). `check` files (an agent's [file] line)
 // are asked with HEAD first: the size fills in, and one /api/file refuses (outside the roots, secret, missing) turns into a
 // disabled chip.
+const fileNote = (r, fallback) => { try { return decodeURIComponent(r.headers.get("x-file-note") || "") || fallback; } catch { return fallback; } };
 const fileMeta = (name, size) => [extOf(name), size ? fsize(size) : ""].filter(Boolean).join(" · ");
 const VIEW_RE = /\.(md|markdown|txt|log|json|ya?ml|csv|tsv)$/i;   // opens in the reader below, the rest in a tab (pdf) or as a download
 const offChip = (f, why) => fileChip(f.name, why, { cls: "off" });
@@ -76,7 +77,7 @@ function fileItem(f) {
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };
   if (img) main.querySelector("img").onerror = () => off("열 수 없는 파일이에요");
   fetch(fileUrl(f.path), { method: "HEAD" }).then(r => {
-    if (!r.ok) return off(r.status === 404 ? "파일이 없어요" : "열 수 없는 위치예요");
+    if (!r.ok) return off(fileNote(r, r.status === 404 ? "파일이 지워졌어요" : "열 수 없는 파일이에요"));
     const n = Number(r.headers.get("content-length") || 0), m = !img && main.querySelector(".fi-m");
     if (m && n) m.textContent = fileMeta(f.name, n);
   }, () => off("확인하지 못했어요"));
@@ -117,13 +118,13 @@ async function viewer(path, name) {
   document.body.append(d); d.showModal(); dialogHist(d);
   try {
     const r = await fetch(fileUrl(path));
-    if (!r.ok) throw r.status;
+    if (!r.ok) throw fileNote(r, r.status === 404 ? "파일이 지워졌어요" : "열 수 없는 파일이에요");
     let t = await r.text();
     const cut = t.length > 200000;
     if (cut) t = t.slice(0, 200000);
     clear(body).append(/\.(md|markdown)$/i.test(name) ? mdNode(t, "md") : el("pre", { text: t }));
     if (cut) body.append(el("p", { class: "tv-st", text: "앞부분만 보여요. 전체는 다운로드해 주세요" }));
-  } catch (e) { clear(body).append(el("p", { class: "tv-st", text: e === 404 ? "파일이 없어요" : "열 수 없어요" })); }
+  } catch (e) { clear(body).append(el("p", { class: "tv-st", text: typeof e === "string" ? e : "열 수 없어요" })); }
 }
 function lightbox(path, name) {
   const d = el("dialog", { class: "lbox", "aria-label": name },
@@ -139,7 +140,7 @@ function lightbox(path, name) {
 // A path an agent writes in a reply (`code.path`) opens as a preview when the gateway allows it; images show inline.
 async function openPath(p) {
   const r = await fetch(fileUrl(p), { method: "HEAD" }).catch(() => null);
-  if (!r || !r.ok) { toast(r && r.status === 404 ? "파일이 없어요" : "열 수 없는 위치예요", true); return; }
+  if (!r || !r.ok) { toast(r ? fileNote(r, r.status === 404 ? "파일이 지워졌어요" : "열 수 없는 파일이에요") : "확인하지 못했어요", true); return; }
   if (IMG_RE.test(p)) lightbox(p, p.split("/").pop()); else window.open(fileUrl(p), "_blank", "noopener");
 }
 function pathFiles(md) {

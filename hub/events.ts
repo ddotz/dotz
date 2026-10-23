@@ -1,6 +1,6 @@
 import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { paths } from "./config.ts";
-import { fileLinePaths } from "./files.ts";
+import { fileLinePaths, snapshotSent } from "./files.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
 
 export type HubEvent = { ts: string; kind: string; source: string; text: string; [key: string]: unknown };
@@ -25,6 +25,7 @@ export const onEmit = (fn: (event: HubEvent) => void) => void emitListeners.add(
 
 export function emit(box: "inbox" | "outbox", event: HubEvent): void {
 	appendFileSync(box === "inbox" ? paths.inbox : paths.outbox, `${JSON.stringify(event)}\n`);
+	if (typeof event.text === "string" && event.text.includes("[file]")) snapshotSent(event.text);
 	recent.push(event);
 	if (recent.length > 300) recent.shift();
 	broadcast(event);
@@ -195,10 +196,10 @@ export function recentOwnerMessages(): { target: string; replyTo?: string; at: n
 // than the cached size is rescanned). The file route serves these to the web even outside the lanes' folders (files.ts).
 let sentCache: { size: number; paths: Set<string> } | undefined;
 export function sentFiles(): ReadonlySet<string> {
-	const size = existsSync(paths.outbox) ? statSync(paths.outbox).size : 0;
+	const size = [paths.outbox, paths.inbox].reduce((n, f) => n + (existsSync(f) ? statSync(f).size : 0), 0);
 	if (sentCache?.size === size) return sentCache.paths;
 	const found = new Set<string>();
-	for (const e of tailEvents(paths.outbox)) if (typeof e.text === "string" && e.text.includes("[file]")) for (const p of fileLinePaths(e.text)) found.add(p);
+	for (const e of [...tailEvents(paths.outbox), ...tailEvents(paths.inbox)]) if (typeof e.text === "string" && e.text.includes("[file]")) for (const p of fileLinePaths(e.text)) found.add(p);
 	sentCache = { size, paths: found };
 	return found;
 }
