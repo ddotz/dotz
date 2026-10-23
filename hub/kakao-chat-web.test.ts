@@ -8,7 +8,7 @@ import { appAsset, indexPage } from "./webapp.ts";
 const SHOTS = process.env.KAKAO_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
-type Msg = { logId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean; unread: number };
+type Msg = { logId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean; unread: number; media?: Record<string, unknown> };
 type Room = { chatId: string; name: string; kind: string; watched: boolean; autoDraft: boolean; unread: number; lastAt: number };
 type Draft = { code: string; text: string; basisLogId: string; created: number };
 type Send = { id: string; text: string; state: string; reason?: string; at: number };
@@ -18,7 +18,8 @@ const at = (d: number, h: number, m: number, s = 0) => Date.UTC(2026, 9, d, h, m
 const who = { 가나: { authorId: "u1", sender: "가나" }, 다라: { authorId: "u2", sender: "다라" }, me: { authorId: "me", sender: "나" } };
 // KakaoTalk's read counters (members who have not read the message yet) of a few messages; everything else is read by all (0).
 const UNREAD: Record<string, number> = { "3001": 2, "3002": 2, "3003": 1, "3007": 1 };
-const mk = (logId: string, w: keyof typeof who, text: string, sentAt: number, type = 1): Msg => ({ logId, ...who[w], text, type, sentAt, fromMe: w === "me", unread: UNREAD[logId] ?? 0 });
+const mk = (logId: string, w: keyof typeof who, text: string, sentAt: number, type = 1, media?: Record<string, unknown>): Msg => ({ logId, ...who[w], text, type, sentAt, fromMe: w === "me", unread: UNREAD[logId] ?? 0, ...(media ? { media } : {}) });
+const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
 const OLD = Array.from({ length: 30 }, (_, i) => mk(String(2001 + i), i % 3 === 2 ? "me" : "가나", `예전 대화 ${i}`, at(20, 1, i * 2)));
 const MID = [
 	mk("3001", "가나", "안녕하세요 가나다 모임입니다", at(21, 3, 0)),
@@ -92,6 +93,12 @@ const server = Bun.serve({
 		if (p === "/api/monitors") return json({ items: [] });
 		if (p === "/api/integrations") return json({ items: [{ key: "kakao", label: "카카오톡", icon: "chat", kind: "app", conv: [], notices: [], needs: { drafts: drafts.length, unread: 30, sentToday: 0 } }] });
 		if (p === "/api/kakao/rooms") return json(roomsAnswer ?? { on: true, rooms });
+		const media = /^\/api\/kakao\/media\/(\w+)\/(\w+)(\/file)?$/.exec(p);
+		if (media) {
+			record({ method: "GET", path: `${p}${url.search}`, body: null });
+			if (media[2] === "5008") return json({ error: "기간이 지나 볼 수 없어요" }, 410);
+			return new Response(PNG, { headers: { "Content-Type": "image/png" } });
+		}
 		const body = req.method === "GET" ? null : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
 		const m = /^\/api\/kakao\/rooms\/(\w+)$/.exec(p);
 		if (m && req.method === "PUT") {
@@ -491,5 +498,146 @@ describe("empty and error states", () => {
 		roomsAnswer = { on: false, rooms: [] };
 		await boot(v);
 		expect(await q(v, `return [...document.querySelectorAll(".kk-rooms .kk-note")].map(n => n.textContent)`)).toEqual(["카카오톡 연동이 꺼져 있어요"]);
+	});
+});
+
+const MEDIA = (): Msg[] => [
+	mk("5001", "가나", "", at(23, 3, 0), 2, { kind: "photo", w: 320, h: 240, count: 1, expired: false }),
+	mk("5002", "가나", "", at(23, 3, 0, 20), 27, { kind: "photo", w: 200, h: 300, count: 8, expired: false }),
+	mk("5003", "다라", "", at(23, 3, 1), 3, { kind: "video", w: 640, h: 360, d: 75, expired: false }),
+	mk("5004", "가나", "", at(23, 3, 2), 5, { kind: "voice", d: 8, expired: false }),
+	mk("5005", "me", "", at(23, 3, 3), 18, { kind: "file", name: "보고서.pdf", size: 2048, local: true, expired: false }),
+	mk("5006", "가나", "", at(23, 3, 4), 18, { kind: "file", name: "<b>큰파일</b>.zip", size: 5 * 1048576, local: false, expired: true }),
+	mk("5007", "다라", "", at(23, 3, 5), 2, { kind: "photo", w: 320, h: 240, count: 1, expired: true }),
+	mk("5008", "가나", "", at(23, 3, 6), 2, { kind: "photo", w: 320, h: 240, count: 1, expired: false }),
+	mk("5009", "가나", "", at(23, 3, 7), 20, { kind: "emoticon", alt: "(이모티콘) 하트" }),
+	mk("5010", "다라", "나도 좋아", at(23, 3, 8), 26, { kind: "reply", quote: "점심 뭐 먹을까", quoteSender: "가나" }),
+	mk("5011", "가나", "", at(23, 3, 9), 16, { kind: "location", label: "서울 강남구", lat: 37.5, lng: 127.03 }),
+	mk("5012", "가나", "다라님이 들어왔어요", at(23, 3, 10), 0),
+	mk("5013", "가나", "알림 메시지", at(23, 3, 11), 71),
+	mk("5014", "다라", "", at(23, 3, 12), 99),
+];
+const useMedia = () => { reset(); msgs = MEDIA(); drafts = []; };
+
+describe("카카오톡 media at desktop width", () => {
+	const v = open(1280, 800);
+
+	test("a photo is a lazy rounded thumbnail from the media route, no colored bubble, at most 240px wide", async () => {
+		useMedia();
+		await boot(v);
+		await openRoom(v);
+		await run(v, `document.querySelector('#kk-tl').scrollTop = 0`);
+		const s = await q<Record<string, any>>(v, `
+			const b = document.querySelector('[data-log="5001"] .kk-photo'), img = b.querySelector("img"), r = b.getBoundingClientRect();
+			return { src: img.getAttribute("src"), loading: img.getAttribute("loading"), alt: img.alt, w: r.width, h: r.height, bubble: !!document.querySelector('[data-log="5001"] .kk-bub'), bg: getComputedStyle(document.querySelector('[data-log="5001"] .kk-media')).backgroundColor, radius: parseFloat(getComputedStyle(b).borderTopLeftRadius), text: document.querySelector('[data-log="5001"]').textContent.includes("(사진)") }`);
+		expect(s).toMatchObject({ src: "/api/kakao/media/100/5001?i=0&v=thumb", loading: "lazy", alt: "사진", bubble: false, text: false });
+		expect(s.w).toBeLessThanOrEqual(240);
+		expect(s.w).toBeGreaterThan(150);
+		expect(Math.abs(s.w / s.h - 320 / 240)).toBeLessThan(0.05);
+		expect(s.radius).toBeGreaterThanOrEqual(8);
+		expect(s.bg).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+		await expectReq(isReq("GET", "/api/kakao/media/100/5001?i=0&v=thumb"));
+	});
+
+	test("an album is a 3-column grid of at most 6 tiles with +N on the last; a tile opens the viewer at its index and the arrows page through", async () => {
+		const g = await q<Record<string, any>>(v, `
+			const a = document.querySelector('[data-log="5002"] .kk-album'), tiles = [...a.querySelectorAll(".kk-photo")];
+			return { cols: a.className, n: tiles.length, more: tiles[5].querySelector(".kk-more-n").textContent, srcs: tiles.map(t => t.querySelector("img").getAttribute("src")), w: a.getBoundingClientRect().width, tw: tiles[0].getBoundingClientRect().width, th: tiles[0].getBoundingClientRect().height, cw: getComputedStyle(a).gridTemplateColumns.split(" ").length }`);
+		expect(g.n).toBe(6);
+		expect(g.cols).toContain("c3");
+		expect(g.cw).toBe(3);
+		expect(g.more).toBe("+3");
+		expect(g.srcs[1]).toBe("/api/kakao/media/100/5002?i=1&v=thumb");
+		expect(g.w).toBeLessThanOrEqual(240);
+		expect(g.tw).toBeLessThan(90);
+		expect(Math.abs(g.tw - g.th)).toBeLessThan(2);
+		await run(v, `document.querySelectorAll('[data-log="5002"] .kk-photo')[1].click()`);
+		await waitFor(v, `document.querySelector('dialog.kk-vwd[open] img')`);
+		const w = () => q<Record<string, any>>(v, `const d = document.querySelector("dialog.kk-vwd"); return { title: d.querySelector(".lb-n").textContent, src: d.querySelector("img").getAttribute("src"), prev: d.querySelector('[data-k="prev"]').hidden, next: d.querySelector('[data-k="next"]').hidden, video: !!d.querySelector("video") }`);
+		expect(await w()).toEqual({ title: "사진 2 / 8", src: "/api/kakao/media/100/5002?i=1&v=full", prev: false, next: false, video: false });
+		await run(v, `document.querySelector('dialog.kk-vwd [data-k="next"]').click()`);
+		expect((await w()).src).toBe("/api/kakao/media/100/5002?i=2&v=full");
+		await run(v, `document.querySelector('dialog.kk-vwd [data-k="close"]').click()`);
+		await waitFor(v, `!document.querySelector('dialog.kk-vwd')`);
+	});
+
+	test("a video shows its thumbnail with a play icon and the length; tapping plays it with controls in the viewer", async () => {
+		const s = await q<Record<string, any>>(v, `const b = document.querySelector('[data-log="5003"] .kk-video'); return { play: !!b.querySelector(".kk-play"), dur: b.querySelector(".kk-dur").textContent, src: b.querySelector("img").getAttribute("src"), label: b.getAttribute("aria-label") }`);
+		expect(s).toEqual({ play: true, dur: "1:15", src: "/api/kakao/media/100/5003?i=0&v=thumb", label: "동영상 재생" });
+		await run(v, `document.querySelector('[data-log="5003"] .kk-video').click()`);
+		await waitFor(v, `document.querySelector('dialog.kk-vwd[open] video[controls]')`);
+		expect(await q(v, `return document.querySelector('dialog.kk-vwd video').getAttribute('src')`)).toBe("/api/kakao/media/100/5003?i=0&v=full");
+		await run(v, `document.querySelector('dialog.kk-vwd [data-k="close"]').click()`);
+		await waitFor(v, `!document.querySelector('dialog.kk-vwd')`);
+	});
+
+	test("voice is a compact audio control that loads nothing until played; files are cards: 열기 when downloaded here, else PC에 없음", async () => {
+		const s = await q<Record<string, any>>(v, `
+			const a = document.querySelector('[data-log="5004"] audio'), f1 = document.querySelector('[data-log="5005"] .kk-bub.file'), f2 = document.querySelector('[data-log="5006"] .kk-bub.file'), open = f1.querySelector("a.kk-open");
+			return { audio: [a.controls, a.getAttribute("preload"), a.getAttribute("src")], f1: [f1.querySelector(".kk-fn").textContent, f1.querySelector(".kk-sub").textContent, open.textContent, open.getAttribute("href"), open.getAttribute("target"), !!f1.querySelector("svg")],
+				f2: [f2.querySelector(".kk-fn").textContent, f2.querySelector("a"), f2.querySelector(".kk-nopc").textContent, f2.querySelector(".kk-sub").textContent], tags: f2.querySelectorAll(".kk-fn *").length }`);
+		expect(s.audio).toEqual([true, "none", "/api/kakao/media/100/5004?i=0&v=full"]);
+		expect(s.f1).toEqual(["보고서.pdf", "2KB", "열기", "/api/kakao/media/100/5005/file", "_blank", true]);
+		expect(s.f2[0]).toBe("<b>큰파일</b>.zip");
+		expect(s.f2[1]).toBeNull();
+		expect(s.f2[2]).toBe("PC에 없음");
+		expect(s.f2[3]).toContain("5.0MB");
+		expect(s.tags).toBe(0);
+		expect(reqs.some(r => r.path.startsWith("/api/kakao/media/100/5004"))).toBe(false);
+	});
+
+	test("an expired photo is a muted 기간이 지나 볼 수 없어요 card without a request; a thumbnail the server answers 410 for turns into one", async () => {
+		expect(await q(v, `const c = document.querySelector('[data-log="5007"] .kk-bub.gone'); return [c.textContent, !!document.querySelector('[data-log="5007"] img')]`)).toEqual(["기간이 지나 볼 수 없어요", false]);
+		expect(reqs.some(r => r.path.startsWith("/api/kakao/media/100/5007"))).toBe(false);
+		await run(v, `document.querySelector('[data-log="5008"]').scrollIntoView()`);
+		await waitFor(v, `document.querySelector('[data-log="5008"] .kk-photo.gone .kk-gonet')`);
+		expect(await q(v, `return document.querySelector('[data-log="5008"] .kk-gonet').textContent`)).toBe("기간이 지나 볼 수 없어요");
+	});
+
+	test("emoticon shows its alt, a reply quotes the source above its text, a location links to a map search, a feed line is a centered system line, other types fall back to text or (기타 메시지)", async () => {
+		const s = await q<Record<string, any>>(v, `
+			const t = id => document.querySelector('[data-log="' + id + '"]'), loc = t("5011").querySelector("a.kk-bub.loc"), sys = t("5012").querySelector(".kk-sys") || t("5012"), r = t("5012").getBoundingClientRect(), tl = document.querySelector("#kk-tl").getBoundingClientRect();
+			return { emo: t("5009").querySelector(".kk-bub").textContent, qn: t("5010").querySelector(".kk-qn").textContent, qt: t("5010").querySelector(".kk-qt").textContent, rt: t("5010").querySelector(".kk-rt").textContent,
+				loc: [loc.textContent, loc.getAttribute("href"), loc.getAttribute("target"), loc.getAttribute("rel")], sys: [sys.textContent, Math.abs((r.left + r.right) / 2 - (tl.left + tl.right) / 2) < 20, !!t("5012").querySelector(".kk-bub")],
+				n71: t("5013").querySelector(".kk-bub").textContent, n99: t("5014").querySelector(".kk-bub").textContent }`);
+		expect(s.emo).toBe("(이모티콘) 하트");
+		expect([s.qn, s.qt, s.rt]).toEqual(["가나", "점심 뭐 먹을까", "나도 좋아"]);
+		expect(s.loc[0]).toContain("위치: 서울 강남구");
+		expect(s.loc[1]).toBe("https://map.kakao.com/link/map/" + encodeURIComponent("서울 강남구") + ",37.5,127.03");
+		expect(s.loc.slice(2)).toEqual(["_blank", "noopener"]);
+		expect(s.sys).toEqual(["다라님이 들어왔어요", true, false]);
+		expect([s.n71, s.n99]).toEqual(["알림 메시지", "(기타 메시지)"]);
+		await shot(v, "10-desktop-media.png");
+		await run(v, `document.querySelector("#kk-tl").scrollTop = 0`);
+		await shot(v, "10-desktop-media-top.png");
+	});
+});
+
+describe("카카오톡 media at 390px", () => {
+	const v = open(390, 844);
+
+	test("a photo is at most 200px wide and the timeline does not scroll sideways", async () => {
+		useMedia();
+		msgs = MEDIA().slice(0, 1);
+		await boot(v);
+		await openRoom(v);
+		const s = await q<Record<string, number>>(v, `const r = document.querySelector('[data-log="5001"] .kk-photo').getBoundingClientRect(), t = document.querySelector("#kk-tl"); return { w: r.width, right: r.right, vw: innerWidth, h: t.scrollWidth - t.clientWidth }`);
+		expect(s.w).toBeLessThanOrEqual(200);
+		expect(s.w).toBeGreaterThan(120);
+		expect(s.right).toBeLessThanOrEqual(s.vw);
+		expect(s.h).toBeLessThanOrEqual(0);
+		await shot(v, "11-mobile-photo.png");
+	});
+
+	test("the mix (album, file, reply, location) fits the phone width", async () => {
+		useMedia();
+		await boot(v);
+		await openRoom(v);
+		const h = await q<number>(v, `const t = document.querySelector('#kk-tl'); return t.scrollWidth - t.clientWidth`);
+		expect(h).toBeLessThanOrEqual(0);
+		await run(v, `document.querySelector('[data-log="5002"]').scrollIntoView()`);
+		await shot(v, "12-mobile-media-mix.png");
+		await run(v, `document.querySelector('[data-log="5005"]').scrollIntoView()`);
+		await shot(v, "12-mobile-media-mix2.png");
 	});
 });
