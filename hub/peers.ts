@@ -11,8 +11,8 @@ import { friendlyName, label, peerInfoName, resolveName } from "./machine-name.t
 export { friendlyName };
 
 export type Peer = { name: string; url: string; self: boolean; online: boolean; unread?: number; need?: number };
-export type TsNode = { DNSName?: string; HostName?: string; UserID?: number; Online?: boolean };
-export type TsStatus = { Self?: TsNode; Peer?: Record<string, TsNode> };
+export type TsNode = { DNSName?: string; HostName?: string; UserID?: number; Online?: boolean; Tags?: string[] };
+export type TsStatus = { Self?: TsNode; Peer?: Record<string, TsNode>; User?: Record<string, { LoginName?: string }> };
 
 const PROBE_MS = 3000;
 const PROBE_PARALLEL = 4;
@@ -29,11 +29,11 @@ export function uniqueNames<T extends { name: string; host: string }>(items: T[]
 	return items.map(i => ((seen.get(i.name) ?? 0) > 1 ? { ...i, name: label(i.host) || i.host } : i));
 }
 
-// Online nodes of the same user as `self`, other than self, with a DNS name. Other users' machines, the phone off the network and self never pass.
+// Online nodes of the same user as `self`, other than self, with a DNS name. Other users' machines, tagged nodes, the phone off the network and self never pass.
 export function sameUserNodes(st: TsStatus): TsNode[] {
 	const me = st.Self;
 	if (!me || me.UserID == null) return [];
-	return Object.values(st.Peer ?? {}).filter(p => p.Online === true && p.UserID === me.UserID && !!p.DNSName && p.DNSName !== me.DNSName);
+	return Object.values(st.Peer ?? {}).filter(p => p.Online === true && p.UserID === me.UserID && !p.Tags?.length && !!p.DNSName && p.DNSName !== me.DNSName);
 }
 
 export function baseUrl(dns: string, port: number): string {
@@ -127,13 +127,21 @@ async function counts(url: string, get: Fetcher = getJson): Promise<{ unread: nu
 	}
 }
 
-async function tailscaleStatus(): Promise<TsStatus | undefined> {
+export async function tailscaleStatus(): Promise<TsStatus | undefined> {
 	for (const bin of ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]) {
 		const st = await Bun.$`${bin} status --json`.quiet().json().catch(() => undefined) as TsStatus | undefined;
 		if (st?.Self?.DNSName) return st;
 	}
 	return undefined;
 }
+
+// The tailscale login (e-mail) this node runs as; undefined for a tagged node or when tailscale cannot be read (then no peer is paired with it).
+export function loginOf(st: TsStatus | undefined): string | undefined {
+	const me = st?.Self;
+	if (!me || me.UserID == null || me.Tags?.length) return undefined;
+	return st?.User?.[String(me.UserID)]?.LoginName?.toLowerCase() || undefined;
+}
+export const ownLogin = cached(60_000, async () => loginOf(await tailscaleStatus()));
 
 export type Found = { name: string; host: string; url: string; self: boolean };
 

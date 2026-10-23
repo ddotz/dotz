@@ -1,13 +1,15 @@
 // Gateway-to-gateway trust for the merged 모니터링 view (docs/peer-monitoring.md). Two gates, both required:
 //   1. tailnet source: the request came in through `tailscale serve`, which adds Tailscale-User-Login (the hub listens on 127.0.0.1 only,
 //      so a request without it is a local process, never a peer);
-//   2. shared peer token: <data dir>/secrets/peer-token, the same value on every gateway of the owner, sent as `x-dotz-peer`.
+//   2. peer token, sent as `x-dotz-peer`: the shared <data dir>/secrets/peer-token (the same value on every gateway, copied by hand), or a token this
+//      gateway issued to one paired peer (hub/peer-pair.ts: made automatically between nodes of the same tailscale login).
 // The token is read at call time and never logged. A request that carries `x-dotz-peer` at all is a peer request and may reach only
 // the read-only paths and the two peer POSTs below, whatever else it carries, so a peer can never do more than this list.
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import { DATA_DIR } from "./config.ts";
+import { acceptedTokens, outToken } from "./peer-pair.ts";
 
 export const PEER_HEADER = "x-dotz-peer";
 export const peerTokenPath = (dataDir: string = DATA_DIR) => join(dataDir, "secrets", "peer-token");
@@ -36,6 +38,14 @@ export function peerToken(path: string = peerTokenPath()): string | undefined {
 	return token;
 }
 
+// Every token this gateway accepts from a peer: the shared one plus the ones it issued.
+export function peerTokens(): string[] {
+	const shared = peerToken();
+	return [...(shared ? [shared] : []), ...acceptedTokens()];
+}
+// The token to send to the peer at `url`: the one it issued to this gateway, else the shared one.
+export const peerTokenFor = (url: string): string | undefined => outToken(url) ?? peerToken();
+
 const same = (a: string, b: string) => {
 	const x = Buffer.from(a);
 	const y = Buffer.from(b);
@@ -48,10 +58,11 @@ export const PEER_POST = [/^\/api\/peer\/act$/, /^\/api\/peer\/lease$/];
 
 export type PeerCheck = "none" | "ok" | "denied";
 // "none": not a peer request (the normal owner checks apply). "ok": a peer may have this path. "denied": refuse with 403.
-export function checkPeer(req: Request, token: string | undefined = peerToken()): PeerCheck {
+export function checkPeer(req: Request, tokens?: string | readonly string[]): PeerCheck {
 	const sent = req.headers.get(PEER_HEADER);
 	if (sent === null) return "none";
-	if (!token || !sent || !same(sent, token)) return "denied";
+	const accepted = tokens === undefined ? peerTokens() : typeof tokens === "string" ? [tokens] : tokens;
+	if (!sent || !accepted.filter(t => same(sent, t)).length) return "denied";
 	if (!req.headers.get("tailscale-user-login")) return "denied";
 	const path = new URL(req.url).pathname;
 	const list = req.method === "GET" || req.method === "HEAD" ? PEER_GET : req.method === "POST" ? PEER_POST : [];

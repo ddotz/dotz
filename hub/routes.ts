@@ -34,7 +34,8 @@ import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
 import { appAsset, committedText, indexPage, webBuild } from "./webapp.ts";
-import { listPeers } from "./peers.ts";
+import { listPeers, ownLogin } from "./peers.ts";
+import { handlePair, PAIR_PATH } from "./peer-pair.ts";
 import { checkPeer } from "./peer-auth.ts";
 import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
 import { handleLease, type LeaseReq } from "./send-lease.ts";
@@ -92,6 +93,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (appFile) return new Response(req.method === "HEAD" ? null : committedText(appFile[0]) ?? Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
 		// The other gateways read this computer's chosen name here (hub/peers.ts); it is a display name, no secret, so it is public like the manifest.
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer-info") return json({ name: resolveName(cfg.web?.machine_name, hostname()) });
+		// Pairing gates itself: only a request from this node's own tailscale login gets a token (hub/peer-pair.ts), so it needs no owner check first.
+		if (req.method === "POST" && url.pathname === PAIR_PATH) return handlePair(req, { ownLogin });
 		// A request with the peer header gets only the peer paths (hub/peer-auth.ts); a good one skips the owner check, a bad one never reaches it.
 		const peer = checkPeer(req);
 		if (peer === "denied") return new Response("forbidden", { status: 403 });

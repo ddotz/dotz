@@ -7,7 +7,8 @@
 // never waits on a refresh, except the very first read of a peer (bounded by the 2.5 s fetch timeout, all peers in parallel).
 // Everything outside (fetch, computers, clock, token, the local handler) is injected, so tests run two gateways in one process.
 import { createHash } from "node:crypto";
-import { PEER_GET, peerHeaders, peerToken } from "./peer-auth.ts";
+import { PEER_GET, peerHeaders, peerTokenFor } from "./peer-auth.ts";
+import { createPairer, type PairResult } from "./peer-pair.ts";
 import { knownComputers } from "./peers.ts";
 import { json } from "./routes-util.ts";
 
@@ -22,7 +23,8 @@ export type MonitorDeps = {
 	computers?: () => Promise<Computer[]>;
 	fetch?: Fetcher;
 	now?: () => number;
-	token?: () => string | undefined;
+	token?: (peerUrl: string) => string | undefined;          // what to send to that peer: its own pair token, else the shared one
+	pair?: (peerUrl: string, force?: boolean) => Promise<PairResult>;  // asks the peer for a pair token (hub/peer-pair.ts)
 	timeoutMs?: number;
 	postTimeoutMs?: number;
 	refreshMs?: number;
@@ -69,8 +71,9 @@ export type PeerMonitor = {
 export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	const f: Fetcher = deps.fetch ?? ((u, init) => fetch(u, init));
 	const now = deps.now ?? Date.now;
-	const token = deps.token ?? (() => peerToken());
+	const token = deps.token ?? peerTokenFor;
 	const computers = deps.computers ?? knownComputers;
+	const pair = deps.pair ?? createPairer({ fetch: f, selfUrl: async () => (await computers()).find(c => c.self)?.url });
 	const getMs = deps.timeoutMs ?? GET_MS;
 	const postMs = deps.postTimeoutMs ?? POST_MS;
 	const refreshMs = deps.refreshMs ?? REFRESH_MS;
@@ -106,15 +109,25 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 
 	// One read of a peer. Never throws: any failure leaves the last items in place and marks the peer offline.
 	async function load(e: Entry): Promise<void> {
-		const h = peerHeaders(token());
+		const url = e.computer.url;
 		try {
+			let h = peerHeaders(token(url));
+			if (!h) {
+				await pair(url);
+				h = peerHeaders(token(url));
+			}
 			if (!h) {
 				e.items = await legacy(e, {});
 				e.online = true;
 				e.at = now();
 				return;
 			}
-			const r = await f(`${e.computer.url}/api/peer/monitoring`, { headers: { ...h, ...(e.items ? { "if-none-match": `"${e.items.rev}"` } : {}) }, signal: AbortSignal.timeout(getMs), redirect: "manual" });
+			const read = (hh: Record<string, string>) => f(`${url}/api/peer/monitoring`, { headers: { ...hh, ...(e.items ? { "if-none-match": `"${e.items.rev}"` } : {}) }, signal: AbortSignal.timeout(getMs), redirect: "manual" });
+			let r = await read(h);
+			if (r.status === 403 && (await pair(url, true)).ok) {
+				h = peerHeaders(token(url)) ?? h;
+				r = await read(h);
+			}
 			if (r.status === 304 && e.items) e.online = true;
 			else if (r.ok) {
 				const s = (await r.json()) as Snapshot;
@@ -173,7 +186,6 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	const etagMatch = (header: string | null, rev: string) => !!header && header.split(",").some(t => t.trim().replace(/^W\//, "").replace(/"/g, "") === rev);
 
 	async function proxy(req: Request, url: URL): Promise<Response> {
-		const h = peerHeaders(token());
 		const pc = originOf(url.searchParams.get("pc") ?? "");
 		const target = (await computers()).find(c => !c.self && originOf(c.url) === pc);
 		if (!target || !pc) return json({ error: "unknown computer" }, 400);
@@ -182,8 +194,14 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 		const get = req.method === "GET";
 		const allowed = !!parsed && parsed.origin === LOCAL && (get ? PEER_GET.some(r => r.test(parsed.pathname)) : parsed.pathname === "/api/peer/act");
 		if (!allowed || !parsed) return json({ error: "path not allowed" }, 400);
-		if (!h && !get) return json({ error: "peering is off" }, 503);
-		let init: RequestInit = { method: req.method, headers: h ?? {}, signal: AbortSignal.timeout(get ? getMs : postMs), redirect: "manual" };
+		const off = (p: PairResult) => json({ error: "peering is off", ...(!p.ok && p.reason ? { reason: p.reason } : {}) }, 503);
+		let h = peerHeaders(token(target.url));
+		if (!h && !get) {
+			const p = await pair(target.url);
+			h = peerHeaders(token(target.url));
+			if (!h) return off(p);
+		}
+		let body: string | undefined;
 		if (!get) {
 			// The owner records who asked: the sender's own name replaces whatever the page sent.
 			let b: Record<string, unknown>;
@@ -192,10 +210,18 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			} catch {
 				return json({ error: "json body required" }, 400);
 			}
-			init = { ...init, headers: { ...h, "content-type": "application/json" }, body: JSON.stringify({ ...b, from: deps.name() }) };
+			body = JSON.stringify({ ...b, from: deps.name() });
 		}
+		const send = (hh: Record<string, string> | undefined) =>
+			f(`${target.url}${parsed.pathname}${parsed.search}`, { method: req.method, headers: { ...hh, ...(body === undefined ? {} : { "content-type": "application/json" }) }, ...(body === undefined ? {} : { body }), signal: AbortSignal.timeout(get ? getMs : postMs), redirect: "manual" });
 		try {
-			const r = await f(`${target.url}${parsed.pathname}${parsed.search}`, init);
+			let r = await send(h);
+			if (h && r.status === 403) {
+				// A stale or unknown token: ask the peer for a fresh pair token once; if it refuses, a write says why.
+				const p = await pair(target.url, true);
+				if (p.ok) r = await send(peerHeaders(token(target.url)) ?? h);
+				else if (!get) return off(p);
+			}
 			const type = r.headers.get("content-type");
 			return new Response(r.status === 204 || r.status === 304 ? null : await r.arrayBuffer(), { status: r.status, ...(type ? { headers: { "content-type": type } } : {}) });
 		} catch {
