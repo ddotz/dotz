@@ -26,6 +26,7 @@ export function humanLabel(label: string, fallback = "모니터링"): string {
 	return /^[a-z0-9][a-z0-9_-]*$/.test(s) ? s.replace(/[-_]+/g, " ") : s;
 }
 
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g;
 const ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})/;
 const HANGUL = /[가-힣]/;
 const PAIR = /(?:^|\s)[A-Za-z_][\w.-]*=\S+/g;
@@ -73,9 +74,22 @@ export function rawFence(raw: string): string {
 	return `\`\`\`원문\n${body.replace(/```/g, "'''")}\n\`\`\``;
 }
 
+export type ItemRef = { app: string; id: string; subject?: string; from?: string };
+const ITEM_LINE = /^DOTZ_ITEM[ \t]+([a-z][a-z0-9-]{0,19}):(\S+)[ \t]*$/m;
+const ITEM_SUBJECT = /^(?:subject|제목)[ \t]*[:=][ \t]*(\S.*)$/im;
+const ITEM_FROM = /^(?:from|보낸 ?사람)[ \t]*[:=][ \t]*(\S.*)$/im;
+
+// The app item a check points at: one `DOTZ_ITEM <app>:<id>` line (a mail: `mail:<source>/<id>` or the mail key). A `subject:` and a `from:` line, when the
+// check printed them, are what the report shows if the hub cannot find the item itself. undefined = the output names no item.
+export function itemRefOf(output: string): ItemRef | undefined {
+	const m = ITEM_LINE.exec(output.replace(ANSI, ""));
+	if (!m) return undefined;
+	const subject = ITEM_SUBJECT.exec(output)?.[1]?.trim().slice(0, 200), from = ITEM_FROM.exec(output)?.[1]?.trim().slice(0, 200);
+	return { app: m[1]!, id: m[2]!, ...(subject ? { subject } : {}), ...(from ? { from } : {}) };
+}
+
 export const isIssue = (reason: string) => /^(?:fail\b|failed \d+|stopped after|needs the owner)/.test(reason.trim());
 
-const ANSI = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g;
 const ISO_ALL = new RegExp(ISO.source, "g");
 const LONG_ID = /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|\d{9,})\b/gi;
 

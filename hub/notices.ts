@@ -8,7 +8,8 @@ import { askDefaults, asksSendWithoutDraft } from "./ask-options.ts";
 import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
-import { describeOutput, humanLabel, isIssue, scheduleLine, watchLine, watchReasonKo } from "./watchtext.ts";
+import { describeOutput, humanLabel, isIssue, itemRefOf, scheduleLine, watchLine, watchReasonKo } from "./watchtext.ts";
+import { resolveItem, type WatchItem } from "./watchitem.ts";
 
 // The web notification store: every worklog / alert / session result / watch / schedule post, kept in notices.json so the
 // bell survives a restart. Fed by what the hub already emits (onEmit), so main.ts only wires the API and the resolver.
@@ -35,6 +36,8 @@ export type Notice = {
 	ref?: string;
 	// kind "watch": the key of the app integration (hub/integrations.ts) the report belongs to. It stays in that app's view and out of 감시 소식.
 	app?: string;
+	// kind "watch": the app item the check pointed at (a `DOTZ_ITEM <app>:<id>` line) with the card to draw for it. A report that names an item stays in 감시 소식 whatever its words say.
+	item?: WatchItem;
 	read: boolean;
 	// Swiped away / x in the bell: kept (so a session's next progress line does not bring it back) but never listed or counted.
 	dismissed?: boolean;
@@ -129,7 +132,7 @@ export const setWatchLabelResolver = (fn: (name: string) => string) => void (wat
 let appOf: (n: Notice) => string | undefined = () => undefined;
 export const setAppResolver = (fn: (n: Notice) => string | undefined) => void (appOf = fn);
 function stampApp(n: Notice): boolean {
-	const app = appOf(n);
+	const app = n.item ? undefined : appOf(n);
 	if (app === n.app) return false;
 	if (app) n.app = app;
 	else delete n.app;
@@ -212,7 +215,7 @@ function trim(): void {
 	}
 }
 
-type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; by?: string; ref?: string; read?: boolean; unread?: boolean; src?: string; at?: string };
+type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string };
 
 function upsert(i: Input): Notice {
 	const at = i.at ?? now();
@@ -230,6 +233,7 @@ function upsert(i: Input): Notice {
 		old.updated = at;
 		if (i.by) old.by = i.by;
 		if (i.ref) old.ref = i.ref;
+		if (i.item) old.item = i.item;
 		if (i.read) old.read = true;
 		else if (reopened) {
 			old.read = false;
@@ -238,7 +242,7 @@ function upsert(i: Input): Notice {
 		}
 		item = old;
 	} else {
-		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: i.kind, tone: i.tone, title: i.title, text: i.text, open: i.open, src: i.src ?? i.open, at, ...(i.key ? { key: i.key } : {}), ...(i.by ? { by: i.by } : {}), ...(i.ref ? { ref: i.ref } : {}), read: i.read === true };
+		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: i.kind, tone: i.tone, title: i.title, text: i.text, open: i.open, src: i.src ?? i.open, at, ...(i.key ? { key: i.key } : {}), ...(i.by ? { by: i.by } : {}), ...(i.ref ? { ref: i.ref } : {}), ...(i.item ? { item: i.item } : {}), read: i.read === true };
 		items.push(item);
 		trim();
 	}
@@ -293,7 +297,10 @@ function fromOutbox(e: HubEvent, asks = false): void {
 	}
 	if (target === "alert") return asks ? undefined : void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered), at: e.ts });
 	const watch = /^ch:\d+$/.test(target) && e.source === "gateway" ? /^\[([^\]\n]+)\]\s*/.exec(text) : null;
-	if (watch) upsert({ kind: "watch", tone, title: watchLabelOf(watch[1]!), text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts });
+	if (watch) {
+		const ref = recovered ? undefined : itemRefOf(text);
+		upsert({ kind: "watch", tone, title: watchLabelOf(watch[1]!), text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts, ...(ref ? { item: resolveItem(ref) } : {}) });
+	}
 }
 
 function fromInbox(e: HubEvent): void {
@@ -313,7 +320,8 @@ function fromInbox(e: HubEvent): void {
 		if (e.to === "orchestrator" && Array.isArray(e.channels) && e.channels.length && orchestratorUp()) return;
 		const [head, reason, output] = [label || "모니터링", String(e.reason ?? ""), String(e.text ?? "")];
 		const prev = typeof e.prev === "string" ? e.prev : undefined;
-		const item = upsert({ kind: "watch", tone: "", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", read: recovered, at: e.ts });
+		const ref = recovered || isIssue(reason) ? undefined : itemRefOf(output);
+		const item = upsert({ kind: "watch", tone: "", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", read: recovered, at: e.ts, ...(ref ? { item: resolveItem(ref) } : {}) });
 		if (summarizeWatch && !isIssue(reason) && !recovered && !describeOutput(output, { prev }).readable)
 			void summarizeWatch(output).then(summary => summary && retextWatch(item.id, clean(watchLine(head, reason, output, { prev, summary })).text));
 		return;
