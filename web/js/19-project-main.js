@@ -113,12 +113,23 @@ function pmHead(q) {
       can ? el("button", { class: "btn", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }) : null,
       pmMenuButton(q))) : null);
 }
+// The project a chat target (ch:<id>) belongs to, from the list the 프로젝트 tab shows (null until it has loaded or once it is gone).
+const pmOfTarget = t => ((PRJ && PRJ.projects) || []).find(x => !x.builtin && prjChat(x) === t) || null;
 
 // 프로젝트 삭제 (hub/projectdelete.ts): the ⋯ menu opens a sheet that lists what goes; 삭제 sends DELETE /api/projects/<ch:id>,
 // or POST /api/peer/act {action:"project"} for a project of another computer (q.pc = {name, url}).
-function pmMenuButton(q) {
-  const b = el("button", { class: "ib pmv-more", type: "button", "aria-label": "프로젝트 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false" }, icon("more"));
-  b.addEventListener("click", () => showMenu(b, [{ value: "delete", label: "프로젝트 삭제" }], { onPick: () => pmDeleteAsk(q) }));
+// The ⋯ menu (수정 / 삭제) is shared: the project page and a project's chat header (31-conversations.js) both build it here. `q` is a project or a
+// function that returns it; 수정 opens that project's page in the 프로젝트 tab (on the page itself it starts editing the name).
+function pmMenuButton(q, cls = "pmv-more") {
+  const b = el("button", { class: `ib ${cls}`, type: "button", "aria-label": "프로젝트 메뉴", title: "프로젝트 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false" }, icon("more"));
+  b.addEventListener("click", () => {
+    const p = typeof q === "function" ? q() : q;
+    if (!p) return toast("이 프로젝트를 찾을 수 없어요");
+    showMenu(b, [{ value: "edit", label: "프로젝트 수정" }, { value: "delete", label: "프로젝트 삭제" }], { onPick: v => {
+      if (v === "delete") return pmDeleteAsk(p);
+      if (current === "project" && PM.key === p.key) { const t = $("#v-project .pmv-title"); if (t) t.click(); } else go("project", p.key);
+    } });
+  });
   return b;
 }
 function pmDeleteCall(q, op, args = {}) {
@@ -134,6 +145,7 @@ const pmDeleteLines = p => [
   `알림 ${p.notices}개를 치워요`,
   `대화 ${p.messages}개는 보관 파일로 남겨요`].filter(Boolean);
 async function pmDeleteAsk(q) {
+  const fromChat = current === "chat";   // deleted from a project's chat header: land on the main chat, not the 프로젝트 list
   let p;
   try { p = await pmDeleteCall(q, "delete-plan"); } catch (e) { return toast(e.message || "지울 내용을 읽지 못했어요", true); }
   const st = { drop: false, busy: false }, err = el("div", { class: "note err" });
@@ -147,7 +159,8 @@ async function pmDeleteAsk(q) {
       h.close(false);
       toast(r.discord && !r.discord.ok ? `프로젝트는 지웠지만 Discord 채널은 남아 있어요 · ${r.discord.error}` : `${r.name} 프로젝트를 지웠어요`, !!(r.discord && !r.discord.ok));
       PM = { key: "", D: null, fail: false, open: 0, flight: null, draft: "" };
-      go("projects"); prjLoad();
+      if (fromChat) pickTarget(MAIN); else go("projects");
+      prjLoad();
     } catch (e) { err.textContent = e.message || "지우지 못했어요"; st.busy = false; go1.disabled = false; }
   } }, "삭제");
   clear(h.box).append(

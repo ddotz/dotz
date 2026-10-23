@@ -79,7 +79,7 @@ test("the project menu opens a confirm sheet that lists exactly what goes, and �
 	const v = await boot();
 	await run(v, `document.querySelector(".pmv-more").click()`);
 	await waitFor(v, `document.querySelector(".menu .mi")`);
-	await run(v, `document.querySelector(".menu .mi").click()`);
+	await run(v, `[...document.querySelectorAll(".menu .mi")].find(m => m.textContent.includes("삭제")).click()`);
 	await waitFor(v, `document.querySelector(".pmd .as-rml")`);
 	const lines = await q<string[]>(v, `return [...document.querySelectorAll(".pmd .as-rml li")].map(li => li.textContent)`);
 	expect(lines[0]).toBe("#유튜브 채널을 Discord에서 지워요");
@@ -100,7 +100,7 @@ test("a running session blocks the 삭제 button and is named in the sheet", asy
 	const v = await boot();
 	await run(v, `document.querySelector(".pmv-more").click()`);
 	await waitFor(v, `document.querySelector(".menu .mi")`);
-	await run(v, `document.querySelector(".menu .mi").click()`);
+	await run(v, `[...document.querySelectorAll(".menu .mi")].find(m => m.textContent.includes("삭제")).click()`);
 	await waitFor(v, `document.querySelector(".pmd .as-rml")`);
 	expect(await q(v, `return document.querySelector('.fs-ft [data-k="delete"]').disabled`)).toBe(true);
 	expect(await q(v, `return document.querySelector(".pmd .note.err").textContent`)).toContain("yt-upload");
