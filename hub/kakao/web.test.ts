@@ -182,6 +182,43 @@ describe("typed send", () => {
 		t.close();
 	});
 
+	test("deleting a failed send removes it from the room and the store, announces it once, and never retries it", async () => {
+		const t = setup();
+		t.state.failSend = true;
+		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
+		await t.web.idle();
+		// One failure is one event (no repeat per poll or read of the room).
+		await t.call("GET", `/api/kakao/chat/${DIRECT}`);
+		await t.call("GET", `/api/kakao/chat/${DIRECT}`);
+		expect(t.events.filter(e => e.kind === "kakao_send" && e.state === "failed")).toHaveLength(1);
+		const tries = t.calls.length;
+
+		expect(await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/${r.json.id}`)).toEqual({ status: 200, json: { ok: true, removed: true } });
+		expect(t.events.at(-1)).toEqual({ kind: "kakao_send", chatId: DIRECT, id: r.json.id, state: "deleted" });
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends).toEqual([]);
+		expect(JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"))).toEqual([]);
+		// Deleting again is a no-op, and nothing was sent again.
+		expect((await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/${r.json.id}`)).json).toEqual({ ok: true, removed: false });
+		await t.web.idle();
+		expect(t.calls.length).toBe(tries);
+		t.close();
+	});
+
+	test("a lost send (gateway restarted) can be deleted; a sent one or another room's id cannot", async () => {
+		const t = setup();
+		const ok = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "done" });
+		await t.web.idle();
+		const file = join(dir, "kakao", "sends.json");
+		const stored = JSON.parse(readFileSync(file, "utf8"));
+		writeFileSync(file, JSON.stringify([...stored, { id: "Slost", chatId: DIRECT, text: "lost", state: "sending", at: NOW }, { id: "Sother", chatId: GROUP, text: "x", state: "failed", at: NOW }]));
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends.map((s: any) => [s.id, s.state])).toEqual([[ok.json.id, "sent"], ["Slost", "failed"]]);
+		expect((await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/${ok.json.id}`)).status).toBe(409);
+		expect((await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/Slost`)).json.removed).toBe(true);
+		expect((await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/Sother`)).json.removed).toBe(false);
+		expect(JSON.parse(readFileSync(file, "utf8")).map((s: any) => s.id)).toEqual([ok.json.id, "Sother"]);
+		t.close();
+	});
+
 	test("an empty or oversize text is refused before anything runs", async () => {
 		const t = setup();
 		expect((await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "   " })).status).toBe(400);
