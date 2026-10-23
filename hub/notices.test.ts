@@ -8,7 +8,7 @@ import { shortTitle } from "./notice-title.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
-import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, setConvNameResolver, setLaneTitleResolver, setViewing, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -1088,4 +1088,15 @@ test("a notice title is the first sentence, short, without its period", () => {
 	expect(long.length).toBeLessThanOrEqual(61);
 	expect(long.endsWith("파하…") || long.endsWith("차카타…") || long.endsWith("사아자…") || long.endsWith("라마바…") || long.endsWith("가나다…")).toBe(true);
 	expect(shortTitle("끝났어요.")).toBe("끝났어요");
+});
+
+test("an answer in a monitor's settings conversation is titled with the monitor's label, and viewing that conversation reads it", () => {
+	setWatchLabelResolver(name => (name === "nas-php-node-patch" ? "NAS 패치 감시" : name));
+	const conv = "settings:w:nas-php-node-patch", item = () => stored().find(n => n.key === `msg:${conv}`)!;
+	post(conv, "네, 아직 새 버전이 없어요");
+	expect(item()).toMatchObject({ kind: "message", title: "NAS 패치 감시", open: conv, src: conv, read: false });
+	expect(setViewing("tab-settings", conv, Date.now())).toMatchObject({ ok: true });
+	expect(item().read).toBe(true);
+	setViewing("tab-settings", "", Date.now());
+	setWatchLabelResolver(name => name);
 });
