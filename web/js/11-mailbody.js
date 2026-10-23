@@ -97,49 +97,5 @@ function mailHtmlNode(key) {
   return host;
 }
 
-/* ---- the text fallback: paragraphs, links, quotes and pipe tables ---- */
-const MB_URL = /\bhttps?:\/\/[^\s<>"']+/g;
-function mbInline(parent, line) {
-  let last = 0;
-  for (const m of line.matchAll(MB_URL)) {
-    const url = m[0].replace(/[.,;:!?)\]}]+$/, "");
-    parent.append(line.slice(last, m.index), el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: url }));
-    last = m.index + url.length;
-  }
-  parent.append(line.slice(last));
-}
-const mbIsRow = l => /\s\|\s/.test(l) || /^\s*\|.*\|\s*$/.test(l);
-function mailTextNode(raw) {
-  const out = el("div", { class: "mb-txt" });
-  const lines = String(raw ?? "").replace(/\r/g, "").split("\n");
-  let para = [], quote = [], rows = [];
-  const flushPara = () => {
-    if (!para.length) return;
-    const p = el("p");
-    para.forEach((l, i) => { if (i) p.append(el("br")); mbInline(p, l); });
-    out.append(p); para = [];
-  };
-  const flushQuote = () => {
-    if (!quote.length) return;
-    const q = el("blockquote");
-    quote.forEach((l, i) => { if (i) q.append(el("br")); mbInline(q, l); });
-    out.append(q); quote = [];
-  };
-  const flushRows = () => {
-    if (rows.length >= 2) out.append(mdNode(rcRawMd(rows.join("\n"))));
-    else para.push(...rows);
-    rows = [];
-  };
-  for (const l of lines) {
-    const t = l.trimEnd();
-    if (mbIsRow(t)) { flushPara(); flushQuote(); rows.push(t); continue; }
-    flushRows();
-    if (/^\s*>/.test(t)) { flushPara(); quote.push(t.replace(/^(\s*>)+\s?/, "")); continue; }
-    flushQuote();
-    if (!t.trim()) flushPara(); else para.push(t);
-  }
-  flushRows(); flushPara(); flushQuote();
-  return out;
-}
 // The original of one mail: the HTML frame when the hub kept an HTML body, else the text.
 const mailBodyNode = (key, html, raw) => html ? mailHtmlNode(key) : mailTextNode(raw);
