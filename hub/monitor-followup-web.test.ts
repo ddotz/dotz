@@ -13,6 +13,8 @@ const SHOTS = process.env.SETTINGS_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const MINI = "http://mini.test";
 const at = (min: number) => new Date(Date.UTC(2026, 9, 23, 3, min)).toISOString();
+// The page labels a time by its day relative to Date.now(); the fixtures are dated, so the page clock runs from this fixed "now" (same KST day as at()), not the real date.
+const PAGE_NOW = Date.UTC(2026, 9, 23, 3, 40);
 const watch = (name: string, label: string, extra: object = {}) => ({ name: label, watch: name, kind: "watch", last_run: at(30), last_result: "ok", next_run: at(60), every: "30분마다", fails: 0, last_ok: at(30), ...extra });
 const failing = (name: string, label: string, fails: number, extra: object = {}) => watch(name, label, { last_result: "fail", fails, last_ok: at(2), last_output: "로그인이 풀렸어요", ...extra });
 const need = { drafts: 0, unread: 0, sentToday: 0 };
@@ -70,6 +72,7 @@ const boot = async (width: number, height: number) => {
 	const v = new Bun.WebView({ width, height });
 	views.push(v);
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	await run(v, `const off = ${PAGE_NOW} - Date.now(), real = Date.now.bind(Date); Date.now = () => real() + off`);
 	await waitFor(v, `S && NM.loaded && NT.loaded && PR.fresh`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	await run(v, `go("monitoring")`);
