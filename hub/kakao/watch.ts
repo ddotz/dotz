@@ -4,6 +4,7 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { featureEnabled } from "../app-feature-flags.ts";
 import { isDraftCandidate, isEmoticon, maxLogId, newSince, ownUserId, roomKind, roomTypes, sentAtMs, sqlcipherDb, TEXT_TYPE, type KakaoDb } from "./db.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
 
@@ -13,6 +14,8 @@ export type WatchDeps = {
 	stateDir: string;
 	now: () => number;
 	dbFiles?: string[];
+	/** 답장 초안 (hub/app-feature-flags.ts) is off: no room wakes the bot, whatever 자동 초안 rooms are chosen. */
+	replyDraftOff?: boolean;
 };
 export type WatchResult = { lines: string[]; code: number };
 
@@ -69,7 +72,7 @@ export async function runWatch(deps: WatchDeps): Promise<WatchResult> {
 
 	// Only rooms that are chosen AND on 자동 초안 can wake the bot; with none, the database is not read at all.
 	const auto = new Set((config.auto_draft_chats ?? []).filter((c) => config.watch_chats?.includes(c)));
-	if (auto.size === 0) return { lines: [], code: 0 };
+	if (auto.size === 0 || deps.replyDraftOff) return { lines: [], code: 0 };
 
 	const lastId = BigInt(lastText);
 	const heldFirst = Object.values(held).map((v) => BigInt(v));
@@ -185,6 +188,7 @@ if (import.meta.main) {
 			stateDir,
 			now: Date.now,
 			dbFiles: config?.dbPath ? [config.dbPath, `${config.dbPath}-wal`] : undefined,
+			replyDraftOff: !featureEnabled(paths.dataDir, "kakao", "reply_draft"),
 		});
 	} catch (err) {
 		const { kind, message } = failureOf(err);

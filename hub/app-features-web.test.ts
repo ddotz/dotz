@@ -25,8 +25,11 @@ const WATCHES = [
 ];
 const LABEL: Record<string, string> = { "sns-ig-comments": "댓글 확인", "ig-site-login": "사이트 로그인", "plain-disk-check": "디스크 점검" };
 const monitors = WATCHES.map(w => ({ name: LABEL[w.name], watch: w.name, kind: "watch", every: "60분마다", last_run: RUN, last_result: w.state.fails ? "fail" : "ok", fails: w.state.fails, ...(w.session ? { keeper: true } : {}) }));
-const NOTICES = [{ id: "n-ig", title: "릴스 올리기 승인 (j-1)", text: "인스타 릴스 영상이에요", ts: RUN, decision: { state: "open", to: "main", draft: { to: "x", body: "b" } } }];
+const NOTICES = [{ id: "n-ig", title: "릴스 올리기 승인 (j-1)", text: "인스타 릴스 영상이에요", ts: RUN, decision: { state: "open", to: "main", draft: { to: "x", body: "주말 여행 릴스예요 #여행" }, options: [{ n: 1, label: "올리기" }, { n: 2, label: "고치기" }, { n: 3, label: "그만두기" }] } }];
+const answers: { id: string; body: unknown }[] = [];
 
+// A raw key, an id like j-1 or a snake_case word in what the owner reads.
+const RAW = /[a-z]+-[0-9]|_|\b(?:sns|ig|yt|each|batch|comments)\b/;
 const featPatches: Record<string, unknown>[] = [];
 const retries: string[] = [];
 let onRetry: (() => void) | undefined;
@@ -59,7 +62,12 @@ const server = Bun.serve({
 		if (p === "/api/monitors") return json({ items: monitors });
 		if (p === "/api/integrations") {
 			const own = ownedWatches(data, WATCHES);
-			return json({ items: [{ key: "instagram", label: "인스타그램", icon: "instagram", kind: "app", conv: [], notices: [], needs: { drafts: 1, unread: 0, sentToday: 0 }, watches: ["sns-ig-"], own: own.get("instagram") ?? [] }], available: [] });
+			return json({ items: [{ key: "instagram", label: "인스타그램", icon: "instagram", kind: "app", conv: [], notices: [], needs: { drafts: 1, unread: 0, sentToday: 0 }, watches: ["sns-ig-"], own: own.get("instagram") ?? [] }, { key: "mail", label: "메일", icon: "mail", kind: "app", conv: [], notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 }, watches: [], own: [] }], available: [] });
+		}
+		const an = /^\/api\/notices\/([^/]+)\/answer$/.exec(p);
+		if (an && req.method === "POST") {
+			answers.push({ id: an[1]!, body: await req.json() });
+			return json({ ok: true });
 		}
 		const f = /^\/api\/integrations\/([a-z0-9-]+)\/(features|retry)$/.exec(p);
 		if (f) {
@@ -157,6 +165,44 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(await q(v, `return document.querySelector('#app-sw [data-feature="reels_approval"] .as-h').textContent`)).toBe("꺼져 있어요");
 		await run(v, `document.querySelector('#app-sw [data-k="feat:reels_approval"]').click()`);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="feat:reels_approval"]').getAttribute("aria-checked") === "true"`);
+	});
+
+	test("the screen says no internal key or id; the approval is its caption; the approval mode and 답장 모델 are setting rows", async () => {
+		const text = await q<string>(v, `return document.querySelector("#app-sw").textContent`);
+		expect(text).not.toMatch(RAW);
+		expect(text).toContain("댓글 가져오기");
+		expect(text).toContain("인스타그램 로그인");
+		expect(await q(v, `return document.querySelector("#app-sw [data-approval] .as-n").textContent`)).toBe("주말 여행 릴스예요 #여행");
+		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-approval] [data-k^='appr:']")].map(b => b.textContent)`)).toEqual(["올리기", "그만두기", "자세히"].slice(0, 2).concat(["자세히"]));
+		expect(await q(v, `return document.querySelector("#app-sw .as-chip, #app-sw .as-sum")`)).toBeNull();
+		expect(await q(v, `return document.querySelector('#app-sw [data-setting="approval"] .as-n').textContent`)).toBe("게시 승인 방식");
+		expect(await q(v, `return [...document.querySelectorAll('#app-sw [data-setting="approval"] option')].map(o => o.textContent)`)).toEqual(["하나씩 승인", "모아서 승인"]);
+		expect(await q(v, `return document.querySelector('#app-sw [data-setting="reply_model"] .as-n').textContent`)).toBe("답장 모델");
+		await run(v, `document.querySelector('#app-sw [data-setting="approval"]').scrollIntoView({ block: "center" })`);
+		await shot(v, `${tag}-instagram-settings.png`);
+	});
+
+	test("an approval row answers from the row (not 고치기) through the notice's answer route", async () => {
+		const before = answers.length;
+		await run(v, `document.querySelector("#app-sw [data-approval] [data-k='appr:그만두기']").click()`);
+		await waitFor(v, `!AS.busy.instagram`);
+		expect(answers.slice(before)).toEqual([{ id: "n-ig", body: { n: 3 } }]);
+	});
+
+	test("a peer app's approval answer is forwarded as the peer's own decision (/api/peer/act answer)", async () => {
+		const a = await q<{ action: string; args: unknown }>(v, `const app = pqApp("instagram", { name: "맥미니", url: "http://mini.test" }); const r = pqAct("/api/integrations/" + app + "/approve", { id: "n-9", n: 1 }); return { action: r.action, args: r.args, pc: r.pc.name }`);
+		expect(a).toMatchObject({ action: "answer", args: { id: "n-9", n: 1 }, pc: "맥미니" });
+	});
+
+	test("mail settings: 새 메일 and 답장 초안 are switches, nothing else is faked", async () => {
+		await boot(v, "i:mail");
+		const more = `[...document.querySelectorAll('[data-as-more="mail"]')].find(b => b.offsetParent && !b.hidden)`;
+		await waitFor(v, more);
+		await run(v, `${more}.click()`);
+		await waitFor(v, `document.querySelector("#app-sw [data-feature='new_mail']")`);
+		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => e.querySelector(".as-n").textContent)`)).toEqual(["새 메일", "답장 초안"]);
+		expect(await q<string>(v, `return document.querySelector("#app-sw").textContent`)).not.toMatch(RAW);
+		await shot(v, `${tag}-mail-settings.png`);
 	});
 });
 

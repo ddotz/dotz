@@ -17,9 +17,12 @@ export type EngineDeps = {
 	broadcast?: (event: Record<string, unknown>) => void;
 	/** The app instance (custom/apps.json id) a source belongs to: its threads, needs and reply model are the instance's. Default = the app (`appOf`). */
 	owner?: (src: SourceConfig) => string;
+	/** Whether an app feature is on (hub/app-feature-flags.ts featureEnabled); off = the engine drafts nothing for that app. Missing = on. */
+	featureOn?: (app: string, id: string) => boolean;
 };
 
 export const appOf = (src: Pick<SourceConfig, "kind">): string => (src.kind === "website" ? "site" : src.kind);
+export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요";
 const MAX_AUTO_PER_RUN = 5;
 const DEFAULT_EVERY_MIN = 5;
 const SAMPLES = 5;
@@ -36,6 +39,7 @@ export function createEngine(deps: EngineDeps) {
 	const inflight = new Set<string>();
 	const pending = new Set<Promise<unknown>>();
 	const emit = (e: Record<string, unknown>) => deps.broadcast?.(e);
+	const replyOn = (src: SourceConfig): boolean => deps.featureOn?.(ownerOf(src), "comment_reply") ?? true;
 	const gate = { store, adapters: deps.adapters, now: deps.now, collector: deps.collector, inflight, onState: (r: Reply) => emit({ kind: "comment_send", source: r.source, thread: r.thread, id: r.id, state: r.state, ...(r.reason ? { reason: r.reason } : {}) }) };
 
 	const ownerOf = (src: SourceConfig): string => deps.owner?.(src) ?? appOf(src);
@@ -94,6 +98,7 @@ export function createEngine(deps: EngineDeps) {
 		const c = find(commentId);
 		const src = c && sourceOf(c.source);
 		if (!c || !src) return Promise.resolve({ ok: false, reason: "원댓글을 찾지 못했어요" });
+		if (!replyOn(src)) return Promise.resolve({ ok: false, reason: OFF_REASON });
 		if (c.mine) return Promise.resolve({ ok: false, reason: "내가 쓴 댓글에는 답글 초안을 만들지 않아요" });
 		return run(c, src).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요" }));
 	}
@@ -146,7 +151,7 @@ export function createEngine(deps: EngineDeps) {
 			}
 			out.added.push(...fresh);
 			for (const t of new Set(fresh.map(c => c.thread))) emit({ kind: "comment", source: src.key, thread: t });
-			if (!src.autoDraft) continue;
+			if (!src.autoDraft || !replyOn(src)) continue;
 			let made = 0;
 			for (const c of fresh) {
 				if (made >= MAX_AUTO_PER_RUN) break;
@@ -178,6 +183,7 @@ export function createEngine(deps: EngineDeps) {
 		const c = d && find(d.commentId);
 		const src = d && sourceOf(d.source);
 		if (!d || !c || !src) return { ok: false, reason: "그 초안을 찾지 못했어요" };
+		if (!replyOn(src)) return { ok: false, reason: OFF_REASON };
 		if (d.status !== "pending") return { ok: false, reason: "이 초안은 이미 처리됐어요" };
 		if (!change.trim()) return { ok: false, reason: "무엇을 고칠지 적어 주세요" };
 		deps.learn?.(src, change.trim());

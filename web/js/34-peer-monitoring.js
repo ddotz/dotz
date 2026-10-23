@@ -25,7 +25,7 @@ function pqFor(path) {
   if (m) return pqPc(decodeURIComponent(m[1]));
   m = /^\/api\/watches\/([a-z0-9-]+)\/settings/.exec(path);
   if (m) return pqPc(`settings:w:${m[1]}`);
-  m = /^\/api\/integrations\/[a-z0-9._-]+~([a-z0-9]+)\/(?:settings|remove|features|retry)/.exec(path);
+  m = /^\/api\/integrations\/[a-z0-9._-]+~([a-z0-9]+)\/(?:settings|remove|features|retry|approve)/.exec(path);
   if (m) return PQ.apps.get(m[1]) || null;
   m = /^\/api\/drafts\/([^/?]+)\//.exec(path);
   if (m) return DRF.pc[decodeURIComponent(m[1])] || null;
@@ -42,6 +42,8 @@ function pqAct(path, body) {
   // A peer app's switches, name and removal: the app's own routes on the computer that has it.
   const fp = /^\/api\/integrations\/([a-z0-9._-]+~[a-z0-9]+)\/(features|retry)$/.exec(path);
   if (fp && pqFor(path)) return { pc: pqFor(path), action: "app", args: fp[2] === "features" ? { op: "features", app: pqBare(fp[1]), id: b.id, on: b.on } : { op: "retry", app: pqBare(fp[1]), watch: b.watch } };
+  const ap = /^\/api\/integrations\/([a-z0-9._-]+~[a-z0-9]+)\/approve$/.exec(path);
+  if (ap && pqFor(path)) return { pc: pqFor(path), action: "answer", args: { id: b.id, n: b.n } };
   const ip = /^\/api\/integrations\/([a-z0-9._-]+~[a-z0-9]+)\/(settings|remove)$/.exec(path);
   if (ip && pqFor(path)) return { pc: pqFor(path), action: "app", args: ip[2] === "settings" ? { op: "settings", app: pqBare(ip[1]), values: b.values } : { op: "remove", app: pqBare(ip[1]), deleteData: b.deleteData === true } };
   const rn = /^\/api\/watches\/([a-z0-9-]+)\/run$/.exec(path);

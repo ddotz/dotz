@@ -281,3 +281,27 @@ test("a 403 quotaExceeded keeps the job scheduled without a failed line, prints 
 	expect(await run(next, [])).toEqual({ lines: [`posted ${job.id} youtube=vid1`], code: 0 });
 	expect(getJob(job.id)?.status).toBe("done");
 });
+
+// The 올리기 승인 switches of the app settings (hub/app-feature-flags.ts): off = the path really stops, with the job kept for when it is turned on.
+const switchOff = (app: string, id: string) => writeJson(join(env.dir, "custom/apps.json"), { [app]: { features: { [id]: false } } });
+
+test("릴스 올리기 승인 off: a new upload skips instagram, an explicit instagram target is refused", () => {
+	const ctx = fakeCtx(env);
+	switchOff("instagram", "reels_approval");
+	expect(upload(ctx).targets).toEqual(["youtube"]);
+	expect(() => newJob(ctx, { kind: "upload", targets: ["instagram"], upload: { file: dropVideo(env, "clip.mp4"), title: "T" } })).toThrow(/올리기 승인이 꺼져/);
+});
+
+test("쇼츠·영상 올리기 승인 off: a due job posts nothing and stays approved; on again, it posts", async () => {
+	const ctx = fakeCtx(env);
+	serve(ctx);
+	const job = youtubeOnly(ctx);
+	switchOff("youtube", "upload_approval");
+	expect(await publishJob(ctx, loadConfig(), job.id)).toEqual([]);
+	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
+	expect(uploadPosts(ctx)).toBe(0);
+	expect(getJob(job.id)?.status).toBe("approved");
+	writeJson(join(env.dir, "custom/apps.json"), {});
+	expect(await publishJob(ctx, loadConfig(), job.id)).toEqual([`posted ${job.id} youtube=vid1`]);
+	expect(uploadPosts(ctx)).toBe(1);
+});

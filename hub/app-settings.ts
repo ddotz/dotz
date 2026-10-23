@@ -37,7 +37,7 @@ export type SettingValue = boolean | string | string[] | number;
 const DRAFTS = "custom/reply-drafts/config.json";
 const SNS = "custom/sns/config.json";
 const draftSwitch = (app: string, label: string): SettingField => ({ key: "auto_draft", label: "자동 초안", type: "bool", help: `${label}에 답할 거리가 오면 초안을 알아서 만들어요`, store: DRAFTS, path: `apps.${app}.auto`, def: false, switch: true, alsoOn: ["enabled"] });
-const approval: SettingField = { key: "approval", label: "게시 승인 방식", type: "enum", help: "each = 하나씩 확인, batch = 모아서 한 번에 확인", store: SNS, path: "approval", options: ["each", "batch"], def: "each" };
+const approval: SettingField = { key: "approval", label: "게시 승인 방식", type: "enum", help: "올리기 전에 하나씩 확인할지, 모아서 한 번에 확인할지 정해요", store: SNS, path: "approval", options: ["each", "batch"], labels: { each: "하나씩 승인", batch: "모아서 승인" }, def: "each" };
 
 // Every app has this switch first: custom/apps.json {"<app>":{"off":true}} (hub/app-off.ts). Off wins over every rule that turned the app on here.
 const deviceSwitch = (app: string): SettingField => ({ key: "use_here", label: "이 기기에서 쓰기", type: "bool", help: "끄면 이 컴퓨터의 앱 목록에서 빠지고 감시와 알림이 멈춰요. 데이터는 그대로 남아요", store: "custom/apps.json", path: `${app}.off`, def: true, switch: true, invert: true });

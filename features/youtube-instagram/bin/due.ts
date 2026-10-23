@@ -8,7 +8,7 @@ import { copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "nod
 import { basename, join } from "node:path";
 import type { Config, Ctx } from "../lib/config.ts";
 import { publishReel, reply as igReply } from "../lib/instagram.ts";
-import { dueJobs, getJob, type Job, markDone, markFailed, markNotified, markPosting, recordResult, release, saveUploadIntent, setError } from "../lib/jobs.ts";
+import { dueJobs, getJob, jobFeatureOn, type Job, markDone, markFailed, markNotified, markPosting, recordResult, release, saveUploadIntent, setError } from "../lib/jobs.ts";
 import { announceExhausted, COSTS, can, exhaustedLine, isExhausted } from "../lib/quota.ts";
 import { type TunnelOpts, withTunnel } from "../lib/tunnel.ts";
 import { AuthError, main, oneLine, type Platform, QuotaError, type RunResult, runWatch, TransientError } from "../lib/watchkit.ts";
@@ -81,7 +81,8 @@ export async function publishJob(ctx: Ctx, cfg: Config, id: string, explicit = f
 	const job = getJob(id);
 	if (!job) throw new Error(`job ${id} not found`);
 	const lines: string[] = [];
-	const remaining = job.targets.filter(t => !job.result[t]);
+	// A platform whose approval feature is switched off is not published: the job stays as it is until the owner turns it on (or rejects it).
+	const remaining = job.targets.filter(t => !job.result[t] && jobFeatureOn(job.kind, t));
 	for (const t of remaining.filter(x => via(cfg, job, x) === "aside" && !job.notified?.includes(x))) {
 		markNotified(id, t);
 		lines.push(`aside-needed ${id} ${t}`);

@@ -60,6 +60,7 @@ import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQ
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { makeRoute } from "./routes.ts";
 import { appEntries, appKeyOf, integrationContext } from "./integrations.ts";
+import { mailFeatureOn } from "./app-feature-flags.ts";
 import { mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
 import { setFormLink } from "./auth.ts";
 import { startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
@@ -208,6 +209,7 @@ const mailDeps = (): MailDeps => ({
 	discordOn: discord.status.enabled,
 	// A Discord thread per mail only when the mail's app instance has 디스코드에도 올리기 on (hub/app-settings.ts); web only otherwise.
 	threadOn: (_source, key) => mailDiscordOn(DATA_DIR, key),
+	newMailOn: (_source, key) => mailFeatureOn(DATA_DIR, key, "new_mail"),
 	emit: event => emit("inbox", event as Parameters<typeof emit>[1]),
 	wake: (event, target) => deliver(inboxText(event), { target }),
 	offerDraft: m =>
