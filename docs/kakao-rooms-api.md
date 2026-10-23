@@ -59,10 +59,13 @@ script-only, no model call. Per room `auto_draft` (config `auto_draft_chats: str
 the bot for that room; rooms without it never wake the bot.
 
 - `POST /api/kakao/chat/<chatId>/draft` -> 202 `{ state: "drafting" }`, then `{kind:"kakao_draft", chatId}` when the draft is
-  stored (or `{kind:"kakao_draft", chatId, error}`). One model call with the small/cheap model: messages since the owner's last
-  reply in the room (cap 30 lines, ~2K tokens), the room's short summary file `<dataDir>/kakao/summaries/<chatId>.md`
-  (refreshed by the same call, only when a draft is made), and up to 5 of the owner's own past lines in that room as style
-  samples. No whole-history reads. The stored draft records `tokens: { in, out }`.
+  stored (or `{kind:"kakao_draft", chatId, error}`). One model call (the reply-drafts `model` setting, else sonnet-class; never a mini model): messages since the owner's last
+  reply in the room, the room's short summary file `<dataDir>/kakao/summaries/<chatId>.md` (refreshed by the same call, only when a
+  draft is made), up to 18 (other's message -> owner's reply) pairs from the last 300 messages, the room's register (반말/존댓말, counted
+  from the owner's own lines) and the owner's voice profile (`tone/kakao.md` + `tone/kakao/<chatId>.md`). The whole prompt is capped at
+  4000 characters (~3K tokens). The first draft of a room learns both profiles from the owner's own lines only (the room's newest 400, and
+  60 of each of his 8 most recent non-excluded rooms), a profile is relearned after 200 more own lines, and an edited send (고치기) is
+  recorded in the room profile. The stored draft records `tokens: { in, out }`.
 - `autoDraft` is stored in config `auto_draft_chats` (a subset of `watch_chats`). The dotz watch reports only rooms in both lists and
   never a message older than 30 minutes; with the list empty it reads no database at all.
 - The draft route answers 403 for a room that is not watched and 409 while a draft of that room is still being made. A skip or a
