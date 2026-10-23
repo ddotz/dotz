@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withoutApiKeys } from "./apikey-policy.ts";
-import { cfg, DATA_DIR, DEFAULTS, IDENTITY_FILE, log, OMP } from "./config.ts";
+import { cfg, DATA_DIR, DEFAULTS, IDENTITY_FILE, log, OMP, splitThinking } from "./config.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
 import { lang, msg } from "./i18n.ts";
 import { baseLanguage, languageName } from "./language.ts";
@@ -108,12 +108,14 @@ const omoModel = (m: string | undefined) => (!m || m.startsWith("@") ? OMO_SMALL
 // One minimal call on the orchestrator's runtime (OmO by default; omp when config.json names it) with no tools, skills,
 // extensions, rules or memory, `system` as the system prompt and `text` as the only message; throws on any failure.
 // Shared by the translation below and hub/summaries.ts. Both print the same json event stream (message_end).
-function modelArgv(system: string, text: string, model: string | undefined): string[] {
+// A model given as `<selector>:<effort>` (e.g. anthropic/claude-sonnet-5-5:high) runs at that effort; without a suffix the call thinks off, as before.
+export function modelArgv(system: string, text: string, selector: string | undefined): string[] {
+	const { model, thinking = "off" } = selector ? splitThinking(selector) : { model: undefined };
 	if ((cfg.orchestrator?.runtime ?? cfg.runtime ?? "omo") === "omp") {
 		prepareOverlay();
-		return [OMP, "-p", "--mode", "json", `--config=${OVERLAY}`, "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-rules", "--no-lsp", "--no-title", "--thinking", "off", "--model", model ?? "@tiny", "--system-prompt", system, text];
+		return [OMP, "-p", "--mode", "json", `--config=${OVERLAY}`, "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-rules", "--no-lsp", "--no-title", "--thinking", thinking, "--model", model ?? "@tiny", "--system-prompt", system, text];
 	}
-	return [OMO, "-p", "--mode", "json", "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-context-files", "--no-prompt-templates", "--omo-senpi-memory-disabled", "--no-model-fallback", "--thinking", "off", "--model", omoModel(model), "--system-prompt", system, text];
+	return [OMO, "-p", "--mode", "json", "--no-session", "--no-tools", "--no-extensions", "--no-skills", "--no-context-files", "--no-prompt-templates", "--omo-senpi-memory-disabled", "--no-model-fallback", "--thinking", thinking, "--model", omoModel(model), "--system-prompt", system, text];
 }
 export async function callModel(system: string, text: string, opts: { model?: string; timeoutMs?: number } = {}): Promise<Rewrite> {
 	const started = Date.now();

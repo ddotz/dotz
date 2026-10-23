@@ -1,6 +1,7 @@
 // The draft life cycle shared by the gateway offer (offer.ts) and the CLI (bin/draft.ts): build -> ask -> revise | send | drop.
 // Nothing here sends without the user's 1) 보내기 pick for exactly that draft id, read from the inbox log.
 import { draftApprovalBlock, draftVerdict } from "../../../hub/draft-approval.ts";
+import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { generateReply, lintReply, reviseReply, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
 import { sendWith, type SendOutcome } from "./senders.ts";
 import { loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
@@ -30,7 +31,15 @@ export function defaultCall(model?: string): ModelCall {
 	};
 }
 
-const callOf = (deps: FlowDeps): ModelCall => deps.call ?? defaultCall(loadSettings().model);
+// The same call for a reply draft, with the model of the app's 답장 모델 setting (hub/reply-model.ts). `conv` (a mail's key) picks the app instance; `call` is injected by tests.
+export function replyCall(app: string, conv?: string, call?: ReplyCall): ModelCall {
+	return async (system, user) => {
+		const { callReplyModel } = await import("../../../hub/reply-model.ts");
+		return (await callReplyModel(app, conv, system, user, call)).text;
+	};
+}
+
+const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string): ModelCall => deps.call ?? replyCall(item.app ?? "mail", conv);
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
 
 function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[] }, changes: string[], deps: FlowDeps): DraftRec {
@@ -38,7 +47,7 @@ function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: 
 }
 
 export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): Promise<Built> {
-	const r = await generateReply(item, loadStyle(toneKey(item)), callOf(deps));
+	const r = await generateReply(item, loadStyle(toneKey(item)), callOf(deps, item, meta.ref));
 	return r.action === "skip" ? r : { action: "draft", rec: toRec(item, meta, r, [], deps), warnings: r.warnings };
 }
 
@@ -59,7 +68,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	if (!change.trim()) return { ok: false, text: "무엇을 고칠지 적어 주세요 (--change)" };
 	recordCorrection(toneKey(old), change, nowOf(deps));
 	await refineAfterCorrection(toneKey(old), deps);
-	const r = await reviseReply(old.item, loadStyle(toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps));
+	const r = await reviseReply(old.item, loadStyle(toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
 	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref }, r, [...old.changes, change], deps);
 	addDraft(rec);

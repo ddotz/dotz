@@ -6,6 +6,7 @@ import { loadStyle, recordCorrection } from "../../features/reply-drafts/lib/set
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
 import { commentsFor, mediaWithCounts, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
 import { commentThreadsSince, ownReplies, recentUploads, replyToComment } from "../../features/youtube-instagram/lib/youtube.ts";
+import { callReplyModel } from "../reply-model.ts";
 import { type DraftModel, createEngine, type Engine } from "./engine.ts";
 import { instagramAdapter, youtubeAdapter } from "./adapters/google-meta.ts";
 import { bunExec, websiteAdapter } from "./adapters/website.ts";
@@ -22,10 +23,8 @@ const requireInstagram = () => {
 	return i;
 };
 
-export const realModel: DraftModel = async (system, user) => {
-	const { callModel } = await import("../outlang.ts");
-	const { loadSettings } = await import("../../features/reply-drafts/lib/settings.ts");
-	const r = await callModel(system, user, { model: loadSettings().model, timeoutMs: 120_000 });
+export const realModel: DraftModel = async (system, user, app) => {
+	const r = await callReplyModel(app ?? "site", undefined, system, user);
 	return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens };
 };
 

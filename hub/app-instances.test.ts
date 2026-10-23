@@ -190,7 +190,7 @@ describe("a custom mail reader", () => {
 		expect(blockedByOff(dir, { src: "mail:kdb-work-77" })).toBe(true);
 		expect(removalPlan(dir, "mail-2", ["kdb-login", "kdb-mail", "webmail-gmail"])).toMatchObject({ label: "회사 메일", watches: ["kdb-login", "kdb-mail"], features: [] });
 		expect(removalPlan(dir, "mail", ["kdb-login", "kdb-mail", "webmail-gmail"])!.watches).toEqual(["webmail-gmail"]);
-		expect(readSettings(dir, "mail-2").map(f => f.key)).toEqual(["use_here", "label", "auto_draft", "skip_senders", "only_senders"]);
+		expect(readSettings(dir, "mail-2").map(f => f.key)).toEqual(["use_here", "label", "auto_draft", "skip_senders", "only_senders", "reply_model"]);
 	});
 });
 

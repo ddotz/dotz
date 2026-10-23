@@ -5,7 +5,7 @@ import { type Comment, type CommentAdapter, dispatchReply, type GateResult, type
 import { createStore, type Draft, type Reply, type Tokens } from "./store.ts";
 
 export type ModelReply = { text: string; inputTokens?: number; outputTokens?: number };
-export type DraftModel = (system: string, user: string) => Promise<ModelReply>;
+export type DraftModel = (system: string, user: string, app?: string) => Promise<ModelReply>;
 export type EngineDeps = {
 	dir: string;
 	now: () => number;
@@ -66,7 +66,7 @@ export function createEngine(deps: EngineDeps) {
 		if (!deps.model) return { ok: false, reason: "초안 만들기를 쓸 수 없어요" };
 		const tokens = { in: 0, out: 0, reported: false, chars: 0, outChars: 0 };
 		const call = async (system: string, user: string): Promise<string> => {
-			const r = await deps.model!(system, user);
+			const r = await deps.model!(system, user, appOf(src));
 			tokens.in += r.inputTokens ?? 0;
 			tokens.out += r.outputTokens ?? 0;
 			tokens.reported ||= (r.inputTokens ?? 0) > 0 || (r.outputTokens ?? 0) > 0;
