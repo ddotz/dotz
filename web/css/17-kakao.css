@@ -146,6 +146,12 @@
 .kk-choices { flex-wrap: wrap; }
 .kk-draft .btn { height: 32px; padding: 0 12px; font-size: 13px; }
 .kk-dt { max-height: min(16dvh, 120px); margin: 2px 0 8px; overflow-y: auto; font: 400 14px/21px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.kk-rq { margin: 2px 0 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
+.kk-rv { width: 100%; box-sizing: border-box; min-height: 40px; margin: 0 0 8px; padding: 8px 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); color: inherit; font: 400 16px/22px var(--font); }
+.kk-rv:focus { outline: 0; border-color: var(--accent); }
+.kk-st { color: var(--fg-3); font: 500 12.5px/18px var(--font); }
+.kk-manual { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--fg-2); }
+.kk-manual .ic { width: 14px; height: 14px; }
 .kk-edit { display: flex; align-items: center; gap: 8px; margin: 0 4px 6px; color: var(--fg-2); font: 500 12.5px/18px var(--font); }
 .kk-edit .btn { height: 28px; }
 .kk-dbtn { gap: 4px; background: var(--layer); color: var(--fg); }

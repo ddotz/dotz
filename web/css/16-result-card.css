@@ -118,6 +118,10 @@ a.dr-att:active { background: var(--active); }
 .dr-none, .dr-warn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--r-ctl); background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--fg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
 .dr-none .ic { color: var(--warn); }
 .dr-warn { font-weight: 600; }
+.dr-q2 { margin: 12px 0 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
+.dr-edit.ask { min-height: 64px; }
+.dr-act .dr-manual { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--fg-2); }
+.dr-act .dr-manual .ic { width: 14px; height: 14px; }
 .dr-act { display: flex; flex-direction: column; gap: 10px; }
 .dr-act.dr-row, .dr-row { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
 .dr-act .btn { height: 40px; padding: 0 18px; font-size: 15px; }

@@ -40,7 +40,7 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 		}
 		if (req.method === "POST" && path.startsWith("/api/kakao/chat/")) {
 			const b = (await req.json()) as { text: string };
-			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: b.text });
+			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: path.endsWith("/draft") ? `draft ${JSON.stringify(b)}` : b.text });
 			return Response.json({ ok: true });
 		}
 		if (req.method === "PATCH" && /^\/api\/watches\/[a-z0-9-]+\/settings$/.test(path)) {
@@ -279,6 +279,16 @@ test("a KakaoTalk reply from a peer runs on the owner's own kakao send route, on
 	expect(B.events).toEqual([{ target: "kakao:123", text: "네" }]);
 	expect(A.events).toEqual([]);
 	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "rm", chatId: "123" } }) }))).status).toBe(400);
+});
+
+test("a 고치기 request for a peer's KakaoTalk draft reaches the owner's draft route with the instruction", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const revise = { code: "d2", change: "더 짧게" };
+	const r = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "draft", chatId: "123", revise } }) }));
+	expect(r.status).toBe(200);
+	expect(B.events).toEqual([{ target: "kakao:123", text: `draft ${JSON.stringify({ revise })}` }]);
+	expect(A.events).toEqual([]);
 });
 
 test("a project delete from a peer reads its plan and runs the owner's own DELETE route, once", async () => {

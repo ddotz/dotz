@@ -11,7 +11,7 @@
 //   결정: <question> (<ref>)                 (ref = the id the approve command takes: draft id, job id, draft code)
 //   **1) 보내기** ← 추천
 //   <what happens>
-//   **2) 고치기** ...   **3) 보내지 않기** ...
+//   **2) 고치기 …**   **3) 보내지 않기** ...
 //
 // 2) 고치기 is an option that needs detail (hub/choices.ts detailOf; the bot's own mark is a trailing " …" on the name): the web sheet and the
 // Discord modal ask for the change first, and the answer is "2) 고치기 - <change>".
@@ -50,7 +50,7 @@ export function draftApprovalBlock(d: DraftInput): string {
 	const head = [`> ${d.toLabel ?? "받는이"}: ${d.to.replace(/\s+/g, " ").trim()}`, ...(d.subject ? [`> 제목: ${d.subject.replace(/\s+/g, " ").trim()}`] : []), ...(files.length ? files : d.attachmentsNone ? ["> 첨부: 없음"] : []), ">"];
 	const options = [
 		{ name: DRAFT_SEND, result: d.sendResult ?? `${d.to.replace(/\s+/g, " ").trim()}에 이 글을 그대로 보내요` },
-		{ name: DRAFT_EDIT, result: "무엇을 고칠지 알려 주면 고쳐서 다시 물어봐요" },
+		{ name: `${DRAFT_EDIT} …`, result: "어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" },
 		{ name: DRAFT_DROP, result: "이 초안은 버려요" },
 	];
 	return [...head, ...quote(d.body.replace(/\r\n?/g, "\n").trim()), issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");

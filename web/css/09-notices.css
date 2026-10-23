@@ -110,6 +110,8 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .dc-act.main { grid-column: 1 / -1; min-height: 52px; background: var(--accent); color: var(--on-accent); }
 .dc-act.main:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, #000); }
 .dc-act:disabled { opacity: .55; }
+.dc-manual { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 0; background: none; color: var(--fg-3); font: 500 13px/18px var(--font); }
+.dc-manual .ic { width: 14px; height: 14px; }
 
 /* x (무시): a question that waits on the owner can be waved off. 44px thumb target on every surface, quiet --fg-3 until pressed. */
 button.nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }

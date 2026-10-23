@@ -365,14 +365,25 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		await waitFor(v, `!document.querySelector('.kk-draft[data-code="d1"]')`);
 
 		await run(v, `document.querySelector('.kk-draft[data-code="d2"] [data-k="edit"]').click()`);
+		// 고치기 asks what to change; the manual editor is the small 직접 수정 action beside it
+		expect(await q(v, `const c = document.querySelector('.kk-draft[data-code="d2"]'); return [c.querySelector(".kk-rq").textContent, c.querySelector(".kk-rv").placeholder, c.querySelector('[data-k="manual"]').textContent, document.querySelector("#kk-edit").hidden]`)).toEqual(["어떻게 고칠까요?", "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘", "직접 수정", true]);
+		await run(v, `document.querySelector('.kk-draft[data-code="d2"] [data-k="manual"]').click()`);
 		const ed = await q<{ value: string; bar: boolean; card: boolean }>(v, `return { value: document.querySelector("#kk-text").value, bar: !document.querySelector("#kk-edit").hidden, card: !!document.querySelector('.kk-draft[data-code="d2"]') }`);
 		expect(ed).toEqual({ value: "초안 둘이에요", bar: true, card: false });
 		await run(v, `const t = document.querySelector("#kk-text"); t.value = "고친 글"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector("#kk-send-btn").click()`);
 		expect((await expectReq(isReq("POST", "/api/kakao/drafts/d2/send"))).body).toEqual({ text: "고친 글" });
 		await waitFor(v, `document.querySelector("#kk-edit").hidden && document.querySelector("#kk-text").value === ""`);
 
-		await run(v, `document.querySelector('.kk-draft[data-code="d3"] [data-k="drop"]').click()`);
-		await expectReq(isReq("POST", "/api/kakao/drafts/d3/drop"));
+		// 고치기 with an instruction: POST /draft { revise }, the old draft stays with 고치는 중… until the new one lands
+		await run(v, `document.querySelector('.kk-draft[data-code="d3"] [data-k="edit"]').click()`);
+		await run(v, `const i = document.querySelector('.kk-draft[data-code="d3"] .kk-rv'); i.value = "더 짧게"; i.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector('.kk-draft[data-code="d3"] [data-k="revise-go"]').click()`);
+		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft" && !!r.body?.revise)).body).toEqual({ revise: { code: "d3", change: "더 짧게" } });
+		expect(await q(v, `const c = document.querySelector('.kk-draft[data-code="d3"]'); return [c.querySelector(".kk-dt").textContent, c.querySelector(".kk-st").textContent, c.querySelectorAll(".btn").length]`)).toEqual(["초안 셋이에요", "고치는 중…", 0]);
+		drafts.splice(drafts.findIndex(d => d.code === "d3"), 1, { code: "d5", text: "짧은 초안", basisLogId: "4033", created: Date.now() });
+		emit({ kind: "kakao_draft", chatId: "100" });
+		await waitFor(v, `document.querySelector('.kk-draft[data-code="d5"]') && !document.querySelector('.kk-draft[data-code="d3"]')`);
+		await run(v, `document.querySelector('.kk-draft[data-code="d5"] [data-k="drop"]').click()`);
+		await expectReq(isReq("POST", "/api/kakao/drafts/d5/drop"));
 		await waitFor(v, `!document.querySelector(".kk-draft")`);
 	});
 

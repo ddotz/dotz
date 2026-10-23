@@ -35,6 +35,14 @@ test("the block carries the draft and exactly the three choices; it parses back 
 	expect(parseDraftApproval(chat)).toMatchObject({ toLabel: "대화방", to: "스터디방", body: "내일 7시에 봐요\n늦지 마요", ref: "K2ABCDE" });
 });
 
+test("고치기 is written as **2) 고치기 …** so Discord and the web ask for the change, and the mark is not part of the label", () => {
+	const block = draftApprovalBlock(mail);
+	expect(block).toContain("**2) 고치기 …**");
+	const [, edit] = parseDecisions(block).blocks[0]!.options;
+	expect(edit).toMatchObject({ n: 2, label: "고치기", detail: true });
+	expect(parseDraftApproval(block)?.ref).toBe("D123");
+});
+
 test("only a draft with the three labels is a draft-approval decision", () => {
 	expect(parseDraftApproval("[ask] 어느 쪽?\n결정: 배포 시점\n**1) 지금**\n**2) 내일**")).toBeUndefined();
 	expect(parseDraftApproval("> 받는이: a@b\n>\n> 본문\n결정: 보낼까요? (D1)\n**1) 보내기**\n**2) 보내지 않기**")).toBeUndefined();

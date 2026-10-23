@@ -37,6 +37,8 @@ export type WebDeps = {
 	learnVoice?: (src: VoiceSource) => Promise<void>;
 	// The owner sent a draft with his own edit (고치기): the draft text and the text he sent, for the room's tone profile.
 	onCorrection?: (chatId: string, draft: string, sent: string) => void;
+	// The owner asked for a change of a draft ("더 짧게"): recorded in the room's tone profile (draft.ts correct), the draft is rewritten right away.
+	onRevise?: (chatId: string, change: string) => void;
 	// The fetch behind GET /api/kakao/media/... (read-only GET of kakaocdn.net media URLs from the database). Default: the global fetch.
 	fetch?: typeof fetch;
 };
@@ -49,6 +51,7 @@ const MAX_SENDS = 200;
 const SEND_WINDOW_MS = 24 * 3600 * 1000;
 const OFF = { error: "카톡 연동이 꺼져 있어요" };
 const LOST = "게이트웨이가 다시 시작돼서 결과를 확인하지 못했어요";
+const REVISE_MAX = 500;
 const STUCK_MS = 60_000;
 const STUCK = "60초가 지나도 끝나지 않아서 실패로 처리했어요";
 const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
@@ -207,7 +210,8 @@ export function createKakaoWeb(deps: WebDeps) {
 
 	// The one model call of a draft request (never per incoming message). Never rejects: every outcome is a kakao_draft event.
 	// With `choice` (the owner's pick of the room's open question) the call writes the reply for that pick instead of deciding again.
-	async function makeDraft(config: KakaoConfig, chatId: string, choice?: string): Promise<void> {
+	// With `revise` (a pending draft and the owner's change request) the call rewrites that draft; createDraft marks the old one stale only when the new one is stored.
+	async function makeDraft(config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }): Promise<void> {
 		const done = (error?: string) => deps.broadcast({ kind: "kakao_draft", chatId, ...(error ? { error } : {}) });
 		try {
 			const room = eligible((await allRooms(config, true)).all).find(r => r.chatId === chatId);
@@ -232,11 +236,11 @@ export function createKakaoWeb(deps: WebDeps) {
 				style = deps.draftStyle?.(chatId);
 			} catch {}
 			const ownLines = recent.filter(m => m.fromMe && m.type === TEXT_TYPE).map(m => m.text);
-			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context: contextLines(recent, window), summary: readJsonText(summaryFile(chatId)), pairs: ownPairs(recent), samples: ownSamples(recent), register: registerOf(ownLines.slice(-80)), style, ...(choice ? { choice } : {}) });
+			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context: contextLines(recent, window), summary: readJsonText(summaryFile(chatId)), pairs: ownPairs(recent), samples: ownSamples(recent), register: registerOf(ownLines.slice(-80)), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}) });
 			const reply = await deps.draftModel!(system, user, chatId);
 			const parsed = parseDraftReply(reply.text);
 			if (!parsed) return done(DRAFT_FAILED);
-			if (parsed.action === "ask" && !choice) {
+			if (parsed.action === "ask" && !choice && !revise) {
 				if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
 				setAsk(chatId, { question: parsed.question!, choices: parsed.choices!, basisLogId: basis, created: now() });
 				return done();
@@ -410,11 +414,25 @@ export function createKakaoWeb(deps: WebDeps) {
 				if (!deps.draftModel) return json({ error: "초안 만들기를 쓸 수 없어요" }, 503);
 				if (drafting.has(chatId)) return json({ error: "이 대화방은 초안을 만드는 중이에요" }, 409);
 				// A pick of the room's open question (web card button): only one of the stored choices.
-				const picked = (await body()).choice;
+				const draftBody = await body();
+				const picked = draftBody.choice;
 				const choice = typeof picked === "string" ? picked.trim() : undefined;
 				if (picked !== undefined && (!choice || !storedAsks()[chatId]?.choices.includes(choice))) return json({ error: "그 선택지는 더 이상 없어요" }, 409);
+				// A change request for a pending draft of this room (web 고치기): { revise: { code, change } }.
+				const rv = draftBody.revise as { code?: unknown; change?: unknown } | undefined;
+				let revise: { code: string; draft: string; change: string } | undefined;
+				if (rv !== undefined) {
+					const change = typeof rv?.change === "string" ? rv.change.replace(/\s+/g, " ").trim().slice(0, REVISE_MAX) : "";
+					if (!change) return json({ error: "무엇을 고칠지 적어 주세요" }, 400);
+					const old = (await listDrafts({ paths, runner: deps.runner })).find(d => d.code === rv?.code);
+					if (!old || old.chatId !== chatId || old.status !== "pending") return json({ error: "고칠 초안을 찾지 못했어요" }, 409);
+					revise = { code: old.code, draft: old.text, change };
+					try {
+						deps.onRevise?.(chatId, change);
+					} catch {}
+				}
 				drafting.add(chatId);
-				const run = makeDraft(config!, chatId, choice).finally(() => drafting.delete(chatId));
+				const run = makeDraft(config!, chatId, choice, revise).finally(() => drafting.delete(chatId));
 				pending.add(run);
 				void run.finally(() => pending.delete(run));
 				return json({ state: "drafting" }, 202);

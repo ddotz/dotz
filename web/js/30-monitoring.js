@@ -151,12 +151,13 @@ const MON_TONE = { fail: ["실패", "err"], warn: ["주의", "warn"], ask: ["답
 const monWhen = n => ntTime(n.updated || n.ts);
 const monTag = tone => { const t = MON_TONE[tone]; return t ? el("span", { class: `tag ${t[1]}`, text: t[0] }) : null; };
 // A send approval (hub/draft-approval.ts): drawn as the mail it would send - the one question, the mail being answered when known, the recipient chip,
-// the subject in bold, the body in paragraphs - with its state as a badge with the time. 보내기 sends, 고치기 opens a box with the draft to change,
+// the subject in bold, the body in paragraphs - with its state as a badge with the time. 보내기 sends, 고치기 asks "어떻게 고칠까요?" (the bot rewrites it),
 // 보내지 않기 is the quiet way out. The whole answer path is the notice's (answerInline / ntPost), so the chat card and this one stay in step.
-const DR = { edit: new Set(), note: {} };
-const DR_STATE = { open: ["승인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], drop: ["보내지 않음", ""], expired: ["만료", ""], ignored: ["무시함", ""] };
+const DR = { edit: new Set(), manual: new Set(), note: {} };
+const DR_STATE = { open: ["승인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], revising: ["고치는 중…", "pri"], drop: ["보내지 않음", ""], expired: ["만료", ""], ignored: ["무시함", ""] };
 function drState(d) {
   if (d.state === "open" || d.state === "ignored") return d.state;
+  if (d.draft && ntRevising({ kind: "decision", decision: d })) return "revising";   // 고치기 answered, the new draft has not landed
   const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && d.options.find(x => x.n === Number(m[1]));
   return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop" }[o.label] || "expired";
 }
@@ -173,26 +174,30 @@ function draftCardNode(n) {
   const redraw = () => { const nn = draftCardNode(n); card.replaceWith(nn); };
   const when = ntTime(d.answered_at || n.updated || n.ts), mail = d.to.startsWith("mail:");
   const q = ntPlain(n.title).replace(/\s*\([^()]*\)\s*$/, "");
-  const editing = open && DR.edit.has(n.id);
-  const ta = editing ? el("textarea", { class: "dr-edit", rows: "8", maxlength: "6000", "aria-label": "초안 고치기", disabled: busy, oninput: () => { DR.note[n.id] = ta.value; go2.disabled = !ta.value.trim(); } }) : null;
-  if (ta) ta.value = DR.note[n.id] ?? drParas(dr.body).join("\n\n");
+  const editing = open && DR.edit.has(n.id), man = editing && DR.manual.has(n.id);
+  let go2 = null;
+  const ta = editing ? el("textarea", { class: man ? "dr-edit" : "dr-edit ask", rows: man ? "8" : "2", maxlength: man ? "6000" : "500", placeholder: man ? "" : DRAFT_HINT, "aria-label": man ? "직접 수정" : "고칠 내용", disabled: busy, oninput: () => { DR.note[n.id] = ta.value; if (go2) go2.disabled = !ta.value.trim(); } }) : null;
+  if (ta) ta.value = DR.note[n.id] ?? (man ? drParas(dr.body).join("\n\n") : "");
+  const leave = () => { DR.edit.delete(n.id); DR.manual.delete(n.id); delete DR.note[n.id]; };
   const mailBox = el("div", { class: "dr-mail" },
     el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || "받는이" }), el("span", { class: "dr-chip", text: dr.to || "-" })),
     dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
-    editing ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
+    man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
     draftFilesNode(dr));
+  if (editing && !man) mailBox.append(el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), ta);
   const kids = [
     el("div", { class: "rc-hd" }, el("span", { class: "dr-ic" }, icon(mail ? "mail" : "send")), el("span", { class: "rc-src", text: mail ? "메일" : (targetName(d.to) || "초안") }), el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` })),
     q ? el("div", { class: "rc-title dr-q", text: q }) : null, mail ? drOriginal(d.to) : null, mailBox];
   if (editing) {
-    const go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: "고친 내용 보내기", onclick: async () => {
+    go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: man ? "이 내용으로 고치기" : "고쳐 달라고 하기", onclick: async () => {
       const text = ta.value.trim();
       if (!text || !oEdit) return;
       dcSending.add(n.id); syncInlineChoices(); redraw();
-      try { await ntPost(n, oEdit.n, `이 내용으로 고쳐 주세요: ${text}`); DR.edit.delete(n.id); delete DR.note[n.id]; } catch (e) { toast(e.message, true); }
+      try { await ntPost(n, oEdit.n, man ? MANUAL_LEAD + text : text); leave(); } catch (e) { toast(e.message, true); }
       dcSending.delete(n.id); syncInlineChoices();
     } });
-    kids.push(el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { DR.edit.delete(n.id); redraw(); } })));
+    kids.push(el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { leave(); redraw(); } }),
+      man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" }))));
   } else if (open) {
     const go = o => () => { if (o && !busy) answerInline(n, o); };
     kids.push(el("div", { class: "dr-act dr-row" },
@@ -206,7 +211,7 @@ function draftCardNode(n) {
 // A decision: the question and the same choice rows a chat message has; an open one is answered here, an answered one shows what was chosen.
 function monDecisionNode(n) {
   const d = n.decision, open = d.state === "open", said = d.state === "answered" ? String(d.answer || "") : "";
-  if (d.draft) return draftCardNode(n);
+  if (d.draft) return ntRevising(n) && ntSuccessor(n) ? null : draftCardNode(n);   // the rewritten draft replaces the one that was sent back
   // The buttons show the options: the body keeps the lead text and the 결정: line, not the option lines (10-decision-card.js stripChoices).
   const fl = fileLines(d.options.length ? stripChoices(n.text) : n.text);
   const rows = ntOptsOrdered(d.options).map(o => el("button", { class: `dcm-row${o.rec ? " rec" : ""}${said.startsWith(`${o.n})`) ? " on" : ""}`, type: "button", disabled: !open || dcSending.has(n.id), "data-n": o.n,

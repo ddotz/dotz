@@ -52,6 +52,8 @@ const onCorrection = (chatId: string, draft: string, sent: string) => {
 	recordCorrection({ app: "kakao", room: chatId }, `초안 "${cut(draft.replace(/\s+/g, " "))}" 대신 "${cut(sent.replace(/\s+/g, " "))}"처럼 씀`, new Date());
 };
 
+const onRevise = (chatId: string, change: string) => recordCorrection({ app: "kakao", room: chatId }, `초안을 고쳐 달라고 함: ${change}`, new Date());
+
 const machine = resolveName(cfg.web?.machine_name, hostname());
 // One sender per room across this owner's computers (docs/peer-monitoring.md): before a send, this gateway claims the room's lease here
 // and on every other gateway; a computer that holds it refuses, and the send does not run.
@@ -76,6 +78,7 @@ const web = createKakaoWeb({
 	draftStyle,
 	learnVoice,
 	onCorrection,
+	onRevise,
 });
 
 export const kakaoRoute = web.route;

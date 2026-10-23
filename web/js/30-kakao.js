@@ -11,7 +11,7 @@ const KK_PAGE = 80;
 const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, pick: null,   // pick: null = open while no room is chosen
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
-  stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", draftT: 0, tailing: false, again: false,
+  stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
   typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
   peerT: 0, peerBusy: false, peerHead: "",
 };
@@ -412,7 +412,7 @@ async function kkOpen(id) {
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
   const seq = ++KK.seq;
   Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" }, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
-    loading: true, roomErr: "", pill: false, stick: true, pin: "", placed: false, readSent: "", edit: null, drafting: "" });
+    loading: true, roomErr: "", pill: false, stick: true, pin: "", placed: false, readSent: "", edit: null, drafting: "", revise: null, reviseCode: "" });
   kkTa.value = KK.typed.get(id) || ""; kkAutosize();
   kkPaintAll(); convTitle();
   try {
@@ -480,7 +480,11 @@ async function kkTail() {
 }
 function kkApply(d) {
   const have = new Set(KK.msgs.map(m => m.logId)), fresh = (Array.isArray(d.messages) ? d.messages : []).filter(m => !have.has(m.logId));
-  if (Array.isArray(d.drafts)) { KK.drafts = d.drafts; KK.ask = kkAskOf(d); }
+  if (Array.isArray(d.drafts)) {
+    KK.drafts = d.drafts; KK.ask = kkAskOf(d);
+    // A peer's room gets no draft event: its old draft going away is the new one landing.
+    if (KK.pc && KK.drafting === KK.open && KK.reviseCode && !d.drafts.some(x => x.code === KK.reviseCode)) { KK.drafting = ""; clearTimeout(KK.draftT); }
+  }
   if (Array.isArray(d.sends)) KK.sends = d.sends;
   if (d.room) KK.room = d.room;
   if (fresh.length) KK.msgs = [...KK.msgs, ...fresh].sort((a, b) => (kkGt(a.logId, b.logId) ? 1 : kkGt(b.logId, a.logId) ? -1 : 0));
@@ -600,8 +604,26 @@ function kkAskCard() {
       ...a.choices.map((c, i) => el("button", { class: "btn tonal", type: "button", "data-k": "pick", "data-i": String(i), text: c, onclick: () => kkMakeDraft(c) })),
       el("button", { class: "btn text", type: "button", "data-k": "own", text: "직접 쓸게", onclick: own })));
 }
+// 고치기 asks what to change; the bot rewrites the draft (one model call, POST .../draft { revise }) and the old draft stays until the new one lands.
+const KK_REVISE_HINT = "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘";
+function kkReviseBox(d, rv) {
+  const inp = el("input", { class: "kk-rv", type: "text", maxlength: "500", placeholder: KK_REVISE_HINT, "aria-label": "고칠 내용", autocomplete: "off" });
+  inp.value = rv.text;
+  const go = el("button", { class: "btn", type: "button", "data-k": "revise-go", text: "고쳐 줘", disabled: !rv.text.trim(), onclick: () => { const change = inp.value.trim(); if (change) { KK.revise = null; kkMakeDraft(undefined, { code: d.code, change }); } } });
+  inp.oninput = () => { rv.text = inp.value; go.disabled = !inp.value.trim(); };
+  inp.onkeydown = ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); go.click(); } };
+  return [el("div", { class: "kk-rq", text: "어떻게 고칠까요?" }), inp,
+    el("div", { class: "btns" }, go,
+      el("button", { class: "btn text", type: "button", "data-k": "revise-cancel", text: "취소", onclick: () => { KK.revise = null; kkPaintFoot(); } }),
+      el("button", { class: "btn text kk-manual", type: "button", "data-k": "manual", "aria-label": "직접 수정", onclick: () => { KK.revise = null; kkEdit(d); } }, icon("pencil"), el("span", { text: "직접 수정" })))];
+}
 function kkDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); kkTail(); } finally { btn.disabled = false; } };
+  const making = !!KK.open && KK.drafting === KK.open && KK.reviseCode === d.code, rv = !making && KK.revise && KK.revise.code === d.code ? KK.revise : null;
+  if (making || rv) return el("div", { class: "kk-draft", "data-code": d.code },
+    el("div", { class: "kk-dh", text: "답장 초안" }),
+    el("div", { class: "kk-dt", text: d.text }),
+    ...(making ? [el("div", { class: "kk-st", role: "status", text: "고치는 중…" })] : kkReviseBox(d, rv)));
   return el("div", { class: "kk-draft", "data-code": d.code },
     el("div", { class: "kk-dh", text: "답장 초안" }),
     el("div", { class: "kk-dt", text: d.text }),
@@ -612,7 +634,7 @@ function kkDraftCard(d) {
         kkAddSend(r, d.text); KK.drafts = KK.drafts.filter(x => x.code !== d.code); KK.stick = true; KK.pin = "bottom";
         kkPaintTl(true); kkPaintFoot();
       }) }),
-      el("button", { class: "btn tonal", type: "button", "data-k": "edit", text: "고치기", onclick: () => kkEdit(d) }),
+      el("button", { class: "btn tonal", type: "button", "data-k": "edit", text: "고치기", onclick: () => { KK.revise = { code: d.code, text: "" }; kkPaintFoot(); const i = $(".kk-rv", kkDrafts); if (i) i.focus(); } }),
       el("button", { class: "btn text", type: "button", "data-k": "drop", text: "버리기", onclick: ev => run(ev.currentTarget, async () => {
         const id = KK.open;
         await api(`/api/kakao/drafts/${enc(d.code)}/drop`, "POST", {});
@@ -634,23 +656,26 @@ function kkEditCancel() {
 function kkPaintFoot() {
   const edit = KK.edit && KK.drafts.some(d => d.code === KK.edit.code) ? KK.edit : null;
   if (KK.edit && !edit) KK.edit = null;
-  const ask = kkAskCard();
+  const ask = kkAskCard(), hadRv = document.activeElement && document.activeElement.classList.contains("kk-rv");
+  if (KK.revise && !KK.drafts.some(d => d.code === KK.revise.code)) KK.revise = null;
   clear(kkDrafts).append(...(ask ? [ask] : []), ...KK.drafts.filter(d => !edit || d.code !== edit.code).map(kkDraftCard));
   kkDrafts.hidden = !kkDrafts.firstChild;
+  if (hadRv) { const i = $(".kk-rv", kkDrafts); if (i) i.focus({ preventScroll: true }); }
   kkEditBar.hidden = !edit;
   const making = !!KK.open && KK.drafting === KK.open;
   kkDraftBtn.disabled = making;
   kkDraftBtn.lastChild.textContent = making ? "초안 만드는 중…" : "답장 초안";
 }
 // Drafts are made only on demand (or by a room's 자동 초안): the request starts it, and the kakao_draft event for this room says it is done.
-async function kkMakeDraft(choice) {
+// `revise` = { code, change }: rewrite that draft with the owner's change instead of making a new one.
+async function kkMakeDraft(choice, revise) {
   const id = KK.open;
   if (!id || KK.drafting === id) return;
-  KK.drafting = id; kkPaintFoot();
+  KK.drafting = id; KK.reviseCode = revise ? revise.code : ""; kkPaintFoot();
   clearTimeout(KK.draftT);
   KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast("초안이 아직 오지 않았어요", true); } }, 120000);
   try {
-    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", choice ? { choice } : {});
+    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", revise ? { revise } : choice ? { choice } : {});
     if (r && typeof r.error === "string" && r.error) throw new Error(r.error);
   } catch (e) {
     clearTimeout(KK.draftT);
