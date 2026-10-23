@@ -2,6 +2,7 @@
 // but the values live on the watch. PATCH /api/watches/<name>/settings is the one write path and ends in patchWatch (hub/watch.ts), the call
 // the project page and the pause button already use; the switches, a change card's 적용 and a peer's /api/peer/act all send that plain request.
 import { settingsContextOf, validateFields, viewOf, type SettingField, type SettingValue, type SettingView, type Turn } from "./app-settings.ts";
+import { watchFacts } from "./monitors.ts";
 import { allWatches, patchWatch } from "./watch.ts";
 
 const WATCH_STORE = "watches.json";
@@ -36,8 +37,14 @@ export function writeWatchSettings(idOrName: string, values: unknown): SettingVi
 	return readWatchSettings(w.id);
 }
 
-/** What the orchestrator gets with a monitor's settings turn: only this monitor's fields and values. */
+/** What the orchestrator gets with a monitor's turn: the monitor itself (name, label, type, state, last output) so it need not ask, then its settings. */
 export const watchSettingsContext = (idOrName: string, recent: readonly Turn[] = []): string => {
-	const w = find(idOrName);
-	return settingsContextOf(`w:${w.name}`, `모니터 "${w.label ?? w.name}"`, readWatchSettings(w.id), recent);
+	const w = find(idOrName), f = watchFacts(w);
+	const state = w.paused ? "일시정지" : w.state.paused ? `멈춤(${w.state.paused} 실패, 승인 대기)` : f.fails ? `실패 ${f.fails}번 연속` : w.state.lastRun ? "정상" : "아직 확인 전";
+	const facts = [
+		`[monitor] 이름 ${w.name} · 표시 이름 ${w.label ?? w.name} · 종류 ${f.keeper ? "로그인 유지" : "모니터링"} · 상태 ${state}`,
+		`마지막 확인 ${w.state.lastRun ?? "없음"} · 마지막 정상 ${w.state.lastOk ?? "없음"} · 마지막 결과: ${f.last_output ?? "없음"}`,
+		"오너가 이 모니터에 대해 자유롭게 지시합니다. 원인 찾기, 다시 로그인, 일시정지는 직접 처리하고 결과를 답하세요. 설정 값만 바꿀 때는 아래 변경 카드를 씁니다.",
+	];
+	return `${facts.join("\n")}\n${settingsContextOf(`w:${w.name}`, `모니터 "${w.label ?? w.name}"`, readWatchSettings(w.id), recent)}`;
 };
