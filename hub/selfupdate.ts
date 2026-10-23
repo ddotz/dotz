@@ -1,6 +1,8 @@
 // Self-update of the dotz checkout the gateway runs from (settings → 업데이트). The check fetches the tracked branch
-// (origin/main by default) and lists what is new; the update refuses while the checkout has uncommitted changes or local
-// commits that are not on origin (it names them and never discards anything), then fast-forwards only, runs `bun install`
+// (origin/main by default) and lists what is new. Local commits upstream already has are dropped, the rest are re-applied on the new
+// version in a temporary worktree (hub/selfupdate-local.ts) with the same checks; what cannot be carried over (conflict, failing checks,
+// uncommitted changes) is saved first (branch dotz-local/<stamp> + patch files in the logs dir) and waits for the owner's button, or is
+// moved aside automatically by auto_apply on a non-developer install. The update then fast-forwards, runs `bun install`
 // when package.json or the lockfile changed, runs the test suite and goes back to the old commit if the tests fail. The
 // restart itself is main.ts's restart gate (waits for running turns) or, on the owner's word, an immediate restart.
 // A daily check (self_update.auto_check / self_update.at in config.json) only notifies, unless self_update.auto_apply is on
@@ -17,6 +19,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renam
 import { join } from "node:path";
 import { issueBlock } from "./choices.ts";
 import { CONFIG_FILE, cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
+import { FORMAT, type Keep, keepLine, keepsLocal, openTrial, parseCommits, type Saved, saveLocal, savedNote, splitEquivalent } from "./selfupdate-local.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export type Exec = (cmd: string[], cwd: string, timeoutMs: number) => Promise<{ code: number; out: string }>;
@@ -37,8 +40,12 @@ export type CheckResult = {
 	incoming: Commit[];
 	incomingTotal: number;
 	ahead: Commit[];
+	// Local commits upstream already has (same patch, or nothing left to apply): skipped, never counted as local work.
+	dropped: Commit[];
 	dirty: string[];
 	blocked: string[];
+	// Local work that cannot be carried onto the new version by itself (already saved): settings shows the 'keep and update' button.
+	keep?: Keep;
 };
 type Job = {
 	id: number;
@@ -51,6 +58,8 @@ type Job = {
 	to?: string;
 	steps: { at: string; text: string }[];
 	check?: CheckResult;
+	keep?: Keep;
+	note?: string;
 };
 export type Options = {
 	dir: string;
@@ -71,7 +80,6 @@ const REPO_DIR = join(import.meta.dir, "..");
 const STATE_FILE = join(DATA_DIR, "self-update.json");
 const LOCK_FILES = ["package.json", "bun.lock", "bun.lockb"];
 const LIST_MAX = 30;
-const SEP = "\x1f";
 
 export const defaultExec: Exec = async (cmd, cwd, timeoutMs) => {
 	// No credential prompt can ever wait for a terminal: a missing login fails at once with a message we can explain.
@@ -114,6 +122,7 @@ function settings() {
 		at,
 		remote: typeof o.remote === "string" && o.remote ? o.remote : "origin",
 		branch: typeof o.branch === "string" && o.branch ? o.branch : "main",
+		keep_local: typeof o.keep_local === "boolean" ? o.keep_local : undefined,
 	};
 }
 
@@ -151,16 +160,6 @@ function record(logDir: string, text: string): void {
 		log(`self-update: log write failed: ${e}`);
 	}
 }
-
-const parseCommits = (out: string): Commit[] =>
-	out
-		.split("\n")
-		.filter(l => l.includes(SEP))
-		.map(l => {
-			const [sha, short, date, ...rest] = l.split(SEP);
-			return { sha, short, date, subject: rest.join(SEP).slice(0, 200) };
-		});
-const FORMAT = `--format=%H${SEP}%h${SEP}%cI${SEP}%s`;
 
 function resolve(o: Options) {
 	const s = settings();
@@ -431,7 +430,7 @@ export async function check(o: Options): Promise<CheckResult> {
 	const { dir, remote, branch, exec, logDir } = resolve(o);
 	const upstream = `${remote}/${branch}`;
 	const v = await version(o);
-	const base: CheckResult = { at: new Date().toISOString(), version: v, ok: false, upstream, incoming: [], incomingTotal: 0, ahead: [], dirty: [], blocked: [] };
+	const base: CheckResult = { at: new Date().toISOString(), version: v, ok: false, upstream, incoming: [], incomingTotal: 0, ahead: [], dropped: [], dirty: [], blocked: [] };
 	if (v.kind === "tarball") return checkTarball(o, v, base);
 	if (v.kind !== "git") {
 		const r = {
@@ -468,9 +467,28 @@ export async function check(o: Options): Promise<CheckResult> {
 		dirty: dirty.out.split("\n").filter(Boolean).slice(0, 40),
 	};
 	if (v.branch !== branch) r.blocked.push(`지금 브랜치가 ${v.branch}이에요. ${branch}에서만 업데이트해요.`);
-	if (r.dirty.length) r.blocked.push(`커밋하지 않은 변경 ${r.dirty.length}개가 있어요. 커밋하거나 치운 뒤 업데이트해요 (지우지 않아요).`);
-	if (r.ahead.length) r.blocked.push(`${upstream}에 없는 로컬 커밋 ${r.ahead.length}개가 있어요. 먼저 push하거나 정리해 주세요 (지우지 않아요).`);
-	record(logDir, `check: ${v.commit.short} vs ${upstream} ${r.remoteHead?.slice(0, 7)}: ${r.incomingTotal} incoming, ${r.ahead.length} local-only, ${r.dirty.length} dirty`);
+	if (r.incomingTotal > 0 && r.remoteHead && (r.ahead.length || r.dirty.length)) {
+		let why: string | undefined;
+		if (r.ahead.length) {
+			const split = await splitEquivalent(exec, dir, upstream);
+			r.dropped = split.dropped;
+			r.ahead = split.rest;
+			if (split.rest.length) {
+				const t = await openTrial(exec, dir, r.remoteHead, split.rest);
+				if (t.ok) {
+					r.dropped = [...r.dropped, ...t.emptied];
+					r.ahead = t.kept;
+					await t.close();
+				} else why = t.reason;
+			}
+		}
+		if (why || r.dirty.length) {
+			const commits = why ? r.ahead : [];
+			r.keep = { line: keepLine(commits, r.dirty.length, why), commits, dirty: r.dirty };
+			r.keep.saved = await saveLocal(exec, dir, logDir, commits, r.dirty.length > 0).catch(e => (record(logDir, `check: save failed: ${e}`), undefined));
+		}
+	}
+	record(logDir, `check: ${v.commit.short} vs ${upstream} ${r.remoteHead?.slice(0, 7)}: ${r.incomingTotal} incoming, ${r.ahead.length} local-only, ${r.dropped.length} already upstream, ${r.dirty.length} dirty${r.keep ? ", needs keep" : ""}`);
 	return r;
 }
 
@@ -490,7 +508,9 @@ export function failedTestNames(out: string, max = 3): string[] {
 let jobSeq = 0;
 let job: Job | undefined;
 
-export async function apply(o: Options): Promise<Job> {
+// `how.keep`: the owner pressed '내 수정을 보관하고 새 버전 받기' (save local work, then move to upstream). `how.auto`: the daily auto-apply,
+// which does the same on its own only for an install that is not a developer checkout (self_update.keep_local, see keepsLocal).
+export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } = {}): Promise<Job> {
 	if (job?.status === "running") return job;
 	const { dir, remote, branch, exec, testCmd, logDir } = resolve(o);
 	const upstream = `${remote}/${branch}`;
@@ -521,22 +541,80 @@ export async function apply(o: Options): Promise<Job> {
 		if (!c.incomingTotal || !c.remoteHead) return end("current", `이미 최신이에요 (${v.commit.short}).`);
 		return applyTarball(o, c, v, j, step, end);
 	}
-	if (c.blocked.length) {
-		const what = [...c.dirty.map(d => `변경: ${d}`), ...c.ahead.map(a => `로컬 커밋: ${a.short} ${a.subject}`)].slice(0, 20);
-		return end("refused", `업데이트하지 않았어요. ${c.blocked.join(" ")}${what.length ? `\n${what.join("\n")}` : ""}`);
-	}
+	if (c.blocked.length) return end("refused", `업데이트하지 않았어요. ${c.blocked.join(" ")}`);
 	if (!c.incomingTotal || !c.remoteHead) return end("current", `이미 최신이에요 (${v.commit.short}).`);
 	const to = c.remoteHead;
 	j.to = to;
 
-	step("병합", `${v.commit.short} → ${to.slice(0, 7)} fast-forward (${c.incomingTotal}개 커밋)`);
-	const m = await exec(["git", "merge", "--ff-only", to], dir, 60_000);
-	if (m.code !== 0) return end("failed", `fast-forward로 합칠 수 없어요: ${lastLine(m.out)}`);
+	const runTests = async (cwd: string, where: string) => {
+		step("테스트", `${testCmd.join(" ")} 실행 중${where}`);
+		const t = await exec(testCmd, cwd, 20 * 60_000);
+		const summary = t.out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
+		if (t.code === 0) return { ok: true as const, summary, why: "" };
+		const blocks = failureBlocks(t.out);
+		if (blocks) record(logDir, `update #${j.id}: failed tests\n${blocks}`);
+		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
+		const names = failedTestNames(t.out);
+		return { ok: false as const, summary, why: `테스트 실패${summary ? ` (${summary})` : ` (exit ${t.code})`}${names.length ? `: ${names.join(" / ")}` : ""}` };
+	};
+
+	// Local work: commits upstream already has are skipped; the rest is re-applied on the new version in a temporary worktree with the
+	// same checks (bun install, tests) and only a clean, green result moves the live checkout. Anything else is saved first, then
+	// moved aside only on the owner's button or the non-developer auto rule.
+	const discard = !!how.keep || (!!how.auto && !keepsLocal(dir, settings().keep_local));
+	let target = to, hard = false, failed: string | undefined, saved: Saved | undefined, note = "", testSummary = "";
+	let lost: Commit[] = [];
+	if (c.dropped.length) step("확인", `이미 새 버전에 있는 로컬 커밋 ${c.dropped.length}개는 건너뛰어요: ${c.dropped.slice(0, 3).map(d => d.subject.slice(0, 40)).join(" / ")}`);
+	if (c.ahead.length) {
+		if (how.keep) lost = c.ahead;
+		else {
+			step("얹기", `로컬 커밋 ${c.ahead.length}개를 임시 작업 폴더에서 새 버전 위에 얹어 봐요`);
+			const t = await openTrial(exec, dir, to, c.ahead);
+			if (!t.ok) failed = t.reason;
+			else {
+				try {
+					const deps = existsSync(join(t.wt, "package.json")) ? await exec(["bun", "install"], t.wt, 10 * 60_000) : { code: 0, out: "" };
+					if (deps.code !== 0) failed = `bun install 실패: ${lastLine(deps.out)}`;
+					else {
+						const r = await runTests(t.wt, " (임시 작업 폴더)");
+						if (r.ok) [target, testSummary] = [t.sha, r.summary];
+						else failed = r.why;
+					}
+				} finally {
+					await t.close();
+				}
+			}
+			if (failed) lost = c.ahead;
+		}
+	}
+	if (lost.length || c.dirty.length) {
+		try {
+			saved = await saveLocal(exec, dir, logDir, lost, c.dirty.length > 0);
+		} catch (e) {
+			return end("failed", `내 수정을 보관하지 못해서 아무것도 바꾸지 않았어요: ${lastLine(String(e))}`);
+		}
+		step("보관", `내 수정을 보관했어요: ${[saved.branch, saved.patch, saved.dirtyPatch].filter(Boolean).join(", ")}`);
+		if (!discard) {
+			const keep: Keep = { line: keepLine(lost, c.dirty.length, failed), commits: lost, dirty: c.dirty, saved };
+			j.keep = keep;
+			const what = [...c.dirty.map(d => `변경: ${d}`), ...lost.map(a => `로컬 커밋: ${a.short} ${a.subject}`)].slice(0, 20);
+			return end("refused", `업데이트하지 않았어요. ${keep.line}${what.length ? `\n${what.join("\n")}` : ""}`);
+		}
+		hard = true;
+		note = ` ${savedNote(saved, upstream)}`;
+		j.note = note.trim();
+	}
+
+	const rebased = target !== to;
+	step("병합", rebased ? `${v.commit.short} → ${target.slice(0, 7)} 새 버전 위에 얹은 로컬 커밋 ${c.ahead.length}개와 함께 옮겨요` : `${v.commit.short} → ${to.slice(0, 7)} ${hard || c.dropped.length ? "새 버전으로 옮겨요" : "fast-forward"} (${c.incomingTotal}개 커밋)`);
+	const m = rebased || hard || c.dropped.length ? await exec(["git", "reset", hard ? "--hard" : "--keep", target], dir, 60_000) : await exec(["git", "merge", "--ff-only", to], dir, 60_000);
+	if (m.code !== 0) return end("failed", `새 버전으로 합칠 수 없어요: ${lastLine(m.out)}`);
 
 	const back = async (why: string, deps: boolean) => {
 		step("되돌리기", `${why} → ${v.commit.short}로 되돌려요`);
 		// --keep moves HEAD and the files the merge changed only; it refuses rather than overwrite anything else.
-		const r = await exec(["git", "reset", "--keep", from], dir, 60_000);
+		const r = await exec(["git", "reset", hard ? "--hard" : "--keep", from], dir, 60_000);
+		if (r.code === 0 && hard && saved?.dirtyPatch) await exec(["git", "apply", saved.dirtyPatch], dir, 60_000);
 		if (r.code !== 0) return end("failed", `${why}. 되돌리기도 실패했어요(지금 ${to.slice(0, 7)}): ${lastLine(r.out)} — 터미널에서 \`git reset --keep ${from.slice(0, 12)}\`로 되돌려 주세요.`);
 		if (deps) {
 			const i = await exec(["bun", "install"], dir, 10 * 60_000);
@@ -545,7 +623,7 @@ export async function apply(o: Options): Promise<Job> {
 		return end("failed", `${why}. 이전 버전(${v.commit.short})에 그대로 있어요.`);
 	};
 
-	const changed = await exec(["git", "diff", "--name-only", from, to], dir, 15_000);
+	const changed = await exec(["git", "diff", "--name-only", from, target], dir, 15_000);
 	const deps = changed.out.split("\n").some(f => LOCK_FILES.includes(f.trim()));
 	if (deps) {
 		step("의존성", "package.json/lockfile이 바뀌어 bun install을 실행해요");
@@ -553,17 +631,13 @@ export async function apply(o: Options): Promise<Job> {
 		if (i.code !== 0) return back(`bun install 실패: ${lastLine(i.out)}`, true);
 	}
 
-	step("테스트", `${testCmd.join(" ")} 실행 중`);
-	const t = await exec(testCmd, dir, 20 * 60_000);
-	const summary = t.out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
-	if (t.code !== 0) {
-		const blocks = failureBlocks(t.out);
-		if (blocks) record(logDir, `update #${j.id}: failed tests\n${blocks}`);
-		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
-		const names = failedTestNames(t.out);
-		return back(`테스트 실패${summary ? ` (${summary})` : ` (exit ${t.code})`}${names.length ? `: ${names.join(" / ")}` : ""}`, deps);
+	if (!rebased) {
+		const t = await runTests(dir, "");
+		if (!t.ok) return back(t.why, deps);
+		testSummary = t.summary;
 	}
-	return end("updated", `${v.commit.short} → ${to.slice(0, 7)} 받았어요${summary ? ` (테스트 ${summary})` : ""}. 재시작하면 적용돼요.`);
+	const extra = `${rebased ? ` 로컬 커밋 ${c.ahead.length}개는 새 버전 위에 얹었어요.` : ""}${c.dropped.length ? ` 이미 새 버전에 있는 로컬 커밋 ${c.dropped.length}개는 건너뛰었어요.` : ""}${note}`;
+	return end("updated", `${v.commit.short} → ${target.slice(0, 7)} 받았어요${testSummary ? ` (테스트 ${testSummary})` : ""}. 재시작하면 적용돼요.${extra}`);
 }
 
 type State = { lastCheck?: CheckResult; notified?: string; autoFailed?: string; autoRefused?: string };
@@ -601,7 +675,7 @@ const autoChoice = (): string =>
 // both as `blocked`). A failed apply is not retried for the same upstream commit; a refusal is re-evaluated daily but alerted once.
 async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks): Promise<void> {
 	const remoteHead = c.remoteHead as string;
-	const { logDir } = resolve(o);
+	const { dir, logDir } = resolve(o);
 	const short = remoteHead.slice(0, 7);
 	if (s.autoFailed === remoteHead) return;
 	if (c.blocked.length) {
@@ -611,13 +685,20 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 		hooks.alert(`dotz 자동 업데이트를 하지 않았어요 (새 커밋 ${c.incomingTotal}개, ${short}). ${c.blocked.join(" ")}\n${autoChoice()}`);
 		return;
 	}
+	if (c.keep && keepsLocal(dir, settings().keep_local)) {
+		record(logDir, `auto-apply: ${short} needs the owner's choice: ${c.keep.line}`);
+		if (s.autoRefused === remoteHead) return;
+		s.autoRefused = remoteHead;
+		hooks.alert(`dotz 자동 업데이트를 하지 않았어요 (새 커밋 ${c.incomingTotal}개, ${short}). ${c.keep.line} (설정 → 업데이트)\n${autoChoice()}`);
+		return;
+	}
 	record(logDir, `auto-apply: applying ${short}`);
-	const j = await apply(o);
+	const j = await apply(o, { auto: true });
 	if (j.status === "running") return;
 	if (j.status === "updated") {
 		delete s.autoRefused;
 		delete s.autoFailed;
-		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${"commit" in c.version ? c.version.commit.short : "?"} → ${short}, 커밋 ${c.incomingTotal}개, 테스트 통과). 하던 일이 모두 끝나면 다시 시작해요.`);
+		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${"commit" in c.version ? c.version.commit.short : "?"} → ${short}, 커밋 ${c.incomingTotal}개, 테스트 통과).${j.note ? ` ${j.note}` : ""} 하던 일이 모두 끝나면 다시 시작해요.`);
 		hooks.restartIdle();
 		return;
 	}
@@ -639,7 +720,7 @@ export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoH
 	}
 	if (c.ok && c.incomingTotal > 0 && c.remoteHead && s.notified !== c.remoteHead) {
 		s.notified = c.remoteHead;
-		const text = `dotz 새 버전이 있어요: 커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.`;
+		const text = `dotz 새 버전이 있어요: 커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.${c.keep ? ` ${c.keep.line}` : ""}`;
 		record(resolve(o).logDir, `auto-check: notified ${c.remoteHead.slice(0, 7)}`);
 		notifyFn?.(text, c.incomingTotal);
 	}
@@ -706,7 +787,8 @@ export async function updateRoute(req: Request, url: URL, deps: RouteDeps): Prom
 	}
 	if (req.method === "POST" && p === "/api/update/apply") {
 		if (job?.status === "running") return json({ error: "업데이트가 이미 진행 중이에요", job }, 409);
-		void apply(o).then(j => j.check && saveState({ ...readState(), lastCheck: j.check }), e => log(`self-update failed: ${e}`));
+		const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+		void apply(o, { keep: b.keep === true }).then(j => j.check && saveState({ ...readState(), lastCheck: j.check }), e => log(`self-update failed: ${e}`));
 		return json({ job }, 202);
 	}
 	if (req.method === "POST" && p === "/api/update/restart") {
@@ -731,7 +813,7 @@ if (import.meta.main) {
 	const i = process.argv.indexOf("--dir");
 	const t = process.argv.indexOf("--test-cmd");
 	const o: Options = { dir: i > 0 ? process.argv[i + 1] : REPO_DIR, ...(t > 0 ? { testCmd: ["sh", "-c", process.argv[t + 1]] } : {}) };
-	if (process.argv.includes("--apply")) console.log(JSON.stringify(await apply(o), null, 2));
+	if (process.argv.includes("--apply")) console.log(JSON.stringify(await apply(o, { keep: process.argv.includes("--keep") }), null, 2));
 	else if (process.argv.includes("--check")) console.log(JSON.stringify(await check(o), null, 2));
-	else console.log("usage: bun hub/selfupdate.ts --check|--apply [--dir PATH] [--test-cmd SHELL]");
+	else console.log("usage: bun hub/selfupdate.ts --check|--apply [--keep] [--dir PATH] [--test-cmd SHELL]");
 }

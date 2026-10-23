@@ -69,8 +69,8 @@ test("uncommitted changes refuse the update, name the file and keep it", async (
 	expect(existsSync(join(work, "notes.txt"))).toBe(true);
 });
 
-test("local commits that are not on origin refuse the update and are listed, never dropped", async () => {
-	commit(work, "mine.txt", "local\n", "my local work");
+test("local commits that conflict with the new version refuse the update and are listed, never dropped", async () => {
+	commit(work, "a.txt", "local\n", "my local work");
 	const mine = head(work);
 	commit(pusher, "a.txt", "2\n", "second");
 	sh(pusher, "push", "-q", "origin", "HEAD:main");
@@ -258,9 +258,9 @@ test("auto_apply refuses a dirty checkout: alert with a choice block, once, noth
 	expect(h.worklog).toEqual([]);
 });
 
-test("auto_apply refuses when local commits are ahead of origin", async () => {
+test("auto_apply refuses when local commits conflict and the checkout is a developer checkout", async () => {
 	autoOn();
-	commit(work, "mine.txt", "local\n", "my local work");
+	commit(work, "a.txt", "local\n", "my local work");
 	const mine = head(work);
 	pushNew();
 	const { h, api } = hooks();
