@@ -32,11 +32,15 @@ export type IntegrationEntry = {
 	match: { conv?: string[]; draft?: string[]; text?: string[] };
 	watches?: string[];
 	data?: string[];
+	/** An app whose items carry a comment source (hub/comments): `filter.source` is a site name and the source key is `<srcBase><name>`. */
+	srcBase?: string;
 	/** Instance fields (appEntries): the registry key, an added instance, a deleted default, and what sibling instances claim from this one. */
 	app?: string;
 	created?: boolean;
 	gone?: boolean;
-	not?: { conv: string[]; watches: string[] };
+	/** The comment-source keys this instance owns (its `filter.source`). */
+	src?: string[];
+	not?: { conv: string[]; watches: string[]; src?: string[] };
 };
 
 export const INTEGRATIONS: IntegrationEntry[] = [
@@ -73,6 +77,7 @@ export const INTEGRATIONS: IntegrationEntry[] = [
 		iconPath: "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3.5V16H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM8 9.5h8M8 12.5h5",
 		on: { flags: ["comments-site"] },
 		match: { text: ["웹사이트 댓글"] },
+		srcBase: "site-",
 	},
 ];
 
@@ -121,6 +126,8 @@ const convPrefixes = (reg: IntegrationEntry, f?: AppFilter): string[] => {
 	const src = typeof f?.source === "string" ? srcKey(f.source) : "", base = reg.match.conv?.[0];
 	return [...strs(f?.conv), ...(src && base ? [`${base}${src}-`] : [])];
 };
+// The comment-source key a `filter.source` names, for an app that has `srcBase` (site: "mapia" -> "site-mapia", the key features/comments/bin/onboard.ts gives it).
+const srcKeys = (reg: IntegrationEntry, f?: AppFilter): string[] => (reg.srcBase && typeof f?.source === "string" && srcKey(f.source) ? [`${reg.srcBase}${srcKey(f.source)}`] : []);
 export const appLabel = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim().slice(0, 30) : undefined);
 export const instanceIdOf = (app: string, id: string): boolean => id === app || (id.startsWith(`${app}-`) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(id));
 /** The app key an instance id belongs to (ids are `<app>` or `<app>-<slug>`). */
@@ -138,13 +145,17 @@ export function appEntries(dataDir: string): IntegrationEntry[] {
 		out.push({ ...reg, app: reg.key, label: appLabel(mine.label) ?? reg.label, ...(mine.deleted ? { gone: true } : {}),
 			match: own.length ? { ...reg.match, conv: own } : reg.match,
 			...(strs(mine.watches).length ? { watches: [...(reg.watches ?? []), ...strs(mine.watches)] } : {}),
-			not: { conv: own.length ? [] : kids.flatMap(([, r]) => convPrefixes(reg, r.filter)), watches: kids.flatMap(([, r]) => theirs(r)) } });
+			...(srcKeys(reg, mine.filter).length ? { src: srcKeys(reg, mine.filter) } : {}),
+			not: { conv: own.length ? [] : kids.flatMap(([, r]) => convPrefixes(reg, r.filter)), watches: kids.flatMap(([, r]) => theirs(r)), ...(reg.srcBase ? { src: kids.flatMap(([, r]) => srcKeys(reg, r.filter)) } : {}) } });
 		for (const [id, r] of kids)
 			out.push({ key: id, app: reg.key, created: true, label: appLabel(r.label) ?? reg.label, kind: reg.kind, icon: reg.icon, ...(reg.iconPath ? { iconPath: reg.iconPath } : {}),
-				on: reg.on, match: { conv: convPrefixes(reg, r.filter), text: strs(r.filter?.text) }, watches: theirs(r), data: strs(r.filter?.data) });
+				on: reg.on, match: { conv: convPrefixes(reg, r.filter), text: strs(r.filter?.text) }, watches: theirs(r), data: strs(r.filter?.data), ...(reg.srcBase ? { src: srcKeys(reg, r.filter) } : {}) });
 	}
 	return out;
 }
+
+/** The instance (key) that owns comment source `source` of `app`: the added instance whose `filter.source` names it, else the app's default instance. */
+export const commentOwner = (entries: readonly IntegrationEntry[], app: string, source: string): string => entries.find(e => e.created && e.app === app && e.src?.includes(source))?.key ?? app;
 
 // What is on at this install, read from disk: enabled feature folders (a personal copy of a shipped folder wins), data files, and the flags the caller knows.
 export function integrationContext(dataDir: string, flags: Iterable<string> = []): IntegrationContext {

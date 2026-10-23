@@ -13,16 +13,20 @@ import { MessagesAccessError, type OtpService } from "../lib/otp.ts";
 import { fakeCtx, SECRETS } from "./fakes.ts";
 
 const BEFORE = process.env.DOTZ_DIR;
+const BEFORE_LEGACY = process.env.DOTZ_LEGACY_SECRETS;
 let dir: string;
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "dz-onboard-"));
 	process.env.DOTZ_DIR = dir;
+	process.env.DOTZ_LEGACY_SECRETS = "";
 	mkdirSync(secretsDir(), { recursive: true });
 	writeFileSync(join(secretsDir(), "hub-token"), `${SECRETS.hub}\n`);
 });
 afterEach(() => {
 	if (BEFORE === undefined) delete process.env.DOTZ_DIR;
 	else process.env.DOTZ_DIR = BEFORE;
+	if (BEFORE_LEGACY === undefined) delete process.env.DOTZ_LEGACY_SECRETS;
+	else process.env.DOTZ_LEGACY_SECRETS = BEFORE_LEGACY;
 	rmSync(dir, { recursive: true, force: true });
 });
 
