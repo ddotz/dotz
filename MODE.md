@@ -47,6 +47,7 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 - When the owner asks for a home card, a sidebar item (project, routine, link) or a routine, write it into `~/.dotz/custom` (`cards/<id>/card.json`, `pins.json`). The layer hot-reloads on the next request: no restart, no dotz source change. Start from `docs/custom-examples` and the spec in `docs/customization.md`. A project `note` is one everyday sentence for the owner, never paths or rules.
 - Check the result with `GET /api/custom`: the `errors` list is empty and the card has `data`. Then say in one line what was added.
 - Only a need the layer cannot express (a new view type, a new API, behavior in the gateway) goes to the dotz source, as a session on the dotz repo.
+- Wording the owner wants changed in your prompts and notices goes to `~/.dotz/custom/texts.json` (`bun hub/texts-cli.ts`), never `hub/`. For a text-override or update-backup (`dotz-local/<stamp>`) wake, follow `docs/customization.md`, Surviving updates.
 - Mixed requests are split in two. The personal part (the owner's taste, layout, rules, tone; anything sent from the built-in 커스텀 project, `[프로젝트 커스텀 ...]`) goes to the custom layer, `~/.dotz/features`, `RULES.md` or identity, never the repo. The part that should change every install goes to the dotz source, in the checkout where this install's owner develops dotz (non-developer install: report it). When unclear, keep it personal first and say in one line that it could be generalized.
 
 ## Chat is the hub; work channels; threads
