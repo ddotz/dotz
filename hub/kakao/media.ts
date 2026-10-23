@@ -4,6 +4,7 @@
 // stored in the database, https only, host *.kakaocdn.net only, no cookies or auth headers, no redirects off that host, 25 MB, 20 s.
 import { existsSync, statSync } from "node:fs";
 import { basename } from "node:path";
+import { EMOTICON_TYPES } from "./db.ts";
 import type { Msg } from "./types.ts";
 
 export type Media =
@@ -11,7 +12,7 @@ export type Media =
 	| { kind: "video"; w?: number; h?: number; d?: number; expired: boolean }
 	| { kind: "voice"; d?: number; expired: boolean }
 	| { kind: "file"; name: string; size?: number; local: boolean; expired: boolean }
-	| { kind: "emoticon"; alt: string }
+	| { kind: "emoticon"; alt: string; text?: string }
 	| { kind: "reply"; quote: string; quoteSender?: string }
 	| { kind: "location"; label: string; lat: number; lng: number };
 
@@ -22,7 +23,7 @@ const QUOTE_MAX = 80;
 export const GONE = "기간이 지나 볼 수 없어요";
 export const NO_LOCAL = "이 컴퓨터에 내려받은 파일이 없어요";
 
-const PHOTO = 2, VIDEO = 3, VOICE = [4, 5], FILE = 18, ALBUM = 27, EMOTICON = [12, 20, 25], REPLY = 26, LOCATION = 16;
+const PHOTO = 2, VIDEO = 3, VOICE = [4, 5], FILE = 18, ALBUM = 27, EMOTICON = EMOTICON_TYPES, REPLY = 26, LOCATION = 16;
 // Types whose message column is an attachment record, not text for people.
 const NO_TEXT = new Set([PHOTO, VIDEO, ...VOICE, FILE, ALBUM, ...EMOTICON, LOCATION]);
 // The body of a message: type 1, a reply's own text, a feed line (0) and unknown types show their text; media types never do.
@@ -74,8 +75,8 @@ export function mediaOf(m: Msg, now: number, names: Map<string, string> = new Ma
 		return { kind: "file", name: text(a.name) || (m.localFilePath ? basename(m.localFilePath) : "파일"), ...(pos(a.size) ? { size: pos(a.size) } : {}), local, expired: expired && !local };
 	}
 	if (EMOTICON.includes(type)) {
-		const alt = text(a.alt).trim();
-		return { kind: "emoticon", alt: !alt ? "(이모티콘)" : alt.startsWith("(이모티콘)") ? alt : `(이모티콘) ${alt}` };
+		const alt = text(a.alt).trim(), words = m.text.trim();
+		return { kind: "emoticon", alt: !alt ? "(이모티콘)" : alt.startsWith("(이모티콘)") ? alt : `(이모티콘) ${alt}`, ...(words ? { text: words } : {}) };
 	}
 	if (type === REPLY) {
 		const quote = clip(text(a.src_message));

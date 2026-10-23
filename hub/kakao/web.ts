@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
-import { type KakaoDb, memberLabel, messageById, messages, ownTextCounts, ownTexts, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
+import { hasWords, type KakaoDb, memberLabel, messageById, messages, ownTextCounts, ownTexts, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
 import { fetchMedia, mediaOf, mediaTarget, serveLocalFile, showsText } from "./media.ts";
 import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
@@ -134,7 +134,7 @@ export function createKakaoWeb(deps: WebDeps) {
 	const saveSends = (list: SendRecord[]) => writePrivate(sendsFile, `${JSON.stringify(list.slice(-MAX_SENDS), null, 1)}\n`);
 
 	const latestIncoming = async (config: KakaoConfig, chatId: string) =>
-		(await messages(await getDb(config), chatId, 50, config.userId ?? "")).findLast(m => m.type === TEXT_TYPE && !m.fromMe)?.logId;
+		(await messages(await getDb(config), chatId, 50, config.userId ?? "")).findLast(m => hasWords(m) && !m.fromMe)?.logId;
 
 	// Runs a send in the background (the gateway-wide queue lives in send.ts) and records sending -> sent | failed.
 	const start = (rec: SendRecord, job: () => Promise<SendResult>) => {

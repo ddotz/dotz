@@ -77,6 +77,8 @@
 .kk-m.me .kk-bub { background: var(--kk-own); color: var(--kk-own-fg); }
 .kk-m.me.first .kk-bub { border-top-right-radius: 4px; }
 .kk-bub.ph { opacity: .75; }
+.kk-emo { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; max-width: 100%; }
+.kk-m.me .kk-emo { align-items: flex-end; }
 .kk-chat { --kk-rd: #d99700; }
 :root[data-theme="dark"] .kk-chat { --kk-rd: #ffd21f; }
 /* time side of a bubble: the read counter (yellow, bold) above the time; own bubbles right-align it, incoming ones left-align it */

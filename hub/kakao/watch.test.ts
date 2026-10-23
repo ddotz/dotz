@@ -90,6 +90,17 @@ describe("runWatch", () => {
 		expect(await t.run()).toEqual({ lines: [], code: 0 });
 	});
 
+	test("an emoticon that came with text is a new message to notice; a bare emoticon is not", async () => {
+		const t = setup();
+		await t.run();
+		t.add(9, ROOM.direct, 2001, 20);
+		addMessage(t.w, { logId: BASE_LOG + 10n, chatId: ROOM.direct, authorId: 2001, message: "", type: 12, sentAt: BASE_TIME + 100, attachment: "{}" });
+		t.touch();
+		const out = await t.run();
+		expect(out).toEqual({ lines: [`kakao chat=${ROOM.direct} new=1 from=${id(9)} to=${id(9)} at=${iso(9)}`], code: 0 });
+		expect(out.lines.join("\n")).not.toContain(BODY);
+	});
+
 	test("an unchanged signature costs zero queries; a changed one reads again", async () => {
 		const t = setup();
 		await t.run();
