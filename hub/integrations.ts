@@ -14,6 +14,10 @@
 //   watches    gateway watches this app owns (a name, or a prefix ending in "-"): paused while the app is off, deleted by 제거
 //   data       what 제거 deletes only when the owner also picks "데이터 지우기": "dir" (a folder) or "dir/file.json#key" (one key of a file)
 // This install can switch any entry off (custom/apps.json, hub/app-off.ts): off wins over every `on` rule, the conversation prefix included.
+// An entry is the DEFAULT instance of its app (id = key). The owner can add more instances of one app (two mail accounts) and rename each:
+// custom/apps.json {"mail":{"label":"회사"},"mail-2":{"app":"mail","label":"개인","filter":{"conv":["mail:naver-"],"watches":["webmail-naver"]}}}.
+// An instance id is `<app key>` or `<app key>-<slug>` (so an app key has no hyphen). `filter` says what is the instance's: conversation prefixes,
+// watch names/prefixes, text patterns and stored data. The default instance owns what no sibling's filter claims (appEntries below).
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { loadFeatureDirs } from "./featuredirs.ts";
@@ -28,6 +32,11 @@ export type IntegrationEntry = {
 	match: { conv?: string[]; draft?: string[]; text?: string[] };
 	watches?: string[];
 	data?: string[];
+	/** Instance fields (appEntries): the registry key, an added instance, a deleted default, and what sibling instances claim from this one. */
+	app?: string;
+	created?: boolean;
+	gone?: boolean;
+	not?: { conv: string[]; watches: string[] };
 };
 
 export const INTEGRATIONS: IntegrationEntry[] = [
@@ -67,31 +76,73 @@ export const INTEGRATIONS: IntegrationEntry[] = [
 	},
 ];
 
-export type IntegrationContext = { features: ReadonlySet<string>; files: (spec: string) => boolean; flags: ReadonlySet<string>; off: ReadonlySet<string> };
+export type IntegrationContext = { features: ReadonlySet<string>; files: (spec: string) => boolean; flags: ReadonlySet<string>; off: ReadonlySet<string>; entries?: readonly IntegrationEntry[] };
 type NoticeLike = { id: string; title?: string; text?: string; open?: string; src?: string; read?: boolean; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: unknown } };
 // What waits on the owner in one app, counted here so the web scans nothing: `drafts` = reply drafts that wait for his 보내기 (open send-approval
 // [ask]s), `unread` = unread notices and conversation messages (the draft asks are not counted twice), `sentToday` = replies sent by themselves today.
 export type IntegrationNeeds = { drafts: number; unread: number; sentToday: number };
-export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "kind" | "icon" | "iconPath"> & { conv: string[]; unread: number; notices: string[]; needs: IntegrationNeeds };
+export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "kind" | "icon" | "iconPath"> & { app: string; conv: string[]; convNot?: string[]; unread: number; notices: string[]; needs: IntegrationNeeds };
 // A mail's suggested reply state (hub/mail.ts MailSuggest) with the time the state was set (or the mail's own time): the "sent today" count reads these.
 export type SuggestLike = { target: string; state?: string; at?: string };
 
 export const APPS_FILE = "custom/apps.json";
-// The apps this install switched off: custom/apps.json {"mail":{"off":true}}. A missing or unreadable file = none off.
+// What custom/apps.json holds per instance id: {"mail":{"off":true}} (the old shape: one default instance per app, read as it is), a label the owner
+// set, an added instance's `app` and `filter`, and `deleted` on a default instance that was deleted (it stays off). A missing or unreadable file = {}.
+// `source` = a mail item's source key (POST /api/mail source): the instance owns `mail:<source>-…`, the same as the conv prefix `mail:<source>-`.
+export type AppFilter = { source?: string; conv?: string[]; watches?: string[]; text?: string[]; data?: string[] };
+// `watches` at the instance level = extra watch names (or prefixes ending in "-") that are this instance's own, beside the registry's (a custom plugin's login keeper).
+export type AppRaw = { app?: string; label?: string; off?: boolean; deleted?: boolean; filter?: AppFilter; watches?: string[] };
 // Cached by the file's mtime and size: the notice lists ask on every call.
-const offCache = new Map<string, { sig: string; off: Set<string> }>();
-export function readAppOff(dataDir: string): Set<string> {
+const offCache = new Map<string, { sig: string; raw: Record<string, AppRaw>; off: Set<string> }>();
+function readApps(dataDir: string): { raw: Record<string, AppRaw>; off: Set<string> } {
 	const file = join(dataDir, APPS_FILE);
 	try {
 		const st = statSync(file), sig = `${st.mtimeMs}:${st.size}`, hit = offCache.get(file);
-		if (hit?.sig === sig) return hit.off;
+		if (hit?.sig === sig) return hit;
 		const v = JSON.parse(readFileSync(file, "utf8"));
-		const off = new Set(Object.entries(v ?? {}).filter(([, s]) => (s as { off?: unknown } | null)?.off === true).map(([k]) => k));
-		offCache.set(file, { sig, off });
-		return off;
+		const raw: Record<string, AppRaw> = v && typeof v === "object" && !Array.isArray(v) ? v : {};
+		const off = new Set(Object.entries(raw).filter(([, s]) => s?.off === true).map(([k]) => k));
+		const next = { sig, raw, off };
+		offCache.set(file, next);
+		return next;
 	} catch {
-		return new Set();
+		return { raw: {}, off: new Set() };
 	}
+}
+/** The instances this install switched off (ids): custom/apps.json {"mail":{"off":true}}. */
+export const readAppOff = (dataDir: string): Set<string> => readApps(dataDir).off;
+export const readAppsFile = (dataDir: string): Record<string, AppRaw> => readApps(dataDir).raw;
+
+const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x) : []);
+// The same cleaning hub/mail.ts mailKey applies to a source, so the prefix matches the keys the mails get.
+export const srcKey = (s: string): string => s.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "").slice(0, 100);
+const convPrefixes = (reg: IntegrationEntry, f?: AppFilter): string[] => {
+	const src = typeof f?.source === "string" ? srcKey(f.source) : "", base = reg.match.conv?.[0];
+	return [...strs(f?.conv), ...(src && base ? [`${base}${src}-`] : [])];
+};
+export const appLabel = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim().slice(0, 30) : undefined);
+export const instanceIdOf = (app: string, id: string): boolean => id === app || (id.startsWith(`${app}-`) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(id));
+/** The app key an instance id belongs to (ids are `<app>` or `<app>-<slug>`). */
+export const appBase = (id: string): string => id.split("-")[0]!;
+
+/** Every instance as a registry-shaped entry, deleted defaults included (`gone`): a registry entry is the default instance of its app, then come the added
+ *  ones (`created`, shown whenever they are on). A label replaces the registry's. An added instance matches only its own filter; the default keeps the registry
+ *  rules minus what the added ones claim (`not`), unless it has a filter of its own. */
+export function appEntries(dataDir: string): IntegrationEntry[] {
+	const raw = readAppsFile(dataDir), out: IntegrationEntry[] = [];
+	for (const reg of INTEGRATIONS) {
+		const kids = Object.entries(raw).filter(([id, r]) => id !== reg.key && instanceIdOf(reg.key, id) && r && typeof r === "object" && !r.deleted);
+		const mine = raw[reg.key] && typeof raw[reg.key] === "object" ? raw[reg.key]! : {}, own = convPrefixes(reg, mine.filter);
+		const theirs = (r: AppRaw) => [...strs(r.filter?.watches), ...strs(r.watches)];
+		out.push({ ...reg, app: reg.key, label: appLabel(mine.label) ?? reg.label, ...(mine.deleted ? { gone: true } : {}),
+			match: own.length ? { ...reg.match, conv: own } : reg.match,
+			...(strs(mine.watches).length ? { watches: [...(reg.watches ?? []), ...strs(mine.watches)] } : {}),
+			not: { conv: own.length ? [] : kids.flatMap(([, r]) => convPrefixes(reg, r.filter)), watches: kids.flatMap(([, r]) => theirs(r)) } });
+		for (const [id, r] of kids)
+			out.push({ key: id, app: reg.key, created: true, label: appLabel(r.label) ?? reg.label, kind: reg.kind, icon: reg.icon, ...(reg.iconPath ? { iconPath: reg.iconPath } : {}),
+				on: reg.on, match: { conv: convPrefixes(reg, r.filter), text: strs(r.filter?.text) }, watches: theirs(r), data: strs(r.filter?.data) });
+	}
+	return out;
 }
 
 // What is on at this install, read from disk: enabled feature folders (a personal copy of a shipped folder wins), data files, and the flags the caller knows.
@@ -109,24 +160,28 @@ export function integrationContext(dataDir: string, flags: Iterable<string> = []
 			return false;
 		}
 	};
-	return { features, files, flags: new Set(flags), off: readAppOff(dataDir) };
+	return { features, files, flags: new Set(flags), off: readAppOff(dataDir), entries: appEntries(dataDir).filter(e => !e.gone) };
 }
 
 export const integrationOn = (e: IntegrationEntry, ctx: IntegrationContext): boolean =>
-	!ctx.off.has(e.key) && !!(e.on.features?.some(f => ctx.features.has(f)) || e.on.files?.some(f => ctx.files(f)) || e.on.flags?.some(f => ctx.flags.has(f)));
+	!ctx.off.has(e.key) && !!(e.created || e.on.features?.some(f => ctx.features.has(f)) || e.on.files?.some(f => ctx.files(f)) || e.on.flags?.some(f => ctx.flags.has(f)));
 
 export const whereOf = (n: NoticeLike): string[] => [n.src, n.open, n.decision?.to].filter((s): s is string => typeof s === "string");
 
+// Where the entry's `conv` prefixes reach, minus what a sibling instance claims.
+export const inConv = (e: IntegrationEntry, where: string): boolean => (e.match.conv ?? []).some(p => where.startsWith(p)) && !(e.not?.conv ?? []).some(p => where.startsWith(p));
+
 // Conversations or notices already live under the entry's `conv` prefixes: this install receives through it, whatever its switches say.
 const hasConvs = (e: IntegrationEntry, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>>): boolean =>
-	(e.match.conv ?? []).some(p => Object.keys(convUnread).some(t => t.startsWith(p)) || notices.some(n => whereOf(n).some(w => w.startsWith(p))));
+	Object.keys(convUnread).some(t => inConv(e, t)) || notices.some(n => whereOf(n).some(w => inConv(e, w)));
 
 const SESSION_SRC = /^(?:lane:|ch:|worklog$|main$)/;
 
 export function belongsTo(e: IntegrationEntry, n: NoticeLike): boolean {
-	const { conv = [], draft = [], text = [] } = e.match;
+	const { draft = [], text = [] } = e.match;
 	const where = whereOf(n);
-	if (conv.some(p => where.some(w => w.startsWith(p)))) return true;
+	if (where.some(w => inConv(e, w))) return true;
+	if (where.some(w => (e.not?.conv ?? []).some(p => w.startsWith(p)))) return false;
 	const body = n.text ?? "";
 	if (n.decision && draft.some(l => body.includes(`> ${l}:`))) return true;
 	// A work session's or channel's own report ("카톡 보내기를 고쳤어요") talks about the app; it is not a notice of the app.
@@ -136,30 +191,30 @@ export function belongsTo(e: IntegrationEntry, n: NoticeLike): boolean {
 }
 
 // The key of the app (an entry on at this install, or one whose conversation the notice lives in) the notice belongs to; none = the owner's own monitor.
-export function appKeyOf(n: NoticeLike, ctx: IntegrationContext, entries: readonly IntegrationEntry[] = INTEGRATIONS): string | undefined {
+export function appKeyOf(n: NoticeLike, ctx: IntegrationContext, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS): string | undefined {
 	const where = whereOf(n);
-	return entries.find(e => belongsTo(e, n) && (integrationOn(e, ctx) || ctx.off.has(e.key) || (e.match.conv ?? []).some(p => where.some(w => w.startsWith(p)))))?.key;
+	return entries.find(e => belongsTo(e, n) && (integrationOn(e, ctx) || ctx.off.has(e.key) || where.some(w => inConv(e, w))))?.key;
 }
 
 // The enabled entries with their notices (newest first as given, at most `cap`) and the unread count: unread notices plus the unread messages
 // of the conversations under the entry's `conv` prefixes (`convUnread`: target -> unread messages). `suggests` = the mails' reply states, `now` = the clock.
-export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now(), comments: Readonly<Record<string, { drafts: number; unread: number }>> = {}): IntegrationItem[] {
+export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now(), comments: Readonly<Record<string, { drafts: number; unread: number }>> = {}): IntegrationItem[] {
 	const today = new Date(now).toDateString();
 	return entries.filter(e => !ctx.off.has(e.key) && (integrationOn(e, ctx) || hasConvs(e, notices, convUnread))).map(e => {
 		const mine = notices.filter(n => !n.dismissed && belongsTo(e, n));
 		const convs = e.match.conv ?? [];
-		const fromConvs = Object.entries(convUnread).reduce((c, [t, n]) => c + (convs.some(p => t.startsWith(p)) ? n : 0), 0);
+		const fromConvs = Object.entries(convUnread).reduce((c, [t, n]) => c + (inConv(e, t) ? n : 0), 0);
 		const waits = (n: NoticeLike) => n.decision?.state === "open" && !!n.decision.draft && !n.ignored;
-		const sentToday = suggests.filter(s => s.state === "sent" && convs.some(p => s.target.startsWith(p)) && s.at && new Date(s.at).toDateString() === today).length;
+		const sentToday = suggests.filter(s => s.state === "sent" && inConv(e, s.target) && s.at && new Date(s.at).toDateString() === today).length;
 		const cm = comments[e.key] ?? { drafts: 0, unread: 0 };
 		const needs = { drafts: mine.filter(waits).length + cm.drafts, unread: mine.filter(n => !n.read && !waits(n)).length + fromConvs + cm.unread, sentToday };
-		return { key: e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, notices: mine.slice(0, cap).map(n => n.id), needs };
+		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, notices: mine.slice(0, cap).map(n => n.id), needs };
 	});
 }
 
 // The apps the 앱 추가 sheet lists: only those the owner switched off or removed here (`off`). An entry never set up on this install is not listed;
 // the owner asks for it and 새로 추가하기 builds it (hub/app-templates.ts). `conv` lets the web tell a mail this install still holds (data is kept
 // while off) from one that only a peer shows.
-export type AvailableApp = Pick<IntegrationEntry, "key" | "label" | "icon" | "iconPath"> & { off: boolean; conv: string[] };
-export const integrationAvailable = (shown: readonly { key: string }[], ctx: IntegrationContext, entries: readonly IntegrationEntry[] = INTEGRATIONS): AvailableApp[] =>
-	entries.filter(e => ctx.off.has(e.key) && !shown.some(i => i.key === e.key)).map(e => ({ key: e.key, label: e.label, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), off: ctx.off.has(e.key), conv: e.match.conv ?? [] }));
+export type AvailableApp = Pick<IntegrationEntry, "key" | "label" | "icon" | "iconPath"> & { app: string; off: boolean; conv: string[]; convNot?: string[] };
+export const integrationAvailable = (shown: readonly { key: string }[], ctx: IntegrationContext, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS): AvailableApp[] =>
+	entries.filter(e => ctx.off.has(e.key) && !shown.some(i => i.key === e.key)).map(e => ({ key: e.key, app: e.app ?? e.key, label: e.label, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), off: ctx.off.has(e.key), conv: e.match.conv ?? [], ...(e.not?.conv.length ? { convNot: e.not.conv } : {}) }));

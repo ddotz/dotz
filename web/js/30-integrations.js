@@ -4,7 +4,9 @@
 // whatever it returns beside the dotz_watch monitors and 알림.
 const INTG = { items: [], available: [], sig: "", timer: 0 };
 // An app switched off on this install keeps its mails here (data is kept): a peer's copy of the same mail must still show (34-peer-monitoring.js pqMail).
-const intgHidden = t => INTG.available.some(a => a.off && (a.conv || []).some(p => String(t).startsWith(p)));
+// An instance owns a conversation under its `conv` prefixes, minus the prefixes its siblings claim (`convNot`, hub/integrations.ts appEntries).
+const intgHas = (it, t) => (it.conv || []).some(p => String(t).startsWith(p)) && !(it.convNot || []).some(p => String(t).startsWith(p));
+const intgHidden = t => INTG.available.some(a => a.off && intgHas(a, t));
 
 async function loadIntegrations() {
   try {
