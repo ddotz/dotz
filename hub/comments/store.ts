@@ -6,8 +6,11 @@ import type { Comment, CommentsConfig, SourceConfig } from "./contract.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
 export type Tokens = { in: number; out: number; estimated?: true };
-export type Draft = { code: string; commentId: string; source: string; thread: string; text: string; status: DraftStatus; created: number; changes: string[]; clean: boolean; notes: string[]; tokens?: Tokens };
-export type Reply = { id: string; commentId: string; source: string; thread: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft: string; via: "owner" | "rule"; collector: string; ref?: string };
+// `mail`: the id of the mail draft (features/reply-drafts, hub/mail-cli.ts compose) that goes out right after this reply, approved by the same pick;
+// `mailAt`: when it was attached, so a pick made on a card that did not show the mail does not approve it. Such a draft is never clean (no rule sends it).
+export type Draft = { code: string; commentId: string; source: string; thread: string; text: string; status: DraftStatus; created: number; changes: string[]; clean: boolean; notes: string[]; tokens?: Tokens; mail?: string; mailAt?: number };
+export type MailOutcome = { state: "sent" | "failed"; text: string };
+export type Reply = { id: string; commentId: string; source: string; thread: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft: string; via: "owner" | "rule"; collector: string; ref?: string; mail?: MailOutcome };
 export type Cursor = { cursor?: string; ranAt?: number; error?: string };
 
 const MAX_COMMENTS = 3000;
@@ -73,6 +76,7 @@ export function createStore(dir: string) {
 		},
 		drafts,
 		putDraft: (d: Draft) => writeAtomic(f("drafts.json"), upsert(drafts(), d, "code", MAX_DRAFTS)),
+		patchDraft: (code: string, patch: Partial<Draft>) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, ...patch } : d))),
 		setDraftStatus: (code: string, status: DraftStatus) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, status } : d))),
 		replies,
 		putReply: (r: Reply) => writeAtomic(f("replies.json"), upsert(replies(), r, "id", MAX_REPLIES)),

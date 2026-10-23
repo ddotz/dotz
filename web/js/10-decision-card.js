@@ -203,12 +203,22 @@ function draftOriginNode(d) {
   if (!o || !o.text) return null;
   return el("div", { class: "dr-origin" }, icon("open"), o.link ? el("a", { href: o.link, target: "_blank", rel: "noopener", text: o.text }) : el("span", { text: o.text }));
 }
+// The mail that goes out right after a comment reply, in the same card (hub/draft-approval.ts "함께 보낼 메일"): recipient, subject, files, body.
+function draftMailNode(m) {
+  if (!m) return null;
+  return el("div", { class: "dr-mailpart" },
+    el("div", { class: "dr-mh" }, icon("mail"), el("span", { text: "함께 보낼 메일" })),
+    el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: m.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: m.to || "-" })),
+    m.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: m.subject })) : null,
+    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "함께 보낼 메일 내용", text: m.body }),
+    draftFilesNode(m, { edit: false }));
+}
 function draftNode(d, o) {
   return el("div", { class: "dc-draft" },
     el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
     draftOriginNode(d),
-    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d, o));
+    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d, o), draftMailNode(d.mail));
 }
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
 const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? "고치는 중…" : st === "sending" ? "보내는 중…" : "보냈어요 · 답을 기다려요");
@@ -236,7 +246,7 @@ function renderSheet(box, dc, picks, step) {
     d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }))
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   const foot = el("div", { class: "fs-ft" });
   foot.append(warnBox);

@@ -1,6 +1,7 @@
 // The draft life cycle shared by the gateway offer (offer.ts) and the CLI (bin/draft.ts): build -> ask -> revise | send | drop.
 // Nothing here sends without the user's 1) 보내기 pick for exactly that draft id, read from the inbox log.
-import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict } from "../../../hub/draft-approval.ts";
+import { linkedComment } from "../../../hub/comments/linked.ts";
+import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { generateChatReply, lintReply, reviseReply, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
 import { matchLibrary } from "./library.ts";
@@ -94,7 +95,7 @@ export async function stageForReply(rec: DraftRec, deps: FlowDeps): Promise<void
 	if (!found.length) rec.libraryMiss = true;
 }
 
-export type Step = { ok: boolean; text: string };
+export type Step = { ok: boolean; text: string; /** The id of the draft a revision made. */ id?: string };
 
 // The user picked 2) 고치기 (or the CLI is asked to): the change is recorded verbatim in the tone profile of that draft (its room, else its app), then the draft is regenerated.
 export async function reviseDraft(id: string, change: string, deps: FlowDeps): Promise<Step> {
@@ -109,9 +110,11 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref, ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
 	if (old.asksFile) rec.asksFile = true;
 	if (old.libraryMiss) rec.libraryMiss = true;
+	if (old.compose) rec.compose = true;
+	if (old.origin) rec.origin = old.origin;
 	carryStagedFiles(old.id, rec.id);
 	addDraft(rec);
-	return { ok: true, text: askText(rec, r.warnings, "답장 초안을 고쳤어요") };
+	return { ok: true, text: askText(rec, r.warnings, "답장 초안을 고쳤어요"), id: rec.id };
 }
 
 export function dropDraft(id: string): Step {
@@ -123,11 +126,15 @@ export function dropDraft(id: string): Step {
 }
 
 // Refuses unless the user's latest pick for this exact draft id, made after the draft was created, is 1) 보내기; lints again first.
-export async function sendDraft(id: string, deps: FlowDeps): Promise<Step> {
+// `withReply`: the mail rides on a comment reply (hub/comments/linked.ts) and the caller is that reply's send, which has already passed the
+// reply's gate (the owner's pick on the one card, or the owner's own click); a linked mail is refused without it.
+export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true } = {}): Promise<Step> {
 	const d = getDraft(id);
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요` };
-	const v = draftVerdict(paths.inbox(), d.id, Date.parse(d.created));
+	const card = opts.withReply ? undefined : linkedComment(id);
+	if (card) return { ok: false, text: `이 메일은 댓글 답글(${card})과 한 장으로 승인해요. 답글 쪽 comments.ts send ${card}로 보내 주세요` };
+	const v: DraftVerdict = opts.withReply ? { verdict: "send" } : draftVerdict(paths.inbox(), d.id, Date.parse(d.created));
 	if (v.verdict === "drop") {
 		setStatus(id, "dropped");
 		return { ok: false, text: "보내지 않기로 한 초안이에요" };

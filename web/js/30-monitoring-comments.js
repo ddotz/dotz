@@ -239,12 +239,16 @@ function cmDraftCard(d) {
   const sending = CM.view.sends.some(s => s.commentId === d.commentId && s.state === "sending");
   const edit = CM.revising === d.code;
   const input = el("input", { class: "kk-ta", type: "text", placeholder: "어떻게 고칠까요? (예: 더 짧게)", "aria-label": "고칠 내용" });
+  // A reply that carries a mail (hub/comments/engine.ts Draft.mail): 고치기 says which part it changes.
+  const part = d.mail ? el("select", { class: "kk-ta", "aria-label": "고칠 곳" }, el("option", { value: "reply", text: "답글" }), el("option", { value: "mail", text: "메일" })) : null;
   return el("div", { class: "kk-draft", "data-code": d.code },
     el("div", { class: "kk-dh", text: "답글 초안" }),
     el("div", { class: "kk-dt", text: d.text }),
+    draftMailNode(d.mail),
+    d.mail ? el("div", { class: "kk-note", role: "status", text: "보내기를 누르면 답글을 올린 뒤 메일을 보내요" }) : null,
     d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null,
-    edit ? el("div", { class: "btns" }, input,
-      el("button", { class: "btn", type: "button", "data-k": "rewrite", text: "다시 쓰기", onclick: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change: input.value }); CM.revising = ""; await cmReload(); }) }),
+    edit ? el("div", { class: "btns" }, part, input,
+      el("button", { class: "btn", type: "button", "data-k": "rewrite", text: "다시 쓰기", onclick: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change: input.value, ...(part ? { part: part.value } : {}) }); CM.revising = ""; await cmReload(); }) }),
       el("button", { class: "btn text", type: "button", text: "취소", onclick: () => { CM.revising = ""; cmPaintChat(false); } }))
     : el("div", { class: "btns" },
       el("button", { class: "btn", type: "button", "data-k": "send", disabled: sending, text: "보내기", onclick: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/send`, "POST", {}); await cmReload(CM.seq, true); }) }),
@@ -257,6 +261,7 @@ function cmLive(e) {
   cmIntgSoon();
   if (e.kind === "comment_sources") { cmLoadSources(); return; }
   if (e.kind === "comment_draft" && e.error) toast(e.error, true);
+  if (e.kind === "comment_send" && e.mail === "failed") toast(`답글은 올렸지만 메일은 보내지 못했어요: ${e.mailReason || "알 수 없는 이유"}`, true);
   if (e.kind === "comment_draft") for (const id of [...CM.drafting]) CM.drafting.delete(id);
   if (!CM.vis) return;
   cmLoad();
