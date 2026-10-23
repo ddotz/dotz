@@ -78,6 +78,9 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .ds-t { margin: 4px 0 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .ds-m { margin: 2px 0 12px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .ds-md { color: var(--fg-2); font: 400 14px/22px var(--font); overflow-wrap: anywhere; }
+.ds-md p { margin: 0 0 10px; }
+.ds-md p:last-child { margin-bottom: 0; }
+.ds-md code { overflow-wrap: anywhere; }
 .ds-opt, .ds-direct { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; width: 100%; min-height: 52px; padding: 10px 16px; border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg); font: inherit; text-align: left; }
 .ds-opt.c { align-items: center; }
 .ds-opt:hover, .ds-direct:hover { background: var(--hover); }

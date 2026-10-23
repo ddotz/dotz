@@ -7,6 +7,8 @@ import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, parseDraftApproval, 
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
+import { orchestratorOnlyAsk } from "./forline.ts";
+import { shortTitle } from "./notice-title.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { describeOutput, humanLabel, isIssue, itemRefOf, scheduleLine, watchLine, watchReasonKo } from "./watchtext.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
@@ -277,12 +279,18 @@ function systemTitle(text: string, fallback: string): string {
 	return fallback;
 }
 
+// A session's [ask] that only hands a chore to the orchestrator is a plain report (forline.ts), not a question for the owner.
+const laneTone = (e: HubEvent, tone: NoticeTone, text: string): NoticeTone =>
+	tone === "ask" && (e.kind === "lane_report" || String(e.source ?? "").startsWith("lane:") || String(e.update_key ?? "").startsWith("lane:")) && orchestratorOnlyAsk(text) ? "" : tone;
+
 // `asks`: the post makes decision items (decisionsOf); an alert post then makes no item of its own, so one message is one notice.
 function fromOutbox(e: HubEvent, asks = false): void {
 	const target = String(e.target ?? "");
 	const key = typeof e.update_key === "string" && e.update_key ? e.update_key : undefined;
 	if (key === "progress") return;
-	const { tone, text } = clean(e.text);
+	const cleaned = clean(e.text);
+	const { text } = cleaned;
+	const tone = laneTone(e, cleaned.tone, text);
 	if (!text) return;
 	const restart = RESTART_PREFIX.test(text);
 	const by = authorOf(e);
@@ -306,7 +314,9 @@ function fromOutbox(e: HubEvent, asks = false): void {
 function fromInbox(e: HubEvent): void {
 	if (e.kind === "lane_report") {
 		const name = String(e.lane ?? "");
-		const { tone, text } = clean(e.text);
+		const cleaned = clean(e.text);
+		const { text } = cleaned;
+		const tone = laneTone(e, cleaned.tone, text);
 		if (!name || !text || !LOUD.has(tone)) return;
 		return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: `lane:${name}`, key: `lane:${name}`, by: `lane:${name}`, at: e.ts });
 	}
@@ -463,7 +473,7 @@ const hashOf = (s: string) => {
 };
 const firstLine = (text: string) => {
 	const l = text.split("\n").map(s => s.replace(/^\s*\[[^\]\n]{1,10}\][ \t]*/, "").replace(/[*_`#>]/g, "").trim()).find(Boolean) ?? "";
-	return l.length > 80 ? `${l.slice(0, 79)}…` : l;
+	return shortTitle(l);
 };
 
 type Draft = { title: string; detail: string; options: DecisionOpt[]; to: string; replyTo: string; group: number; key: string; by?: string; ref?: string; draft?: DraftApproval; assumed?: true };
@@ -487,6 +497,7 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	} else if (e.kind !== "lane_report") return [];
 	const p = parseTone(stripHandoff(String(e.text ?? "")));
 	const body = p.text.trim();
+	if (p.tone === "ask" && laneTone(e, "ask", body) === "") return [];
 	const pc = parseDecisions(body);
 	// An [ask] is a decision; so is any other message (a [done] answer, a lane report, no marker) holding a "결정:" choice block with 2+
 	// options. A plain numbered list without "결정:" is not. The gateway's own alert keeps its older, looser rule.
