@@ -307,6 +307,14 @@ cached 60 s. `web.peers` adds URLs by hand, `web.peer_discovery: false` turns di
 computer (default derived from its hostname; peers learn it from `GET /api/peer-info`). The other gateway checks your tailnet
 identity against its own allow-list, so each machine must allow your login.
 
+**File snapshot retention.** A `[file]` attachment is copied into `~/.dotz/files/<sha256>/` when the message is sent, so the chip opens
+after the original is gone. Copies are not kept forever: a copy nobody opened or sent again for `web.snapshot_keep_days` days (default 30)
+is deleted, and while `files/` is over `web.snapshot_max_total_mb` (default 1024) the least recently used copies go first (the newest
+one stays). Opening a chip refreshes the copy's last use (its file mtime). `web.snapshot_max_mb` (default 200) still skips larger files.
+The sweep is one async directory scan at the first data cleanup after the start, then every hour, and right after a write that passes
+the cap. It touches only `files/<sha>/` folders (never `uploads/`). A chip whose copy and original are both gone says "파일이 지워졌어요".
+Changing these keys needs a gateway restart.
+
 *Push with several gateways.* Each device (a phone, a laptop: one browser or one installed app) gets each notice once, whichever gateway
 made it. The web app gives its device an id and hands it on when you open another computer from the computer chip, so that device's
 subscriptions on every gateway count as one (`hub/push.ts`). The gateway that made the notice picks one subscription per device: the

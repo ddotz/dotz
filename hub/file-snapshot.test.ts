@@ -1,12 +1,12 @@
 // A [file] chip must always open: a message's files are copied into <data dir>/files/ when it is sent (so a deleted /tmp file still opens),
 // an old path outside the roots is served from the home folder or /tmp, secrets and traversal stay refused, a gone file says so.
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { emit } from "./events.ts";
 import { allowedRoots, fileRoute, LOST } from "./files.ts";
-import { FILES, snapshotsIdle } from "./filesnap.ts";
+import { FILES, snapshotsIdle, sweepSnapshots } from "./filesnap.ts";
 
 const DATA = process.env.DOTZ_DIR!;
 const work = mkdtempSync(join(tmpdir(), "snap-"));
@@ -99,4 +99,76 @@ test("a refused secret is never copied into files/", async () => {
 	await snapshotsIdle();
 	const stored = new Bun.Glob("**/*").scanSync({ cwd: FILES }).toArray();
 	expect(stored.some(f => /cert\.pem|id_ed25519|t\.txt|innocent/.test(f))).toBe(false);
+});
+
+// Retention: a copy's last use is its file's mtime; the sweep drops copies unused for keep_days, then the least recently used while over the cap.
+const DAY = 86_400_000;
+const copyDirs = () => readdirSync(FILES, { withFileTypes: true }).filter(d => d.isDirectory() && /^[0-9a-f]{24}$/.test(d.name)).map(d => d.name).sort();
+const plant = (id: string, bytes: number, ageDays: number) => {
+	const dir = join(FILES, id.padEnd(24, "0"));
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "f.bin"), Buffer.alloc(bytes));
+	const t = (Date.now() - ageDays * DAY) / 1000;
+	utimesSync(join(dir, "f.bin"), t, t);
+	return dir;
+};
+const clearCopies = () => copyDirs().forEach(d => rmSync(join(FILES, d), { recursive: true, force: true }));
+
+test("a copy unused for keep_days is deleted, a recent one stays", async () => {
+	clearCopies();
+	const old = plant("a1", 10, 31), fresh = plant("b2", 10, 29);
+	expect(await sweepSnapshots(Date.now(), { keepDays: 30, maxBytes: 1e9 })).toBe(1);
+	expect([existsSync(old), existsSync(fresh)]).toEqual([false, true]);
+});
+
+test("over the cap the least recently used copies go first, and the newest stays", async () => {
+	clearCopies();
+	const a = plant("c1", 100, 3), b = plant("c2", 100, 1), c = plant("c3", 100, 2), d = plant("c4", 100, 0.5);
+	expect(await sweepSnapshots(Date.now(), { keepDays: 30, maxBytes: 250 })).toBe(2);
+	expect([a, b, c, d].map(existsSync)).toEqual([false, true, false, true]);
+	expect(await sweepSnapshots(Date.now(), { keepDays: 30, maxBytes: 1 })).toBe(1); // the newest copy is never removed by the cap
+	expect([existsSync(b), existsSync(d)]).toEqual([false, true]);
+});
+
+test("serving a copy refreshes its last use, so it outlives the age limit", async () => {
+	clearCopies();
+	const orig = join(work, "keep-me.txt");
+	writeFileSync(orig, "KEEP");
+	send(orig);
+	await snapshotsIdle();
+	const dir = join(FILES, copyDirs()[0]!), copy = join(dir, "keep-me.txt");
+	const old = (Date.now() - 40 * DAY) / 1000;
+	utimesSync(copy, old, old);
+	rmSync(orig);
+	expect(await get(orig).text()).toBe("KEEP");
+	expect(Date.now() - statSync(copy).mtimeMs).toBeLessThan(60_000);
+	expect(await sweepSnapshots(Date.now(), { keepDays: 30, maxBytes: 1e9 })).toBe(0);
+	expect(existsSync(copy)).toBe(true);
+	// once the copy is deleted and the original is gone too, the chip says so
+	utimesSync(copy, old, old);
+	expect(await sweepSnapshots(Date.now(), { keepDays: 30, maxBytes: 1e9 })).toBe(1);
+	const res = get(orig);
+	expect([res.status, (await res.json()).error]).toEqual([404, LOST]);
+});
+
+test("the sweep never touches anything outside files/<sha>/ folders", async () => {
+	clearCopies();
+	const t = (Date.now() - 400 * DAY) / 1000;
+	const ancient = (path: string) => { writeFileSync(path, "x"); utimesSync(path, t, t); };
+	mkdirSync(join(DATA, "uploads", "u1"), { recursive: true });
+	ancient(join(DATA, "uploads", "u1", "old.txt"));
+	ancient(join(DATA, "outside.txt"));
+	ancient(join(FILES, "index.jsonl"));
+	mkdirSync(join(FILES, "not-a-copy"), { recursive: true });
+	ancient(join(FILES, "not-a-copy", "x.txt"));
+	const target = join(work, "linked");
+	mkdirSync(target, { recursive: true });
+	ancient(join(target, "x.txt"));
+	symlinkSync(target, join(FILES, "f".repeat(24)));
+	const gone = plant("d1", 5, 400);
+	expect(await sweepSnapshots(Date.now(), { keepDays: 1, maxBytes: 1 })).toBe(1);
+	expect(existsSync(gone)).toBe(false);
+	for (const path of [join(DATA, "uploads", "u1", "old.txt"), join(DATA, "outside.txt"), join(FILES, "index.jsonl"), join(FILES, "not-a-copy", "x.txt"), join(target, "x.txt")]) expect(existsSync(path)).toBe(true);
+	rmSync(join(FILES, "f".repeat(24)), { force: true });
+	rmSync(join(FILES, "not-a-copy"), { recursive: true, force: true });
 });
