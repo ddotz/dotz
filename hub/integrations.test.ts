@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commentAsk, type CommentAdapter } from "../features/reply-drafts/lib/comments.ts";
-import { belongsTo, INTEGRATIONS, integrationContext, integrationItems, integrationOn } from "./integrations.ts";
+import { appKeyOf, belongsTo, INTEGRATIONS, integrationContext, integrationItems, integrationOn } from "./integrations.ts";
 
 const dirs: string[] = [];
 afterAll(() => dirs.forEach(d => rmSync(d, { recursive: true, force: true })));
@@ -186,5 +186,17 @@ describe("needs: what waits on the owner per app", () => {
 			{ target: "ch:1", state: "sent", at: "2026-10-23T09:00:00+09:00" },
 		]);
 		expect(m.needs.sentToday).toBe(1);
+	});
+});
+
+describe("appKeyOf: which notices are an app's, from data", () => {
+	const ctx = integrationContext(install(["kakao"]), []);
+	test("a notice in an app's conversation or about an enabled app is the app's", () => {
+		expect(appKeyOf(notice("m", { open: "mail:a", src: "mail:a" }), ctx)).toBe("mail");
+		expect(appKeyOf(notice("k", { title: "카톡 새 글" }), ctx)).toBe("kakao");
+	});
+	test("a plain monitor, or text of an app this install does not have, is not", () => {
+		expect(appKeyOf(notice("p", { title: "샘플 점검", text: "샘플 점검: 결과가 바뀌었어요" }), ctx)).toBeUndefined();
+		expect(appKeyOf(notice("y", { title: "유튜브 확인" }), ctx)).toBeUndefined();
 	});
 });

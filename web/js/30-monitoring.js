@@ -98,7 +98,8 @@ function monItems() {
       hint: fresh ? monStrip(monLine(last), names) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       badge: m.last_result === "fail" ? ["실패", "err"] : m.kind === "schedule" ? [MON_KIND.schedule, ""] : null });
   }
-  const feed = NT.items.filter(n => n.kind === "watch" && !shown.has(n.id)), last = monNewest(feed);
+  // A report the hub marked as an app's (n.app, hub/notices.ts) is never here, even before the app list below has loaded.
+  const feed = NT.items.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), last = monNewest(feed);
   items.unshift({ key: "notice", group: "", name: MON_FEED, ic: "list", notices: feed, mails: [], unread: monUnread(feed), hint: last ? monLine(last) : "새 감시 소식이 없어요", at: last ? monNoticeAt(last) : "" });
   return items;
 }
