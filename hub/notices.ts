@@ -529,7 +529,7 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	// No choice block (a plain question, often in a mail or work thread): the budget question's buttons, else yes / no or send defaults (ask-options.ts).
 	if (!pc.blocks.length) {
 		if (to.startsWith("lane:") && /\/budget-ok/.test(body)) return [draft(line || "답변이 필요해요", BUDGET_OPTIONS, 1, 0)];
-		const options = askDefaults(body);
+		const options = askDefaults(body, to.startsWith("mail:"));
 		return [{ ...draft(line || "답변이 필요해요", options, 1, 0), ...(options.length ? { assumed: true as const } : {}) }];
 	}
 	const many = pc.blocks.length > 1;
@@ -817,7 +817,7 @@ function reconcileStored(): void {
 		// was stored until the item changes for another reason.
 		for (const i of items)
 			if (isOpenDecision(i) && !i.decision!.options.length && !i.decision!.to.startsWith("auth:")) {
-				i.decision!.options = askDefaults(i.text);
+				i.decision!.options = askDefaults(i.text, i.decision!.to.startsWith("mail:"));
 				if (i.decision!.options.length) i.decision!.assumed = true;
 			}
 		const gone = new Map<string, boolean>();
