@@ -130,8 +130,8 @@ describe("앱 인스턴스 at 390px", () => {
 	test("the settings panel has a name field; changing it PATCHes label and the row, the detail title and the sheet show the new name", async () => {
 		const v = await boot();
 		await run(v, `go("monitoring", "i:mail-2")`);
-		await waitFor(v, `document.querySelector("#mon-tl .as-pin")`);
-		await run(v, `document.querySelector("#mon-tl .as-pin").click()`);
+		await waitFor(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd")`);
+		await run(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd").click()`);
 		await waitFor(v, `target === "settings:mail-2" && document.querySelector('#app-sw [data-k="label"]')`);
 		expect(await q(v, `return document.querySelector('#app-sw [data-k="label"]').value`)).toBe("개인 메일");
 		await shot(v, "02-rename-field.png");

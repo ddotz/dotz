@@ -112,12 +112,12 @@ const boot = async (v: View, route: string) => {
 describe("설정 대화 at desktop width (1280x800)", () => {
 	const v = open(1280, 800);
 
-	test("the mail list pins a 설정 row at the top that opens the settings conversation", async () => {
+	test("the mail detail header has a 설정 button (no row on top of the list) that opens the settings conversation", async () => {
 		await boot(v, "i:mail");
-		await waitFor(v, `document.querySelector("#mon-tl .as-pin")`);
-		expect(await q(v, `return document.querySelector("#mon-tl").firstElementChild.classList.contains("as-pin")`)).toBe(true);
+		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
+		expect(await q(v, `return [document.querySelector("#mon-head .as-hd").getAttribute("aria-label"), document.querySelectorAll(".as-pin").length]`)).toEqual(["설정", 0]);
 		await shot(v, "01-desktop-pinned-row.png");
-		await run(v, `document.querySelector(".as-pin").click()`);
+		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
 		await waitFor(v, `target === "settings:mail" && document.querySelector("#app-sw .as-row")`);
 	});
 
@@ -164,11 +164,11 @@ describe("설정 대화 at desktop width (1280x800)", () => {
 		expect(patches.length).toBe(before);
 	});
 
-	test("kakao: the pinned row sits on top of the room list, and its conversation has the 감시 switch", async () => {
+	test("kakao: the 설정 button is in the app head, none on top of the room list, and its conversation has the 감시 switch", async () => {
 		await run(v, `go("monitoring", "i:kakao")`);
-		await waitFor(v, `document.querySelector(".kk-rooms .as-pin")`);
-		expect(await q(v, `return document.querySelector(".kk-rooms").firstElementChild.classList.contains("as-pin")`)).toBe(true);
-		await run(v, `document.querySelector(".kk-rooms .as-pin").click()`);
+		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
+		expect(await q(v, `return document.querySelectorAll(".as-pin").length`)).toBe(0);
+		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
 		await waitFor(v, `target === "settings:kakao" && document.querySelector('#app-sw [data-k="enabled"]')`);
 		await shot(v, "03-desktop-kakao-settings.png");
 		expect(existsSync(cfgFile("custom/kakao/config.json"))).toBe(false);
