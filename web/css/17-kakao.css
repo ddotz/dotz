@@ -95,3 +95,9 @@
 .kk-dbtn { gap: 4px; background: var(--layer); color: var(--fg); }
 .kk-dbtn .ic { width: 14px; height: 14px; }
 .kk-dbtn:disabled { opacity: .6; }
+
+/* 모니터링 > 앱 > 댓글 (web/js/30-monitoring-comments.js): the same pane; a reply's parent and a source's choices */
+.kk-reply { margin-bottom: 4px; color: var(--kk-time); font: 400 12px/16px var(--font); }
+.kk-pick-src { padding: 4px 0 8px; border-top: 1px solid var(--line, rgb(128 128 128 / .2)); }
+.kk-pick-src > .btn { margin: 0 16px; }
+.cm .kk-draft input.kk-ta { flex: 1; min-width: 0; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line, rgb(128 128 128 / .3)); background: var(--card); color: inherit; font: 400 16px/22px var(--font); }

@@ -35,6 +35,7 @@
     else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") noticeLive(e);
     else if (e.kind === "peer_notice" || e.kind === "peer_counts") prLive(e);
     else if (e.kind === "read") convOnRead(e);
+    else if (e.kind === "comment" || e.kind === "comment_send" || e.kind === "comment_draft" || e.kind === "comment_sources") cmLive(e);
     else if (e.kind === "kakao" || e.kind === "kakao_send" || e.kind === "kakao_draft" || e.kind === "kakao_rooms") kkLive(e);
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
     else if (e.kind === "update_available") { if (!e.ts || Date.now() - Date.parse(e.ts) < 60_000) toast(e.text, false, { label: "보기", onclick: () => go("settings") }, 10000); loadUpdate(); }

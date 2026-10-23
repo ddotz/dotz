@@ -50,6 +50,12 @@ export const INTEGRATIONS: IntegrationEntry[] = [
 		on: { files: ["custom/sns/config.json#youtube"] },
 		match: { text: ["유튜브", "youtube"] },
 	},
+	{
+		key: "site", label: "웹사이트 댓글", kind: "app", icon: "comment",
+		iconPath: "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3.5V16H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM8 9.5h8M8 12.5h5",
+		on: { flags: ["comments-site"] },
+		match: { text: ["웹사이트 댓글"] },
+	},
 ];
 
 export type IntegrationContext = { features: ReadonlySet<string>; files: (spec: string) => boolean; flags: ReadonlySet<string> };
@@ -106,7 +112,7 @@ export function appKeyOf(n: NoticeLike, ctx: IntegrationContext, entries: readon
 
 // The enabled entries with their notices (newest first as given, at most `cap`) and the unread count: unread notices plus the unread messages
 // of the conversations under the entry's `conv` prefixes (`convUnread`: target -> unread messages). `suggests` = the mails' reply states, `now` = the clock.
-export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now()): IntegrationItem[] {
+export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now(), comments: Readonly<Record<string, { drafts: number; unread: number }>> = {}): IntegrationItem[] {
 	const today = new Date(now).toDateString();
 	return entries.filter(e => integrationOn(e, ctx) || hasConvs(e, notices, convUnread)).map(e => {
 		const mine = notices.filter(n => !n.dismissed && belongsTo(e, n));
@@ -114,7 +120,8 @@ export function integrationItems(ctx: IntegrationContext, notices: readonly Noti
 		const fromConvs = Object.entries(convUnread).reduce((c, [t, n]) => c + (convs.some(p => t.startsWith(p)) ? n : 0), 0);
 		const waits = (n: NoticeLike) => n.decision?.state === "open" && !!n.decision.draft && !n.ignored;
 		const sentToday = suggests.filter(s => s.state === "sent" && convs.some(p => s.target.startsWith(p)) && s.at && new Date(s.at).toDateString() === today).length;
-		const needs = { drafts: mine.filter(waits).length, unread: mine.filter(n => !n.read && !waits(n)).length + fromConvs, sentToday };
-		return { key: e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, unread: mine.filter(n => !n.read).length + fromConvs, notices: mine.slice(0, cap).map(n => n.id), needs };
+		const cm = comments[e.key] ?? { drafts: 0, unread: 0 };
+		const needs = { drafts: mine.filter(waits).length + cm.drafts, unread: mine.filter(n => !n.read && !waits(n)).length + fromConvs + cm.unread, sentToday };
+		return { key: e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, notices: mine.slice(0, cap).map(n => n.id), needs };
 	});
 }
