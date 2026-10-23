@@ -56,14 +56,19 @@ export function createEngine(deps: EngineDeps) {
 		const top = c.parent ?? c.native;
 		return store.comments().filter(x => x.source === c.source && x.thread === c.thread && (x.native === top || x.parent === top));
 	};
+	const answeredOnPlatform = (c: Comment): boolean => {
+		const src = sourceOf(c.source);
+		const check = src && deps.adapters[src.kind]?.answered;
+		return check ? check(c, store.comments().filter(x => x.mine && x.source === c.source && x.thread === c.thread)) : false;
+	};
 	// A comment needs the owner's reply when it starts a stream, is not his own, and nobody of his (or a sent reply) answered it yet.
 	const needsReply = (c: Comment): boolean =>
-		!c.mine && !c.parent && !stream(c).some(x => x.mine && x.parent === c.native) && !store.replies().some(r => r.commentId === c.id && r.state !== "failed") && !store.drafts().some(d => d.commentId === c.id && d.status === "pending");
+		!c.mine && !c.parent && !stream(c).some(x => x.mine && x.parent === c.native) && !store.replies().some(r => r.commentId === c.id && r.state !== "failed") && !store.drafts().some(d => d.commentId === c.id && d.status === "pending") && !answeredOnPlatform(c);
 
 	// 미답장 (hub/unreplied.ts): someone else's comment stays open until a reply was sent for it, a comment of his own came after it in the same
 	// stream (he answered on the platform), or he tapped 답장 안 함. Reading it changes nothing.
 	const unrepliedWith = (c: Comment, replies: Reply[], dismissed: Record<string, number>): boolean =>
-		!c.mine && unrepliedFresh(c.at, deps.now()) && !dismissed[c.id] && !replies.some(r => r.commentId === c.id && r.state !== "failed") && !stream(c).some(x => x.mine && x.at >= c.at);
+		!c.mine && unrepliedFresh(c.at, deps.now()) && !dismissed[c.id] && !replies.some(r => r.commentId === c.id && r.state !== "failed") && !stream(c).some(x => x.mine && x.at >= c.at) && !answeredOnPlatform(c);
 	const unreplied = (c: Comment): boolean => unrepliedWith(c, store.replies(), store.dismissed());
 
 	const contextOf = (c: Comment): string => {

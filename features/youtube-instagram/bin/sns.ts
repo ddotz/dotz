@@ -10,6 +10,7 @@ import { defaultCall, type FlowDeps } from "../../reply-drafts/lib/flow.ts";
 import { loadSettings as replySettings, paths as replyPaths } from "../../reply-drafts/lib/settings.ts";
 import { getDraft, setStatus } from "../../reply-drafts/lib/store.ts";
 import { type Ctx, loadConfig, paths, SetupError } from "../lib/config.ts";
+import { PUBLISH_BLOCKED_CARD, publishState } from "../lib/ig-publish.ts";
 import { approve, getJob, type Job, type JobKind, listJobs, newJob, type NewJobInput, OPEN, PUBLISHABLE, recordResult, reject } from "../lib/jobs.ts";
 import { COSTS, can } from "../lib/quota.ts";
 import { cleanExample, ownReplyTexts, snsAdapter } from "../lib/reply-adapter.ts";
@@ -89,7 +90,10 @@ async function dispatch(ctx: Ctx, args: string[], deps: FlowDeps): Promise<RunRe
 			if (!KINDS.includes(kind) || !path) return usage();
 			const body = JSON.parse(readFileSync(path, "utf8")) as Omit<NewJobInput, "kind">;
 			const j = newJob(ctx, { ...body, kind });
-			return ok(`created ${j.id} ${j.kind} ${j.status}`);
+			const made = ok(`created ${j.id} ${j.kind} ${j.status}`);
+			// The approval card of a Reels upload says it cannot go out yet, instead of the job failing at publish time.
+			const blocked = j.kind === "upload" && j.targets.includes("instagram") && publishState().missing;
+			return blocked ? { ...made, lines: [...made.lines, `ig-publish-blocked ${j.id}: ${PUBLISH_BLOCKED_CARD}`] } : made;
 		}
 		case "approve": {
 			if (!pos[0]) return usage();

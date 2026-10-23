@@ -6,6 +6,7 @@ import { defaultCall } from "../../reply-drafts/lib/flow.ts";
 import { loadSettings } from "../../reply-drafts/lib/settings.ts";
 import { SWEEP_LIMIT } from "../../reply-drafts/lib/tone.ts";
 import { type Config, type Ctx, loadConfig, SetupError } from "./config.ts";
+import { ownerView } from "./ig-owner.ts";
 import { commentsFor, mediaWithCounts } from "./instagram.ts";
 import { newJob, reject } from "./jobs.ts";
 import { COSTS, can } from "./quota.ts";
@@ -73,9 +74,11 @@ export async function ownReplyTexts(ctx: Ctx, cfg: Config, platform: Platform, l
 	const texts: string[] = [];
 	if (platform === "youtube" && cfg.youtube && can(ctx, cfg, COSTS.list * 3)) texts.push(...(await ownReplies(ctx, cfg.youtube.channel_id, limit)));
 	if (platform === "instagram" && cfg.instagram) {
-		const owner = cfg.instagram.username.toLowerCase();
+		const owner = { userId: cfg.instagram.user_id, username: cfg.instagram.username };
 		for (const m of (await mediaWithCounts(ctx)).filter(x => x.comments_count > 0).slice(0, 10)) {
-			for (const c of await commentsFor(ctx, m.id)) for (const r of c.replies) if (r.username.toLowerCase() === owner) texts.push(r.text);
+			const list = await commentsFor(ctx, m.id);
+			const view = ownerView(list, owner);
+			for (const c of list) for (const r of c.replies) if (view.isOwner(r)) texts.push(r.text);
 			if (texts.length >= limit) break;
 		}
 	}

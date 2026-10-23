@@ -1,6 +1,7 @@
 // YouTube (Data API) and Instagram (Graph API) adapters of the comment contract. Both reuse the connection of features/youtube-instagram
 // (tokens in ~/.dotz/secrets, quota accounting); there is no second login. The API access is injected so tests use stubs.
 import type { Config, Ctx } from "../../../features/youtube-instagram/lib/config.ts";
+import { mentions, ownerView } from "../../../features/youtube-instagram/lib/ig-owner.ts";
 import type { IgComment, IgMedia } from "../../../features/youtube-instagram/lib/instagram.ts";
 import type { YtComment } from "../../../features/youtube-instagram/lib/youtube.ts";
 import { type CommentAdapter, FALLBACK_TITLE, type PostInfo, type RawComment } from "../contract.ts";
@@ -60,6 +61,7 @@ export function youtubeAdapter(api: () => YoutubeApi): CommentAdapter {
 
 export type InstagramApi = {
 	username: () => string;
+	userId?: () => string;
 	media: () => Promise<IgMedia[]>;
 	comments: (mediaId: string) => Promise<IgComment[]>;
 	reply: (commentId: string, text: string) => Promise<string>;
@@ -81,7 +83,7 @@ export function instagramAdapter(api: () => InstagramApi): CommentAdapter {
 		async list(src, cursor) {
 			const a = api();
 			const prev: IgCursor = cursor ? JSON.parse(cursor) : {};
-			const owner = a.username().toLowerCase();
+			const owner = { userId: a.userId?.(), username: a.username() };
 			const counts: Record<string, number> = {};
 			const raw: RawComment[] = [];
 			lastMedia = await a.media();
@@ -90,18 +92,23 @@ export function instagramAdapter(api: () => InstagramApi): CommentAdapter {
 				if (!m.comments_count || (!src.watch.includes("*") && !src.watch.includes(m.id)) || prev.counts?.[m.id] === m.comments_count) continue;
 				const title = igTitle(m), link = m.permalink, thumb = igThumb(m);
 				const shown = { postTitle: title, ...(link ? { postLink: link } : {}), ...(thumb ? { thumb } : {}) };
-				for (const c of await a.comments(m.id)) {
+				const list = await a.comments(m.id);
+				// Replies carry no author: the owner's are found by id and by his @mentions (lib/ig-owner.ts).
+				const view = ownerView(list, owner);
+				for (const c of list) {
 					// One malformed comment must not fail the whole read.
 					try {
 						const at = Date.parse(c.timestamp) || 0;
-						raw.push({ native: c.id, thread: m.id, author: igAuthor(c.username), text: c.text ?? "", ...shown, at, mine: (c.username ?? "").toLowerCase() === owner });
-						(c.replies ?? []).forEach((r, i) => raw.push({ native: `${c.id}.${i}`, thread: m.id, parent: c.id, author: igAuthor(r.username), text: r.text ?? "", ...shown, at: at + 1 + i, mine: (r.username ?? "").toLowerCase() === owner }));
+						raw.push({ native: c.id, thread: m.id, author: igAuthor(c.username), text: c.text ?? "", ...shown, at, mine: view.isOwner(c) });
+						(c.replies ?? []).forEach((r, i) => raw.push({ native: `${c.id}.${i}`, thread: m.id, parent: c.id, author: igAuthor(r.username), text: r.text ?? "", ...shown, at: Math.max(at + 1 + i, Date.parse(r.timestamp ?? "") || 0), mine: view.isOwner(r) }));
 					} catch {}
 				}
 			}
 			const t = raw.reduce((max, r) => (r.at > Date.parse(max) ? new Date(r.at).toISOString() : max), prev.t ?? new Date(0).toISOString());
 			return { comments: raw, cursor: JSON.stringify({ t, counts }) };
 		},
+		answered: (c, mine) => mine.some(x => x.at >= c.at && mentions(x.text, c.author)),
+		// The target is always a comment id (a reply goes to its top-level comment), never a username.
 		async reply(_src, c, text) {
 			try {
 				return { ok: true, ref: await api().reply(c.parent ?? c.native, text) };

@@ -3,11 +3,14 @@
 // upkeep. The token only travels in the Authorization header; OAuthException 190 / 401 is AuthError, 5xx/429/rate limits and
 // network errors are TransientError.
 import { type Ctx, type InstagramSecret, paths, readJson, SetupError, writeJson } from "./config.ts";
+import { PUBLISH_MISSING_KO, clearPublishMissing, setPublishMissing } from "./ig-publish.ts";
+import { UNKNOWN_USER } from "./ig-owner.ts";
 import { AuthError, TransientError } from "./watchkit.ts";
 
 const BASE = "https://graph.instagram.com/v23.0";
 const REFRESH_URL = "https://graph.instagram.com/refresh_access_token";
 const DAY_MS = 86_400_000;
+const PUBLISH_DENIED_CODE = 10;
 const REFRESH_AFTER_MS = 7 * DAY_MS;
 const REFRESH_WINDOW_MS = 20 * DAY_MS;
 const MIN_REFRESH_AGE_MS = DAY_MS;
@@ -27,10 +30,18 @@ export class InstagramError extends Error {
 }
 
 export type IgMedia = { id: string; caption?: string; comments_count: number; timestamp: string; permalink?: string; thumb?: string };
-export type IgComment = { id: string; text: string; username: string; timestamp: string; replies: { username: string; text: string }[] };
+export type IgReply = { id?: string; username: string; text: string; fromId?: string; timestamp?: string };
+export type IgComment = { id: string; text: string; username: string; timestamp: string; fromId?: string; replies: IgReply[] };
+
+// The token has no instagram_business_content_publish (API code 10): the Reel cannot go out until the owner makes the token again.
+export class PublishPermissionError extends Error {
+	constructor() {
+		super(PUBLISH_MISSING_KO);
+		this.name = "PublishPermissionError";
+	}
+}
 
 type IgFrom = { id?: string; username?: string };
-const UNKNOWN_USER = "알 수 없는 사용자";
 // Some comments (left, restricted or deleted accounts) come without `username`; fall back to `from`, then to a fixed label.
 const authorOf = (c: { username?: string; from?: IgFrom }): string => c.username || c.from?.username || c.from?.id || UNKNOWN_USER;
 
@@ -113,13 +124,20 @@ export async function conversationMessages(ctx: Ctx, conversationId: string): Pr
 }
 
 export async function commentsFor(ctx: Ctx, mediaId: string): Promise<IgComment[]> {
-	type Raw = { username?: string; from?: IgFrom; text?: string };
+	type Raw = { id?: string; username?: string; from?: IgFrom; text?: string; timestamp?: string };
 	const d = await graph<{ data?: (Raw & { id: string; timestamp: string; replies?: { data?: Raw[] } })[] }>(
 		ctx,
-		`${BASE}/${encodeURIComponent(mediaId)}/comments?${new URLSearchParams({ fields: "id,text,username,from{id,username},timestamp,replies{username,from{id,username},text}", limit: "50" })}`,
+		`${BASE}/${encodeURIComponent(mediaId)}/comments?${new URLSearchParams({ fields: "id,text,username,from{id,username},timestamp,replies{id,username,from{id,username},text,timestamp}", limit: "50" })}`,
 		secret().access_token,
 	);
-	return (d.data ?? []).map(c => ({ id: c.id, text: c.text ?? "", username: authorOf(c), timestamp: c.timestamp, replies: (c.replies?.data ?? []).map(r => ({ username: authorOf(r), text: r.text ?? "" })) }));
+	return (d.data ?? []).map(c => ({
+		id: c.id,
+		text: c.text ?? "",
+		username: authorOf(c),
+		timestamp: c.timestamp,
+		fromId: c.from?.id,
+		replies: (c.replies?.data ?? []).map(r => ({ id: r.id, username: authorOf(r), text: r.text ?? "", fromId: r.from?.id, timestamp: r.timestamp })),
+	}));
 }
 
 export async function reply(ctx: Ctx, commentId: string, text: string): Promise<string> {
@@ -127,7 +145,22 @@ export async function reply(ctx: Ctx, commentId: string, text: string): Promise<
 	return d.id;
 }
 
+// A publish that Meta refuses with code 10 is remembered (lib/ig-publish.ts) and surfaces as PublishPermissionError; one that works clears it.
 export async function publishReel(ctx: Ctx, videoUrl: string, caption: string): Promise<string> {
+	try {
+		const id = await publishReelCall(ctx, videoUrl, caption);
+		clearPublishMissing();
+		return id;
+	} catch (e) {
+		if (e instanceof InstagramError && e.code === PUBLISH_DENIED_CODE) {
+			setPublishMissing(ctx);
+			throw new PublishPermissionError();
+		}
+		throw e;
+	}
+}
+
+async function publishReelCall(ctx: Ctx, videoUrl: string, caption: string): Promise<string> {
 	const token = secret().access_token;
 	const container = await graph<{ id: string }>(ctx, `${BASE}/me/media`, token, form({ media_type: "REELS", video_url: videoUrl, caption }));
 	for (let i = 0; ; i++) {
@@ -141,13 +174,17 @@ export async function publishReel(ctx: Ctx, videoUrl: string, caption: string): 
 	return published.id;
 }
 
-// Refreshes when the token is at least 24 h old and either older than 7 days or expiring within 20 days.
+// The one schedule: due when the token is at least 24 h old and either older than 7 days or expiring within 20 days.
+export function refreshDue(s: Pick<InstagramSecret, "obtained_at" | "expires_at">, now: Date): boolean {
+	const age = now.getTime() - Date.parse(s.obtained_at);
+	const left = s.expires_at ? Date.parse(s.expires_at) - now.getTime() : Number.POSITIVE_INFINITY;
+	return age >= MIN_REFRESH_AGE_MS && (age > REFRESH_AFTER_MS || left < REFRESH_WINDOW_MS);
+}
+
 export async function refreshIfNeeded(ctx: Ctx): Promise<{ refreshed: boolean }> {
 	const s = secret();
 	const now = ctx.now().getTime();
-	const age = now - Date.parse(s.obtained_at);
-	const left = s.expires_at ? Date.parse(s.expires_at) - now : Number.POSITIVE_INFINITY;
-	if (!(age >= MIN_REFRESH_AGE_MS && (age > REFRESH_AFTER_MS || left < REFRESH_WINDOW_MS))) return { refreshed: false };
+	if (!refreshDue(s, ctx.now())) return { refreshed: false };
 	// Meta documents this endpoint with the token as a query parameter only (no Authorization header).
 	const d = await graph<{ access_token: string; expires_in: number }>(ctx, `${REFRESH_URL}?${new URLSearchParams({ grant_type: "ig_refresh_token" })}`, s.access_token, {}, true);
 	writeJson(paths.instagram(), { ...s, access_token: d.access_token, obtained_at: ctx.now().toISOString(), expires_at: new Date(now + d.expires_in * 1000).toISOString() } satisfies InstagramSecret, true);
