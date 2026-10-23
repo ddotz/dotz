@@ -12,8 +12,9 @@ export type MailAttachment = { name: string; type: string; size: number; file: s
 /** What a poster sends: the bytes inline (`data`, base64) or a file it already put in the mail files folder (`path`, absolute or relative to it). */
 export type AttachmentInput = { name: string; type?: string; data?: string; path?: string };
 // A suggested next action the web shows in the mail's row and conversation slot (only when present): `reply-draft` = a reply draft
-// was offered as a send-approval [ask] whose question ends in "(<ref>)" (features/reply-drafts).
-export type MailSuggest = { kind: "reply-draft"; label: string; ref: string };
+// was offered as a send-approval [ask] whose question ends in "(<ref>)" (features/reply-drafts). `state` is the reply state the row shows
+// (web 30-monitoring.js mailReplyChip): "draft" (default) a draft waits for approval, "sent" the reply went out, "waiting" a reply is expected.
+export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; state?: "draft" | "sent" | "waiting" };
 export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; suggest?: MailSuggest };
 export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; thread?: string; wake?: boolean; attachments?: AttachmentInput[] };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean };
@@ -197,6 +198,9 @@ export function mailFileRoute(req: Request, url: URL, key: string, index: string
 		const path = insideMailFiles(a.file);
 		if (!path) throw new FileError("첨부파일을 찾을 수 없어요", 404);
 		const res = serveFile(path, req, url.searchParams.get("dl") === "1" || url.searchParams.get("download") === "1");
+		// The file's own name, as RFC 5987 wants it: a Korean name survives, and ' ( ) * (which encodeURIComponent leaves) are percent-encoded too.
+		const kind = res.headers.get("content-disposition")?.startsWith("attachment") ? "attachment" : "inline";
+		res.headers.set("Content-Disposition", `${kind}; filename="${a.name.replace(/[^\x20-\x7e]|["\\]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(a.name).replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`);
 		return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
 	} catch (error) {
 		return Response.json({ error: (error as Error).message }, { status: error instanceof FileError ? error.status : 400 });

@@ -17,29 +17,19 @@
 .rc-rawbody .md .tbl { background: var(--card); }
 .rc-rawbody .md th { background: var(--layer); }
 @media (max-width: 1099px) { .appbar.cvconv h1 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; font-size: 17px; line-height: 22px; overflow-wrap: anywhere; } }
-/* mail row (30-monitoring.js monConvNode): a compact result card, the text on the left and 본문 / 첨부 icon buttons on the right */
-#mon-tl > .bm.rc.mr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px 12px; padding: 10px 12px 10px 16px; }
-.mr-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* mail row (30-monitoring.js monConvNode): a compact result card that is one tap target (role=button); in the original view (11-todo-strip.js) its files */
+#mon-tl > .bm.rc.mr { gap: 2px; padding: 10px 16px; cursor: pointer; }
+#mon-tl > .bm.rc.mr:hover { background: var(--hover); }
+#mon-tl > .bm.rc.mr:focus-visible { outline-offset: -2px; }
 .mr .rc-title { font-size: 15px; line-height: 22px; }
-.mr-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--fg-2); font-size: 14px; line-height: 20px; }
-.mr-slot { margin-top: 6px; }
-.mr-act { display: flex; align-items: center; gap: 6px; }
-.mr-btn { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 600; white-space: nowrap; }
-.mr-btn:hover, .mr-btn[aria-expanded="true"] { background: var(--hover); color: var(--fg); }
-.mr-btn .ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.mr-n { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--on-accent); font-size: 11px; line-height: 18px; text-align: center; }
-.mr-files { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
-.mr-file { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.mr-fn { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 40px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--fg); font-size: 14px; line-height: 20px; text-decoration: none; }
-.mr-fn:hover, .mr-dl:hover { background: var(--hover); }
-.mr-fn .ic, .mr-dl .ic { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--fg-2); }
-.mr-fname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mr-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--fg-2); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.mr-slot { margin-top: 6px; display: flex; gap: 6px; }
+.mr-clip { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.mr-clip .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mr-files { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
+.mr-fh { color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
+.mr-file { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--fg); font-size: 14px; line-height: 20px; text-decoration: none; }
+.mr-file:hover { background: var(--hover); }
+.mr-file .ic { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--fg-2); }
+.mr-fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-fsize { flex: none; color: var(--fg-3); font-size: 12px; }
-.mr-dl { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-ctl); }
-@media (max-width: 639px) {
-  #mon-tl > .bm.rc.mr { padding: 10px 8px 10px 14px; gap: 4px 8px; }
-  .mr-act { flex-direction: column; gap: 4px; }
-  .mr-btn { justify-content: center; width: 44px; height: 44px; padding: 0; }
-  .mr-bl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .mr-n { position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; font-size: 10px; line-height: 16px; }
-}
