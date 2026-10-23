@@ -103,6 +103,13 @@ export function createKakaoWeb(deps: WebDeps) {
 		const names = new Map<string, string>();
 		let looked = 0;
 		for (const r of all) {
+			// The memo chat has no name in the database; KakaoTalk lists and finds it under the owner's own nickname.
+			if (r.kind === "self" && r.name === "(unknown)") {
+				const own = (await db.query("SELECT nickName FROM NTUser WHERE userId = ? AND linkId = 0 LIMIT 1", [String(config.userId ?? "")]).catch(() => []))[0]?.nickName;
+				if (typeof own === "string" && own.trim()) r.name = own.trim();
+				names.set(r.chatId, "나와의 채팅");
+				continue;
+			}
 			if (r.name !== "(unknown)" || (r.kind !== "direct" && r.kind !== "group") || looked >= 10) continue;
 			looked++;
 			names.set(r.chatId, (await memberLabel(db, r.chatId, config.userId ?? "").catch(() => undefined)) ?? "이름 없는 방");

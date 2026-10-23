@@ -292,3 +292,32 @@ test("an edited text is sent instead of the draft's and is kept on the draft; an
 	expect(k.calls[1]).toEqual(["/fake/kmsg", "send", "--", "스터디방", "수정한 글"]);
 	expect((await listDrafts({ paths, runner: k.runner }))[0]!.text).toBe("수정한 글");
 });
+
+// A cold first window often fails before Enter: then nothing went out and one retry runs. "Message sent" with a bad exit code is a sent message (no second send).
+test("sendText retries once with deep recovery only when kmsg never reached Enter", async () => {
+	const script = (results: { code: number; stdout: string; stderr?: string }[]) => {
+		const sends: string[][] = [];
+		const runner: Runner = async argv => {
+			if (argv[0] === "osascript" || argv[0] === "open") return { code: 0, stdout: "com.example.Editor\n", stderr: "" };
+			if (argv.includes("--dry-run")) return { code: 0, stdout: `Recipient: ${argv[argv.indexOf("--") + 1]}\nMessage: x\n`, stderr: "" };
+			sends.push(argv);
+			const r = results.shift()!;
+			return { stderr: "", ...r };
+		};
+		return { sends, runner };
+	};
+	const cold = script([{ code: 1, stdout: "Opening via search...\n", stderr: "Error: chat window not found\n" }, { code: 0, stdout: "✓ Message sent\n" }]);
+	expect(await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, { paths, runner: cold.runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });
+	expect(cold.sends.length).toBe(2);
+	expect(cold.sends[1]).toContain("--deep-recovery");
+
+	const closeFail = script([{ code: 1, stdout: "✓ Message sent to '가나'\n", stderr: "close failed\n" }]);
+	expect(await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, { paths, runner: closeFail.runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });
+	expect(closeFail.sends.length).toBe(1);
+
+	const dead = script([{ code: 1, stdout: "", stderr: "Error: chat window not found\n" }, { code: 1, stdout: "", stderr: "Error: chat window not found\n" }]);
+	const r = await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, { paths, runner: dead.runner, kmsg: "/fake/kmsg" });
+	expect(r.ok).toBe(false);
+	expect(r.reason).toContain("chat window not found");
+	expect(dead.sends.length).toBe(2);
+});
