@@ -129,6 +129,11 @@ const MEMORY_OFF = "--omo-senpi-memory-disabled";
 // owner in its channels instead.
 const NO_ASK = "--no-ask-user";
 
+// Every dotz session's replies are chat messages for the owner. senpi's `chat` prompt surface drops the routing line, the
+// Ask / For you / Now / Next handoff block and the todo handoff cues, which otherwise leaked into owner-facing replies
+// (web, 2026-10-22; worst on the API-key fallback model). Task workers inherit it; MODE.md says the same for older hosts.
+export const PROMPT_SURFACE_ENV = { SENPI_PROMPT_SURFACE: "chat" };
+
 // An API-key fallback entry runs as its own provider, which only exists once the dotz extension has registered it from
 // DOTZ_KEY_PROVIDER (hub/fallback.ts keyEnv): the process starts on the entry's own model and is switched to the key
 // provider's copy before the first prompt (RPC commands run in order), as on omp.
@@ -163,7 +168,7 @@ export const omo: RuntimeAdapter = {
 		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? (onKey ? writeOrchestratorProfile(undefined, onKey, []) : writeOrchestratorProfile()) : undefined;
 		const launcher = senpiLauncher();
 		// stickyEnv() is the account at spawn; a running process follows later switches by itself (the dotz extension re-pins it at each turn).
-		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
+		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...PROMPT_SURFACE_ENV, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
 		const agent = new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);

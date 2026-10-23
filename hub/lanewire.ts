@@ -7,7 +7,7 @@ import { emit, emitDelivery } from "./events.ts";
 import { setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler } from "./lanes.ts";
 import { orch, setNoticeHandler as setOrchNoticeHandler, steer as steerOrchestrator } from "./orchestrator.ts";
 import { createLaneRelay } from "./lanerelay.ts";
-import { inOrder, localize } from "./outlang.ts";
+import { inOrder, localize, noteHandoffLeak } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { send, deliver, out } from "./outbound.ts";
 import { dropForLine } from "./forline.ts";
@@ -16,6 +16,7 @@ export const laneRelay = createLaneRelay({ busy: () => orch.status === "working"
 
 export function installLaneHandlers(): void {
 	setReportHandler((lane, raw, answering) => {
+		noteHandoffLeak(`lane:${lane.name}`, raw);
 		const text = stripHandoff(raw);
 		emit("inbox", { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text });
 		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), lane.orchAsked === false);
@@ -39,6 +40,7 @@ export function installLaneHandlers(): void {
 	// session's chat and Discord channel at once, with the progress line it replaces cleared; the owner's messages become "answered".
 	setOwnerNoteHandlers({
 		note: (lane, raw, refs) => {
+			noteHandoffLeak(`lane:${lane}`, raw);
 			const channel = `lane:${lane}`;
 			void inOrder(channel, async () => {
 				const shown = await localize(dropForLine(stripHandoff(raw)).slice(0, 900), channel, "lane");

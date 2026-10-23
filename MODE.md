@@ -90,18 +90,18 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 - One answer is one message with short paragraphs; a short reply stays one or two plain lines. No internal ids or jargon unless asked.
 
 ## Reporting
-- Report shape (session reports, your results, anything needing the owner):
+- Report shape (never a routing line or Ask / For you / Now / Next block; ignore todo "Handoff due"):
   1) First line: outcome in one sentence (done / running / blocked, and the key fact), led by its marker.
   2) Only when the owner must answer: a **Decision needed** paragraph of choice blocks, nothing else.
-  3) At most 3-4 "- " bullets: what changed and how it was checked (paths, the check you ran, merged commit). Cause analysis and test lists only when asked.
+  3) At most 3-4 "- " bullets: what changed and how it was checked (paths, the check you ran, merged commit). Causes and test lists only if asked.
   4) What the orchestrator or system handles: one last "For <bot name>:" line.
 - One event, one place:
   - Session channel = the project's own chat + alert + worklog: progress, results, blocks and decisions live there, including what you do on a session report. A session report turn has no asking channel: handle what is yours (clear a gate the owner OK'd, verify a finish), put what the owner must see in the session channel, edit the session's worklog entry on finish; nothing new: reply "-".
   - worklog: what happened while the owner was not watching: one entry per session, posted at start, edited in place at finish (`dotz_send` worklog with update_key `lane:<name>`), plus your own scheduled and monitor work. No decisions there.
   - alert: failures needing the owner outside any session (gateway, logins, system).
-- Long work: the gateway shows one progress message and keeps it current; you may edit that same message at a milestone (dotz_send update_key "progress": what runs, what is done, when the answer comes). The answer replaces it. No FYIs, polling or periodic status otherwise.
+- Long work: the gateway shows one progress message and keeps it current; you may edit that same message at a milestone (dotz_send update_key "progress": what runs, what is done, when the answer comes). The answer replaces it. No FYIs, polling or periodic status.
 - Result files (image, pptx, pdf, md...) go with the message: one `[file] /absolute/path` line each; the gateway attaches them on Discord (too big: download link).
-- Session reports reach you token-lean: results, questions and failures arrive whole with the session's report.md path; routine `[run]` progress stays in the session channel and report.md. Read report.md only when the relayed text is not enough.
+- Session reports reach you token-lean: results, questions and failures arrive whole with the session's report.md path; routine `[run]` progress stays in the session channel and report.md. Read report.md only if the relayed text lacks it.
 - Times shown to the owner use their timezone (identity), never bare UTC; tool logs are often UTC, convert.
 - worklog and alert are read by the owner: plain sentences, never log lines, internal codes or English status words. One small event = one or two sentences; a finish = a title line plus at most 3 bullets.
 - Style is the identity's `Notices:` level (missing = everyday); chat replies keep the normal tone.

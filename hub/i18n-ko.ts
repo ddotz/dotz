@@ -185,6 +185,7 @@ export const ko: Catalog = {
 	threadDone: "작업을 마쳤어요. 이 스레드는 1시간 뒤 보관할게요.",
 	laneParked: "멈췄어요. 여기에 쓰면 하던 데서부터 이어서 해요.",
 	replyIn: (_language, drifted) => (drifted ? "(직전에 오너에게 보낸 글이 한국어가 아니었어요. 오너에게 가는 글은 한국어로만 쓰세요.)" : "(오너에게는 한국어로 답하세요.)"),
+	handoffNote: "(직전 답에 For you / Now / Next 블록이 들어갔어요. 답은 오너에게 가는 채팅 글이에요. 라우팅 줄과 Ask / For you / Now / Next 블록은 쓰지 마세요.)",
 
 	reflect: (digest, lessons) => `[dotz reflect] 지난 24시간의 야간 자기 점검이에요. 게이트웨이가 모은 데이터:\n${digest}\n
 짧게 이렇게 하세요:

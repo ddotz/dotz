@@ -196,6 +196,7 @@ export const en = {
 	threadDone: "Done. This thread is archived in an hour.",
 	laneParked: "Stopped. Write here to pick this session back up from where it left off.",
 	replyIn: (language: string, drifted: boolean) => drifted ? `(Your last text for the owner was not in ${language}. Write everything for the owner in ${language} only.)` : `(Answer the owner in ${language}.)`,
+	handoffNote: "(Your last reply carried the For you / Now / Next handoff labels. Replies go to the owner as chat messages: no routing line and no Ask / For you / Now / Next block.)",
 
 	reflect: (digest: string, lessons: string) => `[dotz reflect] Nightly self-review of the last 24h. Data from the gateway:\n${digest}\n
 Do this, briefly:

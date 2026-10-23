@@ -3,6 +3,7 @@ import { settleRevert } from "./lanefailover.ts";
 import { msg, lang } from "./i18n.ts";
 import { languageName } from "./language.ts";
 import { log } from "./config.ts";
+import { handoffNote } from "./outlang.ts";
 
 const WATCHDOG_MS = 120_000;
 
@@ -22,7 +23,7 @@ export function prompt(lane: Lane, text: string): void {
 	// smoke script against a temp DOTZ_DIR.") because the language sat only in the launch footer.
 	const nudge = (lane.retainNext ? `\n${msg().retainNudge}` : "") + (/^\[owner via /.test(text) ? `\n${msg().ownerAnswerNudge}` : "");
 	lane.retainNext = undefined;
-	lane.proc?.send(`${text}${nudge}\n${msg().replyIn(languageName(lang()), false)}`, lane.status === "working" ? "steer" : "prompt");
+	lane.proc?.send(`${text}${nudge}\n${msg().replyIn(languageName(lang()), false)}${handoffNote(`lane:${lane.name}`)}`, lane.status === "working" ? "steer" : "prompt");
 	if (lane.status === "working") return;
 	clearTimeout(lane.watchdog);
 	lane.watchdog = setTimeout(() => {

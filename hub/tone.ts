@@ -74,6 +74,9 @@ export function stripHandoff(text: string): string {
 	return /\bFor you:\s*([\s\S]*?)(?:\s+Now:[\s\S]*)?$/.exec(m[0])?.[1]?.trim() || text;
 }
 
+// True when a reply still carries the harness handoff labels (even when the leading block was stripped or never led).
+export const leaksHandoff = (text: string): boolean => /\bFor you:[\s\S]*\bNow:[\s\S]*\bNext:/.test(text);
+
 // `[later]` ends a turn whose answer a background worker will bring: a sentinel for the gateway, never text for the owner.
 // Where a preview must show something, it reads LATER_LINE.
 export const LATER_LINE = "백그라운드 작업 중";

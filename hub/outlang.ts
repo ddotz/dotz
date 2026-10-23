@@ -11,6 +11,7 @@ import { cfg, DATA_DIR, DEFAULTS, IDENTITY_FILE, log, OMP, splitThinking } from 
 import { OMO } from "./runtime/omo-hosts.ts";
 import { lang, msg } from "./i18n.ts";
 import { baseLanguage, languageName } from "./language.ts";
+import { leaksHandoff } from "./tone.ts";
 
 type Setting = { mode?: string; model?: string; timeout_s?: number };
 // Optional key outside the Config type (hub/config.ts is not touched for it); a string is the mode alone.
@@ -159,6 +160,13 @@ export function inOrder<T>(target: string, run: () => Promise<T>): Promise<T> {
 // Set when an orchestrator text came out in the wrong language; the next inbox turn says so.
 let drifted = false;
 
+// Keys ("orchestrator", "lane:<name>") whose last raw reply carried the harness handoff labels; their next turn says so once.
+const handoffLeaks = new Set<string>();
+export function noteHandoffLeak(key: string, raw: string): void {
+	if (leaksHandoff(raw)) handoffLeaks.add(key);
+}
+export const handoffNote = (key: string): string => (handoffLeaks.delete(key) ? `\n${msg().handoffNote}` : "");
+
 // An inbox turn as the orchestrator gets it, with a language line last: the contract states the language only at the
 // start of a long session, and an answer that drifted keeps priming the next ones (the session holds the original, not
 // the translation), so the line carries a drift note once after a mismatch. It ends the newest message, so the cached
@@ -166,7 +174,7 @@ let drifted = false;
 export function withTurnLanguage(body: string): string {
 	const line = msg().replyIn(languageName(lang()), drifted);
 	drifted = false;
-	return `${body}\n${line}`;
+	return `${body}\n${line}${handoffNote("orchestrator")}`;
 }
 
 // The text to send: the original unless it is not in the owner's language and the rewrite succeeded.
