@@ -126,7 +126,12 @@ describe("decision options that need detail", () => {
 		await view.evaluate(`([...document.querySelectorAll(".fs-ft .dc-act")].find(b => b.textContent === "고치기").click(), 0)`);
 		await waitFor(`document.querySelector(".fs-ft .dc-note")`);
 		expect(await posts()).toEqual([]);
-		expect(await view.evaluate(`document.querySelector(".fs-ft .dc-go").textContent`)).toBe("고칠 내용 보내기");
+		// the input asks "어떻게 고칠까요?" with an example; the draft stays above it; 직접 수정 is not offered until the input is left
+		expect(await view.evaluate(`document.querySelector(".fs-ft .dc-go").textContent`)).toBe("고쳐 달라고 하기");
+		expect(await view.evaluate(`[document.querySelector(".fs-ft .dc-ctx .dc-lb").textContent, document.querySelector(".fs-ft .dc-note").placeholder, !!document.querySelector(".fs-body .dc-dr-b"), !!document.querySelector(".fs-ft .dc-manual")]`)).toEqual(["어떻게 고칠까요?", "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘", true, false]);
+		Bun.spawnSync(["mkdir", "-p", SNAP]);
+		await settled();
+		await Bun.write(`${SNAP}/redraft-input-390.png`, await view.screenshot());
 		await type("3시 말고 4시로");
 		await view.evaluate(`(document.querySelector(".fs-ft .dc-go").click(), 0)`);
 		await waitForPost();
@@ -134,6 +139,31 @@ describe("decision options that need detail", () => {
 		expect(posted).toHaveLength(1);
 		expect(posted[0]!.path).toBe(`/api/notices/${n.id}/answer`);
 		expect(posted[0]!.body).toEqual({ n: 2, note: "3시 말고 4시로" });
+		// the sheet stays open saying 고치는 중… with the old draft; the rewritten draft (a newer open one of the same conversation) replaces it
+		expect(await view.evaluate(`document.querySelector(".fs-ft .dc-st").textContent`)).toBe("고치는 중…");
+		await view.evaluate(`(() => {
+			const old = ntById(DK.nid); old.decision.state = "answered"; old.decision.answer = "2) 고치기 - 3시 말고 4시로";
+			const fresh = JSON.parse(JSON.stringify(old)); fresh.id = "redrafted"; fresh.ts = new Date(Date.now() + 1000).toISOString(); fresh.decision.state = "open"; delete fresh.decision.answer;
+			fresh.decision.draft.body = "다음 주 일정을 4시로 보내 드립니다.";
+			NT.items.push(fresh); dkPaint(); return 0;
+		})()`);
+		await waitFor(`document.querySelector(".fs-body .dc-dr-b").textContent === "다음 주 일정을 4시로 보내 드립니다." && document.querySelectorAll(".fs-ft .dc-act").length === 3`);
+	});
+
+	test("직접 수정 in the draft sheet sends the owner's own text with its lead as the 고치기 note", async () => {
+		const ref = `d-manual-${Date.now()}`;
+		emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${draftApprovalBlock({ to: "kim@example.com", subject: "일정", body: "다음 주 일정을 보내 드립니다.", ref })}` });
+		const n = listNotices(300).items.find(i => i.kind === "decision" && i.decision?.draft?.ref === ref)!;
+		await load(`(noticeSheetOpen(${JSON.stringify(n.id)}), 0)`);
+		await waitFor(`document.querySelector(".fs-ft .dc-manual")`);
+		expect(await view.evaluate(`document.querySelector(".fs-ft .dc-manual").textContent`)).toBe("직접 수정");
+		await view.evaluate(`(document.querySelector(".fs-ft .dc-manual").click(), 0)`);
+		await waitFor(`document.querySelector(".fs-ft .dc-note")`);
+		expect(await view.evaluate(`document.querySelector(".fs-ft .dc-note").value`)).toBe("다음 주 일정을 보내 드립니다.");
+		await type("다음 주 화요일 일정을 보내 드립니다.");
+		await view.evaluate(`(document.querySelector(".fs-ft .dc-go").click(), 0)`);
+		await waitForPost();
+		expect((await posts())[0]!.body).toEqual({ n: 2, note: "이 내용으로 고쳐 주세요: 다음 주 화요일 일정을 보내 드립니다." });
 	});
 
 	test("the notice sheet of a plain decision asks for the reason of '안 됨' too", async () => {

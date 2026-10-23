@@ -75,7 +75,7 @@ const draw = `(() => {
 	MAILS.set("mail:fx-9", { subject: "월간 점검 보고서 확인 요청", from: "Alex Sender <sender@example.com>", source: "fx", at: ${JSON.stringify(now)}, summary: "이번 달 점검이 끝났어요." });
 	CONV.set("mail:fx-8", { ts: ${JSON.stringify(now)}, text: "[ask] ${Q}", from: "bot" }); ts("mail:fx-8").unread = 0;
 	const items = ${JSON.stringify(NOTES)};
-	NT.items = items; NT.loaded = true; DR.edit.clear();
+	NT.items = items; NT.loaded = true; DR.edit.clear(); DR.manual.clear();
 	const nodes = [...items.map(n => monNoticeNode(n, [])), monConvNode("mail:fx-8", "메일")];
 	document.querySelector("#mon-tl").replaceChildren(...nodes);
 	return true;
@@ -96,7 +96,7 @@ for (const width of [1440, 390]) {
 				rowRole: [row.getAttribute("role"), row.tabIndex], rowButtons: row.querySelectorAll("button").length };
 		})()))`)) as string) as any;
 		expect(got.n).toBe(5);
-		expect(got.states).toEqual(["open", "send", "edit", "drop", "expired"]);
+		expect(got.states).toEqual(["open", "send", "revising", "drop", "expired"]);
 		for (const b of got.badge) expect(b).toMatch(/\d{1,2}:\d{2}/);
 		expect(got.questions).toEqual([1, 1, 1, 1, 1]);
 		expect(got.chip).toBe("Alex Sender <sender@example.com>");
@@ -113,11 +113,19 @@ for (const width of [1440, 390]) {
 
 		const edit = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), JSON.stringify((() => {
 			const c = document.querySelector("#mon-tl > .bm.dr"), ta = c.querySelector("textarea.dr-edit");
-			return { ta: ta ? ta.value : null, body: !!c.querySelector(".dr-body"), buttons: [...c.querySelectorAll("button")].map(b => b.textContent.trim()) };
+			return { ta: ta ? ta.value : null, ph: ta ? ta.placeholder : null, body: !!c.querySelector(".dr-body"), ask: c.querySelector(".dr-q2") && c.querySelector(".dr-q2").textContent, buttons: [...c.querySelectorAll(".dr-act button")].map(b => b.textContent.trim()) };
 		})()))`)) as string) as any;
-		expect(edit.ta).toBe("안녕하세요, Alex님.\n\n보내 주신 보고서는 잘 받았습니다.\n\n감사합니다.");
-		expect(edit.body).toBe(false);
-		expect(edit.buttons.length).toBe(2);
+		// 고치기 asks "어떻게 고칠까요?" with the old draft still shown; 직접 수정 is the small secondary action
+		expect(edit).toEqual({ ta: "", ph: "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘", body: true, ask: "어떻게 고칠까요?", buttons: ["고쳐 달라고 하기", "취소", "직접 수정"] });
+		const manual = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), document.querySelector("#mon-tl > .bm.dr .dr-manual").click(), JSON.stringify((() => {
+			const c = document.querySelector("#mon-tl > .bm.dr"), ta = c.querySelector("textarea.dr-edit");
+			return { ta: ta ? ta.value : null, body: !!c.querySelector(".dr-body") };
+		})()))`)) as string) as any;
+		expect(manual).toEqual({ ta: "안녕하세요, Alex님.\n\n보내 주신 보고서는 잘 받았습니다.\n\n감사합니다.", body: false });
+
+		// the instruction goes out as the note of the 고치기 answer; a manual text goes out with its lead
+		const posts = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), (() => { const t = document.querySelector("#mon-tl > .bm.dr textarea.dr-edit"); t.value = "더 짧게"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector("#mon-tl > .bm.dr .dr-act .btn").click(); })(), new Promise(r => setTimeout(r, 0)).then(() => 0), JSON.stringify(window.__posts.map(p => [p[0], p[1].n, p[1].note])))`)) as string) as any;
+		expect(posts).toEqual([["/api/notices/a/answer", 2, "더 짧게"]]);
 
 		const sent = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .dr-send").click(), new Promise(r => setTimeout(r, 0)).then(() => 0), JSON.stringify(window.__posts.map(p => [p[0], p[1].n])))`)) as string) as any;
 		expect(sent).toEqual([["/api/notices/a/answer", 1]]);
@@ -127,3 +135,18 @@ for (const width of [1440, 390]) {
 		expect(await v.evaluate(`window.__opened.join("|")`)).toBe("monitoring:c:mail:fx-8");
 	});
 }
+
+test("a draft sent back for 고치기 says 고치는 중… and gives way to the rewritten draft of the same mail", async () => {
+	const v = await open(390);
+	const later = new Date(Date.now() + 60_000).toISOString();
+	const run = (items: unknown[]) => v.evaluate(`(() => {
+		cancelAnimationFrame(monRaf); window.renderMonitoring = () => {}; window.monSchedule = () => {};
+		const items = ${JSON.stringify(items)};
+		NT.items = items; NT.loaded = true;
+		document.querySelector("#mon-tl").replaceChildren(...items.map(n => monNoticeNode(n, [])).filter(Boolean));
+		return JSON.stringify([...document.querySelectorAll("#mon-tl > .bm.dr")].map(x => [x.dataset.nid, x.querySelector(".dr-st").textContent.replace(/ · .*/, "")]));
+	})()`);
+	const sentBack = note("old", "answered", { answer: "2) 고치기 - 짧게", answered_at: now });
+	expect(JSON.parse((await run([sentBack])) as string)).toEqual([["old", "고치는 중…"]]);
+	expect(JSON.parse((await run([sentBack, { ...note("new", "open"), ts: later }])) as string)).toEqual([["new", "승인 대기"]]);
+});

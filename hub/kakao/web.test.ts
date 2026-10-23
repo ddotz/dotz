@@ -44,7 +44,8 @@ function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void, 
 	const runner: Runner = screen.runner;
 	const calls = screen.sends;
 	const db = sqliteDb(dbPath);
-	const web = createKakaoWeb({ paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()), fetch: (async (input: unknown, init?: RequestInit) => (fetched.push({ url: String(input), init }), upstream.reply(String(input)))) as unknown as typeof fetch, ...extra });
+	const revised: [string, string][] = [];
+	const web = createKakaoWeb({ onRevise: (c, ch) => void revised.push([c, ch]), paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()), fetch: (async (input: unknown, init?: RequestInit) => (fetched.push({ url: String(input), init }), upstream.reply(String(input)))) as unknown as typeof fetch, ...extra });
 	const call = async (method: string, path: string, body?: unknown) => {
 		const url = new URL(`http://local${path}`);
 		const res = await web.route(new Request(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), url, url.pathname.split("/").filter(Boolean));
@@ -57,7 +58,7 @@ function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void, 
 	const draft = (over: Partial<{ chatId: string; text: string; basisLogId: string }> = {}) =>
 		createDraft({ chatId: DIRECT, roomName: "Alex", text: "see you", basisLogId: id(3), ...over }, { paths, runner, now: () => NOW });
 	const config$ = () => JSON.parse(readFileSync(paths.config, "utf8")) as KakaoConfig;
-	return { web, call, raw, fetched, upstream, events, calls, state, model, draft, config$, close: () => db.close() };
+	return { web, revised, call, raw, fetched, upstream, events, calls, state, model, draft, config$, close: () => db.close() };
 }
 
 describe("rooms", () => {
@@ -618,6 +619,37 @@ describe("on-demand draft", () => {
 		const [d] = await storedDrafts();
 		expect(d).toMatchObject({ text: "ㅇㅇ 취소하자", status: "pending", tokens: { in: 800, out: 20 } });
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toBeUndefined();
+		t.close();
+	});
+
+	test("a change request rewrites the pending draft with one call: the old draft stays until the new one is stored, then goes (stale); the change is recorded", async () => {
+		const t = setup();
+		const old = await t.draft({ text: "내일 3시에 봐요" });
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: "내일 3시", summary: "약속" }), inputTokens: 500, outputTokens: 10 });
+		expect((await t.call("POST", DRAFT, { revise: { code: "nope", change: "더 짧게" } })).status).toBe(409);
+		expect((await t.call("POST", DRAFT, { revise: { code: old.code, change: "  " } })).status).toBe(400);
+		expect(t.model.calls).toHaveLength(0);
+		expect(await t.call("POST", DRAFT, { revise: { code: old.code, change: "더 짧게" } })).toEqual({ status: 202, json: { state: "drafting" } });
+		await t.web.idle();
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.model.calls[0]!.user).toContain("내일 3시에 봐요");
+		expect(t.model.calls[0]!.user).toContain("더 짧게");
+		expect(t.model.calls[0]!.system).not.toContain('"action":"ask"');
+		const drafts = await storedDrafts();
+		expect(drafts.filter(d => d.status === "pending").map(d => d.text)).toEqual(["내일 3시"]);
+		expect(drafts.find(d => d.code === old.code)?.status).toBe("stale");
+		expect(t.revised).toEqual([[DIRECT, "더 짧게"]]);
+		t.close();
+	});
+
+	test("a change request whose model call fails keeps the old draft pending", async () => {
+		const t = setup();
+		const old = await t.draft({ text: "내일 3시에 봐요" });
+		t.model.reply = async () => ({ text: "죄송해요, 못 해요" });
+		await t.call("POST", DRAFT, { revise: { code: old.code, change: "더 짧게" } });
+		await t.web.idle();
+		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_draft", chatId: DIRECT, error: expect.any(String) });
+		expect((await storedDrafts()).filter(d => d.status === "pending").map(d => d.text)).toEqual(["내일 3시에 봐요"]);
 		t.close();
 	});
 
