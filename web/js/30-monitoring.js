@@ -20,6 +20,7 @@ const monOwned = t => isMailT(String(t || "")) || isSettingsT(String(t || ""));
 const monItemOf = t => {
   if (!monOwned(t)) return "";
   if (isSettingsT(t)) {
+    if (PQ.of.has(t)) return PQ.of.get(t).key;   // a peer monitor's conversation sits under its row
     const a = settingsApp(t), m = a.startsWith("w:") ? NM.items.find(x => x.watch === a.slice(2)) : null;
     return m ? `m:${m.name}` : `i:${a}`;
   }
@@ -294,7 +295,11 @@ function monRunNode(it) {
   const m = it.mon;
   if (!m.last_run) return null;
   const next = [m.next_run ? `다음 확인 ${monTime(m.next_run)}` : "", m.every || ""].filter(Boolean).join(" · ");
-  const node = monCard(it.name, m.last_run, next, m.kind === "watch" ? m.last_result : "", monRunLine(m));
+  // The status header: fails in a row, the last good run and the last output in words (hub/monitors.ts watchFacts), then when it runs next.
+  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
+  const node = monCard(it.name, m.last_run, [...facts, next].filter(Boolean).join("\n\n"), m.kind === "watch" ? m.last_result : "", monRunLine(m));
+  const chips = m.kind === "watch" && m.watch ? asChipTexts(m) : [];
+  if (node && chips.length) node.append(el("div", { class: "btns cc-act mon-chips" }, ...chips.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asAsk(`w:${m.watch}`, t) }, t))));
   if (node && m.channel && !it.pc && isProjT(m.channel)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else go("monitoring", `c:${m.channel}`); }, text: "프로젝트 대화 열기" })));
   return node;
 }
@@ -305,7 +310,7 @@ function monTimeline(it) {
   const names = it.mon ? monNames(it.mon) : [];
   const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => { const x = monNoticeNode(n, names), src = x && n.pc && monFeed(it) && x.querySelector(".rc-src"); if (src) src.after(el("span", { class: "tag", text: n.pc.name })); return x; } })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
-  const pin = it.app && !it.pc ? asPinnedRow(it.key.slice(2)) : it.mon && it.mon.kind === "watch" && it.mon.watch && !it.pc ? asPinnedRow(`w:${it.mon.watch}`) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
+  const pin = it.app && !it.pc ? asPinnedRow(it.key.slice(2)) : it.mon && it.mon.kind === "watch" && it.mon.watch ? asPinnedRow(`w:${it.mon.watch}`) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
   if (pin) nodes.unshift(pin);
   if (nodes.length) return nodes;
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";

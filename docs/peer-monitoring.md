@@ -72,3 +72,7 @@ gateway that owns the item. That gateway executes it and records it.
   when it holds a lease that has not expired, or when it already recorded the draft id as sent. The sender is the computer
   that is logged in to the app now. After the send, `op:"sent", key, id` records the draft id on every peer.
   A refused claim does not send and reports the holder.
+
+## 모니터마다 대화
+
+모든 감시(로컬과 피어)는 그 감시를 가진 컴퓨터의 오케스트레이터와 대화합니다. 대화 대상은 `settings:w:<감시 이름>`이고, 피어 감시의 메시지와 스위치는 `/api/peer/act`의 `message`와 `watch settings`로 그 컴퓨터에 갑니다. 답은 그 컴퓨터에 쓰이고, 열린 대화가 프록시로 기록을 다시 읽어 보여 줍니다. 실패한 감시에는 '다시 로그인해 줘'(로그인 유지만), '원인 찾아 줘', '일시정지' 칩이 입력칸을 채웁니다. 예약(schedule)에는 설정이 없어서 아직 대화가 없습니다.
