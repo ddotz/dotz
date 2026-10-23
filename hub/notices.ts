@@ -128,6 +128,19 @@ let orchestratorUp: () => boolean = () => true;
 export const setWatchLabelResolver = (fn: (name: string) => string) => void (watchLabelOf = fn);
 let appOf: (n: Notice) => string | undefined = () => undefined;
 export const setAppResolver = (fn: (n: Notice) => string | undefined) => void (appOf = fn);
+function stampApp(n: Notice): boolean {
+	const app = appOf(n);
+	if (app === n.app) return false;
+	if (app) n.app = app;
+	else delete n.app;
+	return true;
+}
+// Watch reports stored before the resolver was set (or before the notice carried `app`) get their app now, once at start: the file keeps it from then on.
+export function tagStoredApps(): number {
+	const changed = items.filter(i => i.kind === "watch" && stampApp(i)).length;
+	if (changed) save();
+	return changed;
+}
 // One small-model sentence for a change the rules could not put in words (hub/watchsummary.ts); unset = rules only. The notice shows the rules' text
 // (the raw output folded) at once and the sentence replaces it when it arrives.
 let summarizeWatch: ((output: string) => Promise<string | undefined>) | undefined;
@@ -231,11 +244,7 @@ function upsert(i: Input): Notice {
 	}
 	// The owner's read position may already cover the message this notice points at (read on another device first): it is born read.
 	if (!item.read && coveredByRead(item)) item.read = true;
-	if (item.kind === "watch") {
-		const app = appOf(item);
-		if (app) item.app = app;
-		else delete item.app;
-	}
+	if (item.kind === "watch") stampApp(item);
 	if (i.kind === "watch") pruneWatch();
 	if (!replaying) {
 		save();
