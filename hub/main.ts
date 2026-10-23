@@ -54,6 +54,7 @@ import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { makeRoute } from "./routes.ts";
 import { appKeyOf, integrationContext } from "./integrations.ts";
 import { setFormLink } from "./auth.ts";
+import { startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
 
 installDelivery();
 setLaneTitleResolver(name => lanes.get(name)?.title);
@@ -319,6 +320,7 @@ startWatches((w, reason, output, prev) => {
 	void out(issue ? "alert" : w.to, watchLine(label, reason, output, { prev }).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label)}` : ""), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 syncFeatureWatches();
+startKakaoLive();
 startPlugins({
 	dataDir: DATA_DIR,
 	log,
@@ -353,7 +355,7 @@ function shutdown(): Promise<never> {
 		// A reply still in its rewrite is waited for, then lands with the original text in the outbox or the unsent ledger.
 		{ name: "pending replies", run: async () => void (await replies.flush(outlangTimeoutMs() + 1000)) },
 		{ name: "discord connection", run: () => discord.disconnect() },
-		{ name: "watch and schedule timers", run: () => (stopWatches(), stopSchedules(), clearTrackedTimers()) },
+		{ name: "watch and schedule timers", run: () => (stopWatches(), stopSchedules(), stopKakaoLive(), clearTrackedTimers()) },
 		{ name: "others", run: () => void 0 },
 	], 10_000 + (replies.size() ? outlangTimeoutMs() + 2000 : 0));
 }

@@ -9,6 +9,8 @@
   --accent: #3182f6; --on-accent: #ffffff;
   --ok: #0a8754; --warn: #b85e00; --err: #e42939;
   --r-card: 18px; --r-ctl: 10px; --edge: 28px;
+  /* KakaoTalk chat (30-kakao.js): the room's backdrop, incoming / own bubbles, time and date chip */
+  --kk-bg: #dbe5ee; --kk-in: #ffffff; --kk-in-fg: #191f28; --kk-own: #fee500; --kk-own-fg: #191919; --kk-time: #5b6877; --kk-chip: rgb(25 31 40 / .38); --kk-chip-fg: #ffffff;
   --scrim: rgb(0 0 0 / .4);
   --float: 0 8px 24px rgb(0 0 0 / .10), 0 1px 3px rgb(0 0 0 / .06);
   --shadow-panel: 0 6px 24px rgba(0, 0, 0, .06);
@@ -27,6 +29,7 @@
   --accent: #4c94ff; --on-accent: #ffffff;
   --ok: #3ecf8e; --warn: #f5a524; --err: #ff6369;
   --scrim: rgb(0 0 0 / .6);
+  --kk-bg: #161c23; --kk-in: #2b2f36; --kk-in-fg: #ececf0; --kk-own: #d9bd00; --kk-own-fg: #1b1b1b; --kk-time: #8e98a5; --kk-chip: rgb(255 255 255 / .12); --kk-chip-fg: #b0b4bc;
   --float: 0 8px 24px rgb(0 0 0 / .5), 0 1px 3px rgb(0 0 0 / .4);
   --shadow-panel: 0 6px 24px rgba(0, 0, 0, .35);
 }

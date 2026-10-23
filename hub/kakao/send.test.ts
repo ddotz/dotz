@@ -3,8 +3,8 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync, statSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseDecisions } from "../choices.ts";
-import { approval, createDraft, draftBlock, listDrafts, sendDraft, type Draft } from "./send.ts";
-import { kakaoPaths, type Runner } from "./types.ts";
+import { approval, createDraft, draftBlock, listDrafts, sendDraft, sendText, type Draft } from "./send.ts";
+import { KAKAO_BUNDLE, kakaoPaths, type Runner } from "./types.ts";
 
 const T0 = Date.parse("2026-10-22T00:00:00.000Z");
 const at = (sec: number) => new Date(T0 + sec * 1000).toISOString();
@@ -22,14 +22,20 @@ const ask = (sec: number, d: Draft, target = "web") => add(paths.outbox, { ts: a
 const pick = (d: Draft, label: string, n = 1) => ({ picks: [{ q: `카톡 답장 보낼까요? (${d.code})`, n, label }] });
 
 // A fake kmsg: records argv, answers --dry-run with the echo kmsg prints, fails the test on anything but send.
-function fakeKmsg(dry: (argv: string[]) => string = a => `Dry run mode - no message will be sent\nRecipient: ${a[a.indexOf("--") + 1]}\nMessage: ${a[a.length - 1]}\n`) {
+function fakeKmsg(dry: (argv: string[]) => string = a => `Dry run mode - no message will be sent\nRecipient: ${a[a.indexOf("--") + 1]}\nMessage: ${a[a.length - 1]}\n`, front = "com.example.Editor") {
 	const calls: string[][] = [];
+	// The focus handling (frontmost app lookup and restore) is not a kmsg call.
+	const focus: string[][] = [];
 	const runner: Runner = async argv => {
+		if (argv[0] === "osascript" || argv[0] === "open") {
+			focus.push(argv);
+			return { code: 0, stdout: argv[0] === "osascript" ? `${front}\n` : "", stderr: "" };
+		}
 		calls.push(argv);
 		expect(argv[1]).toBe("send");
 		return { code: 0, stdout: argv.includes("--dry-run") ? dry(argv) : "sent\n", stderr: "" };
 	};
-	return { calls, runner };
+	return { calls, focus, runner };
 }
 
 const base = { chatId: "100", roomName: "스터디방", text: "내일 7시에 봐요", basisLogId: "500" };
@@ -205,4 +211,84 @@ test("a room whose name another room equals or contains is never sent to by name
 	expect(k.calls).toHaveLength(0);
 	expect((await sendDraft(d.code, { ...sender(k), roomNames: async () => [{ chatId: "100", name: "스터디방" }, { chatId: "300", name: "다른 방" }] })).ok).toBe(true);
 	await expect(make({ chatId: "400", roomName: "(unknown)" })).rejects.toThrow();
+});
+
+const FRONT = "com.example.Editor";
+
+test("focus: the app in front before the send comes back after it; KakaoTalk itself is left alone", async () => {
+	const k = fakeKmsg(undefined, FRONT);
+	expect(await sendText({ chatId: "100", roomName: "스터디방", text: "안녕" }, { paths, runner: k.runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });
+	expect(k.focus.map(a => a[0])).toEqual(["osascript", "open"]);
+	expect(k.focus[1]).toEqual(["open", "-b", FRONT]);
+	const k2 = fakeKmsg(undefined, KAKAO_BUNDLE);
+	await sendText({ chatId: "100", roomName: "스터디방", text: "안녕" }, { paths, runner: k2.runner, kmsg: "/fake/kmsg" });
+	expect(k2.focus.map(a => a[0])).toEqual(["osascript"]);
+});
+
+test("focus: a failing osascript or open never fails the send", async () => {
+	const k = fakeKmsg();
+	const runner: Runner = async (argv, opts) => {
+		if (argv[0] === "osascript") throw new Error("no accessibility");
+		if (argv[0] === "open") return { code: 1, stdout: "", stderr: "boom" };
+		return k.runner(argv, opts);
+	};
+	expect(await sendText({ chatId: "100", roomName: "스터디방", text: "안녕" }, { paths, runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });
+	expect(k.calls).toHaveLength(2);
+});
+
+test("sendText refuses a room name that another room's name contains, before kmsg runs", async () => {
+	const k = fakeKmsg();
+	const r = await sendText({ chatId: "100", roomName: "스터디", text: "안녕" }, { paths, runner: k.runner, kmsg: "/fake/kmsg", roomNames: async () => [{ chatId: "100", name: "스터디" }, { chatId: "101", name: "스터디방" }] });
+	expect(r.ok).toBe(false);
+	expect(k.calls).toHaveLength(0);
+});
+
+test("all sends run one at a time", async () => {
+	let active = 0;
+	let max = 0;
+	const runner: Runner = async argv => {
+		if (argv[0] === "osascript" || argv[0] === "open") return { code: 0, stdout: "", stderr: "" };
+		const dry = argv.includes("--dry-run");
+		if (dry) {
+			active++;
+			max = Math.max(max, active);
+		}
+		for (let i = 0; i < 10; i++) await Promise.resolve();
+		if (!dry) active--;
+		return { code: 0, stdout: dry ? `Recipient: ${argv[argv.indexOf("--") + 1]}\nMessage: x\n` : "sent\n", stderr: "" };
+	};
+	const jobs = ["가", "나", "다"].map(room => sendText({ chatId: room, roomName: room, text: "x" }, { paths, runner, kmsg: "/fake/kmsg" }));
+	expect((await Promise.all(jobs)).every(r => r.ok)).toBe(true);
+	expect(max).toBe(1);
+});
+
+test("ownerApproved skips the inbox verdict only: the send goes out without an inbox answer", async () => {
+	const d = await make();
+	const k = fakeKmsg();
+	expect(await sendDraft(d.code, { ...sender(k), ownerApproved: true })).toEqual({ ok: true });
+	expect(k.calls).toHaveLength(2);
+	expect((await listDrafts({ paths, runner: k.runner }))[0]!.status).toBe("sent");
+});
+
+test("ownerApproved still refuses a stale draft, a draft that is not pending and an ambiguous room name", async () => {
+	const k = fakeKmsg();
+	const stale = await make();
+	expect((await sendDraft(stale.code, { ...sender(k, "501"), ownerApproved: true })).ok).toBe(false);
+	expect((await listDrafts({ paths, runner: k.runner })).find(x => x.code === stale.code)!.status).toBe("stale");
+	expect((await sendDraft(stale.code, { ...sender(k), ownerApproved: true })).ok).toBe(false);
+	const d = await make({ chatId: "200" });
+	const r = await sendDraft(d.code, { ...sender(k), ownerApproved: true, roomNames: async () => [{ chatId: "200", name: "스터디방" }, { chatId: "201", name: "큰 스터디방" }] });
+	expect(r.ok).toBe(false);
+	expect(k.calls).toHaveLength(0);
+});
+
+test("an edited text is sent instead of the draft's and is kept on the draft; an empty or oversize edit is refused", async () => {
+	const d = await make();
+	const k = fakeKmsg();
+	expect((await sendDraft(d.code, { ...sender(k), ownerApproved: true, text: "  " })).ok).toBe(false);
+	expect((await sendDraft(d.code, { ...sender(k), ownerApproved: true, text: "가".repeat(1001) })).ok).toBe(false);
+	expect(k.calls).toHaveLength(0);
+	expect((await sendDraft(d.code, { ...sender(k), ownerApproved: true, text: "수정한 글" })).ok).toBe(true);
+	expect(k.calls[1]).toEqual(["/fake/kmsg", "send", "--", "스터디방", "수정한 글"]);
+	expect((await listDrafts({ paths, runner: k.runner }))[0]!.text).toBe("수정한 글");
 });

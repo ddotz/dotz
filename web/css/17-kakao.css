@@ -1,0 +1,97 @@
+/* 모니터링 > 앱 > 카카오톡 (web/js/30-kakao.js): the room column (rooms to watch + the watched ones) and a KakaoTalk-style chat.
+   From 1100px the column sits beside the chat; below it they are two screens (.kk.chat-open = the chat). Colors are the --kk-* tokens (01-tokens.css). */
+.kk { display: flex; flex: 1; min-height: 0; gap: 16px; }
+#v-monitoring.kk-on > .chatbox { display: none; }
+.kk-rooms, .kk-chat { min-height: 0; border-radius: var(--r-card); box-shadow: var(--shadow-panel); overflow: hidden; }
+.kk-rooms { flex: 1; min-width: 0; overflow-y: auto; background: var(--card); margin-bottom: 12px; }
+.kk-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--kk-bg); margin-bottom: 12px; }
+@media (max-width: 1099px) {
+  .kk:not(.chat-open) .kk-chat { display: none; }
+  .kk.chat-open .kk-rooms { display: none; }
+  .kk-chat { margin-bottom: 0; border-radius: var(--r-card) var(--r-card) 0 0; }
+}
+@media (min-width: 1100px) {
+  #v-monitoring > .kk { grid-row: 4; margin-bottom: 4px; }
+  .kk-rooms { flex: none; width: 300px; margin-bottom: 0; }
+  .kk-chat { margin-bottom: 0; }
+}
+
+/* room choice */
+.kk-ph { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 8px 16px; border: 0; background: transparent; text-align: left; }
+.kk-ph:hover { background: var(--card-hover); }
+.kk-pt { font: 600 14px/20px var(--font); }
+.kk-cnt { flex: 1; color: var(--fg-3); font: 400 13px/20px var(--font); }
+.kk-chev { color: var(--fg-3); transition: transform .15s; }
+.kk-ph[aria-expanded="true"] .kk-chev { transform: rotate(180deg); }
+.kk-hint { padding: 0 16px 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
+.kk-note { padding: 20px 16px; color: var(--fg-3); font: 400 13px/20px var(--font); text-align: center; }
+.kk-pl { max-height: min(46dvh, 360px); overflow-y: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.kk-pr { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 16px; }
+.kk-pr + .kk-pr { border-top: 1px solid var(--line); }
+.kk-auto { display: flex; align-items: center; gap: 8px; margin-top: 2px; color: var(--fg-3); font: 400 12px/18px var(--font); }
+.kk-av { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: hsl(var(--h) 45% 82%); color: hsl(var(--h) 45% 26%); font: 600 15px/1 var(--font); }
+.kk-av.sp { background: transparent; }
+:root[data-theme="dark"] .kk-av { background: hsl(var(--h) 22% 30%); color: hsl(var(--h) 45% 86%); }
+.kk-row .cv-m { flex-direction: column; align-items: flex-end; gap: 4px; }
+.kk-t { color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
+@media (min-width: 1100px) { :is(.kk-rooms) .kk-av { width: 32px; height: 32px; font-size: 14px; } }
+
+/* switch */
+.kk-sw { position: relative; flex: none; width: 44px; height: 26px; padding: 0; border: 0; border-radius: 13px; background: var(--track); transition: background .15s; }
+.kk-sw::before { content: ""; position: absolute; inset: -9px -4px; }
+.kk-knob { position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .25); transition: transform .15s; }
+.kk-sw.on { background: var(--accent); }
+.kk-sw.on .kk-knob { transform: translateX(18px); }
+.kk-sw.sm { width: 34px; height: 20px; border-radius: 10px; }
+.kk-sw.sm .kk-knob { width: 16px; height: 16px; }
+.kk-sw.sm.on .kk-knob { transform: translateX(14px); }
+@media (prefers-reduced-motion: reduce) { .kk-sw, .kk-knob, .kk-chev { transition: none; } }
+
+/* chat */
+.kk-head { display: none; align-items: center; gap: 12px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+.kk-head:not(:empty) { display: flex; }
+@media (max-width: 1099px) { .kk-head, .kk-head:not(:empty) { display: none; } }
+.kk-box { position: relative; flex: 1; min-height: 0; display: flex; }
+.kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 12px 12px 8px; }
+.kk-in { display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; }
+.kk-in > .kk-note { margin: auto; color: var(--kk-time); }
+.kk-pill { position: absolute; left: 50%; bottom: 12px; z-index: 2; height: 32px; padding: 0 14px; transform: translateX(-50%); border-radius: 16px; box-shadow: var(--float); }
+.kk-more { align-self: center; color: var(--kk-time); }
+.kk-date { align-self: center; margin: 14px 0 8px; padding: 4px 12px; border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 500 12px/16px var(--font); }
+.kk-new { display: flex; align-items: center; gap: 12px; margin: 12px 0 6px; color: var(--kk-time); font: 600 12px/16px var(--font); }
+.kk-new::before, .kk-new::after { content: ""; flex: 1; height: 1px; background: color-mix(in srgb, var(--kk-time) 45%, transparent); }
+.kk-m { display: flex; min-width: 0; }
+.kk-m.first { margin-top: 10px; }
+.kk-m.in { gap: 8px; align-items: flex-start; }
+.kk-m.me { flex-direction: column; align-items: flex-end; }
+.kk-mb { min-width: 0; max-width: calc(100% - 46px); display: flex; flex-direction: column; align-items: flex-start; }
+.kk-m.in:not(:has(> .kk-av)) .kk-mb { max-width: 86%; }
+.kk-name { margin: 0 0 4px 2px; color: var(--fg-2); font: 500 12px/16px var(--font); }
+.kk-line { display: flex; align-items: flex-end; gap: 6px; max-width: 100%; min-width: 0; }
+.kk-m.me .kk-line { max-width: 86%; }
+.kk-bub { min-width: 0; padding: 8px 12px; border-radius: 14px; background: var(--kk-in); color: var(--kk-in-fg); font: 400 14px/21px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 1px 1px rgb(0 0 0 / .05); }
+.kk-m.in.first .kk-bub { border-top-left-radius: 4px; }
+.kk-m.me .kk-bub { background: var(--kk-own); color: var(--kk-own-fg); }
+.kk-m.me.first .kk-bub { border-top-right-radius: 4px; }
+.kk-bub.ph { opacity: .75; }
+.kk-time { flex: none; padding-bottom: 1px; color: var(--kk-time); font: 400 11px/14px var(--font); white-space: nowrap; }
+.kk-m.pend.sending .kk-bub { opacity: .7; }
+.kk-st { display: flex; align-items: center; gap: 4px; margin-top: 2px; color: var(--kk-time); font: 400 11px/16px var(--font); }
+.kk-st .btn { height: 24px; padding: 0 6px; font-size: 12px; }
+.kk-m.pend.failed .kk-st { color: var(--err); }
+.kk-m.pend.failed .kk-bub { box-shadow: 0 0 0 1.5px var(--err); }
+
+/* composer: the chat composer's look (.composer, .sendrow), a draft card above it */
+.kk-chat > .kk-composer { max-width: none; margin: 0; padding: 8px 12px max(12px, env(safe-area-inset-bottom)); }
+@media (max-width: 639px) { .kk-chat > .kk-composer { padding-bottom: 8px; } }
+.kk-drafts { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; max-height: min(30dvh, 240px); overflow-y: auto; overscroll-behavior: contain; }
+.kk-draft { flex: none; padding: 10px 12px; border-radius: var(--r-card); background: color-mix(in srgb, var(--accent) 7%, var(--card)); box-shadow: var(--shadow-panel); }
+.kk-dh { color: var(--fg-2); font: 600 12px/16px var(--font); }
+.kk-draft .btns { gap: 6px; }
+.kk-draft .btn { height: 32px; padding: 0 12px; font-size: 13px; }
+.kk-dt { max-height: min(16dvh, 120px); margin: 2px 0 8px; overflow-y: auto; font: 400 14px/21px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.kk-edit { display: flex; align-items: center; gap: 8px; margin: 0 4px 6px; color: var(--fg-2); font: 500 12.5px/18px var(--font); }
+.kk-edit .btn { height: 28px; }
+.kk-dbtn { gap: 4px; background: var(--layer); color: var(--fg); }
+.kk-dbtn .ic { width: 14px; height: 14px; }
+.kk-dbtn:disabled { opacity: .6; }

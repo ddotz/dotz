@@ -20,6 +20,9 @@ for (const file of [paths.inbox, paths.outbox]) {
 }
 recent.sort((a, b) => a.ts.localeCompare(b.ts));
 
+// Pages connected to /api/events right now; background watchers skip their work when it is 0.
+export const subscriberCount = (): number => subscribers.size;
+
 const emitListeners = new Set<(event: HubEvent) => void>();
 export const onEmit = (fn: (event: HubEvent) => void) => void emitListeners.add(fn);
 

@@ -14,6 +14,7 @@ import {
 	isDraftCandidate,
 	maxLogId,
 	messages,
+	newInChats,
 	newSince,
 	ownUserId,
 	parseXmlPlist,
@@ -324,12 +325,27 @@ describe("typed reads on the fixture", () => {
 		edb.close();
 	});
 
-	test("isDraftCandidate: direct and group only, never excluded rooms", async () => {
+	test("isDraftCandidate: only chosen rooms, direct and group only, never excluded rooms", async () => {
 		const db = open();
-		const config = { enabled: true, exclude_chats: [String(ROOM.excluded)] };
-		const flags = Object.fromEntries((await rooms(db)).map((r) => [r.chatId, isDraftCandidate(r, config)]));
-		expect(flags).toEqual({ [ROOM.direct]: true, [ROOM.group]: true, [ROOM.self]: false, [ROOM.excluded]: false, [ROOM.channel]: false });
-		expect(isDraftCandidate({ chatId: "1", kind: "group" }, { enabled: true })).toBe(true);
+		const all = Object.values(ROOM).map(String);
+		const config = { enabled: true, exclude_chats: [String(ROOM.excluded)], watch_chats: all };
+		const flagsOf = async (c: typeof config) => Object.fromEntries((await rooms(db)).map((r) => [r.chatId, isDraftCandidate(r, c)]));
+		expect(await flagsOf(config)).toEqual({ [ROOM.direct]: true, [ROOM.group]: true, [ROOM.self]: false, [ROOM.excluded]: false, [ROOM.channel]: false });
+		expect(await flagsOf({ ...config, watch_chats: [String(ROOM.group)] })).toEqual({ [ROOM.direct]: false, [ROOM.group]: true, [ROOM.self]: false, [ROOM.excluded]: false, [ROOM.channel]: false });
+		expect(Object.values(await flagsOf({ ...config, watch_chats: [] })).some(Boolean)).toBe(false);
+		expect(isDraftCandidate({ chatId: "1", kind: "group" }, {})).toBe(false);
+		db.close();
+	});
+
+	test("messages pages by logId: before / after, oldest first; newInChats reads watched rooms only", async () => {
+		const db = open();
+		const direct = String(ROOM.direct);
+		const id = (n: number) => String(BASE_LOG + BigInt(n));
+		expect((await messages(db, direct, 10, OWNER)).map((m) => m.logId)).toEqual([id(1), id(2), id(3), id(4)]);
+		expect((await messages(db, direct, 2, OWNER, { before: id(4) })).map((m) => m.logId)).toEqual([id(2), id(3)]);
+		expect((await messages(db, direct, 10, OWNER, { after: id(2) })).map((m) => m.logId)).toEqual([id(3), id(4)]);
+		expect((await newInChats(db, id(0), [direct, String(ROOM.channel)], 10)).map((r) => r.logId)).toEqual([id(1), id(2), id(3), id(4), id(8)]);
+		expect(await newInChats(db, id(0), [], 10)).toEqual([]);
 		db.close();
 	});
 });

@@ -30,7 +30,7 @@ function setup(over: Partial<KakaoConfig> = {}) {
 			return w.query(sql).all(...params) as Record<string, unknown>[];
 		},
 	};
-	const config: KakaoConfig = { enabled: true, userId: OWNER, exclude_chats: [String(ROOM.excluded)], ...over };
+	const config: KakaoConfig = { enabled: true, userId: OWNER, exclude_chats: [String(ROOM.excluded)], watch_chats: Object.values(ROOM).map(String), ...over };
 	return {
 		w,
 		stateDir,
@@ -148,7 +148,7 @@ describe("runWatch", () => {
 	});
 
 	test("max_per_run: the rest wait for the next run and nothing is lost", async () => {
-		const t = setup({ max_per_run: 2 });
+		const t = setup({ max_per_run: 2, watch_chats: [...Object.values(ROOM).map(String), "106", "107"] });
 		t.w.query("INSERT INTO NTChatRoom VALUES (106, 1, 'Extra Group', 3, 0, 0, NULL)").run();
 		t.w.query("INSERT INTO NTChatRoom VALUES (107, 1, 'More Group', 3, 0, 0, NULL)").run();
 		await t.run();
@@ -192,5 +192,28 @@ describe("runWatch", () => {
 		expect(parse(first.lines[0])).toEqual(["500", id(9), id(508)]);
 		expect(parse(second.lines[0])).toEqual(["120", id(509), id(628)]);
 		expect(await t.run()).toEqual({ lines: [], code: 0 });
+	});
+});
+
+describe("watch_chats: only the rooms the owner chose", () => {
+	test("a chosen room wakes, an unchosen one does not", async () => {
+		const t = setup({ watch_chats: [String(ROOM.group)] });
+		await t.run();
+		t.add(9, ROOM.direct, 2001);
+		t.add(10, ROOM.group, 2002);
+		t.touch();
+		const out = await t.run();
+		expect(out.lines).toEqual([`kakao chat=${ROOM.group} new=1 from=${id(10)} to=${id(10)} at=${iso(10)}`]);
+	});
+
+	test.each([[[]], [undefined]] as const)("watch_chats %p watches nothing and reads no database after the baseline", async (watch_chats: string[] | undefined) => {
+		const t = setup({ watch_chats });
+		await t.run();
+		const baseline = t.queries;
+		t.add(9, ROOM.direct, 2001);
+		t.add(10, ROOM.group, 2002);
+		t.touch();
+		expect(await t.run()).toEqual({ lines: [], code: 0 });
+		expect(t.queries).toBe(baseline);
 	});
 });
