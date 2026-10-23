@@ -180,7 +180,7 @@ let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 
 // The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
 // pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),
-// "bottom", or "" once the owner took over; placed = the opening has been positioned; seen = the pin held still long enough to count as read.
+// "top" (a mail's start), "bottom", or "" once the owner took over; placed = the opening has been positioned; seen = the pin held still long enough to count as read.
 const CV = { key: "", div: "", divNode: null, jump: "", loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", seen: false, openAt: 0, dwellT: 0, gateT: 0 };
 // 31-conversations.js state; declared here because the boot code calls go() before that file has run.
 const CONV = new Map(), READ = {}, convPend = new Map();

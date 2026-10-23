@@ -143,7 +143,7 @@ test("old chat addresses and notice deep links of a mail land in 모니터링", 
 test("a mail without HTML shows its text with paragraphs, links, quotes and a real table", async () => {
 	const v = await open(390, "monitoring/c:mail%3Afx-2");
 	await v.evaluate(until(`current === "chat" && document.querySelector("#tl .mb-txt")`, "text original not drawn"));
-	const t = await ev(v, `(() => { const b = document.querySelector("#tl .mb-txt"); return { frame: !!document.querySelector("#tl iframe"), p: b.querySelectorAll("p").length, a: [...b.querySelectorAll("a")].map(a => [a.getAttribute("href"), a.getAttribute("rel")]),
+	const t = await ev(v, `(() => { const b = document.querySelector("#tl .mb-txt"); return { frame: !!document.querySelector("#tl iframe"), p: b.querySelectorAll(":scope > p").length, a: [...b.querySelectorAll("a")].map(a => [a.getAttribute("href"), a.getAttribute("rel")]),
 		cells: [...b.querySelectorAll("table tr")].map(r => [...r.children].map(c => c.textContent)), quote: b.querySelector("blockquote")?.textContent ?? null, br: b.querySelectorAll("p br").length, over: document.documentElement.scrollWidth > innerWidth }; })()`);
 	expect(t.frame).toBe(false);
 	expect(t.p).toBe(2);
