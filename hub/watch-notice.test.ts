@@ -1,6 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
+import { now } from "./config.ts";
 import { emit } from "./events.ts";
-import { listNotices, setOrchestratorAvailable, setWatchLabelResolver } from "./notices.ts";
+import { keepWatchNewest, listNotices, setOrchestratorAvailable, setWatchLabelResolver, WATCH_DAYS, WATCH_KEEP } from "./notices.ts";
 import { rawFence, watchLine, watchReasonKo } from "./watchtext.ts";
 import { addWatch, allWatches, relabelWatches, removeWatch } from "./watch.ts";
 import { clearChannel, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
@@ -96,4 +97,31 @@ test("a watch added without a label is named in Korean once, and a key-shaped la
 	} finally {
 		for (const w of [a, b, c]) removeWatch(w.id);
 	}
+});
+
+const ago = (ms: number) => new Date(Date.parse(now()) - ms).toISOString();
+const report = (label: string, ts: string, text: string) => emit("inbox", { ts, kind: "watch", watch: "sample-prune", label, to: "alert", reason: "output changed", text });
+
+const aged = (title: string, ms: number, state?: string) => ({ kind: "watch", title, updated: ago(ms), ...(state ? { decision: { state } } : {}) });
+
+test(`each watch keeps its newest ${WATCH_KEEP} reports and only those, the other watches and kinds are left alone`, () => {
+	const mine = Array.from({ length: WATCH_KEEP + 10 }, (_, i) => aged("정리 시험 가", (i + 1) * 60_000));
+	const other = [aged("정리 시험 나", 1000), { kind: "message", title: "정리 시험 가", updated: ago(1) }];
+	const kept = keepWatchNewest([...other, ...mine], Date.parse(now()));
+	const keptMine = kept.filter(n => n.kind === "watch" && n.title === "정리 시험 가");
+	expect(keptMine).toHaveLength(WATCH_KEEP);
+	expect(keptMine).toEqual(mine.slice(0, WATCH_KEEP));
+	expect(kept).toHaveLength(WATCH_KEEP + 2);
+});
+
+test("a report older than the age limit is dropped, a fresh one stays, an open decision is never dropped", () => {
+	const old = aged("정리 시험 다", (WATCH_DAYS + 1) * 86_400_000);
+	const fresh = aged("정리 시험 다", 3_600_000);
+	const open = aged("정리 시험 다", (WATCH_DAYS + 2) * 86_400_000, "open");
+	expect(keepWatchNewest([old, fresh, open], Date.parse(now()))).toEqual([fresh, open]);
+});
+
+test("a report written through the hub is kept at the newest 50 per watch", () => {
+	for (let i = 0; i < WATCH_KEEP + 5; i++) report("정리 시험 라", ago((WATCH_KEEP + 5 - i) * 1000), "Item " + i);
+	expect(listNotices(300).items.filter(n => n.kind === "watch" && n.title === "정리 시험 라").length).toBeLessThanOrEqual(WATCH_KEEP);
 });
