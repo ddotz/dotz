@@ -122,3 +122,8 @@ test("kakao: the web sheet's 보내기 is an owner message the approval check ac
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("a quote above the draft (the comment being answered) is not part of the draft", () => {
+	const text = ["[ask] 댓글 답글 초안", "> 원댓글 Bob: 영상 잘 봤어요", draftApprovalBlock({ to: "Bob 댓글", toLabel: "대상", body: "고마워요", ref: "j-1-ab12", question: "이 답글 올릴까요?" })].join("\n");
+	expect(parseDraftApproval(text)).toEqual({ toLabel: "대상", to: "Bob 댓글", body: "고마워요", ref: "j-1-ab12" });
+});

@@ -3,7 +3,7 @@
 import { addressesOf, precheck, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { askText, buildDraft } from "./flow.ts";
-import { loadSettings } from "./settings.ts";
+import { appOn, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 
 export type OfferMail = { key: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string };
@@ -13,7 +13,7 @@ export async function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"of
 	const log = deps.log ?? ((line: string) => console.error(line));
 	try {
 		const settings = loadSettings();
-		if (!settings.enabled || !settings.auto) return "off";
+		if (!appOn(settings, "mail")) return "off";
 		if (isDrafted(m.key)) return "skipped";
 		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "" };
 		if (precheck(item, settings.senders)) {
