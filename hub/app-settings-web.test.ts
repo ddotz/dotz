@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readSettings, writeSettings } from "./app-settings.ts";
 import { removalPlan, removeApp } from "./app-off.ts";
-import { integrationContext, integrationItems, readAppOff } from "./integrations.ts";
+import { readAppTemplates } from "./app-templates.ts";
+import { integrationAvailable, integrationContext, integrationItems, readAppOff } from "./integrations.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
 // 모니터링 > 앱 > 설정 (web/js/32-app-settings.js) as shipped, in a headless Bun.WebView against a stub gateway whose settings routes call the real
@@ -54,8 +55,9 @@ const server = Bun.serve({
 		if (p === "/api/integrations") {
 			const all = ["mail", "kakao", "youtube"].map(key => ({ key, label: { mail: "메일", kakao: "카카오톡", youtube: "유튜브" }[key]!, icon: key === "kakao" ? "chat" : key, kind: "app", conv: key === "mail" ? ["mail:"] : [], notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } }));
 			const off = readAppOff(data);
-			return json({ items: all.filter(i => !off.has(i.key)), available: [...all.filter(i => off.has(i.key)).map(i => ({ ...i, off: true })), { key: "instagram", label: "인스타그램", icon: "instagram", off: false, conv: [] }] });
+			return json({ items: all.filter(i => !off.has(i.key)), available: [...all.filter(i => off.has(i.key)).map(i => ({ ...i, off: true }))] });
 		}
+		if (p === "/api/app-templates") return json({ items: readAppTemplates(data) });
 		const life = /^\/api\/integrations\/([a-z0-9-]+)\/(remove|add)$/.exec(p);
 		if (life) {
 			const app = life[1]!;
@@ -97,7 +99,7 @@ const waitFor = (v: View, expr: string, ms = 4000) =>
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
-const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
+const shot = async (v: View, name: string) => { if (SHOTS) await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`); if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
 const boot = async (v: View, route: string) => {
 	const opened = new Promise<void>(r => streamWaiters.push(r));
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
@@ -230,20 +232,86 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 		expect(existsSync(cfgFile("custom/kakao/config.json"))).toBe(true);
 	});
 
-	test("앱 추가 lists the apps that are off; one with nothing set up starts its setup in the chat", async () => {
+	const closeSheet = (v: View) => run(v, `if (AT.h) AT.h.close(false)`);
+	const TPL = ["메일", "카카오톡", "유튜브", "인스타그램", "댓글 자동 답글", "직접 쓰기"];
+
+	test("앱 추가 is the last row of the 앱 group, right under the apps", async () => {
 		await run(v, `go("monitoring")`);
 		await waitFor(v, `document.querySelector('#mon-side [data-k="add-app"]')`);
 		expect(await q(v, `return document.querySelector('#mon-side [data-k="i:kakao"]')`)).toBe(null);
+		const keys = await q<string[]>(v, `return monRows(monItems(), null).map(r => r.header ? "#" + r.header : r.k)`);
+		expect(keys.slice(-3)).toEqual(["i:mail", "i:youtube", "add-app"]);
+		expect(keys.indexOf("#앱")).toBeLessThan(keys.indexOf("add-app"));
 		await shot(v, "07-phone-add-app-row.png");
+	});
+
+	test("the sheet lists only the apps that are off, never an app that was not set up, and 다시 켜기 turns one on", async () => {
 		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-		await waitFor(v, `document.querySelector(".menu .mi")`);
-		expect(await rows(".menu .mi")).toEqual(["카카오톡꺼져 있어요. 다시 켜요", "인스타그램아직 연결 안 했어요"]);
+		await waitFor(v, `document.querySelector(".fs-card [data-tpl]")`);
+		expect(await q<string[]>(v, `return [...document.querySelectorAll(".fs-card [data-app]")].map(e => e.dataset.app)`)).toEqual(["kakao"]);
+		expect(await rows(".fs-card [data-tpl]")).toEqual(TPL);
+		const fit = await q<{ w: number; vw: number }>(v, `return { w: document.querySelector(".fs-card").scrollWidth, vw: innerWidth }`);
+		expect(fit.w).toBeLessThanOrEqual(fit.vw);
+		await shot(v, "08-phone-add-sheet.png");
 		sent.length = 0;
-		await run(v, `[...document.querySelectorAll(".menu .mi")].find(b => b.textContent.includes("카카오톡")).click()`);
-		const deadline = Date.now() + 3000;
-		while (!sent.length && Date.now() < deadline) await Bun.sleep(25);
-		expect(sent[0]).toMatchObject({ text: "카카오톡 연결을 시작해 주세요" });
+		await run(v, `document.querySelector('.fs-card [data-k="on:kakao"]').click()`);
+		await waitFor(v, `!AT.h && target === "main" && ta.value.includes("카카오톡 앱을 만들어")`);
 		expect(readAppOff(data).has("kakao")).toBe(false);
+		expect(sent).toEqual([]);
+	});
+
+	test("with nothing off the sheet has just 새로 추가하기; the button fills the chat box and a chip swaps the text", async () => {
+		await run(v, `ta.value = ""; asTplEnd(); go("monitoring")`);
+		await waitFor(v, `INTG.available.length === 0 && document.querySelector('#mon-side [data-k="add-app"]')`);
+		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
+		await waitFor(v, `document.querySelector(".fs-card [data-tpl]")`);
+		expect(await q(v, `return document.querySelectorAll(".fs-card [data-app]").length`)).toBe(0);
+		const all = readAppTemplates(data);
+		await run(v, `document.querySelector('.fs-card [data-k="new"]').click()`);
+		await waitFor(v, `!AT.h && target === "main" && current === "chat" && ta.value`);
+		const text = () => q<string>(v, `return ta.value`);
+		expect(await text()).toBe(all.find(t => t.key === "custom")!.text);
+		expect(await text()).toContain("{{서비스와 대상}}");
+		expect(await text()).toContain("보안 입력 양식(dotz_auth)");
+		expect(await rows("#app-tpl [data-tpl]")).toEqual(TPL);
+		await shot(v, "09-phone-new-app-composer.png");
+		await run(v, `document.querySelector('#app-tpl [data-tpl="youtube"]').click()`);
+		await waitFor(v, `ta.value.includes("유튜브 앱을 만들어")`);
+		expect(await text()).toBe(all.find(t => t.key === "youtube")!.text);
+		expect(await q(v, `return document.querySelector('#app-tpl [data-tpl="youtube"]').getAttribute("aria-pressed")`)).toBe("true");
+		expect(sent).toEqual([]);
+		await shot(v, "10-phone-template-swapped.png");
+	});
+
+	test("the owner's custom/app-templates.json wins over the shipped template", async () => {
+		mkdirSync(join(data, "custom"), { recursive: true });
+		writeFileSync(join(data, "custom/app-templates.json"), JSON.stringify({ templates: [{ key: "mail", text: "내 메일 요청 {{주소}}" }, { key: "mine", label: "내 앱", text: "내 앱 요청" }] }));
+		try {
+			await run(v, `asTplEnd(); go("monitoring")`);
+			await waitFor(v, `document.querySelector('#mon-side [data-k="add-app"]')`);
+			await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
+			await waitFor(v, `document.querySelector('.fs-card [data-tpl="mine"]')`);
+			expect(await rows(".fs-card [data-tpl]")).toEqual([...TPL, "내 앱"]);
+			await run(v, `document.querySelector('.fs-card [data-tpl="mail"]').click()`);
+			await waitFor(v, `!AT.h && ta.value.startsWith("내 메일 요청")`);
+			expect(await q<string>(v, `return ta.value`)).toBe(readAppTemplates(data).find(t => t.key === "mail")!.text);
+			expect(await q<string>(v, `return ta.value`)).toContain("보안 입력 양식(dotz_auth)");
+		} finally {
+			rmSync(join(data, "custom/app-templates.json"));
+			await run(v, `ta.value = ""; asTplEnd()`);
+		}
+	});
+
+	test("another computer's off apps are listed under its own name", async () => {
+		await run(v, `PQ.list = [{ name: "Mac mini", url: "http://mini.example", online: true, items: { monitors: [], notices: [], conversations: [], integrations: [], available: [{ key: "instagram", label: "인스타그램", icon: "instagram", off: true, conv: [] }] } }]; go("monitoring"); asAddSheet()`);
+		try {
+			await waitFor(v, `document.querySelector(".fs-card [data-app]")`);
+			expect(await rows(".fs-card [data-app] .as-h")).toEqual(["Mac mini · 꺼져 있어요"]);
+			await shot(v, "11-phone-add-sheet-peer.png");
+		} finally {
+			await run(v, `PQ.list = []`);
+			await closeSheet(v);
+		}
 	});
 
 	test("the switch turns an app off here; 앱 추가 turns it back on and opens it", async () => {

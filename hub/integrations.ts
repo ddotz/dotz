@@ -157,8 +157,9 @@ export function integrationItems(ctx: IntegrationContext, notices: readonly Noti
 	});
 }
 
-// The apps the 앱 추가 entry lists: every entry not shown above, either switched off here (`off`) or never set up. `conv` lets the web
-// tell a mail this install still holds (data is kept while off) from one that only a peer shows.
+// The apps the 앱 추가 sheet lists: only those the owner switched off or removed here (`off`). An entry never set up on this install is not listed;
+// the owner asks for it and 새로 추가하기 builds it (hub/app-templates.ts). `conv` lets the web tell a mail this install still holds (data is kept
+// while off) from one that only a peer shows.
 export type AvailableApp = Pick<IntegrationEntry, "key" | "label" | "icon" | "iconPath"> & { off: boolean; conv: string[] };
 export const integrationAvailable = (shown: readonly { key: string }[], ctx: IntegrationContext, entries: readonly IntegrationEntry[] = INTEGRATIONS): AvailableApp[] =>
-	entries.filter(e => !shown.some(i => i.key === e.key)).map(e => ({ key: e.key, label: e.label, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), off: ctx.off.has(e.key), conv: e.match.conv ?? [] }));
+	entries.filter(e => ctx.off.has(e.key) && !shown.some(i => i.key === e.key)).map(e => ({ key: e.key, label: e.label, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), off: ctx.off.has(e.key), conv: e.match.conv ?? [] }));
