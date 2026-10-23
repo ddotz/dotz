@@ -1,14 +1,18 @@
 // One-sentence onboarding of the YouTube + Instagram feature (DESIGN.md R4): `run`, `status`, `reset [step]`.
 // A resumable state machine (state in SNS_DIR/onboard.json). Every external effect goes through an injected runner:
-// `aside` (exec = navigation task, repl = read a value out of a page and POST it to the one-shot receiver), `ctx.exec`
-// (brew and version checks), `ctx.fetch` (gateway, Google, Instagram), `otp` (Messages codes) and the OAuth loopback.
-// Secrets never reach argv, an aside task text, a model or a log: they travel page -> localhost receiver -> 0600 file,
-// and a verification code travels Messages -> one-shot localhost URL -> `const secret` inside `aside repl`.
+// `aside.repl` (our own code drives a background tab: wizard pages are explicit steps with selectors and state checks, see
+// lib/pages.ts; the Aside agent `aside exec` is never used, it spends Aside's own rate limit), `ctx.exec` (brew and version
+// checks), `ctx.fetch` (gateway, Google, Instagram), `otp` (Messages codes) and the OAuth loopback.
+// A login page, a code prompt that cannot be answered or any page a step does not know stops that step with an owner ask
+// (exit 3); nothing is guessed. Secrets never reach argv, a model or a log: they travel page -> localhost receiver -> 0600
+// file, and a verification code travels Messages -> one-shot localhost URL -> `const secret` inside `aside repl`.
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { asideReason } from "../../../hub/aside-errors.ts";
 import { type Config, type Ctx, loadConfig, paths, readJson, realCtx, secretsDir, snsDir, validateConfig, writeJson } from "../lib/config.ts";
 import { me } from "../lib/instagram.ts";
 import { MESSAGES_DB, MessagesAccessError, type OtpService, probeMessages, waitForCode } from "../lib/otp.ts";
+import { CODE_HOSTS, codeBody, gcpApi, gcpApiUrl, gcpClient, gcpClientUrl, gcpConsent, gcpConsentFlow, gcpConsentUrl, GCP_PROJECT_URL, gcpProject, gcpPublish, gcpPublishUrl, IG_ACCOUNT_URL, igAccount, igToken, igTokenUrl, META_APPS_URL, metaApp, type PageResult, pageBody } from "../lib/pages.ts";
 import { serveOnce, startReceiver } from "../lib/receiver.ts";
 import { AuthError } from "../lib/watchkit.ts";
 import { accessToken, channelStats, myChannel } from "../lib/youtube.ts";
@@ -16,17 +20,17 @@ import { run as cardRun } from "./card.ts";
 import { defaultLoopback, gateway, type Loopback, run as setupRun } from "./setup.ts";
 
 export type Result = { lines: string[]; code: number };
-export type Aside = { exec: (task: string) => Promise<string>; repl: (body: string) => Promise<unknown> };
+export type Aside = { repl: (body: string) => Promise<unknown> };
 export type OtpSource = { probe: () => void; wait: (service: OtpService, since: Date) => Promise<string | undefined> };
 export type Deps = { ctx: Ctx; aside: Aside; otp: OtpSource; loopback?: () => Loopback };
 
 type Platform = "youtube" | "instagram";
-type StepId = "deps" | "youtube-client" | "youtube-auth" | "instagram-account" | "instagram-token" | "detect" | "apply" | "test-read" | "done";
+type StepId = "deps" | "gcp-project" | "gcp-api" | "gcp-consent" | "gcp-publish" | "youtube-client" | "youtube-auth" | "instagram-account" | "meta-app" | "instagram-token" | "detect" | "apply" | "test-read" | "done";
 type Status = "pending" | "done" | "needs-owner" | "failed";
 type StepState = { status: Status; at: string; note: string; soft?: boolean };
-type State = { steps: Partial<Record<StepId, StepState>>; platforms: Platform[]; asks: string[] };
+type State = { steps: Partial<Record<StepId, StepState>>; platforms: Platform[]; asks: string[]; ids: { projectId?: string; appId?: string } };
 type Out = { status: Status; note: string; ask?: string; soft?: boolean };
-type Run = { d: Deps; platforms: Platform[]; started: Date; target: string };
+type Run = { d: Deps; platforms: Platform[]; started: Date; target: string; state: State };
 type StepDef = { id: StepId; label: string; platform?: Platform; requires: StepId[]; run: (r: Run) => Promise<Out> };
 
 const UPDATE_KEY = "sns-onboarding";
@@ -35,25 +39,10 @@ const CLIENT_FILE = () => join(secretsDir(), "youtube-client.json");
 const IG_STAGING = () => join(secretsDir(), "instagram-token-new.json");
 const stateFile = () => join(snsDir(), "onboard.json");
 const AUTH_GRACE_MS = 30_000;
-const RECEIVE_WAIT_MS = 15_000;
+const RECEIVE_WAIT_MS = 3 * 60_000;
 const LOGIN_WAIT_MS = 4 * 60_000;
 
-const PROTOCOL =
-	"\n\n비밀번호, 토큰, 인증 코드 같은 값은 읽거나 옮겨 적거나 말하지 않아요. 백그라운드 탭에서 해요. 마지막 줄에는 다음 중 하나만 적어요.\n" +
-	"RESULT: DONE\nRESULT: NEEDS_OWNER <한 줄 이유>\nRESULT: NEEDS_CODE <google 또는 instagram>\nRESULT: FAILED <한 줄 이유>\n" +
-	"비밀번호를 물으면 NEEDS_OWNER, 문자나 이메일로 온 인증 코드를 물으면 NEEDS_CODE로 멈춰요.";
-
-type Verdict = { kind: "done" } | { kind: "owner" | "failed"; reason: string } | { kind: "code"; service: OtpService };
-
 const clean = (s: string) => s.replace(/\s+/g, " ").replace(/[A-Za-z0-9_-]{24,}/g, "…").trim().slice(0, 100);
-
-function verdict(text: string): Verdict {
-	const m = [...text.matchAll(/RESULT:\s*(DONE|NEEDS_OWNER|NEEDS_CODE|FAILED)\b[ \t]*([^\n]*)/g)].at(-1);
-	if (!m) return { kind: "failed", reason: "Aside가 끝났다고 알려 주지 않았어요" };
-	if (m[1] === "DONE") return { kind: "done" };
-	if (m[1] === "NEEDS_CODE") return { kind: "code", service: /google/i.test(m[2]!) ? "google" : /instagram|facebook|meta/i.test(m[2]!) ? "instagram" : "generic" };
-	return { kind: m[1] === "NEEDS_OWNER" ? "owner" : "failed", reason: clean(m[2]!) || "이유를 알려 주지 않았어요" };
-}
 
 // ---- real runners ----------------------------------------------------------------------------------------------------
 
@@ -65,19 +54,14 @@ export function realAside(ctx: Ctx): Aside {
 		started = true;
 	};
 	return {
-		exec: async task => {
-			await ensure();
-			const r = await ctx.exec(["aside", "exec", task], { timeoutMs: 15 * 60_000 });
-			return r.stdout || r.stderr;
-		},
 		repl: async body => {
 			await ensure();
 			const code = `try { const dzOut = await (async () => {\n${body}\n})(); console.log("RESULT " + JSON.stringify({ data: dzOut ?? null })); } catch (e) { console.log("RESULT " + JSON.stringify({ error: String((e && e.message) || e).slice(0, 300) })); }`;
 			const r = await ctx.exec(["aside", "repl", code], { timeoutMs: 118_000 });
 			const m = [...r.stdout.matchAll(/^.*?RESULT (\{.*\})\s*$/gm)].at(-1);
-			if (!m) throw new Error("aside repl가 답하지 않았어요");
+			if (!m) throw new Error(asideReason(r.stdout + r.stderr) || "aside repl가 답하지 않았어요");
 			const j = JSON.parse(m[1]!);
-			if (j.error) throw new Error(String(j.error));
+			if (j.error) throw new Error(asideReason(String(j.error)));
 			return j.data;
 		},
 	};
@@ -89,75 +73,57 @@ export function realOtp(ctx: Ctx, db: string = MESSAGES_DB()): OtpSource {
 
 // ---- helpers shared by the steps -------------------------------------------------------------------------------------
 
-const readBody = (host: string, pats: Record<string, string>, postUrl: string) => `
-const tabs = await getTabs();
-let text = "";
-for (const t of tabs) {
-  const u = String(typeof t.url === "function" ? t.url() : t.url);
-  if (!u.includes(${JSON.stringify(host)})) continue;
-  text += "\\n" + await t.evaluate(() => document.body.innerText);
-}
-const pats = ${JSON.stringify(pats)};
-const found = {};
-for (const [k, p] of Object.entries(pats)) { const m = new RegExp(p).exec(text); if (m) found[k] = m[1] ?? m[0]; }
-if (Object.keys(found).length !== Object.keys(pats).length) return { ok: false };
-const res = await fetch(${JSON.stringify(postUrl)}, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(found) });
-return { ok: res.ok };`;
-
-const codeBody = (url: string) => `
-const secret = await (await fetch(${JSON.stringify(url)})).text();
-const sel = 'input[autocomplete="one-time-code"], input[name="idvPin"], input[name="Pin"], input[name="confirmationCode"], input[name="verificationCode"], input[inputmode="numeric"], input[type="tel"]';
-for (const t of await getTabs()) {
-  const box = t.locator(sel).first();
-  if (await box.count()) { await box.fill(secret); await box.press("Enter"); return { ok: true }; }
-}
-return { ok: false };`;
-
 async function enterCode(d: Deps, service: OtpService, since: Date): Promise<boolean> {
 	const code = await d.otp.wait(service, since);
 	if (!code) return false;
 	const once = serveOnce(code);
 	try {
-		await d.aside.repl(codeBody(once.url));
+		await d.aside.repl(codeBody(once.url, CODE_HOSTS[service]));
 	} finally {
 		once.stop();
 	}
 	return true;
 }
 
-// Runs an aside task; when it stops at a verification-code prompt, fetches the code from Messages and types it in through
-// `aside repl`, then lets the task continue (at most 3 rounds).
-async function drive(r: Run, task: string, noCodeAsk: string): Promise<Verdict> {
-	let text = task;
+type Page = { out: Out } | { data: Record<string, string> };
+type PageAsk = { what: string; owner: string; noCode: string };
+
+// Runs one wizard page script in a background tab (lib/pages.ts). A code prompt is answered from Messages and the script
+// runs again (at most 3 rounds); a login or an unknown page ends the step with an owner ask.
+async function page(r: Run, step: string, url: string, script: string, o: PageAsk): Promise<Page> {
 	for (let round = 0; round < 3; round++) {
-		const v = verdict(await r.d.aside.exec(text + PROTOCOL));
-		if (v.kind !== "code") return v;
-		if (!(await enterCode(r.d, v.service, r.started))) return { kind: "owner", reason: noCodeAsk };
-		text = `${task}\n\n인증 코드는 이미 입력 칸에 넣었어요. 화면 상태를 보고 남은 단계만 이어서 해요.`;
+		const res = ((await r.d.aside.repl(pageBody(step, url, script))) ?? { state: "failed", note: "답이 비었어요" }) as PageResult;
+		const note = clean(res.note ?? "");
+		if (res.state === "ok") return { data: res.data ?? {} };
+		if (res.state === "code") {
+			if (await enterCode(r.d, res.service ?? "generic", r.started)) continue;
+			return { out: { status: "needs-owner", note: o.noCode, ask: `${o.owner} (${o.noCode})` } };
+		}
+		if (res.state === "owner") return { out: { status: "needs-owner", note: note || o.owner, ask: `${o.owner} (${note})` } };
+		if (res.state === "unexpected") return { out: { status: "needs-owner", note: `예상 못 한 화면: ${note}`, ask: `${o.what} 중 예상하지 못한 화면이 나왔어요 (${note}). Aside에서 ${url} 을 열고 이 단계를 직접 해 주세요` } };
+		return { out: { status: "failed", note: `${o.what}: ${note || "이유를 알려 주지 않았어요"}` } };
 	}
-	return { kind: "failed", reason: "인증 코드를 여러 번 물어요" };
+	return { out: { status: "failed", note: `${o.what}: 인증 코드를 여러 번 물어요` } };
 }
 
-const fromVerdict = (v: Verdict, what: string, owner: string): Out | undefined => {
-	if (v.kind === "done") return undefined;
-	if (v.kind === "owner") return { status: "needs-owner", note: v.reason, ask: `${owner} (${v.reason})` };
-	if (v.kind === "failed") return { status: "failed", note: `${what}: ${v.reason}` };
-	return { status: "failed", note: what };
-};
-
-async function receive(r: Run, file: string, fields: string[], body: (url: string) => string): Promise<boolean> {
+// Like page(), for a script that POSTs a secret to a one-shot receiver (file, 0600) inside the same run.
+async function pageSecret(r: Run, step: string, url: string, script: (postUrl: string) => string, file: string, fields: string[], o: PageAsk): Promise<Out | undefined> {
 	const rcv = startReceiver({ file, fields, waitMs: RECEIVE_WAIT_MS, sleep: r.d.ctx.sleep });
 	try {
-		const res = (await r.d.aside.repl(body(rcv.url))) as { ok?: boolean } | null;
-		if (!res?.ok) return false;
+		const g = await page(r, step, url, script(rcv.url), o);
+		if ("out" in g) return g.out;
 		await rcv.done;
-		return true;
+		return undefined;
 	} catch {
-		return false;
+		return { status: "failed", note: `${o.what}: 화면에서 값을 읽지 못했어요` };
 	} finally {
 		rcv.stop();
 	}
 }
+
+const GOOGLE: Omit<PageAsk, "what"> = { owner: "Aside에서 구글 계정에 로그인해 주세요", noCode: "구글에서 문자로 온 인증 코드를 알려 주세요" };
+const INSTAGRAM: Omit<PageAsk, "what"> = { owner: "Aside에서 인스타그램에 로그인해 주세요", noCode: "인스타에서 온 인증 코드를 알려 주세요" };
+const META: Omit<PageAsk, "what"> = { owner: "Aside에서 페이스북/메타 개발자 계정에 로그인해 주세요", noCode: "메타에서 온 인증 코드를 알려 주세요" };
 
 const has = (file: string, keys: string[]) => {
 	try {
@@ -195,22 +161,49 @@ async function stepDeps(r: Run): Promise<Out> {
 	return { status: "done", note: need.length ? `${need.join(", ")}를 설치했어요` : "다 갖춰져 있어요" };
 }
 
+const clientReady = () => has(CLIENT_FILE(), ["client_id", "client_secret"]) || has(paths.ytOauth(), ["client_id", "client_secret"]);
+const ALREADY: Out = { status: "done", note: "이미 있어요" };
+const NO_PROJECT: Out = { status: "failed", note: "프로젝트 ID를 몰라요. gcp-project 단계를 다시 열어 주세요" };
+
+async function stepGcpProject(r: Run): Promise<Out> {
+	if (clientReady()) return ALREADY;
+	const g = await page(r, "gcp-project", GCP_PROJECT_URL, gcpProject(), { what: "구글 클라우드 프로젝트", ...GOOGLE });
+	if ("out" in g) return g.out;
+	if (!g.data.projectId) return { status: "failed", note: "프로젝트 ID를 읽지 못했어요" };
+	r.state.ids.projectId = g.data.projectId;
+	return { status: "done", note: `프로젝트 ${g.data.projectId}` };
+}
+
+async function stepGcpApi(r: Run): Promise<Out> {
+	if (clientReady()) return ALREADY;
+	const id = r.state.ids.projectId;
+	if (!id) return NO_PROJECT;
+	const g = await page(r, "gcp-api", gcpApiUrl(id), gcpApi(), { what: "YouTube API 켜기", ...GOOGLE });
+	return "out" in g ? g.out : { status: "done", note: "YouTube Data API를 켰어요" };
+}
+
+async function stepGcpConsent(r: Run): Promise<Out> {
+	if (clientReady()) return ALREADY;
+	const id = r.state.ids.projectId;
+	if (!id) return NO_PROJECT;
+	const g = await page(r, "gcp-consent", gcpConsentUrl(id), gcpConsent(), { what: "OAuth 동의 화면", ...GOOGLE });
+	return "out" in g ? g.out : { status: "done", note: "동의 화면을 만들었어요" };
+}
+
+async function stepGcpPublish(r: Run): Promise<Out> {
+	if (clientReady()) return ALREADY;
+	const id = r.state.ids.projectId;
+	if (!id) return NO_PROJECT;
+	const g = await page(r, "gcp-publish", gcpPublishUrl(id), gcpPublish(), { what: "앱 게시", ...GOOGLE });
+	return "out" in g ? g.out : { status: "done", note: "프로덕션으로 게시했어요" };
+}
+
 async function stepYoutubeClient(r: Run): Promise<Out> {
-	if (has(CLIENT_FILE(), ["client_id", "client_secret"]) || has(paths.ytOauth(), ["client_id", "client_secret"])) return { status: "done", note: "이미 있어요" };
-	const task =
-		"Google Cloud Console(console.cloud.google.com)에서 차례로 해요. " +
-		"1) 프로젝트 'dotz-youtube'를 만들고, 이미 있으면 그걸 써요. 2) YouTube Data API v3를 사용 설정해요. " +
-		"3) OAuth 동의 화면을 외부(External)로 만들고 앱 이름은 'dotz', 지원 이메일과 개발자 연락처는 지금 로그인된 구글 계정으로 해요. " +
-		"4) 앱을 '프로덕션으로 게시'해요. 테스트 상태로 두면 로그인이 7일 뒤에 풀려요. " +
-		"5) 사용자 인증 정보에서 OAuth 클라이언트 ID를 '데스크톱 앱' 유형으로 만들어요. " +
-		"6) 만들고 나면 클라이언트 ID와 보안 비밀번호가 보이는 창이 열려 있어요. 그 창을 닫지 말고 멈춰요.";
-	const v = await drive(r, task, "구글에서 문자로 온 인증 코드를 알려 주세요");
-	const bad = fromVerdict(v, "구글 클라우드 설정", "Aside에서 구글 계정에 로그인해 주세요");
-	if (bad) return bad;
-	const ok = await receive(r, CLIENT_FILE(), ["client_id", "client_secret"], url =>
-		readBody("console.cloud.google.com", { client_id: "(\\d+-[a-z0-9]+\\.apps\\.googleusercontent\\.com)", client_secret: "(GOCSPX-[A-Za-z0-9_-]+)" }, url),
-	);
-	return ok ? { status: "done", note: "OAuth 클라이언트를 만들었어요" } : { status: "failed", note: "화면에서 클라이언트 값을 읽지 못했어요" };
+	if (clientReady()) return ALREADY;
+	const id = r.state.ids.projectId;
+	if (!id) return NO_PROJECT;
+	const bad = await pageSecret(r, "youtube-client", gcpClientUrl(id), gcpClient, CLIENT_FILE(), ["client_id", "client_secret"], { what: "OAuth 클라이언트", ...GOOGLE });
+	return bad ?? { status: "done", note: "OAuth 클라이언트를 만들었어요" };
 }
 
 async function stepYoutubeAuth(r: Run): Promise<Out> {
@@ -219,51 +212,51 @@ async function stepYoutubeAuth(r: Run): Promise<Out> {
 	const aborted = new Promise<URLSearchParams>(res => (abort = res));
 	const base = (r.d.loopback ?? defaultLoopback)();
 	const lb: Loopback = { ...base, redirect: Promise.race([base.redirect, aborted]) };
-	let flow: Promise<Verdict> | undefined;
+	let flow: Promise<Out | undefined> | undefined;
 	const res = await setupRun(r.d.ctx, ["youtube-auth", "--client", CLIENT_FILE()], {
 		loopback: () => lb,
 		waitMs: LOGIN_WAIT_MS,
 		onLine: l => {
 			if (!l.startsWith("open ")) return;
-			const task = `다음 주소를 열어요: ${l.slice(5)}\n구글 로그인 화면이 나오면 이미 로그인된 계정을 골라요. '확인되지 않은 앱' 경고가 나오면 '고급'을 누르고 '이동(안전하지 않음)'을 눌러요. 권한 요청 화면에서는 유튜브 관리 권한을 허용해요. 연결됐다는 안내가 나오면 끝이에요.`;
-			flow = drive(r, task, "구글에서 문자로 온 인증 코드를 알려 주세요").then(
-				v => {
-					if (v.kind !== "done") abort(new URLSearchParams({ error: "aside" }));
+			flow = page(r, "youtube-auth", l.slice(5), gcpConsentFlow(), { what: "유튜브 로그인", ...GOOGLE }).then(
+				g => {
+					if ("out" in g) abort(new URLSearchParams({ error: "aside" }));
 					else void r.d.ctx.sleep(AUTH_GRACE_MS).then(() => abort(new URLSearchParams({ error: "grace" })));
-					return v;
+					return "out" in g ? g.out : undefined;
 				},
 				(e: Error) => {
 					abort(new URLSearchParams({ error: "aside" }));
-					return { kind: "failed", reason: clean(e.message) } as Verdict;
+					return { status: "failed", note: `유튜브 로그인: ${clean(e.message)}` } as Out;
 				},
 			);
 		},
 	});
 	if (res.code === 0) return { status: "done", note: res.lines.at(-1)?.replace(/^youtube-connected \S+ /, "채널 ") ?? "연결했어요" };
-	const v = await flow;
-	const bad = v && fromVerdict(v, "유튜브 로그인", "Aside에서 구글 계정에 로그인하고 권한을 허용해 주세요");
-	return bad || { status: "failed", note: `유튜브 로그인에 실패했어요 (${clean(res.lines.at(-1) ?? "")})` };
+	const bad = await flow;
+	return bad ?? { status: "failed", note: `유튜브 로그인에 실패했어요 (${clean(res.lines.at(-1) ?? "")})` };
 }
 
 async function stepInstagramAccount(r: Run): Promise<Out> {
 	if (has(paths.instagram(), ["access_token"])) return { status: "done", note: "이미 연결돼 있어요" };
-	const task =
-		"instagram.com에서 로그인된 계정이 프로페셔널(크리에이터 또는 비즈니스) 계정인지 설정에서 확인해요. " +
-		"아니면 설정 > 계정 유형 및 도구 > 프로페셔널 계정으로 전환에서 '크리에이터'로 바꿔요. 이미 프로페셔널이면 아무것도 바꾸지 않아요.";
-	const v = await drive(r, task, "인스타에서 온 인증 코드를 알려 주세요");
-	return fromVerdict(v, "인스타 계정 확인", "Aside에서 인스타그램에 로그인해 주세요") ?? { status: "done", note: "프로페셔널 계정이에요" };
+	const g = await page(r, "instagram-account", IG_ACCOUNT_URL, igAccount(), { what: "인스타 계정 확인", ...INSTAGRAM });
+	return "out" in g ? g.out : { status: "done", note: "프로페셔널 계정이에요" };
+}
+
+async function stepMetaApp(r: Run): Promise<Out> {
+	if (has(paths.instagram(), ["access_token"])) return ALREADY;
+	const g = await page(r, "meta-app", META_APPS_URL, metaApp(), { what: "메타 앱 만들기", ...META });
+	if ("out" in g) return g.out;
+	if (!g.data.appId) return { status: "failed", note: "앱 ID를 읽지 못했어요" };
+	r.state.ids.appId = g.data.appId;
+	return { status: "done", note: `앱 ${g.data.appId}` };
 }
 
 async function stepInstagramToken(r: Run): Promise<Out> {
-	if (has(paths.instagram(), ["access_token"])) return { status: "done", note: "이미 있어요" };
-	const task =
-		"developers.facebook.com에서 차례로 해요. 1) 개발자로 등록이 안 돼 있으면 등록해요. 2) 앱 'dotz-instagram'을 만들어요. 사용 사례는 'Instagram API with Instagram Login'을 골라요. " +
-		"3) 앱 대시보드 Instagram > API 설정에서 지금 로그인된 인스타 계정을 추가하고, 초대가 오면 수락해요. 4) '토큰 생성'을 눌러 장기 토큰이 화면에 보이게 해요. 그 창을 닫지 말고 멈춰요.";
-	const v = await drive(r, task, "메타에서 온 인증 코드를 알려 주세요");
-	const bad = fromVerdict(v, "인스타 토큰 만들기", "Aside에서 페이스북/메타 개발자 계정에 로그인해 주세요");
+	if (has(paths.instagram(), ["access_token"])) return ALREADY;
+	const appId = r.state.ids.appId;
+	if (!appId) return { status: "failed", note: "앱 ID를 몰라요. meta-app 단계를 다시 열어 주세요" };
+	const bad = await pageSecret(r, "instagram-token", igTokenUrl(appId), igToken, IG_STAGING(), ["access_token"], { what: "인스타 토큰 만들기", ...META });
 	if (bad) return bad;
-	const ok = await receive(r, IG_STAGING(), ["access_token"], url => readBody("developers.facebook.com", { access_token: "\\b(IG[A-Za-z0-9_-]{60,})" }, url));
-	if (!ok) return { status: "failed", note: "화면에서 토큰을 읽지 못했어요" };
 	try {
 		const res = await setupRun(r.d.ctx, ["instagram-token", "--from", IG_STAGING()]);
 		return res.code === 0 ? { status: "done", note: res.lines.at(-1)?.replace(/^instagram-connected \S+ /, "@") ?? "연결했어요" } : { status: "failed", note: `토큰 확인에 실패했어요 (${clean(res.lines.at(-1) ?? "")})` };
@@ -307,10 +300,15 @@ async function stepDone(): Promise<Out> {
 
 const STEPS: StepDef[] = [
 	{ id: "deps", label: "준비물 확인", requires: [], run: stepDeps },
-	{ id: "youtube-client", label: "구글 클라우드 앱 만들기", platform: "youtube", requires: [], run: stepYoutubeClient },
+	{ id: "gcp-project", label: "구글 클라우드 프로젝트", platform: "youtube", requires: [], run: stepGcpProject },
+	{ id: "gcp-api", label: "YouTube API 켜기", platform: "youtube", requires: ["gcp-project"], run: stepGcpApi },
+	{ id: "gcp-consent", label: "OAuth 동의 화면", platform: "youtube", requires: ["gcp-api"], run: stepGcpConsent },
+	{ id: "gcp-publish", label: "앱 게시", platform: "youtube", requires: ["gcp-consent"], run: stepGcpPublish },
+	{ id: "youtube-client", label: "구글 OAuth 클라이언트", platform: "youtube", requires: ["gcp-publish"], run: stepYoutubeClient },
 	{ id: "youtube-auth", label: "유튜브 로그인", platform: "youtube", requires: ["youtube-client"], run: stepYoutubeAuth },
 	{ id: "instagram-account", label: "인스타 계정 종류 확인", platform: "instagram", requires: [], run: stepInstagramAccount },
-	{ id: "instagram-token", label: "인스타 토큰 받기", platform: "instagram", requires: ["instagram-account"], run: stepInstagramToken },
+	{ id: "meta-app", label: "메타 앱 만들기", platform: "instagram", requires: ["instagram-account"], run: stepMetaApp },
+	{ id: "instagram-token", label: "인스타 토큰 받기", platform: "instagram", requires: ["meta-app"], run: stepInstagramToken },
 	{ id: "detect", label: "계정 확인", requires: ["youtube-auth", "instagram-token"], run: stepDetect },
 	{ id: "apply", label: "설정과 감시 켜기", requires: ["detect"], run: stepApply },
 	{ id: "test-read", label: "읽기 시험", requires: ["apply"], run: stepTestRead },
@@ -325,9 +323,9 @@ const requiresOf = (s: StepDef, platforms: Platform[]) => ["deps" as StepId, ...
 function loadState(): State {
 	try {
 		const s = readJson<State>(stateFile());
-		if (s && typeof s === "object" && s.steps) return { steps: s.steps, platforms: s.platforms ?? [], asks: s.asks ?? [] };
+		if (s && typeof s === "object" && s.steps) return { steps: s.steps, platforms: s.platforms ?? [], asks: s.asks ?? [], ids: s.ids ?? {} };
 	} catch {}
-	return { steps: {}, platforms: [], asks: [] };
+	return { steps: {}, platforms: [], asks: [], ids: {} };
 }
 const saveState = (s: State) => writeJson(stateFile(), s);
 
@@ -376,7 +374,7 @@ async function cmdRun(d: Deps, flags: Map<string, string | true>): Promise<Resul
 	}
 	const target = typeof flags.get("target") === "string" ? (flags.get("target") as string) : "chat";
 	const started = d.ctx.now();
-	const r: Run = { d, platforms: state.platforms, started, target };
+	const r: Run = { d, platforms: state.platforms, started, target, state };
 	const ok = (id: StepId) => state.steps[id]?.status === "done" || (state.steps[id]?.status === "needs-owner" && state.steps[id]?.soft === true);
 
 	saveState(state);
@@ -430,6 +428,8 @@ function cmdReset(rest: string[]): Result {
 	}
 	for (const id of reopen) {
 		delete s.steps[id];
+		if (id === "gcp-project") delete s.ids.projectId;
+		if (id === "meta-app") delete s.ids.appId;
 		s.asks = s.asks.filter(a => !a.startsWith(`${id}|`));
 		const secret = rest[0] ? OWNED_SECRET[id]?.() : undefined;
 		if (secret) {

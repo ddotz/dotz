@@ -1,12 +1,13 @@
 // The one command behind "use this mail": bun onboard.ts <site> --url <inbox URL> [--channel ch:<id>] [--approve] [--har <file>]
 // [--restart] | --status. Runs lib/onboard.ts with the live Io: the owner's Aside browser in the background only (a tab that
 // is never focused and is closed at once; Aside itself is started hidden if it is not running), the browser's saved
-// password through `aside exec` (no secret ever goes into a prompt), the local gateway for the watches and the one
+// password through `aside repl` (autofill, submitted by our own code; no `aside exec`, no secret ever goes into a prompt), the local gateway for the watches and the one
 // evolving progress message. Exit 0 done, 3 waiting for the owner (the printed ask), 1 failed (the printed reason).
 import { blockedByFeatures } from "../../../hub/featuredirs.ts";
 import { dataDir, liveCtx } from "../lib/config.ts";
 import { cookieHeaderFromAside } from "../lib/cookies.ts";
 import { liveGateway } from "../lib/gateway.ts";
+import { loginViaRepl } from "../lib/login.ts";
 import { loadOnboard, render, runOnboard, type Io, type LoginResult } from "../lib/onboard.ts";
 import { readRecording, recordViaAside } from "./capture.ts";
 
@@ -38,22 +39,8 @@ try {
 	return m ? (m[1] as "form" | "in") : "unknown";
 }
 
-// Aside's own agent signs in with the password the browser saved for the site. It is told to stay in the background, to
-// stop before any second factor unless the owner already said OK, and to answer with one marker word.
 async function login(url: string, allowSecondFactor: boolean): Promise<LoginResult> {
-	const task = [
-		`Open ${url} in a new background tab. Do not focus, raise or switch to any window or tab.`,
-		"Sign in using the password this browser has saved for that site. Never type a password that is not saved in the browser.",
-		allowSecondFactor
-			? "If a second factor (code, app approval, security key) is needed, request it once and wait up to 3 minutes for the owner to approve it; do not request it again."
-			: "If the site asks for a second factor (code, app approval, security key), stop before requesting it.",
-		"Close the tab you opened. Reply with exactly one word: LOGIN_OK when the mailbox is visible, NEED_2FA if a second factor is needed and was not completed, NEED_PASSWORD if no saved password exists, LOGIN_FAILED otherwise.",
-	].join(" ");
-	const out = await run(["aside", "exec", task], allowSecondFactor ? 300_000 : 180_000);
-	if (/LOGIN_OK/.test(out)) return "in";
-	if (/NEED_2FA/.test(out)) return "need-2fa";
-	if (/NEED_PASSWORD/.test(out)) return "need-password";
-	return "failed";
+	return loginViaRepl((code, ms) => run(["aside", "repl", code], ms), url, allowSecondFactor);
 }
 
 function liveIo(site: string, channel?: string): Io {
