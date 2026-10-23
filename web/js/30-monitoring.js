@@ -201,8 +201,21 @@ function monDecisionNode(n) {
 // A monitor's own report drops the monitor's name in front of its first line (the card already says whose it is).
 const monCard = (name, at, text, tone, title) => resultCard({ src: name, at, text, title, tag: monTag(tone) });
 function monNoticeNode(n, names = []) {
+// A report that points at an app item (n.item, hub/watchitem.ts) shows the item as the app draws it, the check's own output folded under it. This is the one
+// place that resolves the reference: a mail this page holds, else the card the hub kept with the report; an item that is not found here (another gateway's)
+// shows the subject and sender the check printed, and a report with nothing to show is a plain report.
+function monItemNode(n) {
+  const it = n.item, t = it && it.app === "mail" && it.key ? `mail:${it.key}` : "", c = it && it.card;
+  if (t && !MAILS.has(t) && c && c.source) MAILS.set(t, c);
+  const node = t && MAILS.has(t) ? monConvNode(t, "메일") : c && (c.subject || c.from) ? resultCard({ src: mailSender(c.from), at: n.updated || n.ts, title: c.subject }) : null;
+  const raw = node ? rcSplit(n.text).raw : "";
+  if (raw) { const d = rcRawFold(raw); d.addEventListener("click", e => e.stopPropagation()); node.append(d); }
+  return node;
+}
   if (ntIsDec(n)) return monDecisionNode(n);
   const node = monCard(ntPlain(names[0] || n.title) || "알림", n.updated || n.ts, monStrip(String(n.text || ""), [...names, ntPlain(n.title)]), n.tone);
+  const card = n.item ? monItemNode(n) : null;
+  if (card) { card.dataset.nid = n.id; return card; }
   if (!node) return null;
   node.dataset.nid = n.id;
   if (ntNeeds(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
