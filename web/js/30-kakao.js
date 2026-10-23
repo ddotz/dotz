@@ -47,8 +47,9 @@ const kkSys = m => Number(m.type) === 0;
 
 /* ---- photos, videos, voice, files, replies, locations: built from m.media (the server sends no URL; bytes come from /api/kakao/media/...) ---- */
 const KK_GONE = "기간이 지나 볼 수 없어요";
-const kkMediaUrl = (m, i, v) => `/api/kakao/media/${enc(KK.open)}/${enc(m.logId)}?i=${i | 0}&v=${v}`;
-const kkFileUrl = m => `/api/kakao/media/${enc(KK.open)}/${enc(m.logId)}/file`;
+// A peer's room (KK.pc) is read through /api/peer/proxy like every other Kakao GET (34-peer-monitoring.js pqLink).
+const kkMediaUrl = (m, i, v) => pqLink(`/api/kakao/media/${enc(KK.open)}/${enc(m.logId)}?i=${i | 0}&v=${v}`);
+const kkFileUrl = m => pqLink(`/api/kakao/media/${enc(KK.open)}/${enc(m.logId)}/file`);
 const kkNum = v => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : 0);
 function kkSize(n) {
   n = kkNum(n);
