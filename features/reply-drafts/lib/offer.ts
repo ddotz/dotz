@@ -3,6 +3,7 @@
 import { addressesOf, precheck, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { askText, buildDraft } from "./flow.ts";
+import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 
@@ -10,6 +11,9 @@ export type OfferMail = { key: string; target: string; thread?: string; source: 
 export type OfferDeps = {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
+	/** The identity sweep: the model call, and the user's sent mail (persona.ts learnFirst), run once before the first draft. */
+	analyze?: ModelCall;
+	sentTexts?: () => Promise<string[]>;
 	readBody?: (source: string, id: string) => Promise<string | undefined>;
 	log?: (line: string) => void;
 	/** Records the suggested action on the mail (hub/mail.ts setMailSuggest), for the web's suggestion slot of that mail. */
@@ -39,6 +43,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps): Promise<"offered" | "ski
 			return "skipped";
 		}
 		item.text = (m.body ?? (await deps.readBody?.(m.source, m.id).catch(e => (log(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), undefined))) ?? m.summary ?? "").trim().slice(0, BODY_MAX) || m.subject;
+		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
 		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key }, { call: deps.call });
 		if (built.action === "skip") {
 			markDrafted(m.key);
