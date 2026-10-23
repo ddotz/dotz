@@ -302,6 +302,27 @@ export async function syncProfile(): Promise<void> {
 	log(`discord avatar set from ${avatar}`);
 }
 
+// Where a lane lives is recorded in its lane.json (hub/lanestate.ts: channel, home); main.ts installs the reader and writer.
+// lane:<name> falls back to that record when channels.json has no entry (a thread home dropped on stop, a resumed lane).
+type LaneRecords = { read: (lane: string) => { channel?: string; home?: string; title?: string } | undefined; remember: (lane: string, channel: string | undefined, home?: string) => void };
+let laneRecords: LaneRecords = { read: () => undefined, remember: () => {} };
+export function setLaneRecords(r: LaneRecords): void {
+	laneRecords = r;
+}
+function laneId(lane: string): string | undefined {
+	if (channels.lanes[lane]) return channels.lanes[lane];
+	const rec = laneRecords.read(lane);
+	if (!rec?.channel) return undefined;
+	channels.lanes[lane] = rec.channel;
+	if (rec.home) channels.homes[lane] = rec.home;
+	save();
+	return rec.channel;
+}
+// Gateway restart: lanes launched before the record held a channel get it from the channel map.
+export function recordLaneChannels(): void {
+	for (const [lane, id] of Object.entries(channels.lanes)) if (!laneRecords.read(lane)?.channel) laneRecords.remember(lane, id, channels.homes[lane]);
+}
+
 // `title` is the owner-facing channel name (their language, plain words); the lane name stays the internal key. `place`
 // (threads.ts lanePlace) says where it works: a new channel, a thread in a work channel (hanging from the owner's own
 // message when it came from there), or an existing sub-topic thread the lane takes over.
@@ -323,6 +344,7 @@ export async function laneChannel(lane: string, title: string | undefined, place
 			await setLight(t.id, place.parent, "working");
 		} else channels.lanes[lane] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: cleanName(title?.trim() || lane), type: 0, parent_id: channels.workCategory ?? channels.category })).id;
 		save();
+		laneRecords.remember(lane, channels.lanes[lane], channels.homes[lane]);
 	}
 	return channels.lanes[lane];
 }
@@ -349,10 +371,12 @@ export function homeOf(lane: string): { home: string; homeName?: string } | unde
 export async function releaseLane(lane: string, info?: { cwd?: string; sessionFile?: string }): Promise<void> {
 	const id = channels.lanes[lane];
 	const parentId = channels.homes[lane];
+	if (id) laneRecords.remember(lane, id, parentId);
 	if (id && !parentId) {
 		const throwaway = /^\/(private\/)?tmp\//.test(info?.cwd ?? "") || !info?.sessionFile || !existsSync(info.sessionFile);
 		onLaneRelease(id, throwaway);
 		if (throwaway) {
+			laneRecords.remember(lane, undefined);
 			delete channels.lanes[lane];
 			save();
 			if (status.enabled) await rest("DELETE", `/channels/${id}`).catch(e => log(`lane ${lane} channel delete failed: ${e}`));
@@ -394,7 +418,7 @@ export async function deleteChannel(id: string): Promise<void> {
 }
 
 function resolve(target: string): string | undefined {
-	if (target.startsWith("lane:")) return channels.lanes[target.slice(5)];
+	if (target.startsWith("lane:")) return laneId(target.slice(5));
 	if (target.startsWith("ch:")) return channels.work[target.slice(3)] ? target.slice(3) : undefined;
 	if (target.startsWith("th:")) return channels.threads[target.slice(3)] ? target.slice(3) : undefined;
 	if (target === "chat" || target === "worklog" || target === "alert" || target === "brief" || target === "dm") return channels[target];
@@ -473,6 +497,7 @@ const sentAt = new Map<string, number>();
 // When the last message (not a progress note) went to a target through send(); the live status line reads it to know
 // whether an answer already reached the channel.
 export const lastSendAt = (target: string): number => sentAt.get(target) ?? 0;
+const unplaced = new Set<string>();
 
 // A REST failure worth retrying: no HTTP answer at all (network down, DNS, reset) or a Discord 5xx. A 4xx is final.
 export function isRetryable(error: unknown): boolean {
@@ -489,7 +514,17 @@ export async function send(
 	opts?: { nonce: string; skip: number; onPart: (index: number) => void },
 ): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
-	const id = resolve(target);
+	let id = resolve(target);
+	// Nothing recorded for the lane: its message goes to the worklog with the lane title in front, never dropped.
+	if (!id && target.startsWith("lane:") && channels.worklog) {
+		const lane = target.slice(5);
+		if (!unplaced.has(lane)) {
+			unplaced.add(lane);
+			log(`discord: no channel recorded for ${target}; its messages go to the worklog`);
+		}
+		id = channels.worklog;
+		text = `**${laneRecords.read(lane)?.title ?? lane}**: ${text}`;
+	}
 	if (!id) return { delivered: false, reason: `unknown target ${target}` };
 	const ids: string[] = [];
 	sentAt.set(target, Date.now());
