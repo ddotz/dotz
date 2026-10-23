@@ -238,6 +238,9 @@ if [ -z "$GIT" ]; then
 		[ -n "$TARBALL_URL" ] && printf 'tarball=%s\n' "$TARBALL_URL"
 		printf 'sha=%s\nauth=%s\ninstalled=%s\n' "$SHA" "$AUTH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	} >"$APP/.dotz-install"
+else
+	# Marks this clone as an install, not a developer checkout: self-update may save local work and move to upstream on its own.
+	printf 'install.sh --git\n' >"$APP/.git/dotz-install"
 fi
 say "$([ -n "$UPGRADE" ] && echo upgraded || echo installed) $SRC -> $APP"
 

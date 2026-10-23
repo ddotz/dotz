@@ -42,6 +42,19 @@ async function updApply(btn) {
   await busy(btn, async () => { UPD.info.job = (await api("/api/update/apply", "POST")).job; });
   loadUpdate();
 }
+async function updKeep(btn) {
+  await busy(btn, async () => { UPD.info.job = (await api("/api/update/apply", "POST", { keep: true })).job; });
+  loadUpdate();
+}
+// Local work the update cannot carry over by itself: one Korean line, what was saved, and the button that saves it and updates.
+function updKeepBox(k, off) {
+  const sv = k.saved || {};
+  const where = [sv.branch, sv.patch, sv.dirtyPatch].filter(Boolean).join(" · ");
+  return el("div", { class: "upd-block" }, el("div", { text: k.line }),
+    el("ul", { class: "upd-log" }, ...k.dirty.slice(0, 8).map(d => el("li", {}, el("code", { text: d.slice(0, 2).trim() || "?" }), el("span", { text: d.slice(3) }))), ...k.commits.slice(0, 8).map(a => el("li", {}, el("code", { text: a.short }), el("span", { text: a.subject, title: a.subject })))),
+    where ? el("div", { class: "sup", text: `보관: ${where}` }) : null,
+    el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...off, onclick: ev => updKeep(ev.currentTarget) }, "내 수정을 보관하고 새 버전 받기")));
+}
 async function updSet(values) {
   try { UPD.info.settings = (await api("/api/update/settings", "PUT", values)).settings; } catch (e) { toast(e.message, true); }
   renderSettings();
@@ -91,17 +104,19 @@ function updateSection() {
     rows.push(el("div", { class: "upd-box" },
       el("div", { class: "hd", text: `새 커밋 ${c.incomingTotal}개 · ${c.upstream}` }),
       el("ul", { class: "upd-log" }, ...c.incoming.slice(0, 8).map(x => el("li", {}, el("code", { text: x.short }), el("span", { text: x.subject, title: x.subject }))), more > 0 ? el("li", { class: "dim" }, el("span", { text: `외 ${more}개` })) : null),
-      c.blocked.length ? el("div", { class: "upd-block" }, ...c.blocked.map(b => el("div", { text: b })), el("ul", { class: "upd-log" }, ...c.dirty.slice(0, 8).map(d => el("li", {}, el("code", { text: d.slice(0, 2).trim() || "?" }), el("span", { text: d.slice(3) }))), ...c.ahead.slice(0, 8).map(a => el("li", {}, el("code", { text: a.short }), el("span", { text: a.subject }))))) : null,
-      el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...(c.blocked.length || pending ? { disabled: true } : off), onclick: ev => updApply(ev.currentTarget) }, "지금 업데이트"), el("span", { class: "sup", text: disk && disk.kind === "tarball" ? "새로 받기 → 테스트 → 폴더 교체 → 재시작. 테스트가 실패하면 그대로 있어요." : "fast-forward → 테스트 → 재시작. 테스트가 실패하면 그대로 있어요." }))));
+      c.blocked.length ? el("div", { class: "upd-block" }, ...c.blocked.map(b => el("div", { text: b }))) : null,
+      c.keep ? updKeepBox(c.keep, pending ? { disabled: true } : off) : null,
+      c.ahead.length && !c.keep ? el("div", { class: "sup", text: `로컬 커밋 ${c.ahead.length}개는 새 버전 위에 자동으로 얹어요. 테스트가 실패하면 그대로 두고 알려요.` }) : null,
+      el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...(c.blocked.length || c.keep || pending ? { disabled: true } : off), onclick: ev => updApply(ev.currentTarget) }, "지금 업데이트"), el("span", { class: "sup", text: disk && disk.kind === "tarball" ? "새로 받기 → 테스트 → 폴더 교체 → 재시작. 테스트가 실패하면 그대로 있어요." : "fast-forward → 테스트 → 재시작. 테스트가 실패하면 그대로 있어요." }))));
   }
   if (jobRunning) rows.push(li(`업데이트 중 · ${job.phase}`, job.message, el("span", { class: "dot pri", "aria-hidden": "true" })));
-  else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.message })));
+  else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.keep && !(c && c.keep) ? job.keep.line : job.message }), job.keep && !(c && c.keep) ? updKeepBox(job.keep, pending ? { disabled: true } : off) : null));
   if (UPD.wait) rows.push(li("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`, el("span", { class: "dot pri", "aria-hidden": "true" })));
   else if (pending) rows.push(li(`새 버전 ${disk.commit.short} 받음`, "재시작하면 적용돼요", el("button", { class: "btn", type: "button", onclick: () => updRestart() }, "재시작")));
   rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "매일 자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알림과 함께 아래 자동 적용이 처리해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
     s.auto_check ? el("input", { class: "upd-at", type: "time", value: s.at, "aria-label": "확인 시각", onchange: ev => updSet({ at: ev.currentTarget.value }) }) : null,
     el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "매일 자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) })));
-  rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "확인에서 새 버전이 있고 변경·로컬 커밋이 없으면 받아서 테스트하고, 하던 일이 끝나면 다시 시작해요. 실패하면 되돌리고 알려요." })),
+  rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "확인에서 새 버전이 있으면 받아서 테스트하고, 하던 일이 끝나면 다시 시작해요. 내 로컬 커밋은 새 버전 위에 얹어 보고, 안 되면 개발자 폴더가 아닌 설치본만 보관하고 새 버전으로 바꿔요. 실패하면 되돌리고 알려요." })),
     el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) })));
   return [head, el("div", { class: "list" }, ...rows)];
 }
