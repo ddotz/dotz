@@ -208,16 +208,19 @@ kkTa.addEventListener("keydown", ev => {
 kkSendBtn.addEventListener("pointerdown", ev => ev.preventDefault());
 kkTl.addEventListener("scroll", () => kkSyncStick(), { passive: true });
 for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) kkTl.addEventListener(ev, () => { KK.pin = ""; }, { passive: true });
-// The pane resizes when the keyboard opens or the composer grows: a view at the bottom stays there; one anchored on the unread line is put back.
+// The pane resizes when the keyboard opens or the composer grows: a view at the bottom stays there.
 let kkH = 0;
 new ResizeObserver(() => {
   const h = kkTl.clientHeight, grew = kkH && h !== kkH;
   kkH = h;
   if (!h || !KK.open || KK.loading) return;
-  if (KK.pin === "div") kkPlace();
-  else if (grew && KK.stick && kkTl.scrollHeight - kkTl.scrollTop - h > 1) kkTl.scrollTop = kkTl.scrollHeight;
+  if (grew && KK.stick && kkTl.scrollHeight - kkTl.scrollTop - h > 1) kkTl.scrollTop = kkTl.scrollHeight;
   else if (!KK.placed) kkPlace();
 }).observe(kkTl);
+// The content grows after it is painted (an image box, a font, a bubble that wraps): a view at the bottom keeps the newest message in sight.
+new ResizeObserver(() => {
+  if (KK.open && !KK.loading && KK.placed && KK.stick && kkTl.scrollHeight - kkTl.scrollTop - kkTl.clientHeight > 1) kkTl.scrollTop = kkTl.scrollHeight;
+}).observe(kkIn);
 
 /* ---- rooms: choose which to watch, and the watched ones as conversation rows ---- */
 async function kkLoadRooms() {
@@ -373,17 +376,16 @@ function kkPaintTl(stick) {
   kkTl.scrollTop = stick ? kkTl.scrollHeight : keep;
   kkSyncStick();
 }
-// Where the unread line goes: before the first message after the web's read position; never opened: KakaoTalk's own unread count says how many of the newest are unread.
+// Where the unread line goes (it is drawn, the view still opens at the newest message): before the first message after the web's read position; never opened: KakaoTalk's own unread count says how many of the newest are unread.
 function kkMarker(msgs, read, unread) {
   if (read != null) { const m = msgs.find(x => !x.fromMe && kkGt(x.logId, read)); return m ? m.logId : ""; }
   if (unread > 0) { const tail = msgs.filter(x => !x.fromMe).slice(-unread); return tail.length ? tail[0].logId : ""; }
   return "";
 }
+// A room opens at its newest message, like KakaoTalk.
 function kkPlace() {
   if (!kkTl.clientHeight) return;
-  const m = kkIn.querySelector(".kk-new");
-  if (m && KK.pin !== "bottom") kkTl.scrollTop = Math.max(0, kkTl.scrollTop + m.getBoundingClientRect().top - kkTl.getBoundingClientRect().top - 12);
-  else kkTl.scrollTop = kkTl.scrollHeight;
+  kkTl.scrollTop = kkTl.scrollHeight;
   KK.placed = true;
   kkSyncStick();
 }
@@ -409,7 +411,7 @@ async function kkOpen(id) {
     KK.room = d.room || KK.room; KK.msgs = Array.isArray(d.messages) ? d.messages : []; KK.read = d.read ?? null;
     KK.drafts = Array.isArray(d.drafts) ? d.drafts : []; KK.sends = Array.isArray(d.sends) ? d.sends : [];
     KK.more = KK.msgs.length >= KK_PAGE; KK.div = kkMarker(KK.msgs, KK.read, d.kakaoUnread | 0);
-    KK.loading = false; KK.pin = KK.div ? "div" : "bottom";
+    KK.loading = false; KK.pin = "bottom";
     kkPaintAll(); convTitle();
     kkPlace();
   } catch (e) {
@@ -452,8 +454,15 @@ async function kkTail() {
   try {
     do {
       KK.again = false;
-      const last = KK.msgs.length ? KK.msgs[KK.msgs.length - 1].logId : "";
-      const d = await api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}${last ? `&after=${enc(last)}` : ""}`);
+      // Pages of rows after the newest one we hold: a full page means more wait behind it (a burst of more than KK_PAGE).
+      for (let fresh = KK_PAGE; fresh >= KK_PAGE;) {
+        const last = KK.msgs.length ? KK.msgs[KK.msgs.length - 1].logId : "";
+        const d = await api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}${last ? `&after=${enc(last)}` : ""}`);
+        if (KK.open !== id) return;
+        fresh = kkApply(d);
+      }
+      // A row can land below the newest logId we hold (a late sync): the newest page is read again and merged in logId order.
+      const d = await api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}`);
       if (KK.open !== id) return;
       kkApply(d);
     } while (KK.again);
@@ -464,12 +473,13 @@ function kkApply(d) {
   if (Array.isArray(d.drafts)) KK.drafts = d.drafts;
   if (Array.isArray(d.sends)) KK.sends = d.sends;
   if (d.room) KK.room = d.room;
-  KK.msgs.push(...fresh);
+  if (fresh.length) KK.msgs = [...KK.msgs, ...fresh].sort((a, b) => (kkGt(a.logId, b.logId) ? 1 : kkGt(b.logId, a.logId) ? -1 : 0));
   const stick = KK.stick || fresh.some(m => m.fromMe);
   if (fresh.some(m => !m.fromMe) && !stick) { KK.pill = true; kkPill.hidden = false; }
   if (stick) KK.pin = "bottom";
   kkPaintTl(stick);
   kkPaintFoot();
+  return fresh.length;
 }
 function kkMaybeRead() {
   if (!KK.open || !KK.placed || !KK.stick || KK.loading || !kkSeen()) return;
