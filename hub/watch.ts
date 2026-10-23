@@ -433,7 +433,11 @@ export function patchWatch(idOrName: string, input: Record<string, unknown>): Re
 		new RegExp(pattern);
 	} else if (input.pattern !== undefined) throw new Error("pattern only applies to on=match");
 	if (input.paused !== undefined && typeof input.paused !== "boolean") throw new Error("paused must be true or false");
+	if (input.label !== undefined && (typeof input.label !== "string" || !input.label.trim() || input.label.length > 60)) throw new Error("label must be 1-60 chars");
+	if (input.to !== undefined && (typeof input.to !== "string" || !/^[a-z0-9:-]{1,40}$/.test(input.to))) throw new Error("to must be orchestrator, alert or chat");
 	w.every_minutes = every;
+	if (input.label !== undefined) w.label = (input.label as string).trim();
+	if (input.to !== undefined) w.to = input.to as string;
 	w.on = on;
 	if (on === "match") w.pattern = pattern;
 	else delete w.pattern;
