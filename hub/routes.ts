@@ -31,6 +31,7 @@ import { appAsset, committedText, indexPage, webBuild } from "./webapp.ts";
 import { listPeers } from "./peers.ts";
 import { checkPeer } from "./peer-auth.ts";
 import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
+import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { hostname } from "node:os";
 import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
@@ -137,6 +138,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (url.pathname === "/api/health") return json({ ok: true });
 		if (req.method === "GET" && url.pathname === "/api/peers") return json(await listPeers());
+		// Send lease of another gateway (hub/send-lease.ts): claim, release or record a sent id before an app message goes out.
+		if (req.method === "POST" && url.pathname === "/api/peer/lease") return json(handleLease((await body(req)) as LeaseReq, Date.now()));
 		// This computer's name for the settings screen: the one in use, the one the owner set (empty = none), and the hostname default.
 		if (url.pathname === "/api/machine" && req.method === "GET") return json({ name: resolveName(cfg.web?.machine_name, hostname()), custom: cleanName(cfg.web?.machine_name), default: friendlyName(hostname()) });
 		if (url.pathname === "/api/machine" && req.method === "PUT") {
