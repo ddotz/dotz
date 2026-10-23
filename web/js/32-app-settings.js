@@ -52,20 +52,87 @@ function asRemoveNode(app) {
     p.data.length ? el("label", { class: "as-del" }, cb, el("span", { text: `저장된 데이터(${p.data.join(", ")})도 지우기. 체크하지 않으면 남겨요` })) : null,
     el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-as-rm": "go", onclick: () => asRemoveGo(app) }, "제거 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
-// 앱 추가: the apps that are off here (or never set up). Turning one on again restores it; one that has nothing set up starts its setup in the main chat.
-function asAddMenu(anchor) {
-  showMenu(anchor, INTG.available.map(a => ({ value: a.key, label: a.label, sub: a.off ? "꺼져 있어요. 다시 켜요" : "아직 연결 안 했어요" })), { onPick: asAdd });
+// 앱 추가: the last row of the 앱 group opens a sheet. It lists only the apps this computer (and each other computer, labeled with its name) had and
+// the owner switched off or removed, each with 다시 켜기, then 새로 추가하기: the chat box opens on the main orchestrator with a detailed activation
+// prompt (GET /api/app-templates, hub/app-templates.ts) the owner edits before sending. A chip row above the box swaps the template.
+const AT = { items: [], key: "", h: null };
+const asOffApps = () => {
+  const peers = PQ.list.filter(p => p && p.url), me = peers.length ? pqSelf() : "";
+  return [...INTG.available.map(a => ({ ...a, pc: null, machine: me })),
+    ...peers.flatMap(p => ((p.items && p.items.available) || []).map(a => ({ ...a, pc: { name: p.name, url: p.url }, machine: p.name })))];
+};
+const asAddHint = () => asOffApps().map(a => a.label).join(" · ") || "새로 추가하기";
+async function asTplLoad() {
+  try { AT.items = (await api("/api/app-templates")).items || []; } catch { AT.items = []; }
 }
-async function asAdd(key) {
-  const a = INTG.available.find(x => x.key === key);
+async function asAddSheet() {
+  if (AT.h) return;
+  const h = AT.h = fsOpen({ labelledby: "as-add-t", onClose: () => { if (AT.h === h) AT.h = null; } });
+  asAddPaint();
+  await asTplLoad();
+  asAddPaint();
+}
+function asAddPaint() {
+  const h = AT.h;
+  if (!h) return;
+  const off = asOffApps();
+  for (const a of off) if (a.iconPath && !ICONS[a.icon]) ICONS[a.icon] = a.iconPath;
+  clear(h.box).append(
+    fsHead([el("h2", { class: "fs-t", id: "as-add-t", text: "앱 추가" })], { close: () => h.close() }),
+    el("div", { class: "fs-body" },
+      ...(off.length ? [el("div", { class: "as-sec", text: "꺼 둔 앱" }), ...off.map(a => el("div", { class: "as-row", "data-app": a.key },
+        el("span", { class: "as-ic", "aria-hidden": "true" }, icon(a.icon)),
+        el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.label }), el("span", { class: "as-h", text: a.machine ? `${a.machine} · 꺼져 있어요` : "꺼져 있어요" })),
+        el("button", { class: "btn tonal", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기")))] : []),
+      el("div", { class: "as-sec", text: "새로 추가하기" }),
+      el("div", { class: "as-h as-lead", text: "원하는 앱을 말로 만들어요. 채팅 입력칸에 활성화 요청이 채워지고, 보내기 전에 고칠 수 있어요." }),
+      el("div", { class: "as-tpls" }, ...AT.items.map(t => el("button", { class: "as-tpl", type: "button", "data-tpl": t.key, onclick: () => asNewApp(t.key) }, t.label))),
+      el("button", { class: "btn", type: "button", "data-k": "new", disabled: !AT.items.length, onclick: () => asNewApp("custom") }, "새로 추가하기")));
+}
+async function asNewApp(key) {
+  if (!AT.items.length) await asTplLoad();
+  const t = AT.items.find(x => x.key === key) || AT.items[AT.items.length - 1];
+  if (!t) return toast("템플릿을 불러오지 못했어요", true);
+  if (AT.h) AT.h.close(false);
+  ts("main").draft = t.text;
+  go("chat", "main");
+  AT.key = t.key;
+  asTplFill(t);
+}
+function asTplFill(t) {
+  ta.value = t.text; saveDraft(); autosize(); updateHints();
+  asTplPaint();
+  ta.focus({ preventScroll: true }); ta.setSelectionRange(0, 0); ta.scrollTop = 0;
+}
+// The chip row above the chat box while a template is in it; it ends when the message is sent or another conversation opens.
+function asTplPaint() {
+  let row = $("#app-tpl");
+  if (!AT.key) { if (row) row.hidden = true; return; }
+  if (!row) { row = el("div", { class: "tplrow", id: "app-tpl", role: "group", "aria-label": "앱 템플릿" }); $("#composer").insertBefore(row, $("#hints")); }
+  row.hidden = false;
+  clear(row).append(...AT.items.map(t => el("button", { class: "as-tpl", type: "button", "data-tpl": t.key, "aria-pressed": String(t.key === AT.key), onclick: () => { AT.key = t.key; asTplFill(t); } }, t.label)),
+    el("button", { class: "as-tpl as-tpl-x", type: "button", "aria-label": "템플릿 닫기", onclick: asTplEnd }, icon("close")));
+  const on = row.querySelector('[aria-pressed="true"]');
+  if (on) row.scrollLeft = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
+}
+function asTplEnd() { AT.key = ""; asTplPaint(); }
+function asTplSync() { if (AT.key && (target !== "main" || current !== "chat")) asTplEnd(); }
+async function asAdd(key, pc) {
+  const a = asOffApps().find(x => x.key === key && (x.pc ? x.pc.url : "") === (pc ? pc.url : ""));
   if (!a) return;
   try {
+    if (pc) {
+      await api(pqProxy(pc, "/api/peer/act"), "POST", { action: "app", args: { op: "add", app: key } });
+      toast(`${pc.name}에서 ${a.label}을(를) 다시 켰어요`);
+      await pqLoad(); asAddPaint(); return;
+    }
     const r = await api(`/api/integrations/${enc(key)}/add`, "POST", {});
     AS.load[key] = null;
     await loadIntegrations();
+    if (AT.h) AT.h.close(false);
     if (r.ready) { toast(`${a.label}을(를) 다시 켰어요`); go("monitoring", `i:${key}`); return; }
-    await api("/api/message", "POST", { text: `${a.label} 연결을 시작해 주세요` });
-    toast(`${a.label} 연결을 시작하도록 요청했어요`); go("chat", "main");
+    toast(`${a.label}을(를) 켰어요. 다시 연결할 내용을 채워 두었어요`);
+    await asNewApp(key === "site" ? "comments" : key);
   } catch (e) { toast(e.message || "앱을 추가하지 못했어요", true); }
 }
 

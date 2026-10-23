@@ -1,5 +1,5 @@
 // The merged 모니터링 across gateways (docs/peer-monitoring.md). Four routes, one cache:
-//   GET  /api/peer/monitoring     this gateway's snapshot {name, rev, monitors, notices, integrations, conversations}, ETag = rev
+//   GET  /api/peer/monitoring     this gateway's snapshot {name, rev, monitors, notices, integrations, available (the apps switched off there), conversations}, ETag = rev
 //   GET  /api/monitoring/peers    every other gateway's snapshot from the cache: [{name, url, online, stale, items}]
 //   GET|POST /api/peer/proxy      the page's way to a peer (pc must be a known peer origin; GET only the peer read list, POST only /api/peer/act)
 //   POST /api/peer/act            an action forwarded here; it runs through this gateway's own handlers, so the owner's web and history show it
@@ -12,7 +12,7 @@ import { knownComputers } from "./peers.ts";
 import { json } from "./routes-util.ts";
 
 export type Computer = { name: string; url: string; self: boolean };
-export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; conversations: unknown[] };
+export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[] };
 export type PeerView = { name: string; url: string; online: boolean; stale: boolean; items: Snapshot | null };
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 export type MonitorDeps = {
@@ -88,7 +88,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 
 	const PARTS = ["/api/monitors", "/api/notices?limit=100", "/api/integrations", "/api/conversations"];
 	const build = (name: string, [m, n, i, c]: any[]): Snapshot => {
-		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], conversations: (c?.items ?? []).filter(isConv) };
+		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv) };
 		return { ...part, rev: createHash("sha1").update(JSON.stringify(part)).digest("hex").slice(0, 12) };
 	};
 	const snapshot = async (): Promise<Snapshot> => build(deps.name(), await Promise.all(PARTS.map(read)));

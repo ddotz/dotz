@@ -50,7 +50,7 @@ describe("the switch", () => {
 		expect(keys()).not.toContain("mail");
 		const ctx = integrationContext(dir, ["zele"]);
 		expect(integrationAvailable(integrationItems(ctx, [], convs), ctx).find(a => a.key === "mail")).toMatchObject({ off: true, conv: ["mail:"] });
-		expect(integrationAvailable([], integrationContext(dir, []))).toHaveLength(5);
+		expect(integrationAvailable([], integrationContext(dir, [])).map(a => a.key)).toEqual(["mail"]);
 		turn("mail", true);
 		expect(keys()).toContain("mail");
 		const back = integrationContext(dir, ["zele"]);
