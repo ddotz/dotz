@@ -30,3 +30,20 @@
 .as-in { flex: none; width: 150px; height: 32px; }
 .as-in[type="number"] { width: 96px; text-align: right; }
 @media (max-width: 1099px) { .app-sw { margin-bottom: 4px; } }
+
+/* 앱 추가 (web/js/32-app-settings.js): the sheet and the template chips above the chat box. */
+.fs-body .as-sec { margin: 16px 0 4px; color: var(--fg-2); font: 600 13px/20px var(--font); }
+.fs-body .as-sec:first-child { margin-top: 0; }
+.fs-body .as-row { padding: 8px 0; }
+.as-ic { flex: none; display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 50%; background: var(--layer); color: var(--fg-2); }
+.as-ic svg { width: 18px; height: 18px; }
+.as-lead { margin-bottom: 8px; }
+.as-tpls, .tplrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.as-tpls { margin-bottom: 16px; }
+.tplrow { position: relative; flex-wrap: nowrap; overflow-x: auto; padding: 6px 12px 2px; scrollbar-width: none; }
+.tplrow[hidden] { display: none; }
+.as-tpl { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 32px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--layer); color: var(--fg-2); font: 500 13px/20px var(--font); cursor: pointer; }
+.as-tpl:hover { background: var(--hover); color: var(--fg); }
+.as-tpl[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.as-tpl-x { width: 32px; padding: 0; }
+.as-tpl-x svg { width: 14px; height: 14px; }

@@ -10,6 +10,7 @@ import { pushRoute } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
 import { readAppOff, integrationAvailable, integrationContext, integrationItems } from "./integrations.ts";
 import { removalPlan, removeApp } from "./app-off.ts";
+import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, removeWatch } from "./watch.ts";
 import { fieldsOf, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
 import { watchOfSubject } from "./watch-settings.ts";
@@ -163,6 +164,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
+		// The 새로 추가하기 prompts (hub/app-templates.ts): shipped ones, replaced or extended by custom/app-templates.json.
+		if (req.method === "GET" && url.pathname === "/api/app-templates") return json({ items: readAppTemplates(DATA_DIR) });
 		// 제거 / 앱 추가 on this install only (hub/app-off.ts): GET remove = what will be removed, POST remove = do it ({deleteData}), POST add = switch it back on.
 		const appLife = /^\/api\/integrations\/([a-z0-9-]+)\/(remove|add)$/.exec(url.pathname);
 		if (appLife) {

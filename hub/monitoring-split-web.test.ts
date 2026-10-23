@@ -41,7 +41,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		cardNode: () => { throw new Error("a fact card is not a conversation message"); },
 		ts: () => ({ unread: 0 }), narrowChat: () => false, go: (...a: string[]) => went.push(a), current: "monitoring", enc: encodeURIComponent,
 		api: async () => ({}), homeSoon: () => {}, titles: { monitoring: "모니터링" }, ntIsDec: (n: N) => n.kind === "decision" && !!n.decision, ntNeeds: () => false,
-		noticeOpen: () => {}, asPinnedRow: () => null, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {},
+		noticeOpen: () => {}, asPinnedRow: () => null, asAddHint: () => "", asAddSheet: () => {}, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {},
 	};
 	const body = `${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
 NM.items = MONS; NM.loaded = true;
@@ -94,15 +94,15 @@ describe("모니터링 lists only what a watch, a schedule or an integration pro
 });
 
 describe("모니터링 list order", () => {
-	test("감시 소식 first, then the 앱 group (the integrations), then the 일반 모니터링 group (the monitors)", () => {
+	test("감시 소식 first, then the 앱 group (the integrations, 앱 추가 last), then the 일반 모니터링 group (the monitors)", () => {
 		const m = load(store(), integrations, monitors), rows = m.monRows(m.monItems(), null);
 		const order = rows.map(r => (r.header ? `#${r.header}` : String(r.k)));
-		expect(order).toEqual(["notice", "#앱", "i:mail", "i:kakao", "#일반 모니터링", "m:node security updates"]);
+		expect(order).toEqual(["notice", "#앱", "i:mail", "i:kakao", "add-app", "#일반 모니터링", "m:node security updates"]);
 	});
 
-	test("an integration without a kind is an app; no 앱 header when none is enabled", () => {
+	test("an integration without a kind is an app; 앱 추가 alone under the 앱 header when none is enabled", () => {
 		const m = load([], [], monitors);
-		expect(m.monRows(m.monItems(), null).map(r => (r.header ? `#${r.header}` : String(r.k)))).toEqual(["notice", "#일반 모니터링", "m:node security updates"]);
+		expect(m.monRows(m.monItems(), null).map(r => (r.header ? `#${r.header}` : String(r.k)))).toEqual(["notice", "#앱", "add-app", "#일반 모니터링", "m:node security updates"]);
 	});
 });
 

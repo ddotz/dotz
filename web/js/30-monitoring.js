@@ -122,13 +122,17 @@ function monState(it) {
 /* ---- the list ---- */
 function monRows(items, sel) {
   const rows = [];
-  let group = null;
+  let group = null, added = false;
+  // 앱 추가 is the last row of the 앱 group, right under the apps; with no app yet it is the group's only row.
+  const addRow = () => { added = true; rows.push({ k: "add-app", name: "앱 추가", av: monIcon("add"), hint: asAddHint(), sel: false, open: () => asAddSheet() }); };
   for (const it of items) {
+    if (group === MON_GROUP.app && it.group !== group && !added) addRow();
+    if (it.group === MON_GROUP.plain && !added) { rows.push({ header: MON_GROUP.app }); addRow(); }
     if (it.group && it.group !== group) rows.push({ header: it.group });
     group = it.group;
     rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", it.key) });
   }
-  if (INTG.available.length) rows.push({ k: "add-app", name: "앱 추가", av: monIcon("add"), hint: INTG.available.map(a => a.label).join(" · "), sel: false, open: ev => asAddMenu(ev.currentTarget) });
+  if (!added) { if (group !== MON_GROUP.app) rows.push({ header: MON_GROUP.app }); addRow(); }
   if (!NM.loaded) rows.push({ header: NM.failed ? "모니터링을 불러오지 못했어요" : "모니터링 불러오는 중…" });
   return rows;
 }
