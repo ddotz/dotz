@@ -12,7 +12,7 @@ import { integrationContext, integrationItems } from "./integrations.ts";
 import { markRead } from "./reads.ts";
 import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
-import { MailError, mailByKey, mailTargets, postMail, type MailDeps } from "./mail.ts";
+import { MailError, attachmentList, mailByKey, mailFileRoute, mailTargets, postMail, type MailDeps } from "./mail.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
@@ -192,10 +192,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "GET" && url.pathname === "/api/conversations") {
 			const items = conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).map(c => {
 				const m = c.target.startsWith("mail:") ? mailByKey(c.target.slice(5)) : undefined;
-				return m ? { ...c, mail: { subject: m.subject, from: m.from, source: m.source, at: m.at } } : c;
+				return m ? { ...c, mail: { subject: m.subject, from: m.from, source: m.source, at: m.at, ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}) } } : c;
 			});
 			return json({ items });
 		}
+		// One attached file of a mail: only files the mail's own record names, only inside the mail files folder (hub/mail.ts).
+		const mailFile = (req.method === "GET" || req.method === "HEAD") && /^\/api\/mail\/([a-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
+		if (mailFile) return mailFileRoute(req, url, mailFile[1]!, mailFile[2]!);
 		// A mail from an outside poster (a webmail watcher, a custom plugin): one conversation per mail (hub/mail.ts, docs/custom-plugins.md).
 		if (req.method === "POST" && url.pathname === "/api/mail") {
 			if (!mailDeps) return json({ error: "mail is not wired in this process" }, 503);
