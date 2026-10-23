@@ -2,7 +2,7 @@
 
 Shipped feature folder, off by default and turned on per install (`bin/onboard.ts on` writes a personal `feature.md` with
 `enabled: true`, like webmail-no-api). Distribution rule: no person's name, account, address or tone sample in the repo; the
-tone is learned per install and lives only under `<DATA_DIR>/custom/reply-drafts/`.
+tone is learned per install, from that install's user, and lives only under `<DATA_DIR>/custom/reply-drafts/`.
 
 ## Mechanism (generic engine in `hub/reply-draft.ts`)
 
@@ -13,25 +13,47 @@ tone is learned per install and lives only under `<DATA_DIR>/custom/reply-drafts
 3. Deterministic lint (recipient is the sender/reply-to/cc and not the user, `Re:` subject, length, no placeholders, no forbidden
    expression). One retry with the failures listed; what still fails is shown as a warning with the draft.
 4. The same lint runs again right before sending (`draft.ts send`).
-5. Each 2) 고치기 text is stored verbatim and dated in `style.md` under `## 고친 점`.
+5. Each 2) 고치기 text is stored verbatim and dated under `## 고친 점` of the tone profile of the draft that was revised (its room, else its app).
 6. `drafts.json` remembers every mail key already looked at, so a mail is not drafted twice.
 
 ## Approval
 
 The offer is a `[ask]` built by `draftApprovalBlock` (1) 보내기 / 2) 고치기 / 3) 보내지 않기). `draft.ts send <id>` goes out only
-when `draftVerdict` (hub/draft-approval.ts) finds the owner's latest pick for exactly that id, made after the draft was created,
+when `draftVerdict` (hub/draft-approval.ts) finds the user's latest pick for exactly that id, made after the draft was created,
 to be 보내기. Without a pick, with a pick for another id, after 고치기 or 보내지 않기: refused.
 
 ## Files (`<DATA_DIR>/custom/reply-drafts/`)
 
 - `config.json` `{enabled, auto, senders: {only, skip}, model?}`; a missing file means off.
-- `style.md` sections `## 말투`, `## 예시`, `## 고친 점`, `## 금지` (bullets). For comments `## 예시` of `custom/sns/tone.md` is merged in.
-- `drafts.json` `{drafts, keys}`; draft ids are `R` + 6 base32 characters; a newer draft for the same mail makes the older one stale.
+- `tone/` the tone store, one markdown file per profile, each with the sections `## 말투`, `## 예시`, `## 고친 점`, `## 금지` (bullets):
+  - `tone/install.md` the whole install (fallback of everything);
+  - `tone/<app>.md` one app: `mail`, `youtube`, `instagram`, `blog`, `kakao`, ... (app id `[a-z0-9-]`; `install` is reserved);
+  - `tone/<app>/<room>.md` one conversation of a messenger (room id reduced to `[A-Za-z0-9_-]`, so it is always a safe file name).
+  Reading (`loadStyle({app, room?})`): the 예시 come from the narrowest profile that has any (room -> app -> install) and the result says
+  which level that was; 말투, 고친 점 and 금지 are merged from all levels, install first and the narrower ones later. Writing
+  (`learnTone`, `recordCorrection`) goes into exactly one profile. Two rooms of one messenger therefore never share a tone, a room
+  that was never written to follows its app, an app without samples follows the install.
+  Legacy: an old `style.md` is read as the `mail` profile until `tone/mail.md` exists (the next write moves it over); for the `youtube`
+  and `instagram` apps without samples, `## 예시` of `custom/sns/tone.md` is used (only for those apps, between app and install).
+- `drafts.json` `{drafts, keys}`; draft ids are `R` + 6 base32 characters; a newer draft for the same mail makes the older one stale. Each draft keeps its `app` and `room`.
+
+## How a new install's tone is learned
+
+1. `onboard.ts on`: the `mail` profile from the user's sent mail when zele is on (`zele mail list --folder sent`, then `zele mail read <id>`).
+   Comment tone needs no step: `custom/sns/tone.md` examples are read for `youtube` and `instagram` until those apps have their own.
+2. `onboard.ts learn [--app <app|install>] [--room <id>] [--from-file <f>]`: sentences of a file into a chosen profile (default `mail`).
+3. KakaoTalk: the first `draft.ts new --app kakao --room <chat id> --kind chat` of a room with an empty profile reads the user's own
+   lines of that room from the hub/kakao reader (`lib/kakao-tone.ts`) and learns `tone/kakao/<chat id>.md`. Only that room's lines.
+4. Then every 고치기: `draft.ts revise` records it in the draft's room (else app) profile; for a chat reply the orchestrator runs
+   `draft.ts correct --app kakao --room <id> --change <text>`.
 
 ## Code
 
-- `lib/offer.ts` `offerMailDraft`: the gateway hook for a new mail (off unless enabled and auto; never throws).
+- `lib/offer.ts` `offerMailDraft`: the gateway hook for a new mail (off unless enabled and auto; never throws; a failure is logged and returns `failed`). `hub/main.ts` wires it into `mailDeps().offerDraft`.
 - `lib/flow.ts` build / revise / send / drop shared by the offer and `bin/draft.ts`.
-- `lib/tone.ts` sentence extraction (3-120 chars, quoted history and signatures dropped, deduped, at most 40) from injected sources.
-- `lib/senders.ts` mail CLI reply, or a webmail-no-api site's draft/approve/send; anything else is refused ("직접 보내야 해요").
+- `lib/tone.ts` sentence extraction (3-120 chars, quoted history and signatures dropped, deduped, at most 40) from injected sources, into one profile.
+- `lib/kakao-tone.ts` the user's own text lines of one KakaoTalk room (injected reader, fixture in tests) -> `kakao/<chat id>`.
+- `lib/senders.ts` zele: `zele mail read <id>` first (zele refuses a reply otherwise), then `zele mail reply <id> --to <to> --body <body>`; a refused
+  reply is reported as a stale draft to redraft. Or a webmail-no-api site's draft/approve/send; anything else is refused ("직접 보내야 해요").
+  `readMailBody(source, id, run)` gives the gateway offer the mail text (zele read, or the site's `mail.ts <site> read <id>`).
 - The model call is injected; the default is `hub/outlang.ts callModel` (subscription only, never an API key).

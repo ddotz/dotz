@@ -1,8 +1,8 @@
 // Learning the user's tone: the user's own sent texts -> sentences of 3-120 characters, quoted history and signatures dropped,
-// deduped, at most 40 -> the "## 예시" section of style.md. The sources are injected (a command runner for the sent-mail reader,
-// a file), so tests never touch mail. Comment tone is read live from the youtube-instagram feature's tone.md (settings.loadStyle).
+// deduped, at most 40 -> the "## 예시" section of ONE tone profile (settings.ts: install, app or app+room). The sources are injected
+// (a command runner for the sent-mail reader, a file, ready-made texts such as one messenger room's own lines), so tests never touch mail.
 import { readFileSync } from "node:fs";
-import { writeExamples } from "./settings.ts";
+import { writeExamples, type ToneKey } from "./settings.ts";
 
 export type RunResult = { code: number; stdout: string; stderr: string };
 export type Runner = (argv: string[]) => Promise<RunResult>;
@@ -70,7 +70,7 @@ export function pickExamples(texts: string[], max = MAX_EXAMPLES): string[] {
 
 // The user's sent mail through the mail CLI (newest first as it lists them); a mail whose body cannot be read falls back to its snippet.
 export async function sentMailTexts(run: Runner, limit = MAX_EXAMPLES): Promise<string[]> {
-	const listed = await run(["zele", "mail", "list", "--filter", "in:sent", "--limit", String(limit)]);
+	const listed = await run(["zele", "mail", "list", "--folder", "sent", "--limit", String(limit)]);
 	if (listed.code !== 0) throw new Error(`보낸 메일 목록을 못 읽었어요: ${(listed.stderr || listed.stdout).trim().slice(0, 160)}`);
 	const items = ((Bun.YAML.parse(listed.stdout) as { items?: Record<string, unknown>[] } | null)?.items ?? []).slice(0, limit);
 	const texts: string[] = [];
@@ -83,22 +83,28 @@ export async function sentMailTexts(run: Runner, limit = MAX_EXAMPLES): Promise<
 	return texts;
 }
 
+// Only an install whose config.json turned zele on reads mail with it (MODE: zele.enabled true); an installed CLI alone is not enough.
 export function zeleEnabled(config: Record<string, any> | undefined): boolean {
-	return config?.zele?.enabled !== false && !!Bun.which("zele");
+	return config?.zele?.enabled === true && !!Bun.which("zele");
 }
 
-export type LearnOpts = { fromFile?: string; run?: Runner; zeleOn?: boolean };
+export type LearnOpts = { fromFile?: string; run?: Runner; zeleOn?: boolean; texts?: string[]; textsLabel?: string };
 export type LearnResult = { examples: string[]; from: string[]; warning?: string };
 
-export async function learnTone(opts: LearnOpts): Promise<LearnResult> {
+// The sent-mail source (zele) belongs to the mail app only; any key can take a file or ready-made texts.
+export async function learnTone(key: ToneKey | "install", opts: LearnOpts): Promise<LearnResult> {
 	const texts: string[] = [];
 	const from: string[] = [];
+	if (opts.texts?.length) {
+		texts.push(...opts.texts);
+		from.push(opts.textsLabel ?? `보낸 글 ${opts.texts.length}개`);
+	}
 	if (opts.fromFile) {
 		texts.push(readFileSync(opts.fromFile, "utf8"));
 		from.push("파일");
 	}
 	let warning: string | undefined;
-	if (opts.zeleOn && opts.run) {
+	if (opts.zeleOn && opts.run && key !== "install" && key.app === "mail" && key.room === undefined) {
 		try {
 			const mails = await sentMailTexts(opts.run);
 			texts.push(...mails);
@@ -108,7 +114,7 @@ export async function learnTone(opts: LearnOpts): Promise<LearnResult> {
 		}
 	}
 	const examples = pickExamples(texts);
-	if (examples.length) writeExamples(examples);
+	if (examples.length) writeExamples(key, examples);
 	return { examples, from, ...(warning ? { warning } : {}) };
 }
 
