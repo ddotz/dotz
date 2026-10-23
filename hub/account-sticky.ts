@@ -6,8 +6,11 @@
 // another one (auth.json "anthropic-subscription".pinned). Unpinning keeps the current account. Every switch is logged
 // with its reason (hub.log and <DATA_DIR>/account-switches.jsonl) and shown on the usage screen.
 //
-// The account reaches OmO as SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT, a soft pin: OmO still moves a request to another account
-// when this one is blocked (account fallback stays on), so a limit never strands a turn. A process dotz spawns starts with
+// The account reaches OmO as SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT. In the automatic mode it is a soft pin: OmO still moves a
+// request to another account when this one is blocked (account fallback stays on), so a limit never strands a turn. In the
+// owner's 고정 mode (a manual pick, Decision.hard) dotz also sets SENPI_CLAUDE_SDK_OAUTH_ACCOUNT_FALLBACK=0 (OmO docs/providers.md:
+// "to stop instead of spending another account's allowance"; affinity.js selectAccount and failover.js runFailover then try only
+// the pinned account), so a limit pauses the work until it resets instead of moving it. A process dotz spawns starts with
 // it (stickyEnv), and a running one follows a switch without a restart: the dotz extension asks the hub
 // (POST /api/accounts/check) at the start of every turn and sets the variable in its own process, which OmO's
 // anthropic-subscription stream re-reads on each request. The decision is also kept in <DATA_DIR>/account.json, which the
@@ -22,10 +25,11 @@ import { accountHistoryDays, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { blockOf, usedAccount } from "./usage-account.ts";
 
 export const PIN_ENV = "SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT";
+export const FALLBACK_ENV = "SENPI_CLAUDE_SDK_OAUTH_ACCOUNT_FALLBACK";
 export type SwitchKind = "start" | "limit" | "owner" | "gone" | "rule" | "script" | "manual";
 export type AccountSwitch = { at: string; from?: string; to: string; kind: SwitchKind; reason: string; rule?: string };
 export type Pool = { names: string[]; pinned?: string; blocked: Record<string, { until?: number; reason: string }>; lastSuccess: Record<string, number> };
-type Saved = { account?: string; since?: string; reason?: string; used?: string };
+type Saved = { account?: string; since?: string; reason?: string; used?: string; hard?: boolean };
 // The account requests really go to changed (usedAccount): `cause` says why, in machine terms (hub/accounts-api.ts words it).
 export type UsedChange = { at: string; from: string; to: string; cause: "limit" | "auth_error" | "gone" | "switch" | "restored"; switchKind?: SwitchKind; rule?: string; until?: number };
 
@@ -184,6 +188,11 @@ export function currentAccount(): string | undefined {
 	saved ??= readJson(stateFile()) ?? {};
 	return saved?.account;
 }
+// True while the owner's 고정 mode holds the account (OmO may not fall back).
+export function hardPinned(now = Date.now()): boolean {
+	stickyAccount(now);
+	return Boolean(saved?.hard);
+}
 
 // The account dotz runs on now: the owner's rules, then the automatic pick. Re-checked when auth.json, the pool state, the
 // rules file, the usage numbers or the script's opinion changed, or once a minute (block expiry, time windows).
@@ -198,12 +207,15 @@ export function stickyAccount(now = Date.now()): string | undefined {
 	const { change, ...decision } = evaluate({ now, pool: pool && pool.pinned && pool.pinned === ownPin() ? { ...pool, pinned: undefined } : pool, current: saved?.account, usage: getUsage(), rules: readRules(), script: getScriptOpinion(), aliases: readAliases() });
 	const account = decision.account;
 	if (pool) record(decision);
-	const used = pool ? usedAccount(account, pool.names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0) : undefined;
-	if (pool && used && saved?.used !== used) {
+	const hard = Boolean(decision.hard);
+	// 고정: requests stay on the pinned account even while it is blocked
+	const used = pool ? (hard ? account : usedAccount(account, pool.names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0)) : undefined;
+	if (pool && used && (saved?.used !== used || Boolean(saved?.hard) !== hard)) {
 		const from = saved?.used;
-		saved = { ...saved, used };
+		saved = { ...saved, used, hard };
+		if (!hard) delete saved.hard;
 		writeAtomic(stateFile(), `${JSON.stringify(saved, null, 2)}\n`);
-		if (from && !quiet) {
+		if (from && from !== used && !quiet) {
 			const b = pool.blocked[from];
 			const c: UsedChange = { at: new Date(now).toISOString(), from, to: used, cause: !pool.names.includes(from) ? "gone" : b ? (blockedKind(b.reason) === "auth_error" ? "auth_error" : "limit") : change?.to === used ? "switch" : "restored", ...(b?.until ? { until: b.until } : {}), ...(change?.to === used ? { switchKind: change.kind, ...(change.rule ? { rule: change.rule } : {}) } : {}) };
 			log(`account used: ${from} -> ${used} (${c.cause})`);
@@ -213,7 +225,7 @@ export function stickyAccount(now = Date.now()): string | undefined {
 	// Landing on the account it already runs on is no switch: nothing is recorded and `since` stays.
 	if (!change || change.to === saved?.account) return account;
 	const s: AccountSwitch = { at: new Date(now).toISOString(), ...change };
-	saved = { account, since: s.at, reason: s.reason, ...(saved?.used ? { used: saved.used } : {}) };
+	saved = { account, since: s.at, reason: s.reason, ...(saved?.used ? { used: saved.used } : {}), ...(hard ? { hard } : {}) };
 	writeAtomic(stateFile(), `${JSON.stringify(saved, null, 2)}\n`);
 	writeAtomic(switchesFile(), `${dropNoops([...readSwitches(now), s]).slice(-MAX_LOG_LINES).map(x => JSON.stringify(x)).join("\n")}\n`);
 	log(`account ${s.kind}: ${s.from ? `${s.from} -> ` : ""}${s.to} (${s.reason})`);
@@ -221,10 +233,11 @@ export function stickyAccount(now = Date.now()): string | undefined {
 	return account;
 }
 
-// What a spawned OmO process gets: its soft pin to the sticky account (nothing when OmO has no subscription accounts).
+// What a spawned OmO process gets: its pin to the sticky account (soft, or hard with fallback off in 고정 mode); nothing when
+// OmO has no subscription accounts.
 export function stickyEnv(now = Date.now()): Record<string, string> {
 	const a = stickyAccount(now);
-	return a ? { [PIN_ENV]: a } : {};
+	return a ? { [PIN_ENV]: a, ...(saved?.hard ? { [FALLBACK_ENV]: "0" } : {}) } : {};
 }
 
 // The usage screen: the account, since when and why, and the latest switches (newest first).

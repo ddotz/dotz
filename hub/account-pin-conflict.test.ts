@@ -3,7 +3,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { aliasesFile } from "./account-alias.ts";
 import { decisionsFile, rulesFile, setManual } from "./account-rules.ts";
-import { PIN_ENV, resetStickyForTest, stickyAccount, stickyEnv, switchesFile } from "./account-sticky.ts";
+import { FALLBACK_ENV, PIN_ENV, resetStickyForTest, stickyAccount, stickyEnv, switchesFile } from "./account-sticky.ts";
 import { accountsBody } from "./accounts-api.ts";
 import { authFile } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
@@ -33,19 +33,20 @@ afterEach(() => {
 	resetStickyForTest();
 });
 
-test("hard pin miseol + manual pick default, default blocked in auth.json: shown, pinned and used account are all miseol", () => {
+test("고정: OmO pins miseol, the owner picked default, default blocked in auth.json: default stays (hard), fallback is off", () => {
 	writeAuth({ defaultBlockedUntil: BLOCKED_UNTIL, pinned: "miseol-shared" });
 	setManual("default");
 	const shown = stickyAccount(NOW);
-	expect(shown).toBe("miseol-shared");
-	expect(stickyEnv(NOW)).toEqual({ [PIN_ENV]: "miseol-shared" });
-	expect(subscriptionAccount(authFile(), NOW, shown)).toMatchObject({ name: "miseol-shared", pinned: true });
+	expect(shown).toBe("default");
+	expect(stickyEnv(NOW)).toEqual({ [PIN_ENV]: "default", [FALLBACK_ENV]: "0" });
+	expect(subscriptionAccount(authFile(), NOW, shown, true)).toMatchObject({ name: "default", pinned: false });
 	const body = accountsBody(NOW);
-	expect(body.accounts.find(a => a.name === "default")).toMatchObject({ current: false, blocked: "rate_limit", blocked_until: new Date(BLOCKED_UNTIL).toISOString() });
-	expect(body.accounts.find(a => a.name === "miseol-shared")?.current).toBe(true);
+	expect(body.accounts.find(a => a.name === "default")).toMatchObject({ current: true, blocked: "rate_limit", blocked_until: new Date(BLOCKED_UNTIL).toISOString() });
+	expect(body.accounts.find(a => a.name === "miseol-shared")?.current).toBe(false);
+	expect(body.mode).toBe("pinned");
+	expect(body.chosen).toMatchObject({ name: "default", used_instead: null });
 	expect(body.manual_text).toContain("한도에 걸려서");
-	expect(body.manual_text).toContain("01:00까지 못 써요");
-	expect(body.manual_text).toContain("miseol-shared");
+	expect(body.manual_text).toContain("01:00까지 멈춰 있어요");
 });
 
 test("hard pin miseol + manual pick default, default usable: the pick is shown and used (dotz's pin outranks OmO's stored pin)", () => {
@@ -53,16 +54,16 @@ test("hard pin miseol + manual pick default, default usable: the pick is shown a
 	setManual("default");
 	const shown = stickyAccount(NOW);
 	expect(shown).toBe("default");
-	expect(stickyEnv(NOW)).toEqual({ [PIN_ENV]: "default" });
+	expect(stickyEnv(NOW)).toEqual({ [PIN_ENV]: "default", [FALLBACK_ENV]: "0" });
 	expect(subscriptionAccount(authFile(), NOW, shown)).toMatchObject({ name: "default", pinned: false, sticky: true });
 	const body = accountsBody(NOW);
 	expect(body.accounts.find(a => a.name === "default")).toMatchObject({ current: true, blocked: null });
 	expect(body.manual_text).not.toContain("못 써요");
 });
 
-test("the manual pick takes effect again once the auth.json block has elapsed", () => {
+test("고정 holds while the block lasts and after it elapsed", () => {
 	writeAuth({ defaultBlockedUntil: BLOCKED_UNTIL, pinned: "miseol-shared" });
 	setManual("default");
-	expect(stickyAccount(NOW)).toBe("miseol-shared");
+	expect(stickyAccount(NOW)).toBe("default");
 	expect(stickyAccount(BLOCKED_UNTIL + MIN)).toBe("default");
 });

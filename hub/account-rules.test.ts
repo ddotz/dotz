@@ -106,8 +106,8 @@ test("manual beats rules and the script; an expired manual pick is ignored", () 
 	expect(ev({ rules: expired })).toMatchObject({ account: "work", source: "rule" });
 	const active: Rules = { manual: { account: "회사 계정", until: new Date(WED_10 + MIN).toISOString() } };
 	expect(ev({ rules: active, aliases: { work: "회사 계정" } })).toMatchObject({ account: "work", source: "manual" });
-	// a blocked manual account falls through to the next layer
-	expect(ev({ rules: { ...officeRule, manual: { account: "spare" } }, pool: pool(["personal", "work", "spare"], { spare: { reason: "rate_limit" } }) }).source).toBe("rule");
+	// 고정: a blocked manual account still holds (hard), it does not fall through to the next layer
+	expect(ev({ rules: { ...officeRule, manual: { account: "spare" } }, pool: pool(["personal", "work", "spare"], { spare: { reason: "rate_limit" } }) })).toMatchObject({ account: "spare", source: "manual", hard: true });
 });
 
 test("a pin to a blocked or absent account falls through; prefer takes the next usable one", () => {

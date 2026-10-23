@@ -3,10 +3,11 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { aliasesFile, readAliases, setAlias } from "./account-alias.ts";
 import { decisionsFile, readRules, rulesFile, setUsage, writeRules } from "./account-rules.ts";
-import { type AccountSwitch, resetStickyForTest, stickyAccount, switchesFile } from "./account-sticky.ts";
-import { accountAnswer, accountAsk, accountsBody, KIND_TEXT, accountsRoute, accountText, labeledAccountView, switchNotice, switchText } from "./accounts-api.ts";
+import { type AccountSwitch, FALLBACK_ENV, PIN_ENV, resetStickyForTest, stickyAccount, stickyEnv, switchesFile } from "./account-sticky.ts";
+import { accountAnswer, accountAsk, accountsBody, KIND_TEXT, accountsRoute, accountText, labeledAccountView, pinnedLimitAlert, switchNotice, switchText } from "./accounts-api.ts";
 import { authFile } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
+import { parseChoices } from "./choices.ts";
 import { msg } from "./i18n.ts";
 import { limitsCard, runCommand } from "./control.ts";
 import { buildQuota } from "./providers.ts";
@@ -85,10 +86,12 @@ test("accountsBody carries labels, states, decision, rules as text, manual pick,
 	writeRules({ manual: { account: "회사 계정", until: "2026-10-21T18:00:00+09:00" }, rules: [{ name: "근무 시간", when: { days: ["mon", "tue", "wed", "thu", "fri"], from: "09:00", to: "18:00" }, do: { pin: "work" } }], script: { path: "/tmp/pick.sh" } });
 	const b = accountsBody(WED_10);
 	expect(b.accounts).toEqual([
-		{ name: "default", alias: "개인 계정", label: "개인 계정", current: true, blocked: null, blocked_until: null, blocked_tag: null, five_hour_left: 62, seven_day_left: 80 },
-		{ name: "work", alias: "회사 계정", label: "회사 계정", current: false, blocked: "rate_limit", blocked_until: new Date(WED_10 + 3_600_000).toISOString(), blocked_tag: expect.stringContaining("11:00"), five_hour_left: null, seven_day_left: null },
+		{ name: "default", alias: "개인 계정", label: "개인 계정", current: false, blocked: null, blocked_until: null, blocked_tag: null, five_hour_left: 62, seven_day_left: 80 },
+		{ name: "work", alias: "회사 계정", label: "회사 계정", current: true, blocked: "rate_limit", blocked_until: new Date(WED_10 + 3_600_000).toISOString(), blocked_tag: expect.stringContaining("11:00"), five_hour_left: null, seven_day_left: null },
 	]);
-	expect(b.decision).toMatchObject({ account: "default", label: "개인 계정", source: "auto" });
+	// the owner's pick (고정) holds although it is blocked
+	expect(b.decision).toMatchObject({ account: "work", label: "회사 계정", source: "manual", hard: true });
+	expect(b.mode).toBe("pinned");
 	expect(b.rules.rules?.[0]?.name).toBe("근무 시간");
 	expect(b.rules_text.map(r => r.index)).toEqual([0]);
 	for (const part of ["09:00-18:00", "회사 계정"]) expect(b.rules_text[0]!.text).toContain(part);
@@ -97,8 +100,9 @@ test("accountsBody carries labels, states, decision, rules as text, manual pick,
 	expect(Object.keys(b.files).sort()).toEqual(["aliases", "decisions", "rules"]);
 	for (const f of Object.values(b.files)) expect(f.startsWith("/")).toBe(true);
 	expect(Array.isArray(b.switches)).toBe(true);
-	expect(Object.keys(b).sort()).toEqual(["accounts", "chosen", "decision", "files", "manual_text", "rules", "rules_text", "script", "switches", "used"]);
-	expect(b.chosen).toMatchObject({ name: "work", source: "manual", blocked: "rate_limit", used_instead: { name: "default" } });
+	expect(Object.keys(b).sort()).toEqual(["accounts", "chosen", "decision", "files", "manual_text", "mode", "rules", "rules_text", "script", "switches", "used"]);
+	expect(b.chosen).toMatchObject({ name: "work", source: "manual", blocked: "rate_limit", used_instead: null });
+	expect(b.chosen!.text).toContain("멈춰 있어요");
 });
 
 test("accountsBody switches carry from_label/to_label/kind_text and labeledAccountView mirrors them", () => {
@@ -164,14 +168,14 @@ test("/account <alias> picks manually, /account auto clears it, /account alias s
 	}
 });
 
-test("a manual pick of a blocked account is stored but not applied, and the note names both accounts", async () => {
+test("a manual pick of a blocked account is applied (고정): the account does not move and the note says it waits", async () => {
 	writeAuth(["default", "work"]);
 	writeSlots({ work: { blockReason: "rate_limit", blockedUntil: Date.now() + 3_600_000 } });
 	for (const [k, v] of Object.entries(ALIASES)) setAlias(k, v);
 	const out = await cmdNote("/account work");
 	expect(readRules().manual).toEqual({ account: "work" });
-	expect(stickyAccount()).toBe("default");
-	for (const part of ["회사 계정", "개인 계정"]) expect(out).toContain(part);
+	expect(stickyAccount()).toBe("work");
+	for (const part of ["회사 계정", "고정"]) expect(out).toContain(part);
 });
 
 test("quota providers carry the account's label next to its id", () => {
@@ -282,4 +286,50 @@ test("API: PUT rules stores the whole file; a validation error is a 400 naming t
 	const missing = await call("PUT", "/api/accounts/rules", {});
 	expect(missing?.status).toBe(400);
 	expect(typeof ((await missing!.json()) as any).error).toBe("string");
+});
+
+test("계정 선택 방식: PUT /mode writes the setting; 고정 never changes account on a block, 자동 전환 does", async () => {
+	writeAuth(["default", "work"]);
+	writeSlots({ default: { blockReason: "rate_limit", blockedUntil: Date.now() + 3_600_000 } });
+	const pinned = await call("PUT", "/api/accounts/mode", { mode: "pinned", account: "default" });
+	expect(pinned?.status).toBe(200);
+	const body = (await pinned!.json()) as any;
+	expect(body.mode).toBe("pinned");
+	expect(body.chosen).toMatchObject({ name: "default", blocked: "rate_limit", used_instead: null });
+	expect(readRules().manual).toMatchObject({ account: "default" });
+	// default is blocked, work is free: 고정 stays, OmO is told not to fall back
+	expect(stickyAccount()).toBe("default");
+	expect(stickyEnv()).toEqual({ [PIN_ENV]: "default", [FALLBACK_ENV]: "0" });
+	expect(accountsBody().accounts.find(a => a.current)?.name).toBe("default");
+
+	const auto = await call("PUT", "/api/accounts/mode", { mode: "auto" });
+	expect(((await auto!.json()) as any).mode).toBe("auto");
+	expect(readRules().manual).toBeUndefined();
+	// the same block now moves the account and fallback stays on
+	expect(stickyAccount()).toBe("work");
+	expect(stickyEnv()).toEqual({ [PIN_ENV]: "work" });
+
+	// 고정 without an account pins the one requests use now
+	const same = await call("PUT", "/api/accounts/mode", { mode: "pinned" });
+	expect(((await same!.json()) as any).chosen).toMatchObject({ name: "work", source: "manual" });
+	expect((await call("PUT", "/api/accounts/mode", { mode: "nope" }))?.status).toBe(400);
+});
+
+test("고정 account at its limit: the alert says which account and until when, and offers 자동 전환으로 바꾸기 (answered by the gateway)", async () => {
+	writeAuth(["default", "work"]);
+	for (const [k, v] of Object.entries(ALIASES)) setAlias(k, v);
+	const until = Date.now() + 3_600_000;
+	writeSlots({ default: { blockReason: "rate_limit", blockedUntil: until } });
+	expect(pinnedLimitAlert(until)).toBeUndefined(); // 자동 전환: nothing to offer
+	await call("PUT", "/api/accounts/mode", { mode: "pinned", account: "default" });
+	const text = pinnedLimitAlert(until)!;
+	expect(text).toContain("개인 계정");
+	expect(text).toContain("멈춰요");
+	const labels = parseChoices(text).options.map(o => o.label);
+	expect(labels[0]).toBe("자동 전환으로 바꾸기");
+	// the clicked option goes out as "1) <label>"; the gateway reads it as 자동
+	expect(accountAsk("1) 자동 전환으로 바꾸기", ["default", "work"], ALIASES)).toEqual({ kind: "auto" });
+	await accountAnswer({ kind: "auto" });
+	expect(readRules().manual).toBeUndefined();
+	expect(pinnedLimitAlert(until)).toBeUndefined();
 });

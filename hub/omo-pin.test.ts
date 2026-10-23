@@ -71,10 +71,10 @@ test("dotz's own pin is not announced as 'the owner pinned X in OmO' (usable pic
 	await use("work");
 	await use("default");
 	expect(stickyAccount()).toBe("default");
-	// the pick is blocked: dotz falls through to the automatic layer while OmO's pin names the blocked account
+	// the pick is blocked: 고정 holds it (no move to another account), and OmO's pin names the same account
 	const blocked = Date.now() + 3_600_000;
 	writeStore(store({}, { accounts: [{ name: "default", access: "tok-default", refresh: "ref-default", expires: 1, blockedUntil: blocked, blockReason: "rate_limit", blockedAt: Date.now() }, { name: "work", access: "tok-work", refresh: "ref-work", expires: 2 }], pinned: "default" }));
-	expect(stickyAccount()).toBe("work");
+	expect(stickyAccount()).toBe("default");
 	expect(switches.filter(s => s.kind === "owner")).toEqual([]);
 	expect(switches.map(s => s.kind)).not.toContain("owner");
 });

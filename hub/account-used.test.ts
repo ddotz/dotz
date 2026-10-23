@@ -52,22 +52,23 @@ test("the usage numbers follow the account requests really use, not the blocked 
 	expect(subscriptionAccount(authFile(), now, "default")?.name).toBe("default");
 });
 
-test("/api/accounts: current is the account really used; the chosen one is blocked and says where requests go", () => {
+test("/api/accounts: current is the account really used; a blocked 고정 pick keeps the requests and says it waits", () => {
 	const now = Date.now();
 	auth(["default", "miseol-shared"], "default");
 	slots({ default: limited(now + 60 * MIN), "miseol-shared": { lastSuccessAt: now } });
 	setManual("default");
 	const b = accountsBody(now);
-	expect(b.accounts.filter(a => a.current).map(a => a.name)).toEqual(["miseol-shared"]);
-	expect(b.used).toMatchObject({ name: "miseol-shared" });
-	expect(b.chosen).toMatchObject({ name: "default", source: "manual", blocked: "rate_limit", used_instead: { name: "miseol-shared" } });
+	expect(b.accounts.filter(a => a.current).map(a => a.name)).toEqual(["default"]);
+	expect(b.used).toMatchObject({ name: "default" });
+	expect(b.chosen).toMatchObject({ name: "default", source: "manual", blocked: "rate_limit", used_instead: null });
 	expect(b.chosen!.blocked_until).toBe(new Date(now + 60 * MIN).toISOString());
 	const d = b.accounts.find(a => a.name === "default")!;
-	expect(d).toMatchObject({ current: false, blocked: "rate_limit" });
+	expect(d).toMatchObject({ current: true, blocked: "rate_limit" });
 	// a later day reads as a clock the owner can read, never "10. 23."
 	expect(d.blocked_tag).toMatch(/\d{2}:\d{2}/);
 	expect(d.blocked_tag).not.toMatch(/\d+\.\s/);
 	expect(b.accounts.find(a => a.name === "miseol-shared")!.blocked_tag).toBeNull();
+	expect(b.accounts.find(a => a.name === "miseol-shared")!.current).toBe(false);
 
 	// not blocked: the pick is the account used and nothing is redirected
 	slots({ default: { lastSuccessAt: now }, "miseol-shared": {} });

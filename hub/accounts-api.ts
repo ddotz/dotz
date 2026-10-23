@@ -4,7 +4,8 @@
 // the raw id appears only in API fields named `name`/`key` and on "-# " detail lines.
 import { aliasesFile, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
 import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, validateRules, writeRules } from "./account-rules.ts";
-import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
+import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, hardPinned, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
+import { issueBlock } from "./choices.ts";
 import { TZ } from "./config.ts";
 import { writeOmoPin } from "./omo-pin.ts";
 import { accountUsedChanged } from "./notices.ts";
@@ -112,7 +113,7 @@ export function labeledAccountView(limit = MAX_LOG_LINES) {
 	const aliases = readAliases();
 	// the account requests really use, not the pick OmO skips while it is blocked
 	const pool = readPool();
-	const account = v.account && pool ? usedAccount(v.account, pool.names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0) : v.account;
+	const account = v.account && pool ? (hardPinned() ? v.account : usedAccount(v.account, pool.names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0)) : v.account;
 	const moved = account !== v.account;
 	return { ...v, ...(moved ? { since: undefined } : {}), ...(account ? { account, account_label: label(account, undefined, aliases) } : {}), switches: v.switches.map(s => labeledSwitch(s, aliases)) };
 }
@@ -126,8 +127,10 @@ const manualText = (m: Manual | undefined, now: number, names: string[], aliases
 	const l = id ? label(id, undefined, aliases) : m.account;
 	const base = `${l}${josa(l, "으로", "로")} 직접 고정${m.until ? ` · ${clockText(Date.parse(m.until), now)}까지` : ""}`;
 	const b = id ? pool?.blocked[id] : undefined;
-	if (!id || !b || current === id) return base;
+	if (!id || !b) return base;
 	const by = blockedKind(b.reason) === "auth_error" ? "로그인이 풀려서" : "한도에 걸려서";
+	// 고정 holds: requests do not move, the work waits
+	if (current === id) return `${base} · ${by} ${b.until ? `${clockText(b.until, now)}까지` : "지금은"} 멈춰 있어요`;
 	const cur = current ? label(current, undefined, aliases) : undefined;
 	return `${base} · ${by} ${b.until ? `${clockText(b.until, now)}까지` : "지금은"} 못 써요${cur ? `, 지금은 ${cur}${josa(cur, "으로", "로")} 요청해요` : ""}`;
 };
@@ -136,6 +139,7 @@ const manualText = (m: Manual | undefined, now: number, names: string[], aliases
 function chosenText(chosen: string, used: string | undefined, source: Decision["source"], rule: string | undefined, until: string | undefined, pool: Pool | undefined, now: number, aliases: Record<string, string>): string {
 	const b = pool?.blocked[chosen];
 	if (b) {
+		if (source === "manual" && used === chosen) return `${blockedKind(b.reason) === "auth_error" ? "로그인이 풀려서" : "한도에 걸려서"} ${b.until ? `${clockText(b.until, now)}까지` : "지금은"} 멈춰 있어요. 고정했으니 다른 계정으로 넘어가지 않아요`;
 		if (!used || used === chosen) return "지금은 못 써요. 쓸 수 있는 다른 계정이 없어요";
 		const u = label(used, undefined, aliases);
 		const to = `${u}${josa(u, "으로", "로")} 요청해요`;
@@ -153,7 +157,8 @@ export function accountsBody(now = Date.now()) {
 	const pool = readPool(undefined, now);
 	const names = pool?.names ?? [];
 	// OmO skips a blocked account: this is where requests really go.
-	const current = pool ? usedAccount(sticky, names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0) : sticky;
+	// 고정 mode: requests stay on the pinned account even while it is blocked
+	const current = pool ? (hardPinned(now) ? sticky : usedAccount(sticky, names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0)) : sticky;
 	const aliases = readAliases();
 	const usage = getUsage();
 	const rules = readRules();
@@ -172,6 +177,8 @@ export function accountsBody(now = Date.now()) {
 	const chosenBlock = chosenId ? pool?.blocked[chosenId] : undefined;
 	const chosenSource: Decision["source"] = manualId ? "manual" : d.source;
 	return {
+		// "pinned" (고정: manual pick, never moves) or "auto" (자동 전환: rules, and a switch when the account is blocked)
+		mode: manualId ? ("pinned" as const) : ("auto" as const),
 		// `current` is the account requests really use; `chosen` the one picked (they differ while the pick is blocked)
 		chosen: chosenId
 			? { name: chosenId, label: lab(chosenId), source: chosenSource, blocked: chosenBlock ? blockedKind(chosenBlock.reason) : null, blocked_until: chosenBlock?.until ? new Date(chosenBlock.until).toISOString() : null, used_instead: current && current !== chosenId ? { name: current, label: lab(current) } : null, text: chosenText(chosenId, current, chosenSource, d.rule, manualId ? manual?.until : undefined, pool, now, aliases) }
@@ -194,6 +201,7 @@ export function accountsBody(now = Date.now()) {
 			...(d.account ? { account: d.account, label: lab(d.account) } : {}),
 			source: d.source,
 			source_text: SOURCE_TEXT[d.source],
+			...(d.hard ? { hard: true } : {}),
 			...(d.rule ? { rule: d.rule } : {}),
 			reason: relabel(d.reason, names, aliases),
 			at: d.at,
@@ -230,6 +238,17 @@ function syncOmoPin(account: string | undefined): void {
 	} catch (e) {
 		throw new AccountsError(`OmO의 고정 계정을 바꾸지 못했어요: ${(e as Error).message}`, 500);
 	}
+}
+
+// The bell/chat text when a 고정 account hits its limit and the work pauses until `until` (ms): which account, until when, and the
+// choice to switch to 자동 전환 (its label is answered by the gateway itself, accountAsk). Undefined outside 고정 mode.
+export function pinnedLimitAlert(until: number, now = Date.now()): string | undefined {
+	if (!hardPinned(now)) return undefined;
+	const id = stickyAccount(now);
+	if (!id || !readPool(undefined, now)?.blocked[id]) return undefined;
+	const l = label(id);
+	const at = clockText(until, now);
+	return [`고정한 계정 ${l}${josa(l, "이", "가")} 한도에 걸려서 ${at}까지 멈춰요. 고정했으니 다른 계정으로 넘어가지 않아요.`, issueBlock("어떻게 할까요?", [{ name: "자동 전환으로 바꾸기", result: "한도에 걸리면 다른 계정으로 넘어가 바로 이어서 해요" }, { name: "그대로 기다리기", result: `${at}에 풀리면 이어서 해요` }])].join("\n");
 }
 
 // A manual pick by id or alias; "auto" (or "자동") clears it. Re-evaluates right away.
@@ -276,7 +295,7 @@ const readBody = async (req: Request): Promise<Record<string, any>> => {
 // The /api/accounts routes (the caller has already checked the token). Undefined: not one of them.
 export async function accountsRoute(req: Request, url: URL): Promise<Response | undefined> {
 	const p = url.pathname;
-	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use", "/api/accounts/switches"].includes(p)) return undefined;
+	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/switches"].includes(p)) return undefined;
 	try {
 		// DELETE /api/accounts/switches?at=<time of the entry> removes one history entry; without `at` it clears the whole history.
 		if (req.method === "DELETE" && p === "/api/accounts/switches") {
@@ -293,6 +312,17 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 		}
 		if (req.method === "PUT" && p === "/api/accounts/rules") {
 			putRules((await readBody(req)).rules);
+			return Response.json(accountsBody());
+		}
+		// 계정 선택 모드: {mode:"auto"} = 자동 전환 (clears the pick), {mode:"pinned", account?} = 고정 (account, else the one requests use now)
+		if (req.method === "PUT" && p === "/api/accounts/mode") {
+			const b = await readBody(req);
+			if (b.mode === "auto") await useAccount("auto");
+			else if (b.mode === "pinned") {
+				const account = typeof b.account === "string" && b.account.trim() ? b.account : accountsBody().used?.name;
+				if (!account) throw new AccountsError("고정할 계정을 골라 주세요", 400);
+				await useAccount(account);
+			} else throw new AccountsError('mode는 "auto" 또는 "pinned"여야 해요', 400);
 			return Response.json(accountsBody());
 		}
 		if (req.method === "POST" && p === "/api/accounts/use") {
@@ -340,9 +370,9 @@ export function accountText(now = Date.now()): string {
 }
 
 const pickedText = (r: Awaited<ReturnType<typeof useAccount>>): string => {
-	if (r.auto) return "고정을 풀었어요. 이제 규칙과 한도에 따라 계정을 골라요.";
+	if (r.auto) return "자동 전환으로 바꾸었어요. 이제 규칙과 한도에 따라 계정을 골라요.";
 	const josaTo = josa(r.label, "으로", "로");
-	if (r.applied) return `${r.label}${josaTo} 바꿨어요. 고정을 풀려면 "계정 자동으로"라고 해 주세요.`;
+	if (r.applied) return `${r.label}${josaTo} 고정했어요. 한도에 걸리면 풀릴 때까지 멈추고 다른 계정으로 넘어가지 않아요. 자동 전환으로 돌리려면 "계정 자동으로"라고 해 주세요.`;
 	const cur = accountsBody().accounts.find(a => a.current);
 	return `${r.label}${josaTo} 고정해 뒀지만 지금은 쓸 수 없어서(한도 등) ${cur ? cur.label : "다른 계정"}을 쓰고 있어요.`;
 };
@@ -370,7 +400,7 @@ type AccountAsk = { kind: "show" } | { kind: "auto" } | { kind: "use"; account: 
 const TAIL = /\s*(?:해\s*줘|해\s*주세요|해\s*줄래요?|해\s*봐|해요|해라|해|줘|주세요|줄래요?|봐|부탁(?:해요|해|드려요)?|할래요?|하자)$/;
 const VERB = "(?:바꿔|바꾸자?|바꿀래|전환|변경|갈아타|옮겨|돌려|써|쓰자|쓸래|사용|고정|선택|골라)";
 const SHOW = [/^(?:(?:지금|현재)\s*)?(?:무슨|어떤|뭔|어느)\s*계정(?:이야|이에요|이지|이니|인가요|인지|써|쓰고\s*있어요?|쓰고\s*있니)?$/, /^(?:지금|현재)\s*계정(?:\s*(?:뭐야|뭐에요|뭐예요|뭐지|알려|보여|확인|상태))?$/, /^계정\s*(?:확인|상태|알려|보여)$/];
-const AUTO = /^(?:자동\s*계정(?:으로)?|계정(?:을|은)?\s*자동(?:으로)?|계정\s*자동\s*(?:전환|선택)?)(?:\s*(?:바꿔|전환|돌려|돌려놔|설정|맞춰|선택))?$/;
+const AUTO = /^(?:자동\s*전환(?:으로)?(?:\s*바꾸기)?|자동\s*계정(?:으로)?|계정(?:을|은)?\s*자동(?:으로)?|계정\s*자동\s*(?:전환|선택)?)(?:\s*(?:바꿔|전환|돌려|돌려놔|설정|맞춰|선택))?$/;
 const OTHER = [new RegExp(`^(?:(?:지금|현재)\\s*)?계정(?:을)?\\s*${VERB}$`), new RegExp(`^(?:다른|딴|반대|다음)\\s*계정(?:으로|로)?(?:\\s*${VERB})?$`)];
 
 // Pure: a short owner message that asks about or changes the account, else undefined (the message goes to the orchestrator).
@@ -378,7 +408,7 @@ const OTHER = [new RegExp(`^(?:(?:지금|현재)\\s*)?계정(?:을)?\\s*${VERB}$
 export function accountAsk(text: string, names: string[], aliases: Record<string, string> = {}): AccountAsk | undefined {
 	const raw = text.trim();
 	if (!raw || raw.length > 40 || /[\n\r]/.test(raw)) return undefined;
-	const t = raw.replace(/[?？!！.。~…,]+$/g, "").replace(/\s+/g, " ").trim().replace(TAIL, "").trim();
+	const t = raw.replace(/^\d{1,2}\)\s*/, "").replace(/[?？!！.。~…,]+$/g, "").replace(/\s+/g, " ").trim().replace(TAIL, "").trim();
 	if (!t) return undefined;
 	if (SHOW.some(r => r.test(t))) return { kind: "show" };
 	if (AUTO.test(t)) return { kind: "auto" };
