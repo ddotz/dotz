@@ -1,7 +1,8 @@
 /* ---------- 모니터링 > 앱 > 카카오톡: choose the rooms to watch, and a KakaoTalk-style chat per chosen room ---------- */
 // API: docs/kakao-rooms-api.md. The item (30-monitoring.js, key "i:kakao") shows this pane instead of the notice timeline: renderMonitoring calls
 // kkMode(). Wide screens put the room column beside the chat; below 1100px they are two screens (KK.open picks which; the app bar's back
-// arrow, kkBack(), leaves the chat). Live updates arrive on the event stream as kakao / kakao_send / kakao_draft / kakao_rooms (99-boot.js -> kkLive).
+// arrow, kkBack(), leaves the chat). Live updates arrive on the event stream as kakao / kakao_send / kakao_draft / kakao_rooms / kakao_read (99-boot.js -> kkLive).
+// Each message carries `unread` (KakaoTalk's yellow number: members who have not read it yet); kakao_read -> /reads refreshes the numbers without bodies.
 // Nothing is ever sent without a click: a typed message, a draft's 보내기 or an edited draft's 보내기 is the owner's own action.
 // Message text only ever goes through el({text}) / textContent, never innerHTML.
 const KK_KEY = "i:kakao";
@@ -11,7 +12,7 @@ const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, pick: null,   // pick: null = open while no room is chosen
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", draftT: 0, tailing: false, again: false,
-  typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null,
+  typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
 };
 
 /* ---- small helpers ---- */
@@ -45,6 +46,15 @@ const kkWho = m => (m.fromMe ? "me" : String(m.authorId ?? m.sender ?? ""));
 const kkSame = (a, b) => kkWho(a) === kkWho(b) && Math.floor(a.sentAt / 60000) === Math.floor(b.sentAt / 60000);
 const kkKindLine = r => (r.kind === "group" || r.kind === "multi" ? "단체 대화방" : r.kind === "direct" || r.kind === "dm" ? "1:1 대화" : "");
 const kkRoom = id => KK.rooms.find(r => r.chatId === id) || null;
+// Room search: a case-insensitive substring of the name; a query made only of consonants (ㄱㄴㄷ…) also matches the name's initial consonants.
+const KK_CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+const kkCho = s => [...s].map(c => { const n = c.codePointAt(0) - 0xac00; return n >= 0 && n < 11172 ? KK_CHO[Math.floor(n / 588)] : c; }).join("");
+function kkMatch(name, q) {
+  q = q.trim().toLowerCase();
+  if (!q) return true;
+  const n = String(name ?? "").toLowerCase();
+  return n.includes(q) || (/^[ㄱ-ㅎ]+$/.test(q) && kkCho(n).includes(q));
+}
 const kkSeen = () => document.visibilityState === "visible" && kkTl.offsetParent !== null && kkTl.clientHeight > 0;
 const kkWide = () => !narrowChat();
 const kkCoarse = () => matchMedia("(pointer: coarse), (max-width: 639px)").matches;
@@ -123,12 +133,19 @@ async function kkSetRoom(r, patch) {
     toast(e.message, true);
   }
 }
+const kkSearch = el("input", { class: "kk-q", id: "kk-q", type: "search", placeholder: "대화방 검색", "aria-label": "대화방 검색", autocomplete: "off", enterkeyhint: "search" });
+// Typing refilters only the list: the input itself stays in place (it keeps focus and the IME composition).
+kkSearch.addEventListener("input", () => { KK.q = kkSearch.value; const pl = $("#kk-pl"); if (pl) clear(pl).append(...kkPickRows()); });
 const kkPickRow = r => el("div", { class: "kk-pr", "data-chat": r.chatId },
   kkAvatar(r.name),
   el("span", { class: "cv-b" },
     el("span", { class: "cv-n", title: r.name, text: r.name }),
     r.watched ? el("span", { class: "kk-auto" }, el("span", { text: "자동 초안" }), kkSwitch(!!r.autoDraft, `${r.name} 자동 초안`, "auto", v => kkSetRoom(r, { autoDraft: v }), true)) : null),
   kkSwitch(!!r.watched, `${r.name} 지켜보기`, "watch", v => kkSetRoom(r, { watched: v })));
+function kkPickRows() {
+  const list = KK.rooms.filter(r => kkMatch(r.name, KK.q));
+  return list.length ? list.map(kkPickRow) : [el("div", { class: "kk-note", id: "kk-nomatch", role: "status", text: "찾는 대화방이 없어요" })];
+}
 function kkRow(r) {
   const on = KK.open === r.chatId, hint = kkKindLine(r);
   return el("button", { class: `cv-row pv kk-row${r.unread ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-chat": r.chatId, "aria-current": on ? "true" : null, onclick: () => kkOpen(r.chatId) },
@@ -148,7 +165,7 @@ function kkPaintRooms() {
   if (expanded) {
     if (note) pick.append(el("div", { class: "kk-note", role: "status", text: note }));
     else if (!KK.rooms.length) pick.append(el("div", { class: "kk-note", text: "고를 수 있는 대화방이 없어요" }));
-    else pick.append(el("div", { class: "kk-hint", text: "자동 초안은 새 메시지마다 답장 초안을 만들어서 토큰이 들어요." }), el("div", { class: "kk-pl", id: "kk-pl" }, ...KK.rooms.map(kkPickRow)));
+    else pick.append(kkSearch, el("div", { class: "kk-hint", text: "자동 초안은 새 메시지마다 답장 초안을 만들어서 토큰이 들어요." }), el("div", { class: "kk-pl", id: "kk-pl" }, ...kkPickRows()));
   }
   const list = el("section", { class: "kk-watch", "aria-label": "지켜보는 대화방" });
   if (KK.loaded && !note) {
@@ -186,11 +203,12 @@ const kkMarkNode = () => el("div", { class: "kk-new", role: "separator", "aria-l
 function kkMsgNode(m, first, last) {
   const group = !!(KK.room && KK.room.group), { text, ph } = kkBody(m);
   const bub = el("div", { class: `kk-bub${ph ? " ph" : ""}`, text });
-  const time = last ? el("span", { class: "kk-time", text: kkTime(m.sentAt) }) : null;
-  if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, time, bub));
+  // On the time side of the bubble: KakaoTalk's yellow number (members who have not read it yet) above the time; nothing when 0.
+  const n = m.unread | 0, meta = n > 0 || last ? el("span", { class: "kk-meta" }, n > 0 ? el("span", { class: "kk-rd", "aria-label": `아직 안 읽은 사람 ${n}명`, text: String(n) }) : null, last ? el("span", { class: "kk-time", text: kkTime(m.sentAt) }) : null) : null;
+  if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, meta, bub));
   return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-log": m.logId },
     group ? (first ? kkAvatar(m.sender) : el("span", { class: "kk-av sp", "aria-hidden": "true" })) : null,
-    el("div", { class: "kk-mb" }, group && first ? el("div", { class: "kk-name", text: m.sender || "알 수 없음" }) : null, el("div", { class: "kk-line" }, bub, time)));
+    el("div", { class: "kk-mb" }, group && first ? el("div", { class: "kk-name", text: m.sender || "알 수 없음" }) : null, el("div", { class: "kk-line" }, bub, meta)));
 }
 // Sends of this room that are not (yet) a message of the room: sending, failed, or just sent and not read back from the database yet.
 function kkPending() {
@@ -343,6 +361,24 @@ function kkMaybeRead() {
     kkIntgSoon();
   }, () => { if (KK.readSent === last) KK.readSent = prev; });
 }
+// KakaoTalk's read counters changed: ask for the numbers of the shown messages (no bodies) and repaint when any changed.
+async function kkReads() {
+  const id = KK.open, first = KK.msgs[0];
+  if (!id || !first || KK.loading || KK.roomErr) return;
+  if (KK.reading) { KK.readAgain = true; return; }
+  KK.reading = true;
+  try {
+    do {
+      KK.readAgain = false;
+      const d = await api(`/api/kakao/chat/${enc(id)}/reads?from=${enc(KK.msgs[0].logId)}`);
+      if (KK.open !== id) return;
+      const counts = d && d.counts || {};
+      let changed = false;
+      for (const m of KK.msgs) if (m.logId in counts && (m.unread | 0) !== counts[m.logId]) { m.unread = counts[m.logId]; changed = true; }
+      if (changed) kkPaintTl(KK.stick);
+    } while (KK.readAgain);
+  } catch { /* the next event or the minute timer asks again */ } finally { KK.reading = false; }
+}
 const kkIntgSoon = () => { clearTimeout(KK.intgT); KK.intgT = setTimeout(loadIntegrations, 500); };
 
 /* ---- sending ---- */
@@ -472,6 +508,7 @@ function kkBump(chatId) {
 // The event stream (99-boot.js): ids only, so the bodies are fetched here.
 function kkLive(e) {
   if (KK.pc) return;   // the stream is this computer's; a peer's room is refreshed by the timer
+  if (e.kind === "kakao_read") { if (KK.vis && e.chatId === KK.open) kkReads(); return; }
   if (e.kind === "kakao_rooms") { if (KK.vis) kkLoadRooms(); kkIntgSoon(); return; }
   kkIntgSoon();
   if (!KK.vis) return;
@@ -487,7 +524,7 @@ function kkLive(e) {
   }
 }
 // After a stream reconnect or coming back to the page: ask again.
-function kkResync() { if (!KK.vis) return; kkLoadRooms(); kkTail(); kkMaybeRead(); }
+function kkResync() { if (!KK.vis) return; kkLoadRooms(); kkTail(); kkReads(); kkMaybeRead(); }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") kkResync(); });
 
 /* ---- the 모니터링 item ---- */

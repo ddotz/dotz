@@ -23,6 +23,9 @@
 .kk-cnt { flex: 1; color: var(--fg-3); font: 400 13px/20px var(--font); }
 .kk-chev { color: var(--fg-3); transition: transform .15s; }
 .kk-ph[aria-expanded="true"] .kk-chev { transform: rotate(180deg); }
+.kk-q { display: block; width: calc(100% - 32px); min-height: 44px; margin: 4px 16px 8px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--layer); color: var(--fg); font: 400 16px/22px var(--font); }
+.kk-q::placeholder { color: var(--fg-3); }
+.kk-q:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .kk-hint { padding: 0 16px 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .kk-note { padding: 20px 16px; color: var(--fg-3); font: 400 13px/20px var(--font); text-align: center; }
 .kk-pl { max-height: min(46dvh, 360px); overflow-y: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -74,7 +77,13 @@
 .kk-m.me .kk-bub { background: var(--kk-own); color: var(--kk-own-fg); }
 .kk-m.me.first .kk-bub { border-top-right-radius: 4px; }
 .kk-bub.ph { opacity: .75; }
-.kk-time { flex: none; padding-bottom: 1px; color: var(--kk-time); font: 400 11px/14px var(--font); white-space: nowrap; }
+.kk-chat { --kk-rd: #d99700; }
+:root[data-theme="dark"] .kk-chat { --kk-rd: #ffd21f; }
+/* time side of a bubble: the read counter (yellow, bold) above the time; own bubbles right-align it, incoming ones left-align it */
+.kk-meta { flex: none; display: flex; flex-direction: column; align-items: flex-start; padding-bottom: 1px; }
+.kk-m.me .kk-meta { align-items: flex-end; }
+.kk-rd { color: var(--kk-rd); font: 700 11px/14px var(--font); white-space: nowrap; }
+.kk-time { flex: none; color: var(--kk-time); font: 400 11px/14px var(--font); white-space: nowrap; }
 .kk-m.pend.sending .kk-bub { opacity: .7; }
 .kk-st { display: flex; align-items: center; gap: 4px; margin-top: 2px; color: var(--kk-time); font: 400 11px/16px var(--font); }
 .kk-st .btn { height: 24px; padding: 0 6px; font-size: 12px; }

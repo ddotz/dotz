@@ -8,7 +8,7 @@ import { appAsset, indexPage } from "./webapp.ts";
 const SHOTS = process.env.KAKAO_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
-type Msg = { logId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean };
+type Msg = { logId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean; unread: number };
 type Room = { chatId: string; name: string; kind: string; watched: boolean; autoDraft: boolean; unread: number; lastAt: number };
 type Draft = { code: string; text: string; basisLogId: string; created: number };
 type Send = { id: string; text: string; state: string; reason?: string; at: number };
@@ -16,7 +16,9 @@ type Req = { method: string; path: string; body: Record<string, unknown> | null 
 
 const at = (d: number, h: number, m: number, s = 0) => Date.UTC(2026, 9, d, h, m, s);
 const who = { 가나: { authorId: "u1", sender: "가나" }, 다라: { authorId: "u2", sender: "다라" }, me: { authorId: "me", sender: "나" } };
-const mk = (logId: string, w: keyof typeof who, text: string, sentAt: number, type = 1): Msg => ({ logId, ...who[w], text, type, sentAt, fromMe: w === "me" });
+// KakaoTalk's read counters (members who have not read the message yet) of a few messages; everything else is read by all (0).
+const UNREAD: Record<string, number> = { "3001": 2, "3002": 2, "3003": 1, "3007": 1 };
+const mk = (logId: string, w: keyof typeof who, text: string, sentAt: number, type = 1): Msg => ({ logId, ...who[w], text, type, sentAt, fromMe: w === "me", unread: UNREAD[logId] ?? 0 });
 const OLD = Array.from({ length: 30 }, (_, i) => mk(String(2001 + i), i % 3 === 2 ? "me" : "가나", `예전 대화 ${i}`, at(20, 1, i * 2)));
 const MID = [
 	mk("3001", "가나", "안녕하세요 가나다 모임입니다", at(21, 3, 0)),
@@ -98,10 +100,15 @@ const server = Bun.serve({
 			if (r) { if ("watched" in body!) r.watched = !!body!.watched; if ("autoDraft" in body!) r.autoDraft = !!body!.autoDraft; }
 			return json({ ok: true, watched: rooms.filter(x => x.watched).map(x => x.chatId) });
 		}
-		const c = /^\/api\/kakao\/chat\/(\w+)(?:\/(read|send|draft))?$/.exec(p);
+		const c = /^\/api\/kakao\/chat\/(\w+)(?:\/(reads?|send|draft))?$/.exec(p);
 		if (c) {
 			const room = rooms.find(x => x.chatId === c[1]);
 			if (!room || !room.watched) return json({ error: "지켜보는 대화방이 아니에요" }, 403);
+			if (c[2] === "reads" && req.method === "GET") {
+				record({ method: "GET", path: `${p}${url.search}`, body: null });
+				const from = BigInt(url.searchParams.get("from") ?? "0");
+				return json({ counts: Object.fromEntries(msgs.filter(x => BigInt(x.logId) >= from).map(x => [x.logId, x.unread])) });
+			}
 			if (req.method === "GET") {
 				record({ method: "GET", path: `${p}${url.search}`, body: null });
 				const after = url.searchParams.get("after");
@@ -146,6 +153,8 @@ const openRoom = async (v: View, id = "100") => {
 	await run(v, `document.querySelector('.kk-row[data-chat="${id}"]').click()`);
 	await waitFor(v, `KK.open === "${id}" && !KK.loading && KK.placed`);
 };
+// Types a query into the room search (an input event, like the keyboard).
+const search = (v: View, text: string) => run(v, `const i = document.querySelector("#kk-q"); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event("input", { bubbles: true }))`);
 const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
 const dark = (v: View) => run(v, `if (dotzTheme.get() !== "dark") dotzTheme.toggle()`);
 const light = (v: View) => run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
@@ -247,10 +256,42 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		await waitFor(v, `(document.querySelector('.kk-row[data-chat="300"] .nb') || {}).textContent === "1"`);
 	});
 
+	test("read counters: a small bold yellow number on the time side of a bubble, above the time, own and incoming alike, none at 0", async () => {
+		const s = await q<Record<string, any>>(v, `
+			const r = s => document.querySelector(s).getBoundingClientRect();
+			const rd = id => (document.querySelector('[data-log="' + id + '"] .kk-rd') || {}).textContent ?? null;
+			const cs = getComputedStyle(document.querySelector('[data-log="3002"] .kk-rd'));
+			return { all: [...document.querySelectorAll(".kk-rd")].map(n => n.closest("[data-log]").dataset.log + ":" + n.textContent), r1: rd("3001"), r2: rd("3002"), r3: rd("3003"), r4: rd("3004"), r6: rd("3006"),
+				weight: Number(cs.fontWeight), size: parseFloat(cs.fontSize), color: cs.color, label: document.querySelector('[data-log="3003"] .kk-rd').getAttribute("aria-label"),
+				inAbove: r('[data-log="3002"] .kk-rd').bottom <= r('[data-log="3002"] .kk-time').top + 1, inSide: r('[data-log="3002"] .kk-meta').left >= r('[data-log="3002"] .kk-bub').right - 1,
+				meAbove: r('[data-log="3003"] .kk-rd').bottom <= r('[data-log="3003"] .kk-time').top + 1, meSide: r('[data-log="3003"] .kk-meta').right <= r('[data-log="3003"] .kk-bub').left + 1,
+				timeless: !document.querySelector('[data-log="3001"] .kk-time') && !!document.querySelector('[data-log="3001"] .kk-meta'), hScroll: document.querySelector("#kk-tl").scrollWidth - document.querySelector("#kk-tl").clientWidth }`);
+		expect(s.all).toEqual(["3001:2", "3002:2", "3003:1", "3007:1"]);
+		expect(s).toMatchObject({ r1: "2", r2: "2", r3: "1", r4: null, r6: null, inAbove: true, inSide: true, meAbove: true, meSide: true, timeless: true, label: "아직 안 읽은 사람 1명" });
+		expect(s.weight).toBeGreaterThanOrEqual(700);
+		expect(s.size).toBeLessThanOrEqual(12);
+		expect(s.color).not.toBe("rgba(0, 0, 0, 0)");
+		expect(s.hScroll).toBeLessThanOrEqual(0);
+		await run(v, `document.querySelector('[data-log="3001"]').scrollIntoView({ block: "center" })`);
+		await shot(v, "08-desktop-counts.png");
+	});
+
+	test("kakao_read for the open room asks /reads?from=<oldest shown> and repaints the counters without refetching bodies", async () => {
+		const bodies = reqs.filter(r => r.method === "GET" && /^\/api\/kakao\/chat\/100\?/.test(r.path)).length;
+		for (const m of msgs) if (m.logId === "3001" || m.logId === "3007") m.unread = 0; else if (m.logId === "3002") m.unread = 1;
+		emit({ kind: "kakao_read", chatId: "300" });
+		emit({ kind: "kakao_read", chatId: "100" });
+		await expectReq(isReq("GET", "/api/kakao/chat/100/reads?from=2001"));
+		await waitFor(v, `[...document.querySelectorAll(".kk-rd")].map(n => n.closest("[data-log]").dataset.log + ":" + n.textContent).join() === "3002:1,3003:1"`);
+		expect(reqs.filter(r => r.path.startsWith("/api/kakao/chat/300"))).toEqual([]);
+		expect(reqs.filter(r => r.method === "GET" && /^\/api\/kakao\/chat\/100\?/.test(r.path)).length).toBe(bodies);
+	});
+
 	test("a typed message POSTs {text} with a 보내는 중 bubble on the right; sent clears it once the message is read back; failed shows the reason and retries", async () => {
 		await run(v, `const t = document.querySelector("#kk-text"); t.value = "가나다 답장"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector("#kk-send-btn").click()`);
 		expect((await expectReq(isReq("POST", "/api/kakao/chat/100/send"))).body).toEqual({ text: "가나다 답장" });
 		await waitFor(v, `document.querySelector(".kk-m.me.pend .kk-state")`);
+		expect(await q(v, `return !!document.querySelector(".kk-m.pend .kk-rd")`)).toBe(false);
 		const pend = await q<{ state: string; right: number; tr: number; empty: string }>(v, `const b = document.querySelector(".kk-m.me.pend .kk-bub").getBoundingClientRect(); return { state: document.querySelector(".kk-m.me.pend .kk-state").textContent, right: b.right, tr: document.querySelector("#kk-tl").getBoundingClientRect().right, empty: document.querySelector("#kk-text").value }`);
 		expect(pend.state).toBe("보내는 중");
 		expect(pend.right).toBeGreaterThan(pend.tr - 24);
@@ -356,12 +397,72 @@ describe("카카오톡 on a phone (390x844)", () => {
 		await waitFor(v, `MON.list`);
 	});
 
+	test("room search at 390px: the input sits on top of the room choice, fits the width, and filters the choice list", async () => {
+		await boot(v);
+		await run(v, `document.querySelector("#kk-pick-btn").click()`);
+		await waitFor(v, `document.querySelector("#kk-q")`);
+		await search(v, "모임");
+		const s = await q<Record<string, any>>(v, `const i = document.querySelector("#kk-q").getBoundingClientRect(), p = document.querySelector(".kk-rooms");
+			return { rows: [...document.querySelectorAll('.kk-pr')].map(r => r.dataset.chat), h: i.height, left: i.left, right: i.right, w: innerWidth, hScroll: p.scrollWidth - p.clientWidth, font: parseFloat(getComputedStyle(document.querySelector("#kk-q")).fontSize) }`);
+		expect(s.rows).toEqual(["100"]);
+		expect(s.h).toBeGreaterThanOrEqual(44);
+		expect(s.left).toBeGreaterThanOrEqual(0);
+		expect(s.right).toBeLessThanOrEqual(s.w);
+		expect(s.hScroll).toBeLessThanOrEqual(0);
+		expect(s.font).toBeGreaterThanOrEqual(16);
+		await shot(v, "14-mobile-search.png");
+	});
+
 	test("dark chat", async () => {
 		await boot(v);
 		await openRoom(v);
 		await dark(v);
 		await shot(v, "13-mobile-dark.png");
 		await light(v);
+	});
+});
+
+describe("대화방 검색 (room search)", () => {
+	const v = open(1280, 800);
+	const rowsOf = (v: View) => q<string[]>(v, `return [...document.querySelectorAll(".kk-pr")].map(r => r.dataset.chat)`);
+
+	test("a search input tops the room choice; it filters by name (substring, case-insensitive, initial consonants) and says so when nothing matches", async () => {
+		reset();
+		await boot(v);
+		await run(v, `document.querySelector("#kk-pick-btn").click()`);
+		const top = await q<Record<string, any>>(v, `const i = document.querySelector("#kk-q"); return { ph: i.placeholder, prev: i.previousElementSibling.id, label: i.getAttribute("aria-label") }`);
+		expect(top).toEqual({ ph: "대화방 검색", prev: "kk-pick-btn", label: "대화방 검색" });
+		expect(await rowsOf(v)).toEqual(["100", "200", "300"]);
+		await search(v, "라마");
+		expect(await rowsOf(v)).toEqual(["300"]);
+		await search(v, "ㄱㄴㄷ");
+		expect(await rowsOf(v)).toEqual(["100"]);
+		await search(v, " ㅅㅇㅈ ");
+		expect(await rowsOf(v)).toEqual(["200"]);
+		await search(v, "모임");
+		expect(await rowsOf(v)).toEqual(["100"]);
+		await search(v, "zzz");
+		expect(await rowsOf(v)).toEqual([]);
+		expect(await q(v, `return document.querySelector("#kk-nomatch").textContent`)).toBe("찾는 대화방이 없어요");
+		await shot(v, "09-desktop-search-empty.png");
+		await search(v, "");
+		expect(await rowsOf(v)).toEqual(["100", "200", "300"]);
+		expect(await q(v, `return !document.querySelector("#kk-nomatch")`)).toBe(true);
+		expect(await q(v, `return [kkMatch("Book Club", "bOOK"), kkMatch("가나다 모임", "나다"), kkMatch("가나다", "ㄴ"), kkMatch("가나다", "ㄹ"), kkMatch("가나다", "가ㄴ")]`)).toEqual([true, true, true, false, false]);
+	});
+
+	test("the switches keep working while filtered, and the query survives the repaint; the watched rows below are not filtered", async () => {
+		await search(v, "라마");
+		await run(v, `document.querySelector('.kk-pr[data-chat="300"] [data-k="watch"]').click()`);
+		expect((await expectReq(isReq("PUT", "/api/kakao/rooms/300"))).body).toEqual({ watched: false });
+		await waitFor(v, `document.querySelector('.kk-pr[data-chat="300"] [data-k="watch"]').getAttribute("aria-checked") === "false"`);
+		expect(await rowsOf(v)).toEqual(["300"]);
+		expect(await q(v, `return [document.querySelector("#kk-q").value, [...document.querySelectorAll(".kk-row")].map(r => r.dataset.chat)]`)).toEqual(["라마", ["100"]]);
+		await search(v, "사아");
+		await run(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="watch"]').click()`);
+		await expectReq(isReq("PUT", "/api/kakao/rooms/200"));
+		await waitFor(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="auto"]')`);
+		expect(await rowsOf(v)).toEqual(["200"]);
 	});
 });
 

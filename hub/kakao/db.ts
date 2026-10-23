@@ -406,6 +406,102 @@ export async function ownUserId(db: KakaoDb): Promise<string | undefined> {
 	return str(rows[0]?.userId) || undefined;
 }
 
+// NTChatRoom.watermarkKeys / watermarkValues are binary plists (bplist00), each a top-level array of int64: the member user ids and,
+// in the same order, each member's last-read logId. This decodes such an array from its hex form (SQL hex(column)); anything that
+// is not a well-formed int array gives undefined, never a throw.
+export function bplistInts(hex: string): bigint[] | undefined {
+	if (!hex || !/^(?:[0-9a-fA-F]{2})+$/.test(hex)) return undefined;
+	const b = Buffer.from(hex, "hex");
+	if (b.length < 40 || b.toString("latin1", 0, 8) !== "bplist00") return undefined;
+	const byte = (at: number) => {
+		if (!Number.isInteger(at) || at < 0 || at >= b.length) throw new RangeError("bplist offset out of range");
+		return b[at] as number;
+	};
+	const uint = (at: number, n: number) => {
+		let v = 0n;
+		for (let i = 0; i < n; i++) v = (v << 8n) | BigInt(byte(at + i));
+		return v;
+	};
+	try {
+		const t = b.length - 32;
+		const offSize = byte(t + 6);
+		const refSize = byte(t + 7);
+		if (offSize < 1 || offSize > 8 || refSize < 1 || refSize > 8) return undefined;
+		const top = Number(uint(t + 16, 8));
+		const table = Number(uint(t + 24, 8));
+		const offOf = (i: number) => Number(uint(table + i * offSize, offSize));
+		const readInt = (at: number): bigint | undefined => {
+			const m = byte(at);
+			if (m >> 4 !== 1 || (m & 15) > 3) return undefined;
+			const n = 1 << (m & 15);
+			const v = uint(at + 1, n);
+			return n === 8 && v >= 1n << 63n ? v - (1n << 64n) : v;
+		};
+		let at = offOf(top);
+		const m = byte(at);
+		if (m >> 4 !== 0xa) return undefined;
+		let count = m & 15;
+		at++;
+		if (count === 15) {
+			const len = readInt(at);
+			if (len === undefined) return undefined;
+			count = Number(len);
+			at += 1 + (1 << (byte(at) & 15));
+		}
+		if (count < 0 || count > b.length) return undefined;
+		const out: bigint[] = [];
+		for (let i = 0; i < count; i++) {
+			const v = readInt(offOf(Number(uint(at + i * refSize, refSize))));
+			if (v === undefined) return undefined;
+			out.push(v);
+		}
+		return out;
+	} catch {
+		return undefined;
+	}
+}
+
+// Member user id -> the logId that member has read up to, for one room. Empty when the room has no (readable) watermarks.
+export async function watermarks(db: KakaoDb, chatId: string): Promise<Map<string, bigint>> {
+	const out = new Map<string, bigint>();
+	let rows: Record<string, unknown>[];
+	try {
+		rows = await db.query("SELECT hex(watermarkKeys) AS k, hex(watermarkValues) AS v FROM NTChatRoom WHERE chatId = ?", [chatId]);
+	} catch {
+		return out;
+	}
+	const keys = bplistInts(str(rows[0]?.k));
+	const values = bplistInts(str(rows[0]?.v));
+	if (!keys || !values || keys.length !== values.length) return out;
+	keys.forEach((k, i) => out.set(String(k), values[i] as bigint));
+	return out;
+}
+
+// KakaoTalk's yellow number: the members, other than the author and the owner, whose read position is before this message. 0 = show nothing.
+export function unreadCount(marks: Map<string, bigint>, logId: string, authorId: string, ownerId: string | number): number {
+	let id: bigint;
+	try {
+		id = BigInt(logId);
+	} catch {
+		return 0;
+	}
+	const owner = String(ownerId);
+	let n = 0;
+	for (const [member, read] of marks) if (member !== authorId && member !== owner && read < id) n++;
+	return n;
+}
+
+// One signature per room (the raw hex of its read positions) for the given rooms, in one query. A failed query gives an empty map.
+export async function watermarkSignatures(db: KakaoDb, chatIds: string[]): Promise<Map<string, string>> {
+	if (!chatIds.length) return new Map();
+	try {
+		const rows = await db.query(`SELECT CAST(chatId AS TEXT) AS chatId, hex(watermarkValues) AS v FROM NTChatRoom WHERE chatId IN (${chatIds.map(() => "?").join(",")})`, chatIds);
+		return new Map(rows.map((r) => [str(r.chatId), str(r.v)]));
+	} catch {
+		return new Map();
+	}
+}
+
 // A room counts only when the owner chose it (watch_chats). KakaoTalk has no per-room mute column in the reader sources,
 // so "muted" is the owner's exclude_chats list.
 export function isDraftCandidate(room: Pick<Room, "chatId" | "kind">, config: Pick<KakaoConfig, "exclude_chats" | "watch_chats">): boolean {

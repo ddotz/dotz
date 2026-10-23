@@ -150,8 +150,8 @@ describe("runWatch", () => {
 	test("max_per_run: the rest wait for the next run and nothing is lost", async () => {
 		const chosen = [...Object.values(ROOM).map(String), "106", "107"];
 		const t = setup({ max_per_run: 2, watch_chats: chosen, auto_draft_chats: chosen });
-		t.w.query("INSERT INTO NTChatRoom VALUES (106, 1, 'Extra Group', 3, 0, 0, NULL)").run();
-		t.w.query("INSERT INTO NTChatRoom VALUES (107, 1, 'More Group', 3, 0, 0, NULL)").run();
+		t.w.query("INSERT INTO NTChatRoom (chatId, type, chatName, activeMembersCount, countOfNewMessage, lastUpdatedAt, directChatMemberUserId) VALUES (106, 1, 'Extra Group', 3, 0, 0, NULL)").run();
+		t.w.query("INSERT INTO NTChatRoom (chatId, type, chatName, activeMembersCount, countOfNewMessage, lastUpdatedAt, directChatMemberUserId) VALUES (107, 1, 'More Group', 3, 0, 0, NULL)").run();
 		await t.run();
 		t.add(9, ROOM.direct, 2001);
 		t.add(10, ROOM.group, 2002);

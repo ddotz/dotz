@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
 import { sqliteDb } from "./db.ts";
 import type { ModelReply } from "./draft.ts";
-import { addMessage, BASE_LOG, BASE_TIME, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
+import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { createDraft, listDrafts } from "./send.ts";
 import { type KakaoConfig, kakaoPaths, type Runner } from "./types.ts";
 import { fakeScreen } from "./ui.fixture.ts";
@@ -149,6 +149,54 @@ describe("chat", () => {
 		expect((await t.call("POST", `/api/kakao/chat/${DIRECT}/read`, { logId: "x" })).status).toBe(400);
 		expect(statSync(join(dir, "kakao", "reads.json")).mode & 0o777).toBe(0o600);
 		t.close();
+	});
+});
+
+describe("read counters", () => {
+	const marks = (members: [number, number][]) => (w: Database) =>
+		w.query("UPDATE NTChatRoom SET watermarkKeys = ?, watermarkValues = ? WHERE chatId = ?").run(bplistOfInts(members.map(m => m[0])), bplistOfInts(members.map(m => id(m[1]))), BigInt(ROOM.direct));
+	// Alex (2001) wrote ids 1, 3, 4 and the owner id 2; Alex has read up to 1, Sam (2002) up to 3, a third member (2003) up to nothing.
+	const MEMBERS: [number, number][] = [[OWNER, 4], [2001, 1], [2002, 3], [2003, 0]];
+
+	test("each message carries unread: members other than the author and the owner who have not read it; 0 without watermarks", async () => {
+		const t = setup({}, marks(MEMBERS));
+		const r = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
+		expect(r.json.messages.map((m: any) => [m.logId, m.unread])).toEqual([[id(1), 1], [id(2), 2], [id(3), 1], [id(4), 2]]);
+		t.close();
+	});
+
+	test("a room without readable watermarks shows 0 on every message", async () => {
+		const plain = setup();
+		expect((await plain.call("GET", `/api/kakao/chat/${DIRECT}`)).json.messages.map((m: any) => m.unread)).toEqual([0, 0, 0, 0]);
+		plain.close();
+	});
+
+	test("/reads?from= answers counters only (no bodies) for messages from that logId on, and follows new read positions", async () => {
+		const t = setup({}, marks(MEMBERS));
+		const all = await t.call("GET", `/api/kakao/chat/${DIRECT}/reads?from=${id(1)}`);
+		expect(all).toEqual({ status: 200, json: { counts: { [id(1)]: 1, [id(2)]: 2, [id(3)]: 1, [id(4)]: 2 } } });
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}/reads?from=${id(3)}`)).json).toEqual({ counts: { [id(3)]: 1, [id(4)]: 2 } });
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}/reads?from=${id(99)}`)).json).toEqual({ counts: {} });
+		expect(JSON.stringify(all.json)).not.toContain("hello");
+		const w = new (await import("bun:sqlite")).Database(join(dir, "k.sqlite"));
+		marks([[OWNER, 4], [2001, 4], [2002, 4], [2003, 4]])(w);
+		w.close();
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}/reads?from=${id(1)}`)).json.counts).toEqual({ [id(1)]: 0, [id(2)]: 0, [id(3)]: 0, [id(4)]: 0 });
+		t.close();
+	});
+
+	test("/reads refuses an unwatched room (403), a missing or bad from (400), and an off integration (409)", async () => {
+		const t = setup();
+		expect((await t.call("GET", `/api/kakao/chat/${GROUP}/reads?from=1`)).status).toBe(403);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}/reads`)).status).toBe(400);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}/reads?from=abc`)).status).toBe(400);
+		t.close();
+	});
+
+	test("/reads is off with the integration off (409)", async () => {
+		const off = setup({ enabled: false });
+		expect((await off.call("GET", `/api/kakao/chat/${DIRECT}/reads?from=1`)).status).toBe(409);
+		off.close();
 	});
 });
 
