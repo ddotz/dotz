@@ -308,7 +308,6 @@ function monRunNode(it) {
   const node = monCard(it.name, m.last_run, [...facts, next].filter(Boolean).join("\n\n"), m.kind === "watch" ? m.last_result : "", monRunLine(m));
   const chips = m.kind === "watch" && m.watch ? asChipTexts(m) : [];
   if (node && chips.length) node.append(el("div", { class: "btns cc-act mon-chips" }, ...chips.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asAsk(`w:${m.watch}`, t) }, t))));
-  if (node && m.channel && !it.pc && isProjT(m.channel)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else go("monitoring", `c:${m.channel}`); }, text: "프로젝트 대화 열기" })));
   if (node && m.kind === "watch" && m.watch) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", "data-run": m.watch, onclick: ev => monRunNow(ev.currentTarget, m), text: "지금 확인" })));
   return node;
 }
@@ -325,9 +324,7 @@ function monTimeline(it) {
   const names = it.mon ? monNames(it.mon) : [];
   const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => { const x = monNoticeNode(n, names), src = x && n.pc && monFeed(it) && x.querySelector(".rc-src"); if (src) src.after(el("span", { class: "tag", text: n.pc.name })); return x; } })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
-  const pin = it.app && it.pc ? asPeerNameRow(it) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
-  if (it.app && it.pc) nodes.push(...(it.owned || []).map(m => monRunNode({ name: monTitle(m), mon: m, pc: it.pc })).filter(Boolean));
-  if (pin) nodes.unshift(pin);
+  const nodes = msgs.map(x => x.node()).filter(Boolean);
   if (nodes.length) return nodes;
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
   return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];
@@ -336,12 +333,12 @@ function monTimeline(it) {
 // The title of a settings conversation: the monitor's or the app's own name (a peer's monitor too), not "설정".
 function monSettingsName(t) {
   const a = settingsApp(t);
-  if (!a.startsWith("w:")) { const it = INTG.items.find(x => x.key === a); return it ? it.label : "설정"; }
+  if (!a.startsWith("w:")) { const pe = PQ.of.get(t), it = pe && pe.app ? { label: pe.label } : INTG.items.find(x => x.key === a); return it ? it.label : "설정"; }
   const pe = PQ.of.get(t), m = pe ? pe.mon : NM.items.find(x => x.watch === a.slice(2));
   return m ? monTitle(m) : "설정";
 }
 // The status block of a settings panel: the monitor itself, or each watch the app owns. Same facts as the status card of the monitor's detail (monRunNode).
-const monStatMons = app => (app.startsWith("w:") ? [asMon(app)] : (monItems().find(i => i.key === `i:${app}`) || {}).owned || []).filter(Boolean);
+const monStatMons = app => (app.startsWith("w:") ? [asMon(app)] : (monItems().find(i => i.app && monSettingsApp(i) === app) || {}).owned || []).filter(Boolean);
 function monStatNode(m) {
   const res = m.last_result ? NT_RESULT[m.last_result] : null;
   const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
@@ -349,7 +346,8 @@ function monStatNode(m) {
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: monTitle(m) }), el("span", { class: "as-h", text: [res && res[0], ntMonRun(m), ntMonNext(m)].filter(Boolean).join(" · ") }), ...facts.map(t => el("span", { class: "as-h", text: t }))),
     m.last_result === "fail" ? el("span", { class: "tag err", text: "실패" }) : null);
 }
-const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : "";
+// A peer's app is `<its key>~<computer hash>`: the same key may exist on this computer too (34-peer-monitoring.js pqApp).
+const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.app && it.pc ? pqApp(it.inst, it.pc) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : "";
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
 const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), el("span", { class: "cv-p", text: monState(it) })), kkItem(it) && KK.open ? null : asEntry(monSettingsApp(it))].filter(Boolean);
 // The settings app of the detail open now (an item, or a conversation sitting under one), for the phone's app bar.

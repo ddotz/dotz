@@ -268,7 +268,7 @@ function convPaintHead() {
   const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
-  clear(convHead).append(...[convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), monCtx ? pqLabel({ pc: pqPc(target) }) : null), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, asEntry(app)].filter(Boolean));
+  clear(convHead).append(...[convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), monCtx ? pqLabel({ pc: pqPc(target) }) : null), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, asEntry(app)].filter(Boolean));
 }
 // A project's conversation gets the project page's ⋯ menu (수정 / 삭제, built by pmMenuButton in 19-project-main.js) once the project is known.
 const pjMenuOn = () => isProjT(target) && !!pmOfTarget(target);
@@ -307,6 +307,7 @@ function convTitle() {
   cvAppMenu.hidden = !(convOnPhone() && isLaneT(target));
   pjAppMenu.hidden = !(convOnPhone() && pjMenuOn());
   if (asBar) asBarSync(narrowChat() ? monDetailApp() : "");
+  if (asMoreBar) asMoreSync(convOnPhone() && isSettingsT(target) ? settingsApp(target) : "");
 }
 function convChrome() {
   const conv = convOnPhone() || monConv(), back = !!backTarget() || conv, bar = $("#appbar");
