@@ -1,8 +1,8 @@
 import { type Lane, setStatus, hooks, pendingFile } from "./lanestate.ts";
-import { type ProviderErrorKind, OWNER_RETRY_MS, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
+import { type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { TZ, log, parseSelector } from "./config.ts";
 import { pinnedLimitAlert } from "./accounts-api.ts";
-import { firstAlertForReset } from "./rate-alert.ts";
+import { authStamp, blockText, limitAccount, limitKind, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
 import { report, withHeld, scheduleReport } from "./lanereport.ts";
 import { prompt } from "./laneprompt.ts";
 import { msg } from "./i18n.ts";
@@ -13,28 +13,47 @@ import { runningSubagents } from "./activity.ts";
 import { resumeLane } from "./lanerun.ts";
 
 // A usage limit ("rate") waits for the window reset. A billing/auth error ("owner") waits for the owner to fix it, which
-// nothing signals, so it is probed every OWNER_RETRY_MS; either way the owner gets one report and messages are held.
+// nothing signals, so it is probed on a slow backoff or when the login changes; either way the owner gets one report per episode (limit-alert.ts) and messages are held.
 async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKind): Promise<void> {
 	if (lane.resumeTimer || lane.pausing) return;
 	lane.pausing = true;
 	setStatus(lane, "rate-limited");
 	const owner = kind === "owner";
-	const { ms: wait, reset } = owner ? { ms: OWNER_RETRY_MS, reset: false } : await rateLimitDelay(err, lane.model, "lane");
+	const agent = `lane:${lane.name}`;
+	const lk = limitKind(err, kind);
+	const account = limitAccount(err, lane.model);
+	log(`lane ${lane.name} blocked (${lk}, ${account}): ${err.replace(/\s+/g, " ").slice(0, 300)}`);
+	let note = owner ? noteBlock(agent, account, lk) : undefined;
+	const { ms: wait, reset } = owner ? { ms: ownerRetryMs(note!.failures), reset: false } : await rateLimitDelay(err, lane.model, "lane");
 	lane.pausing = false;
 	if (lane.status !== "rate-limited") return;
+	note ??= noteBlock(agent, account, lk);
 	const at = new Date(Date.now() + wait).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
-	if ((!lane.pauseReported || lane.pauseKind !== kind) && (owner || firstAlertForReset(`lane:${lane.name}`, Date.now() + wait))) {
+	if (note.alert) {
 		report(lane, owner
-			? `모델 제공자 결제/인증 문제로 멈췄어요 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요해요. 그동안 온 메시지는 모아뒀다가 해결되면 이어서 처리하고, ${Math.round(wait / 60_000)}분마다 다시 시도해요.`
+			? blockText(lk as "auth" | "billing", account, providerOf(lane.model), wait)
 			: pinnedLimitAlert(Date.now() + wait) ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`, true);
 	}
 	lane.pauseReported = true;
 	lane.pauseKind = kind;
-	lane.resumeTimer = setTimeout(() => {
+	const authSince = authStamp();
+	const fire = () => {
+		clearTimeout(lane.resumeTimer);
 		lane.resumeTimer = undefined;
 		setStatus(lane, "idle");
 		prompt(lane, withHeld(lane, owner ? msg().laneProvider : msg().laneRate));
-	}, wait);
+	};
+	const mine = (lane.resumeTimer = setTimeout(fire, wait));
+	if (owner) {
+		watchAuth(authSince, () => lane.resumeTimer === mine, () => {
+			log(`lane ${lane.name} login store changed; retrying the blocked turn now`);
+			fire();
+		});
+	}
+}
+// A turn that works again ends the lane's blocked episode: the owner hears it once.
+export function laneRecovered(lane: Lane): void {
+	if (noteRecovered(`lane:${lane.name}`)) report(lane, recoveryText(), true);
 }
 
 // Overloaded/5xx/network errors: retry the failed turn with backoff, bounded. Returns false once the retries are spent,
@@ -134,7 +153,7 @@ export function pauseExhausted(lane: Lane, c: Chain, until: number): void {
 	const line = msg().fallbackExhausted(c.label(c.active), at);
 	log(`lane ${lane.name} ${line}`);
 	hooks.notice(lane, line);
-	report(lane, line, true);
+	if (noteBlock(`lane:${lane.name}`, c.label(c.active), "limit").alert) report(lane, line, true);
 	lane.pauseReported = true;
 	clearTimeout(lane.resumeTimer);
 	atTime(until, t => (lane.resumeTimer = t), () => {

@@ -345,6 +345,10 @@
    "back again"
   ],
   [
+   "alert",
+   "tester: 모델 제공자가 다시 연결됐어요. 멈춰 있던 일을 이어서 처리해요."
+  ],
+  [
    "stdin",
    0,
    {
@@ -469,7 +473,7 @@
   ],
   [
    "alert",
-   "tester: 모델 제공자 결제/인증 문제로 멈췄어요 (Your credit balance is too low). 크레딧 충전이나 로그인 확인이 필요해요. 그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리하고, #분마다 다시 시도해요."
+   "tester: 모델 제공자 결제(크레딧) 문제로 멈췄어요. 계정: anthropic. anthropic 사이트에서 크레딧을 충전해 주세요. 그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리해요. #분 뒤에 조용히 다시 시도해요 (로그인 정보가 바뀌면 바로). 같은 문제로는 다시 알리지 않아요."
   ],
   [
    "snap",
@@ -499,6 +503,10 @@
   [
    "answer",
    "fixed"
+  ],
+  [
+   "alert",
+   "tester: 모델 제공자가 다시 연결됐어요. 멈춰 있던 일을 이어서 처리해요."
   ],
   [
    "snap",
@@ -1473,6 +1481,11 @@
    "rate"
   ],
   [
+   "report",
+   "alpha",
+   "모델 제공자가 다시 연결됐어요. 멈춰 있던 일을 이어서 처리해요."
+  ],
+  [
    "stdin",
    0,
    {
@@ -1494,7 +1507,7 @@
    ],
    true,
    null,
-   2,
+   3,
    "rate"
   ],
   [
@@ -1621,7 +1634,7 @@
    ],
    true,
    null,
-   4,
+   5,
    "rate"
   ],
   [
@@ -1652,7 +1665,7 @@
    ],
    true,
    null,
-   4,
+   5,
    "rate"
   ],
   [
@@ -1709,7 +1722,7 @@
    ],
    true,
    null,
-   4,
+   5,
    "rate"
   ],
   [
@@ -1734,7 +1747,7 @@
    ],
    true,
    null,
-   4,
+   5,
    "rate"
   ],
   [
@@ -1757,7 +1770,7 @@
    ],
    true,
    null,
-   4,
+   5,
    "rate"
   ],
   [
@@ -1873,7 +1886,7 @@
    ],
    true,
    null,
-   5,
+   6,
    "rate"
   ],
   [
@@ -1940,7 +1953,7 @@
    ],
    true,
    null,
-   5,
+   6,
    "rate"
   ],
   [
@@ -1976,7 +1989,7 @@
    ],
    true,
    null,
-   5,
+   6,
    "rate"
   ],
   [
@@ -1999,7 +2012,7 @@
    ],
    true,
    null,
-   5,
+   6,
    "rate"
   ],
   [
@@ -2073,7 +2086,7 @@
    ],
    false,
    null,
-   5,
+   6,
    "rate"
   ],
   [
@@ -2086,7 +2099,7 @@
      "worker_model": "anthropic/test-worker:high",
      "status": "exited",
      "live": false,
-     "reports": 5,
+     "reports": 6,
      "resumable": true,
      "lastText": "worked again",
      "context": {
