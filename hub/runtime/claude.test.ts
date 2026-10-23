@@ -143,7 +143,7 @@ test("spawn arguments: model, effort, fallback, settings with the deny hook, res
 
 	const settings = JSON.parse(readFileSync(arg("--settings"), "utf8"));
 	const hook = settings.hooks.PreToolUse[0];
-	expect(hook.matcher).toBe("Bash");
+	expect(hook.matcher).toBe("Bash|Edit|Write|MultiEdit|NotebookEdit");
 	expect(hook.hooks[0].command).toContain("DOTZ_DIR='/data dir'\\''s'"); // shell-quoted
 	expect(hook.hooks[0].command).toContain("claude-deny-hook.ts");
 

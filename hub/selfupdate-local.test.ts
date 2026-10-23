@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cfg, DATA_DIR } from "./config.ts";
 import { keepsLocal } from "./selfupdate-local.ts";
-import { type AutoHooks, apply, autoCheck, check } from "./selfupdate.ts";
+import { type AutoHooks, apply, autoCheck, check, onLocalSaved } from "./selfupdate.ts";
 
 let root: string, origin: string, work: string, pusher: string, logDir: string;
 const sh = (cwd: string, ...args: string[]) => {
@@ -26,7 +26,7 @@ const head = (dir: string) => sh(dir, "rev-parse", "HEAD");
 const branches = () => sh(work, "branch", "--list", "dotz-local/*").split("\n").filter(Boolean);
 const logFiles = () => (existsSync(logDir) ? readdirSync(logDir) : []);
 const testCmd = ["sh", "-c", "test ! -f FAIL"];
-const opts = () => ({ dir: work, remote: "origin", branch: "main", testCmd, logDir });
+const opts = () => ({ dir: work, remote: "origin", branch: "main", testCmd, logDir, dataDir: root });
 const setCfg = (v: Record<string, unknown> | undefined) => {
 	(cfg as Record<string, unknown>).self_update = v;
 	rmSync(join(DATA_DIR, "self-update.json"), { force: true });
@@ -178,6 +178,48 @@ test("auto-apply never discards the work of a developer checkout", async () => {
 	expect(h.restarts).toBe(0);
 	expect(h.alerts).toHaveLength(1);
 	expect(h.alerts[0]).toContain("\ub0b4 \uc218\uc815\uc744 \ubcf4\uad00\ud558\uace0 \uc0c8 \ubc84\uc804 \ubc1b\uae30");
+});
+
+test("saved local commits get a short Korean summary in the data dir and queue one orchestrator turn", async () => {
+	setCfg({ auto_apply: true, keep_local: false });
+	commit(work, "a.txt", "local\n", "my conflicting change");
+	commit(work, "mine.txt", "x\n", "my own file");
+	push("a.txt", "2\n", "second");
+	const turns: { file: string; text: string; turn: string }[] = [];
+	onLocalSaved(s => void turns.push(s));
+	try {
+		const { api } = hooks();
+		await autoCheck(opts(), api);
+	} finally {
+		onLocalSaved(() => undefined);
+	}
+	expect(turns).toHaveLength(1);
+	const file = turns[0].file;
+	expect(file.startsWith(join(root, "self-update"))).toBe(true);
+	const text = readFileSync(file, "utf8");
+	expect(text).toContain("my conflicting change");
+	expect(text).toContain("a.txt");
+	expect(text).toContain("my own file");
+	expect(text).toContain("mine.txt");
+	expect(text).toContain("dotz-local/");
+	expect(turns[0].turn).toContain(file);
+	expect(turns[0].turn).toContain("custom");
+});
+
+test("a developer checkout that keeps its work saves no summary and queues no turn", async () => {
+	setCfg({ auto_apply: true });
+	commit(work, "a.txt", "local\n", "my conflicting change");
+	push("a.txt", "2\n", "second");
+	const turns: unknown[] = [];
+	onLocalSaved(s => void turns.push(s));
+	try {
+		const { api } = hooks();
+		await autoCheck(opts(), api);
+	} finally {
+		onLocalSaved(() => undefined);
+	}
+	expect(turns).toEqual([]);
+	expect(existsSync(join(root, "self-update"))).toBe(false);
 });
 
 test("which checkouts keep their local work: explicit flag, the install.sh marker, the default install folder, else yes", () => {

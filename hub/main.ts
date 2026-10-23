@@ -34,7 +34,7 @@ import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
 import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
-import { onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
+import { onLocalSaved, onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
 import { clearChannel, nameWatches, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
 import { watchLine } from "./watchtext.ts";
 import { createWatchSummarizer } from "./watchsummary.ts";
@@ -308,6 +308,13 @@ startTokenAudit(alert);
 // Settings → 업데이트: the daily check announces a new dotz version (push + a toast on open pages + one bell item); with self_update.auto_apply
 // on it applies it instead (worklog on success, alert with a choice block otherwise) and restarts through the idle restart gate.
 onUpdateResolved(updateResolved);
+// Local commits saved by an update: one orchestrator turn asks the bot to re-create the personal ones in the custom layer.
+onLocalSaved(({ turn }) => {
+	const channel = discord.status.enabled ? "chat" : "web";
+	const event = { ts: now(), kind: "schedule", source: "gateway", channel, id: "self-update-local", text: turn };
+	emit("inbox", event);
+	deliver(inboxText(event), { target: channel });
+});
 void startSelfUpdate(text => {
 	updateAvailable(text);
 	pushNotify({ kind: "update", title: "dotz 업데이트", body: text, url: "/#settings", tag: "update" });
