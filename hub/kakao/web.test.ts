@@ -8,6 +8,7 @@ import type { ModelReply } from "./draft.ts";
 import { addMessage, BASE_LOG, BASE_TIME, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { createDraft, listDrafts } from "./send.ts";
 import { type KakaoConfig, kakaoPaths, type Runner } from "./types.ts";
+import { fakeScreen } from "./ui.fixture.ts";
 import { createKakaoWeb } from "./web.ts";
 
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
@@ -32,19 +33,14 @@ function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void) 
 	mkdirSync(dirname(paths.config), { recursive: true });
 	writeFileSync(paths.config, JSON.stringify(full));
 	const events: Record<string, unknown>[] = [];
-	const calls: string[][] = [];
 	const state = { failSend: false, changes: 0, leaseRefusal: undefined as string | undefined };
 	const model = {
 		calls: [] as { system: string; user: string }[],
 		reply: async (): Promise<ModelReply> => ({ text: JSON.stringify({ action: "draft", body: "내일 좋아", summary: "점심 약속을 잡는 중" }), inputTokens: 1200, outputTokens: 30 }),
 	};
-	const runner: Runner = async argv => {
-		if (argv[0] === "osascript") return { code: 0, stdout: "com.example.Editor\n", stderr: "" };
-		if (argv[0] === "open") return { code: 0, stdout: "", stderr: "" };
-		calls.push(argv);
-		if (argv.includes("--dry-run")) return { code: 0, stdout: `Recipient: ${argv[argv.indexOf("--") + 1]}\nMessage: ${argv[argv.length - 1]}\n`, stderr: "" };
-		return { code: state.failSend ? 1 : 0, stdout: "", stderr: "" };
-	};
+	const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { sendOut: () => ({ code: state.failSend ? 1 : 0, stdout: "" }) });
+	const runner: Runner = screen.runner;
+	const calls = screen.sends;
 	const db = sqliteDb(dbPath);
 	const web = createKakaoWeb({ paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, kmsg: "/fake/kmsg", collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()) });
 	const call = async (method: string, path: string, body?: unknown) => {
@@ -164,10 +160,7 @@ describe("typed send", () => {
 		expect(r.json.state).toBe("sending");
 		await t.web.idle();
 		expect(t.events.map(e => [e.kind, e.id, e.state])).toEqual([["kakao_send", r.json.id, "sending"], ["kakao_send", r.json.id, "sent"]]);
-		expect(t.calls).toEqual([
-			["/fake/kmsg", "send", "--dry-run", "--", "Alex", "hello there"],
-			["/fake/kmsg", "send", "--", "Alex", "hello there"],
-		]);
+		expect(t.calls).toEqual([["/fake/kmsg", "send", "--chat-id", "chat_alex", "--", "hello there"]]);
 		const sends = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
 		expect(sends).toEqual([{ id: r.json.id, text: "hello there", state: "sent", at: NOW, collector: "mac-a" }]);
 		expect(statSync(join(dir, "kakao", "sends.json")).mode & 0o777).toBe(0o600);
@@ -208,7 +201,7 @@ describe("drafts", () => {
 		const r = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
 		expect(r.status).toBe(202);
 		await t.web.idle();
-		expect(t.calls.at(-1)).toEqual(["/fake/kmsg", "send", "--", "Alex", "see you"]);
+		expect(t.calls.at(-1)).toEqual(["/fake/kmsg", "send", "--chat-id", "chat_alex", "--", "see you"]);
 		expect((await listDrafts({ paths, runner: async () => ({ code: 0, stdout: "", stderr: "" }) }))[0]!.status).toBe("sent");
 		expect(t.events.map(e => e.kind)).toEqual(["kakao_send", "kakao_send", "kakao_draft"]);
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([]);
@@ -222,7 +215,7 @@ describe("drafts", () => {
 		const r = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, { text: "고친 글" });
 		expect(r.status).toBe(202);
 		await t.web.idle();
-		expect(t.calls.at(-1)).toEqual(["/fake/kmsg", "send", "--", "Alex", "고친 글"]);
+		expect(t.calls.at(-1)).toEqual(["/fake/kmsg", "send", "--chat-id", "chat_alex", "--", "고친 글"]);
 		expect((await t.call("POST", `/api/kakao/drafts/${(await t.draft()).code}/send`, { text: "  " })).status).toBe(400);
 		t.close();
 	});

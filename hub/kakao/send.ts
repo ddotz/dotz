@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { draftApprovalBlock } from "../draft-approval.ts";
 import { writePrivate } from "./creds.ts";
+import { pickRoom, type RoomFact } from "./room.ts";
 import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
@@ -146,15 +147,6 @@ const setStatus = (paths: KakaoPaths, code: string, status: DraftStatus, extra: 
 
 export const newer = (latest: string, basis: string) => (/^\d+$/.test(latest) && /^\d+$/.test(basis) ? BigInt(latest) > BigInt(basis) : latest !== basis);
 
-// kmsg --dry-run only echoes the target. The room counts as resolved when the header (before the Message: line) names exactly this
-// room once and says nothing about several matches.
-function resolvesRoom(out: string, room: string): boolean {
-	const header = out.split(/^Message:/m)[0]!;
-	if (/ambiguous|multiple|여러|모호/i.test(header)) return false;
-	const named = [...header.matchAll(/^Recipient:[ \t]*(.*)$/gm)].map(m => m[1]!.trim());
-	return named.length === 1 && named[0] === room;
-}
-
 const sending = new Set<string>();
 const refuse = (reason: string): SendResult => ({ ok: false, reason });
 
@@ -184,12 +176,8 @@ async function refocus(runner: Runner, id: string | undefined): Promise<void> {
 	} catch {}
 }
 
-// kmsg finds the room by searching its name, which also matches longer names. A send goes out only when no other room's name
-// equals or contains this one; `roomNames` lists every room name in the database.
-export const uniqueRoomName = (room: string, chatId: string, all: { chatId: string; name: string }[]) =>
-	!all.some(r => r.chatId !== chatId && r.name.includes(room));
-
-type RoomNames = () => Promise<{ chatId: string; name: string }[]>;
+// `roomNames` lists every room of the database with its type and member count (kind, members); the send is checked against them.
+type RoomNames = () => Promise<RoomFact[]>;
 
 // The last plain line kmsg wrote on stderr, as a short reason (no message text, no room name).
 const kmsgWhy = (stderr: string) => {
@@ -199,30 +187,34 @@ const kmsgWhy = (stderr: string) => {
 
 const sendTextNow = async (input: { chatId: string; roomName: string; text: string }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => {
 	if (input.roomName.trim() === "(unknown)") return refuse("이름을 알 수 없는 대화방이라 화면 자동화로 찾을 수 없어요");
+	let all: RoomFact[] = [];
 	if (deps.roomNames) {
-		let all: { chatId: string; name: string }[];
 		try {
 			all = await deps.roomNames();
 		} catch {
 			return refuse("대화방 목록을 확인하지 못해서 보내지 않았어요");
 		}
-		if (!uniqueRoomName(input.roomName, input.chatId, all)) return refuse("이름이 같거나 겹치는 대화방이 있어서 자동으로 보내지 않았어요. 카카오톡에서 직접 보내 주세요");
 	}
 	const kmsg = deps.kmsg ?? Bun.which("kmsg") ?? "/opt/homebrew/bin/kmsg";
-	const dry = await deps.runner([kmsg, "send", "--dry-run", "--", input.roomName, input.text], { timeoutMs: 20_000 });
-	if (dry.code !== 0 || !resolvesRoom(dry.stdout, input.roomName)) return refuse("대화방을 하나로 확정하지 못해서 보내지 않았어요");
 	const front = await frontmostApp(deps.runner);
+	// The room is a list row opened by id and checked against the database room (room.ts); a name search never picks it.
+	const known = all.find(r => r.chatId === input.chatId);
+	const picked = await pickRoom({ ...known, chatId: input.chatId, name: input.roomName }, all, { kmsg, runner: deps.runner });
+	if (!picked.ok) {
+		await refocus(deps.runner, front);
+		return refuse(picked.reason);
+	}
 	// kmsg prints "Message sent" once Enter went through; a later failure (closing the window) is still a sent message. Without that
 	// line nothing was sent, so one retry with deep window recovery is safe (a cold first window often fails).
 	const wentOut = (r: { code: number; stdout: string }) => r.code === 0 || /Message sent/i.test(r.stdout);
-	let sent = await deps.runner([kmsg, "send", "--", input.roomName, input.text], { timeoutMs: 90_000 });
-	if (!wentOut(sent)) sent = await deps.runner([kmsg, "send", "--deep-recovery", "--", input.roomName, input.text], { timeoutMs: 90_000 });
+	let sent = await deps.runner([kmsg, "send", "--chat-id", picked.id, "--", input.text], { timeoutMs: 90_000 });
+	if (!wentOut(sent)) sent = await deps.runner([kmsg, "send", "--chat-id", picked.id, "--deep-recovery", "--", input.text], { timeoutMs: 90_000 });
 	await refocus(deps.runner, front);
 	if (!wentOut(sent)) return refuse(`카카오톡에서 보내지 못했어요${kmsgWhy(sent.stderr)}`);
 	return { ok: true };
 };
 
-// The kmsg path shared by every send: unique room name, dry-run resolves exactly this room, the real send, then the owner's previous app is back in front.
+// The kmsg path shared by every send: the exact list row is picked and its window verified (room.ts), the real send by that row's id, then the owner's previous app is back in front.
 export const sendText = (input: { chatId: string; roomName: string; text: string }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => oneAtATime(() => sendTextNow(input, deps));
 
 // A pending draft whose room got a newer incoming message can no longer be sent.
