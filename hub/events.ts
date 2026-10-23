@@ -182,6 +182,14 @@ export function answeredIds(): string[] {
 	return tailEvents(paths.outbox).flatMap(e => (e.kind === "out" && e.source === "orchestrator" && typeof e.reply_to === "string" && e.reply_to ? [e.reply_to] : []));
 }
 
+// The owner message with this id (a web `mid` or a Discord message id): the live ring first, then the inbox tail. A reply_to
+// names it, so a late answer can quote it (hub/outbound.ts).
+export function ownerMessage(id: string): { text: string; ts: string; author?: string } | undefined {
+	const is = (e: HubEvent) => (e.kind === "message" || e.kind === "lane_message") && (e.mid === id || e.message_id === id);
+	const e = recent.findLast(is) ?? tailEvents(paths.inbox).findLast(is);
+	return e ? { text: String(e.text ?? ""), ts: e.ts, ...(typeof e.author === "string" ? { author: e.author } : {}) } : undefined;
+}
+
 // Did the orchestrator answer in `target` after `at` (ms)? A stored prompt without a message id counts as answered then.
 export function answeredSince(target: string, at: number): boolean {
 	return tailEvents(paths.outbox).some(e => e.kind === "out" && e.source === "orchestrator" && e.target === target && !e.update_key && Date.parse(String(e.ts)) > at);
