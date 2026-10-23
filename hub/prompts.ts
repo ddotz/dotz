@@ -112,6 +112,8 @@ export function createPrompts(deps: PromptDeps) {
 		answered.delete(replyTo);
 		answered.add(replyTo);
 		if (answered.size > MAX_ANSWERED) answered.delete(answered.values().next().value!);
+		// pending.json drops it now, not at the next unrelated change: a restart right after the answer must not replay it.
+		save();
 	}
 
 	function deliver(text: string, reply?: Reply): void {
@@ -208,6 +210,14 @@ export function createPrompts(deps: PromptDeps) {
 		// 보고 안하는거", the 17:18 web turn).
 		if (text.trimStart().startsWith("<")) return;
 		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
+		// omp runs prompts in the order they were delivered, so a prompt older than the one that just started was taken into a
+		// turn already. A lane report (no target, no message id) has no answer that could settle it: it was consumed by that turn,
+		// and kept it would be replayed after the next restart (2026-10-23, a morning [done] came back at 08:48).
+		if (i > 0) {
+			const used = prompts.slice(0, i).filter(p => !p.steered && !p.target && !p.replyTo);
+			for (const p of used) prompts.splice(prompts.indexOf(p), 1);
+			if (used.length) deps.log(`${used.length} earlier prompt(s) without a message were consumed by a turn and are not kept for a replay`);
+		}
 		if (i < 0 && current && !current.done) {
 			// A user frame the gateway did not deliver (raw text admitted into the run, a runtime's own message): the turn is
 			// still answering the prompt it started with, so its answer must not lose its prompt (2026-10-20 10:43Z, 10:52Z).
@@ -357,7 +367,12 @@ export function createPrompts(deps: PromptDeps) {
 	/** Delivers prompts that were never answered (the gateway stopped mid-turn) again; returns how many were replayed. */
 	function replay(unanswered: Pending[], wrap: (text: string) => string): number {
 		// A stored prompt without a message id (web messages had none) counts as answered when an answer to its target came after it.
-		const fresh = unanswered.filter(p => p.text && Date.now() - (p.at ?? 0) < REPLAY_MAX_AGE_MS && !isAnswered(p.replyTo) && !(!p.replyTo && p.target && p.at && deps.answeredSince?.(p.target, p.at)));
+		const fresh = unanswered.filter(p => {
+			if (!p.text || Date.now() - (p.at ?? 0) >= REPLAY_MAX_AGE_MS) return false;
+			const done = isAnswered(p.replyTo) || Boolean(!p.replyTo && p.target && p.at && deps.answeredSince?.(p.target, p.at));
+			if (done) deps.log(`not replaying ${p.target ?? "-"} ${p.replyTo ?? "(no id)"} after the restart: already answered`);
+			return !done;
+		});
 		if (fresh.length) deps.log(`replaying ${fresh.length} unanswered prompt(s) from before the restart`);
 		for (const p of fresh) deliver(wrap(p.text), p.target ? { target: p.target, replyTo: p.replyTo } : undefined);
 		return fresh.length;
@@ -366,7 +381,12 @@ export function createPrompts(deps: PromptDeps) {
 	/** After an orchestrator restart: every prompt still open (queued, in the lost turn, deferred) is delivered again once, oldest first. */
 	function reopen(wrap: (text: string) => string): { replayed: number; texts: string[] } {
 		const open = [...openDeferred(), ...(current && !current.done ? [current] : []), ...prompts]
-			.filter((p, i, all) => all.indexOf(p) === i && !isAnswered(p.replyTo))
+			.filter((p, i, all) => all.indexOf(p) === i)
+			.filter(p => {
+				const done = isAnswered(p.replyTo);
+				if (done) deps.log(`not replaying ${p.target ?? "-"} ${p.replyTo} after the restart: already answered`);
+				return !done;
+			})
 			.sort((a, b) => a.at - b.at)
 			.map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
 		prompts.length = 0;

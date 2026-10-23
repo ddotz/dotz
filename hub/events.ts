@@ -176,10 +176,14 @@ export function tailEvents(file: string): HubEvent[] {
 	return out;
 }
 
-// Ids of the owner messages the outbox log shows as answered (reply_to of the orchestrator's `out` events; a gateway
-// notice replying to a message did not answer it), from its tail.
+// Ids of the owner messages the outbox log shows as answered, from its tail: the `answered` delivery state of a message (what
+// the owner sees, also for the other messages of a burst or ones a reply_to-less answer settled) and the reply_to of the
+// orchestrator's `out` events (a gateway notice replying to a message did not answer it).
 export function answeredIds(): string[] {
-	return tailEvents(paths.outbox).flatMap(e => (e.kind === "out" && e.source === "orchestrator" && typeof e.reply_to === "string" && e.reply_to ? [e.reply_to] : []));
+	return tailEvents(paths.outbox).flatMap(e => {
+		if (e.kind === "delivery" && e.state === "answered" && typeof e.ref === "string" && e.ref) return [e.ref];
+		return e.kind === "out" && e.source === "orchestrator" && typeof e.reply_to === "string" && e.reply_to ? [e.reply_to] : [];
+	});
 }
 
 // The owner message with this id (a web `mid` or a Discord message id): the live ring first, then the inbox tail. A reply_to

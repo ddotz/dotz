@@ -121,7 +121,13 @@ function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason
 	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key) {
 		const { done, keep } = settleWaiting(awaiting.get(j.target) ?? [], j.replyTo, isLocal(j.target));
 		awaiting.set(j.target, keep);
-		for (const w of done) emitDelivery(j.target, w.ref, "answered");
+		// One truth: a message shown as answered is answered for the prompt queue too (deferred wait, pending.json, restart replay).
+		// An answer that names the last message of a burst (`by`) leaves the burst's other prompts open otherwise.
+		for (const w of done) {
+			emitDelivery(j.target, w.ref, "answered");
+			queue.markAnswered(w.ref);
+			queue.markAnswered(w.by);
+		}
 		recheckAnswered(j.target);
 	}
 	if (isLocal(j.target)) {
