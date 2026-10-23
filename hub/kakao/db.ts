@@ -376,6 +376,19 @@ export async function messages(db: KakaoDb, chatId: string, limit: number, userI
 	}));
 }
 
+// The owner's own text lines, newest first (the voice profile learns from these only).
+export async function ownTexts(db: KakaoDb, chatId: string, userId: string | number, limit: number): Promise<string[]> {
+	const rows = await db.query("SELECT message FROM NTChatMessage WHERE chatId = ? AND authorId = ? AND type = ? ORDER BY logId DESC LIMIT ?", [chatId, String(userId), TEXT_TYPE, Math.max(1, Math.trunc(limit))]);
+	return rows.map(r => str(r.message)).filter(t => t.trim());
+}
+
+// How many text lines the owner wrote in each of the given rooms (no bodies).
+export async function ownTextCounts(db: KakaoDb, chatIds: string[], userId: string | number): Promise<Map<string, number>> {
+	if (!chatIds.length) return new Map();
+	const rows = await db.query(`SELECT CAST(chatId AS TEXT) AS chatId, COUNT(*) AS n FROM NTChatMessage WHERE authorId = ? AND type = ? AND chatId IN (${chatIds.map(() => "?").join(",")}) GROUP BY chatId`, [String(userId), TEXT_TYPE, ...chatIds]);
+	return new Map(rows.map(r => [str(r.chatId), num(r.n)]));
+}
+
 // One message of a room by logId (the media routes), or undefined when the room has no such message.
 export async function messageById(db: KakaoDb, chatId: string, logId: string, userId: string | number): Promise<Msg | undefined> {
 	const m = (await messages(db, chatId, 1, userId, { after: String(BigInt(logId) - 1n) }))[0];

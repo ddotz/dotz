@@ -7,8 +7,8 @@ import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
-import { type KakaoDb, memberLabel, messageById, messages, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
-import { basisOf, buildDraftPrompt, chatLines, type DraftModel, estimateTokens, ownSamples, parseDraftReply, type StyleHint, sinceOwnLast } from "./draft.ts";
+import { type KakaoDb, memberLabel, messageById, messages, ownTextCounts, ownTexts, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
+import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
 import { fetchMedia, mediaOf, mediaTarget, serveLocalFile, showsText } from "./media.ts";
 import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
@@ -30,6 +30,11 @@ export type WebDeps = {
 	draftModel?: DraftModel;
 	// The reply-drafts tone profile of a room (optional extra for the prompt).
 	draftStyle?: (chatId: string) => StyleHint | undefined;
+	// Learns (first draft) or refreshes (every 200 own lines) the owner's voice profile of the room and the global one, before the prompt is built.
+	// It gets a reader of the owner's OWN text lines only.
+	learnVoice?: (src: VoiceSource) => Promise<void>;
+	// The owner sent a draft with his own edit (고치기): the draft text and the text he sent, for the room's tone profile.
+	onCorrection?: (chatId: string, draft: string, sent: string) => void;
 	// The fetch behind GET /api/kakao/media/... (read-only GET of kakaocdn.net media URLs from the database). Default: the global fetch.
 	fetch?: typeof fetch;
 };
@@ -44,7 +49,8 @@ const OFF = { error: "카톡 연동이 꺼져 있어요" };
 const LOST = "게이트웨이가 다시 시작돼서 결과를 확인하지 못했어요";
 const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
 const DRAFT_FAILED = "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요";
-const DRAFT_READ = 200;
+const DRAFT_READ = 300;
+const VOICE_ROOMS = 8;
 const READS_MAX = 500;
 
 export function readConfig(paths: KakaoPaths): KakaoConfig | undefined {
@@ -165,11 +171,22 @@ export function createKakaoWeb(deps: WebDeps) {
 			const window = sinceOwnLast(recent, self);
 			const basis = basisOf(window, self);
 			if (!basis) return done(NO_REPLY);
+			if (deps.learnVoice) {
+				try {
+					const db = await getDb(config);
+					const me = config.userId ?? "";
+					const all = (await allRooms(config)).all;
+					const excluded = new Set(config.exclude_chats ?? []);
+					const recentRooms = all.filter(r => (r.kind === "direct" || r.kind === "group") && !excluded.has(r.chatId)).sort((a, b) => b.lastAt - a.lastAt).slice(0, VOICE_ROOMS).map(r => r.chatId);
+					await deps.learnVoice({ chatId, ownCounts: ids => ownTextCounts(db, ids, me), ownTexts: (id, limit) => ownTexts(db, id, me, limit), recentRooms: async () => recentRooms });
+				} catch {}
+			}
 			let style: StyleHint | undefined;
 			try {
 				style = deps.draftStyle?.(chatId);
 			} catch {}
-			const { system, user } = buildDraftPrompt({ lines: chatLines(window), summary: readJsonText(summaryFile(chatId)), samples: ownSamples(recent), style });
+			const ownLines = recent.filter(m => m.fromMe && m.type === TEXT_TYPE).map(m => m.text);
+			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context: contextLines(recent, window), summary: readJsonText(summaryFile(chatId)), pairs: ownPairs(recent), samples: ownSamples(recent), register: registerOf(ownLines.slice(-80)), style });
 			const reply = await deps.draftModel!(system, user);
 			const parsed = parseDraftReply(reply.text);
 			if (!parsed) return done(DRAFT_FAILED);
@@ -373,6 +390,11 @@ export function createKakaoWeb(deps: WebDeps) {
 				markStale(paths, code);
 				deps.broadcast({ kind: "kakao_draft", chatId: draft.chatId });
 				return json({ error: "그사이 새 메시지가 와서 초안이 낡았어요" }, 409);
+			}
+			if (typeof edited === "string" && edited.trim() !== draft.text.trim()) {
+				try {
+					deps.onCorrection?.(draft.chatId, draft.text, edited);
+				} catch {}
 			}
 			const rec = newRecord(draft.chatId, edited ?? draft.text, code);
 			start(rec, async () => {
