@@ -15,6 +15,7 @@
 // the Settings entries are for bun. Interactive runs ask for them; --answers runs only print their state. Standalone, safe to rerun:
 //   bun setup.ts permissions [--check]     (--check only prints the state, never raises a dialog)
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { asideState, installApp, installCli, loginCli, openApp } from "./onboard/aside.ts";
@@ -36,6 +37,9 @@ const DIR = expandHome(opt("--dir") ?? join(HOME, ".dotz"));
 const MAC = process.platform === "darwin";
 const PLIST = servicePath({ home: HOME });
 const TOKEN_FILE = join(DIR, "secrets", "discord-bot-token");
+// The key every gateway of this owner shares, so 모니터링 shows all computers together and an action runs on the computer that owns
+// the item (docs/peer-monitoring.md). The first computer makes it; the others take the same value.
+const PEER_TOKEN_FILE = join(DIR, "secrets", "peer-token");
 const IDENTITY_FILE = join(DIR, "identity", "IDENTITY.md");
 const SNOWFLAKE = /^\d{17,20}$/;
 
@@ -47,6 +51,7 @@ type Answers = {
 	bot_token?: string;
 	allow_logins: string[];
 	machine_name: string;
+	peer_token?: string;
 	web_port: number;
 	tailscale_https_port: number;
 	orchestrator_model: string;
@@ -291,6 +296,14 @@ async function interactive(): Promise<Answers> {
 	if (!ts.bin && !login) console.log("  Tailscale 이 없어서 웹 앱은 이 컴퓨터에서만 열려요. Tailscale 을 설치한 뒤 setup 을 다시 실행하면 다른 기기에서도 열려요.");
 	else if (login) console.log("  아래 로그인으로 들어오면 웹 앱이 열려요. 설정이 끝나면 테일넷에 바로 열어 둘게요.");
 	const machine_name = askValid(`이 컴퓨터 이름 (웹 앱의 컴퓨터 목록에 이 이름으로 보여요, ${MAX_NAME}자까지)`, priorMachineName || defaultMachineName, v => cleanName(v).length > 0, "이름을 적어 주세요");
+	let peer_token = "";
+	if (!existsSync(PEER_TOKEN_FILE)) {
+		for (;;) {
+			peer_token = secret("다른 컴퓨터의 dotz와 모니터링을 함께 보려면 그 컴퓨터의 공유 키를 붙여넣기 (화면에 안 보여요, 이 컴퓨터가 처음이면 Enter)").trim();
+			if (!peer_token || peer_token.length >= 16) break;
+			console.log("  공유 키는 16자 이상이에요. 다른 컴퓨터의 ~/.dotz/secrets/peer-token 내용을 그대로 붙여넣으세요.");
+		}
+	}
 	const allow_logins = (ts.bin || login ? ask("웹 앱에 들어올 수 있는 Tailscale 로그인 (쉼표로 여러 개, 없으면 Enter)", login, false) : "").split(",").map(s => s.trim()).filter(Boolean);
 
 	const defaults = {
@@ -309,6 +322,7 @@ async function interactive(): Promise<Answers> {
 		bot_token,
 		allow_logins,
 		machine_name: cleanName(machine_name),
+		...(peer_token ? { peer_token } : {}),
 		...defaults,
 		...(advanced
 			? {
@@ -367,6 +381,7 @@ function validate(a: Partial<Answers>): Answers {
 		bot_token: a.bot_token,
 		allow_logins: a.allow_logins ?? prior.web?.allow_logins ?? [],
 		machine_name: cleanName(a.machine_name) || priorMachineName || defaultMachineName,
+		...(typeof a.peer_token === "string" && a.peer_token.trim().length >= 16 ? { peer_token: a.peer_token.trim() } : {}),
 		web_port: Number(a.web_port ?? prior.web?.port ?? 7420),
 		tailscale_https_port: Number(a.tailscale_https_port ?? prior.web?.tailscale_https_port ?? 8443),
 		orchestrator_model: a.orchestrator_model ?? priorSelector("orchestrator"),
@@ -422,6 +437,11 @@ chmodSync(join(DIR, "secrets"), 0o700);
 if (a.bot_token) {
 	writeFileSync(TOKEN_FILE, `${a.bot_token.trim()}\n`);
 	chmodSync(TOKEN_FILE, 0o600);
+}
+if (a.peer_token || !existsSync(PEER_TOKEN_FILE)) {
+	writeFileSync(PEER_TOKEN_FILE, `${a.peer_token ?? randomBytes(32).toString("hex")}\n`);
+	chmodSync(PEER_TOKEN_FILE, 0o600);
+	console.log(a.peer_token ? "모니터링: 공유 키를 secrets/ 에 저장했어요 (화면에 표시 안 함)" : "모니터링: 다른 컴퓨터와 함께 보는 공유 키를 만들었어요. 다른 컴퓨터의 setup 에서 이 컴퓨터의 ~/.dotz/secrets/peer-token 내용을 붙여넣으세요.");
 }
 const config = {
 	_comment: "Written by dotz setup.ts. Secrets live in secrets/ (0600), never here.",

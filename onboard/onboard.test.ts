@@ -2,7 +2,7 @@
 // login parsers read readiness without credentials, the service file fits the platform, and a full `setup.ts --answers`
 // run in a throwaway HOME writes the chosen runtime, links the omp plugin only for omp, and refuses an unknown runtime.
 import { expect, test } from "bun:test";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultHarness, harness, harnessLine, HARNESSES, parseClaudeAuth, parseOmoAuth } from "./harness.ts";
@@ -111,6 +111,27 @@ test("setup --answers on a fresh HOME with OmO installed writes runtime omo, no 
 		const service = readFileSync(join(m.home, ...(process.platform === "darwin" ? ["Library", "LaunchAgents", "dev.dotz.gateway.plist"] : [".config", "systemd", "user", "dotz-gateway.service"])), "utf8");
 		expect(service).toContain(join(m.root, "bin"));
 		expect(readFileSync(join(m.home, ".dotz", "identity", "IDENTITY.md"), "utf8")).toContain(identity.name);
+	} finally {
+		m.cleanup();
+	}
+}, 60_000);
+
+test("setup makes a 0600 peer key once, keeps it on a rerun, and takes the other computer's key from the answers", async () => {
+	const m = machine({ omo: FAKE_OMO });
+	try {
+		const key = join(m.home, ".dotz", "secrets", "peer-token");
+		expect((await m.run({ identity, allow_logins: [] })).code).toBe(0);
+		const made = readFileSync(key, "utf8").trim();
+		expect(made).toMatch(/^[0-9a-f]{64}$/);
+		expect(statSync(key).mode & 0o777).toBe(0o600);
+		const again = await m.run({ identity, allow_logins: [] });
+		expect(readFileSync(key, "utf8").trim()).toBe(made);
+		expect(again.out).not.toContain(made);
+		const shared = "s".repeat(40);
+		const r = await m.run({ identity, allow_logins: [], peer_token: shared });
+		expect(readFileSync(key, "utf8").trim()).toBe(shared);
+		expect(r.out).not.toContain(shared);
+		expect(readFileSync(join(m.home, ".dotz", "config.json"), "utf8")).not.toContain(shared);
 	} finally {
 		m.cleanup();
 	}
