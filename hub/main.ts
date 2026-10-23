@@ -22,7 +22,8 @@ import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { announceUsedChanges } from "./accounts-api.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { applyAccountChange as holdOrchestratorKeepalive, orch, orchBusy, setIdleHandler as setOrchIdleHandler, start as startOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
+import { applyAccountChange as holdOrchestratorKeepalive, orch, orchBusy, resumeAfterError, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
+import { errorAsk, startErrorWatch } from "./orch-error.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { forgetAccountUsage, usageSnapshot } from "./providers.ts";
@@ -47,7 +48,7 @@ import { readMailBody } from "../features/reply-drafts/lib/senders.ts";
 import { realRunner } from "../features/reply-drafts/lib/tone.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
-import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, installDelivery, replies } from "./outbound.ts";
+import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies } from "./outbound.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
@@ -57,6 +58,11 @@ import { setFormLink } from "./auth.ts";
 import { startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
 
 installDelivery();
+// The orchestrator's retries gave up: one [ask] per episode (sent again after a Discord reconnect by the send ledger, pushed
+// as an ask); after any restart its open prompts replay; once the model host answers again, one automatic resume.
+setErrorHandler(e => alert(errorAsk(NAME, e)));
+setRestartedHandler(replayOpen);
+startErrorWatch({ error: () => orch.error, resume: resumeAfterError, log });
 setLaneTitleResolver(name => lanes.get(name)?.title);
 setWatchLabelResolver(watchLabel);
 setAppResolver(n => appKeyOf(n, integrationContext(DATA_DIR, cfg.zele?.enabled !== false && Bun.which("zele") ? ["zele"] : [])));

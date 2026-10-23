@@ -328,11 +328,23 @@ export function createPrompts(deps: PromptDeps) {
 		return fresh.length;
 	}
 
+	/** After an orchestrator restart: every prompt still open (queued, in the lost turn, deferred) is delivered again once, oldest first. */
+	function reopen(wrap: (text: string) => string): { replayed: number; texts: string[] } {
+		const open = [...openDeferred(), ...(current && !current.done ? [current] : []), ...prompts]
+			.filter((p, i, all) => all.indexOf(p) === i && !isAnswered(p.replyTo))
+			.sort((a, b) => a.at - b.at)
+			.map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
+		prompts.length = 0;
+		deferred.length = 0;
+		current = undefined;
+		return { replayed: replay(open, wrap), texts: open.map(p => p.text) };
+	}
+
 	/** Deferred prompts young enough that a restart should wait for their worker. */
 	const waitingOnWorkers = () => openDeferred().filter(p => Date.now() - p.at <= DEFER_BLOCKS_RESTART_MS).length;
 
 	/** The deferred prompts still waiting for their worker's answer (bgwork.ts ties a worker to one of them). */
 	const deferredOpen = () => openDeferred().flatMap(p => (p.target ? [{ target: p.target, replyTo: p.replyTo, at: p.at }] : []));
 
-	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, waitingOnWorkers, deferredOpen, queued: () => prompts.slice(), current: () => current };
+	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, reopen, waitingOnWorkers, deferredOpen, queued: () => prompts.slice(), current: () => current };
 }
