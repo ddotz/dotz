@@ -45,6 +45,18 @@ test("an attachment is served through the whole route: inline for a safe type, a
 	expect([head.status, head.headers.get("content-length"), await head.text()]).toEqual([200, "7", ""]);
 });
 
+test("a download keeps a Korean name and RFC 5987 specials in Content-Disposition (attachment, ascii fallback, percent-encoded filename*)", async () => {
+	const r = await postMail({ source: "fixture", id: "att-name", subject: "이름", attachments: [{ name: "견적서 (최종)'1'*.txt", type: "text/plain", data: b64("x") }] }, deps);
+	const res = await get(`/api/mail/${r.key}/files/0?dl=1`);
+	const cd = res.headers.get("content-disposition")!;
+	const stored = mailByKey(r.key)!.attachments![0]!.name;
+	expect(cd).toStartWith("attachment;");
+	expect(cd).toContain(`filename*=UTF-8''${encodeURIComponent(stored).replace(/['()*]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase())}`);
+	expect(cd.split("filename*=")[1]).toMatch(/^UTF-8''[A-Za-z0-9%._~!test("without the web auth nothing is served"+,;=@-]+$/);
+	expect(cd).toContain("%EA%B2%AC%EC%A0%81%EC%84%9C");
+	expect(/filename="[\x20-\x7e]*"/.test(cd)).toBe(true);
+});
+
 test("without the web auth nothing is served", async () => {
 	expect((await get(`/api/mail/${key}/files/2`, { auth: false })).status).toBe(403);
 });

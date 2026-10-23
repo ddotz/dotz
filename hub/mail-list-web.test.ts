@@ -3,8 +3,8 @@ import { mkdirSync } from "node:fs";
 import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// The mail rows of the 모니터링 tab (web/js/30-monitoring.js monConvNode) in a headless browser: compact, the summary visible,
-// 본문 and 첨부 on the right, the suggestion slot only with data. Set MAIL_SHOTS=<dir> to keep screenshots.
+// The mail rows of the 모니터링 tab (web/js/30-monitoring.js monConvNode) in a headless browser: compact, the summary visible, no right-side buttons,
+// the whole card opens the mail, the reply chip only with data; and the attachments of the original view. Set MAIL_SHOTS=<dir> to keep screenshots.
 const SHOTS = process.env.MAIL_SHOTS ?? "";
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const server = Bun.serve({
@@ -40,64 +40,101 @@ async function open(width: number) {
 
 const now = new Date().toISOString();
 const MAILS = [
-	{ t: "mail:fx-1", m: { subject: "월간 점검 보고서 확인 요청", from: "Alex Sender <sender@example.com>", source: "fx", at: now, summary: "요약\n이번 달 점검이 끝났어요. 스팸 차단은 정상이고 금요일까지 결과 확인이 필요해요.", attachments: [{ name: "점검보고서-2026-10.pdf", type: "application/pdf", size: 482113 }, { name: "차트.png", type: "image/png", size: 20480 }] }, unread: 1 },
-	{ t: "mail:fx-2", m: { subject: "회의 일정 변경", from: "Kim <kim@example.com>", source: "fx", at: now, preview: "안녕하세요.\n목요일 회의를 금요일 오후로 옮기려고 합니다.\n가능하신지 알려 주세요." }, unread: 0 },
-	{ t: "mail:fx-3", m: { subject: "긴 요약 메일", from: "Lee <lee@example.com>", source: "fx", at: now, summary: "첫째 줄 내용입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다. 다섯째 문장입니다. 여섯째 문장입니다. 일곱째 문장입니다. 여덟째 문장입니다. 아홉째 문장입니다. 열째 문장입니다. 열한째 문장입니다. 열두째 문장입니다.", suggest: { label: "답장 초안" } }, unread: 0 },
+	{ t: "mail:fx-1", m: { subject: "월간 점검 보고서 확인 요청", from: "Alex Sender <sender@example.com>", source: "fx", at: now, summary: "요약\n이번 달 점검이 끝났어요. 스팸 차단은 정상이고 금요일까지 결과 확인이 필요해요.", attachments: [{ name: "점검보고서-2026-10.pdf", type: "application/pdf", size: 482113 }, { name: "차트.png", type: "image/png", size: 20480 }], suggest: { kind: "reply-draft", label: "답장 초안", ref: "d1" } }, unread: 1 },
+	{ t: "mail:fx-2", m: { subject: "회의 일정 변경", from: "Kim <kim@example.com>", source: "fx", at: now, preview: "안녕하세요.\n목요일 회의를 금요일 오후로 옮기려고 합니다.\n가능하신지 알려 주세요.", suggest: { kind: "reply-draft", label: "답장 초안", ref: "d2", state: "sent" } }, unread: 0 },
+	{ t: "mail:fx-3", m: { subject: "긴 요약 메일", from: "Lee <lee@example.com>", source: "fx", at: now, summary: "첫째 줄 내용입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다. 다섯째 문장입니다. 여섯째 문장입니다. 일곱째 문장입니다. 여덟째 문장입니다. 아홉째 문장입니다. 열째 문장입니다. 열한째 문장입니다. 열두째 문장입니다.", suggest: { kind: "reply-draft", label: "답장 초안", ref: "d3", state: "waiting" } }, unread: 0 },
+	// no summary, no body: only the header and the subject; the conversation's last line is the "sender · subject" header and must not come back as a summary
+	{ t: "mail:fx-4", m: { subject: "본문이 없는 메일", from: "Park <park@example.com>", source: "fx", at: now }, unread: 0, last: "Park <park@example.com> · 본문이 없는 메일" },
 ];
 const draw = `(() => {
-	const rows = ${JSON.stringify(MAILS)}.map(({ t, m, unread }) => { MAILS.set(t, m); CONV.set(t, { ts: m.at, text: m.subject, from: "bot" }); ts(t).unread = unread; return monConvNode(t, "메일"); });
+	// the page's own late renders (state, notices) must not replace the fixture rows
+	cancelAnimationFrame(monRaf); window.renderMonitoring = () => {};
+	window.__opened = [];
+	window.go = (...a) => { window.__opened.push(a.join(":")); };
+	const rows = ${JSON.stringify(MAILS)}.map(({ t, m, unread, last }) => { MAILS.set(t, m); CONV.set(t, { ts: m.at, text: last || m.subject, from: "bot" }); ts(t).unread = unread; return monConvNode(t, "메일"); });
 	document.querySelector("#mon-tl").replaceChildren(...rows);
 	return true;
 })()`;
 
 for (const width of [1440, 390]) {
-	test(`mail rows at ${width}px are compact, show the summary and keep 본문 / 첨부 on the right`, async () => {
+	test(`mail rows at ${width}px: sender/time, subject, summary, no right buttons, the card is the link`, async () => {
 		const v = await open(width);
-		await v.evaluate(draw);
-		const got = JSON.parse((await v.evaluate(`JSON.stringify((() => {
+		// every check redraws the rows in the same call: nothing of the page can replace them in between
+		const got = JSON.parse((await v.evaluate(`(${draw}, JSON.stringify((() => {
 			const rows = [...document.querySelectorAll("#mon-tl > .bm.rc.mr")];
 			const box = e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; };
 			return { n: rows.length, h: rows.map(r => r.getBoundingClientRect().height), src: rows.map(r => r.querySelector(".rc-src").textContent), title: rows.map(r => r.querySelector(".rc-title").textContent),
+				time: rows.map(r => !!r.querySelector(".rc-hd .rc-time")?.textContent),
 				sum: rows.map(r => r.querySelector(".mr-sum")?.textContent ?? null), sumH: rows.map(r => r.querySelector(".mr-sum")?.getBoundingClientRect().height ?? 0),
-				btns: rows.map(r => [...r.querySelectorAll(".mr-btn")].map(b => ({ label: b.getAttribute("aria-label"), title: b.title, n: b.querySelector(".mr-n")?.textContent ?? null, ...box(b) }))),
-				rowBox: rows.map(box), mainBox: rows.map(r => box(r.querySelector(".mr-main"))), slot: rows.map(r => r.querySelector("[data-slot=suggest]")?.textContent ?? null),
-				old: [...document.querySelectorAll("#mon-tl button")].filter(b => b.textContent === "메일 열기").length, over: document.documentElement.scrollWidth > innerWidth };
-		})())`)) as string) as any;
-		expect(got.n).toBe(3);
-		expect(got.src).toEqual(["Alex Sender", "Kim", "Lee"]);
+				buttons: document.querySelectorAll("#mon-tl button, #mon-tl .mr-btn").length, role: rows.map(r => [r.getAttribute("role"), r.tabIndex]),
+				clip: rows.map(r => r.querySelector(".mr-clip")?.textContent ?? null), clipTag: rows.map(r => r.querySelector(".mr-clip")?.tagName ?? null),
+				chip: rows.map(r => r.querySelector("[data-slot=suggest]")?.textContent ?? null), chipBottom: rows.map(r => { const c = r.querySelector("[data-slot=suggest]"); return c ? box(c).y >= box(r.querySelector(".rc-title")).y + box(r.querySelector(".rc-title")).h : null; }),
+				rowBox: rows.map(box), over: document.documentElement.scrollWidth > innerWidth };
+		})()))`)) as string) as any;
+		expect(got.n).toBe(4);
+		expect(got.src).toEqual(["Alex Sender", "Kim", "Lee", "Park"]);
 		expect(got.title[0]).toBe("월간 점검 보고서 확인 요청");
+		expect(got.time).toEqual([true, true, true, true]);
 		expect(got.sum[0]).toBe("이번 달 점검이 끝났어요. 스팸 차단은 정상이고 금요일까지 결과 확인이 필요해요.");
 		expect(got.sum[1]).toBe("안녕하세요. 목요일 회의를 금요일 오후로 옮기려고 합니다. 가능하신지 알려 주세요.");
+		// nothing to summarize: no third line, never "sender · subject" or the subject again
+		expect(got.sum[3]).toBeNull();
+		for (const [i, s] of got.sum.entries()) if (s !== null) expect(s).not.toContain(got.title[i]);
 		for (const h of got.sumH) expect(h).toBeLessThanOrEqual(60);
 		for (const r of got.h) expect(r).toBeLessThan(width === 390 ? 190 : 150);
-		expect(got.btns.map((b: any[]) => b.map(x => x.label))).toEqual([["메일 본문과 대화 열기", "첨부파일 2개 보기"], ["메일 본문과 대화 열기"], ["메일 본문과 대화 열기"]]);
-		expect(got.btns[0][1].n).toBe("2");
-		for (const [i, row] of got.btns.entries()) for (const b of row) {
-			expect(b.w).toBeGreaterThanOrEqual(40);
-			expect(b.h).toBeGreaterThanOrEqual(36);
-			expect(b.x).toBeGreaterThan(got.mainBox[i].x + got.mainBox[i].w - 1);
-			expect(b.x + b.w).toBeLessThanOrEqual(got.rowBox[i].x + got.rowBox[i].w + 0.5);
-			if (width === 390) expect(b.h).toBeGreaterThanOrEqual(40);
-		}
-		expect(got.slot).toEqual([null, null, "답장 초안"]);
-		expect(got.old).toBe(0);
+		// no right-side buttons at all; the card is a keyboard-reachable button; the attachment count is information only
+		expect(got.buttons).toBe(0);
+		expect(got.role).toEqual([["button", 0], ["button", 0], ["button", 0], ["button", 0]]);
+		expect(got.clip).toEqual(["2", null, null, null]);
+		expect(got.clipTag[0]).toBe("SPAN");
+		expect(got.chip).toEqual(["답장 초안 있음", "자동 답장 보냄", "답장 대기", null]);
+		expect(got.chipBottom.slice(0, 3)).toEqual([true, true, true]);
+		for (const b of got.rowBox) expect(b.w).toBeGreaterThan(width === 390 ? 300 : 400);
 		expect(got.over).toBe(false);
 		if (SHOTS) {
 			mkdirSync(SHOTS, { recursive: true });
+			await v.evaluate(draw);
 			await Bun.write(`${SHOTS}/mail-list-${width}.png`, await v.screenshot());
 		}
 
-		const files = JSON.parse((await v.evaluate(`new Promise(res => {
-			const row = document.querySelector("#mon-tl > .bm.rc.mr"), btn = row.querySelectorAll(".mr-btn")[1];
-			btn.click();
-			res(JSON.stringify({ expanded: btn.getAttribute("aria-expanded"), links: [...row.querySelectorAll(".mr-fn")].map(a => [a.getAttribute("href"), a.target, a.textContent]), dl: [...row.querySelectorAll(".mr-dl")].map(a => [a.getAttribute("href"), a.download]),
-				tap: [...row.querySelectorAll(".mr-fn, .mr-dl")].map(a => Math.round(a.getBoundingClientRect().height)), over: document.documentElement.scrollWidth > innerWidth }));
-		})`)) as string) as any;
-		expect(files.expanded).toBe("true");
-		expect(files.links).toEqual([["/api/mail/fx-1/files/0", "_blank", "점검보고서-2026-10.pdf471KB"], ["/api/mail/fx-1/files/1", "_blank", "차트.png20KB"]]);
-		expect(files.dl).toEqual([["/api/mail/fx-1/files/0?dl=1", "점검보고서-2026-10.pdf"], ["/api/mail/fx-1/files/1?dl=1", "차트.png"]]);
-		for (const h of files.tap) expect(h).toBeGreaterThanOrEqual(40);
-		expect(files.over).toBe(false);
-		if (SHOTS) await Bun.write(`${SHOTS}/mail-list-${width}-files.png`, await v.screenshot());
+		// the whole card opens the mail: a tap on the summary text, a tap on the paperclip, Enter and Space on the focused card
+		const opened = JSON.parse((await v.evaluate(`(${draw}, JSON.stringify((() => {
+			const rows = [...document.querySelectorAll("#mon-tl > .bm.rc.mr")];
+			rows[0].querySelector(".mr-sum").click();
+			rows[0].querySelector(".mr-clip").click();
+			rows[1].dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+			rows[2].dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+			rows[2].dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+			return window.__opened;
+		})()))`)) as string) as string[];
+		expect(opened).toEqual(["chat:mail:fx-1", "chat:mail:fx-1", "chat:mail:fx-2", "chat:mail:fx-3"]);
+	}, 30_000);
+
+	test(`the original view at ${width}px lists the attachments with name and size as download links`, async () => {
+		const v = await open(width);
+		const text = ["Alex Sender <sender@example.com> · 월간 점검 보고서", "", "요약", "점검이 끝났어요.", "", "원문", "안녕하세요. 점검 결과를 보냅니다.", "감사합니다."].join("\n");
+		const drawOriginal = `(() => {
+			cancelAnimationFrame(monRaf); window.renderMonitoring = () => {};
+			const card = msgNode({ kind: "mail", ts: ${JSON.stringify(now)}, source: "fx", mail: "fx-1", conv: "mail:fx-1", subject: "월간 점검 보고서", from: "Alex Sender <sender@example.com>",
+				attachments: [{ name: "점검보고서-2026-10.pdf", type: "application/pdf", size: 482113 }, { name: "차트.png", type: "image/png", size: 20480 }, { name: "아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-2026.xlsx", type: "application/octet-stream", size: 3 }], text: ${JSON.stringify(text)} });
+			document.querySelector("#mon-tl").replaceChildren(card);
+			return true;
+		})()`;
+		const got = JSON.parse((await v.evaluate(`(${drawOriginal}, JSON.stringify((() => {
+			const card = document.querySelector("#mon-tl > .bm.rc"), rows = [...card.querySelectorAll(".mr-file")];
+			const noKey = msgNode({ kind: "mail", ts: ${JSON.stringify(now)}, source: "fx", subject: "첨부 없음", from: "A <a@example.com>", text: "A <a@example.com> · 첨부 없음" });
+			return { head: card.querySelector(".mr-fh")?.textContent, links: rows.map(a => [a.getAttribute("href"), a.download, a.querySelector(".mr-fname").textContent, a.querySelector(".mr-fsize")?.textContent ?? null]),
+				tap: rows.map(a => Math.round(a.getBoundingClientRect().height)), clipped: rows.map(a => a.scrollWidth <= a.clientWidth + 1), none: !noKey.querySelector(".mr-files"), over: document.documentElement.scrollWidth > innerWidth };
+		})()))`)) as string) as any;
+		expect(got.head).toBe("첨부파일 3개");
+		expect(got.links).toEqual([["/api/mail/fx-1/files/0?dl=1", "점검보고서-2026-10.pdf", "점검보고서-2026-10.pdf", "471KB"], ["/api/mail/fx-1/files/1?dl=1", "차트.png", "차트.png", "20KB"], ["/api/mail/fx-1/files/2?dl=1", "아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-2026.xlsx", "아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-2026.xlsx", "3B"]]);
+		for (const h of got.tap) expect(h).toBeGreaterThanOrEqual(44);
+		expect(got.clipped).toEqual([true, true, true]);
+		expect(got.none).toBe(true);
+		expect(got.over).toBe(false);
+		if (SHOTS) {
+			await v.evaluate(drawOriginal);
+			await Bun.write(`${SHOTS}/mail-original-${width}.png`, await v.screenshot());
+		}
 	}, 30_000);
 }
