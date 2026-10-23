@@ -2,7 +2,7 @@
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
 import { addressesOf, precheck, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
-import { askText, buildDraft } from "./flow.ts";
+import { askText, buildDraft, stageForReply } from "./flow.ts";
 import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
@@ -11,6 +11,8 @@ export type OfferMail = { key: string; target: string; thread?: string; source: 
 export type OfferDeps = {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
+	/** Picks among tied 첨부 파일 폴더 files by name (flow.ts stageForReply); tests inject it. */
+	pick?: (names: string[]) => Promise<string[]>;
 	/** The identity sweep: the model call, and the user's sent mail (persona.ts learnFirst), run once before the first draft. */
 	analyze?: ModelCall;
 	sentTexts?: () => Promise<string[]>;
@@ -50,6 +52,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps): Promise<"offered" | "ski
 			return "skipped";
 		}
 		ensureSwitch();
+		await stageForReply(built.rec, { call: deps.call, pick: deps.pick }).catch(e => log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`));
 		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, built.warnings));
 		addDraft(built.rec);
 		deps.suggest?.(m.key, { kind: "reply-draft", label: "답장 초안", ref: built.rec.id });

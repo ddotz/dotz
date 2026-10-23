@@ -60,6 +60,8 @@ export const setDiscordProbe = (probe: () => boolean): void => {
 /** Whether the mail app instance that owns mail `<key>` (matched by its source like the other instance filters) has 디스코드에도 올리기 on. */
 export const mailDiscordOn = (dataDir: string, key: string): boolean => readAppsFile(dataDir)[instanceOf(appEntries(dataDir), "mail", `mail:${key}`)]?.discord === true;
 const discordField = (app: string): SettingField => ({ key: "discord", label: "디스코드에도 올리기", type: "bool", help: "새 메일마다 디스코드 메일 채널에 스레드를 만들어요", store: "custom/apps.json", path: `${app}.discord`, def: false, switch: true });
+// 첨부 파일 폴더: where a mail instance looks for the file a reply promises or a mail asks for (features/reply-drafts/lib/library.ts); empty = none.
+const attachFolderField = (app: string): SettingField => ({ key: "attach_folder", label: "첨부 파일 폴더", type: "text", help: "자주 보내는 파일(악보, 양식 등)을 모아 둔 이 컴퓨터의 폴더 경로예요. 답장이 파일을 보낸다고 하면 여기서 맞는 파일을 찾아 붙여 둬요", store: DRAFTS, path: `attachFolders.${app}`, max: 300 });
 const REPLY_APPS = new Set(["mail", "kakao", "instagram", "youtube", "site"]);
 const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "답장 초안을 쓸 모델이에요", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "" });
 
@@ -89,7 +91,7 @@ export class SettingsError extends Error {
 // An app key or an instance id (`mail-2`): the schema is the app's, the switch and the name are the instance's.
 export const fieldsOf = (app: string): SettingField[] => {
 	const base = app.split("-")[0]!;
-	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app)] : [])] : [];
+	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app)] : []), ...(base === "mail" ? [attachFolderField(app)] : [])] : [];
 };
 
 const readJson = (file: string): Record<string, any> => {
