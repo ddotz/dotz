@@ -33,6 +33,11 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: b.mail ? `mail:${b.mail}` : `lane:${b.lane}`, text: b.text, ...(b.via ? { via: b.via } : {}) });
 			return Response.json({ ok: true });
 		}
+		if (req.method === "DELETE" && path.startsWith("/api/kakao/chat/")) {
+			const p = path.split("/");
+			events.push({ target: `kakao:${p[4]}`, text: `delete ${p[6]}` });
+			return Response.json({ ok: true, removed: true });
+		}
 		if (req.method === "POST" && path.startsWith("/api/kakao/chat/")) {
 			const b = (await req.json()) as { text: string };
 			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: b.text });
@@ -194,6 +199,17 @@ test("act: unknown action, unknown target and a missing sender are refused", asy
 	expect((await act({ action: "message", args: { target: "kakao:room", text: "hi" }, from: "노트북" })).status).toBe(400);
 	expect((await act({ action: "message", args: { target: "mail:inbox", text: "hi" } })).status).toBe(400);
 	expect(B.events).toEqual([]);
+});
+
+test("deleting a failed KakaoTalk send from a peer runs on the owner's own delete route, once", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const r = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "send-delete", chatId: "123", sendId: "S1" } }) }));
+	expect(r.status).toBe(200);
+	expect(await r.json()).toEqual({ ok: true, removed: true });
+	expect(B.events).toEqual([{ target: "kakao:123", text: "delete S1" }]);
+	expect(A.events).toEqual([]);
+	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "send-delete", chatId: "123" } }) }))).status).toBe(400);
 });
 
 test("a KakaoTalk reply from a peer runs on the owner's own kakao send route, once", async () => {
