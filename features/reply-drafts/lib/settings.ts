@@ -106,7 +106,9 @@ export function setApp(app: string, auto: boolean): Settings {
 	return saveSettings({ apps, ...(app === "mail" ? { auto } : {}), ...(auto || !s.decided ? { enabled: true } : {}) });
 }
 
-export const HEADINGS = { rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지" } as const;
+// `learned` = style features measured from the user's own messages (kakao-voice.ts), kept apart from `rules` so a relearn never overwrites what the user wrote;
+// `record` = what the last learning was based on (own message count).
+export const HEADINGS = { rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지", learned: "## 학습한 말투", record: "## 학습 기록" } as const;
 
 export function bullets(md: string, heading: string): string[] {
 	const lines = md.split("\n");
@@ -188,14 +190,21 @@ export function loadStyle(key: ToneKey): LoadedStyle {
 			break;
 		}
 	}
-	const merged = (heading: string) => unique([install, app, room ?? ""].flatMap(md => bullets(md, heading)));
-	return { samples, samplesFrom, rules: merged(HEADINGS.rules), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
+	const merged = (...headings: string[]) => unique([install, app, room ?? ""].flatMap(md => headings.flatMap(h => bullets(md, h))));
+	return { samples, samplesFrom, rules: merged(HEADINGS.rules, HEADINGS.learned), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
 }
 
 // Writes into exactly that profile (a legacy style.md is carried over first when the mail profile is written for the first time).
 export function writeExamples(key: ToneKey | "install", examples: string[]): void {
 	writeAtomic(toneFile(key), setSection(profile(key), HEADINGS.samples, examples));
 }
+
+// Replaces several sections of exactly that profile at once (every other section stays).
+export function writeSections(key: ToneKey | "install", sections: [heading: string, items: string[]][]): void {
+	writeAtomic(toneFile(key), sections.reduce((md, [heading, items]) => setSection(md, heading, items), profile(key)));
+}
+
+export const profileBullets = (key: ToneKey | "install", heading: string): string[] => bullets(profile(key), heading);
 
 // The user's change request, verbatim and dated, in the profile of the draft that was revised, so every later draft there follows it.
 export function recordCorrection(key: ToneKey, change: string, now: Date): void {

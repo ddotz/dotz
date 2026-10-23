@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
 import { sqliteDb } from "./db.ts";
-import type { ModelReply } from "./draft.ts";
+import { MAX_CHAT_CHARS, MAX_PROMPT_CHARS, type ModelReply } from "./draft.ts";
 import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { createDraft, listDrafts } from "./send.ts";
 import { type KakaoConfig, kakaoPaths, type Runner } from "./types.ts";
 import { fakeScreen } from "./ui.fixture.ts";
-import { createKakaoWeb } from "./web.ts";
+import { createKakaoWeb, type WebDeps } from "./web.ts";
 
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
 const id = (n: number) => String(BASE_LOG + BigInt(n));
@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void) {
+function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void, extra: Partial<WebDeps> = {}) {
 	const dbPath = join(dir, "k.sqlite");
 	const fixture = makeFixtureDb(dbPath);
 	fill?.(fixture);
@@ -44,7 +44,7 @@ function setup(config: Partial<KakaoConfig> = {}, fill?: (w: Database) => void) 
 	const runner: Runner = screen.runner;
 	const calls = screen.sends;
 	const db = sqliteDb(dbPath);
-	const web = createKakaoWeb({ paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, kmsg: "/fake/kmsg", collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()), fetch: (async (input: unknown, init?: RequestInit) => (fetched.push({ url: String(input), init }), upstream.reply(String(input)))) as unknown as typeof fetch });
+	const web = createKakaoWeb({ paths, runner, now: () => NOW, openDb: async () => db, broadcast: e => events.push(e), onWatchChange: () => void state.changes++, kmsg: "/fake/kmsg", collector: "mac-a", lease: async () => (state.leaseRefusal ? { ok: false, reason: state.leaseRefusal } : { ok: true }), draftModel: async (system, user) => (model.calls.push({ system, user }), model.reply()), fetch: (async (input: unknown, init?: RequestInit) => (fetched.push({ url: String(input), init }), upstream.reply(String(input)))) as unknown as typeof fetch, ...extra });
 	const call = async (method: string, path: string, body?: unknown) => {
 		const url = new URL(`http://local${path}`);
 		const res = await web.route(new Request(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), url, url.pathname.split("/").filter(Boolean));
@@ -399,8 +399,8 @@ describe("on-demand draft", () => {
 		const { user } = t.model.calls[0]!;
 		expect(chatBlock(user)).toBe("Alex: fine, lunch tomorrow?\nAlex: (사진·파일)");
 		expect(user).toContain("이전 메모: 점심 이야기");
-		expect(user).toContain("- hi, how are you");
-		expect(user).not.toContain("hello there");
+		expect(user).toContain("상대: hello there\n나: hi, how are you");
+		expect(chatBlock(user)).not.toContain("hello there");
 
 		const [d] = await storedDrafts();
 		expect(d).toMatchObject({ chatId: DIRECT, roomName: "Alex", text: "내일 좋아", basisLogId: id(3), status: "pending", tokens: { in: 1200, out: 30 } });
@@ -427,7 +427,7 @@ describe("on-demand draft", () => {
 		t.close();
 	});
 
-	test("input is capped: 30 lines, 300 characters per line, about 2K tokens (5000 characters) in total", async () => {
+	test("input is capped: 30 lines, 300 characters per line, 2500 characters of chat in total", async () => {
 		const lines = setup({}, incoming(10, 49, n => `line-${n}`));
 		await lines.call("POST", DRAFT);
 		await lines.web.idle();
@@ -450,7 +450,7 @@ describe("on-demand draft", () => {
 		await total.call("POST", DRAFT);
 		await total.web.idle();
 		const block2 = chatBlock(total.model.calls[0]!.user);
-		expect([...block2].length).toBeLessThanOrEqual(5000);
+		expect([...block2].length).toBeLessThanOrEqual(MAX_CHAT_CHARS);
 		expect(block2.split("\n").length).toBeLessThan(30);
 		expect(block2.endsWith("나".repeat(299) + "…")).toBe(true);
 		total.close();
@@ -729,6 +729,73 @@ describe("media", () => {
 		expect(t.fetched.length).toBe(1);
 		writeFileSync(paths.config, JSON.stringify({ enabled: false }));
 		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(20)}`)).status).toBe(409);
+		t.close();
+	});
+});
+
+describe("owner voice in the draft prompt", () => {
+	const PAIRS = 22;
+	const at = (n: number) => ({ logId: BASE_LOG + BigInt(n), chatId: ROOM.direct, sentAt: BASE_TIME + n * 10 });
+	// The other side writes formally, the owner writes casually; the last line is the other side's open question.
+	const formalRoom = (w: Database) => {
+		for (let i = 0; i < PAIRS; i++) {
+			addMessage(w, { ...at(10 + i * 2), authorId: 2001, message: `${i}번 건은 확인해 주시겠습니까?` });
+			addMessage(w, { ...at(11 + i * 2), authorId: OWNER, message: `${i}번 ㅇㅇ 확인함ㅋㅋ` });
+		}
+		addMessage(w, { ...at(100), authorId: 2001, message: "내일 점심 가능하신가요?" });
+	};
+	const section = (user: string) => user.slice(user.indexOf("Imitate the 나 lines:"), user.indexOf("Earlier in the room"));
+
+	test("the prompt has the owner's pairs, the room's register stated as 반말, the learned notes, and stays inside the budget", async () => {
+		const t = setup({}, formalRoom, { draftStyle: () => ({ rules: ["길이: 중앙값 9자"], corrections: [], forbidden: [], samples: [] }) });
+		await t.call("POST", DRAFT);
+		await t.web.idle();
+		const { system, user } = t.model.calls[0]!;
+		expect(/Register in THIS room: (반말|존댓말|혼용)/.exec(user)![1]).toBe("반말");
+		const pairs = section(user);
+		expect(pairs.match(/(^|\n)나: /g)!.length).toBe(18);
+		expect(pairs).toContain("상대: 21번 건은 확인해 주시겠습니까?\n나: 21번 ㅇㅇ 확인함ㅋㅋ");
+		expect(pairs).not.toContain("상대: 0번 건");
+		expect(user).toContain("- 길이: 중앙값 9자");
+		expect(chatBlock(user)).toBe("Alex: 내일 점심 가능하신가요?");
+		expect(system.length + user.length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
+		t.close();
+	});
+
+	test("voice learning gets a reader of the owner's own lines only, over his recent rooms without the excluded ones", async () => {
+		const seen: any[] = [];
+		const learnVoice: WebDeps["learnVoice"] = async src =>
+			void seen.push({ chatId: src.chatId, texts: await src.ownTexts(DIRECT, 50), counts: [...(await src.ownCounts([DIRECT, GROUP]))], rooms: await src.recentRooms() });
+		const t = setup({ exclude_chats: [String(ROOM.excluded)] }, formalRoom, { learnVoice });
+		await t.call("POST", DRAFT);
+		await t.web.idle();
+		expect(seen).toHaveLength(1);
+		expect(seen[0].chatId).toBe(DIRECT);
+		expect(seen[0].texts).toHaveLength(PAIRS + 1);
+		expect(seen[0].texts[0]).toBe(`${PAIRS - 1}번 ㅇㅇ 확인함ㅋㅋ`);
+		expect(seen[0].texts.some((x: string) => x.includes("입니까"))).toBe(false);
+		expect(seen[0].counts).toEqual([[DIRECT, PAIRS + 1]]);
+		expect(seen[0].rooms).toEqual([GROUP, DIRECT]);
+		t.close();
+	});
+
+	test("a failing voice learner never blocks the draft", async () => {
+		const t = setup({}, undefined, { learnVoice: async () => Promise.reject(new Error("boom")) });
+		await t.call("POST", DRAFT);
+		await t.web.idle();
+		expect(t.model.calls).toHaveLength(1);
+		t.close();
+	});
+
+	test("sending an edited draft reports the correction; sending it unchanged does not", async () => {
+		const got: string[][] = [];
+		const t = setup({}, undefined, { onCorrection: (chatId, draft, sent) => void got.push([chatId, draft, sent]) });
+		const a = await t.draft();
+		await t.call("POST", `/api/kakao/drafts/${a.code}/send`, { text: "see you" });
+		const b = await t.draft();
+		await t.call("POST", `/api/kakao/drafts/${b.code}/send`, { text: "고친 글" });
+		await t.web.idle();
+		expect(got).toEqual([[DIRECT, "see you", "고친 글"]]);
 		t.close();
 	});
 });
