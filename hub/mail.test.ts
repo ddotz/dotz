@@ -2,7 +2,7 @@
 // with Discord and the event bus injected as fakes.
 import { describe, expect, test } from "bun:test";
 import { eventTarget, type HubEvent } from "./events.ts";
-import { MailError, mailByKey, mailByThread, mailKey, mailTarget, mailTargets, postMail, type MailDeps } from "./mail.ts";
+import { MailError, mailByKey, mailByThread, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
 import { outEvent } from "./projectchat.ts";
 
 function fakes(discordOn: boolean, channel: string | undefined = "1561565203714408448") {
@@ -136,6 +136,17 @@ describe("postMail", () => {
 		expect(r.duplicate).toBeUndefined();
 		expect(mailByKey(r.key)).toBeDefined();
 		expect(calls.events).toHaveLength(2);
+	});
+
+	test("a suggested reply draft is kept on the mail record and can be cleared; an unknown mail takes none", async () => {
+		const { deps } = fakes(false);
+		const r = await postMail({ source: "zele", id: uid("sg"), subject: "회의 일정 문의", from: "kim@example.com" }, deps);
+		expect(setMailSuggest(r.key, { kind: "reply-draft", label: "답장 초안", ref: "RABC234" })).toBe(true);
+		expect(mailByKey(r.key)?.suggest).toEqual({ kind: "reply-draft", label: "답장 초안", ref: "RABC234" });
+		expect(mailByKey(r.key)?.subject).toBe("회의 일정 문의");
+		expect(setMailSuggest(r.key, undefined)).toBe(true);
+		expect(mailByKey(r.key)?.suggest).toBeUndefined();
+		expect(setMailSuggest("zele-nope-unknown", { kind: "reply-draft", label: "답장 초안", ref: "RX" })).toBe(false);
 	});
 
 	test("a thread that cannot be opened leaves the mail web-only", async () => {

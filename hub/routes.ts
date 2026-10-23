@@ -192,7 +192,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "GET" && url.pathname === "/api/conversations") {
 			const items = conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).map(c => {
 				const m = c.target.startsWith("mail:") ? mailByKey(c.target.slice(5)) : undefined;
-				return m ? { ...c, mail: { subject: m.subject, from: m.from, source: m.source, at: m.at, ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}) } } : c;
+				return m ? { ...c, mail: { subject: m.subject, from: m.from, source: m.source, at: m.at, ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.suggest ? { suggest: m.suggest } : {}) } } : c;
 			});
 			return json({ items });
 		}
