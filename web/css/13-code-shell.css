@@ -10,27 +10,33 @@
 .cb-btn.done { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .cb-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-dialog.dlg.shell[open] { display: flex; flex-direction: column; width: min(760px, calc(100vw - 24px)); height: min(680px, calc(var(--vvh, 100dvh) - 24px)); padding: 14px; overflow: hidden; }
+dialog.dlg.shell[open] { display: flex; flex-direction: column; width: min(820px, calc(100vw - 24px)); height: min(760px, calc(var(--vvh, 100dvh) - 24px)); padding: 12px; overflow: hidden; }
 dialog.dlg.shell .fs-hd { padding: 0 0 8px; }
-dialog.dlg.shell .dbody { padding: 0; }
+dialog.dlg.shell .dbody { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 0; overflow: hidden; }
 dialog.dlg.shell .dact { display: none; }
-.sh-wrap { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; min-width: 0; }
-.sh-st { font: 500 12px/16px var(--font); color: var(--fg-3); }
+.sh-wrap { position: relative; display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; min-width: 0; }
+.sh-st { margin-right: 4px; font: 500 12px/16px var(--font); color: var(--fg-3); white-space: nowrap; }
 .sh-st[data-tone="ok"] { color: var(--ok); }
 .sh-st[data-tone="err"] { color: var(--err); }
-.sh-out { position: relative; flex: 1; min-height: 120px; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--tb); color: var(--tf); font: 12.5px/18px var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; overflow-y: auto; -webkit-user-select: text; user-select: text; }
-.sh-probe { position: absolute; visibility: hidden; white-space: pre; }
-.sh-hint { color: var(--fg-3); font: 500 12px/16px var(--font); }
-.sh-in { display: flex; align-items: flex-end; gap: 8px; }
-.sh-cmd { flex: 1; min-width: 0; min-height: 44px; max-height: 140px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font: 16px/22px var(--mono); resize: none; }
-.btn.sh-run, .btn.sh-pw-send { flex: none; height: 44px; min-width: 76px; }
-.sh-keys { display: flex; gap: 6px; padding-bottom: 2px; overflow-x: auto; scrollbar-width: none; }
+.sh-term { flex: 1; min-height: 120px; min-width: 0; padding: 8px 4px 4px 10px; border-radius: 12px; background: var(--tb); overflow: hidden; }
+.sh-term .xterm { height: 100%; }
+.sh-term .xterm-viewport { background: transparent !important; scrollbar-width: thin; }
+.sh-term .xterm-screen { cursor: text; }
+@media (pointer: coarse) { .sh-term .xterm-helper-textarea { font-size: 16px; } }
+.ib.sh-k-pw, .ib.sh-more { display: inline-flex; align-items: center; justify-content: center; height: 32px; width: auto; min-width: 32px; padding: 0 8px; gap: 4px; color: var(--fg-2); }
+.ib.sh-k-pw .ic { width: 16px; height: 16px; }
+.ib.sh-k-pw .sh-k-t { font: 500 12px/16px var(--font); }
+.ib.sh-k-pw.hot { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.ib.sh-more { font-size: 18px; line-height: 1; }
+.sh-keys { display: flex; gap: 4px; padding-bottom: 2px; overflow-x: auto; scrollbar-width: none; }
 .sh-keys::-webkit-scrollbar { display: none; }
-.btn.sh-k { flex: none; height: 40px; padding: 0 12px; }
-.btn.sh-k-pw .ic { width: 16px; height: 16px; }
-.sh-pw { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 10%, var(--layer)); }
+.btn.sh-k { flex: 1 1 0; min-width: 0; height: 40px; padding: 0 2px; font-family: var(--mono); }
+.btn.sh-k.on { background: var(--accent); color: var(--bg); }
+.sh-pw { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 14%, var(--card)); box-shadow: 0 8px 24px rgb(0 0 0 / .3); }
+.sh-pw[hidden] { display: none; }
 .sh-pw-t { color: var(--fg-2); font: 500 12.5px/18px var(--font); }
 .sh-pw-r { display: flex; align-items: center; gap: 6px; }
+.btn.sh-pw-send { flex: none; height: 44px; min-width: 76px; }
 .sh-pw-in { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font: 16px var(--font); }
 @media (max-width: 639px) {
   dialog.dlg.shell[open] { width: 100vw; max-width: 100vw; height: var(--vvh, 100dvh); max-height: none; margin: 0; border-radius: 0; padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom)); }

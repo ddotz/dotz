@@ -61,6 +61,10 @@ const APP_FILES: Record<string, [string, string]> = {
 	"/icons/badge-96.png": ["icons/badge-96.png", "image/png"],
 	"/icons/monochrome-192.png": ["icons/monochrome-192.png", "image/png"],
 	"/icons/monochrome-512.png": ["icons/monochrome-512.png", "image/png"],
+	// xterm.js for the web terminal (web/js/36-shell.js loads it on first open); library code, no secrets.
+	"/vendor/xterm.js": ["vendor/xterm.js", "text/javascript; charset=utf-8"],
+	"/vendor/addon-fit.js": ["vendor/addon-fit.js", "text/javascript; charset=utf-8"],
+	"/vendor/xterm.css": ["vendor/xterm.css", "text/css; charset=utf-8"],
 };
 const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
 
