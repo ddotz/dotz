@@ -359,9 +359,9 @@ export function installHarnessTools(pi: any): void {
 				...(status ? ["", "--- git status --short ---", status] : []),
 				...(open.length ? ["", "--- open workers / unapplied patches ---", ...open] : []),
 			].join("\n");
-			const result = await ctx.newSession(file ? { parentSession: file } : undefined);
-			if (result?.cancelled) return ctx.ui.notify("handover: new session was cancelled", "warning");
-			pi.sendUserMessage(handover);
+			// After newSession the captured pi and ctx are stale (the engine throws); the first prompt goes through withSession's fresh ctx.
+			const result = await ctx.newSession({ ...(file ? { parentSession: file } : {}), withSession: async (next: any) => { await next.sendUserMessage(handover); } });
+			if (result?.cancelled) ctx.ui.notify("handover: new session was cancelled", "warning");
 		},
 	});
 }
