@@ -16,7 +16,7 @@ const routeAlias = new Function(`${between(palette, "const routeAlias =", ";\n")
 
 type Mon = { sel: string; list: boolean };
 function monitoringRoute(narrow: boolean) {
-	const env = { narrowChat: () => narrow, enc: encodeURIComponent, current: "monitoring" };
+	const env = { narrowChat: () => narrow, enc: encodeURIComponent, current: "monitoring", pqOpen: () => {} };
 	const src = `${between(monitoring, "const MON =", "async function loadMonitors")}\nreturn { MON, monConv, monHash, monRoute };`;
 	return new Function(...Object.keys(env), src)(...Object.values(env)) as { MON: Mon; monConv: () => boolean; monHash: () => string; monRoute: (t?: string) => void };
 }
