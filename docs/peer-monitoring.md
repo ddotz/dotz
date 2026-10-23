@@ -13,7 +13,10 @@ gateway that owns the item. That gateway executes it and records it.
   `<data dir>/secrets/peer-token` and is the same value on every gateway. It is never written to config, prompts or logs.
   A request that carries `x-dotz-peer` can reach only the read-only GET list and two POSTs: `/api/peer/act` and
   `/api/peer/lease`.
-- No token file means peering is off. The page then shows only local items.
+- No token file: reads still work through the owner's tailnet identity (the same way the computer switcher works).
+  Forwarded actions and send leases need the token, so the item is read-only on the other computer.
+- An older peer answers 404 to `/api/peer/monitoring`. The hub then builds that peer's snapshot from its `/api/monitors`,
+  `/api/notices`, `/api/integrations` and `/api/conversations`, and marks it `legacy`.
 
 ## Reads (owning gateway answers, any gateway asks)
 
