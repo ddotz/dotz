@@ -60,7 +60,7 @@ export const queue = createPrompts({
 	covers: target => isLocal(target),
 });
 // The orchestrator's background task workers (what a `[later]` turn waits for), read from OmO's task store: /api/workers, /api/state `work`.
-export const bgWork = createBgWork({ sessionFile: () => orch.sessionFile, deferred: queue.deferredOpen });
+export const bgWork = createBgWork({ sessionFile: () => orch.sessionFile, deferred: queue.deferredOpen, turn: queue.turnAt });
 // `owner` marks the owner's own message (it leads with the what-runs-now line); schedules, watches and mail carry a target but are not.
 export function deliver(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): void {
 	if (reply) discord.typing(reply.target);

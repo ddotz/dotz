@@ -428,3 +428,35 @@ test("a final answer that starts like a text the turn already posted to the same
 	q.onAnswer("Short and different answer that says something else entirely.");
 	expect(state.posts.map(p => p.text)).toEqual([b, "Short and different answer that says something else entirely."]);
 });
+
+test("a worker spawned in turn B belongs to B's message, not to the earlier turn's or a steered one", () => {
+	const { q, state, startTurn } = setup();
+	const real = Date.now;
+	let clock = 1_000_000;
+	Date.now = () => clock;
+	try {
+		startTurn("a", { target: "web", replyTo: "msg-a" });
+		q.onAnswer("[later]"); // turn A defers: msg-a stays an open deferred message
+		state.working = false;
+		q.settleTurn();
+		clock += 60_000;
+		startTurn("b", { target: "web", replyTo: "msg-b" });
+		clock += 10_000;
+		const spawnedInB = clock;
+		q.deliver("c", { target: "web", replyTo: "msg-c" }); // steered into B
+		clock += 1000;
+		q.sent("web", "quick answer to c", "msg-c"); // answered by reply_to: B is still the turn
+		q.sent("web", "ack for b", "msg-b"); // msg-b is answered, so it is not an open deferred message
+		expect(q.turnAt(spawnedInB)).toEqual({ target: "web", replyTo: "msg-b" });
+		expect(q.turnAt(1_000_000 + 1000)).toEqual({ target: "web", replyTo: "msg-a" });
+		q.onAnswer("[later]");
+		state.working = false;
+		q.settleTurn();
+		clock += 600_000;
+		// No turn of ours was running then (a run a worker's result woke): no answer here.
+		expect(q.turnAt(clock - 300_000)).toBeUndefined();
+		expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["msg-a"]);
+	} finally {
+		Date.now = real;
+	}
+});

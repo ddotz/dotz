@@ -31,7 +31,7 @@ async function loadSubs() {
 function subsChanged(source) {
   if (current === "home") renderHome();
   renderSubs(); renderBars(); renderWorking(); paintWorkers();
-  if (SUBD && (!source || (SUBD.id ? SUBD.source === source : SUBD.sources.includes(source)))) renderSheet();
+  if (SUBD && (!source || (SUBD.id ? SUBD.source === source : SUBD.sources.includes(source)))) renderSubSheet();
 }
 function subLine(src) {
   const n = runningSubs(src).length;
@@ -73,12 +73,12 @@ function showSheet(d) {
   if (!SUBD.ov) SUBD.ov = ovOpen(closeSheet);
   shBody.dataset.init = "";
   sheet.hidden = false;
-  renderSheet();
+  renderSubSheet();
   $("#sh-close").focus();
   if (SUBD.id) loadSub();
 }
 function openSubs(sources) { showSheet({ sources }); }
-function openSub(source, id, from) { showSheet({ source, id, from }); }
+function openSub(source, id, from, title) { showSheet({ source, id, from, title }); }
 function closeSheet() {
   if (!SUBD) return;
   clearTimeout(SUBD.timer);
@@ -94,12 +94,12 @@ async function loadSub() {
   try { d.data = await api(`/api/subagents/${enc(d.id)}?source=${enc(d.source)}`); d.err = ""; }
   catch (e) { d.err = e.message || "error"; }
   if (SUBD !== d) return;
-  renderSheet();
+  renderSubSheet();
   const st = (d.data && d.data.status) || subNow(d).status;
   clearTimeout(d.timer);
   if (st === "running") d.timer = setTimeout(loadSub, 3000);
 }
-function renderSheet() {
+function renderSubSheet() {
   const d = SUBD;
   if (!d) return;
   $("#sh-back").hidden = !d.from;
@@ -120,7 +120,7 @@ function renderSheet() {
   }
   const l = subNow(d), data = d.data || {};
   const st = data.status || l.status || "";
-  $("#sh-name").textContent = data.description || l.description || data.agent || l.agent || "서브에이전트";
+  $("#sh-name").textContent = data.description || l.description || d.title || data.agent || l.agent || "서브에이전트";
   $("#sh-sub").textContent = `${targetName(targetOfSource(d.source))} · 서브에이전트`;
   const tag = $("#sh-tag");
   tag.hidden = !st; tag.className = `tag ${subTone(st)}`; tag.textContent = subKo[st] || st;

@@ -19,12 +19,14 @@ const isLaneReport = e => e.kind === "lane_report" || (e.kind === "out" && !e.up
 const laneReport = name => ts(`lane:${name}`).msgs.findLast(isLaneReport) || null;
 const openLaneChat = name => { setTarget(`lane:${name}`); go("chat"); };
 // The main assistant's background work (S.work): running first, then what ended in the last hour.
-// Tap: the conversation that asked for the work (its waiting message, flashed). Unknown, or gone: the main chat at the time it started.
+// Tap: the conversation that asked for the work (its waiting message, flashed). Message unknown or not drawn: the work's own detail, never another message.
 async function workGo(w) {
   const t = w.target && validTarget(w.target) ? w.target : MAIN;
+  if (!w.reply_to) return openSub("orchestrator", w.id, null, w.description);
   if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t).catch(() => {});
-  const asked = w.reply_to ? ts(t).msgs.find(e => e.mid === w.reply_to) : null;
-  ntJump({ src: t, at: asked ? asked.ts : new Date(w.started_at).toISOString() });
+  const asked = ts(t).msgs.find(e => e.mid === w.reply_to);
+  if (!asked) return openSub("orchestrator", w.id, null, w.description);
+  ntJump({ src: t, at: asked.ts });
 }
 // One short Korean sentence out of a free-form message: code, links, hashes and markup dropped; English-only lines are not shown.
 function plainKo(text) {
