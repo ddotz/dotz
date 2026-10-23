@@ -208,7 +208,7 @@ export function integrationItems(ctx: IntegrationContext, notices: readonly Noti
 		const sentToday = suggests.filter(s => s.state === "sent" && inConv(e, s.target) && s.at && new Date(s.at).toDateString() === today).length;
 		const cm = comments[e.key] ?? { drafts: 0, unread: 0 };
 		const needs = { drafts: mine.filter(waits).length + cm.drafts, unread: mine.filter(n => !n.read && !waits(n)).length + fromConvs + cm.unread, sentToday };
-		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, notices: mine.slice(0, cap).map(n => n.id), needs };
+		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, notices: mine.slice(0, cap).map(n => n.id), needs };
 	});
 }
 

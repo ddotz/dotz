@@ -296,7 +296,9 @@ function kkPaintRooms() {
     if (watched.length) list.append(...watched.map(kkRow));
     else list.append(el("div", { class: "kk-note", id: "kk-empty", text: "지켜볼 대화방을 골라 주세요" }));
   }
-  clear(kkRooms).append(pick, list);
+  // A peer's kakao has no settings panel here: the status of the watches it owns (a login keeper) is at the top of its pane.
+  const own = KK.pc ? (monItems().find(i => i.app && i.kk && i.pc && i.pc.url === KK.pc.url) || {}).owned || [] : [];
+  clear(kkRooms).append(...(own.length ? [el("section", { class: "kk-own", "aria-label": "감시 상태" }, ...own.map(monStatNode))] : []), pick, list);
   kkRooms.scrollTop = top;
 }
 
