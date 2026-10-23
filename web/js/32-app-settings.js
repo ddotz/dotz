@@ -273,30 +273,30 @@ function asChipPaint() {
   clear(row).append(...texts.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asSend(t) }, t)));
 }
 
-/* ---- the settings entry of a detail: one gear button in its title bar (the head on a wide screen, the app bar on a phone) ---- */
+/* ---- the entries of a detail's title bar (the head on a wide screen, the app bar on a phone): 대화 opens its settings conversation, ⋯ the settings screen ---- */
 function asOpen(ev) { go("monitoring", `c:${asConv(ev.currentTarget.dataset.asOpen)}`); }
-const asBtn = app => el("button", { class: "ib as-hd", type: "button", "aria-label": "설정", title: "설정", "data-as-open": app, onclick: asOpen }, icon("settings"));
-// The button of the settings conversation `app` ("mail", "w:<watch>"), or null while its settings are not loaded (an app without any shows no button).
+const asBtn = app => el("button", { class: "ib as-hd", type: "button", "aria-label": "대화", title: "대화", "data-as-open": app, onclick: asOpen }, icon("chat"));
+// The two buttons of `app` ("mail", "w:<watch>"): 대화 and ⋯; none while its settings are not loaded (an app without any shows no button).
 function asEntry(app) {
-  if (!app) return null;
+  if (!app) return [];
   if (!AS.load[app]) asLoad(app);
-  return AS.by[app] ? asBtn(app) : null;
+  return AS.by[app] ? [asBtn(app), asMoreBtn(app)] : [];
 }
 // The phone has no head: the same button sits in the app bar beside the title and follows the open detail.
 var asBar = asBtn("");   // var: the app bar is drawn (31-conversations.js convTitle) before this file runs
 asBar.id = "as-bar"; asBar.hidden = true;
 $("#vtog").before(asBar);
-// The conversation's own button: ⋯ opens the settings screen (head on a wide screen, app bar on a phone).
-const asMoreBtn = app => el("button", { class: "ib as-hd as-more", type: "button", "aria-label": "설정 열기", title: "설정 열기", "data-as-more": app, onclick: ev => asScreen(ev.currentTarget.dataset.asMore) }, icon("more"));
+// ⋯ opens the settings screen (in a detail's title bar and in the settings conversation's head).
+function asMoreBtn(app) { return el("button", { class: "ib as-hd as-more", type: "button", "aria-label": "설정", title: "설정", "data-as-more": app, onclick: ev => asScreen(ev.currentTarget.dataset.asMore) }, icon("more")); }
 var asMoreBar = asMoreBtn("");   // var: convTitle runs before this file
 asMoreBar.id = "as-more-bar"; asMoreBar.hidden = true;
 $("#vtog").before(asMoreBar);
 function asMoreSync(app) {
-  asMoreBar.hidden = !app;
+  asMoreBar.hidden = !app || !(isSettingsT(target) || AS.by[app]);
   if (app) asMoreBar.dataset.asMore = app;
 }
 function asBarSync(app) {
-  const on = !!app && !!asEntry(app);
+  const on = !!app && !!asEntry(app).length;
   asBar.hidden = !on;
   if (on) asBar.dataset.asOpen = app;
 }
