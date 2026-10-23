@@ -1,5 +1,5 @@
 // One request turns a comment source on, end to end and resumable (every step checks its own state, so a second run continues):
-//   on --app youtube|instagram|site [--name <site>] [--import-legacy | --no-import-legacy] [--label <text>] [--read-kind rss|json|script --read <url|command>]
+//   on --app youtube|instagram|site [--name <site>] [--import-from <file-or-dir> (repeatable)] [--import-yt <file>] [--import-ig <file>] [--import-legacy | --no-import-legacy] [--label <text>] [--read-kind rss|json|script --read <url|command>]
 //      [--post-kind webhook|script --post <url|command> [--secret <file in ~/.dotz/secrets>]] [--owner <name on the site>] [--to <target>]
 //   off --app <key>   |   status
 // Steps: connection check (the only owner-only step: exit 3 with everything he must do, in one batch) -> source config -> personal
@@ -12,7 +12,7 @@ import type { Engine } from "../../../hub/comments/engine.ts";
 import { realEngine } from "../../../hub/comments/real.ts";
 import { createHub } from "../../../hub/kakao/hub.ts";
 import { loadConfig } from "../../youtube-instagram/lib/config.ts";
-import { legacyGate } from "../../youtube-instagram/lib/legacy.ts";
+import { IMPORT_HINT, legacyGate } from "../../youtube-instagram/lib/legacy.ts";
 import { cleanExample } from "../../youtube-instagram/lib/reply-adapter.ts";
 import { dataDir, writeExamples } from "../../reply-drafts/lib/settings.ts";
 import { pickExamples } from "../../reply-drafts/lib/tone.ts";
@@ -118,7 +118,7 @@ export async function runOnboard(args: string[], deps: { engine?: Engine; gatewa
 			const to = flag(args, "--to");
 			const legacy = legacyGate(args);
 			if (legacy.ask) return { lines: legacy.lines, code: 3 };
-			return { lines: [...legacy.lines, `${WORD[app]}이(가) 아직 연결되지 않았어요. 연결에는 사용자가 직접 할 일이 있어요: bun ${join(FEATURE, "..", "youtube-instagram", "bin", "onboard.ts")} run --${app}${to ? ` --target ${to}` : ""}`, `연결이 끝나면 같은 명령(onboard.ts on --app ${app})을 다시 실행해요`], code: 3 };
+			return { lines: [...legacy.lines, `${WORD[app]}이(가) 아직 연결되지 않았어요. 연결에는 사용자가 직접 할 일이 있어요: bun ${join(FEATURE, "..", "youtube-instagram", "bin", "onboard.ts")} run --${app}${to ? ` --target ${to}` : ""}`, `연결이 끝나면 같은 명령(onboard.ts on --app ${app})을 다시 실행해요`, IMPORT_HINT], code: 3 };
 		}
 		[key, label] = [app, `${WORD[app]} 댓글`];
 	}

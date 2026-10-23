@@ -20,7 +20,7 @@
 - 손으로 할 때 쓰는 개별 명령도 남아 있어요: `setup.ts youtube-auth --client <파일>`, `setup.ts instagram-token --from <파일>`, `setup.ts apply ...`, `setup.ts status`.
 
 ## 기존 연결 가져오기
-이 컴퓨터에 예전 설정(오모냥의 ddotz 폴더 등)의 `youtube-oauth.json`, `instagram.json`이 있으면 `onboard.ts run`이 종료 코드 3과 함께 "기존 유튜브·인스타 연결을 가져올까요?"를 한 번만 물어요. 예면 같은 명령에 `--import-legacy`, 아니요면 `--no-import-legacy`를 붙여요. 예는 데이터 폴더의 secrets에 0600으로 복사하고 값은 출력하지 않아요. 댓글 `onboard.ts on`도 같은 질문을 해요.
+이 컴퓨터에 예전 설정(오모냥의 ddotz 폴더 등)의 `youtube-oauth.json`, `instagram.json`이 있으면 `onboard.ts run`이 종료 코드 3과 함께 "기존 유튜브·인스타 연결을 가져올까요?"를 한 번만 물어요. 예면 같은 명령에 `--import-legacy`, 아니요면 `--no-import-legacy`를 붙여요. 예는 데이터 폴더의 secrets에 0600으로 복사하고 값은 출력하지 않아요. 댓글 `onboard.ts on`도 같은 질문을 해요. 예전 토큰의 위치를 알면 `--import-from <파일 또는 폴더>`(여러 번 가능)나 `--import-yt <파일>`, `--import-ig <파일>`을 붙여 다시 실행해요. 알려 준 위치를 먼저 보고, 못 찾으면 위의 기본 폴더를 봐요. 파일 이름은 `youtube-oauth.json`, `instagram.json`과 `youtube_oauth.json`, `youtube-token.json`, `instagram-token.json` 같은 변형도 찾아요.
 
 ## 번역 (처음엔 꺼져 있어요)
 설정 때 묻지 않아요. 오너가 원할 때만 `setup.ts apply --languages en,ja`로 켜요(하루 한 번 도는 `sns-yt-metadata` 감시가 생겨요). 끄려면 `--languages off`예요. 켜기 전에는 제목과 설명을 기본 언어로만 써요.
