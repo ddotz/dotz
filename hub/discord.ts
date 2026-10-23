@@ -526,7 +526,7 @@ export async function send(
 	target: string,
 	text: string,
 	replyTo?: string,
-	opts?: { nonce: string; skip: number; onPart: (index: number) => void },
+	opts?: { nonce: string; skip: number; onPart: (index: number) => void; ping?: boolean },
 ): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
 	let id = resolve(target);
@@ -544,7 +544,7 @@ export async function send(
 	const ids: string[] = [];
 	sentAt.set(target, Date.now());
 	const { text: bare, files: paths } = fileLines(text);
-	const bodies = buildPayloads(bare, replyTo, SOFT_LIMIT);
+	const bodies = buildPayloads(bare, replyTo, SOFT_LIMIT, opts?.ping && OWNER ? OWNER : undefined);
 	if (paths.length && !bodies.length) bodies.push({ content: "", allowed_mentions: mentionsOff, ...reference(replyTo) });
 	// The files go with the last part, planned only when that part is still to be sent (a retry may have sent it already).
 	const last = bodies.length - 1;

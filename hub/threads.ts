@@ -9,6 +9,8 @@
 //   long work (a lane) from a thread         -> that thread becomes the lane's thread
 //   long work (a lane) from chat             -> a new work channel (chat gets one pointer line)
 
+import { splitTone } from "./tone.ts";
+
 type LanePlace = { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
 
 /**
@@ -47,10 +49,55 @@ const TOP_LEVEL = new Set(["chat", "dm", "worklog", "alert"]);
  * answer shows under the question). In a thread or lane channel the conversation is already one topic, so the reference is
  * noise on a phone; it is kept only when the owner wrote something newer there meanwhile (`lastOwner`), so the pairing is clear.
  */
-export function replyRef(target: string, replyTo: string | undefined, lastOwner: string | undefined): string | undefined {
+export function replyRef(target: string, replyTo: string | undefined, lastOwner: string | undefined, late = false): string | undefined {
 	if (!replyTo || !isSnowflake(replyTo)) return undefined;
 	if (TOP_LEVEL.has(target) || target.startsWith("ch:")) return replyTo;
-	return lastOwner && lastOwner !== replyTo ? replyTo : undefined;
+	return late || (lastOwner && lastOwner !== replyTo) ? replyTo : undefined;
+}
+
+/** An answer older than this after its request is late: the owner has moved on and needs the request quoted. */
+export const LATE_MS = 2 * 60_000;
+/** When a Discord message was created, from its id (the high bits of a snowflake are milliseconds since 2015-01-01). */
+export const snowflakeTime = (id: string): number => Number((BigInt(id) >> 22n) + 1420070400000n);
+/**
+ * Is an answer to owner message `replyTo` late? It is when the owner wrote something newer in that conversation (`newest`),
+ * or when the request is more than LATE_MS old (`askedAt`, ms). A late answer is sent as a visible reply that pings the owner.
+ */
+export function isLate(replyTo: string | undefined, newest: string | undefined, askedAt: number | undefined, now = Date.now()): boolean {
+	if (!replyTo) return false;
+	return (newest !== undefined && newest !== replyTo) || (askedAt !== undefined && now - askedAt > LATE_MS);
+}
+
+/**
+ * The request an orchestrator post to `target` that names none answers, when that request is late: the running turn's prompt
+ * there, else the oldest deferred one (a worker's result woke the run). Undefined when nothing is waiting there or it is not late.
+ */
+export function lateRequestId(
+	target: string,
+	current: { target?: string; replyTo?: string; done?: boolean } | undefined,
+	deferred: { target: string; replyTo?: string }[],
+	newest: string | undefined,
+	askedAt: (id: string) => number | undefined,
+	now = Date.now(),
+): string | undefined {
+	const id = current && !current.done && current.target === target ? current.replyTo : deferred.find(d => d.target === target)?.replyTo;
+	return id && isLate(id, newest, askedAt(id), now) ? id : undefined;
+}
+
+const QUOTE_MAX = 140;
+/** The line that puts a late answer next to its request when Discord has no message to reference (a web message). */
+export function lateQuote(original: { text: string; ts: string }, tz: string): string {
+	const flat = original.text.replace(/\s+/g, " ").trim();
+	if (!flat) return "";
+	const at = new Date(original.ts).toLocaleString("ko-KR", { timeZone: tz, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+	return `원본 메시지(${at}): "${flat.length > QUOTE_MAX ? `${flat.slice(0, QUOTE_MAX - 1)}…` : flat}"`;
+}
+
+/** `quote` on its own line right after the status marker, so the marker still becomes the leading emoji. */
+export function withQuote(text: string, quote: string): string {
+	if (!quote) return text;
+	const { head, rest } = splitTone(text);
+	return `${head.trimEnd()}${head ? " " : ""}${quote}\n${rest.replace(/^\s+/, "")}`;
 }
 
 /**

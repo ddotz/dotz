@@ -60,7 +60,7 @@ export function chunks(text: string, limit = LIMIT): string[] {
 }
 
 // `embeds: []` appears only on PATCH (see edit()), so it is optional.
-export type Body = { content: string; components?: unknown[]; embeds?: never[]; allowed_mentions?: { parse: never[] }; message_reference?: { message_id: string; fail_if_not_exists: boolean } };
+export type Body = { content: string; components?: unknown[]; embeds?: never[]; allowed_mentions?: { parse: never[]; replied_user?: boolean; users?: string[] }; message_reference?: { message_id: string; fail_if_not_exists: boolean } };
 export const mentionsOff = { parse: [] as never[] };
 export const reference = (replyTo?: string) => (replyTo && isSnowflake(replyTo) ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {});
 
@@ -103,14 +103,18 @@ export function readable(text: string): string {
 
 // What goes on the wire for one send: plain content only, split by chunks(); the status emoji leads the first message.
 // Pure, so it is testable offline.
-export function buildPayloads(text: string, replyTo?: string, limit = LIMIT): Body[] {
+// `ping` is the owner's id for a late answer: the first part pings him, through the reply reference when it has one,
+// else with a mention (the only parts that may notify anyone).
+export function buildPayloads(text: string, replyTo?: string, limit = LIMIT, ping?: string): Body[] {
 	const { emoji, body } = plainParts(text);
 	const pieces = body.trim() ? chunks(body, limit) : emoji ? [""] : [];
-	return pieces.map((piece, i) => ({
-		content: i === 0 && emoji ? (piece ? `${emoji} ${piece}` : emoji) : piece,
-		allowed_mentions: mentionsOff,
-		...(i === 0 ? reference(replyTo) : {}),
-	}));
+	return pieces.map((piece, i) => {
+		const lead = i === 0 && emoji ? (piece ? `${emoji} ${piece}` : emoji) : piece;
+		const ref = i === 0 ? reference(replyTo) : {};
+		if (i !== 0 || !ping) return { content: lead, allowed_mentions: mentionsOff, ...ref };
+		if ("message_reference" in ref) return { content: lead, allowed_mentions: { parse: [], replied_user: true }, ...ref };
+		return { content: `<@${ping}> ${lead}`, allowed_mentions: { parse: [], users: [ping] }, ...ref };
+	});
 }
 
 // One message that is edited in place or posted as a progress note: never split, too long text is cut to fit.
