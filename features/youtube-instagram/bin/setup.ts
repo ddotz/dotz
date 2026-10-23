@@ -28,6 +28,11 @@ class Fail extends Error {}
 const shq = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 const home = (p: string) => (p.startsWith(`${homedir()}/`) ? `~${p.slice(homedir().length)}` : p);
 const b64url = (b: Buffer) => b.toString("base64url");
+const onOff = (v: string, flag: string): boolean => {
+	if (["on", "yes", "true"].includes(v)) return true;
+	if (["off", "no", "false"].includes(v)) return false;
+	throw new Fail(`DOTZ_FAIL setup ${flag}는 on 또는 off예요`);
+};
 const csv = (v: string) => v.split(",").map(s => s.trim()).filter(Boolean);
 
 function parseArgs(args: string[]): { cmd: string; flags: Map<string, string | true> } {
@@ -70,8 +75,8 @@ export function defaultLoopback(): Loopback {
 }
 
 async function youtubeAuth(ctx: Ctx, flags: Map<string, string | true>, deps: SetupDeps, out: (l: string) => void): Promise<void> {
-	const file = flags.get("client");
-	if (typeof file !== "string") throw new Fail("DOTZ_FAIL setup --client <json 파일>이 필요해요");
+	const file = flags.get("reuse") === true ? paths.ytOauth() : flags.get("client");
+	if (typeof file !== "string") throw new Fail("DOTZ_FAIL setup --client <json 파일>이나 --reuse가 필요해요");
 	const raw = readSecretFile<any>(file, "클라이언트");
 	const c = raw?.installed ?? raw?.web ?? raw;
 	if (typeof c?.client_id !== "string" || typeof c?.client_secret !== "string" || !c.client_id || !c.client_secret) throw new Fail("DOTZ_FAIL setup 클라이언트 파일에 client_id, client_secret이 없어요");
@@ -94,9 +99,16 @@ async function youtubeAuth(ctx: Ctx, flags: Map<string, string | true>, deps: Se
 			headers: { "content-type": "application/x-www-form-urlencoded" },
 			body: new URLSearchParams({ code, client_id: c.client_id, client_secret: c.client_secret, redirect_uri: redirectUri, grant_type: "authorization_code", code_verifier: verifier }),
 		});
-		const body = (await res.json().catch(() => ({}))) as { refresh_token?: string };
+		const body = (await res.json().catch(() => ({}))) as { refresh_token?: string; refresh_token_expires_in?: number };
 		if (!res.ok || !body.refresh_token) throw new Fail(`DOTZ_FAIL youtube-auth token ${res.status}`);
-		const secret: YoutubeOauth = { client_id: c.client_id, client_secret: c.client_secret, refresh_token: body.refresh_token };
+		const now = ctx.now();
+		const secret: YoutubeOauth = {
+			client_id: c.client_id,
+			client_secret: c.client_secret,
+			refresh_token: body.refresh_token,
+			obtained_at: now.toISOString(),
+			...(Number(body.refresh_token_expires_in) > 0 ? { refresh_expires_at: new Date(now.getTime() + Number(body.refresh_token_expires_in) * 1000).toISOString() } : {}),
+		};
 		writeJson(paths.ytOauth(), secret, true);
 		rmSync(paths.ytAccess(), { force: true });
 	} finally {
@@ -180,9 +192,13 @@ function buildConfig(f: Map<string, string | true>, acc: Accounts): Config {
 	if (acc.instagram) c.instagram = { user_id: acc.instagram.user_id, username: acc.instagram.username, post_via: c.instagram?.post_via ?? "api", ...(c.instagram?.token_source ? { token_source: c.instagram.token_source } : {}) };
 	if (c.youtube) {
 		if (str("languages")) c.youtube.languages = str("languages") === "off" ? [] : csv(str("languages")!);
+		if (str("languages") === "off") delete c.youtube.bulk;
 		if (str("base")) c.youtube.base_language = str("base")!;
 		if (str("privacy")) c.youtube.privacy = str("privacy") as any;
 		if (str("youtube-via")) c.youtube.upload_via = str("youtube-via") as any;
+		if (str("audited")) c.youtube.audited = onOff(str("audited")!, "--audited");
+		if (str("oauth-mode")) c.youtube.oauth_mode = str("oauth-mode") as any;
+		if (str("bulk")) c.youtube.bulk = onOff(str("bulk")!, "--bulk");
 	}
 	if (c.instagram && str("instagram-via")) c.instagram.post_via = str("instagram-via") as any;
 	// An external token source (docs/youtube-instagram.md): a file the owner keeps up to date, or `off` to drop it.
@@ -203,7 +219,8 @@ function buildConfig(f: Map<string, string | true>, acc: Accounts): Config {
 		c.quiet_hours = { from: m[1]!, to: m[2]! };
 	}
 	if (str("inbox")) c.inbox_dir = str("inbox")!.replace(/^~(?=\/|$)/, homedir());
-	if (str("budget")) c.quota = { daily_budget: Number(str("budget")) };
+	if (str("budget")) c.quota = { ...c.quota, daily_budget: Number(str("budget")) };
+	if (str("bulk-budget")) c.quota = { ...c.quota, bulk_budget: Number(str("bulk-budget")) };
 	if (str("channel")) c.channel = str("channel");
 	return c;
 }
@@ -263,10 +280,12 @@ const WATCHES = [
 	{ name: "sns-inbox", script: "inbox.ts", every: 5, platform: "any", on: "match", timeout: 120 },
 	{ name: "sns-due", script: "due.ts", every: 5, platform: "any", on: "match", timeout: 900 },
 	{ name: "sns-tokens", script: "tokens.ts", every: 720, platform: "any", on: "change", timeout: 120 },
+	{ name: "sns-yt-login", label: "유튜브 로그인 유지", script: "tokens.ts", args: "login", every: 360, platform: "youtube", on: "change", timeout: 300 },
 	{ name: "sns-yt-metadata", script: "yt-metadata.ts", every: 1440, platform: "youtube", on: "match", timeout: 120 },
 	// Only with an external token source: the same upkeep as sns-tokens for one app, so a failed source shows under that app (내부 기능).
 	{ name: "sns-yt-tokens", script: "tokens.ts", args: "youtube", every: 720, platform: "youtube", on: "change", timeout: 120 },
 	{ name: "sns-ig-tokens", script: "tokens.ts", args: "instagram", every: 720, platform: "instagram", on: "change", timeout: 120 },
+	{ name: "sns-yt-bulk", label: "유튜브 다국어 설명 적용", script: "yt-bulk.ts", every: 60, platform: "youtube", on: "change", timeout: 900 },
 ] as const;
 
 function projectBody(key: string, c: Config, watchesOn: boolean) {
@@ -305,20 +324,23 @@ async function apply(ctx: Ctx, flags: Map<string, string | true>, out: (l: strin
 	out(`project ${key}`);
 
 	const translating = Boolean(config.youtube?.languages.length);
-	const mine = WATCHES.filter(w => (w.name === "sns-yt-metadata" ? translating : w.name.endsWith("-tokens") && w.name !== "sns-tokens" ? Boolean(config[w.platform as "youtube" | "instagram"]?.token_source) : w.platform === "any" || (w.platform === "youtube" ? config.youtube : config.instagram)));
+	const optional: Record<string, boolean> = { "sns-yt-metadata": translating, "sns-yt-bulk": Boolean(config.youtube?.bulk) };
+	const mine = WATCHES.filter(w => (w.name in optional ? optional[w.name] : w.name.endsWith("-tokens") && w.name !== "sns-tokens" ? Boolean(config[w.platform as "youtube" | "instagram"]?.token_source) : w.platform === "any" || (w.platform === "youtube" ? config.youtube : config.instagram)));
 	// A watch tied to a work channel cannot be deleted through the API (409), so turning translations off pauses it; a
 	// later --languages re-adds it by name, which replaces the paused one.
-	if (flags.get("languages") === "off") {
+	const pausing = [flags.get("languages") === "off" ? "sns-yt-metadata" : "", flags.get("languages") === "off" || flags.get("bulk") === "off" ? "sns-yt-bulk" : ""].filter(Boolean);
+	if (pausing.length) {
 		const list = await gateway(ctx, "GET", "/api/watches");
-		const there = (Array.isArray(list) ? list : []).some((w: any) => w?.name === "sns-yt-metadata");
-		if (there) {
-			await gateway(ctx, "PATCH", "/api/watches/sns-yt-metadata", { paused: true });
-			out("watch sns-yt-metadata paused");
+		for (const name of pausing) {
+			if (!(Array.isArray(list) ? list : []).some((w: any) => w?.name === name)) continue;
+			await gateway(ctx, "PATCH", `/api/watches/${name}`, { paused: true });
+			out(`watch ${name} paused`);
 		}
 	}
 	for (const w of mine) {
 		await gateway(ctx, "POST", "/api/watches", {
 			name: w.name,
+			...("label" in w ? { label: w.label } : {}),
 			command: `bun ${shq(join(BIN, w.script))}${"args" in w ? ` ${w.args}` : ""}`,
 			every_minutes: w.every,
 			on: w.on,

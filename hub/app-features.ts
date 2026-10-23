@@ -84,11 +84,13 @@ function approvalTitle(n: NoticeLike): string {
 	return oneLine((n.title ?? "").replace(ID_TAIL, "").replace(KEY_WORD, ""), 60) || "승인 요청";
 }
 
+// A watch whose last output is a progress line the owner reads as the row's status (the YouTube multilingual bulk apply).
+const PROGRESS_WATCH = /bulk/;
 /** One internal row of a watch the app owns. The reason is the words the watch's own failure carries (hub/watchtext.ts), never the raw output. */
 export function internalOf(w: Watch, appLabel = "앱"): InternalView {
 	const f = watchFacts(w), kind = w.session ? "login" : "sync", last = w.state.lastRun;
 	const dot = f.fails ? "fail" : !last || w.paused || w.state.paused ? "idle" : "ok";
-	const status = dot === "fail" ? `${f.fails}번 연달아 실패했어요` : dot === "idle" ? (w.paused || w.state.paused ? "멈춰 있어요" : "아직 확인 전이에요") : "정상이에요";
+	const status = dot === "fail" ? `${f.fails}번 연달아 실패했어요` : dot === "idle" ? (w.paused || w.state.paused ? "멈춰 있어요" : "아직 확인 전이에요") : PROGRESS_WATCH.test(w.name) && f.last_output ? f.last_output : "정상이에요";
 	return { id: w.name, kind, name: `${KIND_KO[kind]} · ${internalName(w, appLabel)}`, dot, status, ...(last ? { last_run: last } : {}), ...(dot === "fail" ? { reason: f.last_output || "확인에 실패했어요" } : {}) };
 }
 

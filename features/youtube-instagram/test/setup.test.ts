@@ -62,7 +62,7 @@ test("youtube-auth prints one consent URL, exchanges the code with PKCE and stor
 	const exchange = f.api().find(c => c.form?.grant_type === "authorization_code")!;
 	expect(exchange.form!.code).toBe("CODE1");
 	expect(createHash("sha256").update(exchange.form!.code_verifier!).digest("base64url")).toBe(url.searchParams.get("code_challenge")!);
-	expect(read(paths.ytOauth())).toEqual({ client_id: "cid", client_secret: SECRETS.clientSecret, refresh_token: SECRETS.refresh });
+	expect(read(paths.ytOauth())).toEqual({ client_id: "cid", client_secret: SECRETS.clientSecret, refresh_token: SECRETS.refresh, obtained_at: expect.any(String) });
 	expect(mode(paths.ytOauth())).toBe(0o600);
 	expect(d.closed()).toBe(true);
 	for (const s of Object.values(SECRETS)) expect(r.lines.join("\n")).not.toContain(s);
@@ -125,7 +125,7 @@ test("apply --dry-run writes a valid config, card, pins and project, and makes n
 	expect(pins.pins.projects).toEqual([{ name: "유튜브·인스타 관리", path: snsDir(), channel: "123", note: "유튜브와 인스타 올리기, 댓글, 통계를 맡아요" }]);
 
 	expect(r.lines.slice(0, 3)).toEqual([`config ${paths.config()}`, "card sns-channels", "project ch:123"]);
-	expect(r.lines.slice(3)).toEqual(["watch sns-yt-comments every 30m", "watch sns-ig-comments every 60m", "watch sns-ig-dm every 10m", "watch sns-inbox every 5m", "watch sns-due every 5m", "watch sns-tokens every 720m", "watch sns-yt-metadata every 1440m", "ok"]);
+	expect(r.lines.slice(3)).toEqual(["watch sns-yt-comments every 30m", "watch sns-ig-comments every 60m", "watch sns-ig-dm every 10m", "watch sns-inbox every 5m", "watch sns-due every 5m", "watch sns-tokens every 720m", "watch sns-yt-login every 360m", "watch sns-yt-metadata every 1440m", "ok"]);
 	for (const g of f.gateway()) {
 		expect(g.url.startsWith(GATEWAY)).toBe(true);
 		expect(g.hubToken).toBe(SECRETS.hub);
@@ -135,7 +135,7 @@ test("apply --dry-run writes a valid config, card, pins and project, and makes n
 test("apply posts the watches of DESIGN, woken in the project channel, and only for the connected platforms", async () => {
 	const f = fakeCtx();
 	await run(f.ctx, [...DRY_BOTH, "--channel", "ch:123"]);
-	const want = (name: string, script: string, every: number, on: string) => ({ name, command: `bun ${join(BIN, script)}`, every_minutes: every, on, ...(on === "match" ? { pattern: "." } : {}), to: "orchestrator", channels: ["123"] });
+	const want = (name: string, script: string, every: number, on: string, args = "") => ({ name, command: `bun ${join(BIN, script)}${args}`, every_minutes: every, on, ...(on === "match" ? { pattern: "." } : {}), to: "orchestrator", channels: ["123"] });
 	expect(f.watches.map(w => ({ ...w, timeout_seconds: undefined }))).toMatchObject([
 		want("sns-yt-comments", "yt-comments.ts", 30, "match"),
 		want("sns-ig-comments", "ig-comments.ts", 60, "match"),
@@ -143,6 +143,7 @@ test("apply posts the watches of DESIGN, woken in the project channel, and only 
 		want("sns-inbox", "inbox.ts", 5, "match"),
 		want("sns-due", "due.ts", 5, "match"),
 		want("sns-tokens", "tokens.ts", 720, "change"),
+		want("sns-yt-login", "tokens.ts", 360, "change", " login"),
 	]);
 	expect(f.watches.find(w => w.name === "sns-tokens")).not.toHaveProperty("pattern");
 
@@ -157,7 +158,7 @@ test("apply posts the watches of DESIGN, woken in the project channel, and only 
 	resetCustom();
 	const yt = fakeCtx();
 	await run(yt.ctx, ["apply", "--dry-run", "--yt-channel", YT_ID, "--languages", "en"]);
-	expect(yt.watches.map(w => w.name)).toEqual(["sns-yt-comments", "sns-inbox", "sns-due", "sns-tokens", "sns-yt-metadata"]);
+	expect(yt.watches.map(w => w.name)).toEqual(["sns-yt-comments", "sns-inbox", "sns-due", "sns-tokens", "sns-yt-login", "sns-yt-metadata"]);
 	expect(yt.watches.at(-1)).toMatchObject({ command: `bun ${join(BIN, "yt-metadata.ts")}`, every_minutes: 1440, on: "match", pattern: "." });
 });
 
@@ -184,6 +185,27 @@ test("multilingual metadata is opt-in: no languages and no sns-yt-metadata by de
 	expect(off.watches.find(w => w.name === "sns-yt-metadata")).toMatchObject({ paused: true });
 	expect(removed.lines).toContain("watch sns-yt-metadata paused");
 	expect(removed.lines).not.toContain("watch sns-yt-metadata every 1440m");
+});
+
+test("bulk apply is opt-in: off by default, --bulk on needs languages and adds sns-yt-bulk, --bulk off pauses it; audited and oauth-mode are stored", async () => {
+	const plain = fakeCtx();
+	await run(plain.ctx, DRY_BOTH);
+	expect(read(paths.config()).youtube.bulk).toBeUndefined();
+	expect(read(paths.config()).youtube.audited).toBeUndefined();
+	expect(plain.watches.map(w => w.name)).not.toContain("sns-yt-bulk");
+
+	const bad = await run(fakeCtx().ctx, [...DRY_BOTH, "--bulk", "on"]);
+	expect(bad.code).not.toBe(0);
+
+	const on = fakeCtx();
+	const enabled = await run(on.ctx, [...DRY_BOTH, "--languages", "en,ja", "--bulk", "on", "--bulk-budget", "8000", "--audited", "no", "--oauth-mode", "testing"]);
+	expect(enabled.lines).toContain("watch sns-yt-bulk every 60m");
+	expect(read(paths.config())).toMatchObject({ youtube: { bulk: true, audited: false, oauth_mode: "testing" }, quota: { bulk_budget: 8000 } });
+	expect(on.watches.find(w => w.name === "sns-yt-bulk")).toMatchObject({ label: "유튜브 다국어 설명 적용", command: `bun ${join(BIN, "yt-bulk.ts")}`, on: "change" });
+
+	const off = await run(on.ctx, [...DRY_BOTH, "--bulk", "off"]);
+	expect(off.lines).toContain("watch sns-yt-bulk paused");
+	expect(read(paths.config()).youtube.bulk).toBe(false);
 });
 
 test("apply merges the project into pins.json without touching other entries, and a second run changes nothing", async () => {
@@ -226,7 +248,7 @@ test("apply uses the connected accounts, keeps secrets 0600 and prints none of t
 
 	expect(r.code).toBe(0);
 	expect(read(paths.config())).toMatchObject({ youtube: { channel_id: YT_ID, title: "My Channel" }, instagram: { user_id: "1784", username: "owner" } });
-	expect(f.watches).toHaveLength(6);
+	expect(f.watches).toHaveLength(7);
 	expect(mode(paths.ytOauth())).toBe(0o600);
 	expect(mode(paths.instagram())).toBe(0o600);
 	for (const s of Object.values(SECRETS)) {
@@ -286,7 +308,7 @@ test("status prints one Korean line per part, before and after setup", async () 
 	expect(after.lines).toHaveLength(4);
 	expect(after.lines[1]).toContain("My Channel");
 	expect(after.lines[2]).toContain("@owner");
-	expect(after.lines[3]).toContain("6개");
+	expect(after.lines[3]).toContain("7개");
 	for (const l of after.lines) expect(l).toMatch(/요(\)|\.)?$|요 \(/);
 	expect(readJson(paths.config())).toBeDefined();
 });

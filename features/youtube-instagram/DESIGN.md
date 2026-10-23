@@ -87,9 +87,15 @@ and exits with the code. Tests call `run` with a fake ctx.
 ```
 
 - `youtube` / `instagram` are optional (an owner may run only one).
-- `upload_via` / `post_via`: `api` (default) or `aside` (browser fallback, done by the orchestrator through `aside repl`;
-  scripts then only prepare the job and print what to do). Note: Google locks videos uploaded through an unaudited API
-  project to private; until the project passes the audit, public uploads go through `aside` (YouTube Studio).
+- `upload_via` / `post_via`: `api` (default) or `aside`. YouTube uploads use the API only when `youtube.audited` is true
+  (Google locks videos uploaded through an unaudited API project to private and the API cannot set a related video); otherwise
+  due.ts runs the fixed Studio script (`lib/studio.ts`: upload step, then details step, both in background Aside tabs) and
+  falls back to `aside-needed <job> youtube <reason>` for the orchestrator after 3 failed runs or at once on a login page.
+  `youtube.oauth_mode` (testing|production) and `youtube.bulk` are optional; `quota.bulk_budget` caps the bulk apply.
+- Login keeper: `sns-yt-login` (`tokens.ts --youtube`) renews a testing-mode refresh token on day 6 (`lib/reconsent.ts`, the
+  `setup.ts youtube-auth --reuse` loopback + the consent page script); two failed renewals print `DOTZ_FAIL auth` with a Korean reason.
+  Comment reading: `lib/yt-read.ts` uses InnerTube (`lib/innertube.ts`, ids kept per scope in cache/innertube-seen.json) and the
+  Data API `commentThreads` as fallback. Bulk apply: `lib/bulk.ts`, progress in bulk.json.
 - `approval`: `each` (one decision block per item) or `batch` (one decision block per batch). Both ask before anything
   goes public; there is no auto-publish mode.
 - `posting_times`: when `publish_at` is not given, `sns.ts approve` schedules the job at the next posting time.

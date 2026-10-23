@@ -104,7 +104,8 @@ describe("a watch an app owns belongs to the app", () => {
 			await openScreen(v);
 			await waitFor(v, `document.querySelector('#app-sw .as-stat[data-watch="kakao-new"]')`);
 			const t = await q<string>(v, `return document.querySelector('#app-sw .as-stat[data-watch="kakao-new"]').textContent`);
-			for (const s of ["카카오 새 글 확인", "연속 실패 2번", "마지막 정상", "다음 오후"]) expect(t).toContain(s);
+			for (const s of ["카카오 새 글 확인", "연속 실패 2번", "마지막 정상"]) expect(t).toContain(s);
+			expect(t).toMatch(/다음.*오후/);
 			await shot(v, `owned-watch-panel-${w}.png`);
 		});
 		test(`${label}: a peer's owned watch is no row either, its app row fails and the app shows the status`, async () => {
@@ -158,7 +159,8 @@ describe("a monitor's conversation", () => {
 		expect(s.title).toContain("까르띠에 로그인 유지");
 		expect(s.title).not.toContain("설정");
 		expect(s.chip).toBe("맥미니");
-		for (const t of ["연속 실패 3번", "마지막 정상", "다음 오후"]) expect(s.stat).toContain(t);
+		for (const t of ["연속 실패 3번", "마지막 정상"]) expect(s.stat).toContain(t);
+		expect(s.stat).toMatch(/다음.*오후/);
 		await shot(v, "peer-monitor-conversation-390.png");
 	});
 

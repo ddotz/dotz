@@ -96,7 +96,8 @@ export function inQuietHours(cfg: Config, now: Date): boolean {
 }
 
 type Stored<S> = { fails: number; data?: S };
-export type WatchOutcome<S> = { lines: string[]; state?: S } | "skip";
+// fail: a Korean sentence; the state is saved, then the run ends as DOTZ_FAIL auth with it (the app row reads it).
+export type WatchOutcome<S> = { lines: string[]; state?: S; fail?: string } | "skip";
 
 function readState<S>(file: string): Stored<S> {
 	try {
@@ -130,6 +131,7 @@ export async function runWatch<S>(ctx: Ctx, opts: { quiet?: boolean; body: (cfg:
 		}
 		if (out === "skip") return { lines: [], code: 0 };
 		writeJson(file, { fails: 0, data: out.state ?? stored.data });
+		if (out.fail) return fail("auth", out.fail);
 		return { lines: out.lines, code: 0 };
 	} catch (e) {
 		if (e instanceof QuotaError && cfg) return { lines: await announceExhausted(ctx, cfg), code: 0 };

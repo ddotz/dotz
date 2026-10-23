@@ -291,7 +291,8 @@ async function stepDetect(r: Run): Promise<Out> {
 async function stepApply(r: Run): Promise<Out> {
 	// A work channel given as the progress target also owns the project and the watches.
 	const flags = [...r.platforms.map(p => `--${p}`), ...(r.target.startsWith("ch:") ? ["--channel", r.target] : [])];
-	const res = await setupRun(r.d.ctx, ["apply", ...flags]);
+	const production = r.state.steps["gcp-publish"]?.status === "done" ? ["--oauth-mode", "production"] : [];
+	const res = await setupRun(r.d.ctx, ["apply", ...flags, ...production]);
 	return res.code === 0 ? { status: "done", note: "설정, 카드, 프로젝트, 감시를 켰어요" } : { status: "failed", note: `설정 적용에 실패했어요 (${clean(res.lines.at(-1) ?? "")})` };
 }
 

@@ -12,7 +12,7 @@ import type { YtLoc } from "./youtube.ts";
 
 export type JobKind = "upload" | "reply" | "metadata";
 export type JobStatus = "draft" | "approved" | "scheduled" | "posting" | "done" | "failed" | "rejected";
-export type UploadSpec = { file: string; title: string; description: string; tags: string[]; localizations: Record<Lang, YtLoc>; privacy: "private" | "unlisted" | "public"; ig_caption?: string };
+export type UploadSpec = { file: string; title: string; description: string; tags: string[]; localizations: Record<Lang, YtLoc>; privacy: "private" | "unlisted" | "public"; ig_caption?: string; related?: string };
 export type ReplySpec = { platform: Platform; comment_id: string; text: string };
 export type MetadataSpec = { video_id: string; append: Record<Lang, string>; localizations: Record<Lang, YtLoc> };
 export type Job = {
@@ -31,6 +31,7 @@ export type Job = {
 	finished?: string;
 	result: Partial<Record<Platform, string>>;
 	notified?: Platform[];
+	studio?: { video_id?: string; tries: number };
 	error?: string;
 };
 export type UploadIntent = { fingerprint: string; started: string };
@@ -102,7 +103,7 @@ export function newJob(ctx: Ctx, input: NewJobInput): Job {
 		job.targets = input.targets?.length ? input.targets : connected.filter(t => jobFeatureOn("upload", t));
 		if (!job.targets.every(t => connected.includes(t))) throw new Error("a target platform is not connected");
 		if (!job.targets.length || !job.targets.every(t => jobFeatureOn("upload", t))) throw new Error("올리기 승인이 꺼져 있어요. 앱 설정에서 켜 주세요");
-		job.upload = { file: u.file, title: u.title as string, description: u.description ?? "", tags: u.tags ?? [], localizations: u.localizations ?? {}, privacy: u.privacy ?? cfg.youtube?.privacy ?? "private", ig_caption: u.ig_caption };
+		job.upload = { file: u.file, title: u.title as string, description: u.description ?? "", tags: u.tags ?? [], localizations: u.localizations ?? {}, privacy: u.privacy ?? cfg.youtube?.privacy ?? "private", ig_caption: u.ig_caption, ...(str(u.related) ? { related: u.related } : {}) };
 	} else if (input.kind === "reply") {
 		const r = input.reply;
 		if (!r || !PLATFORMS.includes(r.platform as Platform) || !str(r.comment_id) || !str(r.text)) throw new Error("reply needs platform, comment_id and text");
@@ -196,6 +197,14 @@ export function saveUploadIntent(ctx: Ctx, id: string): UploadIntent {
 export function recordResult(id: string, platform: Platform, ref: string): Job {
 	const j = need(id);
 	j.result[platform] = ref;
+	save(j);
+	return j;
+}
+
+// Progress of the Studio script on a job: the video id of step 1 (so a retry never uploads twice) and how many runs failed.
+export function setStudio(id: string, patch: Partial<NonNullable<Job["studio"]>>): Job {
+	const j = need(id);
+	j.studio = { tries: 0, ...j.studio, ...patch };
 	save(j);
 	return j;
 }

@@ -15,7 +15,7 @@ import { approve, getJob, type Job, type JobKind, listJobs, newJob, type NewJobI
 import { COSTS, can } from "../lib/quota.ts";
 import { cleanExample, ownReplyTexts, snsAdapter } from "../lib/reply-adapter.ts";
 import { AuthError, failFrom, main, oneLine, type Platform, type RunResult, TransientError } from "../lib/watchkit.ts";
-import { restoreVideo } from "../lib/youtube.ts";
+import { progressLine, readBulk, restoreAll, restoreOne } from "../lib/bulk.ts";
 import { finishIfComplete, publishJob } from "./due.ts";
 
 const HEADING = "## 예시";
@@ -37,7 +37,7 @@ function positionals(args: string[]): string[] {
 }
 
 const ok = (...lines: string[]): RunResult => ({ lines, code: 0 });
-const usage = (): RunResult => ({ lines: ["usage: sns.ts job new --kind upload|reply|metadata --json <file> | approve <id> [--at ISO|now] | revise <replyJobId> --change <text> | reject <id> | publish <id> | status | tone-sample [--limit N] | restore <videoId> | mark-done <id> <platform> [ref]"], code: 2 });
+const usage = (): RunResult => ({ lines: ["usage: sns.ts job new --kind upload|reply|metadata --json <file> | approve <id> [--at ISO|now] | revise <replyJobId> --change <text> | reject <id> | publish <id> | status | tone-sample [--limit N] | restore <videoId>|all | bulk-status | mark-done <id> <platform> [ref]"], code: 2 });
 
 function summary(j: Job): string {
 	if (j.upload) return oneLine(j.upload.title, 60);
@@ -131,9 +131,18 @@ async function dispatch(ctx: Ctx, args: string[], deps: FlowDeps): Promise<RunRe
 			return toneSample(ctx, rest);
 		case "restore": {
 			if (!pos[0]) return usage();
-			if (!can(ctx, loadConfig(), COSTS.update)) return { lines: [`failed restore ${pos[0]} quota`], code: 1 };
-			await restoreVideo(ctx, pos[0]);
+			const cfg = loadConfig();
+			if (pos[0] === "all") {
+				const r = await restoreAll(ctx, cfg);
+				return ok(`restored ${r.restored} left ${r.left}`);
+			}
+			if (!can(ctx, cfg, COSTS.update)) return { lines: [`failed restore ${pos[0]} quota`], code: 1 };
+			await restoreOne(ctx, pos[0]);
 			return ok(`restored ${pos[0]}`);
+		}
+		case "bulk-status": {
+			const s = readBulk();
+			return ok(s ? progressLine(s) : "다국어 일괄 적용을 시작하지 않았어요");
 		}
 		case "mark-done": {
 			const [id, platform, ref] = pos;

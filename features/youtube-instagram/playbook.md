@@ -16,15 +16,26 @@
    - 3: 오너 손이 필요한 단계가 있어요. 스크립트가 찍은 요청 블록을 그대로 한 번만 보내요(값이 필요하면 `dotz_auth`, 폰 승인은 `dotz_auth` kind approve). 오너가 답하면 같은 명령을 다시 실행해요. 끝난 단계는 건너뛰어요.
    - 그 밖: 실패한 단계와 이유가 찍혀요. `onboard.ts status`로 어디서 멈췄는지 보고, 고칠 수 있으면 고쳐서 다시 실행해요. 한 단계를 처음부터 다시 하려면 `onboard.ts reset <단계>`예요.
 - 중간에 끊겨도(재시작, 타임아웃) `run`을 다시 실행하면 멈춘 단계부터 이어서 해요.
-- 구글은 검수 전 API 프로젝트로 올린 영상을 비공개로 잠가요. 그래서 기본값은 유튜브 업로드를 Aside(YouTube Studio)로 하고, 읽기·댓글·통계만 API로 해요.
+- 구글은 검수 전 API 프로젝트로 올린 영상을 비공개로 잠그고 관련 동영상도 API로 못 정해요. 그래서 검수를 통과했다고 설정하기 전(`audited` 꺼짐, 기본)에는 유튜브 업로드를 정해진 스크립트(`lib/studio.ts`)가 YouTube Studio에서 해요. 백그라운드 탭으로 올리고 제목, 설명, 공개 범위, 관련 동영상을 정한 뒤 탭을 닫아요. 읽기·댓글·통계는 API로 해요.
+- 검수를 통과한 프로젝트만 `setup.ts apply --audited yes --youtube-via api`로 API 올리기를 켜요. 되돌리려면 `--audited no`예요.
+- 올릴 영상 job에 `related`(관련 동영상의 제목 일부)를 적으면 스크립트가 그 영상을 관련 동영상으로 골라요.
 - 손으로 할 때 쓰는 개별 명령도 남아 있어요: `setup.ts youtube-auth --client <파일>`, `setup.ts instagram-token --from <파일>`, `setup.ts apply ...`, `setup.ts status`.
 
 ## 기존 연결 가져오기
 업데이트 뒤 게이트웨이가 시작할 때 예전 연결을 찾으면 같은 질문을 스스로 한 번 올리고, 사용자의 답(`1) 가져오기` 또는 `2) 안 가져오기`)을 게이트웨이가 직접 처리해요(`hub/migrations.ts`). 이때는 아래 명령을 실행하지 않아요. 아래 명령은 직접 실행할 때를 위해 그대로 있어요.
 이 컴퓨터에 예전 설정(오모냥의 ddotz 폴더 등)의 `youtube-oauth.json`, `instagram.json`이 있으면 `onboard.ts run`이 종료 코드 3과 함께 "기존 유튜브·인스타 연결을 가져올까요?"를 한 번만 물어요. 예면 같은 명령에 `--import-legacy`, 아니요면 `--no-import-legacy`를 붙여요. 예는 데이터 폴더의 secrets에 0600으로 복사하고 값은 출력하지 않아요. 댓글 `onboard.ts on`도 같은 질문을 해요. 예전 토큰의 위치를 알면 `--import-from <파일 또는 폴더>`(여러 번 가능)나 `--import-yt <파일>`, `--import-ig <파일>`을 붙여 다시 실행해요. 알려 준 위치를 먼저 보고, 못 찾으면 위의 기본 폴더를 봐요. 파일 이름은 `youtube-oauth.json`, `instagram.json`과 `youtube_oauth.json`, `youtube-token.json`, `instagram-token.json` 같은 변형도 찾아요.
 
+## 로그인 유지 (구글 앱이 테스트 모드일 때만)
+테스트 모드 구글 앱의 refresh token은 7일 뒤 죽어요. `sns-yt-login` 감시(`tokens.ts --youtube`)가 6시간마다 보고, 발급 6일째가 되면 Aside 백그라운드 탭으로 다시 동의받아 새 토큰을 저장해요. 테스트 모드인지는 토큰의 만료 정보나 `youtube.oauth_mode`(`setup.ts apply --oauth-mode testing|production`)로 알아요. production이면 아무것도 하지 않아요.
+
+## 댓글 읽기 (쿼터 없음)
+유튜브 댓글은 로그인 없는 공개 InnerTube(`lib/innertube.ts`)로 먼저 읽어요. 내 채널의 최신 공개 영상 15개의 댓글을 읽고 영상 제목도 함께 가져와요. 읽지 못하면(화면 구조가 바뀌었을 때 등) 쿼터가 남아 있을 때 Data API `commentThreads`로 읽어요. 첫 읽기는 기준만 기록하고 아무것도 알리지 않아요.
+
 ## 번역 (처음엔 꺼져 있어요)
 설정 때 묻지 않아요. 오너가 원할 때만 `setup.ts apply --languages en,ja`로 켜요(하루 한 번 도는 `sns-yt-metadata` 감시가 생겨요). 끄려면 `--languages off`예요. 켜기 전에는 제목과 설명을 기본 언어로만 써요.
+
+### 공개 영상 전체에 한꺼번에 (처음엔 꺼져 있어요, 오너 취향)
+오너가 원할 때만 `setup.ts apply --languages en,ja --bulk on`으로 켜요(끄기는 `--bulk off`). `sns-yt-bulk` 감시가 공개 영상 전체를 하루 쿼터 예산 안에서 나눠 적용해요. 예산은 `--bulk-budget`(기본은 하루 예산에서 500을 뺀 값, 하루 예산 기본 9000)이에요. 원래 설명 아래에 `[English]` 같은 구간을 덧붙이고 언어별 제목·설명을 넣어요. 첫 수정 전에 백업하고, 진행 상황은 유튜브 앱의 내부 기능에 보여요(`sns.ts bulk-status`). 되돌리기는 영상 하나는 `sns.ts restore <videoId>`, 일괄 적용한 전부는 `sns.ts restore all`이에요(하루 예산 안에서 하고, 남으면 다음 날 다시 실행해요). 오너가 되돌려 달라고 했을 때만 해요.
 
 ## 감시가 깨울 때
 출력 한 줄이 항목 하나예요. 말투는 `~/.dotz/custom/sns/tone.md`를 따르고, 비어 있으면 `sns.ts tone-sample`을 한 번 실행해요.
@@ -32,7 +43,9 @@
 - `yt-comment <id> video=.. by=..: 글`, `ig-comment <id> media=.. by=..: 글`: 그 앱을 켜지 않았거나 초안을 못 만든 댓글이에요. 오너 말투로 답글 초안을 쓰고 `sns.ts job new`로 등록해요. 광고나 욕설은 건너뛰고 이유만 알려요. 사용자가 "인스타 댓글 답글 켜 줘"처럼 부탁하면 `bun <dotz 체크아웃>/features/reply-drafts/bin/onboard.ts on --app instagram`(유튜브는 `--app youtube`)을 실행해요. 연결이 안 되어 있으면 종료 코드 3과 함께 연결 명령이 찍히니 그 순서대로 해요. 끄려면 `onboard.ts off --app <앱>`이에요.
 - `new-video <경로> <초>s <WxH> <vertical|landscape> <ok|too-long|not-vertical>`: `ok`면 기본 언어(번역을 켰다면 설정된 언어도)로 제목, 설명, 태그와 인스타 캡션 초안을 쓰고 올리기 job을 만들어요. `too-long`, `not-vertical`은 오너에게 먼저 알려요.
 - `needs-translation <videoId> missing=<언어>: 제목`: 빠진 언어의 제목과 설명을 번역해 메타데이터 job을 만들어요. 원래 설명은 건드리지 않고 언어별 구간만 덧붙여요.
-- `posted <jobId> ...`, `failed <jobId> <이유>`, `aside-needed ...`: 프로젝트 채널에 알려요. `aside-needed`는 `aside repl`로 직접 올려요.
+- `posted <jobId> ...`, `failed <jobId> <이유>`, `aside-needed ...`: 프로젝트 채널에 알려요. `aside-needed <jobId> youtube <이유>`는 Studio 스크립트가 세 번 못 끝냈거나 로그인 화면이 나왔다는 뜻이에요. 이유를 알리고, 로그인이면 `aside repl`로 다시 로그인한 뒤 직접 올려요. 올린 뒤에는 `sns.ts mark-done <jobId> youtube <videoId>`로 알려요.
+- `다국어 설명 ...` 줄: 일괄 적용 진행 상황이에요. 앱의 내부 기능에 보이니 `-`로만 답해요.
+- `DOTZ_FAIL auth` + "유튜브 로그인을 6일째에 다시 받지 못했어요": 테스트 모드 재동의가 두 번 실패했어요. 오너에게 Aside에서 구글 계정에 로그인하라고 한 번 알려요(앱의 유튜브 내부 기능에도 보여요).
 - `yt-quota-exhausted until=<시각>`: 유튜브 하루 쿼터를 다 썼어요. "유튜브 하루 쿼터를 다 써서 <시각>에 다시 이어서 해요" 한 줄로만 알려요. 선택 블록은 필요 없어요.
 - `yt-comment-overflow ...`: 새 댓글이 너무 많아 오래된 건 목록에서 빠졌다고 알려요.
 - `ig-publish-blocked <jobId>: <한 줄>`: 인스타 토큰에 릴스 올리기 권한이 없어요. 줄의 한국어 문장을 그대로 알리고, 릴스 올리기 승인 카드에도 "아직 릴스를 올릴 수 없어요"를 적어요. 새 토큰이 들어오면 job이 알아서 이어져요.

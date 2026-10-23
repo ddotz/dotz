@@ -17,6 +17,8 @@ export const paths = {
 	backup: () => join(snsDir(), "backup"),
 	cache: () => join(snsDir(), "cache"),
 	quota: () => join(snsDir(), "cache", "quota.json"),
+	bulk: () => join(snsDir(), "bulk.json"),
+	innertubeSeen: () => join(snsDir(), "cache", "innertube-seen.json"),
 	stats: () => join(snsDir(), "cache", "stats.json"),
 	videos: () => join(snsDir(), "cache", "videos.json"),
 	igDm: () => join(snsDir(), "cache", "ig-dm.json"),
@@ -32,18 +34,22 @@ export type TokenSource = { file?: string; command?: string[] };
 export type Lang = string; // BCP-47 short code: "en", "ja", "es", "zh-Hans" ...
 export type Config = {
 	version: 1;
-	youtube?: { channel_id: string; title?: string; base_language: Lang; languages: Lang[]; privacy: "private" | "unlisted" | "public"; upload_via: "api" | "aside"; token_source?: TokenSource };
+	// audited: the Google project passed the API audit, so API uploads keep their privacy; without it (default) uploads go through the
+	// Studio script. oauth_mode: set by onboarding/setup, absent = read from the token (refresh_expires_at). bulk: multilingual descriptions
+	// for every public video, within quota.daily_budget (off by default, needs languages).
+	youtube?: { channel_id: string; title?: string; base_language: Lang; languages: Lang[]; privacy: "private" | "unlisted" | "public"; upload_via: "api" | "aside"; audited?: boolean; oauth_mode?: "testing" | "production"; bulk?: boolean; token_source?: TokenSource };
 	instagram?: { user_id: string; username: string; post_via: "api" | "aside"; token_source?: TokenSource };
 	timezone: string;
 	posting_times: string[]; // "HH:MM" in timezone
 	approval: "each" | "batch";
 	quiet_hours?: { from: string; to: string };
 	inbox_dir: string;
-	quota: { daily_budget: number };
+	quota: { daily_budget: number; bulk_budget?: number };
 	channel?: string; // "ch:<id>"
 };
 
-export type YoutubeOauth = { client_id: string; client_secret: string; refresh_token: string };
+// obtained_at / refresh_expires_at: when the refresh token was granted and (Google sends it only for apps in testing mode) when it dies.
+export type YoutubeOauth = { client_id: string; client_secret: string; refresh_token: string; obtained_at?: string; refresh_expires_at?: string };
 export type YoutubeAccess = { access_token: string; expires_at: string };
 export type InstagramSecret = { access_token: string; user_id: string; username?: string; obtained_at: string; expires_at?: string };
 
@@ -73,6 +79,10 @@ export function validateConfig(c: any): string | undefined {
 		if (!/^UC[\w-]{10,}$/.test(String(c.youtube.channel_id ?? ""))) return "유튜브 채널 id(UC...)가 올바르지 않아요";
 		if (!LANG.test(String(c.youtube.base_language ?? ""))) return "기본 언어 코드가 올바르지 않아요";
 		if (!Array.isArray(c.youtube.languages) || !c.youtube.languages.every((l: unknown) => LANG.test(String(l)))) return "언어 목록이 올바르지 않아요";
+		if (c.youtube.audited !== undefined && typeof c.youtube.audited !== "boolean") return "audited는 true 또는 false예요";
+		if (c.youtube.oauth_mode !== undefined && !["testing", "production"].includes(c.youtube.oauth_mode)) return "oauth_mode는 testing 또는 production이에요";
+		if (c.youtube.bulk !== undefined && typeof c.youtube.bulk !== "boolean") return "bulk는 true 또는 false예요";
+		if (c.youtube.bulk === true && !c.youtube.languages.length) return "전체 영상 일괄 번역은 번역 언어를 먼저 정해야 해요";
 		if (!["private", "unlisted", "public"].includes(c.youtube.privacy)) return "공개 범위는 private, unlisted, public 중 하나예요";
 		if (!["api", "aside"].includes(c.youtube.upload_via)) return "유튜브 올리는 방식은 api 또는 aside예요";
 		const bad = tokenSourceProblem("유튜브", c.youtube.token_source);
@@ -94,6 +104,7 @@ export function validateConfig(c: any): string | undefined {
 	if (c.quiet_hours && !(HHMM.test(c.quiet_hours.from) && HHMM.test(c.quiet_hours.to))) return "조용한 시간은 HH:MM이에요";
 	if (typeof c.inbox_dir !== "string" || !c.inbox_dir.startsWith("/")) return "올릴 영상 폴더는 절대 경로예요";
 	if (!(Number(c.quota?.daily_budget) >= 100 && Number(c.quota?.daily_budget) <= 1_000_000)) return "하루 쿼터 예산은 100 이상이에요";
+	if (c.quota.bulk_budget !== undefined && !(Number(c.quota.bulk_budget) >= 0 && Number(c.quota.bulk_budget) <= Number(c.quota.daily_budget))) return "일괄 적용 예산은 하루 예산 이하여야 해요";
 	if (c.channel !== undefined && !/^ch:\d+$/.test(String(c.channel))) return "채널은 ch:<숫자>예요";
 	return undefined;
 }
