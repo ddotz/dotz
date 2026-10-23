@@ -26,7 +26,14 @@ and runs the wizard on the terminal (`/dev/tty`, so it works under `curl | sh`).
 is the upgrade: the code is replaced, the data dir kept, the wizard skipped (`--setup` runs it) and the gateway
 restarted when its service runs this copy. `--uninstall` removes the code and the service (only a service file that runs
 this copy; a gateway from another checkout is never touched), `--purge` the data dir too. Other options:
-`--answers FILE`, `--tailscale`, `--no-open`, `--no-service`, `--no-setup`, `--yes`. From a checkout:
+`--answers FILE`, `--tailscale`, `--no-open`, `--no-service`, `--no-setup`, `--yes`, `--git`.
+
+Two install kinds, both self-updating from settings → 업데이트. The default is a tarball install: no `.git`, and the installer writes
+`<code dir>/.dotz-install` (source kind `github` or `url`, repo, ref, commit sha, how it authenticated: `public`/`token`/`gh`). With
+`GITHUB_TOKEN` the installer also saves the token to `<data dir>/secrets/github-token` (0600) so the gateway can check a private repo.
+`--git` (`DOTZ_GIT_URL` overrides the clone URL) installs a git clone of `DOTZ_REF` instead: local changes and `git` workflows work,
+and updates are the fast-forward ones below. For a private repo with `--git`, run `gh auth setup-git` once so `git fetch` is signed in.
+A tarball install installed before the stamp existed has to run the installer once more (it then updates itself). From a checkout:
 `bun setup.ts --load --tailscale --open` (interactive; or `--answers answers.json`).
 
 The tools step installs (after asking) and signs in Aside (app, CLI and CLI login), Tailscale and zele (mail and
@@ -534,7 +541,16 @@ chooses it with `<data dir>/accounts/rules.json` (manual pick, time-window and u
 fetches the tracked branch and announces a new version. It refuses a checkout with uncommitted changes or local commits
 not on origin; an update is fast-forward only, runs `bun install` when needed and the tests, and returns to the old commit if
 they fail. With `self_update.auto_apply: true` (default off) the daily check applies a clean, not-ahead checkout itself and
-restarts through the idle gate; a refusal or failure alerts with a choice block. A tarball install updates by re-running `install.sh`.
+restarts through the idle gate; a refusal or failure alerts with a choice block.
+
+A tarball install (`install.sh` without `--git`) updates the same way, with the same settings and notices: the check asks GitHub for the
+latest commit of the stamped repo@ref and lists the commits since the installed one (`DOTZ_TARBALL` installs compare the tarball's
+sha256 instead). Apply downloads the new tarball into `<code dir>.update`, runs `bun install` and the tests there, then swaps the
+folders; the previous code stays as `<code dir>.prev` (one copy, replaced by the next update) for a manual rollback, and a failed
+download, install or test removes the staging folder and keeps the old code. GitHub is asked as, in order: `GITHUB_TOKEN`/`GH_TOKEN`,
+`<data dir>/secrets/github-token`, `gh api` (when `gh` is signed in), then no credentials (public repos); a refused credential falls
+through to the next one. Files you changed inside the code folder are not carried over (they stay in `.prev`). `bun hub/selfupdate.ts
+--check|--apply [--dir PATH] [--test-cmd SHELL]` runs the same flow from a terminal.
 
 The launchd job keeps the old code until it is restarted. Restart it from the gateway (`/restart gateway` or
 `POST /api/gateway/restart`): it waits until the orchestrator and every session are idle (at most 20 min), then exits and

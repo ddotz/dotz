@@ -3,15 +3,15 @@
 // applies it. After a restart request the page polls until the gateway answers with a new boot id.
 const UPD = { info: null, wait: null, timer: 0 };
 const updWhen = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }); };
-const updVer = v => !v ? "알 수 없음" : v.kind === "git" ? `${v.commit.short} · ${updWhen(v.commit.date)}${v.branch !== "main" ? ` · ${v.branch}` : ""}` : v.kind === "install" ? `설치본 · ${updWhen(v.installed)}` : "알 수 없음";
+const updVer = v => !v ? "알 수 없음" : v.kind === "git" ? `${v.commit.short} · ${updWhen(v.commit.date)}${v.branch !== "main" ? ` · ${v.branch}` : ""}` : v.kind === "tarball" ? `설치본 ${v.commit.short} · ${updWhen(v.installed)}${v.ref && v.ref !== "main" ? ` · ${v.ref}` : ""}` : v.kind === "install" ? `설치본 · ${updWhen(v.installed)}` : "알 수 없음";
 // `cmd` spans in server hints become <code>.
 const updCode = s => String(s || "").split("`").map((p, i) => i % 2 ? el("code", { text: p }) : p);
 // A pulled-but-not-restarted update (running != disk), and the last check when it still describes the checkout. A check made
 // before the checkout moved (an update just landed) no longer describes it.
 function updState(i) {
   const { running: run, disk } = i || {};
-  const pending = !!(run && disk && run.kind === "git" && disk.kind === "git" && run.commit.sha !== disk.commit.sha);
-  const c = i && i.lastCheck && !(disk && disk.kind === "git" && i.lastCheck.version.kind === "git" && i.lastCheck.version.commit.sha !== disk.commit.sha) ? i.lastCheck : null;
+  const pending = !!(run && disk && run.commit && disk.commit && run.commit.sha !== disk.commit.sha);
+  const c = i && i.lastCheck && !(disk && disk.commit && i.lastCheck.version.commit && i.lastCheck.version.commit.sha !== disk.commit.sha) ? i.lastCheck : null;
   return { pending, c };
 }
 // A new version is waiting to be applied (from /api/update, not the toast).
@@ -92,7 +92,7 @@ function updateSection() {
       el("div", { class: "hd", text: `새 커밋 ${c.incomingTotal}개 · ${c.upstream}` }),
       el("ul", { class: "upd-log" }, ...c.incoming.slice(0, 8).map(x => el("li", {}, el("code", { text: x.short }), el("span", { text: x.subject, title: x.subject }))), more > 0 ? el("li", { class: "dim" }, el("span", { text: `외 ${more}개` })) : null),
       c.blocked.length ? el("div", { class: "upd-block" }, ...c.blocked.map(b => el("div", { text: b })), el("ul", { class: "upd-log" }, ...c.dirty.slice(0, 8).map(d => el("li", {}, el("code", { text: d.slice(0, 2).trim() || "?" }), el("span", { text: d.slice(3) }))), ...c.ahead.slice(0, 8).map(a => el("li", {}, el("code", { text: a.short }), el("span", { text: a.subject }))))) : null,
-      el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...(c.blocked.length || pending ? { disabled: true } : off), onclick: ev => updApply(ev.currentTarget) }, "지금 업데이트"), el("span", { class: "sup", text: "fast-forward → 테스트 → 재시작. 테스트가 실패하면 그대로 있어요." }))));
+      el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...(c.blocked.length || pending ? { disabled: true } : off), onclick: ev => updApply(ev.currentTarget) }, "지금 업데이트"), el("span", { class: "sup", text: disk && disk.kind === "tarball" ? "새로 받기 → 테스트 → 폴더 교체 → 재시작. 테스트가 실패하면 그대로 있어요." : "fast-forward → 테스트 → 재시작. 테스트가 실패하면 그대로 있어요." }))));
   }
   if (jobRunning) rows.push(li(`업데이트 중 · ${job.phase}`, job.message, el("span", { class: "dot pri", "aria-hidden": "true" })));
   else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.message })));
