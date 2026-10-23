@@ -28,7 +28,8 @@ export const PIN_ENV = "SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT";
 export const FALLBACK_ENV = "SENPI_CLAUDE_SDK_OAUTH_ACCOUNT_FALLBACK";
 export type SwitchKind = "start" | "limit" | "owner" | "gone" | "rule" | "script" | "manual";
 export type AccountSwitch = { at: string; from?: string; to: string; kind: SwitchKind; reason: string; rule?: string };
-export type Pool = { names: string[]; pinned?: string; blocked: Record<string, { until?: number; reason: string }>; lastSuccess: Record<string, number> };
+// order: the owner's account order (rules.json "order"), the fallback order of 자동 전환; readPool never sets it.
+export type Pool = { names: string[]; order?: string[]; pinned?: string; blocked: Record<string, { until?: number; reason: string }>; lastSuccess: Record<string, number> };
 type Saved = { account?: string; since?: string; reason?: string; used?: string; hard?: boolean };
 // The account requests really go to changed (usedAccount): `cause` says why, in machine terms (hub/accounts-api.ts words it).
 export type UsedChange = { at: string; from: string; to: string; cause: "limit" | "auth_error" | "gone" | "switch" | "restored"; switchKind?: SwitchKind; rule?: string; until?: number };
@@ -121,7 +122,15 @@ export function readPool(file = authFile(), now = Date.now()): Pool | undefined 
 	return { names, ...(typeof sub.pinned === "string" && names.includes(sub.pinned) ? { pinned: sub.pinned } : {}), blocked, lastSuccess };
 }
 
-const usableFirst = (p: Pool) => [...p.names].sort((a, b) => Number(Boolean(p.blocked[a])) - Number(Boolean(p.blocked[b])) || (p.lastSuccess[b] ?? 0) - (p.lastSuccess[a] ?? 0));
+// An account's place in the owner's order (1-based index into `order`); one the owner did not list comes after the listed ones.
+const rank = (order: string[] | undefined, n: string) => {
+	const i = order?.indexOf(n) ?? -1;
+	return i < 0 ? (order?.length ?? 0) : i;
+};
+// The names in the owner's order; unlisted ones keep their place after the listed ones.
+export const inOrder = (names: string[], order?: string[]): string[] => [...names].sort((a, b) => rank(order, a) - rank(order, b));
+// Usable accounts first, then the owner's order, then the one that last worked.
+const usableFirst = (p: Pool) => [...p.names].sort((a, b) => Number(Boolean(p.blocked[a])) - Number(Boolean(p.blocked[b])) || rank(p.order, a) - rank(p.order, b) || (p.lastSuccess[b] ?? 0) - (p.lastSuccess[a] ?? 0));
 const blockText = (p: Pool, n: string) => {
 	const b = p.blocked[n];
 	return `${n} blocked (${b.reason}${b.until ? `, until ${new Date(b.until).toISOString()}` : ""})`;

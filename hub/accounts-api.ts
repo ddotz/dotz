@@ -3,8 +3,8 @@
 // requests the gateway answers itself ("계정 바꿔줘", main.ts). Every account is shown by its alias (hub/account-alias.ts label);
 // the raw id appears only in API fields named `name`/`key` and on "-# " detail lines.
 import { aliasesFile, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
-import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, validateRules, writeRules } from "./account-rules.ts";
-import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, hardPinned, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
+import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, setOrder, validateRules, writeRules } from "./account-rules.ts";
+import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, hardPinned, inOrder, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
 import { issueBlock } from "./choices.ts";
 import { TZ } from "./config.ts";
 import { writeOmoPin } from "./omo-pin.ts";
@@ -183,10 +183,12 @@ export function accountsBody(now = Date.now()) {
 		chosen: chosenId
 			? { name: chosenId, label: lab(chosenId), source: chosenSource, blocked: chosenBlock ? blockedKind(chosenBlock.reason) : null, blocked_until: chosenBlock?.until ? new Date(chosenBlock.until).toISOString() : null, used_instead: current && current !== chosenId ? { name: current, label: lab(current) } : null, text: chosenText(chosenId, current, chosenSource, d.rule, manualId ? manual?.until : undefined, pool, now, aliases) }
 			: null,
-		accounts: names.map(name => {
+		// in the owner's order (the fallback order of 자동 전환); `order` is the number shown on the row
+		accounts: inOrder(names, rules.order).map((name, i) => {
 			const b = pool?.blocked[name];
 			return {
 				name,
+				order: i + 1,
 				alias: aliases[name] ?? null,
 				label: lab(name),
 				current: name === current,
@@ -295,7 +297,7 @@ const readBody = async (req: Request): Promise<Record<string, any>> => {
 // The /api/accounts routes (the caller has already checked the token). Undefined: not one of them.
 export async function accountsRoute(req: Request, url: URL): Promise<Response | undefined> {
 	const p = url.pathname;
-	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/switches"].includes(p)) return undefined;
+	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/order", "/api/accounts/switches"].includes(p)) return undefined;
 	try {
 		// DELETE /api/accounts/switches?at=<time of the entry> removes one history entry; without `at` it clears the whole history.
 		if (req.method === "DELETE" && p === "/api/accounts/switches") {
@@ -323,6 +325,17 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 				if (!account) throw new AccountsError("고정할 계정을 골라 주세요", 400);
 				await useAccount(account);
 			} else throw new AccountsError('mode는 "auto" 또는 "pinned"여야 해요', 400);
+			return Response.json(accountsBody());
+		}
+		// {order:[id, ...]}: the account order (the fallback order of 자동 전환); every id must be an account in OmO's pool
+		if (req.method === "PUT" && p === "/api/accounts/order") {
+			const order = (await readBody(req)).order;
+			const names = readPool()?.names ?? [];
+			if (!Array.isArray(order) || order.some(x => typeof x !== "string" || !names.includes(x))) throw new AccountsError("order는 계정 id 목록이어야 해요", 400);
+			await quietly(async () => {
+				setOrder(order);
+				await checkNow();
+			});
 			return Response.json(accountsBody());
 		}
 		if (req.method === "POST" && p === "/api/accounts/use") {
