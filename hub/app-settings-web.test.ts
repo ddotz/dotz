@@ -123,10 +123,10 @@ const boot = async (v: View, route: string) => {
 describe("설정 대화 at desktop width (1280x800)", () => {
 	const v = open(1280, 800);
 
-	test("the mail detail header has a 설정 button (no row on top of the list) that opens the settings conversation", async () => {
+	test("the mail detail header has a 대화 button (no row on top of the list) that opens the settings conversation", async () => {
 		await boot(v, "i:mail");
 		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
-		expect(await q(v, `return [document.querySelector("#mon-head .as-hd").getAttribute("aria-label"), document.querySelectorAll(".as-pin").length]`)).toEqual(["설정", 0]);
+		expect(await q(v, `return [document.querySelector("#mon-head .as-hd").getAttribute("aria-label"), document.querySelector("#mon-head .as-more").getAttribute("aria-label"), document.querySelectorAll(".as-pin").length]`)).toEqual(["대화", "설정", 0]);
 		await shot(v, "01-desktop-pinned-row.png");
 		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
 		await waitFor(v, `target === "settings:mail" && [...document.querySelectorAll("[data-as-more]")].some(b => b.offsetParent && !b.hidden)`);

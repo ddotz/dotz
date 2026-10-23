@@ -6,7 +6,7 @@ import { sseResponse } from "./events.ts";
 import { WATCH_FIELDS } from "./watch-settings.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// Every monitoring detail has its 설정 entry as one gear button in the title bar (web/js/32-app-settings.js asEntry): the head on a wide screen,
+// Every monitoring detail has its 설정 entry as a 대화 button and a ⋯ button in the title bar (web/js/32-app-settings.js asEntry): the head on a wide screen,
 // the app bar on a phone. There is no 설정 row on top of the list any more. Headless Bun.WebView against a stub gateway; the peer is a fixture.
 const SHOTS = process.env.SETTINGS_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
@@ -82,7 +82,7 @@ const KINDS: { name: string; open: string; ready?: string; app: string; head: st
 	{ name: "peer monitor", open: `go("monitoring", ${JSON.stringify(PEER_KEY)})`, app: "w:login-cartier-com", head: "#mon-head" },
 ];
 
-describe("the 설정 button of a monitoring detail sits in its title bar", () => {
+describe("the 대화 and ⋯ buttons of a monitoring detail sit side by side in its title bar", () => {
 	for (const [label, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]] as const) {
 		for (const k of KINDS) {
 			test(`${label}: ${k.name}`, async () => {
@@ -90,15 +90,28 @@ describe("the 설정 button of a monitoring detail sits in its title bar", () =>
 				await waitFor(v, `monItems().some(i => i.key === "m:일반 감시") && monItems().some(i => i.key === ${JSON.stringify(PEER_KEY)})`);
 				await run(v, k.open);
 				if (k.ready) await waitFor(v, k.ready);
-				// A phone has no head: the button is in the app bar; a wide screen has it in the detail's head and none in the bar.
-				const btn = w < 1100 ? "#as-bar" : `${k.head} .as-hd`;
+				// A phone has no head: the buttons are in the app bar; a wide screen has them in the detail's head and none in the bar.
+				const btn = w < 1100 ? "#as-bar" : `${k.head} .as-hd[data-as-open]`;
+				const moreBtn = w < 1100 ? "#as-more-bar" : `${k.head} .as-hd[data-as-more]`;
 				await waitFor(v, `(() => { const b = document.querySelector(${JSON.stringify(btn)}); return b && !b.hidden && b.dataset.asOpen === ${JSON.stringify(k.app)}; })()`);
 				const s = await q<{ label: string | null; pins: number; visible: number; bar: boolean }>(v, `const b = document.querySelector(${JSON.stringify(btn)}), r = b.getBoundingClientRect(); return { label: b.getAttribute("aria-label"), pins: document.querySelectorAll(".as-pin").length, visible: Math.round(r.width) * Math.round(r.height), bar: document.querySelector("#as-bar").hidden }`);
-				expect(s.label).toBe("설정");
+				expect(s.label).toBe("대화");
 				expect(s.pins).toBe(0);
+				// ⋯ sits right beside it and opens the settings screen without the conversation.
+				const m = await q<{ label: string | null; app: string | null; gap: number; icons: number; visible: number }>(v, `const b = document.querySelector(${JSON.stringify(btn)}), m = document.querySelector(${JSON.stringify(moreBtn)}), a = b.getBoundingClientRect(), c = m.getBoundingClientRect(); return { label: m.getAttribute("aria-label"), app: m.dataset.asMore, gap: Math.round(c.left - a.right), icons: document.querySelectorAll("[data-as-open] svg path[d^='M4 7h9']").length, visible: Math.round(c.width) * Math.round(c.height) }`);
+				expect(m.label).toBe("설정");
+				expect(m.app).toBe(k.app);
+				expect(m.visible).toBeGreaterThan(0);
+				expect(m.gap).toBeGreaterThanOrEqual(0);
+				expect(m.gap).toBeLessThan(16);
+				expect(m.icons).toBe(0);   // the sliders icon is gone
 				expect(s.visible).toBeGreaterThan(0);
 				if (w >= 1100) expect(s.bar).toBe(true);
 				if (["mail", "kakao room", "general monitor"].includes(k.name)) await shot(v, `settings-header-${k.name.replace(" ", "-")}-${w}.png`);
+				await run(v, `document.querySelector(${JSON.stringify(moreBtn)}).click()`);
+				await waitFor(v, `document.querySelector(".as-screen #app-sw .as-row")`);
+				await run(v, `ASC.h.close()`);
+				await waitFor(v, `!ASC.h`);
 				await run(v, `document.querySelector(${JSON.stringify(btn)}).click()`);
 				await waitFor(v, `target === "settings:${k.app}"`);
 				// The conversation is chat only; its ⋯ button opens the screen that holds the options.

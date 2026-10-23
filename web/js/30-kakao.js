@@ -322,7 +322,7 @@ function kkPaintChat() {
   if (sig !== KK.headSig) {
     KK.headSig = sig;
     clear(kkHead);
-    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: info.group ? "단체 대화방" : "1:1 대화" })), ...(KK.pc ? [] : [asEntry("kakao")].filter(Boolean)));
+    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: info.group ? "단체 대화방" : "1:1 대화" })), ...(KK.pc ? [] : asEntry("kakao")));
     monSchedule();   // the item's head gives the gear to the room head while a room is open
   }
   if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: "대화방을 골라 주세요" })); return; }
