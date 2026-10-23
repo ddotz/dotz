@@ -107,8 +107,8 @@ export function setApp(app: string, auto: boolean): Settings {
 }
 
 // `learned` = style features measured from the user's own messages (kakao-voice.ts), kept apart from `rules` so a relearn never overwrites what the user wrote;
-// `record` = what the last learning was based on (own message count).
-export const HEADINGS = { rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지", learned: "## 학습한 말투", record: "## 학습 기록" } as const;
+// `profile` = the short Korean room profile the draft model wrote from reading the room; `record` = what the last learning was based on.
+export const HEADINGS = { rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지", learned: "## 학습한 말투", profile: "## 대화 이해", record: "## 학습 기록" } as const;
 
 export function bullets(md: string, heading: string): string[] {
 	const lines = md.split("\n");
@@ -191,7 +191,7 @@ export function loadStyle(key: ToneKey): LoadedStyle {
 		}
 	}
 	const merged = (...headings: string[]) => unique([install, app, room ?? ""].flatMap(md => headings.flatMap(h => bullets(md, h))));
-	return { samples, samplesFrom, rules: merged(HEADINGS.rules, HEADINGS.learned), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
+	return { samples, samplesFrom, rules: merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
 }
 
 // Writes into exactly that profile (a legacy style.md is carried over first when the mail profile is written for the first time).

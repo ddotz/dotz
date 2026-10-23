@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
 import { sqliteDb } from "./db.ts";
-import { MAX_CHAT_CHARS, MAX_PROMPT_CHARS, type ModelReply } from "./draft.ts";
+import { MAX_CHAT_CHARS, MAX_PAIRS, MAX_PROMPT_CHARS, type ModelReply } from "./draft.ts";
 import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { createDraft, listDrafts } from "./send.ts";
 import { type KakaoConfig, kakaoPaths, type Runner } from "./types.ts";
@@ -753,7 +753,7 @@ describe("owner voice in the draft prompt", () => {
 		const { system, user } = t.model.calls[0]!;
 		expect(/Register in THIS room: (반말|존댓말|혼용)/.exec(user)![1]).toBe("반말");
 		const pairs = section(user);
-		expect(pairs.match(/(^|\n)나: /g)!.length).toBe(18);
+		expect(pairs.match(/(^|\n)나: /g)!.length).toBe(MAX_PAIRS);
 		expect(pairs).toContain("상대: 21번 건은 확인해 주시겠습니까?\n나: 21번 ㅇㅇ 확인함ㅋㅋ");
 		expect(pairs).not.toContain("상대: 0번 건");
 		expect(user).toContain("- 길이: 중앙값 9자");

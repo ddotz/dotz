@@ -49,7 +49,7 @@ describe("buildDraftPrompt", () => {
 
 	test("never over the budget: oversized pairs, notes, corrections, context and chat are cut, oldest pairs first, the newest chat line stays", () => {
 		const big = (c: string) => c.repeat(300);
-		const pairs = Array.from({ length: 18 }, (_, i) => ({ other: [big("가"), big("나")], own: [`own-${i}-${big("다")}`] }));
+		const pairs = Array.from({ length: MAX_PAIRS }, (_, i) => ({ other: [big("가"), big("나")], own: [`own-${i}-${big("다")}`] }));
 		const { system, user } = buildDraftPrompt({
 			lines: Array.from({ length: 30 }, (_, i) => `Alex: line-${i}-${big("라")}`),
 			context: Array.from({ length: 4 }, () => big("마")),
@@ -62,10 +62,10 @@ describe("buildDraftPrompt", () => {
 		expect(user).not.toContain("own-0-");
 	});
 
-	test("a normal room (18 pairs of short lines) is not cut at all", () => {
-		const pairs = Array.from({ length: 18 }, (_, i) => ({ other: [`질문 ${i} 알려 주시겠어요?`], own: [`답 ${i} ㅇㅇ`] }));
+	test("a normal room (a full set of pairs of short lines) is not cut at all", () => {
+		const pairs = Array.from({ length: MAX_PAIRS }, (_, i) => ({ other: [`질문 ${i} 알려 주시겠어요?`], own: [`답 ${i} ㅇㅇ`] }));
 		const { user } = buildDraftPrompt({ lines: ["Alex: 내일 되나요?"], pairs });
-		expect(user.match(/(^|\n)나: 답 /g)).toHaveLength(18);
+		expect(user.match(/(^|\n)나: 답 /g)).toHaveLength(MAX_PAIRS);
 	});
 
 	test("without pairs the owner's own lines (or the profile examples) are the voice samples", () => {
