@@ -27,6 +27,8 @@ function pqFor(path) {
   if (m) return pqPc(`settings:w:${m[1]}`);
   m = /^\/api\/integrations\/[a-z0-9._-]+~([a-z0-9]+)\/(?:settings|remove|features|retry)/.exec(path);
   if (m) return PQ.apps.get(m[1]) || null;
+  m = /^\/api\/drafts\/([^/?]+)\//.exec(path);
+  if (m) return DRF.pc[decodeURIComponent(m[1])] || null;
   return path.startsWith("/api/kakao/") ? KK.pc : null;
 }
 function pqLink(path) { const pc = pqFor(path); return pc ? pqProxy(pc, pqBare(path)) : path; }
@@ -45,6 +47,8 @@ function pqAct(path, body) {
   const rn = /^\/api\/watches\/([a-z0-9-]+)\/run$/.exec(path);
   if (rn && pqPc(`settings:w:${rn[1]}`)) return { pc: pqPc(`settings:w:${rn[1]}`), action: "watch", args: { op: "run", name: rn[1] } };
   if (path === "/api/message" && b.settings && pqPc(`settings:${b.settings}`)) { const { settings, lane, project, mail, via, ...rest } = b; return { pc: pqPc(`settings:${settings}`), action: "message", args: { target: `settings:${pqBare(settings)}`, ...rest } }; }
+  const df = /^\/api\/drafts\/([^/?]+)\/files$/.exec(path), dref = df && decodeURIComponent(df[1]);
+  if (dref && DRF.pc[dref]) return { pc: DRF.pc[dref], action: "draft-files", args: { ref: dref, ...b } };
   if (path === "/api/read") return { pc: pqPc(b.target), action: "read", args: { target: pqBare(b.target), ts: b.ts } };
   if (!path.startsWith("/api/kakao/") || !KK.pc) return null;
   const id = k && decodeURIComponent(k[2]);

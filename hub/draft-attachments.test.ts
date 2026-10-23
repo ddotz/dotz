@@ -9,6 +9,7 @@ import { draftFileRoute, stageDraftFiles } from "./draft-files.ts";
 import { PEER_GET } from "./peer-auth.ts";
 
 const base = { to: "kim@example.com", subject: "견적서 회신", body: "안녕하세요.\n\n견적서 보내 드립니다.", ref: "RABC123" };
+const calm = { ...base, body: "안녕하세요.\n\n확인했어요." };
 const two = [
 	{ name: "견적서 (최종).pdf", size: 348_160 },
 	{ name: "현장사진.jpg", size: 2_516_582 },
@@ -32,7 +33,7 @@ describe("attachment lines of the approval block", () => {
 	test("a file without a size keeps its name; no attachments writes no 첨부 line at all", () => {
 		const d = parseDraftApproval(draftApprovalBlock({ ...base, attachments: [{ name: "메모.txt" }] }))!;
 		expect(d.attachments).toEqual([{ name: "메모.txt" }]);
-		const plain = draftApprovalBlock(base);
+		const plain = draftApprovalBlock(calm);
 		expect(plain).not.toContain("첨부");
 		const p = parseDraftApproval(plain)!;
 		expect(p.attachments).toBeUndefined();
@@ -40,12 +41,12 @@ describe("attachment lines of the approval block", () => {
 	});
 
 	test("none carried: the original had files and the reply has none, so the block says 첨부: 없음", () => {
-		const block = draftApprovalBlock({ ...base, attachmentsNone: true });
+		const block = draftApprovalBlock({ ...calm, attachmentsNone: true });
 		expect(block).toContain("> 제목: 견적서 회신\n> 첨부: 없음\n>\n");
 		const d = parseDraftApproval(block)!;
 		expect(d.noAttachments).toBe(true);
 		expect(d.attachments).toBeUndefined();
-		expect(d.body).toBe("안녕하세요.\n\n견적서 보내 드립니다.");
+		expect(d.body).toBe("안녕하세요.\n\n확인했어요.");
 		expect(draftApprovalBlock({ ...base, attachments: two, attachmentsNone: true })).not.toContain("첨부: 없음");
 	});
 
@@ -73,7 +74,7 @@ describe("the draft says it attaches something", () => {
 		expect(parseDraftApproval(draftApprovalBlock(claim))!.warning).toBe(NO_ATTACHMENT_WARNING);
 		expect(parseDraftApproval(draftApprovalBlock({ ...claim, attachmentsNone: true }))!.warning).toBe(NO_ATTACHMENT_WARNING);
 		expect(parseDraftApproval(draftApprovalBlock({ ...claim, attachments: two }))!.warning).toBeUndefined();
-		expect(parseDraftApproval(draftApprovalBlock(base))!.warning).toBeUndefined();
+		expect(parseDraftApproval(draftApprovalBlock(calm))!.warning).toBeUndefined();
 		expect(parseDraftApproval(draftApprovalBlock({ ...claim, toLabel: "대화방" }))!.warning).toBeUndefined();
 	});
 });

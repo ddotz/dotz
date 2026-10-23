@@ -1,16 +1,18 @@
 // The draft life cycle shared by the gateway offer (offer.ts) and the CLI (bin/draft.ts): build -> ask -> revise | send | drop.
 // Nothing here sends without the user's 1) 보내기 pick for exactly that draft id, read from the inbox log.
-import { draftApprovalBlock, draftVerdict } from "../../../hub/draft-approval.ts";
+import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { generateChatReply, lintReply, reviseReply, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
-import { sendWith, type SendOutcome } from "./senders.ts";
-import { loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
+import { matchLibrary } from "./library.ts";
+import { canAttach, sendWith, type SendOutcome } from "./senders.ts";
+import { addStagedFile, carryStagedFiles, stagedFiles } from "./staged.ts";
+import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
 import { addDraft, getDraft, newId, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
-export type FlowDeps = { call?: ModelCall; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome> };
+export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome> };
 
 // After a recorded correction: every few corrections fold into the profile's identity. A failed refinement keeps the old identity.
 export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promise<void> {
@@ -55,8 +57,41 @@ export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): P
 // The [ask] message of one draft; the notes line carries lint warnings and what only the user can decide.
 export function askText(rec: DraftRec, warnings: string[], headline = "답장 초안을 만들었어요"): string {
 	const notes = [...warnings.map(w => `확인: ${w}`), ...rec.questions.map(q => `정해 주세요: ${q}`)].map(n => n.replace(/\s+/g, " ")).join(" / ");
-	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: "이 답장 보낼까요?", ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}) });
+	const attachments = stagedFiles(rec.id).map(f => ({ name: f.name, size: f.size }));
+	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: "이 답장 보낼까요?", ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}) });
 	return [`[ask] ${headline}`, ...(notes ? [`-# ${notes}`] : []), block].join("\n");
+}
+
+// The 첨부 파일 폴더 of the mail app instance that owns the mail `ref` (app setting attach_folder), or undefined.
+export async function attachFolder(ref: string): Promise<string | undefined> {
+	try {
+		const { instanceOf } = await import("../../../hub/reply-model.ts");
+		const { appEntries } = await import("../../../hub/integrations.ts");
+		return loadSettings().attachFolders?.[instanceOf(appEntries(dataDir()), "mail", ref)];
+	} catch {
+		return undefined;
+	}
+}
+
+function pickByModel(rec: DraftRec, deps: FlowDeps): (names: string[]) => Promise<string[]> {
+	return async names => {
+		const text = await callOf(deps, rec.item, rec.ref)("파일 이름만 보고 메일에 보낼 파일을 고릅니다. 고른 파일 이름을 한 줄에 하나씩, 최대 3개만 적습니다. 다른 말은 쓰지 않습니다.", `메일 제목: ${rec.item.subject ?? ""}\n\n파일 이름:\n${names.map(n => `- ${n}`).join("\n")}`);
+		return text.split("\n").map(l => l.replace(/^[-*\d.)\s]+/, "").trim()).filter(Boolean);
+	};
+}
+
+// A reply that promises a file or answers a mail that asks for one: the best matches of the 첨부 파일 폴더 are staged for the owner to confirm
+// (they go out only with the owner's 보내기). Nothing fits -> the approval carries the warning and says so. A source that cannot send files gets neither.
+export async function stageForReply(rec: DraftRec, deps: FlowDeps): Promise<void> {
+	if (rec.kind !== "mail") return;
+	rec.asksFile = asksForFile(rec.item.text) || undefined;
+	if (!rec.asksFile && !claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`)) return;
+	if (!canAttach(rec.source)) return;
+	const folder = await attachFolder(rec.ref);
+	if (!folder) return;
+	const found = await matchLibrary(folder, { subject: rec.item.subject ?? "", text: rec.item.text }, deps.pick ?? pickByModel(rec, deps));
+	for (const f of found) addStagedFile(rec.id, f.path);
+	if (!found.length) rec.libraryMiss = true;
 }
 
 export type Step = { ok: boolean; text: string };
@@ -72,6 +107,9 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	const r = await reviseReply(old.item, loadStyle(toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
 	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref, ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
+	if (old.asksFile) rec.asksFile = true;
+	if (old.libraryMiss) rec.libraryMiss = true;
+	carryStagedFiles(old.id, rec.id);
 	addDraft(rec);
 	return { ok: true, text: askText(rec, r.warnings, "답장 초안을 고쳤어요") };
 }

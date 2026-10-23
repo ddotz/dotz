@@ -103,6 +103,7 @@ const needsNote = (dc, opt) => (dc.draft ? opt.label === DRAFT_EDIT : detailOf(o
 const pickSay = o => `${o.n}) ${o.label}${o.note ? ` - ${o.note}` : ""}`;
 function pickOption(dc, bi, opt, note) {
   if (DC.st[dc.key]) return;
+  if (dc.draft && dc.draft.warning && opt.label === "보내기" && !opt.sure) { drfSure(dc.draft, dc.t).then(ok => { if (ok) pickOption(dc, bi, { ...opt, sure: true }, note); }); return; }
   if (!note && needsNote(dc, opt)) { DC.edit[dc.key] = { bi, opt }; paintDecision(); return; }
   const p = DC.picks[dc.key] || [];
   DC.picks[dc.key] = p;
@@ -114,27 +115,93 @@ function pickOption(dc, bi, opt, note) {
 }
 // The files a draft sends along (hub/draft-approval.ts `> 첨부:` lines): one row per file, the row opens the file that will go out
 // (GET /api/drafts/<ref>/files/<n>, hub/draft-files.ts; through the peer proxy for a peer's draft). `첨부 없음` = the mail it answers had
-// files and this reply carries none; `warning` = the text says it attaches something but no file is set.
+// files and this reply carries none; `warning` = the text says it sends a file but none is set (it goes away once a file is added).
+// A mail reply draft of reply-drafts can change its files here (hub/draft-attach.ts): 파일 추가 = a file of this device or of the mail
+// app's 첨부 파일 폴더, x = take one off. The live list (DRF.st) replaces the one written in the message. o.t = the draft's conversation
+// (a peer's draft is changed on its own computer), o.edit false = read only, o.warn = a box the warning is drawn into instead of under the files.
 const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
-function draftFilesNode(d) {
-  const fl = Array.isArray(d.attachments) ? d.attachments : [];
-  if (!fl.length && !d.noAttachments && !d.warning) return null;
-  const rows = fl.map((f, i) => {
-    const ext = (String(f.name).match(/\.([A-Za-z0-9]{1,5})$/) || [0, ""])[1].toUpperCase(), meta = [ext, f.size].filter(Boolean).join(" · ");
-    const kids = [el("span", { class: "dr-fi" }, icon(DR_IMG.test(f.name) ? "image" : "file")), el("span", { class: "dr-fn", text: f.name }), meta ? el("span", { class: "dr-fm", text: meta }) : null];
-    return d.ref ? el("a", { class: "dr-att", href: pqLink(`/api/drafts/${enc(d.ref)}/files/${i}`), target: "_blank", rel: "noopener", title: `${f.name} 열기`, "aria-label": `${f.name} 열기${f.size ? ` (${f.size})` : ""}` }, ...kids, icon("open"))
-      : el("div", { class: "dr-att" }, ...kids);
-  });
-  return el("div", { class: "dr-files" },
-    fl.length ? el("div", { class: "dr-fh", text: `첨부 ${fl.length}개` }) : null, ...rows,
-    !fl.length && d.noAttachments ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부 없음 · 받은 메일의 첨부파일은 들어가지 않아요" })) : null,
-    d.warning ? el("div", { class: "dr-warn", role: "alert" }, el("span", { text: d.warning })) : null);
+const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {} };
+const DRF_WIRE_MAX = 10 * 1024 * 1024;
+const drfPath = (ref, tail) => `/api/drafts/${enc(ref)}/${tail}`;
+const drfNone = { files: [], canAttach: false, library: false, editable: false, failed: true };
+async function drfLoad(ref) { try { const r = await api(drfPath(ref, "files")); DRF.st[ref] = r && Array.isArray(r.files) ? r : drfNone; } catch { DRF.st[ref] = drfNone; } }
+async function drfWrite(ref, body) {
+  const r = await api(drfPath(ref, "files"), "POST", body);
+  DRF.st[ref] = { files: r.files, canAttach: r.canAttach, library: r.library, editable: r.editable };
 }
-function draftNode(d) {
+const drfBase64 = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => no(r.error); r.readAsDataURL(f); });
+async function drfUpload(ref, f) {
+  if (DRF.pc[ref]) {
+    if (f.size > DRF_WIRE_MAX) throw new Error("다른 컴퓨터의 초안에는 10MB 이하 파일만 붙일 수 있어요");
+    return drfWrite(ref, { name: f.name, data: await drfBase64(f) });
+  }
+  const form = new FormData();
+  form.append("file", f, f.name);
+  const r = await fetch("/api/upload", { method: "POST", body: form }), d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || `올리지 못했어요 (HTTP ${r.status})`);
+  return drfWrite(ref, { upload: d.files[0] });
+}
+// 보내기 on a draft whose mail account cannot send files: the owner is asked once more (resolves true to go on).
+async function drfSure(d, t) {
+  const ref = d.ref;
+  if (!ref || d.toLabel !== "받는이") return true;
+  if (!DRF.st[ref]) { DRF.pc[ref] = t ? pqPc(t) : null; await drfLoad(ref); }
+  const st = DRF.st[ref];
+  return !(st.editable && !st.canAttach && (st.files.length || d.warning)) || ask("첨부파일 없이 보낼까요?", "이 메일 계정은 첨부파일을 보낼 수 없어요. 본문만 보내져요.", "그래도 보내기");
+}
+function draftFilesNode(d, o = {}) {
+  const ref = d.ref, box = el("div", { class: "dr-files" });
+  if (ref) DRF.pc[ref] = o.t ? pqPc(o.t) : null;
+  const pickers = el("input", { type: "file", multiple: true, hidden: true, "aria-label": "파일 고르기" });
+  const run = async job => {
+    DRF.busy[ref] = true; paint();
+    try { await job(); } catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 처리하지 못했어요" : e.message, true); }
+    DRF.busy[ref] = false; paint();
+  };
+  pickers.onchange = () => { const list = [...pickers.files]; pickers.value = ""; run(async () => { for (const f of list) await drfUpload(ref, f); DRF.menu[ref] = ""; }); };
+  const openLib = async () => {
+    DRF.menu[ref] = DRF.menu[ref] === "lib" ? "" : "lib"; paint();
+    if (DRF.menu[ref] !== "lib" || DRF.lib[ref]) return;
+    try { DRF.lib[ref] = (await api(drfPath(ref, "library"))).items; } catch (e) { DRF.lib[ref] = []; toast(e.message, true); }
+    paint();
+  };
+  function paint() {
+    const st = ref ? DRF.st[ref] : null, live = !!st && !st.failed;
+    const fl = live ? st.files : Array.isArray(d.attachments) ? d.attachments : [];
+    const can = live && st.editable && o.edit !== false, busy = !!DRF.busy[ref];
+    const warn = d.warning && !fl.length;
+    const noSend = live && st.editable && !st.canAttach && (fl.length || d.warning);
+    const warns = [
+      warn ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: d.warning }), d.note ? el("span", { class: "dr-wn", text: d.note }) : null)) : null,
+      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 메일 계정은 첨부파일을 보낼 수 없어요 · 본문만 보내져요" })) : null];
+    const rows = fl.map((f, i) => {
+      const ext = (String(f.name).match(/\.([A-Za-z0-9]{1,5})$/) || [0, ""])[1].toUpperCase(), meta = [ext, f.size].filter(Boolean).join(" · ");
+      const kids = [el("span", { class: "dr-fi" }, icon(DR_IMG.test(f.name) ? "image" : "file")), el("span", { class: "dr-fn", text: f.name }), meta ? el("span", { class: "dr-fm", text: meta }) : null];
+      const link = ref ? el("a", { class: "dr-att", href: pqLink(drfPath(ref, `files/${i}`)), target: "_blank", rel: "noopener", title: `${f.name} 열기`, "aria-label": `${f.name} 열기${f.size ? ` (${f.size})` : ""}` }, ...kids, icon("open")) : el("div", { class: "dr-att" }, ...kids);
+      return can ? el("div", { class: "dr-ar" }, link, el("button", { class: "dr-x", type: "button", disabled: busy, title: "첨부에서 빼기", "aria-label": `${f.name} 빼기`, onclick: () => run(() => drfWrite(ref, { remove: i })) }, icon("close"))) : link;
+    });
+    const items = DRF.lib[ref] || [];
+    const lib = can && DRF.menu[ref] === "lib" ? el("div", { class: "dr-lib", role: "list" }, ...(items.length ? items.map(it => el("button", { class: "dr-li", type: "button", role: "listitem", disabled: busy, title: it.rel, onclick: () => run(async () => { await drfWrite(ref, { library: it.rel }); DRF.menu[ref] = ""; }) },
+      el("span", { class: "dr-fn", text: it.rel }), it.match ? el("span", { class: "dr-hit", text: "맞음" }) : null, el("span", { class: "dr-fm", text: it.size }))) : [el("div", { class: "dr-none", text: DRF.lib[ref] ? "폴더가 비어 있어요" : "불러오는 중…" })])) : null;
+    const menu = can && DRF.menu[ref] === "menu" ? el("div", { class: "dr-menu" },
+      el("button", { class: "btn tonal", type: "button", onclick: () => pickers.click() }, "이 기기에서 고르기"),
+      st.library ? el("button", { class: "btn tonal", type: "button", onclick: openLib }, "첨부 파일 폴더에서 고르기") : null) : null;
+    const add = can && st.canAttach ? el("button", { class: "dr-add", type: "button", disabled: busy, "aria-expanded": String(!!DRF.menu[ref]), onclick: () => { if (!st.library) pickers.click(); else { DRF.menu[ref] = DRF.menu[ref] ? "" : "menu"; paint(); } } }, icon("clip"), el("span", { text: busy ? "붙이는 중…" : "파일 추가" })) : null;
+    if (o.warn) { clear(o.warn).append(...warns.filter(Boolean)); o.warn.hidden = !warns.some(Boolean); }
+    clear(box).append(...[fl.length ? el("div", { class: "dr-fh", text: `첨부 ${fl.length}개` }) : null, ...rows,
+      !fl.length && d.noAttachments ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부 없음 · 받은 메일의 첨부파일은 들어가지 않아요" })) : null,
+      add, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
+    box.hidden = !box.querySelector(".dr-fh, .dr-none, .dr-warn, .dr-add");
+  }
+  paint();
+  if (ref && o.edit !== false && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
+  return box;
+}
+function draftNode(d, o) {
   return el("div", { class: "dc-draft" },
     el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
-    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d));
+    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d, o));
 }
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
 const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? "고치는 중…" : st === "sending" ? "보내는 중…" : "보냈어요 · 답을 기다려요");
@@ -161,9 +228,11 @@ function renderSheet(box, dc, picks, step) {
     el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d))
+  const warnBox = el("div", { class: "dr-warnbox", hidden: true });
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   const foot = el("div", { class: "fs-ft" });
+  foot.append(warnBox);
   if (edit) foot.append(editNode(dc, edit, st));
   else if (d) {
     foot.append(el("div", { class: "dc-acts" }, ...dc.blocks[0].options.map((o, i) =>
@@ -204,7 +273,7 @@ function renderDecision(box, dc, picks, step) {
   const kids = [head];
   if (!fold) {
     const body = el("div", { class: "dc-body" });
-    if (dc.draft) body.append(draftNode(dc.draft));
+    if (dc.draft) body.append(draftNode(dc.draft, { t: dc.t, edit: !st }));
     if (DC.edit[dc.key] && !st.startsWith("sent")) { body.append(editNode(dc, DC.edit[dc.key], st)); kids.push(body); }
     else {
     if (dc.blocks.length > 1) body.append(el("div", { class: "dc-steps", role: "group", "aria-label": "결정 단계" }, ...dc.blocks.map((b, i) =>

@@ -184,7 +184,7 @@ function draftCardNode(n) {
     el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || "받는이" }), el("span", { class: "dr-chip", text: dr.to || "-" })),
     dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
     man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
-    draftFilesNode(dr));
+    draftFilesNode(dr, { t: d.to, edit: open }));
   if (editing && !man) mailBox.append(el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), ta);
   const kids = [
     el("div", { class: "rc-hd" }, el("span", { class: "dr-ic" }, icon(mail ? "mail" : "send")), el("span", { class: "rc-src", text: mail ? "메일" : (targetName(d.to) || "초안") }), el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` })),
@@ -200,7 +200,7 @@ function draftCardNode(n) {
     kids.push(el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { leave(); redraw(); } }),
       man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" }))));
   } else if (open) {
-    const go = o => () => { if (o && !busy) answerInline(n, o); };
+    const go = o => () => { if (!o || busy) return; if (o === oSend && dr.warning) drfSure(dr, d.to).then(ok => ok && answerInline(n, o)); else answerInline(n, o); };
     kids.push(el("div", { class: "dr-act dr-row" },
       el("button", { class: "btn dr-send", type: "button", disabled: busy || !oSend, text: "보내기", onclick: go(oSend) }),
       el("button", { class: "btn tonal", type: "button", disabled: busy || !oEdit, text: "고치기", onclick: () => { DR.edit.add(n.id); redraw(); } }),
