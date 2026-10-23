@@ -32,7 +32,9 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 	const done = (r: { ok: boolean; text: string }): Out => ({ lines: [r.text], code: r.ok ? 0 : 1 });
 	switch (cmd) {
 		case "new": {
-			if (!loadSettings().enabled) return { lines: ["답장 초안 기능이 꺼져 있어요 (onboard.ts on)"], code: 1 };
+			// A draft the user asks for is their own request: only an explicit `onboard.ts off` refuses it.
+			const s = loadSettings();
+			if (s.decided && !s.enabled) return { lines: ["답장 초안 기능이 꺼져 있어요 (onboard.ts on)"], code: 1 };
 			const kind = kindOf(flag(rest, "--kind"));
 			const app = flag(rest, "--app") ?? (kind === "mail" ? "mail" : undefined);
 			if (!app) return { lines: ["댓글·채팅 초안은 --app <youtube|instagram|kakao ...>이 필요해요"], code: 2 };

@@ -5,7 +5,7 @@
 import { draftApprovalBlock } from "../../../hub/draft-approval.ts";
 import { precheck, reviseReply, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { buildDraft, defaultCall, type FlowDeps, toneKey } from "./flow.ts";
-import { appOn, loadSettings, loadStyle, recordCorrection } from "./settings.ts";
+import { appOn, ensureSwitch, loadSettings, loadStyle, recordCorrection } from "./settings.ts";
 import { addDraft, getDraft, isDrafted, markDrafted, setStatus } from "./store.ts";
 
 export type CommentInput = { id: string; author: string; text: string; context: string };
@@ -62,6 +62,7 @@ export async function draftComments(a: CommentAdapter, lines: string[], deps: Co
 			}
 			const id = await a.stage(c, built.rec.body);
 			addDraft({ ...built.rec, id });
+			ensureSwitch();
 			out.push(commentAsk(a, c, built.rec.body, id, [...built.warnings.map(w => `확인: ${w}`), ...built.rec.questions.map(q => `정해 주세요: ${q}`)]));
 		} catch (e) {
 			console.error(`reply draft: ${a.app} comment ${c.id} not drafted: ${(e as Error).message}`);

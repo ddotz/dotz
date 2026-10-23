@@ -1,7 +1,9 @@
 # Reply drafts (design of record)
 
 Shipped feature folder, off by default and turned on per install (`bin/onboard.ts on` writes a personal `feature.md` with
-`enabled: true`, like webmail-no-api). Distribution rule: no person's name, account, address or tone sample in the repo; the
+`enabled: true`, like webmail-no-api). A source whose monitoring the user set up (zele on in config.json, a webmail-no-api site, a
+connected YouTube or Instagram) gets suggestions without a separate step until the user decides otherwise (`settings.ts appOn`,
+`monitored`); the first suggestion writes the personal switch so the orchestrator knows how to answer it. An explicit off wins. Distribution rule: no person's name, account, address or tone sample in the repo; the
 tone is learned per install, from that install's user, and lives only under `<DATA_DIR>/custom/reply-drafts/`.
 
 ## Mechanism (generic engine in `hub/reply-draft.ts`)

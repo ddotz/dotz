@@ -217,9 +217,10 @@ test("onboard on/off flips the config and the personal feature switch; learn rep
 	expect((await runOnboard(["learn", "--from-file", join(env.dir, "t.txt")], noRun, false)).lines[0]).toContain("문장 2개");
 });
 
-test("draft.ts new prints the [ask] block for a mail and the bare reply text for a comment; it needs the feature on", async () => {
+test("draft.ts new prints the [ask] block for a mail and the bare reply text for a comment; only an explicit off refuses it", async () => {
 	const model = fakeModel([j(goodReply)]);
 	const args = ["new", "--mail", "k-1", "--from", "kim@example.com", "--subject", "회의 일정 문의"];
+	enable(env, { enabled: false });
 	expect((await runDraft(args, "질문이에요", { call: model.call })).code).toBe(1);
 	enable(env);
 	const out = await runDraft(args, "질문이에요", { call: model.call });
