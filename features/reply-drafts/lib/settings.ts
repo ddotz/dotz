@@ -30,7 +30,8 @@ export function writeAtomic(file: string, text: string, mode = 0o600): void {
 
 // `enabled` is the feature switch; `apps` has one switch per source (mail, youtube, instagram, ...), every source off until turned on.
 // A config from before `apps` existed has no apps.mail: mail then follows the top-level `auto` (kept valid, and kept in sync by setApp).
-export type Settings = { enabled: boolean; auto: boolean; apps: Record<string, { auto: boolean }>; senders: { only: string[]; skip: string[] }; model?: string };
+// `decided` = the config file says enabled true or false (the user or onboarding chose); without it each source follows its monitoring.
+export type Settings = { enabled: boolean; decided: boolean; auto: boolean; apps: Record<string, { auto: boolean }>; senders: { only: string[]; skip: string[] }; model?: string };
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map(x => x.trim()) : []);
 
@@ -40,12 +41,13 @@ export function loadSettings(): Settings {
 	try {
 		raw = JSON.parse(readFileSync(paths.config(), "utf8")) ?? {};
 	} catch {
-		return { enabled: false, auto: true, apps: {}, senders: { only: [], skip: [] } };
+		return { enabled: false, decided: false, auto: true, apps: {}, senders: { only: [], skip: [] } };
 	}
 	const apps: Settings["apps"] = {};
 	for (const [app, v] of Object.entries(raw.apps && typeof raw.apps === "object" ? (raw.apps as Record<string, any>) : {})) if (validApp(app)) apps[app] = { auto: v?.auto === true };
 	return {
 		enabled: raw.enabled === true,
+		decided: typeof raw.enabled === "boolean",
 		auto: raw.auto !== false,
 		apps,
 		senders: { only: strings(raw.senders?.only), skip: strings(raw.senders?.skip) },
@@ -54,20 +56,54 @@ export function loadSettings(): Settings {
 }
 
 export function saveSettings(patch: Partial<Settings>): Settings {
-	const next = { ...loadSettings(), ...patch };
-	writeAtomic(paths.config(), `${JSON.stringify(next, null, 2)}\n`, 0o644);
-	return next;
+	const { decided: _d, ...base } = { ...loadSettings(), ...patch };
+	writeAtomic(paths.config(), `${JSON.stringify(base, null, 2)}\n`, 0o644);
+	return { ...base, decided: true };
 }
 
-// Whether a source drafts on its own: the feature is on and that source's own switch is on.
-export const appOn = (s: Settings, app: string): boolean => s.enabled && (s.apps[app]?.auto ?? (app === "mail" ? s.auto : false));
+const readJson = (file: string): any => {
+	try {
+		return JSON.parse(readFileSync(file, "utf8"));
+	} catch {
+		return undefined;
+	}
+};
+
+// Whether the user set up monitoring of this source on this install: mail = zele turned on in config.json or a webmail-no-api site
+// onboarded; youtube / instagram = that platform connected in the SNS feature. That request is the user's opt-in for suggestions.
+export function monitored(app: string): boolean {
+	if (app === "youtube" || app === "instagram") return Boolean(readJson(join(dataDir(), "custom", "sns", "config.json"))?.[app]);
+	if (app !== "mail") return false;
+	if (readJson(join(dataDir(), "config.json"))?.zele?.enabled === true) return true;
+	const webmail = join(dataDir(), "custom", "webmail");
+	return existsSync(webmail) && readdirSync(webmail).some(site => existsSync(join(webmail, site, "config.json")));
+}
+
+// Whether a source drafts on its own. Its own switch wins; a config the user decided (onboard on/off) rules the rest; with no decision
+// yet, a source the user explicitly set up monitoring for gets suggestions (owner 2026-10-23), every other source stays off.
+export function appOn(s: Settings, app: string, isMonitored: (app: string) => boolean = monitored): boolean {
+	const own = s.apps[app];
+	if (own) return s.enabled && own.auto;
+	if (s.decided) return s.enabled && (app === "mail" ? s.auto : isMonitored(app));
+	return isMonitored(app);
+}
+
+// The personal feature switch (a personal copy of the shipped feature.md with enabled: true), so the orchestrator's prompt carries how to
+// answer these asks. Written when the feature is turned on, or the first time a suggestion goes out for a monitored source.
+export function ensureSwitch(): void {
+	if (existsSync(paths.personalFeature())) return;
+	const shipped = readFileSync(join(REPO_FEATURE, "feature.md"), "utf8");
+	mkdirSync(dirname(paths.personalFeature()), { recursive: true });
+	writeFileSync(paths.personalFeature(), shipped.replace(/^enabled:\s*false\s*$/m, "enabled: true"));
+}
 
 // Turns one source on or off. Mail's current state is written down first, so switching another source on never switches mail on by
 // way of the old top-level `auto`; turning a source on also turns the feature switch on.
 export function setApp(app: string, auto: boolean): Settings {
 	const s = loadSettings();
 	const apps = { ...s.apps, mail: { auto: appOn(s, "mail") }, [app]: { auto } };
-	return saveSettings({ apps, ...(app === "mail" ? { auto } : {}), ...(auto ? { enabled: true } : {}) });
+	// Switching one source off on an install that never decided keeps the others as they were (enabled, each following its monitoring).
+	return saveSettings({ apps, ...(app === "mail" ? { auto } : {}), ...(auto || !s.decided ? { enabled: true } : {}) });
 }
 
 export const HEADINGS = { rules: "## 말투", samples: "## 예시", corrections: "## 고친 점", forbidden: "## 금지" } as const;

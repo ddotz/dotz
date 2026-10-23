@@ -136,6 +136,7 @@ test("two kakao rooms keep separate tones, and the first draft of an empty room 
 test("draft.ts new --kind chat: an unreadable room still drafts with a note, a skip exits 3, off keeps today's behaviour, correct writes into the room", async () => {
 	const model = fakeModel([chatReply]);
 	const args = ["new", "--app", "kakao", "--room", "9", "--kind", "chat"];
+	enable(env, { enabled: false });
 	expect((await runDraft(args, "안녕", { call: model.call })).code).toBe(1);
 	enable(env);
 	const broken = await runDraft(args, "안녕", { call: model.call, kakaoReader: async () => Promise.reject(new Error("앱 없음")) });
