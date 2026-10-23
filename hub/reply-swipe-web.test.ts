@@ -193,4 +193,61 @@ describe("reply button on desktop", () => {
 		while (!posted.length) await Bun.sleep(10);
 		expect(posted[0]).toMatchObject({ text: "네 알겠어요", reply: { id: "m-owner-1", author: "", content: "배포는 언제 해요?" } });
 	});
+
+	// The button of an own (right-aligned) message sits left of the bubble, past a gap. It only shows on hover, so the pointer must be able to
+	// reach it from the bubble without leaving the row: every point of the way hits the row, its gap bridge or the button, and a real click at
+	// the (still hidden) button or at the gap opens the reply bar. (The WebKit view has no mouse-move input, so hover itself is a CSS rule.)
+	// The page settles after a resize (scroll anchoring moves rows a frame later): measure only once two frames agree.
+	const rectOf = async (sel: string) => {
+		await view.evaluate(`new Promise(res => { let last = ""; let n = 0; const tick = () => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(), k = [r.left, r.top].join(); n = k === last ? n + 1 : 0; last = k; if (n >= 3) res(true); else requestAnimationFrame(tick); }; tick(); })`);
+		return rectNow(sel);
+	};
+	const rectNow = (sel: string) => ev<{ l: number; r: number; t: number; b: number }>(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; })()`);
+	const hitsRow = (rid: string, x: number, y: number) => ev<boolean>(`(() => { const e = document.elementFromPoint(${x}, ${y}); return !!e && !!e.closest('[data-rid="${rid}"]'); })()`);
+
+	test("no point between an own message and its button leaves the row, and a real click on the hidden button or the gap opens the reply bar", async () => {
+		await view.resize(1280, 800);
+		const row = '#tl [data-rid="m-owner-1"]', btn = row + " > .rp-btn";
+		const b = await rectOf(row), p = await rectOf(btn);
+		const y = (p.t + p.b) / 2;
+		expect(p.r).toBeLessThan(b.l);
+		for (let x = Math.ceil(p.l); x <= b.l + 4; x++) expect(await hitsRow("m-owner-1", x, y)).toBe(true);
+		expect(await ev(`getComputedStyle(document.querySelector(${JSON.stringify(btn)})).opacity`)).toBe("0");
+		await view.click((p.l + p.r) / 2, y);
+		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
+		await view.evaluate(`rpClear()`);
+		await view.click(p.r + 3, y);
+		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
+	});
+
+	test("an assistant message's button is reachable from its text", async () => {
+		await view.resize(1280, 800);
+		const row = `#tl [data-rid="${BOT_TS}"]`, btn = row + " > .rp-btn";
+		const p = await rectOf(btn);
+		expect(await hitsRow(BOT_TS, (p.l + p.r) / 2, (p.t + p.b) / 2)).toBe(true);
+		await view.click((p.l + p.r) / 2, (p.t + p.b) / 2);
+		expect(await bar()).toEqual({ hidden: false, au: "dotz", ct: "내일 오전에 배포할게요" });
+	});
+
+	test("a button reached with the keyboard is shown", async () => {
+		await view.resize(1280, 800);
+		await view.evaluate(`document.querySelector('#tl [data-rid="m-owner-1"] > .rp-btn').focus()`);
+		await view.press("Tab");
+		await waitFor(`document.activeElement.matches(".rp-btn:focus-visible") && getComputedStyle(document.activeElement).opacity === "1"`);
+	});
+});
+
+describe("tap on running work", () => {
+	const WORK = { id: "st_x", description: "프로젝트 지우기", status: "running", started_at: Date.now(), target: "web" };
+	test("a worker whose message is drawn jumps to it; one with no message ref opens its own detail and goes nowhere", async () => {
+		await view.evaluate(`(window.__jumps = [], ts(MAIN).hLoaded = ts(MAIN).aLoaded = true, ntJump = a => window.__jumps.push(a))`);
+		await view.evaluate(`workGo(${JSON.stringify({ ...WORK, reply_to: "m-owner-1" })})`);
+		expect(await ev(`window.__jumps`)).toEqual([{ src: "main", at: "2026-10-22T01:00:00.000Z" }]);
+		expect(await ev(`document.querySelector("#sheet").hidden`)).toBe(true);
+		await view.evaluate(`workGo(${JSON.stringify(WORK)})`);
+		await view.evaluate(`workGo(${JSON.stringify({ ...WORK, reply_to: "gone-msg" })})`);
+		await waitFor(`!document.querySelector("#sheet").hidden`);
+		expect(await ev(`document.querySelector("#sh-name").textContent`)).toBe("프로젝트 지우기");
+		expect(await ev(`window.__jumps.length`)).toBe(1);
+	});
 });

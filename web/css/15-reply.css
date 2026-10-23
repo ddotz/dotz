@@ -10,8 +10,11 @@
 .rp-btn { position: absolute; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: var(--hover); color: var(--fg-2); opacity: 0; pointer-events: none; transition: opacity .12s; }
 .rp-btn:hover { background: var(--active); color: var(--fg); }
 .um > .rp-btn { right: 100%; margin-right: 6px; bottom: 0; }
+/* The 6px gap between an own (right-aligned) bubble and its button is part of the button's hit area, so the pointer never leaves the row on its way there. */
+.um > .rp-btn::after { content: ""; position: absolute; top: 0; bottom: 0; left: 100%; width: 8px; }
 .bm > .rp-btn { top: 0; right: 0; }
-@media (hover: hover) and (pointer: fine) { [data-rid]:hover > .rp-btn, .rp-btn:focus-visible { opacity: 1; pointer-events: auto; } }
+/* The hidden button keeps catching the pointer (it is a child of the row, so the row stays hovered while the pointer is on it) and shows with the row's hover or its own keyboard focus. */
+@media (hover: hover) and (pointer: fine) { .rp-btn { pointer-events: auto; } [data-rid]:hover > .rp-btn, .rp-btn:focus-visible { opacity: 1; } }
 @media (hover: none), (pointer: coarse) { .rp-btn { display: none; } }
 .rpbar { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 0 6px; padding: 4px 4px 4px 12px; border-radius: var(--r-ctl); background: var(--hover); color: var(--fg-2); font-size: 13px; line-height: 20px; }
 .rpbar[hidden] { display: none; }

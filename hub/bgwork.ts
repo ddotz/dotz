@@ -4,8 +4,9 @@
 // there and a restart rebuilds it by itself. The store's root_session_id ties a worker to the orchestrator's session file
 // (the uuid ending its name), as for a session's workers in activity.ts omoTasks.
 //
-// A worker belongs to the owner message it was spawned for when that message is still open (deferred, prompts.ts): the
-// latest deferred message delivered before the worker's spawn. Finished workers keep no such message, nothing waits for them.
+// A worker belongs to the owner message of the turn that spawned it (prompts.ts turnAt); one spawned by no turn of ours (a
+// run a worker's result woke, a restart) belongs to the latest still-open deferred message delivered before its spawn.
+// Finished workers keep no such message, nothing waits for them.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { scrub } from "./activity.ts";
@@ -70,6 +71,8 @@ type BgWorkDeps = {
 	/** The orchestrator's session file (empty before its first run). */
 	sessionFile: () => string | undefined;
 	deferred: () => OpenDeferred[];
+	/** The owner message the turn running at that time (ms) was answering (prompts.ts turnAt), when a turn of ours was running. */
+	turn?: (at: number) => { target: string; replyTo?: string } | undefined;
 	now?: () => number;
 	/** Is this process still alive? A record that says running while its process is gone is a worker the restart killed. */
 	alive?: (pid: number) => boolean;
@@ -139,11 +142,14 @@ export function createBgWork(deps: BgWorkDeps) {
 		const open = deps.deferred().sort((a, b) => a.at - b.at);
 		const works = records(file).map(toWork).filter(w => w.status === "running" || t - (w.ended_at ?? 0) <= FINISHED_KEEP_MS);
 		for (const w of works) {
-			const p = w.status === "running" ? open.filter(d => d.at <= w.started_at + SPAWN_SLACK_MS).at(-1) : undefined;
+			// The turn that spawned the worker is its message; only a worker no turn of ours spawned falls back to the latest
+			// deferred message before it (an answered or newer message is no reason to move it: owner 2026-10-23).
+			const p = w.status === "running" ? (deps.turn?.(w.started_at) ?? served.get(w.id) ?? open.filter(d => d.at <= w.started_at + SPAWN_SLACK_MS).at(-1)) : undefined;
 			if (p) {
 				w.target = p.target;
-				if (p.replyTo) w.reply_to = p.replyTo;
-				served.set(w.id, { target: p.target, ...(p.replyTo ? { reply_to: p.replyTo } : {}) });
+				const ref = "reply_to" in p ? p.reply_to : p.replyTo;
+				if (ref) w.reply_to = ref;
+				served.set(w.id, { target: p.target, ...(ref ? { reply_to: ref } : {}) });
 			} else {
 				const k = served.get(w.id);
 				if (k) Object.assign(w, k);

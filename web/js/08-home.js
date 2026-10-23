@@ -387,12 +387,14 @@ function targetInfo(t) {
   return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable, ask: l.pendingAsk && l.pendingAsk.text ? l.pendingAsk : null } : { status: "", alive: true, known: false };
 }
 const isWorking = t => { const i = targetInfo(t); return i.alive && (i.status === "working" || i.status === "starting"); };
-// The main assistant's background work (S.work) as a row on Home: tap goes to the conversation that asked for it, flashed.
+// The main assistant's background work (S.work) as a row on Home: tap goes to the message that asked for it, flashed (its own detail when that message is unknown).
 async function workGo(w) {
   const t = w.target && validTarget(w.target) ? w.target : MAIN;
+  if (!w.reply_to) return openSub("orchestrator", w.id, null, w.description);
   if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t).catch(() => {});
-  const asked = w.reply_to ? ts(t).msgs.find(e => e.mid === w.reply_to) : null;
-  ntJump({ src: t, at: asked ? asked.ts : new Date(w.started_at).toISOString() });
+  const asked = ts(t).msgs.find(e => e.mid === w.reply_to);
+  if (!asked) return openSub("orchestrator", w.id, null, w.description);
+  ntJump({ src: t, at: asked.ts });
 }
 function workRow(w) {
   const run = w.status === "running", done = w.status === "done";

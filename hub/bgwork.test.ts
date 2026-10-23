@@ -98,3 +98,15 @@ test("a worker is tied to the folder its brief names (not its isolated copy) and
 	const ended = work.list();
 	expect(ended.find(w => w.id === "st_1")).toMatchObject({ status: "done", target: "ch:9", reply_to: "m-9" });
 });
+
+test("a worker spawned by a turn serves that turn's message even when an older deferred message is the only one open", () => {
+	record("st_1", { started_at: iso(T0 + 100_000) });
+	record("st_2", { started_at: iso(T0 + 200_000) });
+	const open: OpenDeferred[] = [{ target: "web", replyTo: "m-old", at: T0 + 10_000 }];
+	const turn = (at: number) => (at < T0 + 150_000 ? { target: "web", replyTo: "m-1" } : at < T0 + 250_000 ? { target: "web", replyTo: "m-2" } : undefined);
+	const work = createBgWork({ sessionFile: () => session, deferred: () => open, turn, now: () => T0 + 300_000 });
+	expect(work.list().map(w => [w.id, w.reply_to])).toEqual([["st_1", "m-1"], ["st_2", "m-2"]]);
+	// A turn with no message id (a schedule) leaves reply_to empty instead of borrowing the old deferred one.
+	const bare = createBgWork({ sessionFile: () => session, deferred: () => open, turn: () => ({ target: "web" }), now: () => T0 + 300_000 });
+	expect(bare.list().map(w => [w.target, w.reply_to])).toEqual([["web", undefined], ["web", undefined]]);
+});
