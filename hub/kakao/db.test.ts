@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash, pbkdf2Sync } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	bplistInts,
 	containerPath,
 	containerPreferencesPath,
 	databaseName,
@@ -26,9 +28,12 @@ import {
 	secureKey,
 	sqlcipherDb,
 	sqliteDb,
+	unreadCount,
 	userIdFromPlist,
+	watermarks,
+	watermarkSignatures,
 } from "./db.ts";
-import { BASE_LOG, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
+import { BASE_LOG, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import type { RunOpts, Runner, RunResult } from "./types.ts";
 
 let dir: string;
@@ -347,5 +352,92 @@ describe("typed reads on the fixture", () => {
 		expect((await newInChats(db, id(0), [direct, String(ROOM.channel)], 10)).map((r) => r.logId)).toEqual([id(1), id(2), id(3), id(4), id(8)]);
 		expect(await newInChats(db, id(0), [], 10)).toEqual([]);
 		db.close();
+	});
+});
+
+describe("read counters (watermarks)", () => {
+	const hex = (v: (bigint | number)[]) => bplistOfInts(v).toString("hex");
+
+	test("bplistInts decodes a top-level int array, including more than 15 elements and negative or 64-bit values", () => {
+		expect(bplistInts(hex([1000n, 2001n, 2002n]))).toEqual([1000n, 2001n, 2002n]);
+		expect(bplistInts(hex([]))).toEqual([]);
+		expect(bplistInts(hex([-5n, 9_007_199_254_740_993n]))).toEqual([-5n, 9_007_199_254_740_993n]);
+		const many = Array.from({ length: 20 }, (_, i) => BigInt(1000 + i));
+		expect(bplistInts(hex(many))).toEqual(many);
+	});
+
+	test("bplistInts gives undefined, never a throw, for anything that is not a well-formed int array", () => {
+		const good = bplistOfInts([1000n, 2001n]);
+		expect(bplistInts("")).toBeUndefined();
+		expect(bplistInts("zz")).toBeUndefined();
+		expect(bplistInts(Buffer.from("notaplist".repeat(8)).toString("hex"))).toBeUndefined();
+		const badHeader = Buffer.from(good);
+		badHeader.write("bplist01", 0, "latin1");
+		expect(bplistInts(badHeader.toString("hex"))).toBeUndefined();
+		expect(bplistInts(good.subarray(0, 20).toString("hex"))).toBeUndefined();
+		const farTop = Buffer.from(good);
+		farTop.writeBigUInt64BE(1n << 40n, good.length - 32 + 16);
+		expect(bplistInts(farTop.toString("hex"))).toBeUndefined();
+		const farTable = Buffer.from(good);
+		farTable.writeBigUInt64BE(1n << 40n, good.length - 32 + 24);
+		expect(bplistInts(farTable.toString("hex"))).toBeUndefined();
+		const notInts = Buffer.from(good);
+		notInts[9] = 0x50;
+		expect(bplistInts(notInts.toString("hex"))).toBeUndefined();
+		const notArray = Buffer.from(good);
+		notArray[8] = 0xd2;
+		expect(bplistInts(notArray.toString("hex"))).toBeUndefined();
+	});
+
+	test.skipIf(!existsSync("/usr/bin/plutil"))("the decoder and the test encoder agree with macOS's own binary plists", () => {
+		const values = [1000, 2001, 2 ** 40, ...Array.from({ length: 17 }, (_, i) => 70_000 + i)];
+		const src = join(dir, "a.json");
+		const out = join(dir, "a.bplist");
+		writeFileSync(src, JSON.stringify(values));
+		const conv = Bun.spawnSync(["/usr/bin/plutil", "-convert", "binary1", "-o", out, src]);
+		expect(conv.exitCode).toBe(0);
+		expect(bplistInts(readFileSync(out).toString("hex"))).toEqual(values.map(BigInt));
+		writeFileSync(out, bplistOfInts(values));
+		const back = Bun.spawnSync(["/usr/bin/plutil", "-convert", "json", "-o", "-", out]);
+		expect(JSON.parse(back.stdout.toString())).toEqual(values);
+	});
+
+	test("unreadCount: members other than the author and the owner whose read position is below the message", () => {
+		const marks = new Map<string, bigint>([["1000", 5n], ["2001", 10n], ["2002", 20n], ["2003", 7n]]);
+		const count = (logId: string, author: string) => unreadCount(marks, logId, author, OWNER);
+		expect(count("11", "2001")).toBe(1);
+		expect(count("11", "1000")).toBe(2);
+		expect(count("10", "1000")).toBe(1);
+		expect(count("21", "2002")).toBe(2);
+		expect(count("3", "2001")).toBe(0);
+		expect(count("abc", "2001")).toBe(0);
+		expect(unreadCount(new Map(), "11", "2001", OWNER)).toBe(0);
+	});
+
+	test("watermarks reads a room's member read positions; a room without them, or a database without the columns, gives an empty map", async () => {
+		const path = join(dir, "marks.sqlite");
+		const id = (n: number) => BASE_LOG + BigInt(n);
+		makeFixtureDb(path, {
+			rooms: [
+				{ chatId: ROOM.group, type: 1, chatName: "Study Group", marks: [[OWNER, id(9)], [2001, id(5)], [2002, id(7)]] },
+				{ chatId: ROOM.direct, type: 0 },
+			],
+		}).close();
+		const db = sqliteDb(path);
+		expect([...(await watermarks(db, String(ROOM.group)))]).toEqual([["1000", id(9)], ["2001", id(5)], ["2002", id(7)]]);
+		expect((await watermarks(db, String(ROOM.direct))).size).toBe(0);
+		expect((await watermarks(db, "999")).size).toBe(0);
+		const sigs = await watermarkSignatures(db, [String(ROOM.group), String(ROOM.direct)]);
+		expect(sigs.get(String(ROOM.group))).toMatch(/^62706c697374/i);
+		expect(sigs.get(String(ROOM.direct))).toBe("");
+		expect((await watermarkSignatures(db, [])).size).toBe(0);
+		db.close();
+		const old = new Database(join(dir, "old.sqlite"), { create: true });
+		old.exec("CREATE TABLE NTChatRoom (chatId INTEGER PRIMARY KEY)");
+		old.close();
+		const odb = sqliteDb(join(dir, "old.sqlite"));
+		expect((await watermarks(odb, "1")).size).toBe(0);
+		expect((await watermarkSignatures(odb, ["1"])).size).toBe(0);
+		odb.close();
 	});
 });

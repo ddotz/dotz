@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
-import { type KakaoDb, memberLabel, messages, rooms, sentAtMs, TEXT_TYPE } from "./db.ts";
+import { type KakaoDb, memberLabel, messages, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, type DraftModel, estimateTokens, ownSamples, parseDraftReply, type StyleHint, sinceOwnLast } from "./draft.ts";
 import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
@@ -42,6 +42,7 @@ const LOST = "게이트웨이가 다시 시작돼서 결과를 확인하지 못�
 const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
 const DRAFT_FAILED = "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요";
 const DRAFT_READ = 200;
+const READS_MAX = 500;
 
 export function readConfig(paths: KakaoPaths): KakaoConfig | undefined {
 	try {
@@ -241,10 +242,11 @@ export function createKakaoWeb(deps: WebDeps) {
 					if (!room) return json({ error: "대화방을 찾지 못했어요" }, 404);
 					const list = await messages(await getDb(config!), chatId, limit, config!.userId ?? "", after !== undefined ? { after } : before !== undefined ? { before } : {});
 					const since = now() - SEND_WINDOW_MS;
+					const marks = await watermarks(await getDb(config!), chatId);
 					return json({
 						room: { chatId, name: roomsCache?.names.get(chatId) ?? room.name, kind: room.kind, group: room.kind === "group" },
 						// Only text bodies are shown; the body of a photo or file message is an attachment record, not text.
-						messages: list.map(m => ({ id: messageId(m), collector, logId: m.logId, authorId: m.authorId, sender: m.sender, text: m.type === TEXT_TYPE ? m.text : "", type: m.type, sentAt: sentAtMs(m.sentAt), fromMe: m.fromMe })),
+						messages: list.map(m => ({ id: messageId(m), collector, logId: m.logId, authorId: m.authorId, sender: m.sender, text: m.type === TEXT_TYPE ? m.text : "", type: m.type, sentAt: sentAtMs(m.sentAt), fromMe: m.fromMe, unread: unreadCount(marks, m.logId, m.authorId, config!.userId ?? "") })),
 						read: readJsonFile<Record<string, string>>(readsFile, {})[chatId] ?? null,
 						kakaoUnread: room.unread,
 						drafts: (await listDrafts({ paths, runner: deps.runner }))
@@ -254,6 +256,20 @@ export function createKakaoWeb(deps: WebDeps) {
 							.filter(s => s.chatId === chatId && s.at >= since)
 							.map(({ id, text, state, reason, at, draft, collector: by }) => ({ id, text, state, ...(reason ? { reason } : {}), at, ...(draft ? { draft } : {}), ...(by ? { collector: by } : {}) })),
 					});
+				} catch {
+					return json({ error: "카톡 데이터를 읽지 못했어요" }, 502);
+				}
+			}
+
+			// KakaoTalk's read counters for the messages from `from` on (inclusive, at most READS_MAX), without their bodies.
+			if (sub === "reads" && parts.length === 5 && method === "GET") {
+				const from = url.searchParams.get("from");
+				if (!digits(from)) return json({ error: "from must be a logId" }, 400);
+				try {
+					const db = await getDb(config!);
+					const list = await messages(db, chatId, READS_MAX, config!.userId ?? "", { after: String(BigInt(from) - 1n) });
+					const marks = await watermarks(db, chatId);
+					return json({ counts: Object.fromEntries(list.map(m => [m.logId, unreadCount(marks, m.logId, m.authorId, config!.userId ?? "")])) });
 				} catch {
 					return json({ error: "카톡 데이터를 읽지 못했어요" }, 502);
 				}

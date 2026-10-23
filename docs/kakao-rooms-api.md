@@ -17,6 +17,13 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
   Messages oldest first. `read` = the owner's read position in the web app for this room (null = never opened; the client then
   uses `kakaoUnread`, KakaoTalk's own unread count, to place the marker). `drafts` = pending drafts of this room only. `sends` =
   this room's sends of the last 24 h (`state`: `sending` | `sent` | `failed`).
+  Each message also has `unread: number`, KakaoTalk's read counter (the yellow number beside a bubble): how many members have
+  not read it yet. It comes from `NTChatRoom.watermarkKeys` / `watermarkValues` (binary plists, each an array of int64: member user
+  ids and, in the same order, each member's last-read logId). Rule: members whose id is neither the message's author nor the owner
+  and whose last-read logId is below the message's logId. `0` = nothing to show (also when the room has no readable watermarks).
+- `GET /api/kakao/chat/<chatId>/reads?from=<logId>` -> `{ counts: { [logId]: number } }` for the room's messages with logId >= `from`
+  (oldest first, at most 500), zeros included, no bodies. 403 when the room is not watched, 400 when `from` is not a logId. The client
+  calls it with the oldest shown logId to refresh the counters after a `kakao_read` event.
 - `POST /api/kakao/chat/<chatId>/read` body `{ logId }` -> `{ ok: true }` (moves forward only).
 - `POST /api/kakao/chat/<chatId>/send` body `{ text }` -> 202 `{ id, state: "sending" }`. The owner typed it: no approval step.
   The send runs in the background, one at a time for the whole gateway.
@@ -47,6 +54,8 @@ the send (a failed send with its reason) before kmsg runs.
 
 Server-sent events on `/api/events` (ids only, never bodies or names):
 - `{ kind: "kakao", chatId, logId }` a new message in a watched room (the client fetches `?after=`).
+- `{ kind: "kakao_read", chatId }` somebody read more in a watched room (its read positions changed): the client refreshes the
+  counters with `/reads`. Like `kakao`, it is only looked for while a page is connected.
 - `{ kind: "kakao_send", chatId, id, state, reason? }` a send changed state.
 - `{ kind: "kakao_draft", chatId }` the drafts of a room changed.
 - `{ kind: "kakao_rooms" }` the watched list changed.

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { type KakaoDb, sqliteDb } from "./db.ts";
-import { addMessage, BASE_LOG, BASE_TIME, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
+import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { createLive } from "./live.ts";
 import { type KakaoConfig, kakaoPaths } from "./types.ts";
 
@@ -70,6 +70,9 @@ function setup(over: Partial<KakaoConfig> = {}) {
 		watchers,
 		timers,
 		setConfig: (c: KakaoConfig | undefined) => void (config = c),
+		// Sets a room's read positions (member user id, last-read logId number): the database change behind kakao_read.
+		marks: (chat: number, members: [number, number][]) =>
+			w.query("UPDATE NTChatRoom SET watermarkKeys = ?, watermarkValues = ? WHERE chatId = ?").run(bplistOfInts(members.map(m => m[0])), bplistOfInts(members.map(m => BASE_LOG + BigInt(m[1]))), BigInt(chat)),
 		add: (n: number, chat: number, author = 2001) => addMessage(w, { logId: BASE_LOG + BigInt(n), chatId: chat, authorId: author, message: BODY, sentAt: BASE_TIME + n * 10 }),
 		fire: async () => {
 			const due = [...timers.values()];
@@ -87,7 +90,7 @@ describe("live watcher", () => {
 		await t.live.sync();
 		expect(t.open().map(x => x.dir)).toEqual([dir, join(dir, "kakao")]);
 		expect(t.timers.size).toBe(0);
-		expect(t.stats.queries).toBe(1);
+		expect(t.stats.queries).toBe(2);
 		t.live.stop();
 		expect(t.open()).toEqual([]);
 	});
@@ -180,6 +183,46 @@ describe("live watcher", () => {
 		t.add(11, ROOM.direct);
 		await t.live.poll();
 		expect(t.stats.queries).toBe(before);
+	});
+
+	test("a change of a watched room's read positions announces kakao_read once, ids only; other rooms and a page-less gateway stay quiet", async () => {
+		const t = setup({ watch_chats: [DIRECT] });
+		await t.live.sync();
+		await t.live.poll();
+		expect(t.events).toEqual([]);
+		t.marks(ROOM.direct, [[OWNER, 4], [2001, 1]]);
+		await t.live.poll();
+		expect(t.events).toEqual([{ kind: "kakao_read", chatId: DIRECT }]);
+		await t.live.poll();
+		expect(t.events).toHaveLength(1);
+
+		t.marks(ROOM.group, [[OWNER, 4], [2002, 2]]);
+		await t.live.poll();
+		expect(t.events).toHaveLength(1);
+
+		const queries = t.stats.queries;
+		t.sub.n = 0;
+		t.marks(ROOM.direct, [[OWNER, 4], [2001, 3]]);
+		await t.live.poll();
+		expect(t.stats.queries).toBe(queries);
+		expect(t.events).toHaveLength(1);
+		t.sub.n = 1;
+		await t.live.poll();
+		expect(t.events).toEqual([{ kind: "kakao_read", chatId: DIRECT }, { kind: "kakao_read", chatId: DIRECT }]);
+	});
+
+	test("a new message and a read change in one pass announce both kinds; a config change re-baselines the read positions", async () => {
+		const t = setup({ watch_chats: [DIRECT] });
+		await t.live.sync();
+		t.add(9, ROOM.direct);
+		t.marks(ROOM.direct, [[OWNER, 9], [2001, 9]]);
+		await t.live.poll();
+		expect(t.events).toEqual([{ kind: "kakao", chatId: DIRECT, logId: id(9) }, { kind: "kakao_read", chatId: DIRECT }]);
+		t.marks(ROOM.group, [[OWNER, 9], [2002, 1]]);
+		t.setConfig({ enabled: true, dbPath: t.dbPath, userId: OWNER, watch_chats: [DIRECT, GROUP] });
+		await t.live.sync();
+		await t.live.poll();
+		expect(t.events).toHaveLength(2);
 	});
 
 	test("drafts.json changes announce kakao_draft for the watched room whose drafts changed", async () => {
