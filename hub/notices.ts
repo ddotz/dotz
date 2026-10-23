@@ -38,6 +38,8 @@ export type Notice = {
 	ref?: string;
 	// kind "watch": the key of the app integration (hub/integrations.ts) the report belongs to. It stays in that app's view and out of 감시 소식.
 	app?: string;
+	// kind "watch": the watch's own name, so a report of a watch an app owns (a login keeper, a sync) is stamped with that app whatever its words say.
+	watch?: string;
 	// kind "watch": the app item the check pointed at (a `DOTZ_ITEM <app>:<id>` line) with the card to draw for it. A report that names an item stays in 감시 소식 whatever its words say.
 	item?: WatchItem;
 	read: boolean;
@@ -339,7 +341,7 @@ function fromInbox(e: HubEvent): void {
 		const [head, reason, output] = [label || "모니터링", String(e.reason ?? ""), String(e.text ?? "")];
 		const prev = typeof e.prev === "string" ? e.prev : undefined;
 		const ref = recovered || isIssue(reason) ? undefined : itemRefOf(output);
-		const item = upsert({ kind: "watch", tone: "", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", read: recovered, at: e.ts, ...(ref ? { item: resolveItem(ref) } : {}) });
+		const item = upsert({ kind: "watch", tone: "", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", ...(name ? { watch: name } : {}), read: recovered, at: e.ts, ...(ref ? { item: resolveItem(ref) } : {}) });
 		if (summarizeWatch && !isIssue(reason) && !recovered && !describeOutput(output, { prev }).readable)
 			void summarizeWatch(output).then(summary => summary && retextWatch(item.id, clean(watchLine(head, reason, output, { prev, summary })).text));
 		return;
