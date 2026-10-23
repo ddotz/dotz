@@ -310,13 +310,23 @@ function monTimeline(it) {
   const names = it.mon ? monNames(it.mon) : [];
   const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => { const x = monNoticeNode(n, names), src = x && n.pc && monFeed(it) && x.querySelector(".rc-src"); if (src) src.after(el("span", { class: "tag", text: n.pc.name })); return x; } })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
-  const pin = it.app && it.pc ? asPeerNameRow(it) : it.app ? asPinnedRow(it.key.slice(2)) : it.mon && it.mon.kind === "watch" && it.mon.watch ? asPinnedRow(`w:${it.mon.watch}`) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
+  const pin = it.app && it.pc ? asPeerNameRow(it) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
   if (pin) nodes.unshift(pin);
   if (nodes.length) return nodes;
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
   return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];
 }
-const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), el("span", { class: "cv-p", text: monState(it) }))];
+// The settings conversation an item has: a local app's, a watch's (local or a peer's, forwarded by pqAct); none for a peer's app, a schedule or an unreachable computer.
+const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : "";
+// The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
+const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), el("span", { class: "cv-p", text: monState(it) })), kkItem(it) && KK.open ? null : asEntry(monSettingsApp(it))].filter(Boolean);
+// The settings app of the detail open now (an item, or a conversation sitting under one), for the phone's app bar.
+function monDetailApp() {
+  if (current === "monitoring") return monConv() ? monSettingsApp(monSel(monItems())) : "";
+  if (!(current === "chat" && monCtx && convOnPhone()) || isSettingsT(target)) return "";
+  const k = monItemOf(target);
+  return k ? monSettingsApp(monItems().find(i => i.key === k)) : "";
+}
 
 // The owner is looking at an open item: its notices that need no answer count as read after a moment (answers keep theirs unread, like everywhere).
 function monSeen() {
@@ -352,7 +362,7 @@ function renderMonitoring() {
   cmMode(cm, !!cm && !(narrowChat() && MON.list));
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
-    const head = JSON.stringify([sel.name, monState(sel)]);
+    const head = JSON.stringify([sel.name, monState(sel), !!AS.by[monSettingsApp(sel)], !!KK.open]);
     if (head !== MON.kkHead) { MON.kkHead = head; clear($("#mon-head")).append(...monHead(sel)); }
     MON.sig = ""; MON.shown = sel.key;
     convTitle();

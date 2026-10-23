@@ -296,7 +296,7 @@ function kkPaintRooms() {
     if (watched.length) list.append(...watched.map(kkRow));
     else list.append(el("div", { class: "kk-note", id: "kk-empty", text: "지켜볼 대화방을 골라 주세요" }));
   }
-  clear(kkRooms).append(...[KK.pc ? null : asPinnedRow("kakao"), pick, list].filter(Boolean));
+  clear(kkRooms).append(pick, list);
   kkRooms.scrollTop = top;
 }
 
@@ -309,11 +309,12 @@ function kkPaintChat() {
   const open = !!KK.open, room = kkRoom(KK.open), info = KK.room || room || {};
   kkFoot.hidden = !open || KK.loading || !!KK.roomErr;
   kkPill.hidden = !(open && KK.pill);
-  const sig = `${KK.open}|${info.name}|${info.group}`;
+  const sig = `${KK.open}|${info.name}|${info.group}|${!!AS.by.kakao}`;
   if (sig !== KK.headSig) {
     KK.headSig = sig;
     clear(kkHead);
-    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: info.group ? "단체 대화방" : "1:1 대화" })));
+    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: info.group ? "단체 대화방" : "1:1 대화" })), ...(KK.pc ? [] : [asEntry("kakao")].filter(Boolean)));
+    monSchedule();   // the item's head gives the gear to the room head while a room is open
   }
   if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: "대화방을 골라 주세요" })); return; }
   if (KK.loading) { clear(kkIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }

@@ -16,7 +16,8 @@ function asLoad(app, again) {
     catch { AS.none[app] = true; }
     asPaint();
     MON.sig = ""; monSchedule();
-    if (typeof KK !== "undefined" && KK.loaded && app === "kakao") kkPaintRooms();
+    if (typeof KK !== "undefined" && KK.loaded && app === "kakao") kkPaintAll();
+    if (monCtx) convSchedule();
   })();
 }
 async function asPatch(app, values) {
@@ -255,14 +256,23 @@ function asPeerNameRow(it) {
   return el("div", { class: "as-row as-name" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 이름" }), el("span", { class: "as-h", text: `${it.pc.name}의 앱이에요` })), inp, el("button", { class: "btn tonal", type: "button", "data-k": "label-save", onclick: save }, "저장"));
 }
 
-/* ---- the pinned row of an app's list ---- */
-function asPinnedRow(app) {
+/* ---- the settings entry of a detail: one gear button in its title bar (the head on a wide screen, the app bar on a phone) ---- */
+function asOpen(ev) { go("monitoring", `c:settings:${ev.currentTarget.dataset.asOpen}`); }
+const asBtn = app => el("button", { class: "ib as-hd", type: "button", "aria-label": "설정", title: "설정", "data-as-open": app, onclick: asOpen }, icon("settings"));
+// The button of the settings conversation `app` ("mail", "w:<watch>"), or null while its settings are not loaded (an app without any shows no button).
+function asEntry(app) {
+  if (!app) return null;
   if (!AS.load[app]) asLoad(app);
-  if (!AS.by[app]) return null;
-  const sw = AS.by[app].filter(f => f.switch && f.key !== "use_here" && f.key !== "label"), hint = sw.length ? sw.map(f => `${f.label} ${asFmt(f, f.value)}`).join(" · ") : "말로 설정을 바꿔요";
-  return el("button", { class: "cv-row pv as-pin", type: "button", onclick: () => go("monitoring", `c:settings:${app}`) },
-    el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon("settings")),
-    el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "설정" }), el("span", { class: "cv-p", text: hint })));
+  return AS.by[app] ? asBtn(app) : null;
+}
+// The phone has no head: the same button sits in the app bar beside the title and follows the open detail.
+var asBar = asBtn("");   // var: the app bar is drawn (31-conversations.js convTitle) before this file runs
+asBar.id = "as-bar"; asBar.hidden = true;
+$("#vtog").before(asBar);
+function asBarSync(app) {
+  const on = !!app && !!asEntry(app);
+  asBar.hidden = !on;
+  if (on) asBar.dataset.asOpen = app;
 }
 
 /* ---- the change card: a ```dotz-settings fence in an answer (mdHtml in 02-basic-markdown.js) ---- */

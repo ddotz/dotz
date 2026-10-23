@@ -120,12 +120,12 @@ describe("the control panel has the conversation's width (app and monitor settin
 describe("monitor settings at desktop width", () => {
 	const v = open(1280, 800);
 
-	test("a monitor's list pins a 설정 row that opens its settings conversation with the controls", async () => {
+	test("a monitor's header has a 설정 button that opens its settings conversation with the controls", async () => {
 		await boot(v, "m:웹 감시");
-		await waitFor(v, `document.querySelector("#mon-tl .as-pin")`);
-		expect(await q(v, `return document.querySelector("#mon-tl").firstElementChild.classList.contains("as-pin")`)).toBe(true);
+		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
+		expect(await q(v, `return document.querySelectorAll(".as-pin").length`)).toBe(0);
 		await shot(v, "monitor-pinned-row-desktop.png");
-		await run(v, `document.querySelector(".as-pin").click()`);
+		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
 		await waitFor(v, `target === "settings:w:t-web" && document.querySelector('#app-sw [data-k="enabled"]')`);
 		const names = await q<string[]>(v, `return [...document.querySelectorAll("#app-sw .as-n")].map(n => n.textContent)`);
 		expect(names).toEqual(["켜기", "확인 간격(분)", "알림 방식", "이름"]);

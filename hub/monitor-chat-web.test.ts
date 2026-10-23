@@ -87,7 +87,7 @@ const CHIPS = ["다시 로그인해 줘", "원인 찾아 줘", "일시정지"];
 describe("a failing peer monitor", () => {
 	test("the detail view says what failed in words, with the machine, the settings row and the quick-action chips", async () => {
 		const v = await boot(1280, 800, PEER_KEY);
-		await waitFor(v, `document.querySelector("#mon-tl .as-pin") && document.querySelector("#mon-tl [data-chip]")`);
+		await waitFor(v, `document.querySelector("#mon-head .as-hd") && document.querySelector("#mon-tl [data-chip]")`);
 		const t = await q<string>(v, `return document.querySelector("#mon-tl").textContent`);
 		for (const s of ["연속 실패 3번", "마지막 정상", "로그인이 풀렸어요"]) expect(t).toContain(s);
 		expect(await q(v, `return document.querySelector("#mon-head .mon-pc").textContent`)).toBe("맥미니");
@@ -116,7 +116,7 @@ describe("a failing peer monitor", () => {
 
 	test("390px phone: the failing peer monitor's detail", async () => {
 		const v = await boot(390, 844, PEER_KEY);
-		await waitFor(v, `document.querySelector("#mon-tl .as-pin") && document.querySelector("#mon-tl [data-chip]")`);
+		await waitFor(v, `document.querySelector("#mon-head .as-hd") && document.querySelector("#mon-tl [data-chip]")`);
 		await Bun.write(join(SHOTS, "peer-monitor-detail-390.png"), await v.screenshot());
 		expect(await q<number>(v, `return document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
 	});
