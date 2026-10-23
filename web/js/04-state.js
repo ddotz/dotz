@@ -169,4 +169,4 @@ $("#brand").onclick = () => go("home");
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
 const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat" && narrowChat()) ? "monitoring" : null;
-$("#back").onclick = () => (monCtx && current === "chat" ? go("monitoring", MON.sel) : convOnPhone() ? openChatList() : go(backTarget() || "home"));
+$("#back").onclick = () => (kkBack() ? 0 : monCtx && current === "chat" ? go("monitoring", MON.sel) : convOnPhone() ? openChatList() : go(backTarget() || "home"));

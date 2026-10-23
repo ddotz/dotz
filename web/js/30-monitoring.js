@@ -105,7 +105,7 @@ function monItems() {
 }
 // The open item: the one picked, else on a wide screen the first (a phone shows its list until one is picked).
 const monSel = items => items.find(i => i.key === MON.sel) || (narrowChat() ? null : items[0] || null);
-const monName = () => { const it = monItems().find(i => i.key === MON.sel); return it ? it.name : titles.monitoring; };
+const monName = () => { const it = monItems().find(i => i.key === MON.sel); return it && it.key === KK_KEY && KK.open && KK.room ? KK.room.name : it ? it.name : titles.monitoring; };
 function monState(it) {
   if (it.mon) { const res = it.mon.last_result ? NT_RESULT[it.mon.last_result] : null; return [res && res[0], ntMonRun(it.mon), ntMonNext(it.mon)].filter(Boolean).join(" · "); }
   if (it.key === "notice") return it.unread ? `안 읽은 소식 ${it.unread}개` : "감시와 예약 결과";
@@ -259,7 +259,17 @@ function renderMonitoring() {
     clear(side).append(...rows.map(convRow));
     side.scrollTop = top;
   }
+  const kakao = !!sel && sel.key === KK_KEY;
+  kkMode(kakao, kakao && !(narrowChat() && MON.list));
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
+  if (kakao) {   // 30-kakao.js draws this item's pane (rooms and chat); only the head is the usual one
+    const head = JSON.stringify([sel.name, monState(sel)]);
+    if (head !== MON.kkHead) { MON.kkHead = head; clear($("#mon-head")).append(...monHead(sel)); }
+    MON.sig = ""; MON.shown = sel.key;
+    convTitle();
+    return;
+  }
+  MON.kkHead = "";
   const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t), MAILS.has(t) ? mailBrief(MAILS.get(t), t) : ""]), sel.mon, NM.loaded, NT.loaded]);
   if (sig !== MON.sig) {
     MON.sig = sig;

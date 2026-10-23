@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { draftApprovalBlock } from "../draft-approval.ts";
 import { writePrivate } from "./creds.ts";
-import type { KakaoPaths, Runner } from "./types.ts";
+import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
 export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string };
@@ -142,7 +142,7 @@ export async function approval(code: string, deps: SendDeps): Promise<boolean> {
 const setStatus = (paths: KakaoPaths, code: string, status: DraftStatus, extra: Partial<Draft> = {}) =>
 	writeDrafts(paths, readDrafts(paths).map(d => (d.code === code ? { ...d, ...extra, status } : d)));
 
-const newer = (latest: string, basis: string) => (/^\d+$/.test(latest) && /^\d+$/.test(basis) ? BigInt(latest) > BigInt(basis) : latest !== basis);
+export const newer = (latest: string, basis: string) => (/^\d+$/.test(latest) && /^\d+$/.test(basis) ? BigInt(latest) > BigInt(basis) : latest !== basis);
 
 // kmsg --dry-run only echoes the target. The room counts as resolved when the header (before the Message: line) names exactly this
 // room once and says nothing about several matches.
@@ -156,52 +156,107 @@ function resolvesRoom(out: string, room: string): boolean {
 const sending = new Set<string>();
 const refuse = (reason: string): SendResult => ({ ok: false, reason });
 
+// Every send of the gateway (typed, draft, CLI) goes through this chain: one at a time, because kmsg drives the one KakaoTalk window.
+let sendChain: Promise<unknown> = Promise.resolve();
+const oneAtATime = <T>(job: () => Promise<T>): Promise<T> => {
+	const run = sendChain.then(job, job);
+	sendChain = run.catch(() => undefined);
+	return run;
+};
+
+// The app in front before the send (bundle id), so the owner's screen goes back to it. Never throws: a failure only skips the restore.
+async function frontmostApp(runner: Runner): Promise<string | undefined> {
+	try {
+		const r = await runner(["osascript", "-e", 'tell application "System Events" to get bundle identifier of first application process whose frontmost is true'], { timeoutMs: 5_000 });
+		const id = r.stdout.trim();
+		return r.code === 0 && /^[A-Za-z0-9.-]+$/.test(id) ? id : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function refocus(runner: Runner, id: string | undefined): Promise<void> {
+	if (!id || id === KAKAO_BUNDLE) return;
+	try {
+		await runner(["open", "-b", id], { timeoutMs: 5_000 });
+	} catch {}
+}
+
 // kmsg finds the room by searching its name, which also matches longer names. A send goes out only when no other room's name
 // equals or contains this one; `roomNames` lists every room name in the database.
 export const uniqueRoomName = (room: string, chatId: string, all: { chatId: string; name: string }[]) =>
 	!all.some(r => r.chatId !== chatId && r.name.includes(room));
 
-export async function sendDraft(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: () => Promise<{ chatId: string; name: string }[]> }): Promise<SendResult> {
-	if (sending.has(code)) return refuse("이미 보내는 중이에요");
+type RoomNames = () => Promise<{ chatId: string; name: string }[]>;
+
+const sendTextNow = async (input: { chatId: string; roomName: string; text: string }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => {
+	if (input.roomName.trim() === "(unknown)") return refuse("이름을 알 수 없는 대화방이라 화면 자동화로 찾을 수 없어요");
+	if (deps.roomNames) {
+		let all: { chatId: string; name: string }[];
+		try {
+			all = await deps.roomNames();
+		} catch {
+			return refuse("대화방 목록을 확인하지 못해서 보내지 않았어요");
+		}
+		if (!uniqueRoomName(input.roomName, input.chatId, all)) return refuse("이름이 같거나 겹치는 대화방이 있어서 자동으로 보내지 않았어요. 카카오톡에서 직접 보내 주세요");
+	}
+	const kmsg = deps.kmsg ?? Bun.which("kmsg") ?? "/opt/homebrew/bin/kmsg";
+	const dry = await deps.runner([kmsg, "send", "--dry-run", "--", input.roomName, input.text], { timeoutMs: 20_000 });
+	if (dry.code !== 0 || !resolvesRoom(dry.stdout, input.roomName)) return refuse("대화방을 하나로 확정하지 못해서 보내지 않았어요");
+	const front = await frontmostApp(deps.runner);
+	const sent = await deps.runner([kmsg, "send", "--", input.roomName, input.text], { timeoutMs: 90_000 });
+	await refocus(deps.runner, front);
+	if (sent.code !== 0) return refuse("카카오톡에서 보내지 못했어요");
+	return { ok: true };
+};
+
+// The kmsg path shared by every send: unique room name, dry-run resolves exactly this room, the real send, then the owner's previous app is back in front.
+export const sendText = (input: { chatId: string; roomName: string; text: string }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => oneAtATime(() => sendTextNow(input, deps));
+
+// A pending draft whose room got a newer incoming message can no longer be sent.
+export const markStale = (paths: KakaoPaths, code: string) => setStatus(paths, code, "stale");
+
+export function dropDraft(code: string, deps: Pick<SendDeps, "paths">): SendResult {
+	const d = readDrafts(deps.paths).find(x => x.code === code);
+	if (!d) return refuse("그 초안을 찾지 못했어요");
+	if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요");
+	setStatus(deps.paths, code, "dropped");
+	return { ok: true };
+}
+
+// `ownerApproved`: the owner clicked 보내기 in the web app, which replaces the inbox verdict; every other check stays. `text`: the owner's edit.
+export function sendDraft(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string }): Promise<SendResult> {
+	if (sending.has(code)) return Promise.resolve(refuse("이미 보내는 중이에요"));
 	sending.add(code);
-	try {
-		const d = readDrafts(deps.paths).find(x => x.code === code);
-		if (!d) return refuse("그 초안을 찾지 못했어요");
-		if (d.status === "sent") return refuse("이미 보낸 초안이에요");
-		if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요");
+	return oneAtATime(() => sendDraftNow(code, deps)).finally(() => sending.delete(code));
+}
+
+async function sendDraftNow(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string }): Promise<SendResult> {
+	const d = readDrafts(deps.paths).find(x => x.code === code);
+	if (!d) return refuse("그 초안을 찾지 못했어요");
+	if (d.status === "sent") return refuse("이미 보낸 초안이에요");
+	if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요");
+	const text = deps.text ?? d.text;
+	if (!text.trim() || [...text].length > MAX_TEXT) return refuse(`답장 글은 1자에서 ${MAX_TEXT}자 사이여야 해요`);
+	if (!deps.ownerApproved) {
 		const v = verdict(d, deps.paths);
 		if (v === "cancelled") {
 			setStatus(deps.paths, code, "dropped");
 			return refuse("보내지 않기로 한 초안이에요");
 		}
 		if (v !== "approved") return refuse("아직 보내도 된다는 답을 받지 못했어요");
-		let latest: string | undefined;
-		try {
-			latest = await deps.latestIncoming(d.chatId);
-		} catch {
-			return refuse("새 메시지가 왔는지 확인하지 못해서 보내지 않았어요");
-		}
-		if (latest && newer(latest, d.basisLogId)) {
-			setStatus(deps.paths, code, "stale");
-			return refuse("그사이 새 메시지가 와서 초안이 낡았어요");
-		}
-		if (deps.roomNames) {
-			let all: { chatId: string; name: string }[];
-			try {
-				all = await deps.roomNames();
-			} catch {
-				return refuse("대화방 목록을 확인하지 못해서 보내지 않았어요");
-			}
-			if (!uniqueRoomName(d.roomName, d.chatId, all)) return refuse("이름이 같거나 겹치는 대화방이 있어서 자동으로 보내지 않았어요. 카카오톡에서 직접 보내 주세요");
-		}
-		const kmsg = deps.kmsg ?? Bun.which("kmsg") ?? "/opt/homebrew/bin/kmsg";
-		const dry = await deps.runner([kmsg, "send", "--dry-run", "--", d.roomName, d.text], { timeoutMs: 20_000 });
-		if (dry.code !== 0 || !resolvesRoom(dry.stdout, d.roomName)) return refuse("대화방을 하나로 확정하지 못해서 보내지 않았어요");
-		const sent = await deps.runner([kmsg, "send", "--", d.roomName, d.text], { timeoutMs: 90_000 });
-		if (sent.code !== 0) return refuse("카카오톡에서 보내지 못했어요");
-		setStatus(deps.paths, code, "sent", { sentAt: new Date(nowMs(deps)).toISOString() });
-		return { ok: true };
-	} finally {
-		sending.delete(code);
 	}
+	let latest: string | undefined;
+	try {
+		latest = await deps.latestIncoming(d.chatId);
+	} catch {
+		return refuse("새 메시지가 왔는지 확인하지 못해서 보내지 않았어요");
+	}
+	if (latest && newer(latest, d.basisLogId)) {
+		setStatus(deps.paths, code, "stale");
+		return refuse("그사이 새 메시지가 와서 초안이 낡았어요");
+	}
+	const r = await sendTextNow({ chatId: d.chatId, roomName: d.roomName, text }, deps);
+	if (r.ok) setStatus(deps.paths, code, "sent", { text, sentAt: new Date(nowMs(deps)).toISOString() });
+	return r;
 }
