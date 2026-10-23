@@ -71,6 +71,12 @@ the bot for that room; rooms without it never wake the bot.
   cached files. The global `tone/kakao.md` counts the owner's lines of his 8 most recent non-excluded rooms. Recent lines weigh double (newest
   100 own lines), and numbers, links and test lines never enter a profile. After 200 more own lines the model updates the old profile from the new
   lines only, and an edited send (고치기) is recorded in the room profile. The stored draft records `tokens: { in, out }`.
+- The same single call first decides whether the last incoming message needs a decision only the owner can make (yes/no, which option,
+  a date, cancel or not). If so it returns `{action:"ask", question, choices}` (2-4 short Korean choices) instead of a draft: no draft is
+  stored, the room's open question is saved in `<dataDir>/kakao/asks.json`, and the room GET carries `ask: { question, choices }` (dropped
+  once a newer incoming message exists). `POST /api/kakao/chat/<chatId>/draft` with body `{ choice }` (one of the stored choices, else 409)
+  makes the draft for that pick with one more call (no decision step) and clears the question. `POST /api/kakao/chat/<chatId>/ask/drop`
+  forgets the question (직접 쓸게: the owner writes the reply himself). The web card shows the question with one button per choice.
 - `autoDraft` is stored in config `auto_draft_chats` (a subset of `watch_chats`). The dotz watch reports only rooms in both lists and
   never a message older than 30 minutes; with the list empty it reads no database at all.
 - The draft route answers 403 for a room that is not watched and 409 while a draft of that room is still being made. A skip or a

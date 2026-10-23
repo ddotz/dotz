@@ -551,6 +551,66 @@ describe("on-demand draft", () => {
 		quiet.close();
 	});
 
+	test("a message that needs the owner's decision comes back as a question with 2-4 short choices: no draft, the question is kept with the room", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "ask", question: "티켓 취소할까?", choices: ["취소해", "다른 날 물어봐", "취소해", "직접 쓸게", "가".repeat(40)], body: "", summary: "공연 일정" }), inputTokens: 900, outputTokens: 40 });
+		await t.call("POST", DRAFT);
+		await t.web.idle();
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.model.calls[0]!.system).toContain('"action":"ask"');
+		expect(t.events).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+		expect(await storedDrafts()).toEqual([]);
+		const room = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json;
+		expect(room.ask).toEqual({ question: "티켓 취소할까?", choices: ["취소해", "다른 날 물어봐"] });
+		expect(room.drafts).toEqual([]);
+		t.close();
+	});
+
+	test("a pick makes the draft for that choice with one more call and no decision step, then clears the question; an unknown choice is refused; a model that asks again keeps the question", async () => {
+		const t = setup();
+		const ask = JSON.stringify({ action: "ask", question: "티켓 취소할까?", choices: ["취소해", "다른 날 물어봐"], body: "", summary: "" });
+		t.model.reply = async () => ({ text: ask });
+		await t.call("POST", DRAFT);
+		await t.web.idle();
+		expect((await t.call("POST", DRAFT, { choice: "없는 선택" })).status).toBe(409);
+		expect((await t.call("POST", DRAFT, { choice: 5 })).status).toBe(409);
+		expect(t.model.calls).toHaveLength(1);
+
+		t.events.length = 0;
+		await t.call("POST", DRAFT, { choice: "취소해" });
+		await t.web.idle();
+		expect(t.events).toHaveLength(1);
+		expect(typeof t.events[0]!.error).toBe("string");
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask.choices).toEqual(["취소해", "다른 날 물어봐"]);
+
+		t.model.calls.length = 0;
+		t.events.length = 0;
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: "ㅇㅇ 취소하자", summary: "취소로 정함" }), inputTokens: 800, outputTokens: 20 });
+		expect(await t.call("POST", DRAFT, { choice: "취소해" })).toEqual({ status: 202, json: { state: "drafting" } });
+		await t.web.idle();
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.model.calls[0]!.user).toContain('"취소해"');
+		expect(t.model.calls[0]!.system).not.toContain('"action":"ask"');
+		expect(t.events).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+		const [d] = await storedDrafts();
+		expect(d).toMatchObject({ text: "ㅇㅇ 취소하자", status: "pending", tokens: { in: 800, out: 20 } });
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toBeUndefined();
+		t.close();
+	});
+
+	test("직접 쓸게 forgets the question and tells the other screens", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "ask", question: "갈까?", choices: ["가자", "안 가"], body: "", summary: "" }) });
+		await t.call("POST", DRAFT);
+		await t.web.idle();
+		t.events.length = 0;
+		expect(await t.call("POST", `/api/kakao/chat/${DIRECT}/ask/drop`)).toEqual({ status: 200, json: { ok: true } });
+		expect(t.events).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.ask).toBeUndefined();
+		expect((await t.call("POST", `/api/kakao/chat/${GROUP}/ask/drop`)).status).toBe(403);
+		t.close();
+	});
+
 	test("an unwatched room is refused (403) and the model is never called", async () => {
 		const t = setup();
 		const r = await t.call("POST", `/api/kakao/chat/${GROUP}/draft`);

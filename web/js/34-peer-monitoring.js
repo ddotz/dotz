@@ -27,7 +27,7 @@ function pqFor(path) {
 function pqLink(path) { const pc = pqFor(path); return pc ? pqProxy(pc, path) : path; }
 // The action a POST of the page means on the computer that owns the item (hub/peer-monitor.ts act), or null for a local one.
 function pqAct(path, body) {
-  const b = body || {}, k = /^\/api\/kakao\/(chat|drafts)\/([^/]+)\/(send|read|draft|drop)$/.exec(path);
+  const b = body || {}, k = /^\/api\/kakao\/(chat|drafts)\/([^/]+)\/(send|read|draft|drop|ask\/drop)$/.exec(path);
   if (path === "/api/message" && b.mail) { const { mail, lane, project, via, ...rest } = b; return { pc: pqPc(`mail:${mail}`), action: "message", args: { target: `mail:${mail}`, ...rest } }; }
   // A monitor's conversation and switches go to the computer that owns the watch: the same message and the same settings PATCH, forwarded.
   const sp = /^\/api\/watches\/([a-z0-9-]+)\/settings$/.exec(path);
@@ -42,7 +42,8 @@ function pqAct(path, body) {
   const id = k && decodeURIComponent(k[2]);
   if (k && k[1] === "chat" && k[3] === "send") return { pc: KK.pc, action: "kakao", args: { op: "send", chatId: id, text: b.text } };
   if (k && k[1] === "chat" && k[3] === "read") return { pc: KK.pc, action: "kakao", args: { op: "read", chatId: id, logId: b.logId } };
-  if (k && k[1] === "chat" && k[3] === "draft") return { pc: KK.pc, action: "kakao", args: { op: "draft", chatId: id } };
+  if (k && k[1] === "chat" && k[3] === "draft") return { pc: KK.pc, action: "kakao", args: { op: "draft", chatId: id, ...(typeof b.choice === "string" ? { choice: b.choice } : {}) } };
+  if (k && k[1] === "chat" && k[3] === "ask/drop") return { pc: KK.pc, action: "kakao", args: { op: "ask-drop", chatId: id } };
   if (k && k[1] === "drafts") return { pc: KK.pc, action: "kakao", args: { op: k[3] === "send" ? "draft-send" : "draft-drop", code: id, ...(b.text === undefined ? {} : { text: b.text }) } };
   throw new Error(`${KK.pc.name}에서 바꿔 주세요`);
 }

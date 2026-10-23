@@ -60,7 +60,7 @@ export async function draftComments(a: CommentAdapter, lines: string[], deps: Co
 				continue;
 			}
 			const built = await buildDraft(item, { source: a.app, mailId: c.id, ref: key }, deps);
-			if (built.action === "skip") {
+			if (built.action !== "draft") {
 				markDrafted(key);
 				continue;
 			}

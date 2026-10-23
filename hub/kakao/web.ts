@@ -112,6 +112,7 @@ export function createKakaoWeb(deps: WebDeps) {
 	const summaryFile = (chatId: string) => join(paths.dataDir, "kakao", "summaries", `${chatId}.md`);
 	const drafting = new Set<string>();
 	const sendsFile = join(paths.dataDir, "kakao", "sends.json");
+	const asksFile = join(paths.dataDir, "kakao", "asks.json");
 	const readsFile = join(paths.dataDir, "kakao", "reads.json");
 	const pending = new Set<Promise<unknown>>();
 	const inflight = new Set<string>();
@@ -189,8 +190,24 @@ export function createKakaoWeb(deps: WebDeps) {
 	};
 	const newRecord = (chatId: string, text: string, draft?: string): SendRecord => ({ id: `S${now().toString(36)}${randomBytes(3).toString("hex")}`, chatId, text, state: "sending", at: now(), collector, ...(draft ? { draft } : {}) });
 
+	// The open question of a room (the model found that the last message needs the owner's decision): one per room, shown as choice buttons.
+	const storedAsks = () => readJsonFile<Record<string, StoredAsk>>(asksFile, {});
+	const setAsk = (chatId: string, ask: StoredAsk | undefined) => {
+		const { [chatId]: _old, ...rest } = storedAsks();
+		writePrivate(asksFile, `${JSON.stringify(ask ? { ...rest, [chatId]: ask } : rest, null, 1)}\n`);
+	};
+	// The room's open question, unless a newer incoming message has made it stale (then it is forgotten).
+	const openAsk = async (config: KakaoConfig, chatId: string) => {
+		const a = storedAsks()[chatId];
+		if (!a) return undefined;
+		const latest = await latestIncoming(config, chatId).catch(() => undefined);
+		if (latest && newer(latest, a.basisLogId)) return void setAsk(chatId, undefined);
+		return { question: a.question, choices: a.choices };
+	};
+
 	// The one model call of a draft request (never per incoming message). Never rejects: every outcome is a kakao_draft event.
-	async function makeDraft(config: KakaoConfig, chatId: string): Promise<void> {
+	// With `choice` (the owner's pick of the room's open question) the call writes the reply for that pick instead of deciding again.
+	async function makeDraft(config: KakaoConfig, chatId: string, choice?: string): Promise<void> {
 		const done = (error?: string) => deps.broadcast({ kind: "kakao_draft", chatId, ...(error ? { error } : {}) });
 		try {
 			const room = eligible((await allRooms(config, true)).all).find(r => r.chatId === chatId);
@@ -215,11 +232,16 @@ export function createKakaoWeb(deps: WebDeps) {
 				style = deps.draftStyle?.(chatId);
 			} catch {}
 			const ownLines = recent.filter(m => m.fromMe && m.type === TEXT_TYPE).map(m => m.text);
-			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context: contextLines(recent, window), summary: readJsonText(summaryFile(chatId)), pairs: ownPairs(recent), samples: ownSamples(recent), register: registerOf(ownLines.slice(-80)), style });
+			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context: contextLines(recent, window), summary: readJsonText(summaryFile(chatId)), pairs: ownPairs(recent), samples: ownSamples(recent), register: registerOf(ownLines.slice(-80)), style, ...(choice ? { choice } : {}) });
 			const reply = await deps.draftModel!(system, user, chatId);
 			const parsed = parseDraftReply(reply.text);
 			if (!parsed) return done(DRAFT_FAILED);
-			if (parsed.action === "skip" || !parsed.body) return done(NO_REPLY);
+			if (parsed.action === "ask" && !choice) {
+				if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
+				setAsk(chatId, { question: parsed.question!, choices: parsed.choices!, basisLogId: basis, created: now() });
+				return done();
+			}
+			if (parsed.action !== "draft" || !parsed.body) return done(parsed.action === "skip" ? NO_REPLY : DRAFT_FAILED);
 			const reported = (reply.inputTokens ?? 0) > 0 || (reply.outputTokens ?? 0) > 0;
 			const tokens = reported ? { in: reply.inputTokens ?? 0, out: reply.outputTokens ?? 0 } : { in: estimateTokens(system.length + user.length), out: estimateTokens(reply.text.length), estimated: true as const };
 			try {
@@ -228,6 +250,7 @@ export function createKakaoWeb(deps: WebDeps) {
 				return done(e instanceof Error ? e.message : DRAFT_FAILED);
 			}
 			if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
+			if (storedAsks()[chatId]) setAsk(chatId, undefined);
 			done();
 		} catch {
 			done(DRAFT_FAILED);
@@ -291,6 +314,7 @@ export function createKakaoWeb(deps: WebDeps) {
 					if (!room) return json({ error: "대화방을 찾지 못했어요" }, 404);
 					const list = await messages(await getDb(config!), chatId, limit, config!.userId ?? "", after !== undefined ? { after } : before !== undefined ? { before } : {});
 					const since = now() - SEND_WINDOW_MS;
+					const ask = await openAsk(config!, chatId);
 					const marks = await watermarks(await getDb(config!), chatId);
 					const names = new Map<string, string>([[String(config!.userId ?? ""), "나"]]);
 					for (const m of list) if (m.sender && !m.fromMe) names.set(m.authorId, m.sender);
@@ -306,6 +330,7 @@ export function createKakaoWeb(deps: WebDeps) {
 						drafts: (await listDrafts({ paths, runner: deps.runner }))
 							.filter(d => d.chatId === chatId && d.status === "pending")
 							.map(d => ({ code: d.code, text: d.text, basisLogId: d.basisLogId, created: d.created })),
+						...(ask ? { ask } : {}),
 						sends: sendList()
 							.filter(s => s.chatId === chatId && s.at >= since)
 							.map(({ id, text, state, reason, at, draft, collector: by }) => ({ id, text, state, ...(reason ? { reason } : {}), at, ...(draft ? { draft } : {}), ...(by ? { collector: by } : {}) })),
@@ -374,11 +399,22 @@ export function createKakaoWeb(deps: WebDeps) {
 				return json({ ok: true, removed: true });
 			}
 
+			// 직접 쓸게: the owner writes the reply himself, the open question goes away.
+			if (sub === "ask" && parts.length === 6 && parts[5] === "drop" && method === "POST") {
+				setAsk(chatId, undefined);
+				deps.broadcast({ kind: "kakao_draft", chatId });
+				return json({ ok: true });
+			}
+
 			if (sub === "draft" && parts.length === 5 && method === "POST") {
 				if (!deps.draftModel) return json({ error: "초안 만들기를 쓸 수 없어요" }, 503);
 				if (drafting.has(chatId)) return json({ error: "이 대화방은 초안을 만드는 중이에요" }, 409);
+				// A pick of the room's open question (web card button): only one of the stored choices.
+				const picked = (await body()).choice;
+				const choice = typeof picked === "string" ? picked.trim() : undefined;
+				if (picked !== undefined && (!choice || !storedAsks()[chatId]?.choices.includes(choice))) return json({ error: "그 선택지는 더 이상 없어요" }, 409);
 				drafting.add(chatId);
-				const run = makeDraft(config!, chatId).finally(() => drafting.delete(chatId));
+				const run = makeDraft(config!, chatId, choice).finally(() => drafting.delete(chatId));
 				pending.add(run);
 				void run.finally(() => pending.delete(run));
 				return json({ state: "drafting" }, 202);

@@ -2,7 +2,7 @@
 // Nothing here sends without the user's 1) 보내기 pick for exactly that draft id, read from the inbox log.
 import { draftApprovalBlock, draftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { generateReply, lintReply, reviseReply, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
+import { generateChatReply, lintReply, reviseReply, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
 import { sendWith, type SendOutcome } from "./senders.ts";
 import { loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
@@ -21,7 +21,8 @@ export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promi
 // The tone profile an item or draft belongs to: its room when it has one, else its app (mail unless the item says otherwise).
 export const toneKey = (x: { app?: string; room?: string }): ToneKey => ({ app: x.app ?? "mail", ...(x.room !== undefined ? { room: x.room } : {}) });
 export type Meta = { source: string; mailId: string; ref: string };
-export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[] };
+// "ask" (chat only): the message needs a decision only the user can make; `choices` are 2-4 short answers.
+export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[] } | { action: "ask"; question: string; choices: string[] };
 
 // The subscription-only model call of the gateway (hub/outlang.ts callModel), loaded on first use so nothing else pulls in the gateway config.
 export function defaultCall(model?: string): ModelCall {
@@ -47,8 +48,8 @@ function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: 
 }
 
 export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): Promise<Built> {
-	const r = await generateReply(item, loadStyle(toneKey(item)), callOf(deps, item, meta.ref));
-	return r.action === "skip" ? r : { action: "draft", rec: toRec(item, meta, r, [], deps), warnings: r.warnings };
+	const r = await generateChatReply(item, loadStyle(toneKey(item)), callOf(deps, item, meta.ref));
+	return r.action !== "draft" ? r : { action: "draft", rec: toRec(item, meta, r, [], deps), warnings: r.warnings };
 }
 
 // The [ask] message of one draft; the notes line carries lint warnings and what only the user can decide.
