@@ -107,6 +107,21 @@ describe("features view", () => {
 		expect(featuresOf(data, "youtube", W, notices).approvals.map(a => [a.id, a.feature])).toEqual([["y1", "upload_approval"]]);
 		expect(featuresOf(data, "instagram", W, notices).features.find(f => f.id === "reels_approval")!.status).toBe("승인 대기 2건");
 	});
+	test("a Reels approval says it cannot publish yet while the token lacks the publish permission", () => {
+		const draft = { to: "x", subject: "s", body: "b" };
+		const notices = [{ id: "a1", title: "릴스 올리기 승인 (j-1)", text: "인스타 릴스 영상이에요", decision: { state: "open", to: "main", draft } }];
+		const flag = join(data, "custom/sns/cache/ig-publish.json");
+		expect(featuresOf(data, "instagram", W, notices).approvals[0]!.note).toBeUndefined();
+		put("custom/sns/cache/ig-publish.json", { missing: true });
+		try {
+			const v = featuresOf(data, "instagram", W, notices);
+			expect(v.approvals[0]!.note).toContain("instagram_business_content_publish");
+			expect(v.features.find(f => f.id === "reels_approval")!.status).toContain("아직 릴스를 올릴 수 없어요");
+			expect(featuresOf(data, "youtube", W, notices).approvals).toEqual([]);
+		} finally {
+			rmSync(flag, { force: true });
+		}
+	});
 	test("다시 시도 runs only a watch the app owns", async () => {
 		const ran: string[] = [];
 		await retryInternal(data, "instagram", "ig-site-login", W, async n => void ran.push(n));

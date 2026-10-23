@@ -35,6 +35,14 @@ export class TransientError extends Error {
 	}
 }
 
+// The owner's external token source (lib/token-source.ts) could not be read or its token does not work; shown after the 2nd failed run in a row.
+export class TokenSourceError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "TokenSourceError";
+	}
+}
+
 const RETRY_WAIT_MS = 3_000;
 const FAILS_BEFORE_ALERT = 3;
 
@@ -45,6 +53,7 @@ export const oneLine = (s: string, max: number): string => s.replace(/\s+/g, " "
 // Maps the errors every script can meet to its DOTZ_FAIL result; anything else is a plain `error` with the message.
 export function failFrom(e: unknown): RunResult {
 	if (e instanceof AuthError) return fail(`${e.platform}-auth`, `${e.platform} login has to be redone`);
+	if (e instanceof TokenSourceError) return fail("token-source", e.message);
 	if (e instanceof SetupError) return fail("setup", e.message);
 	if (e instanceof TransientError) return fail("network", e.message);
 	return fail("error", e instanceof Error ? e.message : "unexpected failure");

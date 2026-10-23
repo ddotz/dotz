@@ -28,7 +28,7 @@ test("mediaWithCounts and commentsFor map the Graph payloads", async () => {
 	const comments = await commentsFor(ctx, "m1");
 	expect(comments[0]).toEqual({ id: "k1", text: "hi", username: "fan", timestamp: "2030-06-02T00:00:00+0000", replies: [{ username: "owner_ig", text: "yo" }] });
 	expect(comments[1]).toMatchObject({ text: "", replies: [] });
-	expect(new URL(ctx.calls[1].url).searchParams.get("fields")).toContain("replies{username,from{id,username},text}");
+	expect(new URL(ctx.calls[1].url).searchParams.get("fields")).toContain("replies{id,username,from{id,username},text,timestamp}");
 });
 
 test("commentsFor keeps comments without username: from.username, from.id, then a fixed label", async () => {

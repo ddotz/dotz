@@ -23,13 +23,17 @@ export const paths = {
 	ytOauth: () => join(secretsDir(), "youtube-oauth.json"),
 	ytAccess: () => join(secretsDir(), "youtube-access.json"),
 	instagram: () => join(secretsDir(), "instagram.json"),
+	igPublish: () => join(snsDir(), "cache", "ig-publish.json"),
 };
 
+// Where a token lives outside dotz (docs/youtube-instagram.md): a file the owner keeps up to date, or a command whose stdout is the token.
+// The login keeper reads it and refreshes the dotz copy one way; it never writes back.
+export type TokenSource = { file?: string; command?: string[] };
 export type Lang = string; // BCP-47 short code: "en", "ja", "es", "zh-Hans" ...
 export type Config = {
 	version: 1;
-	youtube?: { channel_id: string; title?: string; base_language: Lang; languages: Lang[]; privacy: "private" | "unlisted" | "public"; upload_via: "api" | "aside" };
-	instagram?: { user_id: string; username: string; post_via: "api" | "aside" };
+	youtube?: { channel_id: string; title?: string; base_language: Lang; languages: Lang[]; privacy: "private" | "unlisted" | "public"; upload_via: "api" | "aside"; token_source?: TokenSource };
+	instagram?: { user_id: string; username: string; post_via: "api" | "aside"; token_source?: TokenSource };
 	timezone: string;
 	posting_times: string[]; // "HH:MM" in timezone
 	approval: "each" | "batch";
@@ -42,6 +46,16 @@ export type Config = {
 export type YoutubeOauth = { client_id: string; client_secret: string; refresh_token: string };
 export type YoutubeAccess = { access_token: string; expires_at: string };
 export type InstagramSecret = { access_token: string; user_id: string; username?: string; obtained_at: string; expires_at?: string };
+
+function tokenSourceProblem(label: string, t: any): string | undefined {
+	if (t === undefined) return undefined;
+	if (!t || typeof t !== "object" || Array.isArray(t)) return `${label} 토큰 원본은 file이나 command 하나예요`;
+	const hasFile = t.file !== undefined, hasCommand = t.command !== undefined;
+	if (hasFile === hasCommand) return `${label} 토큰 원본은 file이나 command 중 하나만 있어야 해요`;
+	if (hasFile && !(typeof t.file === "string" && (t.file.startsWith("/") || t.file.startsWith("~/")))) return `${label} 토큰 원본 파일은 절대 경로예요`;
+	if (hasCommand && !(Array.isArray(t.command) && t.command.length > 0 && t.command.every((x: unknown) => typeof x === "string" && x)) ) return `${label} 토큰 원본 명령은 문자열 목록이에요`;
+	return undefined;
+}
 
 export const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const LANG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
@@ -61,10 +75,14 @@ export function validateConfig(c: any): string | undefined {
 		if (!Array.isArray(c.youtube.languages) || !c.youtube.languages.every((l: unknown) => LANG.test(String(l)))) return "언어 목록이 올바르지 않아요";
 		if (!["private", "unlisted", "public"].includes(c.youtube.privacy)) return "공개 범위는 private, unlisted, public 중 하나예요";
 		if (!["api", "aside"].includes(c.youtube.upload_via)) return "유튜브 올리는 방식은 api 또는 aside예요";
+		const bad = tokenSourceProblem("유튜브", c.youtube.token_source);
+		if (bad) return bad;
 	}
 	if (c.instagram) {
 		if (!String(c.instagram.user_id ?? "").trim() || !String(c.instagram.username ?? "").trim()) return "인스타 계정 정보가 비어 있어요";
 		if (!["api", "aside"].includes(c.instagram.post_via)) return "인스타 올리는 방식은 api 또는 aside예요";
+		const bad = tokenSourceProblem("인스타", c.instagram.token_source);
+		if (bad) return bad;
 	}
 	try {
 		new Intl.DateTimeFormat("en", { timeZone: c.timezone });
