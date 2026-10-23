@@ -5,7 +5,8 @@
 //                   "do": { "pin": X } | { "prefer": [X, Y] } | { "auto": true } } ],
 //     "script": { "path", "timeout_ms"?, "every_minutes"? } }
 // Precedence: manual (not expired) > the script's opinion > the first matching rule > automatic (decide() in account-sticky.ts).
-// A layer's account that is blocked (OmO's rate_limit/auth block, not expired) or not in OmO's pool is skipped: pin and manual fall
+// The manual pick is the owner's 고정 mode: it holds while blocked (no other account takes over; the work pauses). A layer's
+// account that is blocked (OmO's rate_limit/auth block, not expired) or not in OmO's pool is skipped: script and pin fall
 // through to the next layer, prefer takes the next listed usable one (and skips one whose known usage is under the rule's
 // threshold). Candidates are only OmO's anthropic-subscription accounts (readPool); an API-key slot is never one. Times are the
 // gateway's TZ (Asia/Seoul); from > to wraps midnight and the window belongs to the day it started on. `when` conditions are
@@ -33,7 +34,8 @@ export type Usage = Record<string, { five_hour_left?: number; seven_day_left?: n
 export type ScriptErrorKind = "timeout" | "exit" | "spawn" | "unknown_account";
 type ScriptOpinion = { account?: string; reason?: string; error?: ScriptErrorKind; at: string };
 export type ScriptInput = { now: string; current: string | null; accounts: { name: string; alias: string | null; blocked: null | "rate_limit" | "auth_error" | string; blocked_until: string | null; five_hour_left: number | null; seven_day_left: number | null }[] };
-export type Decision = { account?: string; source: "manual" | "script" | "rule" | "auto"; rule?: string; reason: string; at: string };
+// hard: the owner's 고정 mode. Requests stay on `account` even while it is blocked, and OmO is told not to fall back (account-sticky.ts).
+export type Decision = { account?: string; source: "manual" | "script" | "rule" | "auto"; rule?: string; reason: string; at: string; hard?: true };
 export type Evaluated = Decision & { change?: Omit<AccountSwitch, "at"> };
 
 export const rulesFile = () => join(accountsDir(), "rules.json");
@@ -228,6 +230,7 @@ export function evaluate(i: EvaluateInput): Evaluated {
 	const pick = (account: string, source: "manual" | "script" | "rule", reason: string, rule?: string): Evaluated => ({
 		account,
 		source,
+		...(source === "manual" ? { hard: true as const } : {}),
 		...(rule ? { rule } : {}),
 		reason,
 		at,
@@ -236,7 +239,8 @@ export function evaluate(i: EvaluateInput): Evaluated {
 	const m = rules.manual;
 	if (m && (!m.until || Date.parse(m.until) > i.now)) {
 		const a = resolve(m.account);
-		if (usable(a)) return pick(a, "manual", m.reason ? `직접 고름: ${m.reason}` : "직접 고름");
+		// 고정: the pick holds even while blocked (work pauses until the block ends); only a pick that left OmO's pool falls through.
+		if (a && pool.names.includes(a)) return pick(a, "manual", m.reason ? `직접 고름: ${m.reason}` : "직접 고름");
 	}
 	const s = i.script;
 	if (s && !s.error && s.account && usable(s.account)) return pick(s.account, "script", s.reason ? `스크립트: ${s.reason}` : "스크립트가 골랐어요");
@@ -379,7 +383,7 @@ const dropRepeats = (rows: Row[]): Row[] => rows.filter((r, i) => i === 0 || row
 // (account + source) or the script's error kind changed since the last line, which after a restart is the last line on disk.
 // The file keeps its last MAX_LOG_LINES lines.
 export function record(d: Decision): void {
-	last = { ...(d.account ? { account: d.account } : {}), source: d.source, ...(d.rule ? { rule: d.rule } : {}), reason: d.reason, at: d.at };
+	last = { ...(d.account ? { account: d.account } : {}), source: d.source, ...(d.rule ? { rule: d.rule } : {}), reason: d.reason, at: d.at, ...(d.hard ? { hard: true as const } : {}) };
 	const err = opinion?.error ?? "";
 	const row: Row = { ...last, ...(err ? { script_error: err } : {}) };
 	const key = rowKey(row);

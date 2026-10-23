@@ -1,6 +1,7 @@
 import { type Lane, setStatus, hooks, pendingFile } from "./lanestate.ts";
 import { type ProviderErrorKind, OWNER_RETRY_MS, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { TZ, log, parseSelector } from "./config.ts";
+import { pinnedLimitAlert } from "./accounts-api.ts";
 import { firstAlertForReset } from "./rate-alert.ts";
 import { report, withHeld, scheduleReport } from "./lanereport.ts";
 import { prompt } from "./laneprompt.ts";
@@ -25,7 +26,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	if ((!lane.pauseReported || lane.pauseKind !== kind) && (owner || firstAlertForReset(`lane:${lane.name}`, Date.now() + wait))) {
 		report(lane, owner
 			? `모델 제공자 결제/인증 문제로 멈췄어요 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요해요. 그동안 온 메시지는 모아뒀다가 해결되면 이어서 처리하고, ${Math.round(wait / 60_000)}분마다 다시 시도해요.`
-			: `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`, true);
+			: pinnedLimitAlert(Date.now() + wait) ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`, true);
 	}
 	lane.pauseReported = true;
 	lane.pauseKind = kind;

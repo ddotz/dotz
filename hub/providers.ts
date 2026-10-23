@@ -6,7 +6,7 @@ import { OMP } from "./config.ts";
 import { label } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
-import { stickyAccount } from "./account-sticky.ts";
+import { hardPinned, stickyAccount } from "./account-sticky.ts";
 import { labeledAccountView } from "./accounts-api.ts";
 import { apiBudget } from "./api-budget.ts";
 import { type AccountReport, AccountUsage, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
@@ -188,7 +188,7 @@ const accountUsage = new AccountUsage();
 // An account switch: the account it lands on is read again at once (main.ts calls this from the switch listener).
 export const forgetAccountUsage = (name: string): void => accountUsage.forget(name);
 export async function anthropicUsage(role: "orchestrator" | "lane" = "orchestrator", force = false): Promise<AccountReport | undefined> {
-	const acct = runtimeIdOf(role) === "omo" ? subscriptionAccount(undefined, undefined, stickyAccount()) : undefined;
+	const acct = runtimeIdOf(role) === "omo" ? subscriptionAccount(undefined, undefined, stickyAccount(), hardPinned()) : undefined;
 	if (acct) return accountUsage.report(acct, force);
 	if (force) invalidate();
 	const r = (await usageReports()).find(x => x.provider === "anthropic");

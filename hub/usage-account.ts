@@ -66,7 +66,8 @@ export function usedAccount(chosen: string | undefined, names: string[], isBlock
 // manual pick, a rule or the owner's pin all end up there, and its processes get it as their soft pin), else the pinned one,
 // else the pool's pick (not blocked, latest success). `prefer` wins over auth.json's pin, or a manual switch would keep
 // showing the pinned account's numbers.
-export function subscriptionAccount(file = authFile(), now = Date.now(), prefer?: string): SubscriptionAccount | undefined {
+// hard: the owner's 고정 mode, where requests stay on `prefer` even while it is blocked.
+export function subscriptionAccount(file = authFile(), now = Date.now(), prefer?: string, hard = false): SubscriptionAccount | undefined {
 	const sub = readJson(file)?.["anthropic-subscription"];
 	const accounts: Json[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: Json) => typeof a?.name === "string" && typeof a?.access === "string" && a.access) : [];
 	if (!accounts.length) return undefined;
@@ -77,7 +78,7 @@ export function subscriptionAccount(file = authFile(), now = Date.now(), prefer?
 	const preferred = accounts.find(a => a.name === prefer);
 	const wanted = preferred ?? pin ?? [...accounts].sort((a, b) => Number(usable(b)) - Number(usable(a)) || last(b) - last(a))[0];
 	// a blocked pick is skipped by OmO, so the numbers are those of the account it really falls back to
-	const usedName = usedAccount(wanted.name, accounts.map(a => a.name), n => !usable(accounts.find(a => a.name === n)!), n => last(accounts.find(a => a.name === n)!));
+	const usedName = hard && preferred ? preferred.name : usedAccount(wanted.name, accounts.map(a => a.name), n => !usable(accounts.find(a => a.name === n)!), n => last(accounts.find(a => a.name === n)!));
 	const chosen = accounts.find(a => a.name === usedName) ?? wanted;
 	const pinned = chosen === pin;
 	return { name: chosen.name, pinned, ...(preferred && chosen === preferred && !pinned ? { sticky: true } : {}), token: chosen.access, expiresAt: typeof chosen.expires === "number" ? chosen.expires : null };

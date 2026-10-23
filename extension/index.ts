@@ -455,10 +455,11 @@ function compatHost(pi: any): any {
 }
 
 const PIN_ENV = "SENPI_CLAUDE_SDK_OAUTH_PINNED_ACCOUNT";
+const FALLBACK_ENV = "SENPI_CLAUDE_SDK_OAUTH_ACCOUNT_FALLBACK";
 
 // The account to run the next turn on: the hub's decision (owner's rules and script, hub/account-rules.ts), waiting at most the
 // script's timeout + 1 s; <DATA>/account.json, the account the hub last settled on, when the hub does not answer.
-async function accountNow(): Promise<string | undefined> {
+async function accountNow(): Promise<{ account?: string; hard: boolean }> {
 	const script = (() => {
 		try {
 			return JSON.parse(readFileSync(join(DATA, "accounts", "rules.json"), "utf8")).script;
@@ -469,13 +470,13 @@ async function accountNow(): Promise<string | undefined> {
 	const wait = (script ? (typeof script.timeout_ms === "number" && script.timeout_ms > 0 ? script.timeout_ms : 5000) : 0) + 1000;
 	try {
 		const r = await call("/api/accounts/check", { method: "POST", body: "{}", signal: AbortSignal.timeout(wait) });
-		if (typeof r?.account === "string" && r.account) return r.account;
+		if (typeof r?.account === "string" && r.account) return { account: r.account, hard: r.hard === true };
 	} catch {}
 	try {
-		const a = JSON.parse(readFileSync(join(DATA, "account.json"), "utf8")).account;
-		return typeof a === "string" && a ? a : undefined;
+		const s = JSON.parse(readFileSync(join(DATA, "account.json"), "utf8"));
+		return { ...(typeof s.account === "string" && s.account ? { account: s.account } : {}), hard: s.hard === true };
 	} catch {
-		return undefined;
+		return { hard: false };
 	}
 }
 
@@ -485,8 +486,11 @@ async function accountNow(): Promise<string | undefined> {
 function followAccount(pi: any): void {
 	if (process.env.DOTZ_RUNTIME !== "omo") return;
 	pi.on("turn_start", async () => {
-		const account = await accountNow();
+		const { account, hard } = await accountNow();
 		if (account) process.env[PIN_ENV] = account;
+		// 고정 mode: OmO may not move a request to another account while the pinned one is blocked
+		if (hard) process.env[FALLBACK_ENV] = "0";
+		else if (process.env[FALLBACK_ENV] === "0") delete process.env[FALLBACK_ENV];
 	});
 }
 

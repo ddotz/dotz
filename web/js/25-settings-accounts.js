@@ -27,16 +27,24 @@ function accountSection() {
     const sub = [a.name !== label ? a.name : "", a.five_hour_left != null ? `5시간 ${pct(a.five_hour_left)} 남음` : "", a.seven_day_left != null ? `주간 ${pct(a.seven_day_left)} 남음` : ""].filter(Boolean).join(" · ");
     return el("button", { class: "li tap", type: "button", onclick: () => accDialog(a) }, tx(label, sub), ...accTags(a).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t })), icon("chev", "lead"));
   });
-  // one row for the pick: who, and what really happens (the pick may be blocked and requests go to another account)
-  const ch = ACC.chosen;
-  rows.push(el("div", { class: "li" }, tx(ch ? `고른 계정: ${ch.label}` : "고른 계정이 없어요", ch ? ch.text : ""),
-    ch && ch.source === "manual" ? el("button", { class: "btn text", type: "button", onclick: ev => accMut(ev.currentTarget, () => api("/api/accounts/use", "POST", { account: "auto" }), "고정을 풀었어요") }, "고정 풀기") : null));
-  rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), el("button", { class: "btn tonal", type: "button", onclick: () => rulesDialog() }, "편집")));
-  for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));
+  // two modes: 자동 전환 (rules, and a switch when the account is blocked) or 고정 (one account, requests never move to another)
+  const pinned = ACC.mode === "pinned", ch = ACC.chosen;
+  const setMode = (btn, body, msg) => accMut(btn, () => api("/api/accounts/mode", "PUT", body), msg);
+  const modeBtn = (v, t) => el("button", { type: "button", role: "radio", "aria-checked": String((v === "pinned") === pinned), class: (v === "pinned") === pinned ? "on" : "", onclick: ev => { if ((v === "pinned") !== pinned) setMode(ev.currentTarget, { mode: v }, v === "pinned" ? "고정했어요" : "자동 전환으로 바꿨어요"); } }, t);
+  const pick = pinned ? el("select", { class: "fi", "aria-label": "고정할 계정" }, ...ACC.accounts.map(a => el("option", { value: a.name, text: a.label || a.alias || a.name, selected: ch && a.name === ch.name }))) : null;
+  if (pick) pick.addEventListener("change", () => setMode(pick, { mode: "pinned", account: pick.value }, "고정 계정을 바꿨어요"));
+  const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 풀릴 때까지 멈추고, 다른 계정으로 넘어가지 않아요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가요.";
+  rows.unshift(el("div", { class: "li", style: "flex-direction:column;align-items:stretch;gap:10px" },
+    el("div", { class: "seg", role: "radiogroup", "aria-label": "계정 선택 방식" }, modeBtn("auto", "자동 전환"), modeBtn("pinned", "고정")),
+    pick, el("div", { class: "sup", text: caption })));
+  if (!pinned) {
+    rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), el("button", { class: "btn tonal", type: "button", onclick: () => rulesDialog() }, "편집")));
+    for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));
+  }
   const run = sc && [sc.timeout_ms ? `${Math.round(sc.timeout_ms / 1000)}초 안에 끝나요` : "", sc.every_minutes ? `${sc.every_minutes}분마다` : ""].filter(Boolean).join(" · ");
-  if (sc && sc.path) rows.push(el("button", { class: "li tap", type: "button", onclick: () => accCopy(sc.path) }, tx("스크립트", el("code", { text: sc.path }), run ? ` · ${run}` : "")));
+  if (!pinned && sc && sc.path) rows.push(el("button", { class: "li tap", type: "button", onclick: () => accCopy(sc.path) }, tx("스크립트", el("code", { text: sc.path }), run ? ` · ${run}` : "")));
   const last = sc && sc.last;
-  if (last) rows.push(el("div", { class: "li" }, tx(last.error || last.error_text ? "마지막 실행이 실패했어요" : `마지막 결과 · ${last.label || (last.account ? accLabel(last.account) : "고르지 않음")}`, [last.error_text || last.reason, last.at ? kstStamp(Date.parse(last.at)) : ""].filter(Boolean).join(" · "))));
+  if (!pinned && last) rows.push(el("div", { class: "li" }, tx(last.error || last.error_text ? "마지막 실행이 실패했어요" : `마지막 결과 · ${last.label || (last.account ? accLabel(last.account) : "고르지 않음")}`, [last.error_text || last.reason, last.at ? kstStamp(Date.parse(last.at)) : ""].filter(Boolean).join(" · "))));
   return [el("div", { class: "sec", text: "계정" }), el("div", { class: "list" }, ...rows)];
 }
 function accDialog(a) {
@@ -45,7 +53,7 @@ function accDialog(a) {
   const alias = (v, msg) => (btn, close) => accMut(btn, () => api("/api/accounts/alias", "PUT", { key: a.name, alias: v }), msg, close);
   const d = dialog({ classic: true, title: label, body: el("div", { class: "col" }, a.name !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: a.name })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 6px", text: "별칭" }), inp)), actions: [
     a.alias ? { label: "지우기", kind: "danger", onclick: (c, b) => alias("", "별칭을 지웠어요")(b, c) } : null,
-    { label: "이 계정으로 바꾸기", kind: "tonal", disabled: a.current, onclick: (c, b) => accMut(b, () => api("/api/accounts/use", "POST", { account: a.name }), `${label}로 바꿨어요`, c) },
+    { label: "이 계정으로 고정", kind: "tonal", disabled: ACC.mode === "pinned" && ACC.chosen && ACC.chosen.name === a.name, onclick: (c, b) => accMut(b, () => api("/api/accounts/mode", "PUT", { mode: "pinned", account: a.name }), `${label}로 고정했어요`, c) },
     { label: "저장", kind: "pri", onclick: (c, b) => alias(inp.value.trim(), inp.value.trim() ? "별칭을 저장했어요" : "별칭을 지웠어요")(b, c) }].filter(Boolean) });
   inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   inp.focus();

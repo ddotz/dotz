@@ -14,6 +14,7 @@ import { dropSection, renderState } from "./recall-parts.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { anthropicUsage, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
+import { pinnedLimitAlert } from "./accounts-api.ts";
 import { firstAlertForReset } from "./rate-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy, workerKeyEnv } from "./fallback.ts";
@@ -483,6 +484,7 @@ async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<voi
 	if (!owner) save({ pausedUntil: orch.rateLimitedUntil });
 	if ((!pauseAlerted || changed) && (owner || firstAlertForReset("orchestrator", until.getTime()))) {
 		if (owner) onAlert(`${NAME}: 모델 제공자 결제/인증 문제로 멈췄어요 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요해요. 그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리하고, ${Math.round(retry / 60_000)}분마다 다시 시도해요.`);
+		else if (pinnedLimitAlert(until.getTime())) onAlert(`${NAME}: ${pinnedLimitAlert(until.getTime())}`);
 		else onAlert(`${NAME}: 사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`);
 	}
 	pauseAlerted = true;
