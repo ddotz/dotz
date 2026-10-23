@@ -2,6 +2,8 @@
 // Plain-text mail is parsed once per message into blocks (mtParse, no DOM, cached by its text) and drawn from them when the original opens:
 // paragraphs, small headings ("| 요약 정보", "[제목]"), "key: value" runs as a two-column list, pipe lines as a table, bullet and numbered lines as
 // lists, '>' quotes and "-----Original Message-----" / "보낸 사람:" tails folded, long rules as a rule, URLs and e-mail addresses as links.
+// A run of 2+ lines of one shape "<label> <n>[%] [(<±n>)] [(L: <n> / H: <n>)]" (a market quote) becomes a compact table, the short line before it its caption;
+// a bullet "label :long text" gets the label in bold.
 // Nothing here runs on an event tick: the timeline only draws the blocks of a message that is on screen.
 const MT = { cache: new Map(), max: 60, quoteFold: 4, maxLines: 4000 };
 const MT_RULE = /^\s*(?:[=\-_*~#+]\s*){4,}$/;
@@ -14,8 +16,18 @@ const MT_HEAD = [/^\s*\|\s+([^|]{1,60}?)\s*$/, /^\s*\[([^\[\]]{1,50})\]\s*$/, /^
 const MT_KV = /^\s*([A-Za-z가-힣][^:：|\n]{0,23}?)\s*[:：]\s+(\S.*?)\s*$/;
 const MT_LI = /^(\s*)(?:([-*•·▪‣◦○●▶▷■□])|(\d{1,3})[.)])\s+(\S.*?)\s*$/;
 const MT_SEP = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+const MT_N = "[+\\-\u2212]?\\d[\\d,]*(?:\\.\\d+)?";
+const MT_NUM = new RegExp(`^\\s*(\\S[^()]{0,28}?)\\s+(${MT_N})(%)?(?:\\s*\\(\\s*(${MT_N}%?)\\s*\\))?(?:\\s*\\(\\s*L\\s*[:\uff1a]\\s*(${MT_N})\\s*/\\s*H\\s*[:\uff1a]\\s*(${MT_N})\\s*\\))?\\s*$`);
+// "label : long text" / "label: long text" (a space on one side of the colon, so "https://" and "10:30" are not labels)
+const MT_LABEL = /^([A-Za-z\uac00-\ud7a3][^:\uff1a]{0,23}?)(?:\s+[:\uff1a]\s*|[:\uff1a]\s+)(\S.{19,})$/;
 const mtHead = l => { for (const re of MT_HEAD) { const m = l.match(re); if (m) return m[1]; } return ""; };
 const mtKv = l => { const m = l.match(MT_KV); return m && !/^https?$/i.test(m[1]) ? [m[1].trim(), m[2]] : null; };
+// one market-quote line -> { label, value, change, low, high } (cells as written), or null. Needs a %, a change or an L/H part, so "Item 3" is not a quote.
+const mtNum = l => {
+  const m = l.match(MT_NUM);
+  return m && (m[3] || m[4] || m[5]) ? { label: m[1], value: m[2] + (m[3] || ""), change: m[4] || "", low: m[5] || "", high: m[6] || "" } : null;
+};
+const mtCaption = t => t.length <= 40 && !/[.!?\u3002\u2026]$/.test(t);
 function mtCells(l) {
   if (!l.includes("|")) return null;
   const c = l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(s => s.trim());
@@ -36,7 +48,7 @@ function mtBlocks(lines) {
   const startsBlock = i => {
     const l = lines[i];
     return !l.trim() || MT_RULE.test(l) || MT_QUOTE.test(l) || !!mtHead(l) || MT_LI.test(l)
-      || (!!mtCells(l) && i + 1 < n && !!mtCells(lines[i + 1])) || (!!mtKv(l) && i + 1 < n && !!mtKv(lines[i + 1]));
+      || (!!mtNum(l) && i + 1 < n && !!mtNum(lines[i + 1])) || (!!mtCells(l) && i + 1 < n && !!mtCells(lines[i + 1])) || (!!mtKv(l) && i + 1 < n && !!mtKv(lines[i + 1]));
   };
   let i = 0;
   while (i < n) {
@@ -66,6 +78,17 @@ function mtBlocks(lines) {
       out.push({ t: "table", head: head ? pad(rows[0]) : null, rows: rows.slice(head ? 1 : 0).map(pad) });
       i = e; continue;
     }
+    if (mtNum(l) && i + 1 < n && mtNum(lines[i + 1])) {
+      const e = run(i, x => !!mtNum(x));
+      const rows = lines.slice(i, e).map(mtNum);
+      // the short line (or one-item bullet) right before the run is its caption
+      const prev = out[out.length - 1];
+      let cap = "";
+      if (prev?.t === "p" && mtCaption(prev.lines[prev.lines.length - 1])) { cap = prev.lines.pop(); if (!prev.lines.length) out.pop(); }
+      else if (prev?.t === "ul" && prev.items.length === 1 && typeof prev.items[0] === "string" && mtCaption(prev.items[0])) { cap = prev.items[0]; out.pop(); }
+      out.push({ t: "nt", cap, rows });
+      i = e; continue;
+    }
     if (mtKv(l) && i + 1 < n && mtKv(lines[i + 1])) {
       const e = run(i, x => !!mtKv(x));
       out.push({ t: "kv", rows: lines.slice(i, e).map(mtKv) });
@@ -77,13 +100,13 @@ function mtBlocks(lines) {
       let k = i;
       while (k < n) {
         const m = lines[k].match(MT_LI);
-        if (m) { if (!!m[3] !== ordered) break; items.push(m[4]); k++; continue; }
+        if (m) { if (!!m[3] !== ordered) break; const lb = m[4].match(MT_LABEL); items.push(lb ? { k: lb[1].trim(), v: lb[2] } : m[4]); k++; continue; }
         if (!lines[k].trim()) {
           const m2 = k + 1 < n && lines[k + 1].match(MT_LI);
           if (m2 && !!m2[3] === ordered) { k++; continue; }
           break;
         }
-        if (/^\s{2,}\S/.test(lines[k]) && !startsBlock(k)) { items[items.length - 1] += " " + lines[k].trim(); k++; continue; }
+        if (/^\s{2,}\S/.test(lines[k]) && !startsBlock(k)) { const last = items[items.length - 1], more = lines[k].trim(); if (typeof last === "string") items[items.length - 1] = last + " " + more; else last.v += " " + more; k++; continue; }
         break;
       }
       out.push({ t: ordered ? "ol" : "ul", start: ordered ? Number(li[3]) : 1, items });
@@ -140,13 +163,27 @@ function mtNode(blocks) {
       case "kv": box.append(el("dl", { class: "mt-kv" }, ...b.rows.map(([k, v]) => { const dd = el("dd"); mtInline(dd, v); return el("div", {}, el("dt", { text: k }), dd); }))); break;
       case "ul": case "ol": {
         const l = el(b.t, b.start > 1 ? { start: String(b.start) } : {});
-        for (const it of b.items) { const li = el("li"); mtInline(li, it); l.append(li); }
+        for (const it of b.items) {
+          const li = el("li");
+          if (typeof it === "string") mtInline(li, it);
+          else { li.append(el("b", { class: "mt-lb", text: it.k + ":" }), " "); mtInline(li, it.v); }
+          l.append(li);
+        }
         box.append(l);
         break;
       }
       case "table": {
         const cell = (tag, c) => { const x = el(tag); mtInline(x, c); if (/^[+-]?[\d.,]+%?$/.test(c)) x.className = "num"; return x; };
         const t = el("table", {}, b.head ? el("thead", {}, el("tr", {}, ...b.head.map(c => cell("th", c)))) : null, el("tbody", {}, ...b.rows.map(r => el("tr", {}, ...r.map(c => cell("td", c))))));
+        box.append(el("div", { class: "mt-tbl" }, t));
+        break;
+      }
+      case "nt": {
+        const cols = ["label", "value", ...["change", "low", "high"].filter(c => b.rows.some(r => r[c]))];
+        const sign = c => { const v = Number(c.replace(/,/g, "").replace("\u2212", "-").replace("%", "")); return v < 0 ? " dn" : v > 0 ? " up" : ""; };
+        const td = (r, c) => el("td", { class: c === "label" ? "lb" : "num" + (c === "change" ? sign(r[c] || "0") : ""), text: r[c] });
+        const head = cols.includes("low") || cols.includes("high") ? el("thead", {}, el("tr", {}, ...cols.map(c => el("th", { class: c === "label" ? "lb" : "num", text: c === "low" ? "L" : c === "high" ? "H" : "" })))) : null;
+        const t = el("table", { class: "mt-nt" }, b.cap ? el("caption", { text: b.cap }) : null, head, el("tbody", {}, ...b.rows.map(r => el("tr", {}, ...cols.map(c => td(r, c))))));
         box.append(el("div", { class: "mt-tbl" }, t));
         break;
       }
