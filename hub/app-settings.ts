@@ -44,6 +44,16 @@ const deviceSwitch = (app: string): SettingField => ({ key: "use_here", label: "
 // The instance's name (hub/integrations.ts appEntries): shown in the list, the title and the notices; empty = the app's own name.
 const nameField = (app: string): SettingField => ({ key: "label", label: "앱 이름", type: "text", help: "목록과 제목에 보이는 이름이에요. 비우면 기본 이름으로 돌아가요", store: "custom/apps.json", path: `${app}.label`, max: 30, def: INTEGRATIONS.find(e => e.key === app.split("-")[0])?.label ?? "", switch: true });
 
+// 답장 모델: the model of the reply drafts of one app or instance (hub/reply-model.ts reads it, then the global model, then the subagent model).
+// The options are the runtime's model list, installed by hub/reply-model-choices.ts before a read or write; "" (기본값) is always valid.
+export type ReplyModelChoices = { options: string[]; labels: Record<string, string> };
+let replyChoices: ReplyModelChoices = { options: [""], labels: { "": "기본값" } };
+export const setReplyModelChoices = (c: ReplyModelChoices): void => {
+	replyChoices = c;
+};
+const REPLY_APPS = new Set(["mail", "kakao", "instagram", "youtube", "site"]);
+const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "답장 초안을 쓸 모델이에요", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "" });
+
 export const APP_SETTINGS: Record<string, SettingField[]> = {
 	site: [],
 	mail: [
@@ -70,7 +80,7 @@ export class SettingsError extends Error {
 // An app key or an instance id (`mail-2`): the schema is the app's, the switch and the name are the instance's.
 export const fieldsOf = (app: string): SettingField[] => {
 	const base = app.split("-")[0]!;
-	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), ...APP_SETTINGS[base]!] : [];
+	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), ...APP_SETTINGS[base]!, ...(REPLY_APPS.has(base) ? [replyModelField(app)] : [])] : [];
 };
 
 const readJson = (file: string): Record<string, any> => {

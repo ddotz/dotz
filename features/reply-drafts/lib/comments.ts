@@ -4,7 +4,7 @@
 // Nothing is posted here: the adapter only stages a pending reply, and the source's own approve command checks the user's pick.
 import { draftApprovalBlock } from "../../../hub/draft-approval.ts";
 import { precheck, reviseReply, type ReplyItem } from "../../../hub/reply-draft.ts";
-import { buildDraft, defaultCall, type FlowDeps, refineAfterCorrection, toneKey } from "./flow.ts";
+import { buildDraft, type FlowDeps, refineAfterCorrection, replyCall, toneKey } from "./flow.ts";
 import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings, loadStyle, recordCorrection } from "./settings.ts";
 import { addDraft, getDraft, isDrafted, markDrafted, setStatus } from "./store.ts";
@@ -88,7 +88,7 @@ export async function reviseComment(a: CommentAdapter, id: string, change: strin
 	const now = (deps.now ?? (() => new Date()))();
 	recordCorrection(toneKey(old), change, now);
 	await refineAfterCorrection(toneKey(old), deps);
-	const call = deps.call ?? defaultCall(loadSettings().model);
+	const call = deps.call ?? replyCall(a.app);
 	const r = await reviseReply(old.item, loadStyle(toneKey(old)), { to: old.to, body: old.body }, change, call);
 	if (r.action === "skip") return { ok: false, text: `고친 답글을 만들지 못했어요: ${r.reason}` };
 	const c: CommentInput = { id: old.mailId, author: old.item.from, text: old.item.text, context: old.item.context ?? "" };

@@ -33,7 +33,7 @@ export function writeAtomic(file: string, text: string, mode = 0o600): void {
 // `enabled` is the feature switch; `apps` has one switch per source (mail, youtube, instagram, ...), every source off until turned on.
 // A config from before `apps` existed has no apps.mail: mail then follows the top-level `auto` (kept valid, and kept in sync by setApp).
 // `decided` = the config file says enabled true or false (the user or onboarding chose); without it each source follows its monitoring.
-export type Settings = { enabled: boolean; decided: boolean; auto: boolean; apps: Record<string, { auto: boolean }>; senders: { only: string[]; skip: string[] }; model?: string };
+export type Settings = { enabled: boolean; decided: boolean; auto: boolean; apps: Record<string, { auto: boolean }>; senders: { only: string[]; skip: string[] }; model?: string; models?: Record<string, string> };
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map(x => x.trim()) : []);
 
@@ -47,6 +47,9 @@ export function loadSettings(): Settings {
 	}
 	const apps: Settings["apps"] = {};
 	for (const [app, v] of Object.entries(raw.apps && typeof raw.apps === "object" ? (raw.apps as Record<string, any>) : {})) if (validApp(app)) apps[app] = { auto: v?.auto === true };
+	// `models`: the model of one app or app instance's drafts (the 답장 모델 setting); an empty value means the default and is not kept.
+	const models: Record<string, string> = {};
+	for (const [app, v] of Object.entries(raw.models && typeof raw.models === "object" ? (raw.models as Record<string, any>) : {})) if (validApp(app) && typeof v === "string" && v.trim()) models[app] = v.trim();
 	return {
 		enabled: raw.enabled === true,
 		decided: typeof raw.enabled === "boolean",
@@ -54,6 +57,7 @@ export function loadSettings(): Settings {
 		apps,
 		senders: { only: strings(raw.senders?.only), skip: strings(raw.senders?.skip) },
 		...(typeof raw.model === "string" && raw.model.trim() ? { model: raw.model.trim() } : {}),
+		...(Object.keys(models).length ? { models } : {}),
 	};
 }
 

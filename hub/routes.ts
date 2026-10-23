@@ -13,6 +13,7 @@ import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, removeWatch } from "./watch.ts";
 import { fieldsOf, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
+import { refreshReplyModelChoices } from "./reply-model-choices.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
 import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
@@ -215,6 +216,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (appSettings && (req.method === "GET" || req.method === "PATCH")) {
 			const app = appSettings[1]!;
 			try {
+				await refreshReplyModelChoices();
 				if (!fieldsOf(app).length || !appEntries(DATA_DIR).some(e => e.key === app && !e.gone)) throw new SettingsError(`${app}: 바꿀 수 있는 설정이 없어요`, 404);
 				return json({ key: app, fields: req.method === "GET" ? readSettings(DATA_DIR, app) : writeSettings(DATA_DIR, app, (await body(req)).values) });
 			} catch (error) {
