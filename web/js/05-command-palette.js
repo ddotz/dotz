@@ -82,6 +82,14 @@ const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : [name, 
 function go(name, tgt) {
   closeMenu(false);
   [name, tgt] = routeAlias(name, tgt);
+  // A mail (or any "monitoring/c:<target>") opens inside 모니터링: the chat view is drawn, the tab, the list and the address stay 모니터링's.
+  const inChat = name === "chat" || name === "activity";
+  let mc = false;
+  if (name === "monitoring" && tgt && tgt.startsWith("c:")) { name = "chat"; tgt = tgt.slice(2); mc = true; }
+  else if (inChat && (tgt ? tgt !== "list" && monOwned(tgt) : monOwned(target))) { name = "chat"; mc = true; }
+  else if (inChat && !tgt && monCtx && target === monCtx) mc = true;
+  monCtx = mc ? tgt || target : "";
+  if (mc) { const k = monItemOf(tgt || target); if (k) MON.sel = k; MON.list = false; }
   if (!views.includes(name)) name = "home";
   if (name === "projects" && ppWide()) { name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : "builtin:custom"; }
   if (name === "project" && !tgt) name = "projects";
@@ -97,13 +105,13 @@ function go(name, tgt) {
   if (convSync()) renderAll();
   const tv = name === "chat" || name === "activity";
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
-  const hash = tv ? (chatList ? "chat/list" : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "monitoring" ? monHash() : name;
+  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "monitoring" ? monHash() : name;
   navSync(name, hash);
   const pp = name === "project" && ppWide();
   for (const v of views) $(`#v-${v}`).hidden = v !== name && !(pp && v === "projects");
   $("#views").classList.toggle("pp", pp);
   if ((name === "chat" || name === "activity") && !chatList) try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
-  document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
+  document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : mc ? "monitoring" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#appbar").classList.toggle("tv", tv);
   const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
   th.hidden = !tv; $("#vtog").hidden = !tv;
@@ -115,7 +123,7 @@ function go(name, tgt) {
   if (tv) enterTarget();
   if (name === "home") { renderHome(); loadHomeData(); }
   if (name === "projects" || pp) { renderProjects(); prjLoad(); }
-  if (name === "monitoring") { renderMonitoring(); loadMonitors(); loadNotices(); loadIntegrations(); }
+  if (name === "monitoring" || mc) { renderMonitoring(); loadMonitors(); loadNotices(); loadIntegrations(); }
   if (name === "project") pmOpen(tgt);
   if (name === "settings") { loadUpdate(); loadAccounts(); renderSettings(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }

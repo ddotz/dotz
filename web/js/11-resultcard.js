@@ -49,7 +49,8 @@ function rcRawMd(raw) {
 const rcWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
 const rcPlain = s => String(s ?? "").replace(/^\s*#{1,6}\s*/, "").replace(/\*\*/g, "").trim();
 // opts: src (sender or source), at (ISO), title (else the first line of text), text (summary; may carry the original), raw (else taken
-// from text), tag (a node), actions (buttons). null when there is nothing to show.
+// from text), tag (a node), actions (buttons), rawNode (raw -> node: draws the original itself, as a mail does), rawOpen (the original starts open).
+// null when there is nothing to show.
 function resultCard(opts) {
   const sp = rcSplit(opts.text), raw = opts.raw !== undefined ? String(opts.raw).trim() : sp.raw;
   let title = opts.title !== undefined ? rcPlain(opts.title) : "", body = sp.text;
@@ -57,17 +58,16 @@ function resultCard(opts) {
     const [first, ...rest] = body.split("\n"), t = rcPlain(first);
     if (t && t.length <= 120 && !rcLabel(first)) { title = t; body = rest.join("\n").trim(); }
   }
-  if (!title && !body && !raw) return null;
+  if (!title && !body && !raw && !opts.rawNode) return null;
   const when = rcWhen(opts.at);
   const kids = [el("div", { class: "rc-hd" }, opts.src ? el("span", { class: "rc-src", text: opts.src }) : null, opts.tag || null, when ? el("span", { class: "rc-time", text: when }) : null)];
   if (title) kids.push(el("div", { class: "rc-title", text: title }));
   for (const s of rcSections(body)) kids.push(el("div", { class: "rc-sec" }, s.h ? el("div", { class: "rc-sh", text: s.h }) : null, mdNode(s.body)));
-  if (raw) {
-    const sum = el("summary", { text: "원문 보기" }), box = el("div", { class: "rc-rawbody" }), d = el("details", { class: "rc-raw" }, sum, box);
-    d.addEventListener("toggle", () => {
-      sum.textContent = d.open ? "원문 접기" : "원문 보기";
-      if (d.open && !box.firstChild) box.append(mdNode(rcRawMd(raw)));
-    });
+  if (raw || opts.rawNode) {
+    const sum = el("summary", { text: opts.rawOpen ? "원문 접기" : "원문 보기" }), box = el("div", { class: `rc-rawbody${opts.rawNode ? " own" : ""}` }), d = el("details", { class: "rc-raw" }, sum, box);
+    const fill = () => { if (d.open && !box.firstChild) box.append(opts.rawNode ? opts.rawNode(raw) : mdNode(rcRawMd(raw))); };
+    d.addEventListener("toggle", () => { sum.textContent = d.open ? "원문 접기" : "원문 보기"; fill(); });
+    if (opts.rawOpen) { d.open = true; fill(); }
     kids.push(d);
   }
   if (opts.actions && opts.actions.length) kids.push(el("div", { class: "btns cc-act" }, ...opts.actions));

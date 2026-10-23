@@ -15,6 +15,13 @@ const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
 const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0 };
 const monConv = () => current === "monitoring" && narrowChat() && !MON.list;
 const monHash = () => (!MON.list && MON.sel ? `monitoring/${enc(MON.sel)}` : "monitoring");
+// A mail is a conversation of 모니터링 (go() in 05-command-palette.js draws it with the chat view while the tab stays 모니터링); monItemOf: the list item it sits under.
+const monOwned = t => isMailT(String(t || ""));
+const monItemOf = t => {
+  if (!monOwned(t)) return "";
+  const it = INTG.items.find(x => (x.conv || []).some(p => String(t).startsWith(p)));
+  return `i:${it ? it.key : "mail"}`;
+};
 // go("monitoring", key) opens that item; without one a phone shows the list and a wide screen keeps the open item.
 function monRoute(tgt) {
   if (tgt && tgt !== "list") { MON.sel = tgt; MON.list = false; }
@@ -168,8 +175,8 @@ const mailReplyChip = sg => {
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = ts(t).unread;
   const tag = n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : null;
-  if (!m) return resultCard({ src: label, at: last ? last.ts : "", title: last ? last.text : "", text: "", tag, actions: [el("button", { class: "btn tonal", type: "button", onclick: () => go("chat", t), text: "대화 열기" })] });
-  const files = m.attachments || [], brief = mailBrief(m), when = rcWhen(last ? last.ts : m.at), chip = mailReplyChip(m.suggest), open = () => go("chat", t);
+  if (!m) return resultCard({ src: label, at: last ? last.ts : "", title: last ? last.text : "", text: "", tag, actions: [el("button", { class: "btn tonal", type: "button", onclick: () => go("monitoring", `c:${t}`), text: "대화 열기" })] });
+  const files = m.attachments || [], brief = mailBrief(m), when = rcWhen(last ? last.ts : m.at), chip = mailReplyChip(m.suggest), open = () => go("monitoring", `c:${t}`);
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
   return el("div", { class: "bm alert rc mr", role: "button", tabindex: "0", "aria-label": `${m.subject || "메일"} 원문 열기`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
@@ -184,7 +191,7 @@ function monRunNode(it) {
   if (!m.last_run) return null;
   const next = [m.next_run ? `다음 확인 ${monTime(m.next_run)}` : "", m.every || ""].filter(Boolean).join(" · ");
   const node = monCard(it.name, m.last_run, next, m.kind === "watch" ? m.last_result : "", monRunLine(m));
-  if (node && m.channel && isProjT(m.channel)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else openTarget(m.channel, "chat"); }, text: "프로젝트 대화 열기" })));
+  if (node && m.channel && isProjT(m.channel)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else go("monitoring", `c:${m.channel}`); }, text: "프로젝트 대화 열기" })));
   return node;
 }
 // Every item reads the same way: its reports and mails oldest to newest, a monitor's latest run last.
@@ -218,7 +225,7 @@ let monRaf = 0;
 const monSchedule = () => { if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };
 function renderMonitoring() {
   monRaf = 0;
-  if (current !== "monitoring") return;
+  if (current !== "monitoring") { if (monCtx && current === "chat") convSchedule(); return; }
   const items = monItems(), sel = monSel(items), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");
   const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.badge, r.header, r.sel])]);
   if (sideSig !== MON.side) {
@@ -242,5 +249,5 @@ function renderMonitoring() {
   monSeen();
 }
 $("#mon-timeline").addEventListener("scroll", () => edgeFade($("#mon-timeline")), { passive: true });
-setInterval(() => { if (current === "monitoring" && !document.hidden) loadMonitors(); }, 60_000);
+setInterval(() => { if ((current === "monitoring" || monCtx) && !document.hidden) loadMonitors(); }, 60_000);
 loadMonitors();
