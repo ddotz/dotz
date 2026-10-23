@@ -9,6 +9,9 @@
 //   > 이어서: <what it follows> (<link>)  (optional, a draft made as a follow-up of an approved action, e.g. "댓글 답글에 이어서" + the comment's link)
 //   >
 //   > <body, every line quoted>
+//   >                                       (optional second part, a mail that goes out with a comment reply and is approved by the same pick:)
+//   > 함께 보낼 메일
+//   > 받는이: <address>   > 제목: <subject>   > 첨부: <name> (<size>)   >   > <mail body, every line quoted>
 //   결정: <question> (<ref>)                 (ref = the id the approve command takes: draft id, job id, draft code)
 //   **1) 보내기** ← 추천
 //   <what happens>
@@ -36,8 +39,12 @@ const NOTE_ASKED = "받은 메일이 파일을 요청했어요";
 export type DraftFileIn = { name: string; size?: number };
 export type DraftFile = { name: string; size?: string };
 export type DraftOrigin = { text: string; link?: string };
-export type DraftApproval = { toLabel: string; to: string; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin };
-export type DraftInput = { origin?: DraftOrigin; to: string; toLabel?: DraftToLabel; subject?: string; body: string; ref: string; question?: string; sendResult?: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean };
+export type DraftApproval = { toLabel: string; to: string; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; mail?: DraftApproval };
+// One part of a card: the reply (or the mail) with its recipient line, files and body.
+export type DraftPart = { origin?: DraftOrigin; to: string; toLabel?: DraftToLabel; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean };
+// `mail`: the mail that goes out right after this comment reply, shown below it in the same card (hub/comments).
+export type DraftInput = DraftPart & { ref: string; question?: string; sendResult?: string; mail?: DraftPart };
+export const MAIL_MARK = "함께 보낼 메일";
 
 export function fileSizeText(b: number): string {
 	return b >= 1073741824 ? `${(b / 1073741824).toFixed(1)}GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)}MB` : b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.max(0, Math.round(b))}B`;
@@ -60,17 +67,22 @@ export const asksForFile = (text: string): boolean =>
 
 const quote = (s: string) => s.split("\n").map(l => (l ? `> ${l}` : ">"));
 
-export function draftApprovalBlock(d: DraftInput): string {
+function partLines(d: DraftPart): string[] {
 	const files = (d.attachments ?? []).map(f => `> 첨부: ${f.name.replace(/\s+/g, " ").trim()}${f.size !== undefined ? ` (${fileSizeText(f.size)})` : ""}`);
 	const note = files.length ? "" : (d.toLabel ?? "받는이") !== "받는이" ? "" : claimsAttachment(`${d.subject ?? ""}\n${d.body}`) ? NOTE_BODY : d.asksFile ? NOTE_ASKED : "";
 	const none = note ? `> 첨부: 없음 (${note}${d.libraryMiss ? ` · ${LIBRARY_MISS}` : ""})` : d.attachmentsNone ? "> 첨부: 없음" : "";
 	const head = [`> ${d.toLabel ?? "받는이"}: ${d.to.replace(/\s+/g, " ").trim()}`, ...(d.subject ? [`> 제목: ${d.subject.replace(/\s+/g, " ").trim()}`] : []), ...(files.length ? files : none ? [none] : []), ...(d.origin ? [`> 이어서: ${d.origin.text.replace(/\s+/g, " ").trim()}${d.origin.link ? ` (${d.origin.link.replace(/\s+/g, "")})` : ""}`] : []), ">"];
+	return [...head, ...quote(d.body.replace(/\r\n?/g, "\n").trim())];
+}
+
+export function draftApprovalBlock(d: DraftInput): string {
 	const options = [
 		{ name: DRAFT_SEND, result: d.sendResult ?? `${d.to.replace(/\s+/g, " ").trim()}에 이 글을 그대로 보내요` },
-		{ name: `${DRAFT_EDIT} …`, result: "어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" },
-		{ name: DRAFT_DROP, result: "이 초안은 버려요" },
+		{ name: `${DRAFT_EDIT} …`, result: d.mail ? "답글과 메일 중 어느 쪽을 어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" : "어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" },
+		{ name: DRAFT_DROP, result: d.mail ? "답글과 메일을 모두 버려요" : "이 초안은 버려요" },
 	];
-	return [...head, ...quote(d.body.replace(/\r\n?/g, "\n").trim()), issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
+	const mail = d.mail ? [">", `> ${MAIL_MARK}`, ...partLines({ ...d.mail, toLabel: "받는이" })] : [];
+	return [...partLines(d), ...mail, issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
 }
 
 const HEADER = /^(받는이|대상|대화방)\s*[:：]\s*(.*)$/;
@@ -105,6 +117,15 @@ export function parseQuotedDraft(text: string): DraftApproval | undefined {
 	if (!quoted.length) return undefined;
 	const first = quoted.findIndex(l => HEADER.test(l));
 	if (first > 0) quoted.splice(0, first); // a quote above the draft (the comment being answered) is not part of it
+	const cut = quoted.indexOf(MAIL_MARK);
+	if (cut < 0) return parseDraftLines(quoted);
+	const mail = parseDraftLines(quoted.slice(cut + 1));
+	const main = parseDraftLines(quoted.slice(0, cut));
+	return main && mail ? { ...main, mail } : main;
+}
+
+// One part (the reply or the mail) from its quoted lines: recipient line, optional subject / files / origin, then the body.
+function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	let toLabel = "받는이";
 	let to = "";
 	let subject: string | undefined;
