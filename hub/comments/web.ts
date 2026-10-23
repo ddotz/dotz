@@ -78,6 +78,10 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 			}
 			return undefined;
 		}
+		if (area === "comment" && parts.length === 5 && parts[4] === "no-reply" && (method === "POST" || method === "DELETE")) {
+			if (!cfg.enabled) return json(OFF, 409);
+			return engine.noReply(arg(3), method === "POST") ? json({ ok: true }) : json({ error: "원댓글을 찾지 못했어요" }, 404);
+		}
 		if (area === "comment" && parts.length === 5 && parts[4] === "draft" && method === "POST") {
 			if (!cfg.enabled) return json(OFF, 409);
 			const id = arg(3);

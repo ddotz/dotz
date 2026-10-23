@@ -85,8 +85,10 @@ export type IntegrationContext = { features: ReadonlySet<string>; files: (spec: 
 type NoticeLike = { id: string; title?: string; text?: string; open?: string; src?: string; read?: boolean; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: unknown } };
 // What waits on the owner in one app, counted here so the web scans nothing: `drafts` = reply drafts that wait for his 보내기 (open send-approval
 // [ask]s), `unread` = unread notices and conversation messages (the draft asks are not counted twice), `sentToday` = replies sent by themselves today.
-export type IntegrationNeeds = { drafts: number; unread: number; sentToday: number };
-export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "kind" | "icon" | "iconPath"> & { app: string; conv: string[]; convNot?: string[]; unread: number; notices: string[]; needs: IntegrationNeeds };
+export type IntegrationNeeds = { drafts: number; unread: number; sentToday: number; unreplied: number };
+// 미답장 facts the gateway collects per app (hub/unreplied.ts): the mail targets that wait for a reply, and counts an app keeps itself (kakao rooms).
+export type ReplyWaits = { targets: readonly string[]; apps: Readonly<Record<string, number>> };
+export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "kind" | "icon" | "iconPath"> & { app: string; conv: string[]; convNot?: string[]; unread: number; unreplied: number; notices: string[]; needs: IntegrationNeeds };
 // A mail's suggested reply state (hub/mail.ts MailSuggest) with the time the state was set (or the mail's own time): the "sent today" count reads these.
 export type SuggestLike = { target: string; state?: string; at?: string };
 
@@ -210,17 +212,18 @@ export function appKeyOf(n: NoticeLike, ctx: IntegrationContext, entries: readon
 
 // The enabled entries with their notices (newest first as given, at most `cap`) and the unread count: unread notices plus the unread messages
 // of the conversations under the entry's `conv` prefixes (`convUnread`: target -> unread messages). `suggests` = the mails' reply states, `now` = the clock.
-export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now(), comments: Readonly<Record<string, { drafts: number; unread: number }>> = {}): IntegrationItem[] {
+export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now(), comments: Readonly<Record<string, { drafts: number; unread: number; unreplied?: number }>> = {}, waits: ReplyWaits = { targets: [], apps: {} }): IntegrationItem[] {
 	const today = new Date(now).toDateString();
 	return entries.filter(e => !ctx.off.has(e.key) && (integrationOn(e, ctx) || hasConvs(e, notices, convUnread))).map(e => {
 		const mine = notices.filter(n => !n.dismissed && belongsTo(e, n));
 		const convs = e.match.conv ?? [];
 		const fromConvs = Object.entries(convUnread).reduce((c, [t, n]) => c + (inConv(e, t) ? n : 0), 0);
-		const waits = (n: NoticeLike) => n.decision?.state === "open" && !!n.decision.draft && !n.ignored;
+		const waitsDraft = (n: NoticeLike) => n.decision?.state === "open" && !!n.decision.draft && !n.ignored;
 		const sentToday = suggests.filter(s => s.state === "sent" && inConv(e, s.target) && s.at && new Date(s.at).toDateString() === today).length;
 		const cm = comments[e.key] ?? { drafts: 0, unread: 0 };
-		const needs = { drafts: mine.filter(waits).length + cm.drafts, unread: mine.filter(n => !n.read && !waits(n)).length + fromConvs + cm.unread, sentToday };
-		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, notices: mine.slice(0, cap).map(n => n.id), needs };
+		const unreplied = waits.targets.filter(t => inConv(e, t)).length + (waits.apps[e.key] ?? 0) + (cm.unreplied ?? 0);
+		const needs = { drafts: mine.filter(waitsDraft).length + cm.drafts, unread: mine.filter(n => !n.read && !waitsDraft(n)).length + fromConvs + cm.unread, sentToday, unreplied };
+		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, unreplied, notices: mine.slice(0, cap).map(n => n.id), needs };
 	});
 }
 

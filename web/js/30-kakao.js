@@ -283,7 +283,8 @@ function kkRow(r) {
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), hint ? el("span", { class: "cv-p", text: hint }) : null),
     el("span", { class: "cv-m" },
       r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null,
-      r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null));
+      r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null,
+      r.unreplied ? unrepPill() : null));
 }
 function kkPaintRooms() {
   const top = kkRooms.scrollTop, watched = KK.rooms.filter(r => r.watched).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
@@ -318,11 +319,11 @@ function kkPaintChat() {
   const open = !!KK.open, room = kkRoom(KK.open), info = KK.room || room || {};
   kkFoot.hidden = !open || KK.loading || !!KK.roomErr;
   kkPill.hidden = !(open && KK.pill);
-  const sig = `${KK.open}|${info.name}|${info.group}|${!!AS.by.kakao}`;
+  const owed = !!(room && room.unreplied), sig = `${KK.open}|${info.name}|${info.group}|${!!AS.by.kakao}|${owed}`;
   if (sig !== KK.headSig) {
     KK.headSig = sig;
     clear(kkHead);
-    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: info.group ? "단체 대화방" : "1:1 대화" })), ...(KK.pc ? [] : asEntry("kakao")));
+    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: info.group ? "단체 대화방" : "1:1 대화" })), ...(owed ? [unrepPill(), unrepNo(`/api/kakao/chat/${enc(KK.open)}/no-reply`, kkLoadRooms)] : []), ...(KK.pc ? [] : asEntry("kakao")));
     monSchedule();   // the item's head gives the gear to the room head while a room is open
   }
   if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: "대화방을 골라 주세요" })); return; }
@@ -696,7 +697,7 @@ function kkBump(chatId) {
 function kkLive(e) {
   if (KK.pc) return;   // the stream is this computer's; a peer's room is refreshed by the timer
   if (e.kind === "kakao_read") { if (KK.vis && e.chatId === KK.open) kkReads(); return; }
-  if (e.kind === "kakao_rooms") { if (KK.vis) kkLoadRooms(); kkIntgSoon(); return; }
+  if (e.kind === "kakao_rooms" || e.kind === "kakao_unreplied") { if (KK.vis) kkLoadRooms(); kkIntgSoon(); return; }
   kkIntgSoon();
   if (!KK.vis) return;
   const open = e.chatId === KK.open;
