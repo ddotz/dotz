@@ -275,7 +275,7 @@ export function createKakaoWeb(deps: WebDeps) {
 					const cache = await allRooms(config!, true);
 					const room = cache.all.find(r => r.chatId === chatId);
 					if (!room) return { ok: false, reason: "대화방을 찾지 못했어요" };
-					return dispatchSend({ kind: "text", chatId, roomName: room.name, text }, { paths, runner: deps.runner, now, kmsg: deps.kmsg, lease: deps.lease, roomNames: async () => cache.all.map(({ chatId, name }) => ({ chatId, name })) });
+					return dispatchSend({ kind: "text", chatId, roomName: room.name, text }, { paths, runner: deps.runner, now, kmsg: deps.kmsg, lease: deps.lease, roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })) });
 				});
 				return json({ id: rec.id, state: "sending" }, 202);
 			}
@@ -328,7 +328,7 @@ export function createKakaoWeb(deps: WebDeps) {
 					kmsg: deps.kmsg,
 					lease: deps.lease,
 					latestIncoming: id => latestIncoming(config!, id),
-					roomNames: async () => cache.all.map(({ chatId, name }) => ({ chatId, name })),
+					roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })),
 				});
 			});
 			return json({ id: rec.id, state: "sending" }, 202);

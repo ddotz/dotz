@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { atomicWrite, cardFile, featureFile, isOn, OFF_LINE, type Deps, pidAlive, type Ports, readJson, readState, RUNNING_LINE, runDry, runLoginOnly, runOnboarding, stepName, WATCH_NAME } from "./onboard.ts";
 import { createHub } from "./hub.ts";
+import type { RoomFact } from "./room.ts";
 import { listBlock } from "../listblock.ts";
 import { defaultRunner, type HubFull, type KakaoConfig, type KakaoPaths, kakaoPaths, type Msg, type Room, type Runner } from "./types.ts";
 
@@ -20,7 +21,7 @@ export type Reader = {
 export type DraftsApi = {
 	create: (input: { chatId: string; roomName: string; text: string; basisLogId: string }) => Promise<{ code: string }>;
 	block: (draft: any) => string;
-	send: (code: string, deps: { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames: () => Promise<{ chatId: string; name: string }[]> }) => Promise<{ ok: boolean; reason?: string }>;
+	send: (code: string, deps: { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames: () => Promise<RoomFact[]> }) => Promise<{ ok: boolean; reason?: string }>;
 };
 
 export type Ctx = {
@@ -185,7 +186,7 @@ async function send(args: Record<string, string | true>, ctx: Ctx, config: Kakao
 	const open = async () => (reader ??= await ctx.reader(config));
 	const r = await (await ctx.drafts()).send(code, {
 		latestIncoming: async chatId => newestIncoming(await (await open()).messages(chatId, MAX_READ))?.logId,
-		roomNames: async () => (await (await open()).rooms()).map(({ chatId, name }) => ({ chatId, name })),
+		roomNames: async () => (await (await open()).rooms()).map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })),
 	});
 	ctx.out(r.ok ? "보냈어요" : `보내지 않았어요: ${r.reason ?? "이유를 알 수 없어요"}`);
 	return r.ok ? 0 : 1;

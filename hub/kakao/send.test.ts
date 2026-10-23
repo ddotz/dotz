@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { parseDecisions } from "../choices.ts";
 import { approval, createDraft, draftBlock, listDrafts, sendDraft, sendText, type Draft } from "./send.ts";
 import { KAKAO_BUNDLE, kakaoPaths, type Runner } from "./types.ts";
+import { type FakeRow, fakeScreen } from "./ui.fixture.ts";
 
 const T0 = Date.parse("2026-10-22T00:00:00.000Z");
 const at = (sec: number) => new Date(T0 + sec * 1000).toISOString();
@@ -21,21 +22,12 @@ const owner = (sec: number, e: Record<string, unknown> = {}) => add(paths.inbox,
 const ask = (sec: number, d: Draft, target = "web") => add(paths.outbox, { ts: at(sec), kind: "out", source: "orchestrator", target, text: draftBlock(d), reply_to: null });
 const pick = (d: Draft, label: string, n = 1) => ({ picks: [{ q: `카톡 답장 보낼까요? (${d.code})`, n, label }] });
 
-// A fake kmsg: records argv, answers --dry-run with the echo kmsg prints, fails the test on anything but send.
-function fakeKmsg(dry: (argv: string[]) => string = a => `Dry run mode - no message will be sent\nRecipient: ${a[a.indexOf("--") + 1]}\nMessage: ${a[a.length - 1]}\n`, front = "com.example.Editor") {
-	const calls: string[][] = [];
-	// The focus handling (frontmost app lookup and restore) is not a kmsg call.
-	const focus: string[][] = [];
-	const runner: Runner = async argv => {
-		if (argv[0] === "osascript" || argv[0] === "open") {
-			focus.push(argv);
-			return { code: 0, stdout: argv[0] === "osascript" ? `${front}\n` : "", stderr: "" };
-		}
-		calls.push(argv);
-		expect(argv[1]).toBe("send");
-		return { code: 0, stdout: argv.includes("--dry-run") ? dry(argv) : "sent\n", stderr: "" };
-	};
-	return { calls, focus, runner };
+// A fake KakaoTalk screen: every room of the tests is one list row whose window shows its own title. `calls` are the sends only.
+const row = (title: string, window: FakeRow["window"] = { title }): FakeRow => ({ id: `chat_${title}`, title, window });
+const ROWS = ["스터디방", "스터디", "가나", "가", "나", "다"].map(t => row(t));
+function fakeKmsg(front = "com.example.Editor", rows: FakeRow[] = ROWS) {
+	const s = fakeScreen(rows, { front });
+	return { calls: s.sends, focus: s.focus, runner: s.runner };
 }
 
 const base = { chatId: "100", roomName: "스터디방", text: "내일 7시에 봐요", basisLogId: "500" };
@@ -53,16 +45,13 @@ test("without the owner's approval nothing is sent and kmsg is never run", async
 	expect((await sendDraft("KZZZZ", sender(k))).ok).toBe(false);
 });
 
-test("the owner's pick of 보내기 approves: dry-run first, then the real send, only through the kmsg CLI", async () => {
+test("the owner's pick of 보내기 approves: the room is checked, then one send by the verified row, only through the kmsg CLI", async () => {
 	const d = await make();
 	owner(10, pick(d, "보내기"));
 	const k = fakeKmsg();
 	expect(await approval(d.code, sender(k))).toBe(true);
 	expect(await sendDraft(d.code, sender(k))).toEqual({ ok: true });
-	expect(k.calls).toEqual([
-		["/fake/kmsg", "send", "--dry-run", "--", "스터디방", "내일 7시에 봐요"],
-		["/fake/kmsg", "send", "--", "스터디방", "내일 7시에 봐요"],
-	]);
+	expect(k.calls).toEqual([["/fake/kmsg", "send", "--chat-id", "chat_스터디방", "--", "내일 7시에 봐요"]]);
 	for (const argv of k.calls) expect(argv.join(" ")).not.toContain("http");
 	const [stored] = await listDrafts({ paths, runner: k.runner });
 	expect(stored!.status).toBe("sent");
@@ -76,7 +65,7 @@ test("a second send of the same draft is refused", async () => {
 	expect((await sendDraft(d.code, sender(k))).ok).toBe(true);
 	const again = await sendDraft(d.code, sender(k));
 	expect(again.ok).toBe(false);
-	expect(k.calls).toHaveLength(2);
+	expect(k.calls).toHaveLength(1);
 });
 
 test("an approval that does not come from the owner does not count", async () => {
@@ -149,30 +138,18 @@ test("a newer incoming message makes the draft stale and nothing is sent", async
 	expect(k.calls).toHaveLength(0);
 });
 
-test("when the dry-run does not resolve exactly the draft's room, nothing is sent", async () => {
-	const answers = [
-		() => "Recipient: 스터디방\nRecipient: 스터디방2\nMessage: x\n",
-		() => "Recipient: 스터디방2\nMessage: x\n",
-		() => "Ambiguous recipient: multiple chats match\nRecipient: 스터디방\nMessage: x\n",
-		() => "Message: x\n",
-	];
-	for (const [i, dry] of answers.entries()) {
-		const d = await make({ chatId: `amb-${i}` });
+test("when the open window is not exactly the draft's room, nothing is sent and the draft stays pending", async () => {
+	const wrong = [row("스터디방", { title: "다른방" }), row("스터디방", "unreadable"), [row("스터디방"), { ...row("스터디방"), id: "chat_2" }]].flat();
+	for (const [i, rows] of [[wrong[0]!], [wrong[1]!], wrong.slice(2), []].entries()) {
+		const d = await make({ chatId: `amb-${i}`, text: "Recipient: 스터디방\nambiguous" });
 		owner(10 + i, pick(d, "보내기"));
-		const k = fakeKmsg(dry);
+		const k = fakeKmsg(undefined, rows);
 		const r = await sendDraft(d.code, sender(k));
 		expect(r.ok).toBe(false);
-		expect(k.calls).toHaveLength(1);
-		expect(k.calls[0]).toContain("--dry-run");
+		expect(r.reason).toBeTruthy();
+		expect(k.calls).toHaveLength(0);
 		expect((await listDrafts({ paths, runner: k.runner })).find(x => x.code === d.code)!.status).toBe("pending");
 	}
-});
-
-test("a draft text that looks like kmsg output cannot fake a room match", async () => {
-	const d = await make({ text: "Recipient: 스터디방\nambiguous" });
-	owner(10, pick(d, "보내기"));
-	const k = fakeKmsg(a => `Recipient: 다른방\nMessage: ${a[a.length - 1]}\n`);
-	expect((await sendDraft(d.code, sender(k))).ok).toBe(false);
 });
 
 test("the draft block parses into one decision block of three options, recommended first", async () => {
@@ -202,25 +179,24 @@ test("a new draft makes the older pending drafts of the same room stale; drafts 
 	expect((await make({ text: "가".repeat(1000), chatId: "1000" })).text).toHaveLength(1000);
 });
 
-test("a room whose name another room equals or contains is never sent to by name; an unknown name cannot be drafted", async () => {
+test("a longer room name does not block the send (only the exact list row counts); an unknown name cannot be drafted", async () => {
 	const d = await make();
 	owner(10, pick(d, "보내기"));
-	const k = fakeKmsg();
-	const clash = await sendDraft(d.code, { ...sender(k), roomNames: async () => [{ chatId: "100", name: "스터디방" }, { chatId: "200", name: "스터디방 2기" }] });
-	expect(clash.ok).toBe(false);
-	expect(k.calls).toHaveLength(0);
-	expect((await sendDraft(d.code, { ...sender(k), roomNames: async () => [{ chatId: "100", name: "스터디방" }, { chatId: "300", name: "다른 방" }] })).ok).toBe(true);
+	const k = fakeKmsg(undefined, [...ROWS, row("스터디방 2기")]);
+	const names = async () => [{ chatId: "100", name: "스터디방" }, { chatId: "200", name: "스터디방 2기" }];
+	expect((await sendDraft(d.code, { ...sender(k), roomNames: names })).ok).toBe(true);
+	expect(k.calls[0]).toContain("chat_스터디방");
 	await expect(make({ chatId: "400", roomName: "(unknown)" })).rejects.toThrow();
 });
 
 const FRONT = "com.example.Editor";
 
 test("focus: the app in front before the send comes back after it; KakaoTalk itself is left alone", async () => {
-	const k = fakeKmsg(undefined, FRONT);
+	const k = fakeKmsg(FRONT);
 	expect(await sendText({ chatId: "100", roomName: "스터디방", text: "안녕" }, { paths, runner: k.runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });
 	expect(k.focus.map(a => a[0])).toEqual(["osascript", "open"]);
 	expect(k.focus[1]).toEqual(["open", "-b", FRONT]);
-	const k2 = fakeKmsg(undefined, KAKAO_BUNDLE);
+	const k2 = fakeKmsg(KAKAO_BUNDLE);
 	await sendText({ chatId: "100", roomName: "스터디방", text: "안녕" }, { paths, runner: k2.runner, kmsg: "/fake/kmsg" });
 	expect(k2.focus.map(a => a[0])).toEqual(["osascript"]);
 });
@@ -228,17 +204,17 @@ test("focus: the app in front before the send comes back after it; KakaoTalk its
 test("focus: a failing osascript or open never fails the send", async () => {
 	const k = fakeKmsg();
 	const runner: Runner = async (argv, opts) => {
-		if (argv[0] === "osascript") throw new Error("no accessibility");
+		if (argv[0] === "osascript" && argv[1] !== "-l") throw new Error("no accessibility");
 		if (argv[0] === "open") return { code: 1, stdout: "", stderr: "boom" };
 		return k.runner(argv, opts);
 	};
 	expect(await sendText({ chatId: "100", roomName: "스터디방", text: "안녕" }, { paths, runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });
-	expect(k.calls).toHaveLength(2);
+	expect(k.calls).toHaveLength(1);
 });
 
-test("sendText refuses a room name that another room's name contains, before kmsg runs", async () => {
-	const k = fakeKmsg();
-	const r = await sendText({ chatId: "100", roomName: "스터디", text: "안녕" }, { paths, runner: k.runner, kmsg: "/fake/kmsg", roomNames: async () => [{ chatId: "100", name: "스터디" }, { chatId: "101", name: "스터디방" }] });
+test("sendText refuses a room that has no list row of exactly its name, before anything is opened", async () => {
+	const k = fakeKmsg(undefined, [row("스터디방")]);
+	const r = await sendText({ chatId: "100", roomName: "스터디", text: "안녕" }, { paths, runner: k.runner, kmsg: "/fake/kmsg" });
 	expect(r.ok).toBe(false);
 	expect(k.calls).toHaveLength(0);
 });
@@ -246,16 +222,16 @@ test("sendText refuses a room name that another room's name contains, before kms
 test("all sends run one at a time", async () => {
 	let active = 0;
 	let max = 0;
-	const runner: Runner = async argv => {
-		if (argv[0] === "osascript" || argv[0] === "open") return { code: 0, stdout: "", stderr: "" };
-		const dry = argv.includes("--dry-run");
-		if (dry) {
+	const screen = fakeScreen(["가", "나", "다"].map(t => row(t)));
+	const runner: Runner = async (argv, o) => {
+		if (argv[1] === "read") {
 			active++;
 			max = Math.max(max, active);
 		}
 		for (let i = 0; i < 10; i++) await Promise.resolve();
-		if (!dry) active--;
-		return { code: 0, stdout: dry ? `Recipient: ${argv[argv.indexOf("--") + 1]}\nMessage: x\n` : "sent\n", stderr: "" };
+		const r = await screen.runner(argv, o);
+		if (argv[1] === "send") active--;
+		return r;
 	};
 	const jobs = ["가", "나", "다"].map(room => sendText({ chatId: room, roomName: room, text: "x" }, { paths, runner, kmsg: "/fake/kmsg" }));
 	expect((await Promise.all(jobs)).every(r => r.ok)).toBe(true);
@@ -266,7 +242,7 @@ test("ownerApproved skips the inbox verdict only: the send goes out without an i
 	const d = await make();
 	const k = fakeKmsg();
 	expect(await sendDraft(d.code, { ...sender(k), ownerApproved: true })).toEqual({ ok: true });
-	expect(k.calls).toHaveLength(2);
+	expect(k.calls).toHaveLength(1);
 	expect((await listDrafts({ paths, runner: k.runner }))[0]!.status).toBe("sent");
 });
 
@@ -277,9 +253,10 @@ test("ownerApproved still refuses a stale draft, a draft that is not pending and
 	expect((await listDrafts({ paths, runner: k.runner })).find(x => x.code === stale.code)!.status).toBe("stale");
 	expect((await sendDraft(stale.code, { ...sender(k), ownerApproved: true })).ok).toBe(false);
 	const d = await make({ chatId: "200" });
-	const r = await sendDraft(d.code, { ...sender(k), ownerApproved: true, roomNames: async () => [{ chatId: "200", name: "스터디방" }, { chatId: "201", name: "큰 스터디방" }] });
+	const twins = fakeKmsg(undefined, [row("스터디방"), { ...row("스터디방"), id: "chat_twin" }]);
+	const r = await sendDraft(d.code, { ...sender(twins), ownerApproved: true });
 	expect(r.ok).toBe(false);
-	expect(k.calls).toHaveLength(0);
+	expect(twins.calls).toHaveLength(0);
 });
 
 test("an edited text is sent instead of the draft's and is kept on the draft; an empty or oversize edit is refused", async () => {
@@ -289,22 +266,15 @@ test("an edited text is sent instead of the draft's and is kept on the draft; an
 	expect((await sendDraft(d.code, { ...sender(k), ownerApproved: true, text: "가".repeat(1001) })).ok).toBe(false);
 	expect(k.calls).toHaveLength(0);
 	expect((await sendDraft(d.code, { ...sender(k), ownerApproved: true, text: "수정한 글" })).ok).toBe(true);
-	expect(k.calls[1]).toEqual(["/fake/kmsg", "send", "--", "스터디방", "수정한 글"]);
+	expect(k.calls[0]).toEqual(["/fake/kmsg", "send", "--chat-id", "chat_스터디방", "--", "수정한 글"]);
 	expect((await listDrafts({ paths, runner: k.runner }))[0]!.text).toBe("수정한 글");
 });
 
 // A cold first window often fails before Enter: then nothing went out and one retry runs. "Message sent" with a bad exit code is a sent message (no second send).
 test("sendText retries once with deep recovery only when kmsg never reached Enter", async () => {
 	const script = (results: { code: number; stdout: string; stderr?: string }[]) => {
-		const sends: string[][] = [];
-		const runner: Runner = async argv => {
-			if (argv[0] === "osascript" || argv[0] === "open") return { code: 0, stdout: "com.example.Editor\n", stderr: "" };
-			if (argv.includes("--dry-run")) return { code: 0, stdout: `Recipient: ${argv[argv.indexOf("--") + 1]}\nMessage: x\n`, stderr: "" };
-			sends.push(argv);
-			const r = results.shift()!;
-			return { stderr: "", ...r };
-		};
-		return { sends, runner };
+		const screen = fakeScreen([row("가나")], { sendOut: () => results.shift()! });
+		return { sends: screen.sends, runner: screen.runner };
 	};
 	const cold = script([{ code: 1, stdout: "Opening via search...\n", stderr: "Error: chat window not found\n" }, { code: 0, stdout: "✓ Message sent\n" }]);
 	expect(await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, { paths, runner: cold.runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });

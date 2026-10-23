@@ -9,6 +9,7 @@
 //    refused lease is a failed send with that reason and kmsg is never run.
 import { createHash } from "node:crypto";
 import { sentAtMs } from "./db.ts";
+import type { RoomFact } from "./room.ts";
 import { type Draft, listDrafts, sendDraft, type SendDeps, type SendResult, sendText } from "./send.ts";
 
 export type MessageKey = { chatId: string; logId?: string; authorId: string; sentAt: number; text: string };
@@ -35,7 +36,7 @@ export const addOnce = <T extends { id: string }>(list: T[], item: T): T[] => (l
 export type Lease = (chatId: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
 export type SendRequest = { kind: "text"; chatId: string; roomName: string; text: string } | { kind: "draft"; code: string; text?: string; ownerApproved?: boolean };
 export type DispatchDeps = SendDeps & {
-	roomNames?: () => Promise<{ chatId: string; name: string }[]>;
+	roomNames?: () => Promise<RoomFact[]>;
 	latestIncoming?: (chatId: string) => Promise<string | undefined>;
 	lease?: Lease;
 };
