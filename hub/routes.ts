@@ -10,6 +10,7 @@ import { pushRoute } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
 import { integrationContext, integrationItems } from "./integrations.ts";
 import { fieldsOf, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
+import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
 import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
@@ -290,7 +291,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			// A reply to a message (swipe / reply button in the web): the quoted message reaches the model like a Discord reply (intake.ts parseReply).
 			const reply = parseReply(b.reply, login);
 			let project: { target: string; name: string } | undefined;
-			const settings = typeof b.settings === "string" && fieldsOf(b.settings).length ? b.settings : undefined;
+			const settings = typeof b.settings === "string" && (fieldsOf(b.settings).length || watchOfSubject(b.settings)) ? b.settings : undefined;
 			if ([lane, b.project, b.mail, settings].filter(Boolean).length > 1) return json({ error: "lane, project and mail are exclusive" }, 400);
 			const mail = b.mail ? mailByKey(String(b.mail)) : undefined;
 			if (b.mail && !mail) return json({ error: `no mail conversation ${String(b.mail)}` }, 404);

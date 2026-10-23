@@ -19,7 +19,10 @@ const monHash = () => (!MON.list && MON.sel ? `monitoring/${enc(MON.sel)}` : "mo
 const monOwned = t => isMailT(String(t || "")) || isSettingsT(String(t || ""));
 const monItemOf = t => {
   if (!monOwned(t)) return "";
-  if (isSettingsT(t)) return `i:${settingsApp(t)}`;
+  if (isSettingsT(t)) {
+    const a = settingsApp(t), m = a.startsWith("w:") ? NM.items.find(x => x.watch === a.slice(2)) : null;
+    return m ? `m:${m.name}` : `i:${a}`;
+  }
   const it = INTG.items.find(x => (x.conv || []).some(p => String(t).startsWith(p)));
   return `i:${it ? it.key : "mail"}`;
 };
@@ -297,7 +300,7 @@ function monTimeline(it) {
   const names = it.mon ? monNames(it.mon) : [];
   const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => n.pc ? pqNoticeNode(n) : monNoticeNode(n, names) })), ...(it.convs || []).map(c => ({ at: Date.parse((c.last || {}).ts) || 0, node: () => pqConvNode(it, c) })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
-  const pin = it.app ? asPinnedRow(it.key.slice(2)) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
+  const pin = it.app ? asPinnedRow(it.key.slice(2)) : it.mon && it.mon.kind === "watch" && it.mon.watch && !it.pc ? asPinnedRow(`w:${it.mon.watch}`) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
   if (pin) nodes.unshift(pin);
   if (nodes.length) return nodes;
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
