@@ -550,6 +550,8 @@ itself and tells what was saved and how to get it back. A developer checkout nev
 (true/false) says which it is; unset, a `install.sh --git` clone (marker `.git/dotz-install`) or the default install folder
 counts as not a developer checkout. A refusal or failure alerts with a choice block.
 
+**Setup steps after an update** (`hub/migrations.ts`). A feature that needs a one-time step for existing installs ships it as a migration: the gateway runs every migration it has not run yet at start (so after the restart that applies an update), records the id in `<data dir>/migrations.json`, logs one line each, and posts one line listing what changed. A migration is idempotent, never deletes user data, and on failure posts a Korean notice and is retried at the next start. Today: `site-comment-apps` (an app instance in `custom/apps.json` for every website comment source that has none, the same as `features/comments/bin/onboard.ts on --app site --name X`) and `legacy-sns-tokens` (finding the earlier YouTube/Instagram login asks the owner once, `1) 가져오기` / `2) 안 가져오기`; only yes copies, 0600, values never printed). The `onboard.ts` commands stay for manual use.
+
 A tarball install (`install.sh` without `--git`) updates the same way, with the same settings and notices: the check asks GitHub for the
 latest commit of the stamped repo@ref and lists the commits since the installed one (`DOTZ_TARBALL` installs compare the tarball's
 sha256 instead). Apply downloads the new tarball into `<code dir>.update`, runs `bun install` and the tests there, then swaps the
