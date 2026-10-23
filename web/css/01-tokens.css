@@ -52,6 +52,7 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .side, .main, .appbar { display: contents; }
 .brand, .rail, .pchip, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
 .gban { grid-row: 2; grid-column: 1 / -1; }
+.oerr { grid-row: 3; grid-column: 1 / -1; }
 .views { grid-row: 4; grid-column: 1 / -1; }
 .brand { grid-column: 2; }
 .brand { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; letter-spacing: -.01em; text-align: left; cursor: pointer; }
@@ -112,7 +113,7 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
   .appbar h1, .appbar:not(.back) h1 { display: block; flex: 1; max-width: none; margin: 0; }
   #back, .conn { margin: 0; }
   #vtog, .ustrip { margin: 0; }
-  .gban, .views { grid-row: auto; grid-column: auto; }
+  .gban, .oerr, .views { grid-row: auto; grid-column: auto; }
   .views { flex: 1; }
   /* compact tab bar: a 46px row; the home-indicator inset is trimmed (labels end ~18px above the screen edge, clear of the indicator) */
   .side { order: 2; display: flex; min-width: 0; min-height: 0; padding: 0 0 max(2px, calc(env(safe-area-inset-bottom) - 16px)); border-top: 1px solid var(--line); background: var(--card); }

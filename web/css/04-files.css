@@ -54,6 +54,12 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .bm .more pre { margin: 0; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--card); color: var(--fg-2); font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; }
 .gban { flex: none; display: flex; align-items: center; gap: 10px; width: calc(100% - 48px); max-width: 872px; margin: 0 auto 4px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; }
 
+.oerr { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; width: calc(100% - 48px); max-width: 872px; margin: 0 auto 6px; padding: 10px 10px 10px 14px; border-radius: 12px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; box-shadow: inset 0 0 0 1px var(--warn, #d9822b); }
+.oerr[hidden] { display: none; }
+.oerr .tx { flex: 1 1 220px; min-width: 0; }
+.oerr .tx b { color: var(--fg); font-weight: 600; }
+.oerr .btn { flex: none; min-height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--fg); color: var(--bg); font: inherit; font-weight: 600; }
+@media (max-width: 600px) { .oerr { width: calc(100% - 24px); } .oerr .btn { width: 100%; } }
 .gban .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gban .tx b { color: var(--fg); font-weight: 600; }
 .gban .x { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3); font-size: 18px; line-height: 28px; }
