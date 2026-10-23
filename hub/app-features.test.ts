@@ -78,6 +78,17 @@ describe("features view", () => {
 		expect(/[가-힣]/.test(login.reason!)).toBe(true);
 		expect(featuresOf(data, "kakao", W, []).internal.map(i => [i.id, i.dot])).toEqual([["kakao-new", "idle"]]);
 	});
+	test("the YouTube app lists the bulk apply with its progress and a login renewal that failed with the reason", () => {
+		const ran = "2026-10-23T01:00:00.000Z";
+		const sns = [
+			watch("sns-yt-bulk", { label: "유튜브 다국어 설명 적용" }, { lastRun: ran, last: "다국어 설명 2/3개 적용했어요" }),
+			watch("sns-yt-login", { label: "유튜브 로그인 유지" }, { lastRun: ran, fails: 1, kind: "auth", last: "DOTZ_FAIL auth\n유튜브 로그인을 6일째에 다시 받지 못했어요" }),
+		];
+		const rows = featuresOf(data, "youtube", sns, []).internal;
+		expect(rows.map(r => [r.id, r.dot, r.status])).toEqual([["sns-yt-bulk", "ok", "다국어 설명 2/3개 적용했어요"], ["sns-yt-login", "fail", "1번 연달아 실패했어요"]]);
+		expect(rows[1]!.reason).toContain("6일째");
+		expect(rows[0]!.name).toContain("다국어 설명");
+	});
 	test("a feature switch persists in custom/apps.json, per instance, and a switch bound to a setting writes the setting", () => {
 		expect(featureEnabled(data, "instagram", "reels_approval")).toBe(true);
 		setFeature(data, "instagram", "reels_approval", false);

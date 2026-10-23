@@ -22,7 +22,7 @@ export function setupEnv(mutate?: (c: Config) => void): TestEnv {
 	process.env.DOTZ_DIR = dir;
 	const cfg: Config = {
 		...defaultConfig(),
-		youtube: { channel_id: CHANNEL, base_language: "ko", languages: ["en", "ja"], privacy: "private", upload_via: "api" },
+		youtube: { channel_id: CHANNEL, base_language: "ko", languages: ["en", "ja"], privacy: "private", upload_via: "api", audited: true },
 		instagram: { user_id: "17841", username: "owner_ig", post_via: "api" },
 	};
 	mutate?.(cfg);
