@@ -1,8 +1,11 @@
 import { appendFileSync } from "node:fs";
 import { expect, test } from "bun:test";
 import { paths } from "./config.ts";
-import { conversationList, previewOf } from "./conversations.ts";
 import { emit } from "./events.ts";
+
+// The list is built once per module instance, from the log as it is then. Another test file that asks /api/conversations first
+// would freeze it before this file writes its log lines, so this file loads its own instance.
+const { conversationList, previewOf } = await import("./conversations.ts?first-list");
 
 const lastOf = (target: string) => conversationList().find(c => c.target === target)?.last;
 

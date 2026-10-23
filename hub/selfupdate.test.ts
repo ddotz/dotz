@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cfg, DATA_DIR } from "./config.ts";
-import { type AutoHooks, apply, autoCheck, check, defaultExec, type Exec, failureBlocks, fetchError, scrub } from "./selfupdate.ts";
+import { type AutoHooks, apply, autoCheck, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, scrub } from "./selfupdate.ts";
 
 let root: string, origin: string, work: string, pusher: string, logDir: string;
 const sh = (cwd: string, ...args: string[]) => {
@@ -173,9 +173,16 @@ test("a failing apply logs the failing test block, not only the tail", async () 
 		cmd.join(" ") === testCmd.join(" ") ? { code: 1, out: `${"noise\n".repeat(100)}error: expect(received).toBe(expected)\n(fail) the broken one [1ms]\n 1 fail\n` } : defaultExec(cmd, cwd, ms);
 	const j = await apply(opts(exec));
 	expect(j.status).toBe("failed");
+	expect(j.message).toContain("테스트 실패 (1 fail): the broken one.");
 	const logged = readdirSync(logDir).map(f => readFileSync(join(logDir, f), "utf8")).join("\n");
 	expect(logged).toContain("failed tests\nnoise");
 	expect(logged).toContain("error: expect(received).toBe(expected)\n(fail) the broken one [1ms]");
+});
+
+test("failedTestNames lists each failing test once (bun repeats them in its summary), at most three", () => {
+	const out = ["(pass) ok [1ms]", "(fail) a > one [2.40ms]", "(fail) two", "(fail) three [1ms]", "(fail) four [1ms]", "", "(fail) a > one [2.40ms]"].join("\n");
+	expect(failedTestNames(out)).toEqual(["a > one", "two", "three"]);
+	expect(failedTestNames("(pass) ok [1ms]\n 3 pass")).toEqual([]);
 });
 
 test("nothing new is reported as current and does not run the tests", async () => {

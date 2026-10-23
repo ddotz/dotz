@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { now } from "./config.ts";
 import { emit } from "./events.ts";
-import { keepWatchNewest, listNotices, setOrchestratorAvailable, setWatchLabelResolver, WATCH_DAYS, WATCH_KEEP } from "./notices.ts";
+import { keepWatchNewest, listNotices, NOTICE_CAP, setOrchestratorAvailable, setWatchLabelResolver, WATCH_DAYS, WATCH_KEEP } from "./notices.ts";
 import { rawFence, watchLine, watchReasonKo } from "./watchtext.ts";
 import { addWatch, allWatches, relabelWatches, removeWatch } from "./watch.ts";
 import { clearChannel, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
@@ -10,7 +10,8 @@ setWatchLabelResolver(watchLabel);
 const CH = "1562723146669490227";
 const CH2 = "1562723146669490228";
 const NAME = "까르띠에-재고-구매";
-const noticesFor = (title: string) => listNotices().items.filter(n => n.kind === "watch" && n.title === title);
+// The whole store, not the first page: the notice store is shared with every test file in the run, and unread ones from earlier files fill a 100-item page.
+const noticesFor = (title: string) => listNotices(NOTICE_CAP).items.filter(n => n.kind === "watch" && n.title === title);
 
 afterAll(() => {
 	setOrchestratorAvailable(() => true);
@@ -74,7 +75,7 @@ test("events routed to alert or chat, or an orchestrator event without a channel
 test("a notice stored with the raw watch name and English reason renders with the label and Korean", () => {
 	const w = allWatches().find(x => x.channels?.includes(CH) && watchLabel(x.name) === `${NAME} 감시 1`)!;
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target: "ch:123", text: `[${w.name}] output changed\ncartier_mails=1` });
-	const shown = listNotices().items.find(n => n.kind === "watch" && n.title === `${NAME} 감시 1`);
+	const shown = listNotices(NOTICE_CAP).items.find(n => n.kind === "watch" && n.title === `${NAME} 감시 1`);
 	expect(shown?.text).toBe(`${NAME} 감시 1: 결과가 바뀌었어요`);
 });
 
