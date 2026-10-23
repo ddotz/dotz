@@ -25,7 +25,7 @@ function fire(handlers: Handler[], k: Key) {
 function tabs(platform: string, o: { current?: string; dialog?: boolean; sheet?: boolean } = {}) {
 	const handlers: Handler[] = [], log: string[] = [];
 	const env: Record<string, unknown> = {
-		navigator: { platform }, NAV, current: o.current ?? "home", PR: { node: o.sheet ? {} : null },
+		navigator: { platform }, NAV, monCtx: "", current: o.current ?? "home", PR: { node: o.sheet ? {} : null },
 		document: { addEventListener: (_: string, h: Handler) => handlers.push(h), querySelector: () => (o.dialog ? {} : null) },
 		go: (v: string) => log.push(`go:${v}`), prClose: () => log.push("prClose"), lastChatView: () => "chat", chatTabEnter: () => log.push("chatEnter"),
 	};

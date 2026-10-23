@@ -107,7 +107,7 @@ for (const width of [1440, 390]) {
 			rows[2].dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
 			return window.__opened;
 		})()))`)) as string) as string[];
-		expect(opened).toEqual(["chat:mail:fx-1", "chat:mail:fx-1", "chat:mail:fx-2", "chat:mail:fx-3"]);
+		expect(opened).toEqual(["monitoring:c:mail:fx-1", "monitoring:c:mail:fx-1", "monitoring:c:mail:fx-2", "monitoring:c:mail:fx-3"]);
 	}, 30_000);
 
 	test(`the original view at ${width}px lists the attachments with name and size as download links`, async () => {

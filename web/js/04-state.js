@@ -11,6 +11,9 @@ const narrowChat = () => matchMedia("(max-width: 1099px)").matches;
 const ppWide = () => !narrowChat();
 let ppCur = "";
 const convListing = () => current === "chat" && chatList && narrowChat();
+// A conversation opened from 모니터링 (a mail, a monitor's project chat) is drawn by the chat view but belongs to the 모니터링 tab: its tab stays lit,
+// its list is 모니터링's list and its address is #monitoring/c:<target> (go() in 05-command-palette.js sets it; 30-monitoring.js monOwned).
+let monCtx = "";
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
 const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["monitoring", "모니터링"], ["settings", "설정"]];
 const CHAT_MODE_KEY = "dotz-chat-mode";
@@ -136,14 +139,14 @@ function closeChatList() {
 const CHAT_TAB_KEY = "dotz-chat-tab";
 const chatTabMode = () => { try { return localStorage.getItem(CHAT_TAB_KEY) === "main" ? "main" : "last"; } catch { return "last"; } };
 const chatTabModeSet = v => { try { localStorage.setItem(CHAT_TAB_KEY, v); } catch {} };
-const chatTabEnter = () => { if (chatTabMode() === "main") setTarget(MAIN); go(lastChatView()); };
-const chatTabTap = () => (convListing() ? closeChatList() : narrowChat() && (current === "chat" || current === "activity") ? openChatList() : current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter());
+const chatTabEnter = () => { if (chatTabMode() === "main" || monOwned(target)) setTarget(MAIN); go(lastChatView()); };
+const chatTabTap = () => (monCtx ? chatTabEnter() : convListing() ? closeChatList() : narrowChat() && (current === "chat" || current === "activity") ? openChatList() : current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter());
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 // ⌘/Ctrl+1..5 open the tabs in NAV order; the browser may keep ⌘1..9 for its own tabs in a normal tab (it reaches the page in an installed app window).
 const navKeyHint = id => { const i = NAV.findIndex(n => n[0] === id); return i < 0 ? "" : isMac ? `⌘${i + 1}` : `Ctrl+${i + 1}`; };
 function navShortcut(id) {
   if (id !== "home" && PR.node) prClose(false);
-  if (id === "chat") current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter();
+  if (id === "chat") !monCtx && (current === "chat" || current === "activity") ? go(lastChatView()) : chatTabEnter();
   else go(id);
 }
 document.addEventListener("keydown", ev => {
@@ -165,5 +168,5 @@ const setBrand = () => { $("#brand-name").textContent = botName; paintAttn(); };
 $("#brand").onclick = () => go("home");
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
-const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() ? "monitoring" : null;
-$("#back").onclick = () => (convOnPhone() ? openChatList() : go(backTarget() || "home"));
+const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat" && narrowChat()) ? "monitoring" : null;
+$("#back").onclick = () => (monCtx && current === "chat" ? go("monitoring", MON.sel) : convOnPhone() ? openChatList() : go(backTarget() || "home"));

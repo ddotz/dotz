@@ -35,7 +35,7 @@ function convLastOf(e) {
 // A live message (called by ingestMsg once per new event): moves the row's preview and, unless the owner is looking at that
 // conversation's bottom right now, adds to its unread count (server rule: hub/conversations.ts).
 function convNote(e, t, was) {
-  if (isMailT(t) && e.kind === "mail" && !MAILS.has(t)) MAILS.set(t, { subject: e.subject || "", from: e.from || "", source: e.source || "", at: e.ts, summary: e.summary || "", preview: e.preview || "", attachments: e.attachments || [] });
+  if (isMailT(t) && e.kind === "mail" && !MAILS.has(t)) MAILS.set(t, { subject: e.subject || "", from: e.from || "", source: e.source || "", at: e.ts, summary: e.summary || "", preview: e.preview || "", attachments: e.attachments || [], html: !!e.html });
   const last = convLastOf(e);
   if (!last) return;
   const prev = CONV.get(t);
@@ -276,9 +276,10 @@ function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
   convTitle();
-  const rows = convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint]), target, current]);
+  const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel]), target, current, !!monCtx]);
   if (sig !== convSig) {
     convSig = sig;
+    convSide.setAttribute("aria-label", monCtx ? "모니터링 목록" : "채팅 목록");
     const top = convSide.scrollTop;
     clear(convSide).append(...rows.map(convRow));
     convSide.scrollTop = top;
@@ -291,7 +292,7 @@ function convSchedule() { if (!convRaf) convRaf = requestAnimationFrame(convPain
 // Phone, inside a conversation: back arrow to the list and the conversation's name as the title.
 function convOnPhone() { return current === "chat" && narrowChat() && !chatList; }
 function convTitle() {
-  if (current === "chat") $("#title").textContent = convOnPhone() ? targetName(target) : titles.chat;
+  if (current === "chat") $("#title").textContent = convOnPhone() ? targetName(target) : monCtx ? titles.monitoring : titles.chat;
   else if (current === "monitoring") $("#title").textContent = monConv() ? monName() : titles.monitoring;
   cvAppMenu.hidden = !(convOnPhone() && isLaneT(target));
 }

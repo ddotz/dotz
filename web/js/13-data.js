@@ -143,7 +143,7 @@ function setTarget(t) {
   closeSheet();
   target = t;
   try { localStorage.setItem(TARGET_KEY, t); } catch {}
-  if (current === "chat" || current === "activity") routeReplace(`${current}/${t}`);
+  if (current === "chat" || current === "activity") routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
   const s = ts(t);
   convSync();
   markSeen();

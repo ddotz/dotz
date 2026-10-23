@@ -6,13 +6,14 @@ import { headers, fetchList, type LoginState } from "./session.ts";
 import { type Ctx } from "./config.ts";
 
 export type Mail = { id: string; from: string; subject: string; time: string; read: boolean };
-export type Detail = { id: string; body: string; raw: unknown };
+export type Detail = { id: string; body: string; html?: string; raw: unknown };
 export type MailFile = { name: string; id?: string; url?: string; size?: number; type?: string };
 export type PostedFile = { name: string; type?: string; data: string };
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 export const MAX_FILES = 10;
 const BODY_POST_MAX = 8000;
+const HTML_POST_MAX = 400_000;
 
 const str = (v: unknown): string => (v == null ? "" : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v));
 
@@ -58,7 +59,7 @@ export async function read(ctx: Ctx, spec: SiteSpec, id: string): Promise<Detail
 	const bodyRaw = getPath(raw, spec.read.bodyPath);
 	if (bodyRaw === undefined) throw new Error(`메일 ${id} 읽기: 응답에 ${spec.read.bodyPath} 필드가 없어요`);
 	const text = str(bodyRaw);
-	return { id, body: spec.read.bodyIsHtml ? htmlToText(text) : text, raw };
+	return { id, body: spec.read.bodyIsHtml ? htmlToText(text) : text, ...(spec.read.bodyIsHtml && /<\/?[a-z][^>]*>/i.test(text) ? { html: text } : {}), raw };
 }
 
 // The attached files a read response lists, per spec.read.attachments. Empty when the spec maps none.
@@ -100,7 +101,7 @@ export async function fetchAttachment(ctx: Ctx, spec: SiteSpec, mailId: string, 
 
 // What a new mail adds to its gateway post: the body text and the attached files as base64. A part that cannot be fetched is
 // left out (logged), so the mail itself is always posted.
-export async function describeMail(ctx: Ctx, spec: SiteSpec, id: string): Promise<{ body?: string; attachments?: PostedFile[] }> {
+export async function describeMail(ctx: Ctx, spec: SiteSpec, id: string): Promise<{ body?: string; html?: string; attachments?: PostedFile[] }> {
 	const d = await read(ctx, spec, id);
 	const files: PostedFile[] = [];
 	for (const f of attachmentsOf(spec, d.raw).slice(0, MAX_FILES)) {
@@ -110,7 +111,7 @@ export async function describeMail(ctx: Ctx, spec: SiteSpec, id: string): Promis
 			ctx.log(`mail ${id}: ${(error as Error).message}`);
 		}
 	}
-	return { ...(d.body ? { body: d.body.slice(0, BODY_POST_MAX) } : {}), ...(files.length ? { attachments: files } : {}) };
+	return { ...(d.body ? { body: d.body.slice(0, BODY_POST_MAX) } : {}), ...(d.html && d.html.length <= HTML_POST_MAX ? { html: d.html } : {}), ...(files.length ? { attachments: files } : {}) };
 }
 
 // Fallback when capture saw no mail being opened: try likely read endpoints with a real mail id and keep the first one

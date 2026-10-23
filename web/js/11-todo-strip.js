@@ -162,8 +162,8 @@ function msgNode(e) {
     case "mail": {
       // A mail conversation's first message (hub/mail.ts postMail): sender, subject, then the summary and the body (원문).
       if (e.subject) {
-        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim() });
-        const key = e.mail || (isMailT(e.conv || "") ? mailOf(e.conv) : "");
+        const key = e.mail || (isMailT(e.conv || "") ? mailOf(e.conv) : ""), html = !!(e.html || (MAILS.get(`mail:${key}`) || {}).html);
+        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim(), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw) : undefined });
         if (card && key && Array.isArray(e.attachments) && e.attachments.length) card.append(mailFilesNode(key, e.attachments));
         return card;
       }

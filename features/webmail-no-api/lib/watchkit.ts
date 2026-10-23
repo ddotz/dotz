@@ -91,7 +91,7 @@ export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, sta
 // and its web conversation `mail:<site>-<id>` and gives the orchestrator one turn for it, so a web reply there is gated like a
 // Discord thread message. A mail the gateway did not take (gateway off, or one without /api/mail) keeps its stdout line, which
 // wakes the orchestrator the old way. Returns the lines still to print.
-export async function postToGateway(gw: Gateway, site: string, res: Pick<PollResult, "lines" | "mails">, log: (s: string) => void, describe?: (m: Mail) => Promise<{ body?: string; attachments?: PostedFile[] }>): Promise<string[]> {
+export async function postToGateway(gw: Gateway, site: string, res: Pick<PollResult, "lines" | "mails">, log: (s: string) => void, describe?: (m: Mail) => Promise<{ body?: string; html?: string; attachments?: PostedFile[] }>): Promise<string[]> {
 	const posted = new Set<string>();
 	for (const m of res.mails) {
 		try {
