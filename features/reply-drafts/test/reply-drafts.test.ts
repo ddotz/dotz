@@ -8,7 +8,7 @@ import { runOnboard } from "../bin/onboard.ts";
 import { dropDraft, reviseDraft, sendDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { sendWith } from "../lib/senders.ts";
-import { loadStyle, paths } from "../lib/settings.ts";
+import { loadStyle, paths, toneFile } from "../lib/settings.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
 import { learnTone, type Runner } from "../lib/tone.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, pick, setupEnv } from "./helpers.ts";
@@ -16,7 +16,7 @@ import { enable, fakeModel, goodReply, j, mailFixture, pick, setupEnv } from "./
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
-	for (const p of [paths.config(), paths.style(), paths.drafts(), paths.inbox(), paths.personalFeature()]) rmSync(p, { force: true });
+	for (const p of [paths.config(), paths.legacyStyle(), paths.toneDir(), paths.drafts(), paths.inbox(), paths.personalFeature()]) rmSync(p, { force: true, recursive: true });
 });
 
 const sink = () => {
@@ -79,8 +79,9 @@ test("a model skip, a failing model and a failing send never throw and leave no 
 	enable(env);
 	const out = sink();
 	expect(await offerMailDraft({ ...mailFixture, key: "s-1" }, { send: out.send, call: fakeModel([j({ action: "skip", reason: "newsletter" })]).call })).toBe("skipped");
-	expect(await offerMailDraft({ ...mailFixture, key: "s-2" }, { send: out.send, call: async () => Promise.reject(new Error("down")) })).toBe("failed");
-	expect(await offerMailDraft({ ...mailFixture, key: "s-3" }, { send: () => Promise.reject(new Error("post failed")), call: fakeModel([j(goodReply)]).call })).toBe("failed");
+	const log = () => {};
+	expect(await offerMailDraft({ ...mailFixture, key: "s-2" }, { send: out.send, call: async () => Promise.reject(new Error("down")), log })).toBe("failed");
+	expect(await offerMailDraft({ ...mailFixture, key: "s-3" }, { send: () => Promise.reject(new Error("post failed")), call: fakeModel([j(goodReply)]).call, log })).toBe("failed");
 	expect(out.sent).toEqual([]);
 	expect(listDrafts()).toEqual([]);
 });
@@ -120,7 +121,7 @@ test("with a 보내기 pick the fake sender is called exactly once and the draft
 test("the lint runs again right before sending", async () => {
 	const { rec } = await offered();
 	enable(env);
-	await Bun.write(paths.style(), "## 금지\n\n- 확인해 보고\n");
+	await Bun.write(toneFile({ app: "mail" }), "## 금지\n\n- 확인해 보고\n");
 	pick(env, rec!.id, 1);
 	let called = 0;
 	const r = await sendDraft(rec!.id, { send: async () => (called++, { ok: true, message: "" }) });
@@ -129,18 +130,19 @@ test("the lint runs again right before sending", async () => {
 	expect(called).toBe(0);
 });
 
-test("sending routes by source: the mail CLI gets the mail id, an unknown source is refused for the owner to send by hand", async () => {
+test("sending routes by source: the mail CLI reads then replies to the mail id, an unknown source is refused for the user to send by hand", async () => {
 	const { rec } = await offered();
 	const argvs: string[][] = [];
 	const run: Runner = async argv => (argvs.push(argv), { code: 0, stdout: "", stderr: "" });
 	expect((await sendWith(rec!, run)).ok).toBe(true);
-	expect(argvs).toHaveLength(1);
-	expect(argvs[0]).toContain("msg-1");
-	expect(argvs[0]).toContain(goodReply.body);
+	expect(argvs).toEqual([
+		["zele", "mail", "read", "msg-1"],
+		["zele", "mail", "reply", "msg-1", "--to", "kim@example.com", "--body", goodReply.body],
+	]);
 	const refused = await sendWith({ ...rec!, source: "manual" }, run);
 	expect(refused.ok).toBe(false);
 	expect(refused.message).toContain("직접 보내야 해요");
-	expect(argvs).toHaveLength(1);
+	expect(argvs).toHaveLength(2);
 });
 
 test("webmail source: draft, approve and send of that feature, in that order", async () => {
@@ -152,7 +154,7 @@ test("webmail source: draft, approve and send of that feature, in that order", a
 	expect(argvs.every(a => a[2] === "work")).toBe(true);
 });
 
-test("고치기 round trip: pick with the change, revise makes a new id, the old one goes stale, the change is in style.md and the old id cannot be sent", async () => {
+test("고치기 round trip: pick with the change, revise makes a new id, the old one goes stale, the change is in the mail tone profile and the old id cannot be sent", async () => {
 	const { rec, model } = await offered(fakeModel([j(goodReply), j({ ...goodReply, body: "곧 알려 드릴게요." })]));
 	pick(env, rec!.id, 2, "더 짧게 써 주세요");
 	const sender = { calls: 0 };
@@ -164,8 +166,8 @@ test("고치기 round trip: pick with the change, revise makes a new id, the old
 	expect(next).toMatchObject({ body: "곧 알려 드릴게요.", changes: ["더 짧게 써 주세요"], ref: "m-1" });
 	expect(getDraft(rec!.id)!.status).toBe("stale");
 	expect(parseDraftApproval(revised.text)).toMatchObject({ ref: next.id, body: "곧 알려 드릴게요." });
-	expect(readFileSync(paths.style(), "utf8")).toMatch(/## 고친 점\n\n- \d{4}-\d{2}-\d{2}: 더 짧게 써 주세요/);
-	expect(loadStyle("mail").corrections[0]).toContain("더 짧게 써 주세요");
+	expect(readFileSync(toneFile({ app: "mail" }), "utf8")).toMatch(/## 고친 점\n\n- \d{4}-\d{2}-\d{2}: 더 짧게 써 주세요/);
+	expect(loadStyle({ app: "mail" }).corrections[0]).toContain("더 짧게 써 주세요");
 	expect(model.calls[1]!.user).toContain("더 짧게 써 주세요");
 	expect(model.calls[1]!.user).toContain(goodReply.body);
 	pick(env, rec!.id, 1);
@@ -180,23 +182,25 @@ test("tone learning writes 예시 from the user's sent mail and drops quoted his
 	const bodies: Record<string, string> = { m1: sentBody("자료는 첨부했어요."), m2: `${sentBody("")}\n-- \n서명 줄입니다` };
 	const run: Runner = async argv =>
 		argv[2] === "list" ? { code: 0, stdout: "items:\n  - id: m1\n    snippet: s\n  - id: m2\n    snippet: s\n", stderr: "" } : { code: 0, stdout: bodies[argv[3]!] ?? "", stderr: "" };
-	const r = await learnTone({ run, zeleOn: true });
+	const r = await learnTone({ app: "mail" }, { run, zeleOn: true });
 	expect(r.examples).toEqual(["확인했어요.", "내일 오전에 연락드릴게요.", "감사합니다.", "자료는 첨부했어요."]);
-	const md = readFileSync(paths.style(), "utf8");
+	const md = readFileSync(toneFile({ app: "mail" }), "utf8");
 	expect(md).toContain("## 예시");
 	expect(md).not.toContain("지난번");
 	expect(md).not.toContain("서명");
-	expect(loadStyle("mail").samples).toEqual(r.examples);
-	const none = await learnTone({ zeleOn: false });
+	expect(loadStyle({ app: "mail" }).samples).toEqual(r.examples);
+	const none = await learnTone({ app: "mail" }, { zeleOn: false });
 	expect(none.examples).toEqual([]);
 });
 
-test("tone from a file, at most 40 sentences, and comment style merges the sns tone examples", async () => {
+test("tone from a file, at most 40 sentences, and youtube/instagram fall back to the sns tone examples", async () => {
 	await Bun.write(join(env.dir, "t.txt"), Array.from({ length: 60 }, (_, i) => `이것은 ${i}번째 문장이에요.`).join("\n"));
-	expect((await learnTone({ fromFile: join(env.dir, "t.txt") })).examples).toHaveLength(40);
+	expect((await learnTone({ app: "mail" }, { fromFile: join(env.dir, "t.txt") })).examples).toHaveLength(40);
 	await Bun.write(join(env.dir, "custom", "sns", "tone.md"), "## 예시\n\n- 고마워요!\n");
-	expect(loadStyle("comment").samples).toContain("고마워요!");
-	expect(loadStyle("mail").samples).not.toContain("고마워요!");
+	expect(loadStyle({ app: "youtube" })).toMatchObject({ samples: ["고마워요!"], samplesFrom: "legacy" });
+	expect(loadStyle({ app: "instagram" }).samples).toEqual(["고마워요!"]);
+	expect(loadStyle({ app: "mail" }).samples).not.toContain("고마워요!");
+	expect(loadStyle({ app: "blog" }).samples).toEqual([]);
 });
 
 test("onboard on/off flips the config and the personal feature switch; learn reports a Korean summary", async () => {
@@ -221,7 +225,7 @@ test("draft.ts new prints the [ask] block for a mail and the bare reply text for
 	const out = await runDraft(args, "질문이에요", { call: model.call });
 	expect(out.code).toBe(0);
 	expect(parseDraftApproval(out.lines[0]!)).toMatchObject({ to: "kim@example.com", body: goodReply.body });
-	const comment = await runDraft(["new", "--mail", "c-1", "--kind", "comment", "--from", "viewer"], "영상 잘 봤어요", { call: fakeModel([j({ action: "draft", reason: "r", to: "viewer", body: "고마워요!", questions: [] })]).call });
+	const comment = await runDraft(["new", "--mail", "c-1", "--kind", "comment", "--app", "youtube", "--from", "viewer"], "영상 잘 봤어요", { call: fakeModel([j({ action: "draft", reason: "r", to: "viewer", body: "고마워요!", questions: [] })]).call });
 	expect(comment.lines).toEqual(["고마워요!"]);
 	expect(listDrafts().filter(d => d.kind === "comment")).toEqual([]);
 });

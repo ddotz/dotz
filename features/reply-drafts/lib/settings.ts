@@ -1,10 +1,10 @@
 // Per-install settings and the user's style file of the reply-drafts feature (DESIGN.md). Everything personal lives under
 // <DATA_DIR>/custom/reply-drafts/; nothing about a person is in the repo. Pure fs; never imports hub/config.ts (it loads the
 // gateway config at import time), so the data dir is read from DOTZ_DIR on every call and tests can point it anywhere.
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { ReplyKind, ReplyStyle } from "../../../hub/reply-draft.ts";
+import type { ReplyStyle } from "../../../hub/reply-draft.ts";
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 export const REPO_FEATURE = join(import.meta.dir, "..");
@@ -12,7 +12,8 @@ const root = () => join(dataDir(), "custom", "reply-drafts");
 
 export const paths = {
 	config: () => join(root(), "config.json"),
-	style: () => join(root(), "style.md"),
+	legacyStyle: () => join(root(), "style.md"), // layout of the first version: read as the mail app profile until tone/mail.md exists
+	toneDir: () => join(root(), "tone"),
 	drafts: () => join(root(), "drafts.json"),
 	snsTone: () => join(dataDir(), "custom", "sns", "tone.md"),
 	inbox: () => join(dataDir(), "inbox.jsonl"),
@@ -79,23 +80,89 @@ export function setSection(existing: string, heading: string, items: string[]): 
 	return `${lines.slice(0, start).join("\n")}${start ? "\n" : ""}${section}${tail}`;
 }
 
+// Tone store: <DATA_DIR>/custom/reply-drafts/tone/install.md (whole install), <app>.md (mail, youtube, kakao, ...) and
+// <app>/<room>.md (one conversation of a messenger). Each file has the four sections above.
+export type ToneKey = { app: string; room?: string };
+export type ToneLevel = "room" | "app" | "install";
+export type LoadedStyle = ReplyStyle & { samplesFrom: ToneLevel | "legacy" | "none" };
+
+export const INSTALL = "install";
+const APP_ID = /^[a-z0-9-]+$/;
+
+export function validApp(app: string): boolean {
+	return APP_ID.test(app);
+}
+
+// A room id as a file name: only [A-Za-z0-9_-] survive (no dots, so no traversal), at most 80 characters.
+export const roomFile = (room: string): string => room.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "_";
+
+export function toneFile(key: ToneKey | "install"): string {
+	if (key === INSTALL || key.app === INSTALL) return join(paths.toneDir(), "install.md");
+	if (!validApp(key.app)) throw new Error(`앱 이름은 영문 소문자·숫자·-만 쓸 수 있어요: ${key.app}`);
+	return key.room === undefined ? join(paths.toneDir(), `${key.app}.md`) : join(paths.toneDir(), key.app, `${roomFile(key.room)}.md`);
+}
+
 const read = (file: string) => (existsSync(file) ? readFileSync(file, "utf8") : "");
 const unique = (xs: string[]) => [...new Set(xs)];
+const SNS_APPS = new Set(["youtube", "instagram"]);
 
-export function loadStyle(kind: ReplyKind): ReplyStyle {
-	const md = read(paths.style());
-	const own = bullets(md, HEADINGS.samples);
-	const samples = kind === "comment" ? unique([...own, ...bullets(read(paths.snsTone()), HEADINGS.samples)]) : own;
-	return { samples, rules: bullets(md, HEADINGS.rules), corrections: bullets(md, HEADINGS.corrections), forbidden: bullets(md, HEADINGS.forbidden) };
+// One profile's markdown; the mail app profile falls back to the old single style.md until tone/mail.md exists.
+function profile(key: ToneKey | "install"): string {
+	const file = toneFile(key);
+	if (existsSync(file)) return readFileSync(file, "utf8");
+	return key !== INSTALL && key.app === "mail" && key.room === undefined ? read(paths.legacyStyle()) : "";
 }
 
-export function writeExamples(examples: string[]): void {
-	writeAtomic(paths.style(), setSection(read(paths.style()), HEADINGS.samples, examples));
+export const hasSamples = (key: ToneKey | "install"): boolean => bullets(profile(key), HEADINGS.samples).length > 0;
+
+// Samples come from the narrowest profile that has any (room -> app -> install; for the youtube and instagram apps the old
+// custom/sns/tone.md examples sit between app and install); rules, corrections and forbidden expressions are merged from every level,
+// install first and the narrower ones later.
+export function loadStyle(key: ToneKey): LoadedStyle {
+	const room = key.room === undefined ? undefined : profile(key);
+	const app = profile({ app: key.app });
+	const install = profile("install");
+	const levels: [ToneLevel, string | undefined][] = [["room", room], ["app", app], ["install", install]];
+	let samples: string[] = [];
+	let samplesFrom: LoadedStyle["samplesFrom"] = "none";
+	const legacy = SNS_APPS.has(key.app) ? bullets(read(paths.snsTone()), HEADINGS.samples) : [];
+	for (const [level, md] of levels) {
+		if (md === undefined) continue;
+		let own = bullets(md, HEADINGS.samples);
+		let from: LoadedStyle["samplesFrom"] = level;
+		if (!own.length && level === "app" && legacy.length) [own, from] = [legacy, "legacy"];
+		if (own.length) {
+			[samples, samplesFrom] = [own, from];
+			break;
+		}
+	}
+	const merged = (heading: string) => unique([install, app, room ?? ""].flatMap(md => bullets(md, heading)));
+	return { samples, samplesFrom, rules: merged(HEADINGS.rules), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
 }
 
-// The owner's change request, verbatim and dated, so every later draft follows it.
-export function recordCorrection(change: string, now: Date): void {
-	const md = read(paths.style());
+// Writes into exactly that profile (a legacy style.md is carried over first when the mail profile is written for the first time).
+export function writeExamples(key: ToneKey | "install", examples: string[]): void {
+	writeAtomic(toneFile(key), setSection(profile(key), HEADINGS.samples, examples));
+}
+
+// The user's change request, verbatim and dated, in the profile of the draft that was revised, so every later draft there follows it.
+export function recordCorrection(key: ToneKey, change: string, now: Date): void {
+	const md = profile(key);
 	const line = `${now.toISOString().slice(0, 10)}: ${change.replace(/\s+/g, " ").trim()}`;
-	writeAtomic(paths.style(), setSection(md, HEADINGS.corrections, [...bullets(md, HEADINGS.corrections), line]));
+	writeAtomic(toneFile(key), setSection(md, HEADINGS.corrections, [...bullets(md, HEADINGS.corrections), line]));
+}
+
+// Profile files that exist, relative to the tone dir (for `onboard.ts status`).
+export function listProfiles(): string[] {
+	const out: string[] = [];
+	const walk = (dir: string, rel: string) => {
+		if (!existsSync(dir)) return;
+		for (const e of readdirSync(dir, { withFileTypes: true })) {
+			if (e.isDirectory()) walk(join(dir, e.name), `${rel}${e.name}/`);
+			else if (e.name.endsWith(".md")) out.push(`${rel}${e.name}`);
+		}
+	};
+	walk(paths.toneDir(), "");
+	if (!out.includes("mail.md") && existsSync(paths.legacyStyle())) out.push("mail.md (style.md)");
+	return out.sort();
 }

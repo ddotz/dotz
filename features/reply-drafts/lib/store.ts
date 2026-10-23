@@ -9,6 +9,8 @@ export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
 export type DraftRec = {
 	id: string;
 	kind: ReplyKind;
+	app: string; // tone profile of the draft: mail, youtube, instagram, kakao, ...
+	room?: string; // the messenger conversation, when the app has rooms
 	source: string; // "zele" | "webmail:<site>" | anything else (cannot be sent from here)
 	mailId: string; // the id the source knows the mail by
 	ref: string; // the gateway's mail key

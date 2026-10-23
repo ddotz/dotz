@@ -7,9 +7,10 @@ import { loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 
 export type OfferMail = { key: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string };
-export type OfferDeps = { send: (target: string, text: string) => unknown; call?: ModelCall; readBody?: (source: string, id: string) => Promise<string | undefined> };
+export type OfferDeps = { send: (target: string, text: string) => unknown; call?: ModelCall; readBody?: (source: string, id: string) => Promise<string | undefined>; log?: (line: string) => void };
 
 export async function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
+	const log = deps.log ?? ((line: string) => console.error(line));
 	try {
 		const settings = loadSettings();
 		if (!settings.enabled || !settings.auto) return "off";
@@ -19,7 +20,7 @@ export async function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"of
 			markDrafted(m.key);
 			return "skipped";
 		}
-		item.text = (m.body ?? (await deps.readBody?.(m.source, m.id).catch(() => undefined)) ?? m.summary ?? "").trim() || m.subject;
+		item.text = (m.body ?? (await deps.readBody?.(m.source, m.id).catch(e => (log(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), undefined))) ?? m.summary ?? "").trim() || m.subject;
 		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key }, { call: deps.call });
 		if (built.action === "skip") {
 			markDrafted(m.key);
@@ -28,7 +29,8 @@ export async function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"of
 		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, built.warnings));
 		addDraft(built.rec);
 		return "offered";
-	} catch {
+	} catch (e) {
+		log(`reply draft: offer for mail ${m.key} failed: ${(e as Error).message}`);
 		return "failed";
 	}
 }
