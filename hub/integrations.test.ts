@@ -162,3 +162,29 @@ describe("comment reply asks of the reply-drafts adapter", () => {
 		expect(belongsTo(by("kakao"), ask("인스타"))).toBe(false);
 	});
 });
+
+describe("needs: what waits on the owner per app", () => {
+	const ctx = integrationContext(install(["kakao", "webmail-no-api"]), []);
+	const now = Date.parse("2026-10-23T15:00:00+09:00");
+	const draft = (id: string, extra: Record<string, unknown> = {}) => notice(id, { kind: "decision", text: "> 받는이: a@example.com\n초안", decision: { to: "main", state: "open", draft: { toLabel: "받는이", to: "a@example.com", body: "초안" } }, ...extra });
+	const mail = (items: Parameters<typeof integrationItems>[1], convUnread: Record<string, number> = {}, suggests: Parameters<typeof integrationItems>[5] = []) =>
+		integrationItems(ctx, items, convUnread, 100, undefined, suggests, now).find(i => i.key === "mail")!;
+
+	test("2 waiting drafts + 3 unread: drafts are not counted twice as unread", () => {
+		const m = mail([draft("d1"), draft("d2")], { "mail:a": 2, "mail:b": 1 });
+		expect(m.needs).toEqual({ drafts: 2, unread: 3, sentToday: 0 });
+	});
+	test("answered, ignored or dismissed drafts do not wait; no item: all zero", () => {
+		const items = [draft("d1", { read: true, decision: { to: "main", state: "answered", draft: {} } }), draft("d2", { read: true, ignored: "x" }), draft("d3", { read: true, dismissed: true })];
+		expect(mail(items, { "mail:a": 0 }).needs).toEqual({ drafts: 0, unread: 0, sentToday: 0 });
+	});
+	test("sentToday counts the sent replies of this app set today (local day), not older ones or drafts", () => {
+		const m = mail([], { "mail:a": 0 }, [
+			{ target: "mail:a", state: "sent", at: "2026-10-23T09:00:00+09:00" },
+			{ target: "mail:b", state: "sent", at: "2026-10-22T09:00:00+09:00" },
+			{ target: "mail:c", state: "draft", at: "2026-10-23T09:00:00+09:00" },
+			{ target: "ch:1", state: "sent", at: "2026-10-23T09:00:00+09:00" },
+		]);
+		expect(m.needs.sentToday).toBe(1);
+	});
+});

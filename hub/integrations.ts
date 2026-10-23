@@ -53,8 +53,13 @@ export const INTEGRATIONS: IntegrationEntry[] = [
 ];
 
 export type IntegrationContext = { features: ReadonlySet<string>; files: (spec: string) => boolean; flags: ReadonlySet<string> };
-type NoticeLike = { id: string; title?: string; text?: string; open?: string; src?: string; read?: boolean; dismissed?: boolean; decision?: { to?: string } };
-export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "kind" | "icon" | "iconPath"> & { conv: string[]; unread: number; notices: string[] };
+type NoticeLike = { id: string; title?: string; text?: string; open?: string; src?: string; read?: boolean; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: unknown } };
+// What waits on the owner in one app, counted here so the web scans nothing: `drafts` = reply drafts that wait for his 보내기 (open send-approval
+// [ask]s), `unread` = unread notices and conversation messages (the draft asks are not counted twice), `sentToday` = replies sent by themselves today.
+export type IntegrationNeeds = { drafts: number; unread: number; sentToday: number };
+export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "kind" | "icon" | "iconPath"> & { conv: string[]; unread: number; notices: string[]; needs: IntegrationNeeds };
+// A mail's suggested reply state (hub/mail.ts MailSuggest) with the time the state was set (or the mail's own time): the "sent today" count reads these.
+export type SuggestLike = { target: string; state?: string; at?: string };
 
 // What is on at this install, read from disk: enabled feature folders (a personal copy of a shipped folder wins), data files, and the flags the caller knows.
 export function integrationContext(dataDir: string, flags: Iterable<string> = []): IntegrationContext {
@@ -94,12 +99,16 @@ export function belongsTo(e: IntegrationEntry, n: NoticeLike): boolean {
 }
 
 // The enabled entries with their notices (newest first as given, at most `cap`) and the unread count: unread notices plus the unread messages
-// of the conversations under the entry's `conv` prefixes (`convUnread`: target -> unread messages).
-export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = INTEGRATIONS): IntegrationItem[] {
+// of the conversations under the entry's `conv` prefixes (`convUnread`: target -> unread messages). `suggests` = the mails' reply states, `now` = the clock.
+export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now()): IntegrationItem[] {
+	const today = new Date(now).toDateString();
 	return entries.filter(e => integrationOn(e, ctx) || hasConvs(e, notices, convUnread)).map(e => {
 		const mine = notices.filter(n => !n.dismissed && belongsTo(e, n));
 		const convs = e.match.conv ?? [];
 		const fromConvs = Object.entries(convUnread).reduce((c, [t, n]) => c + (convs.some(p => t.startsWith(p)) ? n : 0), 0);
-		return { key: e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, unread: mine.filter(n => !n.read).length + fromConvs, notices: mine.slice(0, cap).map(n => n.id) };
+		const waits = (n: NoticeLike) => n.decision?.state === "open" && !!n.decision.draft && !n.ignored;
+		const sentToday = suggests.filter(s => s.state === "sent" && convs.some(p => s.target.startsWith(p)) && s.at && new Date(s.at).toDateString() === today).length;
+		const needs = { drafts: mine.filter(waits).length, unread: mine.filter(n => !n.read && !waits(n)).length + fromConvs, sentToday };
+		return { key: e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, unread: mine.filter(n => !n.read).length + fromConvs, notices: mine.slice(0, cap).map(n => n.id), needs };
 	});
 }
