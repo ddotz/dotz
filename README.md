@@ -538,10 +538,17 @@ chooses it with `<data dir>/accounts/rules.json` (manual pick, time-window and u
 ## Updating a running gateway
 
 **dotz self-update** (settings → 업데이트, `hub/selfupdate.ts`). A daily check (`self_update.auto_check`, `self_update.at`)
-fetches the tracked branch and announces a new version. It refuses a checkout with uncommitted changes or local commits
-not on origin; an update is fast-forward only, runs `bun install` when needed and the tests, and returns to the old commit if
-they fail. With `self_update.auto_apply: true` (default off) the daily check applies a clean, not-ahead checkout itself and
-restarts through the idle gate; a refusal or failure alerts with a choice block.
+fetches the tracked branch and announces a new version. Local commits that upstream already has (same patch, or nothing left to
+apply) are dropped; the others are re-applied on the new version in a temporary worktree with the same checks (`bun install`,
+tests), and only a clean, green result moves the checkout. Local commits that conflict or fail the checks, and uncommitted
+changes, are saved first (branch `dotz-local/<YYYYMMDD-HHMM>` + a patch, and for uncommitted changes a diff and a plain copy of the
+files, under `<data dir>/logs`) and the update waits for the button '내 수정을 보관하고 새 버전 받기' in settings → 업데이트
+(`bun hub/selfupdate.ts --apply --keep` from a terminal). Otherwise an update is fast-forward, runs `bun install` when needed and
+the tests, and returns to the old commit if they fail. With `self_update.auto_apply: true` (default off) the daily check applies
+it itself and restarts through the idle gate; for an install that is not a developer checkout it also does the save-and-move
+itself and tells what was saved and how to get it back. A developer checkout never auto-discards: `self_update.keep_local`
+(true/false) says which it is; unset, a `install.sh --git` clone (marker `.git/dotz-install`) or the default install folder
+counts as not a developer checkout. A refusal or failure alerts with a choice block.
 
 A tarball install (`install.sh` without `--git`) updates the same way, with the same settings and notices: the check asks GitHub for the
 latest commit of the stamped repo@ref and lists the commits since the installed one (`DOTZ_TARBALL` installs compare the tarball's
