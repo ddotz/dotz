@@ -4,9 +4,10 @@ import { sseResponse } from "./events.ts";
 import { WATCH_FIELDS } from "./watch-settings.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// A monitor that belongs to a project talks in that project's conversation (the history shows there, the message carries the monitor's
-// note, the change card applies to the watch), a peer's the same through the proxy; 지금 확인 runs a watch now; a home progress row opens
-// the settings conversation; the model's English thinking shows as a Korean label. Headless; the peer is a fixture.
+// A monitor a project created (its channel is ch:<id>) is not tied to the project: its gear opens its own settings:w:<watch> conversation, the
+// chips and messages go there as `settings: "w:<watch>"` with no `project`, the change card applies to the watch, and a peer's is the same through
+// the proxy; 지금 확인 runs a watch now; a home progress row opens the settings conversation; the model's English thinking shows as a Korean label.
+// Headless; the peer is a fixture.
 const MINI = "http://mini.test";
 const CH = "1562723146669490227", PCH = "1562723146669490228";
 const at = (min: number) => new Date(Date.UTC(2026, 9, 23, 3, min)).toISOString();
@@ -20,8 +21,8 @@ const runs: string[] = [];
 const patches: { name: string; values: unknown }[] = [];
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const history: Record<string, Record<string, unknown>[]> = {
-	[`ch:${CH}`]: [{ ts: at(40), kind: "message", source: "web", channel: `ch:${CH}`, author: "local", text: "지난번 질문" }, { ts: at(41), kind: "out", source: "orchestrator", target: `ch:${CH}`, text: CARD }],
-	[`ch:${PCH}`]: [{ ts: at(40), kind: "out", source: "orchestrator", target: `ch:${PCH}`, text: "맥미니 프로젝트에서 보낸 답이에요" }],
+	"settings:w:login-local": [{ ts: at(40), kind: "message", source: "web", channel: "settings:w:login-local", author: "local", text: "지난번 질문" }, { ts: at(41), kind: "out", source: "orchestrator", target: "settings:w:login-local", text: CARD }],
+	"settings:w:login-cartier-com": [{ ts: at(40), kind: "out", source: "orchestrator", target: "settings:w:login-cartier-com", text: "맥미니 감시 대화에서 보낸 답이에요" }],
 };
 const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [failing("login-cartier-com", "까르띠에 로그인 유지", PCH)], notices: [], integrations: [], conversations: [] } }];
 
@@ -94,28 +95,29 @@ const boot = async (key: string) => {
 };
 
 describe("a monitor of a project", () => {
-	test("the settings button opens the project's conversation inside 모니터링 and a chip sends the message to it with the monitor named", async () => {
+	test("the settings button opens the monitor's own settings conversation inside 모니터링 and a chip sends the message to it as the monitor's settings target, without the project", async () => {
 		sent.length = 0;
 		const v = await boot(LOCAL_KEY);
 		await waitFor(v, `document.querySelector("#mon-head .as-hd") && document.querySelector("#mon-tl [data-chip]")`);
 		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
-		await waitFor(v, `target === "ch:${CH}" && monCtx === target && document.querySelector("#tl").textContent.includes("지난번 질문")`);
-		expect(await q(v, `return current`)).toBe("chat");
-		expect(decodeURIComponent(await q(v, `return location.hash`))).toBe(`#monitoring/c:ch:${CH}`);
+		await waitFor(v, `target === "settings:w:login-local" && monCtx === target && document.querySelector("#tl").textContent.includes("지난번 질문")`);
+		expect(decodeURIComponent(await q(v, `return location.hash`))).toBe("#monitoring/c:settings:w:login-local");
 		await waitFor(v, `document.querySelector("#mon-chips [data-chip]")`);
 		await run(v, `document.querySelector('#mon-chips [data-chip="원인 찾아 줘"]').click()`);
 		await until(() => sent.length > 0);
-		expect(sent[0]).toMatchObject({ text: "원인 찾아 줘", project: CH, settings: "w:login-local" });
+		expect(sent[0]).toMatchObject({ text: "원인 찾아 줘", settings: "w:login-local" });
+		expect(sent[0]).not.toHaveProperty("project");
 		expect(await q(v, `return ta.value`)).toBe("");
 	});
 
-	test("a chip of the detail card goes to the project too, and a plain message there carries the monitor's note only while the monitor's conversation is open", async () => {
+	test("a chip of the detail card goes to the monitor's settings conversation, and a plain message carries the monitor's note only while that conversation is open", async () => {
 		sent.length = 0;
 		const v = await boot(LOCAL_KEY);
 		await waitFor(v, `document.querySelector("#mon-tl [data-chip]")`);
 		await run(v, `document.querySelector('#mon-tl [data-chip="다시 로그인해 줘"]').click()`);
 		await until(() => sent.length > 0);
-		expect(sent[0]).toMatchObject({ text: "다시 로그인해 줘", project: CH, settings: "w:login-local" });
+		expect(sent[0]).toMatchObject({ text: "다시 로그인해 줘", settings: "w:login-local" });
+		expect(sent[0]).not.toHaveProperty("project");
 		await run(v, `setTarget("main"); go("chat"); ta.value = "다른 일"; sendChat()`);
 		await until(() => sent.length > 1);
 		expect(sent[1]).toMatchObject({ text: "다른 일" });
@@ -123,12 +125,12 @@ describe("a monitor of a project", () => {
 		expect(sent[1]).not.toHaveProperty("project");
 	});
 
-	test("the change card inside the project conversation applies to that watch", async () => {
+	test("the change card inside the settings conversation applies to that watch", async () => {
 		patches.length = 0;
 		const v = await boot(LOCAL_KEY);
 		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
 		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
-		await waitFor(v, `target === "ch:${CH}" && document.querySelector('#tl .as-card [data-as="apply"]')`);
+		await waitFor(v, `target === "settings:w:login-local" && document.querySelector('#tl .as-card [data-as="apply"]')`);
 		await run(v, `document.querySelector('#tl .as-card [data-as="apply"]').click()`);
 		await until(() => patches.length > 0);
 		expect(patches[0]).toEqual({ name: "login-local", values: { every_minutes: 15 } });
@@ -145,16 +147,18 @@ describe("a monitor of a project", () => {
 });
 
 describe("a peer's monitor of a project", () => {
-	test("its conversation is the project's on that computer: read through the proxy, the message forwarded with the monitor named, 지금 확인 forwarded as the watch run", async () => {
+	test("its conversation is the monitor's own settings conversation on that computer: read through the proxy, the message forwarded to it, 지금 확인 forwarded as the watch run", async () => {
 		sent.length = 0; acts.length = 0;
 		const v = await boot(PEER_KEY);
 		await waitFor(v, `document.querySelector("#mon-head .as-hd") && document.querySelector("#mon-tl [data-chip]")`);
 		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
-		await waitFor(v, `target === "ch:${PCH}" && monCtx === target && document.querySelector("#tl").textContent.includes("맥미니 프로젝트에서 보낸 답이에요")`);
+		await waitFor(v, `target === "settings:w:login-cartier-com" && monCtx === target && document.querySelector("#tl").textContent.includes("맥미니 감시 대화에서 보낸 답이에요")`);
 		await waitFor(v, `document.querySelector("#mon-chips [data-chip]")`);
 		await run(v, `document.querySelector('#mon-chips [data-chip="일시정지"]').click()`);
 		await until(() => acts.some(a => a.action === "message"));
-		expect(acts.find(a => a.action === "message")).toMatchObject({ args: { target: `ch:${PCH}`, settings: "w:login-cartier-com", text: "일시정지" } });
+		expect(acts.find(a => a.action === "message")).toMatchObject({ args: { target: "settings:w:login-cartier-com", text: "일시정지" } });
+		expect(acts.find(a => a.action === "message")!.args).not.toHaveProperty("project");
+		expect(acts.find(a => a.action === "message")!.args).not.toHaveProperty("settings");
 		expect(sent).toEqual([]);
 		await run(v, `go("monitoring", ${JSON.stringify(PEER_KEY)})`);
 		await waitFor(v, `document.querySelector("#mon-tl [data-run]")`);

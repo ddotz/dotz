@@ -208,8 +208,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	}
 	// conv: asked in the web's 알림 / 작업 기록 conversation; the answer comes back as target "web:<conv>" into the same one.
 	const thread = s.mail?.thread && (discord.channels.threads[s.mail.thread] || discord.status.enabled) ? s.mail.thread : undefined;
-	// A monitor of a project is talked about in the project's own conversation: `settings` then only names the monitor whose note the turn carries.
-	const to = s.project ? s.project.target : s.settings ? settingsTarget(s.settings) : s.mail ? (thread ? `th:${thread}` : mailTarget(s.mail.key)) : s.conv ? `web:${s.conv}` : s.channel;
+	const to = s.settings ? settingsTarget(s.settings) : s.mail ? (thread ? `th:${thread}` : mailTarget(s.mail.key)) : (s.project?.target ?? (s.conv ? `web:${s.conv}` : s.channel));
 	const hook = thread ? pluginThread({ thread, text: s.text }) : undefined;
 	const info = thread ? discord.threadInfo(thread) : undefined;
 	// A web-only mail has no thread: its turn names the conversation (the mail note carries the subject), not a thread.

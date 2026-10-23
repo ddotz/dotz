@@ -31,7 +31,13 @@
 .as-done.cancelled, .as-card.cancelled .as-cr { color: var(--fg-3); }
 .as-in { flex: none; width: 150px; height: 32px; }
 .as-in[type="number"] { width: 96px; text-align: right; }
-@media (max-width: 1099px) { .app-sw { margin-bottom: 4px; } }
+/* the settings screen (asScreen): a pushed view with a back button, the options card as its body */
+.as-screen .fs-hd { gap: 4px; padding-left: max(4px, env(safe-area-inset-left)); }
+.as-screen .fs-tt { flex: 1; min-width: 0; }
+.as-screen .fs-body { padding-top: 8px; }
+.as-screen .app-sw { margin: 0 auto 16px; background: var(--card); }
+.as-screen .fs-body .as-row { padding: 8px 16px; }
+.as-screen .fs-body .as-rm { padding: 12px 16px; border-top: 1px solid var(--line); }
 
 /* 앱 추가 (web/js/32-app-settings.js): the sheet and the template chips above the chat box. */
 .fs-body .as-sec { margin: 16px 0 4px; color: var(--fg-2); font: 600 13px/20px var(--font); }

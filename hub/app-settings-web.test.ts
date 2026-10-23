@@ -100,6 +100,17 @@ const waitFor = (v: View, expr: string, ms = 4000) =>
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`); if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
+// The options live in the settings screen the conversation's ⋯ button pushes; `#app-sw` exists only while it is open.
+const openScreen = async (v: View, app = "") => {
+	const more = `[...document.querySelectorAll("[data-as-more]")].find(b => b.offsetParent && !b.hidden && (!${JSON.stringify(app)} || b.dataset.asMore === ${JSON.stringify(app)}))`;
+	await waitFor(v, more);
+	await run(v, `${more}.click()`);
+	await waitFor(v, `document.querySelector("#app-sw .as-row")`);
+};
+const closeScreen = async (v: View) => {
+	await run(v, `const b = document.querySelector('[data-k="as-back"]'); if (b) b.click()`);
+	await waitFor(v, `!document.querySelector("#app-sw")`);
+};
 const boot = async (v: View, route: string) => {
 	const opened = new Promise<void>(r => streamWaiters.push(r));
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
@@ -118,7 +129,11 @@ describe("설정 대화 at desktop width (1280x800)", () => {
 		expect(await q(v, `return [document.querySelector("#mon-head .as-hd").getAttribute("aria-label"), document.querySelectorAll(".as-pin").length]`)).toEqual(["설정", 0]);
 		await shot(v, "01-desktop-pinned-row.png");
 		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
-		await waitFor(v, `target === "settings:mail" && document.querySelector("#app-sw .as-row")`);
+		await waitFor(v, `target === "settings:mail" && [...document.querySelectorAll("[data-as-more]")].some(b => b.offsetParent && !b.hidden)`);
+		expect(await q(v, `return document.querySelector("#cv-body #app-sw, #tl #app-sw")`)).toBe(null);
+		expect(await q(v, `return document.querySelector("#app-sw")`)).toBe(null);
+		await openScreen(v);
+		expect(await q(v, `return document.querySelector(".as-screen #app-sw") !== null`)).toBe(true);
 	});
 
 	test("the switch PATCHes the same route with no message to the bot, and writes the custom file", async () => {
@@ -130,6 +145,7 @@ describe("설정 대화 at desktop width (1280x800)", () => {
 		await run(v, `document.querySelector('#app-sw [data-k="auto_draft"]').click()`);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="auto_draft"]').getAttribute("aria-checked") === "false"`);
 		expect(patches.length).toBe(2);
+		await closeScreen(v);
 	});
 
 	test("an answer with a dotz-settings block is a change card; nothing is written until 적용", async () => {
@@ -145,7 +161,9 @@ describe("설정 대화 at desktop width (1280x800)", () => {
 		await waitFor(v, `document.querySelector("#tl .as-done.applied")`);
 		expect(patches[2]).toEqual({ app: "mail", values: PROPOSAL.changes });
 		expect(JSON.parse(readFileSync(cfgFile("custom/reply-drafts/config.json"), "utf8")).senders.skip).toEqual(["promo@shop.example"]);
+		await openScreen(v);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="auto_draft"]').getAttribute("aria-checked") === "true"`);
+		await closeScreen(v);
 	});
 
 	test("the composer sends settings:<app> to the orchestrator", async () => {
@@ -169,9 +187,12 @@ describe("설정 대화 at desktop width (1280x800)", () => {
 		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
 		expect(await q(v, `return document.querySelectorAll(".as-pin").length`)).toBe(0);
 		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
-		await waitFor(v, `target === "settings:kakao" && document.querySelector('#app-sw [data-k="enabled"]')`);
+		await waitFor(v, `target === "settings:kakao"`);
+		await openScreen(v, "kakao");
+		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]')`);
 		await shot(v, "03-desktop-kakao-settings.png");
 		expect(existsSync(cfgFile("custom/kakao/config.json"))).toBe(false);
+		await closeScreen(v);
 	});
 });
 
@@ -181,13 +202,18 @@ describe("설정 대화 at phone width (390x844)", () => {
 	test("switches above the conversation and the change card fit the screen", async () => {
 		writeSettings(data, "mail", { auto_draft: false, skip_senders: [] });
 		await boot(v, "c:settings:mail");
-		await waitFor(v, `target === "settings:mail" && document.querySelector("#app-sw .as-row") && document.querySelector("#tl .as-card")`);
+		await waitFor(v, `target === "settings:mail" && document.querySelector("#tl .as-card")`);
 		await run(v, `localStorage.removeItem("dotz.settings.cards"); AS.done = {}; renderAll()`);
 		await waitFor(v, `document.querySelector('#tl .as-card [data-as="apply"]')`);
-		const fit = await q<{ sw: number; card: number; vw: number }>(v, `return { sw: document.querySelector("#app-sw").scrollWidth, card: document.querySelector("#tl .as-card").scrollWidth, vw: innerWidth }`);
-		expect(fit.sw).toBeLessThanOrEqual(fit.vw);
-		expect(fit.card).toBeLessThanOrEqual(fit.vw);
+		expect(await q(v, `return document.querySelector("#app-sw")`)).toBe(null);
+		const card = await q<number>(v, `return document.querySelector("#tl .as-card").scrollWidth`);
+		const vw = await q<number>(v, `return innerWidth`);
+		expect(card).toBeLessThanOrEqual(vw);
 		await shot(v, "04-phone-settings-conversation.png");
+		await openScreen(v);
+		expect(await q<number>(v, `return document.querySelector("#app-sw").scrollWidth`)).toBeLessThanOrEqual(vw);
+		await shot(v, "04b-phone-settings-screen.png");
+		await closeScreen(v);
 	});
 });
 
@@ -197,17 +223,22 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 
 	test("the first switch of the panel is 이 기기에서 쓰기 and it is on", async () => {
 		await boot(v, "c:settings:mail");
-		await waitFor(v, `target === "settings:mail" && document.querySelector('#app-sw [data-k="auto_draft"]')`);
+		await waitFor(v, `target === "settings:mail"`);
+		await openScreen(v);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="auto_draft"]')`);
 		expect(await q(v, `return document.querySelector("#app-sw").firstElementChild.querySelector('[data-k="use_here"]') !== null`)).toBe(true);
 		expect(await q(v, `return document.querySelector('#app-sw [data-k="use_here"]').getAttribute("aria-checked")`)).toBe("true");
 		expect((await rows("#app-sw .as-row .as-n"))[0]).toBe("이 기기에서 쓰기");
 		await shot(v, "05-phone-switch-and-remove.png");
+		await closeScreen(v);
 	});
 
 	test("제거 shows plainly what goes, with the data kept by default, before anything is removed", async () => {
 		writeSettings(data, "kakao", { enabled: true });
 		await run(v, `go("monitoring", "c:settings:kakao")`);
-		await waitFor(v, `target === "settings:kakao" && document.querySelector('#app-sw [data-k="enabled"]') && document.querySelector('#app-sw [data-as-rm="ask"]')`);
+		await waitFor(v, `target === "settings:kakao"`);
+		await openScreen(v, "kakao");
+		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]') && document.querySelector('#app-sw [data-as-rm="ask"]')`);
 		await run(v, `document.querySelector('#app-sw [data-as-rm="ask"]').click()`);
 		await waitFor(v, `document.querySelector("#app-sw .as-rm")`);
 		const text = (await rows("#app-sw .as-rm li")).join("|");
@@ -230,6 +261,7 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 		expect(removes).toEqual([{ app: "kakao", deleteData: false }]);
 		expect(readAppOff(data).has("kakao")).toBe(true);
 		expect(existsSync(cfgFile("custom/kakao/config.json"))).toBe(true);
+		await closeScreen(v);
 	});
 
 	const closeSheet = (v: View) => run(v, `if (AT.h) AT.h.close(false)`);
@@ -318,10 +350,13 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 
 	test("the switch turns an app off here; 앱 추가 turns it back on and opens it", async () => {
 		await run(v, `go("monitoring", "c:settings:mail")`);
-		await waitFor(v, `target === "settings:mail" && document.querySelector('#app-sw [data-k="auto_draft"]')`);
+		await waitFor(v, `target === "settings:mail"`);
+		await openScreen(v);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="auto_draft"]')`);
 		await run(v, `document.querySelector('#app-sw [data-k="use_here"]').click()`);
 		await waitFor(v, `INTG.available.some(a => a.key === "mail" && a.off)`);
 		expect(patches.at(-1)).toEqual({ app: "mail", values: { use_here: false } });
+		await closeScreen(v);
 		await run(v, `go("monitoring")`);
 		await waitFor(v, `document.querySelector('#mon-side [data-k="add-app"]') && !document.querySelector('#mon-side [data-k="i:mail"]')`);
 		await run(v, `asAdd("mail")`);

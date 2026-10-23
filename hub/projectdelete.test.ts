@@ -6,7 +6,7 @@ import { emit } from "./events.ts";
 import { countChannelNotices } from "./notices.ts";
 import { deleteProject, type DeleteDeps, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { loadProjects, removeProject, saveProject } from "./projects.ts";
-import { allWatches } from "./watch.ts";
+import { allWatches, removeWatch } from "./watch.ts";
 import { clearChannel, getSetup, setupChannel } from "./workchannels.ts";
 
 let removed: string[];
@@ -34,15 +34,21 @@ beforeEach(() => {
 	running = {};
 	failWith = undefined;
 	rmSync(join(DATA_DIR, "archive"), { recursive: true, force: true });
-	clearChannel("7001");
+	dropSeeded();
 });
 
-afterAll(() => {
+// A deleted project keeps its watches, so the test removes the ones it seeded itself.
+function dropSeeded() {
 	clearChannel("7001");
+	for (const w of allWatches().filter(w => /^(?:ch-7001-|login-example-test)/.test(w.name))) removeWatch(w.id);
+}
+
+afterAll(() => {
+	dropSeeded();
 	removeProject("ch:7001");
 });
 
-test("delete drops the setup's watches, the notices and the list entry, calls the Discord delete once and archives the conversation", async () => {
+test("delete drops the setup, the notices and the list entry, calls the Discord delete once and archives the conversation; the watches stay", async () => {
 	seed();
 	const plan = planDelete("ch:7001", deps);
 	expect(plan).toMatchObject({ name: "유튜브", standing: "새 영상 알림", notices: 1, running: [], archive: archiveFile });
@@ -50,9 +56,13 @@ test("delete drops the setup's watches, the notices and the list entry, calls th
 	expect(plan.logins).toEqual([{ name: expect.stringMatching(/^login-/), shared: false }]);
 	expect(allWatches().filter(w => w.channels?.includes("7001"))).toHaveLength(2);
 	const r = await deleteProject("ch:7001", {}, deps);
-	expect(r).toMatchObject({ ok: true, channel: "ch:7001", name: "유튜브", removed: { monitors: 1, logins: 1, notices: 1 }, archive: archiveFile, discord: { ok: true } });
+	expect(r).toMatchObject({ ok: true, channel: "ch:7001", name: "유튜브", removed: { notices: 1 }, kept: { monitors: 1, logins: 1 }, archive: archiveFile, discord: { ok: true } });
 	expect(removed).toEqual(["7001"]);
+	// The project's monitors are standalone monitors now: still listed, still running, only the link to the channel is gone.
 	expect(allWatches().filter(w => w.channels?.includes("7001"))).toHaveLength(0);
+	const kept = allWatches().filter(w => /^(?:ch-7001-1|login-example-test)/.test(w.name));
+	expect(kept).toHaveLength(2);
+	for (const w of kept) expect(w.paused).toBeFalsy();
 	expect(getSetup("7001")).toBeUndefined();
 	expect(countChannelNotices("ch:7001")).toBe(0);
 	expect(loadProjects()["ch:7001"]).toBeUndefined();

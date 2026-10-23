@@ -43,7 +43,7 @@ const server = Bun.serve({
 		if (p === "/api/projects/ch%3A7001/delete-plan") return json({ ...PLAN, running });
 		if (p === "/api/projects/ch%3A7001" && req.method === "DELETE") {
 			deletes.push({ path: p, body: await req.json() });
-			return json({ ok: true, channel: "ch:7001", name: "유튜브", removed: { monitors: 2, logins: 1, notices: 3 }, archive: PLAN.archive, discord: { ok: true } });
+			return json({ ok: true, channel: "ch:7001", name: "유튜브", removed: { notices: 3 }, kept: { monitors: 2, logins: 2 }, archive: PLAN.archive, discord: { ok: true } });
 		}
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (p === "/api/conversations" || p === "/api/monitors") return json({ items: [] });
@@ -83,8 +83,9 @@ test("the project menu opens a confirm sheet that lists exactly what goes, and �
 	await waitFor(v, `document.querySelector(".pmd .as-rml")`);
 	const lines = await q<string[]>(v, `return [...document.querySelectorAll(".pmd .as-rml li")].map(li => li.textContent)`);
 	expect(lines[0]).toBe("#유튜브 채널을 Discord에서 지워요");
-	expect(lines.join("|")).toContain("모니터링 2개를 지워요: 유튜브 감시 1, 댓글 확인");
-	expect(lines.join("|")).toContain("login-google-com(다른 채널도 써서 남겨요)");
+	expect(lines.join("|")).toContain("모니터링 2개는 따로 남겨요: 유튜브 감시 1, 댓글 확인");
+	expect(lines.join("|")).toContain("로그인 유지 2개도 남겨요: login-studio-youtube-com, login-google-com");
+	expect(lines.join("|")).not.toContain("지워요: 유튜브 감시");
 	expect(lines.join("|")).toContain("알림 3개를 치워요");
 	expect(await q(v, `return document.querySelector('.pmd [data-k="drop-archive"]').checked`)).toBe(false);
 	expect(await q(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);

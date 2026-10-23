@@ -52,7 +52,7 @@ const server = Bun.serve({
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/kakao/rooms") return json({ on: true, rooms: [] });
 		if (p === "/api/monitoring/peers") return json(peers);
-		if (p === "/api/peer/proxy") return json(/^\/api\/watches\/[a-z-]+\/settings$/.test(url.searchParams.get("p") ?? "") ? { key: "x", fields: fields() } : {});
+		if (p === "/api/peer/proxy") return json(/^\/api\/(?:watches|integrations)\/[a-z-]+\/settings$/.test(url.searchParams.get("p") ?? "") ? { key: "x", fields: fields() } : {});
 		if (/^\/api\/(?:integrations|watches)\/[a-z0-9-]+\/settings$/.test(p)) return json({ key: "x", fields: fields() });
 		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
@@ -76,6 +76,13 @@ const boot = async (width: number, height: number) => {
 	await waitFor(v, `PQ.loaded && PQ.list.length && INTG.items.length && monItems().some(i => i.key === "m:로컬 로그인 유지") && monItems().some(i => i.key === ${JSON.stringify(PEER_MON)}) && monItems().some(i => i.key === ${JSON.stringify(PEER_KAKAO)}) && monItems().some(i => i.key === ${JSON.stringify(PEER_MAIL)})`);
 	return v;
 };
+// The options and the status live in the settings screen the conversation's ⋯ button pushes; `#app-sw` exists only while it is open.
+const MORE = `[...document.querySelectorAll("[data-as-more]")].find(b => b.offsetParent && !b.hidden)`;
+const openScreen = async (v: View) => {
+	await waitFor(v, MORE);
+	await run(v, `${MORE}.click()`);
+	await waitFor(v, `document.querySelector("#app-sw .as-row")`);
+};
 const rowNames = async (v: View) => { await waitFor(v, `document.querySelector('#mon-side [data-k^="p:"]')`); return q<string[]>(v, `return [...document.querySelectorAll("#mon-side .cv-row .cv-n")].map(n => n.textContent)`); };
 
 describe("a watch an app owns belongs to the app", () => {
@@ -90,7 +97,9 @@ describe("a watch an app owns belongs to the app", () => {
 			expect(await q(v, `return !!document.querySelector('#mon-side [data-k="i:kakao"] .tag.err')`)).toBe(true);
 			expect(await q(v, `return !!document.querySelector('#mon-side [data-k="i:mail"] .tag.err')`)).toBe(false);
 			await run(v, `go("monitoring", "c:settings:kakao")`);
-			await waitFor(v, `target === "settings:kakao" && document.querySelector('#app-sw .as-stat[data-watch="kakao-new"]')`);
+			await waitFor(v, `target === "settings:kakao"`);
+			await openScreen(v);
+			await waitFor(v, `document.querySelector('#app-sw .as-stat[data-watch="kakao-new"]')`);
 			const t = await q<string>(v, `return document.querySelector('#app-sw .as-stat[data-watch="kakao-new"]').textContent`);
 			for (const s of ["카카오 새 글 확인", "연속 실패 2번", "마지막 정상", "다음 오후"]) expect(t).toContain(s);
 			await shot(v, `owned-watch-panel-${w}.png`);
@@ -108,7 +117,13 @@ describe("a watch an app owns belongs to the app", () => {
 			expect(await q<string>(v, `return document.querySelector('.kk-rooms .as-stat[data-watch="kdb-login"]').textContent`)).toContain("연속 실패 4번");
 			await shot(v, `owned-watch-peer-${w}.png`);
 			await run(v, `go("monitoring", ${JSON.stringify(PEER_MAIL)})`);
-			await waitFor(v, `document.querySelector("#mon-tl") && document.querySelector("#mon-tl").textContent.includes("연속 실패 2번")`);
+			// The app's status is in its settings screen, opened from the title-bar gear.
+			const gear = `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd[data-as-open]")`;
+			await waitFor(v, gear);
+			await run(v, `${gear}.click()`);
+			await waitFor(v, `/^settings:mail~/.test(target)`);
+			await openScreen(v);
+			await waitFor(v, `document.querySelector("#app-sw .as-stat") && document.querySelector("#app-sw .as-stat").textContent.includes("연속 실패 2번")`);
 		});
 	}
 });
@@ -131,8 +146,12 @@ describe("a monitor's conversation", () => {
 	test("390px: a peer monitor's conversation is titled with its own name and the machine, with its status", async () => {
 		const v = await boot(390, 844);
 		await run(v, `go("monitoring", "c:settings:w:login-cartier-com")`);
-		await waitFor(v, `target === "settings:w:login-cartier-com" && document.querySelector('#app-sw .as-stat')`);
-		const s = await q<{ title: string; chip: string; stat: string }>(v, `return { title: document.querySelector("#title").textContent, chip: document.querySelector("#title .mon-pc").textContent, stat: document.querySelector("#app-sw .as-stat").textContent }`);
+		await waitFor(v, `target === "settings:w:login-cartier-com"`);
+		const conv = await q<{ title: string; chip: string; sw: boolean }>(v, `return { title: document.querySelector("#title").textContent, chip: document.querySelector("#title .mon-pc").textContent, sw: !!document.querySelector("#app-sw") }`);
+		expect(conv.sw).toBe(false);
+		await openScreen(v);
+		await waitFor(v, `document.querySelector('#app-sw .as-stat')`);
+		const s = { ...conv, stat: await q<string>(v, `return document.querySelector("#app-sw .as-stat").textContent`) };
 		expect(s.title).toContain("까르띠에 로그인 유지");
 		expect(s.title).not.toContain("설정");
 		expect(s.chip).toBe("맥미니");
@@ -152,7 +171,7 @@ describe("a monitor's conversation", () => {
 		orchStatus = "working";
 		const v = await boot(390, 844);
 		await run(v, `go("monitoring", "c:settings:w:plain-watch")`);
-		await waitFor(v, `target === "settings:w:plain-watch" && document.querySelector("#app-sw .as-stat")`);
+		await waitFor(v, `target === "settings:w:plain-watch" && ${MORE}`);
 		expect(await q(v, `return [isWorking(target), document.querySelector("#runline").hidden, document.querySelector("#working").hidden]`)).toEqual([false, true, true]);
 		await run(v, `chatPush({ a: { type: "tool_call", tool: "Bash", ts: new Date().toISOString(), input: {} } })`);
 		expect(await q(v, `return document.querySelectorAll("#tl .work").length`)).toBe(0);

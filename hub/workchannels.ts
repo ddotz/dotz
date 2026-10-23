@@ -61,9 +61,15 @@ export function setupChannel(input: Record<string, any>, channelName: string, ru
 	return s;
 }
 
+// A deleted channel is not a deleted monitor: its watches (and kept logins) stay as standalone monitors of their own, only the link to the channel
+// goes, so their reports reach the default target (hub/main.ts) and 모니터링 lists them as before.
+function unlink(channel: string): void {
+	for (const w of allWatches().filter(w => w.channels?.includes(channel))) setWatchChannels(w.id, w.channels!.filter(c => c !== channel));
+}
+
 export function clearChannel(channel: string): boolean {
 	channel = channel.replace(/^ch:/, "");
-	release(channel);
+	unlink(channel);
 	const i = setups.findIndex(s => s.channel === channel);
 	if (i < 0) return false;
 	setups.splice(i, 1);

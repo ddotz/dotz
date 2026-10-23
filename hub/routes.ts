@@ -12,7 +12,7 @@ import { appEntries, readAppOff, integrationAvailable, integrationContext, integ
 import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, removeWatch } from "./watch.ts";
-import { fieldsOf, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
+import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
 import { refreshReplyModelChoices } from "./reply-model-choices.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
@@ -297,7 +297,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main";
-			if (target !== "main" && target !== "alert" && target !== "worklog" && !target.startsWith("lane:") && !isProjectTarget(target) && !isMailTarget(target)) return json({ error: "target must be main, alert, worklog, lane:<name>, ch:<id> or mail:<key>" }, 400);
+			if (target !== "main" && target !== "alert" && target !== "worklog" && !target.startsWith("lane:") && !isProjectTarget(target) && !isMailTarget(target) && !isSettingsTarget(target)) return json({ error: "target must be main, alert, worklog, lane:<name>, ch:<id>, mail:<key> or settings:<app>" }, 400);
 			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
 			return json({ target, events: historyEvents(target, limit, url.searchParams.get("before") ?? undefined) });
 		}
@@ -346,9 +346,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			// A reply to a message (swipe / reply button in the web): the quoted message reaches the model like a Discord reply (intake.ts parseReply).
 			const reply = parseReply(b.reply, login);
 			let project: { target: string; name: string } | undefined;
-			// A monitor's note may ride along with its project's conversation (web/js/32-app-settings.js asConv); an app's settings only have their own.
-			const settings = typeof b.settings === "string" && ((!b.project && fieldsOf(b.settings).length) || watchOfSubject(b.settings)) ? b.settings : undefined;
-			if ([lane, b.mail, b.project || settings].filter(Boolean).length > 1) return json({ error: "lane, project and mail are exclusive" }, 400);
+			const settings = typeof b.settings === "string" && (fieldsOf(b.settings).length || watchOfSubject(b.settings)) ? b.settings : undefined;
+			if ([lane, b.project, b.mail, settings].filter(Boolean).length > 1) return json({ error: "lane, project and mail are exclusive" }, 400);
 			const mail = b.mail ? mailByKey(String(b.mail)) : undefined;
 			if (b.mail && !mail) return json({ error: `no mail conversation ${String(b.mail)}` }, 404);
 			if (b.project) {

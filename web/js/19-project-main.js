@@ -139,8 +139,8 @@ function pmDeleteCall(q, op, args = {}) {
 }
 const pmDeleteLines = p => [
   `#${p.name} 채널을 Discord에서 지워요`,
-  p.monitors.length ? `모니터링 ${p.monitors.length}개를 지워요: ${p.monitors.join(", ")}` : "지울 모니터링은 없어요",
-  p.logins.length ? `로그인 유지 ${p.logins.length}개를 멈춰요: ${p.logins.map(l => l.shared ? `${l.name}(다른 채널도 써서 남겨요)` : l.name).join(", ")}` : "멈출 로그인 유지는 없어요",
+  p.monitors.length ? `모니터링 ${p.monitors.length}개는 따로 남겨요: ${p.monitors.join(", ")}` : "",
+  p.logins.length ? `로그인 유지 ${p.logins.length}개도 남겨요: ${p.logins.map(l => l.name).join(", ")}` : "",
   p.standing ? `자동 처리 설정을 지워요: ${p.standing}` : "",
   `알림 ${p.notices}개를 치워요`,
   `대화 ${p.messages}개는 보관 파일로 남겨요`].filter(Boolean);

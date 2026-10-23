@@ -63,6 +63,8 @@ const server = Bun.serve({
 		if (p === "/api/app-templates") return json({ items: [] });
 		if (p === "/api/peer/proxy") {
 			if (req.method === "POST") { acts.push((await req.json()) as (typeof acts)[number]); const w = actWaiters; actWaiters = []; for (const f of w) f(); return json({ ok: true }); }
+			// A peer app's settings are read through the proxy (the `~hash` is stripped by the web app).
+			if (url.searchParams.get("p") === "/api/integrations/mail/settings") return json({ key: "mail", fields: [{ key: "label", label: "앱 이름", type: "text", help: "", max: 30, switch: true, value: "회사 메일" }] });
 			return json({});
 		}
 		if (p === "/api/apps" && req.method === "POST") return json({ ok: true, ...createApp(data, (await req.json()) as object) });
@@ -97,6 +99,17 @@ const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) { await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`); await Bun.write(join(SHOTS, name), await v.screenshot()); } };
 const rowOf = (key: string) => `[...document.querySelectorAll("#mon-side .cv-row")].find(r => r.dataset.k === ${JSON.stringify(key)})`;
+// The options live in the settings screen the conversation's ⋯ button pushes; `#app-sw` exists only while it is open.
+const openScreen = async (v: View, app = "") => {
+	const more = `[...document.querySelectorAll("[data-as-more]")].find(b => b.offsetParent && !b.hidden && (!${JSON.stringify(app)} || b.dataset.asMore === ${JSON.stringify(app)}))`;
+	await waitFor(v, more);
+	await run(v, `${more}.click()`);
+	await waitFor(v, `document.querySelector("#app-sw .as-row")`);
+};
+const closeScreen = async (v: View) => {
+	await run(v, `const b = document.querySelector('[data-k="as-back"]'); if (b) b.click()`);
+	await waitFor(v, `!document.querySelector("#app-sw")`);
+};
 const boot = async (): Promise<View> => {
 	const v = new Bun.WebView({ width: 390, height: 844 });
 	views.push(v);
@@ -132,13 +145,17 @@ describe("앱 인스턴스 at 390px", () => {
 		await run(v, `go("monitoring", "i:mail-2")`);
 		await waitFor(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd")`);
 		await run(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd").click()`);
-		await waitFor(v, `target === "settings:mail-2" && document.querySelector('#app-sw [data-k="label"]')`);
+		await waitFor(v, `target === "settings:mail-2"`);
+		expect(await q(v, `return document.querySelector("#app-sw")`)).toBe(null);
+		await openScreen(v, "mail-2");
+		await waitFor(v, `document.querySelector('#app-sw [data-k="label"]')`);
 		expect(await q(v, `return document.querySelector('#app-sw [data-k="label"]').value`)).toBe("개인 메일");
 		await shot(v, "02-rename-field.png");
 		await run(v, `const i = document.querySelector('#app-sw [data-k="label"]'); i.value = "회사 보조"; i.dispatchEvent(new Event("change"))`);
 		await waitFor(v, `INTG.items.some(i => i.key === "mail-2" && i.label === "회사 보조")`);
 		expect(calls.filter(c => c.startsWith("PATCH mail-2"))).toEqual([`PATCH mail-2 {"label":"회사 보조"}`]);
 		expect(appsFile()["mail-2"].label).toBe("회사 보조");
+		await closeScreen(v);
 		await run(v, `go("monitoring", "i:mail-2")`);
 		await waitFor(v, `monName() === "회사 보조"`);
 		expect(await q(v, `return monItems().find(i => i.key === "i:mail-2").name`)).toBe("회사 보조");
@@ -179,9 +196,14 @@ describe("앱 인스턴스 at 390px", () => {
 		expect(acts).toEqual([{ action: "app", args: { op: "delete", app: "mail-5", deleteData: true } }]);
 		acts.length = 0;
 		await run(v, `go("monitoring", ${JSON.stringify(`p:${MINI}|i:mail`)})`);
-		await waitFor(v, `document.querySelector('#mon-tl .as-name input')`);
+		await waitFor(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd[data-as-open]")`);
+		expect(await q(v, `return document.querySelector("#mon-tl .as-name")`)).toBe(null);
+		await run(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd[data-as-open]").click()`);
+		await waitFor(v, `/^settings:mail~[a-z0-9]+$/.test(target)`);
+		await openScreen(v);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="label"]')`);
 		const sent = nextAct();
-		await run(v, `const i = document.querySelector('#mon-tl .as-name input'); i.value = "맥미니 회사"; document.querySelector('#mon-tl [data-k="label-save"]').click()`);
+		await run(v, `const i = document.querySelector('#app-sw [data-k="label"]'); i.value = "맥미니 회사"; i.dispatchEvent(new Event("change"))`);
 		await sent;
 		expect(acts).toEqual([{ action: "app", args: { op: "settings", app: "mail", values: { label: "맥미니 회사" } } }]);
 	}, 20_000);

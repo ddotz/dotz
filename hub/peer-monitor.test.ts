@@ -306,12 +306,12 @@ test("a message to a peer's monitor conversation is forwarded as the settings ta
 	expect(A.events).toEqual([]);
 });
 
-test("a message to a peer monitor that belongs to a project goes to that project's conversation with the monitor named; a settings conversation target ignores the monitor name", async () => {
+test("a message to a project target of a peer never carries a monitor name; a settings conversation target ignores it", async () => {
 	const { A, B } = pair();
 	const pc = encodeURIComponent(URL_B), p = encodeURIComponent("/api/peer/act");
 	const post = (body: unknown) => A.handle(req(`/api/peer/proxy?pc=${pc}&p=${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
 	expect((await post({ action: "message", args: { target: "ch:1562723146669490227", settings: "w:login-cartier-com", text: "원인 찾아 줘" } })).status).toBe(200);
-	expect(B.events).toEqual([{ target: "ch:1562723146669490227", settings: "w:login-cartier-com", text: "원인 찾아 줘", via: "노트북" }]);
+	expect(B.events).toEqual([{ target: "ch:1562723146669490227", text: "원인 찾아 줘", via: "노트북" }]);
 	expect((await post({ action: "message", args: { target: "settings:w:login-cartier-com", settings: "w:other", text: "x" } })).status).toBe(200);
 	expect(B.events[1]).toEqual({ target: "settings:w:login-cartier-com", text: "x", via: "노트북" });
 });
