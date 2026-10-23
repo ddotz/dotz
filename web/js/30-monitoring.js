@@ -86,19 +86,27 @@ function monNeedLine(n) {
   if (n.sentToday) parts.push(`오늘 자동 답장 ${n.sentToday}건 보냄`);
   return parts.slice(0, 2).join(" · ") || "확인할 것 없어요";
 }
+// A watch an app owns (it.watches / it.watchesNot of GET /api/integrations, hub/integrations.ts) belongs to that app: no row of its own in 일반 모니터링,
+// its status is in the app's panel and a failing one marks the app's row.
+const monNamed = (list, w) => (list || []).some(x => x.endsWith("-") ? w.startsWith(x) : w === x);
+const monOwner = (apps, m) => m.kind === "watch" && m.watch ? apps.find(a => monNamed(a.watches, m.watch) && !monNamed(a.watchesNot, m.watch)) : undefined;
+const monOwnedBy = (apps, mons) => { const by = new Map(); for (const m of mons) { const o = monOwner(apps, m); if (o) by.set(o.key, [...(by.get(o.key) || []), m]); } return by; };
+const monFail = owned => owned.some(m => m.last_result === "fail") ? ["실패", "err"] : null;
 function monItems() {
   intgWatch();
-  const mons = ntMons(), shown = new Set(), items = [];
+  const mons = ntMons(), shown = new Set(), items = [], owned = monOwnedBy(INTG.items, mons);
   for (const it of INTG.items) {
     const notices = (it.notices || []).map(ntById).filter(n => n && monMine(n, it)), mails = [...CONV.keys()].filter(t => !PQ.of.has(t) && intgHas(it, t));
     for (const n of notices) shown.add(n.id);
     const cands = [...notices.map(n => ({ at: monNoticeAt(n), text: monLine(n) })), ...mails.filter(t => CONV.get(t)).map(t => ({ at: CONV.get(t).ts, text: (MAILS.get(t) || {}).subject || CONV.get(t).text }))].sort((a, b) => b.at.localeCompare(a.at));
     const needs = it.needs || { drafts: 0, unread: monUnread(notices) + mails.reduce((c, t) => c + (ts(t).unread | 0), 0), sentToday: 0 };
-    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, unread: needs.drafts || needs.unread, hint: monNeedLine(needs), at: cands[0] ? cands[0].at : "" });
+    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, unread: needs.drafts || needs.unread, hint: monNeedLine(needs), at: cands[0] ? cands[0].at : "", owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
   }
+  const ownedNames = new Set([...owned.values()].flat());
   for (const m of mons) {
     const notices = NT.items.filter(n => monHas(m, n)), last = monNewest(notices), names = monNames(m);
     for (const n of notices) shown.add(n.id);
+    if (ownedNames.has(m)) continue;
     // The row says the newest result in words: the newest report, unless a later run said nothing (an "ok" run posts no report).
     const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
     items.push({ key: `m:${m.name}`, group: MON_GROUP.plain, name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices),
@@ -318,12 +326,29 @@ function monTimeline(it) {
   const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => { const x = monNoticeNode(n, names), src = x && n.pc && monFeed(it) && x.querySelector(".rc-src"); if (src) src.after(el("span", { class: "tag", text: n.pc.name })); return x; } })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
   const pin = it.app && it.pc ? asPeerNameRow(it) : null, nodes = msgs.map(x => x.node()).filter(Boolean);
+  if (it.app && it.pc) nodes.push(...(it.owned || []).map(m => monRunNode({ name: monTitle(m), mon: m, pc: it.pc })).filter(Boolean));
   if (pin) nodes.unshift(pin);
   if (nodes.length) return nodes;
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
   return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];
 }
 // The settings conversation an item has: a local app's, a watch's (local or a peer's, forwarded by pqAct); none for a peer's app, a schedule or an unreachable computer.
+// The title of a settings conversation: the monitor's or the app's own name (a peer's monitor too), not "설정".
+function monSettingsName(t) {
+  const a = settingsApp(t);
+  if (!a.startsWith("w:")) { const it = INTG.items.find(x => x.key === a); return it ? it.label : "설정"; }
+  const pe = PQ.of.get(t), m = pe ? pe.mon : NM.items.find(x => x.watch === a.slice(2));
+  return m ? monTitle(m) : "설정";
+}
+// The status block of a settings panel: the monitor itself, or each watch the app owns. Same facts as the status card of the monitor's detail (monRunNode).
+const monStatMons = app => (app.startsWith("w:") ? [asMon(app)] : (monItems().find(i => i.key === `i:${app}`) || {}).owned || []).filter(Boolean);
+function monStatNode(m) {
+  const res = m.last_result ? NT_RESULT[m.last_result] : null;
+  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
+  return el("div", { class: "as-row as-stat", "data-watch": m.watch || m.name },
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: monTitle(m) }), el("span", { class: "as-h", text: [res && res[0], ntMonRun(m), ntMonNext(m)].filter(Boolean).join(" · ") }), ...facts.map(t => el("span", { class: "as-h", text: t }))),
+    m.last_result === "fail" ? el("span", { class: "tag err", text: "실패" }) : null);
+}
 const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : "";
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
 const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), el("span", { class: "cv-p", text: monState(it) })), kkItem(it) && KK.open ? null : asEntry(monSettingsApp(it))].filter(Boolean);

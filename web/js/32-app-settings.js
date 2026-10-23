@@ -198,12 +198,13 @@ function asPaint() {
   if (!box) return;
   const app = isSettingsT(target) ? settingsApp(target) : "", fields = app ? AS.by[app] : null;
   if (!fields) { box.hidden = true; delete box.dataset.sig; clear(box); return; }
-  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app]]);
+  const stat = monStatMons(app), sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], stat]);
   box.hidden = false;
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   const sw = fields.filter(f => f.switch), other = fields.filter(f => !f.switch);
   clear(box).append(
+    ...stat.map(monStatNode),
     ...sw.map(f => el("div", { class: "as-row" },
       el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), el("span", { class: "as-h", text: f.help })),
       asControl(f, async v => {
