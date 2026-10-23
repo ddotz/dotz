@@ -19,7 +19,7 @@ import { createPrompts } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
-import { parseTone, stripHandoff } from "./tone.ts";
+import { splitTone, stripHandoff } from "./tone.ts";
 import { replyRef } from "./threads.ts";
 import { orchestratorAnswered } from "./notices.ts";
 
@@ -169,8 +169,8 @@ export async function progress(target: string, key: string, text: string, replyT
 		// The label goes in after the status marker ([done] becomes the leading emoji) and after localize (a rewrite must not touch it).
 		if (target === "worklog" && key.startsWith("lane:")) {
 			const prefix = claimPrefix(key.slice(5));
-			const rest = parseTone(t).text;
-			if (prefix) t = `${t.slice(0, t.length - rest.length)}${prefix}${rest}`;
+			const { head, rest } = splitTone(t);
+			if (prefix) t = `${head}${prefix}${rest}`;
 		}
 		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key }, threadHome, threadMail));
 		return t;

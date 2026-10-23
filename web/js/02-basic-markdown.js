@@ -77,7 +77,7 @@ function listBlockHtml(src) {
 function mdHtml(src) {
   // split() with two groups: [text, language, code, text, language, code, ...]; each code block gets its copy / run bar (35-code-blocks.js).
   // A fence opens only at the start of a line (``` in the middle of a sentence stays text) and closes with ``` at the end of a line.
-  const parts = String(src ?? "").split(/(?:^|\n)[ \t]{0,3}```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/);
+  const parts = stripMarkers(src).split(/(?:^|\n)[ \t]{0,3}```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/);
   // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
   return parts.map((p, i) => i % 3 === 0 ? blocks(p) : i % 3 === 2 ? (parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
 }
@@ -87,9 +87,31 @@ const mdNode = (src, cls = "md") => el("div", { class: cls, safeHtml: mdHtml(src
 const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
 const TONE_EMOJI = { done: "✅", run: "⏳", ask: "❓", fail: "❌" };
 const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], ask: ["warn", "질문"], fail: ["err", "실패"] };
+// Machine markers never reach the owner as text (owner 2026-10-23). Same shapes as hub/tone.ts stripMarkers (keep in step):
+// known marker shapes at line start (behind an optional list dash, `**` or `**name**: ` lead), outside ``` fences; any
+// other bracket is content. Status words, [lane <word>], [dotz ...], [orchestrator-guard], [지금 도는 것], [attachment],
+// [system], [owner via <x>], [ok | 12ms], [routine:...], [10-23]; a left-over [file] line is dropped.
+const MK_BODY = "(?:run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류|attachment|system|handover|keepalive|orchestrator-guard|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})";
+const MK_LEAD = new RegExp("^([ \\t]*(?:[-*][ \\t]+)?(?:\\*\\*[^*\\n]{1,60}\\*\\*:?[ \\t]+)?)(\\*\\*)?\\[" + MK_BODY + "\\](\\*\\*)?[ \\t]*", "i");
+function stripMarkers(text) {
+  text = String(text ?? "");
+  if (!text.includes("[")) return text;
+  let fence = false;
+  const out = [];
+  for (const line of text.split("\n")) {
+    if (/^\s*```/.test(line)) { fence = !fence; out.push(line); continue; }
+    if (fence) { out.push(line); continue; }
+    if (/^[ \t]*\[file\][ \t]/i.test(line)) continue;
+    let l = line;
+    for (let m = MK_LEAD.exec(l); m; m = MK_LEAD.exec(l)) l = m[1] + l.slice(m[0].length);
+    out.push(l);
+  }
+  return out.join("\n");
+}
 function parseTone(text) {
+  text = String(text ?? "");
   const m = text.match(/^\[([^\]\n]+)\][ \t]*/), tag = m && TONE_TAGS.get(m[1].toLowerCase());
-  return tag ? { tone: tag, text: text.slice(m[0].length) } : { tone: "", text };
+  return tag ? { tone: tag, text: stripMarkers(text.slice(m[0].length)) } : { tone: "", text: stripMarkers(text) };
 }
 
 /* ---------- api ---------- */
@@ -127,7 +149,7 @@ async function busy(btn, fn) {
 let toastTimer;
 function toast(msg, bad, action, ms) {
   document.querySelectorAll(".snack").forEach(n => n.remove());
-  const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: msg }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { n.remove(); action.onclick(); } }) : null);
+  const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: stripMarkers(msg) }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { n.remove(); action.onclick(); } }) : null);
   (document.querySelector("dialog[open]") || document.body).append(n);
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => n.remove(), ms || (bad || action ? 6000 : 3500));
@@ -154,7 +176,7 @@ function notify(e) {
   const title = e.title || (lane ? `세션 ${lane}` : alertish ? "알림" : `${botName} 작업 기록`);
   const at = e.ts ? new Date(e.ts) : null;
   const tm = at && !isNaN(at) ? at.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }) : "";
-  const first = text.split("\n").find(l => l.trim()) || text;
+  const first = stripMarkers(text).split("\n").find(l => l.trim()) || "";
   const n = el("div", { class: "ntf in", role: alertish ? "alert" : "status" },
     el("span", { class: `dot ${e.tone || (alertish ? "err" : lane ? "ok" : "")}` }),
     el("div", { class: "tx" }, el("div", { class: "hd" }, el("span", { class: "nm", text: title }), tm ? el("span", { class: "tm", text: tm }) : null), el("div", { class: "bd2", text: first.slice(0, 240) })));

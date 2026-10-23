@@ -106,7 +106,7 @@ test("a notice sheet keeps the files of its [file] lines as chips next to the te
 test("the web turns [file] lines into chips, keeps them out of notice text and has the reader", () => {
 	const js = bundle("js").text;
 	const grab = (re: RegExp) => re.exec(js)?.[0] ?? "";
-	const fn = new Function(`${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/const ntPlain = [\s\S]*?\.trim\(\);/)}\nreturn { fileLines, ntPlain };`)();
+	const fn = new Function(`${grab(/const MK_BODY[\s\S]*?\nfunction stripMarkers[\s\S]*?\n\}\n/)}\n${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/const ntPlain = [\s\S]*?\.trim\(\);/)}\nreturn { fileLines, ntPlain };`)();
 	const r = fn.fileLines("결과\n[file] /a/b/notice-arch.png\n[file] qa/findings.md\n```\n[file] /in/fence\n```");
 	expect(r.files.map((x: { name: string }) => x.name)).toEqual(["notice-arch.png", "findings.md"]);
 	expect(r.text).toContain("[file] /in/fence");
