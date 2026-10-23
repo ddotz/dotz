@@ -136,14 +136,18 @@ function draftNode(d) {
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
     el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d));
 }
+// What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
+const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? "고치는 중…" : st === "sending" ? "보내는 중…" : "보냈어요 · 답을 기다려요");
 // 고치기 on a draft, or an option that needs detail (안 됨 …): the owner types the change / reason, then the answer goes out with it.
+// 고치기 on a draft asks "어떻게 고칠까요?" and the bot rewrites it; 직접 수정 (ed.manual) is the owner's own text, sent as the change "이 내용으로 고쳐 주세요: ...".
+const DRAFT_HINT = "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘", MANUAL_LEAD = "이 내용으로 고쳐 주세요: ";
 function editNode(dc, ed, st) {
-  const opt = ed.opt, drf = !!dc.draft;
-  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: drf ? "어떻게 고칠까요?" : "이유나 내용을 적어 주세요", "aria-label": drf ? "고칠 내용" : "자세한 내용", disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
-  ta.value = DC.note[dc.key] || "";
-  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, note); } }, drf ? "고칠 내용 보내기" : "내용 보내기");
+  const opt = ed.opt, drf = !!dc.draft, man = !!ed.manual;
+  const ta = el("textarea", { class: "dc-note", rows: man ? "7" : "2", maxlength: man ? "6000" : "500", placeholder: drf ? (man ? "보낼 내용을 직접 고쳐 주세요" : DRAFT_HINT) : "이유나 내용을 적어 주세요", "aria-label": man ? "직접 수정" : drf ? "고칠 내용" : "자세한 내용", disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
+  ta.value = DC.note[dc.key] ?? (man ? dc.draft.body : "");
+  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, man ? MANUAL_LEAD + note : note); } }, man ? "이 내용으로 고치기" : drf ? "고쳐 달라고 하기" : "내용 보내기");
   const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, "돌아가기");
-  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
+  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: man ? "직접 수정" : drf ? "어떻게 고칠까요?" : opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A decision in the full-screen overlay (30-notices.js dkOpen, 38-overlay.js): header = what it is, body = the draft or the question, sticky footer = the choices.
 // A draft waiting for send approval shows who and what in the header and 보내기 / 고치기 / 보내지 않기 in the footer. Only the body scrolls.
@@ -164,6 +168,8 @@ function renderSheet(box, dc, picks, step) {
   else if (d) {
     foot.append(el("div", { class: "dc-acts" }, ...dc.blocks[0].options.map((o, i) =>
       el("button", { class: `dc-act${i === 0 ? " main" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label))));
+    const oe = dc.blocks[0].options.find(o => o.label === DRAFT_EDIT);
+    if (oe && !st) foot.append(el("button", { class: "dc-manual", type: "button", onclick: () => { delete DC.note[dc.key]; DC.edit[dc.key] = { bi: 0, opt: oe, manual: true }; paintDecision(); } }, icon("pencil"), el("span", { text: "직접 수정" })));
   } else {
     if (dc.blocks.length > 1) foot.append(el("div", { class: "dc-steps", role: "group", "aria-label": "결정 단계" }, ...dc.blocks.map((b, i) =>
       el("button", { class: `dc-chip${i === step ? " on" : ""}${picks[i] ? " got" : ""}`, type: "button", disabled: !!st, "aria-pressed": String(i === step), onclick: () => { DC.step[dc.key] = i; paintDecision(); } }, `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}`))));
@@ -173,7 +179,7 @@ function renderSheet(box, dc, picks, step) {
       for (const o of blk.options) foot.append(choiceRow(dc, step, o, picks, st));
     }
   }
-  if (st) foot.append(el("div", { class: "dc-st", role: "status", text: st === "sending" ? "보내는 중…" : "보냈어요 · 답을 기다려요" }));
+  if (st) foot.append(el("div", { class: "dc-st", role: "status", text: dcStText(dc, st) }));
   clear(box).append(head, ...(body ? [body] : []), foot);
   if (body) body.scrollTop = top;
   const nn = $(".dc-note", box);
@@ -213,7 +219,7 @@ function renderDecision(box, dc, picks, step) {
     kids.push(body);
     }
   }
-  if (st) kids.push(el("div", { class: "dc-st", role: "status", text: st === "sending" ? "보내는 중…" : "보냈어요 · 답을 기다려요" }));
+  if (st) kids.push(el("div", { class: "dc-st", role: "status", text: dcStText(dc, st) }));
   clear(box).append(...kids);
   box.classList.toggle("fold", fold);
   const nb = $(".dc-body", box); if (nb) nb.scrollTop = top;
@@ -274,5 +280,5 @@ function paintDecision() {
 // What a decision card shows; the card (docked or in the sheet) is redrawn only when this changes. A redraw replaces the reason field, and on
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
-  return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0]);
+  return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0]);
 }

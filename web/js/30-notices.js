@@ -268,8 +268,13 @@ function dkPaint() {
   if (!DK.node) return;
   let dc = DK.dc;
   if (DK.nid) {   // a draft sheet follows its own notice
-    const n = ntById(DK.nid);
-    if (!n || !ntOpenDec(n)) { const answered = !!n && ntIsDec(n) && !ntIgnoredDec(n); dkClose(false); if (answered) toast("답을 보냈어요"); return; }
+    const n = ntById(DK.nid), rv = n ? ntRevising(n) : null;
+    if (rv) {   // 고치기 was answered: the sheet keeps the old draft with 고치는 중… until the new one lands, then shows that one
+      const nx = ntSuccessor(n);
+      if (nx && ntOpenDec(nx)) { ntDraftSheet(nx); return; }
+      if (nx) { dkClose(false); return; }
+      if (!DC.picks[dc.key]) { DC.picks[dc.key] = [rv]; DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; }
+    } else if (!n || !ntOpenDec(n)) { const answered = !!n && ntIsDec(n) && !ntIgnoredDec(n); dkClose(false); if (answered) toast("답을 보냈어요"); return; }
   } else {
     dc = decisionOf(DK.dc.t);
     if (!dc || dc.sig !== DK.dc.sig) { dkClose(false); return; }   // answered, here or elsewhere
@@ -278,7 +283,7 @@ function dkPaint() {
   const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
   const sig = dcSig(dc, picks, step);
   if (DK.box.dataset.sig !== sig) { DK.box.dataset.key = dc.key; renderDecision(DK.box, DK.dc, picks, step); DK.box.dataset.sig = sig; }
-  if (DC.st[dc.key] === "sent" && !DK.timer) DK.timer = setTimeout(() => { dkClose(false); toast("답을 보냈어요"); }, 900);
+  if (DC.st[dc.key] === "sent" && !DK.timer && !(dc.draft && dcStText(dc, "sent") === "고치는 중…")) DK.timer = setTimeout(() => { dkClose(false); toast("답을 보냈어요"); }, 900);
 }
 function dkOpen(dc, draft, nid, ign) {
   dkClose(false);
@@ -321,6 +326,13 @@ function ntLaneNote(n) {
 // button posts /api/notices/:id/answer: the hub sends the answer to the chat, session or login request the question came from.
 const ntIsDec = n => n.kind === "decision" && !!n.decision;
 const ntOpenDec = n => ntIsDec(n) && n.decision.state === "open";
+// A draft whose 고치기 was answered: its 고치기 option, until the new draft of the same conversation arrives (the successor).
+const ntRevising = n => {
+  if (!ntIsDec(n) || !n.decision.draft || n.decision.state !== "answered") return null;
+  const m = /^\s*(\d+)\)/.exec(String(n.decision.answer || "")), o = m && n.decision.options.find(x => x.n === Number(m[1]));
+  return o && o.label === DRAFT_EDIT ? o : null;
+};
+const ntSuccessor = n => NT.items.find(x => x.id !== n.id && ntIsDec(x) && x.decision.draft && x.decision.to === n.decision.to && String(x.ts) > String(n.ts)) || null;
 // Waits on the owner's action: an open decision or an [ask] item (the alert / message twin of one), unread and not ignored. Same rule as
 // hub/notices.ts needsAnswer, which keeps these unread however they are viewed: only an answer, a resolving signal or the x (무시) clears them.
 const ntNeeds = n => !n.read && !n.ignored && !n.dismissed && (ntOpenDec(n) || n.tone === "ask");
