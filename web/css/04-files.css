@@ -157,6 +157,8 @@ details.work.live .wdot { display: block; }
 /* running state: a pulsing line above the composer, a spinner on the model chip, and the send button turns into stop */
 .runline { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 0 0 8px 6px; color: var(--accent); font-size: 13px; font-weight: 600; line-height: 20px; animation: runpulse 1.6s ease-in-out infinite; }
 .runline[hidden] { display: none; }
+.pausenote { margin: 0 0 6px 6px; color: var(--warn); font-size: 12.5px; line-height: 18px; }
+.pausenote[hidden] { display: none; }
 .runline .dot { width: 7px; height: 7px; }
 .runline.warn { color: var(--warn); }
 @keyframes runpulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }

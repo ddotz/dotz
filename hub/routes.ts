@@ -459,7 +459,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (laneResponse) return laneResponse;
 		return new Response("not found", { status: 404 });
 	};
-	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, hostname()), local: route, localHeaders: { "x-dotz-token": HUB_TOKEN } });
+	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, hostname()), local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }) });
 	activatePeerMonitor(peers);
 	return route;
 }

@@ -56,8 +56,9 @@ function ingestAct(a) {
     if (t === target && s.aLoaded && CV.full) { if (!isProjT(t)) chatPush({ a }); termPush(a); }
   }
 }
-async function loadTarget(t) {
-  const s = ts(t);
+// quiet: a repeated read of a peer's conversation (34-peer-monitoring.js) redraws only when it brought something new.
+async function loadTarget(t, quiet) {
+  const s = ts(t), before = s.mk.size;
   if (s.loading) return s.loading;
   s.loading = (async () => {
     await Promise.all([
@@ -69,7 +70,7 @@ async function loadTarget(t) {
     { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e) && !quietReply(s, e)); if (te) noteDone(t, te.ts, false); }
   })().finally(() => { s.loading = null; });
   await s.loading;
-  if (t === target) renderAll();
+  if (t === target && (!quiet || s.mk.size !== before)) renderAll();
 }
 // A tapped push or notice names a message the stream may not have delivered (it stalls while the phone sleeps): fetch the
 // history until that message is in. loadTarget joins a fetch already in flight, so the second round covers one that began before the message existed.

@@ -80,14 +80,21 @@ async function pqLoad() {
   PQ.busy = false;
   if (PQ.again) { PQ.again = false; pqSoon(); }
   if (!pqSelf()) await mnLoad();
+  paintPause();
   monSchedule();
 }
 const pqSoon = () => { clearTimeout(PQ.t); PQ.t = setTimeout(pqLoad, 1000); };
 const pqOpen = () => { if (Date.now() - PQ.at > 5000) pqLoad(); };
 setInterval(() => { if ((current === "monitoring" || monCtx) && !document.hidden) pqLoad(); }, 60_000);
 
-// The answer to a message sent to a peer's monitor is written on that computer and never reaches this stream: the open conversation re-reads its history through the proxy.
-setInterval(() => { if (isSettingsT(target) && pqPc(target) && !document.hidden) loadTarget(target); }, 4000);
+// What a peer writes into its conversations (the answer to a message sent to its monitor, a mail's gateway notice such as "the bot is paused", the held
+// state) is written on that computer and never reaches this stream: the open conversation re-reads its history through the proxy, and the peer's
+// bot status (the composer's pause line) comes with the monitoring snapshot.
+setInterval(() => {
+  if (document.hidden || !pqPc(target) || !(isSettingsT(target) || isMailT(target))) return;
+  loadTarget(target, true);
+  if (Date.now() - PQ.at > 15000) pqLoad();
+}, 4000);
 
 // A peer's mail as the local stores hold a mail (MAILS, CONV, the unread count), so monConvNode and the chat view draw it. A mail this computer has itself stays local.
 function pqMail(c, pc, itemKey) {
