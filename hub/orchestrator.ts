@@ -13,9 +13,9 @@ import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { dropSection, renderState } from "./recall-parts.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
-import { anthropicUsage, OWNER_RETRY_MS, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
+import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { pinnedLimitAlert } from "./accounts-api.ts";
-import { firstAlertForReset } from "./rate-alert.ts";
+import { authStamp, blockText, limitAccount, limitKind, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy, workerKeyEnv } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
@@ -32,7 +32,7 @@ export const RESTART_WINDOW_MS = 10 * 60_000;
 // pausedUntil: a usage-limit pause, so a gateway restart inside it holds messages instead of replaying them into the limit.
 // activeModel: the selector the session's process ran (a fallback entry's too); apiSince: an API-key episode is on (its
 // start was announced, its end is announced once a turn succeeds on a non-key entry).
-type Saved = { sessionFile?: string; model?: string; runtime?: string; pausedUntil?: string; activeModel?: string; apiSince?: string };
+type Saved = { sessionFile?: string; model?: string; runtime?: string; pausedUntil?: string; pausedKind?: "owner"; pausedAuth?: number; activeModel?: string; apiSince?: string };
 
 export const orch = {
 	status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
@@ -289,7 +289,7 @@ function pauseExhausted(c: Chain, until: number): void {
 	const line = msg().fallbackExhausted(c.label(c.active), at);
 	log(`orchestrator ${line}`);
 	onNotice(line);
-	onAlert(`${NAME}: ${line}`);
+	if (noteBlock("orchestrator", c.label(c.active), "limit").alert) onAlert(`${NAME}: ${line}`);
 	pauseAlerted = true;
 	clearTimeout(resumeTimer);
 	atTime(until, t => (resumeTimer = t), () => {
@@ -363,6 +363,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					errorStreak.ok();
 					streakAlerted = false;
 					clearError();
+					if (noteRecovered("orchestrator")) onAlert(`${NAME}: ${recoveryText()}`);
 				} else if (inKeepalive && keepaliveErrorDropped(ev.error.kind)) {
 					log(`keepalive failed (${ev.error.text.replace(/\s+/g, " ").slice(0, 120)}); not retried, the next message is the next try`);
 				} else if (ev.error.kind !== "rate" && ev.error.kind !== "owner" && errorStreak.fail() !== "go") {
@@ -462,7 +463,7 @@ function armWatchdog(): void {
 // While paused by a rate limit (5h or a spent week), prompts are held instead of each starting a turn that fails at once;
 // right after the spent window resets (from the provider's usage report; retry-after otherwise) they all go in, oldest
 // first, after the resume note. A retry that hits the limit again re-arms quietly. A billing/auth error ("owner") pauses
-// the same way, but nothing says when the owner fixes it, so it is probed every OWNER_RETRY_MS; the owner is told once.
+// the same way, but nothing says when the owner fixes it, so it is probed on a slow backoff (ownerRetryMs) or when the login changes; the owner is told once per episode (limit-alert.ts).
 const isResumeNote = (t: string) => isNote(t, "rateLead") || isNote(t, "providerLead") || isNote(t, "transientLead");
 let resumeTimer: Timer | undefined;
 let pausing = false;
@@ -473,27 +474,34 @@ async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<voi
 	orch.status = "rate-limited";
 	orch.rateLimitedUntil = "";
 	const owner = kind === "owner";
-	const { ms: retry, reset } = owner ? { ms: OWNER_RETRY_MS, reset: false } : await rateLimitDelay(err, currentModel);
+	const lk = limitKind(err, kind);
+	const account = limitAccount(err, currentModel);
+	log(`orchestrator blocked (${lk}, ${account}): ${err.replace(/\s+/g, " ").slice(0, 300)}`);
+	let note = owner ? noteBlock("orchestrator", account, lk) : undefined;
+	const { ms: retry, reset } = owner ? { ms: ownerRetryMs(note!.failures), reset: false } : await rateLimitDelay(err, currentModel);
 	pausing = false;
 	if (orch.status !== "rate-limited") return;
+	note ??= noteBlock("orchestrator", account, lk);
 	const until = new Date(Date.now() + retry);
 	orch.rateLimitedUntil = until.toISOString();
 	const at = until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
-	const changed = orch.pauseKind !== (owner ? "owner" : "rate");
 	orch.pauseKind = owner ? "owner" : "rate";
-	if (!owner) save({ pausedUntil: orch.rateLimitedUntil });
-	if ((!pauseAlerted || changed) && (owner || firstAlertForReset("orchestrator", until.getTime()))) {
-		if (owner) onAlert(`${NAME}: 모델 제공자 결제/인증 문제로 멈췄어요 (${err.replace(/\s+/g, " ").slice(0, 160)}). 크레딧 충전이나 로그인 확인이 필요해요. 그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리하고, ${Math.round(retry / 60_000)}분마다 다시 시도해요.`);
+	const authSince = authStamp();
+	save({ pausedUntil: orch.rateLimitedUntil, pausedKind: owner ? "owner" : undefined, pausedAuth: owner ? authSince : undefined });
+	if (note.alert) {
+		if (owner) onAlert(`${NAME}: ${blockText(lk as "auth" | "billing", account, providerOf(currentModel), retry)}`);
 		else if (pinnedLimitAlert(until.getTime())) onAlert(`${NAME}: ${pinnedLimitAlert(until.getTime())}`);
 		else onAlert(`${NAME}: 사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`);
 	}
 	pauseAlerted = true;
-	armResume(retry, owner);
+	armResume(retry, owner, authSince);
 }
-function armResume(retry: number, owner: boolean): void {
-	resumeTimer = setTimeout(() => {
+// A billing/auth pause also ends the moment the login store changes (the owner logged in again), still without a word.
+function armResume(retry: number, owner: boolean, authSince: number): void {
+	const fire = () => {
+		clearTimeout(resumeTimer);
 		resumeTimer = undefined;
-		save({ pausedUntil: undefined });
+		save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
 		orch.status = "idle";
 		// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
 		// retry that hits the limit again loses nothing.
@@ -501,7 +509,14 @@ function armResume(retry: number, owner: boolean): void {
 		settleRevert(false);
 		proc?.send(owner ? m.orchProvider(held.length) : m.orchRate(held.length), "followUp");
 		armWatchdog();
-	}, retry);
+	};
+	const mine = (resumeTimer = setTimeout(fire, retry));
+	if (owner) {
+		watchAuth(authSince, () => resumeTimer === mine, () => {
+			log("orchestrator login store changed; retrying the blocked turn now");
+			fire();
+		});
+	}
 }
 
 // Overloaded/5xx/network errors: after a failed turn, retry with backoff (bounded). Messages arriving meanwhile are not
@@ -620,14 +635,15 @@ export function start(): void {
 	orch.status = "starting";
 	orch.startedAt = now();
 	const pausedUntil = Date.parse(saved().pausedUntil ?? "");
-	if (pausedUntil > Date.now()) {
+	const ownerPause = saved().pausedKind === "owner";
+	if (pausedUntil > Date.now() && !(ownerPause && authStamp() !== saved().pausedAuth)) {
 		orch.status = "rate-limited";
-		orch.pauseKind = "rate";
+		orch.pauseKind = ownerPause ? "owner" : "rate";
 		orch.rateLimitedUntil = new Date(pausedUntil).toISOString();
 		pauseAlerted = true;
 		clearTimeout(resumeTimer);
-		armResume(pausedUntil - Date.now(), false);
-		log(`orchestrator still paused on a usage limit until ${orch.rateLimitedUntil}; messages are held`);
+		armResume(pausedUntil - Date.now(), ownerPause, saved().pausedAuth ?? 0);
+		log(`orchestrator still paused on ${ownerPause ? "a billing/auth block" : "a usage limit"} until ${orch.rateLimitedUntil}; messages are held`);
 	}
 	void readEvents(proc);
 	const self = proc;
@@ -685,7 +701,7 @@ export function start(): void {
 		probeAfterStart = false;
 		if (!replayed && orch.error) proc.send(PROBE_TEXT, "followUp");
 	}
-	for (const h of held.splice(0)) sendOwner(h.text, h.header);
+	if (orch.status !== "rate-limited") for (const h of held.splice(0)) sendOwner(h.text, h.header);
 	setTimeout(() => proc?.refreshSession(), 4000);
 	log(`orchestrator ${resume ? `resumed ${prior}` : rotate ? "rotated to a fresh session" : "started"} (${model})`);
 	statusActivity("orchestrator", `orchestrator ${resume ? "resumed its session" : rotate ? "started a fresh session with a handover" : "started"} (${model})`);

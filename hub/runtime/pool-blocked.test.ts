@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type * as Orchestrator from "../orchestrator.ts";
 import { cfg } from "../config.ts";
 import { poolRetryAt, resumeDelay } from "../providers.ts";
-import { firstAlertForReset, rateAlertsFile } from "../rate-alert.ts";
+import { limitAlertsFile } from "../limit-alert.ts";
 import { adapters } from "./index.ts";
 import { omo } from "./omo.ts";
 import { advance, clock, flush } from "./test-clock.ts";
@@ -73,12 +73,12 @@ beforeAll(() => {
 	cfg.models = { ...savedCfg.models, orchestrator: { model: "anthropic/test-orch", thinking: "low", fallback: [] } };
 	writeFileSync(join(DATA, "orchestrator.json"), "{}");
 	writeFileSync(join(DATA, "pool-session.jsonl"), "");
-	rmSync(rateAlertsFile(), { force: true });
+	rmSync(limitAlertsFile(), { force: true });
 });
 afterAll(() => {
 	delete adapters.fake;
 	Object.assign(cfg, savedCfg);
-	rmSync(rateAlertsFile(), { force: true });
+	rmSync(limitAlertsFile(), { force: true });
 });
 
 test("the blocked-pool message is a rate limit whose reset is OmO's soonest retry", () => {
@@ -90,14 +90,6 @@ test("the blocked-pool message is a rate limit whose reset is OmO's soonest retr
 	// a usage report naming a later window does not override the time OmO names
 	const later = { resets_at: retryAt + 5 * 3600_000, remaining: 0, used: 100, limit: 100, status: "exhausted" } as never;
 	expect(resumeDelay(msg, [later], retryAt - 47 * 60_000)).toEqual({ ms: 47 * 60_000 + 60_000, reset: true });
-});
-
-test("firstAlertForReset: once per who and reset minute", () => {
-	const at = Date.parse("2026-10-20T14:01:00.000Z");
-	expect(firstAlertForReset("lane:x", at)).toBe(true);
-	expect(firstAlertForReset("lane:x", at + 20)).toBe(false);
-	expect(firstAlertForReset("lane:y", at)).toBe(true);
-	expect(firstAlertForReset("lane:x", at + 3600_000)).toBe(true);
 });
 
 test("orchestrator: pauses until the named retry with one alert; a gateway restart inside the pause holds and stays quiet", async () => {
