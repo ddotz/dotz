@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 
 export type FixtureRoom = { chatId: bigint | number; type: number; chatName?: string | null; title?: string; members?: number; unread?: number; lastUpdatedAt?: number; peer?: number | null; marks?: [number, bigint | number][] };
 export type FixtureUser = { userId: number; linkId?: number; friendNickName?: string | null; displayName?: string | null; nickName?: string | null };
-export type FixtureMsg = { logId: bigint | number; chatId: bigint | number; authorId: number; message: string; type?: number; sentAt: number };
+export type FixtureMsg = { logId: bigint | number; chatId: bigint | number; authorId: number; message: string; type?: number; sentAt: number; attachment?: string; localFilePath?: string };
 export type FixtureSpec = { ownerId?: number; rooms?: FixtureRoom[]; users?: FixtureUser[]; messages?: FixtureMsg[] };
 
 // A binary plist (bplist00) holding one top-level array of int64, like NTChatRoom.watermarkKeys / watermarkValues. Up to 255 elements.
@@ -72,7 +72,7 @@ export function makeFixtureDb(path: string, spec: FixtureSpec = {}): Database {
 	const db = new Database(path, { create: true });
 	db.exec(`
 		CREATE TABLE NTChatRoom (chatId INTEGER PRIMARY KEY, type INTEGER, chatName TEXT, activeMembersCount INTEGER, countOfNewMessage INTEGER, lastUpdatedAt INTEGER, directChatMemberUserId INTEGER, watermarkKeys BLOB, watermarkValues BLOB);
-		CREATE TABLE NTChatMessage (logId INTEGER PRIMARY KEY, chatId INTEGER, authorId INTEGER, message TEXT, type INTEGER, sentAt INTEGER);
+		CREATE TABLE NTChatMessage (logId INTEGER PRIMARY KEY, chatId INTEGER, authorId INTEGER, message TEXT, type INTEGER, sentAt INTEGER, attachment TEXT, localFilePath TEXT);
 		CREATE TABLE NTUser (userId INTEGER, linkId INTEGER, friendNickName TEXT, displayName TEXT, nickName TEXT, PRIMARY KEY (userId, linkId));
 		CREATE TABLE NTChatContext (userId INTEGER);
 		CREATE TABLE NTChatMeta (chatId INTEGER, type INTEGER, content TEXT, groupNickname TEXT);
@@ -89,5 +89,5 @@ export function makeFixtureDb(path: string, spec: FixtureSpec = {}): Database {
 }
 
 export function addMessage(db: Database, m: FixtureMsg): void {
-	db.query("INSERT INTO NTChatMessage VALUES (?, ?, ?, ?, ?, ?)").run(BigInt(m.logId), BigInt(m.chatId), m.authorId, m.message, m.type ?? 1, m.sentAt);
+	db.query("INSERT INTO NTChatMessage VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(BigInt(m.logId), BigInt(m.chatId), m.authorId, m.message, m.type ?? 1, m.sentAt, m.attachment ?? null, m.localFilePath ?? null);
 }

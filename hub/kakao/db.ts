@@ -356,7 +356,7 @@ export async function messages(db: KakaoDb, chatId: string, limit: number, userI
 	const rows = await db.query(
 		`SELECT CAST(m.logId AS TEXT) AS logId, CAST(m.chatId AS TEXT) AS chatId, CAST(m.authorId AS TEXT) AS authorId,
 			COALESCE(NULLIF(u.friendNickName, ''), NULLIF(u.displayName, ''), NULLIF(u.nickName, '')) AS sender,
-			m.message AS text, m.type AS type, m.sentAt AS sentAt
+			m.message AS text, m.type AS type, m.sentAt AS sentAt, m.attachment AS attachment, m.localFilePath AS localFilePath
 		FROM NTChatMessage m LEFT JOIN NTUser u ON m.authorId = u.userId AND u.linkId = 0
 		WHERE m.chatId = ?${bound === undefined ? "" : ` AND m.logId ${after ? ">" : "<"} ?`} ORDER BY m.logId ${after ? "ASC" : "DESC"} LIMIT ?`,
 		[chatId, ...(bound === undefined ? [] : [bound]), Math.max(1, Math.trunc(limit))],
@@ -371,7 +371,15 @@ export async function messages(db: KakaoDb, chatId: string, limit: number, userI
 		type: num(r.type),
 		sentAt: num(r.sentAt),
 		fromMe: str(r.authorId) === me,
+		...(str(r.attachment) ? { attachment: str(r.attachment) } : {}),
+		...(str(r.localFilePath) ? { localFilePath: str(r.localFilePath) } : {}),
 	}));
+}
+
+// One message of a room by logId (the media routes), or undefined when the room has no such message.
+export async function messageById(db: KakaoDb, chatId: string, logId: string, userId: string | number): Promise<Msg | undefined> {
+	const m = (await messages(db, chatId, 1, userId, { after: String(BigInt(logId) - 1n) }))[0];
+	return m?.logId === logId ? m : undefined;
 }
 
 export type NewRow = { logId: string; chatId: string; authorId: string; type: number; sentAt: number };
