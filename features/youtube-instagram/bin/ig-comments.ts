@@ -5,7 +5,7 @@ import type { Ctx } from "../lib/config.ts";
 import { SetupError } from "../lib/config.ts";
 import type { CommentDeps } from "../../reply-drafts/lib/comments.ts";
 import { commentsFor, mediaWithCounts } from "../lib/instagram.ts";
-import { realReplyDeps, withReplyDrafts } from "../lib/reply-adapter.ts";
+import { realReplyDeps, titleArg, withReplyDrafts } from "../lib/reply-adapter.ts";
 import { main, oneLine, type RunResult, runWatch } from "../lib/watchkit.ts";
 
 type State = { counts: Record<string, number>; since: string };
@@ -29,7 +29,7 @@ export async function run(ctx: Ctx, _args: string[] = [], deps?: CommentDeps): P
 					if (at <= sinceMs) continue;
 					newest = Math.max(newest, at);
 					if (c.username.toLowerCase() === owner || c.replies.some(r => r.username.toLowerCase() === owner)) continue;
-					found.push({ at, line: `ig-comment ${c.id} media=${m.id} by=${oneLine(c.username, 60)}: ${oneLine(c.text, 200)}` });
+					found.push({ at, line: `ig-comment ${c.id} media=${m.id}${titleArg(m.caption)} by=${oneLine(c.username, 60)}: ${oneLine(c.text, 200)}` });
 				}
 			}
 			found.sort((a, b) => a.at - b.at);

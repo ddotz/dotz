@@ -4,7 +4,7 @@
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
 const CM = { apps: new Set(), sources: [], vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
-  drafting: new Set(), revising: "", pick: null, posts: new Map(), timer: 0, intgT: 0, readSent: "" };
+  drafting: new Set(), revising: "", pick: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
 // default instance of its app, or an added one such as site-mapia); an older gateway sends none, then the app of its kind.
 const cmAppOfKind = k => (k === "website" ? "site" : k);
@@ -29,7 +29,9 @@ async function cmLoadSources() {
     const r = await api("/api/comments/sources");
     CM.sources = r.on === false ? [] : Array.isArray(r.sources) ? r.sources : [];
   } catch { return; }
+  await dmLoadList();
   const apps = new Set(CM.sources.filter(s => (s.watch || []).length).map(cmOwner));
+  if (DM.on && DM.connected) apps.add(DM_APP);
   const changed = apps.size !== CM.apps.size || [...apps].some(a => !CM.apps.has(a));
   CM.apps = apps;
   if (changed && typeof monSchedule === "function") monSchedule();
@@ -38,6 +40,7 @@ async function cmLoadSources() {
 async function cmLoad() {
   const seq = ++CM.rseq;
   await cmLoadSources();
+  if (CM.tab === "dm") { cmPaintRooms(); return; }
   try {
     const r = await api(`/api/comments/threads?app=${enc(CM.app)}`);
     if (seq !== CM.rseq) return;
@@ -87,12 +90,39 @@ function cmSourceNode(s) {
 function cmRow(t) {
   const on = CM.open && CM.open.source === t.source && CM.open.thread === t.thread, n = t.unread + t.drafts;
   return el("button", { class: `cv-row pv kk-row${n ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-thread": t.thread, "aria-current": on ? "true" : null, onclick: () => cmOpen(t) },
-    kkAvatar(t.title),
+    cmThumb(t.title, t.thumb),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: t.title, text: t.title }), el("span", { class: "cv-p", text: `${t.lastAuthor}: ${t.lastText}` })),
     el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), n ? el("span", { class: "nb", "aria-label": t.drafts ? `답장 확인 ${t.drafts}건` : `읽지 않은 댓글 ${t.unread}개`, text: t.drafts ? `초안 ${t.drafts}` : String(t.unread > 99 ? "99+" : t.unread) }) : null, t.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${t.unreplied}개`, text: `미답장 ${t.unreplied}` }) : null));
 }
+// The picture of a post: its thumbnail when the source gave one (it falls back to the title's initial when the picture does not load).
+function cmThumb(title, thumb) {
+  const av = kkAvatar(title);
+  if (!thumb) return av;
+  const img = el("img", { class: "kk-av kk-thumb", src: thumb, alt: "", loading: "lazy", referrerpolicy: "no-referrer" });
+  img.addEventListener("error", () => img.replaceWith(av), { once: true });
+  return img;
+}
+// The post at the top of its conversation (the head above it is hidden on a phone): thumbnail, title, link to the original.
+function cmPostCard(thread, kind) {
+  return el("div", { class: "cm-post" }, cmThumb(thread.title, thread.thumb),
+    el("span", { class: "cv-b" }, el("span", { class: "cm-pt", text: thread.title }),
+      thread.link ? el("a", { class: "cm-pl", href: thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(kind) }) : null));
+}
+const cmOpenWord = kind => (kind === "youtube" ? "영상 열기" : "원본 글 열기");
+function cmTabs() {
+  if (!(DM.on && DM.connected && CM.app === DM_APP && cmSources().some(s => (s.watch || []).length))) return null;
+  const b = (id, text) => el("button", { type: "button", class: CM.tab === id ? "on" : "", "data-tab": id, "aria-pressed": CM.tab === id ? "true" : "false", text, onclick: () => cmTab(id) });
+  return el("div", { class: "seg cm-tabs", role: "group", "aria-label": "보기" }, b("comments", "댓글"), b("dm", "DM"));
+}
+function cmTab(id) {
+  if (CM.tab === id) return;
+  CM.tab = id; CM.open = null; DM.open = null; CM.seq++; DM.seq++;
+  cmPaintAll();
+  if (id === "dm") dmRefresh(); else cmLoad();
+}
 function cmPaintRooms() {
   if (!CM.vis) return;
+  if (CM.tab === "dm") { dmPaintRooms(); return; }
   const top = cmRooms.scrollTop, srcs = cmSources(), expanded = CM.pick === null ? !CM.threads.length : CM.pick;
   const pick = el("section", { class: "kk-pick", "aria-label": "지켜볼 글 고르기" },
     el("button", { class: "kk-ph", id: "cm-pick-btn", type: "button", "aria-expanded": expanded ? "true" : "false", onclick: () => { CM.pick = !expanded; cmPaintRooms(); } },
@@ -108,7 +138,8 @@ function cmPaintRooms() {
     else if (CM.threads.length) list.append(...CM.threads.map(cmRow));
     else list.append(el("div", { class: "kk-note", id: "cm-empty", text: "아직 받은 댓글이 없어요" }));
   }
-  clear(cmRooms).append(pick, list);
+  const tabs = cmTabs();
+  clear(cmRooms).append(...(tabs ? [tabs] : []), pick, list);
   cmRooms.scrollTop = top;
 }
 
@@ -136,7 +167,8 @@ async function cmReload(seq = CM.seq, scroll = false) {
 }
 function cmClose() { CM.open = null; CM.view = null; CM.seq++; CM.loading = false; CM.revising = ""; cmPaintAll(); convTitle(); }
 function cmBack() {
-  if (!(CM.vis && CM.open && narrowChat() && current === "monitoring" && !MON.list)) return false;
+  if (!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && narrowChat() && current === "monitoring" && !MON.list)) return false;
+  if (CM.tab === "dm") { dmClose(); return true; }
   cmClose();
   return true;
 }
@@ -163,19 +195,20 @@ function cmSendNode(s) {
     el("div", { class: "kk-st", role: failed ? "alert" : "status" }, el("span", { class: "kk-state", text: st })));
 }
 function cmPaintChat(stick) {
+  if (CM.tab === "dm") { dmPaintChat(); return; }
   const open = CM.open, v = CM.view;
   cmFoot.hidden = !open || CM.loading || !!CM.viewErr || !v;
-  const sig = open ? `${open.source}/${open.thread}/${open.title}` : "";
+  const sig = open ? `${open.source}/${open.thread}/${open.title}/${v && v.thread.title}/${v && v.thread.thumb}` : "";
   if (sig !== CM.headSig) {
     CM.headSig = sig; clear(cmHead);
-    if (open) cmHead.append(kkAvatar(open.title), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.title }),
-      v && v.thread.link ? el("a", { class: "cv-p", href: v.thread.link, target: "_blank", rel: "noopener noreferrer", text: "원본 글 열기" }) : el("span", { class: "cv-p", text: "댓글" })));
+    if (open) cmHead.append(cmThumb(open.title, v && v.thread.thumb), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.title }),
+      v && v.thread.link ? el("a", { class: "cv-p", href: v.thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(v.source.kind) }) : el("span", { class: "cv-p", text: "댓글" })));
   }
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "글을 골라 주세요" })); return; }
   if (CM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
   if (CM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: CM.viewErr })); return; }
   const by = new Map(v.comments.map(c => [c.id.split(":").slice(2).join(":"), c]));
-  const nodes = []; let prev = null;
+  const nodes = [cmPostCard(v.thread, v.source.kind)]; let prev = null;
   for (const c of v.comments) {
     if (!prev || kkDay(prev.at) !== kkDay(c.at)) nodes.push(el("div", { class: "kk-date", text: kkDate(c.at) }));
     nodes.push(cmCommentNode(c, new Map([...by].map(([k, x]) => [k, x])), !prev || prev.author !== c.author || prev.mine !== c.mine || kkDay(prev.at) !== kkDay(c.at)));
@@ -189,7 +222,7 @@ function cmPaintChat(stick) {
   cmDrafts.hidden = !cmDrafts.firstChild;
 }
 function cmPaintAll() {
-  cmPane.classList.toggle("chat-open", !!CM.open);
+  cmPane.classList.toggle("chat-open", !!(CM.tab === "dm" ? DM.open : CM.open));
   cmPaintRooms(); cmPaintChat(true);
 }
 
@@ -235,12 +268,14 @@ function cmMode(app, shown) {
   if (app) $("#v-monitoring").classList.add("kk-on");
   cmPane.hidden = !app;
   if (shown && (!CM.vis || CM.app !== app)) {
-    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, pick: null, headSig: "" }); CM.seq++;
+    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", tab: CM.sources.some(s => cmOwner(s) === app && (s.watch || []).length) || !(DM.on && DM.connected && app === DM_APP) ? "comments" : "dm" }); CM.seq++;
+    Object.assign(DM, { open: null, view: null }); DM.seq++;
     cmPaintAll(); cmLoad();
+    if (CM.tab === "dm") dmRefresh();
     clearInterval(CM.timer);
     CM.timer = setInterval(() => { if (document.visibilityState === "visible") cmLoad(); }, 60000);
   } else if (!shown && CM.vis) {
-    CM.vis = false; CM.open = null; CM.seq++; clearInterval(CM.timer);
+    CM.vis = false; CM.open = null; DM.open = null; CM.seq++; DM.seq++; clearInterval(CM.timer);
   }
 }
 cmLoadSources();

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { loadStyle, recordCorrection } from "../../features/reply-drafts/lib/settings.ts";
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
 import { commentsFor, mediaWithCounts, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
-import { commentThreadsSince, ownReplies, recentUploads, replyToComment } from "../../features/youtube-instagram/lib/youtube.ts";
+import { commentThreadsSince, ownReplies, recentUploads, replyToComment, videoInfos } from "../../features/youtube-instagram/lib/youtube.ts";
 import { appBase, appEntries, commentOwner } from "../integrations.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { callReplyModel } from "../reply-model.ts";
@@ -50,6 +50,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 				channelId: () => requireYoutube().channel_id,
 				threadsSince: (id, since) => commentThreadsSince(realCtx(), id, since),
 				uploads: id => recentUploads(realCtx(), id, 50),
+				videos: ids => videoInfos(realCtx(), ids),
 				reply: (parent, text) => replyToComment(realCtx(), parent, text),
 				ownReplies: (id, limit) => ownReplies(realCtx(), id, limit),
 			})),

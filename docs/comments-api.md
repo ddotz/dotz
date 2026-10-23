@@ -56,3 +56,9 @@ Posting (`site.post`), body `{"sendId", "commentId", "thread", "parent?", "text"
 - `script`: the body arrives on stdin; print `{"ok":true,"ref":"..."}` or `{"ok":false,"reason":"..."}`; a non-zero exit is a failure with its output as the reason.
 
 Scripts and commands run with the owner's rights and come only from his own config; nothing from a comment is ever used as a command.
+
+## Post title, thumbnail and link (2026-10-23)
+
+`GET /api/comments/threads` rows and `GET /api/comments/thread/<source>/<thread>` carry the post: `title` (the video title, or the first 80 characters of an Instagram caption),
+`link` (the video or post URL), `thumb` (picture URL or null) and, on the rows, `kind` (`youtube` | `instagram` | `website`). A comment collected before its title was readable is renamed
+on the next poll (`adapter.retitle`); the drafts' [ask] text names the post (`> 영상 <title>`) and says nothing about it while the title is unknown.

@@ -1,7 +1,7 @@
 // The comment engine: collect (script only, no model), draft (a model call only on request or per-source auto-draft), send (only through
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
 import { generateReply, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
-import { type Comment, type CommentAdapter, dispatchReply, type GateResult, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
+import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
 import { createStore, type Draft, type Reply, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 
@@ -156,6 +156,7 @@ export function createEngine(deps: EngineDeps) {
 				store.setCursor(src.key, { ...prior, ranAt: deps.now(), error: reason });
 				continue;
 			}
+			await retitle(src, adapter);
 			out.added.push(...fresh);
 			for (const t of new Set(fresh.map(c => c.thread))) emit({ kind: "comment", source: src.key, thread: t });
 			if (!src.autoDraft || !replyOn(src)) continue;
@@ -174,6 +175,16 @@ export function createEngine(deps: EngineDeps) {
 			}
 		}
 		return out;
+	}
+
+	// Stored comments that were collected without a post title (the title was not readable then) get it now; a failure leaves them for the next poll.
+	async function retitle(src: SourceConfig, adapter: CommentAdapter): Promise<void> {
+		if (!adapter.retitle) return;
+		const stale = [...new Set(store.comments().filter(c => c.source === src.key && isUntitled(c)).map(c => c.thread))];
+		if (!stale.length) return;
+		try {
+			for (const [thread, p] of Object.entries(await adapter.retitle(src, stale))) store.retitle(src.key, thread, { postTitle: p.title, postLink: p.link, thumb: p.thumb });
+		} catch {}
 	}
 
 	function drop(draftCode: string): { ok: boolean; reason?: string } {
@@ -226,7 +237,7 @@ export function createEngine(deps: EngineDeps) {
 		return [...by.values()]
 			.map(list => {
 				const last = list[list.length - 1]!;
-				return { source: last.source, thread: last.thread, title: last.postTitle, link: last.postLink ?? null, lastAt: last.at, lastText: clip(last.text, 80), lastAuthor: last.mine ? "나" : last.author, unread: list.filter(c => unreadOf(c, reads)).length, drafts: pendingDrafts.filter(d => d.source === last.source && d.thread === last.thread).length, unreplied: list.filter(c => unrepliedWith(c, replies, dismissed)).length };
+				return { source: last.source, thread: last.thread, kind: cfg.sources[last.source]!.kind, title: last.postTitle, link: last.postLink ?? null, thumb: last.thumb ?? null, lastAt: last.at, lastText: clip(last.text, 80), lastAuthor: last.mine ? "나" : last.author, unread: list.filter(c => unreadOf(c, reads)).length, drafts: pendingDrafts.filter(d => d.source === last.source && d.thread === last.thread).length, unreplied: list.filter(c => unrepliedWith(c, replies, dismissed)).length };
 			})
 			.sort((a, b) => b.lastAt - a.lastAt);
 	}
@@ -240,7 +251,7 @@ export function createEngine(deps: EngineDeps) {
 		const first = list[0]!;
 		return {
 			source: { key: src.key, kind: src.kind, label: src.label },
-			thread: { id: thread, title: first.postTitle, link: first.postLink ?? null },
+			thread: { id: thread, title: list[list.length - 1]!.postTitle, link: list[list.length - 1]!.postLink ?? first.postLink ?? null, thumb: list[list.length - 1]!.thumb ?? first.thumb ?? null },
 			comments: list.map(c => ({ id: c.id, parent: c.parent ?? null, author: c.author, text: c.text, at: c.at, mine: c.mine, needsReply: needsReply(c), unreplied: unreplied(c) })),
 			read: store.reads()[threadKey(source, thread)] ?? null,
 			drafts: store.drafts().filter(d => d.source === source && d.thread === thread && d.status === "pending").map(d => ({ code: d.code, commentId: d.commentId, text: d.text, notes: d.notes, clean: d.clean, created: d.created, ...(d.tokens ? { tokens: d.tokens } : {}) })),

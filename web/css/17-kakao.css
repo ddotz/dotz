@@ -163,3 +163,13 @@
 .kk-pick-src { padding: 4px 0 8px; border-top: 1px solid var(--line, rgb(128 128 128 / .2)); }
 .kk-pick-src > .btn { margin: 0 16px; }
 .cm .kk-draft input.kk-ta { flex: 1; min-width: 0; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line, rgb(128 128 128 / .3)); background: var(--card); color: inherit; font: 400 16px/22px var(--font); }
+
+/* 모니터링 > 인스타그램 > DM, and the post card / thumbnails of 댓글 */
+.cm-tabs { margin: 8px 16px; }
+.dm-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 16px 8px; }
+.dm-note { color: var(--fg-3); font: 400 12px/16px var(--font); }
+.kk-av.kk-thumb { width: 48px; height: 36px; border-radius: 6px; object-fit: cover; background: var(--layer); }
+.cm-post { display: flex; align-items: center; gap: 12px; margin: 8px 12px 12px; padding: 10px 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); }
+.cm-post .kk-av.kk-thumb { width: 64px; height: 48px; }
+.cm-pt { display: block; color: var(--fg); font: 600 14px/20px var(--font); overflow-wrap: anywhere; }
+.cm-pl { display: inline-block; margin-top: 2px; color: var(--accent, var(--fg-2)); font: 500 12px/16px var(--font); }
