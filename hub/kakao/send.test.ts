@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseDecisions } from "../choices.ts";
-import { approval, createDraft, draftBlock, listDrafts, sendDraft, sendText, type Draft } from "./send.ts";
+import { approval, createDraft, draftBlock, forgetWarm, listDrafts, sendDraft, sendText, type Draft } from "./send.ts";
 import { KAKAO_BUNDLE, kakaoPaths, type Runner } from "./types.ts";
 import { type FakeRow, fakeScreen } from "./ui.fixture.ts";
 
@@ -15,6 +15,7 @@ beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "kk-send-"));
 	paths = kakaoPaths(dir, dir);
 	mkdirSync(join(dir, "kakao"), { recursive: true });
+	forgetWarm();
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -51,7 +52,7 @@ test("the owner's pick of 보내기 approves: the room is checked, then one send
 	owner(10, pick(d, "보내기"));
 	const k = fakeKmsg();
 	expect(await approval(d.code, sender(k))).toBe(true);
-	expect(await sendDraft(d.code, sender(k))).toEqual({ ok: true });
+	expect(await sendDraft(d.code, sender(k))).toMatchObject({ ok: true });
 	expect(k.calls).toEqual([["/fake/kmsg", "send", "--chat-id", "chat_스터디방", "--", "내일 7시에 봐요"]]);
 	for (const argv of k.calls) expect(argv.join(" ")).not.toContain("http");
 	const [stored] = await listDrafts({ paths, runner: k.runner });
@@ -194,7 +195,7 @@ const FRONT = "com.example.Editor";
 
 test("focus: the app in front before the send comes back after it; KakaoTalk itself is left alone", async () => {
 	const k = fakeKmsg(FRONT);
-	expect(await sendText({ chatId: "100", roomName: "스터디방", text: "안녕" }, { paths, runner: k.runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });
+	expect(await sendText({ chatId: "100", roomName: "스터디방", text: "안녕" }, { paths, runner: k.runner, kmsg: "/fake/kmsg" })).toMatchObject({ ok: true });
 	expect(k.focus.map(a => a[0])).toEqual(["osascript", "open"]);
 	expect(k.focus[1]).toEqual(["open", "-b", FRONT]);
 	const k2 = fakeKmsg(KAKAO_BUNDLE);
@@ -209,7 +210,7 @@ test("focus: a failing osascript or open never fails the send", async () => {
 		if (argv[0] === "open") return { code: 1, stdout: "", stderr: "boom" };
 		return k.runner(argv, opts);
 	};
-	expect(await sendText({ chatId: "100", roomName: "스터디방", text: "안녕" }, { paths, runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });
+	expect(await sendText({ chatId: "100", roomName: "스터디방", text: "안녕" }, { paths, runner, kmsg: "/fake/kmsg" })).toMatchObject({ ok: true });
 	expect(k.calls).toHaveLength(1);
 });
 
@@ -242,7 +243,7 @@ test("all sends run one at a time", async () => {
 test("ownerApproved skips the inbox verdict only: the send goes out without an inbox answer", async () => {
 	const d = await make();
 	const k = fakeKmsg();
-	expect(await sendDraft(d.code, { ...sender(k), ownerApproved: true })).toEqual({ ok: true });
+	expect(await sendDraft(d.code, { ...sender(k), ownerApproved: true })).toMatchObject({ ok: true });
 	expect(k.calls).toHaveLength(1);
 	expect((await listDrafts({ paths, runner: k.runner }))[0]!.status).toBe("sent");
 });
@@ -278,12 +279,12 @@ test("sendText retries once with deep recovery only when kmsg never reached Ente
 		return { sends: screen.sends, runner: screen.runner };
 	};
 	const cold = script([{ code: 1, stdout: "Opening via search...\n", stderr: "Error: chat window not found\n" }, { code: 0, stdout: "✓ Message sent\n" }]);
-	expect(await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, { paths, runner: cold.runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });
+	expect(await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, { paths, runner: cold.runner, kmsg: "/fake/kmsg" })).toMatchObject({ ok: true });
 	expect(cold.sends.length).toBe(2);
 	expect(cold.sends[1]).toContain("--deep-recovery");
 
 	const closeFail = script([{ code: 1, stdout: "✓ Message sent to '가나'\n", stderr: "close failed\n" }]);
-	expect(await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, { paths, runner: closeFail.runner, kmsg: "/fake/kmsg" })).toEqual({ ok: true });
+	expect(await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, { paths, runner: closeFail.runner, kmsg: "/fake/kmsg" })).toMatchObject({ ok: true });
 	expect(closeFail.sends.length).toBe(1);
 
 	const dead = script([{ code: 1, stdout: "", stderr: "Error: chat window not found\n" }, { code: 1, stdout: "", stderr: "Error: chat window not found\n" }]);
@@ -298,15 +299,15 @@ test("a checked room is sent to again without the list and the check window, unt
 	const screen = fakeScreen([row("가나"), row("가나다")]);
 	const facts = [{ chatId: "100", name: "가나" }, { chatId: "200", name: "가나다" }];
 	const deps = { paths, runner: screen.runner, kmsg: "/fake/kmsg", roomNames: async () => facts };
-	expect(await sendText({ chatId: "100", roomName: "가나", text: "하나" }, deps)).toEqual({ ok: true });
+	expect(await sendText({ chatId: "100", roomName: "가나", text: "하나" }, deps)).toMatchObject({ ok: true });
 	expect(screen.opened).toEqual(["chat_가나"]);
 	expect((statSync(join(dir, "kakao", "picked.json")).mode & 0o777).toString(8)).toBe("600");
-	expect(await sendText({ chatId: "100", roomName: "가나", text: "둘" }, deps)).toEqual({ ok: true });
+	expect(await sendText({ chatId: "100", roomName: "가나", text: "둘" }, deps)).toMatchObject({ ok: true });
 	expect(screen.opened).toEqual(["chat_가나"]);
 	expect(screen.sends.map(a => a.at(-1))).toEqual(["하나", "둘"]);
 	expect(screen.sends[1]).toContain("chat_가나");
 	// A renamed room is checked again.
-	expect(await sendText({ chatId: "100", roomName: "가나다", text: "셋" }, { ...deps, roomNames: async () => [{ chatId: "100", name: "가나다" }] })).toEqual({ ok: true });
+	expect(await sendText({ chatId: "100", roomName: "가나다", text: "셋" }, { ...deps, roomNames: async () => [{ chatId: "100", name: "가나다" }] })).toMatchObject({ ok: true });
 	expect(screen.opened).toEqual(["chat_가나", "chat_가나다"]);
 	// Another database room of the same name: the remembered row is not used.
 	facts.splice(0, 2, { chatId: "100", name: "가나다" }, { chatId: "200", name: "가나다" });
@@ -319,7 +320,7 @@ test("a remembered row kmsg no longer knows is checked again; a failed check for
 	const screen = fakeScreen([row("가나")], { sendOut: argv => (argv.includes("chat_old") && unknown ? { code: 1, stdout: "", stderr: "Error: Unknown chat_id 'chat_old'\n" } : { code: 0, stdout: "sent\n" }) });
 	writeFileSync(join(dir, "kakao", "picked.json"), JSON.stringify({ "100": { id: "chat_old", name: "가나" } }));
 	const deps = { paths, runner: screen.runner, kmsg: "/fake/kmsg", roomNames: async () => [{ chatId: "100", name: "가나" }] };
-	expect(await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, deps)).toEqual({ ok: true });
+	expect(await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, deps)).toMatchObject({ ok: true });
 	expect(screen.sends.map(a => a[a.indexOf("--chat-id") + 1])).toEqual(["chat_old", "chat_가나"]);
 	expect(JSON.parse(readFileSync(join(dir, "kakao", "picked.json"), "utf8"))["100"].id).toBe("chat_가나");
 
@@ -327,4 +328,78 @@ test("a remembered row kmsg no longer knows is checked again; a failed check for
 	const r = await sendText({ chatId: "100", roomName: "가나", text: "안녕" }, { ...deps, runner: fakeScreen([], { sendOut: () => ({ code: 1, stdout: "", stderr: "Unknown chat_id\n" }) }).runner });
 	expect(r.ok).toBe(false);
 	expect(JSON.parse(readFileSync(join(dir, "kakao", "picked.json"), "utf8"))["100"]).toBeUndefined();
+});
+
+// Fast path: a window kept open, the frontmost lookup beside the send, the idle close, the phase times.
+const kept = (argv: string[]) => argv.includes("--keep-window");
+const one = { chatId: "100", roomName: "가나", text: "안녕" };
+const names = async () => [{ chatId: "100", name: "가나" }];
+
+test("keep window: only while KakaoTalk shows a window or the room was kept before; the idle close runs once after the last send", async () => {
+	const timers: (() => void)[] = [];
+	const later = (fn: () => void) => void timers.push(fn);
+	const shown = fakeScreen([row("가나")], { kakaoShown: true });
+	const deps = { paths, kmsg: "/fake/kmsg", roomNames: names, later };
+	expect(await sendText(one, { ...deps, runner: shown.runner })).toMatchObject({ ok: true, ms: { keep: true } });
+	expect(shown.sends.map(kept)).toEqual([true]);
+	// KakaoTalk is hidden now, but its window was kept: the next send of the room keeps it too and moves the idle close.
+	const hidden = fakeScreen([row("가나")], { kakaoShown: false });
+	expect(await sendText(one, { ...deps, runner: hidden.runner })).toMatchObject({ ok: true });
+	expect(hidden.sends.map(kept)).toEqual([true]);
+	expect(timers).toHaveLength(2);
+	timers[0]!();
+	await sendText({ ...one, text: "다시" }, { ...deps, runner: hidden.runner });
+	expect(hidden.closes()).toBe(0);
+	timers[2]!();
+	await sendText({ ...one, text: "끝" }, { ...deps, runner: hidden.runner }); // queued behind the idle close
+	expect(hidden.closes()).toBe(1);
+	expect(hidden.sends.map(kept)).toEqual([true, true, false]);
+	// No kept window and KakaoTalk not shown: nothing is kept, nothing to close.
+	forgetWarm();
+	const cold = fakeScreen([row("가나")], { kakaoShown: false });
+	expect(await sendText(one, { ...deps, runner: cold.runner })).toMatchObject({ ok: true });
+	expect(cold.sends.map(kept)).toEqual([false]);
+	expect(timers).toHaveLength(3);
+});
+
+test("the frontmost lookup runs beside the send: a kept room is sent before the lookup answers, and the owner's app comes back after the send", async () => {
+	const deps = { paths, kmsg: "/fake/kmsg", roomNames: names, later: () => {} };
+	await sendText(one, { ...deps, runner: fakeScreen([row("가나")], { kakaoShown: true }).runner });
+	const screen = fakeScreen([row("가나")], { front: "com.example.Editor" });
+	let release!: () => void;
+	const gate = new Promise<void>(r => (release = r));
+	const runner: Runner = async (argv, o) => {
+		if (argv[0] === "osascript" && argv[1] !== "-l") await gate;
+		if (argv[1] === "send") release();
+		return screen.runner(argv, o);
+	};
+	expect(await sendText(one, { ...deps, runner })).toMatchObject({ ok: true });
+	expect(screen.order).toEqual(["send", "front", "open"]);
+	expect(screen.focus.at(-1)).toEqual(["open", "-b", "com.example.Editor"]);
+});
+
+test("the phase times of a send are on its result; the room check shows only when it ran", async () => {
+	const screen = fakeScreen([row("가나")]);
+	const deps = { paths, runner: screen.runner, kmsg: "/fake/kmsg", roomNames: names };
+	const first = await sendText(one, deps);
+	expect(Object.keys(first.ms ?? {}).sort()).toEqual(["front", "pick", "refocus", "send", "total"]);
+	expect(first.ms!.total).toBeGreaterThanOrEqual(first.ms!.send);
+	expect(screen.opened).toEqual(["chat_가나"]);
+	expect((await sendText(one, deps)).ms!.pick).toBe(0);
+	expect(screen.opened).toEqual(["chat_가나"]);
+});
+
+test("the room check reads the first rows of the list; all rows only when that finds no row, or when another database room has the name", async () => {
+	const a = fakeScreen([row("가나")]);
+	await sendText(one, { paths, runner: a.runner, kmsg: "/fake/kmsg", roomNames: names });
+	expect(a.limits).toEqual([40]);
+	rmSync(join(dir, "kakao", "picked.json"), { force: true });
+	const b = fakeScreen([row("다라")]);
+	const miss = await sendText(one, { paths, runner: b.runner, kmsg: "/fake/kmsg", roomNames: names });
+	expect(miss.ok).toBe(false);
+	expect(b.limits).toEqual([40, 300]);
+	rmSync(join(dir, "kakao", "picked.json"), { force: true });
+	const c = fakeScreen([row("가나")]);
+	await sendText(one, { paths, runner: c.runner, kmsg: "/fake/kmsg", roomNames: async () => [{ chatId: "100", name: "가나" }, { chatId: "200", name: "가나" }] });
+	expect(c.limits).toEqual([300]);
 });

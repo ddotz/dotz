@@ -10,7 +10,7 @@ import { writePrivate } from "./creds.ts";
 import { type KakaoDb, memberLabel, messageById, messages, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, type DraftModel, estimateTokens, ownSamples, parseDraftReply, type StyleHint, sinceOwnLast } from "./draft.ts";
 import { fetchMedia, mediaOf, mediaTarget, serveLocalFile, showsText } from "./media.ts";
-import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendResult } from "./send.ts";
+import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 
 export type WebDeps = {
@@ -34,7 +34,7 @@ export type WebDeps = {
 	fetch?: typeof fetch;
 };
 
-export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string };
+export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string; ms?: SendMs };
 
 const ROOMS_TTL_MS = 30_000;
 const MAX_TEXT = 1000;
@@ -145,7 +145,7 @@ export function createKakaoWeb(deps: WebDeps) {
 			inflight.delete(rec.id);
 			const state = r.ok ? "sent" : "failed";
 			const reason = r.ok ? undefined : (r.reason ?? "보내지 못했어요");
-			saveSends(storedSends().map(s => (s.id === rec.id ? { ...s, state, ...(reason ? { reason } : {}) } : s)));
+			saveSends(storedSends().map(s => (s.id === rec.id ? { ...s, state, ...(reason ? { reason } : {}), ...(r.ms ? { ms: r.ms } : {}) } : s)));
 			deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state, ...(reason ? { reason } : {}) });
 			if (rec.draft) deps.broadcast({ kind: "kakao_draft", chatId: rec.chatId });
 		})();

@@ -16,6 +16,9 @@ export type Pick = { ok: true; id: string } | { ok: false; reason: string };
 
 const MAX_CANDIDATES = 4;
 const LIST_LIMIT = 300;
+// `kmsg chats` walks the list row by row (measured 2026-10: 0.4 s for 1 row, 19.6 s for 200). A room no other database room shares is
+// looked for in the first rows only, and in all LIST_LIMIT rows when that finds none.
+const QUICK_LIMIT = 40;
 
 const osascript = (runner: Runner, req: object) => runner(["osascript", "-l", "JavaScript", "-e", jxa], { stdin: `${JSON.stringify(req)}\n`, timeoutMs: 30_000 });
 
@@ -27,9 +30,9 @@ export const REFUSE = {
 	list: "카카오톡 대화 목록을 읽지 못해서 보내지 않았어요",
 } as const;
 
-export async function listRows(kmsg: string, runner: Runner): Promise<ListRow[] | undefined> {
+export async function listRows(kmsg: string, runner: Runner, limit = LIST_LIMIT): Promise<ListRow[] | undefined> {
 	try {
-		const r = await runner([kmsg, "chats", "--json", "--limit", String(LIST_LIMIT)], { timeoutMs: 60_000 });
+		const r = await runner([kmsg, "chats", "--json", "--limit", String(limit)], { timeoutMs: 60_000 });
 		if (r.code !== 0) return undefined;
 		const chats = JSON.parse(r.stdout)?.chats;
 		if (!Array.isArray(chats)) return undefined;
@@ -73,7 +76,7 @@ async function readWindow(runner: Runner): Promise<WindowFacts | undefined> {
 	}
 }
 
-const closeWindow = async (runner: Runner) => {
+export const closeWindow = async (runner: Runner) => {
 	try {
 		await osascript(runner, { action: "close" });
 	} catch {}
@@ -81,7 +84,9 @@ const closeWindow = async (runner: Runner) => {
 
 // Picks the one list row that is this database room. `all` lists every database room (for same-name detection).
 export async function pickRoom(room: RoomFact, all: RoomFact[], deps: { kmsg: string; runner: Runner }): Promise<Pick> {
-	const rows = await listRows(deps.kmsg, deps.runner);
+	const dbShared = all.some(r => r.chatId !== room.chatId && r.name === room.name);
+	let rows = await listRows(deps.kmsg, deps.runner, dbShared ? LIST_LIMIT : QUICK_LIMIT);
+	if (rows && !dbShared && !rows.some(r => r.title === room.name)) rows = await listRows(deps.kmsg, deps.runner);
 	if (!rows) return { ok: false, reason: REFUSE.list };
 	const candidates = rows.filter(r => r.title === room.name);
 	if (!candidates.length) return { ok: false, reason: REFUSE.notListed };
