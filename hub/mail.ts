@@ -15,7 +15,7 @@ export type AttachmentInput = { name: string; type?: string; data?: string; path
 // A suggested next action the web shows in the mail's row and conversation slot (only when present): `reply-draft` = a reply draft
 // was offered as a send-approval [ask] whose question ends in "(<ref>)" (features/reply-drafts). `state` is the reply state the row shows
 // (web 30-monitoring.js mailReplyChip): "draft" (default) a draft waits for approval, "sent" the reply went out, "waiting" a reply is expected.
-export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; state?: "draft" | "sent" | "waiting" };
+export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; state?: "draft" | "sent" | "waiting"; at?: string };
 export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest };
 export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; attachments?: AttachmentInput[] };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean };
@@ -82,10 +82,12 @@ export function setMailSuggest(key: string, suggest: MailSuggest | undefined): b
 	const r = byKey.get(key);
 	if (!r) return false;
 	const { suggest: _old, ...rest } = r;
-	recordMail(suggest ? { ...rest, suggest } : rest);
+	recordMail(suggest ? { ...rest, suggest: suggest.state === "sent" ? { ...suggest, at: suggest.at ?? new Date().toISOString() } : suggest } : rest);
 	return true;
 }
 export const mailByThread = (thread: string): MailRecord | undefined => records.find(r => r.thread === thread);
+// The reply states of the mails (the 모니터링 app lines count them: hub/integrations.ts).
+export const mailSuggests = (): Array<{ target: string; state?: string; at: string }> => records.flatMap(r => r.suggest ? [{ target: mailTarget(r.key), state: r.suggest.state ?? "draft", at: r.suggest.at ?? r.at }] : []);
 export const mailTargets = (): string[] => [...records].sort((a, b) => b.at.localeCompare(a.at)).map(r => mailTarget(r.key));
 
 export function recordMail(r: MailRecord): void {
