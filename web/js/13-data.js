@@ -159,7 +159,7 @@ function enterTarget() {
   markSeen();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking(); paintDecision();
   if (current === "chat") { if (!CV.placed) scrollChat(true); } else scrollTerm(true);
-  if (SUBD) renderSheet();
+  if (SUBD) renderSubSheet();
   autosize();
   if (!matchMedia("(pointer: coarse)").matches && !document.querySelector("dialog[open]")) ta.focus({ preventScroll: true });
 }

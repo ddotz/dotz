@@ -78,6 +78,9 @@ const LATER = "[later]";
 const DEFER_MAX_AGE_MS = 3 * 3600_000;
 // A restart waits for a deferred prompt this young (its worker dies with the orchestrator process); older ones do not block.
 const DEFER_BLOCKS_RESTART_MS = 60 * 60_000;
+// Turns kept for tying a background worker to the turn that spawned it, and the clock rounding allowed after a turn's end.
+const MAX_TURNS = 200;
+const TURN_SLACK_MS = 1000;
 
 export function createPrompts(deps: PromptDeps) {
 	const prompts: Prompt[] = [];
@@ -89,6 +92,12 @@ export function createPrompts(deps: PromptDeps) {
 	const recentSent: { target: string; text: string; at: number }[] = [];
 	// Prompts whose turn ended with LATER, oldest first, until a later run answers them.
 	const deferred: Prompt[] = [];
+	// Every turn that ran (omp started it from a delivered prompt), oldest first: a worker belongs to the turn it was spawned in.
+	const turns: { prompt: Prompt; start: number; end?: number }[] = [];
+	const closeTurn = () => {
+		const t = turns.at(-1);
+		if (t && t.end === undefined) t.end = Date.now();
+	};
 	const openDeferred = () => deferred.filter(p => !p.done && !isAnswered(p.replyTo) && Date.now() - p.at <= DEFER_MAX_AGE_MS);
 
 	const save = () => {
@@ -206,7 +215,12 @@ export function createPrompts(deps: PromptDeps) {
 			current.unmatched = true;
 			return;
 		}
+		closeTurn();
 		current = i >= 0 ? prompts.splice(i, 1)[0] : undefined;
+		if (current) {
+			turns.push({ prompt: current, start: Date.now() });
+			if (turns.length > MAX_TURNS) turns.shift();
+		}
 		// A prompt redelivered at idle waits in the runtime's queue and cannot be taken back; if a dotz_send answered its message
 		// meanwhile (2026-10-22 00:32, web 3e7dd934), it still starts as a turn, but that turn's own answer would only repeat the first.
 		if (current && isAnswered(current.replyTo)) {
@@ -235,8 +249,20 @@ export function createPrompts(deps: PromptDeps) {
 			if (p.last) onAnswer(p.last);
 			else p.done = true;
 		}
+		closeTurn();
 		current = undefined;
 		save();
+	}
+
+	/**
+	 * The owner message the turn running at `at` (ms) was answering: a new turn replaces it, a message steered into the turn
+	 * or answered with a dotz_send reply_to does not move it. Undefined when no turn of ours was running then (a run a
+	 * worker's result woke, or one before this process started).
+	 */
+	function turnAt(at: number): { target: string; replyTo?: string } | undefined {
+		const t = turns.findLast(x => x.start <= at);
+		if (!t || (t.end !== undefined && at > t.end + TURN_SLACK_MS) || !t.prompt.target) return undefined;
+		return { target: t.prompt.target, ...(t.prompt.replyTo ? { replyTo: t.prompt.replyTo } : {}) };
 	}
 
 	/** Who an answer without a prompt goes to: the owner's newest message of the last 30 minutes, one still unanswered first. */
@@ -336,6 +362,7 @@ export function createPrompts(deps: PromptDeps) {
 			.map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
 		prompts.length = 0;
 		deferred.length = 0;
+		closeTurn();
 		current = undefined;
 		return { replayed: replay(open, wrap), texts: open.map(p => p.text) };
 	}
@@ -346,5 +373,5 @@ export function createPrompts(deps: PromptDeps) {
 	/** The deferred prompts still waiting for their worker's answer (bgwork.ts ties a worker to one of them). */
 	const deferredOpen = () => openDeferred().flatMap(p => (p.target ? [{ target: p.target, replyTo: p.replyTo, at: p.at }] : []));
 
-	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, reopen, waitingOnWorkers, deferredOpen, queued: () => prompts.slice(), current: () => current };
+	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, reopen, waitingOnWorkers, deferredOpen, turnAt, queued: () => prompts.slice(), current: () => current };
 }
