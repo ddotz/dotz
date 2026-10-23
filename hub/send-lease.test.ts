@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { advance } from "./runtime/test-clock.ts";
-import { handleLease, sendOnce, type LeaseReply, type LeaseReq } from "./send-lease.ts";
+import { claimLease, handleLease, sendOnce, type LeaseReply, type LeaseReq } from "./send-lease.ts";
 
 const dirs: string[] = [];
 const store = () => {
@@ -165,4 +165,18 @@ test("when send throws the lease is released everywhere and the error is returne
 	expect(r).toEqual({ ok: false, reason: "error", error: "kmsg failed" });
 	expect(handleLease({ op: "claim", key: K, holder: "c", id: "d1", until: w.now() + 10 }, w.now(), w.paths.a).ok).toBe(true);
 	expect(handleLease({ op: "claim", key: K, holder: "c", id: "d1", until: w.now() + 10 }, w.now(), w.paths.b).ok).toBe(true);
+});
+
+test("claimLease: the room stays with the computer that sent until the lease expires, then the other may send", async () => {
+	const pa = store(), pb = store();
+	let clock = 0;
+	const now = () => clock;
+	const toB = async (_p: string, _path: string, body: LeaseReq): Promise<LeaseReply> => handleLease(body, clock, pb);
+	const toA = async (_p: string, _path: string, body: LeaseReq): Promise<LeaseReply> => handleLease(body, clock, pa);
+	expect(await claimLease({ key: K, self: "맥북", ttlMs: 60_000, peers: ["b"], post: toB, now, path: pa })).toEqual({ ok: true });
+	expect(await claimLease({ key: K, self: "맥미니", ttlMs: 60_000, peers: ["a"], post: toA, now, path: pb })).toEqual({ ok: false, reason: "held", holder: "맥북" });
+	expect(await claimLease({ key: K, self: "맥북", ttlMs: 60_000, peers: ["b"], post: toB, now, path: pa })).toEqual({ ok: true });
+	clock = 60_001;
+	expect(await claimLease({ key: K, self: "맥미니", ttlMs: 60_000, peers: ["a"], post: toA, now, path: pb })).toEqual({ ok: true });
+	expect(await claimLease({ key: K, self: "맥북", ttlMs: 60_000, peers: ["b"], post: toB, now, path: pa })).toMatchObject({ ok: false, holder: "맥미니" });
 });

@@ -37,13 +37,17 @@ gateway that owns the item. That gateway executes it and records it.
 ## Actions (forwarded, executed by the owner)
 
 - `POST /api/peer/act {action, args, from}` on the owning gateway. The actions are `message` (a reply or a confirmed draft
-  in a conversation), `answer` (a decision), `read` (mark read) and `watch` (pause, resume or run a watch). The owner runs
+  in a conversation), `answer` (a decision), `read` (mark read), `watch` (pause, resume or run a watch) and `kakao`
+  (`op` send, read, draft-send or draft-drop on the owner's `/api/kakao/...` routes). The owner runs
   the same handler as its own web app. It records the event with `via: <from machine name>`. Its own web and history show
   the action the same as a local action, with a small 'from <machine>' note. The other gateway keeps no copy beyond its cache.
 
 ## App messages across computers (`hub/app-sync.ts`)
 
-- Stable message id: `<app>:<room key>:<app id>` when the app exposes its own id. KakaoTalk `logId` is server-assigned,
+- KakaoTalk uses `messageId()` in `hub/kakao/contract.ts` (`k:<chatId>:<logId>`, else `h:<chatId>:<hash>`). It follows the
+  same rule. Its `dispatchSend` lease hook is wired in `hub/kakao/gateway.ts` to `claimLease` (key `kakao:<chatId>`, 60 s):
+  the computer that sent last keeps the room for 60 s, and the other computer's send is refused with the holder's name.
+- Stable message id for other apps (`stableMsgId`): `<app>:<room key>:<app id>` when the app exposes its own id. KakaoTalk `logId` is server-assigned,
   so it is the same on every PC. Without an app id, the id is `<app>:<room key>:h<sha1(sender|sentAt ms|text)>`. The id
   never depends on the collecting computer.
 - `collector`: the machine name that read the message. It is information only and is not part of the id.
