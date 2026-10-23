@@ -44,10 +44,11 @@
 .as-tpls { margin-bottom: 16px; }
 .tplrow { position: relative; flex-wrap: nowrap; overflow-x: auto; padding: 6px 12px 2px; scrollbar-width: none; }
 .tplrow[hidden] { display: none; }
-.as-tpl { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 32px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--layer); color: var(--fg-2); font: 500 13px/20px var(--font); cursor: pointer; }
+.as-tpl { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 18px; background: var(--card); color: var(--fg); font: 500 13px/20px var(--font); cursor: pointer; }
 .as-tpl:hover { background: var(--hover); color: var(--fg); }
-.as-tpl[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
-.as-tpl-x { width: 32px; padding: 0; }
+.as-tpl[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+#mon-chips { flex-wrap: wrap; overflow-x: visible; }
+.as-tpl-x { width: 36px; padding: 0; }
 .as-tpl-x svg { width: 14px; height: 14px; }
 .as-btns { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .as-name .as-in { flex: 1 1 120px; min-width: 0; }

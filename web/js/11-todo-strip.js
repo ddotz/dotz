@@ -246,7 +246,9 @@ function chatPush(en, bulk) {
     dayDiv(en.m.ts);
     if (CS.group) { CS.group.live = false; CS.group.node.classList.remove("live"); CS.group.update(); }
     CS.group = null;
-    const e = en.m, pkey = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
+    const e = en.m;
+    if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") TURN.set(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) TURN.delete(target); }
+    const pkey = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
     const et = eventTarget(e) || "", laneT = isLaneT(et) ? et : "";
     // One progress note per target+key (newest text at the newest position; a session keeps only its newest note);
     // the answer to that target (or its lane report) drops them.
@@ -267,7 +269,7 @@ function chatPush(en, bulk) {
       tl.append(n); if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
-    if (!WORK.has(en.a.type) || isMailT(target)) return;
+    if (!WORK.has(en.a.type) || isMailT(target) || (isSettingsT(target) && !(TURN.get(target) <= (Date.parse(en.a.ts) || 0)))) return;
     if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
     CS.group.add(en.a);
   }

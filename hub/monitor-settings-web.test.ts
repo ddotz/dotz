@@ -127,7 +127,7 @@ describe("monitor settings at desktop width", () => {
 		await shot(v, "monitor-pinned-row-desktop.png");
 		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
 		await waitFor(v, `target === "settings:w:t-web" && document.querySelector('#app-sw [data-k="enabled"]')`);
-		const names = await q<string[]>(v, `return [...document.querySelectorAll("#app-sw .as-n")].map(n => n.textContent)`);
+		const names = await q<string[]>(v, `return [...document.querySelectorAll("#app-sw .as-row:not(.as-stat) .as-n")].map(n => n.textContent)`);
 		expect(names).toEqual(["켜기", "확인 간격(분)", "알림 방식", "이름"]);
 	});
 

@@ -97,6 +97,7 @@ function pqMerge(items) {
     const pc = { name: p.name, url: p.url }, s = p.items, key = k => `p:${p.url}|${k}`;
     if (!s) { off.push({ key: key("off"), group: MON_GROUP.plain, name: `${p.name} · 연결 안 됨`, ic: "activity", notices: [], mails: [], unread: 0, hint: "", at: "", pc, off: true }); continue; }
     const chips = [[p.name, ""], ...(p.online ? [] : [["연결 안 됨", "warn"]])], sn = (s.notices || []).map(n => ({ ...n, pc })), shown = new Set();
+    const owned = monOwnedBy(s.integrations || [], s.monitors || []), ownedNames = new Set([...owned.values()].flat());
     for (const it of s.integrations || []) {
       if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;
       const notices = (it.notices || []).map(id => sn.find(n => String(n.id) === String(id))).filter(n => n && monMine(n, it));
@@ -104,12 +105,13 @@ function pqMerge(items) {
       for (const n of notices) shown.add(n.id);
       const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 };
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";
-      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, hint: monNeedLine(needs), at, pc, chips });
+      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, hint: monNeedLine(needs), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {
       const notices = sn.filter(n => monHas(m, n)), last = monNewest(notices);
       for (const n of notices) shown.add(n.id);
+      if (ownedNames.has(m)) continue;
       // A peer's watch has the same settings conversation as a local one; it lives on that computer (a watch name this computer has itself stays local).
       if (m.kind === "watch" && m.watch && !NM.items.some(x => x.watch === m.watch)) PQ.of.set(`settings:w:${m.watch}`, { pc, key: key(`m:${m.name}`), mon: m });
       // A peer monitor of a project talks in that project's conversation, which lives on that computer (a project this computer has itself stays local).

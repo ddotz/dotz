@@ -174,6 +174,7 @@ async function sendChat(how) {
   chatStick = true; termStick = true;
   if (text.startsWith("/")) { sendCommand(text); return; }
   const mode = how || (isWorking(t) ? "steer" : undefined), reply = rpTake();
+  if (isSettingsT(t) && !TURN.has(t)) TURN.set(t, Date.now() - 5000);
   try {
     const r = await api("/api/message", "POST", { text, ...(reply ? { reply } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : asAbout(t) ? { settings: asAbout(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) });
     scrollChat(true); scrollTerm(true);

@@ -365,7 +365,7 @@ const targetName = t => {
   if (t === MAIN) return botName;
   if (isFixedT(t)) return FIXED_NAME[t];
   if (isMailT(t)) return (MAILS.get(t) || {}).subject || "메일";
-  if (isSettingsT(t)) return "설정";
+  if (isSettingsT(t)) return monSettingsName(t);
   if (isProjT(t)) {
     let list = [];
     try { list = (PRJ && PRJ.projects) || []; } catch { /* PRJ (the project list, declared further down) is not set up yet */ }
@@ -380,8 +380,12 @@ const liveTargets = () => S ? [MAIN, ...projTargets(), ...S.lanes.filter(laneAli
 const modeOf = () => current === "activity" ? "term" : "chat";
 let target = MAIN;
 try { const v = localStorage.getItem(TARGET_KEY); if (v && validTarget(v)) target = v; } catch {}
+// A settings conversation (a monitor's or an app's) shows the orchestrator busy only for a turn its own message started: TURN = target -> when that message
+// was sent, until the answer comes. A peer's monitor is answered on that computer, so this one's status never applies to it.
+const TURN = new Map();
 function targetInfo(t) {
-  if (t === MAIN || isFixedT(t) || isMailT(t) || isSettingsT(t)) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
+  if (isSettingsT(t)) { const o = (S && S.orchestrator) || {}, busy = o.status === "working" || o.status === "starting"; return { status: busy && (!TURN.has(t) || PQ.of.has(t)) ? "idle" : o.status || "", alive: true, known: true }; }
+  if (t === MAIN || isFixedT(t) || isMailT(t)) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
   if (isProjT(t)) { const o = (S && S.orchestrator) || {}, known = projTargets().includes(t); return { status: o.status || "", alive: known || !S, known }; }
   const l = S && S.lanes.find(x => x.name === laneOf(t));
   return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable, ask: l.pendingAsk && l.pendingAsk.text ? l.pendingAsk : null } : { status: "", alive: true, known: false };
