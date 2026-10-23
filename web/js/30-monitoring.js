@@ -129,9 +129,64 @@ function monRows(items, sel) {
 const MON_TONE = { fail: ["실패", "err"], warn: ["주의", "warn"], ask: ["답변 필요", "warn"], ok: ["정상", "ok"], changed: ["바뀜", "warn"] };
 const monWhen = n => ntTime(n.updated || n.ts);
 const monTag = tone => { const t = MON_TONE[tone]; return t ? el("span", { class: `tag ${t[1]}`, text: t[0] }) : null; };
+// A send approval (hub/draft-approval.ts): drawn as the mail it would send - the one question, the mail being answered when known, the recipient chip,
+// the subject in bold, the body in paragraphs - with its state as a badge with the time. 보내기 sends, 고치기 opens a box with the draft to change,
+// 보내지 않기 is the quiet way out. The whole answer path is the notice's (answerInline / ntPost), so the chat card and this one stay in step.
+const DR = { edit: new Set(), note: {} };
+const DR_STATE = { open: ["승인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], drop: ["보내지 않음", ""], expired: ["만료", ""], ignored: ["무시함", ""] };
+function drState(d) {
+  if (d.state === "open" || d.state === "ignored") return d.state;
+  const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && d.options.find(x => x.n === Number(m[1]));
+  return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop" }[o.label] || "expired";
+}
+const drParas = body => String(body ?? "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().split(/\n\n/);
+function drOriginal(t) {
+  const m = MAILS.get(t);
+  if (!m) return null;
+  const brief = mailBrief(m, t);
+  return el("div", { class: "dr-orig" }, el("div", { class: "dr-ok", text: "답장할 메일" }), el("div", { class: "dr-os" }, el("b", { text: mailSender(m.from) }), m.subject ? ` · ${m.subject}` : ""), brief ? el("div", { class: "dr-ob", text: brief }) : null);
+}
+function draftCardNode(n) {
+  const d = n.decision, dr = d.draft, st = drState(d), open = st === "open", [stText, stTone] = DR_STATE[st], busy = dcSending.has(n.id);
+  const opt = k => d.options.find(o => o.label === k) || null, oSend = opt("보내기"), oEdit = opt("고치기"), oDrop = opt("보내지 않기");
+  const redraw = () => { const nn = draftCardNode(n); card.replaceWith(nn); };
+  const when = ntTime(d.answered_at || n.updated || n.ts), mail = d.to.startsWith("mail:");
+  const q = ntPlain(n.title).replace(/\s*\([^()]*\)\s*$/, "");
+  const files = Array.isArray(dr.files) ? dr.files : [];
+  const editing = open && DR.edit.has(n.id);
+  const ta = editing ? el("textarea", { class: "dr-edit", rows: "8", maxlength: "6000", "aria-label": "초안 고치기", disabled: busy, oninput: () => { DR.note[n.id] = ta.value; go2.disabled = !ta.value.trim(); } }) : null;
+  if (ta) ta.value = DR.note[n.id] ?? drParas(dr.body).join("\n\n");
+  const mailBox = el("div", { class: "dr-mail" },
+    el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || "받는이" }), el("span", { class: "dr-chip", text: dr.to || "-" })),
+    dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
+    editing ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
+    files.length ? el("div", { class: "dr-files" }, ...files.map(f => el("span", { class: "dr-file" }, icon("clip"), f.name || String(f)))) : null);
+  const kids = [
+    el("div", { class: "rc-hd" }, el("span", { class: "dr-ic" }, icon(mail ? "mail" : "send")), el("span", { class: "rc-src", text: mail ? "메일" : (targetName(d.to) || "초안") }), el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` })),
+    q ? el("div", { class: "rc-title dr-q", text: q }) : null, mail ? drOriginal(d.to) : null, mailBox];
+  if (editing) {
+    const go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: "고친 내용 보내기", onclick: async () => {
+      const text = ta.value.trim();
+      if (!text || !oEdit) return;
+      dcSending.add(n.id); syncInlineChoices(); redraw();
+      try { await ntPost(n, oEdit.n, `이 내용으로 고쳐 주세요: ${text}`); DR.edit.delete(n.id); delete DR.note[n.id]; } catch (e) { toast(e.message, true); }
+      dcSending.delete(n.id); syncInlineChoices();
+    } });
+    kids.push(el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { DR.edit.delete(n.id); redraw(); } })));
+  } else if (open) {
+    const go = o => () => { if (o && !busy) answerInline(n, o); };
+    kids.push(el("div", { class: "dr-act dr-row" },
+      el("button", { class: "btn dr-send", type: "button", disabled: busy || !oSend, text: "보내기", onclick: go(oSend) }),
+      el("button", { class: "btn tonal", type: "button", disabled: busy || !oEdit, text: "고치기", onclick: () => { DR.edit.add(n.id); redraw(); } }),
+      el("button", { class: "btn text dr-drop", type: "button", disabled: busy || !oDrop, text: "보내지 않기", onclick: go(oDrop) })));
+  }
+  const card = el("div", { class: `bm alert rc dr ${st}`, "data-nid": n.id }, ...kids.filter(Boolean));
+  return card;
+}
 // A decision: the question and the same choice rows a chat message has; an open one is answered here, an answered one shows what was chosen.
 function monDecisionNode(n) {
   const d = n.decision, open = d.state === "open", said = d.state === "answered" ? String(d.answer || "") : "";
+  if (d.draft) return draftCardNode(n);
   // The buttons show the options: the body keeps the lead text and the 결정: line, not the option lines (10-decision-card.js stripChoices).
   const fl = fileLines(d.options.length ? stripChoices(n.text) : n.text);
   const rows = ntOptsOrdered(d.options).map(o => el("button", { class: `dcm-row${o.rec ? " rec" : ""}${said.startsWith(`${o.n})`) ? " on" : ""}`, type: "button", disabled: !open || dcSending.has(n.id), "data-n": o.n,
@@ -197,20 +252,17 @@ const mailReplyChip = sg => {
 // a paperclip and the file count when it has files), the subject, a summary of up to 3 lines and, at the bottom, the reply state. The
 // whole card is the way in: it opens the mail's conversation, where the original and its files are (11-todo-strip.js "mail").
 function monConvNode(t, label) {
-  const m = MAILS.get(t), last = CONV.get(t), n = ts(t).unread;
-  const tag = n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : null;
-  if (!m) return resultCard({ src: label, at: last ? last.ts : "", title: last ? last.text : "", text: "", tag, actions: [el("button", { class: "btn tonal", type: "button", onclick: () => go("monitoring", `c:${t}`), text: "대화 열기" })] });
-  const files = m.attachments || [], brief = mailBrief(m, t), when = rcWhen(last ? last.ts : m.at), chip = mailReplyChip(m.suggest), open = () => go("monitoring", `c:${t}`);
-// A report that points at an app item (n.item, hub/watchitem.ts) shows the item as the app draws it, the check's own output folded under it. This is the one
-// place that resolves the reference: a mail this page holds, else the card the hub kept with the report; an item that is not found here (another gateway's)
-// shows the subject and sender the check printed, and a report with nothing to show is a plain report.
-function monItemNode(n) {
-  const it = n.item, t = it && it.app === "mail" && it.key ? `mail:${it.key}` : "", c = it && it.card;
-  if (t && !MAILS.has(t) && c && c.source) MAILS.set(t, c);
-  const node = t && MAILS.has(t) ? monConvNode(t, "메일") : c && (c.subject || c.from) ? resultCard({ src: mailSender(c.from), at: n.updated || n.ts, title: c.subject }) : null;
-  const raw = node ? rcSplit(n.text).raw : "";
-  if (raw) { const d = rcRawFold(raw); d.addEventListener("click", e => e.stopPropagation()); node.append(d); }
-  return node;
+  const m = MAILS.get(t), last = CONV.get(t), n = ts(t).unread, open = () => go("monitoring", `c:${t}`);
+  const tag = n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : !m && ntHasDecision(t) ? el("span", { class: "tag warn", text: "답변 필요" }) : null;
+  const files = m ? m.attachments || [] : [], brief = m ? mailBrief(m, t) : "", when = rcWhen(last ? last.ts : m && m.at), chip = m ? mailReplyChip(m.suggest) : null;
+  const title = m ? m.subject || "(제목 없음)" : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
+  const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
+  return el("div", { class: "bm alert rc mr", role: "button", tabindex: "0", "aria-label": `${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
+    onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
+    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? mailSender(m.from) || label : label }), tag, clip, when ? el("span", { class: "rc-time", text: when }) : null),
+    el("div", { class: "rc-title", text: title }),
+    brief ? el("div", { class: "mr-sum", text: brief }) : null,
+    chip ? el("div", { class: "mr-slot" }, chip) : null);
 }
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
   return el("div", { class: "bm alert rc mr", role: "button", tabindex: "0", "aria-label": `${m.subject || "메일"} 원문 열기`, onclick: open,

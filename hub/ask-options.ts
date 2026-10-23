@@ -52,3 +52,18 @@ export function askDefaults(text: string): DecisionOption[] {
 		{ n: 2, label: "아니요", desc: "", rec: false, detail: true },
 	];
 }
+
+import { type DraftApproval, parseQuotedDraft } from "./draft-approval.ts";
+
+// The draft a send question asks about when the message quotes it (recipient line first): such a question gets the draft-approval options
+// (DRAFT_OPTIONS), never the yes / no fallback, with or without an approval id.
+export function askedDraft(text: string): DraftApproval | undefined {
+	const q = lastQuestion(text);
+	return q && !OPEN.test(q) && SEND.test(q) ? parseQuotedDraft(text) : undefined;
+}
+
+export const DRAFT_OPTIONS: DecisionOption[] = [
+	{ n: 1, label: DRAFT_SEND, desc: "그대로 보내요", rec: true },
+	{ n: 2, label: DRAFT_EDIT, desc: "무엇을 고칠지 알려 주면 고쳐서 다시 물어봐요", rec: false, detail: true },
+	{ n: 3, label: DRAFT_DROP, desc: "보내지 않아요", rec: false },
+];
