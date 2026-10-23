@@ -142,12 +142,25 @@ function monNoticeNode(n, names = []) {
   if (ntNeeds(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
   return node;
 }
-// A mail's short text for its row: the poster's summary, else the first lines of its body (hub/mail.ts keeps both), else nothing.
-// It never repeats the sender or the subject: with no summary and no body the row shows no third line.
-const mailBrief = m => {
-  const subj = rcPlain(m.subject), head = rcPlain(`${m.from} · ${m.subject}`);
-  const lines = String(m.summary || m.preview || "").split("\n").map(l => rcPlain(l)).filter(l => l && !rcLabel(l) && l !== subj && l !== head);
-  return lines.join(" ");
+// A mail's short text for its row: the poster's summary, else the first lines of its body (hub/mail.ts keeps both), else the same taken from
+// the conversation's first message the web already holds (a plugin that posts only sender and subject: the 요약 section the lane wrote, else
+// the original's first lines; hub/mail.ts mailBriefOf does the same for the list), else nothing.
+// It never repeats the sender or the subject: with nothing to summarize the row shows no third line.
+const mailSkip = m => new Set([rcPlain(m.subject), rcPlain(`${m.from} · ${m.subject}`), rcPlain(m.from), rcPlain(mailSender(m.from))].filter(Boolean));
+const mailLines = (s, skip) => String(s ?? "").split("\n").map(l => rcPlain(l).replace(/^(?:[-*•]|\d+[.)])\s+/, "").trim()).filter(l => l && !rcLabel(l) && !skip.has(l));
+function mailFromMsg(text, skip) {
+  const sp = rcSplit(text), sec = rcSections(sp.text).find(s => s.h === "요약"), own = sec ? mailLines(sec.body, skip).slice(0, 3) : [];
+  return own.length ? own : mailLines(sp.raw, skip).slice(0, 3);
+}
+const mailBrief = (m, t) => {
+  const skip = mailSkip(m), own = mailLines(m.summary || m.preview, skip);
+  if (own.length || !t) return own.join(" ");
+  for (const e of ts(t).msgs) {
+    if (!convIncoming(e)) continue;
+    const lines = mailFromMsg(e.text, skip);
+    if (lines.length) return lines.join(" ");
+  }
+  return "";
 };
 const mailSize = b => b >= 1048576 ? `${(b / 1048576).toFixed(1)}MB` : b >= 1024 ? `${Math.round(b / 1024)}KB` : b > 0 ? `${b}B` : "";
 // The authenticated hub route of one attached file (hub/mail.ts mailFileRoute); dl=1 answers with Content-Disposition: attachment.
@@ -176,7 +189,7 @@ function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = ts(t).unread;
   const tag = n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : null;
   if (!m) return resultCard({ src: label, at: last ? last.ts : "", title: last ? last.text : "", text: "", tag, actions: [el("button", { class: "btn tonal", type: "button", onclick: () => go("monitoring", `c:${t}`), text: "대화 열기" })] });
-  const files = m.attachments || [], brief = mailBrief(m), when = rcWhen(last ? last.ts : m.at), chip = mailReplyChip(m.suggest), open = () => go("monitoring", `c:${t}`);
+  const files = m.attachments || [], brief = mailBrief(m, t), when = rcWhen(last ? last.ts : m.at), chip = mailReplyChip(m.suggest), open = () => go("monitoring", `c:${t}`);
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
   return el("div", { class: "bm alert rc mr", role: "button", tabindex: "0", "aria-label": `${m.subject || "메일"} 원문 열기`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
@@ -235,7 +248,7 @@ function renderMonitoring() {
     side.scrollTop = top;
   }
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
-  const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t)]), sel.mon, NM.loaded, NT.loaded]);
+  const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t), MAILS.has(t) ? mailBrief(MAILS.get(t), t) : ""]), sel.mon, NM.loaded, NT.loaded]);
   if (sig !== MON.sig) {
     MON.sig = sig;
     const again = MON.shown === sel.key, keep = box.scrollTop, stick = !again || box.scrollTop + box.clientHeight >= box.scrollHeight - 40;

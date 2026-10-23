@@ -1,8 +1,9 @@
 // Mail as conversations (hub/mail.ts): key rules, postMail with and without Discord, idempotency, validation and the wake turn,
 // with Discord and the event bus injected as fakes.
 import { describe, expect, test } from "bun:test";
-import { eventTarget, type HubEvent } from "./events.ts";
-import { MailError, mailByKey, mailByThread, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
+import "./conversations.ts"; // listens to the event bus: the first message of a mail conversation gives the mail its summary
+import { emit, eventTarget, type HubEvent } from "./events.ts";
+import { MailError, mailBriefOf, mailByKey, mailByThread, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
 import { outEvent } from "./projectchat.ts";
 
 function fakes(discordOn: boolean, channel: string | undefined = "1561565203714408448") {
@@ -172,5 +173,39 @@ describe("mail conversation identity", () => {
 		expect(eventTarget({ ts: "x", kind: "out", source: "orchestrator", target: "mail:zele-x", text: "답" })).toBe("mail:zele-x");
 		expect(eventTarget({ ts: "x", kind: "delivery", source: "gateway", target: "mail:zele-x", text: "" })).toBe("mail:zele-x");
 		expect(eventTarget({ ts: "x", kind: "message", source: "discord", channel: "th:77", conv: "mail:zele-x", parent: "ch:5", text: "ㅇㅇ" })).toBe("mail:zele-x");
+	});
+});
+
+describe("a mail posted without a summary", () => {
+	const from = "Alex Sender <sender@example.com>";
+	test("mailBriefOf: the 요약 lines (max 3), else the original's first lines; never the sender or the subject", () => {
+		const both = [`${from} · 월간 점검`, "", "요약", "- 점검이 끝났어요.", "- 결과 확인이 필요해요.", "- 금요일까지 회신해 주세요.", "- 네 번째는 버려요.", "", "할 일", "- 회신", "", "원문", "안녕하세요."].join("\n");
+		expect(mailBriefOf(both, from, "월간 점검")).toBe("점검이 끝났어요.\n결과 확인이 필요해요.\n금요일까지 회신해 주세요.");
+		const orig = [`${from} · 월간 점검`, "", "원문", "월간 점검", "Alex Sender", "첫 줄입니다.", "둘째 줄입니다."].join("\n");
+		expect(mailBriefOf(orig, from, "월간 점검")).toBe("첫 줄입니다.\n둘째 줄입니다.");
+		expect(mailBriefOf(`${from} · 월간 점검`, from, "월간 점검")).toBe("");
+		expect(mailBriefOf("요약\n월간 점검\n\n원문\n본문입니다.", from, "월간 점검")).toBe("본문입니다.");
+	});
+
+	test("the first conversation message with text sets summary once; the owner's words and a header-only mail event do not", async () => {
+		const { deps } = fakes(false);
+		const id = uid("b");
+		const r = await postMail({ source: "plug", id, subject: "월간 점검", from }, deps);
+		expect(mailByKey(r.key)?.summary).toBeUndefined();
+		const at = (n: number) => new Date(Date.UTC(2099, 0, 1, 0, 0, n)).toISOString();
+		emit("outbox", { ts: at(1), kind: "mail", source: "plug", channel: r.target, conv: r.target, mail: r.key, subject: "월간 점검", from, text: `${from} · 월간 점검` });
+		emit("inbox", { ts: at(2), kind: "message", source: "web", channel: r.target, text: "요약\n- 내가 쓴 말" });
+		expect(mailByKey(r.key)?.summary).toBeUndefined();
+		emit("outbox", { ts: at(3), kind: "out", source: "orchestrator", target: r.target, text: `${from} · 월간 점검\n\n요약\n- 점검이 끝났어요.\n- 확인이 필요해요.\n\n원문\n본문입니다.` });
+		expect(mailByKey(r.key)?.summary).toBe("점검이 끝났어요.\n확인이 필요해요.");
+		emit("outbox", { ts: at(4), kind: "out", source: "orchestrator", target: r.target, text: "요약\n- 나중 말" });
+		expect(mailByKey(r.key)?.summary).toBe("점검이 끝났어요.\n확인이 필요해요.");
+	});
+
+	test("a conversation with neither a 요약 section nor an original leaves the mail without a summary", async () => {
+		const { deps } = fakes(false);
+		const r = await postMail({ source: "plug", id: uid("n"), subject: "본문 없는 메일", from }, deps);
+		emit("outbox", { ts: "2099-01-01T01:00:00.000Z", kind: "out", source: "orchestrator", target: r.target, text: `${from} · 본문 없는 메일` });
+		expect(mailByKey(r.key)?.summary).toBeUndefined();
 	});
 });

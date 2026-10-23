@@ -1,5 +1,6 @@
 import { eventTarget, onEmit, tailEvents, type HubEvent } from "./events.ts";
 import { paths } from "./config.ts";
+import { briefMail } from "./mail.ts";
 import { readOf, unreadFrom } from "./reads.ts";
 import { parseTone, previewSource } from "./tone.ts";
 
@@ -91,6 +92,8 @@ function note(e: HubEvent): void {
 	const target = eventTarget(e);
 	const last = target ? lastOf(e) : undefined;
 	if (!target || !last) return;
+	// A mail posted without a summary gets the one its conversation says (once; the list then needs no conversation).
+	if (target.startsWith("mail:") && !OWNER_KINDS.has(e.kind)) briefMail(target.slice(5), String(e.text ?? ""));
 	countIncoming(target, e, last);
 	const prev = known.get(target);
 	if (prev && prev.ts > last.ts) return;
