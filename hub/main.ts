@@ -26,7 +26,7 @@ import { applyAccountChange as holdOrchestratorKeepalive, orch, orchBusy, setIdl
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { forgetAccountUsage, usageSnapshot } from "./providers.ts";
-import { backfillNotices, dropChannelNotices, setConvNameResolver, setLaneTitleResolver, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, updateAvailable, updateResolved } from "./notices.ts";
+import { backfillNotices, dropChannelNotices, setConvNameResolver, setLaneTitleResolver, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
@@ -63,6 +63,7 @@ setOrchestratorAvailable(() => orch.status !== "stopped" && orch.status !== "rat
 setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] ?? discord.channels.threads[conv.slice(3)]?.name : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
 backfillNotices();
+tagStoredApps();
 installLaneHandlers();
 
 // Result files ([file] lines, discord.ts) go out only when GET /api/file would serve them (inside the roots, or named in a [file] line of a sent message); a file too big to attach goes
