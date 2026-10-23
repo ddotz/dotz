@@ -10,6 +10,7 @@ import { createLaneRelay } from "./lanerelay.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { send, deliver, out } from "./outbound.ts";
+import { dropForLine } from "./forline.ts";
 
 export const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });
 
@@ -26,7 +27,7 @@ export function installLaneHandlers(): void {
 		// A [run] report is progress: it edits the lane's one progress message. Results, questions and failures are real messages.
 		// A [run] text that is the answer to an owner message is that answer, not progress to edit away.
 		const running = parseTone(text).tone === "run" && !answering;
-		void inOrder(channel, () => localize(text.slice(0, 1800), channel, "lane"))
+		void inOrder(channel, () => localize(dropForLine(text).slice(0, 1800), channel, "lane"))
 			.then(async shown => {
 				if (running) return void (await discord.progress(channel, "progress", shown));
 				if ((await send(channel, shown)).delivered) await discord.clearProgress(channel);
@@ -40,7 +41,7 @@ export function installLaneHandlers(): void {
 		note: (lane, raw, refs) => {
 			const channel = `lane:${lane}`;
 			void inOrder(channel, async () => {
-				const shown = await localize(stripHandoff(raw).slice(0, 900), channel, "lane");
+				const shown = await localize(dropForLine(stripHandoff(raw)).slice(0, 900), channel, "lane");
 				emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, answers: refs });
 				return shown;
 			})
@@ -60,7 +61,7 @@ export function installLaneHandlers(): void {
 		const tone = parseTone(text).tone;
 		const real = tone === "ask" || tone === "fail" || tone === "done";
 		void inOrder(channel, async () => {
-			const local = await localize(text.slice(0, real ? 1800 : 900), channel, "lane");
+			const local = await localize(dropForLine(text).slice(0, real ? 1800 : 900), channel, "lane");
 			const shown = real || tone === "run" ? local : `[run] ${local}`;
 			emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, ...(real ? {} : { update_key: "progress" }) });
 			return shown;

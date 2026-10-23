@@ -67,6 +67,7 @@ function legacyError(lane: Lane, e: AgentError): void {
 	if (e.kind === "rate" || e.kind === "owner") void pauseForRateLimit(lane, e.text, e.kind);
 	else if (e.kind !== "transient" || !retryTransient(lane, e.text)) {
 		lane.lastText = `[lane error] ${(e.text || "model request failed").slice(0, 300)}`;
+		lane.unreported = true;
 		scheduleReport(lane);
 	}
 }

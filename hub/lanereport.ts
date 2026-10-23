@@ -13,6 +13,7 @@ export const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 
 // leaves a pending ask alone.
 export function report(lane: Lane, text: string, notice = false): void {
 	rmSync(pendingFile(lane), { force: true });
+	lane.unreported = false;
 	// The turn's final text answers every owner message still open (a gateway notice does not).
 	const answering = !notice && ownerNotes.reported(lane.name);
 	lane.reports++;
@@ -71,11 +72,14 @@ export function scheduleReport(lane: Lane): void {
 	if (lane.transientTimer || lane.failing) return;
 	if (lane.silent && !lane.lastText.startsWith("[lane error]")) {
 		lane.lastText = lane.silent.lastText;
+		lane.unreported = false;
 		lane.silent = undefined;
 		rmSync(pendingFile(lane), { force: true });
 		return;
 	}
 	lane.silent = undefined;
+	// A turn that wrote no text of its own (aborted, empty) has nothing new to report.
+	if (!lane.unreported) return void rmSync(pendingFile(lane), { force: true });
 	if (lane.lastText) writeAtomic(pendingFile(lane), lane.lastText);
 	clearTimeout(lane.timer);
 	lane.timer = setTimeout(() => {
