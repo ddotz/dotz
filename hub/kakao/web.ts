@@ -31,7 +31,7 @@ export type WebDeps = {
 	// The reply-drafts tone profile of a room (optional extra for the prompt).
 	draftStyle?: (chatId: string) => StyleHint | undefined;
 	// Learns (first draft) or refreshes (every 200 own lines) the owner's voice profile of the room and the global one, before the prompt is built.
-	// It gets a reader of the owner's OWN text lines only.
+	// It gets the room's messages (read once to write the profile) and counts of the owner's own lines.
 	learnVoice?: (src: VoiceSource) => Promise<void>;
 	// The owner sent a draft with his own edit (고치기): the draft text and the text he sent, for the room's tone profile.
 	onCorrection?: (chatId: string, draft: string, sent: string) => void;
@@ -178,7 +178,7 @@ export function createKakaoWeb(deps: WebDeps) {
 					const all = (await allRooms(config)).all;
 					const excluded = new Set(config.exclude_chats ?? []);
 					const recentRooms = all.filter(r => (r.kind === "direct" || r.kind === "group") && !excluded.has(r.chatId)).sort((a, b) => b.lastAt - a.lastAt).slice(0, VOICE_ROOMS).map(r => r.chatId);
-					await deps.learnVoice({ chatId, ownCounts: ids => ownTextCounts(db, ids, me), ownTexts: (id, limit) => ownTexts(db, id, me, limit), recentRooms: async () => recentRooms });
+					await deps.learnVoice({ chatId, ownCounts: ids => ownTextCounts(db, ids, me), ownTexts: (id, limit) => ownTexts(db, id, me, limit), messages: (id, limit) => messages(db, id, limit, me), ask: deps.draftModel, recentRooms: async () => recentRooms });
 				} catch {}
 			}
 			let style: StyleHint | undefined;

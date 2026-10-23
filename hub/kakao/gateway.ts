@@ -44,7 +44,8 @@ const draftStyle = (chatId: string): StyleHint => {
 
 const learnVoice = async (src: VoiceSource) => {
 	enableKakaoApp();
-	await ensureKakaoVoice(src);
+	const r = await ensureKakaoVoice(src);
+	if (r.mode) log(`kakao voice ${r.mode} room=${src.chatId} model tokens in=${r.tokens?.in ?? 0} out=${r.tokens?.out ?? 0} profile=${r.profile.length > 0}`);
 };
 const onCorrection = (chatId: string, draft: string, sent: string) => {
 	const cut = (s: string) => (s.length > 70 ? `${s.slice(0, 69)}…` : s);
