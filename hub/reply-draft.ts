@@ -9,6 +9,8 @@ export type ReplyKind = "mail" | "comment" | "chat";
 
 export type ReplyItem = {
 	kind: ReplyKind;
+	app?: string; // where the item came from (mail, youtube, kakao, ...): an install keeps one tone profile per app
+	room?: string; // the conversation inside a messenger app: its own tone profile
 	from: string;
 	replyTo?: string;
 	cc?: string[];
