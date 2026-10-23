@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { approxTokens, fieldsOf, parseProposal, readSettings, SettingsError, settingsContext, validate, writeSettings } from "./app-settings.ts";
+import { approxTokens, fieldsOf, mailDiscordOn, parseProposal, readSettings, setDiscordProbe, SettingsError, settingsContext, validate, writeSettings } from "./app-settings.ts";
 
 let dir = "";
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "as-")); });
@@ -31,6 +31,39 @@ describe("schema validation", () => {
 		expect(fieldsOf("site").map(f => f.key)).toEqual(["use_here", "label", "reply_model"]);
 		expect(() => validate("nope", { a: 1 })).toThrow(SettingsError);
 		expect(() => validate("__proto__", { a: 1 })).toThrow(SettingsError);
+	});
+});
+
+describe("디스코드에도 올리기 (mail)", () => {
+	afterEach(() => setDiscordProbe(() => false));
+	const has = (app: string) => fieldsOf(app).some(f => f.key === "discord");
+	test("drawn for the mail app and its instances only while Discord is connected", () => {
+		setDiscordProbe(() => false);
+		expect(has("mail")).toBe(false);
+		setDiscordProbe(() => true);
+		expect(has("mail")).toBe(true);
+		expect(has("mail-2")).toBe(true);
+		expect(has("kakao")).toBe(false);
+		const f = readSettings(dir, "mail").find(x => x.key === "discord")!;
+		expect(f).toMatchObject({ label: "디스코드에도 올리기", type: "bool", help: "새 메일마다 디스코드 메일 채널에 스레드를 만들어요", value: false });
+		expect(() => validate("mail", { discord: true })).not.toThrow();
+		setDiscordProbe(() => false);
+		expect(() => validate("mail", { discord: true })).toThrow(SettingsError);
+	});
+	test("off by default; the switch is stored per instance and mailDiscordOn follows the instance that owns the mail's source", () => {
+		setDiscordProbe(() => true);
+		seed("custom/apps.json", { mail: {}, "mail-2": { app: "mail", label: "개인", filter: { source: "naver" } } });
+		expect(mailDiscordOn(dir, "zele-1")).toBe(false);
+		expect(mailDiscordOn(dir, "naver-1")).toBe(false);
+		writeSettings(dir, "mail-2", { discord: true });
+		expect(json("custom/apps.json")["mail-2"]).toMatchObject({ discord: true, label: "개인" });
+		expect(mailDiscordOn(dir, "naver-1")).toBe(true);
+		expect(mailDiscordOn(dir, "zele-1")).toBe(false);
+		expect(readSettings(dir, "mail").find(x => x.key === "discord")?.value).toBe(false);
+		writeSettings(dir, "mail", { discord: true });
+		expect(mailDiscordOn(dir, "zele-1")).toBe(true);
+		writeSettings(dir, "mail-2", { discord: false });
+		expect(mailDiscordOn(dir, "naver-1")).toBe(false);
 	});
 });
 

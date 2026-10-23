@@ -91,7 +91,8 @@ export const APPS_FILE = "custom/apps.json";
 // `source` = a mail item's source key (POST /api/mail source): the instance owns `mail:<source>-…`, the same as the conv prefix `mail:<source>-`.
 export type AppFilter = { source?: string; conv?: string[]; watches?: string[]; text?: string[]; data?: string[] };
 // `watches` at the instance level = extra watch names (or prefixes ending in "-") that are this instance's own, beside the registry's (a custom plugin's login keeper).
-export type AppRaw = { app?: string; label?: string; off?: boolean; deleted?: boolean; filter?: AppFilter; watches?: string[] };
+// `discord` (mail instances): a Discord thread per new mail too (hub/app-settings.ts 디스코드에도 올리기); missing = web only.
+export type AppRaw = { app?: string; label?: string; off?: boolean; discord?: boolean; deleted?: boolean; filter?: AppFilter; watches?: string[] };
 // Cached by the file's mtime and size: the notice lists ask on every call.
 const offCache = new Map<string, { sig: string; raw: Record<string, AppRaw>; off: Set<string> }>();
 function readApps(dataDir: string): { raw: Record<string, AppRaw>; off: Set<string> } {
