@@ -1,10 +1,11 @@
-// Gateway browser jobs go through the `aside` CLI only (`aside repl` for tabs/DOM, `aside exec` for agent tasks); no
-// AppleScript window control and no direct CDP. The owner works in Aside themself, so nothing here activates Aside or
+// Gateway browser jobs go through `aside repl` only (our own code drives tabs/DOM, no Aside agent quota); `aside exec` is
+// never used on an automatic path. No AppleScript window control and no direct CDP. The owner works in Aside themself, so nothing here activates Aside or
 // selects one of his tabs: `openTab()` in `aside repl` adds a background tab (the window's active tab and the front app
 // stay as they were, measured 2026-10-19) and every tab we open is closed in the same repl run. A stopped Aside is started
 // hidden in the background (`open -g -j`), never brought to the front.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { asideReason } from "./aside-errors.ts";
 import { DATA_DIR } from "./config.ts";
 
 const ASIDE = Bun.which("aside") ?? "aside";
@@ -47,7 +48,7 @@ export async function ensureAside(): Promise<void> {
 			throw new Error("Aside is running with no browser window open; aside repl needs one (not opened here: that would bring Aside to the front)");
 		await Bun.sleep(1000);
 	}
-	throw new Error(`Aside did not answer aside repl within ${START_WAIT_MS / 1000}s: ${last.slice(-200)}`);
+	throw new Error(`Aside did not answer aside repl within ${START_WAIT_MS / 1000}s: ${asideReason(last)}`);
 }
 
 // A secret file under <data dir>/secrets, read at run time. The value is never logged and never placed in argv.
@@ -90,7 +91,7 @@ ${body}
 })(); console.log("RESULT " + JSON.stringify({ data: dzOut ?? null })); } catch (e) { console.log("RESULT " + JSON.stringify({ error: String((e && e.message) || e).slice(0, 300) })); } finally { if (dzTab) await closeTab(dzTab).catch(() => {}); }`;
 		const r = await runCmd([ASIDE, "repl", code], o.timeoutMs ?? 118_000);
 		const m = [...r.out.matchAll(/^.*?RESULT (\{.*\})\s*$/gm)].at(-1);
-		if (!m) throw new Error(`aside repl${r.timedOut ? " timed out" : " failed"}: ${(r.out + r.err).replace(/\x1b\[[0-9;]*m/g, "").replace(/\s+/g, " ").slice(-200)}`);
+		if (!m) throw new Error(`aside repl${r.timedOut ? " timed out" : " failed"}: ${asideReason(r.out + r.err)}`);
 		const j = JSON.parse(m[1]);
 		if (j.error) throw new Error(j.error);
 		return j.data;
