@@ -1,0 +1,192 @@
+import { expect, test } from "bun:test";
+import { checkPeer, peerToken } from "./peer-auth.ts";
+import { type Computer, createPeerMonitor, type PeerMonitor } from "./peer-monitor.ts";
+
+// Two simulated gateways (A and B) in one process: each is a handler function (peer gate, peer routes, then a small fake of the owner's own API),
+// wired to the other by an injected fetch. No network, no real clock.
+const TOKEN = "t".repeat(24);
+const LOGIN = "owner@example.test";
+const URL_A = "https://a.example.test";
+const URL_B = "https://b.example.test";
+let clock = 1_000_000;
+
+type Gateway = { name: string; mon: PeerMonitor; handle: (req: Request) => Promise<Response>; events: Array<{ target: string; text: string; via?: string }>; down: boolean; hang: boolean; statuses: number[]; seen: Request[] };
+const nodes = new Map<string, Gateway>();
+
+const netFetch = async (url: string, init?: RequestInit): Promise<Response> => {
+	const g = nodes.get(new URL(url).origin);
+	if (!g || g.down) throw new Error("connection refused");
+	if (g.hang) return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("timeout"))));
+	const req = new Request(url, { ...init, headers: { ...(init?.headers as Record<string, string>), "tailscale-user-login": LOGIN } });
+	g.seen.push(req.clone());
+	const res = await g.handle(req);
+	g.statuses.push(res.status);
+	return res;
+};
+
+function gateway(name: string, self: string, other: string, otherName: string): Gateway {
+	const events: Gateway["events"] = [];
+	const local = async (req: Request): Promise<Response> => {
+		const path = new URL(req.url).pathname;
+		if (req.method === "POST" && path === "/api/message") {
+			const b = (await req.json()) as { mail?: string; lane?: string; text: string; via?: string };
+			events.push({ target: b.mail ? `mail:${b.mail}` : `lane:${b.lane}`, text: b.text, ...(b.via ? { via: b.via } : {}) });
+			return Response.json({ ok: true });
+		}
+		if (path === "/api/monitors") return Response.json({ items: [{ name: `${name} 감시`, kind: "watch" }] });
+		if (path === "/api/notices") return Response.json({ items: [{ id: `n-${name}`, title: `${name} 알림`, read: false }], unread: 1 });
+		if (path === "/api/integrations") return Response.json({ items: [{ key: "mail", unread: events.length }] });
+		if (path === "/api/conversations") {
+			const last = events.at(-1);
+			return Response.json({ items: [{ target: "lane:work", last: null }, { target: "mail:inbox", last: last ? { text: last.text, ...(last.via ? { via: last.via } : {}) } : null }, { target: "kakao:room", last: null }] });
+		}
+		return new Response("not found", { status: 404 });
+	};
+	const computers: Computer[] = [{ name, url: self, self: true }, { name: otherName, url: other, self: false }];
+	const mon = createPeerMonitor({ name: () => name, local, computers: async () => computers, fetch: netFetch, now: () => clock, token: () => TOKEN, timeoutMs: 20 });
+	const handle = async (req: Request): Promise<Response> => {
+		if (checkPeer(req, TOKEN) === "denied") return new Response("forbidden", { status: 403 });
+		return (await mon.route(req, new URL(req.url))) ?? local(req);
+	};
+	const g: Gateway = { name, mon, handle, events, down: false, hang: false, statuses: [], seen: [] };
+	nodes.set(self, g);
+	return g;
+}
+const pair = () => {
+	nodes.clear();
+	return { A: gateway("노트북", URL_A, URL_B, "맥미니"), B: gateway("맥미니", URL_B, URL_A, "노트북") };
+};
+const req = (path: string, init: RequestInit = {}) => new Request(`${URL_A}${path}`, init);
+
+test("merge: the peer's items come with its name, mail and kakao rows only, and this gateway's own list stays local", async () => {
+	const { A, B } = pair();
+	const merged = await A.mon.peerMonitoring();
+	expect(merged).toHaveLength(1);
+	const [m] = merged;
+	expect(m).toMatchObject({ name: "맥미니", url: URL_B, online: true, stale: false });
+	expect(m!.items!.name).toBe("맥미니");
+	expect(m!.items!.monitors).toEqual([{ name: "맥미니 감시", kind: "watch" }]);
+	expect(m!.items!.conversations.map(c => (c as { target: string }).target)).toEqual(["mail:inbox", "kakao:room"]);
+	const own = await A.mon.snapshot();
+	expect(own.monitors).toEqual([{ name: "노트북 감시", kind: "watch" }]);
+	expect(JSON.stringify(own)).not.toContain("맥미니");
+	expect(B.mon).toBeDefined();
+});
+
+test("a peer that is down: offline, answered within the timeout budget, cached items kept as stale", async () => {
+	const { A, B } = pair();
+	B.hang = true;
+	const first = await A.mon.peerMonitoring();
+	expect(first).toEqual([{ name: "맥미니", url: URL_B, online: false, stale: false, items: null }]);
+
+	B.hang = false;
+	clock += 21_000;
+	await A.mon.peerMonitoring();
+	await A.mon.idle();
+	const up = (await A.mon.peerMonitoring())[0]!;
+	expect(up.online).toBe(true);
+	const items = up.items;
+
+	B.down = true;
+	A.mon.invalidatePeer(URL_B);
+	await A.mon.idle();
+	const down = (await A.mon.peerMonitoring())[0]!;
+	expect(down).toMatchObject({ online: false, stale: true });
+	expect(down.items).toBe(items);
+});
+
+test("ETag: an unchanged peer answers 304 and the cached snapshot object is kept", async () => {
+	const { A, B } = pair();
+	const first = (await A.mon.peerMonitoring())[0]!.items!;
+	expect(B.statuses).toEqual([200]);
+	A.mon.invalidatePeer(URL_B);
+	await A.mon.idle();
+	expect(B.seen.at(-1)!.headers.get("if-none-match")).toBe(`"${first.rev}"`);
+	expect(B.statuses).toEqual([200, 304]);
+	const second = (await A.mon.peerMonitoring())[0]!;
+	expect(second.items).toBe(first);
+	expect(second.online).toBe(true);
+	const direct = await B.handle(new Request(`${URL_B}/api/peer/monitoring`, { headers: { "x-dotz-peer": TOKEN, "tailscale-user-login": LOGIN, "if-none-match": "W/\"" + first.rev + "\"" } }));
+	expect(direct.status).toBe(304);
+});
+
+test("no token: the peer is read with the four plain reads, without the peer header, and actions are refused", async () => {
+	const { A, B } = pair();
+	const quiet = createPeerMonitor({ name: () => "x", local: async () => new Response("no"), computers: async () => [{ name: "맥미니", url: URL_B, self: false }], fetch: netFetch, token: () => undefined, now: () => clock });
+	const [v] = await quiet.peerMonitoring();
+	expect(v).toMatchObject({ name: "맥미니", online: true, stale: false });
+	expect(v!.items!.monitors).toEqual([{ name: "맥미니 감시", kind: "watch" }]);
+	expect(B.seen.map(r => new URL(r.url).pathname).sort()).toEqual(["/api/conversations", "/api/integrations", "/api/monitors", "/api/notices"]);
+	expect(B.seen.every(r => r.headers.get("x-dotz-peer") === null)).toBe(true);
+	const act = await quiet.route(new Request(`${URL_A}/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: "{}" }), new URL(`${URL_A}/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`));
+	expect(act!.status).toBe(503);
+	expect(A.name).toBe("노트북");
+});
+
+test("an older peer without /api/peer/monitoring (404) is read with the plain reads", async () => {
+	const { A, B } = pair();
+	const inner = B.handle;
+	B.handle = async r => (new URL(r.url).pathname === "/api/peer/monitoring" ? new Response("not found", { status: 404 }) : inner(r));
+	const [v] = await A.mon.peerMonitoring();
+	expect(v).toMatchObject({ name: "맥미니", online: true });
+	expect(v!.items!.notices).toEqual([{ id: "n-맥미니", title: "맥미니 알림", read: false }]);
+	expect(v!.items!.conversations.map(c => (c as { target: string }).target)).toEqual(["mail:inbox", "kakao:room"]);
+});
+
+test("checkPeer gates", () => {
+	const headers = (h: Record<string, string>) => ({ headers: h });
+	const good = { "x-dotz-peer": TOKEN, "tailscale-user-login": LOGIN };
+	const get = (path: string, h: Record<string, string>, method = "GET") => new Request(`${URL_A}${path}`, { method, ...headers(h) });
+	expect(checkPeer(get("/api/notices", {}), TOKEN)).toBe("none");
+	expect(checkPeer(get("/api/peer/monitoring", good), TOKEN)).toBe("ok");
+	expect(checkPeer(get("/api/peer/act", good, "POST"), TOKEN)).toBe("ok");
+	expect(checkPeer(get("/api/peer/monitoring", good), peerToken("/nonexistent/peer-token"))).toBe("denied");
+	expect(checkPeer(get("/api/peer/monitoring", { ...good, "x-dotz-peer": "w".repeat(24) }), TOKEN)).toBe("denied");
+	expect(checkPeer(get("/api/peer/monitoring", { "x-dotz-peer": TOKEN }), TOKEN)).toBe("denied");
+	expect(checkPeer(get("/api/message", good, "POST"), TOKEN)).toBe("denied");
+	expect(checkPeer(get("/api/state", good), TOKEN)).toBe("denied");
+});
+
+test("proxy: only known peers, only the peer lists", async () => {
+	const { A, B } = pair();
+	const through = (pc: string, p: string, method = "GET", body?: object) =>
+		A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(pc)}&p=${encodeURIComponent(p)}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }));
+	expect((await through("https://evil.example.test", "/api/notices")).status).toBe(400);
+	expect((await through(URL_A, "/api/notices")).status).toBe(400);
+	expect((await through(URL_B, "/api/state")).status).toBe(400);
+	expect((await through(URL_B, "//evil.example.test/api/notices")).status).toBe(400);
+	expect((await through(URL_B, "/api/message", "POST", { text: "x" })).status).toBe(400);
+	expect(B.seen).toHaveLength(0);
+	const ok = await through(URL_B, "/api/notices");
+	expect(ok.status).toBe(200);
+	expect(ok.headers.get("content-type")).toContain("json");
+	expect(((await ok.json()) as { unread: number }).unread).toBe(1);
+	B.down = true;
+	const gone = await through(URL_B, "/api/notices");
+	expect(gone.status).toBe(502);
+	expect(await gone.json()).toEqual({ error: "연결 안 됨" });
+});
+
+test("a forwarded message is recorded once on the owner with via, and shows once in the sender's merged view", async () => {
+	const { A, B } = pair();
+	await A.mon.peerMonitoring();
+	const sent = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: JSON.stringify({ action: "message", args: { target: "mail:inbox", text: "알겠습니다" }, from: "spoofed" }) }));
+	expect(sent.status).toBe(200);
+	expect(B.events).toEqual([{ target: "mail:inbox", text: "알겠습니다", via: "노트북" }]);
+	expect(A.events).toEqual([]);
+	A.mon.invalidatePeer(URL_B);
+	await A.mon.idle();
+	const view = (await A.mon.peerMonitoring())[0]!.items!;
+	const rows = view.conversations.filter(c => (c as { target: string }).target === "mail:inbox") as Array<{ last: { text: string; via: string } }>;
+	expect(rows).toHaveLength(1);
+	expect(rows[0]!.last).toEqual({ text: "알겠습니다", via: "노트북" });
+});
+
+test("act: unknown action, unknown target and a missing sender are refused", async () => {
+	const { B } = pair();
+	const act = (b: object) => B.handle(new Request(`${URL_B}/api/peer/act`, { method: "POST", headers: { "x-dotz-peer": TOKEN, "tailscale-user-login": LOGIN }, body: JSON.stringify(b) }));
+	expect((await act({ action: "rm", args: {}, from: "노트북" })).status).toBe(400);
+	expect((await act({ action: "message", args: { target: "kakao:room", text: "hi" }, from: "노트북" })).status).toBe(400);
+	expect((await act({ action: "message", args: { target: "mail:inbox", text: "hi" } })).status).toBe(400);
+	expect(B.events).toEqual([]);
+});

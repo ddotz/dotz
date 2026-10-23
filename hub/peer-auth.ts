@@ -43,8 +43,8 @@ const same = (a: string, b: string) => {
 };
 
 // Read-only paths a peer may GET, and the peer POSTs (forwarded actions, send lease).
-const PEER_GET = [/^\/api\/peer\/monitoring$/, /^\/api\/monitors$/, /^\/api\/notices$/, /^\/api\/integrations$/, /^\/api\/conversations$/, /^\/api\/history$/, /^\/api\/mail\/[a-z0-9._-]+\/body$/, /^\/api\/mail\/[a-z0-9._-]+\/files\/\d+$/, /^\/api\/kakao\/[^?]*$/, /^\/api\/peer-info$/];
-const PEER_POST = [/^\/api\/peer\/act$/, /^\/api\/peer\/lease$/];
+export const PEER_GET = [/^\/api\/peer\/monitoring$/, /^\/api\/monitors$/, /^\/api\/notices$/, /^\/api\/integrations$/, /^\/api\/conversations$/, /^\/api\/history$/, /^\/api\/mail\/[a-z0-9._-]+\/body$/, /^\/api\/mail\/[a-z0-9._-]+\/files\/\d+$/, /^\/api\/kakao\/[^?]*$/, /^\/api\/peer-info$/];
+export const PEER_POST = [/^\/api\/peer\/act$/, /^\/api\/peer\/lease$/];
 
 export type PeerCheck = "none" | "ok" | "denied";
 // "none": not a peer request (the normal owner checks apply). "ok": a peer may have this path. "denied": refuse with 403.

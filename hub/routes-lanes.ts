@@ -13,7 +13,7 @@ import { stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace } from "./threads.ts";
 import { addSchedule, listSchedules, patchSchedule, removeSchedule } from "./schedule.ts";
 import { clearChannel, listSetups, setupChannel } from "./workchannels.ts";
-import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, watchScript } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, runWatch, watchScript } from "./watch.ts";
 import { queue, out } from "./outbound.ts";
 import { json, body } from "./routes-util.ts";
 
@@ -94,6 +94,12 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 			if (req.method === "GET") return json(listWatches());
 			if (req.method === "POST" && parts[2] && parts[3] === "approve") return json({ ok: true, watch: approveWatch(parts[2]) });
 			if (req.method === "PATCH" && parts[2]) return json(patchWatch(parts[2], await body(req)));
+			// Run one watch now (the peer action `watch run`, hub/peer-monitor.ts); the round runs behind the request.
+			if (req.method === "POST" && parts[2] && parts[3] === "run") {
+				if (!allWatches().some(w => w.id === parts[2] || w.name === parts[2])) return json({ error: `no watch ${parts[2]}` }, 404);
+				void runWatch(parts[2]).catch(e => log(`watch run failed: ${(e as Error).message}`));
+				return json({ ok: true });
+			}
 			if (req.method === "POST") return json({ ok: true, watch: addWatch(await body(req), existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "") });
 			if (req.method === "DELETE" && parts[2]) {
 				const owned = allWatches().find(w => (w.id === parts[2] || w.name === parts[2]) && w.channels?.length);
