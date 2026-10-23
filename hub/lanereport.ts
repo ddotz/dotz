@@ -14,6 +14,8 @@ export const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 
 export function report(lane: Lane, text: string, notice = false): void {
 	rmSync(pendingFile(lane), { force: true });
 	lane.unreported = false;
+	if (lane.reportedThisTurn === text) return log(`lane ${lane.name} report dropped (same text again before a new turn)`);
+	lane.reportedThisTurn = text;
 	// The turn's final text answers every owner message still open (a gateway notice does not).
 	const answering = !notice && ownerNotes.reported(lane.name);
 	lane.reports++;
