@@ -43,6 +43,10 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: b.text });
 			return Response.json({ ok: true });
 		}
+		if (req.method === "PATCH" && /^\/api\/watches\/[a-z0-9-]+\/settings$/.test(path)) {
+			events.push({ target: `settings:${path.split("/")[3]}`, text: JSON.stringify(((await req.json()) as { values: unknown }).values) });
+			return Response.json({ ok: true });
+		}
 		if (path === "/api/monitors") return Response.json({ items: [{ name: `${name} 감시`, kind: "watch" }] });
 		if (path === "/api/notices") return Response.json({ items: [{ id: `n-${name}`, title: `${name} 알림`, read: false }], unread: 1 });
 		if (path === "/api/integrations") return Response.json({ items: [{ key: "mail", unread: events.length }] });
@@ -210,6 +214,17 @@ test("deleting a failed KakaoTalk send from a peer runs on the owner's own delet
 	expect(B.events).toEqual([{ target: "kakao:123", text: "delete S1" }]);
 	expect(A.events).toEqual([]);
 	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "send-delete", chatId: "123" } }) }))).status).toBe(400);
+});
+
+test("a monitor settings change from a peer is a plain PATCH on the owner, once; its settings read is a proxied GET", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const r = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "watch", args: { name: "disk-check", op: "settings", values: { every_minutes: 30 } } }) }));
+	expect(r.status).toBe(200);
+	expect(B.events).toEqual([{ target: "settings:disk-check", text: JSON.stringify({ every_minutes: 30 }) }]);
+	expect(A.events).toEqual([]);
+	const read = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/watches/disk-check/settings")}`));
+	expect(read.status).toBe(404);   // allowed through to B (this fake has no such route); a path outside the peer read list would be 400
 });
 
 test("a KakaoTalk reply from a peer runs on the owner's own kakao send route, once", async () => {

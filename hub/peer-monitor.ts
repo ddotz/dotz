@@ -53,6 +53,7 @@ function targetFields(target: unknown): Record<string, string> | undefined {
 	if (kind === "lane") return { lane: rest };
 	if (kind === "mail") return { mail: rest };
 	if (kind === "ch") return { project: t };
+	if (kind === "settings") return { settings: rest };
 	return undefined;
 }
 
@@ -227,7 +228,9 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (!a.name) return bad("name required");
 				if (a.op === "pause" || a.op === "resume") return ask("PATCH", `/api/watches/${name}`, { paused: a.op === "pause" }, login);
 				if (a.op === "run") return ask("POST", `/api/watches/${name}/run`, {}, login);
-				return bad("op must be pause, resume or run");
+				// A monitor's settings (hub/watch-settings.ts): the same plain PATCH the owner's web sends, with the change set as `values`.
+				if (a.op === "settings") return ask("PATCH", `/api/watches/${name}/settings`, { values: a.values }, login);
+				return bad("op must be pause, resume, run or settings");
 			}
 			// KakaoTalk rooms (hub/kakao/web.ts): the owning gateway sends through its own single send door, lease included.
 			case "kakao": {

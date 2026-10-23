@@ -6,10 +6,13 @@ const AS_KEY = "dotz.settings.cards";
 const AS = { by: {}, none: {}, load: {}, busy: {}, done: (() => { try { return JSON.parse(localStorage.getItem(AS_KEY)) || {}; } catch { return {}; } })() };
 const asSave = () => { try { localStorage.setItem(AS_KEY, JSON.stringify(AS.done)); } catch { /* storage full or blocked: the card state lasts until reload */ } };
 
+// An app is "mail", "kakao"...; a monitor is "w:<watch name>" (hub/watch-settings.ts): same schema, same card, a different URL.
+const asUrl = app => app.startsWith("w:") ? `/api/watches/${enc(app.slice(2))}/settings` : `/api/integrations/${enc(app)}/settings`;
+
 function asLoad(app, again) {
   if (AS.load[app] && !again) return AS.load[app];
   return AS.load[app] = (async () => {
-    try { AS.by[app] = (await api(`/api/integrations/${enc(app)}/settings`)).fields || []; delete AS.none[app]; }
+    try { AS.by[app] = (await api(asUrl(app))).fields || []; delete AS.none[app]; }
     catch { AS.none[app] = true; }
     asPaint();
     MON.sig = ""; monSchedule();
@@ -17,7 +20,7 @@ function asLoad(app, again) {
   })();
 }
 async function asPatch(app, values) {
-  const r = await api(`/api/integrations/${enc(app)}/settings`, "PATCH", { values });
+  const r = await api(asUrl(app), "PATCH", { values });
   AS.by[app] = r.fields || [];
   asPaint();
   MON.sig = ""; monSchedule();
@@ -28,6 +31,7 @@ const asYes = v => v ? "켜짐" : "꺼짐";
 function asFmt(f, v) {
   if (f.type === "bool") return asYes(v);
   if (f.type === "list") return v.length ? `${v.length}개` : "없음";
+  if (f.type === "enum") return (f.labels || {})[v] || String(v);
   return String(v) || "없음";
 }
 // A list changes by what leaves and what comes in; the rest by before -> after.
@@ -37,7 +41,16 @@ function asChange(f, before, after) {
   return [add.length ? `추가 ${add.join(", ")}` : "", del.length ? `뺌 ${del.join(", ")}` : "", !add.length && !del.length ? "달라지는 것 없음" : ""].filter(Boolean).join(" · ");
 }
 
-/* ---- the switches above the conversation ---- */
+/* ---- the controls above the conversation: a switch, a menu or a box per common setting ---- */
+function asControl(f, set) {
+  if (f.type === "bool") return kkSwitch(f.value, f.label, f.key, set);
+  const num = f.type === "number";
+  const c = f.type === "enum"
+    ? el("select", { class: "fi as-in", "aria-label": f.label, "data-k": f.key, onchange: () => set(c.value) }, ...(f.options || []).map(o => el("option", { value: o, text: (f.labels || {})[o] || o })))
+    : el("input", { class: "fi as-in", type: num ? "number" : "text", ...(num ? { min: f.min, max: f.max, inputmode: "numeric" } : {}), "aria-label": f.label, "data-k": f.key, onchange: () => set(num ? Number(c.value) : c.value.trim()) });
+  c.value = String(f.value);
+  return c;
+}
 function asPaint() {
   const box = $("#app-sw");
   if (!box) return;
@@ -51,13 +64,13 @@ function asPaint() {
   clear(box).append(
     ...sw.map(f => el("div", { class: "as-row" },
       el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), el("span", { class: "as-h", text: f.help })),
-      kkSwitch(f.value, f.label, f.key, async on => {
+      asControl(f, async v => {
         if (AS.busy[app]) return;
         AS.busy[app] = true;
-        try { await asPatch(app, { [f.key]: on }); } catch (e) { toast(e.message || "설정을 바꾸지 못했어요"); }
-        AS.busy[app] = false; asPaint();
+        try { await asPatch(app, { [f.key]: v }); } catch (e) { toast(e.message || "설정을 바꾸지 못했어요"); }
+        AS.busy[app] = false; delete box.dataset.sig; asPaint();
       }))),
-    other.length ? el("div", { class: "as-sum" }, ...other.map(f => el("span", { class: "as-chip", title: f.help, text: `${f.label} ${asFmt(f, f.value)}` }))) : null);
+    ...(other.length ? [el("div", { class: "as-sum" }, ...other.map(f => el("span", { class: "as-chip", title: f.help, text: `${f.label} ${asFmt(f, f.value)}` })))] : []));
 }
 // Called when the conversation head is drawn (31-conversations.js convPaintHead).
 function asSync() {
@@ -69,7 +82,7 @@ function asSync() {
 function asPinnedRow(app) {
   if (!AS.load[app]) asLoad(app);
   if (!AS.by[app]) return null;
-  const sw = AS.by[app].filter(f => f.switch), hint = sw.length ? sw.map(f => `${f.label} ${asYes(f.value)}`).join(" · ") : "말로 설정을 바꿔요";
+  const sw = AS.by[app].filter(f => f.switch), hint = sw.length ? sw.map(f => `${f.label} ${asFmt(f, f.value)}`).join(" · ") : "말로 설정을 바꿔요";
   return el("button", { class: "cv-row pv as-pin", type: "button", onclick: () => go("monitoring", `c:settings:${app}`) },
     el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon("settings")),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "설정" }), el("span", { class: "cv-p", text: hint })));

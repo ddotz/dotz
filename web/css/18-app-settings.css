@@ -1,6 +1,6 @@
 /* 모니터링 > 앱 > 설정 대화 (web/js/32-app-settings.js): the switches above the conversation, the pinned 설정 row and the change card.
    The switch itself is the kakao one (.kk-sw, 17-kakao.css). */
-.app-sw { display: flex; flex-direction: column; margin: 0 0 8px; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
+.app-sw { display: flex; flex-direction: column; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto 8px; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
 .app-sw[hidden] { display: none; }
 .as-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 16px; }
 .as-row + .as-row { border-top: 1px solid var(--line); }
@@ -22,4 +22,6 @@
 .as-done { margin-top: 8px; font: 600 13px/20px var(--font); }
 .as-done.applied { color: var(--ok); }
 .as-done.cancelled, .as-card.cancelled .as-cr { color: var(--fg-3); }
+.as-in { flex: none; width: 150px; height: 32px; }
+.as-in[type="number"] { width: 96px; text-align: right; }
 @media (max-width: 1099px) { .app-sw { margin-bottom: 4px; } }

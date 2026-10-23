@@ -13,6 +13,7 @@ import { stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace } from "./threads.ts";
 import { addSchedule, listSchedules, patchSchedule, removeSchedule } from "./schedule.ts";
 import { clearChannel, listSetups, setupChannel } from "./workchannels.ts";
+import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
 import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, runWatch, watchScript } from "./watch.ts";
 import { queue, out } from "./outbound.ts";
 import { json, body } from "./routes-util.ts";
@@ -90,6 +91,11 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 			if (parts[2] && parts[3] === "script" && parts.length === 4) {
 				if (req.method === "GET") return json(watchScript(parts[2]));
 				if (req.method === "PUT") return json({ ok: true, ...putWatchScript(parts[2], (await body(req)).text) });
+			}
+			// A monitor's settings (hub/watch-settings.ts): GET reads, PATCH is the one write path, shared by the switches, a change card and a peer.
+			if (parts[2] && parts[3] === "settings" && parts.length === 4 && (req.method === "GET" || req.method === "PATCH")) {
+				if (!allWatches().some(w => w.id === parts[2] || w.name === parts[2])) return json({ error: `no watch ${parts[2]}` }, 404);
+				return json({ key: `w:${parts[2]}`, fields: req.method === "GET" ? readWatchSettings(parts[2]) : writeWatchSettings(parts[2], (await body(req)).values) });
 			}
 			if (req.method === "GET") return json(listWatches());
 			if (req.method === "POST" && parts[2] && parts[3] === "approve") return json({ ok: true, watch: approveWatch(parts[2]) });

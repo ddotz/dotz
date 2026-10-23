@@ -7,7 +7,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-export type FieldType = "bool" | "enum" | "list" | "text";
+export type FieldType = "bool" | "enum" | "list" | "text" | "number";
 export type SettingField = {
 	key: string;
 	label: string;
@@ -17,13 +17,18 @@ export type SettingField = {
 	store: string;
 	path: string;
 	options?: string[];
+	/** Words the owner reads for each option (enum). */
+	labels?: Record<string, string>;
+	/** Whole-number range (number). */
+	min?: number;
+	max?: number;
 	def?: boolean | string | string[];
-	/** A common setting the web draws as a switch above the conversation (bool only). */
+	/** A common setting the web draws as a control above the conversation: a switch (bool), a menu (enum) or a box (number, text). */
 	switch?: boolean;
 	/** Dotted paths in the same file that are set true together with this switch turned on. */
 	alsoOn?: string[];
 };
-export type SettingValue = boolean | string | string[];
+export type SettingValue = boolean | string | string[] | number;
 
 const DRAFTS = "custom/reply-drafts/config.json";
 const SNS = "custom/sns/config.json";
@@ -79,6 +84,10 @@ function clean(f: SettingField, v: unknown): SettingValue {
 		if (typeof v !== "string" || !f.options?.includes(v)) throw new SettingsError(`${f.key}: ${f.options?.join(", ")} 중 하나여야 해요`);
 		return v;
 	}
+	if (f.type === "number") {
+		if (typeof v !== "number" || !Number.isInteger(v) || v < (f.min ?? 0) || v > (f.max ?? Number.MAX_SAFE_INTEGER)) throw new SettingsError(`${f.key}: ${f.min ?? 0}에서 ${f.max} 사이 정수여야 해요`);
+		return v;
+	}
 	if (f.type === "text") {
 		if (typeof v !== "string" || v.length > 500) throw new SettingsError(`${f.key}: 500자 이하 글이어야 해요`);
 		return v.trim();
@@ -87,10 +96,8 @@ function clean(f: SettingField, v: unknown): SettingValue {
 	return [...new Set((v as string[]).map(x => x.trim()))];
 }
 
-/** Validates a whole change set without writing; the clean values keyed by field key. Unknown key, wrong type or an empty set throws. */
-export function validate(app: string, values: unknown): Record<string, SettingValue> {
-	const fields = fieldsOf(app);
-	if (!fields.length) throw new SettingsError(`${app}: 바꿀 수 있는 설정이 없어요`, 404);
+/** Validates a whole change set against a schema without writing; the clean values keyed by field key. Unknown key, wrong type or an empty set throws. */
+export function validateFields(fields: SettingField[], values: unknown): Record<string, SettingValue> {
 	if (!values || typeof values !== "object" || Array.isArray(values) || !Object.keys(values).length) throw new SettingsError("values: 바꿀 항목이 있어야 해요");
 	const out: Record<string, SettingValue> = {};
 	for (const [k, v] of Object.entries(values)) {
@@ -100,8 +107,15 @@ export function validate(app: string, values: unknown): Record<string, SettingVa
 	}
 	return out;
 }
+export function validate(app: string, values: unknown): Record<string, SettingValue> {
+	const fields = fieldsOf(app);
+	if (!fields.length) throw new SettingsError(`${app}: 바꿀 수 있는 설정이 없어요`, 404);
+	return validateFields(fields, values);
+}
 
-export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "options" | "switch"> & { value: SettingValue };
+export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "options" | "labels" | "min" | "max" | "switch"> & { value: SettingValue };
+/** A field with its current value, as GET returns it. */
+export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), value });
 export function readSettings(dataDir: string, app: string): SettingView[] {
 	const cache = new Map<string, Record<string, any>>();
 	return fieldsOf(app).map(f => {
@@ -113,7 +127,7 @@ export function readSettings(dataDir: string, app: string): SettingView[] {
 		} catch {
 			value = f.def ?? "";
 		}
-		return { key: f.key, label: f.label, type: f.type, help: f.help, ...(f.options ? { options: f.options } : {}), ...(f.switch ? { switch: true } : {}), value };
+		return viewOf(f, value);
 	});
 }
 
@@ -147,13 +161,13 @@ const FENCE = "```";
 const BLOCK = new RegExp(`${FENCE}dotz-settings[ \\t]*\\n([\\s\\S]*?)${FENCE}`);
 export type Proposal = { app: string; changes: Record<string, SettingValue> };
 /** The change proposal in an answer, or null. Parsing never writes: a proposal is applied only by the PATCH the 적용 button sends. */
-export function parseProposal(text: string, app: string): Proposal | null {
+export function parseProposal(text: string, app: string, fields: SettingField[] = fieldsOf(app)): Proposal | null {
 	const m = BLOCK.exec(text);
 	if (!m) return null;
 	try {
 		const b = JSON.parse(m[1]!);
 		if (b?.app !== app) return null;
-		return { app, changes: validate(app, b.changes) };
+		return { app, changes: validateFields(fields, b.changes) };
 	} catch {
 		return null;
 	}
@@ -164,8 +178,9 @@ const show = (v: SettingValue): string => (Array.isArray(v) ? JSON.stringify(v.s
 export type Turn = { from: "owner" | "bot"; text: string };
 
 /** What the orchestrator gets with a settings turn: this app's fields and current values, the proposal format and the last few turns. Nothing else. */
-export function settingsContext(dataDir: string, app: string, label: string, recent: readonly Turn[] = []): string {
-	const rows = readSettings(dataDir, app).map(f => `${f.key} | ${f.type}${f.options ? `(${f.options.join("/")})` : ""} | ${f.label} | ${show(f.value)} | ${f.help}`);
+export const settingsContext = (dataDir: string, app: string, label: string, recent: readonly Turn[] = []): string => settingsContextOf(app, label, readSettings(dataDir, app), recent);
+export function settingsContextOf(app: string, label: string, views: readonly SettingView[], recent: readonly Turn[] = []): string {
+	const rows = views.map(f => `${f.key} | ${f.type}${f.options ? `(${f.options.join("/")})` : ""} | ${f.label} | ${show(f.value)} | ${f.help}`);
 	const turns = recent.slice(-4).map(t => `${t.from === "owner" ? "오너" : "봇"}: ${t.text.replace(BLOCK, "(변경 제안)").replace(/\s+/g, " ").trim().slice(0, 300)}`);
 	return [
 		`[settings:${app}] ${label} 설정 대화입니다. 아래 항목만 바꾸고, 파일을 직접 고치지 않습니다.`,
