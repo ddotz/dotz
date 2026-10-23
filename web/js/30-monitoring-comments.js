@@ -3,11 +3,13 @@
 // app (CM.apps). It reuses the KakaoTalk pane's layout and classes (30-kakao.js, 17-kakao.css). Live updates: comment / comment_draft /
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
-const CM_KEYS = { "i:youtube": "youtube", "i:instagram": "instagram", "i:site": "site" };
 const CM = { apps: new Set(), sources: [], vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
   drafting: new Set(), revising: "", pick: null, posts: new Map(), timer: 0, intgT: 0, readSent: "" };
-const cmAppOf = key => (CM_KEYS[key] && CM.apps.has(CM_KEYS[key]) ? CM_KEYS[key] : "");
+// An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
+// default instance of its app, or an added one such as site-mapia); an older gateway sends none, then the app of its kind.
 const cmAppOfKind = k => (k === "website" ? "site" : k);
+const cmOwner = s => s.app || cmAppOfKind(s.kind);
+const cmAppOf = key => (key.startsWith("i:") && CM.apps.has(key.slice(2)) ? key.slice(2) : "");
 
 const cmRooms = el("div", { class: "kk-rooms", id: "cm-rooms", "aria-label": "댓글을 지켜보는 글" });
 const cmHead = el("div", { class: "kk-head", id: "cm-head" });
@@ -20,14 +22,14 @@ const cmPane = el("div", { class: "kk cm", id: "cm", hidden: true }, cmRooms, cm
 $("#v-monitoring").append(cmPane);
 
 const cmIntgSoon = () => { clearTimeout(CM.intgT); CM.intgT = setTimeout(loadIntegrations, 500); };
-const cmSources = () => CM.sources.filter(s => cmAppOfKind(s.kind) === CM.app);
+const cmSources = () => CM.sources.filter(s => cmOwner(s) === CM.app);
 
 async function cmLoadSources() {
   try {
     const r = await api("/api/comments/sources");
     CM.sources = r.on === false ? [] : Array.isArray(r.sources) ? r.sources : [];
   } catch { return; }
-  const apps = new Set(CM.sources.filter(s => (s.watch || []).length).map(s => cmAppOfKind(s.kind)));
+  const apps = new Set(CM.sources.filter(s => (s.watch || []).length).map(cmOwner));
   const changed = apps.size !== CM.apps.size || [...apps].some(a => !CM.apps.has(a));
   CM.apps = apps;
   if (changed && typeof monSchedule === "function") monSchedule();

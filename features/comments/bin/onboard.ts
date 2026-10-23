@@ -1,9 +1,10 @@
 // One request turns a comment source on, end to end and resumable (every step checks its own state, so a second run continues):
-//   on --app youtube|instagram|site [--name <site>] [--label <text>] [--read-kind rss|json|script --read <url|command>]
+//   on --app youtube|instagram|site [--name <site>] [--import-legacy | --no-import-legacy] [--label <text>] [--read-kind rss|json|script --read <url|command>]
 //      [--post-kind webhook|script --post <url|command> [--secret <file in ~/.dotz/secrets>]] [--owner <name on the site>] [--to <target>]
 //   off --app <key>   |   status
 // Steps: connection check (the only owner-only step: exit 3 with everything he must do, in one batch) -> source config -> personal
 // feature switch -> tone from his past replies -> the `comments` watch (and the old per-platform comment watch paused) -> first read.
+// A site also becomes its own app instance (POST /api/apps {app:"site", id:"site-<name>", filter:{source:<name>}}): its own row, comment view and settings.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SiteConfig, SourceConfig, SourceKind } from "../../../hub/comments/contract.ts";
@@ -11,12 +12,13 @@ import type { Engine } from "../../../hub/comments/engine.ts";
 import { realEngine } from "../../../hub/comments/real.ts";
 import { createHub } from "../../../hub/kakao/hub.ts";
 import { loadConfig } from "../../youtube-instagram/lib/config.ts";
+import { legacyGate } from "../../youtube-instagram/lib/legacy.ts";
 import { cleanExample } from "../../youtube-instagram/lib/reply-adapter.ts";
 import { dataDir, writeExamples } from "../../reply-drafts/lib/settings.ts";
 import { pickExamples } from "../../reply-drafts/lib/tone.ts";
 
 type Out = { lines: string[]; code: number };
-export type Gateway = { watches: () => Promise<string[]>; add: (body: Record<string, unknown>) => Promise<void>; pause: (name: string) => Promise<void> };
+export type Gateway = { watches: () => Promise<string[]>; add: (body: Record<string, unknown>) => Promise<void>; pause: (name: string) => Promise<void>; app?: (body: Record<string, unknown>) => Promise<void> };
 
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const FEATURE = join(import.meta.dir, "..");
@@ -38,6 +40,11 @@ export const realGateway = (dir: string): Gateway => {
 			if (r.status >= 300) throw new Error(`gateway ${r.status}`);
 		},
 		pause: async name => void (await hub.patch(`/api/watches/${name}`, { paused: true })),
+		// 409 = the instance is already there (a second run).
+		app: async body => {
+			const r = await hub.post("/api/apps", body);
+			if (r.status >= 300 && r.status !== 409) throw new Error(`gateway ${r.status}`);
+		},
 	};
 };
 
@@ -101,7 +108,7 @@ export async function runOnboard(args: string[], deps: { engine?: Engine; gatewa
 	let site: SiteConfig | undefined;
 	if (app === "site") {
 		const name = (flag(args, "--name") ?? "").toLowerCase();
-		if (!/^[a-z0-9-]{1,30}$/.test(name)) return { lines: ["사이트 이름이 필요해요 (--name, 영문 소문자·숫자·-)"], code: 2 };
+		if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name) || name.length > 30) return { lines: ["사이트 이름이 필요해요 (--name, 영문 소문자·숫자·-)"], code: 2 };
 		const s = siteOf(args);
 		if ("missing" in s) return { lines: ["웹사이트 댓글을 켜려면 이것만 알려 주세요 (한 번에):", ...s.missing.map(m => `- ${m}`), "알려 주시면 같은 명령에 넣어서 이어서 해요"], code: 3 };
 		[kind, key, label, site] = ["website", `site-${name}`, flag(args, "--label") ?? `웹사이트 댓글 (${name})`, s];
@@ -109,7 +116,9 @@ export async function runOnboard(args: string[], deps: { engine?: Engine; gatewa
 		kind = app as "youtube" | "instagram";
 		if (!(deps.connected ?? connected)(kind)) {
 			const to = flag(args, "--to");
-			return { lines: [`${WORD[app]}이(가) 아직 연결되지 않았어요. 연결에는 사용자가 직접 할 일이 있어요: bun ${join(FEATURE, "..", "youtube-instagram", "bin", "onboard.ts")} run --${app}${to ? ` --target ${to}` : ""}`, `연결이 끝나면 같은 명령(onboard.ts on --app ${app})을 다시 실행해요`], code: 3 };
+			const legacy = legacyGate(args);
+			if (legacy.ask) return { lines: legacy.lines, code: 3 };
+			return { lines: [...legacy.lines, `${WORD[app]}이(가) 아직 연결되지 않았어요. 연결에는 사용자가 직접 할 일이 있어요: bun ${join(FEATURE, "..", "youtube-instagram", "bin", "onboard.ts")} run --${app}${to ? ` --target ${to}` : ""}`, `연결이 끝나면 같은 명령(onboard.ts on --app ${app})을 다시 실행해요`], code: 3 };
 		}
 		[key, label] = [app, `${WORD[app]} 댓글`];
 	}
@@ -133,6 +142,7 @@ export async function runOnboard(args: string[], deps: { engine?: Engine; gatewa
 	}
 
 	try {
+		if (app === "site") await gateway.app?.({ app: "site", id: key, label: label.slice(0, 30), filter: { source: key.slice(5) } });
 		const names = await gateway.watches();
 		if (!names.includes(WATCH)) await gateway.add({ name: WATCH, command: `bun ${shq(join(FEATURE, "bin", "watch.ts"))}`, every_minutes: 5, on: "match", pattern: ".", to: "orchestrator", timeout_seconds: 300 });
 		const old = OLD_WATCH[key];

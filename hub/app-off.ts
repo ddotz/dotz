@@ -113,7 +113,7 @@ function cleanFilter(v: unknown, reg: IntegrationEntry): AppFilter {
 	if (typeof v !== "object" || Array.isArray(v)) throw new SettingsError("filter: 객체여야 해요");
 	const out: AppFilter = {}, source = (v as Record<string, unknown>).source;
 	if (source !== undefined) {
-		if (typeof source !== "string" || source.length > 60 || !srcKey(source) || !reg.match.conv?.length) throw new SettingsError("filter.source: 메일 같은 앱의 출처 이름(영문·숫자 60자 이하)이어야 해요");
+		if (typeof source !== "string" || source.length > 60 || !srcKey(source) || !(reg.match.conv?.length || reg.srcBase)) throw new SettingsError("filter.source: 메일이나 웹사이트 댓글 같은 앱의 출처 이름(영문·숫자 60자 이하)이어야 해요");
 		out.source = source.trim();
 	}
 	for (const k of ["conv", "watches", "text", "data"] as const) {

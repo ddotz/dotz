@@ -9,6 +9,7 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { asideReason } from "../../../hub/aside-errors.ts";
+import { legacyGate } from "../lib/legacy.ts";
 import { type Config, type Ctx, loadConfig, paths, readJson, realCtx, secretsDir, snsDir, validateConfig, writeJson } from "../lib/config.ts";
 import { me } from "../lib/instagram.ts";
 import { MESSAGES_DB, MessagesAccessError, type OtpService, probeMessages, waitForCode } from "../lib/otp.ts";
@@ -372,6 +373,8 @@ async function cmdRun(d: Deps, flags: Map<string, string | true>): Promise<Resul
 	if (flags.get("dry-run")) {
 		return { code: 0, lines: ["미리보기예요. 아무것도 바꾸지 않았어요", ...activeSteps(state.platforms).map(def => `⏳ ${def.label}`)] };
 	}
+	const legacy = legacyGate([...flags.keys()].map(k => `--${k}`));
+	if (legacy.ask) return { code: 3, lines: legacy.lines };
 	const target = typeof flags.get("target") === "string" ? (flags.get("target") as string) : "chat";
 	const started = d.ctx.now();
 	const r: Run = { d, platforms: state.platforms, started, target, state };
@@ -403,7 +406,7 @@ async function cmdRun(d: Deps, flags: Map<string, string | true>): Promise<Resul
 	await sendProgress(d, target, state, true);
 	const ask = askBlock(state);
 	const failed = steps.some(s => state.steps[s.id]?.status === "failed");
-	return { code: ask.length ? 3 : failed || !finished ? 1 : 0, lines: [...checklist(state), ...ask] };
+	return { code: ask.length ? 3 : failed || !finished ? 1 : 0, lines: [...legacy.lines, ...checklist(state), ...ask] };
 }
 
 function cmdStatus(): Result {

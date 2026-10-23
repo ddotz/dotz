@@ -15,6 +15,8 @@ export type EngineDeps = {
 	style?: (src: SourceConfig) => ReplyStyle;
 	learn?: (src: SourceConfig, change: string) => void;
 	broadcast?: (event: Record<string, unknown>) => void;
+	/** The app instance (custom/apps.json id) a source belongs to: its threads, needs and reply model are the instance's. Default = the app (`appOf`). */
+	owner?: (src: SourceConfig) => string;
 };
 
 export const appOf = (src: Pick<SourceConfig, "kind">): string => (src.kind === "website" ? "site" : src.kind);
@@ -36,6 +38,7 @@ export function createEngine(deps: EngineDeps) {
 	const emit = (e: Record<string, unknown>) => deps.broadcast?.(e);
 	const gate = { store, adapters: deps.adapters, now: deps.now, collector: deps.collector, inflight, onState: (r: Reply) => emit({ kind: "comment_send", source: r.source, thread: r.thread, id: r.id, state: r.state, ...(r.reason ? { reason: r.reason } : {}) }) };
 
+	const ownerOf = (src: SourceConfig): string => deps.owner?.(src) ?? appOf(src);
 	const sourceOf = (id: string): SourceConfig | undefined => store.config().sources[id];
 	const find = (id: string): Comment | undefined => store.comments().find(c => c.id === id);
 	const stream = (c: Comment): Comment[] => {
@@ -66,7 +69,7 @@ export function createEngine(deps: EngineDeps) {
 		if (!deps.model) return { ok: false, reason: "초안 만들기를 쓸 수 없어요" };
 		const tokens = { in: 0, out: 0, reported: false, chars: 0, outChars: 0 };
 		const call = async (system: string, user: string): Promise<string> => {
-			const r = await deps.model!(system, user, appOf(src));
+			const r = await deps.model!(system, user, ownerOf(src));
 			tokens.in += r.inputTokens ?? 0;
 			tokens.out += r.outputTokens ?? 0;
 			tokens.reported ||= (r.inputTokens ?? 0) > 0 || (r.outputTokens ?? 0) > 0;
@@ -186,7 +189,7 @@ export function createEngine(deps: EngineDeps) {
 
 	function threads(app: string) {
 		const cfg = store.config();
-		const mine = new Set(Object.values(cfg.sources).filter(s => appOf(s) === app).map(s => s.key));
+		const mine = new Set(Object.values(cfg.sources).filter(s => ownerOf(s) === app).map(s => s.key));
 		const reads = store.reads();
 		const pendingDrafts = store.drafts().filter(d => d.status === "pending");
 		const by = new Map<string, Comment[]>();
@@ -227,14 +230,14 @@ export function createEngine(deps: EngineDeps) {
 		const out: Record<string, { drafts: number; unread: number }> = {};
 		if (!cfg.enabled) return out;
 		const reads = store.reads();
-		for (const src of Object.values(cfg.sources)) out[appOf(src)] ??= { drafts: 0, unread: 0 };
+		for (const src of Object.values(cfg.sources)) out[ownerOf(src)] ??= { drafts: 0, unread: 0 };
 		for (const d of store.drafts()) {
 			const s = cfg.sources[d.source];
-			if (s && d.status === "pending") out[appOf(s)]!.drafts++;
+			if (s && d.status === "pending") out[ownerOf(s)]!.drafts++;
 		}
 		for (const c of store.comments()) {
 			const s = cfg.sources[c.source];
-			if (s && watches(s, c.thread) && unreadOf(c, reads)) out[appOf(s)]!.unread++;
+			if (s && watches(s, c.thread) && unreadOf(c, reads)) out[ownerOf(s)]!.unread++;
 		}
 		return out;
 	}
@@ -258,6 +261,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, collect, makeDraft, revise, drop, send, update, threads, threadView, markRead, needs, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, collect, makeDraft, revise, drop, send, update, threads, threadView, markRead, needs, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

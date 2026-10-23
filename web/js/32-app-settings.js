@@ -209,7 +209,7 @@ async function asAdd(key, pc) {
     if (AT.h) AT.h.close(false);
     if (r.ready) { toast(`${a.label}을(를) 다시 켰어요`); go("monitoring", `i:${key}`); return; }
     toast(`${a.label}을(를) 켰어요. 다시 연결할 내용을 채워 두었어요`);
-    await asNewApp(key === "site" ? "comments" : key);
+    await asNewApp(/^site(-|$)/.test(key) ? "comments" : key);
   } catch (e) { toast(e.message || "앱을 추가하지 못했어요", true); }
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEngine } from "../../../hub/comments/engine.ts";
@@ -8,15 +8,20 @@ import { type Gateway, runOnboard } from "../bin/onboard.ts";
 
 let dir: string;
 let before: string | undefined;
+let beforeLegacy: string | undefined;
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "comments-onboard-"));
 	before = process.env.DOTZ_DIR;
+	beforeLegacy = process.env.DOTZ_LEGACY_SECRETS;
 	process.env.DOTZ_DIR = dir;
+	process.env.DOTZ_LEGACY_SECRETS = "";
 });
 afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
 	if (before === undefined) delete process.env.DOTZ_DIR;
 	else process.env.DOTZ_DIR = before;
+	if (beforeLegacy === undefined) delete process.env.DOTZ_LEGACY_SECRETS;
+	else process.env.DOTZ_LEGACY_SECRETS = beforeLegacy;
 });
 
 const adapter = (own: string[] = ["네, 감사합니다!", "곧 알려 드릴게요."]): CommentAdapter => ({ kind: "youtube", list: async () => ({ comments: [{ native: "c1", thread: "v1", author: "A", text: "?", postTitle: "T", at: 1 }] }), reply: async () => ({ ok: true }), ownReplies: async () => own });
@@ -24,8 +29,9 @@ const engineOf = (a: CommentAdapter) => createEngine({ dir: join(dir, "custom", 
 const gateway = (names: string[] = []) => {
 	const added: Record<string, unknown>[] = [];
 	const paused: string[] = [];
-	const g: Gateway = { watches: async () => [...names, ...added.map(a => String(a.name))], add: async b => void added.push(b), pause: async n => void paused.push(n) };
-	return { g, added, paused };
+	const apps: Record<string, unknown>[] = [];
+	const g: Gateway = { watches: async () => [...names, ...added.map(a => String(a.name))], add: async b => void added.push(b), pause: async n => void paused.push(n), app: async b => void apps.push(b) };
+	return { g, added, paused, apps };
 };
 
 describe("onboard", () => {
@@ -66,6 +72,62 @@ describe("onboard", () => {
 		const ok = await runOnboard(["on", "--app", "site", "--name", "blog", "--read-kind", "rss", "--read", "https://site.example/comments/feed", "--post-kind", "webhook", "--post", "https://site.example/hook", "--secret", "blog-token", "--owner", "Owner"], { engine, gateway: gw.g });
 		expect(ok.code).toBe(0);
 		expect(engine.store.config().sources["site-blog"]).toMatchObject({ kind: "website", watch: ["*"], site: { read: { kind: "rss", url: "https://site.example/comments/feed" }, post: { kind: "webhook", url: "https://site.example/hook", secret: "blog-token" }, owner: "Owner" } });
+	});
+
+	test("a site is also registered as its own app instance, once per site name", async () => {
+		const gw = gateway();
+		const engine = engineOf(adapter());
+		const args = (name: string) => ["on", "--app", "site", "--name", name, "--read-kind", "rss", "--read", "https://site.example/feed", "--post-kind", "webhook", "--post", "https://site.example/hook"];
+		await runOnboard(args("mapia"), { engine, gateway: gw.g });
+		await runOnboard(args("indi"), { engine, gateway: gw.g });
+		expect(gw.apps).toEqual([
+			{ app: "site", id: "site-mapia", label: "웹사이트 댓글 (mapia)", filter: { source: "mapia" } },
+			{ app: "site", id: "site-indi", label: "웹사이트 댓글 (indi)", filter: { source: "indi" } },
+		]);
+		const named = await runOnboard([...args("blog"), "--label", "내 블로그"], { engine, gateway: gw.g });
+		expect(named.code).toBe(0);
+		expect(gw.apps[2]).toMatchObject({ id: "site-blog", label: "내 블로그" });
+		expect((await runOnboard(["on", "--app", "site", "--name", "Bad_Name", "--read-kind", "rss"], { engine, gateway: gw.g })).code).toBe(2);
+		await runOnboard(["on", "--app", "youtube"], { engine, gateway: gw.g, connected: () => true });
+		expect(gw.apps).toHaveLength(3);
+	});
+
+	describe("token import", () => {
+		const VALUE = "placeholder-token-value";
+		const earlier = () => {
+			const old = join(dir, "earlier");
+			mkdirSync(old, { recursive: true });
+			writeFileSync(join(old, "youtube-oauth.json"), JSON.stringify({ refresh_token: VALUE }), { mode: 0o644 });
+			process.env.DOTZ_LEGACY_SECRETS = old;
+		};
+
+		test("asks one yes/no when an earlier login exists, copies 0600 on yes, never prints the value, and does not ask again", async () => {
+			earlier();
+			const gw = gateway();
+			const engine = engineOf(adapter());
+			const ask = await runOnboard(["on", "--app", "youtube"], { engine, gateway: gw.g, connected: () => false });
+			expect(ask.code).toBe(3);
+			expect(ask.lines.join("\n")).toContain("기존 유튜브·인스타 연결을 가져올까요?");
+			expect(existsSync(join(dir, "secrets", "youtube-oauth.json"))).toBe(false);
+			const yes = await runOnboard(["on", "--app", "youtube", "--import-legacy"], { engine, gateway: gw.g, connected: () => false });
+			expect(yes.lines.join("\n")).not.toContain(VALUE);
+			expect(yes.lines.join("\n")).toContain("youtube-oauth.json");
+			const file = join(dir, "secrets", "youtube-oauth.json");
+			expect(statSync(file).mode & 0o777).toBe(0o600);
+			expect(readFileSync(file, "utf8")).toContain(VALUE);
+			const again = await runOnboard(["on", "--app", "youtube"], { engine, gateway: gw.g, connected: () => false });
+			expect(again.lines.join("\n")).not.toContain("가져올까요");
+		});
+
+		test("a no is remembered and copies nothing", async () => {
+			earlier();
+			const gw = gateway();
+			const engine = engineOf(adapter());
+			await runOnboard(["on", "--app", "youtube", "--no-import-legacy"], { engine, gateway: gw.g, connected: () => false });
+			expect(existsSync(join(dir, "secrets", "youtube-oauth.json"))).toBe(false);
+			const next = await runOnboard(["on", "--app", "youtube"], { engine, gateway: gw.g, connected: () => false });
+			expect(next.lines.join("\n")).not.toContain("가져올까요");
+		});
 	});
 
 	test("off stops reading that source", async () => {
