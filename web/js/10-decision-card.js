@@ -112,11 +112,29 @@ function pickOption(dc, bi, opt, note) {
   if (next >= 0) { DC.step[dc.key] = next; paintDecision(); return; }
   answerDecision(dc, dc.blocks.length === 1 ? pickSay(p[0]) : `결정 답: ${dc.blocks.map((_, i) => pickSay(p[i])).join(" · ")}`, dc.blocks.length === 1 ? p[0] : undefined, dc.blocks.length === 1 ? note : undefined);
 }
+// The files a draft sends along (hub/draft-approval.ts `> 첨부:` lines): one row per file, the row opens the file that will go out
+// (GET /api/drafts/<ref>/files/<n>, hub/draft-files.ts; through the peer proxy for a peer's draft). `첨부 없음` = the mail it answers had
+// files and this reply carries none; `warning` = the text says it attaches something but no file is set.
+const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
+function draftFilesNode(d) {
+  const fl = Array.isArray(d.attachments) ? d.attachments : [];
+  if (!fl.length && !d.noAttachments && !d.warning) return null;
+  const rows = fl.map((f, i) => {
+    const ext = (String(f.name).match(/\.([A-Za-z0-9]{1,5})$/) || [0, ""])[1].toUpperCase(), meta = [ext, f.size].filter(Boolean).join(" · ");
+    const kids = [el("span", { class: "dr-fi" }, icon(DR_IMG.test(f.name) ? "image" : "file")), el("span", { class: "dr-fn", text: f.name }), meta ? el("span", { class: "dr-fm", text: meta }) : null];
+    return d.ref ? el("a", { class: "dr-att", href: pqLink(`/api/drafts/${enc(d.ref)}/files/${i}`), target: "_blank", rel: "noopener", title: `${f.name} 열기`, "aria-label": `${f.name} 열기${f.size ? ` (${f.size})` : ""}` }, ...kids, icon("open"))
+      : el("div", { class: "dr-att" }, ...kids);
+  });
+  return el("div", { class: "dr-files" },
+    fl.length ? el("div", { class: "dr-fh", text: `첨부 ${fl.length}개` }) : null, ...rows,
+    !fl.length && d.noAttachments ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부 없음 · 받은 메일의 첨부파일은 들어가지 않아요" })) : null,
+    d.warning ? el("div", { class: "dr-warn", role: "alert" }, el("span", { text: d.warning })) : null);
+}
 function draftNode(d) {
   return el("div", { class: "dc-draft" },
     el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
-    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }));
+    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d));
 }
 // 고치기 on a draft, or an option that needs detail (안 됨 …): the owner types the change / reason, then the answer goes out with it.
 function editNode(dc, ed, st) {
@@ -139,7 +157,7 @@ function renderSheet(box, dc, picks, step) {
     el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, el("div", { class: "dc-dr-b", text: d.body }))
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   const foot = el("div", { class: "fs-ft" });
   if (edit) foot.append(editNode(dc, edit, st));

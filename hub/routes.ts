@@ -18,6 +18,7 @@ import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
 import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
+import { draftFileRoute } from "./draft-files.ts";
 import { MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTargets, postMail, type MailDeps } from "./mail.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
@@ -285,6 +286,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// One attached file of a mail: only files the mail's own record names, only inside the mail files folder (hub/mail.ts).
 		const mailFile = (req.method === "GET" || req.method === "HEAD") && /^\/api\/mail\/([a-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
 		if (mailFile) return mailFileRoute(req, url, mailFile[1]!, mailFile[2]!);
+		// One file a draft sends along (the `> 첨부:` lines of a send approval): only files staged for that draft (hub/draft-files.ts).
+		const draftFile = (req.method === "GET" || req.method === "HEAD") && /^\/api\/drafts\/([A-Za-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
+		if (draftFile) return draftFileRoute(req, url, draftFile[1]!, draftFile[2]!);
 		const mailBody = req.method === "GET" && /^\/api\/mail\/([a-z0-9._-]+)\/body$/.exec(url.pathname);
 		if (mailBody) return mailBodyRoute(mailBody[1]!);
 		// A mail from an outside poster (a webmail watcher, a custom plugin): one conversation per mail (hub/mail.ts, docs/custom-plugins.md).

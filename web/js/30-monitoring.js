@@ -173,7 +173,6 @@ function draftCardNode(n) {
   const redraw = () => { const nn = draftCardNode(n); card.replaceWith(nn); };
   const when = ntTime(d.answered_at || n.updated || n.ts), mail = d.to.startsWith("mail:");
   const q = ntPlain(n.title).replace(/\s*\([^()]*\)\s*$/, "");
-  const files = Array.isArray(dr.files) ? dr.files : [];
   const editing = open && DR.edit.has(n.id);
   const ta = editing ? el("textarea", { class: "dr-edit", rows: "8", maxlength: "6000", "aria-label": "초안 고치기", disabled: busy, oninput: () => { DR.note[n.id] = ta.value; go2.disabled = !ta.value.trim(); } }) : null;
   if (ta) ta.value = DR.note[n.id] ?? drParas(dr.body).join("\n\n");
@@ -181,7 +180,7 @@ function draftCardNode(n) {
     el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || "받는이" }), el("span", { class: "dr-chip", text: dr.to || "-" })),
     dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
     editing ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
-    files.length ? el("div", { class: "dr-files" }, ...files.map(f => el("span", { class: "dr-file" }, icon("clip"), f.name || String(f)))) : null);
+    draftFilesNode(dr));
   const kids = [
     el("div", { class: "rc-hd" }, el("span", { class: "dr-ic" }, icon(mail ? "mail" : "send")), el("span", { class: "rc-src", text: mail ? "메일" : (targetName(d.to) || "초안") }), el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` })),
     q ? el("div", { class: "rc-title dr-q", text: q }) : null, mail ? drOriginal(d.to) : null, mailBox];
