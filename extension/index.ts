@@ -20,6 +20,8 @@ import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { systemDeny } from "../hub/systemdeny.ts";
+import { codeLockReason } from "../hub/codeguard.ts";
+import { lockedCodeDir } from "../hub/selfupdate-local.ts";
 import { loadPlugins, pluginDeny } from "../hub/plugins.ts";
 import { installCompactKept } from "./compact-kept.ts";
 import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason } from "../hub/live-guard.ts";
@@ -71,6 +73,12 @@ function enforceRules(pi: any): void {
 		const copy = throwaway();
 		const live = copy ? liveWrite(event, [...new Set([liveDataDir(DATA), defaultDataDir()].filter((d): d is string => Boolean(d)))]) : undefined;
 		if (live) return { block: true, reason: `Blocked by dotz: this session is a throwaway (${copy}) and may not change the owner's live state: ${live}. Set DOTZ_ALLOW_LIVE=1 for a deliberate live run.` };
+		// Orchestrator, lanes and their workers never change the code of an install that is not a developer checkout.
+		if (process.env.DOTZ_ORCHESTRATOR === "1" || process.env.DOTZ_LANE) {
+			const locked = lockedCodeDir(DATA);
+			const refused = locked && codeLockReason(String(event?.toolName ?? ""), event?.input, process.cwd(), locked);
+			if (refused) return { block: true, reason: refused };
+		}
 		const command = shellText(event);
 		if (command === undefined) return;
 		const system = systemDeny(command);

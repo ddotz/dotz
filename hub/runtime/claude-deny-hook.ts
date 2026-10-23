@@ -1,4 +1,4 @@
-// PreToolUse hook that Claude Code runs before every Bash call (wired by claude.ts through a per-run --settings file).
+// PreToolUse hook that Claude Code runs before every Bash call (and file edit/write, only refused under an install's locked code folder: hub/codeguard.ts) (wired by claude.ts through a per-run --settings file).
 // It applies dotz's built-in denies (hub/systemdeny.ts), the owner's RULES.md "## Blocked commands" lines
 // (`- deny: <regex> | <reason>`) and the deny lists of the feature folders, the same matching the omp extension does
 // (extension/index.ts `blockedBy`, featuredirs.ts) and the custom plugins' `deny` hooks (hub/plugins.ts), on the command text. Blocking = exit code 2 with the reason on
@@ -12,6 +12,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { blockedByFeatures } from "../featuredirs.ts";
+import { codeLockReason } from "../codeguard.ts";
+import { lockedCodeDir } from "../selfupdate-local.ts";
 import { systemDeny } from "../systemdeny.ts";
 import { loadPlugins, pluginDeny } from "../plugins.ts";
 
@@ -47,11 +49,15 @@ if (import.meta.main) {
 	}, Number(process.env.DOTZ_HOOK_DEADLINE_MS ?? HOOK_DEADLINE_MS));
 	let reason: string | undefined;
 	try {
-		const input = JSON.parse(await Bun.stdin.text()) as { tool_name?: string; tool_input?: { command?: unknown } };
+		const input = JSON.parse(await Bun.stdin.text()) as { tool_name?: string; cwd?: string; tool_input?: Record<string, unknown> };
 		const command = input.tool_name === "Bash" ? String(input.tool_input?.command ?? "") : "";
 		const dataDir = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
-		if (command) await loadPlugins(dataDir);
-		reason = command ? denyReason(command, dataDir) : undefined;
+		const locked = lockedCodeDir(dataDir);
+		reason = locked && input.tool_name ? codeLockReason(input.tool_name, input.tool_input, input.cwd ?? process.cwd(), locked) : undefined;
+		if (command && !reason) {
+			await loadPlugins(dataDir);
+			reason = denyReason(command, dataDir);
+		}
 	} catch (e) {
 		reason = `dotz could not check this command (${e instanceof Error ? e.message : e}), so it is blocked. Report it if the task needs it.`;
 	}

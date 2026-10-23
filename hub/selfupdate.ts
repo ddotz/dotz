@@ -19,7 +19,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renam
 import { join } from "node:path";
 import { issueBlock } from "./choices.ts";
 import { CONFIG_FILE, cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
-import { FORMAT, type Keep, keepLine, keepsLocal, openTrial, parseCommits, type Saved, saveLocal, savedNote, splitEquivalent } from "./selfupdate-local.ts";
+import { FORMAT, type Keep, keepLine, keepsLocal, openTrial, parseCommits, type Saved, saveLocal, savedNote, splitEquivalent, writeSavedSummary } from "./selfupdate-local.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export type Exec = (cmd: string[], cwd: string, timeoutMs: number) => Promise<{ code: number; out: string }>;
@@ -603,6 +603,15 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 		hard = true;
 		note = ` ${savedNote(saved, upstream)}`;
 		j.note = note.trim();
+		if (lost.length) {
+			try {
+				const s = await writeSavedSummary(exec, dir, o.dataDir ?? DATA_DIR, lost, saved);
+				step("보관", `보관한 커밋 요약을 적었어요: ${s.file}`);
+				localSavedFn?.(s);
+			} catch (e) {
+				record(logDir, `update #${j.id}: summary failed: ${e}`);
+			}
+		}
 	}
 
 	const rebased = target !== to;
@@ -657,6 +666,9 @@ let notifyFn: ((text: string, count: number) => void) | undefined;
 let resolvedFn: (() => void) | undefined;
 // Called when a check finds the checkout current or an update was applied: the "new version" notice is no longer true.
 export const onUpdateResolved = (fn: () => void) => void (resolvedFn = fn);
+// Called once after local commits were saved and moved aside: the summary file, its text and the orchestrator turn text (main.ts asks the orchestrator to re-create the personal parts).
+let localSavedFn: ((s: { file: string; text: string; turn: string }) => void) | undefined;
+export const onLocalSaved = (fn: (s: { file: string; text: string; turn: string }) => void) => void (localSavedFn = fn);
 const settled = (c: CheckResult) => {
 	if (c.ok && c.incomingTotal === 0) resolvedFn?.();
 };
