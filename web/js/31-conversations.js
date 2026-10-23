@@ -263,7 +263,8 @@ const convHead = el("div", { id: "cv-head", class: "cv-head" });
 $("#v-chat").prepend(convSide, convHead);
 
 function convPaintHead() {
-  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : i.alive ? statusKo(i.status) : "종료됨", sig = `${target}|${targetName(target)}|${state}`;
+  asSync();
+  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", sig = `${target}|${targetName(target)}|${state}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   clear(convHead).append(...[convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: targetName(target) }), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null].filter(Boolean));

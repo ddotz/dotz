@@ -79,7 +79,7 @@ function mdHtml(src) {
   // A fence opens only at the start of a line (``` in the middle of a sentence stays text) and closes with ``` at the end of a line.
   const parts = String(src ?? "").split(/(?:^|\n)[ \t]{0,3}```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/);
   // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
-  return parts.map((p, i) => i % 3 === 0 ? blocks(p) : i % 3 === 2 ? (parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
+  return parts.map((p, i) => i % 3 === 0 ? blocks(p) : i % 3 === 2 ? (parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
 }
 const mdNode = (src, cls = "md") => el("div", { class: cls, safeHtml: mdHtml(src) });
 

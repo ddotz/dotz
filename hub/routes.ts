@@ -9,6 +9,7 @@ import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
 import { integrationContext, integrationItems } from "./integrations.ts";
+import { fieldsOf, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
 import { markRead } from "./reads.ts";
 import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
@@ -144,6 +145,17 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
 			return json({ items: integrationItems(integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags()), listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds()) });
 		}
+		// Per-app settings (hub/app-settings.ts): GET reads, PATCH is the one write path (the web's switches and a change card's 적용 both call it).
+		const appSettings = /^\/api\/integrations\/([a-z0-9-]+)\/settings$/.exec(url.pathname);
+		if (appSettings && (req.method === "GET" || req.method === "PATCH")) {
+			const app = appSettings[1]!;
+			try {
+				if (!fieldsOf(app).length) throw new SettingsError(`${app}: 바꿀 수 있는 설정이 없어요`, 404);
+				return json({ key: app, fields: req.method === "GET" ? readSettings(DATA_DIR, app) : writeSettings(DATA_DIR, app, (await body(req)).values) });
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);
+			}
+		}
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
 		// The bot closes the questions whose matter is over (ids, match text, conv or all): they are answered, read and off 답변 필요.
 		if (req.method === "POST" && url.pathname === "/api/notices/resolve") return json(resolveNotices(await body(req)));
@@ -264,7 +276,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			// A reply to a message (swipe / reply button in the web): the quoted message reaches the model like a Discord reply (intake.ts parseReply).
 			const reply = parseReply(b.reply, login);
 			let project: { target: string; name: string } | undefined;
-			if ([lane, b.project, b.mail].filter(Boolean).length > 1) return json({ error: "lane, project and mail are exclusive" }, 400);
+			const settings = typeof b.settings === "string" && fieldsOf(b.settings).length ? b.settings : undefined;
+			if ([lane, b.project, b.mail, settings].filter(Boolean).length > 1) return json({ error: "lane, project and mail are exclusive" }, 400);
 			const mail = b.mail ? mailByKey(String(b.mail)) : undefined;
 			if (b.mail && !mail) return json({ error: `no mail conversation ${String(b.mail)}` }, 404);
 			if (b.project) {
@@ -282,7 +295,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			try {
 				// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
 				const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
-				await sendWeb({ lane, project, mail, conv: lane || project || mail ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}) });
+				await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}
