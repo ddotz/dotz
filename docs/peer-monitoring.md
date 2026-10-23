@@ -13,6 +13,8 @@ gateway that owns the item. That gateway executes it and records it.
   `<data dir>/secrets/peer-token` and is the same value on every gateway. It is never written to config, prompts or logs.
   A request that carries `x-dotz-peer` can reach only the read-only GET list and two POSTs: `/api/peer/act` and
   `/api/peer/lease`.
+- Setup (`setup.ts`) makes the key on the first computer. On another computer, setup asks for that key (or takes
+  `peer_token` in an answers file) and stores it 0600. A rerun keeps the key.
 - No token file: reads still work through the owner's tailnet identity (the same way the computer switcher works).
   Forwarded actions and send leases need the token, so the item is read-only on the other computer.
 - An older peer answers 404 to `/api/peer/monitoring`. The hub then builds that peer's snapshot from its `/api/monitors`,
