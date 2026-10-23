@@ -6,6 +6,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { eventTarget, type HubEvent, onEmit } from "./events.ts";
+import { orchestratorOnlyAsk } from "./forline.ts";
 import { answerReply, decisionsOf, type Notice, onDecision } from "./notices.ts";
 import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource } from "./tone.ts";
@@ -94,6 +95,7 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 		return { kind: "lane", title: `${name} · 시작`, body: plain(rest), url: `/#chat/lane:${encodeURIComponent(name)}`, tag: `start:${name}` };
 	}
 	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
+	if (lane && tone === "ask" && orchestratorOnlyAsk(rest)) return undefined;
 	if (e.kind === "out" && e.target === "alert") {
 		if (tone === "ask") return { kind: "ask", title: "dotz · 확인 필요", body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
 		if (e.reply_to || tone === "done" || tone === "run" || ROUTINE_ALERT.test(rest)) return undefined;

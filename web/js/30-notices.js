@@ -412,9 +412,31 @@ function ntEditNode(n, ed) {
   return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A notice sheet's body: the text without its `[file]` lines, then those files as the same image / file chips a chat message shows (15-attachments.js).
-function ntBody(n) {
-  const fl = fileLines(n.text);
-  return [mdNode(fl.text, "md ds-md"), filesNode(fl.files)];
+function ntBody(n, text) {
+  const fl = fileLines(text == null ? n.text : text);
+  return [mdNode(ntCode(fl.text), "md ds-md"), filesNode(fl.files)];
+}
+// Ids, hashes and paths in the body read as `code` (they wrap anywhere); text already in backticks stays as it is.
+function ntCode(text) {
+  return String(text).split(/(`[^`]*`)/).map((s, i) => i % 2 ? s : s.replace(/(?<![\w:/.@(-])[\w.-]+\/[\w./-]*\w|\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b/g, m => `\`${m}\``)).join("");
+}
+// The first sentence of a line, 60 characters at most (cut at a word boundary with "…"), without its closing period (hub/notice-title.ts).
+function ntShort(line, max = 60) {
+  const one = String(line).replace(/\s+/g, " ").trim();
+  const base = (/^.*?[.!?。？！](?=\s|$)/.exec(one) || [one])[0].replace(/[.。]+$/, "");
+  if (base.length <= max) return base;
+  const cut = base.slice(0, max), sp = cut.lastIndexOf(" ");
+  return `${(sp > max / 2 ? cut.slice(0, sp) : cut).trimEnd()}…`;
+}
+// A notice sheet's title is one short line and its body the rest. A title that is not the text's own first sentence (a question, a block title)
+// keeps the whole text as the body; a first sentence that had to be cut stays in the body in full.
+function ntParts(n) {
+  const text = String(n.text || "").replace(/^\s*\[[^\]\n]{1,10}\][ \t]*/, "").trim(), title0 = ntPlain(n.title);
+  const first = (text.split("\n").find(l => l.trim()) || "").trim();
+  const m = /^.*?[.!?。？！](?=\s|$)/.exec(first), sent = m ? m[0] : first;
+  const head = ntShort(sent.replace(/[*_`#>]/g, "")), a = head.replace(/…$/, ""), b = title0.replace(/…$/, "");
+  if (!title0 || !a || !(a.startsWith(b) || b.startsWith(a))) return { title: ntShort(title0), rest: text };
+  return { title: head, rest: head.endsWith("…") ? text : text.replace(sent, "").trim() };
 }
 // A failure alert: its whole text in the same sheet over the current screen, with the way into the conversation.
 function ntDetailOpen(n) {
@@ -437,14 +459,14 @@ function ntSheetPaint() {
   if (NS.det) { ntDetailPaint(NS.det); return; }
   const n = ntById(NS.id);
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
-  const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
+  const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
   const kids = [
-    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: open ? "답변이 필요해요" : ignd ? "무시했어요" : d.resolved ? "해결됐어요" : "답변했어요" })],
+    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecWhere(d)} · ${open ? "답변 필요" : ignd ? "무시함" : d.resolved ? "해결됨" : "답변함"}` })],
       { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
-      el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "답변이 필요해요" }),
-      el("div", { class: "ds-m", text: `${ntDecWhere(d)} · ${ntWhen(n)}` }),
-      ...ntBody(n))];
+      el("h2", { class: "ds-t", id: "ds-t", text: parts.title || "답변이 필요해요" }),
+      el("div", { class: "ds-m", text: ntWhen(n) }),
+      ...ntBody(n, parts.rest))];
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).

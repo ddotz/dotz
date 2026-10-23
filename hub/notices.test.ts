@@ -2,7 +2,9 @@ import { afterAll, expect, test } from "bun:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CONFIG_FILE, paths } from "./config.ts";
+import { CONFIG_FILE, NAME, paths } from "./config.ts";
+import { decisionsOf } from "./notices.ts";
+import { shortTitle } from "./notice-title.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
@@ -1065,4 +1067,25 @@ test("the owner's own message in a conversation (Discord or web) reads that conv
 
 afterAll(() => {
 	for (const n of listNotices(NOTICE_CAP).items) if (needsAnswer(n)) ignoreNotice(n.id);
+});
+
+test("a session's [ask] that only hands a chore to the orchestrator is no owner decision", () => {
+	const mk = (lane: string, text: string) => ({ ts: rts(), kind: "lane_report", source: `lane:${lane}`, lane, text }) as HubEvent;
+	const chore = mk("orch-only", `[ask] 확인해 보니 같은 11개가 실패해요(1448개 통과).\n\n${NAME} 몫: 고치게 하고 알려 주세요`);
+	expect(decisionsOf(chore)).toEqual([]);
+	emit("inbox", chore);
+	expect(stored().filter(n => n.open === "lane:orch-only" && (n.decision || n.tone === "ask"))).toEqual([]);
+	// a question to the owner, or a choice block, stays a decision
+	expect(decisionsOf(mk("orch-only", `[ask] 이 방향으로 갈까요?\n\n${NAME} 몫: 알려 주세요`))).toHaveLength(1);
+	const block = decisionsOf(mk("orch-only", `[ask] 방향을 골라 주세요\n결정: 방향\n**1) 가\n**2) 나\n\n${NAME} 몫: 알려 주세요`));
+	expect(block.length).toBeGreaterThan(0);
+	expect(decisionsOf(mk("orch-only", "[ask] 이 방향으로 진행할까요"))).toHaveLength(1);
+});
+
+test("a notice title is the first sentence, short, without its period", () => {
+	expect(shortTitle("확인해 보니 origin/main(a9e15d3) 단독에서도 똑같이 11개가 실패해요(1448개 통과). 나머지는 뒤에 있어요.")).toBe("확인해 보니 origin/main(a9e15d3) 단독에서도 똑같이 11개가 실패해요(1448개 통과)");
+	const long = shortTitle("가나다 라마바 사아자 차카타 파하 ".repeat(6));
+	expect(long.length).toBeLessThanOrEqual(61);
+	expect(long.endsWith("파하…") || long.endsWith("차카타…") || long.endsWith("사아자…") || long.endsWith("라마바…") || long.endsWith("가나다…")).toBe(true);
+	expect(shortTitle("끝났어요.")).toBe("끝났어요");
 });
