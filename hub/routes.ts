@@ -26,6 +26,7 @@ import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
 import { NOTICE_CAP, answerDecision, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
+import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
 import { readTodo } from "./todo.ts";
 import { customRoute } from "./custom.ts";
@@ -119,6 +120,17 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			}
 		}
 		if (url.pathname === "/api/projects" && req.method === "GET") return json({ projects: loadProjects() });
+		// Deleting a project (hub/projectdelete.ts): GET .../delete-plan lists what would go, DELETE {archive?: false} does it.
+		const projectDelete = /^\/api\/projects\/([^/]+)(\/delete-plan)?$/.exec(url.pathname);
+		if (projectDelete && ((projectDelete[2] && req.method === "GET") || (!projectDelete[2] && req.method === "DELETE"))) {
+			const key = decodeURIComponent(projectDelete[1]!);
+			try {
+				if (projectDelete[2]) return json(planDelete(key));
+				return json(await deleteProject(key, { archive: (await body(req)).archive !== false }));
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof ProjectDeleteError ? error.status : 400);
+			}
+		}
 		if (url.pathname === "/api/todo" && req.method === "GET") {
 			const target = url.searchParams.get("target") ?? "main";
 			if (target !== "main" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, lane:<name> or ch:<id>" }, 400);

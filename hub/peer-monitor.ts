@@ -252,6 +252,14 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if ((a.op === "draft-send" || a.op === "draft-drop") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
 				return bad("op must be send, send-delete, read, draft, draft-send or draft-drop");
 			}
+			// A project on this machine (hub/projectdelete.ts): what deleting it removes, and the delete itself.
+			case "project": {
+				const key = encodeURIComponent(String(a.key ?? ""));
+				if (!a.key) return bad("key required");
+				if (a.op === "delete-plan") return ask("GET", `/api/projects/${key}/delete-plan`, undefined, login);
+				if (a.op === "delete") return ask("DELETE", `/api/projects/${key}`, { archive: a.archive !== false }, login);
+				return bad("op must be delete-plan or delete");
+			}
 			default:
 				return bad("unknown action");
 		}

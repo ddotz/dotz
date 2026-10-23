@@ -417,6 +417,21 @@ export async function deleteChannel(id: string): Promise<void> {
 	});
 }
 
+// Deletes a project's work channel on Discord and forgets it here (its threads too). The local mapping goes even when Discord refuses,
+// so the project is gone from the list; the error is thrown after, for the caller to report. Already gone (404) is fine.
+export async function deleteWorkChannel(id: string): Promise<void> {
+	if (!channels.work[id]) throw new Error(`ch:${id} is not a work channel`);
+	let failed: Error | undefined;
+	if (!status.enabled) failed = new Error("discord not configured");
+	else await rest("DELETE", `/channels/${id}`).catch(e => {
+		if (!/: 404 /.test(String(e))) failed = e as Error;
+	});
+	delete channels.work[id];
+	for (const [tid, t] of Object.entries(channels.threads)) if (t.parent === id) delete channels.threads[tid];
+	save();
+	if (failed) throw failed;
+}
+
 function resolve(target: string): string | undefined {
 	if (target.startsWith("lane:")) return laneId(target.slice(5));
 	if (target.startsWith("ch:")) return channels.work[target.slice(3)] ? target.slice(3) : undefined;

@@ -793,11 +793,14 @@ export function dropLaneNotices(name: string): number {
 
 // Called when a channel is deleted, or when its session stops (`messagesOnly`: the channel stays, only its unread-message items go).
 // Returns how many were retired.
+const channelNotices = (conv: string, messagesOnly: boolean) => items.filter(i => !i.dismissed && (i.src ?? i.open) === conv && (!messagesOnly || i.kind === "message"));
 export function dropChannelNotices(conv: string, messagesOnly = false): number {
-	const list = items.filter(i => !i.dismissed && (i.src ?? i.open) === conv && (!messagesOnly || i.kind === "message"));
+	const list = channelNotices(conv, messagesOnly);
 	retire(list);
 	return list.length;
 }
+// How many notices dropChannelNotices(conv) would retire (the project delete sheet lists it).
+export const countChannelNotices = (conv: string): number => channelNotices(conv, false).length;
 
 // On load: notices of sessions that no longer exist (deleted, or removed while the hub was down) are retired when they still count (unread or open);
 // read ones stay as history. So are the message and result notices of a session that stopped before the stop hook (dropChannelNotices) existed:

@@ -42,6 +42,15 @@ function milestones(v: unknown): Milestone[] {
 	});
 }
 
+// A deleted project loses its record too (hub/projectdelete.ts). Returns whether there was one.
+export function removeProject(key: string): boolean {
+	const all = loadProjects();
+	if (!(key in all)) return false;
+	delete all[key];
+	writeAtomic(file(), `${JSON.stringify({ projects: all }, null, 2)}\n`);
+	return true;
+}
+
 // An empty string clears title/purpose/goal (the derived value shows again); fields not given are kept.
 export function saveProject(input: Record<string, unknown>): { key: string; record: ProjectRecord } {
 	const key = typeof input.key === "string" ? input.key.trim() : "";
