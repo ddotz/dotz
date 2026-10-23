@@ -20,7 +20,7 @@ export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promi
 
 // The tone profile an item or draft belongs to: its room when it has one, else its app (mail unless the item says otherwise).
 export const toneKey = (x: { app?: string; room?: string }): ToneKey => ({ app: x.app ?? "mail", ...(x.room !== undefined ? { room: x.room } : {}) });
-export type Meta = { source: string; mailId: string; ref: string };
+export type Meta = { source: string; mailId: string; ref: string; origAttachments?: number };
 // "ask" (chat only): the message needs a decision only the user can make; `choices` are 2-4 short answers.
 export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[] } | { action: "ask"; question: string; choices: string[] };
 
@@ -55,7 +55,7 @@ export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): P
 // The [ask] message of one draft; the notes line carries lint warnings and what only the user can decide.
 export function askText(rec: DraftRec, warnings: string[], headline = "답장 초안을 만들었어요"): string {
 	const notes = [...warnings.map(w => `확인: ${w}`), ...rec.questions.map(q => `정해 주세요: ${q}`)].map(n => n.replace(/\s+/g, " ")).join(" / ");
-	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: "이 답장 보낼까요?" });
+	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: "이 답장 보낼까요?", ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}) });
 	return [`[ask] ${headline}`, ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
@@ -71,7 +71,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	await refineAfterCorrection(toneKey(old), deps);
 	const r = await reviseReply(old.item, loadStyle(toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
-	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref }, r, [...old.changes, change], deps);
+	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref, ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
 	addDraft(rec);
 	return { ok: true, text: askText(rec, r.warnings, "답장 초안을 고쳤어요") };
 }
