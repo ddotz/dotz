@@ -6,9 +6,14 @@
 // A daily check (self_update.auto_check / self_update.at in config.json) only notifies, unless self_update.auto_apply is on
 // (default off): then a new upstream commit on a clean checkout with nothing ahead of origin goes through the same apply()
 // (ff-only, bun install, tests, revert on failure) and the idle restart gate; a refusal or failure goes to alert with a choice block.
-// Every check and update leaves lines in ~/.dotz/logs/update-YYYYMMDD.log. A non-git install (install.sh tarball)
-// cannot be updated from here; the check says so and names the installer command that upgrades it.
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+// Every check and update leaves lines in ~/.dotz/logs/update-YYYYMMDD.log.
+// A tarball install (install.sh without --git: no .git, a .dotz-install stamp with repo, ref, commit sha, source kind and
+// auth) updates the same way: the check asks GitHub for the latest commit of repo@ref (for DOTZ_TARBALL installs it compares
+// the tarball's sha256) and lists the incoming commits; apply downloads the new tarball into a staging dir next to the install,
+// runs bun install and the tests there, then swaps the dirs (the old one stays as <dir>.prev, one copy) and leaves the restart to
+// the same gate. A failed step removes the staging dir and keeps the old code. GitHub auth order: GITHUB_TOKEN/GH_TOKEN,
+// <data dir>/secrets/github-token (0600, saved by install.sh), `gh api` when gh is signed in, then none (public repos).
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { issueBlock } from "./choices.ts";
 import { CONFIG_FILE, cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
@@ -18,6 +23,7 @@ export type Exec = (cmd: string[], cwd: string, timeoutMs: number) => Promise<{ 
 export type Commit = { sha: string; short: string; date: string; subject: string };
 export type Version =
 	| { kind: "git"; commit: Commit; branch: string }
+	| { kind: "tarball"; commit: Commit; origin: "github" | "url"; repo: string; ref: string; auth: string; source: string; installed: string }
 	| { kind: "install"; source: string; installed: string }
 	| { kind: "unknown"; detail: string };
 type CheckError = { reason: string; fix: string; detail: string };
@@ -53,7 +59,13 @@ export type Options = {
 	exec?: Exec;
 	testCmd?: string[];
 	logDir?: string;
+	// Tarball installs only: the network (default fetch), the environment tokens come from, the data dir holding secrets/github-token.
+	http?: Http;
+	env?: Record<string, string | undefined>;
+	dataDir?: string;
 };
+export type Http = (url: string, init?: { headers?: Record<string, string> }) => Promise<Response>;
+type Tarball = Extract<Version, { kind: "tarball" }>;
 
 const REPO_DIR = join(import.meta.dir, "..");
 const STATE_FILE = join(DATA_DIR, "self-update.json");
@@ -155,19 +167,263 @@ function resolve(o: Options) {
 	return { dir: o.dir, remote: o.remote ?? s.remote, branch: o.branch ?? s.branch, exec: o.exec ?? defaultExec, testCmd: o.testCmd ?? ["bun", "test"], logDir: o.logDir ?? join(DATA_DIR, "logs") };
 }
 
+type Stamp = Record<string, string>;
+const readStamp = (dir: string): Stamp | undefined => {
+	try {
+		const kv: Stamp = {};
+		for (const l of readFileSync(join(dir, ".dotz-install"), "utf8").split("\n")) {
+			const i = l.indexOf("=");
+			if (i > 0) kv[l.slice(0, i)] = l.slice(i + 1).trim();
+		}
+		return kv;
+	} catch {
+		return undefined;
+	}
+};
+const stampText = (kv: Stamp) => `${Object.entries(kv).map(([k, v]) => `${k}=${v}`).join("\n")}\n`;
+// A stamp from before the sha was recorded only has `source=github.com/OWNER/REPO@REF`: enough to check, with an unknown sha.
+function tarballVersion(kv: Stamp): Tarball | undefined {
+	let { kind: origin, repo, ref } = kv;
+	if (!origin) {
+		const m = /^github\.com\/([^/@\s]+\/[^/@\s]+)@(.+)$/.exec(kv.source ?? "");
+		if (m) [origin, repo, ref] = ["github", m[1], m[2]];
+	}
+	const installed = kv.installed ?? "?";
+	const sha = kv.sha ?? "";
+	const commit: Commit = { sha, short: sha.slice(0, 7) || "?", date: installed, subject: "" };
+	const common = { kind: "tarball" as const, commit, auth: kv.auth ?? "?", source: scrub(kv.source ?? "?"), installed };
+	if (origin === "github" && repo && ref) return { ...common, origin, repo, ref };
+	if (origin === "url" && kv.tarball) return { ...common, origin, repo: "", ref: "" };
+	return undefined;
+}
+
 // The version on disk: the checked-out commit, or the install.sh stamp for a tarball install.
 export async function version(o: Options): Promise<Version> {
 	const { dir, exec } = resolve(o);
 	if (!existsSync(join(dir, ".git"))) {
-		const stamp = join(dir, ".dotz-install");
-		if (!existsSync(stamp)) return { kind: "unknown", detail: "git 저장소도 install.sh 설치본도 아니에요" };
-		const kv = Object.fromEntries(readFileSync(stamp, "utf8").split("\n").map(l => l.split("=", 2) as [string, string]).filter(p => p.length === 2));
-		return { kind: "install", source: scrub(kv.source ?? "?"), installed: kv.installed ?? "?" };
+		const kv = readStamp(dir);
+		if (!kv) return { kind: "unknown", detail: "git 저장소도 install.sh 설치본도 아니에요" };
+		return tarballVersion(kv) ?? { kind: "install", source: scrub(kv.source ?? "?"), installed: kv.installed ?? "?" };
 	}
 	const [c, b] = await Promise.all([exec(["git", "log", "-1", FORMAT], dir, 15_000), exec(["git", "rev-parse", "--abbrev-ref", "HEAD"], dir, 15_000)]);
 	const commit = parseCommits(c.out)[0];
 	if (c.code !== 0 || !commit) return { kind: "unknown", detail: lastLine(c.out) };
 	return { kind: "git", commit, branch: b.code === 0 ? b.out.trim() : "?" };
+}
+
+// ---- tarball installs (install.sh without --git) ----
+type Cred = { how: "token"; token: string; from: string } | { how: "gh" } | { how: "none" };
+const credName = (c: Cred) => (c.how === "token" ? `token(${c.from})` : c.how);
+const authLabel = (c: Cred) => (c.how === "none" ? "public" : c.how);
+
+// Who GitHub is asked as, in order: GITHUB_TOKEN, GH_TOKEN, the token file install.sh saved, `gh api` (when gh is signed in), nobody.
+// A credential GitHub refuses falls through to the next one, so a stale token never blocks a public repo.
+export function authOrder(o: Options): Cred[] {
+	const env = o.env ?? process.env;
+	const out: Cred[] = [];
+	const add = (token: string | undefined, from: string) => {
+		const t = token?.trim();
+		if (t && !out.some(c => c.how === "token" && c.token === t)) out.push({ how: "token", token: t, from });
+	};
+	add(env.GITHUB_TOKEN, "env GITHUB_TOKEN");
+	add(env.GH_TOKEN, "env GH_TOKEN");
+	const file = join(o.dataDir ?? DATA_DIR, "secrets", "github-token");
+	if (existsSync(file)) add(readFileSync(file, "utf8"), "secrets/github-token");
+	out.push({ how: "gh" }, { how: "none" });
+	return out;
+}
+
+type GhCommit = { sha: string; commit?: { message?: string; committer?: { date?: string } } };
+const toCommit = (x: GhCommit): Commit => ({ sha: x.sha, short: x.sha.slice(0, 7), date: x.commit?.committer?.date ?? "", subject: (x.commit?.message ?? "").split("\n")[0].slice(0, 200) });
+const sameSha = (a: string, b: string) => a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a));
+const sha256 = (b: Uint8Array) => new Bun.CryptoHasher("sha256").update(b).digest("hex");
+
+type Try<T> = { ok: true; value: T } | { ok: false; status: number; detail: string };
+type Hit<T> = { ok: true; value: T; cred: Cred } | { ok: false; error: CheckError };
+
+function github(o: Options, repo: string) {
+	const { exec } = resolve(o);
+	const http: Http = o.http ?? ((u, i) => fetch(u, { ...i, signal: AbortSignal.timeout(120_000) }));
+	const creds = authOrder(o);
+	let good: Cred | undefined;
+	const headers = (c: Cred, accept: string): Record<string, string> => ({ accept, "user-agent": "dotz-selfupdate", ...(c.how === "token" ? { authorization: `Bearer ${c.token}` } : {}) });
+	// The first credential that works wins (and goes first next time); the error names what the refusals mean for the owner.
+	const run = async <T>(fn: (c: Cred) => Promise<Try<T>>): Promise<Hit<T>> => {
+		const fails: string[] = [];
+		let auth = false, rate = false, net = false;
+		for (const c of good ? [good, ...creds.filter(x => x !== good)] : creds) {
+			const r = await fn(c).catch((e): Try<T> => ({ ok: false, status: 0, detail: String(e) }));
+			if (r.ok) {
+				good = c;
+				return { ok: true, value: r.value, cred: c };
+			}
+			fails.push(`${credName(c)}: ${r.status || "-"} ${r.detail}`.trim());
+			if (/rate limit/i.test(r.detail)) rate = true;
+			else if ([401, 403, 404].includes(r.status)) auth = true;
+			else if (r.status === 0 && c.how !== "gh") net = true;
+		}
+		const detail = scrub(fails.join(" | ")).slice(0, 400);
+		if (rate) return { ok: false, error: { reason: "GitHub 요청 한도에 걸렸어요.", fix: "잠시 뒤 다시 확인해 주세요. GITHUB_TOKEN이나 `gh auth login`을 쓰면 한도가 커져요.", detail } };
+		if (auth) return { ok: false, error: { reason: `GitHub 인증이 없어 ${repo}을(를) 받을 수 없어요 (비공개 저장소이거나 ref가 없어요).`, fix: "이 Mac의 터미널에서 `gh auth login`을 하거나, GITHUB_TOKEN을 준 채 install.sh를 다시 실행해 주세요 (토큰은 데이터 폴더의 secrets/github-token에 0600으로 저장돼요).", detail } };
+		if (net) return { ok: false, error: { reason: "GitHub에 연결하지 못했어요 (네트워크).", fix: "인터넷 연결을 확인하고 잠시 뒤 다시 확인해 주세요.", detail } };
+		return { ok: false, error: { reason: "GitHub에서 새 버전을 받지 못했어요.", fix: "`gh auth status`로 로그인을 확인하고 다시 확인해 주세요.", detail } };
+	};
+	return {
+		json: <T>(path: string) =>
+			run<T>(async c => {
+				if (c.how === "gh") {
+					const r = await exec(["gh", "api", path.slice(1), "-H", "Accept: application/vnd.github+json"], o.dir, 60_000);
+					if (r.code !== 0) return { ok: false, status: Number(/HTTP (\d{3})/.exec(r.out)?.[1] ?? 0), detail: lastLine(r.out) };
+					return { ok: true, value: JSON.parse(r.out) as T };
+				}
+				const res = await http(`https://api.github.com${path}`, { headers: headers(c, "application/vnd.github+json") });
+				if (!res.ok) return { ok: false, status: res.status, detail: lastLine(await res.text().catch(() => "")) };
+				return { ok: true, value: (await res.json()) as T };
+			}),
+		download: (sha: string, dest: string) =>
+			run<true>(async c => {
+				if (c.how === "gh") {
+					const r = await exec(["sh", "-c", 'gh api "$1" > "$2"', "sh", `repos/${repo}/tarball/${sha}`, dest], o.dir, 5 * 60_000);
+					return r.code === 0 ? { ok: true, value: true } : { ok: false, status: Number(/HTTP (\d{3})/.exec(r.out)?.[1] ?? 0), detail: lastLine(r.out) };
+				}
+				const url = c.how === "token" ? `https://api.github.com/repos/${repo}/tarball/${sha}` : `https://codeload.github.com/${repo}/tar.gz/${sha}`;
+				const res = await http(url, { headers: headers(c, "application/vnd.github+json") });
+				if (!res.ok) return { ok: false, status: res.status, detail: lastLine(await res.text().catch(() => "")) };
+				await Bun.write(dest, res);
+				return { ok: true, value: true };
+			}),
+	};
+}
+
+// A DOTZ_TARBALL install: the same URL or path again. Its identity is the sha256 of the bytes.
+async function readUrl(o: Options, url: string): Promise<Uint8Array> {
+	if (!/^https?:\/\//.test(url)) return new Uint8Array(await Bun.file(url.startsWith("file://") ? decodeURIComponent(new URL(url).pathname) : url).arrayBuffer());
+	const token = authOrder(o).find(c => c.how === "token");
+	const http: Http = o.http ?? ((u, i) => fetch(u, { ...i, signal: AbortSignal.timeout(120_000) }));
+	const res = await http(url, { headers: token?.how === "token" ? { authorization: `Bearer ${token.token}` } : {} });
+	if (!res.ok) throw new Error(`HTTP ${res.status}`);
+	return new Uint8Array(await res.arrayBuffer());
+}
+
+async function checkTarball(o: Options, v: Tarball, base: CheckResult): Promise<CheckResult> {
+	const { logDir } = resolve(o);
+	const fail = (upstream: string, error: CheckError) => {
+		record(logDir, `check: tarball ${upstream} failed: ${error.reason} (${error.detail})`);
+		return { ...base, upstream, error };
+	};
+	if (v.origin === "url") {
+		const url = readStamp(o.dir)?.tarball ?? "";
+		const upstream = scrub(url);
+		let digest: string;
+		try {
+			digest = sha256(await readUrl(o, url));
+		} catch (e) {
+			return fail(upstream, { reason: "설치할 때 쓴 tarball을 다시 받지 못했어요.", fix: "DOTZ_TARBALL 경로나 주소가 아직 있는지 확인하고, 없으면 install.sh를 다시 실행해 주세요.", detail: lastLine(String(e)) });
+		}
+		const r: CheckResult = { ...base, ok: true, upstream, remoteHead: digest };
+		if (sameSha(digest, v.commit.sha)) return r;
+		r.incoming = [{ sha: digest, short: digest.slice(0, 7), date: new Date().toISOString(), subject: `${upstream}의 tarball이 바뀌었어요` }];
+		r.incomingTotal = 1;
+		record(logDir, `check: ${v.commit.short} vs tarball ${digest.slice(0, 7)}: changed`);
+		return r;
+	}
+	const upstream = `${v.repo}@${v.ref}`;
+	const gh = github(o, v.repo);
+	const latest = await gh.json<GhCommit>(`/repos/${v.repo}/commits/${encodeURI(v.ref)}`);
+	if (!latest.ok) return fail(upstream, latest.error);
+	const head = toCommit(latest.value);
+	const r: CheckResult = { ...base, ok: true, upstream, remoteHead: head.sha };
+	const cur = v.commit.sha;
+	if (cur && sameSha(cur, head.sha)) {
+		record(logDir, `check: ${v.commit.short} is ${upstream} (${latest.cred.how})`);
+		return r;
+	}
+	r.incoming = [head];
+	r.incomingTotal = 1;
+	if (cur) {
+		const cmp = await gh.json<{ status?: string; total_commits?: number; commits?: GhCommit[] }>(`/repos/${v.repo}/compare/${cur}...${head.sha}`);
+		const list = cmp.ok && cmp.value.status === "ahead" ? cmp.value.commits ?? [] : [];
+		if (list.length) {
+			r.incoming = list.map(toCommit).reverse().slice(0, LIST_MAX);
+			r.incomingTotal = cmp.ok ? cmp.value.total_commits ?? list.length : list.length;
+		}
+	}
+	record(logDir, `check: ${v.commit.short || "?"} vs ${upstream} ${head.short}: ${r.incomingTotal} incoming (${latest.cred.how})`);
+	return r;
+}
+
+// Download → extract → bun install → tests, all in a staging dir next to the install; only then swap the dirs. Any failure removes the
+// staging dir and leaves the running code untouched.
+async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Job, step: (phase: string, text: string) => void, end: (status: Job["status"], text: string) => Job): Promise<Job> {
+	const { dir, exec, testCmd, logDir } = resolve(o);
+	const stage = `${dir}.update`;
+	const prev = `${dir}.prev`;
+	const fresh = join(stage, "new");
+	const oldStamp = readStamp(dir) ?? {};
+	const fail = (why: string) => {
+		rmSync(stage, { recursive: true, force: true });
+		return end("failed", `${why}. 이전 버전(${v.commit.short})이 그대로 있어요.`);
+	};
+	let to = c.remoteHead as string;
+	let auth = v.auth;
+	rmSync(stage, { recursive: true, force: true });
+	mkdirSync(join(stage, "x"), { recursive: true });
+	const tgz = join(stage, "src.tgz");
+	step("내려받기", `${v.origin === "url" ? scrub(oldStamp.tarball ?? "") : `${v.repo}@${v.ref}`} 새 버전을 내려받아요`);
+	if (v.origin === "github") {
+		const d = await github(o, v.repo).download(to, tgz);
+		if (!d.ok) return fail(`내려받지 못했어요: ${d.error.reason} ${d.error.detail}`);
+		auth = authLabel(d.cred);
+	} else {
+		try {
+			const bytes = await readUrl(o, oldStamp.tarball ?? "");
+			to = sha256(bytes);
+			writeFileSync(tgz, bytes);
+		} catch (e) {
+			return fail(`내려받지 못했어요: ${lastLine(String(e))}`);
+		}
+	}
+	j.to = to;
+	step("풀기", "압축을 풀어요");
+	const x = await exec(["tar", "-xzf", tgz, "-C", join(stage, "x")], stage, 2 * 60_000);
+	if (x.code !== 0) return fail(`압축을 풀지 못했어요: ${lastLine(x.out)}`);
+	// GitHub tarballs (and git archive --prefix) wrap everything in one top folder.
+	const tops = readdirSync(join(stage, "x"));
+	const top = tops.length === 1 && statSync(join(stage, "x", tops[0])).isDirectory() ? join(stage, "x", tops[0]) : join(stage, "x");
+	if (!existsSync(join(top, "setup.ts")) || !existsSync(join(top, "hub", "main.ts"))) return fail("받은 파일이 dotz가 아니에요 (setup.ts, hub/main.ts가 없어요)");
+	renameSync(top, fresh);
+	writeFileSync(join(fresh, ".dotz-install"), stampText({ ...oldStamp, sha: to, auth, installed: new Date().toISOString().replace(/\.\d+Z$/, "Z") }));
+
+	step("의존성", "새 폴더에서 bun install을 실행해요");
+	const i = await exec(["bun", "install"], fresh, 10 * 60_000);
+	if (i.code !== 0) return fail(`bun install 실패: ${lastLine(i.out)}`);
+
+	step("테스트", `${testCmd.join(" ")} 실행 중 (새 폴더)`);
+	const t = await exec(testCmd, fresh, 20 * 60_000);
+	const summary = t.out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
+	if (t.code !== 0) {
+		const blocks = failureBlocks(t.out);
+		if (blocks) record(logDir, `update #${j.id}: failed tests\n${blocks}`);
+		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
+		const names = failedTestNames(t.out);
+		return fail(`테스트 실패${summary ? ` (${summary})` : ` (exit ${t.code})`}${names.length ? `: ${names.join(" / ")}` : ""}`);
+	}
+
+	step("교체", `${dir} 폴더를 새 버전으로 바꾸고 이전 폴더는 ${prev}에 남겨요`);
+	try {
+		rmSync(prev, { recursive: true, force: true });
+		renameSync(dir, prev);
+		try {
+			renameSync(fresh, dir);
+		} catch (e) {
+			renameSync(prev, dir);
+			throw e;
+		}
+	} catch (e) {
+		return fail(`폴더를 바꾸지 못했어요: ${lastLine(String(e))}`);
+	}
+	rmSync(stage, { recursive: true, force: true });
+	return end("updated", `${v.commit.short} → ${to.slice(0, 7)} 받았어요${summary ? ` (테스트 ${summary})` : ""}. 이전 폴더는 ${prev}에 있어요. 재시작하면 적용돼요.`);
 }
 
 // Fetch the tracked branch and compare. Never changes the working tree.
@@ -176,12 +432,13 @@ export async function check(o: Options): Promise<CheckResult> {
 	const upstream = `${remote}/${branch}`;
 	const v = await version(o);
 	const base: CheckResult = { at: new Date().toISOString(), version: v, ok: false, upstream, incoming: [], incomingTotal: 0, ahead: [], dirty: [], blocked: [] };
+	if (v.kind === "tarball") return checkTarball(o, v, base);
 	if (v.kind !== "git") {
 		const r = {
 			...base,
 			error: {
-				reason: v.kind === "install" ? "install.sh로 설치한 사본이라 git으로 확인할 수 없어요." : "업데이트할 수 있는 dotz 사본이 아니에요.",
-				fix: "설치 스크립트를 다시 실행하면 최신으로 바뀌어요: `curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh` (비공개 저장소면 먼저 `gh auth login`)",
+				reason: v.kind === "install" ? "install.sh 설치본의 출처를 알 수 없어서 새 버전을 확인할 수 없어요." : "업데이트할 수 있는 dotz 사본이 아니에요.",
+				fix: "설치 스크립트를 다시 실행하면 최신으로 바뀌고, 그다음부터는 여기서 업데이트해요: `curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh` (비공개 저장소면 먼저 `gh auth login`)",
 				detail: v.kind === "install" ? `source=${v.source} installed=${v.installed}` : v.detail,
 			},
 		};
@@ -256,23 +513,28 @@ export async function apply(o: Options): Promise<Job> {
 	step("확인", `업데이트 시작 (${upstream})`);
 	const c = await check(o);
 	j.check = c;
-	if (!c.ok || c.version.kind !== "git") return end("failed", `확인 실패: ${c.error?.reason ?? "?"}`);
-	const from = c.version.commit.sha;
+	const v = c.version;
+	if (!c.ok || (v.kind !== "git" && v.kind !== "tarball")) return end("failed", `확인 실패: ${c.error?.reason ?? "?"}`);
+	const from = v.commit.sha;
 	j.from = from;
+	if (v.kind === "tarball") {
+		if (!c.incomingTotal || !c.remoteHead) return end("current", `이미 최신이에요 (${v.commit.short}).`);
+		return applyTarball(o, c, v, j, step, end);
+	}
 	if (c.blocked.length) {
 		const what = [...c.dirty.map(d => `변경: ${d}`), ...c.ahead.map(a => `로컬 커밋: ${a.short} ${a.subject}`)].slice(0, 20);
 		return end("refused", `업데이트하지 않았어요. ${c.blocked.join(" ")}${what.length ? `\n${what.join("\n")}` : ""}`);
 	}
-	if (!c.incomingTotal || !c.remoteHead) return end("current", `이미 최신이에요 (${c.version.commit.short}).`);
+	if (!c.incomingTotal || !c.remoteHead) return end("current", `이미 최신이에요 (${v.commit.short}).`);
 	const to = c.remoteHead;
 	j.to = to;
 
-	step("병합", `${c.version.commit.short} → ${to.slice(0, 7)} fast-forward (${c.incomingTotal}개 커밋)`);
+	step("병합", `${v.commit.short} → ${to.slice(0, 7)} fast-forward (${c.incomingTotal}개 커밋)`);
 	const m = await exec(["git", "merge", "--ff-only", to], dir, 60_000);
 	if (m.code !== 0) return end("failed", `fast-forward로 합칠 수 없어요: ${lastLine(m.out)}`);
 
 	const back = async (why: string, deps: boolean) => {
-		step("되돌리기", `${why} → ${c.version.commit.short}로 되돌려요`);
+		step("되돌리기", `${why} → ${v.commit.short}로 되돌려요`);
 		// --keep moves HEAD and the files the merge changed only; it refuses rather than overwrite anything else.
 		const r = await exec(["git", "reset", "--keep", from], dir, 60_000);
 		if (r.code !== 0) return end("failed", `${why}. 되돌리기도 실패했어요(지금 ${to.slice(0, 7)}): ${lastLine(r.out)} — 터미널에서 \`git reset --keep ${from.slice(0, 12)}\`로 되돌려 주세요.`);
@@ -280,7 +542,7 @@ export async function apply(o: Options): Promise<Job> {
 			const i = await exec(["bun", "install"], dir, 10 * 60_000);
 			if (i.code !== 0) step("되돌리기", `이전 의존성 bun install 실패: ${lastLine(i.out)}`);
 		}
-		return end("failed", `${why}. 이전 버전(${c.version.commit.short})에 그대로 있어요.`);
+		return end("failed", `${why}. 이전 버전(${v.commit.short})에 그대로 있어요.`);
 	};
 
 	const changed = await exec(["git", "diff", "--name-only", from, to], dir, 15_000);
@@ -301,7 +563,7 @@ export async function apply(o: Options): Promise<Job> {
 		const names = failedTestNames(t.out);
 		return back(`테스트 실패${summary ? ` (${summary})` : ` (exit ${t.code})`}${names.length ? `: ${names.join(" / ")}` : ""}`, deps);
 	}
-	return end("updated", `${c.version.commit.short} → ${to.slice(0, 7)} 받았어요${summary ? ` (테스트 ${summary})` : ""}. 재시작하면 적용돼요.`);
+	return end("updated", `${v.commit.short} → ${to.slice(0, 7)} 받았어요${summary ? ` (테스트 ${summary})` : ""}. 재시작하면 적용돼요.`);
 }
 
 type State = { lastCheck?: CheckResult; notified?: string; autoFailed?: string; autoRefused?: string };
@@ -355,7 +617,7 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 	if (j.status === "updated") {
 		delete s.autoRefused;
 		delete s.autoFailed;
-		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${c.version.kind === "git" ? c.version.commit.short : "?"} → ${short}, 커밋 ${c.incomingTotal}개, 테스트 통과). 하던 일이 모두 끝나면 다시 시작해요.`);
+		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${"commit" in c.version ? c.version.commit.short : "?"} → ${short}, 커밋 ${c.incomingTotal}개, 테스트 통과). 하던 일이 모두 끝나면 다시 시작해요.`);
 		hooks.restartIdle();
 		return;
 	}
@@ -465,10 +727,11 @@ export async function updateRoute(req: Request, url: URL, deps: RouteDeps): Prom
 }
 
 if (import.meta.main) {
-	// bun hub/selfupdate.ts --check|--apply [--dir PATH]: the same flow from a terminal (prints JSON).
+	// bun hub/selfupdate.ts --check|--apply [--dir PATH] [--test-cmd SHELL]: the same flow from a terminal (prints JSON).
 	const i = process.argv.indexOf("--dir");
-	const o: Options = { dir: i > 0 ? process.argv[i + 1] : REPO_DIR };
+	const t = process.argv.indexOf("--test-cmd");
+	const o: Options = { dir: i > 0 ? process.argv[i + 1] : REPO_DIR, ...(t > 0 ? { testCmd: ["sh", "-c", process.argv[t + 1]] } : {}) };
 	if (process.argv.includes("--apply")) console.log(JSON.stringify(await apply(o), null, 2));
 	else if (process.argv.includes("--check")) console.log(JSON.stringify(await check(o), null, 2));
-	else console.log("usage: bun hub/selfupdate.ts --check|--apply [--dir PATH]");
+	else console.log("usage: bun hub/selfupdate.ts --check|--apply [--dir PATH] [--test-cmd SHELL]");
 }
