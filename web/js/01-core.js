@@ -73,6 +73,8 @@ function rel(ms) {
   return `${s} 후 초기화`;
 }
 const oneLine = s => String(s).replace(/\s+/g, " ").trim().slice(0, 160);
+// The one line a 생각 row shows: the model's thinking when it is Korean, else a Korean label (the raw English stays in the row's fold).
+const thinkLine = (s, max = 80) => { const t = oneLine(s ?? ""); return /[가-힣]/.test(t) ? t.slice(0, max) : "생각을 정리하는 중"; };
 const num = n => Number(n || 0).toLocaleString("ko-KR");
 // JSON kept in localStorage, or `fallback` when the key is missing, unparsable or storage is blocked.
 const lsJson = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; } };

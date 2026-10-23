@@ -22,10 +22,12 @@ const openLaneChat = name => { setTarget(`lane:${name}`); go("chat"); };
 // Tap: the conversation that asked for the work (its waiting message, flashed). Message unknown or not drawn: the work's own detail, never another message.
 async function workGo(w) {
   const t = w.target && validTarget(w.target) ? w.target : MAIN;
-  if (!w.reply_to) return openSub("orchestrator", w.id, null, w.description);
+  // Work for a monitor's / app's settings chat or a project is that conversation's: with the message unknown the row still opens it, never the worker sheet.
+  const fallback = () => t === MAIN ? openSub("orchestrator", w.id, null, w.description) : ntGo(t);
+  if (!w.reply_to) return fallback();
   if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t).catch(() => {});
   const asked = ts(t).msgs.find(e => e.mid === w.reply_to);
-  if (!asked) return openSub("orchestrator", w.id, null, w.description);
+  if (!asked) return fallback();
   ntJump({ src: t, at: asked.ts });
 }
 // One short Korean sentence out of a free-form message: code, links, hashes and markup dropped; English-only lines are not shown.

@@ -64,7 +64,7 @@ function actNode(a, ctx) {
     case "turn_start": case "turn_end": return null;
     case "status": return el("div", { class: "a-div", text: `${oneLine(a.text ?? "")} · ${time}` });
     case "text": return el("div", { class: "a-text" }, el("span", { class: "a-time", text: time }), ...mdFiles(a.text));
-    case "thinking": return el("details", { class: "box think" }, el("summary", {}, el("span", { class: "tname", text: "생각" }), el("span", { class: "tsum", text: `· ${oneLine(a.text ?? "").slice(0, 80)}` }), el("span", { class: "sp" }), el("span", { class: "ttime", text: time })), mdNode(a.text));
+    case "thinking": return el("details", { class: "box think" }, el("summary", {}, el("span", { class: "tname", text: "생각" }), el("span", { class: "tsum", text: `· ${thinkLine(a.text)}` }), el("span", { class: "sp" }), el("span", { class: "ttime", text: time })), mdNode(a.text));
     case "error": { const raw = String(a.text ?? ""), line = humanAlert(raw); return el("div", { class: "lg-e" }, line, line.trim() === raw.trim() ? null : el("details", {}, el("summary", { text: "자세히" }), el("pre", { text: raw }))); }
     case "tool_call": {
       const rec = logRow(a, kindOf(a.tool), toolLabel(a) || capName(a.tool));
