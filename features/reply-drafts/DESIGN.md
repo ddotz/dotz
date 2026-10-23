@@ -75,7 +75,9 @@ corrections turned into a checklist). `lib/persona.ts`:
 - `lib/tone.ts` sentence extraction (3-120 chars, quoted history and signatures dropped, deduped, at most 40) from injected sources, into one profile.
 - `lib/kakao-tone.ts` the user's own text lines of one KakaoTalk room (injected reader, fixture in tests) -> `kakao/<chat id>`.
 - `lib/senders.ts` zele: `zele mail read <id>` first (zele refuses a reply otherwise), then `zele mail reply <id> --to <to> --body <body>`; a refused
-  reply is reported as a stale draft to redraft. Or a webmail-no-api site's draft/approve/send; anything else is refused ("직접 보내야 해요").
+  reply is reported as a stale draft to redraft; the files staged for the draft ride along as `--attach <path>` (one flag each). Or a webmail-no-api site's draft/approve/send
+  (no files: the sheet says so and asks once more); or a custom plugin's `reply` hook (docs/custom-plugins.md, files in `attachments`); anything else is refused ("직접 보내야 해요").
+- `lib/library.ts` + `lib/staged.ts`: the instance's 첨부 파일 폴더 setting (`attachFolders.<instance>`). A reply that promises a file or answers a mail that asks for one gets the best filename matches (max 3, no model unless more than 3 tie) staged under `draft-files/<draft id>/<n>/`; the owner confirms or changes them in the send sheet (hub/draft-attach.ts), and nothing goes without 보내기.
   `readMailBody(source, id, run)` gives the gateway offer the mail text (zele read, or the site's `mail.ts <site> read <id>`).
 - The model call is injected; the default is `hub/outlang.ts callModel` (subscription only, never an API key).
 

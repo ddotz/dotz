@@ -19,6 +19,7 @@ import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
 import { historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
+import { draftAttachRoute } from "./draft-attach.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTargets, postMail, type MailDeps } from "./mail.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
@@ -307,6 +308,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// One file a draft sends along (the `> 첨부:` lines of a send approval): only files staged for that draft (hub/draft-files.ts).
 		const draftFile = (req.method === "GET" || req.method === "HEAD") && /^\/api\/drafts\/([A-Za-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
 		if (draftFile) return draftFileRoute(req, url, draftFile[1]!, draftFile[2]!);
+		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
+		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library)$/.exec(url.pathname);
+		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
 		const mailBody = req.method === "GET" && /^\/api\/mail\/([a-z0-9._-]+)\/body$/.exec(url.pathname);
 		if (mailBody) return mailBodyRoute(mailBody[1]!);
 		// A mail from an outside poster (a webmail watcher, a custom plugin): one conversation per mail (hub/mail.ts, docs/custom-plugins.md).

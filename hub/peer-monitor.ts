@@ -285,6 +285,12 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if ((a.op === "draft-send" || a.op === "draft-drop") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
 				return bad("op must be send, send-delete, read, draft, ask-drop, draft-send or draft-drop");
 			}
+			// A mail reply draft's files (hub/draft-attach.ts): added from the library folder or as bytes, or taken off, on the computer that owns the draft.
+			case "draft-files": {
+				const ref = encodeURIComponent(String(a.ref ?? ""));
+				if (!a.ref) return bad("ref required");
+				return ask("POST", `/api/drafts/${ref}/files`, Number.isInteger(a.remove) ? { remove: a.remove } : typeof a.library === "string" ? { library: a.library } : { name: a.name, data: a.data }, login);
+			}
 			// A project on this machine (hub/projectdelete.ts): what deleting it removes, and the delete itself.
 			case "project": {
 				const key = encodeURIComponent(String(a.key ?? ""));

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { draftApprovalBlock } from "./draft-approval.ts";
+import { draftApprovalBlock, NO_ATTACHMENT_WARNING } from "./draft-approval.ts";
 import { draftFileRoute, stageDraftFiles } from "./draft-files.ts";
 import { emit, sseResponse } from "./events.ts";
 import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount } from "./notices.ts";
@@ -110,19 +110,20 @@ describe("attachments in the send sheet", () => {
 		});
 	}
 
-	test("none carried: 첨부 없음 row, and the claim in the text raises the warning; a plain reply shows only 첨부 없음", async () => {
+	test("the claim in the text raises the warning above 보내기 (not under the files); a plain reply shows only 첨부 없음", async () => {
 		const v = await open(390, 844);
 		await openSheet(v, String(find("RATT0002").id));
-		await waitFor(v, `document.querySelector(".fs-body .dr-none")`);
-		expect(await texts(v, ".fs-body .dr-none")).toEqual(["첨부 없음 · 받은 메일의 첨부파일은 들어가지 않아요"]);
-		expect(await texts(v, ".fs-body .dr-warn")).toEqual(["본문에 첨부라고 썼지만 첨부파일이 없어요"]);
+		await waitFor(v, `document.querySelector(".fs-ft .dr-warn")`);
+		expect(await texts(v, ".fs-ft .dr-wt > span:first-child")).toEqual([NO_ATTACHMENT_WARNING]);
+		expect(await texts(v, ".fs-ft .dr-wn")).toEqual(["본문에는 보낸다고 썼어요"]);
+		expect(await v.evaluate(`!!document.querySelector(".fs-body .dr-warn")`)).toBe(false);
 		expect(await v.evaluate(`document.querySelectorAll(".fs-body .dr-att").length`)).toBe(0);
-		expect(await v.evaluate(`document.querySelector(".fs-body .dr-warn").getAttribute("role")`)).toBe("alert");
+		expect(await v.evaluate(`document.querySelector(".fs-ft .dr-warn").getAttribute("role")`)).toBe("alert");
 		await Bun.write(`${SNAP}/sheet-warning-390.png`, await v.screenshot());
 		const w2 = await open(390, 844);
 		await openSheet(w2, String(find("RATT0003").id));
 		await waitFor(w2, `document.querySelector(".fs-body .dr-none")`);
-		expect(await w2.evaluate(`!!document.querySelector(".fs-body .dr-warn")`)).toBe(false);
+		expect(await w2.evaluate(`!!document.querySelector(".fs-ft .dr-warn")`)).toBe(false);
 	});
 });
 
@@ -133,7 +134,7 @@ describe("attachments in the mail draft card", () => {
 		const n = find("RATT0001");
 		const html = await v.evaluate(`(() => { const n = ${JSON.stringify(n)}; const c = draftCardNode(n); document.body.append(c); return c.querySelectorAll("a.dr-att").length + "|" + [...c.querySelectorAll(".dr-fn")].map(e => e.textContent).join(",") + "|" + c.querySelector("a.dr-att").getAttribute("href"); })()`);
 		expect(html).toBe("2|견적서 최종.pdf,현장사진.jpg|/api/drafts/RATT0001/files/0");
-		const plain = await v.evaluate(`(() => { const n = ${JSON.stringify({ ...n, decision: { ...n.decision, draft: { toLabel: "받는이", to: "a@b.c", body: "안녕하세요." } } })}; return draftFilesNode(n.decision.draft) === null && draftCardNode(n).querySelector(".dr-files") === null; })()`);
+		const plain = await v.evaluate(`(() => { const n = ${JSON.stringify({ ...n, decision: { ...n.decision, draft: { toLabel: "받는이", to: "a@b.c", body: "안녕하세요." } } })}; return draftFilesNode(n.decision.draft).hidden && draftCardNode(n).querySelector(".dr-files").hidden; })()`);
 		expect(plain).toBe(true);
 	});
 });

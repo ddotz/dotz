@@ -43,6 +43,10 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: path.endsWith("/draft") ? `draft ${JSON.stringify(b)}` : b.text });
 			return Response.json({ ok: true });
 		}
+		if (req.method === "POST" && /^\/api\/drafts\/[A-Za-z0-9._-]+\/files$/.test(path)) {
+			events.push({ target: `draft:${path.split("/")[3]}`, text: JSON.stringify(await req.json()) });
+			return Response.json({ ok: true });
+		}
 		if (req.method === "PATCH" && /^\/api\/watches\/[a-z0-9-]+\/settings$/.test(path)) {
 			events.push({ target: `settings:${path.split("/")[3]}`, text: JSON.stringify(((await req.json()) as { values: unknown }).values) });
 			return Response.json({ ok: true });
@@ -332,4 +336,24 @@ test("a message to a project target of a peer never carries a monitor name; a se
 	expect(B.events).toEqual([{ target: "ch:1562723146669490227", text: "원인 찾아 줘", via: "노트북" }]);
 	expect((await post({ action: "message", args: { target: "settings:w:login-cartier-com", settings: "w:other", text: "x" } })).status).toBe(200);
 	expect(B.events[1]).toEqual({ target: "settings:w:login-cartier-com", text: "x", via: "노트북" });
+});
+
+test("a peer's mail draft gets and loses files through the owner's own draft files route, once; the file list is a proxied GET", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const act = (args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "draft-files", args }) }));
+	expect((await act({ ref: "RPEER0001", library: "악보/행방불명_공유용.pdf" })).status).toBe(200);
+	expect((await act({ ref: "RPEER0001", name: "견적.pdf", data: "JVBERg==" })).status).toBe(200);
+	expect((await act({ ref: "RPEER0001", remove: 0 })).status).toBe(200);
+	expect((await act({ remove: 0 })).status).toBe(400);
+	expect(B.events).toEqual([
+		{ target: "draft:RPEER0001", text: JSON.stringify({ library: "악보/행방불명_공유용.pdf" }) },
+		{ target: "draft:RPEER0001", text: JSON.stringify({ name: "견적.pdf", data: "JVBERg==" }) },
+		{ target: "draft:RPEER0001", text: JSON.stringify({ remove: 0 }) },
+	]);
+	expect(A.events).toEqual([]);
+	const read = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/drafts/RPEER0001/files")}`));
+	expect(read.status).toBe(404);   // allowed through to B (this fake has no such GET); a path outside the peer read list would be 400
+	const lib = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/drafts/RPEER0001/library?q=ost")}`));
+	expect(lib.status).toBe(404);
 });

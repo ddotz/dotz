@@ -13,6 +13,8 @@ export default {
 	claim(channelId) {},                 // Discord channel outside the bot's categories
 	thread({ thread, text }) {},         // owner message in a thread
 	deny(command, dataDir) {},           // shell command about to run
+	reply(draft) {},                     // an approved mail reply of a source this plugin posts (files included)
+	repliesWithFiles(source) {},         // true when reply sends draft.attachments for that source
 } satisfies Plugin;
 ```
 
@@ -21,7 +23,7 @@ export default {
 - `thread({ thread, text })`: runs for each owner message in a thread; may do side effects and return `{ note, parentName }`: `note` is appended to the orchestrator's inbox turn for that message, `parentName` replaces the parent's name.
 - `deny(command, dataDir)`: return a reason to block the command (agent sessions and Claude), `undefined` to let it pass.
 
-Claim and thread hooks can run before `start`; keep what they need at module level. The extension and the Claude hook run in separate processes and call only `deny`.
+Claim and thread hooks can run before `start`; keep what they need at module level. The extension and the Claude hook run in separate processes and call only `deny`. `reply` also runs in the reply-drafts CLI (`features/reply-drafts/bin/draft.ts send`), which loads the plugins itself.
 
 A plugin that fails to load, whose `start` throws (it is dropped for the run), or whose hook throws is logged (`plugin <name>: ...`) and skipped; the hub keeps running. With no plugin installed the hooks return at once, and nothing is added to prompts.
 
@@ -45,6 +47,23 @@ curl -s -X POST http://127.0.0.1:<web.port>/api/mail \
 - `thread`: the Discord thread id when the poster already put the mail on Discord. The gateway records it and posts nothing; without it the gateway opens the thread itself (Discord on) or keeps the mail web-only.
 - `wake: true` gives the orchestrator one turn for the mail (zele does this). Leave it off when the poster already summarised it.
 - The owner's reply in that web conversation reaches the orchestrator as a message in the mail's thread: your plugin's `thread` hook runs and its `note` goes into the turn, so an OK recorded there gates `deny` exactly as on Discord. A mail with no plugin note gets a built-in note: draft first, send only after the owner's OK there.
+
+## Sending a reply, with files
+
+The reply-drafts feature sends a reply the owner approved (보내기). For a mail whose `source` is neither `zele` nor a webmail-no-api site, it asks the plugins, in file-name order, until one returns a result:
+
+```ts
+reply(draft) { // draft: { source, id, to, subject?, body, attachments: [{ name, path, size }] }
+	if (draft.source !== "work") return undefined;           // not mine: the next plugin, else "send it by hand"
+	// ... send draft.body to draft.to; attach every file at draft.attachments[i].path (absolute, on this computer)
+	return { ok: true, message: "답장을 보냈어요" };            // or { ok: false, message: "why" }
+},
+repliesWithFiles(source) { return source === "work"; },     // true only when reply really sends draft.attachments
+```
+
+- `attachments` are the files staged for that draft: the owner added them in the send sheet, or reply-drafts matched them in the mail instance's 첨부 파일 폴더 setting and the owner confirmed them. Without `repliesWithFiles`, the sheet says the account cannot send files, asks once more before 보내기, and a draft that holds files is not sent at all.
+- zele sends them with `zele mail reply <id> --attach <path>` (one flag per file). A webmail-no-api site cannot send files: its adapter only saves a text draft.
+- A throw in `reply` is a failed send (logged, the owner sees why); returning `undefined` means the source is not this plugin's.
 
 ## Registering a mail reader as a mail instance
 

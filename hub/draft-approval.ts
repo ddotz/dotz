@@ -27,12 +27,15 @@ export type DraftAction = "send" | "edit" | "drop";
 export type DraftToLabel = "받는이" | "대상" | "대화방";
 export const DRAFT_BODY_MAX = 6000;
 
-export const NO_ATTACHMENT_WARNING = "본문에 첨부라고 썼지만 첨부파일이 없어요";
+export const NO_ATTACHMENT_WARNING = "본문에 파일을 보낸다고 썼지만 첨부파일이 없어요";
+export const LIBRARY_MISS = "첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
+const NOTE_BODY = "본문에는 보낸다고 썼어요";
+const NOTE_ASKED = "받은 메일이 파일을 요청했어요";
 // An outgoing file: size in bytes when building a block, as the block shows it ("340KB") once parsed.
 export type DraftFileIn = { name: string; size?: number };
 export type DraftFile = { name: string; size?: string };
-export type DraftApproval = { toLabel: string; to: string; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string };
-export type DraftInput = { to: string; toLabel?: DraftToLabel; subject?: string; body: string; ref: string; question?: string; sendResult?: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean };
+export type DraftApproval = { toLabel: string; to: string; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string };
+export type DraftInput = { to: string; toLabel?: DraftToLabel; subject?: string; body: string; ref: string; question?: string; sendResult?: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean };
 
 export function fileSizeText(b: number): string {
 	return b >= 1073741824 ? `${(b / 1073741824).toFixed(1)}GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)}MB` : b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.max(0, Math.round(b))}B`;
@@ -40,14 +43,26 @@ export function fileSizeText(b: number): string {
 
 // The draft says it attaches something ("첨부합니다", "attached"). A refusal ("첨부하지 못", "첨부 없음") is not a claim.
 const CLAIM = /첨부\s*(?:파일|자료|문서|서류)?\s*(?:을|를|은|는)?\s*(?:합니다|했습니다|했어요|해요|드립니다|드려요|드릴게요|해\s*드립니다|해\s*드려요|해\s*드릴게요|하였습니다)|첨부(?:파일|자료|문서|서류)?\s*(?:을|를)?\s*(?:보내|함께)|\b(?:attached|attaching)\b|\bI(?:'ve| have)?\s+attach|\bplease\s+find\b.*\battach/i;
-const NO_CLAIM = /첨부\s*(?:파일)?\s*(?:은|는|이|가)?\s*(?:없|못|불가)|첨부(?:하지|할 수 없)|not\s+attach|no\s+attach/i;
-export const claimsAttachment = (text: string): boolean => CLAIM.test(text) && !NO_CLAIM.test(text);
+const NO_CLAIM = /첨부\s*(?:파일)?\s*(?:은|는|이|가)?\s*(?:없|못|불가)|첨부(?:하지|할 수 없)|not\s+attach|no\s+attach|보내\s*(?:드리지|지)\s*못|못\s*보내|보내\s*드릴 수 없|보낼 수 없/i;
+// Nouns that name a file when a draft says it sends one or a mail asks for one.
+const FILE_NOUN = "악보|파일|자료|문서|견적서|청구서|계약서|제안서|보고서|이력서|영수증|사진|이미지|영상|음원|녹음|양식|서식|신청서|스캔본|스캔|첨부|pdf|hwpx?|docx?|xlsx?|pptx?|zip";
+const SENDS = "보내\\s*드(?:립니다|려요|릴게요|릴께요|리겠습니다|렸습니다|렸어요|립니다만)|보냅니다|보내요|보낼게요|보냈(?:습니다|어요)";
+// "행방불명 OST 또다시 악보 보내드립니다", "보내드린 악보는": the draft says it sends a file-like thing.
+const SENDS_FILE = new RegExp(`(?:${FILE_NOUN})[가-힣]{0,2}\\s*(?:을|를|은|는|도|만)?\\s*(?:[가-힣A-Za-z0-9]+\\s+){0,2}(?:${SENDS})|(?:보내\\s*드린|보낸)\\s*(?:${FILE_NOUN})|\\b(?:I'm sending|I'll send|I sent|I've sent|sending you|here is|here's)\\b[^.\\n]{0,40}\\b(?:file|pdf|document|score|sheet music|photo|invoice|quote)s?\\b`, "i");
+const ASK = /부탁|보내\s*주|보내\s*줘|보내\s*달|(?:공유|전달)\s*해?\s*(?:주|달)|주세요|주시면|주실 수|주실래/;
+const ASK_EN = /\b(?:please|could you|can you|would you)\b[^.\n]{0,40}\b(?:send|share|attach|forward)\b[^.\n]{0,40}\b(?:file|pdf|document|score|sheet music|photo|invoice|quote|copy)s?\b/i;
+export const claimsAttachment = (text: string): boolean => (CLAIM.test(text) || SENDS_FILE.test(text)) && !NO_CLAIM.test(text);
+// The mail being answered asks for a file ("악보 부탁드립니다", "견적서 보내주세요").
+export const asksForFile = (text: string): boolean =>
+	ASK_EN.test(text) || text.split(/[.!?\n]+/).some(sentence => new RegExp(FILE_NOUN, "i").test(sentence) && ASK.test(sentence));
 
 const quote = (s: string) => s.split("\n").map(l => (l ? `> ${l}` : ">"));
 
 export function draftApprovalBlock(d: DraftInput): string {
 	const files = (d.attachments ?? []).map(f => `> 첨부: ${f.name.replace(/\s+/g, " ").trim()}${f.size !== undefined ? ` (${fileSizeText(f.size)})` : ""}`);
-	const head = [`> ${d.toLabel ?? "받는이"}: ${d.to.replace(/\s+/g, " ").trim()}`, ...(d.subject ? [`> 제목: ${d.subject.replace(/\s+/g, " ").trim()}`] : []), ...(files.length ? files : d.attachmentsNone ? ["> 첨부: 없음"] : []), ">"];
+	const note = files.length ? "" : (d.toLabel ?? "받는이") !== "받는이" ? "" : claimsAttachment(`${d.subject ?? ""}\n${d.body}`) ? NOTE_BODY : d.asksFile ? NOTE_ASKED : "";
+	const none = note ? `> 첨부: 없음 (${note}${d.libraryMiss ? ` · ${LIBRARY_MISS}` : ""})` : d.attachmentsNone ? "> 첨부: 없음" : "";
+	const head = [`> ${d.toLabel ?? "받는이"}: ${d.to.replace(/\s+/g, " ").trim()}`, ...(d.subject ? [`> 제목: ${d.subject.replace(/\s+/g, " ").trim()}`] : []), ...(files.length ? files : none ? [none] : []), ">"];
 	const options = [
 		{ name: DRAFT_SEND, result: d.sendResult ?? `${d.to.replace(/\s+/g, " ").trim()}에 이 글을 그대로 보내요` },
 		{ name: `${DRAFT_EDIT} …`, result: "어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" },
@@ -59,6 +74,7 @@ export function draftApprovalBlock(d: DraftInput): string {
 const HEADER = /^(받는이|대상|대화방)\s*[:：]\s*(.*)$/;
 const SUBJECT = /^제목\s*[:：]\s*(.*)$/;
 const ATTACH = /^첨부\s*[:：]\s*(.*)$/;
+const NONE_NOTE = /^없음\s*\((.+)\)$/;
 const FILE_SIZE = /^(.*\S)\s+\((\d+(?:\.\d+)?(?:B|KB|MB|GB))\)$/;
 const REF = /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/;
 
@@ -91,6 +107,7 @@ export function parseQuotedDraft(text: string): DraftApproval | undefined {
 	let subject: string | undefined;
 	const attachments: DraftFile[] = [];
 	let none = false;
+	let note: string | undefined;
 	let i = 0;
 	for (; i < quoted.length; i++) {
 		const h = HEADER.exec(quoted[i]!) ?? undefined;
@@ -103,15 +120,17 @@ export function parseQuotedDraft(text: string): DraftApproval | undefined {
 		else if (a) {
 			const v = a[1]!.trim();
 			const m = FILE_SIZE.exec(v);
+			const nn = NONE_NOTE.exec(v);
 			if (v === "없음") none = true;
+			else if (nn) note = nn[1]!.trim();
 			else if (v) attachments.push(m ? { name: m[1]!, size: m[2]! } : { name: v });
 		} else break;
 	}
 	const body = quoted.slice(i).join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\s+$/g, "");
 	if (!body) return undefined;
 	const clipped = body.slice(0, DRAFT_BODY_MAX);
-	const warn = toLabel === "받는이" && !attachments.length && claimsAttachment(`${subject ?? ""}\n${clipped}`);
-	return { toLabel, to, ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none ? { noAttachments: true as const } : {}), ...(warn ? { warning: NO_ATTACHMENT_WARNING } : {}) };
+	const warn = toLabel === "받는이" && !attachments.length && (!!note || claimsAttachment(`${subject ?? ""}\n${clipped}`));
+	return { toLabel, to, ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none ? { noAttachments: true as const } : {}), ...(warn ? { warning: NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}) };
 }
 
 // The quoted draft of a message (recipient line first, as draftApprovalBlock writes it), as standard "> " lines; undefined when the message
