@@ -379,7 +379,7 @@ function feed(e: HubEvent): void {
 /* ---------- unread answers: one bell item per conversation the owner is not looking at ---------- */
 const VIEW_MS = 60_000;
 const MESSAGE_PREVIEW = 120;
-const CONV_RE = /^(?:main|alert|worklog|lane:[\w.-]+|ch:\d+|mail:[a-z0-9._-]+)$/;
+const CONV_RE = /^(?:main|alert|worklog|lane:[\w.-]+|ch:\d+|mail:[a-z0-9._-]+|settings:[\w.:-]+)$/;
 // What each open web page reports it is showing (id -> conversation, "" = hidden / not a chat). A report older than VIEW_MS no longer counts.
 const viewers = new Map<string, { conv: string; at: number }>();
 let convNameOf: (conv: string) => string | undefined = () => undefined;
@@ -454,11 +454,12 @@ function fromAnswer(e: HubEvent): void {
 
 // The name of a conversation for a notice title; never a raw id: a project, then the session that owns the channel, then a plain label.
 function channelTitle(conv: string): string {
+	if (conv.startsWith("settings:w:")) return watchLabelOf(conv.slice(11));
 	const named = convNameOf(conv)?.trim();
 	if (named) return named;
 	const lane = conv.startsWith("ch:") ? channelLanes().get(conv) : undefined;
 	if (lane) return laneTitle(lane);
-	return conv.startsWith("ch:") ? "채널" : "대화";
+	return conv.startsWith("ch:") ? "채널" : conv.startsWith("settings:") ? "설정" : "대화";
 }
 
 /* ---------- decisions: every question that waits on the owner is its own pinned notice ---------- */
@@ -955,6 +956,10 @@ function retextWatch(id: string, text: string): void {
 
 // A watch notice stored before labels and Korean reasons: its title is the watch name and its text starts with the raw reason.
 function readable(n: Notice): Notice {
+	if (n.kind === "message" && n.key?.startsWith("msg:settings:")) {   // stored before settings conversations had a name: titled "대화"
+		const title = channelTitle(n.key.slice(4));
+		return title === n.title ? n : { ...n, title };
+	}
 	if (n.kind !== "watch") return n;
 	const title = watchLabelOf(n.title);
 	const [first = "", ...rest] = n.text.split("\n");

@@ -55,7 +55,7 @@ import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { makeRoute } from "./routes.ts";
-import { appKeyOf, integrationContext } from "./integrations.ts";
+import { appEntries, appKeyOf, integrationContext } from "./integrations.ts";
 import { setFormLink } from "./auth.ts";
 import { startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
 
@@ -71,7 +71,7 @@ setAppResolver(n => appKeyOf(n, integrationContext(DATA_DIR, cfg.zele?.enabled !
 setWatchGate(name => watchOff(DATA_DIR, name));
 setAppBlocker(n => blockedByOff(DATA_DIR, n));
 setOrchestratorAvailable(() => orch.status !== "stopped" && orch.status !== "rate-limited");
-setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] ?? discord.channels.threads[conv.slice(3)]?.name : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : undefined));
+setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] ?? discord.channels.threads[conv.slice(3)]?.name : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : conv.startsWith("settings:") ? appEntries(DATA_DIR).find(e => e.key === conv.slice(9))?.label : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
 backfillNotices();
 tagStoredApps();
