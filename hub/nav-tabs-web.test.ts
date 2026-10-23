@@ -22,7 +22,7 @@ function monitoringRoute(narrow: boolean) {
 }
 
 function chain(name: string, hash: string, narrow: boolean, mon: Mon) {
-	const env = { narrowChat: () => narrow, chatList: false, target: "main", SUB: new Set(), backTarget: () => null, MON: mon };
+	const env = { narrowChat: () => narrow, chatList: false, target: "main", SUB: new Set(), backTarget: () => null, MON: mon, monCtx: "", enc: encodeURIComponent };
 	const src = `${between(history, "function routeChain", "function navSync")}\nreturn routeChain;`;
 	return (new Function(...Object.keys(env), src)(...Object.values(env)) as (n: string, h: string) => string[])(name, hash);
 }

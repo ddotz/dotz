@@ -64,13 +64,14 @@ test("a spec without a file map posts only the body; the gateway post carries bo
 	const { server, spec, ctx } = site();
 	try {
 		const plain = { ...spec, read: { ...spec.read, attachments: undefined } };
-		expect(await describeMail(ctx, plain, "7")).toEqual({ body: "견적서를 첨부합니다." });
+		expect(await describeMail(ctx, plain, "7")).toEqual({ body: "견적서를 첨부합니다.", html: "<p>견적서를 첨부합니다.</p>" });
 		const calls: any[] = [];
 		const res = { lines: ["mail 7 from=a: s"], mails: [{ id: "7", from: "a", subject: "s", time: "", read: false }] };
 		const left = await postToGateway(async (m, p, b) => void calls.push([m, p, b]), "fake", res, () => {}, (m) => describeMail(ctx, spec, m.id));
 		expect(left).toEqual([]);
 		expect(calls[0][2].attachments.map((a: any) => a.name)).toEqual(["견적서.pdf", "inline.txt"]);
 		expect(calls[0][2].body).toBe("견적서를 첨부합니다.");
+		expect(calls[0][2].html).toBe("<p>견적서를 첨부합니다.</p>");
 		const failing = await postToGateway(async (m, p, b) => void calls.push([m, p, b]), "fake", res, () => {}, async () => { throw new Error("HTTP 500"); });
 		expect(failing).toEqual([]);
 		expect(calls[1][2].attachments).toBeUndefined();

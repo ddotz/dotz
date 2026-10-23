@@ -14,6 +14,7 @@ const hurl = c => `#${c[c.length - 1]}`;
 function routeChain(name, hash) {
   if (name === "home") return ["home"];
   const conv = n => narrowChat() ? ["home", "chat/list", `${n}/${target}`] : ["home", `${n}/${target}`];
+  if (monCtx && (name === "chat" || name === "activity")) return narrowChat() ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", hash];
   if (name === "chat" || name === "activity") return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
   if (name === "harness") return ["home", "settings", hash];
   if (name === "project") return ["home", "projects", hash];

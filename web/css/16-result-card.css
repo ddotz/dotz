@@ -15,6 +15,19 @@
 .rc-rawbody { margin-top: 8px; padding: 12px 14px; max-height: 60vh; overflow: auto; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); }
 .bm.rc .rc-rawbody .md { font-size: 14px; line-height: 22px; }
 .rc-rawbody .md .tbl { background: var(--card); }
+/* the original of a mail (11-mailbody.js): the HTML frame (white page, auto height, no inner scroll) or the laid-out text */
+.rc-rawbody.own { padding: 0; max-height: none; overflow: visible; background: none; }
+.mb { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mb-bar { display: flex; align-items: center; gap: 8px; min-height: 32px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.mb-bar .mb-note { min-width: 0; flex: 1; }
+.mb-frame { display: block; width: 100%; height: 120px; border: 1px solid var(--line); border-radius: var(--r-ctl); background: #fff; }
+.mb-fail { padding: 12px 14px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-3); }
+.mb-txt { padding: 12px 14px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font-size: 15px; line-height: 24px; overflow-wrap: anywhere; }
+.mb-txt p { margin: 0 0 10px; }
+.mb-txt blockquote { margin: 0 0 10px; padding-left: 12px; border-left: 3px solid var(--line-2); color: var(--fg-2); }
+.mb-txt a { color: var(--accent); }
+.mb-txt > :last-child { margin-bottom: 0; }
+.mb-txt .md { font-size: 14px; line-height: 22px; margin-bottom: 10px; }
 .rc-rawbody .md th { background: var(--layer); }
 @media (max-width: 1099px) { .appbar.cvconv h1 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; font-size: 17px; line-height: 22px; overflow-wrap: anywhere; } }
 /* mail row (30-monitoring.js monConvNode): a compact result card that is one tap target (role=button); in the original view (11-todo-strip.js) its files */

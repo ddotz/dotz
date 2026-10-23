@@ -6,17 +6,18 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileS
 import { isAbsolute, join, sep } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
+import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
 
 /** One attached file of a mail. `file` is relative to the mail files folder (`<key>/<n>/<name>`); it never leaves that folder. */
-export type MailAttachment = { name: string; type: string; size: number; file: string };
+export type MailAttachment = { name: string; type: string; size: number; file: string; cid?: string };
 /** What a poster sends: the bytes inline (`data`, base64) or a file it already put in the mail files folder (`path`, absolute or relative to it). */
-export type AttachmentInput = { name: string; type?: string; data?: string; path?: string };
+export type AttachmentInput = { name: string; type?: string; data?: string; path?: string; cid?: string };
 // A suggested next action the web shows in the mail's row and conversation slot (only when present): `reply-draft` = a reply draft
 // was offered as a send-approval [ask] whose question ends in "(<ref>)" (features/reply-drafts). `state` is the reply state the row shows
 // (web 30-monitoring.js mailReplyChip): "draft" (default) a draft waits for approval, "sent" the reply went out, "waiting" a reply is expected.
 export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; state?: "draft" | "sent" | "waiting" };
-export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; suggest?: MailSuggest };
-export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; thread?: string; wake?: boolean; attachments?: AttachmentInput[] };
+export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest };
+export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; attachments?: AttachmentInput[] };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean };
 export type MailDeps = {
 	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
@@ -111,10 +112,10 @@ function parseAttachments(v: unknown): AttachmentInput[] | undefined {
 	if (v.length > FILES_MAX) throw new MailError(`attachments: at most ${FILES_MAX} files`);
 	return v.map((a, i) => {
 		if (!a || typeof a !== "object") throw new MailError(`attachments[${i}] must be an object`);
-		const { name, type, data, path } = a as Record<string, unknown>;
+		const { name, type, data, path, cid } = a as Record<string, unknown>;
 		if (typeof name !== "string" || !name.trim()) throw new MailError(`attachments[${i}].name is required`);
 		if ((typeof data === "string") === (typeof path === "string")) throw new MailError(`attachments[${i}] needs exactly one of data (base64) or path`);
-		return { name: name.slice(0, 200), ...(typeof type === "string" ? { type: type.slice(0, 100) } : {}), ...(typeof data === "string" ? { data } : { path: path as string }) };
+		return { name: name.slice(0, 200), ...(typeof type === "string" ? { type: type.slice(0, 100) } : {}), ...(typeof cid === "string" && cid.trim() ? { cid: cid.trim().replace(/^<|>$/g, "").slice(0, 200) } : {}), ...(typeof data === "string" ? { data } : { path: path as string }) };
 	});
 }
 
@@ -132,6 +133,7 @@ export function parseMail(raw: unknown): MailInput {
 		to: str(b.to, "to", 500, false),
 		summary: str(b.summary, "summary", SUMMARY_MAX, false),
 		body: str(b.body, "body", BODY_MAX, false),
+		html: str(b.html, "html", MAIL_HTML_MAX, false),
 		thread,
 		wake: b.wake === true,
 		attachments: parseAttachments(b.attachments),
@@ -173,7 +175,7 @@ function saveAttachments(key: string, inputs: AttachmentInput[] | undefined): Ma
 			if (!bytes.length || bytes.length > FILE_MAX_BYTES) throw new Error(`size ${bytes.length} not accepted`);
 			mkdirSync(join(MAIL_FILES, key, String(n)), { recursive: true });
 			writeFileSync(dest, bytes);
-			out.push({ name, type: a.type || Bun.file(dest).type || "application/octet-stream", size: bytes.length, file });
+			out.push({ name, type: a.type || Bun.file(dest).type || "application/octet-stream", size: bytes.length, file, ...(a.cid ? { cid: a.cid } : {}) });
 		} catch (error) {
 			log(`mail ${key}: attachment ${n} (${a.name}) not stored: ${(error as Error).message}`);
 		}
@@ -185,6 +187,33 @@ function saveAttachments(key: string, inputs: AttachmentInput[] | undefined): Ma
 export function mailPreview(body: string | undefined): string {
 	const lines = (body ?? "").split(/\r?\n/).map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean);
 	return lines.slice(0, 3).join("\n").slice(0, PREVIEW_MAX);
+}
+
+const BODY_FILE = (key: string) => join(MAIL_FILES, key, "body.html");
+
+// Stores the sanitized HTML body next to the attachments (not in the records file, which stays small). True when a body was kept.
+async function saveHtml(key: string, html: string | undefined, attachments: MailAttachment[]): Promise<boolean> {
+	if (!html?.trim()) return false;
+	try {
+		const cids: Record<string, string> = {};
+		for (const [n, a] of attachments.entries()) if (a.cid) cids[a.cid] = `/api/mail/${key}/files/${n}`;
+		const clean = await sanitizeMailHtml(html, cids);
+		if (!clean) return false;
+		mkdirSync(join(MAIL_FILES, key), { recursive: true });
+		writeFileSync(BODY_FILE(key), clean);
+		return true;
+	} catch (error) {
+		log(`mail ${key}: html body not stored: ${(error as Error).message}`);
+		return false;
+	}
+}
+
+/** GET /api/mail/<key>/body: the stored, sanitized HTML of a known mail. The CSP header keeps even a direct visit inert. */
+export function mailBodyRoute(key: string): Response {
+	const rec = mailByKey(key);
+	const path = rec?.html ? insideMailFiles(BODY_FILE(key)) : undefined;
+	if (!path) return Response.json({ error: "메일 본문을 찾을 수 없어요" }, { status: 404 });
+	return new Response(Bun.file(path), { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox", "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=300" } });
 }
 
 /** The public face of a mail's files for the web: no stored paths. */
@@ -249,10 +278,11 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps): 
 	}
 	const at = deps.now?.() ?? new Date().toISOString();
 	const attachments = saveAttachments(key, m.attachments);
+	const html = await saveHtml(key, m.html, attachments);
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
-	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}) });
-	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), text: mailText(m) };
+	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}) });
+	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);
 	try {
