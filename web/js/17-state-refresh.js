@@ -13,7 +13,7 @@ async function refreshState() {
     // A lane that exits disappears at once: the view falls back to the main assistant (it stays reachable from ⌘K).
     if (isLaneT(target) && (!S.lanes.some(l => `lane:${l.name}` === target) || (PREV[target] && PREV[target] !== "exited" && targetInfo(target).status === "exited"))) setTarget(MAIN);
     if (isProjT(target) && !projTargets().includes(target)) setTarget(MAIN);   // its work channel was deleted
-    noteStatus(); paintAuth(); paintDecision(); paintOrchError();
+    noteStatus(); paintAuth(); paintDecision(); paintOrchError(); paintPause();
     renderBars(); renderWorking(); updateComposerMeta();
     if (current === "project") pmPaint();
     if (current === "home") renderHome();
