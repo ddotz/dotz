@@ -20,6 +20,7 @@ async function prLoad() {
     return;
   }
   prPaint();
+  if (typeof paintPause === "function") paintPause();   // the pause line names this computer, which the list gives
 }
 
 // A tapped notice relayed from another computer arrives as ?pc=<that computer's origin>[&n=<decision id>|&m=<message ts>]#<route> (cold start:

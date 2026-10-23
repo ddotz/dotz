@@ -13,13 +13,17 @@ import { knownComputers } from "./peers.ts";
 import { json } from "./routes-util.ts";
 
 export type Computer = { name: string; url: string; self: boolean };
-export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[] };
+// `orchestrator`: that gateway's bot status ("rate-limited" = paused; pauseKind "owner" = login/billing), for the composer's status line.
+// It is part of the rev, so a change of pause reaches a peer holding the older snapshot.
+export type OrchestratorPause = { status: string; pauseKind: string };
+export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause };
 export type PeerView = { name: string; url: string; online: boolean; stale: boolean; items: Snapshot | null };
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 export type MonitorDeps = {
 	name: () => string;                                       // this gateway's machine name
 	local: (req: Request) => Promise<Response>;               // this gateway's own handler chain (the same one the web app talks to)
 	localHeaders?: Record<string, string>;                    // what makes a local request pass the owner check
+	orchestrator?: () => OrchestratorPause;                   // this gateway's orchestrator status, read when the snapshot is built
 	computers?: () => Promise<Computer[]>;
 	fetch?: Fetcher;
 	now?: () => number;
@@ -91,7 +95,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 
 	const PARTS = ["/api/monitors", "/api/notices?limit=100", "/api/integrations", "/api/conversations"];
 	const build = (name: string, [m, n, i, c]: any[]): Snapshot => {
-		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv) };
+		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}) };
 		return { ...part, rev: createHash("sha1").update(JSON.stringify(part)).digest("hex").slice(0, 12) };
 	};
 	const snapshot = async (): Promise<Snapshot> => build(deps.name(), await Promise.all(PARTS.map(read)));
