@@ -349,7 +349,7 @@ function monStatNode(m) {
 // A peer's app is `<its key>~<computer hash>`: the same key may exist on this computer too (34-peer-monitoring.js pqApp).
 const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.app && it.pc ? pqApp(it.inst, it.pc) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : "";
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
-const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), el("span", { class: "cv-p", text: monState(it) })), kkItem(it) && KK.open ? null : asEntry(monSettingsApp(it))].filter(Boolean);
+const monHead = it => [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), el("span", { class: "cv-p", text: monState(it) })), ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
 // The settings app of the detail open now (an item, or a conversation sitting under one), for the phone's app bar.
 function monDetailApp() {
   if (current === "monitoring") return monConv() ? monSettingsApp(monSel(monItems())) : "";
