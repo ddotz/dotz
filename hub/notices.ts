@@ -91,6 +91,30 @@ let replaying = false;
 const save = () => writeAtomic(paths.notices, `${JSON.stringify(items, null, 1)}\n`);
 export const unreadCount = () => items.reduce((n, i) => n + (i.read || i.dismissed ? 0 : 1), 0);
 
+// The 감시 소식 feed stays small: each watch keeps its newest WATCH_KEEP reports and none older than WATCH_DAYS, dropped when a report is written and
+// when the file loads, so notices.json and the payload never grow with the age of the install. An open decision is never dropped.
+export const WATCH_KEEP = 50;
+export const WATCH_DAYS = 7;
+type Aged = { kind: string; title: string; updated: string; decision?: { state: string } };
+export function keepWatchNewest<T extends Aged>(list: T[], nowMs: number): T[] {
+	const cutoff = new Date(nowMs - WATCH_DAYS * 86_400_000).toISOString();
+	const counts = new Map<string, number>();
+	const drop = new Set<T>();
+	for (const i of list.filter(n => n.kind === "watch").sort((x, y) => y.updated.localeCompare(x.updated))) {
+		const n = (counts.get(i.title) ?? 0) + 1;
+		counts.set(i.title, n);
+		if ((n > WATCH_KEEP || i.updated < cutoff) && i.decision?.state !== "open") drop.add(i);
+	}
+	return drop.size ? list.filter(i => !drop.has(i)) : list;
+}
+function pruneWatch(): boolean {
+	const kept = keepWatchNewest(items, Date.parse(now()));
+	if (kept === items) return false;
+	items = kept;
+	return true;
+}
+if (pruneWatch()) save();
+
 // The Korean title of a session (never its code name); main.ts passes lanes.get(name)?.title.
 let laneTitleOf: (name: string) => string | undefined = () => undefined;
 export const setLaneTitleResolver = (fn: (name: string) => string | undefined) => void (laneTitleOf = fn);
@@ -203,6 +227,7 @@ function upsert(i: Input): Notice {
 	}
 	// The owner's read position may already cover the message this notice points at (read on another device first): it is born read.
 	if (!item.read && coveredByRead(item)) item.read = true;
+	if (i.kind === "watch") pruneWatch();
 	if (!replaying) {
 		save();
 		broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });

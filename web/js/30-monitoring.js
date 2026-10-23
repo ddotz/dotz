@@ -217,11 +217,12 @@ function monRunNode(it) {
   if (node && m.channel && isProjT(m.channel)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => { if (S && !projTargets().includes(m.channel)) toast("이 프로젝트를 찾을 수 없어요"); else go("monitoring", `c:${m.channel}`); }, text: "프로젝트 대화 열기" })));
   return node;
 }
-// Every item reads the same way: its reports and mails oldest to newest, a monitor's latest run last.
+// An item reads like a chat: its reports and mails oldest to newest, a monitor's latest run last. The 감시 소식 feed is a list, not a chat: newest on top.
+const monFeed = it => it.key === "notice";
 function monTimeline(it) {
   const names = it.mon ? monNames(it.mon) : [];
   const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => monNoticeNode(n, names) })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
-    ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => a.at - b.at);
+    ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
   const nodes = msgs.map(x => x.node()).filter(Boolean);
   if (nodes.length) return nodes;
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
@@ -265,7 +266,7 @@ function renderMonitoring() {
     MON.shown = sel.key;
     clear($("#mon-head")).append(...monHead(sel));
     clear(tl).append(...monTimeline(sel));
-    box.scrollTop = stick ? box.scrollHeight : keep;
+    box.scrollTop = monFeed(sel) ? (again ? keep : 0) : stick ? box.scrollHeight : keep;
     edgeFade(box);
   }
   convTitle();
