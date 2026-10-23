@@ -185,18 +185,18 @@ export const fileRoots = () => allowedRoots([...lanes.values()].flatMap(l => [l.
 
 // Prompts that were delivered but never answered (the gateway stopped mid-turn) are delivered again on start.
 // Returns how many prompts were replayed.
+const replayWrap = (text: string) => (isNote(text, "replayLead") ? text : `${msg().replay}\n${text}`);
 export function replayPending(): number {
 	const open = unanswered;
-const replayWrap = (text: string) => (isNote(text, "replayLead") ? text : `${msg().replay}\n${text}`);
 	unanswered = [];
 	return queue.replay(open, replayWrap);
 }
 
-// Registrations main.ts makes at the same point of its start (kept out of import time).
-export function installDelivery(): void {
 // After an orchestrator restart (orchestrator.ts): the prompts still open in this process go in again, once, oldest first.
 export const replayOpen = () => queue.reopen(replayWrap);
 
+// Registrations main.ts makes at the same point of its start (kept out of import time).
+export function installDelivery(): void {
 	livestatus.setWebProgress(webNote);
 	// The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
 	setAnswerHandlers(
