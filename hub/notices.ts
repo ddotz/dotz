@@ -8,7 +8,7 @@ import { askDefaults, asksSendWithoutDraft } from "./ask-options.ts";
 import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
-import { humanLabel, scheduleLine, watchLine, watchReasonKo } from "./watchtext.ts";
+import { describeOutput, humanLabel, isIssue, scheduleLine, watchLine, watchReasonKo } from "./watchtext.ts";
 
 // The web notification store: every worklog / alert / session result / watch / schedule post, kept in notices.json so the
 // bell survives a restart. Fed by what the hub already emits (onEmit), so main.ts only wires the API and the resolver.
@@ -100,6 +100,10 @@ export const setLaneTitleResolver = (fn: (name: string) => string | undefined) =
 let watchLabelOf: (name: string) => string = name => name;
 let orchestratorUp: () => boolean = () => true;
 export const setWatchLabelResolver = (fn: (name: string) => string) => void (watchLabelOf = fn);
+// One small-model sentence for a change the rules could not put in words (hub/watchsummary.ts); unset = rules only. The notice shows the rules' text
+// (the raw output folded) at once and the sentence replaces it when it arrives.
+let summarizeWatch: ((output: string) => Promise<string | undefined>) | undefined;
+export const setWatchSummarizer = (fn: typeof summarizeWatch) => void (summarizeWatch = fn);
 export const setOrchestratorAvailable = (fn: () => boolean) => void (orchestratorUp = fn);
 // A stopped lane is no longer in the live map: its title lives in the lane record the hub keeps (lanes/<name>/lane.json) and
 // in the title its lane_start event carries.
@@ -246,7 +250,7 @@ function fromOutbox(e: HubEvent, asks = false): void {
 	}
 	if (target === "alert") return asks ? undefined : void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered), at: e.ts });
 	const watch = /^ch:\d+$/.test(target) && e.source === "gateway" ? /^\[([^\]\n]+)\]\s*/.exec(text) : null;
-	if (watch) upsert({ kind: "watch", tone, title: watch[1]!, text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts });
+	if (watch) upsert({ kind: "watch", tone, title: watchLabelOf(watch[1]!), text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts });
 }
 
 function fromInbox(e: HubEvent): void {
@@ -264,8 +268,12 @@ function fromInbox(e: HubEvent): void {
 		// The wake event itself is a message of the 알림 conversation (hub/events.ts eventTarget); the bell gets nothing extra when the
 		// orchestrator, which reports in the channel, is up.
 		if (e.to === "orchestrator" && Array.isArray(e.channels) && e.channels.length && orchestratorUp()) return;
-		const text = clean(watchLine(label || "모니터링", String(e.reason ?? ""), String(e.text ?? ""), { raw: false })).text;
-		return void upsert({ kind: "watch", tone: "", title: label || "모니터링", text: text || "알림이 왔어요", open: "alert", read: recovered, at: e.ts });
+		const [head, reason, output] = [label || "모니터링", String(e.reason ?? ""), String(e.text ?? "")];
+		const prev = typeof e.prev === "string" ? e.prev : undefined;
+		const item = upsert({ kind: "watch", tone: "", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", read: recovered, at: e.ts });
+		if (summarizeWatch && !isIssue(reason) && !recovered && !describeOutput(output, { prev }).readable)
+			void summarizeWatch(output).then(summary => summary && retextWatch(item.id, clean(watchLine(head, reason, output, { prev, summary })).text));
+		return;
 	}
 	if (e.kind === "schedule") {
 		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
@@ -859,6 +867,15 @@ export function summary(text: string): string {
 		.slice(0, 3)
 		.map(l => (l.length > 160 ? `${l.slice(0, 159)}…` : l))
 		.join("\n");
+}
+
+// The model's sentence arrived for a watch notice: its text is replaced, the notice keeps its place and read state.
+function retextWatch(id: string, text: string): void {
+	const n = items.find(i => i.id === id);
+	if (!n || !text || n.text === text) return;
+	n.text = text;
+	save();
+	broadcast({ ts: now(), kind: "notice", source: "gateway", item: n, unread: unreadCount() });
 }
 
 // A watch notice stored before labels and Korean reasons: its title is the watch name and its text starts with the raw reason.

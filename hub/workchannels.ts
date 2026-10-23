@@ -3,8 +3,8 @@
 // channels on the same site and kept for as long as some channel needs them; a deleted channel drops its setup.
 import { existsSync, readFileSync } from "node:fs";
 import { now, paths, writeAtomic } from "./config.ts";
-import { addWatch, allWatches, removeWatch, setWatchChannels, type Watch } from "./watch.ts";
-import { humanLabel } from "./watchtext.ts";
+import { addWatch, allWatches, relabelWatches, removeWatch, setWatchChannels, type Watch } from "./watch.ts";
+import { deriveLabel, humanLabel, isKeyLabel } from "./watchtext.ts";
 
 export type Login = { session_url: string; expect?: string; host?: string; profile?: string };
 export type Monitor = { command: string; every_minutes?: number; on?: "change" | "match" | "fail"; pattern?: string; label?: string };
@@ -47,7 +47,8 @@ export function setupChannel(input: Record<string, any>, channelName: string, ru
 	});
 	// The name is only a key ([a-z0-9-]); the channel id keeps it unique where a Korean channel name slugs to nothing.
 	const monitors = ((input.monitors ?? []) as Monitor[]).map((m, i) => {
-		const w = addWatch({ ...m, name: `ch-${channel}-${i + 1}`, to: "orchestrator", channels: [channel] }, rulesText);
+		const name = `ch-${channel}-${i + 1}`;
+		const w = addWatch({ ...m, name, label: m.label?.trim() || deriveLabel({ name, project: channelName, index: i + 1 }), to: "orchestrator", channels: [channel] }, rulesText);
 		claimed.add(w.id);
 		return w.name;
 	});
@@ -72,18 +73,24 @@ export function clearChannel(channel: string): boolean {
 
 export const getSetup = (channel: string) => setups.find(s => s.channel === channel);
 
-// What the owner reads for a watch: its own label, else "<채널 이름> 감시 <n>" for a monitor of a channel setup (also for monitors
-// stored before labels existed), else the name; a key-shaped name or label ("kakao-new") is shown as words (humanLabel).
+// What the owner reads for a watch: its stored label (named once, see nameWatches), else "<채널 이름> 감시 <n>" for a monitor of a channel setup, else the
+// words of its key. A notice can outlive its watch, so the key is still turned into words here ("ch-123-2" -> "<채널 이름> 감시 2"); a key never shows.
 export function watchLabel(name: string): string {
 	const own = allWatches().find(w => w.name === name)?.label;
-	if (own) return humanLabel(own);
-	const s = setups.find(x => x.monitors.includes(name));
-	return s ? `${s.name} 감시 ${s.monitors.indexOf(name) + 1}` : humanLabel(name, name);
+	if (own && !isKeyLabel(own)) return humanLabel(own);
+	if (!/^[a-z0-9][a-z0-9_ -]*$/.test(name)) return name;
+	const s = setups.find(x => x.monitors.includes(name)) ?? setups.find(x => x.channel === /^ch-(\d+)-\d+$/.exec(name)?.[1]);
+	if (s) return deriveLabel({ name, project: s.name, index: Number(/(\d+)$/.exec(name)?.[1]) || s.monitors.indexOf(name) + 1 });
+	const words = humanLabel(deriveLabel({ name }), name);
+	return words;
 }
 
+// Boot: every watch without a readable name gets one, stored (hub/watch.ts relabelWatches). Returns how many.
+export const nameWatches = (): number => relabelWatches(w => setups.find(s => w.channels?.includes(s.channel))?.name);
+
 // The inbox event a watch report becomes (hub/notices.ts and the web read label / to to word it).
-export const watchWakeEvent = (w: Watch, reason: string, output: string) =>
-	({ ts: now(), kind: "watch", source: `watch:${w.name}`, watch: w.name, label: watchLabel(w.name), to: w.to, channels: w.channels, reason, text: output });
+export const watchWakeEvent = (w: Watch, reason: string, output: string, prev?: string) =>
+	({ ts: now(), kind: "watch", source: `watch:${w.name}`, watch: w.name, label: watchLabel(w.name), to: w.to, channels: w.channels, reason, text: output, ...(prev ? { prev } : {}) });
 
 // The owner edited the project's purpose on its page: the setup (and so the orchestrator prompt) follows. False without a setup.
 export function setSetupPurpose(channel: string, purpose: string): boolean {
