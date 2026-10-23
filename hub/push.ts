@@ -9,7 +9,7 @@ import { eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { answerReply, decisionsOf, type Notice, onDecision } from "./notices.ts";
 import { type Found, knownComputers } from "./peers.ts";
-import { isLater, parseTone, previewSource } from "./tone.ts";
+import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
 
 export const PUSH_KINDS = ["answer", "ask", "lane", "usage", "update"] as const;
@@ -63,7 +63,7 @@ const origin = (endpoint: string) => {
 let subject = () => "mailto:dotz@example.com";
 
 const plain = (t: string, max = 180) => {
-	const s = previewSource(t).replace(/```[\s\S]*?```/g, " ").replace(/[*_`#>|]/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();
+	const s = stripMarkers(previewSource(t)).replace(/```[\s\S]*?```/g, " ").replace(/[*_`#>|]/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();
 	return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 };
 

@@ -10,7 +10,7 @@ const ntAt = n => Date.parse(n.updated || n.ts) || 0;
 const ntTime = t => kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
 const ntWhen = n => ntTime(n.updated || n.ts);
 // Row text is plain: markdown marks (links, headings, bullets, emphasis, code) are dropped.
-const ntPlain = s => String(s ?? "")
+const ntPlain = s => stripMarkers(s)
   .replace(/^[ \t]*\[file\][ \t].*$/gm, "")
   .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
   .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
@@ -431,7 +431,7 @@ function ntShort(line, max = 60) {
 // A notice sheet's title is one short line and its body the rest. A title that is not the text's own first sentence (a question, a block title)
 // keeps the whole text as the body; a first sentence that had to be cut stays in the body in full.
 function ntParts(n) {
-  const text = String(n.text || "").replace(/^\s*\[[^\]\n]{1,10}\][ \t]*/, "").trim(), title0 = ntPlain(n.title);
+  const text = stripMarkers(n.text).replace(/^\s*\[[^\]\n]{1,10}\][ \t]*/, "").trim(), title0 = ntPlain(n.title);
   const first = (text.split("\n").find(l => l.trim()) || "").trim();
   const m = /^.*?[.!?。？！](?=\s|$)/.exec(first), sent = m ? m[0] : first;
   const head = ntShort(sent.replace(/[*_`#>]/g, "")), a = head.replace(/…$/, ""), b = title0.replace(/…$/, "");
