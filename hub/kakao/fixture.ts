@@ -1,10 +1,38 @@
 // Tests only: a plain SQLite file with the subset of KakaoTalk's schema the reader touches. Generic fake names; production never imports this.
 import { Database } from "bun:sqlite";
 
-export type FixtureRoom = { chatId: bigint | number; type: number; chatName?: string | null; title?: string; members?: number; unread?: number; lastUpdatedAt?: number; peer?: number | null };
+export type FixtureRoom = { chatId: bigint | number; type: number; chatName?: string | null; title?: string; members?: number; unread?: number; lastUpdatedAt?: number; peer?: number | null; marks?: [number, bigint | number][] };
 export type FixtureUser = { userId: number; linkId?: number; friendNickName?: string | null; displayName?: string | null; nickName?: string | null };
 export type FixtureMsg = { logId: bigint | number; chatId: bigint | number; authorId: number; message: string; type?: number; sentAt: number };
 export type FixtureSpec = { ownerId?: number; rooms?: FixtureRoom[]; users?: FixtureUser[]; messages?: FixtureMsg[] };
+
+// A binary plist (bplist00) holding one top-level array of int64, like NTChatRoom.watermarkKeys / watermarkValues. Up to 255 elements.
+export function bplistOfInts(values: (bigint | number)[]): Buffer {
+	const n = values.length;
+	const top: number[] = n < 15 ? [0xa0 | n] : [0xaf, 0x10, n];
+	const topBytes = Buffer.concat([Buffer.from(top), Buffer.from(Array.from({ length: n }, (_, i) => i + 1))]);
+	const ints = values.map(v => {
+		const b = Buffer.alloc(9);
+		b[0] = 0x13;
+		b.writeBigInt64BE(BigInt(v), 1);
+		return b;
+	});
+	const offsets: number[] = [8];
+	let at = 8 + topBytes.length;
+	for (const b of ints) {
+		offsets.push(at);
+		at += b.length;
+	}
+	const table = Buffer.alloc(offsets.length * 2);
+	offsets.forEach((o, i) => table.writeUInt16BE(o, i * 2));
+	const trailer = Buffer.alloc(32);
+	trailer[6] = 2;
+	trailer[7] = 1;
+	trailer.writeBigUInt64BE(BigInt(offsets.length), 8);
+	trailer.writeBigUInt64BE(0n, 16);
+	trailer.writeBigUInt64BE(BigInt(at), 24);
+	return Buffer.concat([Buffer.from("bplist00"), topBytes, ...ints, table, trailer]);
+}
 
 export const OWNER = 1000;
 export const BASE_TIME = 1_700_000_000;
@@ -43,7 +71,7 @@ const DEFAULT_MESSAGES: FixtureMsg[] = [
 export function makeFixtureDb(path: string, spec: FixtureSpec = {}): Database {
 	const db = new Database(path, { create: true });
 	db.exec(`
-		CREATE TABLE NTChatRoom (chatId INTEGER PRIMARY KEY, type INTEGER, chatName TEXT, activeMembersCount INTEGER, countOfNewMessage INTEGER, lastUpdatedAt INTEGER, directChatMemberUserId INTEGER);
+		CREATE TABLE NTChatRoom (chatId INTEGER PRIMARY KEY, type INTEGER, chatName TEXT, activeMembersCount INTEGER, countOfNewMessage INTEGER, lastUpdatedAt INTEGER, directChatMemberUserId INTEGER, watermarkKeys BLOB, watermarkValues BLOB);
 		CREATE TABLE NTChatMessage (logId INTEGER PRIMARY KEY, chatId INTEGER, authorId INTEGER, message TEXT, type INTEGER, sentAt INTEGER);
 		CREATE TABLE NTUser (userId INTEGER, linkId INTEGER, friendNickName TEXT, displayName TEXT, nickName TEXT, PRIMARY KEY (userId, linkId));
 		CREATE TABLE NTChatContext (userId INTEGER);
@@ -51,7 +79,7 @@ export function makeFixtureDb(path: string, spec: FixtureSpec = {}): Database {
 	`);
 	db.query("INSERT INTO NTChatContext (userId) VALUES (?)").run(spec.ownerId ?? OWNER);
 	for (const r of spec.rooms ?? DEFAULT_ROOMS) {
-		db.query("INSERT INTO NTChatRoom VALUES (?, ?, ?, ?, ?, ?, ?)").run(BigInt(r.chatId), r.type, r.chatName ?? null, r.members ?? 2, r.unread ?? 0, r.lastUpdatedAt ?? 0, r.peer ?? null);
+		db.query("INSERT INTO NTChatRoom VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(BigInt(r.chatId), r.type, r.chatName ?? null, r.members ?? 2, r.unread ?? 0, r.lastUpdatedAt ?? 0, r.peer ?? null, r.marks ? bplistOfInts(r.marks.map(m => m[0])) : null, r.marks ? bplistOfInts(r.marks.map(m => m[1])) : null);
 		if (r.title) db.query("INSERT INTO NTChatMeta VALUES (?, 3, ?, ?)").run(BigInt(r.chatId), r.title, r.title);
 	}
 	for (const u of spec.users ?? DEFAULT_USERS)

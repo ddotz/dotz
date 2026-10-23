@@ -3,7 +3,7 @@
 // With no web page connected the query is skipped and the last seen logId stays where it was, so the next query catches up.
 import { mkdirSync, readFileSync, watch } from "node:fs";
 import { basename, dirname } from "node:path";
-import { type KakaoDb, maxLogId, newInChats } from "./db.ts";
+import { type KakaoDb, maxLogId, newInChats, watermarkSignatures } from "./db.ts";
 import type { KakaoConfig, KakaoPaths } from "./types.ts";
 
 export type Watcher = { close(): void };
@@ -41,6 +41,8 @@ export function createLive(deps: LiveDeps) {
 	let dbTimer: unknown;
 	let draftTimer: unknown;
 	let draftSigs = new Map<string, string>();
+	// Per watched room, the raw read positions of its members (NTChatRoom.watermarkValues); a change = someone read more.
+	let markSigs: Map<string, string> | undefined;
 
 	const draftSignatures = (): Map<string, string> => {
 		const sigs = new Map<string, string[]>();
@@ -65,8 +67,25 @@ export function createLive(deps: LiveDeps) {
 		const db = await deps.openDb(config);
 		if (last === undefined) {
 			last = await maxLogId(db);
+			markSigs = await watermarkSignatures(db, chats);
 			return;
 		}
+		await pollNew(db, last);
+		await pollMarks(db);
+	};
+
+	// One event per watched room whose read positions changed since the last look (ids only).
+	const pollMarks = async (db: KakaoDb) => {
+		const next = await watermarkSignatures(db, chats);
+		if (!next.size) return;
+		const prev = markSigs;
+		markSigs = next;
+		if (!prev) return;
+		for (const [chatId, sig] of next) if (prev.has(chatId) && prev.get(chatId) !== sig) deps.broadcast({ kind: "kakao_read", chatId });
+	};
+
+	const pollNew = async (db: KakaoDb, from: string) => {
+		last = from;
 		for (;;) {
 			const rows = await newInChats(db, last, chats, PAGE);
 			if (!rows.length) return;
@@ -133,6 +152,7 @@ export function createLive(deps: LiveDeps) {
 		chats = [];
 		config = undefined;
 		last = undefined;
+		markSigs = undefined;
 		draftSigs = new Map();
 	};
 
@@ -148,6 +168,7 @@ export function createLive(deps: LiveDeps) {
 		config = next;
 		chats = list;
 		last = undefined;
+		markSigs = undefined;
 		draftSigs = draftSignatures();
 		try {
 			const draftDir = dirname(deps.paths.drafts);
@@ -157,7 +178,9 @@ export function createLive(deps: LiveDeps) {
 			deps.log?.(`kakao live: could not watch (${(e as Error).message.slice(0, 80)})`);
 		}
 		try {
-			last = await maxLogId(await deps.openDb(next));
+			const db = await deps.openDb(next);
+			last = await maxLogId(db);
+			markSigs = await watermarkSignatures(db, list);
 		} catch {
 			last = undefined;
 		}
