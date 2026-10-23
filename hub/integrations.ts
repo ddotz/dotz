@@ -7,7 +7,8 @@
 //   kind       "app": an interactive (app-type) source the owner talks to; 모니터링 lists these as the 앱 group, between 감시 소식 and the plain monitors
 //   icon       an icon name of web/js/01-core.js ICONS; `iconPath` (24x24 stroke path) registers it when the web has none yet
 //   on         shown only when one of these holds on this install: a feature folder that is enabled (feature.md `enabled`), a data file
-//              that exists ("dir/file.json", or "dir/file.json#key" = the file has that key), or a named runtime flag set by the caller
+//              that exists ("dir/file.json", or "dir/file.json#key" = the file has that key), or a named runtime flag set by the caller.
+//              An entry with a `match.conv` prefix is also on when this install has a conversation or a notice under that prefix.
 //   match      which notices belong to it: a conversation prefix on where the notice lives (`conv`, e.g. "mail:"), the label of an
 //              approval draft (`draft`, the "> 대화방:" line of hub/draft-approval.ts), or a case-insensitive pattern on title + text
 import { existsSync, readFileSync } from "node:fs";
@@ -76,9 +77,15 @@ export function integrationContext(dataDir: string, flags: Iterable<string> = []
 export const integrationOn = (e: IntegrationEntry, ctx: IntegrationContext): boolean =>
 	!!(e.on.features?.some(f => ctx.features.has(f)) || e.on.files?.some(f => ctx.files(f)) || e.on.flags?.some(f => ctx.flags.has(f)));
 
+const whereOf = (n: NoticeLike): string[] => [n.src, n.open, n.decision?.to].filter((s): s is string => typeof s === "string");
+
+// Conversations or notices already live under the entry's `conv` prefixes: this install receives through it, whatever its switches say.
+const hasConvs = (e: IntegrationEntry, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>>): boolean =>
+	(e.match.conv ?? []).some(p => Object.keys(convUnread).some(t => t.startsWith(p)) || notices.some(n => whereOf(n).some(w => w.startsWith(p))));
+
 export function belongsTo(e: IntegrationEntry, n: NoticeLike): boolean {
 	const { conv = [], draft = [], text = [] } = e.match;
-	const where = [n.src, n.open, n.decision?.to].filter((s): s is string => typeof s === "string");
+	const where = whereOf(n);
 	if (conv.some(p => where.some(w => w.startsWith(p)))) return true;
 	const body = n.text ?? "";
 	if (n.decision && draft.some(l => body.includes(`> ${l}:`))) return true;
@@ -89,7 +96,7 @@ export function belongsTo(e: IntegrationEntry, n: NoticeLike): boolean {
 // The enabled entries with their notices (newest first as given, at most `cap`) and the unread count: unread notices plus the unread messages
 // of the conversations under the entry's `conv` prefixes (`convUnread`: target -> unread messages).
 export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = INTEGRATIONS): IntegrationItem[] {
-	return entries.filter(e => integrationOn(e, ctx)).map(e => {
+	return entries.filter(e => integrationOn(e, ctx) || hasConvs(e, notices, convUnread)).map(e => {
 		const mine = notices.filter(n => !n.dismissed && belongsTo(e, n));
 		const convs = e.match.conv ?? [];
 		const fromConvs = Object.entries(convUnread).reduce((c, [t, n]) => c + (convs.some(p => t.startsWith(p)) ? n : 0), 0);

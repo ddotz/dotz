@@ -42,6 +42,15 @@ describe("which integrations show", () => {
 		expect(keys(install([]), ["zele"])).toEqual(["mail"]);
 	});
 
+	test("a mail conversation or a mail notice turns 메일 on without any switch; none leaves it off", () => {
+		const ctx = integrationContext(install([]), []);
+		const on = (notices: Parameters<typeof integrationItems>[1], convUnread: Record<string, number> = {}) => integrationItems(ctx, notices, convUnread).map(i => i.key);
+		expect(on([], { "mail:k1": 0 })).toEqual(["mail"]);
+		expect(on([{ id: "n", src: "mail:k1" }])).toEqual(["mail"]);
+		expect(on([{ id: "n", open: "alert", title: "디스크 경고" }], { "ch:7": 3 })).toEqual([]);
+		expect(on([])).toEqual([]);
+	});
+
 	test("YouTube and Instagram follow the channels set up in the sns config, each on its own", () => {
 		expect(keys(install([], { youtube: { channel_id: "c" } }))).toEqual(["youtube"]);
 		expect(keys(install([], { instagram: { user_id: "u" } }))).toEqual(["instagram"]);
