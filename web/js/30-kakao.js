@@ -206,7 +206,7 @@ function kkSendNode(s) {
     el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
     el("div", { class: "kk-st", role: failed ? "alert" : "status" }, el("span", { class: "kk-state", text: st }),
       failed ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: () => kkRetry(s) }) : null,
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: () => { KK.hidden.add(s.id); kkPaintTl(KK.stick); } }) : null));
+      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: () => kkDeleteSend(s) }) : null));
 }
 function kkTimeline() {
   const out = [], msgs = KK.msgs;
@@ -377,13 +377,24 @@ async function kkSend() {
   if (!ok && KK.open === id && !kkTa.value) { kkTa.value = text; kkAutosize(); }
   if (!kkTa.disabled && kkWide()) kkTa.focus();
 }
-function kkRetry(s) {
-  KK.hidden.add(s.id);
-  kkPaintTl(KK.stick);
-  kkSendText(s.text, null);
+// The failed send is deleted on the gateway (the stored record, so no other web or reload shows it again); a 404 means it is already gone.
+async function kkDeleteSend(s) {
+  const id = KK.open;
+  try {
+    await api(`/api/kakao/chat/${enc(id)}/send/${enc(s.id)}`, "DELETE");
+  } catch (e) {
+    toast(e.message, true);
+    return false;
+  }
+  if (KK.open === id) { KK.sends = KK.sends.filter(x => x.id !== s.id); kkPaintTl(KK.stick); }
+  return true;
+}
+async function kkRetry(s) {
+  if (await kkDeleteSend(s)) kkSendText(s.text, null);
 }
 async function kkSendEvent(e) {
   const s = KK.sends.find(x => x.id === e.id);
+  if (e.state === "deleted") { if (s) { KK.sends = KK.sends.filter(x => x.id !== e.id); kkPaintTl(KK.stick); } return; }
   if (!s) { kkTail(); return; }
   s.state = e.state; s.reason = e.reason;
   kkPaintTl(KK.stick);

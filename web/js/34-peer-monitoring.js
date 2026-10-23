@@ -90,6 +90,7 @@ async function pqConvLoad(c) {
     const r = await api(pqUrl(c.pc, kk ? `/api/kakao/chat/${enc(kk)}?limit=50` : `/api/history?target=${enc(c.t)}&limit=50`));
     c.events = kk ? (r.messages || []).filter(m => m && m.text).map(m => ({ ts: new Date(m.sentAt).toISOString(), text: String(m.text), in: !m.fromMe }))
       : (r.events || []).filter(e => e && e.text).map(e => ({ ts: e.ts, text: String(e.text), in: !!convIncoming(e) }));
+    c.sends = kk ? (r.sends || []).filter(s => s && s.state === "failed") : [];
     c.state = "ok";
   } catch { c.state = "err"; }
   if (PQ.conv === c) monSchedule();
@@ -112,6 +113,18 @@ async function pqSend(c, ta, btn) {
   } catch { toast("연결 안 됨", true); }
   btn.disabled = false;
 }
+// A failed KakaoTalk send is deleted on the owning gateway (forwarded through /api/peer/act), then the conversation is read again.
+async function pqDeleteSend(c, s, btn) {
+  btn.disabled = true;
+  try {
+    const r = await fetch(pqUrl(c.pc, "/api/peer/act"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "kakao", args: { op: "send-delete", chatId: pqKakao(c.t), sendId: s.id } }) });
+    if (r.status === 503) toast("이 컴퓨터에서는 읽기만 돼요", true);
+    else if (r.status === 502) toast("연결 안 됨", true);
+    else if (!r.ok) toast(((await r.json().catch(() => null)) || {}).error || `HTTP ${r.status}`, true);
+    else pqConvLoad(c);
+  } catch { toast("연결 안 됨", true); }
+  btn.disabled = false;
+}
 function pqConvView(c) {
   const back = el("button", { class: "btn tonal pm-back", type: "button", onclick: () => { PQ.conv = null; monSchedule(); }, text: "목록으로" });
   const ta = el("textarea", { class: "fi pm-ta", rows: 2, placeholder: "답장 쓰기", "aria-label": "답장", oninput: () => { c.draft = ta.value; } });
@@ -119,7 +132,8 @@ function pqConvView(c) {
   const send = el("button", { class: "btn pri", type: "button", onclick: () => pqSend(c, ta, send), text: "보내기" });
   const body = c.state === "loading" ? [el("div", { class: "empty", text: "불러오는 중…" })] : c.state === "err" ? [el("div", { class: "empty", text: "연결 안 됨" })]
     : c.events.length ? c.events.map(e => el("div", { class: `bm pm-msg${e.in ? "" : " me"}` }, el("div", { class: "mt", text: rcWhen(e.ts) }), mdNode(e.text))) : [el("div", { class: "empty", text: "대화가 아직 없어요" })];
-  return [back, ...body, el("div", { class: "pm-reply" }, ta, send)];
+  const failed = (c.sends || []).map(s => { const x = el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: () => pqDeleteSend(c, s, x) }); return el("div", { class: "bm pm-msg me", "data-send": s.id }, el("div", { class: "mt", role: "alert", text: `실패${s.reason ? ` · ${s.reason}` : ""}` }), mdNode(s.text), x); });
+  return [back, ...body, ...failed, el("div", { class: "pm-reply" }, ta, send)];
 }
 // The peer part of monTimeline: its open conversation, or the note of a computer that has nothing cached; null = the usual timeline.
 function pqTimeline(it) {

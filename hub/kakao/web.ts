@@ -280,6 +280,17 @@ export function createKakaoWeb(deps: WebDeps) {
 				return json({ id: rec.id, state: "sending" }, 202);
 			}
 
+			// The owner's delete of a failed (or lost) send: the record leaves sends.json for good, so the room, every web and every peer stop showing it. A send still running cannot be taken back.
+			if (sub === "send" && parts.length === 6 && method === "DELETE") {
+				const sendId = decodeURIComponent(parts[5]!);
+				const rec = storedSends().find(s => s.id === sendId && s.chatId === chatId);
+				if (!rec) return json({ ok: true, removed: false });
+				if (rec.state === "sent" || inflight.has(rec.id)) return json({ error: "이 메시지는 지울 수 없어요" }, 409);
+				saveSends(storedSends().filter(s => s.id !== sendId));
+				deps.broadcast({ kind: "kakao_send", chatId, id: sendId, state: "deleted" });
+				return json({ ok: true, removed: true });
+			}
+
 			if (sub === "draft" && parts.length === 5 && method === "POST") {
 				if (!deps.draftModel) return json({ error: "초안 만들기를 쓸 수 없어요" }, 503);
 				if (drafting.has(chatId)) return json({ error: "이 대화방은 초안을 만드는 중이에요" }, 409);
