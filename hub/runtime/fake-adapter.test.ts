@@ -170,7 +170,8 @@ test("orchestrator: idle -> working -> final -> idle, then a rate limit pauses a
 	expect(agent.calls[1]).toMatch(/^send:followUp:/);
 	await agent.push(...turn(answer("back")));
 	expect(agent.calls.slice(2)).toEqual(["send:followUp:held one"]);
-	expect(seen.filter(s => s.startsWith("alert:"))).toHaveLength(1);
+	// the limit alert, then the one recovery line when the resumed turn works
+	expect(seen.filter(s => s.startsWith("alert:"))).toHaveLength(2);
 
 	o.stop();
 	expect(agent.calls.at(-1)).toBe("kill");
