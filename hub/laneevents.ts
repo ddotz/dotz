@@ -35,6 +35,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				clearTimeout(lane.errorHold);
 				lane.failing = false;
 				lane.transientTimer = undefined;
+				lane.reportedThisTurn = undefined;
 				rmSync(pendingFile(lane), { force: true });
 				setStatus(lane, "working");
 				lane.progressAt = Date.now();
