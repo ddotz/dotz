@@ -366,14 +366,14 @@ function parseArgs(args: string[]): { cmd: string; flags: Map<string, string | t
 
 // ---- commands --------------------------------------------------------------------------------------------------------
 
-async function cmdRun(d: Deps, flags: Map<string, string | true>): Promise<Result> {
+async function cmdRun(d: Deps, flags: Map<string, string | true>, args: string[]): Promise<Result> {
 	const state = loadState();
 	const asked = (["youtube", "instagram"] as Platform[]).filter(p => flags.get(p));
 	state.platforms = asked.length ? asked : state.platforms.length ? state.platforms : ["youtube", "instagram"];
 	if (flags.get("dry-run")) {
 		return { code: 0, lines: ["미리보기예요. 아무것도 바꾸지 않았어요", ...activeSteps(state.platforms).map(def => `⏳ ${def.label}`)] };
 	}
-	const legacy = legacyGate([...flags.keys()].map(k => `--${k}`));
+	const legacy = legacyGate(args);
 	if (legacy.ask) return { code: 3, lines: legacy.lines };
 	const target = typeof flags.get("target") === "string" ? (flags.get("target") as string) : "chat";
 	const started = d.ctx.now();
@@ -447,7 +447,7 @@ function cmdReset(rest: string[]): Result {
 
 export async function run(d: Deps, args: string[]): Promise<Result> {
 	const { cmd, flags, rest } = parseArgs(args);
-	if (cmd === "run") return cmdRun(d, flags);
+	if (cmd === "run") return cmdRun(d, flags, args);
 	if (cmd === "status") return cmdStatus();
 	if (cmd === "reset") return cmdReset(rest);
 	return { code: 1, lines: ["명령은 run, status, reset 중 하나예요"] };
