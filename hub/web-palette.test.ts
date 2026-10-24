@@ -133,8 +133,10 @@ describe("command palette, in a headless browser", () => {
 	test("a button in a result runs its command in the palette", async () => {
 		const v = await open(1280, 800);
 		await runPalette(v, "/model");
-		await v.evaluate(`document.querySelector(".pal-out .cc-act .btn").click()`);
-		await waitFor(v, `document.querySelector(".pal-out .pal-rt")?.textContent !== "모델"`);
+		// The stub answers "/model ..." with the same 모델 card, so the title alone cannot show the run; only the brief 실행 중
+		// state differs, and catching it was a race. Wait for the clicked card to be replaced by a settled one instead.
+		await v.evaluate(`(window.__palCard = document.querySelector(".pal-out .pal-res"), document.querySelector(".pal-out .cc-act .btn").click())`);
+		await waitFor(v, `!!document.querySelector(".pal-out .pal-res") && !document.querySelector(".pal-out").contains(window.__palCard) && document.querySelector(".pal-out .pal-rt")?.textContent !== "실행 중"`);
 		expect(await v.evaluate(`document.querySelectorAll("dialog.pal pre").length`)).toBe(0);
 	}, 60_000);
 
