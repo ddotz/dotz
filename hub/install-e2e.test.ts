@@ -2,7 +2,7 @@
 // a tarball install stamps itself and then self-updates to a newer local tarball; a --git install stays a git checkout and
 // self-updates through git as before. The copy of this repo's files is the "release".
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -13,12 +13,14 @@ const run = (cmd: string[], extra: Record<string, string> = {}, cwd = root) => {
 	const r = Bun.spawnSync(cmd, { cwd, env: { ...process.env, ...env, ...extra }, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
 	return { code: r.exitCode, out: `${r.stdout}${r.stderr}`, stdout: r.stdout.toString() };
 };
-// The files of this checkout (tracked or new, not ignored, not node_modules) copied to dir.
+// The files of this checkout (tracked or new, not ignored, not node_modules) copied to dir. The self-update runs these tests
+// inside a tarball install's staging folder, which has no .git: there every file but node_modules and .git is the release.
 function copyTree(dir: string) {
-	const list = run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {}, REPO).out.split("\0").filter(Boolean);
+	const listed = run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {}, REPO);
+	const list = listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : readdirSync(REPO, { recursive: true, encoding: "utf8" });
 	for (const f of list) {
 		const from = join(REPO, f);
-		if (f.startsWith("node_modules") || !existsSync(from) || !statSync(from).isFile()) continue;
+		if (f.startsWith("node_modules") || f === ".git" || f.startsWith(".git/") || !existsSync(from) || !statSync(from).isFile()) continue;
 		mkdirSync(dirname(join(dir, f)), { recursive: true });
 		copyFileSync(from, join(dir, f));
 	}
