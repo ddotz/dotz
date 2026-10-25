@@ -194,6 +194,34 @@ test("without a test command the gate runs bun test --isolate in the staging dir
 	expect(gate[0]!.cwd.startsWith(`${app}.update`)).toBe(true);
 });
 
+test("the gate command and time limit come from the new version's hub/update-gate.json, not the running one", async () => {
+	put(app, { "hub/update-gate.json": JSON.stringify({ cmd: ["bun", "test", "--old"], timeoutMinutes: 1 }) });
+	const tgz = tarball("new", { "hub/update-gate.json": JSON.stringify({ cmd: ["bun", "test", "--new-gate"], timeoutMinutes: 45 }) });
+	const seen: { cmd: string; ms: number }[] = [];
+	const e = exec(async (cmd, _cwd, ms) => (seen.push({ cmd: cmd.join(" "), ms }), undefined));
+	const j = await apply(opts({ http: github(tgz), exec: e, testCmd: undefined }));
+	expect(j.status).toBe("updated");
+	expect(seen.filter(s => s.cmd.startsWith("bun test"))).toEqual([{ cmd: "bun test --new-gate", ms: 45 * 60_000 }]);
+	expect(logs()).toContain("bun test --new-gate");
+});
+
+test("a broken or missing gate file in the new version falls back to bun test --isolate and 20 minutes", async () => {
+	for (const [n, files] of [{ "hub/update-gate.json": "{ not json" }, { "hub/update-gate.json": JSON.stringify({ cmd: [], timeoutMinutes: -1 }) }, {}].entries()) {
+		put(app, { ".dotz-install": stamp() });
+		const seen: { cmd: string; ms: number }[] = [];
+		const e = exec(async (cmd, _cwd, ms) => (seen.push({ cmd: cmd.join(" "), ms }), undefined));
+		const j = await apply(opts({ http: github(tarball(`gate-${n}`, files)), exec: e, testCmd: undefined }));
+		expect(j.status).toBe("updated");
+		expect(seen.filter(s => s.cmd.startsWith("bun test"))).toEqual([{ cmd: "bun test --isolate", ms: 20 * 60_000 }]);
+	}
+});
+
+test("an explicit test command (--test-cmd) still wins over the new version's gate file", async () => {
+	const tgz = tarball("new", { "hub/update-gate.json": JSON.stringify({ cmd: ["sh", "-c", "exit 1"] }) });
+	const j = await apply(opts({ http: github(tgz) }));
+	expect(j.status).toBe("updated");
+});
+
 test("a failing check keeps the old code, removes staging and says why", async () => {
 	const tgz = tarball("bad", { FAIL: "boom\n" });
 	const j = await apply(opts({ http: github(tgz) }));
