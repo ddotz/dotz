@@ -93,7 +93,8 @@ const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], ask: ["w
 // [system], [owner via <x>], [ok | 12ms], [routine:...], [10-23]; a left-over [file] line is dropped.
 const MK_BODY = "(?:run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류|attachment|system|handover|keepalive|orchestrator-guard|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})";
 const MK_LEAD = new RegExp("^([ \\t]*(?:[-*][ \\t]+)?(?:\\*\\*[^*\\n]{1,60}\\*\\*:?[ \\t]+)?)(\\*\\*)?\\[" + MK_BODY + "\\](\\*\\*)?[ \\t]*", "i");
-function stripMarkers(text) {
+// keepFiles: a message body keeps its `[file]` lines for the attachment chips (fileLines, 15-attachments.js); mdNode drops them.
+function stripMarkers(text, keepFiles = false) {
   text = String(text ?? "");
   if (!text.includes("[")) return text;
   let fence = false;
@@ -101,7 +102,7 @@ function stripMarkers(text) {
   for (const line of text.split("\n")) {
     if (/^\s*```/.test(line)) { fence = !fence; out.push(line); continue; }
     if (fence) { out.push(line); continue; }
-    if (/^[ \t]*\[file\][ \t]/i.test(line)) continue;
+    if (/^[ \t]*\[file\][ \t]/i.test(line)) { if (keepFiles) out.push(line); continue; }
     let l = line;
     for (let m = MK_LEAD.exec(l); m; m = MK_LEAD.exec(l)) l = m[1] + l.slice(m[0].length);
     out.push(l);
@@ -111,7 +112,7 @@ function stripMarkers(text) {
 function parseTone(text) {
   text = String(text ?? "");
   const m = text.match(/^\[([^\]\n]+)\][ \t]*/), tag = m && TONE_TAGS.get(m[1].toLowerCase());
-  return tag ? { tone: tag, text: stripMarkers(text.slice(m[0].length)) } : { tone: "", text: stripMarkers(text) };
+  return tag ? { tone: tag, text: stripMarkers(text.slice(m[0].length), true) } : { tone: "", text: stripMarkers(text, true) };
 }
 
 /* ---------- api ---------- */
