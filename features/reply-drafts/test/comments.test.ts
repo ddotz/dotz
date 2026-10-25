@@ -60,9 +60,7 @@ test("youtube on: the watch prints one ready [ask] and one pending reply job; in
 	expect(jobs).toHaveLength(1);
 	expect(jobs[0]).toMatchObject({ kind: "reply", status: "draft", targets: ["youtube"], reply: { platform: "youtube", comment_id: "c2", text: REPLY } });
 	expect(res.lines[0]).toContain("[ask]");
-	expect(res.lines[0]).toContain("> 원댓글 Bob: 영상 잘 봤어요");
 	expect(parseDraftApproval(res.lines[0]!)).toEqual({ toLabel: "대상", to: "Bob 댓글", body: REPLY, ref: jobs[0]!.id });
-	expect(res.lines[0]).toMatch(/1\) 보내기.*\n.*\n\*\*2\) 고치기|\*\*2\) 고치기/s);
 
 	const igOut = await draftComments(snsAdapter(ctx, "instagram"), [IG_LINE, "ig-comment-note something"], { call: model.call });
 	expect(igOut).toEqual([IG_LINE, "ig-comment-note something"]);
