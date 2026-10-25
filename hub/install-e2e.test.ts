@@ -2,7 +2,7 @@
 // a tarball install stamps itself and then self-updates to a newer local tarball; a --git install stays a git checkout and
 // self-updates through git as before. The copy of this repo's files is the "release".
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -18,8 +18,9 @@ const run = (cmd: string[], extra: Record<string, string> = {}, cwd = root) => {
 const releaseFile = (f: string) => !f.endsWith(".test.ts") && (f.startsWith("hub/") || ["setup.ts", "package.json"].includes(f));
 function copyTree(dir: string) {
 	const listed = run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {}, REPO);
-	if (listed.code !== 0) throw new Error(listed.out);
-	for (const f of listed.stdout.split("\0").filter(releaseFile)) {
+	// The self-update runs these tests in a tarball install's staging folder, which has no .git: there the folder itself is the release.
+	const files = listed.code === 0 ? listed.stdout.split("\0") : readdirSync(REPO, { recursive: true, encoding: "utf8" }).filter(f => !f.startsWith("node_modules/"));
+	for (const f of files.filter(releaseFile)) {
 		const from = join(REPO, f);
 		if (!existsSync(from) || !statSync(from).isFile()) continue;
 		mkdirSync(dirname(join(dir, f)), { recursive: true });
