@@ -473,9 +473,14 @@ async function kkTail() {
         fresh = kkApply(d);
       }
       // A row can land below the newest logId we hold (a late sync): the newest page is read again and merged in logId order.
+      // Only rows up to that logId: newer ones mean a burst landed meanwhile, and taking its newest page would leave a gap
+      // before it that no later tail reads (they all start after the newest row), so the loop above reads it page by page.
+      const head = KK.msgs.length ? KK.msgs[KK.msgs.length - 1].logId : "";
       const d = await api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}`);
       if (KK.open !== id) return;
-      kkApply(d);
+      const rows = Array.isArray(d.messages) ? d.messages : [];
+      if (head && rows.some(m => kkGt(m.logId, head))) KK.again = true;
+      kkApply({ ...d, messages: head ? rows.filter(m => !kkGt(m.logId, head)) : rows });
     } while (KK.again);
   } catch { /* the next event or the minute timer asks again */ } finally { KK.tailing = false; }
 }
