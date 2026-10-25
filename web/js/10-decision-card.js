@@ -248,6 +248,8 @@ function renderSheet(box, dc, picks, step) {
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
   const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
+  box.classList.remove("od-wide");
+  const org = d && d.ref && body && d.toLabel === "받는이" && !d.mail ? orgNodes(d, dc.t, box, body) : null;
   const foot = el("div", { class: "fs-ft" });
   foot.append(warnBox);
   if (edit) foot.append(editNode(dc, edit, st));
@@ -266,7 +268,7 @@ function renderSheet(box, dc, picks, step) {
     }
   }
   if (st) foot.append(el("div", { class: "dc-st", role: "status", text: dcStText(dc, st) }));
-  clear(box).append(head, ...(body ? [body] : []), foot);
+  clear(box).append(head, ...(org ? [org.bar, org.split] : body ? [body] : []), foot);
   if (body) body.scrollTop = top;
   const nn = $(".dc-note", box);
   if (nn && (refocus || (edit && !oldNote))) { nn.focus({ preventScroll: true }); nn.setSelectionRange(caret || nn.value.length, caret || nn.value.length); }

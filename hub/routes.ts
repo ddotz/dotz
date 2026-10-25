@@ -314,7 +314,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const draftFile = (req.method === "GET" || req.method === "HEAD") && /^\/api\/drafts\/([A-Za-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
 		if (draftFile) return draftFileRoute(req, url, draftFile[1]!, draftFile[2]!);
 		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
-		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library)$/.exec(url.pathname);
+		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library|original)$/.exec(url.pathname);
 		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
 		// 답장 안 함 on a mail (POST) or taking it back (DELETE): the owner's mark that this mail needs no reply (hub/unreplied.ts).
 		const mailNoReply = (req.method === "POST" || req.method === "DELETE") && /^\/api\/mail\/([a-z0-9._-]+)\/no-reply$/.exec(url.pathname);
