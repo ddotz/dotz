@@ -1,40 +1,25 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { appAsset, indexPage, webBuild } from "./webapp.ts";
+import { fakeHub, json, on } from "./test-web.ts";
+import { webBuild } from "./webapp.ts";
 
 // Swipe a message from right to left (touch) or press its hover button to reply to it: a quoted bar sits above the composer (x cancels it)
 // and the send carries the quoted message (hub/intake.ts parseReply). Touch is driven with synthetic pointer events and synthetic touch
 // events (the same drag logic); a real finger is a phone check.
-const enc = new TextEncoder();
-const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
-const send = (e: object) => { for (const c of streams) c.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`)); };
+const send = (e: object) => hub.push(e);
 const posted: Record<string, any>[] = [];
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const { pathname } = new URL(req.url);
-		if (pathname === "/") return indexPage(req);
+const hub = fakeHub({
+	stream: "fake",
+	api: async (req, url) => {
+		const { pathname } = url;
 		if (pathname === "/sw.js") return new Response("no", { status: 404 });
-		const asset = appAsset(req, pathname);
-		if (asset) return asset;
 		if (pathname === "/api/state") return Response.json({ name: "dotz", web_build: webBuild(), orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
 		if (pathname === "/api/message") { posted.push(await req.json()); return Response.json({ ok: true }); }
-		if (pathname === "/api/events") {
-			let ctl!: ReadableStreamDefaultController<Uint8Array>;
-			return new Response(new ReadableStream<Uint8Array>({
-				start(c) { ctl = c; streams.add(c); c.enqueue(enc.encode("event: reset\ndata: {}\n\n")); },
-				cancel() { streams.delete(ctl); },
-			}), { headers: { "Content-Type": "text/event-stream" } });
-		}
-		return pathname.startsWith("/api/") ? Response.json({}) : new Response("not found", { status: 404 });
 	},
 });
-const view = new Bun.WebView({ width: 390, height: 844 });
-afterAll(() => { view.close(); server.stop(true); });
+const view = await hub.view({ width: 390, height: 844 });
+afterAll(() => hub.stop());
 
-const waitFor = (expr: string, ms = 10_000) =>
-	view.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else setTimeout(tick, 20); }; tick(); })`);
+const { waitFor } = on(view);
 const ev = async <T>(expr: string) => JSON.parse((await view.evaluate(`JSON.stringify(${expr})`)) as string) as T;
 
 const OWNER = { kind: "message", source: "web", channel: "web", mid: "m-owner-1", author: "me", text: "배포는 언제 해요?" };
@@ -44,9 +29,10 @@ const BOT_TS = "2026-10-22T01:00:01.000Z";
 beforeEach(async () => {
 	posted.length = 0;
 	await view.resize(390, 844);
-	await view.navigate(`http://127.0.0.1:${server.port}/`);
+	const opened = hub.nextStream();
+	await view.navigate(`${hub.origin}/`);
 	await waitFor(`typeof S === "object" && S && S.web_build`);
-	while (streams.size < 1) await Bun.sleep(10);
+	await opened;
 	await view.evaluate(`go("chat", "main")`);
 	await waitFor(`!document.querySelector("#v-chat").hidden`);
 	send({ ...OWNER, ts: "2026-10-22T01:00:00.000Z" });

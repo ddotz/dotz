@@ -6,7 +6,7 @@ import { readSettings, writeSettings } from "./app-settings.ts";
 import { paths } from "./config.ts";
 import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
 import { addWatch, allWatches, removeWatch, startWatches } from "./watch.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // The settings conversation of an app and of a monitor (web/js/32-app-settings.js) in a headless Bun.WebView against a stub gateway whose settings
 // routes call the real hub code: the control panel has the conversation's width, a monitor's switches PATCH, a change card writes only on 적용.
@@ -28,28 +28,10 @@ const history = (target: string) => target === "settings:w:t-web" ? [
 const sent: Record<string, unknown>[] = [];
 const patches: Record<string, unknown>[] = [];
 const deletes: string[] = [];
-const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
-let streamWaiters: (() => void)[] = [];
-const te = new TextEncoder();
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") {
-			let ctl: ReadableStreamDefaultController<Uint8Array>;
-			const body = new ReadableStream<Uint8Array>({
-				start(c) { ctl = c; streams.add(c); c.enqueue(te.encode(": open\n\n")); const w = streamWaiters; streamWaiters = []; for (const f of w) f(); },
-				cancel() { streams.delete(ctl); },
-			});
-			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
-		}
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	stream: "fake",
+	api: async (req, url) => {
+		const p = url.pathname;
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: history(url.searchParams.get("target") ?? "") });
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
@@ -72,23 +54,17 @@ const server = Bun.serve({
 		}
 		if (req.method === "DELETE" && /^\/api\/watches\/[a-z0-9-]+$/.test(p)) { deletes.push(p); return json({ ok: true }); }
 		if (p === "/api/message") { sent.push((await req.json()) as Record<string, unknown>); return json({ ok: true }); }
-		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-const open = (width: number, height: number): View => { const v = new Bun.WebView({ width, height }); views.push(v); return v; };
-afterAll(() => { for (const v of views) v.close(); for (const c of streams) { try { c.close(); } catch { /* already closed */ } } server.stop(true); rmSync(data, { recursive: true, force: true }); for (const w of allWatches()) removeWatch(w.id); });
+const open = (width: number, height: number): Promise<View> => hub.view({ width, height });
+afterAll(() => { hub.stop(); rmSync(data, { recursive: true, force: true }); for (const w of allWatches()) removeWatch(w.id); });
 
-const waitFor = (v: View, expr: string, ms = 4000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
 const boot = async (v: View, route: string) => {
-	const opened = new Promise<void>(r => streamWaiters.push(r));
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const opened = hub.nextStream();
+	await v.navigate(`${hub.origin}/`);
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && NM.loaded && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
@@ -127,7 +103,7 @@ const expectScreenFits = async (v: View) => {
 describe("the control panel has the conversation's width (app and monitor settings)", () => {
 	for (const [label, w, h] of [["desktop", 1280, 800], ["fold", 880, 900], ["phone", 390, 844]] as const) {
 		test(`${label} ${w}px`, async () => {
-			const v = open(w, h);
+			const v = await open(w, h);
 			await boot(v, "c:settings:mail");
 			await waitFor(v, `target === "settings:mail" && document.querySelector("#tl")`);
 			await expectScreenFits(v);
@@ -144,8 +120,8 @@ describe("the control panel has the conversation's width (app and monitor settin
 	}
 });
 
-describe("monitor settings at desktop width", () => {
-	const v = open(1280, 800);
+describe("monitor settings at desktop width", async () => {
+	const v = await open(1280, 800);
 
 	test("a monitor's header has a 설정 button that opens its settings conversation with the controls", async () => {
 		await boot(v, "m:웹 감시");
@@ -215,7 +191,7 @@ describe("monitor settings at desktop width", () => {
 
 for (const [w, h] of [[390, 844], [1280, 800]] as const) test(`a disconnected app's row says 연결 끊김 with since when, whatever its counts (${w}px)`, async () => {
 	mailDown = true;
-	const v = open(w, h);
+	const v = await open(w, h);
 	try {
 		await boot(v, "m:웹 감시");
 		await waitFor(v, `[...document.querySelectorAll("body *")].some(n => !n.childElementCount && n.textContent === ${JSON.stringify(DOWN)})`);
@@ -226,7 +202,7 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const) test(`a disconnected ap
 
 
 test("감시 삭제 in a monitor's settings asks first, then deletes the watch and leaves the screen", async () => {
-	const v = open(1280, 800);
+	const v = await open(1280, 800);
 	await boot(v, "m:웹 감시");
 	await openScreen(v);
 	await waitFor(v, `document.querySelector('#app-sw [data-as-rm="ask"]')`);

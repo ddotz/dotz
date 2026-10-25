@@ -6,7 +6,7 @@ import { readSettings, writeSettings } from "./app-settings.ts";
 import { removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { integrationAvailable, integrationContext, integrationItems, readAppOff } from "./integrations.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // 모니터링 > 앱 > 설정 (web/js/32-app-settings.js) as shipped, in a headless Bun.WebView against a stub gateway whose settings routes call the real
 // hub/app-settings.ts on a temp data dir. Screenshots are written only when SETTINGS_SHOTS names a folder. Names and ids are placeholders.
@@ -25,28 +25,10 @@ const history = (target: string) => target === "settings:mail" ? [
 const sent: Record<string, unknown>[] = [];
 const patches: Record<string, unknown>[] = [];
 const removes: Record<string, unknown>[] = [];
-const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
-let streamWaiters: (() => void)[] = [];
-const te = new TextEncoder();
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") {
-			let ctl: ReadableStreamDefaultController<Uint8Array>;
-			const body = new ReadableStream<Uint8Array>({
-				start(c) { ctl = c; streams.add(c); c.enqueue(te.encode(": open\n\n")); const w = streamWaiters; streamWaiters = []; for (const f of w) f(); },
-				cancel() { streams.delete(ctl); },
-			});
-			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
-		}
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	stream: "fake",
+	api: async (req, url) => {
+		const p = url.pathname;
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: history(url.searchParams.get("target") ?? "") });
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
@@ -86,19 +68,13 @@ const server = Bun.serve({
 			}
 		}
 		if (p === "/api/message") { sent.push((await req.json()) as Record<string, unknown>); return json({ ok: true }); }
-		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-const open = (width: number, height: number): View => { const v = new Bun.WebView({ width, height }); views.push(v); return v; };
-afterAll(() => { for (const v of views) v.close(); for (const c of streams) { try { c.close(); } catch { /* already closed */ } } server.stop(true); rmSync(data, { recursive: true, force: true }); });
+const open = (width: number, height: number): Promise<View> => hub.view({ width, height });
+afterAll(() => { hub.stop(); rmSync(data, { recursive: true, force: true }); });
 
-const waitFor = (v: View, expr: string, ms = 4000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`); if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
 // The options live in the settings screen the conversation's ⋯ button pushes; `#app-sw` exists only while it is open.
 const openScreen = async (v: View, app = "") => {
@@ -112,16 +88,16 @@ const closeScreen = async (v: View) => {
 	await waitFor(v, `!document.querySelector("#app-sw")`);
 };
 const boot = async (v: View, route: string) => {
-	const opened = new Promise<void>(r => streamWaiters.push(r));
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const opened = hub.nextStream();
+	await v.navigate(`${hub.origin}/`);
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	await run(v, `go("monitoring", ${JSON.stringify(route)})`);
 };
 
-describe("설정 대화 at desktop width (1280x800)", () => {
-	const v = open(1280, 800);
+describe("설정 대화 at desktop width (1280x800)", async () => {
+	const v = await open(1280, 800);
 
 	test("the mail detail header has a 대화 button (no row on top of the list) that opens the settings conversation", async () => {
 		await boot(v, "i:mail");
@@ -208,8 +184,8 @@ describe("설정 대화 at desktop width (1280x800)", () => {
 	});
 });
 
-describe("설정 대화 at phone width (390x844)", () => {
-	const v = open(390, 844);
+describe("설정 대화 at phone width (390x844)", async () => {
+	const v = await open(390, 844);
 
 	test("switches above the conversation and the change card fit the screen", async () => {
 		writeSettings(data, "mail", { auto_draft: false, skip_senders: [] });
@@ -229,8 +205,8 @@ describe("설정 대화 at phone width (390x844)", () => {
 	});
 });
 
-describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844)", () => {
-	const v = open(390, 844);
+describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844)", async () => {
+	const v = await open(390, 844);
 	const rows = (sel: string) => q<string[]>(v, `return [...document.querySelectorAll(${JSON.stringify(sel)})].map(e => e.textContent.trim())`);
 
 	test("연결됨 sits at the top, then 자동 초안과 승인 and 고급 with 이 기기에서 쓰기 on", async () => {

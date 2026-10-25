@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { featuresOf, ownedWatches, retryInternal, setFeature } from "./app-features.ts";
 import { readSettings, writeSettings } from "./app-settings.ts";
 import type { Watch } from "./watch.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // The instagram app's ⋯ settings screen in a headless Bun.WebView against a stub gateway whose feature routes call the real hub code: 기능 with switches
 // above 설정, 내부 기능 with a status dot and 다시 시도, and none of the app's watches as a row of 일반 모니터링. Screenshots are written only when
@@ -34,28 +34,10 @@ const featPatches: Record<string, unknown>[] = [];
 const watchPatches: { watch: string; values: unknown }[] = [];
 const retries: string[] = [];
 let onRetry: (() => void) | undefined;
-const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
-let streamWaiters: (() => void)[] = [];
-const te = new TextEncoder();
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") {
-			let ctl: ReadableStreamDefaultController<Uint8Array>;
-			const body = new ReadableStream<Uint8Array>({
-				start(c) { ctl = c; streams.add(c); c.enqueue(te.encode(": open\n\n")); const w = streamWaiters; streamWaiters = []; for (const f of w) f(); },
-				cancel() { streams.delete(ctl); },
-			});
-			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
-		}
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	stream: "fake",
+	api: async (req, url) => {
+		const p = url.pathname;
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
@@ -95,23 +77,17 @@ const server = Bun.serve({
 			if (req.method === "PATCH") return json({ key: m[1], fields: writeSettings(data, m[1]!, ((await req.json()) as { values: unknown }).values) });
 			return json({ key: m[1], fields: readSettings(data, m[1]!) });
 		}
-		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-const open = (width: number, height: number): View => { const v = new Bun.WebView({ width, height }); views.push(v); return v; };
-afterAll(() => { for (const v of views) v.close(); for (const c of streams) { try { c.close(); } catch { /* already closed */ } } server.stop(true); rmSync(data, { recursive: true, force: true }); });
+const open = (width: number, height: number): Promise<View> => hub.view({ width, height });
+afterAll(() => { hub.stop(); rmSync(data, { recursive: true, force: true }); });
 
-const waitFor = (v: View, expr: string, ms = 4000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`); if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
 const boot = async (v: View, route: string) => {
-	const opened = new Promise<void>(r => streamWaiters.push(r));
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const opened = hub.nextStream();
+	await v.navigate(`${hub.origin}/`);
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
@@ -124,8 +100,8 @@ const openScreen = async (v: View) => {
 	await waitFor(v, `document.querySelector("#app-sw [data-feature]") && document.querySelector("#app-sw [data-internal]")`);
 };
 
-const suite = (label: string, width: number, height: number, tag: string) => describe(`instagram ⋯ settings at ${label}`, () => {
-	const v = open(width, height);
+const suite = (label: string, width: number, height: number, tag: string) => describe(`instagram ⋯ settings at ${label}`, async () => {
+	const v = await open(width, height);
 
 	test("the app's watches are not rows of 일반 모니터링; the unrelated one is", async () => {
 		await boot(v, "i:instagram");
