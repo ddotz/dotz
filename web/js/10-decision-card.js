@@ -249,7 +249,7 @@ function renderSheet(box, dc, picks, step) {
   const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   box.classList.remove("od-wide");
-  const org = d && d.ref && body && d.toLabel === "받는이" && !d.mail ? orgNodes(d, dc.t, box, body) : null;
+  const org = d && d.ref && body && (d.toLabel === "대상" || (d.toLabel === "받는이" && !d.mail)) ? orgNodes(d, dc.t, box, body) : null;
   const foot = el("div", { class: "fs-ft" });
   foot.append(warnBox);
   if (edit) foot.append(editNode(dc, edit, st));

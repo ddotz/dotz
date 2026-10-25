@@ -1,4 +1,4 @@
-/* ---------- 원문 보기 in the send sheet (web/js/10-draft-original.js): the original slides in from the left, the draft moves right ---------- */
+/* ---------- 원문 보기 (web/js/10-draft-original.js): the mail or comment a draft answers slides in from the left of the draft, in the send sheet and in the comment view's draft card ---------- */
 /* One 250ms transition: the sheet widens (desktop), the grid columns go 0fr 1fr -> 1fr 1fr, the original's pane slides and fades in. */
 .od-tg { flex: none; display: flex; align-items: center; gap: 8px; width: calc(100% - 32px); min-height: 44px; margin: 0 16px 8px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg-2); font: 500 14px/20px var(--font); text-align: left; }
 .od-tg:hover { background: var(--hover); }
@@ -10,7 +10,7 @@
 .od-tg[aria-expanded="true"] .od-chev { transform: rotate(180deg); }
 .od-split { position: relative; flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 0fr 1fr; grid-template-rows: minmax(0, 1fr); column-gap: 0; margin: 0 16px; transition: grid-template-columns .25s ease, column-gap .25s ease; }
 .od-split.open { grid-template-columns: 1fr 1fr; column-gap: 12px; }
-.od-split > .fs-body.panel { grid-area: 1 / 2; margin: 0; min-width: 0; }
+.od-split > .od-main { grid-area: 1 / 2; margin: 0; min-width: 0; }
 .od-orig { grid-area: 1 / 1; min-width: 0; overflow: hidden; border-radius: 12px; }
 .od-orig[inert] { visibility: hidden; transition: visibility 0s .25s; }
 .od-pane { box-sizing: border-box; height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 16px; border-radius: 12px; background: var(--fs-fill); transform: translateX(-32px); opacity: 0; transition: transform .25s ease, opacity .25s ease; }
@@ -22,6 +22,22 @@
 .od-body { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-2); min-width: 0; }
 .od-body .mb-txt { max-width: none; padding: 0; border: 0; background: transparent; }
 .od-files { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.od-post { display: flex; align-items: center; gap: 10px; min-width: 0; margin-bottom: 12px; }
+.od-post .kk-av.kk-thumb { flex: none; width: 56px; height: 40px; border-radius: 8px; object-fit: cover; }
+.od-pt { display: flex; flex-direction: column; min-width: 0; }
+.od-ptt { font: 600 14px/20px var(--font); overflow-wrap: anywhere; }
+.od-parent { display: flex; flex-direction: column; gap: 2px; margin-top: 12px; padding: 8px 10px; border-left: 3px solid var(--line-2); color: var(--fg-3); font-size: 14px; line-height: 20px; }
+.od-pc { overflow-wrap: anywhere; white-space: pre-wrap; }
+.od-ct { white-space: pre-wrap; overflow-wrap: anywhere; font: 400 15px/23px var(--font); }
+.od-open { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-top: 4px; color: var(--accent); font: 500 14px/20px var(--font); text-decoration: none; }
+.od-open svg { width: 16px; height: 16px; }
+.kk-drafts:has(.od-wide) { max-height: min(62dvh, 520px); }
+.kk-draft .od-split { flex: none; margin: 0 0 8px; }
+.kk-draft .od-pane, .kk-draft .od-main { max-height: min(46dvh, 360px); overflow-y: auto; overscroll-behavior: contain; }
+.kk-draft .od-main { padding: 0; }
+.kk-draft .od-main .kk-dt { max-height: none; }
+.kk-draft .od-tg { width: 100%; margin: 0 0 8px; }
+.kk-draft .od-tg, .kk-draft .od-pane { background: var(--card); }
 .od-note { color: var(--fg-3); font-size: 14px; line-height: 22px; }
 .od-div { display: none; grid-area: 1 / 1; justify-self: end; align-self: center; z-index: 2; width: 28px; height: 56px; padding: 0; border: 1px solid var(--line-2); border-radius: 14px; background: var(--card); transform: translateX(calc(50% + 6px)); }
 .od-div::before { content: ""; position: absolute; top: 20px; bottom: 20px; left: 10px; right: 10px; border-left: 2px solid var(--fg-3); border-right: 2px solid var(--fg-3); }

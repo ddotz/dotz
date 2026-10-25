@@ -4,7 +4,8 @@
 //                                          { name, data: "<base64>" } (a file picked on another computer, sent to the computer that owns the draft),
 //                                          { remove: <n> } (take the n-th file off the draft)
 //   GET    /api/drafts/<ref>/library[?q=] the files of the 첨부 파일 폴더, best match for the mail first
-//   GET    /api/drafts/<ref>/original     the mail this draft answers (the sheet's 원문 보기): { key, from, to?, date, subject?, text, html, attachments }; 404 when it is gone
+//   GET    /api/drafts/<ref>/original     what this draft answers (the sheet's 원문 보기); 404 when it is gone. A mail: { kind: "mail", key, from, to?, date, subject?, text, html, attachments }.
+//                                          A comment (YouTube, Instagram, site): { kind: "comment", key, author, date?, text, post: { title?, link?, thumb?, kind }, parent? } (hub/comments/original.ts)
 // Only a pending mail draft of reply-drafts can change; nothing is sent from here (the owner's 보내기 does that).
 import { basename } from "node:path";
 import { attachFolder } from "../features/reply-drafts/lib/flow.ts";
@@ -14,6 +15,8 @@ import { addStagedBytes, addStagedFile, removeStagedFile, stagedFiles } from "..
 import { getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { fileSizeText } from "./draft-approval.ts";
 import { messageFiles } from "./files.ts";
+import { commentOriginalOf } from "./comments/gateway.ts";
+import type { CommentOriginal } from "./comments/original.ts";
 import { attachmentList, mailByKey } from "./mail.ts";
 
 const FILE_MAX = 25 * 1024 * 1024;
@@ -30,20 +33,35 @@ async function view(rec: DraftRec | undefined, ref: string) {
 	};
 }
 
-// The mail a reply draft answers: what the gateway recorded of it (sender, date, files, whether an HTML body is kept) and the text the draft was written from.
+const GONE = () => json({ error: "원문을 찾을 수 없어요" }, 404);
+
+// A comment draft of reply-drafts (the older watch path) keeps only the comment's author, text and a context line (`YouTube video "<title>" (<id>)`).
+function commentOfRec(rec: DraftRec): CommentOriginal {
+	const ctx = rec.item.context ?? "";
+	const title = /"([^"]+)"/.exec(ctx)?.[1];
+	return { kind: "comment", key: rec.ref, author: rec.item.from, text: rec.item.text, post: { ...(title ? { title } : {}), kind: rec.app } };
+}
+
+// What a reply draft answers. A mail: what the gateway recorded of it (sender, date, files, whether an HTML body is kept) and the text the draft was written from;
 // `html` true = GET /api/mail/<key>/body has the sanitized HTML. A new-mail draft (compose) answers nothing, and a mail that fell out of the record has nothing to show.
-function original(rec: DraftRec | undefined): Response {
-	if (!rec || rec.kind !== "mail" || rec.compose) return json({ error: "원문을 찾을 수 없어요" }, 404);
+// A comment: the comment engine's draft (not in reply-drafts' store) reads its stored comment, post and thread parent.
+function original(rec: DraftRec | undefined, ref: string): Response {
+	if (!rec) {
+		const c = commentOriginalOf(ref);
+		return c ? json(c) : GONE();
+	}
+	if (rec.kind === "comment") return rec.item.text.trim() ? json(commentOfRec(rec)) : GONE();
+	if (rec.kind !== "mail" || rec.compose) return GONE();
 	const mail = mailByKey(rec.ref);
-	if (!mail && !rec.item.text.trim()) return json({ error: "원문을 찾을 수 없어요" }, 404);
-	return json({ key: rec.ref, from: mail?.from ?? rec.item.from, ...(mail?.to ? { to: mail.to } : {}), date: mail?.at ?? rec.created, ...(mail?.subject || rec.item.subject ? { subject: mail?.subject ?? rec.item.subject } : {}), text: rec.item.text, html: !!mail?.html, attachments: mail ? attachmentList(mail) : [] });
+	if (!mail && !rec.item.text.trim()) return GONE();
+	return json({ kind: "mail", key: rec.ref, from: mail?.from ?? rec.item.from, ...(mail?.to ? { to: mail.to } : {}), date: mail?.at ?? rec.created, ...(mail?.subject || rec.item.subject ? { subject: mail?.subject ?? rec.item.subject } : {}), text: rec.item.text, html: !!mail?.html, attachments: mail ? attachmentList(mail) : [] });
 }
 
 export async function draftAttachRoute(req: Request, url: URL, ref: string, tail: string): Promise<Response> {
 	const rec = getDraft(ref);
 	const editable = !!rec && rec.kind === "mail" && rec.status === "pending";
 	try {
-		if (tail === "original" && req.method === "GET") return original(rec);
+		if (tail === "original" && req.method === "GET") return original(rec, ref);
 		if (tail === "files" && req.method === "GET") return json(await view(rec, ref));
 		if (!rec || !editable) return json({ error: "이 초안은 파일을 바꿀 수 없어요" }, rec ? 409 : 404);
 		if (tail === "library" && req.method === "GET") {
