@@ -103,14 +103,17 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .dc-dh .dc-dr-v.sub { font-weight: 500; }
 .fs-body .dc-dr-b { max-height: none; margin: 0; overflow: visible; font-size: 15px; line-height: 24px; word-break: keep-all; }
 .fs-body .dc-q { margin-top: 0; font-size: 17px; line-height: 26px; }
-.dc-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.dc-act { display: flex; align-items: center; justify-content: center; min-height: 48px; border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg); font: 600 15px/22px var(--font); }
+.dc-acts { display: flex; align-items: center; gap: 6px; }
+.dc-act { flex: none; display: flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: 600 14px/20px var(--font); }
 .dc-act:active:not(:disabled) { background: var(--active); }
-.dc-act.main { grid-column: 1 / -1; min-height: 52px; background: var(--accent); color: var(--on-accent); }
+.dc-act.alt { background: var(--fs-fill); color: var(--fg); }
+.dc-act.main { order: 0; padding: 0 20px; background: var(--accent); color: var(--on-accent); }
 .dc-act.main:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, #000); }
 .dc-act:disabled { opacity: .55; }
-.dc-manual { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 0; background: none; color: var(--fg-3); font: 500 13px/18px var(--font); }
+.dc-manual { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 4px 0 8px; border: 0; background: none; color: var(--fg-3); font: 500 13px/18px var(--font); }
+.dc-manual:active { color: var(--fg); }
 .dc-manual .ic { width: 14px; height: 14px; }
+@media (max-width: 639px) { .dc-act, .dc-manual { min-height: 44px; } }
 
 /* x (무시): a question that waits on the owner can be waved off. 44px thumb target on every surface, quiet --fg-3 until pressed. */
 button.nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }

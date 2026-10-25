@@ -17,7 +17,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
     if (FS[FS.length - 1] !== h || document.querySelector("dialog[open]")) return;
     if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); h.close(); return; }
     if (ev.key !== "Tab") return;
-    const f = [...box.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]")].filter(e => e.offsetParent);
+    const f = [...box.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]")].filter(e => e.offsetParent && !e.closest("[inert]"));
     if (!f.length) return;
     const first = f[0], last = f[f.length - 1], at = document.activeElement;
     if (!box.contains(at)) { ev.preventDefault(); first.focus(); }

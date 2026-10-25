@@ -87,7 +87,8 @@ describe("draft approval opens full screen", () => {
 		await inside(".fs-hd .fs-x");
 		const send = await inside(".dc-act.main");
 		expect((await inside(".dc-acts .dc-act:nth-child(2)")).h).toBeGreaterThanOrEqual(44);
-		expect(send.h).toBeGreaterThanOrEqual(48);
+		expect(send.h).toBeGreaterThanOrEqual(44);
+		expect(send.h).toBeLessThanOrEqual(48);
 		expect(await phone.evaluate(`document.querySelector(".fs-body").scrollHeight > document.querySelector(".fs-body").clientHeight + 200`)).toBe(true);
 		await Bun.write(`${SNAP}/draft-390-top.png`, await phone.screenshot());
 

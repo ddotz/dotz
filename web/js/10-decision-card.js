@@ -248,16 +248,19 @@ function renderSheet(box, dc, picks, step) {
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
   const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
-  box.classList.remove("od-wide");
-  const org = d && d.ref && body && (d.toLabel === "대상" || (d.toLabel === "받는이" && !d.mail)) ? orgNodes(d, dc.t, box, body) : null;
+  // 원문 보기 (10-draft-original.js): the original is its own panel beside the draft (a toggle on a phone); the draft side (body + footer) is the one that slides.
+  box.classList.remove("od-host", "od-on");
+  const col = d && d.ref && body && (d.toLabel === "대상" || (d.toLabel === "받는이" && !d.mail)) ? el("div", { class: "od-draftcol" }) : null;
+  const org = col ? orgNodes(d, dc.t, box, col) : null;
   const foot = el("div", { class: "fs-ft" });
   foot.append(warnBox);
   if (edit) foot.append(editNode(dc, edit, st));
   else if (d) {
-    foot.append(el("div", { class: "dc-acts" }, ...dc.blocks[0].options.map((o, i) =>
-      el("button", { class: `dc-act${i === 0 ? " main" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label))));
-    const oe = dc.blocks[0].options.find(o => o.label === DRAFT_EDIT);
-    if (oe && !st) foot.append(el("button", { class: "dc-manual", type: "button", onclick: () => { delete DC.note[dc.key]; DC.edit[dc.key] = { bi: 0, opt: oe, manual: true }; paintDecision(); } }, icon("pencil"), el("span", { text: "직접 수정" })));
+    // One compact row: the first choice (보내기) filled, 고치기 tonal, the rest as text, and 직접 수정 as a small link at the end.
+    const opts = dc.blocks[0].options, oe = opts.find(o => o.label === DRAFT_EDIT);
+    const btns = opts.map((o, i) => el("button", { class: `dc-act${i === 0 ? " main" : o.label === DRAFT_EDIT ? " alt" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label));
+    const man = oe && !st ? el("button", { class: "dc-manual", type: "button", title: "직접 수정", "aria-label": "직접 수정", onclick: () => { delete DC.note[dc.key]; DC.edit[dc.key] = { bi: 0, opt: oe, manual: true }; paintDecision(); } }, icon("pencil"), el("span", { text: "직접 수정" })) : null;
+    foot.append(el("div", { class: "dc-acts" }, ...btns, ...(man ? [man] : [])));
   } else {
     if (dc.blocks.length > 1) foot.append(el("div", { class: "dc-steps", role: "group", "aria-label": "결정 단계" }, ...dc.blocks.map((b, i) =>
       el("button", { class: `dc-chip${i === step ? " on" : ""}${picks[i] ? " got" : ""}`, type: "button", disabled: !!st, "aria-pressed": String(i === step), onclick: () => { DC.step[dc.key] = i; paintDecision(); } }, `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}`))));
@@ -268,7 +271,8 @@ function renderSheet(box, dc, picks, step) {
     }
   }
   if (st) foot.append(el("div", { class: "dc-st", role: "status", text: dcStText(dc, st) }));
-  clear(box).append(head, ...(org ? [org.bar, org.split] : body ? [body] : []), foot);
+  if (org) { col.append(body, foot); clear(box).append(head, org.bar, el("div", { class: "od-stage" }, org.orig, col)); }
+  else clear(box).append(head, ...(body ? [body] : []), foot);
   if (body) body.scrollTop = top;
   const nn = $(".dc-note", box);
   if (nn && (refocus || (edit && !oldNote))) { nn.focus({ preventScroll: true }); nn.setSelectionRange(caret || nn.value.length, caret || nn.value.length); }

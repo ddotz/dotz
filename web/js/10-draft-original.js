@@ -1,12 +1,13 @@
-/* ---------- 원문 보기: the mail or comment a reply draft answers, beside the draft (the send sheet, the comment view's draft card) ---------- */
-// Collapsed by default: one line (sender, subject) under the sheet's header. Opening it widens the sheet and slides the original in from the left while the draft
-// moves to the right (one 250ms transition of the grid columns, 15-draft-original.css); both columns scroll on their own. The original is fetched on the first
-// open (GET /api/drafts/<ref>/original, hub/draft-attach.ts; through the peer proxy for a peer's draft, the same way as the draft's files) and kept per draft.
+/* ---------- 원문 보기: the mail or comment a reply draft answers, as its own panel next to the draft (the send sheet, the comment view's draft card) ---------- */
+// The draft stays as it was. A wide screen (>= 900px) opens the original as a SEPARATE panel (own header 원문 + x, own scroll) to the left while the draft slides to the
+// right; a narrow one has a 2-segment toggle 초안 | 원문 above the draft and slides between the two (15-draft-original.css). One state (open) drives both. The original is
+// fetched on the first open (GET /api/drafts/<ref>/original, hub/draft-attach.ts; through the peer proxy for a peer's draft, the same way as the draft's files) and kept per draft.
 // The answer says what it is (kind "mail" | "comment"). A mail's body is the mail view's own (mailBodyNode: the sandboxed HTML frame or the laid-out text); a comment
 // shows its author, time, text, the post it is under (title, thumbnail) and the comment above it in a thread. The state lives here, so a repaint keeps it open.
 const ORG = { st: {} };
-const orgSt = ref => ORG.st[ref] || (ORG.st[ref] = { open: false, load: "", data: null, focus: "" });
-const ORG_FOCUS = { "": "orig", orig: "draft", draft: "" };
+const orgSt = ref => ORG.st[ref] || (ORG.st[ref] = { open: false, load: "", data: null });
+const ORG_WIDE = matchMedia("(min-width: 900px)");
+ORG_WIDE.addEventListener("change", () => { for (const k in ORG.st) if (ORG.st[k].sync) ORG.st[k].sync(); });
 
 async function orgLoad(ref, t, paint) {
   const s = orgSt(ref), go = () => (s.paint || paint)();
@@ -44,29 +45,30 @@ function orgFill(pane, d, t, retry) {
     files.length ? el("div", { class: "od-files" }, ...files.map((f, i) => el("a", { class: "dr-att", href: mailFileUrl(m.key, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` },
       icon("clip"), el("span", { class: "dr-fn", text: f.name }), f.size ? el("span", { class: "dr-fs", text: mailSize(f.size) }) : null))) : null].filter(Boolean));
 }
-// The toggle line, the split (original | draft) around `body`, and the width class on `box`. Nothing is fetched until the first open. `d` = { ref, to, toLabel, subject? }:
-// toLabel "대상" is a comment reply, "받는이" a mail.
-function orgNodes(d, t, box, body) {
-  const ref = d.ref, s = orgSt(ref), who = d.to || "", sub = String(d.subject || "").replace(/^\s*(?:re|답장|회신)\s*:\s*/i, ""), cm = d.toLabel === "대상";
-  const sum = el("span", { class: "od-sum", text: [who, sub].filter(Boolean).join(" · ") });
-  const tt = el("span", { class: "od-tt" }), chev = icon("down", "od-chev");
-  const tg = el("button", { class: "od-tg", type: "button", "aria-controls": `od-${ref}` }, icon(cm ? "chat" : "mail"), tt, sum, chev);
+// The bar (desktop: one 원문 보기 button; phone: the 초안 | 원문 toggle) and the original panel for `host`, the box both panels live in; `draftEl` is the draft's own
+// side (it goes inert while the phone shows the original). The caller places bar above, orig and the draft in one stage. Nothing is fetched until the first open.
+// `d` = { ref, to, toLabel }: toLabel "대상" is a comment reply, "받는이" a mail.
+function orgNodes(d, t, host, draftEl) {
+  const ref = d.ref, s = orgSt(ref), cm = d.toLabel === "대상";
+  const tt = el("span", { class: "od-tt" }), tg = el("button", { class: "od-tg", type: "button", "aria-controls": `od-${ref}` }, icon(cm ? "chat" : "mail"), tt);
+  const sg = (v, label) => el("button", { class: "od-sg", type: "button", "data-v": v, onclick: () => show(v === "orig") }, label);
+  const sgDraft = sg("draft", "초안"), sgOrig = sg("orig", "원문");
+  const bar = el("div", { class: "od-bar" }, tg, el("div", { class: "od-seg", role: "group", "aria-label": "초안과 원문 고르기" }, sgDraft, sgOrig));
   const pane = el("div", { class: "od-pane", tabindex: "0", role: "region", "aria-label": cm ? "댓글 원문" : "메일 원문" });
-  const orig = el("div", { class: "od-orig", id: `od-${ref}` }, pane);
-  const div = el("button", { class: "od-div", type: "button", "aria-label": "원문과 초안의 너비 바꾸기" });
-  body.classList.add("od-main");
-  const split = el("div", { class: "od-split" }, orig, body, div);
-  const paint = () => { if (split.isConnected || !s.open) orgFill(pane, d, t, () => { s.load = ""; orgLoad(ref, t, paint); }); };
+  const x = el("button", { class: "ib fs-x od-x", type: "button", "aria-label": "원문 닫기", onclick: () => { show(false); (ORG_WIDE.matches ? tg : sgDraft).focus({ preventScroll: true }); } }, icon("close"));
+  const orig = el("section", { class: "od-orig", id: `od-${ref}`, "aria-label": "원문" }, el("div", { class: "od-oh" }, el("span", { class: "od-ot", text: "원문" }), x), pane);
+  host.classList.add("od-host");
+  const paint = () => { if (orig.isConnected || !s.open) orgFill(pane, d, t, () => { s.load = ""; orgLoad(ref, t, paint); }); };
   const sync = () => {
+    host.classList.toggle("od-on", s.open);
     tg.setAttribute("aria-expanded", String(s.open)); tt.textContent = s.open ? "원문 접기" : "원문 보기";
-    split.classList.toggle("open", s.open); box.classList.toggle("od-wide", s.open);
-    orig.toggleAttribute("inert", !s.open); div.tabIndex = s.open ? 0 : -1;
-    if (s.focus) split.dataset.focus = s.focus; else delete split.dataset.focus;
+    sgDraft.setAttribute("aria-pressed", String(!s.open)); sgOrig.setAttribute("aria-pressed", String(s.open));
+    orig.toggleAttribute("inert", !s.open); draftEl.toggleAttribute("inert", s.open && !ORG_WIDE.matches);
   };
-  tg.onclick = () => { s.open = !s.open; sync(); if (s.open) orgLoad(ref, t, paint); };
-  div.onclick = () => { s.focus = ORG_FOCUS[s.focus]; sync(); };
-  s.paint = paint;
+  const show = open => { s.open = open; sync(); if (open) orgLoad(ref, t, paint); };
+  tg.onclick = () => show(!s.open);
+  s.paint = paint; s.sync = sync;
   sync(); paint();
   if (s.open) orgLoad(ref, t, paint);
-  return { bar: tg, split };
+  return { bar, orig };
 }
