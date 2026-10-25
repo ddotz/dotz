@@ -45,16 +45,25 @@ async function slowIndex(req: Request): Promise<Response> {
 // and the next hub reuses one. A view with a console handler is bound to its first test and is closed instead.
 const idle: View[] = [];
 const pooled = new WeakSet<View>();
+const pending = new WeakMap<View, number>();   // evaluate() calls still running: a view with one is closed, never reused
 async function acquire(o: ViewOptions): Promise<View> {
 	const width = o.width ?? 390, height = o.height ?? 844;
 	const v = o.console ? undefined : idle.pop();
 	if (v) { await v.resize(width, height); return v; }
 	const fresh = new Bun.WebView({ width, height, ...(o.console ? { console: o.console } : {}) } as ConstructorParameters<typeof Bun.WebView>[0]);
 	if (!o.console) pooled.add(fresh);
+	const evaluate = fresh.evaluate.bind(fresh);
+	fresh.evaluate = ((...a: Parameters<View["evaluate"]>) => {
+		pending.set(fresh, (pending.get(fresh) ?? 0) + 1);
+		const p = evaluate(...a);
+		const done = () => pending.set(fresh, (pending.get(fresh) ?? 1) - 1);
+		p.then(done, done);
+		return p;
+	}) as View["evaluate"];
 	return fresh;
 }
 function release(v: View): void {
-	if (!pooled.has(v)) { v.close(); return; }
+	if (!pooled.has(v) || pending.get(v)) { v.close(); return; }
 	v.navigate("about:blank").then(() => { idle.push(v); }, () => { pooled.delete(v); v.close(); });
 }
 
