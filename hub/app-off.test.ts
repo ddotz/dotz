@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,6 +29,8 @@ afterAll(() => {
 	for (const w of allWatches()) if (w.name.startsWith("kakao-new")) removeWatch(w.id);
 	rmSync(dir, { recursive: true, force: true });
 });
+
+beforeEach(() => rmSync(at("custom/apps.json"), { force: true }));
 
 const convs = { "mail:a": 2 };
 const keys = (flags: string[] = ["zele"]) => integrationItems(integrationContext(dir, flags), [], convs).map(i => i.key);
@@ -146,6 +148,8 @@ describe("제거", () => {
 	});
 
 	test("a removed app can be switched on again; it is listed as available until it is set up", () => {
+		kakaoOn();
+		removeApp(dir, "kakao", {}, fakeWatches([]).deps);
 		const ctx = () => integrationContext(dir, []);
 		expect(integrationAvailable(integrationItems(ctx(), [], {}), ctx()).find(a => a.key === "kakao")).toMatchObject({ off: true });
 		turn("kakao", true);

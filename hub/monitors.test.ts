@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, test } from "bun:test";
 import { paths } from "./config.ts";
 import { advance } from "./runtime/test-clock.ts";
 import { listMonitors } from "./monitors.ts";
@@ -10,6 +10,7 @@ const clearAll = () => {
 	for (const w of allWatches()) removeWatch(w.id);
 	for (const s of listSchedules()) removeSchedule(s.id);
 };
+beforeEach(clearAll);
 afterAll(clearAll);
 
 test("no watches and no schedules is an empty list", () => {
@@ -34,7 +35,6 @@ test("one watch and one schedule come back in the owner-facing shape", async () 
 
 // A one-shot is removed from the hub (memory and file) once it has done its job; a recurring one stays.
 test("a one-shot schedule is deleted after it fires and a recurring one is kept", async () => {
-	clearAll();
 	const fired: string[] = [];
 	startSchedules(s => fired.push(s.id));
 	const once = addSchedule({ text: "ch:7 한 번만", in_minutes: 1 });
@@ -51,7 +51,6 @@ test("a one-shot schedule is deleted after it fires and a recurring one is kept"
 });
 
 test("a one-shot watch is deleted after its first match report and a recurring one is kept", async () => {
-	clearAll();
 	const reports: string[] = [];
 	startWatches((w, reason) => reports.push(`${w.name}:${reason}`));
 	// each run prints a new number, so every run after the baseline is a change that matches the pattern

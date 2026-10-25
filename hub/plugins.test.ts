@@ -1,5 +1,5 @@
 // Custom plugins (hub/plugins.ts): the loader, the four hooks and the failure policy, with a neutral fixture plugin written to a throwaway data dir.
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,6 +34,11 @@ beforeAll(async () => {
 	writeFileSync(join(dir, "40-throws-in-hooks.ts"), `export default { start() { throw new Error("no start"); }, claim() { throw new Error("no claim"); }, thread() { throw new Error("no thread"); }, deny() { throw new Error("no deny"); } };\n`);
 	writeFileSync(join(dir, "10-fixture.test.ts"), `throw new Error("a plugin's own test is not a plugin");\n`);
 	writeFileSync(join(dir, "types.d.ts"), `export {};\n`);
+});
+// Every test starts from a freshly loaded plugin set and empty logs: a plugin whose start throws is dropped for good, so a shared load would make the tests order-dependent.
+beforeEach(async () => {
+	logs.length = 0;
+	started.length = 0;
 	await loadPlugins(data, line => logs.push(line));
 });
 afterAll(async () => {

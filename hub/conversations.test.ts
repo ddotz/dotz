@@ -4,23 +4,25 @@ import { paths } from "./config.ts";
 import { emit } from "./events.ts";
 
 // The list is built once per module instance, from the log as it is then. Another test file that asks /api/conversations first
-// would freeze it before this file writes its log lines, so this file loads its own instance.
-const { conversationList, previewOf } = await import("./conversations.ts?first-list");
+// would freeze it before this file writes its log lines, so this file loads its own instances: one here for the live tests and
+// one inside the first-list test, after that test wrote its log lines (so no other test of this file can freeze it first).
+const { conversationList, previewOf } = await import("./conversations.ts?live");
 
 const lastOf = (target: string) => conversationList().find(c => c.target === target)?.last;
 
-test("the first list is built from the log tail, newest real message per target wins, noise is ignored", () => {
+test("the first list is built from the log tail, newest real message per target wins, noise is ignored", async () => {
 	const line = (e: object) => `${JSON.stringify(e)}\n`;
 	appendFileSync(
 		paths.outbox,
-		line({ ts: "2026-10-20T01:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:11", text: "[done] **첫** 답" }) +
-			line({ ts: "2026-10-20T02:00:00.000Z", kind: "delivery", source: "gateway", target: "ch:11", ref: "a", state: "answered" }) +
-			line({ ts: "2026-10-20T03:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:11", update_key: "p", text: "진행 중: 읽는 중" }) +
+		line({ ts: "2026-10-20T01:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:12", text: "[done] **첫** 답" }) +
+			line({ ts: "2026-10-20T02:00:00.000Z", kind: "delivery", source: "gateway", target: "ch:12", ref: "a", state: "answered" }) +
+			line({ ts: "2026-10-20T03:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:12", update_key: "p", text: "진행 중: 읽는 중" }) +
 			line({ ts: "2026-10-20T03:30:00.000Z", kind: "lane_start", lane: "old", text: "start" }),
 	);
-	appendFileSync(paths.inbox, line({ ts: "2026-10-20T00:30:00.000Z", kind: "message", source: "web", channel: "ch:11", text: "먼저 보낸 말" }));
-	expect(lastOf("ch:11")).toEqual({ ts: "2026-10-20T01:00:00.000Z", text: "첫 답", from: "bot" });
-	expect(conversationList().some(c => c.target === "lane:old")).toBe(false);
+	appendFileSync(paths.inbox, line({ ts: "2026-10-20T00:30:00.000Z", kind: "message", source: "web", channel: "ch:12", text: "먼저 보낸 말" }));
+	const first = (await import("./conversations.ts?first-list")).conversationList();
+	expect(first.find(c => c.target === "ch:12")?.last).toEqual({ ts: "2026-10-20T01:00:00.000Z", text: "첫 답", from: "bot" });
+	expect(first.some(c => c.target === "lane:old")).toBe(false);
 });
 
 test("a live message replaces the preview; progress, delivery and notice events do not", () => {

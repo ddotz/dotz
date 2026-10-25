@@ -2,7 +2,7 @@
 // API-key entry, that entry's limit-free return follows when the subscription resets, its monthly spend cap moves it on to the
 // next entry, and when no entry is left it pauses until the cap period ends and then starts on the subscription again.
 // FALLBACK_STEP_LOG=<file> also writes each step as one line (the evidence log of the feature).
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type * as Lanes from "../lanes.ts";
@@ -98,6 +98,12 @@ afterAll(() => {
 	delete adapters.fake;
 	Object.assign(cfg, savedCfg);
 	patchable.spawn = realSpawn;
+});
+
+beforeEach(() => {
+	started.length = 0;
+	notices.length = 0;
+	alerts.length = 0;
 });
 
 const current = () => started.at(-1)!;
