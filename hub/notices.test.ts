@@ -934,6 +934,30 @@ test("read state survives a reload: what the owner read (by position or by id) s
 	expect((JSON.parse(readFileSync(join(dir, "notices.json"), "utf8")) as Notice[]).find(n => n.id === "ccccccc1")!.read).toBe(true);
 });
 
+test("on load, waiting items are redrawn from their source event by the current rules; ids, read and answer state stay, the rest is untouched", () => {
+	const t1 = "2026-10-20T01:00:00.000Z", t2 = "2026-10-20T01:05:00.000Z", t3 = "2026-10-20T01:10:00.000Z";
+	const ask: HubEvent = { ts: t1, kind: "out", source: "orchestrator", target: "main", text: "[ask] 배포할까요?\n\n결정: 배포 시점\n**1) 지금** ← 추천\n**2) 내일**" };
+	const alert: HubEvent = { ts: t2, kind: "out", source: "gateway", target: "alert", text: "[fail] 디스크가 거의 찼어요" };
+	const done: HubEvent = { ts: t3, kind: "out", source: "gateway", target: "alert", text: "[fail] 이미 본 알림" };
+	const old = (id: string, at: string, extra: Partial<Notice>): Notice => ({ id, ts: at, updated: at, kind: "alert", tone: "", title: "옛 제목", text: "옛 문구", open: "main", src: "main", at, read: false, ...extra });
+	const dir = storeDir({
+		notices: [
+			old("ddddddd1", t1, { kind: "decision", tone: "ask", key: "dec:main:old", decision: { to: "main", reply_to: t1, options: [{ n: 1, label: "옛 선택지" }], group: 1, state: "open" } as Notice["decision"] }),
+			old("ddddddd2", t2, { open: "alert", src: "alert" }),
+			old("ddddddd3", t3, { open: "alert", src: "alert", read: true }),
+		],
+	});
+	writeFileSync(join(dir, "outbox.jsonl"), [ask, alert, done].map(e => JSON.stringify(e)).join("\n") + "\n");
+	const fresh = loadIn(dir);
+	const by = (id: string) => fresh.items.find(n => n.id === id)!;
+	const [want] = decisionsOf(ask);
+	expect(by("ddddddd1")).toMatchObject({ title: want!.title, text: want!.detail, key: want!.key, read: false, decision: { state: "open", reply_to: t1, options: want!.options } });
+	expect(by("ddddddd2")).toMatchObject({ tone: "fail", text: "디스크가 거의 찼어요", read: false });
+	expect(by("ddddddd3")).toMatchObject({ tone: "", text: "옛 문구", read: true });
+	// the redrawn form is what the file holds, so a second load changes nothing
+	expect(loadIn(dir).items.find(n => n.id === "ddddddd1")).toEqual(by("ddddddd1"));
+});
+
 test("a notice that arrives after the owner already read that conversation past it is born read; a newer one is unread", () => {
 	markRead({ target: "lane:born1", ts: "2026-10-22T05:00:00.000Z" });
 	emit("outbox", { ts: "2026-10-22T04:00:00.000Z", kind: "out", source: "lane:born1", target: "worklog", text: "[done] 이미 본 결과", update_key: "lane:born1" });
