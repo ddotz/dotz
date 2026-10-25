@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { fakeHub, json } from "./test-web.ts";
+import { fakeHub, json, waitFor } from "./test-web.ts";
 
 // Plain-text mail (web/js/11-mailtext.js) in a headless browser: market-quote runs as a table, "label :text" bullets, the caption line. Set MT_SHOTS=<dir> to keep screenshots.
 const SHOTS = process.env.MT_SHOTS ?? "";
@@ -30,7 +30,7 @@ const MAIL = [
 async function open(width: number) {
 	const v = await hub.view({ width, height: 900 });
 	await v.navigate(`${hub.origin}/?light`);
-	await v.evaluate(`new Promise(res => { const f = () => typeof mailTextNode === "function" ? res(true) : setTimeout(f, 20); f(); })`);
+	await waitFor(v, `typeof mailTextNode === "function"`);
 	await v.evaluate(`(() => {
 		cancelAnimationFrame(monRaf); renderMonitoring = () => {};
 		document.body.replaceChildren(Object.assign(document.createElement("div"), { id: "stage", style: "max-width:560px;margin:0 auto;padding:12px" }));

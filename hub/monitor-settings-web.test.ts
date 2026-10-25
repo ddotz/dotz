@@ -6,7 +6,7 @@ import { readSettings, writeSettings } from "./app-settings.ts";
 import { paths } from "./config.ts";
 import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
 import { addWatch, allWatches, removeWatch, startWatches } from "./watch.ts";
-import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
+import { fakeHub, inbox, json, run, waitFor, type View } from "./test-web.ts";
 
 // The settings conversation of an app and of a monitor (web/js/32-app-settings.js) in a headless Bun.WebView against a stub gateway whose settings
 // routes call the real hub code: the control panel has the conversation's width, a monitor's switches PATCH, a change card writes only on 적용.
@@ -25,8 +25,8 @@ const history = (target: string) => target === "settings:w:t-web" ? [
 	{ ts: ts(2), kind: "out", source: "orchestrator", target, text: `확인 간격과 알림 방식을 바꾸는 변경이에요.\n\`\`\`dotz-settings\n${JSON.stringify(PROPOSAL)}\n\`\`\`` },
 ] : [];
 
-const sent: Record<string, unknown>[] = [];
-const patches: Record<string, unknown>[] = [];
+const sent = inbox<Record<string, unknown>>();
+const patches = inbox<Record<string, unknown>>();
 const deletes: string[] = [];
 const hub = fakeHub({
 	stream: "fake",
@@ -183,8 +183,7 @@ describe("monitor settings at desktop width", async () => {
 		await waitFor(v, `document.querySelector("#tl .as-done.cancelled")`);
 		expect(patches.length).toBe(before);
 		await run(v, `ta.value = "밤에는 확인하지 마"; sendChat()`);
-		const deadline = Date.now() + 3000;
-		while (!sent.length && Date.now() < deadline) await Bun.sleep(25);
+		await sent.until(() => !(!sent.length));
 		expect(sent[0]).toMatchObject({ text: "밤에는 확인하지 마", settings: "w:t-web" });
 	});
 });

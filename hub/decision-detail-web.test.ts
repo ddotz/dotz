@@ -6,7 +6,6 @@ import { fakeHub, json, on } from "./test-web.ts";
 
 // An option that needs detail (안 됨 / 고치기 / a trailing " …") opens a text field and sends nothing until the owner writes it; a positive option sends at once.
 // Headless browser against a fixture history and the real notice store; every POST is recorded, nothing leaves the process.
-const SNAP = "/tmp/dotz-decision-detail";
 const ASK = "[ask] 확인\n결정: 확인\n**1) 확인됨** ← 추천\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n";
 const MARKED = "[ask] 배포\n결정: 배포\n**1) 배포하기** ← 추천\n바로 올려요\n**2) 보류 …**\n이유만 남겨요\n";
 let history: unknown[] = [];
@@ -53,8 +52,6 @@ describe("decision options that need detail", () => {
 		expect(await view.evaluate(`document.querySelector("#dcard .dc-ctx").textContent`)).toBe("2안 됨");
 		expect(await view.evaluate(`document.querySelector("#dcard .dc-go").disabled`)).toBe(true);
 		expect(await view.evaluate(`document.querySelectorAll("#dcard .dc-row").length`)).toBe(0);
-		Bun.spawnSync(["mkdir", "-p", SNAP]);
-		await Bun.write(`${SNAP}/detail-field-390.png`, await view.screenshot());
 		expect(await posts()).toEqual([]);
 		await type("  화면이 안 열려요  ");
 		expect(await view.evaluate(`document.querySelector("#dcard .dc-go").disabled`)).toBe(false);
@@ -115,9 +112,7 @@ describe("decision options that need detail", () => {
 		// the input asks "어떻게 고칠까요?" with an example; the draft stays above it; 직접 수정 is not offered until the input is left
 		expect(await view.evaluate(`document.querySelector(".fs-ft .dc-go").textContent`)).toBe("고쳐 달라고 하기");
 		expect(await view.evaluate(`[document.querySelector(".fs-ft .dc-ctx .dc-lb").textContent, document.querySelector(".fs-ft .dc-note").placeholder, !!document.querySelector(".fs-body .dc-dr-b"), !!document.querySelector(".fs-ft .dc-manual")]`)).toEqual(["어떻게 고칠까요?", "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘", true, false]);
-		Bun.spawnSync(["mkdir", "-p", SNAP]);
 		await settled();
-		await Bun.write(`${SNAP}/redraft-input-390.png`, await view.screenshot());
 		await type("3시 말고 4시로");
 		await view.evaluate(`(document.querySelector(".fs-ft .dc-go").click(), 0)`);
 		await waitForPost();

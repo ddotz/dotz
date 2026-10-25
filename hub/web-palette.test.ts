@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // The cards /api/command answers with (hub/control.ts CommandCard), one per command the palette lists.
@@ -23,7 +23,6 @@ const CARDS: Record<string, Card> = {
 const HELP = card("명령", [{ label: "상태", value: "/status  봇·세션 상태\n/context  컨텍스트 사용량" }, { label: "세션", value: "/lanes  세션 목록\n/stop  세션 멈추기" }], { note: "인자는 Tab 으로 골라요" });
 const FAIL = card("실패", [], { tone: "err", note: "no such session: nope" });
 
-const SNAP = "/tmp/dotz-palette-test";
 const hub = fakeHub({
 	api: async (req, url) => {
 		if (req.method === "POST" && url.pathname === "/api/command") {
@@ -57,7 +56,6 @@ const shape = async (v: View) => JSON.parse(await v.evaluate(`JSON.stringify({
 	pre: number; out: boolean; listHidden: boolean; title: string; tag: string; dot: string; rows: string[]; note: string; acts: string[]; mono: string; sw: number; dlgR: number;
 };
 
-beforeAll(() => { Bun.spawnSync(["mkdir", "-p", SNAP]); });
 afterAll(() => hub.stop());
 
 describe("command palette, in a headless browser", () => {
@@ -75,7 +73,6 @@ describe("command palette, in a headless browser", () => {
 		expect(m.heads).not.toContain("이동");
 		expect(m).toMatchObject({ firstCmd: false, lastCmd: true, wrapped: true, back: true });
 		expect(m.order).toMatch(/^t+c+$/);   // no command row above a tool row
-		await Bun.write(`${SNAP}/palette-list-1280.png`, await v.screenshot());
 	}, 60_000);
 
 	test("filtering keeps the order: a slash query lists only commands; a word lists tools before commands", async () => {
@@ -137,13 +134,4 @@ describe("command palette, in a headless browser", () => {
 		expect(s.dot).toContain("err");
 	}, 60_000);
 
-	test("screenshots: /status, /model and /lanes at 390px and on a desktop width", async () => {
-		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
-			const v = await open(w, h);
-			for (const [cmd, name] of [["/status", "status"], ["/model", "model"], ["/lanes", "lanes"]] as const) {
-				await runPalette(v, cmd);
-				await Bun.write(`${SNAP}/palette-${name}-${w}.png`, await v.screenshot());
-			}
-		}
-	}, 120_000);
 });

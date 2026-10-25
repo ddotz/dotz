@@ -11,7 +11,6 @@ import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 // The send sheet and the mail draft card show which files go out (web/js/10-decision-card.js draftFilesNode): a row per attachment with a
 // type icon, name and size that opens the staged file, `첨부 없음` when the original's files are not carried, and a warning when the text
 // says it attaches something but no file is set. Headless browser against the real notice store; nothing is sent.
-const SNAP = "/tmp/dotz-draft-attachments";
 const root = mkdtempSync(join(tmpdir(), "dotz-draft-atts-"));
 const src = mkdtempSync(join(tmpdir(), "dotz-draft-atts-src-"));
 writeFileSync(join(src, "견적서 최종.pdf"), "%PDF-1.4 fixture-bytes");
@@ -50,7 +49,6 @@ const openSheet = async (v: View, id: string) => {
 };
 
 beforeAll(() => {
-	Bun.spawnSync(["mkdir", "-p", SNAP]);
 	resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });
 	markNoticesRead({ all: true });
 	ask("RATT0001", { attachments: staged });
@@ -88,7 +86,6 @@ describe("attachments in the send sheet", () => {
 			expect(await v.evaluate(`[...document.querySelectorAll(".fs-body a.dr-att")].map(a => a.getAttribute("href")).join(" ")`)).toBe("/api/drafts/RATT0001/files/0 /api/drafts/RATT0001/files/1");
 			expect(await v.evaluate(`fetch(document.querySelector(".fs-body a.dr-att").getAttribute("href")).then(r => r.text())`)).toBe("%PDF-1.4 fixture-bytes");
 			expect(await v.evaluate(`document.querySelector(".fs-body a.dr-att").target`)).toBe("_blank");
-			await Bun.write(`${SNAP}/sheet-${name}.png`, await v.screenshot());
 		});
 	}
 
@@ -101,7 +98,6 @@ describe("attachments in the send sheet", () => {
 		expect(await v.evaluate(`!!document.querySelector(".fs-body .dr-warn")`)).toBe(false);
 		expect(await v.evaluate(`document.querySelectorAll(".fs-body .dr-att").length`)).toBe(0);
 		expect(await v.evaluate(`document.querySelector(".fs-ft .dr-warn").getAttribute("role")`)).toBe("alert");
-		await Bun.write(`${SNAP}/sheet-warning-390.png`, await v.screenshot());
 		const w2 = await open(390, 844);
 		await openSheet(w2, String(find("RATT0003").id));
 		await waitFor(w2, `document.querySelector(".fs-body .dr-none")`);
