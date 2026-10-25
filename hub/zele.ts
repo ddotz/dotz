@@ -92,6 +92,66 @@ export async function zeleAccounts(): Promise<string[]> {
 	return [...new Set(text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) ?? [])];
 }
 
+// `zele mail read <thread>` prints a header, then one block per message split by a line of `─`: `From: Name <addr> [unread]`, `To:`, `Date:`,
+// optional `Auth:`, a blank line, the body. A block without a `From:` line (the header) is not a message.
+export type ThreadMessage = { from: string; date: string; body: string };
+const SEPARATOR = /^\s*─{3,}\s*$/;
+export function parseThread(text: string): ThreadMessage[] {
+	const blocks: string[][] = [[]];
+	for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
+		if (SEPARATOR.test(line)) blocks.push([]);
+		else blocks.at(-1)!.push(line);
+	}
+	const out: ThreadMessage[] = [];
+	for (const lines of blocks) {
+		const at = lines.findIndex(l => /^From:\s/.test(l));
+		if (at < 0) continue;
+		const blank = lines.findIndex((l, i) => i > at && !l.trim());
+		const head = lines.slice(at, blank < 0 ? lines.length : blank);
+		out.push({
+			from: lines[at].replace(/^From:\s*/, "").replace(/\s*\[unread\]\s*$/i, "").trim(),
+			date: head.find(l => /^\s*Date:\s/.test(l))?.replace(/^\s*Date:\s*/, "").trim() ?? "",
+			body: blank < 0 ? "" : lines.slice(blank + 1).join("\n").trim(),
+		});
+	}
+	return out;
+}
+
+// Where a client starts quoting the earlier mail; everything from there on is not the new text.
+const QUOTE_START = [/^On .+wrote:\s*$/i, /^20\d\d[.\-/년 ].*작성:?\s*$/, /^-{2,}\s*(Original Message|원본 메시지)\s*-{2,}$/i, /^(From|보낸 사람):\s/i];
+/** The new text of a message: quoted lines, the quoted earlier mail and a `-- ` signature dropped. */
+export function newText(body: string): string {
+	const kept: string[] = [];
+	for (const line of body.split("\n")) {
+		const t = line.trim();
+		if (QUOTE_START.some(r => r.test(t)) || line === "-- " || t === "--") break;
+		if (!t.startsWith(">")) kept.push(line);
+	}
+	return kept.join("\n").trim();
+}
+
+const REQUEST = /부탁|요청|문의|가능|할 수 있|please|could|can you/i;
+// An ack has to say thanks or "received": a short note without it ("see the file", "3pm then") may still need the owner.
+const THANKS = /감사|고맙|잘 받았|받았습니다|확인했습니다|thank|received|got it/i;
+/** A short thank-you or "received" note: a thanks word, no question, no request words, at most 4 lines / 300 chars. An empty note is not one,
+ * since it may carry only an attachment the owner has to look at. */
+export function isAck(body: string): boolean {
+	const text = newText(body);
+	return THANKS.test(text) && !/[?？]/.test(text) && !REQUEST.test(text) && text.split("\n").filter(l => l.trim()).length <= 4 && text.length <= 300;
+}
+
+/** The thread is answered and everything the other side wrote after the owner's last message is only an acknowledgement. */
+export function onlyAcksAfterOwner(messages: ThreadMessage[], own: ReadonlySet<string>): boolean {
+	const reply = messages.findLastIndex(m => isOwnAddress(m.from, own));
+	return reply >= 0 && reply < messages.length - 1 && messages.slice(reply + 1).every(m => isAck(m.body));
+}
+
+const zeleRead = async (id: string, account: string): Promise<string> => {
+	const r = await Bun.$`zele mail read ${id} ${account ? ["--account", account] : []}`.nothrow().quiet();
+	if (r.exitCode !== 0) throw new Error(r.stderr.toString().trim().slice(0, 200));
+	return r.stdout.toString();
+};
+
 // zele lists a thread with the count and the date of its newest message; together they name that message (a new answer raises the count).
 const stampOf = (m: Item): string => `${m.messages ?? ""}|${m.date ?? ""}`;
 const THREADS_MAX = 2000;
@@ -102,7 +162,9 @@ const newMail = (m: Item): NewMail => ({ id: String(m.id), message: stampOf(m), 
 // The list is not limited to unread: an answer in a thread the owner already read must still be seen, so each thread's newest message
 // (stampOf) is compared with the one noted in `threads`; a thread never seen before still needs to be unread to count as new mail.
 // The sent folder is read too, so a reply he wrote after reading the thread (no longer unread) still closes it.
-export async function tick(h: Hooks, now = new Date(), list: (args: string[]) => Promise<Item[]> = zele): Promise<void> {
+// A thank-you the other side sends after the owner's reply is read from the thread and not posted: it needs no draft and no conversation.
+// A thread that cannot be read is posted, so a failure only makes the watch louder.
+export async function tick(h: Hooks, now = new Date(), list: (args: string[]) => Promise<Item[]> = zele, read: (id: string, account: string) => Promise<string> = zeleRead): Promise<void> {
 	const s = load();
 	const mail = await list(["mail", "list", "--filter", "newer_than:2d", "--limit", "60"]);
 	const sent = await list(["mail", "list", "--folder", "sent", "--filter", "newer_than:2d", "--limit", "40"]).catch(error => (log(`zele: sent folder not read: ${(error as Error).message}`), [] as Item[]));
@@ -130,6 +192,13 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 		if (isNoise(m)) {
 			log(`zele: skipped noise mail ${m.from} | ${m.subject}`);
 			continue;
+		}
+		if (before?.own) {
+			const messages = await read(key, String(m.account ?? "")).then(parseThread, error => (log(`zele: thread ${key} not read: ${(error as Error).message}`), []));
+			if (onlyAcksAfterOwner(messages, own)) {
+				log(`zele: skipped thread ${key}: only an acknowledgement after the owner's reply`);
+				continue;
+			}
 		}
 		await h.mail(newMail(m));
 	}
