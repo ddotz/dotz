@@ -15,8 +15,9 @@ import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount 
 import { PEER_GET } from "./peer-auth.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// 원문 보기 in the send sheet (web/js/10-draft-original.js, GET /api/drafts/<ref>/original): collapsed by default, the first open fetches the mail once and
-// keeps it, the sheet splits into original | draft and back, a vanished mail says so, and a peer's draft is read through /api/peer/proxy.
+// 원문 보기 in the send sheet (web/js/10-draft-original.js, GET /api/drafts/<ref>/original): closed by default, the first open fetches the mail once and keeps it.
+// Wide (>= 900px): the original is a separate panel left of the draft, the draft slides right and keeps its size. Narrow: a 초안 | 원문 toggle slides between them.
+// A vanished mail says so, a peer's draft is read through /api/peer/proxy, and the draft's one-row buttons keep their actions.
 // The same component shows the comment a comment reply draft answers (hub/comments/original.ts): the sheet of an [ask], a combined reply + mail card, and the comment view's own draft card.
 // Headless browser against the real draft store, notice store and draft route; nothing is sent.
 const SNAP = "/tmp/dotz-draft-original";
@@ -140,6 +141,10 @@ const openSheet = async (v: View, ref: string, before = "") => {
 };
 const theme = (v: View, t: "light" | "dark") => v.evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(t)}`);
 const expanded = (v: View) => v.evaluate(`document.querySelector(".od-tg").getAttribute("aria-expanded")`);
+const wide = (v: View): Promise<boolean> => v.evaluate(`innerWidth >= 900`);
+// The way a person opens / closes the original at this width: the 원문 보기 button and the panel's x (wide), or the 초안 | 원문 toggle (narrow).
+const showOrig = async (v: View, scope = "") => click(v, (await wide(v)) ? `${scope} .od-tg` : `${scope} .od-sg[data-v="orig"]`);
+const showDraft = async (v: View, scope = "") => click(v, (await wide(v)) ? `${scope} .od-x` : `${scope} .od-sg[data-v="draft"]`);
 
 beforeAll(async () => {
 	Bun.spawnSync(["mkdir", "-p", SNAP]);
@@ -176,45 +181,71 @@ describe("GET /api/drafts/<ref>/original", () => {
 	});
 });
 
+const mountCard = (v: View, ref: string) =>
+	v.evaluate(`(() => { CM.view = { comments: [{ id: ${JSON.stringify(commentId("youtube", "top"))}, author: "김팬" }], sends: [], drafts: [] };
+		const box = el("div", { class: "kk-drafts", id: "t-box", style: "position:fixed;left:8px;top:8px;width:" + (innerWidth - 16) + "px;z-index:9999;background:var(--bg)" });
+		document.body.append(box);
+		box.append(cmDraftCard({ code: ${JSON.stringify(ref)}, commentId: ${JSON.stringify(commentId("youtube", "top"))}, text: "봐 주셔서 감사합니다. 악보는 설명란 링크에서 받으실 수 있어요.", notes: [] })); })()`);
+
 describe("원문 보기 in the send sheet", () => {
-	test("collapsed by default: one line with sender and subject, nothing fetched; opening splits the sheet, closing joins it, the second open reads the cache", async () => {
+	test("closed by default and nothing fetched; wide: a separate panel opens left and the draft slides right at the same size; narrow: the toggle slides between them", async () => {
 		const ref = drafts.plain!;
-		for (const [w, h, min] of [[390, 844, 150], [1280, 800, 300]] as const) {
+		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
 			const v = await open(w, h);
+			const isWide = w >= 900;
 			delete hits[ref];
 			await openSheet(v, ref);
 			expect(await expanded(v)).toBe("false");
 			expect(await text(v, ".od-tt")).toBe("원문 보기");
-			expect(await text(v, ".od-sum")).toContain("kim@example.com");
-			expect(await text(v, ".od-sum")).toContain("다음 주 일정 확인 부탁드립니다");
 			expect(await v.evaluate(`document.querySelector(".od-orig").hasAttribute("inert")`)).toBe(true);
-			expect((await box(v, ".od-tg"))!.h).toBeGreaterThanOrEqual(44);
 			expect(hits[ref] ?? 0).toBe(0);
-			const narrow = (await box(v, ".fs-card"))!;
+			if (isWide) expect((await box(v, ".od-tg"))!.h).toBeGreaterThanOrEqual(32);
+			else {
+				expect((await box(v, ".od-sg[data-v=orig]"))!.h).toBeGreaterThanOrEqual(36);
+				expect(await v.evaluate(`document.querySelector(".od-sg[data-v=draft]").getAttribute("aria-pressed")`)).toBe("true");
+				expect((await box(v, ".od-tg")) === null || (await box(v, ".od-tg"))!.w === 0).toBe(true);
+			}
+			const card = (await box(v, ".fs-card"))!, draft = (await box(v, ".od-draftcol > .fs-body"))!;
 
-			await click(v, ".od-tg");
+			await showOrig(v);
 			await waitFor(v, `document.querySelector(".od-pane .mb-txt")`);
 			await settled(v);
 			expect(hits[ref]).toBe(1);
 			expect(await expanded(v)).toBe("true");
 			expect(await text(v, ".od-tt")).toBe("원문 접기");
-			const pane = (await text(v, ".od-pane")) ;
+			const pane = await text(v, ".od-pane");
 			for (const s of ["Kim Minsu <kim@example.com>", "me@example.net", "다음 주 일정 확인 부탁드립니다", "1번째 줄이에요", "일정표.pdf"]) expect(pane).toContain(s);
-			const o = (await box(v, ".od-pane"))!, d = (await box(v, ".od-split > .fs-body"))!, card = (await box(v, ".fs-card"))!;
-			expect(o.w).toBeGreaterThanOrEqual(min);
-			expect(d.w).toBeGreaterThanOrEqual(min);
-			expect(o.r).toBeLessThanOrEqual(d.l);
-			expect(o.l).toBeGreaterThanOrEqual(card.l);
-			expect(d.r).toBeLessThanOrEqual(card.r);
-			if (w >= 1000) expect(card.w).toBeGreaterThan(narrow.w);
-			expect(await v.evaluate(`(() => { const p = document.querySelector(".od-pane"), b = document.querySelector(".od-split > .fs-body"); return p.scrollHeight > p.clientHeight && getComputedStyle(p).overflowY === "auto" && getComputedStyle(b).overflowY === "auto"; })()`)).toBe(true);
+			expect(await text(v, ".od-ot")).toBe("원문");
+			expect(await v.evaluate(`document.querySelectorAll(".od-orig .dc-act, .od-orig .dc-acts, .od-orig .fs-ft").length`)).toBe(0);
+			expect(await v.evaluate(`(() => { const p = document.querySelector(".od-pane"); return p.scrollHeight > p.clientHeight && getComputedStyle(p).overflowY === "auto"; })()`)).toBe(true);
+			const o = (await box(v, ".od-orig"))!, d = (await box(v, ".fs-card"))!, dBody = (await box(v, ".od-draftcol > .fs-body"))!;
+			if (isWide) {
+				expect(o.w).toBeGreaterThanOrEqual(300);
+				expect(d.w).toBe(card.w);
+				expect(dBody.w).toBe(draft.w);
+				expect(d.l).toBeGreaterThan(card.l);
+				expect(d.l - o.r).toBeGreaterThanOrEqual(12);
+				expect(o.t).toBe(d.t);
+				expect(o.h).toBe(d.h);
+				expect(o.l).toBeGreaterThanOrEqual(0);
+				expect(d.r).toBeLessThanOrEqual(w);
+				expect(await v.evaluate(`!document.querySelector(".od-draftcol").contains(document.querySelector(".od-orig"))`)).toBe(true);
+			} else {
+				expect(o.l).toBeGreaterThanOrEqual(0);
+				expect(o.r).toBeLessThanOrEqual(w);
+				expect(o.w).toBeGreaterThan(w - 40);
+				expect((await box(v, ".od-draftcol"))!.r).toBeLessThanOrEqual(0);
+				expect(await v.evaluate(`document.querySelector(".od-sg[data-v=orig]").getAttribute("aria-pressed")`)).toBe("true");
+			}
 
-			await click(v, ".od-tg");
+			await showDraft(v);
 			await settled(v);
 			expect(await expanded(v)).toBe("false");
-			expect((await box(v, ".od-orig"))!.w).toBe(0);
-			expect((await box(v, ".fs-card"))!.w).toBe(narrow.w);
-			await click(v, ".od-tg");
+			expect(await v.evaluate(`document.querySelector(".od-orig").hasAttribute("inert")`)).toBe(true);
+			expect(await v.evaluate(`getComputedStyle(document.querySelector(".od-orig")).visibility`)).toBe("hidden");
+			expect((await box(v, ".fs-card"))!.l).toBe(card.l);
+			expect((await box(v, ".od-draftcol > .fs-body"))!.l).toBe(draft.l);
+			await showOrig(v);
 			await settled(v);
 			expect(await expanded(v)).toBe("true");
 			expect(hits[ref]).toBe(1);
@@ -222,16 +253,71 @@ describe("원문 보기 in the send sheet", () => {
 		}
 	});
 
-	test("the sheet stays split when it repaints (고치기 asks for the change)", async () => {
+	test("the slide runs ~250ms and halfway the panel is between hidden and shown; reduced motion jumps", async () => {
+		const v = await open(1280, 800);
+		await openSheet(v, drafts.plain!);
+		await showOrig(v);
+		await waitFor(v, `document.querySelector(".od-pane .mb-txt")`);
+		await settled(v);
+		await showDraft(v);
+		await settled(v);
+		await showOrig(v);
+		const t = await v.evaluate(`document.getAnimations().map(a => a.effect.getComputedTiming().duration).filter(d => d > 0)`);
+		expect(t.length).toBeGreaterThan(0);
+		for (const d of t as number[]) expect(d).toBe(250);
+		await v.evaluate(`document.getAnimations().forEach(a => { a.pause(); a.currentTime = 125; })`);
+		const op = Number(await v.evaluate(`getComputedStyle(document.querySelector(".od-orig")).opacity`));
+		expect(op).toBeGreaterThan(0.05);
+		expect(op).toBeLessThan(0.95);
+		v.close();
+	});
+
+	test("the sheet stays open on the original when it repaints (고치기 asks for the change)", async () => {
 		const v = await open(1280, 800);
 		await openSheet(v, drafts.html!);
-		await click(v, ".od-tg");
+		await showOrig(v);
 		await waitFor(v, `document.querySelector(".od-pane .mb-frame")`);
 		await settled(v);
 		await click(v, ".fs-ft .dc-act:nth-child(2)");
 		await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);
 		expect(await expanded(v)).toBe("true");
-		expect((await box(v, ".od-pane"))!.w).toBeGreaterThan(300);
+		expect((await box(v, ".od-orig"))!.w).toBeGreaterThan(300);
+	});
+
+	test("the draft's buttons are one compact row of the draft panel and still answer", async () => {
+		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
+			const v = await open(w, h);
+			await theme(v, "light");
+			await openSheet(v, drafts.plain!);
+			const acts = await v.evaluate(`[...document.querySelectorAll(".dc-acts .dc-act")].map(b => b.textContent)`);
+			expect(acts).toEqual(["보내기", "고치기", "보내지 않기"]);
+			const row = (await box(v, ".dc-acts"))!, main = (await box(v, ".dc-act.main"))!, man = (await box(v, ".dc-manual"))!;
+			expect(main.l).toBe(row.l);
+			expect((await box(v, ".dc-acts .dc-act:nth-child(2)"))!.l).toBeGreaterThan(main.r);
+			expect(row.h).toBeLessThanOrEqual(48);
+			expect(main.h).toBeLessThanOrEqual(48);
+			expect(main.t).toBe((await box(v, ".dc-acts .dc-act:nth-child(3)"))!.t);
+			expect(man.t).toBeGreaterThanOrEqual(row.t);
+			expect(man.b).toBeLessThanOrEqual(row.b);
+			expect(man.l).toBeGreaterThan((await box(v, ".dc-acts .dc-act:nth-child(3)"))!.r);
+			expect(row.r).toBeLessThanOrEqual(w);
+			expect(await v.evaluate(`document.querySelectorAll(".dc-acts .dc-act").length + document.querySelectorAll(".dc-manual").length`)).toBe(4);
+			await Bun.write(`${SNAP}/buttons-${w}-light.png`, await v.screenshot());
+			await click(v, ".dc-manual");
+			await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);
+			expect(await v.evaluate(`document.querySelector(".fs-ft .dc-note").value`)).toContain("말씀하신 일정 확인했습니다");
+			v.close();
+		}
+	});
+
+	test("보내지 않기 in the row posts the answer once", async () => {
+		const v = await open(1280, 800);
+		await openSheet(v, drafts.peer!);
+		await v.evaluate(`(() => { window.__posts = []; const f = window.fetch; window.fetch = (u, o) => { if (o && o.method === "POST") window.__posts.push(String(u)); return f(u, o); }; })()`);
+		await click(v, ".dc-acts .dc-act:nth-child(3)");
+		await waitFor(v, `window.__posts.length > 0`);
+		expect(await v.evaluate(`window.__posts.length`)).toBe(1);
+		v.close();
 	});
 
 	test("a mail that is gone says 원문을 찾을 수 없어요 and the draft stays usable", async () => {
@@ -239,11 +325,13 @@ describe("원문 보기 in the send sheet", () => {
 		gone.add(ref);
 		const v = await open(390, 844);
 		await openSheet(v, ref);
-		await click(v, ".od-tg");
+		await showOrig(v);
 		await waitFor(v, `document.querySelector(".od-pane").textContent === "원문을 찾을 수 없어요"`);
 		expect(await text(v, ".od-pane")).toBe("원문을 찾을 수 없어요");
+		await showDraft(v);
+		await settled(v);
 		expect(await v.evaluate(`!document.querySelector(".fs-ft .dc-act").disabled`)).toBe(true);
-		expect((await box(v, ".od-split > .fs-body"))!.w).toBeGreaterThan(120);
+		expect((await box(v, ".od-draftcol > .fs-body"))!.w).toBeGreaterThan(120);
 	});
 
 	test("a peer's draft is read through /api/peer/proxy, not from this computer", async () => {
@@ -252,7 +340,7 @@ describe("원문 보기 in the send sheet", () => {
 		const t = find(ref).decision!.to;
 		await openSheet(v, ref, `PQ.of.set(${JSON.stringify(t)}, { pc: { name: "mini", url: "http://mini.test:7777" }, key: ${JSON.stringify(t)} })`);
 		delete hits[ref];
-		await click(v, ".od-tg");
+		await showOrig(v);
 		await waitFor(v, `document.querySelector(".od-pane .mb-txt")`);
 		expect(proxied.filter(u => u.endsWith("/original"))).toEqual([`http://mini.test:7777/api/drafts/${ref}/original`]);
 		expect(hits[ref] ?? 0).toBe(0);
@@ -283,17 +371,16 @@ describe("GET /api/drafts/<code>/original for a comment reply draft", () => {
 });
 
 describe("원문 보기 for a comment reply draft", () => {
-	test("sheet of an [ask]: collapsed one line with the commenter, nothing fetched; opening shows author, time, text, post title with thumbnail and the link", async () => {
+	test("sheet of an [ask]: closed and nothing fetched; opening shows author, time, text, post title with thumbnail and the link", async () => {
 		const ref = code.top!;
-		for (const [w, h, min] of [[390, 844, 150], [1280, 800, 300]] as const) {
+		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
 			const v = await open(w, h);
 			delete hits[ref];
 			await openSheet(v, ref);
 			expect(await expanded(v)).toBe("false");
 			expect(await text(v, ".od-tt")).toBe("원문 보기");
-			expect(await text(v, ".od-sum")).toContain("김팬 댓글");
 			expect(hits[ref] ?? 0).toBe(0);
-			await click(v, ".od-tg");
+			await showOrig(v);
 			await waitFor(v, `document.querySelector(".od-pane .od-ct")`);
 			await settled(v);
 			expect(hits[ref]).toBe(1);
@@ -302,14 +389,15 @@ describe("원문 보기 for a comment reply draft", () => {
 			expect(await v.evaluate(`document.querySelector(".od-pane .od-open").href`)).toBe("https://www.youtube.com/watch?v=v1");
 			expect(await v.evaluate(`!!document.querySelector(".od-pane img.kk-thumb")`)).toBe(true);
 			expect(await v.evaluate(`!document.querySelector(".od-parent")`)).toBe(true);
-			const o = (await box(v, ".od-pane"))!, d = (await box(v, ".od-split > .fs-body"))!;
-			expect(o.w).toBeGreaterThanOrEqual(min);
-			expect(d.w).toBeGreaterThanOrEqual(min);
-			expect(o.r).toBeLessThanOrEqual(d.l);
-			expect(await text(v, ".od-split > .fs-body")).toContain("봐 주셔서 감사합니다");
-			await click(v, ".od-tg");
+			const o = (await box(v, ".od-orig"))!, d = (await box(v, ".od-draftcol > .fs-body"))!;
+			if (w >= 900) {
+				expect(o.w).toBeGreaterThanOrEqual(300);
+				expect(o.r).toBeLessThanOrEqual(d.l);
+			} else expect(o.w).toBeGreaterThan(w - 40);
+			expect(await text(v, ".od-draftcol > .fs-body")).toContain("봐 주셔서 감사합니다");
+			await showDraft(v);
 			await settled(v);
-			expect((await box(v, ".od-orig"))!.w).toBe(0);
+			expect(await expanded(v)).toBe("false");
 			v.close();
 		}
 	});
@@ -317,7 +405,7 @@ describe("원문 보기 for a comment reply draft", () => {
 	test("a reply in a thread shows its parent comment", async () => {
 		const v = await open(390, 844);
 		await openSheet(v, code.reply!);
-		await click(v, ".od-tg");
+		await showOrig(v);
 		await waitFor(v, `document.querySelector(".od-pane .od-parent")`);
 		expect(await text(v, ".od-parent")).toContain("이독자");
 		expect(await text(v, ".od-parent")).toContain("저도 악보가 궁금해요");
@@ -327,11 +415,10 @@ describe("원문 보기 for a comment reply draft", () => {
 	test("a combined reply + mail card keeps working: its original is the comment", async () => {
 		const v = await open(1280, 800);
 		await openSheet(v, code.combo!);
-		expect(await text(v, ".od-sum")).toContain("김팬 댓글");
-		await click(v, ".od-tg");
+		await showOrig(v);
 		await waitFor(v, `document.querySelector(".od-pane .od-ct")`);
 		expect(await text(v, ".od-ct")).toBe(CTEXT);
-		const body = await text(v, ".od-split > .fs-body");
+		const body = await text(v, ".od-draftcol > .fs-body");
 		expect(body).toContain("함께 보낼 메일");
 		expect(body).toContain("악보 보내드립니다");
 	});
@@ -339,7 +426,7 @@ describe("원문 보기 for a comment reply draft", () => {
 	test("a comment that is gone says 원문을 찾을 수 없어요 and the draft stays usable", async () => {
 		const v = await open(390, 844);
 		await openSheet(v, code.gone!);
-		await click(v, ".od-tg");
+		await showOrig(v);
 		await waitFor(v, `document.querySelector(".od-pane").textContent === "원문을 찾을 수 없어요"`);
 		expect(await v.evaluate(`!document.querySelector(".fs-ft .dc-act").disabled`)).toBe(true);
 	});
@@ -350,80 +437,86 @@ describe("원문 보기 for a comment reply draft", () => {
 		const t = find(ref).decision!.to;
 		await openSheet(v, ref, `PQ.of.set(${JSON.stringify(t)}, { pc: { name: "mini", url: "http://mini.test:7777" }, key: ${JSON.stringify(t)} })`);
 		delete hits[ref];
-		await click(v, ".od-tg");
+		await showOrig(v);
 		await waitFor(v, `document.querySelector(".od-pane .od-ct")`);
 		expect(proxied.filter(u => u.endsWith(`/${ref}/original`))).toEqual([`http://mini.test:7777/api/drafts/${ref}/original`]);
 		expect(hits[ref] ?? 0).toBe(0);
 		expect(await text(v, ".od-ct")).toBe(CTEXT);
 	});
 
-	test("the comment view's own draft card has the same bar and split", async () => {
+	test("the comment view's own draft card has the same panel and toggle, and keeps its three buttons", async () => {
 		const ref = code.card!;
 		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
 			const v = await open(w, h);
 			await waitFor(v, `typeof cmDraftCard === "function"`);
-			await v.evaluate(`(() => { CM.view = { comments: [{ id: ${JSON.stringify(commentId("youtube", "top"))}, author: "김팬" }], sends: [], drafts: [] };
-				const box = el("div", { class: "kk-drafts", id: "t-box", style: "position:fixed;left:8px;top:8px;width:" + (innerWidth - 16) + "px;z-index:9999;background:var(--bg)" });
-				document.body.append(box);
-				box.append(cmDraftCard({ code: ${JSON.stringify(ref)}, commentId: ${JSON.stringify(commentId("youtube", "top"))}, text: "봐 주셔서 감사합니다. 악보는 설명란 링크에서 받으실 수 있어요.", notes: [] })); })()`);
+			await theme(v, "light");
+			await mountCard(v, ref);
 			delete hits[ref];
-			expect(await text(v, "#t-box .od-sum")).toContain("김팬 댓글");
 			expect(hits[ref] ?? 0).toBe(0);
-			await click(v, "#t-box .od-tg");
+			expect(await v.evaluate(`document.querySelectorAll("#t-box .kk-draft .btns .btn").length`)).toBe(3);
+			await Bun.write(`${SNAP}/comment-card-closed-${w}-light.png`, await v.screenshot());
+			await showOrig(v, "#t-box");
 			await waitFor(v, `document.querySelector("#t-box .od-pane .od-ct")`);
 			await settled(v);
+			expect(hits[ref]).toBe(1);
 			expect(await text(v, "#t-box .od-ct")).toBe(CTEXT);
-			const o = (await box(v, "#t-box .od-pane"))!, d = (await box(v, "#t-box .od-main"))!;
-			expect(o.w).toBeGreaterThan(120);
-			expect(d.w).toBeGreaterThan(120);
-			expect(o.r).toBeLessThanOrEqual(d.l);
-			expect(await text(v, "#t-box .od-main")).toContain("봐 주셔서 감사합니다");
-			expect(await v.evaluate(`document.querySelectorAll("#t-box .btns .btn").length`)).toBe(3);
-			await Bun.write(`${SNAP}/comment-card-expanded-${w}.png`, await v.screenshot());
+			const o = (await box(v, "#t-box .od-orig"))!, d = (await box(v, "#t-box .kk-draft"))!;
+			if (w >= 900) {
+				expect(o.w).toBeGreaterThan(200);
+				expect(d.w).toBeGreaterThan(300);
+				expect(o.r).toBeLessThanOrEqual(d.l);
+			} else {
+				expect(o.l).toBeGreaterThanOrEqual(0);
+				expect(o.r).toBeLessThanOrEqual(w);
+				expect(d.r).toBeLessThanOrEqual((await box(v, "#t-box"))!.l);
+			}
+			expect(await text(v, "#t-box .kk-draft")).toContain("봐 주셔서 감사합니다");
+			expect(await v.evaluate(`document.querySelectorAll("#t-box .od-orig .btn.main, #t-box .od-orig [data-k=send]").length`)).toBe(0);
+			await Bun.write(`${SNAP}/comment-card-open-${w}-light.png`, await v.screenshot());
+			await showDraft(v, "#t-box");
+			await settled(v);
+			expect(await v.evaluate(`document.querySelector("#t-box .od-tg").getAttribute("aria-expanded")`)).toBe("false");
 			v.close();
 		}
 	});
 });
 
 describe("screenshots", () => {
-	test("a comment draft: collapsed and expanded at 390 and 1280, light", async () => {
+	test("a mail draft: closed and open at 390 (both toggle states) and 1280, light", async () => {
 		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
 			const v = await open(w, h);
 			await theme(v, "light");
-			await openSheet(v, code.reply!);
-			await Bun.write(`${SNAP}/comment-collapsed-${w}-light.png`, await v.screenshot());
-			await click(v, ".od-tg");
-			await waitFor(v, `document.querySelector(".od-pane .od-ct")`);
+			await openSheet(v, drafts.html!);
+			await Bun.write(`${SNAP}/mail-closed-${w}-light.png`, await v.screenshot());
+			await showOrig(v);
+			await waitFor(v, `document.querySelector(".od-pane .mb-frame")`);
 			await settled(v);
-			await Bun.write(`${SNAP}/comment-expanded-${w}-light.png`, await v.screenshot());
+			await Bun.write(`${SNAP}/mail-open-${w}-light.png`, await v.screenshot());
+			if (w < 900) {
+				await showDraft(v);
+				await settled(v);
+				await Bun.write(`${SNAP}/mail-open-${w}-draft-light.png`, await v.screenshot());
+			}
 			v.close();
 		}
 	});
 
-	test("collapsed, mid-animation and expanded at 390 and 1280, light and dark", async () => {
-		const ref = drafts.plain!;
+	test("a comment draft with a mail: closed and open at 390 and 1280, light", async () => {
 		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
-			for (const t of ["light", "dark"] as const) {
-				const v = await open(w, h);
-				await theme(v, t);
-				await openSheet(v, ref);
-				await Bun.write(`${SNAP}/collapsed-${w}-${t}.png`, await v.screenshot());
-				await click(v, ".od-tg");
-				await waitFor(v, `document.querySelector(".od-pane .mb-txt")`);
+			const v = await open(w, h);
+			await theme(v, "light");
+			await openSheet(v, code.reply!);
+			await Bun.write(`${SNAP}/comment-closed-${w}-light.png`, await v.screenshot());
+			await showOrig(v);
+			await waitFor(v, `document.querySelector(".od-pane .od-ct")`);
+			await settled(v);
+			await Bun.write(`${SNAP}/comment-open-${w}-light.png`, await v.screenshot());
+			if (w < 900) {
+				await showDraft(v);
 				await settled(v);
-				await click(v, ".od-tg");
-				await settled(v);
-				await click(v, ".od-tg");
-				await v.evaluate(`document.getAnimations().forEach(a => { a.pause(); a.currentTime = 125; })`);
-				const op = Number(await v.evaluate(`getComputedStyle(document.querySelector(".od-pane")).opacity`));
-				expect(op).toBeGreaterThan(0.05);
-				expect(op).toBeLessThan(0.95);
-				await Bun.write(`${SNAP}/mid-${w}-${t}.png`, await v.screenshot());
-				await v.evaluate(`document.getAnimations().forEach(a => a.finish())`);
-				await settled(v);
-				await Bun.write(`${SNAP}/expanded-${w}-${t}.png`, await v.screenshot());
-				v.close();
+				await Bun.write(`${SNAP}/comment-open-${w}-draft-light.png`, await v.screenshot());
 			}
+			v.close();
 		}
 	});
 });
