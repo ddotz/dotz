@@ -47,8 +47,9 @@ import { blockedByOff, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
-import { mailByKey, mailByThread, mailTarget, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
+import { mailByKey, mailByThread, mailTarget, migrateStoredMails, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
 import { offerMailDraft } from "../features/reply-drafts/lib/offer.ts";
+import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { readMailBody } from "../features/reply-drafts/lib/senders.ts";
 import { installSentMail, realRunner } from "../features/reply-drafts/lib/tone.ts";
 import { defaultCall } from "../features/reply-drafts/lib/flow.ts";
@@ -228,11 +229,23 @@ const mailDeps = (): MailDeps => ({
 		void offerMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner) }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
 });
 
+function classifyStoredMails(): void {
+	const n = migrateStoredMails(new Set(listDrafts().filter(d => d.status === "sent").map(d => d.ref)));
+	if (n) log(`mail: ${n} stored mails classified`);
+}
+classifyStoredMails();
+
 void startZele({
 	alert,
 	mail: async m => {
 		await postMail({ source: "zele", id: m.id, from: m.from, to: m.to, subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, wake: true }, mailDeps()).catch(e => log(`zele: mail ${m.id} not posted: ${(e as Error).message}`));
 	},
+	// The owner's own mail: listed as 내가 보냄, never new; a thread he answered becomes 답장함 (hub/mail-state.ts).
+	sent: async m => {
+		await postMail({ source: "zele", id: m.id, from: m.from, to: m.to, subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, direction: "out" }, mailDeps()).catch(e => log(`zele: sent mail ${m.id} not recorded: ${(e as Error).message}`));
+	},
+	// His accounts are known now: stored mails written from them become 내가 보냄, and threads that already have his reply 답장함 (once; a rerun changes nothing).
+	accounts: classifyStoredMails,
 	brief: text => {
 		const target = !discord.status.enabled ? "web" : discord.channels.brief ? "brief" : "chat";
 		const event = { ts: now(), kind: "schedule", source: "zele", id: "zele", channel: target, text };

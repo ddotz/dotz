@@ -1,6 +1,6 @@
 import { eventTarget, onEmit, tailEvents, type HubEvent } from "./events.ts";
 import { paths } from "./config.ts";
-import { briefMail } from "./mail.ts";
+import { briefMail, mailByKey } from "./mail.ts";
 import { readOf, unreadFrom } from "./reads.ts";
 import { parseTone, previewSource } from "./tone.ts";
 
@@ -81,6 +81,7 @@ function countIncoming(target: string, e: HubEvent, last: ConversationLast): voi
 }
 
 export function unreadOf(target: string): number {
+	if (target.startsWith("mail:") && mailByKey(target.slice(5))?.dir === "out") return 0;
 	const read = unreadFrom(target);
 	let n = 0;
 	for (const ts of incoming.get(target)?.values() ?? []) if (!read || ts > read) n++;

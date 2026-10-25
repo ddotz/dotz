@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
+import { isOwnAddress, ownAddresses, setOwnAddresses } from "./mail-state.ts";
 
 type Item = Record<string, string | number | undefined>;
 type Seen = { summary: string; start: string; end: string };
@@ -14,6 +15,10 @@ export type NewMail = { id: string; account: string; from: string; to: string; s
 type Hooks = {
 	alert: (text: string) => void;
 	mail: (m: NewMail) => Promise<void>;
+	/** A mail the owner wrote himself (its sender is one of his addresses): never a new mail, only a sign that the thread was answered. */
+	sent?: (m: NewMail) => Promise<void>;
+	/** The owner's accounts are known (startup, and again when they change): the stored mails are classified with them. */
+	accounts?: (addresses: string[]) => void;
 	brief: (text: string) => void;
 };
 
@@ -82,11 +87,20 @@ export async function zeleAccounts(): Promise<string[]> {
 	return [...new Set(text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) ?? [])];
 }
 
-export async function tick(h: Hooks, now = new Date()): Promise<void> {
+const newMail = (m: Item): NewMail => ({ id: String(m.id), account: String(m.account ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), subject: String(m.subject ?? ""), snippet: String(m.snippet ?? "").slice(0, 400) });
+
+// `zele mail list` lists threads and `from` is the sender of the thread's newest message, so a thread the owner answered last still matches
+// `is:unread` while an older message in it is unread. Direction is judged here by the sender; the sent folder is read too, so a reply he
+// wrote after reading the thread (no longer unread) still closes it.
+export async function tick(h: Hooks, now = new Date(), list: (args: string[]) => Promise<Item[]> = zele): Promise<void> {
 	const s = load();
-	const mail = await zele(["mail", "list", "--filter", "is:unread newer_than:2d", "--limit", "40"]);
+	const mail = await list(["mail", "list", "--filter", "is:unread newer_than:2d", "--limit", "40"]);
+	const sent = await list(["mail", "list", "--folder", "sent", "--filter", "newer_than:2d", "--limit", "40"]).catch(error => (log(`zele: sent folder not read: ${(error as Error).message}`), [] as Item[]));
+	const own = ownAddresses([...mail, ...sent].flatMap(m => (m.account ? [String(m.account)] : [])));
+	for (const m of [...mail, ...sent]) if (isOwnAddress(String(m.from ?? ""), own)) await h.sent?.(newMail(m));
 	for (const m of mail) {
 		const key = String(m.id);
+		if (isOwnAddress(String(m.from ?? ""), own)) continue;
 		if (s.mail.includes(key)) continue;
 		s.mail.push(key);
 		if (!s.seeded) continue;
@@ -94,10 +108,10 @@ export async function tick(h: Hooks, now = new Date()): Promise<void> {
 			log(`zele: skipped noise mail ${m.from} | ${m.subject}`);
 			continue;
 		}
-		await h.mail({ id: key, account: String(m.account ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), subject: String(m.subject ?? ""), snippet: String(m.snippet ?? "").slice(0, 400) });
+		await h.mail(newMail(m));
 	}
 
-	const upcoming = (await zele(["cal", "events", "--days", "14", "--all", "--limit", "100"])).filter(ev => !isHoliday(ev));
+	const upcoming = (await list(["cal", "events", "--days", "14", "--all", "--limit", "100"])).filter(ev => !isHoliday(ev));
 	const current = new Map(upcoming.map(ev => [String(ev.id), seen(ev)]));
 	for (const [id, e] of Object.entries(s.events)) if (!current.has(id) && !e.summary) delete s.events[id];
 	const vanished = Object.entries(s.events).filter(([id]) => !current.has(id));
@@ -123,7 +137,7 @@ export async function tick(h: Hooks, now = new Date()): Promise<void> {
 		delete s.events[id];
 	}
 
-	const soon = await zele(["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all"]);
+	const soon = await list(["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all"]);
 	for (const ev of soon) {
 		const key = `${ev.id}:${ev.start}`;
 		if (s.soon.includes(key)) continue;
@@ -151,6 +165,8 @@ export async function startZele(h: Hooks): Promise<void> {
 		setTimeout(() => void startZele(h), NO_ACCOUNT_RETRY_MS);
 		return;
 	}
+	setOwnAddresses("zele", accounts);
+	h.accounts?.(accounts);
 	log(`zele: watching ${accounts.join(", ")} every ${POLL_MS / 1000}s`);
 	let fails = 0;
 	const loop = async () => {

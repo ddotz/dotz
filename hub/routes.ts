@@ -22,7 +22,7 @@ import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
-import { composeMail, MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailNoReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { composeMail, MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
@@ -183,7 +183,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
-		const unrepliedMailList = () => unrepliedMails(new Set(listDrafts().filter(d => d.status === "sent").map(d => d.ref)));
+		const sentMailRefs = () => new Set(listDrafts().filter(d => d.status === "sent").map(d => d.ref));
+		const unrepliedMailList = () => unrepliedMails(sentMailRefs());
 		const integrationView = () => {
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
 			const ctx = integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags());
@@ -301,9 +302,10 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (req.method === "GET" && url.pathname === "/api/conversations") {
 			const owed = new Set(unrepliedMailList().map(m => m.key));
+			const sent = sentMailRefs();
 			const items = conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).map(c => {
 				const m = c.target.startsWith("mail:") ? mailByKey(c.target.slice(5)) : undefined;
-				return m ? { ...c, mail: mailCard(m, owed.has(m.key)) } : c;
+				return m ? { ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key)) } : c;
 			});
 			return json({ items });
 		}
@@ -316,10 +318,10 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
 		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library|original)$/.exec(url.pathname);
 		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
-		// 답장 안 함 on a mail (POST) or taking it back (DELETE): the owner's mark that this mail needs no reply (hub/unreplied.ts).
-		const mailNoReply = (req.method === "POST" || req.method === "DELETE") && /^\/api\/mail\/([a-z0-9._-]+)\/no-reply$/.exec(url.pathname);
+		// 답장 안 함 / 참고만 on a mail (POST) or taking it back (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
+		const mailNoReply = (req.method === "POST" || req.method === "DELETE") && /^\/api\/mail\/([a-z0-9._-]+)\/(no-reply|fyi)$/.exec(url.pathname);
 		if (mailNoReply) {
-			if (!setMailNoReply(mailNoReply[1]!, req.method === "POST")) return json({ error: "이 메일을 찾지 못했어요" }, 404);
+			if (!(mailNoReply[2] === "fyi" ? setMailFyi : setMailNoReply)(mailNoReply[1]!, req.method === "POST")) return json({ error: "이 메일을 찾지 못했어요" }, 404);
 			broadcast({ kind: "mail_unreplied", target: mailTarget(mailNoReply[1]!) });
 			return json({ ok: true });
 		}
@@ -329,6 +331,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// The reply and KakaoTalk CLIs report an approved send here; the gateway wakes the bot once when that app has a 이어서 할 일 rule (hub/followup.ts).
 		if (req.method === "POST" && url.pathname === "/api/followup") {
 			const input = parseFollowup(await body(req));
+			// The approved reply went out: the mail is 답장함 (hub/mail-state.ts), whether or not the app has a 이어서 할 일 rule.
+			if (input?.kind === "mail" && input.ids.mail && setMailReply(input.ids.mail, "sent")) broadcast({ kind: "mail_unreplied", target: mailTarget(input.ids.mail) });
 			return input ? json({ ok: true, result: triggerFollowup(input) }) : json({ error: "app, kind (comment|mail|kakao), key required" }, 400);
 		}
 		if (req.method === "POST" && url.pathname === "/api/mail/compose") {

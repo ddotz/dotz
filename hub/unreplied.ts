@@ -1,3 +1,5 @@
+import { type LegacyReplyFacts, replyOf } from "./mail-state.ts";
+
 // 미답장: the one shared rule for "this item still waits for the owner's reply", kept apart from read/unread (reading never clears it).
 // Each app keeps the facts in its own state (comments: custom/comments, mail: mail-conversations.json, kakao: kakao/unreplied.json) and
 // asks these pure rules. An item leaves 미답장 when a reply went out for it, when the owner answered himself, or when he taps 답장 안 함.
@@ -6,12 +8,13 @@
 export const UNREPLIED_WINDOW_MS = 30 * 24 * 3600 * 1000;
 export const unrepliedFresh = (at: number, now: number): boolean => Number.isFinite(at) && now - at <= UNREPLIED_WINDOW_MS;
 
-/** Mail: set when the mail expects an answer (a reply draft was offered, a reply is awaited, or a poster marked it `needsReply`);
- *  cleared by a sent draft for it, by the reply state "sent", or by the owner's 답장 안 함 (`noReply`). */
-export type MailFacts = { key: string; at: string; suggest?: { state?: string }; needsReply?: boolean; noReply?: boolean };
+/** Mail: an incoming mail whose reply state is 답장 필요 or 초안 있음 (hub/mail-state.ts); an outgoing mail, a sent draft for it, 답장함,
+ *  답장 안 함 and 참고만 leave it. */
+export type MailFacts = LegacyReplyFacts & { key: string; at: string; dir?: "out" };
 export function mailUnreplied(m: MailFacts, sentRefs: ReadonlySet<string>, now: number): boolean {
-	if (m.noReply || sentRefs.has(m.key) || m.suggest?.state === "sent") return false;
-	return (m.needsReply === true || !!m.suggest) && unrepliedFresh(Date.parse(m.at), now);
+	if (m.dir === "out" || sentRefs.has(m.key)) return false;
+	const reply = replyOf(m);
+	return (reply === "needs" || reply === "draft") && unrepliedFresh(Date.parse(m.at), now);
 }
 
 /** Kakao: a watched room waits for a reply while the newest message with words is from someone else. The owner's own message after it

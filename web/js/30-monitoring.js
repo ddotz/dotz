@@ -12,7 +12,7 @@ const MON_KIND = { watch: "모니터링", schedule: "예약" };
 // The list's groups after 감시 소식: app-type integrations (hub/integrations.ts kind "app"), then the plain monitors.
 const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
 // sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: a phone shows the list instead of the conversation.
-const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0 };
+const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all" };
 const monConv = () => current === "monitoring" && narrowChat() && !MON.list;
 const monHash = () => (!MON.list && MON.sel ? `monitoring/${enc(MON.sel)}` : "monitoring");
 // A mail is a conversation of 모니터링 (go() in 05-command-palette.js draws it with the chat view while the tab stays 모니터링); monItemOf: the list item it sits under.
@@ -288,22 +288,41 @@ const mailReplyChip = sg => {
   const [text, tone] = MAIL_REPLY[sg.state || "draft"] || [];
   return text ? el("span", { class: `tag mr-reply${tone ? ` ${tone}` : ""}`, "data-slot": "suggest", text }) : null;
 };
+// The state label of a mail row (hub/mail-state.ts mailLabel): outgoing = 내가 보냄; incoming = its reply state (m.reply: needs | draft | replied | skipped | fyi),
+// else 읽음 / 새 메일. Reading never changes the reply state; the unread count stays beside it as its own tag.
+const MAIL_STATE = { needs: ["답장 필요", "warn"], draft: ["초안 있음", "pri"], replied: ["답장함", "ok"], skipped: ["답장 안 함", ""], fyi: ["참고만", ""] };
+const mailStateOf = (m, unread) => m.dir === "out" ? ["내가 보냄", ""] : MAIL_STATE[m.reply] || (unread ? ["새 메일", "warn"] : ["읽음", ""]);
+// The filter of the mail list: 전체 / 답장 필요 / 답장함 / 보낸 메일.
+const MAIL_FILTERS = [["all", "전체", () => true], ["owed", "답장 필요", m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft")], ["replied", "답장함", m => m.dir !== "out" && m.reply === "replied"], ["sent", "보낸 메일", m => m.dir === "out"]];
+const mailFilterOf = () => MAIL_FILTERS.find(f => f[0] === MON.mailFilter) || MAIL_FILTERS[0];
+function mailFilterBar(mails) {
+  const cur = mailFilterOf()[0];
+  return el("div", { class: "mr-filter", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
+    const n = k === "all" ? 0 : mails.filter(t => MAILS.has(t) && ok(MAILS.get(t))).length;
+    return el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); } }, label, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
+  }));
+}
 // A mail or chat of an integration is its own conversation in 채팅. A mail is a compact result-card row: sender and time on one line (with
 // a paperclip and the file count when it has files), the subject, a summary of up to 3 lines and, at the bottom, the reply state. The
 // whole card is the way in: it opens the mail's conversation, where the original and its files are (11-todo-strip.js "mail").
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = ts(t).unread, open = () => go("monitoring", `c:${t}`);
-  const tag = n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : !m && ntHasDecision(t) ? el("span", { class: "tag warn", text: "답변 필요" }) : null;
-  const files = m ? m.attachments || [] : [], brief = m ? mailBrief(m, t) : "", when = rcWhen(last ? last.ts : m && m.at), chip = m ? mailReplyChip(m.suggest) : null, owed = !!(m && m.unreplied);
+  const owed = !!(m && m.unreplied), [stateText, stateTone] = m ? mailStateOf(m, n) : ["", ""];
+  // A mail's tags: the unread count only beside a reply state (alone, "새 메일" says it); the state label is the orange 미답장 pill while a reply is owed.
+  const tag = m ? (n && m.dir !== "out" && m.reply ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : null) : n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : ntHasDecision(t) ? el("span", { class: "tag warn", text: "답변 필요" }) : null;
+  const stateTag = m ? (owed ? unrepPill(stateText) : el("span", { class: `tag mr-state${stateTone ? ` ${stateTone}` : ""}`, "data-state": stateText, text: stateText })) : null;
+  const files = m ? m.attachments || [] : [], brief = m ? mailBrief(m, t) : "", when = rcWhen(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
   const title = m ? m.subject || "(제목 없음)" : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
   return el("div", { class: "bm alert rc mr", role: "button", tabindex: "0", "aria-label": `${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
-    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? mailSender(m.from) || label : label }), tag, owed ? unrepPill() : null, clip, when ? el("span", { class: "rc-time", text: when }) : null),
+    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null),
     el("div", { class: "rc-title", text: title }),
     brief ? el("div", { class: "mr-sum", text: brief }) : null,
-    chip || owed ? el("div", { class: "mr-slot" }, chip, owed ? unrepNo(`/api/mail/${t.slice(5)}/no-reply`, () => { m.unreplied = false; monSchedule(); if (pqPc(t)) pqSoon(); }) : null) : null);
+    chip || owed ? el("div", { class: "mr-slot" }, chip, owed ? unrepNo(`/api/mail/${t.slice(5)}/no-reply`, () => { m.unreplied = false; m.reply = "skipped"; monSchedule(); if (pqPc(t)) pqSoon(); }) : null, owed ? mailFyiButton(t, m) : null) : null);
 }
+// 참고만: this mail needs no reply (POST /api/mail/<key>/fyi); the label changes at once, the lists re-read.
+const mailFyiButton = (t, m) => el("button", { class: "cchip unrep-no mr-fyi", type: "button", text: "참고만", onclick: ev => { ev.stopPropagation(); api(`/api/mail/${t.slice(5)}/fyi`, "POST", {}).then(() => { toast("참고만으로 표시했어요"); m.unreplied = false; m.reply = "fyi"; monSchedule(); if (pqPc(t)) pqSoon(); loadIntegrations(); }, e => toast(e.message, true)); } });
 // A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
 function monRunNode(it) {
   const m = it.mon;
@@ -328,9 +347,11 @@ const monFeed = it => it.key === "notice";
 function monTimeline(it) {
   if (it.off) return [el("div", { class: "empty", text: "연결 안 됨" })];
   const names = it.mon ? monNames(it.mon) : [];
-  const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => { const x = monNoticeNode(n, names), src = x && n.pc && monFeed(it) && x.querySelector(".rc-src"); if (src) src.after(el("span", { class: "tag", text: n.pc.name })); return x; } })), ...it.mails.map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || 0, node: () => monConvNode(t, it.name) })),
+  const withMails = !monFeed(it) && it.mails.some(t => MAILS.has(t)), mf = withMails ? mailFilterOf() : null;
+  const msgs = [...it.notices.map(n => ({ at: ntAt(n), node: () => { const x = monNoticeNode(n, names), src = x && n.pc && monFeed(it) && x.querySelector(".rc-src"); if (src) src.after(el("span", { class: "tag", text: n.pc.name })); return x; } })), ...(mf ? it.mails.filter(t => !MAILS.has(t) || mf[2](MAILS.get(t))) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => monFeed(it) ? b.at - a.at : a.at - b.at);
   const nodes = msgs.map(x => x.node()).filter(Boolean);
+  if (withMails) return [mailFilterBar(it.mails), ...(nodes.length ? nodes : [el("div", { class: "empty", text: "이 보기에 해당하는 메일이 없어요" })])];
   if (nodes.length) return nodes;
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
   return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];
@@ -405,7 +426,7 @@ function renderMonitoring() {
     return;
   }
   MON.kkHead = "";
-  const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.unreplied | 0, sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone, n.item, n.item && n.item.key ? MAILS.get(`mail:${n.item.key}`) : null]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t), MAILS.has(t) ? mailBrief(MAILS.get(t), t) : ""]), sel.mon, NM.loaded, NT.loaded, pqSig(sel)]);
+  const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.unreplied | 0, sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone, n.item, n.item && n.item.key ? MAILS.get(`mail:${n.item.key}`) : null]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t), MAILS.has(t) ? mailBrief(MAILS.get(t), t) : ""]), sel.mon, NM.loaded, NT.loaded, MON.mailFilter || "all", pqSig(sel)]);
   if (sig !== MON.sig) {
     MON.sig = sig;
     const again = MON.shown === sel.key, keep = box.scrollTop, stick = !again || box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
