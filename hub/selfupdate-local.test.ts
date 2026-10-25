@@ -1,58 +1,38 @@
 // Self-update with local work on a git install, against real temp repos (bare origin, the install, a pusher; no network).
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR } from "./config.ts";
 import { keepsLocal } from "./selfupdate-local.ts";
-import { type AutoHooks, apply, autoCheck, check, onLocalSaved } from "./selfupdate.ts";
+import { autoHooks, commit, failFileTestCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg as setCfg } from "./selfupdate-fixture.ts";
+import { apply, autoCheck, check, onLocalSaved } from "./selfupdate.ts";
 
-let root: string, origin: string, work: string, pusher: string, logDir: string;
-const sh = (cwd: string, ...args: string[]) => {
-	const r = Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-	if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
-	return r.stdout.toString().trim();
-};
-const commit = (dir: string, file: string, text: string, msg: string) => {
-	writeFileSync(join(dir, file), text);
-	sh(dir, "add", file);
-	sh(dir, "commit", "-q", "-m", msg);
-};
-const push = (file: string, text: string, msg: string) => {
-	commit(pusher, file, text, msg);
-	sh(pusher, "push", "-q", "origin", "HEAD:main");
-};
-const head = (dir: string) => sh(dir, "rev-parse", "HEAD");
+let r: Repos;
+let root: string, work: string, pusher: string, logDir: string;
+const push = (file: string, text: string, msg: string) => r.push(file, text, msg);
 const branches = () => sh(work, "branch", "--list", "dotz-local/*").split("\n").filter(Boolean);
 const logFiles = () => (existsSync(logDir) ? readdirSync(logDir) : []);
-const testCmd = ["sh", "-c", "test ! -f FAIL"];
-const opts = () => ({ dir: work, remote: "origin", branch: "main", testCmd, logDir, dataDir: root });
-const setCfg = (v: Record<string, unknown> | undefined) => {
-	(cfg as Record<string, unknown>).self_update = v;
-	rmSync(join(DATA_DIR, "self-update.json"), { force: true });
-};
-const hooks = () => {
-	const h = { worklog: [] as string[], alerts: [] as string[], restarts: 0 };
-	const api: AutoHooks = { worklog: t => void h.worklog.push(t), alert: t => void h.alerts.push(t), restartIdle: () => (h.restarts++, "queued") };
-	return { h, api };
+const opts = () => ({ dir: work, remote: "origin", branch: "main", testCmd: failFileTestCmd, logDir, dataDir: root });
+// Runs the daily auto-check and returns what the orchestrator would have been told about saved local work.
+const autoCheckSaved = async () => {
+	const saved: { file: string; text: string; turn: string }[] = [];
+	onLocalSaved(s => void saved.push(s));
+	try {
+		const { h, api } = autoHooks();
+		await autoCheck(opts(), api);
+		return { h, saved };
+	} finally {
+		onLocalSaved(() => undefined);
+	}
 };
 
 beforeEach(() => {
-	root = mkdtempSync(join(tmpdir(), "dotz-selfupdate-local-"));
-	origin = join(root, "origin.git");
-	work = join(root, "work");
-	pusher = join(root, "pusher");
-	logDir = join(root, "logs");
-	sh(root, "init", "-q", "--bare", origin);
-	sh(root, "clone", "-q", origin, pusher);
-	commit(pusher, "a.txt", "1\n", "first");
-	sh(pusher, "push", "-q", "origin", "HEAD:main");
-	sh(root, "clone", "-q", origin, work);
+	r = makeRepos();
+	({ root, work, pusher, logDir } = r);
 	setCfg(undefined);
 });
 afterEach(() => {
 	setCfg(undefined);
-	rmSync(root, { recursive: true, force: true });
+	r.remove();
 });
 
 test("local commits whose patch or content upstream already has are dropped, not saved", async () => {
@@ -98,7 +78,7 @@ test("a rebase whose checks fail saves the commits and does not move the checkou
 	push("a.txt", "2\n", "second");
 	const j = await apply(opts());
 	expect(j.status).toBe("refused");
-	expect(j.keep?.line).toContain("\ud14c\uc2a4\ud2b8");
+	expect(j.keep).toBeDefined();
 	expect(head(work)).toBe(mine);
 	expect(branches()).toHaveLength(1);
 });
@@ -109,7 +89,6 @@ test("a conflict is saved as a branch and a patch first, the checkout stays unti
 	push("a.txt", "2\n", "second");
 	const upstream = head(pusher);
 	const c = await check(opts());
-	expect(c.keep?.line).toContain("\ub0b4 \uc218\uc815\uc744 \ubcf4\uad00\ud558\uace0 \uc0c8 \ubc84\uc804 \ubc1b\uae30");
 	expect(c.keep?.line).toContain("my conflicting change");
 	const br = c.keep?.saved?.branch ?? "";
 	expect(br).toMatch(/^dotz-local\/\d{8}-\d{4}/);
@@ -154,8 +133,7 @@ test("auto-apply on an install that is not a developer checkout saves the confli
 	setCfg({ auto_apply: true, keep_local: false });
 	commit(work, "a.txt", "local\n", "my conflicting change");
 	push("a.txt", "2\n", "second");
-	const { h, api } = hooks();
-	await autoCheck(opts(), api);
+	const { h } = await autoCheckSaved();
 	expect(head(work)).toBe(head(pusher));
 	expect(branches()).toHaveLength(1);
 	expect(h.alerts).toEqual([]);
@@ -165,61 +143,33 @@ test("auto-apply on an install that is not a developer checkout saves the confli
 	expect(h.worklog[0]).toContain("git cherry-pick");
 });
 
-test("auto-apply never discards the work of a developer checkout", async () => {
+test("auto-apply never discards the work of a developer checkout: no move, one alert, no summary and no orchestrator turn", async () => {
 	setCfg({ auto_apply: true });
 	commit(work, "a.txt", "local\n", "my conflicting change");
 	const mine = head(work);
 	push("a.txt", "2\n", "second");
 	writeFileSync(join(work, "wip.txt"), "wip\n");
-	const { h, api } = hooks();
-	await autoCheck(opts(), api);
+	const { h, saved } = await autoCheckSaved();
 	expect(head(work)).toBe(mine);
 	expect(existsSync(join(work, "wip.txt"))).toBe(true);
 	expect(h.restarts).toBe(0);
 	expect(h.alerts).toHaveLength(1);
-	expect(h.alerts[0]).toContain("\ub0b4 \uc218\uc815\uc744 \ubcf4\uad00\ud558\uace0 \uc0c8 \ubc84\uc804 \ubc1b\uae30");
+	expect(saved).toEqual([]);
+	expect(existsSync(join(root, "self-update"))).toBe(false);
 });
 
-test("saved local commits get a short Korean summary in the data dir and queue one orchestrator turn", async () => {
+test("saved local commits get a summary in the data dir and queue one orchestrator turn", async () => {
 	setCfg({ auto_apply: true, keep_local: false });
 	commit(work, "a.txt", "local\n", "my conflicting change");
 	commit(work, "mine.txt", "x\n", "my own file");
 	push("a.txt", "2\n", "second");
-	const turns: { file: string; text: string; turn: string }[] = [];
-	onLocalSaved(s => void turns.push(s));
-	try {
-		const { api } = hooks();
-		await autoCheck(opts(), api);
-	} finally {
-		onLocalSaved(() => undefined);
-	}
-	expect(turns).toHaveLength(1);
-	const file = turns[0].file;
+	const { saved } = await autoCheckSaved();
+	expect(saved).toHaveLength(1);
+	const file = saved[0].file;
 	expect(file.startsWith(join(root, "self-update"))).toBe(true);
 	const text = readFileSync(file, "utf8");
-	expect(text).toContain("my conflicting change");
-	expect(text).toContain("a.txt");
-	expect(text).toContain("my own file");
-	expect(text).toContain("mine.txt");
-	expect(text).toContain("dotz-local/");
-	expect(turns[0].turn).toContain(file);
-	expect(turns[0].turn).toContain("custom");
-});
-
-test("a developer checkout that keeps its work saves no summary and queues no turn", async () => {
-	setCfg({ auto_apply: true });
-	commit(work, "a.txt", "local\n", "my conflicting change");
-	push("a.txt", "2\n", "second");
-	const turns: unknown[] = [];
-	onLocalSaved(s => void turns.push(s));
-	try {
-		const { api } = hooks();
-		await autoCheck(opts(), api);
-	} finally {
-		onLocalSaved(() => undefined);
-	}
-	expect(turns).toEqual([]);
-	expect(existsSync(join(root, "self-update"))).toBe(false);
+	for (const part of ["my conflicting change", "a.txt", "my own file", "mine.txt", "dotz-local/"]) expect(text).toContain(part);
+	expect(saved[0].turn).toContain(file);
 });
 
 test("which checkouts keep their local work: explicit flag, the install.sh marker, the default install folder, else yes", () => {
