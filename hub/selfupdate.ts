@@ -165,10 +165,28 @@ function record(logDir: string, text: string): void {
 // (WebViews, servers, timers) piles up until the later Bun.WebView tests time out one after another, and the whole run passes the
 // 20-minute limit below (exit 143) on a slower or busy Mac, so the update never lands. Each file alone passes either way.
 export const TEST_CMD = ["bun", "test", "--isolate"];
+export const GATE_MINUTES = 20;
+
+// The gate is read from the version being installed (hub/update-gate.json in the folder under test), not from this running file.
+// The updater that runs is always the OLD one, so a gate fix shipped as a code constant would only take effect one update later,
+// and never if the old gate keeps failing (that is how the --isolate fix got stuck behind exit 143). Missing or bad file: the
+// constants above. An explicit testCmd (tests, --test-cmd) still wins; the time limit comes from the new folder either way.
+export const GATE_FILE = join("hub", "update-gate.json");
+export function gateIn(cwd: string, testCmd?: string[]): { cmd: string[]; ms: number } {
+	let g: { cmd?: unknown; timeoutMinutes?: unknown } = {};
+	try {
+		g = JSON.parse(readFileSync(join(cwd, GATE_FILE), "utf8"));
+	} catch {
+		// no gate file (an older version, or a test tree): fall back below
+	}
+	const fileCmd = Array.isArray(g?.cmd) && g.cmd.length > 0 && g.cmd.every(x => typeof x === "string" && x) ? (g.cmd as string[]) : undefined;
+	const min = typeof g?.timeoutMinutes === "number" && g.timeoutMinutes > 0 ? g.timeoutMinutes : GATE_MINUTES;
+	return { cmd: testCmd ?? fileCmd ?? TEST_CMD, ms: min * 60_000 };
+}
 
 function resolve(o: Options) {
 	const s = settings();
-	return { dir: o.dir, remote: o.remote ?? s.remote, branch: o.branch ?? s.branch, exec: o.exec ?? defaultExec, testCmd: o.testCmd ?? TEST_CMD, logDir: o.logDir ?? join(DATA_DIR, "logs") };
+	return { dir: o.dir, remote: o.remote ?? s.remote, branch: o.branch ?? s.branch, exec: o.exec ?? defaultExec, testCmd: o.testCmd, logDir: o.logDir ?? join(DATA_DIR, "logs") };
 }
 
 type Stamp = Record<string, string>;
@@ -402,8 +420,9 @@ async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Job, step
 	const i = await exec(["bun", "install"], fresh, 10 * 60_000);
 	if (i.code !== 0) return fail(`bun install 실패: ${lastLine(i.out)}`);
 
-	step("테스트", `${testCmd.join(" ")} 실행 중 (새 폴더)`);
-	const t = await exec(testCmd, fresh, 20 * 60_000);
+	const gate = gateIn(fresh, testCmd);
+	step("테스트", `${gate.cmd.join(" ")} 실행 중 (새 폴더)`);
+	const t = await exec(gate.cmd, fresh, gate.ms);
 	const summary = t.out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
 	if (t.code !== 0) {
 		const blocks = failureBlocks(t.out);
@@ -552,8 +571,9 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 	j.to = to;
 
 	const runTests = async (cwd: string, where: string) => {
-		step("테스트", `${testCmd.join(" ")} 실행 중${where}`);
-		const t = await exec(testCmd, cwd, 20 * 60_000);
+		const gate = gateIn(cwd, testCmd);
+		step("테스트", `${gate.cmd.join(" ")} 실행 중${where}`);
+		const t = await exec(gate.cmd, cwd, gate.ms);
 		const summary = t.out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
 		if (t.code === 0) return { ok: true as const, summary, why: "" };
 		const blocks = failureBlocks(t.out);

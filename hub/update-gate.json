@@ -1,0 +1,4 @@
+{
+	"cmd": ["bun", "test", "--isolate"],
+	"timeoutMinutes": 20
+}
