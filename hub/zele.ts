@@ -6,11 +6,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
+import { parseThread, triage } from "./mail-thread.ts";
 
 type Item = Record<string, string | number | undefined>;
 type Seen = { summary: string; start: string; end: string };
-type State = { seeded: boolean; mail: string[]; events: Record<string, Seen>; soon: string[]; briefDate: string };
-export type NewMail = { id: string; account: string; from: string; to: string; subject: string; snippet: string };
+// mailVersion 2: a multi-message thread is keyed `<thread>.<count>`, so a new message in a seen thread is noticed.
+type State = { seeded: boolean; mail: string[]; events: Record<string, Seen>; soon: string[]; briefDate: string; mailVersion?: number };
+const MAIL_VERSION = 2;
+/** `seq`: the thread's message count when this is a follow-up in a thread (its own conversation); `needsReply`: the owner is needed. */
+export type NewMail = { id: string; account: string; from: string; to: string; subject: string; snippet: string; needsReply: boolean; seq?: number };
 type Hooks = {
 	alert: (text: string) => void;
 	mail: (m: NewMail) => Promise<void>;
@@ -65,36 +69,93 @@ async function stillThere(id: string): Promise<boolean> {
 const save = (s: State) => writeAtomic(STATE, `${JSON.stringify(s)}\n`);
 const cap = (xs: string[]) => xs.slice(-2000);
 
-async function zele(args: string[]): Promise<Item[]> {
+type Run = (args: string[]) => Promise<{ code: number; out: string; err: string }>;
+const spawnZele: Run = async args => {
 	const proc = Bun.spawn(["zele", ...args], { stdout: "pipe", stderr: "pipe" });
 	const kill = setTimeout(() => proc.kill("SIGKILL"), 90_000);
 	const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
 	clearTimeout(kill);
-	if ((await proc.exited) !== 0) throw new Error(`zele ${args.join(" ")}: ${(err || out).trim().slice(0, 200)}`);
-	return ((Bun.YAML.parse(out) as { items?: Item[] } | null)?.items ?? []) as Item[];
-}
+	return { code: await proc.exited, out, err };
+};
+let run = spawnZele;
+/** Tests swap in a fake zele (hub/zele.test.ts); a changed PATH does not reach Bun.spawn in a running process. */
+export const setZeleRunner = (r?: Run) => void (run = r ?? spawnZele);
 
-export async function zeleAccounts(): Promise<string[]> {
-	if (!Bun.which("zele")) return [];
-	const r = await Bun.$`zele whoami`.nothrow().quiet();
-	const text = r.stdout.toString();
-	if (r.exitCode !== 0 || /not authenticated/i.test(text)) return [];
-	return [...new Set(text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) ?? [])];
+async function zeleText(args: string[]): Promise<string> {
+	const r = await run(args);
+	if (r.code !== 0) throw new Error(`zele ${args.join(" ")}: ${(r.err || r.out).trim().slice(0, 200)}`);
+	return r.out;
 }
+const zele = async (args: string[]): Promise<Item[]> => ((Bun.YAML.parse(await zeleText(args)) as { items?: Item[] } | null)?.items ?? []) as Item[];
+
+async function ownAddresses(): Promise<string[]> {
+	const r = await run(["whoami"]);
+	if (r.code !== 0 || /not authenticated/i.test(r.out)) return [];
+	return [...new Set(r.out.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) ?? [])];
+}
+export const zeleAccounts = async (): Promise<string[]> => (Bun.which("zele") ? ownAddresses() : []);
+
+// What the owner sees first in a mail conversation that is a later message of a thread.
+const ANSWERED = "답장한 스레드에 새 메시지";
+const UNANSWERED = "아직 답장하지 않은 스레드에 새 메시지";
+const addrOf = (from: string) => (from.match(/<([^>]+)>/)?.[1] ?? from.match(/[\w.+-]+@[\w-]+\.[\w.-]+/)?.[0] ?? "").trim().toLowerCase();
 
 export async function tick(h: Hooks, now = new Date()): Promise<void> {
 	const s = load();
+	// A state written before mailVersion 2 has only bare thread ids: on this first tick a thread it already saw gets its
+	// `<thread>.<count>` key recorded silently, so the upgrade does not replay every multi-message thread.
+	const upgrading = s.seeded && (s.mailVersion ?? 1) < MAIL_VERSION;
 	const mail = await zele(["mail", "list", "--filter", "is:unread newer_than:2d", "--limit", "40"]);
+	let owner: Set<string> | undefined;
+	const owners = async () => (owner ??= new Set((await ownAddresses()).map(a => a.toLowerCase())));
 	for (const m of mail) {
-		const key = String(m.id);
+		const thread = String(m.id);
+		const count = Number(m.messages ?? 1) || 1;
+		// One-message threads keep the bare id, so state from before the follow-up keys stays valid.
+		const key = count > 1 ? `${thread}.${count}` : thread;
 		if (s.mail.includes(key)) continue;
 		s.mail.push(key);
-		if (!s.seeded) continue;
+		if (!s.seeded || (upgrading && count > 1 && s.mail.includes(thread))) continue;
 		if (isNoise(m)) {
 			log(`zele: skipped noise mail ${m.from} | ${m.subject}`);
 			continue;
 		}
-		await h.mail({ id: key, account: String(m.account ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), subject: String(m.subject ?? ""), snippet: String(m.snippet ?? "").slice(0, 400) });
+		const account = String(m.account ?? "");
+		const base = { id: thread, account, from: String(m.from ?? ""), to: String(m.to ?? ""), subject: String(m.subject ?? "") };
+		const snippet = String(m.snippet ?? "");
+		if (count === 1) {
+			// `from` is the only message here, so the owner's own mail (e.g. sent to themselves) is caught without a read.
+			if ((await owners()).has(addrOf(base.from))) {
+				log(`zele: skipped own mail ${thread} | ${base.subject}`);
+				continue;
+			}
+			await h.mail({ ...base, snippet: snippet.slice(0, 400), needsReply: true });
+			continue;
+		}
+		let text: string;
+		try {
+			text = await zeleText(["mail", "read", thread, ...(account ? ["--account", account] : [])]);
+		} catch (error) {
+			// Not recorded, so the next poll reads it again.
+			s.mail.pop();
+			log(`zele: thread ${thread} not read: ${(error as Error).message}`);
+			continue;
+		}
+		const messages = parseThread(text);
+		const t = triage(messages, await owners());
+		if (t.kind === "own") {
+			log(`zele: skipped thread ${thread} (${count}): the newest message is the owner's`);
+			continue;
+		}
+		// An acknowledgement after the owner's reply is not posted: a posted mail always gets a reply draft offered
+		// (hub/mail.ts post -> offerDraft), and a thank-you needs neither a draft nor a conversation.
+		if (t.kind === "ack") {
+			log(`zele: skipped thread ${thread} (${count}): only an acknowledgement after the owner's reply`);
+			continue;
+		}
+		const latest = messages.at(-1);
+		const body = (latest?.body || snippet).slice(0, 400);
+		await h.mail({ ...base, from: latest?.from || base.from, snippet: `${t.answered ? ANSWERED : UNANSWERED} · ${body}`, needsReply: true, seq: count });
 	}
 
 	const upcoming = (await zele(["cal", "events", "--days", "14", "--all", "--limit", "100"])).filter(ev => !isHoliday(ev));
@@ -138,6 +199,7 @@ export async function tick(h: Hooks, now = new Date()): Promise<void> {
 	}
 	if (!s.seeded) log(`zele: first run recorded ${mail.length} mails, ${upcoming.length} events (no notices)`);
 	s.seeded = true;
+	s.mailVersion = MAIL_VERSION;
 	s.mail = cap(s.mail);
 	s.soon = cap(s.soon);
 	save(s);

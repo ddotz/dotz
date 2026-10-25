@@ -40,10 +40,10 @@ curl -s -X POST http://127.0.0.1:<web.port>/api/mail \
 # {"ok":true,"key":"work-8812","target":"mail:work-8812","thread":"1430..."}
 ```
 
-- Required: `source`, `id`, `subject`. Optional: `from`, `to`, `summary` (up to 2000 chars), `body` (up to 20000), `html` (the HTML body, up to 400000; the gateway reduces it to a safe subset and the web shows it in a sandboxed frame; send it only when the mail really has one), `thread`, `wake`.
+- Required: `source`, `id`, `subject`. Optional: `from`, `to`, `summary` (up to 2000 chars), `body` (up to 20000), `html` (the HTML body, up to 400000; the gateway reduces it to a safe subset and the web shows it in a sandboxed frame; send it only when the mail really has one), `thread`, `wake`, `seq`.
 - `attachments` (up to 10): `[{"name":"quote.pdf","type":"application/pdf","data":"<base64>"}]`, or `{"name":...,"path":"<file>"}` for a file the poster already put under `<data dir>/mail-files/` (any other path is refused). Each file is limited to 25 MB and stored as `mail-files/<key>/<n>/<name>`. The mail row in 모니터링 then shows a 첨부 button, and the file is served by `GET /api/mail/<key>/files/<n>` (`?dl=1` to download) with the same auth as every `/api` route, never from outside that folder.
 - A mail without `summary` shows the first lines of `body` in the list.
-- The key is `<source>-<id>`, lowercased and limited to `[a-z0-9._-]`. Posting the same key again changes nothing and answers `"duplicate": true`, so a retry is safe.
+- The key is `<source>-<id>`, lowercased and limited to `[a-z0-9._-]`. Posting the same key again changes nothing and answers `"duplicate": true`, so a retry is safe. `seq` (a positive integer, e.g. the thread's message count) makes a later message of the same mail its own conversation, keyed `<source>-<id>.<seq>`, while `id` stays the mail id replies use (zele does this for a new message in a thread).
 - `thread`: the Discord thread id when the poster already put the mail on Discord. The gateway records it and posts nothing; without it the gateway opens the thread itself (Discord on) or keeps the mail web-only.
 - `wake: true` gives the orchestrator one turn for the mail (zele does this). Leave it off when the poster already summarised it.
 - The owner's reply in that web conversation reaches the orchestrator as a message in the mail's thread: your plugin's `thread` hook runs and its `note` goes into the turn, so an OK recorded there gates `deny` exactly as on Discord. A mail with no plugin note gets a built-in note: draft first, send only after the owner's OK there.

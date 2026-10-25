@@ -222,7 +222,7 @@ const mailDeps = (): MailDeps => ({
 void startZele({
 	alert,
 	mail: async m => {
-		await postMail({ source: "zele", id: m.id, from: m.from, to: m.to, subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, wake: true }, mailDeps()).catch(e => log(`zele: mail ${m.id} not posted: ${(e as Error).message}`));
+		await postMail({ source: "zele", id: m.id, from: m.from, to: m.to, subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, wake: true, needsReply: m.needsReply, ...(m.seq ? { seq: m.seq } : {}) }, mailDeps()).catch(e => log(`zele: mail ${m.id} not posted: ${(e as Error).message}`));
 	},
 	brief: text => {
 		const target = !discord.status.enabled ? "web" : discord.channels.brief ? "brief" : "chat";

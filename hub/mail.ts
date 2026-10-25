@@ -18,7 +18,7 @@ export type AttachmentInput = { name: string; type?: string; data?: string; path
 // (web 30-monitoring.js mailReplyChip): "draft" (default) a draft waits for approval, "sent" the reply went out, "waiting" a reply is expected.
 export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; state?: "draft" | "sent" | "waiting"; at?: string };
 export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; needsReply?: true; noReply?: true };
-export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[] };
+export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; seq?: number };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true };
 export type MailDeps = {
 	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
@@ -152,6 +152,7 @@ export function parseMail(raw: unknown): MailInput {
 	const thread = str(b.thread, "thread", 30, false);
 	if (thread && !THREAD_ID.test(thread)) throw new MailError("thread must be a Discord thread id (15-22 digits)");
 	if (b.wake !== undefined && typeof b.wake !== "boolean") throw new MailError("wake must be a boolean");
+	if (b.seq !== undefined && !(Number.isInteger(b.seq) && (b.seq as number) > 0)) throw new MailError("seq must be a positive integer");
 	return {
 		source: str(b.source, "source", 60, true)!,
 		id: str(b.id, "id", 200, true)!,
@@ -165,6 +166,7 @@ export function parseMail(raw: unknown): MailInput {
 		wake: b.wake === true,
 		needsReply: b.needsReply === true,
 		attachments: parseAttachments(b.attachments),
+		...(b.seq !== undefined ? { seq: b.seq as number } : {}),
 	};
 }
 
@@ -345,7 +347,9 @@ const inflight = new Map<string, Promise<MailResult>>();
 
 export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult> {
 	const m = parseMail(raw);
-	const key = mailKey(m.source, m.id);
+	// A later message of an already posted thread (`seq`) is its own conversation, while `id` stays the mail id the source
+	// reads and replies to (features/reply-drafts zele `mail read` / `mail reply`).
+	const key = mailKey(m.source, m.seq ? `${m.id}.${m.seq}` : m.id);
 	const target = mailTarget(key);
 	if (deps.newMailOn && !deps.newMailOn(m.source, key)) return { ok: true, key, target, skipped: true };
 	const known = byKey.get(key);

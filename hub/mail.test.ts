@@ -116,6 +116,18 @@ describe("postMail", () => {
 		expect(calls.events).toHaveLength(1);
 	});
 
+	test("a later message of the same thread (seq) is its own conversation and keeps the mail id", async () => {
+		const { deps, calls } = fakes(false);
+		const id = uid("seq");
+		const a = await postMail({ source: "zele", id, subject: "일정" }, deps);
+		const b = await postMail({ source: "zele", id, subject: "일정", seq: 3, needsReply: true }, deps);
+		expect(b.duplicate).toBeUndefined();
+		expect(b.key).toBe(`${a.key}.3`);
+		expect(mailByKey(b.key)).toMatchObject({ id, needsReply: true });
+		expect(calls.events).toHaveLength(2);
+		await expect(postMail({ source: "zele", id, subject: "s", seq: 0 }, deps)).rejects.toBeInstanceOf(MailError);
+	});
+
 	test("invalid input is refused before anything happens", async () => {
 		const { deps, calls } = fakes(true);
 		for (const bad of [null, "x", { id: "1", subject: "s" }, { source: "a", subject: "s" }, { source: "a", id: "1" }, { source: "a", id: "1", subject: " " }, { source: "a", id: "1", subject: "s", thread: "abc" }, { source: "a", id: "1", subject: "s", wake: "yes" }, { source: 3, id: "1", subject: "s" }])
