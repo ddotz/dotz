@@ -810,9 +810,80 @@ export const countChannelNotices = (conv: string): number => channelNotices(conv
 // On load: notices of sessions that no longer exist (deleted, or removed while the hub was down) are retired when they still count (unread or open);
 // read ones stay as history. So are the message and result notices of a session that stopped before the stop hook (dropChannelNotices) existed:
 // saved as exited, and not active since the notice. And a notice whose message the read position already covers is read.
+// After an update the stored wording of what still waits on the owner may be older than the code: an open question, and an unread result or
+// alert, is drawn again from its source event (outbox / inbox) by the current rules, in place: id, read and answer state stay. Watch reports
+// (their text may hold a model summary), message previews and login requests stay as stored, and so does an item whose event is gone.
+// A generic title (the resolvers are not wired yet at load) never replaces a stored one. Returns how many items changed.
+const GENERIC_TITLES = new Set(["세션", "채널", "대화", "설정"]);
+function rerenderPending(): number {
+	const pending = items.filter(i => !i.dismissed && i.at && i.kind !== "watch" && i.kind !== "message" && !i.decision?.to.startsWith("auth:") && (isOpenDecision(i) || (!i.read && !i.decision)));
+	if (!pending.length) return 0;
+	const wanted = new Set(pending.map(i => i.decision?.reply_to ?? i.at!));
+	const events: HubEvent[] = [];
+	for (const file of [paths.outbox, paths.inbox]) {
+		if (!existsSync(file)) continue;
+		for (const line of readFileSync(file, "utf8").split("\n")) {
+			const ts = /"ts":"([^"]+)"/.exec(line)?.[1];
+			if (!ts || !wanted.has(ts)) continue;
+			try {
+				const e = JSON.parse(line) as HubEvent;
+				if (e.ts === ts && (e.kind === "out" || e.kind === "lane_report")) events.push(e);
+			} catch {
+				continue;
+			}
+		}
+	}
+	const kept = items;
+	let changed = 0;
+	for (const e of events) {
+		// The current rules draw the event into an empty list (replaying: nothing is saved or broadcast); the stored items take its fields.
+		items = [];
+		try {
+			const ds = decisionsOf(e);
+			if (e.kind === "out") fromOutbox(e, ds.length > 0);
+			else fromInbox(e);
+			for (const d of ds) putDecision(d, e.ts);
+		} catch (err) {
+			log(`notice redraw of ${e.ts} failed: ${err}`);
+		}
+		const fresh = items;
+		items = kept;
+		const was = (i: Notice) => JSON.stringify(i);
+		const asked = pending.filter(i => isOpenDecision(i) && i.decision!.reply_to === e.ts);
+		const drawn = fresh.filter(n => n.decision);
+		asked.forEach((i, idx) => {
+			const n = drawn.find(d => d.key === i.key) ?? (asked.length === drawn.length ? drawn[idx] : undefined);
+			if (!n?.decision) return;
+			const before = was(i);
+			i.title = n.title;
+			i.text = n.text;
+			if (n.key) i.key = n.key;
+			const d = i.decision!;
+			d.options = n.decision.options;
+			d.group = n.decision.group;
+			if (n.decision.draft) d.draft = n.decision.draft;
+			else delete d.draft;
+			if (n.decision.assumed) d.assumed = true;
+			else delete d.assumed;
+			if (was(i) !== before) changed++;
+		});
+		for (const i of pending.filter(p => !p.decision && p.at === e.ts)) {
+			const n = fresh.find(f => !f.decision && f.kind === i.kind && f.key === i.key);
+			if (!n) continue;
+			const before = was(i);
+			if (!GENERIC_TITLES.has(n.title)) i.title = n.title;
+			i.text = n.text;
+			i.tone = n.tone;
+			if (was(i) !== before) changed++;
+		}
+	}
+	return changed;
+}
+
 function reconcileStored(): void {
 	replaying = true;
 	try {
+		const redrawn = rerenderPending();
 		// An open question stored without options (made before ask-options.ts) gets them by the same rule, in memory only: the file keeps what
 		// was stored until the item changes for another reason.
 		for (const i of items)
@@ -859,9 +930,9 @@ function reconcileStored(): void {
 				i.read = true;
 				read++;
 			}
-		if (stale.length || read || retitled || twins.length) {
+		if (stale.length || read || retitled || twins.length || redrawn) {
 			save();
-			log(`notices reconciled on load: ${stale.length} of gone sessions retired, ${read} read by position, ${twins.length} duplicate alert items folded`);
+			log(`notices reconciled on load: ${redrawn} waiting items redrawn by the current rules, ${stale.length} of gone sessions retired, ${read} read by position, ${twins.length} duplicate alert items folded`);
 		}
 	} finally {
 		replaying = false;
