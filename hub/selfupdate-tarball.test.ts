@@ -184,6 +184,16 @@ test("apply downloads into staging, installs, tests, swaps the dirs and keeps on
 	expect(readdirSync(root).filter(f => f.startsWith("dotz.")).sort()).toEqual(["dotz.prev"]);
 });
 
+test("without a test command the gate runs bun test --isolate in the staging dir", async () => {
+	const seen: { cmd: string; cwd: string }[] = [];
+	const e = exec(async (cmd, cwd) => (seen.push({ cmd: cmd.join(" "), cwd }), undefined));
+	const j = await apply(opts({ http: github(tarball("new", {})), exec: e, testCmd: undefined }));
+	expect(j.status).toBe("updated");
+	const gate = seen.filter(s => s.cmd.startsWith("bun test"));
+	expect(gate.map(s => s.cmd)).toEqual(["bun test --isolate"]);
+	expect(gate[0]!.cwd.startsWith(`${app}.update`)).toBe(true);
+});
+
 test("a failing check keeps the old code, removes staging and says why", async () => {
 	const tgz = tarball("bad", { FAIL: "boom\n" });
 	const j = await apply(opts({ http: github(tgz) }));
