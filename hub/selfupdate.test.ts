@@ -1,7 +1,7 @@
 // Settings → 업데이트 against real git repos in a temp dir: a bare "origin", a clone the updater works on, and a second
 // clone that pushes newer commits. The test command is a shell check so a commit can make "the tests" fail on purpose.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { autoHooks, commit, failFileTestCmd as testCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg } from "./selfupdate-fixture.ts";
 import { apply, autoCheck, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, scrub } from "./selfupdate.ts";
@@ -146,6 +146,16 @@ describe("against temp git repos", () => {
 		expect(j.status).toBe("updated");
 		expect(seen.indexOf("bun install")).toBeGreaterThan(-1);
 		expect(seen.indexOf("bun install")).toBeLessThan(seen.indexOf(testCmd.join(" ")));
+	});
+
+	test("the gate the incoming commit defines in hub/update-gate.json is the one that runs, on the same update", async () => {
+		mkdirSync(join(pusher, "hub"), { recursive: true });
+		r.push("hub/update-gate.json", JSON.stringify({ cmd: ["sh", "-c", "test ! -f FAIL && echo new-gate"], timeoutMinutes: 30 }), "new gate");
+		const seen: { cmd: string; ms: number }[] = [];
+		const exec: Exec = async (cmd, cwd, ms) => (seen.push({ cmd: cmd.join(" "), ms }), cmd[0] === "bun" ? { code: 0, out: "" } : defaultExec(cmd, cwd, ms));
+		const j = await apply({ ...opts(exec), testCmd: undefined });
+		expect(j.status).toBe("updated");
+		expect(seen.filter(s => s.cmd.startsWith("sh -c") || s.cmd.startsWith("bun test"))).toEqual([{ cmd: "sh -c test ! -f FAIL && echo new-gate", ms: 30 * 60_000 }]);
 	});
 
 	test("failing tests put the checkout back on the old commit", async () => {
