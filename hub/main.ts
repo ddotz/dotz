@@ -28,7 +28,7 @@ import { errorAsk, startErrorWatch } from "./orch-error.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { forgetAccountUsage, usageSnapshot } from "./providers.ts";
-import { backfillNotices, dropChannelNotices, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
+import { backfillNotices, dropChannelNotices, setAppLabelResolver, setDraftHandled, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
@@ -66,7 +66,10 @@ import { appEntries, appKeyOf, integrationContext } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
 import { mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
 import { setFormLink } from "./auth.ts";
-import { startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
+import { kakaoDraftFacts, startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
+import { commentDraftFacts } from "./comments/gateway.ts";
+import { draftHandled } from "./draft-handled.ts";
+import { listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
 
 installDelivery();
 // The orchestrator's retries gave up: one [ask] per episode (sent again after a Discord reconnect by the send ledger, pushed
@@ -84,6 +87,12 @@ setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? d
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
 backfillNotices();
 tagStoredApps();
+setAppLabelResolver(key => appEntries(DATA_DIR).find(e => e.key === key)?.label ?? key);
+setDraftHandled(d => draftHandled(d.draft!.ref!, { mail: { drafts: listMailDrafts, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }));
+const sweepHandledDrafts = () => void settleHandledDrafts().then(n => n && log(`notices: ${n} send approvals closed, their drafts were handled elsewhere`), e => log(`handled-draft sweep failed: ${(e as Error).message}`));
+sweepHandledDrafts();
+const HANDLED_SWEEP_MS = 30_000;
+setInterval(sweepHandledDrafts, HANDLED_SWEEP_MS);
 installLaneHandlers();
 
 // Result files ([file] lines, discord.ts) go out only when GET /api/file would serve them (inside the roots, or named in a [file] line of a sent message); a file too big to attach goes

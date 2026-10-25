@@ -409,6 +409,36 @@ function ntHomeRow(n) {
     ntIgnoreBtn(n));
 }
 
+// Send approvals (draft decisions) of one monitoring app instance are one row: "메일 답장 확인 3건". A tap unfolds the items, each one a normal row that opens its sheet.
+// The count is of items, never of groups (the badges count NT.unread / `waiting`, untouched). A lone approval stays a plain row. The noun matches hub/notices.ts confirmNoun.
+const NT_OPEN = new Set();
+const ntGroupNoun = key => (key.split("-")[0] === "mail" || key.split("-")[0] === "kakao" ? "답장 확인" : "댓글 답글");
+function ntGroupKey(n) {
+  if (!ntOpenDec(n) || !n.decision.draft) return "";
+  const it = ((typeof INTG === "object" && INTG.items) || []).find(i => (i.notices || []).includes(n.id));
+  return it ? it.key : "";
+}
+function ntGroupRow(key, list) {
+  const it = INTG.items.find(i => i.key === key), open = NT_OPEN.has(key), label = `${it.label} ${ntGroupNoun(key)} ${list.length}건`;
+  const who = list.slice(0, 2).map(n => n.decision.draft.to).filter(Boolean).join(", ");
+  const head = el("button", { class: "hrx-m ntg-h", type: "button", "aria-expanded": String(open), "aria-label": label, onclick: () => { if (open) NT_OPEN.delete(key); else NT_OPEN.add(key); homeSoon(); } },
+    el("span", { class: "dot att" }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: label })), el("span", { class: "ha", text: who ? `${who}${list.length > 2 ? " 외" : ""}` : "하나씩 확인해 주세요" })),
+    el("span", { class: "hs warn", text: open ? "접기" : "펼치기" }));
+  return el("div", { class: `ntg${open ? " open" : ""}`, "data-group": key }, el("div", { class: "hr hrx" }, head), open ? el("div", { class: "ntg-l" }, ...list.map(ntHomeRow)) : null);
+}
+function ntHomeRows(list) {
+  const by = new Map();
+  for (const n of list) { const k = ntGroupKey(n); if (k) by.set(k, [...(by.get(k) || []), n]); }
+  const seen = new Set(), rows = [];
+  for (const n of list) {
+    const k = ntGroupKey(n), g = k && by.get(k);
+    if (!g || g.length < 2) rows.push(ntHomeRow(n));
+    else if (!seen.has(k)) { seen.add(k); rows.push(ntGroupRow(k, g)); }
+  }
+  return rows;
+}
+
 /* ---- detail sheet ---- */
 const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null };   // edit: { id, opt, text, fresh } while the owner writes the detail an option asks for   // det: a notice shown read-only (a failure alert), not looked up by id
 function ntSheetClose(restore = true) { if (NS.h) NS.h.close(restore); }
