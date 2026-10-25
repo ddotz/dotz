@@ -241,12 +241,14 @@ function cmDraftCard(d) {
   const input = el("input", { class: "kk-ta", type: "text", placeholder: "어떻게 고칠까요? (예: 더 짧게)", "aria-label": "고칠 내용" });
   // A reply that carries a mail (hub/comments/engine.ts Draft.mail): 고치기 says which part it changes.
   const part = d.mail ? el("select", { class: "kk-ta", "aria-label": "고칠 곳" }, el("option", { value: "reply", text: "답글" }), el("option", { value: "mail", text: "메일" })) : null;
-  return el("div", { class: "kk-draft", "data-code": d.code },
-    el("div", { class: "kk-dh", text: "답글 초안" }),
-    el("div", { class: "kk-dt", text: d.text }),
+  // 원문 보기 (web/js/10-draft-original.js): the comment this draft answers opens on the left of the draft, inside the card.
+  const card = el("div", { class: "kk-draft", "data-code": d.code }), cm = CM.view.comments.find(c => c.id === d.commentId);
+  const body = el("div", { class: "kk-dbody" }, el("div", { class: "kk-dt", text: d.text }),
     draftMailNode(d.mail),
     d.mail ? el("div", { class: "kk-note", role: "status", text: "보내기를 누르면 답글을 올린 뒤 메일을 보내요" }) : null,
-    d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null,
+    d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null);
+  const org = orgNodes({ ref: d.code, to: `${cm ? cm.author : "원"} 댓글`, toLabel: "대상" }, null, card, body);
+  card.append(el("div", { class: "kk-dh", text: "답글 초안" }), org.bar, org.split,
     edit ? el("div", { class: "btns" }, part, input,
       el("button", { class: "btn", type: "button", "data-k": "rewrite", text: "다시 쓰기", onclick: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change: input.value, ...(part ? { part: part.value } : {}) }); CM.revising = ""; await cmReload(); }) }),
       el("button", { class: "btn text", type: "button", text: "취소", onclick: () => { CM.revising = ""; cmPaintChat(false); } }))
@@ -254,6 +256,7 @@ function cmDraftCard(d) {
       el("button", { class: "btn", type: "button", "data-k": "send", disabled: sending, text: "보내기", onclick: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/send`, "POST", {}); await cmReload(CM.seq, true); }) }),
       el("button", { class: "btn tonal", type: "button", "data-k": "edit", text: "고치기", onclick: () => { CM.revising = d.code; cmPaintChat(false); } }),
       el("button", { class: "btn text", type: "button", "data-k": "drop", text: "버리기", onclick: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/drop`, "POST", {}); await cmReload(); }) })));
+  return card;
 }
 
 /* ---- live and mode ---- */

@@ -5,6 +5,7 @@ import { cfg, DATA_DIR } from "../config.ts";
 import { broadcast } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
 import { triggerFollowup } from "../followup.ts";
+import { commentOriginal } from "./original.ts";
 import { realEngine } from "./real.ts";
 import { createCommentsWeb } from "./web.ts";
 
@@ -17,6 +18,8 @@ const engine = realEngine(DATA_DIR, {
 const web = createCommentsWeb({ engine, broadcast });
 
 export const commentsRoute = web.route;
+// The comment a draft of the comment engine answers (hub/draft-attach.ts: GET /api/drafts/<code>/original).
+export const commentOriginalOf = (code: string) => commentOriginal(engine.store, code);
 // What waits per integration key ("youtube", "instagram", "site") and whether a website source exists; read by GET /api/integrations.
 export const commentNeeds = () => engine.needs();
 export const commentFlags = (): string[] => (Object.values(engine.store.config().sources).some(s => s.kind === "website") && engine.store.config().enabled ? ["comments-site"] : []);
