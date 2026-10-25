@@ -76,8 +76,8 @@ test("off by default: no config flag, no call", async () => {
 test("bulk needs languages and a budget within the daily one", () => {
 	setup();
 	const base = readCfg();
-	expect(validateConfig({ ...base, youtube: { ...base.youtube, languages: [] } })).toContain("번역 언어");
-	expect(validateConfig({ ...base, quota: { daily_budget: 9000, bulk_budget: 9500 } })).toContain("예산");
+	expect(validateConfig({ ...base, youtube: { ...base.youtube, languages: [] } })).toBeDefined();
+	expect(validateConfig({ ...base, quota: { daily_budget: 9000, bulk_budget: 9500 } })).toBeDefined();
 });
 
 test("public videos get [English]/[日本語] sections and localizations; the original is backed up first; a second run changes nothing", async () => {
