@@ -25,6 +25,23 @@ export type HubOptions = {
 
 const enc = new TextEncoder();
 
+// A WebView costs ~120 ms to start, a navigation ~20 ms: finished views go back to a process-wide pool (bun runs every test file in one process)
+// and the next hub reuses one. A view with a console handler is bound to its first test and is closed instead.
+const idle: View[] = [];
+const pooled = new WeakSet<View>();
+async function acquire(o: ViewOptions): Promise<View> {
+	const width = o.width ?? 390, height = o.height ?? 844;
+	const v = o.console ? undefined : idle.pop();
+	if (v) { await v.resize(width, height); return v; }
+	const fresh = new Bun.WebView({ width, height, ...(o.console ? { console: o.console } : {}) } as ConstructorParameters<typeof Bun.WebView>[0]);
+	if (!o.console) pooled.add(fresh);
+	return fresh;
+}
+function release(v: View): void {
+	if (!pooled.has(v)) { v.close(); return; }
+	v.navigate("about:blank").then(() => { idle.push(v); }, () => { pooled.delete(v); v.close(); });
+}
+
 export function fakeHub(opts: HubOptions = {}) {
 	const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
 	const views: View[] = [];
@@ -84,13 +101,13 @@ export function fakeHub(opts: HubOptions = {}) {
 		nextStream(ms = 10_000): Promise<void> { return hub.streamConnected(connects + 1, ms); },
 		// A tracked view, navigated to `path` on this hub when one is given; stop() closes it.
 		async view(o: ViewOptions = {}, path?: string): Promise<View> {
-			const v = new Bun.WebView({ width: o.width ?? 390, height: o.height ?? 844, ...(o.console ? { console: o.console } : {}) } as ConstructorParameters<typeof Bun.WebView>[0]);
+			const v = await acquire(o);
 			views.push(v);
 			if (path !== undefined) await v.navigate(`${origin}${path}`);
 			return v;
 		},
 		stop() {
-			for (const v of views) v.close();
+			for (const v of views) release(v);
 			for (const c of streams) { try { c.close(); } catch { /* already closed */ } }
 			server.stop(true);
 		},
