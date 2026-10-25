@@ -1,22 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { sseResponse, emit } from "./events.ts";
+import { emit } from "./events.ts";
 import { ignoreNotice, listNotices, markNoticesRead, type Notice, resolveNotices, unignoreNotice, unreadCount } from "./notices.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // The x (무시) on its two surfaces, in a headless browser against the real notice store: the 답변 필요 row on 홈 and the decision sheet's
 // header. The 알림 card lists only news, so a question that waits is on 홈 once, in 답변 필요. A second page on the same hub hears the change live (the event stream).
 const SNAP = "/tmp/dotz-notice-ignore-test";
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+const hub = fakeHub({
+	api: async (req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: unreadCount() });
 		if (url.pathname === "/api/notices" && req.method === "GET") return json(listNotices(100));
 		if (url.pathname === "/api/notices/read") return json(markNoticesRead(await req.json()));
@@ -25,27 +16,21 @@ const server = Bun.serve({
 			const r = (m[2] === "ignore" ? ignoreNotice : unignoreNotice)(m[1]);
 			return json(r.body, r.status);
 		}
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const base = `http://127.0.0.1:${server.port}/`;
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
+const base = `${hub.origin}/`;
 const open = async (width: number, height: number): Promise<View> => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
+	const v = await hub.view({ width, height });
 	await v.navigate(base);
 	return v;
 };
-const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }); done(); })`);
 const stored = () => listNotices(300).items;
 const ask = (title: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n**1) 예**\n**2) 아니요**` });
 const settled = (v: View) => v.evaluate(`Promise.all(document.getAnimations().map(a => a.finished.catch(() => 0))).then(() => true)`);
 const rect = (v: View, sel: string) => v.evaluate(`JSON.stringify((() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const r = e.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right) }; })())`).then(s => JSON.parse(s as string) as { w: number; h: number; left: number; right: number } | null);
 
 beforeAll(() => { Bun.spawnSync(["mkdir", "-p", SNAP]); });
-afterAll(() => { for (const v of views) v.close(); server.stop(true); });
+afterAll(() => hub.stop());
 
 describe("the x (무시) in a headless browser", () => {
 	test("at 390px the x sits on the 답변 필요 row and the sheet header, thumb-sized and inside the screen, the 알림 card does not repeat the question; ignoring syncs live and undo brings the question back", async () => {

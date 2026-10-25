@@ -1,42 +1,25 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { draftApprovalBlock } from "./draft-approval.ts";
-import { emit, sseResponse } from "./events.ts";
+import { emit } from "./events.ts";
 import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount } from "./notices.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // Send-approval drafts open as a full-screen view (a large dialog on desktop); every other decision uses the same full-screen frame (hub/overlay-fullscreen-web.test.ts) without the large size.
 // Headless browser against the real notice store; the decisions are fixtures and nothing is sent.
 const SNAP = "/tmp/dotz-draft-fullscreen";
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+const hub = fakeHub({
+	api: async (req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: unreadCount() });
 		if (url.pathname === "/api/notices" && req.method === "GET") return json(listNotices(100));
 		if (url.pathname === "/api/notices/read") return json(markNoticesRead(await req.json()));
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const base = `http://127.0.0.1:${server.port}/`;
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
+const base = `${hub.origin}/`;
 const open = async (width: number, height: number): Promise<View> => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
+	const v = await hub.view({ width, height });
 	await v.navigate(base);
 	return v;
 };
-const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(
-		`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document, { subtree: true, childList: true, attributes: true, characterData: true }); done(); })`,
-	);
 const settled = (v: View) => v.evaluate(`Promise.all(document.getAnimations().map(a => a.finished.catch(() => 0))).then(() => true)`);
 type Box = { l: number; t: number; r: number; b: number; w: number; h: number };
 const box = async (v: View, sel: string): Promise<Box | null> =>
@@ -50,10 +33,7 @@ const find = (pred: (n: Notice) => boolean) => stored().find(n => n.kind === "de
 beforeAll(() => {
 	Bun.spawnSync(["mkdir", "-p", SNAP]);
 });
-afterAll(() => {
-	for (const v of views) v.close();
-	server.stop(true);
-});
+afterAll(() => hub.stop());
 
 describe("draft approval opens full screen", () => {
 	test("a draft decision opens the full-screen view with the buttons always visible; any other decision opens the normal-size frame", async () => {

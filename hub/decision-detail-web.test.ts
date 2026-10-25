@@ -1,40 +1,26 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { draftApprovalBlock } from "./draft-approval.ts";
-import { emit, sseResponse } from "./events.ts";
+import { emit } from "./events.ts";
 import { listNotices, unreadCount } from "./notices.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, on } from "./test-web.ts";
 
 // An option that needs detail (안 됨 / 고치기 / a trailing " …") opens a text field and sends nothing until the owner writes it; a positive option sends at once.
 // Headless browser against a fixture history and the real notice store; every POST is recorded, nothing leaves the process.
 const SNAP = "/tmp/dotz-decision-detail";
-const json = (v: unknown) => Response.json(v);
 const ASK = "[ask] 확인\n결정: 확인\n**1) 확인됨** ← 추천\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n";
 const MARKED = "[ask] 배포\n결정: 배포\n**1) 배포하기** ← 추천\n바로 올려요\n**2) 보류 …**\n이유만 남겨요\n";
 let history: unknown[] = [];
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+const hub = fakeHub({
+	api: (req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "땅콩", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: unreadCount() });
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: url.searchParams.get("target") === "main" ? history : [] });
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
 		if (url.pathname === "/api/notices" && req.method === "GET") return json(listNotices(100));
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const view = new Bun.WebView({ width: 390, height: 844 });
-afterAll(() => {
-	view.close();
-	server.stop(true);
-});
-const waitFor = (expr: string, ms = 10_000) =>
-	view.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+const view = await hub.view({ width: 390, height: 844 });
+afterAll(() => hub.stop());
+const { waitFor } = on(view);
 const settled = () => view.evaluate(`Promise.all(document.getAnimations().map(a => a.finished.catch(() => 0))).then(() => true)`);
 const ask = (text: string) => [
 	{ ts: "2026-10-22T08:10:00.000Z", kind: "message", source: "web", channel: "web", text: "확인해 줘" },
@@ -42,7 +28,7 @@ const ask = (text: string) => [
 ];
 const RECORD = `(() => { window.__posts = []; const f = window.fetch.bind(window); window.fetch = (u, o) => { if (o && o.method === "POST") window.__posts.push({ path: String(u).replace(location.origin, ""), body: JSON.parse(o.body || "null") }); return f(u, o); }; return 0; })()`;
 const load = async (ready: string) => {
-	await view.navigate(`http://127.0.0.1:${server.port}/`);
+	await view.navigate(`${hub.origin}/`);
 	await waitFor(`typeof openTarget === "function" && S`);
 	await view.evaluate(RECORD);
 	await view.evaluate(ready);

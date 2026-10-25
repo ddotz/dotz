@@ -1,8 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { viewOf } from "./app-settings.ts";
-import { sseResponse } from "./events.ts";
 import { WATCH_FIELDS } from "./watch-settings.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // A monitor a project created (its channel is ch:<id>) is not tied to the project: its gear opens its own settings:w:<watch> conversation, the
 // chips and messages go there as `settings: "w:<watch>"` with no `project`, the change card applies to the watch, and a peer's is the same through
@@ -19,7 +18,6 @@ const sent: Record<string, unknown>[] = [];
 const acts: { action: string; args: Record<string, unknown> }[] = [];
 const runs: string[] = [];
 const patches: { name: string; values: unknown }[] = [];
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 const history: Record<string, Record<string, unknown>[]> = {
 	"settings:w:login-local": [{ ts: at(40), kind: "message", source: "web", channel: "settings:w:login-local", author: "local", text: "지난번 질문" }, { ts: at(41), kind: "out", source: "orchestrator", target: "settings:w:login-local", text: CARD }],
 	"settings:w:login-cartier-com": [{ ts: at(40), kind: "out", source: "orchestrator", target: "settings:w:login-cartier-com", text: "맥미니 감시 대화에서 보낸 답이에요" }],
@@ -39,18 +37,11 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 	}
 	return json({});
 }
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+const hub = fakeHub({
+	api: async (req, url) => {
+		const p = url.pathname;
 		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: { [CH]: "까르띠에-재고-구매" } }, discord: {}, notices_unread: 0, work: [{ id: "w1", description: "로그인 원인 조사", status: "running", started_at: Date.now() - 60_000, target: "settings:w:login-local" }] });
-		if (p === "/api/peers") return json([{ name: "맥북", url: `http://127.0.0.1:${server.port}`, self: true, online: true }, ...peers.map(x => ({ name: x.name, url: x.url, self: false, online: x.online }))]);
+		if (p === "/api/peers") return json([{ name: "맥북", url: `${hub.origin}`, self: true, online: true }, ...peers.map(x => ({ name: x.name, url: x.url, self: false, online: x.online }))]);
 		if (p === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
 		if (p === "/api/monitors") return json({ items: [failing("login-local", "로컬 로그인 유지", CH)] });
 		if (p === "/api/notices") return json({ unread: 0, items: [] });
@@ -68,24 +59,17 @@ const server = Bun.serve({
 		if (st && req.method === "PATCH") { patches.push({ name: st[1]!, values: ((await req.json()) as { values: unknown }).values }); return json({ key: st[1], fields: fields() }); }
 		if (st) return json({ key: st[1], fields: fields() });
 		if (p === "/api/message") { sent.push((await req.json()) as Record<string, unknown>); return json({ ok: true }); }
-		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-afterAll(() => { for (const v of views) v.close(); server.stop(true); });
-const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+afterAll(() => hub.stop());
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const until = async (ok: () => boolean) => { const d = Date.now() + 5000; while (!ok() && Date.now() < d) await Bun.sleep(25); };
 const LOCAL_KEY = "m:로컬 로그인 유지";
 const PEER_KEY = `p:${MINI}|m:까르띠에 로그인 유지`;
 const boot = async (key: string) => {
-	const v = new Bun.WebView({ width: 1280, height: 800 });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width: 1280, height: 800 });
+	await v.navigate(`${hub.origin}/`);
 	await waitFor(v, `S && NM.loaded && NT.loaded && PR.fresh`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	await run(v, `go("monitoring")`);
@@ -171,9 +155,8 @@ describe("a peer's monitor of a project", () => {
 
 describe("settings conversations on the home and in the log", () => {
 	test("a progress row of work for a settings conversation opens that conversation even when its message is not known", async () => {
-		const v = new Bun.WebView({ width: 1280, height: 800 });
-		views.push(v);
-		await v.navigate(`http://127.0.0.1:${server.port}/`);
+		const v = await hub.view({ width: 1280, height: 800 });
+		await v.navigate(`${hub.origin}/`);
 		await waitFor(v, `S && S.work && S.work.length && NM.loaded`);
 		await run(v, `go("home")`);
 		await waitFor(v, `[...document.querySelectorAll("#home-now .hr")].some(r => r.textContent.includes("로그인 원인 조사"))`);
@@ -182,9 +165,8 @@ describe("settings conversations on the home and in the log", () => {
 	});
 
 	test("the thinking line shows Korean text as it is and English text as a Korean label", async () => {
-		const v = new Bun.WebView({ width: 1280, height: 800 });
-		views.push(v);
-		await v.navigate(`http://127.0.0.1:${server.port}/`);
+		const v = await hub.view({ width: 1280, height: 800 });
+		await v.navigate(`${hub.origin}/`);
 		await waitFor(v, `S && NM.loaded`);
 		const sum = (text: string) => q<string>(v, `return actNode({ type: "thinking", ts: "2026-10-23T03:00:00Z", text: ${JSON.stringify(text)} }, { calls: new Map() }).querySelector("summary").textContent.replace(/오[전후] \\d+:\\d+:\\d+$/, "")`);
 		expect(await sum("I should check why the login keeper failed, then retry.")).toBe("생각· 생각을 정리하는 중");

@@ -2,9 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { viewOf } from "./app-settings.ts";
-import { sseResponse } from "./events.ts";
 import { WATCH_FIELDS } from "./watch-settings.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // Every monitoring detail has its 설정 entry as a 대화 button and a ⋯ button in the title bar (web/js/32-app-settings.js asEntry): the head on a wide screen,
 // the app bar on a phone. There is no 설정 row on top of the list any more. Headless Bun.WebView against a stub gateway; the peer is a fixture.
@@ -18,19 +17,10 @@ const ROOMS = [{ chatId: "100", name: "가나다 모임", kind: "group", watched
 const fields = () => WATCH_FIELDS.map(f => viewOf(f, f.key === "enabled" ? true : f.key === "every_minutes" ? 30 : f.key === "to" ? "alert" : "이름"));
 const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [watch("login-cartier-com", "까르띠에 로그인 유지", { last_result: "fail", fails: 3, keeper: true })], notices: [], integrations: [], conversations: [] } }];
 
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
-		if (p === "/api/peers") return json([{ name: "맥북", url: `http://127.0.0.1:${server.port}`, self: true, online: true }, ...peers.map(x => ({ name: x.name, url: x.url, self: false, online: x.online }))]);
+const hub = fakeHub({
+	api: (_req, url) => {
+		const p = url.pathname;
+		if (p === "/api/peers") return json([{ name: "맥북", url: `${hub.origin}`, self: true, online: true }, ...peers.map(x => ({ name: x.name, url: x.url, self: false, online: x.online }))]);
 		if (p === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
 		if (p === "/api/monitors") return json({ items: [watch("plain-watch", "일반 감시"), watch("login-local", "로컬 로그인 유지", { keeper: true })] });
 		if (p === "/api/notices") return json({ unread: 0, items: [] });
@@ -46,22 +36,15 @@ const server = Bun.serve({
 		if (p === "/api/monitoring/peers") return json(peers);
 		if (p === "/api/peer/proxy") return json(url.searchParams.get("p") === "/api/watches/login-cartier-com/settings" ? { key: "login-cartier-com", fields: fields() } : {});
 		if (/^\/api\/(?:integrations|watches)\/[a-z0-9-]+\/settings$/.test(p)) return json({ key: "x", fields: fields() });
-		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-afterAll(() => { for (const v of views) v.close(); server.stop(true); });
-const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+afterAll(() => hub.stop());
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
 const boot = async (width: number, height: number) => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height });
+	await v.navigate(`${hub.origin}/`);
 	await waitFor(v, `S && NM.loaded && NT.loaded && PR.fresh`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	await run(v, `go("monitoring")`);

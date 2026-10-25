@@ -1,8 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { parseQuotedDraft } from "./draft-approval.ts";
-import { sseResponse } from "./events.ts";
 import { decisionsOf } from "./notices.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json } from "./test-web.ts";
 
 // The send-approval card (web/js/30-monitoring.js draftCardNode) and what feeds it (hub/notices.ts decisionsOf): a mail question that quotes its
 // draft always carries the draft and the draft-approval options, the card shows the question once, and the thread row is one tap target.
@@ -28,34 +27,18 @@ test("a question that quotes nothing keeps the plain yes / no, and the quoted dr
 	expect(body.split("\n\n")).toEqual(["안녕하세요, Alex님.", "보내 주신 보고서는 잘 받았습니다.", "감사합니다."]);
 });
 
-const json = (v: unknown) => Response.json(v);
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
-		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	api: (_req, url) => {
 		if (url.pathname === "/api/notices") return json({ items: [], unread: 0 });
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const views: InstanceType<typeof Bun.WebView>[] = [];
-afterAll(() => {
-	for (const v of views) v.close();
-	server.stop(true);
-});
+afterAll(() => hub.stop());
 
 async function open(width: number) {
-	const v = new Bun.WebView({ width, height: 1200 });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height: 1200 });
+	await v.navigate(`${hub.origin}/`);
 	await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), true)`);
-	await v.navigate(`http://127.0.0.1:${server.port}/?light#monitoring/notice`);
+	await v.navigate(`${hub.origin}/?light#monitoring/notice`);
 	await v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("page not ready")), 10000); const done = () => { if (typeof go === "function" && current !== "monitoring") go("monitoring", "notice"); if (document.querySelector("#mon-tl") && typeof draftCardNode === "function") { clearTimeout(t); res(true); } else setTimeout(done, 50); }; done(); })`);
 	return v;
 }

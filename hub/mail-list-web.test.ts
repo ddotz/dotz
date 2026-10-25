@@ -1,39 +1,22 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { sseResponse } from "./events.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json } from "./test-web.ts";
 
 // The mail rows of the 모니터링 tab (web/js/30-monitoring.js monConvNode) in a headless browser: compact, the summary visible, no right-side buttons but the ⋯ at the top right,
 // the whole card opens the mail, the reply chip only with data; and the attachments of the original view. Set MAIL_SHOTS=<dir> to keep screenshots.
 const SHOTS = process.env.MAIL_SHOTS ?? "";
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
-		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	api: (_req, url) => {
 		if (url.pathname === "/api/notices") return json({ items: [], unread: 0 });
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const views: InstanceType<typeof Bun.WebView>[] = [];
-afterAll(() => {
-	for (const v of views) v.close();
-	server.stop(true);
-});
+afterAll(() => hub.stop());
 
 async function open(width: number) {
-	const v = new Bun.WebView({ width, height: 900 });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height: 900 });
+	await v.navigate(`${hub.origin}/`);
 	await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), true)`);
-	await v.navigate(`http://127.0.0.1:${server.port}/?light#monitoring/notice`);
+	await v.navigate(`${hub.origin}/?light#monitoring/notice`);
 	await v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("page not ready")), 10000); const done = () => { if (typeof go === "function" && current !== "monitoring") go("monitoring", "notice"); if (document.querySelector("#mon-tl") && NT.loaded && NM.loaded) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.documentElement, { subtree: true, childList: true }); done(); })`);
 	return v;
 }

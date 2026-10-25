@@ -1,6 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { sseResponse } from "./events.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // 모니터링 shows this computer's items and every peer's together (web/js/34-peer-monitoring.js): a machine chip on each peer row, '연결 안 됨'
 // on a peer that does not answer, the peer's reports in 감시 소식 and the machine name beside each detail title. Headless; the peers are fixtures.
@@ -35,7 +34,6 @@ const peers = [
 	{ name: "창고", url: "http://store.test", online: false, stale: false, items: null },
 ];
 
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 // What the Mac mini answers behind /api/peer/proxy: the same shapes its own web app reads.
 async function proxy(req: Request, url: URL): Promise<Response> {
 	const p = url.searchParams.get("p") ?? "";
@@ -57,18 +55,10 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 	}
 	return json({});
 }
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+const hub = fakeHub({
+	api: (req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 1 });
-		if (url.pathname === "/api/peers") return json([{ name: "맥북", url: `http://127.0.0.1:${server.port}`, self: true, online: true }, ...peers.map(p => ({ name: p.name, url: p.url, self: false, online: p.online }))]);
+		if (url.pathname === "/api/peers") return json([{ name: "맥북", url: `${hub.origin}`, self: true, online: true }, ...peers.map(p => ({ name: p.name, url: p.url, self: false, online: p.online }))]);
 		if (url.pathname === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
 		if (url.pathname === "/api/monitors") return json({ items: [localMon] });
 		if (url.pathname === "/api/notices") return json({ unread: 1, items: [localNote] });
@@ -76,21 +66,15 @@ const server = Bun.serve({
 		if (url.pathname === "/api/conversations") return json({ items: [{ target: "mail:loc", unread: 1, read: null, mail: MAIL, last: LAST }] });
 		if (url.pathname === "/api/monitoring/peers") return json(peers);
 		if (url.pathname === "/api/peer/proxy") return proxy(req, url);
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-afterAll(() => { for (const v of views) v.close(); server.stop(true); });
+afterAll(() => hub.stop());
 const open = async (width: number, height: number): Promise<View> => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height });
+	await v.navigate(`${hub.origin}/`);
 	return v;
 };
-const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const text = (v: View, expr: string) => v.evaluate(expr) as Promise<string>;
 const rowOf = (key: string) => `[...document.querySelectorAll("#mon-side .cv-row")].find(r => r.dataset.k === ${JSON.stringify(key)})`;
 const boot = async (width: number, height: number) => {

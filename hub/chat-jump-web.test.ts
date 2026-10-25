@@ -1,6 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { sseResponse } from "./events.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, on } from "./test-web.ts";
 
 // Where a conversation sits after a jump, in a headless browser at 390px against a fixture conversation with tall images (their bytes are held
 // back by the test, so they land late), code blocks and a "새 메시지" divider. The rule (web/js/31-conversations.js chatJump): a jump target
@@ -30,17 +29,8 @@ let histGate: Promise<void> = Promise.resolve();
 let openHistory = () => {};
 const arm = () => { holdImages = true; gate = new Promise(r => { release = () => { holdImages = false; r(); }; }); };
 
-const json = (v: unknown) => Response.json(v);
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+const hub = fakeHub({
+	api: async (_req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 1 });
 		if (url.pathname === "/api/history") {
 			if (holdHistory) await histGate;
@@ -58,17 +48,15 @@ const server = Bun.serve({
 			if (holdImages) await gate;
 			return new Response(svg(Number(/p(\d+)\.png/.exec(url.searchParams.get("path") ?? "")?.[1] ?? 0)), { headers: { "Content-Type": "image/svg+xml" } });
 		}
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 let jumpAt = ts(12);
 
-const view = new Bun.WebView({ width: 390, height: 844 });
-afterAll(() => { release(); view.close(); server.stop(true); });
+const view = await hub.view({ width: 390, height: 844 });
+afterAll(() => hub.stop());
 beforeEach(() => { arm(); imageHits = 0; });
 
-const waitFor = (expr: string, ms = 10_000) =>
-	view.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+const { waitFor } = on(view);
 // Frames until every image has loaded and the scroll position held for 6 frames in a row.
 const settle = () => view.evaluate(`new Promise(res => { let last = -1, same = 0; const tick = () => { const st = timeline.scrollTop, done = [...document.images].every(i => i.complete); same = done && st === last ? same + 1 : 0; last = st; if (same >= 6) res(true); else requestAnimationFrame(tick); }; tick(); })`);
 const stable = () => view.evaluate(`new Promise(res => { let last = -1, same = 0; const tick = () => { const st = timeline.scrollTop; same = st === last ? same + 1 : 0; last = st; if (same >= 6) res(true); else requestAnimationFrame(tick); }; tick(); })`);
@@ -82,7 +70,7 @@ const measure = async (at: string): Promise<M> => JSON.parse((await view.evaluat
 const boot = async () => {
 	holdHistory = true;
 	histGate = new Promise(r => { openHistory = () => { holdHistory = false; r(); }; });
-	await view.navigate(`http://127.0.0.1:${server.port}/`);
+	await view.navigate(`${hub.origin}/`);
 	openHistory();
 	await waitFor(`typeof NT !== "undefined" && NT.loaded && NT.items.length === 1 && S`);
 };
