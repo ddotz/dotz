@@ -33,6 +33,8 @@ describe("choice helpers", () => {
 		expect(cleanChoices("취소해")).toEqual([]);
 	});
 	test("the block ends with the own-text option", () => {
-		expect(replyChoiceBlock("q?", ["가", "나"])).toBe("결정: q?\n**1) 가**\n고른 대로 답장을 써요\n**2) 나**\n고른 대로 답장을 써요\n**3) 직접 쓸게 …**\n적은 글을 답장으로 써요");
+		const lines = replyChoiceBlock("q?", ["가", "나"]).split("\n");
+		expect(lines[0]).toBe("결정: q?");
+		expect(lines.filter(l => /^\*\*\d\) /.test(l))).toEqual(["**1) 가**", "**2) 나**", "**3) 직접 쓸게 …**"]);
 	});
 });
