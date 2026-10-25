@@ -243,7 +243,7 @@ function renderHomeNow() {
   const bg = workRunning(), working = run.filter(t => rank(t) < 2).length + bg.length;
   clear(box).append(
     el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, owedN ? unrepPill(`미답장 ${owedN}`) : null),
-    el("div", { class: "hn" }, ...dec.map(ntHomeRow), ...loose.map(ntHomeRow), ...need.map(x => homeNowRow(x.t, NEED[x.k], "att")), ...owed.map(homeOwedRow), ...(waiting ? [] : [el("div", { class: "empty", text: "답변할 항목이 없어요" })])),
+    el("div", { class: "hn" }, ...ntHomeRows(dec), ...loose.map(ntHomeRow), ...need.map(x => homeNowRow(x.t, NEED[x.k], "att")), ...owed.map(homeOwedRow), ...(waiting ? [] : [el("div", { class: "empty", text: "답변할 항목이 없어요" })])),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
     el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", "")), ...bg.map(workRow)),
     endedGroup() || "");

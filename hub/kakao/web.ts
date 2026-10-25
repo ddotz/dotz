@@ -183,6 +183,14 @@ export function createKakaoWeb(deps: WebDeps) {
 		waiting = { at: now(), rooms: out };
 		return out;
 	};
+	const draftFacts = {
+		drafts: async () => (await listDrafts({ paths, runner: deps.runner })).map(d => ({ code: d.code, chatId: d.chatId, status: d.status, created: d.created })),
+		waiting: async (chatId: string): Promise<boolean | undefined> => {
+			const config = readConfig(paths);
+			if (config?.enabled !== true || !(config.watch_chats ?? []).includes(chatId)) return undefined;
+			return (await waitingRooms(config).catch(() => undefined))?.has(chatId);
+		},
+	};
 	let lastCount = 0;
 	// The count the app row shows: answered from the last look so the integration list never waits on the database; a stale look refreshes in the background.
 	const unrepliedCount = (): number => {
@@ -560,5 +568,5 @@ export function createKakaoWeb(deps: WebDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { route, idle, unrepliedCount };
+	return { route, idle, unrepliedCount, draftFacts };
 }

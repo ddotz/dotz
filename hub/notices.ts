@@ -731,6 +731,32 @@ export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unk
 	return { resolved: resolveAsks(pick, now(), !!(ids || match)), unread: unreadCount() };
 }
 
+// Signal 5: the item behind a send approval was handled without the notice hearing of it. An open draft decision is the owner's to pick, yet the draft
+// itself can be over: sent from the app or by the owner's own client, dropped, replaced by a revision, marked 답장 안 함, answered on the platform,
+// deleted at the source, or handled on another computer. The apps know it (hub/draft-handled.ts); this settles the notice as resolved.
+let draftHandled: (d: Decision, n: Notice) => Promise<boolean> | boolean = () => false;
+export const setDraftHandled = (fn: typeof draftHandled) => void (draftHandled = fn);
+export async function settleHandledDrafts(at = now()): Promise<number> {
+	const open = items.filter(i => isOpenDecision(i) && i.decision!.draft?.ref && !i.decision!.to.startsWith("auth:"));
+	const hit: Notice[] = [];
+	for (const i of open)
+		if (await (async () => draftHandled(i.decision!, i))().catch(() => false)) hit.push(i);
+	for (const i of hit) if (isOpenDecision(i)) settleDecision(i, "", at, true);
+	return hit.length;
+}
+
+// The send approvals of one monitoring app instance are shown, and pushed, as one group ("메일 답장 확인 3건"): the app instance key, its name and the open count.
+let appLabelOf: (key: string) => string = key => key;
+export const setAppLabelResolver = (fn: typeof appLabelOf) => void (appLabelOf = fn);
+export const confirmNoun = (key: string) => (["mail", "kakao"].includes(key.split("-")[0]!) ? "답장 확인" : "댓글 답글");
+export function confirmGroup(n: Notice): { key: string; label: string; count: number } | undefined {
+	if (!isOpenDecision(n) || !n.decision!.draft) return undefined;
+	const key = appOf(n);
+	if (!key) return undefined;
+	const count = items.filter(i => isOpenDecision(i) && i.decision!.draft && appOf(i) === key).length;
+	return { key, label: `${appLabelOf(key)} ${confirmNoun(key)}`, count };
+}
+
 onEmit(feed);
 
 /* ---------- stale notices: the session is gone, or the owner already read the message ---------- */
