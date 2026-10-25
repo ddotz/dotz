@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
-import { answerReply, conversationTitle, decisionsOf, type Notice, onDecision } from "./notices.ts";
+import { answerReply, confirmGroup, conversationTitle, decisionsOf, type Notice, onDecision } from "./notices.ts";
 import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
@@ -128,6 +128,9 @@ const DECISION_ACTIONS = 2;
 export function decisionPush(n: Notice): PushMessage {
 	const d = n.decision!;
 	const url = d.to.startsWith("lane:") ? `/#chat/lane:${encodeURIComponent(d.to.slice(5))}` : d.to.startsWith("ch:") ? `/#chat/${d.to}` : "/#chat/main";
+	const group = confirmGroup(n);
+	// The send approvals of one monitoring app are one notification that evolves (same tag): "메일 답장 확인 3건", with no button, since a button answers one item.
+	if (group && group.count > 1) return { kind: "ask", title: DECISION_PUSH_TITLE, body: `${group.label} ${group.count}건`, url: "/#home", tag: `decision-group:${group.key}`, ts: n.at };
 	const actions = d.options.filter(o => o.action !== "form").slice(0, DECISION_ACTIONS).map(o => ({ action: `opt:${o.n}`, title: plain(`${o.n}) ${o.label}`, 40) }));
 	return { kind: "ask", title: DECISION_PUSH_TITLE, body: plain(n.title), url, tag: `decision:${n.id}`, ts: n.at, id: n.id, ...(actions.length ? { actions } : {}) };
 }
