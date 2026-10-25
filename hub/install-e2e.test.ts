@@ -2,34 +2,36 @@
 // a tarball install stamps itself and then self-updates to a newer local tarball; a --git install stays a git checkout and
 // self-updates through git as before. The copy of this repo's files is the "release".
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const REPO = join(import.meta.dir, "..");
-let root: string, env: Record<string, string>;
+let root: string, release: string, env: Record<string, string>;
 
 const run = (cmd: string[], extra: Record<string, string> = {}, cwd = root) => {
 	const r = Bun.spawnSync(cmd, { cwd, env: { ...process.env, ...env, ...extra }, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
 	return { code: r.exitCode, out: `${r.stdout}${r.stderr}`, stdout: r.stdout.toString() };
 };
-// The files of this checkout (tracked or new, not ignored, not node_modules) copied to dir. The self-update runs these tests
-// inside a tarball install's staging folder, which has no .git: there every file but node_modules and .git is the release.
+// The release: this checkout's code (tracked or new, not ignored) without tests, web assets, docs and feature folders, copied once. The
+// update flow only needs the files the installer checks for and the code the updater CLI imports.
+const releaseFile = (f: string) => !f.endsWith(".test.ts") && (f.startsWith("hub/") || ["setup.ts", "package.json"].includes(f));
 function copyTree(dir: string) {
 	const listed = run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {}, REPO);
-	const list = listed.code === 0 ? listed.stdout.split("\0").filter(Boolean) : readdirSync(REPO, { recursive: true, encoding: "utf8" });
-	for (const f of list) {
+	if (listed.code !== 0) throw new Error(listed.out);
+	for (const f of listed.stdout.split("\0").filter(releaseFile)) {
 		const from = join(REPO, f);
-		if (f.startsWith("node_modules") || f === ".git" || f.startsWith(".git/") || !existsSync(from) || !statSync(from).isFile()) continue;
+		if (!existsSync(from) || !statSync(from).isFile()) continue;
 		mkdirSync(dirname(join(dir, f)), { recursive: true });
 		copyFileSync(from, join(dir, f));
 	}
 }
 const tarball = (out: string, marker?: string) => {
-	const src = mkdtempSync(join(root, "tree-"));
-	copyTree(join(src, "dotz"));
-	if (marker) writeFileSync(join(src, "dotz", marker), "newer\n");
-	expect(run(["tar", "-czf", out, "-C", src, "dotz"]).code).toBe(0);
+	const markerFile = marker ? join(release, "dotz", marker) : undefined;
+	if (markerFile) writeFileSync(markerFile, "newer\n");
+	const r = run(["tar", "-czf", out, "-C", release, "dotz"]);
+	if (markerFile) rmSync(markerFile);
+	expect(r.code).toBe(0);
 };
 const installer = (extra: Record<string, string>, ...args: string[]) => run(["sh", join(REPO, "install.sh"), "--no-service", "--no-setup", "--no-open", "--yes", ...args], extra);
 const selfupdate = (app: string, ...args: string[]) => {
@@ -43,6 +45,8 @@ beforeAll(() => {
 	env = { HOME: join(root, "home"), DOTZ_DIR: join(root, "data"), DOTZ_HARNESS: "none", GIT_TERMINAL_PROMPT: "0" };
 	delete process.env.GITHUB_TOKEN;
 	delete process.env.GH_TOKEN;
+	release = join(root, "release-tree");
+	copyTree(join(release, "dotz"));
 });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
@@ -89,8 +93,9 @@ test("tarball install writes the stamp, then self-updates to a newer local tarba
 test("--git installs a clone that updates through git, without a stamp", () => {
 	const origin = join(root, "origin");
 	copyTree(origin);
+	// no background gc after the commit: it repacks the origin while the installer clones it
 	const git = (...a: string[]) => {
-		const r = run(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...a], {}, origin);
+		const r = run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "gc.auto=0", "-c", "maintenance.auto=false", ...a], {}, origin);
 		expect(r.code).toBe(0);
 		return r.out;
 	};
