@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { unreadOf } from "./conversations.ts";
 import { emit, type HubEvent } from "./events.ts";
-import { mailByKey, mailCard, mailTarget, migrateStoredMails, postMail, recordMail, setMailFyi, setMailNoReply, setMailReply, setMailSuggest, unrepliedMails, type MailDeps, type MailRecord } from "./mail.ts";
+import { mailByKey, mailCard, mailTarget, migrateStoredMails, postMail, recordMail, setMailFyi, setMailNoReply, setMailReply, setMailSuggest, sentReplyRefs, unrepliedMails, type MailDeps, type MailRecord } from "./mail.ts";
 import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
 import { markRead } from "./reads.ts";
 import { tick } from "./zele.ts";
@@ -33,11 +33,11 @@ function fakes() {
 }
 
 // What `zele mail list` prints per thread: id is the thread id, from is the sender of the newest message.
-type Thread = { id: string; from: string; to?: string; subject: string; snippet?: string; account?: string; flags?: string; labels?: string };
+type Thread = { id: string; from: string; to?: string; subject: string; snippet?: string; account?: string; flags?: string; labels?: string; messages?: number; date?: string };
 const thread = (t: Thread) => ({ flags: "unread", to: "Owner <owner@example.com>", snippet: "본문 일부", date: "10월 25일, 오전 9:00", messages: 1, ...t });
 
 // One watch pass: the unread list, the sent-folder list and an empty calendar, wired to postMail like hub/main.ts does.
-async function pass(unread: Thread[], sent: Thread[], deps: MailDeps) {
+async function pass(unread: Thread[], sent: Thread[], deps: MailDeps, needsReply = false) {
 	const seen = { mail: [] as string[], sent: [] as string[] };
 	const list = async (args: string[]) => {
 		if (args[0] === "cal") return [];
@@ -49,7 +49,7 @@ async function pass(unread: Thread[], sent: Thread[], deps: MailDeps) {
 			brief: () => {},
 			mail: async m => {
 				seen.mail.push(m.id);
-				await postMail({ source: "zele", id: m.id, from: m.from, to: m.to, subject: m.subject, summary: m.snippet, wake: true }, deps);
+				await postMail({ source: "zele", id: m.id, messageId: m.message, from: m.from, to: m.to, subject: m.subject, summary: m.snippet, wake: true, ...(needsReply ? { needsReply: true } : {}) }, deps);
 			},
 			sent: async m => {
 				seen.sent.push(m.id);
@@ -165,6 +165,134 @@ describe("the watch", () => {
 		await tick({ ...hooks, mail: async () => void got++ }, new Date(clock), list as never);
 		expect(got).toBe(1);
 		void deps;
+	});
+});
+
+// Every thread below is listed the way zele does: the sender and the date/count are those of the newest message of the thread.
+describe("a newer message in a thread decides its state again", () => {
+	const KIM = "Kim <kim@example.com>";
+	const OWNER = "Owner <owner@example.com>";
+	const d = (n: number) => `10월 25일, 오전 ${9 + n}:00`;
+	const kim = (id: string, n: number, flags = "unread"): Thread => ({ id, from: KIM, subject: "일정 문의", messages: n, date: d(n), flags });
+	const owner = (id: string, n: number): Thread => ({ id, from: OWNER, to: KIM, subject: "Re: 일정 문의", messages: n, date: d(n), flags: "sent" });
+
+	test("owner replied -> the other side replies again -> new mail and 답장 필요 once; owner replies again -> 답장함", async () => {
+		const { deps, calls } = fakes();
+		await pass([], [], deps);
+		const id = uid("rr");
+		const key = `zele-${id}`;
+		await pass([kim(id, 1)], [], deps, true);
+		expect(calls.wakes).toBe(1);
+		expect(mailByKey(key)!.reply).toBe("needs");
+		await pass([], [owner(id, 2)], deps);
+		expect(mailByKey(key)).toMatchObject({ reply: "replied" });
+		expect(mailByKey(key)!.sentAt).toBeTruthy();
+		expect(unrepliedMails(new Set()).some(m => m.key === key)).toBe(false);
+		// He read the thread; the other side answers: not unread in zele any more, still seen.
+		markRead({ target: mailTarget(key), ts: new Date(clock).toISOString() });
+		expect(unreadOf(mailTarget(key))).toBe(0);
+		const events = calls.events.length;
+		const seen = await pass([kim(id, 3, "")], [], deps, true);
+		expect(seen.mail).toEqual([id]);
+		expect(calls.events.length).toBe(events + 1);
+		expect(calls.wakes).toBe(2);
+		expect(calls.offers).toBe(2);
+		expect(mailByKey(key)).toMatchObject({ reply: "needs", msg: expect.any(String) });
+		expect(mailByKey(key)!.sentAt).toBeUndefined();
+		expect(mailByKey(key)!.dir).toBeUndefined();
+		expect(mailCard(mailByKey(key)!)).toMatchObject({ reply: "needs" });
+		expect(unreadOf(mailTarget(key))).toBe(1);
+		expect(unrepliedMails(new Set()).some(m => m.key === key)).toBe(true);
+		// The same list again: the same message is not a new one.
+		await pass([kim(id, 3, "")], [], deps, true);
+		expect(calls.wakes).toBe(2);
+		expect(calls.offers).toBe(2);
+		// He answers again.
+		await pass([], [owner(id, 4)], deps);
+		expect(mailByKey(key)).toMatchObject({ reply: "replied" });
+		expect(calls.wakes).toBe(2);
+		expect(unrepliedMails(new Set()).some(m => m.key === key)).toBe(false);
+	});
+
+	test("the owner's old reply in the sent folder does not close the thread again after the other side answered", async () => {
+		const { deps } = fakes();
+		await pass([], [], deps);
+		const id = uid("old");
+		const key = `zele-${id}`;
+		await pass([kim(id, 1)], [], deps);
+		await pass([], [owner(id, 2)], deps);
+		await pass([kim(id, 3)], [], deps);
+		await pass([kim(id, 3)], [owner(id, 2)], deps);
+		expect(mailByKey(key)!.reply).toBeUndefined();
+	});
+
+	test("답장 안 함 and 참고만 are reopened by a newer incoming message", async () => {
+		const { deps, calls } = fakes();
+		await pass([], [], deps);
+		const a = uid("skip");
+		const b = uid("fyi");
+		await pass([kim(a, 1), kim(b, 1)], [], deps);
+		setMailNoReply(`zele-${a}`, true);
+		setMailFyi(`zele-${b}`, true);
+		expect([mailByKey(`zele-${a}`)!.reply, mailByKey(`zele-${b}`)!.reply]).toEqual(["skipped", "fyi"]);
+		const events = calls.events.length;
+		const seen = await pass([kim(a, 2, ""), kim(b, 2)], [], deps, true);
+		expect(seen.mail.sort()).toEqual([a, b].sort());
+		expect(calls.events.length).toBe(events + 2);
+		expect([mailByKey(`zele-${a}`)!.reply, mailByKey(`zele-${b}`)!.reply]).toEqual(["needs", "needs"]);
+	});
+
+	test("a mail without a reply need comes back as a plain new mail", async () => {
+		const { deps, calls } = fakes();
+		await pass([], [], deps);
+		const id = uid("plain");
+		const key = `zele-${id}`;
+		await pass([kim(id, 1)], [], deps);
+		setMailReply(key, "sent");
+		await pass([kim(id, 2)], [], deps);
+		expect(calls.wakes).toBe(2);
+		expect(mailByKey(key)!.reply).toBeUndefined();
+		expect(mailCard(mailByKey(key)!)).not.toHaveProperty("reply");
+	});
+
+	test("the same message seen twice (twice in the list, in two passes, or posted twice) is one wake", async () => {
+		const { deps, calls } = fakes();
+		await pass([], [], deps);
+		const id = uid("twice");
+		const key = `zele-${id}`;
+		await pass([kim(id, 1)], [], deps);
+		await pass([kim(id, 2), kim(id, 2)], [], deps);
+		await pass([kim(id, 2)], [], deps);
+		expect(calls.wakes).toBe(2);
+		expect(calls.offers).toBe(2);
+		const post = { source: "zele", id, messageId: mailByKey(key)!.msg, subject: "일정 문의", from: KIM, wake: true };
+		expect((await postMail(post, deps)).duplicate).toBe(true);
+		expect(calls.wakes).toBe(2);
+		expect((await postMail({ ...post, messageId: "another" }, deps)).duplicate).toBeUndefined();
+		expect(calls.wakes).toBe(3);
+	});
+
+	test("a thread never seen before that is already read is not new mail; a known one is seen even when read", async () => {
+		const { deps, calls } = fakes();
+		await pass([], [], deps);
+		const id = uid("readfirst");
+		await pass([kim(id, 1, "")], [], deps);
+		expect(calls.wakes).toBe(0);
+		await pass([kim(id, 2, "")], [], deps);
+		expect(calls.wakes).toBe(1);
+	});
+
+	test("a reply draft sent before the thread was reopened does not make the new message 답장함", async () => {
+		const { deps } = fakes();
+		await pass([], [], deps);
+		const id = uid("dr");
+		const key = `zele-${id}`;
+		await pass([kim(id, 1)], [], deps);
+		const before = new Date(0).toISOString();
+		await pass([kim(id, 2)], [], deps);
+		const after = new Date(clock + 3_600_000).toISOString();
+		expect([...sentReplyRefs([{ ref: key, status: "sent", created: before }])]).toEqual([]);
+		expect([...sentReplyRefs([{ ref: key, status: "sent", created: after }])]).toEqual([key]);
 	});
 });
 

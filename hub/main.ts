@@ -47,7 +47,7 @@ import { blockedByOff, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
-import { mailByKey, mailByThread, mailTarget, migrateStoredMails, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
+import { mailByKey, mailByThread, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailSuggest, type MailDeps } from "./mail.ts";
 import { offerMailDraft } from "../features/reply-drafts/lib/offer.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { readMailBody } from "../features/reply-drafts/lib/senders.ts";
@@ -230,7 +230,7 @@ const mailDeps = (): MailDeps => ({
 });
 
 function classifyStoredMails(): void {
-	const n = migrateStoredMails(new Set(listDrafts().filter(d => d.status === "sent").map(d => d.ref)));
+	const n = migrateStoredMails(sentReplyRefs(listDrafts()));
 	if (n) log(`mail: ${n} stored mails classified`);
 }
 classifyStoredMails();
@@ -238,7 +238,7 @@ classifyStoredMails();
 void startZele({
 	alert,
 	mail: async m => {
-		await postMail({ source: "zele", id: m.id, from: m.from, to: m.to, subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, wake: true }, mailDeps()).catch(e => log(`zele: mail ${m.id} not posted: ${(e as Error).message}`));
+		await postMail({ source: "zele", id: m.id, messageId: m.message, from: m.from, to: m.to, subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, wake: true }, mailDeps()).catch(e => log(`zele: mail ${m.id} not posted: ${(e as Error).message}`));
 	},
 	// The owner's own mail: listed as 내가 보냄, never new; a thread he answered becomes 답장함 (hub/mail-state.ts).
 	sent: async m => {
