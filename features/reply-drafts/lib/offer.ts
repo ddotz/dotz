@@ -7,7 +7,7 @@ import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 
-export type OfferMail = { key: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
+export type OfferMail = { key: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
 export type OfferDeps = {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
@@ -38,23 +38,26 @@ async function offerOne(m: OfferMail, deps: OfferDeps): Promise<"offered" | "ski
 	try {
 		const settings = loadSettings();
 		if (!appOn(settings, "mail")) return "off";
-		if (isDrafted(m.key)) return "skipped";
+		// One look per message: a newer message of the same thread (messageId) is looked at again, a repeat of the same one is not.
+		const looked = m.messageId ? `${m.key}#${m.messageId}` : m.key;
+		if (isDrafted(looked)) return "skipped";
 		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "" };
 		if (precheck(item, settings.senders)) {
-			markDrafted(m.key);
+			markDrafted(looked);
 			return "skipped";
 		}
 		item.text = (m.body ?? (await deps.readBody?.(m.source, m.id).catch(e => (log(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), undefined))) ?? m.summary ?? "").trim().slice(0, BODY_MAX) || m.subject;
 		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
 		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key, ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, { call: deps.call });
 		if (built.action !== "draft") {
-			markDrafted(m.key);
+			markDrafted(looked);
 			return "skipped";
 		}
 		ensureSwitch();
 		await stageForReply(built.rec, { call: deps.call, pick: deps.pick }).catch(e => log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`));
 		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, built.warnings));
 		addDraft(built.rec);
+		markDrafted(looked);
 		deps.suggest?.(m.key, { kind: "reply-draft", label: "답장 초안", ref: built.rec.id });
 		return "offered";
 	} catch (e) {

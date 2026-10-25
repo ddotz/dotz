@@ -20,8 +20,10 @@ export type AttachmentInput = { name: string; type?: string; data?: string; path
 export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; state?: "draft" | "sent" | "waiting"; at?: string };
 // `dir: "out"` = written by the owner (hub/mail-state.ts); `reply` = the reply state of an incoming mail, `sentAt` = when his reply was sent or found.
 // `needsReply` / `noReply` are the flags of older records; migrateMails turns them into `reply`.
-export type MailRecord = { key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; dir?: "out"; reply?: MailReply; sentAt?: string; needsReply?: true; noReply?: true };
-export type MailInput = { source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[] };
+// `msg` = the id of the newest incoming message the record stands for (MailInput.messageId); a post with another id is a newer message of the
+// same thread and reopens it (postMail). `reopenedAt` = when that happened: a reply draft sent before it answered an older message.
+export type MailRecord = { msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; dir?: "out"; reply?: MailReply; sentAt?: string; needsReply?: true; noReply?: true };
+export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[] };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true; direction?: "out"; replied?: true };
 export type MailDeps = {
 	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
@@ -39,7 +41,7 @@ export type MailDeps = {
 	/** One orchestrator turn for the mail event, its answer going to `target`. */
 	wake: (event: Record<string, any>, target: string) => void;
 	/** Offered every new mail (never a duplicate), fire-and-forget: a throw is logged and never breaks postMail. features/reply-drafts offers an [ask] reply draft here. */
-	offerDraft?: (m: { key: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; attachments?: { name: string; size: number }[] }) => void;
+	offerDraft?: (m: { key: string; target: string; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; attachments?: { name: string; size: number }[] }) => void;
 	now?: () => string;
 };
 
@@ -112,6 +114,10 @@ export function setMailReply(key: string, event: MailReplyEvent, at = new Date()
 	const next: MailRecord = { ...rest, ...(reply ? { reply } : {}), ...(sentNow ? { sentAt: at } : {}), ...keep };
 	if (JSON.stringify(next) !== JSON.stringify(r)) recordMail(next);
 	return true;
+}
+/** The keys whose reply draft was sent (from the drafts list); a draft sent before the thread was reopened by a newer message does not count. */
+export function sentReplyRefs(drafts: ReadonlyArray<{ ref: string; status: string; created: string }>): Set<string> {
+	return new Set(drafts.filter(d => d.status === "sent" && !(d.created < (byKey.get(d.ref)?.reopenedAt ?? ""))).map(d => d.ref));
 }
 export const mailByThread = (thread: string): MailRecord | undefined => records.find(r => r.thread === thread);
 // 미답장 (hub/unreplied.ts): the mails still waiting for a reply, given the keys whose reply draft was sent. 답장 안 함 (`noReply`) is the owner's own mark.
@@ -189,6 +195,7 @@ export function parseMail(raw: unknown): MailInput {
 		body: str(b.body, "body", BODY_MAX, false),
 		html: str(b.html, "html", MAIL_HTML_MAX, false),
 		thread,
+		messageId: str(b.messageId, "messageId", 200, false),
 		wake: b.wake === true,
 		needsReply: b.needsReply === true,
 		attachments: parseAttachments(b.attachments),
@@ -387,10 +394,13 @@ export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult
 	const known = byKey.get(key);
 	if (directionOf({ from: m.from, direction: m.direction, folder: m.folder, labels: m.labels }) === "out") return recordOutgoing(m, key, target, deps);
 	// An outgoing mail of the thread was recorded first; the answer that comes in now is a new incoming mail and replaces it.
-	if (known && known.dir !== "out") return { ok: true, key, target, ...(known.thread ? { thread: known.thread } : {}), duplicate: true };
+	// A known incoming thread is a repeat, unless the post names another message than the one recorded: then the thread got a newer
+	// message and it is a new mail again, whatever state it was in (answered, 답장 안 함, 참고만).
+	const again = known && known.dir !== "out" && !!m.messageId && m.messageId !== known.msg ? known : undefined;
+	if (known && known.dir !== "out" && !again) return { ok: true, key, target, ...(known.thread ? { thread: known.thread } : {}), duplicate: true };
 	const running = inflight.get(key);
 	if (running) return { ...(await running), duplicate: true };
-	const job = post(m, key, target, deps);
+	const job = post(m, key, target, deps, again);
 	inflight.set(key, job);
 	try {
 		return await job;
@@ -415,9 +425,13 @@ function recordOutgoing(m: MailInput, key: string, target: string, deps: MailDep
 	return { ok: true, key, target, direction: "out" };
 }
 
-async function post(m: MailInput, key: string, target: string, deps: MailDeps): Promise<MailResult> {
-	let thread = m.thread;
+async function post(m: MailInput, key: string, target: string, deps: MailDeps, reopened?: MailRecord): Promise<MailResult> {
+	let thread = m.thread ?? reopened?.thread;
 	let parent: string | undefined;
+	if (reopened?.thread && !m.thread && deps.discordOn) {
+		const note = [m.from ?? "", m.summary ?? "", m.body ? `원문\n${m.body}` : ""].filter(Boolean).join("\n").slice(0, 1900);
+		if (note) await deps.send(`th:${reopened.thread}`, note).catch(e => log(`mail ${key}: new message not posted to its thread: ${e}`));
+	}
 	if (!thread && deps.discordOn && deps.threadOn?.(m.source, key)) {
 		try {
 			const channel = await deps.mailChannel();
@@ -436,12 +450,12 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps): 
 	const html = await saveHtml(key, m.html, attachments);
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
-	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(m.needsReply ? { reply: "needs" as const } : {}) });
+	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(m.needsReply ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(reopened ? { reopenedAt: at } : {}) });
 	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);
 	try {
-		deps.offerDraft?.({ key, target, ...(thread ? { thread } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}) });
+		deps.offerDraft?.({ key, target, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}) });
 	} catch (error) {
 		log(`mail ${key}: reply draft offer failed: ${(error as Error).message}`);
 	}

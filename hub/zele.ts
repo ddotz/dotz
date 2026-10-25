@@ -10,8 +10,12 @@ import { isOwnAddress, ownAddresses, setOwnAddresses } from "./mail-state.ts";
 
 type Item = Record<string, string | number | undefined>;
 type Seen = { summary: string; start: string; end: string };
-type State = { seeded: boolean; mail: string[]; events: Record<string, Seen>; soon: string[]; briefDate: string };
-export type NewMail = { id: string; account: string; from: string; to: string; subject: string; snippet: string };
+/** The newest message of a thread the watch has seen: its stamp (stampOf), whether it is the owner's own, and when it was noted (for the cap). */
+type ThreadSeen = { n: string; own: boolean; at: number };
+// `mail` holds the thread ids the older watch kept; `threads` replaces it and tells a new message in a thread that is already known.
+type State = { seeded: boolean; mail: string[]; threads: Record<string, ThreadSeen>; events: Record<string, Seen>; soon: string[]; briefDate: string };
+/** `message` names the newest message of the thread (stampOf): one value per message, so the hub can tell a repeat from an answer. */
+export type NewMail = { id: string; message: string; account: string; from: string; to: string; subject: string; snippet: string };
 type Hooks = {
 	alert: (text: string) => void;
 	mail: (m: NewMail) => Promise<void>;
@@ -50,6 +54,7 @@ const when = (ev: Item) => (ev.end && ev.end !== ev.start ? `${ko(ev.start)} ~ $
 
 const load = (): State => {
 	const s = existsSync(STATE) ? JSON.parse(readFileSync(STATE, "utf8")) : { seeded: false, mail: [], events: {}, soon: [], briefDate: "" };
+	s.threads ??= {};
 	if (Array.isArray(s.events)) s.events = Object.fromEntries(s.events.map((id: string) => [id, { summary: "", start: "", end: "" }]));
 	return s;
 };
@@ -87,22 +92,40 @@ export async function zeleAccounts(): Promise<string[]> {
 	return [...new Set(text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) ?? [])];
 }
 
-const newMail = (m: Item): NewMail => ({ id: String(m.id), account: String(m.account ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), subject: String(m.subject ?? ""), snippet: String(m.snippet ?? "").slice(0, 400) });
+// zele lists a thread with the count and the date of its newest message; together they name that message (a new answer raises the count).
+const stampOf = (m: Item): string => `${m.messages ?? ""}|${m.date ?? ""}`;
+const THREADS_MAX = 2000;
+const newMail = (m: Item): NewMail => ({ id: String(m.id), message: stampOf(m), account: String(m.account ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), subject: String(m.subject ?? ""), snippet: String(m.snippet ?? "").slice(0, 400) });
 
-// `zele mail list` lists threads and `from` is the sender of the thread's newest message, so a thread the owner answered last still matches
-// `is:unread` while an older message in it is unread. Direction is judged here by the sender; the sent folder is read too, so a reply he
-// wrote after reading the thread (no longer unread) still closes it.
+// `zele mail list` lists threads and `from` is the sender of the newest message of the thread, so the state of a thread follows its LAST
+// message: the owner's own (a sign the thread was answered) or someone else's (a new mail, again, if it is newer than what the watch saw).
+// The list is not limited to unread: an answer in a thread the owner already read must still be seen, so each thread's newest message
+// (stampOf) is compared with the one noted in `threads`; a thread never seen before still needs to be unread to count as new mail.
+// The sent folder is read too, so a reply he wrote after reading the thread (no longer unread) still closes it.
 export async function tick(h: Hooks, now = new Date(), list: (args: string[]) => Promise<Item[]> = zele): Promise<void> {
 	const s = load();
-	const mail = await list(["mail", "list", "--filter", "is:unread newer_than:2d", "--limit", "40"]);
+	const mail = await list(["mail", "list", "--filter", "newer_than:2d", "--limit", "60"]);
 	const sent = await list(["mail", "list", "--folder", "sent", "--filter", "newer_than:2d", "--limit", "40"]).catch(error => (log(`zele: sent folder not read: ${(error as Error).message}`), [] as Item[]));
 	const own = ownAddresses([...mail, ...sent].flatMap(m => (m.account ? [String(m.account)] : [])));
-	for (const m of [...mail, ...sent]) if (isOwnAddress(String(m.from ?? ""), own)) await h.sent?.(newMail(m));
+	const note = (m: Item, isOwn: boolean) => void ((s.threads[String(m.id)] = { n: stampOf(m), own: isOwn, at: now.getTime() }));
+	for (const m of [...mail, ...sent]) {
+		if (!isOwnAddress(String(m.from ?? ""), own)) continue;
+		const before = s.threads[String(m.id)];
+		if (before?.own && before.n === stampOf(m)) continue;
+		// His older message, still listed (the sent folder) after the other side wrote a newer one, is not an answer to it.
+		if (before && Number.parseInt(before.n, 10) > Number(m.messages)) continue;
+		note(m, true);
+		await h.sent?.(newMail(m));
+	}
 	for (const m of mail) {
 		const key = String(m.id);
 		if (isOwnAddress(String(m.from ?? ""), own)) continue;
-		if (s.mail.includes(key)) continue;
-		s.mail.push(key);
+		const before = s.threads[key];
+		const older = !before && s.mail.includes(key);
+		if (before && !before.own && before.n === stampOf(m)) continue;
+		note(m, false);
+		// Never seen before: only an unread thread is new mail (a read one is old news). Seen before: its newest message is new, read or not.
+		if (older || (!before && m.flags !== undefined && !/unread/i.test(String(m.flags)))) continue;
 		if (!s.seeded) continue;
 		if (isNoise(m)) {
 			log(`zele: skipped noise mail ${m.from} | ${m.subject}`);
@@ -153,6 +176,8 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 	if (!s.seeded) log(`zele: first run recorded ${mail.length} mails, ${upcoming.length} events (no notices)`);
 	s.seeded = true;
 	s.mail = cap(s.mail);
+	const noted = Object.entries(s.threads);
+	if (noted.length > THREADS_MAX) s.threads = Object.fromEntries(noted.sort((a, b) => b[1].at - a[1].at).slice(0, THREADS_MAX));
 	s.soon = cap(s.soon);
 	save(s);
 }
