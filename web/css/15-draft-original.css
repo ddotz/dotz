@@ -1,21 +1,22 @@
-/* ---------- 원문 보기 (web/js/10-draft-original.js): the mail or comment a draft answers slides in from the left of the draft, in the send sheet and in the comment view's draft card ---------- */
-/* One 250ms transition: the sheet widens (desktop), the grid columns go 0fr 1fr -> 1fr 1fr, the original's pane slides and fades in. */
-.od-tg { flex: none; display: flex; align-items: center; gap: 8px; width: calc(100% - 32px); min-height: 44px; margin: 0 16px 8px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg-2); font: 500 14px/20px var(--font); text-align: left; }
+/* ---------- 원문 보기 (web/js/10-draft-original.js): the mail or comment a draft answers, as its own panel next to the draft ---------- */
+/* Hosts: the send sheet (.fs-card.od-host, 14-overlay.css) and the comment view's draft (.od-cwrap). The draft is untouched; .od-on = the original is shown.
+   >= 900px: the original is a separate card (header 원문 + x, own scroll) to the left, the draft slides right (250ms). Narrower: the 초안 | 원문 toggle slides between them. */
+.od-bar { flex: none; display: flex; margin: 0 16px 8px; }
+.od-tg { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg-2); font: 500 14px/20px var(--font); }
 .od-tg:hover { background: var(--hover); }
 .od-tg:active { background: var(--active); }
-.od-tg svg { flex: none; width: 18px; height: 18px; }
-.od-tt { flex: none; color: var(--fg); font-weight: 600; }
-.od-sum { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); }
-.od-chev { transition: transform .25s ease; }
-.od-tg[aria-expanded="true"] .od-chev { transform: rotate(180deg); }
-.od-split { position: relative; flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 0fr 1fr; grid-template-rows: minmax(0, 1fr); column-gap: 0; margin: 0 16px; transition: grid-template-columns .25s ease, column-gap .25s ease; }
-.od-split.open { grid-template-columns: 1fr 1fr; column-gap: 12px; }
-.od-split > .od-main { grid-area: 1 / 2; margin: 0; min-width: 0; }
-.od-orig { grid-area: 1 / 1; min-width: 0; overflow: hidden; border-radius: 12px; }
-.od-orig[inert] { visibility: hidden; transition: visibility 0s .25s; }
-.od-pane { box-sizing: border-box; height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 16px; border-radius: 12px; background: var(--fs-fill); transform: translateX(-32px); opacity: 0; transition: transform .25s ease, opacity .25s ease; }
+.od-tg svg { flex: none; width: 16px; height: 16px; }
+.od-tt { color: var(--fg); font-weight: 600; }
+.od-seg { display: none; }
+.od-sg { min-height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3); font: 600 14px/20px var(--font); }
+.od-sg[aria-pressed="true"] { background: var(--card); color: var(--fg); box-shadow: 0 1px 3px rgb(0 0 0 / .14); }
+.od-stage, .od-draftcol { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.od-orig { display: flex; flex-direction: column; min-width: 0; color: var(--fg); transition: opacity .25s ease, transform .25s ease, visibility 0s; }
+.od-orig[inert] { visibility: hidden; transition-delay: 0s, 0s, .25s; }
+.od-oh { flex: none; display: flex; align-items: center; gap: 8px; padding: 16px 8px 8px 24px; }
+.od-ot { flex: 1; min-width: 0; font: 700 18px/26px var(--font); letter-spacing: -.02em; }
+.od-pane { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 24px 24px; }
 .od-pane:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.od-split.open .od-pane { transform: none; opacity: 1; }
 .od-pane .dc-dh { align-items: flex-start; }
 .od-pane .dc-dr-k { flex: none; }
 .od-pane .dc-dr-v { min-width: 0; overflow-wrap: anywhere; }
@@ -29,33 +30,51 @@
 .od-parent { display: flex; flex-direction: column; gap: 2px; margin-top: 12px; padding: 8px 10px; border-left: 3px solid var(--line-2); color: var(--fg-3); font-size: 14px; line-height: 20px; }
 .od-pc { overflow-wrap: anywhere; white-space: pre-wrap; }
 .od-ct { white-space: pre-wrap; overflow-wrap: anywhere; font: 400 15px/23px var(--font); }
-.od-open { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-top: 4px; color: var(--accent); font: 500 14px/20px var(--font); text-decoration: none; }
-.od-open svg { width: 16px; height: 16px; }
-.kk-drafts:has(.od-wide) { max-height: min(62dvh, 520px); }
-.kk-draft .od-split { flex: none; margin: 0 0 8px; }
-.kk-draft .od-pane, .kk-draft .od-main { max-height: min(46dvh, 360px); overflow-y: auto; overscroll-behavior: contain; }
-.kk-draft .od-main { padding: 0; }
-.kk-draft .od-main .kk-dt { max-height: none; }
-.kk-draft .od-tg { width: 100%; margin: 0 0 8px; }
-.kk-draft .od-tg, .kk-draft .od-pane { background: var(--card); }
+.od-pane .od-open { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-top: 4px; color: var(--accent); font: 500 14px/20px var(--font); text-decoration: none; }
+.od-pane .od-open svg { width: 16px; height: 16px; }
 .od-note { color: var(--fg-3); font-size: 14px; line-height: 22px; }
-.od-div { display: none; grid-area: 1 / 1; justify-self: end; align-self: center; z-index: 2; width: 28px; height: 56px; padding: 0; border: 1px solid var(--line-2); border-radius: 14px; background: var(--card); transform: translateX(calc(50% + 6px)); }
-.od-div::before { content: ""; position: absolute; top: 20px; bottom: 20px; left: 10px; right: 10px; border-left: 2px solid var(--fg-3); border-right: 2px solid var(--fg-3); }
-.fs-card.tall { transition: width .25s ease; }
-.fs-card.tall.od-wide { width: min(1240px, calc(100% - 48px)); }
-@media (max-width: 639px) {
-  .fs-card.tall.od-wide { width: 100%; }
-  .od-tg { width: calc(100% - 16px); margin-left: max(8px, env(safe-area-inset-left)); margin-right: max(8px, env(safe-area-inset-right)); }
-  .od-split { margin-left: max(8px, env(safe-area-inset-left)); margin-right: max(8px, env(safe-area-inset-right)); }
-  .od-split.open { column-gap: 8px; }
-  .od-split.open .od-div { display: block; }
-  .od-split.open[data-focus="orig"] { grid-template-columns: 3fr 2fr; }
-  .od-split.open[data-focus="draft"] { grid-template-columns: 2fr 3fr; }
-  .od-pane { padding: 12px 10px; }
-  .od-split > .fs-body.panel { padding: 12px 10px; }
+
+/* comment view: the draft card is the .kk-draft inside .od-cwrap; the original is a card of the same family */
+.od-cwrap { flex: none; display: flex; flex-direction: column; }
+.od-cwrap > .od-bar { margin: 0 0 6px; }
+.od-cwrap .od-stage { flex: none; }
+.od-cwrap .od-orig { background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow-panel); max-height: min(46dvh, 360px); }
+.od-cwrap .od-oh { padding: 8px 4px 0 14px; }
+.od-cwrap .od-ot { font: 600 14px/20px var(--font); }
+.od-cwrap .od-x { width: 36px; height: 36px; }
+.od-cwrap .od-pane { padding: 4px 14px 12px; }
+.kk-drafts:has(.od-on) { max-height: min(62dvh, 520px); }
+
+@media (min-width: 900px) {
+  .fs-card.tall.od-host { --od-p: clamp(300px, calc(100vw - 784px), 480px); position: relative; overflow: visible; transition: transform .25s ease, width .25s ease; }
+  .fs-card.tall.od-host.od-on { width: min(720px, calc(100vw - 64px - var(--od-p))); transform: translateX(calc((var(--od-p) + 16px) / 2)); }
+  .fs-card .od-orig { position: absolute; top: 0; bottom: 0; right: calc(100% + 16px); width: var(--od-p); background: var(--card); border-radius: 20px; box-shadow: var(--float); overflow: hidden; opacity: 0; transform: translateX(24px); }
+  .od-on > .od-stage > .od-orig { opacity: 1; transform: none; }
+  .od-cwrap .od-stage { flex-direction: row; align-items: stretch; }
+  .od-cwrap .od-orig { flex: 0 0 0; opacity: 0; transform: translateX(-16px); overflow: hidden; transition: flex-basis .25s ease, margin .25s ease, opacity .25s ease, transform .25s ease, visibility 0s; }
+  .od-cwrap.od-on .od-orig { flex-basis: 45%; margin-right: 12px; opacity: 1; transform: none; }
+  .od-cwrap .od-orig[inert] { transition-delay: 0s, 0s, 0s, 0s, .25s; }
+  .od-cwrap .kk-draft { flex: 1 1 0; min-width: 0; }
+}
+@media (max-width: 899px) {
+  .od-bar { margin: 0 max(8px, env(safe-area-inset-left)) 8px max(8px, env(safe-area-inset-left)); }
+  .od-cwrap > .od-bar { margin: 0 0 6px; }
+  .od-tg { display: none; }
+  .od-seg { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px; border-radius: 11px; background: var(--layer); }
+  .od-stage { position: relative; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); overflow: hidden; }
+  .od-draftcol, .od-orig, .od-cwrap .kk-draft { grid-area: 1 / 1; min-width: 0; min-height: 0; }
+  .od-draftcol, .od-cwrap .kk-draft { transition: transform .25s ease, visibility 0s; }
+  .od-draftcol[inert], .od-cwrap .kk-draft[inert] { visibility: hidden; transition-delay: 0s, .25s; }
+  .od-on > .od-stage > .od-draftcol, .od-on > .od-stage > .kk-draft { transform: translateX(-100%); }
+  .od-orig { align-self: stretch; transform: translateX(100%); }
+  .od-on > .od-stage > .od-orig { transform: none; }
+  .od-oh { display: none; }
+  .fs-card .od-pane { margin: 0 max(8px, env(safe-area-inset-left)); padding: 16px; border-radius: 12px; background: var(--fs-fill); }
+  .od-cwrap .od-stage { display: grid; }
+  .od-cwrap .od-pane { margin: 0; padding: 12px 14px; }
+  .od-cwrap .od-orig { background: var(--card); }
   .od-pane .dc-dh { flex-direction: column; gap: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .od-split, .od-pane, .od-chev, .fs-card.tall { transition: none; }
-  .od-orig[inert] { transition: none; }
+  .od-orig, .od-draftcol, .od-cwrap .kk-draft, .fs-card.tall.od-host, .od-cwrap .od-orig { transition: none; }
 }
