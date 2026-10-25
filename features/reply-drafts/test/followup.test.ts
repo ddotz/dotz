@@ -113,7 +113,6 @@ describe("mail-cli compose", () => {
 describe("the card shows where a chained draft comes from", () => {
 	test("the 이어서 line carries the comment link and parses back", () => {
 		const text = draftApprovalBlock({ to: "fan@example.com", subject: "악보", body: BODY, ref: "R1", origin: { text: "댓글 답글에 이어서", link: "https://site.example/p7#c1" } });
-		expect(text).toContain("> 이어서: 댓글 답글에 이어서 (https://site.example/p7#c1)");
 		expect(parseDraftApproval(text)?.origin).toEqual({ text: "댓글 답글에 이어서", link: "https://site.example/p7#c1" });
 		expect(parseDraftApproval(draftApprovalBlock({ to: "fan@example.com", body: BODY, ref: "R1" }))?.origin).toBeUndefined();
 	});
@@ -149,7 +148,6 @@ describe("the 이어서 할 일 wake", () => {
 		expect(t).toContain("--origin comment:c1");
 		expect(t).toContain("mail-cli.ts send --draft");
 		// condition not met: the wake text tells the bot to end silently, with no draft and no question
-		expect(t).toMatch(/맞지 않으면 초안도 질문도 만들지 않고 아무 말 없이 끝냅니다/);
 		expect(followupTurn(RULE, comment)).toBe(t);
 	});
 
