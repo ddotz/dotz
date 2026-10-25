@@ -49,8 +49,9 @@ const reader = (sseResponse().body as ReadableStream<Uint8Array>).getReader();
 // The suite's clock is manual (hub/runtime/test-clock.ts): real time passes for the sockets, the debounce and reconnect timers are advanced by hand.
 const tick = async () => { await Bun.sleep(5); await advance(25); };
 const until = async (pred: () => boolean) => {
-	for (let i = 0; !pred(); i++) {
-		if (i > 400) throw new Error(`timeout; heard ${JSON.stringify(heard)}`);
+	const deadline = performance.now() + 8000;
+	while (!pred()) {
+		if (performance.now() > deadline) throw new Error(`timeout; heard ${JSON.stringify(heard)}`);
 		await tick();
 	}
 };

@@ -3,6 +3,8 @@
 // A device's per-gateway switch (PUT /api/push/gateways) lives on the sending gateway and decides whether that gateway's notices reach the device.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createDecipheriv, createECDH, createHmac } from "node:crypto";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { b64u } from "./webpush.ts";
 
 type Push = typeof import("./push.ts");
@@ -14,6 +16,8 @@ const GW = {
 type Id = keyof typeof GW;
 const ids = Object.keys(GW) as Id[];
 const inst = {} as Record<Id, Push>;
+// The instances read the shared data dir when they load: subscriptions another test file left there would be pushed to as well.
+for (const f of ["push.json", "push-devices.json"]) rmSync(join(process.env.DOTZ_DIR!, f), { force: true });
 for (const id of ids) inst[id] = (await import(`./push.ts?gw=${id}`)) as Push;
 
 // the user agent's half of RFC 8291 (as hub/webpush.test.ts), to read what a subscription was sent
@@ -34,6 +38,13 @@ function decrypt(msg: Buffer, uaPrivate: Buffer, uaPublic: Buffer, auth: Buffer)
 let down: Set<Id>;
 let relays: Array<{ to: Id; from: string; via: string }>;
 let pushes: Array<{ endpoint: string; body: Uint8Array }>;
+// A presence POST is forwarded to the other gateways in the background; a test awaits the n forwards it expects instead of sleeping.
+let presenceLeft = 0;
+let presenceDone: () => void = () => {};
+const forwards = (n: number) => new Promise<void>(resolve => {
+	presenceLeft = n;
+	presenceDone = resolve;
+});
 const real = globalThis.fetch;
 const idOfHost = (host: string) => ids.find(i => new URL(GW[i].url).host === host)!;
 beforeEach(() => {
@@ -55,7 +66,11 @@ beforeEach(() => {
 			if (down.has(to)) throw new Error("unreachable");
 			return (await inst[to].pushRoute(new Request(url, { method: init?.method ?? "GET", ...(init?.body ? { body: init.body as string } : {}) }), url))!;
 		}
-		if (url.pathname === "/api/push/presence") return (await inst[idOfHost(url.host)].pushRoute(new Request(url, { method: "POST", body: init!.body as string }), url))!;
+		if (url.pathname === "/api/push/presence") {
+			const res = (await inst[idOfHost(url.host)].pushRoute(new Request(url, { method: "POST", body: init!.body as string }), url))!;
+			if (--presenceLeft === 0) presenceDone();
+			return res;
+		}
 		pushes.push({ endpoint: String(input), body: init!.body as Uint8Array });
 		return new Response(null, { status: 201 });
 	}) as unknown as typeof fetch;
@@ -232,12 +247,14 @@ test("a page open on one gateway quiets its device's subscriptions on the others
 	const app = await sub("alpha", PHONE, true), browser = await sub("gamma", LAPTOP, false), laptop = await sub("beta", LAPTOP, false);
 	const url = new URL("http://x/api/push/presence");
 	const page = (active: boolean) => inst.gamma.pushRoute(new Request(url, { method: "POST", body: JSON.stringify({ did: PHONE, active }) }), url);
+	let landed = forwards(2);
 	await page(true);
-	await Bun.sleep(10);
+	await landed;
 	await send("beta");
 	expect([app.got().length, laptop.got().length]).toEqual([0, 1]);
+	landed = forwards(2);
 	await page(false);
-	await Bun.sleep(10);
+	await landed;
 	await send("beta");
 	expect(app.got().length).toBe(1);
 	expect(browser.got().length).toBe(0);   // the laptop's gamma browser: the laptop's other subscription (beta) took it

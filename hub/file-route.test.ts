@@ -32,7 +32,8 @@ test("fileLinePaths reads [file] lines outside code fences", () => {
 });
 
 test("a file named in a sent [file] line is served; before the message it is refused", async () => {
-	const png = join(QA, "notice-arch.png");
+	const png = join(QA, "late.png");
+	writeFileSync(png, "PNGDATA");
 	expect((await get(png)).status).toBe(403);
 	sendFiles(png, join(QA, "findings.md"), join(QA, "bundle.zip"), join(DATA, "secrets", "key.txt"), join(DATA, "config-copy.txt"), "~/no-such-dir/x.png", "qa/notice-arch/findings.md", "../outside.txt");
 	const ok = await get(png);

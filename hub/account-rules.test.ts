@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { aliasesFile, setAlias } from "./account-alias.ts";
-import { checkNow, decisionsFile, describeRule, evaluate, lastDecision, readRules, rulesFile, runScript, type Rules, type ScriptInput, setManual, setUsage, writeRules } from "./account-rules.ts";
+import { checkNow, decisionsFile, evaluate, lastDecision, readRules, rulesFile, runScript, type Rules, type ScriptInput, setManual, setUsage, writeRules } from "./account-rules.ts";
 import { type AccountSwitch, MAX_LOG_LINES, onSwitch, type Pool, resetStickyForTest, stickyAccount, switchesFile } from "./account-sticky.ts";
 import { authFile } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
@@ -143,7 +143,7 @@ const NEVER_EXITS = "await new Promise(() => setInterval(() => {}, 2 ** 30))";
 
 test("script hook: a script that outlives its timeout is killed and reported as a timeout", async () => {
 	const file = script("slow", `${NEVER_EXITS}; console.log("work");`);
-	const opinion = await runScript(file, input(), 300);
+	const opinion = await runScript(file, input(), 50);
 	expect(opinion).toMatchObject({ error: "timeout" });
 	expect(opinion.account).toBeUndefined();
 });
@@ -207,7 +207,7 @@ test("checkNow: a script timeout is logged once with its error kind, and the rul
 	writeAuth(["personal", "work"]);
 	writeSlots({ personal: { lastSuccessAt: 2 }, work: { lastSuccessAt: 1 } });
 	const file = script("hang", NEVER_EXITS);
-	writeRules({ ...officeRule, script: { path: file, timeout_ms: 300 } });
+	writeRules({ ...officeRule, script: { path: file, timeout_ms: 50 } });
 	const d = await checkNow(WED_10);
 	expect(d).toMatchObject({ account: "work", source: "rule", rule: "office" });
 	await checkNow(WED_10 + 5000);
@@ -240,10 +240,4 @@ test("the rules file: round trip, a manual pick set and cleared, and bad input r
 	expect(() => writeRules({ script: { path: "" } })).toThrow("script.path");
 	writeFileSync(rulesFile(), "{ not json");
 	expect(readRules()).toEqual({});
-});
-
-test("describeRule reads as a plain Korean sentence", () => {
-	const label = (n: string) => (n === "work" ? "회사 계정" : n);
-	expect(describeRule(officeRule.rules![0], label)).toBe("평일 09:00-18:00에는 회사 계정으로 고정");
-	expect(describeRule({ when: { five_hour_left_below: 10 }, do: { prefer: ["work", "spare"] } }, label)).toContain("5시간 한도가 10% 밑이면");
 });

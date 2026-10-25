@@ -1,7 +1,7 @@
 // An owner message to a session shows its delivery state and is answered at the session's next tool boundary, not only in the
 // final report (2026-10-21, owner: "내가 직접 레인에 보내는건 피드백이 안와서 잘 모르겠음"). The session is a fake process whose
 // events the test pushes, so "during a running turn" is real: the note arrives before any turn_end.
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type * as Lanes from "./lanes.ts";
@@ -81,6 +81,12 @@ beforeAll(() => {
 afterAll(() => {
 	delete adapters.fakeomo;
 	Object.assign(cfg, savedCfg);
+});
+
+beforeEach(() => {
+	shown.length = 0;
+	answered.length = 0;
+	reports.length = 0;
 });
 
 async function working(name: string): Promise<{ lane: Lanes.Lane; agent: FakeAgent }> {
