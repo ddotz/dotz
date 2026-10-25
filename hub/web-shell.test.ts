@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { PtyHost, ptyRoute } from "./pty.ts";
 import { advance } from "./runtime/test-clock.ts";
 import { join } from "node:path";
@@ -8,7 +8,6 @@ import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 const SHELL = `printf '$ '; while IFS= read -r line; do case "$line" in sudo*) printf '[sudo] password for test: '; stty -echo; IFS= read -r pw; stty echo; printf '\\n'; printf 'PW:%s\\n' "$(printf %s "$pw" | cksum | cut -d' ' -f1)";; *) printf 'RAN:%s\\n' "$line";; esac; printf '$ '; done`;
 const SECRET = "s3cret-테스트-77";
 const cksum = (s: string) => new TextDecoder().decode(Bun.spawnSync(["sh", "-c", `printf %s "$1" | cksum | cut -d' ' -f1`, "sh", s]).stdout).trim();
-const SNAP = "/tmp/dotz-shell-test";
 
 const host = new PtyHost({ cmd: ["/bin/sh", "-c", SHELL] });
 // What the page POSTs to the PTY endpoints: the stand-in for the socket the keystrokes must reach.
@@ -77,7 +76,6 @@ const openTerm = async (v: View) => {
 	await waitTerm(v, `typeof SH !== "undefined" && SH.alive && ${BUF}.startsWith("$")`);
 };
 
-beforeAll(() => { Bun.spawnSync(["mkdir", "-p", SNAP]); });
 afterAll(() => hub.stop());
 
 describe("the web terminal is a real terminal, in a headless browser", () => {
@@ -97,7 +95,6 @@ describe("the web terminal is a real terminal, in a headless browser", () => {
 		expect(m.cols).toBeGreaterThan(60);
 		expect(m.title).toStartWith("터미널 ·");
 		await settled(v);
-		await Bun.write(`${SNAP}/terminal-desktop.png`, await v.screenshot());
 	}, 90_000);
 
 	test("keystrokes reach the PTY: typing, Enter, arrows, Ctrl+C, paste, and the shell's answer shows in the terminal", async () => {
@@ -147,7 +144,6 @@ describe("the web terminal is a real terminal, in a headless browser", () => {
 		expect(m.termH).toBeGreaterThan(m.dlgH * 0.6);
 		expect(m.cols).toBeGreaterThanOrEqual(30);
 		await settled(v);
-		await Bun.write(`${SNAP}/terminal-390.png`, await v.screenshot());
 		sent.length = 0;
 		await v.evaluate(`document.querySelector(".sh-keys .sh-k:nth-child(4)").click()`);
 		await v.evaluate(`document.querySelector(".sh-keys .sh-k:nth-child(8)").click()`);
@@ -188,7 +184,6 @@ describe("the web terminal is a real terminal, in a headless browser", () => {
 		expect(asked).toMatchObject({ type: "password", ac: "off", inForm: false });
 		expect(asked.sw).toBeLessThanOrEqual(390);
 		await settled(v);
-		await Bun.write(`${SNAP}/terminal-password-390.png`, await v.screenshot());
 
 		sent.length = 0;
 		await v.evaluate(`document.querySelector(".sh-pw-in").value = ${JSON.stringify(SECRET)}`);

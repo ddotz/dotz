@@ -5,7 +5,6 @@ import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // Every pop-up over the app is the same full-screen frame (web/css/14-overlay.css, web/js/38-overlay.js): on a phone it covers the tab bar with a fixed
 // header and footer, on desktop it is a centered dialog. The computer switcher and the settings tab's dialogs (dialog({ classic: true })) keep their earlier look. Headless browser against the real notice store; every decision and form here is a fixture.
-const SNAP = "/tmp/dotz-overlay-fullscreen";
 type Field = { name: string; label: string; type: string; optional?: boolean };
 const FIELDS: Field[] = Array.from({ length: 12 }, (_, i) => ({ name: `f${i}`, label: `칸 ${i + 1}`, type: "text" }));
 let authList: unknown[] = [];
@@ -57,7 +56,6 @@ const KINDS: { name: string; open: (id: string) => string; ready: string; frame:
 ];
 
 beforeAll(() => {
-	Bun.spawnSync(["mkdir", "-p", SNAP]);
 	resolveNotices({ ids: listNotices(300).items.filter(n => n.decision?.state === "open").map(n => n.id) });
 	markNoticesRead({ all: true });
 	ask("오버레이 확인");
@@ -107,7 +105,6 @@ describe("every overlay opens as the shared full-screen frame", () => {
 				await coversPhone(phone, w, h, k.frame);
 				if (w === 390) {
 					const slug = k.name.replace(/[^a-z]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
-					await Bun.write(`${SNAP}/${slug}-390.png`, await phone.screenshot());
 				}
 				// Esc closes it
 				await phone.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`);
@@ -136,7 +133,6 @@ describe("every overlay opens as the shared full-screen frame", () => {
 		expect(sheet.t).toBeGreaterThan(0);
 		expect(sheet.h).toBeLessThan(844);
 		expect(await phone.evaluate(`getComputedStyle(document.querySelector(".ds-sheet")).borderTopLeftRadius`)).toBe("20px");
-		await Bun.write(`${SNAP}/computer-switcher-390.png`, await phone.screenshot());
 		await phone.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`);
 		await waitFor(phone, `!document.querySelector(".ds-bd")`);
 	}, 30_000);
@@ -153,7 +149,6 @@ describe("every overlay opens as the shared full-screen frame", () => {
 		expect(dlg.t).toBeGreaterThan(0);
 		expect(dlg.h).toBeLessThan(844);
 		expect(await phone.evaluate(`getComputedStyle(document.querySelector("dialog.dlg.cl")).paddingTop`)).toBe("20px");
-		await Bun.write(`${SNAP}/settings-dialog-390.png`, await phone.screenshot());
 		await phone.click("dialog.dlg.cl .dhd .dx");
 		await waitFor(phone, `!document.querySelector("dialog[open]")`);
 	}, 30_000);
@@ -169,14 +164,12 @@ describe("every overlay opens as the shared full-screen frame", () => {
 		expect(send.h).toBeGreaterThanOrEqual(44);
 		expect(send.b).toBeLessThanOrEqual(card.b);
 		expect(await phone.evaluate(`(() => { const b = document.querySelector(".fs-body"); return b.scrollHeight > b.clientHeight + 100; })()`)).toBe(true);
-		await Bun.write(`${SNAP}/dotz-auth-form-390-top.png`, await phone.screenshot());
 		const footTop = (await box(phone, ".fs-ft"))!.t;
 		await phone.evaluate(`document.querySelector(".fs-body").scrollTop = 1e6`);
 		await settled(phone);
 		expect((await box(phone, ".fs-ft"))!.t).toBe(footTop);
 		expect((await box(phone, ".fs-hd"))!.t).toBe(0);
 		expect((await box(phone, ".fs-ft .btn[type=submit]"))!.b).toBeLessThanOrEqual(card.b);
-		await Bun.write(`${SNAP}/dotz-auth-form-390-scrolled.png`, await phone.screenshot());
 		// closing hides it without answering; the request is still pending
 		await phone.click(".fs-hd .fs-x");
 		await waitFor(phone, `!document.querySelector(".fs-bd")`);

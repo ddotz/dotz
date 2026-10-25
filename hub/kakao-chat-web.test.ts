@@ -100,6 +100,8 @@ const hub = fakeHub({
 		if (media) {
 			record({ method: "GET", path: `${p}${url.search}`, body: null });
 			if (media[2] === "5008") return json({ error: "기간이 지나 볼 수 없어요" }, 410);
+			// the full video never finishes loading: the viewer's <video> stays as it is (a PNG body would fire `error` at a load-dependent moment)
+			if (media[2] === "5003" && url.searchParams.get("v") === "full") return new Response(new ReadableStream({}), { headers: { "Content-Type": "video/mp4" } });
 			return new Response(PNG, { headers: { "Content-Type": "image/png" } });
 		}
 		const body = req.method === "GET" ? null : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
@@ -655,11 +657,11 @@ describe("카카오톡 media at desktop width", async () => {
 	});
 
 	test("a video shows its thumbnail with a play icon and the length; tapping plays it with controls in the viewer", async () => {
+		await waitFor(v, `document.querySelector('[data-log="5003"] .kk-video .kk-dur') && !document.querySelector("dialog.kk-vwd")`);
 		const s = await q<Record<string, any>>(v, `const b = document.querySelector('[data-log="5003"] .kk-video'); return { play: !!b.querySelector(".kk-play"), dur: b.querySelector(".kk-dur").textContent, src: b.querySelector("img").getAttribute("src"), label: b.getAttribute("aria-label") }`);
 		expect(s).toEqual({ play: true, dur: "1:15", src: "/api/kakao/media/100/5003?i=0&v=thumb", label: "동영상 재생" });
 		await run(v, `document.querySelector('[data-log="5003"] .kk-video').click()`);
-		await waitFor(v, `document.querySelector('dialog.kk-vwd[open] video[controls]')`);
-		expect(await q(v, `return document.querySelector('dialog.kk-vwd video').getAttribute('src')`)).toBe("/api/kakao/media/100/5003?i=0&v=full");
+		await waitFor(v, `document.querySelector('dialog.kk-vwd[open] video[controls]')?.getAttribute("src") === "/api/kakao/media/100/5003?i=0&v=full"`);
 		await run(v, `document.querySelector('dialog.kk-vwd [data-k="close"]').click()`);
 		await waitFor(v, `!document.querySelector('dialog.kk-vwd')`);
 	});

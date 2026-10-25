@@ -56,18 +56,18 @@ test("a device with the app sees one switch per gateway; flipping the other gate
 	await view.evaluate(`document.querySelector('[role=switch][aria-label$="알림"]').closest(".list").scrollIntoView({ block: "center" })`);
 
 	const did = (await view.evaluate(`DEVICE_ID`)) as string;
-	const readsBefore = listReads.items.length;
+	const readsBefore = listReads.length;
 	await view.evaluate(`${rows}.find(b => b.getAttribute("aria-label") === "맥미니 알림").click()`);
 	await listReads.until(r => r.length > readsBefore, 10_000, "list re-read");
 	await waitFor(`${rows}.find(b => b.getAttribute("aria-label") === "맥미니 알림").getAttribute("aria-checked") === "false"`);
 	expect([...aOff]).toEqual([did]);
-	expect(aCalls.items).toEqual(["POST on=false"]);
+	expect(aCalls).toEqual(["POST on=false"]);
 	expect(await view.evaluate(`${rows}.map(b => b.getAttribute("aria-checked")).join("|")`)).toBe("false|true");   // after the re-read from A's own record
 
 	await view.evaluate(`${rows}.find(b => b.getAttribute("aria-label") === "맥미니 알림").click()`);
 	await aCalls.until(c => c.length >= 2, 10_000, "second POST");
 	await waitFor(`${rows}.every(b => b.getAttribute("aria-checked") === "true")`);
 	expect(aOff.size).toBe(0);
-	expect(aCalls.items).toEqual(["POST on=false", "POST on=true"]);
+	expect(aCalls).toEqual(["POST on=false", "POST on=true"]);
 	expect(posts.filter(p => /subscribe|prefs/.test(p) && !/unsubscribe/.test(p))).toEqual([]);   // this origin's browser was never subscribed
 });

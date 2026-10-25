@@ -4,7 +4,6 @@ import { fakeHub, idleState, json, on } from "./test-web.ts";
 
 // A [done]-style chat answer ending in a 결정: choice block shows the buttons in the message and the decision card, at 390px.
 // Headless browser against a fixture history; nothing is sent. Before the fix the same message rendered as plain text.
-const SNAP = "/tmp/dotz-decision-any-marker";
 const events = [
 	{ ts: "2026-10-22T08:10:00.000Z", kind: "message", source: "web", channel: "web", text: "방문 예약 잡아줘" },
 	{ ts: "2026-10-22T08:19:17.721Z", kind: "out", source: "orchestrator", target: "web", reply_to: "ec330340", auto: true, text: DONE_REPLY },
@@ -35,7 +34,5 @@ describe("a [done] answer with a choice block", () => {
 		const seen = JSON.parse(await view.evaluate(`JSON.stringify([...document.querySelectorAll(".dcm-row, #dcard .dc-row")].map(b => { const r = b.getBoundingClientRect(); return r.width > 200 && r.height >= 40 && r.left >= 0 && r.right <= innerWidth; }))`));
 		expect(seen).toHaveLength(6);
 		expect(seen.every(Boolean)).toBe(true);
-		Bun.spawnSync(["mkdir", "-p", SNAP]);
-		await Bun.write(`${SNAP}/done-choice-390.png`, await view.screenshot());
 	});
 });
