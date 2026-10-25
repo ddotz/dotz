@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // 모니터링 > 앱 > 카카오톡 (web/js/30-kakao.js): the room choice, the chosen rooms as conversation rows and the per-room chat, run as shipped in a headless
 // browser (Bun.WebView) against a stubbed /api/kakao/* (docs/kakao-rooms-api.md). Names and texts are placeholders. Screenshots are written only when KAKAO_SHOTS names a folder.
@@ -58,35 +58,12 @@ const expectReq = (pred: (r: Req) => boolean, ms = 3500): Promise<Req> => {
 };
 const isReq = (method: string, path: string) => (r: Req) => r.method === method && r.path === path;
 
-const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
-let streamWaiters: (() => void)[] = [];
-const te = new TextEncoder();
-const emit = (e: object) => {
-	for (const c of streams) {
-		try { c.enqueue(te.encode(`data: ${JSON.stringify(e)}\n\n`)); } catch { streams.delete(c); }
-	}
-};
-const streamOpen = () => new Promise<void>(r => streamWaiters.push(r));
+const emit = (e: object) => hub.push(e);
 
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") {
-			let ctl: ReadableStreamDefaultController<Uint8Array>;
-			const body = new ReadableStream<Uint8Array>({
-				start(c) { ctl = c; streams.add(c); c.enqueue(te.encode(": open\n\n")); const w = streamWaiters; streamWaiters = []; for (const f of w) f(); },
-				cancel() { streams.delete(ctl); },
-			});
-			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
-		}
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	stream: "fake",
+	api: async (req, url) => {
+		const p = url.pathname;
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
@@ -192,23 +169,17 @@ const server = Bun.serve({
 			if (d[2] === "send") { const s = { id: `s${sends.length + 1}`, text: String(body!.text ?? "초안"), state: "sending", at: Date.now() }; sends.push(s); return json({ id: s.id, state: "sending" }, 202); }
 			return json({ ok: true });
 		}
-		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-const open = (width: number, height: number): View => { const v = new Bun.WebView({ width, height }); views.push(v); return v; };
-afterAll(() => { for (const v of views) v.close(); for (const c of streams) { try { c.close(); } catch { /* already closed */ } } server.stop(true); });
+const open = (width: number, height: number): Promise<View> => hub.view({ width, height });
+afterAll(() => { hub.stop(); });
 beforeEach(reset);
 
-const waitFor = (v: View, expr: string, ms = 3500) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const boot = async (v: View) => {
-	const opened = streamOpen();
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const opened = hub.nextStream();
+	await v.navigate(`${hub.origin}/`);
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S`);
 	await light(v);
@@ -232,8 +203,8 @@ const newestInSight = (v: View, logId: string) =>
 type Geo = { markTop: number; scrollTop: number; stick: boolean; markNext: string | null };
 const geo = (v: View) => q<Geo>(v, `const m = document.querySelector(".kk-new"), t = document.querySelector("#kk-tl"); return { markTop: m ? Math.round(m.getBoundingClientRect().top - t.getBoundingClientRect().top) : -999, scrollTop: Math.round(t.scrollTop), stick: KK.stick, markNext: m && m.nextElementSibling ? m.nextElementSibling.dataset.log : null }`);
 
-describe("카카오톡 at desktop width (1280x800)", () => {
-	const v = open(1280, 800);
+describe("카카오톡 at desktop width (1280x800)", async () => {
+	const v = await open(1280, 800);
 
 	test("the room choice lists every room with a switch; the chosen ones are conversation rows with name, initial, time and unread", async () => {
 		await boot(v);
@@ -489,8 +460,8 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 	});
 });
 
-describe("카카오톡 on a phone (390x844)", () => {
-	const v = open(390, 844);
+describe("카카오톡 on a phone (390x844)", async () => {
+	const v = await open(390, 844);
 
 	test("the room list and the chat are separate screens with a back button; the composer stays on screen", async () => {
 		await boot(v);
@@ -550,8 +521,8 @@ describe("카카오톡 on a phone (390x844)", () => {
 	});
 });
 
-describe("대화방 검색 (room search)", () => {
-	const v = open(1280, 800);
+describe("대화방 검색 (room search)", async () => {
+	const v = await open(1280, 800);
 	const rowsOf = (v: View) => q<string[]>(v, `return [...document.querySelectorAll(".kk-pr")].map(r => r.dataset.chat)`);
 
 	test("a search input tops the room choice; it filters by name (substring, case-insensitive, initial consonants) and says so when nothing matches", async () => {
@@ -594,8 +565,8 @@ describe("대화방 검색 (room search)", () => {
 	});
 });
 
-describe("empty and error states", () => {
-	const v = open(1280, 800);
+describe("empty and error states", async () => {
+	const v = await open(1280, 800);
 
 	test("no room chosen: the picker is open and one line asks to choose", async () => {
 		reset();
@@ -641,8 +612,8 @@ const MEDIA = (): Msg[] => [
 ];
 const useMedia = () => { reset(); msgs = MEDIA(); drafts = []; };
 
-describe("카카오톡 media at desktop width", () => {
-	const v = open(1280, 800);
+describe("카카오톡 media at desktop width", async () => {
+	const v = await open(1280, 800);
 
 	test("a photo is a lazy rounded thumbnail from the media route, no colored bubble, at most 240px wide", async () => {
 		useMedia();
@@ -740,8 +711,8 @@ describe("카카오톡 media at desktop width", () => {
 });
 
 for (const [w, h] of [[1280, 800], [390, 844]] as const)
-	describe(`카카오톡 사용자별 분석 at ${w}px`, () => {
-		const v = open(w, h);
+	describe(`카카오톡 사용자별 분석 at ${w}px`, async () => {
+		const v = await open(w, h);
 
 		test("tapping a sender's name opens the panel with the counted stats; 요약 분석 asks the model and shows the summary with its time", async () => {
 			reset();
@@ -781,8 +752,8 @@ for (const [w, h] of [[1280, 800], [390, 844]] as const)
 		});
 	});
 
-describe("카카오톡 방 목록 실시간 갱신", () => {
-	const v = open(1280, 800);
+describe("카카오톡 방 목록 실시간 갱신", async () => {
+	const v = await open(1280, 800);
 
 	test("a kakao event updates another room's preview, time and unread at once; the open room's row follows the message just appended", async () => {
 		reset();
@@ -805,8 +776,8 @@ describe("카카오톡 방 목록 실시간 갱신", () => {
 	});
 });
 
-describe("카카오톡 지원하지 않는 메시지와 빈 줄", () => {
-	const v = open(1280, 800);
+describe("카카오톡 지원하지 않는 메시지와 빈 줄", async () => {
+	const v = await open(1280, 800);
 
 	test("a JSON record is never a bubble (neutral label), an empty system line leaves no row, and no large blank gaps remain", async () => {
 		reset();
@@ -832,8 +803,8 @@ describe("카카오톡 지원하지 않는 메시지와 빈 줄", () => {
 	});
 });
 
-describe("카카오톡 이전 메시지 자동 불러오기", () => {
-	const v = open(1280, 800);
+describe("카카오톡 이전 메시지 자동 불러오기", async () => {
+	const v = await open(1280, 800);
 
 	test("reaching the top loads the older page once and keeps the anchor message at its offset; the button stays, and loading stops at the room's beginning", async () => {
 		reset();
@@ -866,8 +837,8 @@ describe("카카오톡 이전 메시지 자동 불러오기", () => {
 	});
 });
 
-describe("카카오톡 link previews at 390px", () => {
-	const v = open(390, 844);
+describe("카카오톡 link previews at 390px", async () => {
+	const v = await open(390, 844);
 
 	test("the preview card fits the phone width without a sideways scroll", async () => {
 		reset();
@@ -884,8 +855,8 @@ describe("카카오톡 link previews at 390px", () => {
 	});
 });
 
-describe("카카오톡 메시지 만들어 줘", () => {
-	const v = open(1280, 800);
+describe("카카오톡 메시지 만들어 줘", async () => {
+	const v = await open(1280, 800);
 
 	test("the composer asks what to send; one intent makes a 새 메시지 초안 card through the same draft route, and 취소 closes it", async () => {
 		reset();
@@ -911,7 +882,7 @@ describe("카카오톡 메시지 만들어 줘", () => {
 		expect(await q(v, `return document.querySelector("#kk-intent").hidden`)).toBe(true);
 	});
 
-	const pv = open(390, 844);
+	const pv = await open(390, 844);
 	test("on a phone the intent box fits the width above the composer", async () => {
 		reset();
 		await boot(pv);
@@ -925,8 +896,8 @@ describe("카카오톡 메시지 만들어 줘", () => {
 	});
 });
 
-describe("카카오톡 이전 메시지 자동 불러오기 at 390px", () => {
-	const v = open(390, 844);
+describe("카카오톡 이전 메시지 자동 불러오기 at 390px", async () => {
+	const v = await open(390, 844);
 
 	test("reaching the top on a phone loads the older page once and keeps the anchor message at its offset", async () => {
 		reset();
@@ -944,8 +915,8 @@ describe("카카오톡 이전 메시지 자동 불러오기 at 390px", () => {
 	});
 });
 
-describe("카카오톡 link previews", () => {
-	const v = open(1280, 800);
+describe("카카오톡 link previews", async () => {
+	const v = await open(1280, 800);
 
 	test("an address is a link with a lazy preview card under the bubble; one request per address; a failed preview keeps only the link", async () => {
 		reset();
@@ -975,8 +946,8 @@ describe("카카오톡 link previews", () => {
 	});
 });
 
-describe("카카오톡 reply quotes", () => {
-	const v = open(1280, 800);
+describe("카카오톡 reply quotes", async () => {
+	const v = await open(1280, 800);
 
 	test("the quote names the original's author; a tap jumps to the original (loading the page around it when not shown); a source the room lacks says so", async () => {
 		useMedia();
@@ -1033,8 +1004,8 @@ describe("카카오톡 reply quotes", () => {
 	});
 });
 
-describe("카카오톡 media at 390px", () => {
-	const v = open(390, 844);
+describe("카카오톡 media at 390px", async () => {
+	const v = await open(390, 844);
 
 	test("a photo is at most 200px wide and the timeline does not scroll sideways", async () => {
 		useMedia();
@@ -1086,8 +1057,8 @@ const useOpen = () => {
 	];
 };
 for (const [w, h] of [[390, 844], [1280, 800]] as const)
-	describe(`오픈채팅 room at ${w}px`, () => {
-		const v = open(w, h);
+	describe(`오픈채팅 room at ${w}px`, async () => {
+		const v = await open(w, h);
 		test("senders are named over their runs, the emoticon is an image (or one chip), the reply names the original's author", async () => {
 			useOpen();
 			await boot(v);
@@ -1156,8 +1127,8 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const)
 
 // 오픈채팅 rooms and the hint line: a room's kind and its newest message (or member count) under its name, in the choice and in the rows.
 for (const [w, h] of [[390, 844], [1280, 800]] as const)
-	describe(`오픈채팅 and room hints at ${w}px`, () => {
-		const v = open(w, h);
+	describe(`오픈채팅 and room hints at ${w}px`, async () => {
+		const v = await open(w, h);
 		test("an open chat room is listed with 오픈채팅 and its hint; similar rooms are told apart by their hints; nothing overflows", async () => {
 			rooms = [
 				{ chatId: "100", name: "가나다 모임", kind: "group", watched: true, autoDraft: false, unread: 0, lastAt: at(22, 1, 29), hint: "오늘 모임은 일곱 시예요" },

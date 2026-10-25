@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { draftApprovalBlock, NO_ATTACHMENT_WARNING } from "./draft-approval.ts";
 import { draftFileRoute, stageDraftFiles } from "./draft-files.ts";
-import { emit, sseResponse } from "./events.ts";
+import { emit } from "./events.ts";
 import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount } from "./notices.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // The send sheet and the mail draft card show which files go out (web/js/10-decision-card.js draftFilesNode): a row per attachment with a
 // type icon, name and size that opens the staged file, `첨부 없음` when the original's files are not carried, and a warning when the text
@@ -18,38 +18,21 @@ writeFileSync(join(src, "견적서 최종.pdf"), "%PDF-1.4 fixture-bytes");
 writeFileSync(join(src, "현장사진.jpg"), "jpg-fixture-bytes");
 const staged = stageDraftFiles("RATT0001", [join(src, "견적서 최종.pdf"), join(src, "현장사진.jpg")], root);
 
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
+const hub = fakeHub({
+	api: async (req, url) => {
 		const file = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
 		if (file) return draftFileRoute(req, url, file[1]!, file[2]!, root);
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: unreadCount() });
 		if (url.pathname === "/api/notices" && req.method === "GET") return json(listNotices(100));
 		if (url.pathname === "/api/notices/read") return json(markNoticesRead(await req.json()));
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const base = `http://127.0.0.1:${server.port}/`;
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
+const base = `${hub.origin}/`;
 const open = async (width: number, height: number): Promise<View> => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
+	const v = await hub.view({ width, height });
 	await v.navigate(base);
 	return v;
 };
-const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(
-		`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document, { subtree: true, childList: true, attributes: true, characterData: true }); done(); })`,
-	);
 const settled = (v: View) => v.evaluate(`Promise.all(document.getAnimations().map(a => a.finished.catch(() => 0))).then(() => true)`);
 type Box = { l: number; t: number; r: number; b: number; w: number; h: number };
 const box = async (v: View, sel: string): Promise<Box | null> =>
@@ -75,8 +58,7 @@ beforeAll(() => {
 	ask("RATT0003", { attachmentsNone: true }, "안녕하세요.\n\n확인했어요. 회신은 내일 드릴게요.");
 });
 afterAll(() => {
-	for (const v of views) v.close();
-	server.stop(true);
+	hub.stop();
 	rmSync(root, { recursive: true, force: true });
 	rmSync(src, { recursive: true, force: true });
 });

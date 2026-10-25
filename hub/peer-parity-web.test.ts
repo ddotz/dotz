@@ -2,9 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { isSettingsTarget, viewOf } from "./app-settings.ts";
-import { sseResponse } from "./events.ts";
 import { WATCH_FIELDS } from "./watch-settings.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // A monitor kept on the Mac mini (a peer's watch) looks exactly like the same monitor on this computer: the list row, the detail, the status card, the
 // chips, the settings conversation (chat only) and the settings screen behind its ⋯ button; only the machine chip differs. A peer's app has the same
@@ -28,7 +27,6 @@ const history: Record<string, Record<string, unknown>[]> = {
 	[LOCAL_T]: [{ ts: at(40), kind: "message", source: "web", channel: LOCAL_T, author: "owner", text: "왜 실패했어?" }, { ts: at(41), kind: "out", source: "orchestrator", target: LOCAL_T, text: "로그인이 풀렸어요." }],
 	[PEER_T]: [{ ts: at(40), kind: "message", source: "web", channel: PEER_T, author: "owner", text: "왜 실패했어?" }, { ts: at(41), kind: "out", source: "orchestrator", target: PEER_T, text: "로그인이 풀렸어요." }],
 };
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [watch(PEER_W)], notices: [report(30)], integrations: [MAIL], conversations: [] } }];
 let mailName = "메일";
 
@@ -46,18 +44,10 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 	if (p.startsWith("/api/history")) return historyOf(new URL(p, MINI).searchParams.get("target") ?? "");
 	return json({});
 }
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
-		if (p === "/api/peers") return json([{ name: "맥북", url: `http://127.0.0.1:${server.port}`, self: true, online: true }, ...peers.map(x => ({ name: x.name, url: x.url, self: false, online: x.online }))]);
+const hub = fakeHub({
+	api: async (req, url) => {
+		const p = url.pathname;
+		if (p === "/api/peers") return json([{ name: "맥북", url: `${hub.origin}`, self: true, online: true }, ...peers.map(x => ({ name: x.name, url: x.url, self: false, online: x.online }))]);
 		if (p === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
 		if (p === "/api/monitors") return json({ items: [watch(LOCAL_W)] });
 		if (p === "/api/notices") return json({ unread: 0, items: [report(30)] });
@@ -68,22 +58,15 @@ const server = Bun.serve({
 		if (p === "/api/history") return historyOf(url.searchParams.get("target") ?? "");
 		if (/^\/api\/watches\/[a-z-]+\/settings$/.test(p)) return json({ key: "local", fields: fields() });
 		if (p === "/api/message") { sent.push((await req.json()) as Record<string, unknown>); return json({ ok: true }); }
-		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-afterAll(() => { for (const v of views) v.close(); server.stop(true); });
-const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+afterAll(() => hub.stop());
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const KEYS = { local: `m:${TITLE}`, peer: `p:${MINI}|m:${TITLE}` };
 const boot = async (width: number, height: number, key: string) => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height });
+	await v.navigate(`${hub.origin}/`);
 	await waitFor(v, `S && NM.loaded && NT.loaded && PR.fresh`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	await run(v, `go("monitoring")`);
@@ -173,9 +156,8 @@ describe("a peer's app", () => {
 });
 
 const boot0 = async (width: number, height: number, key: string) => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height });
+	await v.navigate(`${hub.origin}/`);
 	await waitFor(v, `S && NM.loaded && NT.loaded && PR.fresh`);
 	await run(v, `go("monitoring")`);
 	await waitFor(v, `PQ.loaded && PQ.list.length && monItems().some(i => i.key === ${JSON.stringify(key)})`);
