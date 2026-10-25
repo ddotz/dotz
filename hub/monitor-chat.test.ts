@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { onEmit, type HubEvent } from "./events.ts";
 import { bursts, inboxText, sendWeb } from "./intake.ts";
 import { listMonitors } from "./monitors.ts";
-import { addWatch, allWatches, removeWatch, startWatches } from "./watch.ts";
+import { addWatch, allWatches, removeWatch, setWatchGate, startWatches } from "./watch.ts";
 import { recheckAnswered, setRecheckRunner } from "./watch-recheck.ts";
 import { out } from "./outbound.ts";
 
@@ -10,13 +10,18 @@ import { out } from "./outbound.ts";
 // so the orchestrator has the context without asking. Drives the real web send path (hub/intake.ts sendWeb) up to the burst it queues.
 const inbox: HubEvent[] = [];
 beforeAll(() => {
+	// The fixture is a login keeper: armed for real it would run `aside repl` in the owner's browser and change the state the tests read.
+	setWatchGate(name => name === "login-cartier-com");
 	startWatches(() => {});
 	onEmit(e => void (e.kind === "message" && e.source === "web" && inbox.push(e)));
 	const w = addWatch({ name: "login-cartier-com", label: "까르띠에 로그인 유지", session_url: "https://www.cartier.com/ko-kr/login", refresh_hours: 6, every_minutes: 30, on: "fail", to: "alert" }, "");
 	const live = allWatches().find(x => x.id === w.id)!;
 	Object.assign(live.state, { fails: 3, kind: "login", kindFails: 3, lastRun: "2026-10-23T05:32:00.000Z", lastOk: "2026-10-23T03:02:00.000Z", last: "DOTZ_FAIL login\n로그인 화면이 다시 나왔어요" });
 });
-afterAll(() => { for (const w of allWatches()) removeWatch(w.id); });
+afterAll(() => {
+	for (const w of allWatches()) removeWatch(w.id);
+	setWatchGate(() => false);
+});
 
 test("the monitor list carries the status words the detail header shows", () => {
 	const m = listMonitors().find(x => x.watch === "login-cartier-com")!;
