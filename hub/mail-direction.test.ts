@@ -58,6 +58,7 @@ async function pass(unread: Thread[], sent: Thread[], deps: MailDeps, needsReply
 		},
 		new Date(clock),
 		list,
+		async () => Promise.reject(new Error("threads are not read in this test")),
 	);
 	return seen;
 }
