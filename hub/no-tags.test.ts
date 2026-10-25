@@ -70,6 +70,10 @@ describe("owner-facing text has no [tag]", () => {
 			expect([w.tone || undefined, w.text]).toEqual([tone, text]);
 		}
 	});
+	// A bubble takes its file chips from the parsed text (fileLines in 15-attachments.js), so the web keeps [file] lines there.
+	test("web parseTone keeps [file] lines for the attachment chips", () => {
+		expect(web.parseTone("[ask] 시안\n[file] /a/b.png").text).toBe("시안\n[file] /a/b.png");
+	});
 });
 
 describe("Discord posts and push text have no [tag]", () => {
