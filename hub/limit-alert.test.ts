@@ -15,35 +15,29 @@ const DATA = process.env.DOTZ_DIR!;
 const T0 = Date.parse("2026-10-23T14:55:00.000Z");
 const MIN = 60_000;
 
-test("repeated failures of one episode send one alert", () => {
-	expect(noteBlock("orchestrator", "imported-anthropic", "auth", T0)).toEqual({ alert: true, failures: 1 });
-	expect(noteBlock("orchestrator", "imported-anthropic", "auth", T0 + 5 * MIN)).toEqual({ alert: false, failures: 2 });
-	expect(noteBlock("orchestrator", "imported-anthropic", "auth", T0 + 10 * MIN)).toEqual({ alert: false, failures: 3 });
-	expect(noteBlock("lane:web", "imported-anthropic", "auth", T0 + 10 * MIN).alert).toBe(true);
-});
+// One agent id of its own: the later orchestrator tests of this file note blocks under "orchestrator" and would join the episode otherwise.
+test("an episode alerts once, survives a restart, repeats after 12 hours, ends with one recovery, and a new kind or account starts another", async () => {
+	const A = "episode-agent";
+	expect(noteBlock(A, "imported-anthropic", "auth", T0)).toEqual({ alert: true, failures: 1 });
+	expect(noteBlock(A, "imported-anthropic", "auth", T0 + 5 * MIN)).toEqual({ alert: false, failures: 2 });
+	expect(noteBlock(A, "imported-anthropic", "auth", T0 + 10 * MIN)).toEqual({ alert: false, failures: 3 });
+	expect(noteBlock("lane:episode", "imported-anthropic", "auth", T0 + 10 * MIN).alert).toBe(true);
 
-test("the episode is on disk: a restart does not repeat it", async () => {
 	const fresh: typeof import("./limit-alert.ts") = await import("./limit-alert.ts?restart");
-	expect(fresh.noteBlock("orchestrator", "imported-anthropic", "auth", T0 + 20 * MIN).alert).toBe(false);
-});
+	expect(fresh.noteBlock(A, "imported-anthropic", "auth", T0 + 20 * MIN).alert).toBe(false);
 
-test("a new kind or account is a new episode", () => {
-	expect(noteBlock("orchestrator", "imported-anthropic", "billing", T0 + 30 * MIN).alert).toBe(true);
-	expect(noteBlock("orchestrator", "other-account", "billing", T0 + 31 * MIN).alert).toBe(true);
-	expect(noteBlock("orchestrator", "other-account", "billing", T0 + 32 * MIN).alert).toBe(false);
-});
+	expect(noteBlock(A, "imported-anthropic", "billing", T0 + 30 * MIN).alert).toBe(true);
+	expect(noteBlock(A, "other-account", "billing", T0 + 31 * MIN).alert).toBe(true);
+	expect(noteBlock(A, "other-account", "billing", T0 + 32 * MIN).alert).toBe(false);
 
-test("still blocked after 12 hours: one more alert, then quiet again", () => {
 	const at = T0 + 31 * MIN;
-	expect(noteBlock("orchestrator", "other-account", "billing", at + REPEAT_MS - MIN).alert).toBe(false);
-	expect(noteBlock("orchestrator", "other-account", "billing", at + REPEAT_MS).alert).toBe(true);
-	expect(noteBlock("orchestrator", "other-account", "billing", at + REPEAT_MS + MIN).alert).toBe(false);
-});
+	expect(noteBlock(A, "other-account", "billing", at + REPEAT_MS - MIN).alert).toBe(false);
+	expect(noteBlock(A, "other-account", "billing", at + REPEAT_MS).alert).toBe(true);
+	expect(noteBlock(A, "other-account", "billing", at + REPEAT_MS + MIN).alert).toBe(false);
 
-test("clearing ends the episode with one recovery; the next block alerts again", () => {
-	expect(noteRecovered("orchestrator")?.kind).toBe("billing");
-	expect(noteRecovered("orchestrator")).toBeUndefined();
-	expect(noteBlock("orchestrator", "other-account", "billing", T0 + 14 * 3600_000).alert).toBe(true);
+	expect(noteRecovered(A)?.kind).toBe("billing");
+	expect(noteRecovered(A)).toBeUndefined();
+	expect(noteBlock(A, "other-account", "billing", T0 + 14 * 3600_000).alert).toBe(true);
 });
 
 test("kinds, accounts, owner text and the slow backoff", () => {

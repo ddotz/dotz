@@ -1,9 +1,9 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, test } from "bun:test";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CONFIG_FILE, NAME, paths } from "./config.ts";
-import { decisionsOf } from "./notices.ts";
+import { decisionsOf, resetNoticesForTest } from "./notices.ts";
 import { shortTitle } from "./notice-title.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
@@ -16,6 +16,7 @@ const post = (target: string, text: string, extra: Record<string, unknown> = {})
 const byText = (text: string) => stored().filter(n => n.text === text);
 
 setLaneTitleResolver(name => (name === "x" ? "로그인 고치기" : undefined));
+beforeEach(resetNoticesForTest);
 
 test("a worklog post becomes a persisted unread notice", () => {
 	post("worklog", "[run] 첫 번째 작업 기록");
@@ -364,6 +365,8 @@ test("a signal that the matter is over still clears a question that waits", () =
 });
 
 test("ignoring takes a question off the count, keeps it in the history, answers nothing, and tells every page; undo brings it back", async () => {
+	post("worklog", "[done] 무시할 수 없는 기록이에요");
+	const plain = byText("무시할 수 없는 기록이에요")[0]!.id;
 	orchAsk("[ask] 무시해 볼게요\n**1) 예**\n**2) 아니요**");
 	const { id } = waiting("무시해 볼게요");
 	let since = lastEventId();
@@ -388,7 +391,7 @@ test("ignoring takes a question off the count, keeps it in the history, answers 
 	expect(unreadCount()).toBe(before - 1);   // the repeat makes no item of its own
 	// ignoring twice is harmless; an answered or plain notice cannot be ignored
 	expect(ignoreNotice(id).body.already).toBe(true);
-	expect(ignoreNotice(byText("보면 읽히는 기록이에요")[0]!.id).status).toBe(409);
+	expect(ignoreNotice(plain).status).toBe(409);
 	expect(ignoreNotice("nope").status).toBe(404);
 	// survives a restart as stored
 	expect(JSON.parse(readFileSync(paths.notices, "utf8")).find((n: Notice) => n.id === id).decision.state).toBe("ignored");

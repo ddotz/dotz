@@ -1161,3 +1161,15 @@ export function reopenNotices(ids: unknown): { reopened: string[]; unread: numbe
 	if (hit.length) announce(hit, at);
 	return { reopened: hit.map(i => i.id), unread: unreadCount() };
 }
+
+// Test hook: an empty store and no per-conversation memory, so a test does not depend on what an earlier test left behind.
+export function resetNoticesForTest(): void {
+	items = [];
+	launchTitles.clear();
+	viewers.clear();
+	awaitingReply.clear();
+	quietReplies.clear();
+	sending.clear();
+	orchTurnFrom = undefined;
+	save();
+}

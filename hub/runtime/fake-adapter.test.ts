@@ -175,7 +175,7 @@ test("orchestrator: idle -> working -> final -> idle, then a rate limit pauses a
 
 	o.stop();
 	expect(agent.calls.at(-1)).toBe("kill");
-	await advance(300);
+	await advance(5000); // the start's 4 s session-refresh timer must not outlive the test and reach the next orchestrator
 });
 
 test("orchestrator on a compacting runtime: a long context is compacted in place; a failed compaction rotates", async () => {
@@ -199,7 +199,7 @@ test("orchestrator on a compacting runtime: a long context is compacted in place
 		expect(started.length).toBe(before + 1);
 		expect(started.at(-1)!.opts.resume).toBeUndefined();
 		o.stop();
-		await advance(300);
+		await advance(5000);
 	} finally {
 		fake.caps = { ...fake.caps, contextLimit: undefined };
 	}

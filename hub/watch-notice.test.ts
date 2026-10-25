@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { now } from "./config.ts";
 import { emit } from "./events.ts";
 import { keepWatchNewest, listNotices, NOTICE_CAP, setOrchestratorAvailable, setWatchLabelResolver, WATCH_DAYS, WATCH_KEEP } from "./notices.ts";
@@ -13,7 +13,14 @@ const NAME = "까르띠에-재고-구매";
 // The whole store, not the first page: the notice store is shared with every test file in the run, and unread ones from earlier files fill a 100-item page.
 const noticesFor = (title: string) => listNotices(NOTICE_CAP).items.filter(n => n.kind === "watch" && n.title === title);
 
+// The channels and their monitors are the fixture of the tests below, set up once so no test depends on another having run first.
+let a: ReturnType<typeof setupChannel>, b: ReturnType<typeof setupChannel>;
+beforeAll(() => {
+	a = setupChannel({ channel: `ch:${CH}`, purpose: "재고 확인", monitors: [{ command: "echo cartier_mails=0" }, { command: "echo cartier_mails=1" }] }, NAME, "");
+	b = setupChannel({ channel: `ch:${CH2}`, purpose: "다른 일", monitors: [{ command: "echo 1", label: "메일 감시" }] }, "다른-채널", "");
+});
 afterAll(() => {
+	for (const w of allWatches().filter(x => x.channels?.includes(CH) || x.channels?.includes(CH2))) removeWatch(w.id);
 	setOrchestratorAvailable(() => true);
 	clearChannel(CH);
 	clearChannel(CH2);
@@ -33,8 +40,6 @@ test("reasons of the watch runner read as Korean and unknown ones pass through",
 });
 
 test("channel monitors are named by the channel, and two Korean channels never share a key", () => {
-	const a = setupChannel({ channel: `ch:${CH}`, purpose: "재고 확인", monitors: [{ command: "echo cartier_mails=0" }, { command: "echo cartier_mails=1" }] }, NAME, "");
-	const b = setupChannel({ channel: `ch:${CH2}`, purpose: "다른 일", monitors: [{ command: "echo 1", label: "메일 감시" }] }, "다른-채널", "");
 	expect(new Set([...a.monitors, ...b.monitors]).size).toBe(3);
 	expect(a.monitors[1]).toMatch(/^ch-[a-z0-9-]+$/);
 	expect(watchLabel(a.monitors[0]!)).toBe(`${NAME} 감시 1`);
@@ -46,8 +51,9 @@ test("channel monitors are named by the channel, and two Korean channels never s
 test("a channel monitor event routed to the orchestrator makes no notice while the orchestrator is up", () => {
 	const name = allWatches().find(w => w.channels?.includes(CH) && watchLabel(w.name) === `${NAME} 감시 2`)!;
 	setOrchestratorAvailable(() => true);
+	const before = noticesFor(`${NAME} 감시 2`).length;
 	emit("inbox", watchWakeEvent(name, "output changed", "cartier_mails=1"));
-	expect(noticesFor(`${NAME} 감시 2`)).toHaveLength(0);
+	expect(noticesFor(`${NAME} 감시 2`)).toHaveLength(before);
 });
 
 test("with the orchestrator unavailable the same event is a Korean notice titled by the channel", () => {
@@ -58,8 +64,8 @@ test("with the orchestrator unavailable the same event is a Korean notice titled
 	} finally {
 		setOrchestratorAvailable(() => true);
 	}
-	const [n] = noticesFor(`${NAME} 감시 2`);
-	expect(n).toMatchObject({ kind: "watch", open: "alert", text: `${NAME} 감시 2: 결과가 바뀌었어요\n${rawFence("cartier_mails=1")}` });
+	const text = `${NAME} 감시 2: 결과가 바뀌었어요\n${rawFence("cartier_mails=1")}`;
+	expect(noticesFor(`${NAME} 감시 2`).find(n => n.text === text)).toMatchObject({ kind: "watch", open: "alert" });
 });
 
 test("events routed to alert or chat, or an orchestrator event without a channel, keep their notice", () => {
@@ -77,11 +83,6 @@ test("a notice stored with the raw watch name and English reason renders with th
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target: "ch:123", text: `[${w.name}] output changed\ncartier_mails=1` });
 	const shown = listNotices(NOTICE_CAP).items.find(n => n.kind === "watch" && n.title === `${NAME} 감시 1`);
 	expect(shown?.text).toBe(`${NAME} 감시 1: 결과가 바뀌었어요`);
-});
-
-test("cleanup removes the test watches", () => {
-	for (const w of allWatches().filter(x => x.channels?.includes(CH) || x.channels?.includes(CH2))) removeWatch(w.id);
-	expect(allWatches().some(x => x.channels?.includes(CH))).toBe(false);
 });
 
 test("a watch added without a label is named in Korean once, and a key-shaped label is replaced at boot", () => {

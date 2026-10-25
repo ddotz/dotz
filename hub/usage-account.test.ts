@@ -1,6 +1,6 @@
 // "한도", the lane budget gate and the 429 resume time read the limits of the account dotz's agents really run on: under
 // OmO that is OmO's pinned subscription account (e.g. miseol-shared), not omp's login (the owner's default).
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { resetStickyForTest } from "./account-sticky.ts";
@@ -15,6 +15,11 @@ const FAR = Date.now() + 365 * 86400e3;
 const accounts = [{ name: "default", access: "tok-default", expires: FAR }, { name: "miseol-shared", access: "tok-miseol", expires: FAR }];
 const body = (five: number, week: number) => ({ five_hour: { utilization: five, resets_at: "2030-01-01T05:00:00Z" }, seven_day: { utilization: week, resets_at: "2030-01-07T00:00:00Z" }, seven_day_opus: null });
 const realFetch = globalThis.fetch;
+// A read held from an earlier test (or the sticky pick it left) would answer from cache instead of the fake fetch.
+beforeEach(() => {
+	resetStickyForTest();
+	for (const a of accounts) forgetAccountUsage(a.name);
+});
 afterEach(() => {
 	globalThis.fetch = realFetch;
 	pool({});
@@ -53,8 +58,6 @@ test("after an account switch the quota is the new account's, not the pinned or 
 		return { account: p?.account, five: p?.limits.find(l => l.id === "anthropic:5h")?.used };
 	};
 	try {
-		resetStickyForTest();
-		for (const a of accounts) forgetAccountUsage(a.name); // the first test left a held read
 		expect(await fiveOf()).toEqual({ account: "miseol-shared", five: 37 });
 		// the owner picks the other account in the web app (POST /api/accounts/use)
 		setManual("default");

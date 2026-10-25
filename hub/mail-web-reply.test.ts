@@ -2,8 +2,8 @@
 // plugin `thread` hook runs (its note goes into the turn, its OK side effect is recorded), the answer target is the thread, and
 // the plugin's command guard lets a send pass only after that OK. Drives the real web send path (hub/intake.ts sendWeb) up to
 // the burst the orchestrator gets, with a fake plugin in a throwaway data dir.
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as discord from "./discord.ts";
@@ -42,6 +42,10 @@ beforeAll(async () => {
 	discord.channels.threads[THREAD] = { parent: "1561565203714408448", name: "견적 요청" };
 	recordMail({ key: KEY, source: "kdb", id: KEY.slice(4), subject: "견적 요청", from: "Kim <kim@example.com>", at: new Date().toISOString(), thread: THREAD });
 	onEmit(e => void (e.kind === "message" && e.source === "web" && inbox.push(e)));
+});
+beforeEach(() => {
+	rmSync(OK_FILE, { force: true });
+	inbox.length = 0;
 });
 afterAll(async () => {
 	delete discord.channels.threads[THREAD];
