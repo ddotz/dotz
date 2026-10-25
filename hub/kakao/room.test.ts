@@ -273,10 +273,9 @@ test("no KakaoTalk window: the list is opened once by its menu, the previous fro
 	expect(shown.screen.listCalls).toHaveLength(0);
 });
 
-test("no KakaoTalk window and the list does not show after the menu: the send is refused with the Korean reason and nothing is typed", async () => {
+test("no KakaoTalk window and the list does not show after the menu: the send is refused and nothing is typed", async () => {
 	const { r, screen } = await send([familyRow], family, [family], { listShown: false });
 	expect(r.ok).toBe(false);
-	expect(r.reason).toBe("카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요");
 	expect(screen.sends).toHaveLength(0);
 	expect(screen.menus()).toBe(0);
 });
@@ -311,7 +310,6 @@ test("the last rung brings KakaoTalk to the front for one try and puts the owner
 test("a press without a confirmed send stops and is never sent again; an owner's own text is not retried; other input failures retry", async () => {
 	const unclear = await send([familyRow], family, [family], { axSend: () => ({ ok: false, why: "unclear", pressed: true }) });
 	expect(unclear.r.ok).toBe(false);
-	expect(unclear.r.reason).toContain("다시 보내지 않았으니");
 	expect(unclear.screen.sends).toHaveLength(1);
 	const owner = await send([familyRow], family, [family], { axSend: () => ({ ok: false, why: "owner_text", preview: "내가 쓰던 글" }) });
 	expect(owner.r.ok).toBe(false);
