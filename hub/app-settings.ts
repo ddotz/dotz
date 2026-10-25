@@ -194,7 +194,6 @@ export function writeSettings(dataDir: string, app: string, values: unknown): Se
 export const settingsTarget = (app: string): string => `settings:${app}`;
 // A settings conversation as a name: `settings:<app>` or `settings:w:<watch>` (the form only; whether the app or watch exists is another question).
 export const isSettingsTarget = (t: string): boolean => /^settings:(?:w:)?[a-z0-9][a-z0-9._-]*$/.test(t);
-export const appOfSettingsTarget = (target: string): string | undefined => (target.startsWith("settings:") && fieldsOf(target.slice(9)).length ? target.slice(9) : undefined);
 
 const FENCE = "```";
 const BLOCK = new RegExp(`${FENCE}dotz-settings[ \\t]*\\n([\\s\\S]*?)${FENCE}`);

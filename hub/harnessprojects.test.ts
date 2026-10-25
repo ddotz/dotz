@@ -16,6 +16,7 @@ const lane = (name: string, cwd: string, extra: Partial<Lane> = {}): Lane => ({ 
 const projects = (disk: Record<string, any> = {}) => harnessProjects({ disk, mName: s => s, gateway: node("gateway"), orchestrator: node("orchestrator") });
 
 beforeEach(() => {
+	lanes.clear();
 	dir = mkdtempSync(join(tmpdir(), "dotz-proj-"));
 });
 afterEach(() => {

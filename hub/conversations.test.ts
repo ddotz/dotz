@@ -46,7 +46,7 @@ test("a result for the main chat is a message, an older late event never replace
 });
 
 test("lists are sorted by latest message, live targets without messages come last", () => {
-	emit("outbox", { ts: "2099-02-01T07:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:11", text: "제일 최근" });
+	emit("outbox", { ts: "9000-02-01T07:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:11", text: "제일 최근" });
 	const items = conversationList(["lane:silent", "ch:99"]);
 	expect(items[0].target).toBe("ch:11");
 	const tail = items.slice(-2).map(c => c.target);
