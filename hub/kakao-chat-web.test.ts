@@ -223,7 +223,7 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		expect((await expectReq(isReq("POST", "/api/kakao/chat/100/read"))).body).toEqual({ logId: "4030" });
 		const lay = await q<Record<string, number>>(v, `
 			const r = s => document.querySelector(s).getBoundingClientRect(), t = r("#kk-tl");
-			return { inL: r('[data-log="3001"] .kk-bub').left, inR: r('[data-log="3001"] .kk-bub').right, meL: r('[data-log="3003"] .kk-bub').left, meR: r('[data-log="3003"] .kk-bub').right, tl: t.left, tr: t.right, longR: r('[data-log="3007"] .kk-bub').right, hScroll: document.querySelector("#kk-tl").scrollWidth - document.querySelector("#kk-tl").clientWidth }`);
+			return { inL: r('[data-log="3001"] .kk-bub').left, inR: r('[data-log="3001"] .kk-bub').right, meL: r('[data-log="3003"] .kk-bub').left, meR: r('[data-log="3003"] .kk-bub').right, tl: t.left, tr: t.left + document.querySelector("#kk-tl").clientLeft + document.querySelector("#kk-tl").clientWidth, longR: r('[data-log="3007"] .kk-bub').right, hScroll: document.querySelector("#kk-tl").scrollWidth - document.querySelector("#kk-tl").clientWidth }`);
 		expect(lay.inL).toBeLessThan(lay.tl + 80);
 		expect(lay.meR).toBeGreaterThan(lay.tr - 24);
 		expect(lay.meL).toBeGreaterThan(lay.inL + 100);
@@ -329,7 +329,7 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		expect((await expectReq(isReq("POST", "/api/kakao/chat/100/send"))).body).toEqual({ text: "가나다 답장" });
 		await waitFor(v, `document.querySelector(".kk-m.me.pend .kk-state")`);
 		expect(await q(v, `return !!document.querySelector(".kk-m.pend .kk-rd")`)).toBe(false);
-		const pend = await q<{ state: string; right: number; tr: number; empty: string }>(v, `const b = document.querySelector(".kk-m.me.pend .kk-bub").getBoundingClientRect(); return { state: document.querySelector(".kk-m.me.pend .kk-state").textContent, right: b.right, tr: document.querySelector("#kk-tl").getBoundingClientRect().right, empty: document.querySelector("#kk-text").value }`);
+		const pend = await q<{ state: string; right: number; tr: number; empty: string }>(v, `const b = document.querySelector(".kk-m.me.pend .kk-bub").getBoundingClientRect(); return { state: document.querySelector(".kk-m.me.pend .kk-state").textContent, right: b.right, tr: (tl => tl.getBoundingClientRect().left + tl.clientLeft + tl.clientWidth)(document.querySelector("#kk-tl")), empty: document.querySelector("#kk-text").value }`);
 		expect(pend.state).toBe("보내는 중");
 		expect(pend.right).toBeGreaterThan(pend.tr - 24);
 		expect(pend.empty).toBe("");
