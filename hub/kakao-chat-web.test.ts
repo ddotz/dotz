@@ -182,6 +182,8 @@ const newestInSight = (v: View, logId: string) =>
 	q<boolean>(v, `const t = document.querySelector("#kk-tl"), tr = t.getBoundingClientRect(), m = document.querySelector('[data-log="${logId}"]').getBoundingClientRect(), f = document.querySelector("#kk-foot").getBoundingClientRect();
 		return m.bottom <= tr.bottom + 1 && m.top >= tr.top && tr.bottom <= f.top + 1 && t.scrollHeight - t.scrollTop - t.clientHeight <= 1`);
 type Geo = { markTop: number; scrollTop: number; stick: boolean; markNext: string | null };
+// The right edge of the timeline's content, inside its scrollbar: with macOS set to always show scroll bars the bar takes 17px of the box.
+const TL_RIGHT = `(() => { const t = document.querySelector("#kk-tl"); return t.getBoundingClientRect().left + t.clientLeft + t.clientWidth; })()`;
 const geo = (v: View) => q<Geo>(v, `const m = document.querySelector(".kk-new"), t = document.querySelector("#kk-tl"); return { markTop: m ? Math.round(m.getBoundingClientRect().top - t.getBoundingClientRect().top) : -999, scrollTop: Math.round(t.scrollTop), stick: KK.stick, markNext: m && m.nextElementSibling ? m.nextElementSibling.dataset.log : null }`);
 
 describe("카카오톡 at desktop width (1280x800)", () => {
@@ -223,7 +225,7 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		expect((await expectReq(isReq("POST", "/api/kakao/chat/100/read"))).body).toEqual({ logId: "4030" });
 		const lay = await q<Record<string, number>>(v, `
 			const r = s => document.querySelector(s).getBoundingClientRect(), t = r("#kk-tl");
-			return { inL: r('[data-log="3001"] .kk-bub').left, inR: r('[data-log="3001"] .kk-bub').right, meL: r('[data-log="3003"] .kk-bub').left, meR: r('[data-log="3003"] .kk-bub').right, tl: t.left, tr: t.right, longR: r('[data-log="3007"] .kk-bub').right, hScroll: document.querySelector("#kk-tl").scrollWidth - document.querySelector("#kk-tl").clientWidth }`);
+			return { inL: r('[data-log="3001"] .kk-bub').left, inR: r('[data-log="3001"] .kk-bub').right, meL: r('[data-log="3003"] .kk-bub').left, meR: r('[data-log="3003"] .kk-bub').right, tl: t.left, tr: ${TL_RIGHT}, longR: r('[data-log="3007"] .kk-bub').right, hScroll: document.querySelector("#kk-tl").scrollWidth - document.querySelector("#kk-tl").clientWidth }`);
 		expect(lay.inL).toBeLessThan(lay.tl + 80);
 		expect(lay.meR).toBeGreaterThan(lay.tr - 24);
 		expect(lay.meL).toBeGreaterThan(lay.inL + 100);
@@ -329,7 +331,7 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		expect((await expectReq(isReq("POST", "/api/kakao/chat/100/send"))).body).toEqual({ text: "가나다 답장" });
 		await waitFor(v, `document.querySelector(".kk-m.me.pend .kk-state")`);
 		expect(await q(v, `return !!document.querySelector(".kk-m.pend .kk-rd")`)).toBe(false);
-		const pend = await q<{ state: string; right: number; tr: number; empty: string }>(v, `const b = document.querySelector(".kk-m.me.pend .kk-bub").getBoundingClientRect(); return { state: document.querySelector(".kk-m.me.pend .kk-state").textContent, right: b.right, tr: document.querySelector("#kk-tl").getBoundingClientRect().right, empty: document.querySelector("#kk-text").value }`);
+		const pend = await q<{ state: string; right: number; tr: number; empty: string }>(v, `const b = document.querySelector(".kk-m.me.pend .kk-bub").getBoundingClientRect(); return { state: document.querySelector(".kk-m.me.pend .kk-state").textContent, right: b.right, tr: ${TL_RIGHT}, empty: document.querySelector("#kk-text").value }`);
 		expect(pend.state).toBe("보내는 중");
 		expect(pend.right).toBeGreaterThan(pend.tr - 24);
 		expect(pend.empty).toBe("");
