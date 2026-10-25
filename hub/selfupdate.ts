@@ -161,9 +161,14 @@ function record(logDir: string, text: string): void {
 	}
 }
 
+// The update gate runs every test file in a fresh global (--isolate). In one shared global, what earlier files leave behind
+// (WebViews, servers, timers) piles up until the later Bun.WebView tests time out one after another, and the whole run passes the
+// 20-minute limit below (exit 143) on a slower or busy Mac, so the update never lands. Each file alone passes either way.
+export const TEST_CMD = ["bun", "test", "--isolate"];
+
 function resolve(o: Options) {
 	const s = settings();
-	return { dir: o.dir, remote: o.remote ?? s.remote, branch: o.branch ?? s.branch, exec: o.exec ?? defaultExec, testCmd: o.testCmd ?? ["bun", "test"], logDir: o.logDir ?? join(DATA_DIR, "logs") };
+	return { dir: o.dir, remote: o.remote ?? s.remote, branch: o.branch ?? s.branch, exec: o.exec ?? defaultExec, testCmd: o.testCmd ?? TEST_CMD, logDir: o.logDir ?? join(DATA_DIR, "logs") };
 }
 
 type Stamp = Record<string, string>;
