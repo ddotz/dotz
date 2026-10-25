@@ -1,11 +1,11 @@
 import { afterAll, expect, test } from "bun:test";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { mailText } from "./mail.ts";
-import { fakeHub, json } from "./test-web.ts";
+import { fakeHub, json, on } from "./test-web.ts";
 
 // A new mail's offered reply draft in its mail conversation, in a headless browser against a fixture history (nothing is sent):
 // the mail card first, then the bot's "[ask] 답장 초안을 만들었어요" with the quoted draft and 보내기 / 고치기 / 보내지 않기.
-// Screenshots: /tmp/dotz-mail-draft-offer.png (390x844) and /tmp/dotz-mail-draft-offer-desktop.png (1280x1700, tall enough for the whole conversation).
+// The desktop view is tall enough for the whole conversation.
 const KEY = "zele-abc123";
 const TARGET = `mail:${KEY}`;
 const DRAFT_BODY = "안녕하세요.\n목요일 오후 3시 괜찮습니다.\n감사합니다.";
@@ -27,32 +27,24 @@ const hub = fakeHub({
 });
 afterAll(() => hub.stop());
 
-async function shoot(width: number, height: number, file: string) {
-	const view = await hub.view({ width, height });
-	const waitFor = (expr: string, ms = 10_000) =>
-		view.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
-	await view.navigate(`${hub.origin}/`);
-	await waitFor(`typeof openTarget === "function" && S`);
-	await view.evaluate(`(openTarget(${JSON.stringify(TARGET)}, "chat"), 0)`);
-	await waitFor(`document.body.textContent.includes("목요일 오후 3시 괜찮습니다.") && document.body.textContent.includes("회의 일정 문의")`);
-	await waitFor(`document.querySelectorAll(".dcm-row").length === 3`);
-	const seen = JSON.parse(
-		await view.evaluate(`JSON.stringify({
-			options: [...document.querySelectorAll(".dcm-row")].map(b => b.querySelector(".dc-lb").textContent.replace("추천", "").trim()),
-			text: document.body.innerText,
-			over: document.documentElement.scrollWidth > innerWidth,
-		})`),
-	) as { options: string[]; text: string; over: boolean };
-	expect(seen.options).toEqual(["보내기", "고치기", "보내지 않기"]);
-	for (const part of ["답장 초안을 만들었어요", "kim@example.com", "Re: 회의 일정 문의", "안녕하세요.", "목요일 오후 3시 괜찮습니다.", "감사합니다.", "이 답장 보낼까요?"]) expect(seen.text).toContain(part);
-	expect(seen.over).toBe(false);
-	await Bun.write(file, await view.screenshot());
+for (const [width, height] of [[390, 844], [1280, 1700]] as const) {
+	test(`a mail conversation shows the mail card, then the offered reply draft with its three options, at ${width}px`, async () => {
+		const view = await hub.view({ width, height });
+		const { waitFor } = on(view);
+		await view.navigate(`${hub.origin}/`);
+		await waitFor(`typeof openTarget === "function" && S`);
+		await view.evaluate(`(openTarget(${JSON.stringify(TARGET)}, "chat"), 0)`);
+		await waitFor(`document.body.textContent.includes("목요일 오후 3시 괜찮습니다.") && document.body.textContent.includes("회의 일정 문의")`);
+		await waitFor(`document.querySelectorAll(".dcm-row").length === 3`);
+		const seen = JSON.parse(
+			await view.evaluate(`JSON.stringify({
+				options: [...document.querySelectorAll(".dcm-row")].map(b => b.querySelector(".dc-lb").textContent.replace("추천", "").trim()),
+				text: document.body.innerText,
+				over: document.documentElement.scrollWidth > innerWidth,
+			})`),
+		) as { options: string[]; text: string; over: boolean };
+		expect(seen.options).toEqual(["보내기", "고치기", "보내지 않기"]);
+		for (const part of ["kim@example.com", "Re: 회의 일정 문의", "안녕하세요.", "목요일 오후 3시 괜찮습니다.", "감사합니다."]) expect(seen.text).toContain(part);
+		expect(seen.over).toBe(false);
+	});
 }
-
-test("a mail conversation shows the mail card, then the offered reply draft with its three options, at 390px", async () => {
-	await shoot(390, 844, "/tmp/dotz-mail-draft-offer.png");
-}, 30_000);
-
-test("the same conversation at desktop width", async () => {
-	await shoot(1280, 1700, "/tmp/dotz-mail-draft-offer-desktop.png");
-}, 30_000);

@@ -54,11 +54,11 @@ const boot = async (width: number, height: number) => {
 
 // One entry per kind of detail: how it is opened, which settings conversation its button leads to, and where its title bar is on a wide screen.
 const PEER_KEY = `p:${MINI}|m:까르띠에 로그인 유지`;
-const KINDS: { name: string; open: string; ready?: string; app: string; head: string }[] = [
+const KINDS: { name: string; open: string; after?: [string, string]; ready?: string; app: string; head: string }[] = [
 	{ name: "mail app", open: `go("monitoring", "i:mail")`, app: "mail", head: "#mon-head" },
 	{ name: "mail", open: `go("monitoring", "c:mail:fx-1")`, ready: `target === "mail:fx-1"`, app: "mail", head: "#cv-head" },
 	{ name: "kakao app", open: `go("monitoring", "i:kakao")`, app: "kakao", head: "#mon-head" },
-	{ name: "kakao room", open: `go("monitoring", "i:kakao"); setTimeout(() => kkOpen("100"), 50)`, ready: `KK.open === "100" && !KK.loading`, app: "kakao", head: "#kk-head" },
+	{ name: "kakao room", open: `go("monitoring", "i:kakao")`, after: ["KK.loaded", `kkOpen("100")`], ready: `KK.open === "100" && !KK.loading`, app: "kakao", head: "#kk-head" },
 	{ name: "other app", open: `go("monitoring", "i:site")`, app: "site", head: "#mon-head" },
 	{ name: "general monitor", open: `go("monitoring", "m:일반 감시")`, app: "w:plain-watch", head: "#mon-head" },
 	{ name: "login keeper", open: `go("monitoring", "m:로컬 로그인 유지")`, app: "w:login-local", head: "#mon-head" },
@@ -72,6 +72,7 @@ describe("the 대화 and ⋯ buttons of a monitoring detail sit side by side in 
 				const v = await boot(w, h);
 				await waitFor(v, `monItems().some(i => i.key === "m:일반 감시") && monItems().some(i => i.key === ${JSON.stringify(PEER_KEY)})`);
 				await run(v, k.open);
+				if (k.after) { await waitFor(v, k.after[0]); await run(v, k.after[1]); }
 				if (k.ready) await waitFor(v, k.ready);
 				// A phone has no head: the buttons are in the app bar; a wide screen has them in the detail's head and none in the bar.
 				const btn = w < 1100 ? "#as-bar" : `${k.head} .as-hd[data-as-open]`;

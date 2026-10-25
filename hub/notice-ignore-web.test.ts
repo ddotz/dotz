@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { emit } from "./events.ts";
 import { ignoreNotice, listNotices, markNoticesRead, type Notice, resolveNotices, unignoreNotice, unreadCount } from "./notices.ts";
 import { fakeHub, json, waitFor, type View } from "./test-web.ts";
@@ -29,7 +29,6 @@ const ask = (title: string) => emit("outbox", { ts: new Date().toISOString(), ki
 const settled = (v: View) => v.evaluate(`Promise.all(document.getAnimations().map(a => a.finished.catch(() => 0))).then(() => true)`);
 const rect = (v: View, sel: string) => v.evaluate(`JSON.stringify((() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const r = e.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right) }; })())`).then(s => JSON.parse(s as string) as { w: number; h: number; left: number; right: number } | null);
 
-beforeAll(() => { Bun.spawnSync(["mkdir", "-p", SNAP]); });
 afterAll(() => hub.stop());
 
 describe("the x (무시) in a headless browser", () => {
@@ -58,7 +57,6 @@ describe("the x (무시) in a headless browser", () => {
 		expect(await phone.evaluate(`(() => { const r = document.querySelector(".hn .hrx"); return r.scrollWidth <= r.clientWidth; })()`)).toBe(true);
 		await phone.evaluate(`document.querySelector("#home-now").scrollIntoView({ block: "start" })`);
 		await settled(phone);
-		await Bun.write(`${SNAP}/home-390.png`, await phone.screenshot());
 
 		// the 알림 card is drawn but does not list the waiting question a second time
 		await waitFor(phone, `document.querySelector(".hc .hc-none, .hc .hc-list")`);
@@ -75,7 +73,6 @@ describe("the x (무시) in a headless browser", () => {
 		expect(await phone.evaluate(`[...document.querySelectorAll(".fs-hd > *")].every(e => e.getBoundingClientRect().right <= 390)`)).toBe(true);
 		expect(await phone.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
 		await settled(phone);
-		await Bun.write(`${SNAP}/sheet-390.png`, await phone.screenshot());
 
 		// viewing never cleared it
 		expect(item().read).toBe(false);
@@ -89,7 +86,6 @@ describe("the x (무시) in a headless browser", () => {
 		expect(item().ignored).toBeString();
 		expect(unreadCount()).toBe(before - 1);
 		await settled(phone);
-		await Bun.write(`${SNAP}/ignored-toast-390.png`, await phone.screenshot());
 
 		// undo from the toast
 		await phone.evaluate(`document.querySelector(".snack .sa").click()`);
@@ -109,9 +105,7 @@ describe("the x (무시) in a headless browser", () => {
 		await waitFor(phone, `document.querySelector(".fs-ey.ign")`);
 		expect(await phone.evaluate(`document.querySelector(".fs-ey").textContent`)).toBe("알림 · 무시함");
 		await settled(phone);
-		await Bun.write(`${SNAP}/history-390.png`, await phone.screenshot());
 		await desk.evaluate(`document.querySelectorAll(".snack").forEach(n => n.remove())`);
 		await settled(desk);
-		await Bun.write(`${SNAP}/home-desktop.png`, await desk.screenshot());
 	}, 60_000);
 });

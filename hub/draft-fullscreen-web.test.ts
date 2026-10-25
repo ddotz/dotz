@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { emit } from "./events.ts";
 import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount } from "./notices.ts";
@@ -6,7 +6,6 @@ import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // Send-approval drafts open as a full-screen view (a large dialog on desktop); every other decision uses the same full-screen frame (hub/overlay-fullscreen-web.test.ts) without the large size.
 // Headless browser against the real notice store; the decisions are fixtures and nothing is sent.
-const SNAP = "/tmp/dotz-draft-fullscreen";
 const hub = fakeHub({
 	api: async (req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: unreadCount() });
@@ -30,9 +29,6 @@ const draft = (ref: string) => emit("outbox", { ts: new Date().toISOString(), ki
 const plain = (title: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n**1) 예**\n**2) 아니요**` });
 const find = (pred: (n: Notice) => boolean) => stored().find(n => n.kind === "decision" && n.decision?.state === "open" && pred(n))! as Notice;
 
-beforeAll(() => {
-	Bun.spawnSync(["mkdir", "-p", SNAP]);
-});
 afterAll(() => hub.stop());
 
 describe("draft approval opens full screen", () => {
@@ -70,7 +66,6 @@ describe("draft approval opens full screen", () => {
 		expect(send.h).toBeGreaterThanOrEqual(44);
 		expect(send.h).toBeLessThanOrEqual(48);
 		expect(await phone.evaluate(`document.querySelector(".fs-body").scrollHeight > document.querySelector(".fs-body").clientHeight + 200`)).toBe(true);
-		await Bun.write(`${SNAP}/draft-390-top.png`, await phone.screenshot());
 
 		// scrolled to the end of the draft: header and footer did not move
 		const footTop = (await box(phone, ".fs-ft"))!.t;
@@ -79,7 +74,6 @@ describe("draft approval opens full screen", () => {
 		expect((await box(phone, ".fs-ft"))!.t).toBe(footTop);
 		expect((await box(phone, ".fs-hd"))!.t).toBe(card.t);
 		await inside(".dc-act.main");
-		await Bun.write(`${SNAP}/draft-390-scrolled.png`, await phone.screenshot());
 
 		// 고치기: the input and its send button stay in the footer
 		await phone.evaluate(`document.querySelector(".dc-acts .dc-act:nth-child(2)").click()`);
@@ -91,7 +85,6 @@ describe("draft approval opens full screen", () => {
 		await phone.evaluate(`(() => { const t = document.querySelector(".dc-note"); t.value = "인사말을 더 짧게 해 주세요"; t.dispatchEvent(new Event("input")); })()`);
 		expect(await phone.evaluate(`!!document.querySelector(".fs-ft .dc-go").disabled`)).toBe(false);
 		await settled(phone);
-		await Bun.write(`${SNAP}/draft-390-edit.png`, await phone.screenshot());
 		await phone.evaluate(`dkClose()`);
 		await waitFor(phone, `!document.querySelector(".fs-bd")`);
 
@@ -104,7 +97,6 @@ describe("draft approval opens full screen", () => {
 		const sc = (await box(small, ".fs-card.tall"))!;
 		expect(sc.w).toBe(360);
 		for (const sel of [".dc-act.main", ".dc-acts .dc-act:nth-child(3)", ".fs-hd .fs-ign", ".fs-hd .fs-x"]) expect((await box(small, sel))!.b).toBeLessThanOrEqual(sc.b);
-		await Bun.write(`${SNAP}/draft-360.png`, await small.screenshot());
 
 		// a plain decision is full screen on the phone too, but not the large dialog
 		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(String(pn.id))})`);
@@ -127,6 +119,5 @@ describe("draft approval opens full screen", () => {
 		expect(Math.abs((dc.l + dc.r) / 2 - 640)).toBeLessThanOrEqual(2);
 		expect(Math.abs((dc.t + dc.b) / 2 - 400)).toBeLessThanOrEqual(2);
 		expect((await box(desk, ".dc-act.main"))!.b).toBeLessThanOrEqual(dc.b);
-		await Bun.write(`${SNAP}/draft-desktop.png`, await desk.screenshot());
 	}, 90_000);
 });

@@ -1,12 +1,10 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
 import { emit } from "./events.ts";
 import { answerDecision, listNotices, markNoticesRead, resolveNotices, unreadCount } from "./notices.ts";
 import { fakeHub, json } from "./test-web.ts";
 
 // The 모니터링 tab's decision card (30-monitoring.js monNoticeNode) in a headless browser against the real notice store: one [ask] with a choice block
 // reaches the page as one notice, and its card, which shows the option buttons, does not print the option lines of the message body again.
-const SNAP = "/tmp/dup-shots";
 const hub = fakeHub({
 	api: async (req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: unreadCount() });
@@ -49,7 +47,5 @@ test("one answered [ask] with a choice block is one card: lead text, its 결정 
 	expect(lines.some(l => l.includes("폰에서도 잘 보여요") || l.includes("어디가 이상한지"))).toBe(false);
 	expect(lines.some(l => l.includes("탭 구성을 바꿨어요"))).toBe(true);
 	expect(lines.some(l => l.includes("결정: 폰 탭 구성 확인"))).toBe(true);
-	mkdirSync(SNAP, { recursive: true });
 	await v.evaluate(`(${card}.scrollIntoView({ block: "center" }), true)`);
-	await Bun.write(`${SNAP}/after.png`, await v.screenshot());
 }, 30_000);

@@ -1,23 +1,19 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
 import { viewOf } from "./app-settings.ts";
 import { WATCH_FIELDS } from "./watch-settings.ts";
-import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
+import { advanceTimers, fakeHub, inbox, json, run, waitFor, type View } from "./test-web.ts";
 
 // Every monitor has a conversation with the orchestrator of the computer that owns it (web/js/32-app-settings.js, 34-peer-monitoring.js): a
 // failing login keeper shows quick-action chips that fill the composer, a message to a local monitor goes to this gateway, a message to a peer's
 // monitor goes through /api/peer/proxy as the 'message' act, and the peer's answer shows here. Headless; the peer is a fixture.
-const SHOTS = process.env.SETTINGS_SHOTS ?? "/tmp/mon-chat-shots";
-mkdirSync(SHOTS, { recursive: true });
 const MINI = "http://mini.test";
 const at = (min: number) => new Date(Date.UTC(2026, 9, 23, 3, min)).toISOString();
 const failing = (name: string, label: string) => ({ name: label, watch: name, kind: "watch", last_run: at(32), last_result: "fail", next_run: at(62), every: "30분마다", fails: 3, last_ok: at(2), last_output: "로그인이 풀렸어요 로그인 화면이 다시 나왔어요", keeper: true });
 const PEER_T = "settings:w:login-cartier-com";
 const fields = () => WATCH_FIELDS.map(f => viewOf(f, f.key === "enabled" ? true : f.key === "every_minutes" ? 30 : f.key === "to" ? "alert" : "까르띠에 로그인 유지"));
 
-const sent: Record<string, unknown>[] = [];
-const acts: { action: string; args: Record<string, unknown> }[] = [];
+const sent = inbox<Record<string, unknown>>();
+const acts = inbox<{ action: string; args: Record<string, unknown> }>();
 const peerHistory: Record<string, unknown>[] = [];
 const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [failing("login-cartier-com", "까르띠에 로그인 유지")], notices: [], integrations: [], conversations: [] } }];
 
@@ -37,6 +33,7 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 	return json({});
 }
 const hub = fakeHub({
+	slowTimers: true,
 	api: async (req, url) => {
 		const p = url.pathname;
 		if (p === "/api/peers") return json([{ name: "맥북", url: `${hub.origin}`, self: true, online: true }, ...peers.map(x => ({ name: x.name, url: x.url, self: false, online: x.online }))]);
@@ -100,21 +97,19 @@ describe("a failing peer monitor", () => {
 		await openScreen(v);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]')`);
 		await run(v, `document.querySelector('#app-sw [data-k="enabled"]').click()`);
-		const deadline = Date.now() + 5000;
-		while (!acts.some(a => a.action === "watch") && Date.now() < deadline) await Bun.sleep(25);
+		await acts.until(() => !(!acts.some(a => a.action === "watch")));
 		expect(acts.find(a => a.action === "watch")).toEqual({ action: "watch", args: { op: "settings", name: "login-cartier-com", values: { enabled: false } } });
-		const d2 = Date.now() + 5000;
-		while (!acts.some(a => a.action === "message") && Date.now() < d2) await Bun.sleep(25);
+		await acts.until(() => !(!acts.some(a => a.action === "message")));
 		expect(acts.find(a => a.action === "message")).toMatchObject({ args: { target: PEER_T, text: "다시 로그인해 줘" } });
 		expect(sent).toEqual([]);
 		await closeScreen(v);
-		await waitFor(v, `document.querySelector("#tl").textContent.includes("맥미니에서 다시 로그인했어요")`, 15_000);
+		await advanceTimers(v, 4000);   // the open peer conversation re-reads its history every 4 s
+		await waitFor(v, `document.querySelector("#tl").textContent.includes("맥미니에서 다시 로그인했어요")`);
 	});
 
 	test("390px phone: the failing peer monitor's detail", async () => {
 		const v = await boot(390, 844, PEER_KEY);
 		await waitFor(v, `document.querySelector("#mon-head .as-hd") && document.querySelector("#mon-tl [data-chip]")`);
-		await Bun.write(join(SHOTS, "peer-monitor-detail-390.png"), await v.screenshot());
 		expect(await q<number>(v, `return document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
 	});
 });
@@ -126,13 +121,11 @@ describe("a failing local monitor", () => {
 		expect(await q(v, `return [...document.querySelectorAll("#mon-tl [data-chip]")].map(b => b.dataset.chip)`)).toEqual(CHIPS);
 		await run(v, `document.querySelector('#mon-tl [data-chip="원인 찾아 줘"]').click()`);
 		await waitFor(v, `target === "settings:w:login-local" && document.querySelector("#mon-chips [data-chip]")`);
-		const deadline = Date.now() + 5000;
-		while (!sent.length && Date.now() < deadline) await Bun.sleep(25);
+		await sent.until(() => !(!sent.length));
 		expect(sent[0]).toMatchObject({ text: "원인 찾아 줘", settings: "w:login-local" });
 		expect(await q(v, `return ta.value`)).toBe("");
 		await run(v, `ta.value = "쓰던 글"; document.querySelector('#mon-chips [data-chip="일시정지"]').click()`);
-		const d2 = Date.now() + 5000;
-		while (sent.length < 2 && Date.now() < d2) await Bun.sleep(25);
+		await sent.until(() => !(sent.length < 2));
 		expect(sent[1]).toMatchObject({ text: "일시정지", settings: "w:login-local" });
 		expect(await q(v, `return ta.value`)).toBe("쓰던 글");
 		await run(v, `go("monitoring", "m:정상 감시")`);

@@ -6,7 +6,7 @@ import { readSettings, writeSettings } from "./app-settings.ts";
 import { removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { integrationAvailable, integrationContext, integrationItems, readAppOff } from "./integrations.ts";
-import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
+import { fakeHub, inbox, json, run, waitFor, type View } from "./test-web.ts";
 
 // 모니터링 > 앱 > 설정 (web/js/32-app-settings.js) as shipped, in a headless Bun.WebView against a stub gateway whose settings routes call the real
 // hub/app-settings.ts on a temp data dir. Screenshots are written only when SETTINGS_SHOTS names a folder. Names and ids are placeholders.
@@ -22,8 +22,8 @@ const history = (target: string) => target === "settings:mail" ? [
 	{ ts: ts(2), kind: "out", source: "orchestrator", target, text: `광고 보내는 곳 하나를 빼고 자동 초안을 켜는 변경이에요.\n\`\`\`dotz-settings\n${JSON.stringify(PROPOSAL)}\n\`\`\`` },
 ] : [];
 
-const sent: Record<string, unknown>[] = [];
-const patches: Record<string, unknown>[] = [];
+const sent = inbox<Record<string, unknown>>();
+const patches = inbox<Record<string, unknown>>();
 const removes: Record<string, unknown>[] = [];
 const hub = fakeHub({
 	stream: "fake",
@@ -144,8 +144,7 @@ describe("설정 대화 at desktop width (1280x800)", async () => {
 
 	test("the composer sends settings:<app> to the orchestrator", async () => {
 		await run(v, `ta.value = "답장 말투 더 짧게"; sendChat()`);
-		const deadline = Date.now() + 3000;
-		while (!sent.length && Date.now() < deadline) await Bun.sleep(25);
+		await sent.until(() => !(!sent.length));
 		expect(sent[0]).toMatchObject({ text: "답장 말투 더 짧게", settings: "mail" });
 	});
 

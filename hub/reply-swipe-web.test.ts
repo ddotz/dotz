@@ -1,12 +1,12 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { fakeHub, json, on } from "./test-web.ts";
+import { fakeHub, inbox, json, on } from "./test-web.ts";
 import { webBuild } from "./webapp.ts";
 
 // Swipe a message from right to left (touch) or press its hover button to reply to it: a quoted bar sits above the composer (x cancels it)
 // and the send carries the quoted message (hub/intake.ts parseReply). Touch is driven with synthetic pointer events and synthetic touch
 // events (the same drag logic); a real finger is a phone check.
 const send = (e: object) => hub.push(e);
-const posted: Record<string, any>[] = [];
+const posted = inbox<Record<string, any>>();
 const hub = fakeHub({
 	stream: "fake",
 	api: async (req, url) => {
@@ -146,7 +146,7 @@ describe("swipe to reply on a phone", () => {
 		expect((await bar())?.hidden).toBe(true);
 		await view.type("그냥 보낼게요");
 		await view.evaluate(`document.querySelector("#send-btn").click()`);
-		while (!posted.length) await Bun.sleep(10);
+		await posted.until(p => p.length > 0);
 		expect(posted[0].text).toBe("그냥 보낼게요");
 		expect(posted[0].reply).toBeUndefined();
 	});
@@ -155,12 +155,12 @@ describe("swipe to reply on a phone", () => {
 		await drag(BOT_TS, [[-30, 1], [-80, 2]], { end: "up" });
 		await view.type("그럼 오늘은 테스트만요");
 		await view.evaluate(`document.querySelector("#send-btn").click()`);
-		while (!posted.length) await Bun.sleep(10);
+		await posted.until(p => p.length > 0);
 		expect(posted[0]).toMatchObject({ text: "그럼 오늘은 테스트만요", reply: { id: BOT_TS, author: "dotz", content: "내일 오전에 배포할게요" } });
 		expect((await bar())?.hidden).toBe(true);
 		await view.evaluate(`document.querySelector("#text").value = "다음 메시지"`);
 		await view.evaluate(`document.querySelector("#send-btn").click()`);
-		while (posted.length < 2) await Bun.sleep(10);
+		await posted.until(p => p.length >= 2);
 		expect(posted[1].reply).toBeUndefined();
 		send({ kind: "message", source: "web", channel: "web", mid: "m-owner-2", author: "me", text: "그럼 오늘은 테스트만요", ts: "2026-10-22T01:00:05.000Z", reply: { id: BOT_TS, author: "dotz", content: "내일 오전에 배포할게요" } });
 		await waitFor(`document.querySelector('#tl [data-rid="m-owner-2"] .rpq')`);
@@ -176,7 +176,7 @@ describe("reply button on desktop", () => {
 		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
 		await view.type("네 알겠어요");
 		await view.evaluate(`document.querySelector("#send-btn").click()`);
-		while (!posted.length) await Bun.sleep(10);
+		await posted.until(p => p.length > 0);
 		expect(posted[0]).toMatchObject({ text: "네 알겠어요", reply: { id: "m-owner-1", author: "", content: "배포는 언제 해요?" } });
 	});
 

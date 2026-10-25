@@ -21,9 +21,25 @@ export type HubOptions = {
 	stream?: "real" | "fake";
 	// Answer to unknown /api/* paths (the page tolerates an empty object).
 	fallback?: unknown;
+	// Page timers of 1 s or more (the page's 2 s / 4 s / 15 s / 60 s polls) become virtual: they only run when a test calls advanceTimers(view, ms).
+	slowTimers?: boolean;
 };
 
 const enc = new TextEncoder();
+
+// Injected first into the page: setTimeout / setInterval of >= 1000 ms go to a virtual queue that __advance(ms) runs in time order.
+const SLOW_TIMERS = `(() => { const q = []; let now = 0, seq = 1e9; const rs = setTimeout, ri = setInterval, rc = clearTimeout, rci = clearInterval;
+	setTimeout = (f, ms = 0, ...a) => { if (ms < 1000) return rs(f, ms, ...a); q.push({ id: ++seq, at: now + ms, f: () => f(...a) }); return seq; };
+	setInterval = (f, ms = 0, ...a) => { if (ms < 1000) return ri(f, ms, ...a); q.push({ id: ++seq, at: now + ms, every: ms, f: () => f(...a) }); return seq; };
+	const clear = real => id => { const i = q.findIndex(t => t.id === id); if (i >= 0) q.splice(i, 1); else real(id); };
+	clearTimeout = clear(rc); clearInterval = clear(rci);
+	window.__advance = ms => { const end = now + ms; for (;;) { const due = q.filter(t => t.at <= end).sort((x, y) => x.at - y.at)[0]; if (!due) break; now = due.at; if (due.every) due.at += due.every; else q.splice(q.indexOf(due), 1); due.f(); } now = end; };
+})();`;
+async function slowIndex(req: Request): Promise<Response> {
+	const plain = await indexPage(new Request(req.url));
+	const html = (await plain.text()).replace(/<head[^>]*>/i, m => `${m}<script>${SLOW_TIMERS}</script>`);
+	return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+}
 
 // A WebView costs ~120 ms to start, a navigation ~20 ms: finished views go back to a process-wide pool (bun runs every test file in one process)
 // and the next hub reuses one. A view with a console handler is bound to its first test and is closed instead.
@@ -58,7 +74,7 @@ export function fakeHub(opts: HubOptions = {}) {
 		idleTimeout: 0,
 		async fetch(req) {
 			const url = new URL(req.url), p = url.pathname;
-			if (p === "/") return indexPage(req);
+			if (p === "/") return opts.slowTimers ? slowIndex(req) : indexPage(req);
 			const asset = appAsset(req, p);
 			if (asset) return asset;
 			const own = await opts.api?.(req, url);
@@ -119,6 +135,8 @@ export type FakeHub = ReturnType<typeof fakeHub>;
 // Resolves when the page-side expression is truthy, re-checked every animation frame.
 export const waitFor = (v: View, expr: string, ms = 10_000) =>
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+// Runs the page's virtual slow timers (fakeHub({ slowTimers: true })) that fall due within `ms`.
+export const advanceTimers = (v: View, ms: number) => run(v, `__advance(${ms})`);
 // Evaluates a page-side expression and returns it as JSON.
 export const ev = async <T = unknown>(v: View, expr: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify(${expr})`)) as string) as T;
 // Runs page-side statements and returns nothing.
@@ -133,21 +151,25 @@ export const on = (v: View) => ({
 // Page-side fake time: Date.now() runs from `now` (and keeps ticking), so dated fixtures label the same way on every day.
 export const fixPageNow = (v: View, now: number) => run(v, `const off = ${now} - Date.now(), real = Date.now.bind(Date); Date.now = () => real() + off`);
 
-// Node-side values a test waits for (requests a fake hub received, messages posted): until() resolves on the push that satisfies it.
-export function inbox<T>() {
-	const items: T[] = [];
-	const waiters = new Set<() => void>();
-	return {
-		items,
-		push(x: T) { items.push(x); for (const w of [...waiters]) w(); },
-		clear() { items.length = 0; },
-		until(ok: (items: T[]) => boolean, ms = 10_000, what = "condition"): Promise<T[]> {
-			if (ok(items)) return Promise.resolve(items);
-			return new Promise<T[]>((resolve, reject) => {
-				const check = () => { if (ok(items)) { waiters.delete(check); resolve(items); } };
-				waiters.add(check);
-				AbortSignal.timeout(ms).addEventListener("abort", () => { waiters.delete(check); reject(new Error(`timeout: ${what}; got ${JSON.stringify(items)}`)); });
-			});
-		},
-	};
+// Node-side values a test waits for (requests a fake hub received, messages posted): a plain array whose push() wakes until().
+const inboxWaiters = new WeakMap<object, Set<() => void>>();
+class Inbox<T> extends Array<T> {
+	static get [Symbol.species]() { return Array; }
+	push(...x: T[]): number {
+		const n = super.push(...x);
+		for (const w of [...(inboxWaiters.get(this) ?? [])]) w();
+		return n;
+	}
+	// Resolves on the push that makes `ok` true; rejects after `ms` (a real timer: setTimeout is the test clock here).
+	until(ok: (items: T[]) => boolean, ms = 10_000, what = "condition"): Promise<T[]> {
+		if (ok(this)) return Promise.resolve(this);
+		return new Promise<T[]>((resolve, reject) => {
+			const waiters = inboxWaiters.get(this) ?? new Set<() => void>();
+			inboxWaiters.set(this, waiters);
+			const check = () => { if (ok(this)) { waiters.delete(check); resolve(this); } };
+			waiters.add(check);
+			AbortSignal.timeout(ms).addEventListener("abort", () => { waiters.delete(check); reject(new Error(`timeout: ${what}; got ${JSON.stringify(this)}`)); });
+		});
+	}
 }
+export const inbox = <T>(): Inbox<T> => new Inbox<T>();

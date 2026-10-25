@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { fakeHub, idleState, json, run, waitFor } from "./test-web.ts";
+import { advanceTimers, fakeHub, idleState, json, run, waitFor } from "./test-web.ts";
 
 // The owner on the MacBook writes in a mail conversation of the Mac mini whose bot is paused. The page reads that conversation through the proxy and never
 // gets the mini's events on its own stream, so the notice the mini writes afterwards has to arrive by the page's repeated read; the composer says the bot is
@@ -16,6 +16,7 @@ const localBot = { status: "rate-limited", pauseKind: "rate" };
 const peers = () => [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [], notices: [], integrations: [MAIL], available: [], conversations: [{ target: T, mail: { key: "kdb-66931568", subject: "견적 요청", from: "Kim", source: "kdb", at: asked.ts }, last: { text: "메일 본문", via: "kdb" }, unread: 0 }], orchestrator: miniBot } }];
 
 const hub = fakeHub({
+	slowTimers: true,
 	state: idleState({ orchestrator: localBot }),
 	api: (_req, url) => {
 		const p = url.pathname;
@@ -43,6 +44,7 @@ test("a peer's mail conversation gets the mini's later notice and held state, an
 		{ ts: "2026-10-23T12:50:01.000Z", kind: "delivery", source: "gateway", target: THREAD, conv: T, ref: "m1", state: "held", text: "" },
 		{ ts: "2026-10-23T12:50:02.000Z", kind: "out", source: "gateway", target: THREAD, conv: T, text: PAUSED_OUT, reply_to: "m1" },
 	);
+	await advanceTimers(v, 4000);   // the open peer conversation re-reads its history every 4 s
 	await waitFor(v, `$("#tl").textContent.includes(${JSON.stringify(PAUSED_OUT)}) && $("#tl").textContent.includes(DELIV_LABEL.held)`);
 }, 30_000);
 

@@ -1,15 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
 import { isSettingsTarget, viewOf } from "./app-settings.ts";
 import { WATCH_FIELDS } from "./watch-settings.ts";
-import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
+import { fakeHub, inbox, json, run, waitFor, type View } from "./test-web.ts";
 
 // A monitor kept on the Mac mini (a peer's watch) looks exactly like the same monitor on this computer: the list row, the detail, the status card, the
 // chips, the settings conversation (chat only) and the settings screen behind its ⋯ button; only the machine chip differs. A peer's app has the same
 // title-bar gear and its name is a field of the settings screen. Headless; both computers are fixtures with the same data.
-const SHOTS = process.env.PARITY_SHOTS ?? "/tmp/parity-shots";
-mkdirSync(SHOTS, { recursive: true });
 const MINI = "http://mini.test";
 const at = (min: number) => new Date(Date.UTC(2026, 9, 23, 3, min)).toISOString();
 const TITLE = "나스 패키지 새 버전";
@@ -21,8 +17,8 @@ const LOCAL_T = `settings:w:${LOCAL_W}`, PEER_T = `settings:w:${PEER_W}`;
 const labelField = (value: string) => ({ key: "label", label: "앱 이름", type: "text", help: "", max: 30, switch: true, value });
 const MAIL = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], unread: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } };
 
-const acts: { action: string; args: Record<string, unknown> }[] = [];
-const sent: Record<string, unknown>[] = [];
+const acts = inbox<{ action: string; args: Record<string, unknown> }>();
+const sent = inbox<Record<string, unknown>>();
 const history: Record<string, Record<string, unknown>[]> = {
 	[LOCAL_T]: [{ ts: at(40), kind: "message", source: "web", channel: LOCAL_T, author: "owner", text: "왜 실패했어?" }, { ts: at(41), kind: "out", source: "orchestrator", target: LOCAL_T, text: "로그인이 풀렸어요." }],
 	[PEER_T]: [{ ts: at(40), kind: "message", source: "web", channel: PEER_T, author: "owner", text: "왜 실패했어?" }, { ts: at(41), kind: "out", source: "orchestrator", target: PEER_T, text: "로그인이 풀렸어요." }],
@@ -111,7 +107,6 @@ describe.each([[390, 844], [1280, 800]])("a monitor on the Mac mini and the same
 	test("the screenshots", async () => {
 		for (const side of ["local", "peer"] as const) {
 			const v = await boot(width, height, KEYS[side]);
-			await Bun.write(join(SHOTS, `${side}-detail-${width}.png`), await v.screenshot());
 		}
 	});
 
@@ -129,7 +124,6 @@ describe.each([[390, 844], [1280, 800]])("a monitor on the Mac mini and the same
 			screens.push(await q<string>(v, `${NORMALIZE} return clean(document.querySelector(".as-screen #app-sw"))`));
 			expect(await q<number>(v, `return document.querySelector(".as-screen").scrollWidth`)).toBeLessThanOrEqual(width);
 			await waitFor(v, `document.getAnimations().length === 0`);
-			await Bun.write(join(SHOTS, `${side}-settings-${width}.png`), await v.screenshot());
 			await run(v, `document.querySelector('.as-screen [data-k="as-back"]').click()`);
 			await waitFor(v, `!document.querySelector(".as-screen") && target === ${JSON.stringify(t)}`);
 		}
@@ -148,8 +142,7 @@ describe("a peer's app", () => {
 		expect(await q(v, `return document.querySelector('.as-screen #app-sw [data-k="label"]').value`)).toBe("메일");
 		await run(v, `const i = document.querySelector('.as-screen #app-sw [data-k="label"]'); i.value = "맥미니 메일"; i.dispatchEvent(new Event("change"))`);
 		await waitFor(v, `document.querySelector('.as-screen #app-sw [data-k="label"]').value === "맥미니 메일"`);
-		const deadline = Date.now() + 5000;
-		while (!acts.some(a => a.action === "app") && Date.now() < deadline) await Bun.sleep(25);
+		await acts.until(() => !(!acts.some(a => a.action === "app")));
 		expect(acts.find(a => a.action === "app")).toEqual({ action: "app", args: { op: "settings", app: "mail", values: { label: "맥미니 메일" } } });
 		expect(sent).toEqual([]);
 	});

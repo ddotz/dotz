@@ -14,7 +14,6 @@ import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 // The send sheet of a reply that promises a file (web/js/10-decision-card.js draftFilesNode): a matched file of the 첨부 파일 폴더 is a row with an x,
 // a missing one is an amber warning above 보내기, 파일 추가 picks from the folder (or the device), x takes a file off, and a mail account that cannot
 // send files says so and asks once more. Headless browser against the real draft store, notice store and draft-attach routes; nothing is sent.
-const SNAP = "/tmp/dotz-draft-attach";
 const lib = mkdtempSync(join(tmpdir(), "dotz-attach-lib-"));
 for (const f of ["행방불명_공유용.pdf", "하울의 움직이는 성_공유용.pdf", "악보/기타/캐논.pdf"]) {
 	mkdirSync(join(lib, f, ".."), { recursive: true });
@@ -67,7 +66,6 @@ const openSheet = async (v: View, ref: string) => {
 };
 
 beforeAll(async () => {
-	Bun.spawnSync(["mkdir", "-p", SNAP]);
 	resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });
 	markNoticesRead({ all: true });
 	mkdirSync(join(paths.config(), ".."), { recursive: true });
@@ -101,7 +99,6 @@ describe("files in the send sheet at 390px", () => {
 			expect(b.l).toBeGreaterThanOrEqual(card.l);
 			expect(b.r).toBeLessThanOrEqual(card.r);
 		}
-		await Bun.write(`${SNAP}/sheet-matched-390.png`, await v.screenshot());
 	});
 
 	test("no match: the amber warning sits above 보내기; 파일 추가 from the folder clears it, x brings it back", async () => {
@@ -116,7 +113,6 @@ describe("files in the send sheet at 390px", () => {
 		const warn = (await box(v, ".fs-ft .dr-warn"))!, send = (await box(v, ".fs-ft .dc-act.main"))!;
 		expect(warn.b).toBeLessThanOrEqual(send.t);
 		expect(await v.evaluate(`getComputedStyle(document.querySelector(".fs-ft .dr-warn")).backgroundColor !== getComputedStyle(document.querySelector(".fs-card")).backgroundColor`)).toBe(true);
-		await Bun.write(`${SNAP}/sheet-warning-390.png`, await v.screenshot());
 
 		await waitFor(v, `document.querySelector(".fs-body .dr-add")`);
 		await click(v, ".fs-body .dr-add");
@@ -145,6 +141,5 @@ describe("files in the send sheet at 390px", () => {
 		await waitFor(v, `document.querySelector("dialog.dlg")`);
 		expect(await texts(v, "dialog.dlg .dtitle")).toEqual(["첨부파일 없이 보낼까요?"]);
 		expect(await v.evaluate(`!!document.querySelector(".fs-ft .dc-st")`)).toBe(false);
-		await Bun.write(`${SNAP}/sheet-cannot-send-390.png`, await v.screenshot());
 	});
 });

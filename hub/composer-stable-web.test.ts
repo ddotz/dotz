@@ -138,7 +138,7 @@ describe("typing on the phone composer while the page updates", () => {
 		await view.evaluate(`Object.defineProperty(window, "innerHeight", { configurable: true, get: () => 844 }), 0`);   // a frame where innerHeight lags
 		await view.evaluate(`visualViewport.dispatchEvent(new Event("resize")), 0`);
 		await waitFor(`document.documentElement.style.getPropertyValue("--kb") !== ""`);
-		await Bun.sleep(80);   // one animation frame for the queued apply
+		await view.evaluate(`new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`);   // the queued apply has run
 		expect(await view.evaluate(`document.documentElement.style.getPropertyValue("--kb")`)).toBe("0px");
 		expect(Number(await view.evaluate(`document.querySelector(".app").getBoundingClientRect().height`))).toBeGreaterThan(540);
 		await view.resize(390, 844);

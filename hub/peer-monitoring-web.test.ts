@@ -1,9 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { fakeHub, json, waitFor, type View } from "./test-web.ts";
+import { advanceTimers, fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // 모니터링 shows this computer's items and every peer's together (web/js/34-peer-monitoring.js): a machine chip on each peer row, '연결 안 됨'
 // on a peer that does not answer, the peer's reports in 감시 소식 and the machine name beside each detail title. Headless; the peers are fixtures.
-const SNAP = "/tmp/tm-shots";
 const MINI = "http://mini.test";
 const at = (min: number) => new Date(Date.UTC(2026, 9, 20, 3, min)).toISOString();
 const localMon = { name: "local-check", watch: "local-check", kind: "watch", last_run: at(10), last_result: "ok", next_run: at(40), every: "30분" };
@@ -56,6 +55,7 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 	return json({});
 }
 const hub = fakeHub({
+	slowTimers: true,
 	api: (req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 1 });
 		if (url.pathname === "/api/peers") return json([{ name: "맥북", url: `${hub.origin}`, self: true, online: true }, ...peers.map(p => ({ name: p.name, url: p.url, self: false, online: p.online }))]);
@@ -165,11 +165,12 @@ describe("merged 모니터링", () => {
 		const afters = () => hits.filter(h => h.startsWith("/api/kakao/chat/c1?") && h.includes("after=")).length;
 		const h0 = heads();
 		c1More.push({ logId: "102", sentAt: Date.parse(at(26)), fromMe: false, sender: "엄마", authorId: "a1", type: 1, text: "다른 컴퓨터에 저장된 새 메시지" });
-		await waitFor(v, `document.querySelector('#kk-tl [data-log="102"]')`, 6000);
+		await advanceTimers(v, 2000);   // the open peer room asks for its head every 2 s (KK_PEER_MS)
+		await waitFor(v, `document.querySelector('#kk-tl [data-log="102"]')`);
 		expect(heads()).toBeGreaterThan(h0);
 		expect(await text(v, `String(document.querySelectorAll('#kk-tl [data-log="102"]').length)`)).toBe("1");
 		// Nothing moved: the next poll asks for the head only, not for rows.
-		await waitFor(v, `KK.peerHead === "c1:102" && !KK.peerBusy`, 6000);
+		await waitFor(v, `KK.peerHead === "c1:102" && !KK.peerBusy`);
 		const a = afters(), h = heads();
 		await v.evaluate(`kkPeerPoll()`);
 		expect(heads()).toBe(h + 1);
@@ -179,26 +180,14 @@ describe("merged 모니터링", () => {
 		await waitFor(v, `!KK.vis`);
 		await v.evaluate(`kkPeerPoll()`);
 		expect(heads()).toBe(h + 1);
-	}, 20_000);
+	});
 });
 
-for (const [name, w, h] of [["390", 390, 844], ["desktop", 1280, 800]] as const) {
-	describe(`screenshot at ${w}px`, () => {
-		test("모니터링 with a peer item open", async () => {
-			const v = await boot(w, h);
-			await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|m:peer-backup`)}), 0)`);
-			await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-head .mon-pc").textContent === "맥미니" && $("#mon-tl .rc")`);
-			if (w >= 1100) await Bun.write(`${SNAP}/monitor-${name}.png`, await v.screenshot());
-			else {
-				await v.evaluate(`(go("monitoring"), 0)`);
-				await waitFor(v, `$("#mon-side .cv-row")`);
-				await Bun.write(`${SNAP}/monitor-${name}-list.png`, await v.screenshot());
-				await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|m:peer-backup`)}), 0)`);
-				await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-tl .rc")`);
-				expect(await text(v, `$("#title .mon-pc").textContent`)).toBe("맥미니");
-				await Bun.write(`${SNAP}/monitor-${name}.png`, await v.screenshot());
-			}
-			expect(await Bun.file(`${SNAP}/monitor-${name}.png`).exists()).toBe(true);
-		});
+for (const [w, h] of [[390, 844], [1280, 800]] as const) {
+	test(`a peer monitor's detail names its computer at ${w}px`, async () => {
+		const v = await boot(w, h);
+		await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|m:peer-backup`)}), 0)`);
+		await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-head .mon-pc").textContent === "맥미니" && $("#mon-tl .rc")`);
+		if (w < 1100) expect(await text(v, `$("#title .mon-pc").textContent`)).toBe("맥미니");
 	});
 }
