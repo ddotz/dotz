@@ -4,6 +4,7 @@
 //                                          { name, data: "<base64>" } (a file picked on another computer, sent to the computer that owns the draft),
 //                                          { remove: <n> } (take the n-th file off the draft)
 //   GET    /api/drafts/<ref>/library[?q=] the files of the 첨부 파일 폴더, best match for the mail first
+//   GET    /api/drafts/<ref>/original     the mail this draft answers (the sheet's 원문 보기): { key, from, to?, date, subject?, text, html, attachments }; 404 when it is gone
 // Only a pending mail draft of reply-drafts can change; nothing is sent from here (the owner's 보내기 does that).
 import { basename } from "node:path";
 import { attachFolder } from "../features/reply-drafts/lib/flow.ts";
@@ -13,6 +14,7 @@ import { addStagedBytes, addStagedFile, removeStagedFile, stagedFiles } from "..
 import { getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { fileSizeText } from "./draft-approval.ts";
 import { messageFiles } from "./files.ts";
+import { attachmentList, mailByKey } from "./mail.ts";
 
 const FILE_MAX = 25 * 1024 * 1024;
 const LIBRARY_LIST_MAX = 100;
@@ -28,10 +30,20 @@ async function view(rec: DraftRec | undefined, ref: string) {
 	};
 }
 
+// The mail a reply draft answers: what the gateway recorded of it (sender, date, files, whether an HTML body is kept) and the text the draft was written from.
+// `html` true = GET /api/mail/<key>/body has the sanitized HTML. A new-mail draft (compose) answers nothing, and a mail that fell out of the record has nothing to show.
+function original(rec: DraftRec | undefined): Response {
+	if (!rec || rec.kind !== "mail" || rec.compose) return json({ error: "원문을 찾을 수 없어요" }, 404);
+	const mail = mailByKey(rec.ref);
+	if (!mail && !rec.item.text.trim()) return json({ error: "원문을 찾을 수 없어요" }, 404);
+	return json({ key: rec.ref, from: mail?.from ?? rec.item.from, ...(mail?.to ? { to: mail.to } : {}), date: mail?.at ?? rec.created, ...(mail?.subject || rec.item.subject ? { subject: mail?.subject ?? rec.item.subject } : {}), text: rec.item.text, html: !!mail?.html, attachments: mail ? attachmentList(mail) : [] });
+}
+
 export async function draftAttachRoute(req: Request, url: URL, ref: string, tail: string): Promise<Response> {
 	const rec = getDraft(ref);
 	const editable = !!rec && rec.kind === "mail" && rec.status === "pending";
 	try {
+		if (tail === "original" && req.method === "GET") return original(rec);
 		if (tail === "files" && req.method === "GET") return json(await view(rec, ref));
 		if (!rec || !editable) return json({ error: "이 초안은 파일을 바꿀 수 없어요" }, rec ? 409 : 404);
 		if (tail === "library" && req.method === "GET") {
