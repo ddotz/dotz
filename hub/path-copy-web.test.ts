@@ -8,10 +8,10 @@ import { appAsset, indexPage } from "./webapp.ts";
 // Set T1_SHOTS=<dir> to keep screenshots.
 const SHOTS = process.env.T1_SHOTS ?? "";
 const json = (v: unknown, status = 200) => Response.json(v, { status });
-const XLSX = "/Users/hyuns/.dotz/uploads/2026-10-26/mvoqivnd0r9j-2026년_9월_단신부임여비_신청.xlsx";
-const PDF = "/Users/hyuns/.dotz/uploads/2026-10-26/1분기_정산_보고서.pdf";
+const XLSX = "/Users/fake/.dotz/uploads/2026-10-26/mvoqivnd0r9j-2026년_9월_국내출장여비_신청.xlsx";
+const PDF = "/Users/fake/.dotz/uploads/2026-10-26/1분기_정산_보고서.pdf";
 const FILE_MSG = `첨부 두 개 보내 드려요.\n\n[file] ${XLSX}\n[file] ${PDF}`;
-const SHORT_XLSX = "~/…/2026-10-26/mvoqiv…임여비_신청.xlsx";
+const SHORT_XLSX = "~/…/2026-10-26/mvoqiv…장여비_신청.xlsx";
 const SHORT_PDF = "~/…/2026-10-26/1분기_정산_보고서.pdf";
 const ASK = "[ask] 확인\n결정: 어떻게 할까요?\n**1) 그대로 보내기** ← 추천\n바로 보내요\n**2) 고치기**\n내용을 고쳐요\n";
 const history = [

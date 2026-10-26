@@ -10,11 +10,11 @@ const SHOTS = process.env.T7_SHOTS ?? join(tmpdir(), "dotz-shots", "apps");
 mkdirSync(SHOTS, { recursive: true });
 const json = (v: unknown) => Response.json(v);
 const items = [
-	{ id: "hdocs", label: "한컴 문서", kind: "tool", source: "manifest", icon: "file", status: "running", off: false, health: "/", watches: [], settings: { port: 4417 }, web: { url: "http://127.0.0.1:4417", path: "/", mode: "rewrite", href: "/apps/hdocs/" }, start: { command: "bun src/server.ts", cwd: "~/Code/hdocs/hdocs-web-live" } },
+	{ id: "mydocs", label: "문서 도구", kind: "tool", source: "manifest", icon: "file", status: "running", off: false, health: "/", watches: [], settings: { port: 4417 }, web: { url: "http://127.0.0.1:4417", path: "/", mode: "rewrite", href: "/apps/mydocs/" }, start: { command: "bun src/server.ts", cwd: "~/Code/my-docs" } },
 	{ id: "kakao", label: "카카오톡", kind: "monitor", source: "registry", icon: "chat", status: "running" },
 ];
 const errors = [{ id: "broken", dir: "/tmp/custom/apps/broken", reason: "app.json을 읽을 수 없어요: Unexpected token" }];
-const PAGE = `<!doctype html><html><head><title>fake hdocs</title></head><body><h1>가짜 문서 앱</h1><button id="appbtn">앱 안의 버튼</button></body></html>`;
+const PAGE = `<!doctype html><html><head><title>fake docs tool</title></head><body><h1>가짜 문서 앱</h1><button id="appbtn">앱 안의 버튼</button></body></html>`;
 const server = Bun.serve({
 	port: 0,
 	hostname: "127.0.0.1",
@@ -25,7 +25,7 @@ const server = Bun.serve({
 		const asset = appAsset(req, url.pathname);
 		if (asset) return asset;
 		if (url.pathname === "/api/apps") return json({ items, errors });
-		if (url.pathname === "/apps/hdocs/" || url.pathname === "/apps/hdocs/index.html") return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
+		if (url.pathname === "/apps/mydocs/" || url.pathname === "/apps/mydocs/index.html") return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {} });
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
@@ -58,7 +58,7 @@ describe("앱 at 390px", () => {
 		await boot();
 		const list = await view.evaluate(`(() => $("#apps-side").innerText)()`) as string;
 		expect(list).toContain("사용자 앱");
-		expect(list).toContain("한컴 문서");
+		expect(list).toContain("문서 도구");
 		expect(list).toContain("실행 중");
 		expect(list).toContain("모니터링 앱");
 		expect(list).toContain("카카오톡");
@@ -67,16 +67,16 @@ describe("앱 at 390px", () => {
 		expect(await view.evaluate(`(() => document.querySelectorAll("#apps-side .cv-row").length)()`)).toBe(3);
 		expect(await view.evaluate(`(() => !!document.querySelector("#apps-side .app-dot.ok"))()`)).toBe(true);
 		await Bun.write(join(SHOTS, "apps-list-390.png"), await view.screenshot());
-		await view.evaluate(`(() => { [...document.querySelectorAll("#apps-side .cv-row")].find(b => b.dataset.k === "hdocs").click(); return 0; })()`);
+		await view.evaluate(`(() => { [...document.querySelectorAll("#apps-side .cv-row")].find(b => b.dataset.k === "mydocs").click(); return 0; })()`);
 		await waitFor(`!!document.querySelector("#apps-pane .apps-frame")`);
-		expect(await view.evaluate(`(() => $("#apps-pane .apps-n").textContent)()`)).toBe("한컴 문서");
+		expect(await view.evaluate(`(() => $("#apps-pane .apps-n").textContent)()`)).toBe("문서 도구");
 		expect(await view.evaluate(`(() => $("#apps-pane .apps-p").textContent)()`)).toContain("실행 중");
-		expect(await view.evaluate(`(() => $("#apps-pane .apps-frame").getAttribute("src"))()`)).toBe("/apps/hdocs/");
+		expect(await view.evaluate(`(() => $("#apps-pane .apps-frame").getAttribute("src"))()`)).toBe("/apps/mydocs/");
 		expect(await view.evaluate(`(() => !!$("#apps-pane a[target=_blank]"))()`)).toBe(true);
 		expect(await view.evaluate(`(() => [...$("#apps-pane").querySelectorAll("button[aria-label='앱 메뉴'], button.apps-menu")].length)()`)).toBe(1);
 		await waitFor(`(() => { try { return document.querySelector("#apps-pane .apps-frame").contentDocument.body.innerText.includes("가짜 문서 앱"); } catch { return false; } })()`);
 		await Bun.write(join(SHOTS, "apps-open-390.png"), await view.screenshot());
-		expect(await view.evaluate(`(location.hash)`)).toBe("#apps/hdocs");
+		expect(await view.evaluate(`(location.hash)`)).toBe("#apps/mydocs");
 		expect(errorsSeen).toEqual([]);
 	}, 25_000);
 
@@ -90,7 +90,7 @@ describe("앱 at 390px", () => {
 		await view.evaluate(`(() => { [...document.querySelectorAll(".menu .mi")].find(b => b.textContent.trim() === "설정").click(); return 0; })()`);
 		await waitFor(`document.querySelector("dialog[open]") && document.querySelector("dialog[open]").innerText.includes("bun src/server.ts")`);
 		const dl = await view.evaluate(`(() => document.querySelector("dialog[open]").innerText)()`) as string;
-		expect(dl).toContain("~/Code/hdocs/hdocs-web-live");
+		expect(dl).toContain("~/Code/my-docs");
 		expect(dl).toContain("4417");
 		await view.evaluate(`(() => { document.querySelector("dialog[open]").close(); return 0; })()`);
 	}, 25_000);

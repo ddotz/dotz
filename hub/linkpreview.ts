@@ -222,6 +222,18 @@ export function createLinkPreview(deps: PreviewDeps = {}) {
 		return undefined;
 	};
 
+	// The request goes to the address that was checked, not to a second DNS answer (rebinding): the host travels in Host and,
+	// for https, as the TLS server name the certificate is verified against.
+	const pinnedGet = (at: { url: URL; addresses: string[] }, init: RequestInit & { headers: Record<string, string> }): Promise<Response> => {
+		const host = at.url.hostname.replace(/^\[|\]$/g, "");
+		const ip = at.addresses[0];
+		if (!ip || isIp(host)) return doFetch(at.url.href, init);
+		const to = new URL(at.url.href);
+		to.hostname = ip.includes(":") ? `[${ip}]` : ip;
+		const headers = { ...init.headers, host: at.url.host };
+		return doFetch(to.href, { ...init, headers, ...(at.url.protocol === "https:" ? { tls: { serverName: host } } : {}) } as RequestInit);
+	};
+
 	// One GET with the redirects followed by hand, each new address checked again; the content type must be HTML.
 	const getHtml = async (raw: string): Promise<{ ok: true; html: string; url: URL; cut: boolean } | { ok: false; error: string }> => {
 		const signal = AbortSignal.timeout(timeoutMs);
@@ -230,7 +242,7 @@ export function createLinkPreview(deps: PreviewDeps = {}) {
 		for (let hop = 0; hop <= MAX_HOPS; hop++) {
 			let up: Response;
 			try {
-				up = await doFetch(at.url.href, { method: "GET", redirect: "manual", credentials: "omit", signal, headers: { accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1" } });
+				up = await pinnedGet(at, { method: "GET", redirect: "manual", credentials: "omit", signal, headers: { accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1" } });
 			} catch {
 				return { ok: false, error: "미리 보기를 가져오지 못했어요" };
 			}
@@ -285,7 +297,7 @@ export function createLinkPreview(deps: PreviewDeps = {}) {
 		const signal = AbortSignal.timeout(timeoutMs);
 		let up: Response;
 		try {
-			up = await doFetch(at.url.href, { method: "GET", redirect: "manual", credentials: "omit", signal, headers: { accept: "image/*" } });
+			up = await pinnedGet(at, { method: "GET", redirect: "manual", credentials: "omit", signal, headers: { accept: "image/*" } });
 		} catch {
 			return json({ error: "이미지를 가져오지 못했어요" }, 502);
 		}

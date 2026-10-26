@@ -3,20 +3,20 @@
 // (GET /api/apps), checks their health, and reverse-proxies a tool app's own web UI at /apps/<id>/ (hub/app-proxy.ts).
 //
 //   {
-//     "label": "한컴 문서",                    // the name the owner reads, required
+//     "label": "문서 도구",                    // the name the owner reads, required
 //     "kind": "tool",                          // "tool": its own web UI (web.url required) | "monitor": no UI, status only
 //     "icon": "file",                          // a web icon name (web/js/01-core.js ICONS), or
 //     "iconPath": "M4 5h16...",                //    a 24x24 stroke path when the web has no icon for it
-//     "id": "hdocs",                           // optional; must equal the folder name
+//     "id": "mydocs",                           // optional; must equal the folder name
 //     "web": { "url": "http://127.0.0.1:4417", // loopback only (127.0.0.1, ::1, localhost); no path, query or login
 //              "path": "/",                    //   where the app's own http server answers
 //              "mode": "rewrite" },             // "prefix" (default): the app serves under /apps/<id>/ itself, relative URLs
-//                                               // "rewrite": the app was written for "/" (hdocs): the gateway prefixes its
+//                                               // "rewrite": the app was written for "/" (mydocs): the gateway prefixes its
 //                                               //   root-absolute URLs and injects a fetch/XHR/WebSocket shim
-//     "start": { "command": "bun src/server.ts", "cwd": "~/Code/hdocs/hdocs-web-live", "env": { "PORT": "4417" } },
+//     "start": { "command": "bun src/server.ts", "cwd": "~/Code/my-docs", "env": { "PORT": "4417" } },
 //                                               // a HINT for the owner and the bot: the gateway never runs it
 //     "health": "/",                           // path on web.url that answers when the app is up (GET, any 2xx-4xx = running)
-//     "watches": ["hdocs-"],                   // watch names/prefixes this app owns (shown in its 설정 panel)
+//     "watches": ["mydocs-"],                   // watch names/prefixes this app owns (shown in its 설정 panel)
 //     "settings": { "port": 4417 },            // free-form name -> string/number/boolean, shown read-only in 설정
 //     "order": 10                              // list order (default 100)
 //   }
@@ -211,8 +211,8 @@ export function setUserAppOff(dataDir: string, id: string, off: boolean): void {
 }
 
 /** 제거: the folder moves to custom/apps-removed/<stamp>-<id>/ (recoverable by hand), and its off entry goes. */
-export function removeUserApp(dataDir: string, id: string): { removed: string; kept: string } | undefined {
-	const app = userApp(dataDir, id);
+export function removeUserApp(dataDir: string, id: string, registryIds: readonly string[] = []): { removed: string; kept: string } | undefined {
+	const app = userApp(dataDir, id, registryIds);
 	if (!app) return undefined;
 	const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "");
 	const kept = join(dataDir, REMOVED_DIR, `${stamp}-${id}`);
@@ -221,7 +221,7 @@ export function removeUserApp(dataDir: string, id: string): { removed: string; k
 	try {
 		setUserAppOff(dataDir, id, false);
 	} catch {}
-	delete healthCache.get(id);
+	healthCache.delete(id);
 	return { removed: app.dir, kept };
 }
 

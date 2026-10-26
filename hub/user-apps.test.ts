@@ -17,11 +17,11 @@ afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true 
 
 describe("manifest validation", () => {
 	test("a tool app with a loopback url loads with its defaults", () => {
-		const d = manifest(fresh(), "hdocs", { label: "한컴 문서", kind: "tool", icon: "file", web: { url: "http://127.0.0.1:4417", mode: "rewrite" }, start: { command: "bun src/server.ts", cwd: "~/Code/hdocs" } });
+		const d = manifest(fresh(), "mydocs", { label: "문서 도구", kind: "tool", icon: "file", web: { url: "http://127.0.0.1:4417", mode: "rewrite" }, start: { command: "bun src/server.ts", cwd: "~/Code/my-docs" } });
 		const { apps, errors } = loadUserApps(d);
 		expect(errors).toEqual([]);
 		expect(apps).toHaveLength(1);
-		expect(apps[0]).toMatchObject({ id: "hdocs", label: "한컴 문서", kind: "tool", icon: "file", health: "/", order: 100, off: false, web: { url: "http://127.0.0.1:4417", path: "/", mode: "rewrite" }, start: { command: "bun src/server.ts", cwd: "~/Code/hdocs" } });
+		expect(apps[0]).toMatchObject({ id: "mydocs", label: "문서 도구", kind: "tool", icon: "file", health: "/", order: 100, off: false, web: { url: "http://127.0.0.1:4417", path: "/", mode: "rewrite" }, start: { command: "bun src/server.ts", cwd: "~/Code/my-docs" } });
 	});
 
 	test("a break in one manifest is its own error; the others still load", () => {
@@ -58,7 +58,7 @@ describe("manifest validation", () => {
 	});
 
 	test("a manifest's own id must equal its folder", () => {
-		const d = manifest(fresh(), "docs", { id: "hdocs", label: "문서", kind: "monitor" });
+		const d = manifest(fresh(), "docs", { id: "mydocs", label: "문서", kind: "monitor" });
 		expect(loadUserApps(d).errors[0]!.reason).toContain("폴더 이름");
 	});
 
@@ -81,34 +81,34 @@ describe("manifest validation", () => {
 		expect(parseUserApp("x", JSON.stringify({ label: "x", kind: "monitor", order: "first" }))).toContain("order");
 		expect(parseUserApp("x", JSON.stringify({ label: "x", kind: "monitor", watches: "w" }))).toContain("watches");
 		expect(parseUserApp("x", JSON.stringify({ label: "x", kind: "monitor", settings: { a: {} } }))).toContain("settings");
-		const ok = parseUserApp("x", JSON.stringify({ label: "x", kind: "monitor", watches: ["hdocs-"], settings: { port: 4417, on: true } }));
-		expect(ok).toMatchObject({ watches: ["hdocs-"], settings: { port: 4417, on: true } });
+		const ok = parseUserApp("x", JSON.stringify({ label: "x", kind: "monitor", watches: ["mydocs-"], settings: { port: 4417, on: true } }));
+		expect(ok).toMatchObject({ watches: ["mydocs-"], settings: { port: 4417, on: true } });
 	});
 });
 
 describe("switch and removal", () => {
 	test("끄기 writes custom/apps.json next to the app instances' own entries and leaves the manifest alone", () => {
-		const d = manifest(fresh(), "hdocs", { label: "한컴 문서", kind: "tool", web: { url: "http://127.0.0.1:4417" } });
+		const d = manifest(fresh(), "mydocs", { label: "문서 도구", kind: "tool", web: { url: "http://127.0.0.1:4417" } });
 		mkdirSync(join(d, "custom"), { recursive: true });
 		writeFileSync(join(d, "custom/apps.json"), JSON.stringify({ mail: { off: true } }));
-		setUserAppOff(d, "hdocs", true);
-		expect(JSON.parse(readFileSync(join(d, "custom/apps.json"), "utf8"))).toEqual({ mail: { off: true }, hdocs: { off: true } });
-		expect(userApp(d, "hdocs")!.off).toBe(true);
-		setUserAppOff(d, "hdocs", false);
+		setUserAppOff(d, "mydocs", true);
+		expect(JSON.parse(readFileSync(join(d, "custom/apps.json"), "utf8"))).toEqual({ mail: { off: true }, mydocs: { off: true } });
+		expect(userApp(d, "mydocs")!.off).toBe(true);
+		setUserAppOff(d, "mydocs", false);
 		expect(JSON.parse(readFileSync(join(d, "custom/apps.json"), "utf8"))).toEqual({ mail: { off: true } });
-		expect(existsSync(join(d, "custom/apps/hdocs/app.json"))).toBe(true);
+		expect(existsSync(join(d, "custom/apps/mydocs/app.json"))).toBe(true);
 	});
 
 	test("제거 moves the folder to custom/apps-removed and the app disappears", () => {
-		const d = manifest(fresh(), "hdocs", { label: "한컴 문서", kind: "tool", web: { url: "http://127.0.0.1:4417" } });
-		setUserAppOff(d, "hdocs", true);
-		const r = removeUserApp(d, "hdocs")!;
-		expect(existsSync(join(d, "custom/apps/hdocs"))).toBe(false);
+		const d = manifest(fresh(), "mydocs", { label: "문서 도구", kind: "tool", web: { url: "http://127.0.0.1:4417" } });
+		setUserAppOff(d, "mydocs", true);
+		const r = removeUserApp(d, "mydocs")!;
+		expect(existsSync(join(d, "custom/apps/mydocs"))).toBe(false);
 		expect(existsSync(join(r.kept, "app.json"))).toBe(true);
 		expect(r.kept).toContain("custom/apps-removed/");
 		expect(loadUserApps(d).apps).toEqual([]);
 		expect(JSON.parse(readFileSync(join(d, "custom/apps.json"), "utf8"))).toEqual({});
-		expect(removeUserApp(d, "hdocs")).toBeUndefined();
+		expect(removeUserApp(d, "mydocs")).toBeUndefined();
 	});
 });
 

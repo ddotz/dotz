@@ -7,13 +7,13 @@
 //            app's own script writes at run time. Absolute ws:// URLs and location assignments are not rewritten: an app that
 //            needs those must serve under the prefix.
 // A websocket upgrade is bridged to the same upstream path (Bun's server.upgrade + a client WebSocket per connection), so an
-// app like hdocs keeps its editor channel. Bodies stream both ways.
+// app like mydocs keeps its editor channel. Bodies stream both ways.
 import type { Server, ServerWebSocket } from "bun";
 import type { UserApp } from "./user-apps.ts";
 
 export type AppWsData = { app: string; target: string; queue: (string | Uint8Array)[]; up?: WebSocket };
 
-/** `/apps/hdocs/a/b` -> { id: "hdocs", rest: "/a/b" }; anything under /apps/ that is not this shape is undefined. */
+/** `/apps/mydocs/a/b` -> { id: "mydocs", rest: "/a/b" }; anything under /apps/ that is not this shape is undefined. */
 export function proxyMatch(pathname: string): { id: string; rest: string } | undefined {
 	if (!pathname.startsWith("/apps/")) return undefined;
 	const cut = pathname.indexOf("/", "/apps/".length);
@@ -86,13 +86,29 @@ function rewriteSetCookie(value: string, base: string): string {
 }
 
 const TEXTUAL = /(?:^text\/html|^text\/css|^application\/xhtml\+xml)/i;
-const CORS = { "access-control-allow-origin": "*" };
+
+// The gateway's own credentials and the owner's identity stay at the gateway; the app gets only the browser's request.
+const PRIVATE = (k: string): boolean => k === "x-dotz-token" || k === "x-dotz-peer" || k.startsWith("tailscale-");
+
+// tailscale serve signs every request from the owner's device, whichever page sent it: a page of another origin must not
+// open an app's websocket or send it a state-changing request with that identity (same rule as pty.ts).
+const sameOrigin = (req: Request): boolean => {
+	const origin = req.headers.get("origin");
+	if (!origin) return true;
+	try {
+		return new URL(origin).host === req.headers.get("host");
+	} catch {
+		return false;
+	}
+};
 
 /** The proxied answer, streaming, with only the headers a browser needs. */
 export async function proxyRequest(req: Request, url: URL, app: UserApp, match: { id: string; rest: string }, srv?: Server<unknown>): Promise<Response | undefined> {
 	const base = `/apps/${app.id}`;
 	const target = upstreamUrl(app, match.rest, url.search);
 	if (!app.web) return new Response("this app has no web ui", { status: 404 });
+	const upgrade = req.headers.get("upgrade")?.toLowerCase() === "websocket";
+	if ((upgrade || (req.method !== "GET" && req.method !== "HEAD")) && !sameOrigin(req)) return new Response("cross-origin request refused", { status: 403 });
 	if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
 		const ws = app.web.url.replace(/^http:/, "ws:");
 		const wsTarget = `${ws}${app.web.path === "/" ? "" : app.web.path.replace(/\/$/, "")}${match.rest === "/" ? "/" : match.rest}${url.search}`;
@@ -101,6 +117,7 @@ export async function proxyRequest(req: Request, url: URL, app: UserApp, match: 
 		return ok ? undefined : new Response("websocket upgrade failed", { status: 400 });
 	}
 	const headers = stripHops(new Headers(req.headers));
+	for (const k of [...headers.keys()]) if (PRIVATE(k.toLowerCase())) headers.delete(k);
 	if (app.web.mode === "rewrite") headers.delete("accept-encoding");
 	headers.set("x-forwarded-host", url.host);
 	headers.set("x-forwarded-proto", "http");
@@ -121,9 +138,12 @@ export async function proxyRequest(req: Request, url: URL, app: UserApp, match: 
 	const out = stripHops(new Headers(upstream.headers));
 	const type = upstream.headers.get("content-type") ?? "";
 	const rewrite = app.web.mode === "rewrite" && TEXTUAL.test(type);
-	out.delete("content-security-policy");
-	out.delete("content-security-policy-report-only");
-	for (const [k, v] of Object.entries(CORS)) if (!out.has(k)) out.set(k, v);
+	// rewrite mode injects an inline script the app's own policy would block; otherwise the app's policy stands.
+	if (rewrite) {
+		out.delete("content-security-policy");
+		out.delete("content-security-policy-report-only");
+	}
+	for (const k of [...out.keys()]) if (k.toLowerCase().startsWith("access-control-")) out.delete(k);
 	const loc = out.get("location");
 	if (loc) out.set("location", prefixUrl(loc, normalizeBase(base), app.web.url));
 	const cookies = upstream.headers.getSetCookie();

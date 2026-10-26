@@ -321,7 +321,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (url.pathname === "/api/apps" && req.method === "POST" || appDel && req.method === "DELETE") {
 			try {
 				if (appDel) {
-				const own = removeUserApp(DATA_DIR, appDel[1]!);
+				const own = removeUserApp(DATA_DIR, appDel[1]!, INTEGRATIONS.map(i => i.key));
 				if (own) return json({ ok: true, removed: own.kept });
 				return json({ ok: true, removed: deleteApp(DATA_DIR, appDel[1]!, { deleteStored: url.searchParams.get("data") === "1" }, { watchNames: () => allWatches().map(w => w.name), removeWatch }) });
 			}

@@ -1,5 +1,5 @@
 // What one conversation's agent is doing right now, and — the point of this file — why nothing is running while its plan
-// still has open tasks (owner 2026-10-26: "가끔 todo는 남아있는데 아무것도 안하고 있을때 왜 안하는지 모르는 경우가 많음").
+// still has open tasks.
 // /api/state carries it under `runs` for the main conversation and every lane; the web chat shows it as one line above the
 // composer (web/js/41-runstate.js). The derivation is pure so every case is tested without a gateway.
 export type RunKind = "working" | "waiting" | "idle" | "limited" | "error" | "stopped" | "done";
