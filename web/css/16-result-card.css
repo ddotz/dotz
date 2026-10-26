@@ -149,7 +149,7 @@ a.dr-att:active { background: var(--active); }
 .dr-edit.ask { min-height: 64px; }
 .dr-act .dr-manual { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--fg-2); }
 .dr-act .dr-manual .ic { width: 14px; height: 14px; }
-.dr-act { display: flex; flex-direction: column; gap: 10px; }
+.dr-act { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .dr-act.dr-row, .dr-row { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
 .dr-act .btn { height: var(--btn-h); padding: 0 18px; font-size: 15px; }
 .dr-act .btn.text { padding: 0 12px; }
