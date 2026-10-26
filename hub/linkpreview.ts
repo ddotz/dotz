@@ -224,14 +224,25 @@ export function createLinkPreview(deps: PreviewDeps = {}) {
 
 	// The request goes to the address that was checked, not to a second DNS answer (rebinding): the host travels in Host and,
 	// for https, as the TLS server name the certificate is verified against.
-	const pinnedGet = (at: { url: URL; addresses: string[] }, init: RequestInit & { headers: Record<string, string> }): Promise<Response> => {
+	// IPv4 first, then the next checked address when one cannot be reached (a network without IPv6 routes).
+	const pinnedGet = async (at: { url: URL; addresses: string[] }, init: RequestInit & { headers: Record<string, string> }): Promise<Response> => {
 		const host = at.url.hostname.replace(/^\[|\]$/g, "");
-		const ip = at.addresses[0];
-		if (!ip || isIp(host)) return doFetch(at.url.href, init);
-		const to = new URL(at.url.href);
-		to.hostname = ip.includes(":") ? `[${ip}]` : ip;
+		if (!at.addresses.length || isIp(host)) return doFetch(at.url.href, init);
+		const ips = [...at.addresses].sort((a, b) => Number(a.includes(":")) - Number(b.includes(":")));
 		const headers = { ...init.headers, host: at.url.host };
-		return doFetch(to.href, { ...init, headers, ...(at.url.protocol === "https:" ? { tls: { serverName: host } } : {}) } as RequestInit);
+		const tls = at.url.protocol === "https:" ? { tls: { serverName: host } } : {};
+		let last: unknown;
+		for (const ip of ips) {
+			const to = new URL(at.url.href);
+			to.hostname = ip.includes(":") ? `[${ip}]` : ip;
+			try {
+				return await doFetch(to.href, { ...init, headers, ...tls } as RequestInit);
+			} catch (e) {
+				if (init.signal?.aborted) throw e;
+				last = e;
+			}
+		}
+		throw last;
 	};
 
 	// One GET with the redirects followed by hand, each new address checked again; the content type must be HTML.
