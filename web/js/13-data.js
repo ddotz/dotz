@@ -62,7 +62,7 @@ async function loadTarget(t, quiet) {
   if (s.loading) return s.loading;
   s.loading = (async () => {
     await Promise.all([
-      api(`/api/history?target=${enc(t)}&limit=150`).then(r => { for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
+      api(`/api/history?target=${enc(t)}&limit=150`).then(r => { s.hmore = (r.events || []).length >= 150; for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
       isFixedT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
     ]);
     s.hLoaded = s.aLoaded = true;
@@ -101,6 +101,20 @@ async function loadOlder() {
     }
   } catch { toast("이전 기록을 불러오지 못했어요", true); }
   finally { s.older = false; }
+}
+// Older chat messages, 150 at a time, when the conversation is scrolled to its top (history keeps more than the first read).
+async function loadOlderMsgs() {
+  const t = target, s = ts(t);
+  if (!s.hmore || s.olderMsgs || !s.hLoaded || !s.msgs.length) return;
+  s.olderMsgs = true;
+  try {
+    const r = await api(`/api/history?target=${enc(t)}&limit=150&before=${enc(s.msgs[0].ts)}`);
+    const add = (r.events || []).filter(e => !s.mk.has(msgKey(e)));
+    for (const e of add) s.mk.add(msgKey(e));
+    s.msgs = [...add, ...s.msgs]; s.hmore = (r.events || []).length >= 150 && add.length > 0;
+    if (t === target && add.length) { const ch = timeline.scrollHeight - timeline.scrollTop; renderAll(true); timeline.scrollTop = timeline.scrollHeight - ch; }
+  } catch { toast("이전 대화를 불러오지 못했어요", true); }
+  finally { s.olderMsgs = false; }
 }
 function renderAll(keepScroll) { renderAll0(keepScroll); paintDecision(); paintTodo(); paintWorkers(); edgeFade(timeline); edgeFade(term); }
 function edgeFade(t) { const b = t.parentElement; b.classList.toggle("fade-t", t.scrollTop > 4); b.classList.toggle("fade-b", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
