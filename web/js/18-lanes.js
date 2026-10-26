@@ -150,22 +150,106 @@ function sessionRow(l, o = {}) {
     el("span", { class: `hs ${tone}`, text: word }));
 }
 
-// Status dot and word of a project: waiting on the owner > working > a live session or channel > nothing running.
-function prjStatus(p) {
-  const ls = p.lanes || [];
-  if (prjPaused(p)) return ["", "일시 정지"];
-  if (ls.some(l => l.waiting)) return ["att", "질문 대기"];
-  if (ls.some(l => l.live && l.status === "working")) return ["pri", "작업 중"];
-  return [ls.some(l => l.live) || p.channel ? "ok" : "", ""];
+/* ---------- 프로젝트 level 1: a compact list (name, one status line, milestone progress, last activity), filtered and paged ----------
+   Rows sort by what needs the owner, then what runs, then the most recent. A row opens the project's overview (level 2); the overview's
+   sections open one drill-in page each (level 3). The built-in 커스텀 project is a settings page, so it sits at the end, outside the filters. */
+const PJ_PAGE = 12, PJ_VIEWS = [["all", "전체"], ["run", "진행 중"], ["need", "확인 필요"], ["done", "끝남"]];
+const PJ = { view: "all", q: "", more: PJ_PAGE };
+// What the owner should do with a project now: a waiting session first, then work running, then a finished goal, then a resting one.
+function prjState(p) {
+  const ls = p.lanes || [], ms = prjMiles(p), allDone = ms.length > 0 && ms.every(m => m.done);
+  if (prjPaused(p)) return { k: "paused", tone: "", word: "일시 정지" };
+  const ask = ls.find(l => l.waiting);
+  if (ask) return { k: "need", tone: "att", word: "답을 기다려요", lane: ask };
+  const work = ls.find(l => l.live && (l.status === "working" || l.status === "starting"));
+  if (work) return { k: "run", tone: "pri", word: "작업 중", lane: work };
+  if (allDone) return { k: "done", tone: "ok", word: "끝남" };
+  if (ls.some(l => l.live)) return { k: "run", tone: "", word: "세션 열림" };
+  return { k: "idle", tone: "", word: ls.length ? "쉬는 중" : "아직 세션이 없어요" };
 }
-// 프로젝트: the projects as chat-list rows (커스텀 first); the open one is marked, and from 1100px its page sits beside the list.
+// The newest thing that happened in the project: a session's report or start, or the record's last save.
+function prjLastAt(p) {
+  const at = x => Date.parse(x || "") || 0;
+  return Math.max(0, ...(p.lanes || []).map(l => at(l.lastReportAt) || at(l.startedAt)), at(p.record && p.record.updated));
+}
+// A short, calm time: 방금 · 12분 전 · 3시간 전 · 어제 · 4일 전 · 9/30.
+function prjAgo(at) {
+  if (!at) return "기록 없음";
+  const m = Math.max(0, Math.floor((Date.now() - at) / 60000));
+  if (m < 1) return "방금";
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? "어제" : d < 7 ? `${d}일 전` : kstDay(at);
+}
+const prjRank = s => (s.k === "need" ? 0 : s.k === "run" ? 1 : 2);
+// The projects as data rows, in reading order: need -> running -> recent.
 function projRows(list) {
-  const row = p => {
-    const [tone, word] = p.builtin ? ["", "고정"] : prjStatus(p), chat = prjChat(p);
-    return { name: prjTitle(p), av: el("span", { class: "cv-av", "aria-hidden": "true" }, icon("projects")), badge: word ? [word, tone === "att" ? "warn" : tone] : null, unread: chat ? ts(chat).unread : 0, open: () => go("project", p.key), sel: current === "project" && ppCur === p.key };
-  };
-  const rest = list.filter(p => !p.builtin);
-  return [...list.filter(p => p.builtin).map(row), ...(rest.length ? [{ header: "프로젝트" }, ...rest.map(row)] : [])];
+  return list.filter(p => !p.builtin).map(p => ({ p, st: prjState(p) }))
+    .sort((a, b) => prjRank(a.st) - prjRank(b.st) || prjLastAt(b.p) - prjLastAt(a.p) || String(prjTitle(a.p)).localeCompare(String(prjTitle(b.p)), "ko", { numeric: true }));
+}
+function pjChipCounts(rows) {
+  return { all: rows.length, need: rows.filter(r => r.st.k === "need").length, run: rows.filter(r => r.st.k === "run").length, done: rows.filter(r => r.st.k === "done").length };
+}
+function pjFiltered() {
+  const q = PJ.q.trim().toLowerCase(), rows = projRows((PRJ && PRJ.projects) || []);
+  return rows.filter(r => (PJ.view === "all" || r.st.k === PJ.view) && (!q || `${prjTitle(r.p)} ${prjPurpose(r.p)}`.toLowerCase().includes(q)));
+}
+// One row: name + last activity, the one status line, the milestone bar. A waiting row leads with the question's session.
+function prjRow(r) {
+  const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
+  const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
+  const line = st.lane ? `${st.word} · ${st.lane.title || st.lane.name}` : st.k === "done" ? `끝남 · 목표를 모두 마쳤어요` : st.word;
+  return el("button", { class: `pl-row${sel ? " on" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
+    el("span", { class: "pl-b" },
+      el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) }), unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "pl-at", text: prjAgo(at) })),
+      el("span", { class: "pl-s" }, el("span", { class: `dot ${st.tone}` }), el("span", { class: "pl-sw", text: line })),
+      ms.length ? el("span", { class: "pl-p" }, el("span", { class: `pl-bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "pl-pn", text: `${done}/${ms.length}` })) : null));
+}
+function pjSearch() {
+  return el("label", { class: "pl-search" }, icon("search"),
+    el("input", { id: "pl-q", type: "search", placeholder: "프로젝트 검색", "aria-label": "프로젝트 검색", autocomplete: "off", value: PJ.q, oninput: ev => { PJ.q = ev.target.value; pjPaintRows(); } }));
+}
+function pjChips(counts) {
+  return el("div", { class: "pl-chips", role: "tablist", "aria-label": "프로젝트 보기" }, ...PJ_VIEWS.map(([k, label]) =>
+    el("button", { class: `cchip mr-f${PJ.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(PJ.view === k), "data-view": k, onclick: () => { PJ.view = k; PJ.more = PJ_PAGE; pjPaintChips(); pjPaintRows(); } },
+      label, counts[k] ? el("span", { class: "mr-fn", text: String(counts[k]) }) : el("span", { class: "mr-fn", hidden: true }))));
+}
+function pjShell() {
+  return el("div", { class: "pl", id: "pl-shell" }, el("div", { class: "pl-top" }, pjSearch(), el("div", { id: "pl-chips" })), el("div", { class: "pl-list", id: "pl-list" }));
+}
+function pjPaintChips() {
+  const box = $("#pl-chips");
+  if (!box) return;
+  const counts = pjChipCounts(projRows((PRJ && PRJ.projects) || [])), had = $(".mr-f", box);
+  if (!had) { clear(box).append(pjChips(counts)); return; }
+  // The chips stay put (a refresh never steals focus); only their state and counts follow the data.
+  for (const b of box.querySelectorAll(".mr-f")) {
+    const k = b.dataset.view, n = $(".mr-fn", b), c = counts[k] || 0;
+    b.classList.toggle("on", PJ.view === k); b.setAttribute("aria-selected", String(PJ.view === k));
+    n.textContent = c ? String(c) : ""; n.hidden = !c;
+  }
+}
+function pjPaintRows() {
+  const box = $("#pl-list");
+  if (!box) return;
+  const rows = pjFiltered(), page = rows.slice(0, PJ.more), rest = rows.length - page.length;
+  const builtin = ((PRJ && PRJ.projects) || []).find(p => p.builtin), searching = !!PJ.q.trim();
+  const showBuiltin = !!builtin && PJ.view === "all" && (!searching || "커스텀".includes(PJ.q.trim().toLowerCase()));
+  const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjMiles(r.p).map(m => m.done), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", showBuiltin]);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  const nodes = page.map(prjRow);
+  if (rest > 0) nodes.push(el("div", { class: "cv-more" }, el("button", { class: "btn text", type: "button", "data-k": "more", onclick: () => { PJ.more += PJ_PAGE; pjPaintRows(); }, text: `프로젝트 ${rest}개 더 보기` })));
+  if (!rows.length) nodes.push(el("div", { class: "cv-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
+  // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
+  if (showBuiltin) {
+    nodes.push(el("div", { class: "pl-gh", role: "presentation", text: "내 설정" }));
+    nodes.push(el("button", { class: `pl-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
+      el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" })))));
+  }
+  clear(box).append(...nodes);
 }
 function renderProjects() {
   const box = $("#v-projects");
@@ -173,7 +257,10 @@ function renderProjects() {
   const list = PRJ.projects || [];
   if (!list.length) { delete box.dataset.sig; clear(box).append(emptyNode("아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요")); return; }
   const sig = JSON.stringify([list, ppCur, current === "project", list.map(p => { const c = prjChat(p); return c ? ts(c).unread : 0; })]);
-  if (box.dataset.sig === sig) return;
-  box.dataset.sig = sig;
-  clear(box).append(el("div", { class: "cv-list" }, ...projRows(list).map(convRow)));
+  if (box.dataset.sig !== sig) {
+    box.dataset.sig = sig;
+    clear(box).append(pjShell());
+  }
+  pjPaintChips();
+  pjPaintRows();
 }
