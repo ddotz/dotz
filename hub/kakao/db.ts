@@ -330,8 +330,11 @@ const num = (v: unknown) => Number(v ?? 0);
 
 // The name of a person in a room: his friend name, else his own; in an open chat room his open profile (the NTUser row of that link) comes first,
 // as KakaoTalk shows it there, and the friend row only when the link has none.
+// The room's own profile (an open chat's link) first, else the friend row. Outer columns appear only in WHERE: older SQLite (macOS 26,
+// 3.51) refuses them in a subquery's ORDER BY ("no such column").
+const NAME = (t: string) => `COALESCE(NULLIF(${t}.friendNickName, ''), NULLIF(${t}.displayName, ''), NULLIF(${t}.nickName, ''))`;
 const personName = (author: string, link: string) =>
-	`(SELECT COALESCE(NULLIF(pu.friendNickName, ''), NULLIF(pu.displayName, ''), NULLIF(pu.nickName, '')) FROM NTUser pu WHERE pu.userId = ${author} AND (pu.linkId = 0 OR pu.linkId = ${link}) ORDER BY pu.linkId = ${link} DESC LIMIT 1)`;
+	`COALESCE((SELECT ${NAME("pl")} FROM NTUser pl WHERE pl.userId = ${author} AND pl.linkId = ${link} LIMIT 1), (SELECT ${NAME("pu")} FROM NTUser pu WHERE pu.userId = ${author} AND pu.linkId = 0 LIMIT 1))`;
 
 // Whether this database has open chat links (NTChatRoom.linkId, NTOpenLink); an older schema has neither and has no open rooms.
 async function hasLinks(db: KakaoDb): Promise<boolean> {
@@ -393,10 +396,12 @@ export async function memberLabel(db: KakaoDb, chatId: string, userId: string | 
 export async function memberLabels(db: KakaoDb, list: { chatId: string; members?: number }[], userId: string | number): Promise<Map<string, string>> {
 	const out = new Map<string, string>();
 	if (!list.length) return out;
-	const link = (await hasLinks(db)) ? "(SELECT r.linkId FROM NTChatRoom r WHERE r.chatId = a.chatId)" : "0";
+	// the room's link comes from a join: an outer column two subqueries deep is refused by older SQLite (macOS 26: "no such column")
+	const links = await hasLinks(db);
 	const rows = await db.query(
-		`SELECT CAST(a.chatId AS TEXT) AS chatId, ${personName("a.authorId", link)} AS name
+		`SELECT CAST(a.chatId AS TEXT) AS chatId, ${personName("a.authorId", links ? "COALESCE(r.linkId, 0)" : "0")} AS name
 		FROM (SELECT chatId, authorId, MAX(logId) AS last FROM NTChatMessage WHERE chatId IN (${list.map(() => "?").join(",")}) AND authorId != ? GROUP BY chatId, authorId) a
+		${links ? "LEFT JOIN NTChatRoom r ON r.chatId = a.chatId" : ""}
 		ORDER BY a.chatId, a.last DESC`,
 		[...list.map(r => r.chatId), String(userId)],
 	);
@@ -430,7 +435,9 @@ export async function roomKinds(db: KakaoDb): Promise<Map<string, Room["kind"]>>
 export async function messages(db: KakaoDb, chatId: string, limit: number, userId: string | number, opts: { before?: string; after?: string } = {}): Promise<Msg[]> {
 	const after = opts.after !== undefined;
 	const bound = opts.after ?? opts.before;
-	const link = (await hasLinks(db)) ? "(SELECT r.linkId FROM NTChatRoom r WHERE r.chatId = m.chatId)" : "0";
+	// one room: its link is read first and written in as a number, since older SQLite (macOS 26) refuses an outer column in the name lookup
+	const linkRow = (await hasLinks(db)) ? (await db.query("SELECT CAST(COALESCE(linkId, 0) AS TEXT) AS l FROM NTChatRoom WHERE chatId = ?", [chatId]))[0] : undefined;
+	const link = /^-?\d+$/.test(str(linkRow?.l)) ? str(linkRow?.l) : "0";
 	const rows = await db.query(
 		`SELECT CAST(m.logId AS TEXT) AS logId, CAST(m.chatId AS TEXT) AS chatId, CAST(m.authorId AS TEXT) AS authorId,
 			${personName("m.authorId", link)} AS sender,
