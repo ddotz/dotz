@@ -1,6 +1,6 @@
 /* ---------- 구성: 프로젝트 (작업 채널·홈 채널에 묶인 레인마다 한 장; data: /api/harness 의 projects) ---------- */
 const hPj = () => (HGB && hProjId && (HGB.projects || []).find(p => p.id === hProjId)) || null;
-const hProjWhere = p => `${(p.channels[0] || {}).name || p.name} · ${p.cwd}`;
+const hProjWhere = (p, full) => `${(p.channels[0] || {}).name || p.name} · ${full ? p.cwd : shortPath(p.cwd)}`;
 const pjSize = b => (b < 1024 ? `${b}B` : `${(b / 1024).toFixed(1)}KB`);
 const pjChain = c => (c.length ? c.map(e => [modelName(fbBase(e.model)) + (e.key_file ? " (API 키)" : ""), e.when ? FB_WHEN[e.when] : "", e.cap ? fbCapText(e.cap) : "", e.revert ? "리셋되면 복귀" : ""].filter(Boolean).join(" · ")).join(" → ") : "없음");
 const PJ_ROWS = [["모델", "model", modelName], ["강도", "effort", v => v], ["서브에이전트 모델", "worker_model", modelName], ["서브에이전트 강도", "worker_effort", v => v], ["런타임", "runtime", v => v || "–"], ["폴백", "fallback", pjChain], ["서브에이전트 폴백", "worker_fallback", pjChain]];
@@ -22,7 +22,7 @@ function hProjCard(p) {
     el("div", { class: "pj-top" }, el("span", { class: `dot ${tone}` }), el("span", { class: "pj-nm", text: p.name }), el("span", { class: `tag ${tone}`, text: p.status_text }),
       p.overrides ? el("span", { class: "bd m", title: "전역 기본과 다른 값의 수", text: `전역과 다름 ${p.overrides}` }) : el("span", { class: "pj-g", text: "전부 전역 기본" })),
     el("div", { class: "pj-chs" }, ...p.channels.map(c => el("span", { class: "pj-tg", title: `${c.kind_text}: ${c.name}` }, `#${c.name}`, el("span", { class: "kd", text: c.kind_text })))),
-    el("div", { class: "pj-cwd", text: p.cwd, title: p.cwd }),
+    pathCopy(p.cwd, "pj-cwd"),
     el("div", { class: "pj-fs" }, ...PJ_ROWS.map(([label, key, fmt]) => pjField(label, p.fields[key], fmt))),
     el("div", { class: "pj-sc" }, el("div", { class: "cl", text: "지침 파일" }),
       p.files.length ? el("div", { class: "pj-chs" }, ...p.files.map(f => el("span", { class: "pj-tg", title: f.dir ? f.name : `${f.name} · ${num(f.bytes)}바이트 · ${kstStamp(f.modified)} 수정${f.heading ? ` · ${f.heading}` : ""}` }, f.name, f.dir ? null : el("span", { class: "kd", text: pjSize(f.bytes) })))) : el("div", { class: "tx dim", text: "없음" })),
@@ -46,7 +46,7 @@ function hProjHead(p) {
   const back = el("button", { class: "btn tonal", type: "button", onclick: () => hOpenProject("") }, icon("back"), "전체 구성");
   return el("div", { class: "pj-bk" }, back,
     el("span", { class: "pj-title" }, el("span", { class: `dot ${statusTone(p.status)}` }), p.name, ...p.channels.filter(c => c.kind !== "thread").map(c => el("span", { class: "pj-tg" }, `#${c.name}`, el("span", { class: "kd", text: c.kind_text })))),
-    hScopeTag("project", hProjWhere(p)));
+    hScopeTag("project", hProjWhere(p), false, hProjWhere(p, true)));
 }
 
 // Opens a project's own map (or the main map with ""); the hash `#harness/project/<id>` restores it on reload.
@@ -61,7 +61,7 @@ async function hOpenProject(id) {
 
 // Free-text request about one card of the project map; always carries the 범위: 프로젝트 line.
 function hProjAsk(p, n, drafts) {
-  const where = hProjWhere(p);
+  const where = hProjWhere(p, true);
   const ta = el("textarea", { class: "fi hs-ta", rows: 3, spellcheck: "false", placeholder: "이 프로젝트에 바라는 변경을 적어 주세요", "aria-label": "프로젝트 수정 요청" });
   const send = el("button", { class: "btn", type: "button", disabled: true }, `${botName}에게 수정 요청`);
   const note = el("div", { class: "note" });
@@ -72,7 +72,7 @@ function hProjAsk(p, n, drafts) {
     catch (e) { note.className = "note err"; note.textContent = e.message; toast(e.message, true); send.disabled = false; }
   };
   drafts.push(() => ta.value.trim() !== "");
-  return el("div", { class: "hs-set" }, ta, el("div", { class: "btns hs-act" }, hScopeTag("project", where), send), note);
+  return el("div", { class: "hs-set" }, ta, el("div", { class: "btns hs-act" }, hScopeTag("project", hProjWhere(p), false, where), send), note);
 }
 
 function hCanvas(avail) {
@@ -368,8 +368,8 @@ function hOriginLine(n) {
   const mine = n.origin === "personal";
   const where = n.file ? `${hData()}/${n.file}` : mine && FC && FC.harness ? FC.harness.dirs.join(", ") : "";
   const tags = [el("span", { class: `tag${mine ? " m" : ""}`, text: mine ? "개인" : "배포" })];
-  const text = mine ? `내 ${n.file ? "파일" : "확장"}이에요${where ? ` (${where})` : ""}` : `dotz와 함께 오는 기본이에요${n.file ? " (저장소 파일 · 읽기 전용)" : ""}`;
-  const extra = !mine && n.custom && n.custom.length ? ` · 설정값 ${n.custom.length}개는 내가 바꿨어요 (${hData()}/config.json)` : !mine && n.settings.some(s => s.editable) ? ` · 설정값은 ${hData()}/config.json에 저장돼요` : "";
+  const text = mine ? `내 ${n.file ? "파일" : "확장"}이에요${where ? ` (${shortPath(where)})` : ""}` : `dotz와 함께 오는 기본이에요${n.file ? " (저장소 파일 · 읽기 전용)" : ""}`;
+  const extra = !mine && n.custom && n.custom.length ? ` · 설정값 ${n.custom.length}개는 내가 바꿨어요 (${shortPath(`${hData()}/config.json`)})` : !mine && n.settings.some(s => s.editable) ? ` · 설정값은 ${shortPath(`${hData()}/config.json`)}에 저장돼요` : "";
   return el("div", { class: "hs-or" }, ...tags, el("span", { text: text + extra }));
 }
 // 구성's model and effort settings (config.json models.<target>) open the 모델 · 폴백 screen instead of a change request.
@@ -564,5 +564,5 @@ function hFileEditor(n, drafts, line) {
     mark();
     if (line) gotoLine(line);
   }, e => { info.className = "note err"; info.textContent = e.message; });
-  return el("div", { class: "hs-fw" }, ta, note, el("div", { class: "btns hs-act" }, n.fileEditable ? undo : null, n.fileEditable ? hScopeTag("personal", `${hData()}/${n.file}`) : null, n.fileEditable ? send : null), info, stat);
+  return el("div", { class: "hs-fw" }, ta, note, el("div", { class: "btns hs-act" }, n.fileEditable ? undo : null, n.fileEditable ? hScopeTag("personal", shortPath(`${hData()}/${n.file}`)) : null, n.fileEditable ? send : null), info, stat);
 }
