@@ -358,3 +358,11 @@ test("고정 account at its limit: the alert says which account and until when, 
 	expect(readRules().manual).toBeUndefined();
 	expect(pinnedLimitAlert(until)).toBeUndefined();
 });
+
+test("a usage report with no numbers says why: an expired login asks for /login, a blocked read says it retries", () => {
+	const expired = buildQuota([{ provider: "anthropic", account: "a", limits: [], problem: "expired" } as any], ["anthropic"]);
+	expect(expired.providers).toEqual([]);
+	expect(expired.unavailable[0]!.reason).toContain("/login anthropic");
+	expect(buildQuota([{ provider: "anthropic", limits: [], problem: "rate_limited" } as any], ["anthropic"]).unavailable[0]!.reason).toContain("잠시 막혔어요");
+	expect(buildQuota([], ["openai"]).unavailable[0]!.reason).toBe("사용량 정보를 제공하지 않아요");
+});
