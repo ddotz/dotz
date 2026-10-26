@@ -115,7 +115,8 @@ export function labeledAccountView(limit = MAX_LOG_LINES) {
 	const pool = readPool();
 	const account = v.account && pool ? (hardPinned() ? v.account : usedAccount(v.account, pool.names, n => Boolean(pool.blocked[n]), n => pool.lastSuccess[n] ?? 0)) : v.account;
 	const moved = account !== v.account;
-	return { ...v, ...(moved ? { since: undefined } : {}), ...(account ? { account, account_label: label(account, undefined, aliases) } : {}), switches: v.switches.map(s => labeledSwitch(s, aliases)) };
+	// pinned: the owner's 고정 mode, so the usage screen does not promise a switch on a limit that will not happen
+	return { ...v, ...(moved ? { since: undefined } : {}), ...(account ? { account, account_label: label(account, undefined, aliases) } : {}), pinned: hardPinned(), switches: v.switches.map(s => labeledSwitch(s, aliases)) };
 }
 
 // A manual pick whose account is blocked is skipped (evaluate()), so the text says so plainly, with the resume time in local

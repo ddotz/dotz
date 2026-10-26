@@ -37,3 +37,19 @@ test("without a subscription OmO's anthropic key is the anthropic provider; no l
 	expect(omoModels(table, undefined, {})).toEqual([]);
 	expect(omoAuthInfos(undefined)).toEqual([]);
 });
+
+test("an OmO-only install offers no web login: the row says how to log in on this computer, and login-only providers are not offered under 추가", () => {
+	const catalog = [{ id: "anthropic", name: "Anthropic (Claude Pro/Max)" }, { id: "openai", name: "OpenAI" }, { id: "github-copilot", name: "GitHub Copilot" }];
+	const auth = omoAuthInfos(mini);
+	const omo = buildProviders({ auth, env: {}, models: [], catalog, inUse: new Set(["anthropic"]), webLogin: false });
+	const a = omo.providers.find(p => p.id === "anthropic")!;
+	expect(a.can_login).toBe(false);
+	expect(a.login_hint).toBe("/login anthropic");
+	expect(omo.addable.map(p => p.id)).not.toContain("github-copilot");
+	expect(omo.addable.find(p => p.id === "openai")?.kind).toBe("api_key");
+	const omp = buildProviders({ auth, env: {}, models: [], catalog, inUse: new Set(["anthropic"]) });
+	expect(omp.providers.find(p => p.id === "anthropic")!.can_login).toBe(true);
+	expect(omp.providers.find(p => p.id === "anthropic")!.login_hint).toBeUndefined();
+	expect(omp.addable.map(p => p.id)).toContain("github-copilot");
+});
+
