@@ -79,6 +79,8 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 			expect(await q(`return ${LIST}.textContent`)).not.toContain("한도 걸림");
 			expect(await q(`return document.querySelector("#home-now .hn-h .tag.err").textContent`)).toBe("중요 3");
 			expect(await q(`return [...document.querySelectorAll(".hc-row .t")].map(e => e.textContent)`)).toContain("게이트웨이 업데이트");
+			// the chat list's 답 필요 uses the same rule: the gateway's update question alone does not make its conversation wait
+			expect(await q(`const keep = NT.items; NT.items = keep.filter(n => n.id === "gw-update"); try { return convNeeds("alert"); } finally { NT.items = keep; }`)).toBe(false);
 			if (SHOTS) await Bun.write(join(SHOTS, `B-home-needs-${w}.png`), await view.screenshot());
 		}, 15_000);
 
