@@ -4,7 +4,7 @@
 // stored in the database, https only, host *.kakaocdn.net only, no cookies or auth headers, no redirects off that host, 25 MB, 20 s.
 import { existsSync, statSync } from "node:fs";
 import { basename } from "node:path";
-import { EMOTICON_TYPES } from "./db.ts";
+import { EMOTICON_TYPES, looksLikeRecord, TEXT_TYPE } from "./db.ts";
 import type { Msg } from "./types.ts";
 
 export type Media =
@@ -13,7 +13,7 @@ export type Media =
 	| { kind: "voice"; d?: number; expired: boolean }
 	| { kind: "file"; name: string; size?: number; local: boolean; expired: boolean }
 	| { kind: "emoticon"; alt: string; text?: string; image?: true }
-	| { kind: "reply"; quote: string; quoteSender?: string }
+	| { kind: "reply"; quote: string; quoteSender?: string; srcLogId?: string }
 	| { kind: "location"; label: string; lat: number; lng: number };
 
 export const MEDIA_MAX_BYTES = 25 * 1024 * 1024;
@@ -28,6 +28,13 @@ const PHOTO = 2, VIDEO = 3, VOICE = [4, 5], FILE = 18, ALBUM = 27, EMOTICON = EM
 const NO_TEXT = new Set([PHOTO, VIDEO, ...VOICE, FILE, ALBUM, ...EMOTICON, LOCATION]);
 // The body of a message: type 1, a reply's own text, a feed line (0) and unknown types show their text; media types never do.
 export const showsText = (type: number) => !NO_TEXT.has(type);
+
+// What the web may show as a message body ("" = the web draws its type's label instead).
+export function bodyText(m: Pick<Msg, "type" | "text">): string {
+	if (!showsText(m.type)) return "";
+	if (m.type === TEXT_TYPE || m.type === REPLY || m.type === 0) return m.text;
+	return looksLikeRecord(m.text) ? "" : m.text;
+}
 
 type Att = Record<string, unknown>;
 const parse = (s?: string): Att => {
@@ -82,7 +89,8 @@ export function mediaOf(m: Msg, now: number, names: Map<string, string> = new Ma
 		const quote = clip(text(a.src_message));
 		if (!quote) return undefined;
 		const who = names.get(replySource(m) ?? "");
-		return { kind: "reply", quote, ...(who ? { quoteSender: who } : {}) };
+		const src = replySourceLog(m);
+		return { kind: "reply", quote, ...(who ? { quoteSender: who } : {}), ...(src ? { srcLogId: src } : {}) };
 	}
 	if (type === LOCATION) {
 		const lat = Number(a.lat), lng = Number(a.lng), label = text(a.a).trim() || text(a.t).trim();
@@ -97,6 +105,27 @@ export const replySource = (m: Pick<Msg, "type" | "attachment">): string | undef
 	if (m.type !== REPLY) return undefined;
 	const id = parse(m.attachment).src_userId;
 	return id === undefined || id === null || id === "" ? undefined : String(id);
+};
+
+const srcLogOf = (v: unknown): string | undefined => {
+	if (v === undefined || v === null || v === "") return undefined;
+	const s = String(v).trim();
+	return /^\d+$/.test(s) && s !== "0" ? s : undefined;
+};
+
+// The logId of the message a reply answers (type 26 src_logId), so the web can scroll to it. The attachment JSON puts it at the top level
+// or inside a src/reply/origin/parent container (kakarot's reader.rs accepts the same shapes).
+export const replySourceLog = (m: Pick<Msg, "type" | "attachment">): string | undefined => {
+	if (m.type !== REPLY) return undefined;
+	const a = parse(m.attachment);
+	for (const key of ["reply", "src", "origin", "parent"]) {
+		const inner = a[key];
+		if (inner && typeof inner === "object" && !Array.isArray(inner)) {
+			const hit = srcLogOf((inner as Att).src_logId ?? (inner as Att).srcLogId);
+			if (hit) return hit;
+		}
+	}
+	return srcLogOf(a.src_logId ?? a.srcLogId);
 };
 
 // An emoticon's image is the item file named in its attachment ("4412207.emot_001.webp"), served by KakaoTalk's item CDN; only a plain file name is used.
