@@ -94,6 +94,16 @@ const server = Bun.serve({
 		if (p === "/api/monitors") return json({ items: [] });
 		if (p === "/api/integrations") return json({ items: [{ key: "kakao", label: "카카오톡", icon: "chat", kind: "app", conv: [], notices: [], needs: { drafts: drafts.length, unread: 30, sentToday: 0 } }] });
 		if (p === "/api/kakao/rooms") return json(roomsAnswer ?? { on: true, rooms });
+		if (p === "/api/link-preview") {
+			record({ method: "GET", path: `${p}${url.search}`, body: null });
+			const target = url.searchParams.get("url") ?? "";
+			if (target.includes("nopreview")) return json({ ok: false, url: target, error: "미리 볼 수 있는 페이지가 아니에요" });
+			return json({ ok: true, url: target, site: "Google Maps", title: "강남 맛집 모음", description: "지도에서 확인해 보세요", image: `/api/link-preview/image?url=${encodeURIComponent(`${target}/card.png`)}` });
+		}
+		if (p === "/api/link-preview/image") {
+			record({ method: "GET", path: `${p}${url.search}`, body: null });
+			return new Response(PNG, { headers: { "Content-Type": "image/png" } });
+		}
 		const media = /^\/api\/kakao\/media\/(\w+)\/(\w+)(\/file)?$/.exec(p);
 		if (media) {
 			record({ method: "GET", path: `${p}${url.search}`, body: null });
@@ -682,6 +692,34 @@ describe("카카오톡 media at desktop width", () => {
 		await shot(v, "10-desktop-media.png");
 		await run(v, `document.querySelector("#kk-tl").scrollTop = 0`);
 		await shot(v, "10-desktop-media-top.png");
+	});
+});
+
+describe("카카오톡 link previews", () => {
+	const v = open(1280, 800);
+
+	test("an address is a link with a lazy preview card under the bubble; one request per address; a failed preview keeps only the link", async () => {
+		reset();
+		msgs = [
+			mk("8001", "가나", "지도 https://maps.app.goo.gl/abc 확인해 줘", at(25, 1, 0)),
+			mk("8002", "다라", "같은 지도 https://maps.app.goo.gl/abc", at(25, 1, 1)),
+			mk("8003", "가나", "https://nopreview.example/x", at(25, 1, 2)),
+		];
+		drafts = [];
+		await boot(v);
+		await openRoom(v);
+		const link = await q<Record<string, any>>(v, `const b = document.querySelector('[data-log="8001"] .kk-bub'), a = b.querySelector("a.kk-link"); return { href: a.getAttribute("href"), target: a.getAttribute("target"), rel: a.getAttribute("rel"), text: a.textContent, bubble: b.textContent, tags: b.querySelectorAll("a").length }`);
+		expect(link).toMatchObject({ href: "https://maps.app.goo.gl/abc", target: "_blank", rel: "noopener noreferrer", text: "https://maps.app.goo.gl/abc", tags: 1 });
+		expect(link.bubble).toBe("지도 https://maps.app.goo.gl/abc 확인해 줘");
+		await waitFor(v, `document.querySelector('[data-log="8001"] .kk-lp .kk-lp-t')?.textContent === "강남 맛집 모음"`);
+		const card = await q<Record<string, any>>(v, `const c = document.querySelector('[data-log="8001"] .kk-lp'); return { href: c.getAttribute("href"), site: c.querySelector(".kk-lp-s").textContent, desc: c.querySelector(".kk-lp-d").textContent, img: c.querySelector("img").getAttribute("src"), loading: c.querySelector("img").getAttribute("loading") }`);
+		expect(card).toMatchObject({ href: "https://maps.app.goo.gl/abc", site: "Google Maps", desc: "지도에서 확인해 보세요", loading: "lazy" });
+		expect(card.img).toContain("/api/link-preview/image?url=");
+		await waitFor(v, `document.querySelector('[data-log="8002"] .kk-lp .kk-lp-t')`);
+		expect(reqs.filter(r => r.path.startsWith("/api/link-preview?url=")).map(r => new URL(`http://x${r.path}`).searchParams.get("url"))).toEqual(["https://maps.app.goo.gl/abc", "https://nopreview.example/x"]);
+		await waitFor(v, `!document.querySelector('[data-log="8003"] .kk-lp')`);
+		expect(await q(v, `return !!document.querySelector('[data-log="8003"] a.kk-link') && !document.querySelector('[data-log="8003"] .kk-lp')`)).toBe(true);
+		await shot(v, "16-desktop-link-preview.png");
 	});
 });
 
