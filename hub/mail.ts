@@ -22,8 +22,8 @@ export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; sta
 // `needsReply` / `noReply` are the flags of older records; migrateMails turns them into `reply`.
 // `msg` = the id of the newest incoming message the record stands for (MailInput.messageId); a post with another id is a newer message of the
 // same thread and reopens it (postMail). `reopenedAt` = when that happened: a reply draft sent before it answered an older message.
-export type MailRecord = { msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; dir?: "out"; reply?: MailReply; sentAt?: string; needsReply?: true; noReply?: true };
-export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[] };
+export type MailRecord = { msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; dir?: "out"; reply?: MailReply; sentAt?: string; needsReply?: true; noReply?: true };
+export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[] };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true; direction?: "out"; replied?: true };
 export type MailDeps = {
 	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
@@ -191,6 +191,7 @@ export function parseMail(raw: unknown): MailInput {
 		subject: str(b.subject, "subject", 300, true)!,
 		from: str(b.from, "from", 300, false),
 		to: str(b.to, "to", 500, false),
+		cc: str(b.cc, "cc", 500, false),
 		summary: str(b.summary, "summary", SUMMARY_MAX, false),
 		body: str(b.body, "body", BODY_MAX, false),
 		html: str(b.html, "html", MAIL_HTML_MAX, false),
@@ -336,7 +337,7 @@ const mailStateOf = (m: MailRecord, sent: boolean) => {
 };
 
 /** What the web draws a mail row from (GET /api/conversations `mail`, and a watch report that points at the mail): no stored paths. */
-export const mailCard = (m: MailRecord, unreplied = false, sent = false) => ({ ...mailStateOf(m, sent), subject: m.subject, from: m.from, source: m.source, at: m.at, ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.html ? { html: true as const } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), ...(unreplied ? { unreplied: true as const } : {}) });
+export const mailCard = (m: MailRecord, unreplied = false, sent = false) => ({ ...mailStateOf(m, sent), subject: m.subject, from: m.from, ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), source: m.source, at: m.at, ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.html ? { html: true as const } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), ...(unreplied ? { unreplied: true as const } : {}) });
 
 /** GET/HEAD /api/mail/<key>/files/<n>[?dl=1]: main.ts adds the web auth in front. Only files of a known mail, only inside MAIL_FILES. */
 export function mailFileRoute(req: Request, url: URL, key: string, index: string): Response {
@@ -421,7 +422,7 @@ function recordOutgoing(m: MailInput, key: string, target: string, deps: MailDep
 	}
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
-	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), at, dir: "out", ...(summary ? { summary } : {}), ...(preview ? { preview } : {}) });
+	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, dir: "out", ...(summary ? { summary } : {}), ...(preview ? { preview } : {}) });
 	return { ok: true, key, target, direction: "out" };
 }
 
@@ -450,8 +451,8 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 	const html = await saveHtml(key, m.html, attachments);
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
-	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(m.needsReply ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(reopened ? { reopenedAt: at } : {}) });
-	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
+	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(m.needsReply ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(reopened ? { reopenedAt: at } : {}) });
+	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);
 	try {

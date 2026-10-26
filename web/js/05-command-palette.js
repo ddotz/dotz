@@ -139,6 +139,7 @@ function go(name, tgt) {
   const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
   th.hidden = !tv; $("#vtog").hidden = !tv || !LOG_VIEW;
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
+  if (MT_READY) mailThreadSync();   // the same-sender mail panel belongs to the mail conversation that is open (30-mail-thread.js)
   $("#title").textContent = name === "home" ? botName : titles[name];
   convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
