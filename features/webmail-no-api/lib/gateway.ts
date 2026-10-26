@@ -33,7 +33,8 @@ export const liveGateway: Gateway = async (method, path, body) => {
 		throw new Error("게이트웨이에 연결하지 못했어요 (게이트웨이가 켜져 있나요?)");
 	}
 	const text = await res.text();
-	if (!res.ok) throw new Error(`게이트웨이 ${method} ${path} 실패: HTTP ${res.status} ${text.slice(0, 160)}`);
+	// `status` lets a caller tell "already there" (409) from a real failure.
+	if (!res.ok) throw Object.assign(new Error(`게이트웨이 ${method} ${path} 실패: HTTP ${res.status} ${text.slice(0, 160)}`), { status: res.status });
 	try {
 		return JSON.parse(text);
 	} catch {

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { dataDir, defaultConfig, loadSpec, paths, REPO_FEATURE, siteDir, validateConfig, writeJson, type SiteConfig } from "../lib/config.ts";
 import { endpointUrl, type SiteSpec } from "../lib/spec.ts";
 
-export type ApplyOpts = { site: string; channel?: string; poll_minutes?: number; refresh_hours?: number; keepalive?: boolean };
+export type ApplyOpts = { site: string; channel?: string; label?: string; poll_minutes?: number; refresh_hours?: number; keepalive?: boolean };
 
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 export const cardFile = (site: string) => join(dataDir(), "custom", "cards", `webmail-${site}.json`);
@@ -48,11 +48,11 @@ export function sessionWatchSpec(spec: SiteSpec, config: SiteConfig): Record<str
 	return { name: `webmail-${spec.site}-login`.slice(0, 40), session_url: url, expect: `"${key}"\\s*:`, refresh_hours: config.refresh_hours, every_minutes: 30 };
 }
 
-function mergePins(site: string, channel?: string): void {
+function mergePins(site: string, channel?: string, label = `${site} 메일`): void {
 	const pins = existsSync(pinsFile()) ? JSON.parse(readFileSync(pinsFile(), "utf8")) : {};
 	const projects: any[] = Array.isArray(pins.projects) ? pins.projects : [];
 	const path = siteDir(site);
-	const project = { name: `${site} 메일`, path, ...(channel ? { channel } : {}), note: "zele로 안 되는 메일을 읽고, 새 메일을 알리고, 초안을 써요" };
+	const project = { name: label, path, ...(channel ? { channel } : {}), note: "zele로 안 되는 메일을 읽고, 새 메일을 알리고, 초안을 써요" };
 	const at = projects.findIndex((p) => p?.path === path);
 	if (at >= 0) projects[at] = project;
 	else projects.push(project);
@@ -79,7 +79,7 @@ export function apply(opts: ApplyOpts): { config: SiteConfig; watch: Record<stri
 	mkdirSync(siteDir(opts.site), { recursive: true });
 	writeJson(paths.config(opts.site), config);
 	writeJson(cardFile(opts.site), {
-		title: `${opts.site} 메일`,
+		title: opts.label ?? `${opts.site} 메일`,
 		note: "zele로 안 되는 메일",
 		view: "kv",
 		command: `WEBMAIL_SITE=${shq(opts.site)} bun ${shq(join(REPO_FEATURE, "bin", "card.ts"))}`,
@@ -87,7 +87,7 @@ export function apply(opts: ApplyOpts): { config: SiteConfig; watch: Record<stri
 		timeout_seconds: 15,
 		actions: [{ label: "새 메일 확인", prompt: `${opts.site} 메일 새로 온 거 확인해 줘` }],
 	}, 0o644);
-	mergePins(opts.site, opts.channel);
+	mergePins(opts.site, opts.channel, opts.label);
 	enableFeature();
 	return { config, watch: watchSpec(opts.site, config), session: sessionWatchSpec(spec, config) };
 }

@@ -1,4 +1,4 @@
-// The one command behind "use this mail": bun onboard.ts <site> --url <inbox URL> [--channel ch:<id>] [--approve] [--har <file>]
+// The one command behind "use this mail": bun onboard.ts <site> --url <inbox URL> [--channel ch:<id>] [--label <이름>] [--approve] [--har <file>]
 // [--restart] | --status. Runs lib/onboard.ts with the live Io: the owner's Aside browser in the background only (a tab that
 // is never focused and is closed at once; Aside itself is started hidden if it is not running), the browser's saved
 // password through `aside repl` (autofill, submitted by our own code; no `aside exec`, no secret ever goes into a prompt), the local gateway for the watches and the one
@@ -62,7 +62,7 @@ async function main(argv: string[]): Promise<number> {
 	const site = argv[0] ?? "";
 	const get = (flag: string) => (argv.indexOf(flag) >= 0 ? argv[argv.indexOf(flag) + 1] : undefined);
 	if (!site || site.startsWith("--")) {
-		console.log("사용법: onboard.ts <site> --url <받은메일함 URL> [--channel ch:<id>] [--approve] [--har <파일>] [--restart] | <site> --status");
+		console.log("사용법: onboard.ts <site> --url <받은메일함 URL> [--channel ch:<id>] [--label <이름>] [--approve] [--har <파일>] [--restart] | <site> --status");
 		return 1;
 	}
 	if (argv.includes("--status")) {
@@ -72,7 +72,7 @@ async function main(argv: string[]): Promise<number> {
 	}
 	const har = get("--har");
 	const channel = get("--channel") ?? loadOnboard(site)?.channel;
-	const res = await runOnboard(liveIo(site, channel), { site, url: get("--url"), channel, approve: argv.includes("--approve"), restart: argv.includes("--restart"), ...(har ? { har: readRecording(har) } : {}) });
+	const res = await runOnboard(liveIo(site, channel), { site, url: get("--url"), channel, label: get("--label"), approve: argv.includes("--approve"), restart: argv.includes("--restart"), ...(har ? { har: readRecording(har) } : {}) });
 	console.log(render(res.state));
 	console.log(`WEBMAIL_ONBOARD ${res.status}${res.step ? ` ${res.step}` : ""}`);
 	if (res.status === "waiting") console.log(`다음: 위 질문을 오너에게 한 번에 묻고, 답을 받으면 같은 명령에 --approve를 붙여 다시 실행해요`);
