@@ -304,11 +304,12 @@ function kkPersonPaint(d, body, r) {
   const reply = [s.replyToOwnerMs !== undefined ? `상대 → 나 ${kkMin(s.replyToOwnerMs)}` : "", s.ownerReplyMs !== undefined ? `나 → 상대 ${kkMin(s.ownerReplyMs)}` : ""].filter(Boolean).join(" · ") || "아직 잴 수 없어요";
   const unanswered = Array.isArray(s.recentUnanswered) ? s.recentUnanswered : [];
   const sum = el("div", { class: "kk-sum" });
-  const paintSum = a => clear(sum).append(
+  const paintSum = a => clear(sum).append(...[
     el("div", { class: "kk-dh", text: "요약 분석" }),
     a && a.text ? el("div", { class: "kk-dt", text: a.text }) : null,
     a && a.at ? el("div", { class: "kk-sub", text: `${kstStamp(a.at)}에 만든 요약` }) : null,
-    el("button", { class: "btn tonal", type: "button", "data-k": "analyze", text: a ? "다시 분석" : "요약 분석", onclick: ev => kkAnalyze(d, ev.currentTarget, paintSum) }));
+    el("button", { class: "btn tonal", type: "button", "data-k": "analyze", text: a ? "다시 분석" : "요약 분석", onclick: ev => kkAnalyze(d, ev.currentTarget, paintSum) }),
+  ].filter(Boolean));
   paintSum(r && r.analysis);
   clear(body).append(
     el("div", { class: "kk-psec" },

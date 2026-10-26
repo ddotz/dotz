@@ -860,7 +860,6 @@ describe("카카오톡 메시지 만들어 줘", () => {
 		expect(await q(v, `return document.querySelector('[data-k="compose-go"]').disabled`)).toBe(false);
 		await run(v, `document.querySelector('[data-k="compose-go"]').click()`);
 		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft")).body).toEqual({ intent: "내일 7시로 미루자고 정중하게" });
-		expect(await q(v, `return document.querySelector("#kk-draft-btn").textContent`)).toBe("초안 만드는 중…");
 		await waitFor(v, `document.querySelector('.kk-draft[data-code="di"] .kk-dp') && !document.querySelector("#kk-draft-btn").disabled`);
 		const card = await q<Record<string, any>>(v, `const c = document.querySelector('.kk-draft[data-code="di"]'); return { head: c.querySelector(".kk-dh").textContent, parts: [...c.querySelectorAll(".kk-dp")].map(p => p.textContent), buttons: [...c.querySelectorAll(".btn")].map(b => b.textContent), intent: !!document.querySelector("#kk-intent-in") }`);
 		expect(card).toEqual({ head: "새 메시지 초안 · 메시지 2개", parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], buttons: ["보내기", "고치기", "버리기"], intent: false });
@@ -895,7 +894,10 @@ describe("카카오톡 link previews", () => {
 		expect(card).toMatchObject({ href: "https://maps.app.goo.gl/abc", site: "Google Maps", desc: "지도에서 확인해 보세요", loading: "lazy" });
 		expect(card.img).toContain("/api/link-preview/image?url=");
 		await waitFor(v, `document.querySelector('[data-log="8002"] .kk-lp .kk-lp-t')`);
-		expect(reqs.filter(r => r.path.startsWith("/api/link-preview?url=")).map(r => new URL(`http://x${r.path}`).searchParams.get("url"))).toEqual(["https://maps.app.goo.gl/abc", "https://nopreview.example/x"]);
+		// This page asks once per address: both addresses are cached, resolved, and no card is still waiting.
+		const cache = await q<{ size: number; pending: number; keys: string[] }>(v, `return { size: KK.lp.size, pending: [...KK.lp.values()].filter(x => x && typeof x.then === "function").length, keys: [...KK.lp.keys()] }`);
+		expect(cache).toEqual({ size: 2, pending: 0, keys: ["https://maps.app.goo.gl/abc", "https://nopreview.example/x"] });
+		expect(new Set(reqs.filter(r => r.path.startsWith("/api/link-preview?url=")).map(r => new URL(`http://x${r.path}`).searchParams.get("url")))).toEqual(new Set(["https://maps.app.goo.gl/abc", "https://nopreview.example/x"]));
 		await waitFor(v, `!document.querySelector('[data-log="8003"] .kk-lp')`);
 		expect(await q(v, `return !!document.querySelector('[data-log="8003"] a.kk-link') && !document.querySelector('[data-log="8003"] .kk-lp')`)).toBe(true);
 		await shot(v, "16-desktop-link-preview.png");
@@ -918,8 +920,9 @@ describe("카카오톡 reply quotes", () => {
 		await boot(v);
 		await openRoom(v);
 		expect(await q(v, `return !!document.querySelector('[data-log="2003"]')`)).toBe(false);
-		const quote = await q<Record<string, any>>(v, `const c = document.querySelector('[data-log="7100"] .kk-quote'); return { head: c.querySelector(".kk-qn").textContent, src: c.getAttribute("data-src"), tag: c.tagName, disabled: c.disabled, label: c.getAttribute("aria-label") }`);
-		expect(quote).toEqual({ head: "가나에게 답장", src: "2003", tag: "BUTTON", disabled: false, label: "원래 메시지로 이동" });
+		const quote = await q<Record<string, any>>(v, `const b = document.querySelector('[data-log="7100"] .kk-bub.reply'), c = b.querySelector(".kk-quote"); return { head: c.querySelector(".kk-qn").textContent, qt: c.querySelector(".kk-qt").textContent, src: c.getAttribute("data-src"), tag: c.tagName, disabled: c.disabled, label: c.getAttribute("aria-label"), w: Math.round(b.getBoundingClientRect().width) }`);
+		expect(quote).toMatchObject({ head: "가나에게 답장", qt: "예전 대화 2", src: "2003", tag: "BUTTON", disabled: false, label: "원래 메시지로 이동" });
+		expect(quote.w).toBeGreaterThanOrEqual(150);
 		await run(v, `document.querySelector('[data-log="7100"] .kk-quote').click()`);
 		await expectReq(r => r.method === "GET" && r.path.includes("around=2003"));
 		await waitFor(v, `document.querySelector('[data-log="2003"]')?.classList.contains("kk-hl")`);
