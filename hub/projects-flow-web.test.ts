@@ -112,55 +112,64 @@ async function boot(width: number, height: number): Promise<View> {
 	await waitFor(v, `typeof S !== "undefined" && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	await run(v, `go("projects")`);
-	await waitFor(v, `document.querySelector(".pj-row")`);
+	await waitFor(v, `document.querySelector(".pl-row")`);
 	return v;
 }
 
 test("the list pages 12 projects at a time, filters by need/running/done and searches", async () => {
 	const v = await boot(390, 844);
-	const rows = `[...document.querySelectorAll("#pj-list .pj-row:not(.sub)")]`;
-	expect(await q<string[]>(v, `return ${rows}.slice(0, 3).map(r => r.querySelector(".pj-s").textContent)`).then(s => s.every(t => t.includes("답을 기다려요")))).toBe(true);
+	const rows = `[...document.querySelectorAll("#pl-list .pl-row:not(.sub)")]`;
+	expect(await q<string[]>(v, `return ${rows}.slice(0, 3).map(r => r.querySelector(".pl-s").textContent)`).then(s => s.every(t => t.includes("답을 기다려요")))).toBe(true);
 	expect(await q<number>(v, `return ${rows}.length`)).toBe(12);
-	expect(await q(v, `return document.querySelector('#pj-list [data-k="more"]').textContent`)).toBe("프로젝트 18개 더 보기");
+	expect(await q(v, `return document.querySelector('#pl-list [data-k="more"]').textContent`)).toBe("프로젝트 18개 더 보기");
+	// the list starts right under the app bar (normal section spacing, no stray gap)
+	expect(await q<number>(v, `return document.querySelector(".pl").getBoundingClientRect().top - document.querySelector("#appbar").getBoundingClientRect().bottom`)).toBeLessThanOrEqual(20);
+	expect(await q<number>(v, `const b = [...document.querySelectorAll(".pl-chips .mr-f")].map(x => Math.round(x.getBoundingClientRect().top)); return new Set(b).size`)).toBe(1);
+	expect(await q<number>(v, `return Math.round(document.querySelector(".pl-search").getBoundingClientRect().width)`)).toBe(366);
 	await shot(v, "01-list-390.png");
-	await run(v, `document.querySelector('#pj-list [data-k="more"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pj-list .pj-row:not(.sub)").length === 24`);
-	await run(v, `document.querySelector('#pj-list [data-k="more"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pj-list .pj-row:not(.sub)").length === 30`);
-	expect(await q(v, `return !!document.querySelector('#pj-list [data-k="more"]')`)).toBe(false);
+	await run(v, `document.querySelector('#pl-list [data-k="more"]').click()`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 24`);
+	await run(v, `document.querySelector('#pl-list [data-k="more"]').click()`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 30`);
+	expect(await q(v, `return !!document.querySelector('#pl-list [data-k="more"]')`)).toBe(false);
 	// chips: need -> running -> done -> all (paging starts again)
-	await run(v, `document.querySelector('.pj-chips [data-view="need"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pj-list .pj-row:not(.sub)").length === 4`);
-	await run(v, `document.querySelector('.pj-chips [data-view="run"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pj-list .pj-row:not(.sub)").length === 6`);
-	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pj-list .pj-row:not(.sub) .pj-s")].map(n => n.textContent)`).then(s => s.every(t => t.includes("작업 중")))).toBe(true);
-	await run(v, `document.querySelector('.pj-chips [data-view="done"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pj-list .pj-row:not(.sub)").length === 10`);
-	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pj-list .pj-row:not(.sub) .pj-s")].map(n => n.textContent)`).then(s => s.every(t => t.includes("끝남")))).toBe(true);
-	await run(v, `document.querySelector('.pj-chips [data-view="all"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pj-list .pj-row:not(.sub)").length === 12`);
+	await run(v, `document.querySelector('.pl-chips [data-view="need"]').click()`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 4`);
+	await run(v, `document.querySelector('.pl-chips [data-view="run"]').click()`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 6`);
+	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .pl-s")].map(n => n.textContent)`).then(s => s.every(t => t.includes("작업 중")))).toBe(true);
+	await run(v, `document.querySelector('.pl-chips [data-view="done"]').click()`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 10`);
+	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .pl-s")].map(n => n.textContent)`).then(s => s.every(t => t.includes("끝남")))).toBe(true);
+	expect(await q(v, `return getComputedStyle(document.querySelector("#pl-list .pl-bar.done i")).backgroundColor`)).toBe("rgb(10, 135, 84)");
+	await run(v, `document.querySelector('.pl-chips [data-view="all"]').click()`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 12`);
 	// search narrows to the typed name
-	await run(v, `const i = document.querySelector("#pj-q"); i.value = "프로젝트 17"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
-	await waitFor(v, `document.querySelectorAll("#pj-list .pj-row:not(.sub)").length === 1`);
-	expect(await q(v, `return document.querySelector("#pj-list .pj-row .pj-n").textContent`)).toBe("프로젝트 17");
+	await run(v, `const i = document.querySelector("#pl-q"); i.value = "프로젝트 17"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 1`);
+	expect(await q(v, `return document.querySelector("#pl-list .pl-row .pl-n").textContent`)).toBe("프로젝트 17");
 	// the built-in 커스텀 page stays reachable at the end of 전체
-	await run(v, `const i = document.querySelector("#pj-q"); i.value = ""; i.dispatchEvent(new Event("input", { bubbles: true }))`);
-	await waitFor(v, `document.querySelector("#pj-list .pj-row.sub")`);
-	expect(await q(v, `return document.querySelector("#pj-list .pj-gh").textContent`)).toBe("내 설정");
-	await run(v, `document.querySelector("#pj-list .pj-row.sub").click()`);
+	await run(v, `const i = document.querySelector("#pl-q"); i.value = ""; i.dispatchEvent(new Event("input", { bubbles: true }))`);
+	await waitFor(v, `document.querySelector("#pl-list .pl-row.sub")`);
+	expect(await q(v, `return document.querySelector("#pl-list .pl-gh").textContent`)).toBe("내 설정");
+	await run(v, `document.querySelector("#pl-list .pl-row.sub").click()`);
 	await waitFor(v, `document.querySelector("#v-project .pmv-title")`);
 	expect(await q(v, `return document.querySelector("#v-project .pmv-title").textContent`)).toBe("커스텀");
 });
 
 test("a row opens the overview; every section opens its own page and 뒤로 or the browser back returns", async () => {
 	const v = await boot(390, 844);
-	await run(v, `document.querySelectorAll("#pj-list .pj-row")[0].click()`);
+	await run(v, `document.querySelectorAll("#pl-list .pl-row")[0].click()`);
 	await waitFor(v, `document.querySelectorAll(".pm-row").length === 4`);
 	expect(await q<string[]>(v, `return [...document.querySelectorAll(".pm-row-k")].map(n => n.textContent)`)).toEqual(["목표와 진행", "세션", "최근 결과", "루틴과 모니터링"]);
 	// 확인 필요 is the primary action, and it is a single tap into the waiting session's chat
 	expect(await q(v, `return document.querySelector(".pm-need-t").textContent`)).toBe("질문 세션 1");
 	expect(await q(v, `return document.querySelector('.pm-need [data-k="answer"]').textContent`)).toBe("답하기");
-	expect(await q(v, `return document.querySelector(".pm-row .pj-bar").getAttribute("aria-valuenow")`)).toBe("33");
+	expect(await q(v, `return document.querySelector(".pm-row .pl-bar").getAttribute("aria-valuenow")`)).toBe("33");
+	// the page menu is a real 40px icon button, like the app's other ⋯ menus
+	expect(await q(v, `const b = document.querySelector(".pmv-more").getBoundingClientRect(); return [Math.round(b.width), Math.round(b.height)]`)).toEqual([40, 40]);
+	// in progress = accent, complete = success green
+	expect(await q(v, `return getComputedStyle(document.querySelector(".pm-row .pl-bar i")).backgroundColor`)).toBe("rgb(49, 130, 246)");
 	await shot(v, "02-overview-390.png");
 	// 목표와 진행: the goal and its milestones, editable as before
 	await run(v, `document.querySelector('.pm-row[data-k="goal"]').click()`);
@@ -196,9 +205,14 @@ test("a row opens the overview; every section opens its own page and 뒤로 or t
 
 test("from 1100px the list sits beside the overview, and a section page opens over both", async () => {
 	const v = await boot(1280, 900);
-	await run(v, `document.querySelectorAll("#pj-list .pj-row")[0].click()`);
-	await waitFor(v, `document.querySelectorAll(".pj-row").length > 0 && document.querySelectorAll(".pm-row").length === 4`);
+	await run(v, `document.querySelectorAll("#pl-list .pl-row")[0].click()`);
+	await waitFor(v, `document.querySelectorAll(".pl-row").length > 0 && document.querySelectorAll(".pm-row").length === 4`);
 	expect(await q(v, `return !document.querySelector("#v-projects").hidden && document.querySelector(".views").classList.contains("pp")`)).toBe(true);
+	// the open project is the selected row, and the chips stay on one line
+	expect(await q(v, `return document.querySelector("#pl-list .pl-row.on .pl-n").textContent`)).toBe("프로젝트 1");
+	expect(await q(v, `return getComputedStyle(document.querySelector("#pl-list .pl-row.on")).backgroundColor`)).toBe("rgb(242, 244, 246)");
+	expect(await q(v, `return document.querySelector(".pl-chips").scrollWidth > document.querySelector(".pl-chips").clientWidth`)).toBe(true);
+	expect(await q<number>(v, `const b = [...document.querySelectorAll(".pl-chips .mr-f")].map(x => Math.round(x.getBoundingClientRect().top)); return new Set(b).size`)).toBe(1);
 	await shot(v, "05-list-overview-1280.png");
 	await run(v, `document.querySelector('.pm-row[data-k="sessions"]').click()`);
 	await waitFor(v, `!!document.querySelector(".pdv .srows")`);
@@ -208,6 +222,6 @@ test("from 1100px the list sits beside the overview, and a section page opens ov
 	// dark mode, same list
 	await run(v, `dotzTheme.toggle()`);
 	await run(v, `go("projects")`);
-	await waitFor(v, `document.querySelector(".pj-row")`);
+	await waitFor(v, `document.querySelector(".pl-row")`);
 	await shot(v, "07-list-1280-dark.png");
 });

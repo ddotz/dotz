@@ -105,7 +105,7 @@ function pmOverview(q, D, rows) {
     pmPrimary(rows, live, working, workRun),
     el("div", { class: "pm-rows" },
       pmSummaryRow({ k: "goal", label: "목표와 진행", value: goal ? oneLine(goal) : "아직 목표가 없어요", onclick: () => pmSheet("goal"),
-        bar: ms.length ? el("span", { class: "pj-bar", role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })) : null,
+        bar: ms.length ? el("span", { class: `pl-bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })) : null,
         sub: ms.length ? `${done}/${ms.length} 단계 · ${pct}%` : "눌러서 목표와 단계를 정해요" }),
       pmSummaryRow({ k: "sessions", label: "세션", value: `세션 ${rows.length}개${working.length ? ` · 작업 중 ${working.length}` : ""}`, onclick: () => pmSheet("sessions"),
         sub: newestSess ? `${newestSess.title} · ${newestSess.live ? "지금 열림" : prjAgo(newestSess.at)}` : "아직 세션이 없어요" }),
@@ -265,7 +265,7 @@ function pmGoalBody(q) {
   addIn.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); doAdd(); } });
   const bare = !rec.goal && !ms.length, node = el("div", { class: "card pmv-goal" },
     pmEditable({ value: rec.goal || "", label: "목표", placeholder: "아직 목표가 없어요 · 눌러서 적어 주세요", multiline: true, save: v => pmWrite({ goal: v }) }),
-    ms.length ? el("div", { class: "pmv-prog" }, el("span", { class: "pmv-big", text: `${done}/${ms.length}` }), el("div", { class: "bar", role: "progressbar", "aria-label": "마일스톤 진행", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` }))) : bare ? null : el("div", { class: "sup", text: "단계를 더하면 진행률이 보여요" }),
+    ms.length ? el("div", { class: "pmv-prog" }, el("span", { class: "pmv-big", text: `${done}/${ms.length}` }), el("div", { class: `bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": "마일스톤 진행", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` }))) : bare ? null : el("div", { class: "sup", text: "단계를 더하면 진행률이 보여요" }),
     ms.length ? el("div", { class: "pmv-mlist" }, ...rows) : null,
     el("div", { class: "pmv-add" }, addIn, addBtn), note);
   if (PM.draft) { addIn.value = PM.draft; addBtn.disabled = !PM.draft.trim(); }
