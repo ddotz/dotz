@@ -222,6 +222,18 @@ test("an explicit test command (--test-cmd) still wins over the new version's ga
 	expect(j.status).toBe("updated");
 });
 
+test("an applied tarball update leaves update-pending.json with the .prev dir and starts the watchdog; a failed one leaves nothing", async () => {
+	const spawned: string[][] = [];
+	const watch = { pid: 4242, port: 47111, spawn: (c: string[]) => void spawned.push(c) };
+	const bad = await apply(opts({ http: github(tarball("bad", { FAIL: "boom\n" })), watch }));
+	expect(bad.status).toBe("failed");
+	expect(existsSync(join(data, "update-pending.json"))).toBe(false);
+	const j = await apply(opts({ http: github(tarball("new", {})), watch }));
+	expect(j.status).toBe("updated");
+	expect(JSON.parse(readFileSync(join(data, "update-pending.json"), "utf8"))).toMatchObject({ kind: "tarball", dir: app, prev: `${app}.prev`, from: OLD, to: NEW, status: "pending", gatewayPid: 4242, port: 47111 });
+	expect(spawned).toEqual([[process.execPath, join(data, "update-watchdog.ts"), join(data, "update-pending.json")]]);
+});
+
 test("a failing check keeps the old code, removes staging and says why", async () => {
 	const tgz = tarball("bad", { FAIL: "boom\n" });
 	const j = await apply(opts({ http: github(tgz) }));

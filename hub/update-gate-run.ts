@@ -1,4 +1,6 @@
-// The update gate (hub/update-gate.json runs `bun test ./hub/update-gate-run.ts`): the whole suite, run the fastest way this bun can.
+// The developer's full gate, run by hand before every push on the MacBook and on the Mac mini (docs/development.md): `bun test ./hub/update-gate-run.ts`,
+// the whole suite, run the fastest way this bun can. Owner machines no longer run it on update (it hit time limits and machine-specific
+// failures there, 2026-10-26); their gate is the smoke start, hub/update-gate.json -> hub/update-smoke-run.ts.
 // bun 1.4.2+ runs test files in parallel workers. bun 1.4.0 cannot start WebView hosts from parallel workers ("Failed to spawn WebView host
 // process", 25-31 web test files on a Mac mini, 2026-10-26), so an older bun runs the files one by one in a fresh global. Even then bun 1.4.0
 // fails a WebView start now and then (ERR_DLOPEN_FAILED, 4 of 51 web files in one run, each passing alone), so each file that failed runs again

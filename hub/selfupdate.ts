@@ -3,7 +3,9 @@
 // version in a temporary worktree (hub/selfupdate-local.ts) with the same checks; what cannot be carried over (conflict, failing checks,
 // uncommitted changes) is saved first (branch dotz-local/<stamp> + patch files in the logs dir) and waits for the owner's button, or is
 // moved aside automatically by auto_apply on a non-developer install. The update then fast-forwards, runs `bun install`
-// when package.json or the lockfile changed, runs the test suite and goes back to the old commit if the tests fail. The
+// when package.json or the lockfile changed, runs the update gate (hub/update-gate.json of the new version: a smoke start of its gateway)
+// and goes back to the old commit if it fails. An applied update leaves <data>/update-pending.json and, from the gateway, a detached
+// watchdog (hub/update-watchdog.ts) that rolls it back when the restarted gateway never comes up healthy (updateBoot clears it). The
 // restart itself is main.ts's restart gate (waits for running turns) or, on the owner's word, an immediate restart.
 // A daily check (self_update.auto_check / self_update.at in config.json) only notifies, unless self_update.auto_apply is on
 // (default off): then a new upstream commit on a clean checkout with nothing ahead of origin goes through the same apply()
@@ -18,9 +20,10 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { issueBlock } from "./choices.ts";
-import { CONFIG_FILE, cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
+import { CONFIG_FILE, cfg, DATA_DIR, HUB_TOKEN, log, PORT, writeAtomic } from "./config.ts";
 import { FORMAT, type Keep, keepLine, keepsLocal, openTrial, parseCommits, type Saved, saveLocal, savedNote, splitEquivalent, writeSavedSummary } from "./selfupdate-local.ts";
 import { trackTimer } from "./shutdown.ts";
+import type { Pending } from "./update-watchdog.ts";
 
 export type Exec = (cmd: string[], cwd: string, timeoutMs: number) => Promise<{ code: number; out: string }>;
 export type Commit = { sha: string; short: string; date: string; subject: string };
@@ -72,7 +75,11 @@ export type Options = {
 	http?: Http;
 	env?: Record<string, string | undefined>;
 	dataDir?: string;
+	// Set when the running gateway applies an update to its own code: arm the rollback watchdog for this gateway pid and port.
+	watch?: Watch;
 };
+// spawn: starts the watchdog detached (default spawnDetached); tests pass a fake.
+export type Watch = { pid: number; port: number; spawn?: (cmd: string[]) => void };
 export type Http = (url: string, init?: { headers?: Record<string, string> }) => Promise<Response>;
 type Tarball = Extract<Version, { kind: "tarball" }>;
 
@@ -80,6 +87,16 @@ const REPO_DIR = join(import.meta.dir, "..");
 const STATE_FILE = join(DATA_DIR, "self-update.json");
 const LOCK_FILES = ["package.json", "bun.lock", "bun.lockb"];
 const LIST_MAX = 30;
+export const PENDING_FILE = "update-pending.json";
+// The watchdog text of the version running now, read once at start: by the time it is spawned the files on disk are already the new version's.
+const WATCHDOG_SRC = (() => {
+	try {
+		return readFileSync(join(import.meta.dir, "update-watchdog.ts"), "utf8");
+	} catch {
+		return undefined;
+	}
+})();
+let gatewayWatch: Watch | undefined;
 
 export const defaultExec: Exec = async (cmd, cwd, timeoutMs) => {
 	// No credential prompt can ever wait for a terminal: a missing login fails at once with a message we can explain.
@@ -187,7 +204,8 @@ export function gateIn(cwd: string, testCmd?: string[]): { cmd: string[]; ms: nu
 
 function resolve(o: Options) {
 	const s = settings();
-	return { dir: o.dir, remote: o.remote ?? s.remote, branch: o.branch ?? s.branch, exec: o.exec ?? defaultExec, testCmd: o.testCmd, logDir: o.logDir ?? join(DATA_DIR, "logs") };
+	const watch = o.watch ?? (gatewayWatch && o.dir === REPO_DIR ? gatewayWatch : undefined);
+	return { dir: o.dir, remote: o.remote ?? s.remote, branch: o.branch ?? s.branch, exec: o.exec ?? defaultExec, testCmd: o.testCmd, logDir: o.logDir ?? join(DATA_DIR, "logs"), watch };
 }
 
 type Stamp = Record<string, string>;
@@ -375,6 +393,35 @@ async function checkTarball(o: Options, v: Tarball, base: CheckResult): Promise<
 	return r;
 }
 
+// Detached from the gateway's process group, so the service manager does not take it down with the gateway. Under systemd the whole
+// unit cgroup is stopped when the gateway exits, so it runs in a transient unit of its own there.
+function spawnDetached(cmd: string[]): void {
+	const systemd = process.platform === "linux" && process.env.INVOCATION_ID && Bun.which("systemd-run");
+	const p = Bun.spawn(systemd ? ["systemd-run", "--user", "--collect", "--quiet", ...cmd] : cmd, { detached: true, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+	p.unref();
+}
+
+// After an update is applied: <data>/update-pending.json for the next start to clear (updateBoot), and, when the running gateway
+// applied it to its own code, the rollback watchdog started from a copy in the data dir (hub/update-watchdog.ts says why).
+function markPending(o: Options, p: Pick<Pending, "kind" | "dir" | "from" | "to" | "prev" | "deps">, step: (phase: string, text: string) => void): void {
+	const { watch, logDir } = resolve(o);
+	const data = o.dataDir ?? DATA_DIR;
+	const file = join(data, PENDING_FILE);
+	const marker: Pending = { ...p, at: new Date().toISOString(), status: "pending", ...(watch ? { gatewayPid: watch.pid, port: watch.port } : {}) };
+	try {
+		mkdirSync(data, { recursive: true });
+		writeAtomic(file, `${JSON.stringify(marker)}\n`);
+		if (!watch) return record(logDir, "update: pending marker written, no watchdog (not the running gateway's own code)");
+		if (!WATCHDOG_SRC) return record(logDir, "update: no watchdog source in the running version; no automatic rollback");
+		const copy = join(data, "update-watchdog.ts");
+		writeFileSync(copy, WATCHDOG_SRC);
+		(watch.spawn ?? spawnDetached)([process.execPath, copy, file]);
+		step("확인", "재시작한 게이트웨이가 3분 안에 정상으로 뜨지 않으면 이전 버전으로 자동으로 되돌려요");
+	} catch (e) {
+		record(logDir, `update: pending marker or watchdog failed: ${e}`);
+	}
+}
+
 // Download → extract → bun install → tests, all in a staging dir next to the install; only then swap the dirs. Any failure removes the
 // staging dir and leaves the running code untouched.
 async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Job, step: (phase: string, text: string) => void, end: (status: Job["status"], text: string) => Job): Promise<Job> {
@@ -447,6 +494,7 @@ async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Job, step
 		return fail(`폴더를 바꾸지 못했어요: ${lastLine(String(e))}`);
 	}
 	rmSync(stage, { recursive: true, force: true });
+	markPending(o, { kind: "tarball", dir, from: v.commit.sha, to, prev }, step);
 	return end("updated", `${v.commit.short} → ${to.slice(0, 7)} 받았어요${summary ? ` (테스트 ${summary})` : ""}. 이전 폴더는 ${prev}에 있어요. 재시작하면 적용돼요.`);
 }
 
@@ -671,6 +719,7 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 		if (!t.ok) return back(t.why, deps);
 		testSummary = t.summary;
 	}
+	markPending(o, { kind: "git", dir, from, to: target, deps }, step);
 	const extra = `${rebased ? ` 로컬 커밋 ${c.ahead.length}개는 새 버전 위에 얹었어요.` : ""}${c.dropped.length ? ` 이미 새 버전에 있는 로컬 커밋 ${c.dropped.length}개는 건너뛰었어요.` : ""}${note}`;
 	return end("updated", `${v.commit.short} → ${target.slice(0, 7)} 받았어요${testSummary ? ` (테스트 ${testSummary})` : ""}. 재시작하면 적용돼요.${extra}`);
 }
@@ -781,8 +830,48 @@ function schedule(o: Options): void {
 	trackTimer("self update check", autoTimer);
 }
 
+// The gateway's start (main.ts, once it listens): a pending update of this code is marked healthy (the marker deleted) after a quiet
+// settle while /api/health answers, which ends its watchdog; a rollback the watchdog did is told once through alert, and its version is
+// not auto-applied again (autoFailed). Never a second rollback: the watchdog only acts on status "pending".
+export const SETTLE_MS = 45_000;
+const readPending = (file: string): Pending | undefined => {
+	try {
+		return JSON.parse(readFileSync(file, "utf8")) as Pending;
+	} catch {
+		return undefined;
+	}
+};
+export function updateBoot(hooks: { alert: (text: string) => void }, o: { dir?: string; dataDir?: string; settleMs?: number; health?: () => Promise<boolean> } = {}): void {
+	const dir = o.dir ?? REPO_DIR;
+	const data = o.dataDir ?? DATA_DIR;
+	const file = join(data, PENDING_FILE);
+	const logDir = join(data, "logs");
+	const m = readPending(file);
+	if (!m || m.dir !== dir) return;
+	if (m.status === "rolled-back" || m.status === "rollback-failed") {
+		const text = m.message ?? `업데이트 ${m.to.slice(0, 7)} 가 시작되지 않아 ${m.from.slice(0, 7)}으로 되돌렸어요.`;
+		record(logDir, `boot: ${text}`);
+		hooks.alert(text);
+		const s = readState();
+		s.autoFailed = m.to;
+		saveState(s);
+		rmSync(file, { force: true });
+		return;
+	}
+	if (m.status !== "pending") return;
+	const health = o.health ?? (() => fetch(`http://127.0.0.1:${PORT}/api/health`, { headers: { "x-dotz-token": HUB_TOKEN }, signal: AbortSignal.timeout(5000) }).then(r => r.status === 200, () => false));
+	trackTimer("update settle", setTimeout(async () => {
+		if (!(await health())) return record(logDir, `boot: ${m.to.slice(0, 7)} does not answer /api/health after the settle; leaving it pending`);
+		const now = readPending(file);
+		if (!now || now.to !== m.to || now.at !== m.at || now.status !== "pending") return;
+		rmSync(file, { force: true });
+		record(logDir, `boot: update ${m.from.slice(0, 7)} -> ${m.to.slice(0, 7)} is healthy`);
+	}, o.settleMs ?? SETTLE_MS));
+}
+
 export async function startSelfUpdate(notify: (text: string, count: number) => void, o: Options = { dir: REPO_DIR }, auto?: AutoHooks): Promise<void> {
 	notifyFn = notify;
+	gatewayWatch = { pid: process.pid, port: PORT };
 	autoHooks = auto;
 	running = await version(o).catch(() => undefined);
 	schedule(o);
