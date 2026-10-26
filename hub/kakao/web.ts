@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
-import { hasWords, type KakaoDb, memberLabel, messageById, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
+import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, roomShown, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
 import { fetchMedia, mediaOf, mediaTarget, serveLocalFile, showsText } from "./media.ts";
 import type { AxStep, Focus } from "./room.ts";
@@ -48,6 +48,9 @@ export type WebDeps = {
 export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus };
 
 const ROOMS_TTL_MS = 30_000;
+const HINT_MAX = 32;
+// A room with no name and no message of anyone else to name it by: what kind of room it is, with its size.
+const fallbackName = (r: Room): string => (r.kind === "direct" ? "1:1 대화방" : r.kind === "open" ? "오픈채팅방" : `단체 대화방${r.members ? ` ${r.members}명` : ""}`);
 const MAX_TEXT = 1000;
 const MAX_SENDS = 200;
 const SEND_WINDOW_MS = 24 * 3600 * 1000;
@@ -122,7 +125,7 @@ export function createKakaoWeb(deps: WebDeps) {
 	const pending = new Set<Promise<unknown>>();
 	const inflight = new Set<string>();
 	let dbCache: { path: string; db: KakaoDb } | undefined;
-	let roomsCache: { at: number; all: Room[]; names: Map<string, string> } | undefined;
+	let roomsCache: { at: number; all: Room[]; names: Map<string, string>; hints: Map<string, string> } | undefined;
 	// Newest logId per room for GET .../head (a peer's viewer asks every ~2 s). While the database files do not change, the answer comes from here and no query runs.
 	let headCache: { sig: string; at: number; heads: Map<string, string> } | undefined;
 
@@ -138,7 +141,6 @@ export function createKakaoWeb(deps: WebDeps) {
 		const db = await getDb(config);
 		const all = await rooms(db);
 		const names = new Map<string, string>();
-		let looked = 0;
 		for (const r of all) {
 			// The memo chat has no name in the database; KakaoTalk lists and finds it under the owner's own nickname.
 			if (r.kind === "self" && r.name === "(unknown)") {
@@ -147,13 +149,20 @@ export function createKakaoWeb(deps: WebDeps) {
 				names.set(r.chatId, "나와의 채팅");
 				continue;
 			}
-			if (r.name !== "(unknown)" || (r.kind !== "direct" && r.kind !== "group") || looked >= 10) continue;
-			looked++;
-			names.set(r.chatId, (await memberLabel(db, r.chatId, config.userId ?? "").catch(() => undefined)) ?? "이름 없는 방");
 		}
-		return (roomsCache = { at: now(), all, names });
+		// Every other room without a name: its members (KakaoTalk's own way), else what kind of room it is; never "(unknown)". One query for all.
+		const unnamed = all.filter(r => r.name === "(unknown)" && r.kind !== "self");
+		const labels = await memberLabels(db, unnamed, config.userId ?? "").catch(() => new Map<string, string>());
+		for (const r of unnamed) names.set(r.chatId, labels.get(r.chatId) ?? fallbackName(r));
+		const hints = await lastLines(db, all.map(r => r.chatId)).catch(() => new Map<string, string>());
+		return (roomsCache = { at: now(), all, names, hints });
 	};
-	const eligible = (all: Room[]) => all.filter(r => r.kind === "direct" || r.kind === "group" || r.kind === "self");
+	const eligible = (all: Room[], config: KakaoConfig) => all.filter(r => r.kind === "self" || roomShown(r.kind, config));
+	// Under the name in the list: the newest message, else the member count, so two rooms of the same name can be told apart.
+	const hintOf = (r: Room, hints: Map<string, string>) => {
+		const chars = [...(hints.get(r.chatId) ?? "")];
+		return chars.length ? (chars.length > HINT_MAX ? `${chars.slice(0, HINT_MAX - 1).join("").trimEnd()}…` : chars.join("")) : `${r.members ?? 0}명`;
+	};
 
 	const storedSends = () => readJsonFile<SendRecord[]>(sendsFile, []);
 	// A "sending" record nobody is working on (the gateway restarted meanwhile) is shown as failed.
@@ -258,7 +267,7 @@ export function createKakaoWeb(deps: WebDeps) {
 	async function makeDraft(config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }): Promise<void> {
 		const done = (error?: string) => deps.broadcast({ kind: "kakao_draft", chatId, ...(error ? { error } : {}) });
 		try {
-			const room = eligible((await allRooms(config, true)).all).find(r => r.chatId === chatId);
+			const room = eligible((await allRooms(config, true)).all, config).find(r => r.chatId === chatId);
 			if (!room) return done("대화방을 찾지 못했어요");
 			const recent = await messages(await getDb(config), chatId, DRAFT_READ, config.userId ?? "");
 			const self = room.kind === "self";
@@ -320,9 +329,9 @@ export function createKakaoWeb(deps: WebDeps) {
 			try {
 				const cache = await allRooms(config!);
 				const owed = await waitingRooms(config!).catch(() => new Map<string, string>());
-				const list = eligible(cache.all)
+				const list = eligible(cache.all, config!)
 					.sort((a, b) => b.lastAt - a.lastAt)
-					.map(r => ({ chatId: r.chatId, name: cache.names.get(r.chatId) ?? r.name, kind: r.kind, watched: watched.has(r.chatId), autoDraft: watched.has(r.chatId) && auto.has(r.chatId), unread: r.unread, unreplied: owed.has(r.chatId), lastAt: sentAtMs(r.lastAt) }));
+					.map(r => ({ chatId: r.chatId, name: cache.names.get(r.chatId) ?? r.name, hint: hintOf(r, cache.hints), kind: r.kind, watched: watched.has(r.chatId), autoDraft: watched.has(r.chatId) && auto.has(r.chatId), unread: r.unread, unreplied: owed.has(r.chatId), lastAt: sentAtMs(r.lastAt) }));
 				return json({ on: true, rooms: list });
 			} catch {
 				return json({ on: true, rooms: [], error: "카톡 데이터를 읽지 못했어요. 전체 디스크 접근 권한과 카카오톡 로그인을 확인해 주세요" });
@@ -359,7 +368,7 @@ export function createKakaoWeb(deps: WebDeps) {
 				const after = url.searchParams.get("after") ?? undefined;
 				if ((before !== undefined && !digits(before)) || (after !== undefined && !digits(after))) return json({ error: "before / after must be a logId" }, 400);
 				try {
-					const room = eligible((await allRooms(config!)).all).find(r => r.chatId === chatId);
+					const room = eligible((await allRooms(config!)).all, config!).find(r => r.chatId === chatId);
 					if (!room) return json({ error: "대화방을 찾지 못했어요" }, 404);
 					const list = await messages(await getDb(config!), chatId, limit, config!.userId ?? "", after !== undefined ? { after } : before !== undefined ? { before } : {});
 					const since = now() - SEND_WINDOW_MS;
