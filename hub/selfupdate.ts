@@ -170,7 +170,7 @@ export const GATE_MINUTES = 20;
 // The gate is read from the version being installed (hub/update-gate.json in the folder under test), not from this running file.
 // The updater that runs is always the OLD one, so a gate fix shipped as a code constant would only take effect one update later,
 // and never if the old gate keeps failing (that is how the --isolate fix got stuck behind exit 143). Missing or bad file: the
-// constants above. An explicit testCmd (tests, --test-cmd) still wins; the time limit comes from the new folder either way.
+// constants above (the running version's own gate, never "no gate"). An explicit testCmd (tests, --test-cmd) still wins; the time limit comes from the new folder either way.
 export const GATE_FILE = join("hub", "update-gate.json");
 export function gateIn(cwd: string, testCmd?: string[]): { cmd: string[]; ms: number } {
 	let g: { cmd?: unknown; timeoutMinutes?: unknown } = {};
@@ -179,8 +179,9 @@ export function gateIn(cwd: string, testCmd?: string[]): { cmd: string[]; ms: nu
 	} catch {
 		// no gate file (an older version, or a test tree): fall back below
 	}
-	const fileCmd = Array.isArray(g?.cmd) && g.cmd.length > 0 && g.cmd.every(x => typeof x === "string" && x) ? (g.cmd as string[]) : undefined;
-	const min = typeof g?.timeoutMinutes === "number" && g.timeoutMinutes > 0 ? g.timeoutMinutes : GATE_MINUTES;
+	// The file may only choose the arguments of `bun test` and a limit of at most 60 minutes: a gate that is `true` or never ends is no gate.
+	const fileCmd = Array.isArray(g?.cmd) && g.cmd.length >= 2 && g.cmd.every(x => typeof x === "string" && x) && g.cmd[0] === "bun" && g.cmd[1] === "test" ? (g.cmd as string[]) : undefined;
+	const min = typeof g?.timeoutMinutes === "number" && g.timeoutMinutes > 0 && g.timeoutMinutes <= 60 ? g.timeoutMinutes : GATE_MINUTES;
 	return { cmd: testCmd ?? fileCmd ?? TEST_CMD, ms: min * 60_000 };
 }
 

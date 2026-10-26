@@ -205,8 +205,8 @@ test("the gate command and time limit come from the new version's hub/update-gat
 	expect(logs()).toContain("bun test --new-gate");
 });
 
-test("a broken or missing gate file in the new version falls back to bun test --isolate and 20 minutes", async () => {
-	for (const [n, files] of [{ "hub/update-gate.json": "{ not json" }, { "hub/update-gate.json": JSON.stringify({ cmd: [], timeoutMinutes: -1 }) }, {}].entries()) {
+test("a broken, missing or non-bun-test gate file in the new version falls back to bun test --isolate and 20 minutes", async () => {
+	for (const [n, files] of [{ "hub/update-gate.json": "{ not json" }, { "hub/update-gate.json": JSON.stringify({ cmd: [], timeoutMinutes: -1 }) }, { "hub/update-gate.json": JSON.stringify({ cmd: ["sh", "-c", "exit 0"], timeoutMinutes: 9999 }) }, {}].entries()) {
 		put(app, { ".dotz-install": stamp() });
 		const seen: { cmd: string; ms: number }[] = [];
 		const e = exec(async (cmd, _cwd, ms) => (seen.push({ cmd: cmd.join(" "), ms }), undefined));
