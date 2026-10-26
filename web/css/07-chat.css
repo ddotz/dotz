@@ -15,7 +15,7 @@
 .dc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 0 8px 8px; overflow-y: auto; overscroll-behavior: contain; }
 .dc-steps { flex: none; display: flex; gap: 6px; padding-bottom: 2px; overflow-x: auto; scrollbar-width: none; }
 .dc-steps::-webkit-scrollbar { display: none; }
-.dc-chip { flex: none; max-width: 70%; height: 28px; padding: 0 12px; border: 0; border-radius: 14px; background: var(--card); color: var(--fg-2); font: inherit; font-size: 13px; line-height: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dc-chip { flex: none; max-width: 70%; height: var(--btn-h-sm); padding: 0 12px; border: 0; border-radius: 999px; background: var(--card); color: var(--fg-2); font: inherit; font-size: 13px; line-height: var(--btn-h-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dc-chip.got { color: var(--fg); }
 .dc-chip.on { background: var(--fg); color: var(--bg); }
 .dc-sub, .dcm-sub { padding: 2px 4px 0; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 600; }
@@ -44,10 +44,8 @@
 .dc-note { width: 100%; box-sizing: border-box; min-height: 72px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); resize: vertical; font-size: 14px; line-height: 22px; }
 .dc-note:focus { outline: 0; border-color: var(--accent); }
 .dc-eb { display: flex; gap: 8px; }
-.dc-back, .dc-go { flex: 1; min-height: 44px; border: 0; border-radius: var(--r-ctl); font-weight: 600; font-size: 15px; }
-.dc-back { background: var(--card); color: var(--fg-2); }
-.dc-go { background: var(--accent); color: var(--on-accent); }
-.dc-go:disabled { opacity: .45; }
+/* 돌아가기 (secondary) and the send button (primary) are the one button system (01-tokens.css); only the row layout is here */
+.dc-back, .dc-go { flex: 1; }
 @media (pointer: coarse) { .dc-note { font-size: 16px; } }
 .dc-st { flex: none; padding: 4px 16px 10px; color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
 /* In the 알림 / 작업내역 conversations the rows are not answer buttons: a tap on the message opens the decision sheet (30-notices.js). */
@@ -75,5 +73,5 @@
 .tg-done { background: var(--fg-3); }
 .tg-done::after { content: ""; position: absolute; left: 4px; top: 1.5px; width: 3px; height: 6px; border: solid var(--card); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
 .tg-drop { border: 1.5px dashed var(--fg-3); }
-@media (pointer: coarse) { .dc-fold { width: 44px; height: 44px; margin: -6px -4px 0 0; } .dc-chip { height: 36px; line-height: 36px; } .td-bar { min-height: 44px; } }
+@media (pointer: coarse) { .dc-fold { width: 44px; height: 44px; margin: -6px -4px 0 0; } .td-bar { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .dc-fold .ic, .td-ch { transition: none; } }

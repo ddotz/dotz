@@ -14,7 +14,6 @@ button.cu-r:hover, a.cu-r:hover { background: var(--card-hover); }
 .cu-r > .ib { margin-left: auto; }
 .cu-m { color: var(--fg-3); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
 .cf .btn:disabled, .pv-acts .btn:disabled { opacity: .4; cursor: default; }
-@media (pointer: coarse) { .cf .btn { height: 36px; } }
 .cu-cause { margin-top: 8px; color: var(--err); font-size: 12px; line-height: 16px; }
 /* card editor (dialog): the app's fields, two to a row where they are short, one tonal block per action */
 .cu-form { display: flex; flex-direction: column; gap: 14px; padding-top: 8px; }
@@ -115,7 +114,7 @@ button.pv-res:hover { background: var(--card-hover); }
 .pv-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .pv-q { height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 14px; background: transparent; color: var(--fg-2); font: 500 12.5px/26px var(--font); cursor: pointer; }
 .pv-q:hover { background: var(--hover); color: var(--fg); }
-@media (pointer: coarse) { .pv-ta { font-size: 16px; line-height: 22px; } .pv-acts .btn { height: 36px; } .pv-q { height: 34px; line-height: 32px; } }
+@media (pointer: coarse) { .pv-ta { font-size: 16px; line-height: 22px; } .pv-q { height: 34px; line-height: 32px; } }
 @media (min-width: 1100px) {
   .pv-top { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
   .pv-cols { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
@@ -469,16 +468,8 @@ button.pv-res:hover { background: var(--card-hover); }
     if (m < 24 * 60) return `${Math.floor(m / 60)}시간 전`;
     return `${Math.floor(m / 1440)}일 전`;
   }
-  // A folder as people read it: its last two names ("workspace › score_from_midi"), the full path on hover.
-  function shortPath(path) {
-    const parts = String(path).replace(/^~\/?/, "").split("/").filter(Boolean);
-    return parts.length ? `${parts.length > 2 ? "… › " : ""}${parts.slice(-2).join(" › ")}` : "홈 폴더";
-  }
-  function pathNode(path) {
-    const b = el("button", { class: "pv-path", type: "button", title: `${path}\n누르면 경로를 복사해요`, text: `폴더 · ${shortPath(path)}` });
-    b.addEventListener("click", () => navigator.clipboard.writeText(path).then(() => toast("경로를 복사했어요"), () => toast(path)));
-    return b;
-  }
+  // A folder as the rest of the app shows it (shortPath + pathCopy in 15-attachments.js): a short line, the full path in the title, a tap copies it.
+  const pathNode = path => pathCopy(path, "pv-path");
   const sec = (label, extra) => el("div", { class: "pv-sh" }, el("div", { class: "sec", text: label }), extra || null);
   const emptyCard = t => el("div", { class: "card empty", text: t });
 
