@@ -28,7 +28,7 @@ function renderProviders() {
     const canLogout = p.can_logout ?? p.removable;
     const sub = p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨");
     // OmO-only install: logging in happens on that computer (hub/providers.ts buildProviders login_hint), so say how instead of a button that cannot work.
-    const hint = p.login_hint ? `${isConnected(p) ? "다시 로그인" : "로그인"}은 이 컴퓨터의 터미널에서 omo를 열고 ${p.login_hint}` : "";
+    const hint = p.login_hint ? `${isConnected(p) ? "다시 로그인" : "로그인"}: 이 컴퓨터의 터미널에서 omo를 열고 ${p.login_hint}를 실행해요` : "";
     const btns = el("div", { class: "btns" });
     if (p.can_login) btns.append(el("button", { class: `btn ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인"));
     if (canLogout) btns.append(el("button", { class: "btn danger", type: "button", onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, p.auth === "api_key" ? "키 삭제" : "로그아웃"));

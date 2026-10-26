@@ -251,7 +251,11 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 	const disk = readDisk();
 	const models = opts.light ? ([] as ModelInfo[]) : await Promise.race([availableModels().catch((): ModelInfo[] => []), sleep(2500, [] as ModelInfo[])]);
 	// the same names as the 모델 screen (Opus 5.5), not the raw id an OmO model list without names would leave (claude-opus-5-5)
-	const mName = (sel: string) => models.find(m => m.selector === sel)?.name ?? modelName(sel);
+	const mName = (sel: string) => {
+		// OmO's model list names a model by its id, so the readable name (Opus 5.5) comes first whenever the id is a known one
+		const nice = modelName(sel);
+		return nice !== (sel.split("/").pop() ?? sel) ? nice : (models.find(m => m.selector === sel)?.name ?? nice);
+	};
 	const om = orchestratorModel(), lm = lanesModel(), wm = parseSelector(workerModel());
 	const S = (p: string, over: Partial<Setting> = {}) => settingOf(p, disk, over);
 	const ro = (key: string, label: string, value: string | number, source: string, extra: Partial<Setting> = {}): Setting => ({ key, label, value, type: "text", editable: false, applies: "restart", source, ...extra });
