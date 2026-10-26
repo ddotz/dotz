@@ -65,11 +65,14 @@ describe("features view", () => {
 		const v = featuresOf(data, "instagram", W, []);
 		expect(v.features.map(f => f.id)).toEqual(["comment_reply", "reels_approval", "dm_read"]);
 		expect(APP_FEATURES.instagram!.features.filter(f => f.ready === false).map(f => f.id)).toEqual(["post_edit", "dm"]);
-		expect(featuresOf(data, "youtube", W, []).features.map(f => f.name)).toEqual(["댓글 답글", "메타데이터", "쇼츠·영상 올리기 승인"]);
+		expect(featuresOf(data, "youtube", W, []).features.map(f => f.name)).toEqual(["자동 초안", "메타데이터", "쇼츠·영상 올리기 승인"]);
 	});
 	test("login keeper and sync are internal rows with status dot, last run and the failure in Korean", () => {
 		const v = featuresOf(data, "instagram", W, []);
 		expect(v.internal.map(i => [i.id, i.kind, i.dot])).toEqual([["sns-ig-comments", "sync", "ok"], ["ig-site-login", "login", "fail"]]);
+		expect(v.internal.map(i => i.every_minutes)).toEqual([60, 60]);
+		// A feature whose switch is a settings key names that key and its section, so the screen draws the control once.
+		expect(v.features.map(f => [f.id, f.setting ?? null, f.section ?? null])).toEqual([["comment_reply", "auto_draft", "draft"], ["reels_approval", null, "draft"], ["dm_read", null, "more"]]);
 		const login = v.internal[1]!;
 		expect(login.name.startsWith("로그인 유지")).toBe(true);
 		expect(login.status).toBe("2번 연달아 실패했어요");

@@ -233,14 +233,15 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 	const v = open(390, 844);
 	const rows = (sel: string) => q<string[]>(v, `return [...document.querySelectorAll(${JSON.stringify(sel)})].map(e => e.textContent.trim())`);
 
-	test("the first switch of the panel is 이 기기에서 쓰기 and it is on", async () => {
+	test("연결됨 sits at the top, then 자동 초안과 승인 and 고급 with 이 기기에서 쓰기 on", async () => {
 		await boot(v, "c:settings:mail");
 		await waitFor(v, `target === "settings:mail"`);
 		await openScreen(v);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="auto_draft"]')`);
-		expect(await q(v, `return document.querySelector("#app-sw").firstElementChild.querySelector('[data-k="use_here"]') !== null`)).toBe(true);
+		expect(await q(v, `return { conn: document.querySelector("#app-sw").firstElementChild.dataset.conn, secs: [...document.querySelectorAll("#app-sw [data-sec]")].map(e => e.dataset.sec) }`)).toEqual({ conn: "connected", secs: ["draft", "advanced"] });
 		expect(await q(v, `return document.querySelector('#app-sw [data-k="use_here"]').getAttribute("aria-checked")`)).toBe("true");
-		expect((await rows("#app-sw .as-row .as-n"))[0]).toBe("이 기기에서 쓰기");
+		expect((await rows("#app-sw .as-row .as-n"))[0]).toBe("연결됨");
+		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-sec='draft'] ~ [data-setting]")].map(e => e.dataset.setting)`)).toEqual(["auto_draft", "skip_senders", "only_senders", "use_here", "label", "reply_model", "memory"]);
 		await shot(v, "05-phone-switch-and-remove.png");
 		await closeScreen(v);
 	});

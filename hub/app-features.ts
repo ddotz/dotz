@@ -10,7 +10,7 @@
 //   POST  /api/integrations/<app>/retry           -> {watch}: runs one owned watch now (다시 시도)
 import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { readSettings, SettingsError, writeSettings } from "./app-settings.ts";
+import { readSettings, SettingsError, writeSettings, type SettingSection } from "./app-settings.ts";
 import { APP_FEATURES, declOf, type FeatureDecl, featureOn, readApps } from "./app-feature-flags.ts";
 import { APPS_FILE, appBase, appEntries, belongsTo, type IntegrationEntry } from "./integrations.ts";
 import { watchFacts } from "./monitors.ts";
@@ -49,9 +49,11 @@ export function ownedWatches(dataDir: string, watches: readonly WatchLike[]): Ma
 
 export { APP_FEATURES, type AppDecl, type FeatureDecl, featureEnabled } from "./app-feature-flags.ts";
 
-export type FeatureView = { id: string; name: string; status: string; on: boolean };
+// `setting`/`section`: a feature whose switch IS a settings row says which key and group, so the screen draws that row once and never a second switch
+// under 기능 (자동 초안, 감시). The screen groups every row by its section key.
+export type FeatureView = { id: string; name: string; status: string; on: boolean; setting?: string; section?: SettingSection };
 export type ApprovalOption = { n: number; label: string };
-export type InternalView = { id: string; kind: "login" | "sync"; name: string; dot: "ok" | "fail" | "idle"; status: string; last_run?: string; reason?: string };
+export type InternalView = { id: string; kind: "login" | "sync"; name: string; dot: "ok" | "fail" | "idle"; status: string; last_run?: string; reason?: string; every_minutes?: number };
 /** An approval row: `title` is the item (post title or the start of the caption), `kind` what is approved, `options` the answers the owner can give from the row (고치기 needs a text, so it stays in the sheet). */
 export type ApprovalView = { id: string; title: string; kind?: string; feature?: string; state: string; at?: string; note?: string; options: ApprovalOption[] };
 export type FeaturesView = { app: string; features: FeatureView[]; internal: InternalView[]; approvals: ApprovalView[] };
@@ -91,7 +93,7 @@ export function internalOf(w: Watch, appLabel = "앱"): InternalView {
 	const f = watchFacts(w), kind = w.session ? "login" : "sync", last = w.state.lastRun;
 	const dot = f.fails ? "fail" : !last || w.paused || w.state.paused ? "idle" : "ok";
 	const status = dot === "fail" ? `${f.fails}번 연달아 실패했어요` : dot === "idle" ? (w.paused || w.state.paused ? "멈춰 있어요" : "아직 확인 전이에요") : PROGRESS_WATCH.test(w.name) && f.last_output ? f.last_output : "정상이에요";
-	return { id: w.name, kind, name: `${KIND_KO[kind]} · ${internalName(w, appLabel)}`, dot, status, ...(last ? { last_run: last } : {}), ...(dot === "fail" ? { reason: f.last_output || "확인에 실패했어요" } : {}) };
+	return { id: w.name, kind, name: `${KIND_KO[kind]} · ${internalName(w, appLabel)}`, dot, status, every_minutes: w.every_minutes, ...(last ? { last_run: last } : {}), ...(dot === "fail" ? { reason: f.last_output || "확인에 실패했어요" } : {}) };
 }
 
 /** Why a Reels upload cannot go out yet: the Instagram token lacks instagram_business_content_publish (features/youtube-instagram/lib/ig-publish.ts writes the flag). */
@@ -114,7 +116,7 @@ export function featuresOf(dataDir: string, app: string, watches: readonly Watch
 	const approvals: ApprovalView[] = open.map(n => ({ id: n.id, title: approvalTitle(n), ...(featureOfNotice(n) ? { feature: featureOfNotice(n)!.id, kind: featureOfNotice(n)!.name } : {}), ...(blocked && featureOfNotice(n)?.id === "reels_approval" ? { note: REELS_BLOCKED } : {}), state: "open", ...(n.updated ?? n.ts ? { at: n.updated ?? n.ts } : {}), options: (n.decision?.options ?? []).filter(o => !o.label.startsWith("고치기")).map(o => ({ n: o.n, label: o.label })) }));
 	const features = decls.map(f => {
 		const on = featureOn(dataDir, app, f, settings), waiting = approvals.filter(a => a.feature === f.id).length;
-		return { id: f.id, name: f.name, on, status: !on ? "꺼져 있어요" : blocked && f.id === "reels_approval" ? REELS_BLOCKED : waiting ? `승인 대기 ${waiting}건` : f.hint };
+		return { id: f.id, name: f.name, on, status: !on ? "꺼져 있어요" : blocked && f.id === "reels_approval" ? REELS_BLOCKED : waiting ? `승인 대기 ${waiting}건` : f.hint, ...(f.setting ? { setting: f.setting } : {}), ...(f.section ? { section: f.section } : {}) };
 	});
 	const internal = watches.filter(w => mine.has(w.name)).map(w => internalOf(w, entry.label));
 	return { app, features, internal, approvals };
