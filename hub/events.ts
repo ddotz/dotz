@@ -151,28 +151,56 @@ export function eventTarget(e: HubEvent): string | undefined {
 }
 
 // Last HISTORY_TAIL bytes of a jsonl file, parsed; a cut first line is dropped.
+// History pages, the conversation list, decision cards and file checks all ask for it, so what was parsed is kept per file and only
+// the bytes appended since are read (the logs only grow by appendFileSync; a smaller size or another inode is a rewrite: read afresh).
+// Each kept line remembers its byte offset, so the window moves exactly as a fresh read of the last HISTORY_TAIL bytes would.
 const HISTORY_TAIL = 4 * 1024 * 1024;
-export function tailEvents(file: string): HubEvent[] {
-	if (!existsSync(file)) return [];
-	const size = statSync(file).size;
-	const start = Math.max(0, size - HISTORY_TAIL);
-	const buf = Buffer.alloc(size - start);
-	const fd = openSync(file, "r");
+type Tail = { ino: number; size: number; mtime: number; lines: { start: number; event: HubEvent }[] };
+const tails = new Map<string, Tail>();
+const parsed = (text: string): HubEvent | undefined => {
 	try {
-		readSync(fd, buf, 0, buf.length, start);
-	} finally {
-		closeSync(fd);
+		return JSON.parse(text);
+	} catch {
+		return undefined;
 	}
-	const lines = buf.toString("utf8").split("\n");
-	if (start > 0) lines.shift();
-	const out: HubEvent[] = [];
-	for (const line of lines) {
+};
+export function tailEvents(file: string): HubEvent[] {
+	if (!existsSync(file)) {
+		tails.delete(file);
+		return [];
+	}
+	const { size, ino, mtimeMs } = statSync(file);
+	const windowStart = Math.max(0, size - HISTORY_TAIL);
+	const kept = (start: number) => windowStart === 0 || start > windowStart;
+	let tail = tails.get(file);
+	const rewritten = tail && (tail.ino !== ino || size < tail.size || (size === tail.size && mtimeMs !== tail.mtime));
+	if (!tail || rewritten || tail.size < windowStart) tail = { ino, size: windowStart, mtime: mtimeMs, lines: [] };
+	tail.mtime = mtimeMs;
+	tails.set(file, tail);
+	let partial: HubEvent | undefined;
+	if (size > tail.size) {
+		const from = tail.size;
+		const buf = Buffer.alloc(size - from);
+		const fd = openSync(file, "r");
 		try {
-			out.push(JSON.parse(line));
-		} catch {
-			continue;
+			readSync(fd, buf, 0, buf.length, from);
+		} finally {
+			closeSync(fd);
 		}
+		let at = 0;
+		for (let nl = buf.indexOf(10); nl !== -1; at = nl + 1, nl = buf.indexOf(10, at)) {
+			if (!kept(from + at)) continue;
+			const event = parsed(buf.toString("utf8", at, nl));
+			if (event) tail.lines.push({ start: from + at, event });
+		}
+		// A line still being written is not kept (its end may not be there yet); it is read again once its newline lands.
+		tail.size = from + at;
+		if (at < buf.length && kept(from + at)) partial = parsed(buf.toString("utf8", at));
 	}
+	const drop = tail.lines.findIndex(l => kept(l.start));
+	if (drop !== 0) tail.lines.splice(0, drop === -1 ? tail.lines.length : drop);
+	const out = tail.lines.map(l => l.event);
+	if (partial) out.push(partial);
 	return out;
 }
 
