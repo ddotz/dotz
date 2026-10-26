@@ -190,6 +190,10 @@ details.work.live .wdot { display: block; }
 .tl-top { display: flex; justify-content: center; margin: 0 0 -6px; }
 .tl-top[hidden] { display: none; }
 .tl-top .tl-more { height: 26px; font-size: 12.5px; }
+/* Inline line buttons are not card buttons: the touch rule's 44px min-height (01-tokens.css) would make the line itself 44px tall.
+   They keep their compact height and get a larger hit area from an invisible box around them. */
+.runstate .rs-go, .pausenote .pn-go, .tl-top .tl-more { position: relative; min-height: 0; }
+.runstate .rs-go::after, .pausenote .pn-go::after, .tl-top .tl-more::after { content: ""; position: absolute; inset: -8px -4px; }
 .runline.warn { color: var(--warn); }
 @keyframes runpulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 #working > .dot, #working-tx, #working > .sp, #working-stop { display: none !important; }

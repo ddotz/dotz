@@ -31,7 +31,7 @@ function runText(r) {
     }
     case "limited": return [label, r.detail ? `${kstTime(r.detail)}까지` : "잠시 쉬어요"].join(" · ");
     case "error": return [label, r.detail].filter(Boolean).join(" · ");
-    case "stopped": return [label, r.reason === "owner" ? "주인님이 멈추게 했어요" : "", left].filter(Boolean).join(" · ");
+    case "stopped": return [label, r.reason === "owner" ? "직접 멈췄어요" : "", left].filter(Boolean).join(" · ");
     case "done": return [label, r.since ? kstHM(r.since) : ""].filter(Boolean).join(" · ");
     default: return label;
   }

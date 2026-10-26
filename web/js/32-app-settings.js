@@ -297,11 +297,15 @@ function asControl(f, set) {
 // The sections of the settings screen in the order the owner reads them (hub/app-settings.ts SettingSection); a row is drawn once, under one heading.
 const AS_SECTIONS = [["notify", "알림"], ["draft", "자동 초안과 승인"], ["watch", "감시"], ["more", "기타 기능"], ["advanced", "고급"]];
 // 연결 상태 at the top of an app: whether it is connected to its site (and since when it is not). A monitor's own top row is its status card (asStatRow).
-function asConnNode(app) {
-  if (app.startsWith("w:")) return null;
+// The integration item behind an app's settings: this computer's, or the peer's when the app is `<key>~<computer>`.
+function asConnItem(app) {
   const pc = typeof pqPc === "function" ? pqPc(`settings:${app}`) : null;
   const peer = pc && typeof PQ !== "undefined" ? PQ.list.find(p => p && p.url === pc.url) : null;
-  const it = pc ? ((peer && peer.items && peer.items.integrations) || []).find(x => x.key === app.split("~")[0]) : INTG.items.find(x => x.key === app);
+  return { pc, it: pc ? ((peer && peer.items && peer.items.integrations) || []).find(x => x.key === app.split("~")[0]) : INTG.items.find(x => x.key === app) };
+}
+function asConnNode(app) {
+  if (app.startsWith("w:")) return null;
+  const { pc, it } = asConnItem(app);
   const off = !!(it && it.state === "disconnected");
   const last = pc ? "" : monStatMons(app).map(m => m && (m.last_ok || m.last_run)).filter(Boolean).sort().pop();
   const sub = off ? (it.since ? `${monTime(it.since)}부터 연결이 끊겼어요` : it.hint || "다시 로그인해 주세요") : !it ? "" : pc ? `${pc.name}에서 쓰는 앱이에요` : last ? `마지막 확인 ${monTime(last)}` : "";
@@ -333,7 +337,9 @@ function asPaint() {
     return;
   }
   const feat = app.startsWith("w:") ? null : AS.feat[app] || null;
-  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat]);
+  // The watch status rows and the connection row are drawn from the monitor and integration data, so their changes repaint too.
+  const statSig = app.startsWith("w:") ? [asMon(app)] : [monStatMons(app), (({ it }) => it ? [it.state, it.since, it.hint] : null)(asConnItem(app))];
+  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat, statSig]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   // Within a section: the switch that turns the feature on, then the feature rows, then the other values, then the lists, then what waits or runs.

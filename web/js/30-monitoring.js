@@ -64,7 +64,9 @@ const monRel = (ms, past) => {
   return past ? `${t} 전` : `${t} 후`;
 };
 const MON_PTAG = { ok: ["정상", "ok"], changed: ["바뀜", "warn"], fail: ["실패", "err"], disconnected: ["연결 끊김", "err"], need: ["확인 필요", "warn"], off: ["꺼짐", ""], late: ["늦어짐", "warn"], run: ["확인 중", "warn"] };
-const monConnLine = m => ["연결 끊김", m.since ? `${monTime(m.since)}부터` : "", m.conn_reason === "login" ? "다시 로그인 필요" : m.conn_reason ? "확인이 계속 실패해요" : ""].filter(Boolean).join(" · ");
+// Wording (one pair): a row, a tag or a badge says "연결 끊김"; the banner at the top of the conversation says "연결이 끊겼어요" plus why.
+const monConnWhy = m => [m.since ? `${monTime(m.since)}부터` : "", m.conn_reason === "login" ? "다시 로그인 필요" : m.conn_reason ? "확인이 계속 실패해요" : ""].filter(Boolean).join(" · ");
+const monConnLine = m => ["연결 끊김", monConnWhy(m)].filter(Boolean).join(" · ");
 // The list row's status line has room for the start of the outage only; the banner and the overview add why.
 const monConnShort = m => ["연결 끊김", m.since ? `${kstHM(m.since).replace(/^오[전후]\s*/, "")}부터` : ""].filter(Boolean).join(" · ");
 // Empty for a paused or disconnected monitor: its one tag (꺼짐 / 연결 끊김) and, when down, the banner's single line already say it.
@@ -94,7 +96,8 @@ function monProgNode(m, opts = {}) {
   const width = st.kind === "run" ? 35 : st.pct;
   const bar = el("span", { class: `mon-prog${st.kind ? ` ${st.kind}` : ""}`, role: "progressbar", "aria-label": `${monTitle(m)} 진행`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(st.pct)), "aria-valuetext": line }, el("i", { style: `width:${width}%` }));
   if (live && from > 0 && to > 0) { bar.dataset.from = String(from); bar.dataset.to = String(to); bar.dataset.short = opts.short ? "1" : ""; }
-  const tag = text && opts.tag !== false ? el("span", { class: `mon-ptag${tone ? ` ${tone}` : ""}`, "data-fixed": st.tag === "fail" || st.tag === "disconnected" || st.tag === "off" || st.tag === "run" ? "1" : null, text }) : null;
+  // data-tag keeps the result the node was built with: the ticker only flips a live tag between it and 늦어짐, never to another result.
+  const tag = text && opts.tag !== false ? el("span", { class: `mon-ptag${tone ? ` ${tone}` : ""}`, "data-tag": st.tag, "data-fixed": st.tag === "fail" || st.tag === "disconnected" || st.tag === "off" || st.tag === "run" ? "1" : null, text }) : null;
   const tx = line ? el("span", { class: "mon-prog-tx", text: line }) : null;
   return el("div", { class: `mon-prog-wrap${opts.compact ? " compact" : ""}` }, el("div", { class: "mon-prog-top" }, bar, tag), tx);
 }
@@ -419,11 +422,13 @@ const monRunNow = (btn, m) => busy(btn, async () => {
 const monRecheckApp = (btn, it, names) => busy(btn, async () => {
   for (const n of names) MON.running.add(n);
   MON.sig = ""; MON.side = ""; monSchedule();
-  try { await Promise.all(names.map(n => api(`/api/watches/${enc(n)}/run`, "POST", {}))); }
-  finally { for (const n of names) MON.running.delete(n); }
-  await Promise.all([loadMonitors(), it.pc ? pqLoad() : loadIntegrations()]);
+  // allSettled: one watch failing to run still lets the others finish, the data reload and the owner hear how it went.
+  const res = await Promise.allSettled(names.map(n => api(`/api/watches/${enc(n)}/run`, "POST", {})));
+  for (const n of names) MON.running.delete(n);
+  await Promise.allSettled([loadMonitors(), it.pc ? pqLoad() : loadIntegrations()]);
   MON.sig = ""; MON.side = ""; monSchedule();
-  toast("지금 다시 확인했어요");
+  const bad = res.filter(r => r.status === "rejected").length;
+  toast(bad ? `${names.length}개 중 ${bad}개는 확인하지 못했어요` : "지금 다시 확인했어요", !!bad);
 });
 // An item reads like a chat: its reports and mails oldest to newest, a monitor's latest run last. The 감시 소식 feed is a list, not a chat: newest on top.
 const monFeed = it => it.key === "notice";
@@ -617,18 +622,28 @@ function monStatNode(m) {
 // A peer's app is `<its key>~<computer hash>`: the same key may exist on this computer too (34-peer-monitoring.js pqApp).
 const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.app && it.pc ? pqApp(it.inst, it.pc) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : "";
 // A connection that is down says so at the top of the conversation, whether or not an alert went out, with the way to check again.
-function monBannerNode(text, btn) {
-  const t = String(text || "").trim(), head = t.startsWith("연결 끊김") ? "연결 끊김" : "연결이 끊겼어요";
-  return el("div", { class: "mon-banner", role: "alert" }, icon("refresh"), el("span", { class: "mon-banner-tx" }, el("b", { text: head }), t.startsWith("연결 끊김") && t.length > head.length ? t.slice(head.length) : t && !t.startsWith("연결 끊김") ? ` · ${t}` : ""), btn);
+// Two states, two banners: kind "down" (the connection is gone: err tone, 연결이 끊겼어요) and "fail" (connected, the last check failed: warn tone,
+// 확인 실패). The head is passed in, never guessed from the detail text.
+function monBannerNode(kind, detail, btn) {
+  const head = kind === "down" ? "연결이 끊겼어요" : "확인 실패", t = String(detail || "").trim();
+  return el("div", { class: `mon-banner ${kind}`, role: kind === "down" ? "alert" : "status", "data-kind": kind }, icon("refresh"), el("span", { class: "mon-banner-tx" }, el("b", { text: head }), t ? ` · ${t}` : ""), btn);
 }
-const monRunBtn = (m, text) => el("button", { class: "as-tpl mon-run", type: "button", "data-run": m.watch, text: text || "지금 확인", onclick: ev => monRunNow(ev.currentTarget, m) });
+// The app hint the hub writes for a down app starts with the row word ("연결 끊김 · ..."); the banner has its own head, so only the why is kept.
+const monHintWhy = h => String(h || "").replace(/^\s*연결\s*(끊김|이 끊겼어요)\s*(·\s*)?/, "");
+const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", type: "button", "data-run": m.watch, text: text || "지금 확인", onclick: ev => monRunNow(ev.currentTarget, m) });
+const monRecheckBtn = (watch, onclick) => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text: "지금 다시 확인", onclick });
 // One re-check control per conversation: a down or failing monitor, and a down app, get the banner and its button; a healthy one gets 지금 확인
 // in the head (a phone at the top of the timeline). The latest-run card never repeats it.
 function monBannerOf(it) {
-  if (it.mon && (it.mon.connection === "disconnected" || it.mon.last_result === "fail")) return monBannerNode(it.mon.connection === "disconnected" ? monConnLine(it.mon) : "마지막 확인이 실패했어요", it.mon.watch ? el("button", { class: "as-tpl mon-recheck", type: "button", "data-watch": it.mon.watch, text: "지금 다시 확인", onclick: ev => monRunNow(ev.currentTarget, it.mon) }) : null);
+  if (it.mon) {
+    const m = it.mon, down = m.connection === "disconnected";
+    if (!down && m.last_result !== "fail") return null;
+    const detail = down ? monConnWhy(m) : [m.fails > 1 ? `${m.fails}번 연속 실패했어요` : "마지막 확인이 실패했어요", m.last_summary || ""].filter(Boolean).join(" · ");
+    return monBannerNode(down ? "down" : "fail", detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m)) : null);
+  }
   if (!it.conn) return null;
   const names = (it.owned || []).map(m => m.watch).filter(Boolean);
-  return monBannerNode(it.hint || "연결이 끊겼어요", names.length ? el("button", { class: "as-tpl mon-recheck", type: "button", "data-watch": it.key, text: "지금 다시 확인", onclick: ev => monRecheckApp(ev.currentTarget, it, names) }) : null);
+  return monBannerNode("down", monHintWhy(it.hint), names.length ? monRecheckBtn(it.key, ev => monRecheckApp(ev.currentTarget, it, names)) : null);
 }
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
 // A monitor adds its own progress block and 지금 확인 under the name, so the conversation always says how far the wait has come.
@@ -745,16 +760,22 @@ function monTick() {
     if (tx) tx.textContent = monProgLine(from, to, now, null, bar.dataset.short === "1");
     const tag = wrap.querySelector(".mon-ptag");
     if (tag && !tag.dataset.fixed) {
-      const [text, tone] = monPTagOf(late ? "late" : "ok");
+      const [text, tone] = monPTagOf(late ? "late" : tag.dataset.tag || "ok");
       if (tag.textContent !== text) tag.textContent = text;
       tag.className = `mon-ptag${tone ? ` ${tone}` : ""}`;
     }
   }
 }
-let monTickRaf = 0;
-function monTickLoop() { monTickRaf = 0; if (document.hidden || current !== "monitoring") return; monTick(); monTickRaf = requestAnimationFrame(monTickLoop); }
-function monTickStart() { if (!monTickRaf && current === "monitoring" && !document.hidden) monTickRaf = requestAnimationFrame(monTickLoop); }
-document.addEventListener("visibilitychange", () => { if (document.hidden) { if (monTickRaf) cancelAnimationFrame(monTickRaf); monTickRaf = 0; } else monTickStart(); });
+// Once a second is plenty: the words change once a minute and a bar moves under a pixel per frame. The timer stops itself when the tab or the
+// page is not shown and the next paint of 모니터링 (or the page coming back) starts it again.
+let monTickT = 0;
+function monTickStop() { if (monTickT) clearInterval(monTickT); monTickT = 0; }
+function monTickStart() {
+  if (monTickT || current !== "monitoring" || document.hidden) return;
+  monTick();
+  monTickT = setInterval(() => { if (document.hidden || current !== "monitoring") monTickStop(); else monTick(); }, 1000);
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) monTickStop(); else monTickStart(); });
 let monOlderObs = null;
 // The owner reached the top of an older page: the previous reports load themselves, one page per paint, and the anchored scroll keeps the reader
 // where they were (the same keep + growth rule the button uses).
