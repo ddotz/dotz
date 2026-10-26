@@ -94,6 +94,13 @@ const server = Bun.serve({
 		if (p === "/api/monitors") return json({ items: [] });
 		if (p === "/api/integrations") return json({ items: [{ key: "kakao", label: "카카오톡", icon: "chat", kind: "app", conv: [], notices: [], needs: { drafts: drafts.length, unread: 30, sentToday: 0 } }] });
 		if (p === "/api/kakao/rooms") return json(roomsAnswer ?? { on: true, rooms });
+		const per = /^\/api\/kakao\/person\/(\w+)(\/analyze)?$/.exec(p);
+		if (per) {
+			const personBody = req.method === "GET" ? null : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
+			record({ method: req.method, path: `${p}${url.search}`, body: personBody });
+			if (per[2]) return json({ analysis: { text: "가나와는 일정을 자주 맞추는 사이예요.", at: at(26, 3, 0) } });
+			return json({ stats: { userId: per[1], name: "가나", room: String(url.searchParams.get("room") || ""), windowDays: 30, roomMessages: 42, watchedMessages: 120, watchedRooms: 4, firstAt: at(1, 1, 0), lastAt: at(22, 1, 0), hours: Array.from({ length: 24 }, (_, i) => (i === 9 ? 30 : i === 18 ? 8 : 0)), weekdays: [1, 2, 3, 4, 5, 6, 7], replyToOwnerMs: 390_000, ownerReplyMs: 120_000, mentionShare: 0.25, mentions: 10, recentUnanswered: [{ logId: "3007", at: at(21, 3, 9), text: "아주긴문장" }] } });
+		}
 		const latest = /^\/api\/kakao\/rooms\/(\w+)\/latest$/.exec(p);
 		if (latest && req.method === "GET") {
 			record({ method: "GET", path: p, body: null });
@@ -284,14 +291,16 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 	});
 
 	test("a new message while scrolled up shows the 새 메시지 pill and keeps the place; at the bottom it follows", async () => {
-		await run(v, `document.querySelector("#kk-tl").scrollTop = 0`);
+		// Mid-list, not the very top: the top itself now loads the older page by itself.
+		await run(v, `const t = document.querySelector("#kk-tl"); t.scrollTop = Math.floor(t.scrollHeight * 0.4)`);
 		await waitFor(v, `KK.stick === false`);
+		const kept = await q<number>(v, `return document.querySelector("#kk-tl").scrollTop`);
 		msgs.push(mk("4031", "다라", "위에 있을 때 온 메시지", at(22, 2, 0)));
 		emit({ kind: "kakao", chatId: "100", logId: "4031" });
 		await waitFor(v, `document.querySelector('[data-log="4031"]')`);
 		const s = await q<{ pill: boolean; top: number; text: string }>(v, `return { pill: !document.querySelector("#kk-pill").hidden, top: document.querySelector("#kk-tl").scrollTop, text: document.querySelector("#kk-pill").textContent }`);
 		expect(s.pill).toBe(true);
-		expect(s.top).toBeLessThan(5);
+		expect(Math.abs(s.top - kept)).toBeLessThanOrEqual(2);
 		expect(s.text).toContain("새 메시지");
 		await run(v, `document.querySelector("#kk-pill").click()`);
 		await waitFor(v, `KK.stick && document.querySelector("#kk-pill").hidden`);
@@ -702,12 +711,54 @@ describe("카카오톡 media at desktop width", () => {
 		expect(s.loc[1]).toBe("https://map.kakao.com/link/map/" + encodeURIComponent("서울 강남구") + ",37.5,127.03");
 		expect(s.loc.slice(2)).toEqual(["_blank", "noopener"]);
 		expect(s.sys).toEqual(["다라님이 들어왔어요", true, false]);
-		expect([s.n71, s.n99]).toEqual(["알림 메시지", "(기타 메시지)"]);
+		expect([s.n71, s.n99]).toEqual(["알림 메시지", "(지원하지 않는 메시지)"]);
 		await shot(v, "10-desktop-media.png");
 		await run(v, `document.querySelector("#kk-tl").scrollTop = 0`);
 		await shot(v, "10-desktop-media-top.png");
 	});
 });
+
+for (const [w, h] of [[1280, 800], [390, 844]] as const)
+	describe(`카카오톡 사용자별 분석 at ${w}px`, () => {
+		const v = open(w, h);
+
+		test("tapping a sender's name opens the panel with the counted stats; 요약 분석 asks the model and shows the summary with its time", async () => {
+			reset();
+			await boot(v);
+			await openRoom(v);
+			await run(v, `document.querySelector('[data-log="3001"] .kk-name').click()`);
+			await waitFor(v, `document.querySelector("dialog.kk-pd") && document.querySelector(".kk-prow")`);
+			const s = await q<Record<string, any>>(v, `const d = document.querySelector("dialog.kk-pd"), r = d.getBoundingClientRect();
+				return { name: d.querySelector(".cv-n").textContent, rows: [...d.querySelectorAll(".kk-prow")].map(x => x.textContent),
+				hours: d.querySelectorAll(".kk-hist")[0].children.length, weekdays: d.querySelectorAll(".kk-hist")[1].children.length,
+				unanswered: d.querySelector(".kk-put")?.textContent ?? null, btn: d.querySelector('[data-k="analyze"]').textContent,
+				w: Math.round(r.width), h: Math.round(r.height), right: Math.round(r.right), vw: innerWidth, vh: innerHeight }`);
+			expect(s.name).toBe("가나");
+			expect(s.rows.join(" | ")).toContain("이 방 42개 · 지켜보는 방 120개 (4곳)");
+			expect(s.rows.join(" | ")).toContain("상대 → 나 7분 · 나 → 상대 2분");
+			expect(s.rows.join(" | ")).toContain("25% (10개)");
+			expect([s.hours, s.weekdays, s.unanswered, s.btn]).toEqual([24, 7, "아주긴문장", "요약 분석"]);
+			if (w === 390) {
+				expect(s.w).toBe(s.vw);
+				expect(Math.abs(s.h - s.vh)).toBeLessThanOrEqual(1);
+			} else {
+				expect(s.w).toBe(400);
+				expect(s.right).toBe(s.vw);
+			}
+			await shot(v, `21-person-${w}.png`);
+
+			await run(v, `document.querySelector('[data-k="analyze"]').click()`);
+			expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/person/u1/analyze")).body).toEqual({ room: "100" });
+			await waitFor(v, `document.querySelector(".kk-sum .kk-dt")?.textContent.includes("일정을 자주")`);
+			const sum = await q<Record<string, any>>(v, `const s = document.querySelector(".kk-sum"); return { text: s.querySelector(".kk-dt").textContent, at: s.querySelector(".kk-sub").textContent, btn: s.querySelector('[data-k="analyze"]').textContent }`);
+			expect(sum.text).toBe("가나와는 일정을 자주 맞추는 사이예요.");
+			expect(sum.at).toContain("에 만든 요약");
+			expect(sum.btn).toBe("다시 분석");
+			await shot(v, `22-person-summary-${w}.png`);
+			await run(v, `document.querySelector('dialog.kk-pd [data-k="close"]').click()`);
+			await waitFor(v, `!document.querySelector("dialog.kk-pd")`);
+		});
+	});
 
 describe("카카오톡 방 목록 실시간 갱신", () => {
 	const v = open(1280, 800);

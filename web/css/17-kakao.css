@@ -200,6 +200,29 @@
 .kk-dbtn .ic { width: 14px; height: 14px; }
 .kk-dbtn:disabled { opacity: .6; }
 
+/* 사용자별 분석 (30-kakao.js kkPerson): desktop a side panel, phone a full-screen sheet */
+.kk-pd { border: 0; padding: 0; max-width: none; max-height: none; background: transparent; color: var(--fg); }
+.kk-pd::backdrop { background: rgb(0 0 0 / .3); }
+.kk-pd-in { display: flex; flex-direction: column; width: min(400px, 100vw); max-height: min(680px, 100dvh); margin: auto; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
+.kk-pd-h { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.kk-pd-h .x { margin-left: auto; }
+.kk-pd-b { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 16px 16px; }
+.kk-psec { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.kk-psec:last-child { border-bottom: 0; }
+.kk-prow { display: flex; gap: 12px; padding: 3px 0; font: 400 13px/19px var(--font); }
+.kk-pk { flex: none; width: 108px; color: var(--fg-3); }
+.kk-pv { min-width: 0; overflow-wrap: anywhere; }
+.kk-hist { display: flex; align-items: flex-end; gap: 2px; height: 64px; margin: 8px 0 4px; }
+.kk-hb { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); }
+.kk-hax { display: flex; justify-content: space-between; color: var(--fg-3); font: 400 10px/14px var(--font); }
+.kk-hax7 { justify-content: space-around; font-size: 11px; }
+.kk-pun { display: flex; flex-direction: column; gap: 1px; padding: 6px 0; }
+.kk-put { font: 400 13px/19px var(--font); overflow-wrap: anywhere; }
+.kk-sum { padding-top: 12px; }
+.kk-sum .btn { margin-top: 8px; height: 34px; }
+@media (min-width: 640px) { .kk-pd { margin: 0 0 0 auto; height: 100dvh; } .kk-pd-in { height: 100dvh; max-height: none; border-radius: 0; } }
+@media (max-width: 639px) { .kk-pd { margin: 0; width: 100vw; height: 100dvh; } .kk-pd-in { width: 100vw; height: 100dvh; max-height: none; border-radius: 0; } }
+
 /* 모니터링 > 앱 > 댓글 (web/js/30-monitoring-comments.js): the same pane; a reply's parent and a source's choices */
 .kk-reply { margin-bottom: 4px; color: var(--kk-time); font: 400 12px/16px var(--font); }
 .kk-pick-src { padding: 4px 0 8px; border-top: 1px solid var(--line, rgb(128 128 128 / .2)); }
