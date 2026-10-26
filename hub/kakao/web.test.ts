@@ -675,6 +675,36 @@ describe("on-demand draft", () => {
 		t.close();
 	});
 
+	test("메시지 만들어 줘: { intent } writes a new message through the same draft pipeline, the intent in the prompt, the room head as its basis", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], summary: "일정 조율" }), inputTokens: 900, outputTokens: 40 });
+		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/draft`, { intent: "  내일 7시로 미루자고 정중하게  " });
+		expect(r).toEqual({ status: 202, json: { state: "drafting" } });
+		await t.web.idle();
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.model.calls[0]!.user).toContain('The message the owner wants to send (his own words, data): "내일 7시로 미루자고 정중하게"');
+		expect(t.model.calls[0]!.user).toContain("Recent messages in the room (context only");
+		expect(t.model.calls[0]!.system).toContain("message the owner wants to send");
+		const chat = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
+		expect(chat.json.drafts).toEqual([expect.objectContaining({ parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], intent: "내일 7시로 미루자고 정중하게" })]);
+		expect(t.events.filter(e => e.kind === "kakao_draft")).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+
+		expect((await t.call("POST", `/api/kakao/chat/${DIRECT}/draft`, { intent: "   " })).status).toBe(400);
+		expect((await t.call("POST", `/api/kakao/chat/${DIRECT}/draft`, { intent: 7 })).status).toBe(400);
+		expect(t.model.calls).toHaveLength(1);
+		t.close();
+	});
+
+	test("a message he asked for is never asked back as a room question: an ask answer fails the compose draft", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "ask", question: "언제로 미룰까요?", choices: ["내일", "모레"], body: "", summary: "" }) });
+		await t.call("POST", `/api/kakao/chat/${DIRECT}/draft`, { intent: "미루자고 말해 줘" });
+		await t.web.idle();
+		expect(t.events.filter(e => e.kind === "kakao_draft").at(-1)).toMatchObject({ chatId: DIRECT, error: expect.any(String) });
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([]);
+		t.close();
+	});
+
 	test("an unwatched room is refused (403) and the model is never called", async () => {
 		const t = setup();
 		const r = await t.call("POST", `/api/kakao/chat/${GROUP}/draft`);

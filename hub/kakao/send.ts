@@ -16,7 +16,8 @@ export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
 export type DraftTokens = { in: number; out: number; estimated?: true };
 // unconfirmed: the 전송 button was pressed but the send was not confirmed; the draft counts as sent so it is never sent again.
 // sentParts: how many parts of the text (draft.ts draftParts) are already in the room; a retry sends only the rest, so no part goes twice.
-export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens; unconfirmed?: true; sentParts?: number };
+// intent: a message the owner asked for himself ("내일 7시로 미루자고 정중하게"), not a reply to the room's last message.
+export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens; unconfirmed?: true; sentParts?: number; intent?: string };
 // `later`: how the idle close of a kept window is scheduled (tests pass their own; the default is an unref'd timer).
 export type SendDeps = { paths: KakaoPaths; runner: Runner; now?: () => number; later?: (fn: () => void, ms: number) => void };
 // ms: wall time of each phase of one send; ax: every Accessibility step of it (room.ts AxStep) with its time and, where it failed, the exact
@@ -62,7 +63,7 @@ function newCode(taken: Set<string>): string {
 	}
 }
 
-export async function createDraft(input: { chatId: string; roomName: string; text: string; basisLogId: string; tokens?: DraftTokens }, deps: SendDeps): Promise<Draft> {
+export async function createDraft(input: { chatId: string; roomName: string; text: string; basisLogId: string; tokens?: DraftTokens; intent?: string }, deps: SendDeps): Promise<Draft> {
 	const bad = draftTextError(input.text);
 	if (bad) throw new Error(bad);
 	if (!input.chatId || !input.roomName.trim()) throw new Error("대화방 정보가 비어 있어요");
