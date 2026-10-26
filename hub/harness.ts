@@ -14,6 +14,7 @@ import { modeFile, lang, msg } from "./i18n.ts";
 import { BUDGET_MARGIN, BUDGET_WINDOW_HOURS, DEFAULT_EST, laneLive, lanes, RECOVERY_MAX, RECOVERY_WINDOW_MS, laneSlotsNow, workerSlotsNow } from "./lanes.ts";
 import { KEEPALIVE_FROM_MS, KEEPALIVE_MAX, KEEPALIVE_TO_MS, keepaliveSupported, MAX_RESTARTS as ORCH_RESTARTS, orch, RESTART_WINDOW_MS } from "./orchestrator.ts";
 import { availableModels, ControlError, type ModelInfo, quota, TRANSIENT_RETRIES } from "./providers.ts";
+import { modelName } from "./control.ts";
 import { listSchedules, MIN_EVERY_MINUTES } from "./schedule.ts";
 import { CHECK_MS as MEM_CHECK_MS, MAX_RESTARTS as MEM_RESTARTS, WINDOW_MS as MEM_WINDOW_MS } from "./memguard.ts";
 import { FIRST_AFTER_MS } from "./livestatus.ts";
@@ -249,7 +250,8 @@ function markOrigin(nodes: HarnessNode[], ownGuard: boolean): void {
 export async function harnessGraph(opts: { terminals?: number; light?: boolean } = {}) {
 	const disk = readDisk();
 	const models = opts.light ? ([] as ModelInfo[]) : await Promise.race([availableModels().catch((): ModelInfo[] => []), sleep(2500, [] as ModelInfo[])]);
-	const mName = (sel: string) => models.find(m => m.selector === sel)?.name ?? (sel.split("/").pop() ?? sel);
+	// the same names as the 모델 screen (Opus 5.5), not the raw id an OmO model list without names would leave (claude-opus-5-5)
+	const mName = (sel: string) => models.find(m => m.selector === sel)?.name ?? modelName(sel);
 	const om = orchestratorModel(), lm = lanesModel(), wm = parseSelector(workerModel());
 	const S = (p: string, over: Partial<Setting> = {}) => settingOf(p, disk, over);
 	const ro = (key: string, label: string, value: string | number, source: string, extra: Partial<Setting> = {}): Setting => ({ key, label, value, type: "text", editable: false, applies: "restart", source, ...extra });
