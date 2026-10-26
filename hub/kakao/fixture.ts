@@ -1,10 +1,11 @@
 // Tests only: a plain SQLite file with the subset of KakaoTalk's schema the reader touches. Generic fake names; production never imports this.
 import { Database } from "bun:sqlite";
 
-export type FixtureRoom = { chatId: bigint | number; type: number; chatName?: string | null; title?: string; members?: number; unread?: number; lastUpdatedAt?: number; peer?: number | null; marks?: [number, bigint | number][] };
+export type FixtureRoom = { chatId: bigint | number; type: number; chatName?: string | null; title?: string; members?: number; unread?: number; lastUpdatedAt?: number; peer?: number | null; marks?: [number, bigint | number][]; linkId?: number };
 export type FixtureUser = { userId: number; linkId?: number; friendNickName?: string | null; displayName?: string | null; nickName?: string | null };
 export type FixtureMsg = { logId: bigint | number; chatId: bigint | number; authorId: number; message: string; type?: number; sentAt: number; attachment?: string; localFilePath?: string };
-export type FixtureSpec = { ownerId?: number; rooms?: FixtureRoom[]; users?: FixtureUser[]; messages?: FixtureMsg[] };
+// openLinks: NTOpenLink rows (an open chat room's name is its link's name); `noLinks` leaves out the linkId column and NTOpenLink (an older schema).
+export type FixtureSpec = { ownerId?: number; rooms?: FixtureRoom[]; users?: FixtureUser[]; messages?: FixtureMsg[]; openLinks?: { linkId: number; linkName: string }[]; noLinks?: boolean };
 
 // A binary plist (bplist00) holding one top-level array of int64, like NTChatRoom.watermarkKeys / watermarkValues. Up to 255 elements.
 export function bplistOfInts(values: (bigint | number)[]): Buffer {
@@ -71,15 +72,19 @@ const DEFAULT_MESSAGES: FixtureMsg[] = [
 export function makeFixtureDb(path: string, spec: FixtureSpec = {}): Database {
 	const db = new Database(path, { create: true });
 	db.exec(`
-		CREATE TABLE NTChatRoom (chatId INTEGER PRIMARY KEY, type INTEGER, chatName TEXT, activeMembersCount INTEGER, countOfNewMessage INTEGER, lastUpdatedAt INTEGER, directChatMemberUserId INTEGER, watermarkKeys BLOB, watermarkValues BLOB);
+		CREATE TABLE NTChatRoom (chatId INTEGER PRIMARY KEY, type INTEGER, chatName TEXT, activeMembersCount INTEGER, countOfNewMessage INTEGER, lastUpdatedAt INTEGER, directChatMemberUserId INTEGER, watermarkKeys BLOB, watermarkValues BLOB${spec.noLinks ? "" : ", linkId INTEGER"});
 		CREATE TABLE NTChatMessage (logId INTEGER PRIMARY KEY, chatId INTEGER, authorId INTEGER, message TEXT, type INTEGER, sentAt INTEGER, attachment TEXT, localFilePath TEXT);
 		CREATE TABLE NTUser (userId INTEGER, linkId INTEGER, friendNickName TEXT, displayName TEXT, nickName TEXT, PRIMARY KEY (userId, linkId));
 		CREATE TABLE NTChatContext (userId INTEGER);
 		CREATE TABLE NTChatMeta (chatId INTEGER, type INTEGER, content TEXT, groupNickname TEXT);
 	`);
+	if (!spec.noLinks) db.exec("CREATE TABLE NTOpenLink (linkId INTEGER PRIMARY KEY, linkName TEXT)");
+	for (const l of spec.openLinks ?? []) db.query("INSERT INTO NTOpenLink VALUES (?, ?)").run(l.linkId, l.linkName);
 	db.query("INSERT INTO NTChatContext (userId) VALUES (?)").run(spec.ownerId ?? OWNER);
 	for (const r of spec.rooms ?? DEFAULT_ROOMS) {
-		db.query("INSERT INTO NTChatRoom VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(BigInt(r.chatId), r.type, r.chatName ?? null, r.members ?? 2, r.unread ?? 0, r.lastUpdatedAt ?? 0, r.peer ?? null, r.marks ? bplistOfInts(r.marks.map(m => m[0])) : null, r.marks ? bplistOfInts(r.marks.map(m => m[1])) : null);
+		const row = [BigInt(r.chatId), r.type, r.chatName ?? null, r.members ?? 2, r.unread ?? 0, r.lastUpdatedAt ?? 0, r.peer ?? null, r.marks ? bplistOfInts(r.marks.map(m => m[0])) : null, r.marks ? bplistOfInts(r.marks.map(m => m[1])) : null];
+		if (spec.noLinks) db.query("INSERT INTO NTChatRoom VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(...row);
+		else db.query("INSERT INTO NTChatRoom VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(...row, r.linkId ?? 0);
 		if (r.title) db.query("INSERT INTO NTChatMeta VALUES (?, 3, ?, ?)").run(BigInt(r.chatId), r.title, r.title);
 	}
 	for (const u of spec.users ?? DEFAULT_USERS)
