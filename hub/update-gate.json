@@ -1,4 +1,4 @@
 {
-	"cmd": ["bun", "test", "./hub/update-gate-run.ts"],
-	"timeoutMinutes": 20
+	"cmd": ["bun", "test", "./hub/update-smoke-run.ts"],
+	"timeoutMinutes": 5
 }
