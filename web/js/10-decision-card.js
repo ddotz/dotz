@@ -95,7 +95,7 @@ async function answerDecision(dc, text, opt, note) {
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
     DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
     if (t === target) { chatStick = true; scrollChat(true); }
-  } catch (e) { delete DC.st[dc.key]; delete DC.picks[dc.key]; toast(e.message, true); }
+  } catch (e) { delete DC.st[dc.key]; toast(e.message, true); }   // the picks stay, so a retry does not start the card over
   paintDecision();
 }
 // A draft asks for text on 고치기 only; any other decision on an option that needs detail (안 됨 …): what to change / why is typed first, nothing is sent before.
