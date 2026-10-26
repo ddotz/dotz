@@ -265,7 +265,8 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 	});
 
 	const closeSheet = (v: View) => run(v, `if (AT.h) AT.h.close(false)`);
-	const TPL = ["메일", "카카오톡", "유튜브", "인스타그램", "댓글 자동 답글", "직접 쓰기"];
+	// 새로 추가 asks one plain question; the app templates stay in docs/app-templates for the bot to read when the owner names an app (owner 2026-10-26).
+	const NEW_DRAFT = "연결할 앱: ";
 
 	test("앱 추가 is the last row of the 앱 group, right under the apps", async () => {
 		await run(v, `go("monitoring")`);
@@ -277,63 +278,42 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 		await shot(v, "07-phone-add-app-row.png");
 	});
 
-	test("the sheet lists only the apps that are off, never an app that was not set up, and 다시 켜기 turns one on", async () => {
+	test("the sheet lists only the apps that are off and one 새로 추가하기, no template list; 다시 켜기 refills that app's request", async () => {
 		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-		await waitFor(v, `document.querySelector('.fs-card [data-tpl="custom"]')`);
+		await waitFor(v, `document.querySelector('.fs-card [data-k="new-app"]')`);
 		expect(await q<string[]>(v, `return [...document.querySelectorAll(".fs-card [data-app]")].map(e => e.dataset.app)`)).toEqual(["kakao"]);
-		expect(await q<string[]>(v, `return [...document.querySelectorAll(".fs-card [data-tpl]")].map(e => e.textContent)`)).toEqual(TPL);   // every kind of app, one tap each
+		expect(await q(v, `return document.querySelectorAll(".fs-card [data-tpl]").length`)).toBe(0);
+		expect(await q(v, `return document.querySelector('.fs-card [data-k="new-app"]').textContent`)).toBe("새로 추가하기");
 		const fit = await q<{ w: number; vw: number }>(v, `return { w: document.querySelector(".fs-card").scrollWidth, vw: innerWidth }`);
 		expect(fit.w).toBeLessThanOrEqual(fit.vw);
 		await shot(v, "08-phone-add-sheet.png");
 		sent.length = 0;
 		await run(v, `document.querySelector('.fs-card [data-k="on:kakao"]').click()`);
 		await waitFor(v, `!AT.h && target === "main" && ta.value.includes("카카오톡 앱을 만들어")`);
+		expect(await q(v, `return document.querySelectorAll("#app-tpl [data-tpl]").length`)).toBe(0);
+		expect(await q(v, `return document.querySelector("#app-tpl-note").textContent`)).toContain("{{ }}");
 		expect(readAppOff(data).has("kakao")).toBe(false);
 		expect(sent).toEqual([]);
 	});
 
-	test("with nothing off the sheet has just the kinds of app; 직접 쓰기 fills the chat box and a chip swaps the text", async () => {
+	test("새로 추가하기 opens the main chat with one plain question; the owner names the app and nothing is sent for him", async () => {
 		await run(v, `ta.value = ""; asTplEnd(); go("monitoring")`);
 		await waitFor(v, `INTG.available.length === 0 && document.querySelector('#mon-side [data-k="add-app"]')`);
 		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-		await waitFor(v, `document.querySelector('.fs-card [data-tpl="custom"]')`);
+		await waitFor(v, `document.querySelector('.fs-card [data-k="new-app"]')`);
 		expect(await q(v, `return document.querySelectorAll(".fs-card [data-app]").length`)).toBe(0);
-		const all = readAppTemplates(data);
-		await run(v, `document.querySelector('.fs-card [data-tpl="custom"]').click()`);
+		await shot(v, "08b-phone-add-sheet-empty.png");
+		await run(v, `document.querySelector('.fs-card [data-k="new-app"]').click()`);
 		await waitFor(v, `!AT.h && target === "main" && current === "chat" && ta.value`);
-		const text = () => q<string>(v, `return ta.value`);
-		expect(await text()).toBe(all.find(t => t.key === "custom")!.text);
-		expect(await text()).toContain("{{서비스와 대상}}");
-		expect(await text()).toContain("보안 입력 양식(dotz_auth)");
-		expect(await rows("#app-tpl [data-tpl]")).toEqual(TPL);
-		await shot(v, "09-phone-new-app-composer.png");
-		await run(v, `document.querySelector('#app-tpl [data-tpl="youtube"]').click()`);
-		await waitFor(v, `ta.value.includes("유튜브 앱을 만들어")`);
-		expect(await text()).toBe(all.find(t => t.key === "youtube")!.text);
-		expect(await q(v, `return document.querySelector('#app-tpl [data-tpl="youtube"]').getAttribute("aria-pressed")`)).toBe("true");
+		expect(await q<string>(v, `return ta.value`)).toBe(NEW_DRAFT);
+		expect(await q(v, `return document.querySelector("#app-tpl-note").textContent`)).toBe("어떤 앱을 연결할까요?");
+		expect(await q(v, `return document.querySelectorAll("#app-tpl [data-tpl]").length`)).toBe(0);
+		expect(await q(v, `return [ta.selectionStart, ta.value.length]`)).toEqual([NEW_DRAFT.length, NEW_DRAFT.length]);
 		expect(sent).toEqual([]);
-		await shot(v, "10-phone-template-swapped.png");
-	});
-
-	test("the owner's custom/app-templates.json wins over the shipped template", async () => {
-		mkdirSync(join(data, "custom"), { recursive: true });
-		writeFileSync(join(data, "custom/app-templates.json"), JSON.stringify({ templates: [{ key: "mail", text: "내 메일 요청 {{주소}}" }, { key: "mine", label: "내 앱", text: "내 앱 요청" }] }));
-		try {
-			await run(v, `asTplEnd(); go("monitoring")`);
-			await waitFor(v, `document.querySelector('#mon-side [data-k="add-app"]')`);
-			await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-			await waitFor(v, `AT.items.some(t => t.key === "mine") && document.querySelector('.fs-card [data-tpl="custom"]')`);
-			await run(v, `document.querySelector('.fs-card [data-tpl="custom"]').click()`);
-			await waitFor(v, `document.querySelector('#app-tpl [data-tpl="mine"]')`);
-			expect(await rows("#app-tpl [data-tpl]")).toEqual([...TPL, "내 앱"]);
-			await run(v, `document.querySelector('#app-tpl [data-tpl="mail"]').click()`);
-			await waitFor(v, `!AT.h && ta.value.startsWith("내 메일 요청")`);
-			expect(await q<string>(v, `return ta.value`)).toBe(readAppTemplates(data).find(t => t.key === "mail")!.text);
-			expect(await q<string>(v, `return ta.value`)).toContain("보안 입력 양식(dotz_auth)");
-		} finally {
-			rmSync(join(data, "custom/app-templates.json"));
-			await run(v, `ta.value = ""; asTplEnd()`);
-		}
+		await shot(v, "09-phone-new-app-composer.png");
+		await run(v, `document.querySelector("#app-tpl .as-tpl-x").click()`);
+		await waitFor(v, `!AT.key && document.querySelector("#app-tpl-note").hidden`);
+		await run(v, `ta.value = ""`);
 	});
 
 	test("another computer's off apps are listed under its own name", async () => {

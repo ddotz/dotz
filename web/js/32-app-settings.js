@@ -111,9 +111,9 @@ function asRemoveNode(app) {
     el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-as-rm": "go", onclick: () => asRemoveGo(app) }, "제거 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
 // 앱 추가: the last row of the 앱 group opens a sheet. It lists only the apps this computer (and each other computer, labeled with its name) had and
-// the owner switched off or removed, each with 다시 켜기, then 새로 추가하기: the chat box opens on the main orchestrator with a detailed activation
-// prompt (GET /api/app-templates, hub/app-templates.ts) the owner edits before sending. A chip row above the box swaps the template. The sheet lists
-// every kind of app (메일, 카카오톡, ..., 직접 쓰기) so one tap picks the right template.
+// the owner switched off or removed, each with 다시 켜기, then one 새로 추가하기: the chat box opens on the main orchestrator with one plain question
+// (어떤 앱을 연결할까요?) and no template list; the bot reads the matching request in docs/app-templates when the owner names the app
+// (owner 2026-10-26). 다시 켜기 of an app that needs reconnecting still fills that one app's request (GET /api/app-templates, hub/app-templates.ts).
 const AT = { items: [], key: "", h: null };
 const asOffApps = () => {
   const peers = PQ.list.filter(p => p && p.url), me = peers.length ? pqSelf() : "";
@@ -161,8 +161,6 @@ async function asAddSheet() {
   if (AT.h) return;
   const h = AT.h = fsOpen({ labelledby: "as-add-t", onClose: () => { if (AT.h === h) AT.h = null; } });
   asAddPaint();
-  await asTplLoad();
-  asAddPaint();
 }
 function asAddPaint() {
   const h = AT.h;
@@ -179,10 +177,19 @@ function asAddPaint() {
           el("button", { class: "btn tonal", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기"),
           el("button", { class: "btn tonal", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
         ...(asDelOpen(a) ? [asDelNode(a)] : [])])] : []),
-      // 새로 추가: one tap per kind of app opens its template; 직접 쓰기 is the free-form one.
       el("div", { class: "as-sec", text: "새로 추가" }),
-      AT.items.length ? el("div", { class: "as-tpls", role: "group", "aria-label": "새로 추가할 앱" }, ...AT.items.map(t => el("button", { class: "as-tpl", type: "button", "data-tpl": t.key, onclick: () => asNewApp(t.key) }, t.label)))
-        : el("div", { class: "as-h", text: "불러오는 중…" })));
+      el("div", { class: "as-tpls" }, el("button", { class: "btn", type: "button", "data-k": "new-app", onclick: asNewAsk }, "새로 추가하기"))));
+}
+// 새로 추가하기: the main chat with the start of the request in the box and the question above it; the owner names the app and sends.
+const NEW_ASK = "어떤 앱을 연결할까요?", NEW_DRAFT = "연결할 앱: ";
+function asNewAsk() {
+  if (AT.h) AT.h.close(false);
+  ts("main").draft = NEW_DRAFT;
+  go("chat", "main");
+  AT.key = "ask";
+  ta.value = NEW_DRAFT; saveDraft(); autosize(); updateHints();
+  asTplPaint();
+  ta.focus({ preventScroll: true }); ta.setSelectionRange(NEW_DRAFT.length, NEW_DRAFT.length);
 }
 async function asNewApp(key) {
   if (!AT.items.length) await asTplLoad();
@@ -199,20 +206,19 @@ function asTplFill(t) {
   asTplPaint();
   ta.focus({ preventScroll: true }); ta.setSelectionRange(0, 0); ta.scrollTop = 0;
 }
-// The chip row above the chat box while a template is in it; it ends when the message is sent or another conversation opens.
+// The line above the chat box while an app request is in it (the question, or the {{ }} hint of a refilled request) with its x; it ends when the
+// message is sent or another conversation opens.
 function asTplPaint() {
-  let row = $("#app-tpl");
-  if (!AT.key) { if (row) row.hidden = true; const n = $("#app-tpl-note"); if (n) n.hidden = true; return; }
-  if (!row) { row = el("div", { class: "tplrow", id: "app-tpl", role: "group", "aria-label": "앱 템플릿" }); $("#composer").insertBefore(row, $("#hints")); }
-  row.hidden = false;
-  clear(row).append(...AT.items.map(t => el("button", { class: "as-tpl", type: "button", "data-tpl": t.key, "aria-pressed": String(t.key === AT.key), onclick: () => { AT.key = t.key; asTplFill(t); } }, t.label)),
-    el("button", { class: "as-tpl as-tpl-x", type: "button", "aria-label": "템플릿 닫기", onclick: asTplEnd }, icon("close")));
-  const on = row.querySelector('[aria-pressed="true"]');
-  if (on) row.scrollLeft = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
+  let row = $("#app-tpl"), note = $("#app-tpl-note");
+  if (!AT.key) { if (row) row.hidden = true; if (note) note.hidden = true; return; }
+  if (!row) {
+    row = el("div", { class: "tplrow", id: "app-tpl" }, note = el("div", { class: "tplnote", id: "app-tpl-note" }),
+      el("button", { class: "as-tpl as-tpl-x", type: "button", "aria-label": "앱 추가 닫기", title: "닫기", onclick: asTplEnd }, icon("close")));
+    $("#composer").insertBefore(row, $("#hints"));
+  }
+  row.hidden = false; note.hidden = false;
   // The {{ }} fields are the owner's own details: the bot asks for them in the secure form after the message is sent, so they can stay as they are.
-  let note = $("#app-tpl-note");
-  if (!note) { note = el("div", { class: "tplnote", id: "app-tpl-note", text: "{{ }} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요" }); row.after(note); }
-  note.hidden = false;
+  note.textContent = AT.key === "ask" ? NEW_ASK : "{{ }} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요";
 }
 function asTplEnd() { AT.key = ""; asTplPaint(); }
 function asTplSync() { if (AT.key && (target !== "main" || current !== "chat")) asTplEnd(); }
