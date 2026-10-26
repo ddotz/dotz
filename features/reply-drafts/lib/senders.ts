@@ -1,6 +1,7 @@
 // Sending an approved draft. Routed by the mail's source: the mail CLI replies to that mail id; a webmail-no-api site goes through
 // that feature's own draft/approve/send commands; anything else is refused with a plain message (the user sends it by hand).
 // Comment replies are not sent from here (the youtube-instagram job flow posts them). The runner is injected.
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadPlugins, pluginReply, pluginRepliesWithFiles, pluginsLoaded } from "../../../hub/plugins.ts";
 import { dataDir } from "./settings.ts";
@@ -19,7 +20,10 @@ export const readArgv = (mailId: string): string[] => ["zele", "mail", "read", m
 export const sendArgv = (to: string, subject: string, body: string, files: string[] = []): string[] => ["zele", "mail", "send", "--to", to, "--subject", subject, "--body", body, ...files.flatMap(f => ["--attach", f])];
 export const replyArgv = (mailId: string, to: string, body: string, files: string[] = []): string[] => ["zele", "mail", "reply", mailId, "--to", to, "--body", body, ...files.flatMap(f => ["--attach", f])];
 
-const webmailSite = (source: string): string | undefined => /^webmail[:/]([a-z0-9-]+)$/.exec(source)?.[1];
+// A webmail-no-api site: "webmail:<site>" (a new mail composed for it), or the plain site name its watch posts as the mail's `source`
+// (features/webmail-no-api/lib/watchkit.ts postToGateway) when this install onboarded that site.
+export const webmailSite = (source: string): string | undefined =>
+	/^webmail[:/]([a-z0-9-]+)$/.exec(source)?.[1] ?? (/^[a-z0-9][a-z0-9-]{0,39}$/.test(source) && existsSync(join(dataDir(), "custom", "webmail", source, "spec.json")) ? source : undefined);
 
 // The text of one mail for the gateway offer: zele reads it by id, a webmail-no-api site through its own read command; any other source has none.
 export async function readMailBody(source: string, id: string, run: Runner): Promise<string | undefined> {
