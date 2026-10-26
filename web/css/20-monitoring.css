@@ -15,6 +15,10 @@
 .mon-prog-wrap.compact { margin-top: 6px; }
 .mon-prog-wrap.compact .mon-prog { height: 3px; }
 .mon-prog-wrap.compact .mon-prog-tx { font-size: 11px; line-height: 15px; }
+/* a list row's bar is a second full-width line under the title and status, so a peer row's machine chip and badge never squeeze its meta text */
+.cv-row.has-mon-prog { flex-wrap: wrap; row-gap: 2px; }
+.cv-row.has-mon-prog > .mon-row-status { flex: 1 0 100%; order: 8; margin-top: 2px; }
+.cv-row.has-mon-prog > .mon-prog-wrap { flex: 1 0 100%; order: 9; margin-top: 2px; }
 /* the result tag (same look as .tag, its own class so the row's other tags keep their place in a query) */
 .mon-ptag { display: inline-flex; align-items: center; align-self: center; flex: none; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--layer); color: var(--fg-2); font-size: 11px; line-height: 16px; font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .mon-ptag.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
@@ -40,7 +44,9 @@
 .mon-ov-h { padding: 0 4px 4px; color: var(--fg); font: 700 14px/20px var(--font); }
 .mon-ov-row { display: flex; flex-direction: column; gap: 4px; width: 100%; min-width: 0; padding: 8px; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; }
 .mon-ov-row:hover { background: var(--hover); }
-.mon-ov-n { font: 600 14px/20px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mon-ov-hd { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mon-ov-n { min-width: 0; font: 600 14px/20px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mon-ov-peer { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .mon-ov-s { color: var(--fg-3); font: 400 12px/16px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mon-ov-empty { padding: 4px; color: var(--fg-3); font-size: 13px; }
 
