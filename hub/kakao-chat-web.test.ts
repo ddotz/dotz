@@ -845,6 +845,24 @@ describe("카카오톡 이전 메시지 자동 불러오기", () => {
 	});
 });
 
+describe("카카오톡 link previews at 390px", () => {
+	const v = open(390, 844);
+
+	test("the preview card fits the phone width without a sideways scroll", async () => {
+		reset();
+		msgs = [mk("8101", "가나", "지도 https://maps.app.goo.gl/abc", at(25, 2, 0))];
+		drafts = [];
+		await boot(v);
+		await openRoom(v);
+		await waitFor(v, `document.querySelector('[data-log="8101"] .kk-lp .kk-lp-t')`);
+		const s = await q<Record<string, number>>(v, `const c = document.querySelector('[data-log="8101"] .kk-lp').getBoundingClientRect(), t = document.querySelector("#kk-tl"); return { right: c.right, vw: innerWidth, w: c.width, h: t.scrollWidth - t.clientWidth }`);
+		expect(s.right).toBeLessThanOrEqual(s.vw);
+		expect(s.w).toBeLessThanOrEqual(260);
+		expect(s.h).toBeLessThanOrEqual(0);
+		await shot(v, "16-mobile-link-preview.png");
+	});
+});
+
 describe("카카오톡 메시지 만들어 줘", () => {
 	const v = open(1280, 800);
 
@@ -870,6 +888,38 @@ describe("카카오톡 메시지 만들어 줘", () => {
 		await run(v, `document.querySelector('[data-k="compose-cancel"]').click()`);
 		await waitFor(v, `!document.querySelector("#kk-intent-in")`);
 		expect(await q(v, `return document.querySelector("#kk-intent").hidden`)).toBe(true);
+	});
+
+	const pv = open(390, 844);
+	test("on a phone the intent box fits the width above the composer", async () => {
+		reset();
+		await boot(pv);
+		await openRoom(pv);
+		await run(pv, `document.querySelector("#kk-new-btn").click()`);
+		await waitFor(pv, `!!document.querySelector("#kk-intent-in")`);
+		const s = await q<Record<string, number>>(pv, `const i = document.querySelector("#kk-intent").getBoundingClientRect(), f = document.querySelector("#kk-form").getBoundingClientRect(); return { right: i.right, vw: innerWidth, bottom: i.bottom, formTop: f.top }`);
+		expect(s.right).toBeLessThanOrEqual(s.vw);
+		expect(s.bottom).toBeLessThanOrEqual(s.formTop + 1);
+		await shot(pv, "17-mobile-compose.png");
+	});
+});
+
+describe("카카오톡 이전 메시지 자동 불러오기 at 390px", () => {
+	const v = open(390, 844);
+
+	test("reaching the top on a phone loads the older page once and keeps the anchor message at its offset", async () => {
+		reset();
+		msgs = Array.from({ length: 120 }, (_, i) => mk(String(9301 + i), i % 2 ? "다라" : "가나", `옛 대화 ${i}`, at(26, 2, 0, i)));
+		drafts = [];
+		await boot(v);
+		await openRoom(v);
+		const before = await q<number>(v, `const t = document.querySelector("#kk-tl").getBoundingClientRect().top; document.querySelector("#kk-tl").scrollTop = 0; return document.querySelector('[data-log="9371"]').getBoundingClientRect().top - t`);
+		await expectReq(r => r.method === "GET" && r.path.includes("before=9371"));
+		await waitFor(v, `document.querySelector('[data-log="9321"]')`);
+		const after = await q<{ top: number; first: string }>(v, `const t = document.querySelector("#kk-tl").getBoundingClientRect().top, tl = document.querySelector("#kk-tl"); return { top: document.querySelector('[data-log="9371"]').getBoundingClientRect().top - t, first: [...tl.querySelectorAll("[data-log]")][0].dataset.log }`);
+		expect(after.first).toBe("9321");
+		expect(Math.abs(after.top - before)).toBeLessThanOrEqual(2);
+		await shot(v, "18-mobile-autoolder.png");
 	});
 });
 
