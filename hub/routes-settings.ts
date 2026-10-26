@@ -13,6 +13,7 @@ import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
 import { json, body, terminals } from "./routes-util.ts";
 import { budgetSettings, deleteAdminKey, saveAdminKey, saveMonthlyLimit } from "./api-budget.ts";
+import { postSettings, savePostSettings } from "./discord-post.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
 	const fail = (error: unknown) =>
@@ -135,6 +136,15 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 			return json(budgetSettings());
 		} catch (error) {
 			return fail(error);
+		}
+	}
+	// Which conversations also go to Discord (hub/discord-post.ts); the web always gets everything.
+	if (url.pathname === "/api/discord/post" && (req.method === "GET" || req.method === "PUT")) {
+		if (req.method === "GET") return json(postSettings());
+		try {
+			return json(savePostSettings((await body(req)) as Record<string, unknown>));
+		} catch (error) {
+			return json({ error: String((error as Error).message ?? error) }, 400);
 		}
 	}
 	if (req.method === "POST" && url.pathname === "/api/command") {
