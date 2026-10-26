@@ -117,8 +117,8 @@ async function startLogin(p) {
     if (current === "providers") renderProviders();
     if (current === "home") renderHome();
     loadModels(true);
-    // 설정 → 계정 lists the Claude accounts; a new one shows there at once
-    if (p.id === "anthropic") loadAccounts();
+    // 설정 → 계정 groups every provider's accounts; a new one shows there at once
+    if (p.id === "anthropic" || p.add_account) loadAccounts();
   };
   const fail = text => { msg.textContent = text; msg.hidden = false; };
   const poll = async () => {

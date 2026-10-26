@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { aliasesFile, readAliases, setAlias } from "./account-alias.ts";
 import { decisionsFile, readRules, rulesFile, setUsage, writeRules } from "./account-rules.ts";
@@ -100,7 +100,11 @@ test("accountsBody carries labels, states, decision, rules as text, manual pick,
 	expect(Object.keys(b.files).sort()).toEqual(["aliases", "decisions", "rules"]);
 	for (const f of Object.values(b.files)) expect(f.startsWith("/")).toBe(true);
 	expect(Array.isArray(b.switches)).toBe(true);
-	expect(Object.keys(b).sort()).toEqual(["accounts", "chosen", "decision", "files", "manual_text", "mode", "rules", "rules_text", "script", "switches", "used"]);
+	expect(Object.keys(b).sort()).toEqual(["accounts", "chosen", "decision", "files", "login_providers", "manual_text", "mode", "providers", "rules", "rules_text", "script", "switches", "used"]);
+	// the Claude group mirrors the same accounts, shaped like the other providers' groups
+	expect(b.providers[0]).toMatchObject({ id: "anthropic", name: "Claude 구독", multi: true, can_pin: true, can_delete: true });
+	expect(b.providers[0]!.accounts.map(a => [a.name, a.current, a.pinned, a.label, a.windows.map(w => w.label)])).toEqual([["default", false, false, "개인 계정", ["5시간", "7일"]], ["work", true, false, "회사 계정", []]]);
+	expect(b.providers[0]!.accounts[1]!.blocked_tag).toContain("11:00");
 	expect(b.chosen).toMatchObject({ name: "work", source: "manual", blocked: "rate_limit", used_instead: null });
 	expect(b.chosen!.text).toContain("멈춰 있어요");
 });
@@ -365,4 +369,101 @@ test("a usage report with no numbers says why: an expired login asks for /login,
 	expect(expired.unavailable[0]!.reason).toContain("/login anthropic");
 	expect(buildQuota([{ provider: "anthropic", limits: [], problem: "rate_limited" } as any], ["anthropic"]).unavailable[0]!.reason).toContain("잠시 막혔어요");
 	expect(buildQuota([], ["openai"]).unavailable[0]!.reason).toBe("사용량 정보를 제공하지 않아요");
+});
+
+// ---- every provider's account pool, not only the Claude subscription ------------------------------------------------
+const CATALOG = [
+	{ id: "anthropic", name: "Anthropic Subscription (Claude Pro/Max)" },
+	{ id: "chatgpt-subscription", name: "ChatGPT Subscription (Plus/Pro)" },
+	{ id: "google", name: "Google" },
+];
+const usageFile = () => join(process.env.OMO_CODING_AGENT_DIR!, "subscription-usage.json");
+const readAuth = () => JSON.parse(readFileSync(authFile(), "utf8"));
+function writeMixedAuth(): void {
+	writeFileSync(authFile(), JSON.stringify({
+		"anthropic-subscription": { type: "oauth", pinned: "work", accounts: [{ name: "default", access: "a" }, { name: "work", access: "b" }] },
+		"chatgpt-subscription": { type: "oauth", pinned: "login-2", accounts: [{ name: "default", access: "c" }, { name: "login-2", access: "d" }] },
+		google: { type: "api_key", key: "AIza-test-key-000" },
+	}));
+}
+beforeEach(() => {
+	rmSync(usageFile(), { force: true });
+	writeSlots({});
+});
+afterEach(() => rmSync(usageFile(), { force: true }));
+
+test("GET lists one group per provider with accounts, Korean product names, states and usage windows", () => {
+	writeMixedAuth();
+	writeSlots({});
+	writeFileSync(join(process.env.OMO_CODING_AGENT_DIR!, "credential-pool-state.json"), JSON.stringify({ providers: { "chatgpt-subscription": { lanes: { stored: { slots: { default: { blockReason: "rate_limit", blockedUntil: WED_10 + 3_600_000 } } } } } } }));
+	writeFileSync(usageFile(), JSON.stringify({ accounts: { "chatgpt-subscription/login-2": { windows: [{ id: "5h", windowMinutes: 300, usedPercent: 38, resetsAt: WED_10 + 7_200_000 }, { id: "7d", windowMinutes: 10080, usedPercent: 20 }] } } }));
+	const b = accountsBody(WED_10, CATALOG);
+	expect(b.providers.map(g => [g.id, g.name, g.auth, g.multi, g.can_add])).toEqual([
+		["anthropic", "Claude 구독", "oauth", true, true],
+		["chatgpt-subscription", "ChatGPT 구독", "oauth", true, true],
+		["google", "Gemini", "api_key", false, false],
+	]);
+	const gpt = b.providers[1]!;
+	expect(gpt.accounts.map(a => [a.name, a.label, a.current, a.pinned])).toEqual([["default", "default", false, false], ["login-2", "login-2", true, true]]);
+	// a block OmO recorded for the account makes it logged as a limit, and its tag says until when
+	expect(gpt.accounts[0]).toMatchObject({ blocked: "rate_limit" });
+	expect(gpt.accounts[0]!.blocked_tag).toContain("11:00");
+	expect(gpt.accounts[1]!.windows).toEqual([{ id: "5h", label: "5시간", left: 62, resets_at: WED_10 + 7_200_000 }, { id: "7d", label: "7일", left: 80, resets_at: null }]);
+	// the API-key provider holds one key, named for what it is, and offers no account pool
+	expect(b.providers[2]!.accounts).toMatchObject([{ name: "default", label: "API 키", current: true, windows: [] }]);
+	expect(b.providers[2]!.can_delete).toBe(false);
+	expect(b.login_providers).toEqual([
+		{ id: "anthropic", name: "Claude 구독", configured: true },
+		{ id: "chatgpt-subscription", name: "ChatGPT 구독", configured: true },
+		{ id: "google", name: "Gemini", configured: true },
+	]);
+});
+
+test("a provider the install cannot log into is listed but offers no add, and an empty pool says so with no accounts", () => {
+	writeFileSync(authFile(), JSON.stringify({ "anthropic-subscription": { accounts: [{ name: "default", access: "a" }] }, "chatgpt-subscription": { type: "oauth", accounts: [] } }));
+	const b = accountsBody(WED_10, []);
+	expect(b.providers[0]).toMatchObject({ id: "anthropic", can_add: false });
+	expect(b.providers[1]).toMatchObject({ id: "chatgpt-subscription", name: "ChatGPT 구독", can_add: false, accounts: [] });
+	expect(b.login_providers).toEqual([]);
+});
+
+test("a per-provider alias is used for that pool's account and does not leak into another pool's same name", () => {
+	writeMixedAuth();
+	setAlias("chatgpt-subscription:login-2", "회사용 GPT");
+	setAlias("default", "개인 계정");
+	const b = accountsBody(WED_10, CATALOG);
+	expect(b.providers[1]!.accounts.map(a => a.label)).toEqual(["default", "회사용 GPT"]);
+	expect(b.providers[2]!.accounts[0]!.label).toBe("API 키");
+});
+
+test("PUT /api/accounts/pin sets OmO's pin for any provider's pool; delete drops one account and refuses the last", async () => {
+	writeMixedAuth();
+	const r = await call("PUT", "/api/accounts/pin", { provider: "chatgpt-subscription", account: "default" });
+	expect(r.status).toBe(200);
+	expect(readAuth()["chatgpt-subscription"].pinned).toBe("default");
+	const body = await r.json();
+	expect(body.providers[1].accounts.map((a: { name: string; pinned: boolean }) => [a.name, a.pinned])).toEqual([["default", true], ["login-2", false]]);
+	await call("PUT", "/api/accounts/pin", { provider: "chatgpt-subscription", account: null });
+	expect(readAuth()["chatgpt-subscription"].pinned).toBeUndefined();
+	// the Claude pin still goes through dotz's own pick (rules and the 고정 mode follow it)
+	const c = await call("PUT", "/api/accounts/pin", { provider: "anthropic", account: "work" });
+	expect(c.status).toBe(200);
+	expect((await c.json()).mode).toBe("pinned");
+	expect(readAuth()["anthropic-subscription"].pinned).toBe("work");
+	// one account out of the ChatGPT pool; its pin moves off it
+	const d = await call("DELETE", "/api/accounts?provider=chatgpt-subscription&name=login-2");
+	expect(d.status).toBe(200);
+	expect(readAuth()["chatgpt-subscription"].accounts.map((a: { name: string }) => a.name)).toEqual(["default"]);
+	const last = await call("DELETE", "/api/accounts?provider=chatgpt-subscription&name=default");
+	expect(last.status).toBe(409);
+	const missing = await call("DELETE", "/api/accounts?provider=google&name=nope");
+	expect(missing.status).toBe(404);
+});
+
+test("without a subscription login, OmO's anthropic API key is its own group and no empty Claude subscription group appears", () => {
+	writeFileSync(authFile(), JSON.stringify({ anthropic: { type: "api_key", key: "sk-ant-test-000000" } }));
+	const b = accountsBody(WED_10, CATALOG);
+	expect(b.accounts).toEqual([]);
+	expect(b.providers.map(g => [g.id, g.name, g.auth])).toEqual([["anthropic", "Claude API 키", "api_key"]]);
+	expect(b.providers[0]!.accounts.map(a => a.label)).toEqual(["API 키"]);
 });
