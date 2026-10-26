@@ -530,7 +530,7 @@ const RESUME_MARGIN_MS = 60_000;
 const RESUME_MAX_MS = 8 * 24 * 3600_000;
 // OmO's account pool, when every account is blocked, names the time the first one frees: "Soonest automatic retry: 2026-10-19T16:40:00.000Z."
 export function poolRetryAt(err: string): number | undefined {
-	const t = Date.parse(err.match(/automatic retry:\s*(\d{4}-\d\d-\d\dT[\d:.]+Z)/i)?.[1] ?? "");
+	const t = Date.parse(err.match(/(?:automatic retry:|blocked \(rate limit\) until)\s*(\d{4}-\d\d-\d\dT[\d:.]+Z)/i)?.[1] ?? "");
 	return Number.isFinite(t) ? t : undefined;
 }
 export function resumeDelay(err: string, limits: QuotaLimit[], at: number): { ms: number; reset: boolean } {
@@ -565,7 +565,8 @@ const OWNER_ERR_RE = /credit balance|provider is (?:not configured|disabled)|ins
 const RATE_ERR_RE = /429|rate_limit|usage limit|session limit/i;
 // OmO's account pool when every subscription account is out (the 5h/weekly limit as OmO reports it). Checked before the
 // owner patterns: the message also names "/login" as a way to add another account.
-const POOL_BLOCKED_RE = /accounts? for [\w-]+ (?:are|is) currently blocked \(rate limit|no credential slots available/i;
+// also a pinned account on its limit: "Claude account 'x' for anthropic-subscription is blocked (rate limit) until <time>, and account fallback is off"
+const POOL_BLOCKED_RE = /accounts? for [\w-]+ (?:are|is) currently blocked \(rate limit|account '[^']+' for [\w-]+ is blocked \(rate limit\)|no credential slots available/i;
 const TRANSIENT_ERR_RE = /overloaded|\b5(?:00|02|03|04|29)\b|server error|internal error|bad gateway|service unavailable|gateway time-?out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|network|socket hang up|other side closed|connection (?:error|reset|closed|lost|ended)|websocket (?:error|closed)|error injected into sse stream|timed? ?out|terminated/i;
 export function classifyProviderError(err: string): ProviderErrorKind | undefined {
 	if (POOL_BLOCKED_RE.test(err)) return "rate";
