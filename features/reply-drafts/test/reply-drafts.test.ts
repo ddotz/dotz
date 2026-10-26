@@ -230,3 +230,19 @@ test("draft.ts new prints the [ask] block for a mail and the bare reply text for
 	expect(comment.lines).toEqual(["고마워요!"]);
 	expect(listDrafts().filter(d => d.kind === "comment")).toEqual([]);
 });
+
+test("a second mail's body is read while the first draft is still in its model call; only the model calls queue", async () => {
+	enable(env);
+	const out = sink();
+	let release!: () => void;
+	const gate = new Promise<void>(r => (release = r));
+	const model = fakeModel([j(goodReply), j(goodReply)]);
+	const reads: string[] = [];
+	const deps = { send: out.send, call: async (s: string, u: string) => (await gate, model.call(s, u)), readBody: async (_src: string, id: string) => (reads.push(id), "다음 주 화요일에 회의 가능하신가요?") };
+	const first = offerMailDraft({ ...mailFixture, body: undefined, key: "p-1", id: "p-1" }, deps);
+	const second = offerMailDraft({ ...mailFixture, body: undefined, key: "p-2", id: "p-2" }, deps);
+	await Promise.resolve();
+	expect(reads).toEqual(["p-1", "p-2"]);   // both reads started before the first model call returned
+	release();
+	expect([await first, await second]).toEqual(["offered", "offered"]);
+});
