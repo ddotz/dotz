@@ -90,7 +90,7 @@ function renderBars() {
     clear(vt).append(...[icon(to), ud ? el("i", { class: "ud" }) : null].filter(Boolean));
     vt.title = vt.ariaLabel = to === "chat" ? "대화 보기" : "로그 보기";
     vt.onclick = () => go(to === "chat" ? "chat" : "activity");
-    vt.hidden = !$("#appbar").classList.contains("tv") || convListing() || isFixedT(target);
+    vt.hidden = !LOG_VIEW || !$("#appbar").classList.contains("tv") || convListing() || isFixedT(target);
   }
 }
 // Desktop: target chips that do not fit fold into one "더보기 n" chip at the end (the selected one always stays visible;
