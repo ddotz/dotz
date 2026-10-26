@@ -166,7 +166,7 @@ describe("앱 인스턴스 at 390px", () => {
 		await run(v, `asAddSheet()`);
 		await waitFor(v, `document.querySelector('[data-k="del:mail-3"]')`);
 		expect(await q(v, `return !!document.querySelector('[data-k="on:mail-3"]') && !document.querySelector('[data-k="del:mail-2"]')`)).toBe(true);
-		expect(await q(v, `return [...document.querySelectorAll(".as-sec")].map(t => t.textContent)`)).toEqual(["꺼 둔 앱"]);
+		expect(await q(v, `return [...document.querySelectorAll(".as-sec")].map(t => t.textContent)`)).toEqual(["꺼 둔 앱", "새로 추가"]);
 		await run(v, `document.querySelector('[data-k="del:mail-3"]').click()`);
 		await waitFor(v, `document.querySelector('[data-k="del-confirm"] [data-k="del-go"]')`);
 		await waitFor(v, `document.querySelector('[data-k="del-confirm"]').textContent.includes("webmail-daum")`);
