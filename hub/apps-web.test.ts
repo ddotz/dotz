@@ -140,7 +140,7 @@ describe("앱 is drawn only while shown", () => {
 	test("phone: an open app, then 홈, then 앱 shows the list", async () => {
 		const v = await open(390, 844);
 		expect(await v.evaluate(`!!document.querySelector("#apps-pane .apps-frame")`)).toBe(false);
-		await v.evaluate(`(go("apps", "hdocs"), 0)`);
+		await v.evaluate(`(go("apps", "mydocs"), 0)`);
 		await waitOn(v, `!!document.querySelector("#apps-pane .apps-frame") && !document.querySelector("#v-apps").classList.contains("cv-listing")`);
 		await v.evaluate(`(go("home"), 0)`);
 		const got = JSON.parse(await v.evaluate(`(go("apps"), JSON.stringify({ listing: document.querySelector("#v-apps").classList.contains("cv-listing"), list: APPS.list, hash: location.hash, side: document.querySelector("#apps-side").getBoundingClientRect().width > 0 }))`) as string);
