@@ -3,7 +3,7 @@
 // original next to it. A header list ("Kim <kim@example.com>, Lee <lee@example.com>") is parsed to name + address; a long list shows two and "외 N명",
 // and a tap opens the rest.
 //
-// The thread: when the mail has earlier or later mail with the same sender address (or the same subject without Re:/Fwd:), a wide screen
+// The thread: when the mail has earlier or later mail with the same counterpart (its sender, or a sent mail's recipients), a wide screen
 // (>= 1024px) shows them in a panel beside the conversation, newest first, the open one marked; a phone shows one row "이 사람과 주고받은 메일 N"
 // under the mail's own header that opens the same list. Everything comes from the MAILS map (GET /api/conversations mail cards), so no extra route.
 var MT_READY = false;
@@ -29,25 +29,22 @@ function mailAddrList(v) {
     return { name, addr: /@/.test(addr) ? addr : "", raw: p };
   }).filter(a => a.addr || a.name);
 }
-// "Kim <kim@example.com>" -> kim@example.com (the same person even when a name or a case differs); no address -> the whole text, lowered.
-const mailAddrKey = v => (mailAddrList(v)[0] || {}).addr?.toLowerCase() || String(v ?? "").trim().toLowerCase();
-const mailSubjectKey = s => String(s ?? "").replace(/^\s*(?:(?:re|fw|fwd|답장|회신|전달)\s*:\s*)+/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
 
 // One list of addresses: name in the text colour, the address in grey; two at most, then "외 N명" (a tap opens all, another folds them).
 function mailAddrNode(list, max = 2) {
-  const box = el("span", { class: "mh-v" });
+  const box = el("span", { class: "mhd-v" });
   const paint = open => {
     clear(box);
     const shown = open ? list : list.slice(0, max);
     shown.forEach((a, i) => {
       if (i) box.append(", ");
-      box.append(el("span", { class: "mh-n", text: a.name || a.addr }));
-      if (a.name && a.addr) box.append(el("span", { class: "mh-a", text: ` <${a.addr}>` }));
+      box.append(el("span", { class: "mhd-n", text: a.name || a.addr }));
+      if (a.name && a.addr) box.append(el("span", { class: "mhd-a", text: ` <${a.addr}>` }));
     });
     if (list.length > shown.length) {
-      box.append(" ", el("button", { class: "mh-more", type: "button", onclick: () => paint(true), text: `외 ${list.length - shown.length}명` }));
+      box.append(" ", el("button", { class: "mhd-more", type: "button", onclick: () => paint(true), text: `외 ${list.length - shown.length}명` }));
     } else if (open && list.length > max) {
-      box.append(" ", el("button", { class: "mh-more", type: "button", onclick: () => paint(false), text: "접기" }));
+      box.append(" ", el("button", { class: "mhd-more", type: "button", onclick: () => paint(false), text: "접기" }));
     }
   };
   paint(false);
@@ -58,8 +55,8 @@ function mailAddrNode(list, max = 2) {
 function mailHeadNode(m) {
   const src = m || {};
   const from = mailAddrList(src.from), to = mailAddrList(src.to), cc = mailAddrList(src.cc);
-  const row = (k, list) => el("div", { class: "mh-r" }, el("span", { class: "mh-k", text: k }), list.length ? mailAddrNode(list) : el("span", { class: "mh-v mh-none", text: "-" }));
-  return el("div", { class: "mh", role: "group", "aria-label": "보낸 사람과 받는 사람" }, row("보낸 사람", from), row("받는 사람", to), cc.length ? row("참조", cc) : null);
+  const row = (k, list) => el("div", { class: "mhd-r" }, el("span", { class: "mhd-k", text: k }), list.length ? mailAddrNode(list) : el("span", { class: "mhd-v mhd-none", text: "-" }));
+  return el("div", { class: "mhd", role: "group", "aria-label": "보낸 사람과 받는 사람" }, row("보낸 사람", from), row("받는 사람", to), cc.length ? row("참조", cc) : null);
 }
 
 // A mail list row's one-line version: two names then 외 N명, no buttons inside the row (the whole row opens the mail).
@@ -72,15 +69,17 @@ function mailToText(m) {
   return [to.length ? `받는 사람 ${fmt(to)}` : "", cc.length ? `참조 ${fmt(cc)}` : ""].filter(Boolean).join(" · ");
 }
 
-// The mails of one conversation: same sender address or same subject (Re:/Fwd: ignored), newest first, the open one included.
+// The other side of a mail: its sender, or for a mail the owner sent (dir "out") its recipients. Addresses, lowered.
+const mailPeers = m => new Set((m.dir === "out" ? mailAddrList(m.to) : mailAddrList(m.from)).map(a => (a.addr || a.name).toLowerCase()).filter(Boolean));
+// The label "이 사람과 주고받은 메일": every mail with the same counterpart (received from them or sent to them), newest first, the open one included.
 function mailRelated(t) {
   const cur = MAILS.get(t);
   if (!cur) return [];
-  const from = mailAddrKey(cur.from), subject = mailSubjectKey(cur.subject);
+  const peers = mailPeers(cur);
   const out = [];
   for (const [k, m] of MAILS) {
     if (!m) continue;
-    const mine = k === t, same = mine || (from && mailAddrKey(m.from) === from) || (subject && mailSubjectKey(m.subject) === subject);
+    const same = k === t || [...mailPeers(m)].some(p => peers.has(p));
     if (same) out.push({ t: k, m });
   }
   if (out.length < 2) return out;
@@ -119,7 +118,7 @@ function mailThreadMobile(t) {
 function mailMetaNode(t, e) {
   const base = MAILS.get(t) || {};
   const m = { from: base.from || (e && e.from), to: base.to || (e && e.to), cc: base.cc || (e && e.cc), dir: base.dir || (e && e.dir) };
-  return el("div", { class: "mh-wrap" }, mailHeadNode(m), mailThreadMobile(t));
+  return el("div", { class: "mhd-wrap" }, mailHeadNode(m), mailThreadMobile(t));
 }
 
 // The wide panel, beside the conversation (see the CSS): it sits in the chat box and only shows for a mail with related mail.
