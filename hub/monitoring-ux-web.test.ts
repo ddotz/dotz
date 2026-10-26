@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
@@ -7,7 +8,7 @@ import { appAsset, indexPage } from "./webapp.ts";
 // 모니터링 over a fixed gateway: every plain monitor row and its conversation carries a last-run → next-run bar with the result as a tag,
 // a disconnected app or watch says so at once with 지금 다시 확인, and 감시 소식 opens with every plain monitor at a glance. The times are
 // built from the wall clock (new Date(), untouched by the test clock) so the page's own Date.now() puts the ok bar at about half.
-const SHOTS = process.env.MONITORING_SHOTS ?? "/var/folders/80/2k5mvzgd4bncllljjdswkq7c0000gn/T/ux2run.bWW2O3bIEF/shots/t3";
+const SHOTS = process.env.MONITORING_SHOTS ?? join(tmpdir(), "dotz-shots", "monitoring");
 mkdirSync(SHOTS, { recursive: true });
 const T0 = new Date().getTime();
 const at = (ms: number) => new Date(ms).toISOString();
