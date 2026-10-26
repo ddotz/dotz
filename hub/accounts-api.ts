@@ -5,6 +5,7 @@
 import { aliasesFile, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
 import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, setOrder, validateRules, writeRules } from "./account-rules.ts";
 import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, hardPinned, inOrder, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
+import { deletePoolAccount, providerGroups, readProviderStore, writeProviderPin } from "./accounts-providers.ts";
 import { issueBlock } from "./choices.ts";
 import { TZ } from "./config.ts";
 import { deleteOmoAccount, writeOmoPin } from "./omo-pin.ts";
@@ -153,7 +154,9 @@ function chosenText(chosen: string, used: string | undefined, source: Decision["
 	return "자동으로 골랐어요";
 }
 
-export function accountsBody(now = Date.now()) {
+// `catalog`: the login providers this install offers (providers.ts loginProviders); a provider there can gain an account, and
+// only those appear in the 계정 추가 picker. accountsRoute fills it, since reading it may start an OmO process.
+export function accountsBody(now = Date.now(), catalog: { id: string; name: string }[] = []) {
 	const sticky = stickyAccount(now);
 	const pool = readPool(undefined, now);
 	const names = pool?.names ?? [];
@@ -177,7 +180,48 @@ export function accountsBody(now = Date.now()) {
 	const chosenId = manualId ?? sticky;
 	const chosenBlock = chosenId ? pool?.blocked[chosenId] : undefined;
 	const chosenSource: Decision["source"] = manualId ? "manual" : d.source;
+	const accounts = inOrder(names, rules.order).map((name, i) => {
+		const b = pool?.blocked[name];
+		return {
+			name,
+			order: i + 1,
+			alias: aliases[name] ?? null,
+			label: lab(name),
+			current: name === current,
+			blocked: b ? blockedKind(b.reason) : null,
+			blocked_until: b?.until ? new Date(b.until).toISOString() : null,
+			blocked_tag: b ? blockedTag(blockedKind(b.reason), b.until, now) : null,
+			five_hour_left: usage[name]?.five_hour_left ?? null,
+			seven_day_left: usage[name]?.seven_day_left ?? null,
+		};
+	});
+	// The Claude subscription group: the same accounts as `accounts` (dotz's own order and labels), shaped like every other
+	// provider's group so the card can render all of them the same way.
+	const claude = {
+		id: "anthropic",
+		name: "Claude 구독",
+		auth: "oauth" as const,
+		multi: true,
+		can_add: catalog.some(p => p.id === "anthropic"),
+		can_pin: true,
+		can_delete: accounts.length > 1,
+		accounts: accounts.map(a => ({
+			name: a.name,
+			label: a.label,
+			order: a.order,
+			current: a.current,
+			pinned: pool?.pinned === a.name,
+			blocked: a.blocked,
+			blocked_until: a.blocked_until,
+			blocked_tag: a.blocked_tag,
+			windows: [...(a.five_hour_left !== null ? [{ id: "anthropic:5h", label: "5시간", left: a.five_hour_left, resets_at: null }] : []), ...(a.seven_day_left !== null ? [{ id: "anthropic:7d", label: "7일", left: a.seven_day_left, resets_at: null }] : [])],
+		})),
+	};
+	const generic = providerGroups({ ...readProviderStore(), aliases, catalog, now });
+	for (const g of generic.providers) for (const a of g.accounts) if (a.blocked) a.blocked_tag = blockedTag(blockedKind(a.blocked), a.blocked_until ? Date.parse(a.blocked_until) : undefined, now);
 	return {
+		providers: [...(names.length ? [claude] : []), ...generic.providers],
+		login_providers: generic.login_providers,
 		// "pinned" (고정: manual pick, never moves) or "auto" (자동 전환: rules, and a switch when the account is blocked)
 		mode: manualId ? ("pinned" as const) : ("auto" as const),
 		// `current` is the account requests really use; `chosen` the one picked (they differ while the pick is blocked)
@@ -185,21 +229,7 @@ export function accountsBody(now = Date.now()) {
 			? { name: chosenId, label: lab(chosenId), source: chosenSource, blocked: chosenBlock ? blockedKind(chosenBlock.reason) : null, blocked_until: chosenBlock?.until ? new Date(chosenBlock.until).toISOString() : null, used_instead: current && current !== chosenId ? { name: current, label: lab(current) } : null, text: chosenText(chosenId, current, chosenSource, d.rule, manualId ? manual?.until : undefined, pool, now, aliases) }
 			: null,
 		// in the owner's order (the fallback order of 자동 전환); `order` is the number shown on the row
-		accounts: inOrder(names, rules.order).map((name, i) => {
-			const b = pool?.blocked[name];
-			return {
-				name,
-				order: i + 1,
-				alias: aliases[name] ?? null,
-				label: lab(name),
-				current: name === current,
-				blocked: b ? blockedKind(b.reason) : null,
-				blocked_until: b?.until ? new Date(b.until).toISOString() : null,
-				blocked_tag: b ? blockedTag(blockedKind(b.reason), b.until, now) : null,
-				five_hour_left: usage[name]?.five_hour_left ?? null,
-				seven_day_left: usage[name]?.seven_day_left ?? null,
-			};
-		}),
+		accounts,
 		decision: {
 			...(d.account ? { account: d.account, label: lab(d.account) } : {}),
 			source: d.source,
@@ -310,14 +340,25 @@ const readBody = async (req: Request): Promise<Record<string, any>> => {
 // The /api/accounts routes (the caller has already checked the token). Undefined: not one of them.
 export async function accountsRoute(req: Request, url: URL): Promise<Response | undefined> {
 	const p = url.pathname;
-	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/order", "/api/accounts/switches"].includes(p)) return undefined;
+	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/order", "/api/accounts/pin", "/api/accounts/switches"].includes(p)) return undefined;
+	// the login providers this install offers, for the 계정 추가 picker (one OmO/omp process, then cached by providers.ts)
+	const catalog = async () => (await import("./providers.ts")).loginProviders().catch(() => []);
 	try {
 		// DELETE /api/accounts/switches?at=<time of the entry> removes one history entry; without `at` it clears the whole history.
 		if (req.method === "DELETE" && p === "/api/accounts/switches") {
 			const at = url.searchParams.get("at");
 			return Response.json({ removed: at === null ? clearSwitches() : deleteSwitch(at) });
 		}
-		if (req.method === "GET" && p === "/api/accounts") return Response.json(accountsBody());
+		if (req.method === "GET" && p === "/api/accounts") return Response.json(accountsBody(Date.now(), await catalog()));
+		// DELETE /api/accounts?provider=<id>&name=<slot>: one account of any provider's pool (Claude keeps its own route below).
+		if (req.method === "DELETE" && p === "/api/accounts" && url.searchParams.get("provider")) {
+			const provider = url.searchParams.get("provider")!;
+			const name = url.searchParams.get("name") ?? "";
+			const r = deletePoolAccount(provider, name);
+			if (r === "missing") throw new AccountsError(`그런 계정이 없어요: ${name}`, 404);
+			if (r === "last") throw new AccountsError("마지막 남은 계정은 지울 수 없어요. 공급자 화면에서 로그아웃해 주세요", 409);
+			return Response.json(accountsBody(Date.now(), await catalog()));
+		}
 		// DELETE /api/accounts?name=<id>: removes a subscription account from OmO's store and from dotz's pick, order and alias.
 		if (req.method === "DELETE" && p === "/api/accounts") {
 			const name = url.searchParams.get("name") ?? "";
@@ -327,18 +368,32 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 				if (r === "last") throw new AccountsError("마지막 남은 계정은 지울 수 없어요. 공급자 화면에서 로그아웃해 주세요", 409);
 				await checkNow();
 			});
-			return Response.json(accountsBody());
+			return Response.json(accountsBody(Date.now(), await catalog()));
+		}
+		// {provider, account}: OmO's own pinned account for that provider's pool (null clears it). Claude also moves dotz's pick,
+		// so its rules and the 고정 mode agree with what OmO runs on.
+		if (req.method === "PUT" && p === "/api/accounts/pin") {
+			const b = await readBody(req);
+			const provider = typeof b.provider === "string" ? b.provider.trim() : "";
+			if (!provider) throw new AccountsError("provider가 필요해요", 400);
+			const account = typeof b.account === "string" && b.account.trim() ? b.account.trim() : undefined;
+			if (provider === "anthropic") await useAccount(account ?? "auto");
+			else {
+				const r = writeProviderPin(provider, account);
+				if (r === "missing") throw new AccountsError(`그런 공급자가 없어요: ${provider}`, 404);
+			}
+			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
 		if (req.method === "PUT" && p === "/api/accounts/alias") {
 			const b = await readBody(req);
 			if (typeof b.key !== "string" || !b.key.trim()) throw new AccountsError("key(계정 id 또는 이메일)가 필요해요", 400);
 			if (b.alias !== undefined && b.alias !== null && typeof b.alias !== "string") throw new AccountsError("alias는 글자여야 해요", 400);
 			setAlias(b.key.trim(), b.alias ?? "");
-			return Response.json(accountsBody());
+			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
 		if (req.method === "PUT" && p === "/api/accounts/rules") {
 			putRules((await readBody(req)).rules);
-			return Response.json(accountsBody());
+			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
 		// 계정 선택 모드: {mode:"auto"} = 자동 전환 (clears the pick), {mode:"pinned", account?} = 고정 (account, else the one requests use now)
 		if (req.method === "PUT" && p === "/api/accounts/mode") {
@@ -349,7 +404,7 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 				if (!account) throw new AccountsError("고정할 계정을 골라 주세요", 400);
 				await useAccount(account);
 			} else throw new AccountsError('mode는 "auto" 또는 "pinned"여야 해요', 400);
-			return Response.json(accountsBody());
+			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
 		// {order:[id, ...]}: the account order (the fallback order of 자동 전환); every id must be an account in OmO's pool
 		if (req.method === "PUT" && p === "/api/accounts/order") {
@@ -360,12 +415,12 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 				setOrder(order);
 				await checkNow();
 			});
-			return Response.json(accountsBody());
+			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
 		if (req.method === "POST" && p === "/api/accounts/use") {
 			const b = await readBody(req);
 			await useAccount(String(b.account ?? ""), b.until === undefined || b.until === null ? undefined : String(b.until));
-			return Response.json(accountsBody());
+			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
 		return undefined;
 	} catch (e) {
@@ -393,7 +448,7 @@ const whyText = (d: AccountsBody["decision"]): string => (d.source === "auto" ? 
 // "/account": the whole picture in Korean, labels first.
 export function accountText(now = Date.now()): string {
 	const b = accountsBody(now);
-	if (!b.accounts.length) return "OmO에 Claude 구독 계정이 없어요.";
+	if (!b.accounts.length) return "쓰는 Claude 구독 계정이 없어요. 다른 공급자 계정은 설정 → 계정에서 봐요.";
 	const cur = b.accounts.find(a => a.current);
 	const lines = [`지금 계정: ${cur ? cur.label : "아직 안 골랐어요"}`, `이유: ${whyText(b.decision)}`];
 	if (b.manual_text) lines.push(`직접 고정: ${b.manual_text} (고정을 풀려면 /account auto)`);
@@ -463,7 +518,7 @@ export async function accountAnswer(ask: AccountAsk): Promise<string> {
 	if (ask.kind === "auto") return pickedText(await useAccount("auto"));
 	if (ask.kind === "use") return pickedText(await useAccount(ask.account));
 	const b = accountsBody();
-	if (!b.accounts.length) return "OmO에 Claude 구독 계정이 없어요.";
+	if (!b.accounts.length) return "쓰는 Claude 구독 계정이 없어요. 다른 공급자 계정은 설정 → 계정에서 봐요.";
 	const cur = b.accounts.find(a => a.current);
 	if (ask.kind === "show") return `지금은 ${cur ? `${cur.label}${josa(cur.label, "을", "를")} 쓰고 있어요` : "계정을 아직 안 골랐어요"}. ${whyText(b.decision)}`;
 	const others = b.accounts.filter(a => !a.current);
