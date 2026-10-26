@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
 import { sqliteDb } from "./db.ts";
-import { replySourceLog } from "./media.ts";
+import { replySource, replySourceLog } from "./media.ts";
 import { MAX_CHAT_CHARS, MAX_PAIRS, MAX_PROMPT_CHARS, type ModelReply } from "./draft.ts";
 import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { createDraft, listDrafts } from "./send.ts";
@@ -325,7 +325,7 @@ describe("typed send", () => {
 		t.close();
 	});
 
-	test("watchdog: a send still sending after 60 s is failed, announced and kept as failed in the store", async () => {
+	test("watchdog: a send whose job still runs after 60 s is never reported failed (it may still press); its result lands when it ends", async () => {
 		let clock = NOW;
 		const timers: { fn: () => void; ms: number }[] = [];
 		let release!: () => void;
@@ -341,14 +341,16 @@ describe("typed send", () => {
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends[0].state).toBe("sending");
 		clock = NOW + 61_000;
 		timers[0]!.fn();
-		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_send", id: r.json.id, state: "failed" });
-		expect(typeof t.events.at(-1)!.reason).toBe("string");
-		expect(JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"))[0]).toMatchObject({ id: r.json.id, state: "failed" });
-		const failedEvents = t.events.filter(e => e.state === "failed").length;
-		timers[0]!.fn();
-		expect(t.events.filter(e => e.state === "failed")).toHaveLength(failedEvents);
+		// Still running: no failure, and the watchdog looks again later.
+		expect(t.events.filter(e => e.state === "failed")).toHaveLength(0);
+		expect(timers.map(x => x.ms)).toEqual([60_000, 60_000]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends[0].state).toBe("sending");
 		release();
 		await t.web.idle();
+		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_send", id: r.json.id, state: "sent" });
+		timers[1]!.fn();
+		expect(t.events.filter(e => e.state === "failed")).toHaveLength(0);
+		expect(JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"))[0]).toMatchObject({ id: r.json.id, state: "sent" });
 		t.close();
 	});
 
@@ -836,6 +838,11 @@ describe("media", () => {
 		const src = (attachment: unknown, type = 26) => replySourceLog({ type, attachment: JSON.stringify(attachment) });
 		expect(src({ src_logId: 4242 })).toBe("4242");
 		expect(src({ srcLogId: "9007199254740993" })).toBe("9007199254740993");
+		// Real logIds are 19-digit JSON numbers: they survive exactly, top level and nested.
+		const raw = (attachment: string) => replySourceLog({ type: 26, attachment });
+		expect(raw('{"src_logId":3456789012345678901,"src_userId":4567890123456789012}')).toBe("3456789012345678901");
+		expect(raw('{"src": {"src_logId" : 3456789012345678901}}')).toBe("3456789012345678901");
+		expect(replySource({ type: 26, attachment: '{"src_userId":4567890123456789012}' })).toBe("4567890123456789012");
 		expect(src({ src: { src_logId: 7 } })).toBe("7");
 		expect(src({ reply: { srcLogId: "8" } }, 26)).toBe("8");
 		expect(src({})).toBeUndefined();
@@ -1004,6 +1011,11 @@ describe("person analysis", () => {
 		expect(statSync(join(dir, "kakao", "person-summaries.json")).mode & 0o777).toBe(0o600);
 
 		expect((await t.call("POST", "/api/kakao/person/2001/analyze", {})).status).toBe(400);
+		// A spent subscription is said as such (with its reset time), not as unreadable KakaoTalk data; any other model failure is its own message.
+		t.model.reply = async () => Promise.reject(new Error("구독 한도에 걸렸어요 · 오전 1:20에 풀려요"));
+		expect(await t.call("POST", "/api/kakao/person/2001/analyze", { room: DIRECT })).toEqual({ status: 429, json: { error: "구독 한도에 걸렸어요 · 오전 1:20에 풀려요" } });
+		t.model.reply = async () => Promise.reject(new Error("model call exited 1"));
+		expect(await t.call("POST", "/api/kakao/person/2001/analyze", { room: DIRECT })).toEqual({ status: 502, json: { error: "요약을 만들지 못했어요" } });
 		expect((await t.call("GET", "/api/kakao/person/abc?room=1")).status).toBe(400);
 		expect((await t.call("GET", "/api/kakao/person/2001?room=999")).status).toBe(404);
 		writeFileSync(paths.config, JSON.stringify({ ...t.config$(), enabled: false }));

@@ -10,7 +10,7 @@ const kkItem = it => !!it && (it.key === KK_KEY || !!it.kk);   // a peer's Kakao
 const KK_PAGE = 50;
 const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, pick: null,   // pick: null = open while no room is chosen
-  open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
+  open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
   typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "", compose: null,
   peerT: 0, peerBusy: false, peerHead: "", lp: new Map(), olderBusy: false, olderAgain: false,
@@ -206,9 +206,10 @@ function kkJump(src) {
     const id = KK.open;
     api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}&around=${enc(src)}`).then(d => {
       if (KK.open !== id) return;
-      // The page around the original is merged into what the room already shows (a jump never drops the current view).
-      const have = new Set(KK.msgs.map(x => x.logId)), got = Array.isArray(d.messages) ? d.messages : [];
-      KK.msgs = [...KK.msgs, ...got.filter(x => !have.has(x.logId))].sort((a, b) => (kkGt(a.logId, b.logId) ? 1 : kkGt(b.logId, a.logId) ? -1 : 0));
+      // The page around the original is merged into what the room already shows (a jump never drops the current view). Messages between
+      // that page and the rest are not loaded: the place is marked as a gap (kkGapNode) instead of drawing the two pages as adjacent.
+      const got = Array.isArray(d.messages) ? d.messages : [];
+      kkMergeGap(got);
       if (d.room) KK.room = d.room;
       if (Array.isArray(d.drafts)) { KK.drafts = d.drafts; KK.ask = kkAskOf(d); }
       if (Array.isArray(d.sends)) KK.sends = d.sends;
@@ -226,6 +227,37 @@ function kkJump(src) {
   kkFlash(node);
   kkSyncStick();
 }
+const kkByLog = (a, b) => (kkGt(a.logId, b.logId) ? 1 : kkGt(b.logId, a.logId) ? -1 : 0);
+// Merges a page that may not touch what is shown (a quote jump, a gap fill). A page sharing no message with the view leaves a gap on each
+// side that has shown messages; a gap the page reaches into is closed. KK.gaps holds the logId each gap follows. `closes`: the gap this
+// page fills from below (its lower side is contiguous by construction).
+function kkMergeGap(got, closes) {
+  if (!got.length) return;
+  const have = new Set(KK.msgs.map(x => x.logId)), fresh = got.filter(x => !have.has(x.logId)), page = [...got].sort(kkByLog);
+  const lo = page[0].logId, hi = page[page.length - 1].logId, touches = fresh.length < got.length;
+  if (closes) KK.gaps.delete(closes);
+  if (!touches) {
+    const above = KK.msgs.find(x => kkGt(x.logId, hi)), below = KK.msgs.filter(x => kkGt(lo, x.logId)).pop();
+    if (above) KK.gaps.add(hi);
+    if (below && !closes) KK.gaps.add(below.logId);
+  }
+  KK.msgs = [...KK.msgs, ...fresh].sort(kkByLog);
+}
+// The messages after a gap, one page at a time; the gap closes once the page reaches what is shown after it.
+async function kkFillGap(after) {
+  const id = KK.open;
+  if (!id || KK.gapBusy) return;
+  KK.gapBusy = true;
+  try {
+    const d = await api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}&after=${enc(after)}`);
+    if (KK.open !== id) return;
+    kkMergeGap(Array.isArray(d.messages) ? d.messages : [], after);
+    kkPaintTl(false);
+  } catch (e) { toast(e.message, true); }
+  finally { KK.gapBusy = false; }
+}
+const kkGapNode = after => el("div", { class: "kk-gap", role: "separator", "aria-label": "불러오지 않은 메시지가 있어요" },
+  el("button", { class: "btn text", type: "button", "data-k": "gap", text: "사이 메시지 불러오기", onclick: () => kkFillGap(after) }));
 // A sticker: its image from the media route when the server has one (md.image), else (or when it cannot be fetched) one chip with its name.
 // The text written with it sits in a bubble under it.
 const kkEmoChip = md => el("div", { class: "kk-bub ph kk-emo-chip", text: md.alt || "이모티콘" });
@@ -590,15 +622,16 @@ function kkTimeline() {
   if (KK.more) out.push(el("div", { class: "kk-top", id: "kk-top" }, el("button", { class: "btn text kk-more", type: "button", text: "이전 메시지 더 보기", onclick: () => kkOlder() })));
   let prev = null;
   msgs.forEach((m, i) => {
-    const newDay = !prev || kkDay(prev.sentAt) !== kkDay(m.sentAt), mark = !!KK.div && m.logId === KK.div, next = msgs[i + 1];
+    const newDay = !prev || kkDay(prev.sentAt) !== kkDay(m.sentAt), mark = !!KK.div && m.logId === KK.div, next = msgs[i + 1], gapBefore = !!prev && KK.gaps.has(prev.logId);
     if (newDay) out.push(kkDateNode(m.sentAt));
     if (mark) out.push(kkMarkNode());
     // Name and avatar once per run of one sender (like KakaoTalk); the time once per same-minute run.
-    const cont = !!prev && !newDay && !mark && !kkSys(prev) && kkWho(prev) === kkWho(m);
-    const nextCont = !!next && kkDay(next.sentAt) === kkDay(m.sentAt) && !(KK.div && next.logId === KK.div) && kkSame(m, next);
+    const cont = !!prev && !newDay && !mark && !gapBefore && !kkSys(prev) && kkWho(prev) === kkWho(m);
+    const nextCont = !!next && !KK.gaps.has(m.logId) && kkDay(next.sentAt) === kkDay(m.sentAt) && !(KK.div && next.logId === KK.div) && kkSame(m, next);
     const node = kkMsgNode(m, !cont, !nextCont);
     // A row with nothing visible in it (an empty body, a record this build does not draw) leaves no blank space.
     if (node && (node.textContent.trim() || node.querySelector("img, audio, video, button, a"))) out.push(node);
+    if (next && KK.gaps.has(m.logId)) out.push(kkGapNode(m.logId));
     prev = m;
   });
   out.push(...kkPending().map(kkSendNode));
@@ -640,7 +673,7 @@ async function kkOpen(id) {
   if (!r) return;
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
   const seq = ++KK.seq;
-  Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" || r.kind === "open", watched: !!r.watched }, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(), compose: null,
+  Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" || r.kind === "open", watched: !!r.watched }, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(), compose: null,
     loading: true, roomErr: "", pill: false, stick: true, pin: "", placed: false, readSent: "", edit: null, drafting: "", revise: null, reviseCode: "" });
   kkTa.value = KK.typed.get(id) || ""; kkAutosize();
   kkPaintAll(); convTitle();

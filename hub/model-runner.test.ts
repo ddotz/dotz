@@ -36,6 +36,10 @@ if (!args.includes("rpc")) {
 			n++;
 			if (mode === "hang") continue;
 			if (mode === "crash") process.exit(4);
+			if (mode === "limit") {
+				out({ type: "message_end", message: { role: "assistant", content: [], stopReason: "error", errorMessage: "429 rate_limit_error: usage limit reached" } });
+				continue;
+			}
 			out({ type: "agent_start" });
 			out({ type: "message_start", message: { role: "assistant" } });
 			out({ type: "message_update", message: { role: "assistant", usage: { input: 5, output: 1 } }, assistantMessageEvent: { type: "text_delta", delta: "답" } });
@@ -211,4 +215,63 @@ test("no subscription login is its own reason, and a non-subscription model is n
 	writeFileSync(join(agent, "auth.json"), JSON.stringify({}));
 	expect(() => ensureProvider("anthropic-subscription/claude-sonnet-5-5")).toThrow("구독 로그인이 없어요");
 	expect(() => ensureProvider("openai/gpt-5")).not.toThrow();
+});
+
+test("when the pinned account is spent and readiness moves to another, the next call runs on a process pinned to that one", async () => {
+	auth([account("default"), account("work", "b")]);
+	expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 답 1");
+	usage([{ usedPercent: 100, resetsAt: later(3_600_000) }]);
+	resetHealthForTest();
+	expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 답 1");
+	expect(spawns().map(s => s.pin)).toEqual(["default", "work"]);
+	// the process pinned to the spent account does not keep a slot
+	expect(runnerCountForTest()).toBe(1);
+});
+
+test("a spent-limit answer stops the process that gave it, so it is never asked again", async () => {
+	auth([account()]);
+	process.env.FAKE_OMO_MODE = "limit";
+	await expect(callWarm("sys", "u", { model: "anthropic-subscription/claude-sonnet-5-5", timeoutMs: 45_000, account: "default" })).rejects.toThrow("rate_limit");
+	await flush();
+	expect(runnerCountForTest()).toBe(0);
+});
+
+test("a warm turn that times out is not followed by a one-shot call that waits the whole bound again", async () => {
+	auth([account()]);
+	process.env.FAKE_OMO_MODE = "hang";
+	const oneShots: string[][] = [];
+	const spawnOneShot = modelDeps.spawn;
+	modelDeps.spawn = (argv, options) => (oneShots.push(argv), spawnOneShot(argv, options));
+	const call = callModel("sys", "u", { model: SONNET, timeoutMs: 45_000 }).catch((e: Error) => e);
+	await flush();
+	await advance(46_000);
+	expect(String(await call)).toContain("timed out after 45s");
+	expect(oneShots).toEqual([]);
+});
+
+test("two calls of one prompt shape at once run on two processes; the next call reuses an idle one", async () => {
+	auth([account()]);
+	const [a, b] = await Promise.all([callModel("sys", "u", { model: SONNET }), callModel("sys", "u", { model: SONNET })]);
+	expect([a.text, b.text]).toEqual(["warm 답 1", "warm 답 1"]);
+	expect(spawns()).toHaveLength(2);
+	expect((await callModel("sys", "u", { model: SONNET })).text).toBe("warm 답 2");
+	expect(spawns()).toHaveLength(2);
+});
+
+test("a full pool never stops a busy process: a new prompt shape takes the one-shot path instead", async () => {
+	auth([account()]);
+	const max = runnerDeps.maxRunners;
+	runnerDeps.maxRunners = 1;
+	try {
+		process.env.FAKE_OMO_MODE = "hang";
+		const busy = callWarm("sys a", "u", { model: "anthropic-subscription/claude-sonnet-5-5", timeoutMs: 45_000, account: "default" }).catch((e: Error) => e);
+		await flush();
+		delete process.env.FAKE_OMO_MODE;
+		expect((await callModel("sys b", "u", { model: SONNET })).text).toBe("print 답");
+		expect(runnerCountForTest()).toBe(1);
+		await advance(46_000);
+		expect(String(await busy)).toContain("timed out");
+	} finally {
+		runnerDeps.maxRunners = max;
+	}
 });

@@ -19,10 +19,14 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
   `{ room: { chatId, name, kind, group, watched }, messages: [{ id, collector, logId, authorId, sender, text, type, sentAt, fromMe }], read: <logId|null>,
   kakaoUnread: number, drafts: [{ code, text, parts, sentParts?, basisLogId, created }], sends: [{ id, text, state, reason?, at, draft? }] }`.
   Messages oldest first. `around` (one logId) sends the page that holds it: up to `limit` messages up to and including it, plus the
-  `limit` after it; a quote tap uses it to reach a replied-to message that the open page does not hold. `read` = the owner's read position in the web app for this room (null = never opened; the client then
+  `limit` after it; a quote tap uses it to reach a replied-to message that the open page does not hold. When that page shares no message
+  with what the view shows, the web marks the place between them as a gap (사이 메시지 불러오기) and fills it with `after=` pages
+  until it reaches the shown messages; the two pages are never drawn as adjacent. `read` = the owner's read position in the web app for this room (null = never opened; the client then
   uses `kakaoUnread`, KakaoTalk's own unread count, to place the marker). `drafts` = pending drafts of this room only; a draft may be several KakaoTalk messages: `parts` (its `text` split at blank lines, at
   most 5, each at most 1000 characters) go out in order on one 보내기, and `sentParts` of them are already in the room (a retry sends the rest only). `sends` =
-  this room's sends of the last 24 h (`state`: `sending` | `sent` | `failed`). `group` = senders are named over their messages (group and
+  this room's sends of the last 24 h (`state`: `sending` | `sent` | `failed`). A send stays `sending` for as long as its job runs in this
+  gateway, however long (a send that can still press 전송 is never shown failed, so the owner does not send it again); a `sending` record
+  no job works on (the gateway restarted) is shown failed. `group` = senders are named over their messages (group and
   open chat rooms; an open chat room names each sender by his open profile). `watched: false` = read-only: `drafts` is [], and send,
   draft, ask and no-reply answer 403. Opening a room reads that room's own row and its newest page only, never the whole room list.
   Each message also has `unread: number`, KakaoTalk's read counter (the yellow number beside a bubble): how many members have
@@ -40,7 +44,8 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
     `https://item.kakaocdn.net/dw/<path>`; `text` is the message written with the sticker, absent when it went out alone)
   - `{ kind: "reply", quote, quoteSender?, srcLogId? }` type 26 (`quote` = the replied-to text, clipped to 80 characters; `quoteSender` = the name of the
     original's author (attachment `src_userId`) as this room shows it, read for it when it is not on the page, `나` for the owner; `srcLogId` = the
-    original's logId from the attachment (`src_logId`, at the top level or inside a `src`/`reply`/`origin`/`parent` object), so the quote can jump to it); `text` is the reply itself
+    original's logId from the attachment (`src_logId`, at the top level or inside a `src`/`reply`/`origin`/`parent` object; read as a string, so a
+    19-digit logId stays exact), so the quote can jump to it); `text` is the reply itself
   - `{ kind: "location", label, lat, lng }` type 16 (`label` = address, else title)
   `expired` = the attachment's `expire` (epoch seconds) is in the past (a file the owner downloaded is never expired).
 - `GET /api/kakao/media/<chatId>/<logId>?i=<index>&v=thumb|full` (default `i=0`, `v=full`; `i` = the album image) -> the bytes of a
@@ -112,7 +117,9 @@ the send (a failed send with its reason) before kmsg runs.
   `analysis` is the last stored summary for that room and person (`<dataDir>/kakao/person-summaries.json`, with its `at` time).
 - `POST /api/kakao/person/<userId>/analyze` body `{ room }` -> `{ analysis: { text, at } }`. One model call through the same draft model: the last
   200 lines with that person, the counted numbers, and a short Korean note on the relationship; the result is stored with its time and served by the
-  next GET (다시 분석 overwrites it). 400 without a room or with a bad id, 404 for a room off the list, 503 without a model.
+  next GET (다시 분석 overwrites it). 400 without a room or with a bad id, 404 for a room off the list, 503 without a model, 429 with the
+  model's own message when the subscription limit is reached (`구독 한도에 걸렸어요 · …에 풀려요`), 502 `요약을 만들지 못했어요` for any other
+  model failure.
 
 ## Link previews
 

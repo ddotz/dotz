@@ -39,6 +39,7 @@ export const REFUSE = {
 	mismatch: "방 이름이나 인원이 달라요",
 	noList: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요",
 	openFailed: "방을 열지 못했어요",
+	partial: "같은 이름의 방을 목록 끝까지 확인하지 못해서 고르지 않았어요",
 	timeout: "방을 여는 데 5초가 넘게 걸려서 멈췄어요",
 } as const;
 
@@ -81,7 +82,8 @@ const previewSame = (shown: string, want: string) => {
 	return (b.length >= 8 && b.startsWith(a)) || (a.length >= 8 && a.startsWith(b));
 };
 
-export type RowChoice = { ok: true; index: number; via: "name" | "members" | "preview" } | { ok: false; why: "none" | "mismatch" };
+// members/preview: what the chosen row showed (re-verified at open time when the choice rested on them).
+export type RowChoice = { ok: true; index: number; via: "name" | "members" | "preview"; members?: number; preview?: string } | { ok: false; why: "none" | "mismatch" };
 
 // Which list row is the room. A name no other database room has needs one row of that title (the window is checked after, and a window
 // is the only place the count is proven); a shared name is told apart by the row's own member count, and when that is not enough (two
@@ -94,11 +96,12 @@ export function chooseRow(rows: string[][], room: RoomFact, shared: boolean): Ro
 	let left = hits;
 	if (room.kind === "group") left = left.filter(h => h.members !== undefined && h.members === room.members);
 	else if (room.kind === "direct" || room.kind === "self") left = left.filter(h => h.members === undefined);
-	if (left.length === 1) return { ok: true, index: left[0]!.index, via: "members" };
+	const pickHit = (h: (typeof hits)[number], via: "members" | "preview"): RowChoice => ({ ok: true, index: h.index, via, ...(h.members !== undefined ? { members: h.members } : {}), ...(via === "preview" && h.preview !== undefined ? { preview: h.preview } : {}) });
+	if (left.length === 1) return pickHit(left[0]!, "members");
 	// Same name and size: the newest message of the database room is the only fact left that the screen itself shows.
 	if (room.preview && left.length > 1) {
 		const byPreview = left.filter(h => h.preview !== undefined && previewSame(h.preview, room.preview!));
-		if (byPreview.length === 1) return { ok: true, index: byPreview[0]!.index, via: "preview" };
+		if (byPreview.length === 1) return pickHit(byPreview[0]!, "preview");
 	}
 	return { ok: false, why: "mismatch" };
 }
@@ -155,6 +158,7 @@ export async function axSend(name: string, text: string, runner: Runner, opts: {
 		const r = await osascript(runner, { action: "send", name, text, ...(opts.ours?.length ? { ours: opts.ours } : {}), ...(opts.priorPressed?.length ? { priorPressed: opts.priorPressed } : {}) });
 		const out = JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "");
 		if (out?.ok === true) return { ok: true };
+		if (typeof out?.why !== "string") return UNCERTAIN;
 		return {
 			ok: false,
 			pressed: out?.pressed === true,
@@ -163,9 +167,12 @@ export async function axSend(name: string, text: string, runner: Runner, opts: {
 			...(typeof out?.left === "string" ? { left: out.left } : {}),
 		};
 	} catch {
-		return { ok: false, why: "failed" };
+		return UNCERTAIN;
 	}
 }
+// No answer that says how far the script got (killed by the timeout, no JSON, no reason): the press may have happened, so it counts as
+// pressed. The send then asks the database and never types or presses again (exactly once beats delivery).
+const UNCERTAIN: SendOut = { ok: false, pressed: true, why: "uncertain" };
 
 type Out = { focus?: { from?: unknown; took?: unknown; restored?: unknown }; ok?: boolean; opened?: boolean; rows?: unknown; hits?: unknown; scanned?: number; pages?: number; stopped?: string; step?: string; why?: string; err?: string; ms?: Record<string, number> };
 
@@ -191,13 +198,19 @@ const DEEP_ROWS = 120;
 export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean; hint?: number } = {}): Promise<Opened> {
 	const steps: AxStep[] = [];
 	const t0 = performance.now();
-	const left = () => OPEN_CAP_MS - (performance.now() - t0);
-	const shared = all.some(r => r.chatId !== room.chatId && normalizeTitle(r.name) === normalizeTitle(room.name));
+	const left = () => cap - (performance.now() - t0);
+	const want = normalizeTitle(room.name);
+	const namesakes = all.filter(r => r.chatId !== room.chatId && normalizeTitle(r.name) === want).length;
+	const shared = namesakes > 0;
 	let focus: Focus | undefined;
 	const stop = (reason: string): Opened => ({ ok: false, reason, steps, ...(focus ? { focus } : {}) });
 	const deep = opts.deep === true;
-	const budget = deep ? DEEP_BUDGET_MS : ROWS_BUDGET_MS;
-	const rowsReq = { action: "rows", name: room.name, max: deep ? DEEP_ROWS : READ_ROWS, budgetMs: budget, first: !shared, ...(deep || opts.hint === undefined ? {} : { hint: opts.hint }) };
+	// A shared name is only chosen once every row of that name was seen (the list end, or as many rows as the database has rooms of that
+	// name), so it gets the whole budget at once instead of failing rung after rung on a partial read.
+	const budget = deep || shared ? DEEP_BUDGET_MS : ROWS_BUDGET_MS;
+	const need = shared ? namesakes + 1 : 1;
+	const rowsReq = { action: "rows", name: room.name, max: deep ? DEEP_ROWS : READ_ROWS, budgetMs: budget, first: !shared, ...(shared ? { need } : {}), ...(deep || opts.hint === undefined ? {} : { hint: opts.hint }) };
+	const cap = shared ? OPEN_CAP_MS + 2_000 : OPEN_CAP_MS;
 	const rowsCallMs = budget + 1_200;
 
 	let listed = await call(runner, rowsReq, Math.min(left(), rowsCallMs));
@@ -229,8 +242,11 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 		const stopped = listed.out.stopped ?? "?";
 		steps.push({ step: deep ? "rows:deep" : "rows", ms: listed.ms, ok: choice.ok, why: `${scanned}:${stopped}${listed.out.pages ? `:p${listed.out.pages}` : ""}${choice.ok ? `:row${choice.index}:${choice.via}` : `:${choice.why}`}` });
 		if (!choice.ok) return stop(choice.why === "none" ? (stopped === "budget" ? REFUSE.notFoundTime : REFUSE.notFoundEnd) : REFUSE.mismatch);
+		if (shared && stopped !== "end" && !(stopped === "found" && hits.length >= need)) return stop(REFUSE.partial);
 		if (left() < 1_000) return stop(REFUSE.timeout);
-		const row = await call(runner, { action: "open", name: room.name, row: choice.index }, Math.max(1_500, left()));
+		// What told the row apart is checked again on the row at open time (a twin that moved into this index is refused, never opened).
+		const expect = shared ? { ...(choice.members !== undefined ? { members: choice.members } : { noCount: true }), ...(choice.preview !== undefined ? { preview: choice.preview } : {}) } : undefined;
+		const row = await call(runner, { action: "open", name: room.name, row: choice.index, ...(expect ? { expect } : {}) }, Math.max(1_500, left()));
 		const phases = Object.entries(row.out.ms ?? {}).map(([k, v]) => `${k}=${v}`).join(",");
 		steps.push({ step: row.out.step ?? "open", ms: row.ms, ok: row.out.ok === true, why: row.out.ok === true ? phases : `${row.timedOut ? "timeout" : failWhy(row.out)}${phases ? `:${phases}` : ""}` });
 		if (row.out.ok !== true) {
