@@ -407,7 +407,7 @@ const monReadAll = (btn, list) => busy(btn, async () => {
 // One report as a row: source, state, time and a two-line summary; a tap unfolds the whole card in place (sections, the original, 답하러 가기).
 // A report that waits on the owner carries 답하러 가기 on the row itself. A decision is always the whole card: it is answered in place.
 function monRowNode(n, names) {
-  if (ntIsDec(n) && !n.pc) return monNoticeNode(n, names);
+  if ((ntIsDec(n) && !n.pc) || n.item) return monNoticeNode(n, names);   // a report about an app item shows the item (a mail row) as the app draws it
   const key = `n:${n.id}`, src = ntPlain(names[0] || n.title) || "알림";
   if (MON.open.has(key)) {
     const full = monNoticeNode(n, names);
@@ -441,7 +441,7 @@ function monFeedNodes(it, names) {
   const ok = monFilterOf()[2], list = it.notices.filter(ok).sort((a, b) => ntAt(b) - ntAt(a));
   const asked = new Map(), by = new Map();
   for (const n of list) if (monNeed(n)) { const k = `${monSrcKey(n)}|${monSummary(n, names)}`; asked.set(k, [...(asked.get(k) || []), n]); }
-  for (const n of list) if (!monNeed(n)) { const k = monSrcKey(n); by.set(k, [...(by.get(k) || []), n]); }
+  for (const n of list) if (!monNeed(n)) { const k = n.item ? `item|${n.id}` : monSrcKey(n); by.set(k, [...(by.get(k) || []), n]); }
   const groups = [...by.values()], bad = groups.filter(g => g.some(n => monFailed(n) && !n.read));
   const secs = [["답 필요", [...asked.values()]], ["실패", bad], ["소식", groups.filter(g => !bad.includes(g))]].filter(s => s[1].length);
   const page = MON.more.get("feed") || MON_PAGE, out = [];
@@ -483,10 +483,18 @@ function monChronoNodes(it, names) {
   if (withMails) return [mailFilterBar(it.mails), ...(nodes.length ? nodes : [el("div", { class: "empty", text: "이 보기에 해당하는 메일이 없어요" })])];
   return nodes;
 }
+// A short feed (a handful of reports) reads best as the whole cards, newest first, with the machine of a peer's report; past MON_COMPACT
+// reports it becomes the sections and folded rows of monFeedNodes.
+const MON_COMPACT = 6;
+const monFeedCards = (it, names) => it.notices.filter(monFilterOf()[2]).sort((a, b) => ntAt(b) - ntAt(a)).map(n => {
+  const x = monNoticeNode(n, names), src = x && n.pc && x.querySelector(".rc-src");
+  if (src) src.after(el("span", { class: "tag", text: n.pc.name }));
+  return x;
+}).filter(Boolean);
 function monTimeline(it) {
   if (it.off) return [el("div", { class: "empty", text: "연결 안 됨" })];
   const names = it.mon ? monNames(it.mon) : [];
-  const bar = monBarWanted(it) ? [monBar(it)] : [], nodes = monFeed(it) ? monFeedNodes(it, names) : monChronoNodes(it, names);
+  const bar = monBarWanted(it) ? [monBar(it)] : [], nodes = !monFeed(it) ? monChronoNodes(it, names) : it.notices.length > MON_COMPACT ? monFeedNodes(it, names) : monFeedCards(it, names);
   if (nodes.length) return [...bar, ...nodes];
   if (bar.length) return [...bar, el("div", { class: "empty", text: "이 보기에 해당하는 소식이 없어요" })];
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
