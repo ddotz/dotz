@@ -132,7 +132,7 @@ function pqMerge(items) {
       const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 };
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";
       PQ.of.set(`settings:${pqApp(it.key, pc)}`, { pc, key: key(`i:${it.key}`), app: true, label: it.label });   // the app's settings conversation lives on that computer
-      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: monNeedLine(needs), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
+      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: it.state === "disconnected" && it.hint ? it.hint : monNeedLine(needs), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {

@@ -16,7 +16,8 @@ const peerFeed = { id: "pn2", kind: "watch", tone: "ok", title: "peer orphan", t
 const MAIL = { subject: "회의 일정", from: "민수 <m@example.com>", source: "mail", at: at(20), summary: "내일 3시 회의예요", attachments: [{ name: "안건.pdf", size: 2048 }], html: true, suggest: { kind: "reply-draft", label: "답장 초안", ref: "d1", state: "draft" } };
 const LAST = { ts: at(20), text: "회의 일정", from: "bot" };
 const MAIL_APP = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], unread: 1, notices: [], needs: { drafts: 1, unread: 1, sentToday: 0 } };
-const KAKAO_APP = { key: "kakao", label: "카카오톡", icon: "chat", kind: "app", conv: ["kakao:"], unread: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } };
+const PEER_DOWN = "연결 끊김 · 10월 23일 21:29부터 · 다시 로그인 필요";
+const KAKAO_APP = { key: "kakao", label: "카카오톡", icon: "chat", kind: "app", conv: ["kakao:"], unread: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 }, state: "disconnected", hint: PEER_DOWN };
 const hits: string[] = [];
 // Rows the Mac mini stores in room c1 after the page opened it (the page learns of them only by polling the room's head).
 const c1More: Record<string, unknown>[] = [];
@@ -106,6 +107,8 @@ describe("merged 모니터링", () => {
 		expect(await text(v, `${rowOf(`p:${MINI}|m:peer-backup`)}.querySelector(".tag").textContent`)).toBe("맥미니");
 		expect(await text(v, `${rowOf(`p:${MINI}|i:mail`)}.querySelector(".tag").textContent`)).toBe("맥미니");
 		expect(await text(v, `${rowOf("m:local-check")}.querySelectorAll(".tag").length + ""`)).toBe("0");
+		// the other computer's disconnected app says so here too, not "확인할 것 없어요"
+		expect(await text(v, `${rowOf(`p:${MINI}|i:kakao`)}.textContent`)).toContain(PEER_DOWN);
 		const stale = await text(v, `[...${rowOf("p:http://study.test|m:study-disk")}.querySelectorAll(".tag")].map(t => t.textContent).join(",")`);
 		expect(stale).toBe("서재,연결 안 됨");
 		expect(await text(v, `${rowOf("p:http://store.test|off")}.querySelector(".cv-n").textContent`)).toBe("창고 · 연결 안 됨");
