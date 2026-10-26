@@ -2,10 +2,11 @@
 // gateway-proxied page in the frame under the dotz header (back, name, status, 새 탭, ⋯), at 390 and 1280.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appAsset, indexPage } from "./webapp.ts";
 
-const SHOTS = process.env.T7_SHOTS ?? "/var/folders/80/2k5mvzgd4bncllljjdswkq7c0000gn/T/ux2run.bWW2O3bIEF/shots/t7";
+const SHOTS = process.env.T7_SHOTS ?? join(tmpdir(), "dotz-shots", "apps");
 mkdirSync(SHOTS, { recursive: true });
 const json = (v: unknown) => Response.json(v);
 const items = [
