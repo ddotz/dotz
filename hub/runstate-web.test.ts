@@ -154,7 +154,7 @@ test("a stopped turn on an error says the plain reason and offers 다시 시도"
 test("stopped by the owner offers 다시 시작; a finished turn says 끝났어요 with no action", async () => {
 	const v = await boot();
 	const stopped = await show(v, { kind: "stopped", reason: "owner", since: ts(6) }, { status: "stopped", stoppedBy: "owner" });
-	expect(stopped).toEqual({ text: "멈춤 · 주인님이 멈추게 했어요", act: "다시 시작" });
+	expect(stopped).toEqual({ text: "멈춤 · 직접 멈췄어요", act: "다시 시작" });
 	const hitOnce = hit("restart");
 	await v.evaluate(`document.querySelector("#runstate-act").click()`);
 	await hitOnce;
