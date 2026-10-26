@@ -7,10 +7,10 @@ import { allWatches, patchWatch } from "./watch.ts";
 
 const WATCH_STORE = "watches.json";
 export const WATCH_FIELDS: SettingField[] = [
-	{ key: "enabled", label: "켜기", type: "bool", help: "끄면 확인을 멈추고, 켜면 다시 확인해요", store: WATCH_STORE, path: "paused", def: true, switch: true },
-	{ key: "every_minutes", label: "확인 간격(분)", type: "number", help: "몇 분마다 확인할지예요 (1분에서 7일)", store: WATCH_STORE, path: "every_minutes", min: 1, max: 7 * 24 * 60, def: 10, switch: true },
-	{ key: "to", label: "알림 방식", type: "enum", help: "비서가 먼저 보거나, 알림 대화나 채팅에 바로 알려요", store: WATCH_STORE, path: "to", options: ["orchestrator", "alert", "chat"], labels: { orchestrator: "비서가 알려줌", alert: "알림 대화", chat: "채팅" }, def: "orchestrator", switch: true },
-	{ key: "label", label: "이름", type: "text", help: "목록에 보이는 이름이에요", store: WATCH_STORE, path: "label", def: "", switch: true },
+	{ key: "enabled", label: "감시 켜기", type: "bool", help: "끄면 확인을 멈추고, 켜면 다시 확인해요", store: WATCH_STORE, path: "paused", def: true, switch: true, section: "watch" },
+	{ key: "every_minutes", label: "감시 주기(분)", type: "number", help: "몇 분마다 확인할지예요 (1분에서 7일)", store: WATCH_STORE, path: "every_minutes", min: 1, max: 7 * 24 * 60, def: 10, switch: true, section: "watch" },
+	{ key: "to", label: "알림 방식", type: "enum", help: "비서가 먼저 보거나, 알림 대화나 채팅에 바로 알려요", store: WATCH_STORE, path: "to", options: ["orchestrator", "alert", "chat"], labels: { orchestrator: "비서가 알려줌", alert: "알림 대화", chat: "채팅" }, def: "orchestrator", switch: true, section: "notify" },
+	{ key: "label", label: "이름", type: "text", help: "목록에 보이는 이름이에요", store: WATCH_STORE, path: "label", def: "", switch: true, section: "advanced" },
 ];
 
 /** The watch id or name of a settings subject "w:<name>", or undefined. */
