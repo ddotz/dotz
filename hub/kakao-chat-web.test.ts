@@ -124,9 +124,13 @@ const server = Bun.serve({
 			}
 			if (req.method === "GET") {
 				record({ method: "GET", path: `${p}${url.search}`, body: null });
-				const after = url.searchParams.get("after");
+				const after = url.searchParams.get("after"), before = url.searchParams.get("before"), around = url.searchParams.get("around");
 				const sorted = [...msgs].sort((a, b) => (BigInt(a.logId) > BigInt(b.logId) ? 1 : -1)), lim = Number(url.searchParams.get("limit") ?? 80);
-				const list = after ? sorted.filter(x => BigInt(x.logId) > BigInt(after)).slice(0, lim) : sorted.slice(-lim);
+				const list = around
+					? [...sorted.filter(x => BigInt(x.logId) <= BigInt(around)).slice(-lim), ...sorted.filter(x => BigInt(x.logId) > BigInt(around)).slice(0, lim)]
+					: after ? sorted.filter(x => BigInt(x.logId) > BigInt(after)).slice(0, lim)
+					: before ? sorted.filter(x => BigInt(x.logId) < BigInt(before)).slice(-lim)
+					: sorted.slice(-lim);
 				return json({ room: { chatId: room.chatId, name: room.name, kind: room.kind, group: room.kind === "group" || room.kind === "open", watched: room.watched }, messages: list, read: after ? undefined : "3007", kakaoUnread: 30, drafts: room.watched ? drafts : [], sends, ...(ask ? { ask } : {}) });
 			}
 			record({ method: "POST", path: p, body });
@@ -574,7 +578,7 @@ const MEDIA = (): Msg[] => [
 	mk("5007", "다라", "", at(23, 3, 5), 2, { kind: "photo", w: 320, h: 240, count: 1, expired: true }),
 	mk("5008", "가나", "", at(23, 3, 6), 2, { kind: "photo", w: 320, h: 240, count: 1, expired: false }),
 	mk("5009", "가나", "", at(23, 3, 7), 20, { kind: "emoticon", alt: "(이모티콘) 하트" }),
-	mk("5010", "다라", "나도 좋아", at(23, 3, 8), 26, { kind: "reply", quote: "점심 뭐 먹을까", quoteSender: "가나" }),
+	mk("5010", "다라", "나도 좋아", at(23, 3, 8), 26, { kind: "reply", quote: "점심 뭐 먹을까", quoteSender: "가나", srcLogId: "3002" }),
 	mk("5011", "가나", "", at(23, 3, 9), 16, { kind: "location", label: "서울 강남구", lat: 37.5, lng: 127.03 }),
 	mk("5012", "가나", "다라님이 들어왔어요", at(23, 3, 10), 0),
 	mk("5013", "가나", "알림 메시지", at(23, 3, 11), 71),
@@ -669,7 +673,7 @@ describe("카카오톡 media at desktop width", () => {
 		const e = await q<Record<string, any>>(v, `const t = id => document.querySelector('[data-log="' + id + '"]'), b = [...t("5015").querySelectorAll(".kk-emo .kk-bub")], bare = t("5009").querySelectorAll(".kk-bub");
 			return { texts: b.map(x => x.textContent), cls: b.map(x => x.classList.contains("ph")), under: b.length === 2 && b[0].getBoundingClientRect().bottom <= b[1].getBoundingClientRect().top + 1, markup: !!t("5015").querySelector("b"), bare: bare.length, bareEmo: !!t("5009").querySelector(".kk-emo") }`);
 		expect(e).toEqual({ texts: ["(이모티콘) 카카오 이모티콘", "고마워 <b>x</b>"], cls: [true, false], under: true, markup: false, bare: 1, bareEmo: false });
-		expect([s.qn, s.qt, s.rt]).toEqual(["가나에게 답글", "점심 뭐 먹을까", "나도 좋아"]);
+		expect([s.qn, s.qt, s.rt]).toEqual(["가나에게 답장", "점심 뭐 먹을까", "나도 좋아"]);
 		expect(s.loc[0]).toContain("위치: 서울 강남구");
 		expect(s.loc[1]).toBe("https://map.kakao.com/link/map/" + encodeURIComponent("서울 강남구") + ",37.5,127.03");
 		expect(s.loc.slice(2)).toEqual(["_blank", "noopener"]);
@@ -678,6 +682,38 @@ describe("카카오톡 media at desktop width", () => {
 		await shot(v, "10-desktop-media.png");
 		await run(v, `document.querySelector("#kk-tl").scrollTop = 0`);
 		await shot(v, "10-desktop-media-top.png");
+	});
+});
+
+describe("카카오톡 reply quotes", () => {
+	const v = open(1280, 800);
+
+	test("the quote names the original's author; a tap jumps to the original (loading the page around it when not shown); a source the room lacks says so", async () => {
+		useMedia();
+		msgs = [
+			...OLD,
+			...MEDIA(),
+			...Array.from({ length: 12 }, (_, i) => mk(String(7001 + i), "가나", `채움 ${i}`, at(23, 4, 0, i))),
+			mk("7100", "다라", "예전 얘기 답장", at(23, 5, 0), 26, { kind: "reply", quote: "예전 대화 2", quoteSender: "가나", srcLogId: "2003" }),
+			mk("7101", "다라", "없는 얘기 답장", at(23, 5, 1), 26, { kind: "reply", quote: "사라진 글", quoteSender: "가나", srcLogId: "777777" }),
+		];
+		drafts = [];
+		await boot(v);
+		await openRoom(v);
+		expect(await q(v, `return !!document.querySelector('[data-log="2003"]')`)).toBe(false);
+		const quote = await q<Record<string, any>>(v, `const c = document.querySelector('[data-log="7100"] .kk-quote'); return { head: c.querySelector(".kk-qn").textContent, src: c.getAttribute("data-src"), tag: c.tagName, disabled: c.disabled, label: c.getAttribute("aria-label") }`);
+		expect(quote).toEqual({ head: "가나에게 답장", src: "2003", tag: "BUTTON", disabled: false, label: "원래 메시지로 이동" });
+		await run(v, `document.querySelector('[data-log="7100"] .kk-quote').click()`);
+		await expectReq(r => r.method === "GET" && r.path.includes("around=2003"));
+		await waitFor(v, `document.querySelector('[data-log="2003"]')?.classList.contains("kk-hl")`);
+		const pos = await q<{ top: number; h: number }>(v, `const t = document.querySelector("#kk-tl").getBoundingClientRect(), m = document.querySelector('[data-log="2003"]').getBoundingClientRect(); return { top: m.top - t.top, h: t.height }`);
+		expect(pos.top).toBeGreaterThanOrEqual(0);
+		expect(pos.top).toBeLessThan(pos.h);
+		await shot(v, "15-desktop-quote-jump.png");
+
+		await run(v, `document.querySelector('[data-log="7101"] .kk-quote').click()`);
+		await waitFor(v, `document.querySelector(".snack")?.textContent.includes("원래 메시지를 찾지 못했어요")`);
+		expect(await q(v, `return !!document.querySelector('[data-log="7101"]') && KK.open === "100"`)).toBe(true);
 	});
 });
 
@@ -751,7 +787,7 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const)
 			expect(s.meName).toBe(false);
 			expect(s.img).toEqual(["/api/kakao/media/400/6003?i=0&v=full", "카카오 이모티콘", true, true]);
 			expect(s.chip).toEqual(["카카오 이모티콘"]);
-			expect([s.qn, s.qt, s.rt]).toEqual(["출장세차는 빠루빠루맨 (상도동)에게 답글", "네 가능합니다", "나중에 연락드릴게요"]);
+			expect([s.qn, s.qt, s.rt]).toEqual(["출장세차는 빠루빠루맨 (상도동)에게 답장", "네 가능합니다", "나중에 연락드릴게요"]);
 			expect(s.hScroll).toBeLessThanOrEqual(0);
 			await shot(v, `30-open-chat-${w}.png`);
 			await dark(v);

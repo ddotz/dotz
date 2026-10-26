@@ -400,13 +400,20 @@ export function createKakaoWeb(deps: WebDeps) {
 				const limit = Math.max(1, Math.min(Math.trunc(Number(url.searchParams.get("limit") ?? CHAT_PAGE)) || CHAT_PAGE, 200));
 				const before = url.searchParams.get("before") ?? undefined;
 				const after = url.searchParams.get("after") ?? undefined;
-				if ((before !== undefined && !digits(before)) || (after !== undefined && !digits(after))) return json({ error: "before / after must be a logId" }, 400);
+				const around = url.searchParams.get("around") ?? undefined;
+				if ((before !== undefined && !digits(before)) || (after !== undefined && !digits(after)) || (around !== undefined && !digits(around))) return json({ error: "before / after / around must be a logId" }, 400);
 				try {
 					const found = listed ?? (await findRoom(config!, chatId));
 					if (!found) return json({ error: "대화방을 찾지 못했어요" }, 404);
 					const { room } = found;
 					const db = await getDb(config!);
-					const list = await messages(db, chatId, limit, config!.userId ?? "", after !== undefined ? { after } : before !== undefined ? { before } : {});
+					// `around`: the page that holds a replied-to message (a quote tap): up to `limit` up to and including it, plus the `limit` after it.
+					const list = around !== undefined
+						? [
+							...(await messages(db, chatId, limit, config!.userId ?? "", { before: String(BigInt(around) + 1n) })),
+							...(await messages(db, chatId, limit, config!.userId ?? "", { after: around })),
+						]
+						: await messages(db, chatId, limit, config!.userId ?? "", after !== undefined ? { after } : before !== undefined ? { before } : {});
 					const since = now() - SEND_WINDOW_MS;
 					const ask = isWatched ? await openAsk(config!, chatId) : undefined;
 					const marks = await watermarks(db, chatId);

@@ -137,7 +137,14 @@
 .kk-bub.card.loc { flex-direction: column; align-items: flex-start; gap: 0; max-width: 260px; text-decoration: none; color: var(--kk-in-fg); }
 .kk-bub.card.loc .kk-fn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .kk-bub.reply { display: flex; flex-direction: column; gap: 4px; }
-.kk-quote { display: flex; flex-direction: column; gap: 1px; margin: -2px -4px 0; padding: 4px 8px; border-radius: 8px; background: color-mix(in srgb, currentColor 8%, transparent); font: 400 12px/17px var(--font); }
+.kk-quote { display: flex; flex-direction: column; gap: 1px; width: 100%; margin: -2px -4px 0; padding: 4px 8px; border: 0; border-radius: 8px; background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; text-align: left; font: 400 12px/17px var(--font); }
+.kk-quote.jump { cursor: pointer; }
+.kk-quote.jump:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+.kk-quote:disabled { cursor: default; }
+/* a quote tap flashes the original message (30-kakao.js kkFlash) */
+.kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker { animation: kk-hl 1.6s ease; border-radius: 10px; }
+@keyframes kk-hl { 0%, 55% { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker { animation-duration: .01s; } }
 .kk-qn { font-weight: 600; opacity: .85; }
 .kk-qt { opacity: .75; }
 .kk-qt { overflow-wrap: anywhere; }

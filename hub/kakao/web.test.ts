@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
 import { sqliteDb } from "./db.ts";
+import { replySourceLog } from "./media.ts";
 import { MAX_CHAT_CHARS, MAX_PAIRS, MAX_PROMPT_CHARS, type ModelReply } from "./draft.ts";
 import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { createDraft, listDrafts } from "./send.ts";
@@ -151,6 +152,11 @@ describe("chat", () => {
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?before=${id(3)}`)).json.messages.map((m: any) => m.logId)).toEqual([id(1), id(2)]);
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?after=${id(2)}`)).json.messages.map((m: any) => m.logId)).toEqual([id(3), id(4)]);
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?after=abc`)).status).toBe(400);
+		// a quote tap: the page that holds the replied-to logId (up to `limit` up to it, plus `limit` after it)
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?limit=2&around=${id(2)}`)).json.messages.map((m: any) => m.logId)).toEqual([id(1), id(2), id(3), id(4)]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?limit=2&around=${id(4)}`)).json.messages.map((m: any) => m.logId)).toEqual([id(3), id(4)]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?limit=2&around=${id(1)}`)).json.messages.map((m: any) => m.logId)).toEqual([id(1), id(2), id(3)]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?around=abc`)).status).toBe(400);
 
 		expect((await t.call("POST", `/api/kakao/chat/${DIRECT}/read`, { logId: id(3) })).json).toEqual({ ok: true });
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.read).toBe(id(3));
@@ -769,7 +775,7 @@ describe("media", () => {
 		// the text written with a sticker rides in media.text (the text field stays empty, as for every media type); blank text is none
 		expect(by(32)).toMatchObject({ type: 12, text: "", media: { kind: "emoticon", alt: "카카오 이모티콘", text: "고마워 :)" } });
 		expect(by(33).media).toEqual({ kind: "emoticon", alt: "하트" });
-		expect(by(27)).toMatchObject({ text: "나는 국밥", media: { kind: "reply", quoteSender: "Alex" } });
+		expect(by(27)).toMatchObject({ text: "나는 국밥", media: { kind: "reply", quoteSender: "Alex", srcLogId: "1" } });
 		expect([...by(27).media.quote].length).toBeLessThanOrEqual(81);
 		expect(by(27).media.quote.startsWith("점심 뭐 먹을까 ")).toBe(true);
 		expect(by(28).media).toEqual({ kind: "location", label: "서울 강남구", lat: 37.5, lng: 127.03 });
@@ -780,6 +786,20 @@ describe("media", () => {
 		const body = JSON.stringify(r.json);
 		for (const leak of ["kakaocdn", "https://", "http://", dir, "localFilePath", "attachment", "thumbnailUrl"]) expect(body).not.toContain(leak);
 		t.close();
+	});
+
+	test("a reply's source logId is read from the attachment JSON, top level or a src/reply container, for the quote jump", () => {
+		const src = (attachment: unknown, type = 26) => replySourceLog({ type, attachment: JSON.stringify(attachment) });
+		expect(src({ src_logId: 4242 })).toBe("4242");
+		expect(src({ srcLogId: "9007199254740993" })).toBe("9007199254740993");
+		expect(src({ src: { src_logId: 7 } })).toBe("7");
+		expect(src({ reply: { srcLogId: "8" } }, 26)).toBe("8");
+		expect(src({})).toBeUndefined();
+		expect(src({ src_logId: 0 })).toBeUndefined();
+		expect(src({ src_logId: -3 })).toBeUndefined();
+		expect(src({ src_logId: "abc" })).toBeUndefined();
+		expect(src({ attachment: { src_logId: 5 } })).toBeUndefined();
+		expect(src({ src_logId: 5 }, 1)).toBeUndefined();
 	});
 
 	test("the media route fetches the stored URL server-side, without cookies or auth, and streams only image/video/audio back", async () => {

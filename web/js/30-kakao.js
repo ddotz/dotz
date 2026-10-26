@@ -118,12 +118,52 @@ function kkFileNode(m, md) {
     el("span", { class: "kk-fb" }, el("span", { class: "kk-fn", title: md.name, text: md.name }), sub ? el("span", { class: "kk-sub", text: sub }) : null),
     md.local ? el("a", { class: "btn tonal kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: "열기" }) : el("span", { class: "kk-sub kk-nopc", text: "PC에 없음" }));
 }
-// Like KakaoTalk: "<author of the original>에게 답글" over the quoted original, then the reply's own text.
+// Like KakaoTalk: "<author of the original>에게 답장" over the quoted original, then the reply's own text. The quote is a button that jumps to
+// the original (kkJump), when the attachment names its logId.
 function kkReplyNode(m, md) {
   const { text } = kkBody(m);
   return el("div", { class: "kk-bub reply" },
-    el("div", { class: "kk-quote" }, el("span", { class: "kk-qn", text: md.quoteSender ? `${md.quoteSender}에게 답글` : "답글" }), el("span", { class: "kk-qt", text: md.quote })),
+    el("button", { class: `kk-quote${md.srcLogId ? " jump" : ""}`, type: "button", disabled: !md.srcLogId, "data-src": md.srcLogId || null, "aria-label": md.srcLogId ? "원래 메시지로 이동" : null, onclick: ev => { ev.stopPropagation(); kkJump(md.srcLogId); } },
+      el("span", { class: "kk-qn", text: md.quoteSender ? `${md.quoteSender}에게 답장` : "답장" }), el("span", { class: "kk-qt", text: md.quote })),
     el("div", { class: "kk-rt", text }));
+}
+// The original message of a quote: scroll it into view and flash it briefly. When the page does not hold it, the server sends the page
+// around that logId (?around=); a logId the room does not have says so with a toast.
+const kkFlash = node => {
+  node.classList.remove("kk-hl");
+  void node.offsetWidth;
+  node.classList.add("kk-hl");
+  clearTimeout(node._hlT);
+  node._hlT = setTimeout(() => node.classList.remove("kk-hl"), 1800);
+};
+function kkJump(src) {
+  src = String(src || "").trim();
+  if (!src || !KK.open) return;
+  const find = () => [...kkTl.querySelectorAll("[data-log]")].find(n => n.dataset.log === src);
+  let node = find();
+  if (!node) {
+    const id = KK.open;
+    api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}&around=${enc(src)}`).then(d => {
+      if (KK.open !== id) return;
+      // The page around the original is merged into what the room already shows (a jump never drops the current view).
+      const have = new Set(KK.msgs.map(x => x.logId)), got = Array.isArray(d.messages) ? d.messages : [];
+      KK.msgs = [...KK.msgs, ...got.filter(x => !have.has(x.logId))].sort((a, b) => (kkGt(a.logId, b.logId) ? 1 : kkGt(b.logId, a.logId) ? -1 : 0));
+      if (d.room) KK.room = d.room;
+      if (Array.isArray(d.drafts)) { KK.drafts = d.drafts; KK.ask = kkAskOf(d); }
+      if (Array.isArray(d.sends)) KK.sends = d.sends;
+      if (d.read !== undefined) KK.read = d.read;
+      kkPaintTl(false);
+      const hit = find();
+      if (!hit) { toast("원래 메시지를 찾지 못했어요", true); return; }
+      hit.scrollIntoView({ block: "center" });
+      kkFlash(hit);
+      kkSyncStick();
+    }, e => toast(e.message, true));
+    return;
+  }
+  node.scrollIntoView({ block: "center" });
+  kkFlash(node);
+  kkSyncStick();
 }
 // A sticker: its image from the media route when the server has one (md.image), else (or when it cannot be fetched) one chip with its name.
 // The text written with it sits in a bubble under it.
@@ -381,7 +421,7 @@ function kkMsgNode(m, first, last) {
   // On the time side of the bubble: KakaoTalk's yellow number (members who have not read it yet) above the time; nothing when 0.
   const n = m.unread | 0, meta = n > 0 || last ? el("span", { class: "kk-meta" }, n > 0 ? el("span", { class: "kk-rd", "aria-label": `아직 안 읽은 사람 ${n}명`, text: String(n) }) : null, last ? el("span", { class: "kk-time", text: kkTime(m.sentAt) }) : null) : null;
   if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, meta, bub));
-  return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-log": m.logId },
+  return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-log": m.logId, "data-author": m.authorId || null },
     group ? (first ? kkAvatar(m.sender) : el("span", { class: "kk-av sp", "aria-hidden": "true" })) : null,
     el("div", { class: "kk-mb" }, group && first ? el("div", { class: "kk-name", text: m.sender || "알 수 없음" }) : null, el("div", { class: "kk-line" }, bub, meta)));
 }
