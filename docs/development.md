@@ -52,5 +52,17 @@ Check: `ps aux | grep hub/main.ts` shows `~/.local/share/dotz/hub/main.ts`, and 
 ## Tests and the update gate
 
 - `bun run test` runs the whole suite in parallel (`bun test --parallel`), about 25 s on an M-series Mac.
-- The update gate (`hub/update-gate.json`, read from the version being installed) runs `bun test --parallel=4 --timeout=20000`
-  within 20 minutes. A new test must pass in a folder without `.git` (a tarball install) and under parallel load.
+- Before every push, run the full gate on both the MacBook and the Mac mini: `bun test ./hub/update-gate-run.ts` (the whole suite in
+  parallel, failed files retried alone). Both must exit 0. The machines differ in macOS and system SQLite (macOS 26 / SQLite 3.51 vs
+  macOS 27 / 3.54), and a change that passes on only one of them breaks updates on the other. A new test must pass in a folder without
+  `.git` (a tarball install) and under parallel load.
+- Owner machines do not run the suite on update. The update gate (`hub/update-gate.json`, read from the version being installed) is
+  `bun test ./hub/update-smoke-run.ts` (5-minute limit, under a second in practice). It starts that version's gateway on a throwaway data dir,
+  HOME and port, with no Discord, no agent and no tailscale, and checks `/api/health`, the web page with its scripts and styles, and
+  `/api/state` and `/api/notices`.
+- When the running gateway applies an update, it writes `<data>/update-pending.json` and starts a detached watchdog from a copy in the data
+  folder (`hub/update-watchdog.ts`). If the restarted gateway has not marked the update healthy within 3 minutes (it does so after
+  45 s up while `/api/health` answers), the watchdog rolls back once: `git reset --keep <from>`, or swapping `<dir>` and `<dir>.prev`. It then
+  stops the gateway process so launchd/systemd starts the old code, which posts "업데이트 <to> 가 시작되지 않아 <from>으로 되돌렸어요" to alert
+  and does not auto-apply that version again. The watchdog log lines are in `<data>/logs/update-*.log`. An update applied from a terminal
+  (`bun hub/selfupdate.ts --apply`) leaves the marker but starts no watchdog.
