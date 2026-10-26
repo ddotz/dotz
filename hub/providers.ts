@@ -1,7 +1,8 @@
 // Model providers as the gateway sees them, all kept in the runtime's own credential store: OAuth logins (`omp login`,
 // started and finished through the gateway), API keys (`omp auth import`), sign-out (`omp auth-broker logout`), plus
 // the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
-import { copyFileSync, existsSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { OMP, writeAtomic } from "./config.ts";
 import { label } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
@@ -45,12 +46,26 @@ export async function saveProviderKey(provider: string, rawKey: string): Promise
 	const key = rawKey.trim();
 	if (!PROVIDER_ENV[provider]) throw new ControlError(`"${provider}"은(는) API 키로 추가할 수 없는 공급자예요`);
 	if (key.length < 8 || key.length > 512 || /\s/.test(key)) throw new ControlError("키 형식이 올바르지 않아요 (공백 없이 8~512자)");
-	const proc = Bun.spawn([OMP, "auth", "import", "-"], { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
-	proc.stdin.write(JSON.stringify({ version: 1, credentials: [{ provider, credential: { type: "api_key", key } }] }));
-	await proc.stdin.end();
-	if ((await proc.exited) !== 0) throw new ControlError("키를 저장하지 못했어요", 500);
+	// OmO reads keys from its own auth.json (what its RPC login_api_key writes); `omp auth import` only fills omp's store, so on an OmO
+	// install a key saved there never showed up or got used.
+	if (usesOmo()) saveOmoKey(provider, key);
+	if (usesOmp()) {
+		const proc = Bun.spawn([OMP, "auth", "import", "-"], { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
+		proc.stdin.write(JSON.stringify({ version: 1, credentials: [{ provider, credential: { type: "api_key", key } }] }));
+		await proc.stdin.end();
+		if ((await proc.exited) !== 0) throw new ControlError("키를 저장하지 못했어요", 500);
+	}
 	invalidate();
 	return mask(key);
+}
+
+// One API-key entry in OmO's auth.json, the same shape OmO writes ({ type: "api_key", key }); a copy of the file is kept first (0600).
+export function saveOmoKey(provider: string, key: string, now = Date.now()): void {
+	const file = authFile();
+	const auth = omoAuth() ?? {};
+	if (existsSync(file)) copyFileSync(file, `${file}.bak-${now}`);
+	mkdirSync(dirname(file), { recursive: true });
+	writeAtomic(file, `${JSON.stringify({ ...auth, [provider]: { type: "api_key", key } }, null, 2)}\n`, 0o600);
 }
 
 // Provider keys set in the gateway's own environment, redacted from anything shown to the owner.
@@ -350,6 +365,9 @@ function loginOf(provider: string, loginId: string): Login {
 export async function startLogin(provider: string): Promise<{ login_id: string } & LoginView> {
 	if (!PROVIDER_ID.test(provider) || !(await loginProviders()).some(p => p.id === provider)) throw new ControlError(`"${provider}"은(는) 로그인할 수 없는 공급자예요`, 404);
 	if (login && !login.exited) throw new ControlError(`이미 진행 중인 로그인이 있어요 (${login.provider}). 먼저 취소해 주세요`, 409);
+	// `omp login` writes omp's store; an OmO-only install never reads it, so the login looked done and changed nothing. OmO logs in from its
+	// own prompt until dotz drives OmO's RPC login (login_start).
+	if (!usesOmp()) throw new ControlError(`이 컴퓨터는 OmO로 돌아요. 이 컴퓨터의 터미널에서 omo를 열고 /login ${provider === "anthropic" ? "anthropic" : provider}를 실행해 주세요`, 409);
 	const proc = Bun.spawn([OMP, "login", provider], { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, BROWSER: "true" } });
 	const l: Login = { id: crypto.randomUUID(), provider, proc, out: "", lastOutAt: Date.now(), exited: false, status: "waiting", cancelled: false, timer: setTimeout(() => killLogin(l, "시간이 지나 로그인이 취소됐어요"), LOGIN_TTL_MS) };
 	l.timer.unref();
