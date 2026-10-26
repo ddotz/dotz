@@ -36,8 +36,9 @@ function prTryFollow() {
   if (!p || !p.online) { toast(p ? `${p.name}에 연결할 수 없어요` : "그 컴퓨터를 찾지 못했어요", true); history.replaceState(history.state, "", location.pathname + location.hash); return; }
   const q = new URLSearchParams({ did: DEVICE_ID });
   for (const k of ["n", "m"]) if (u.searchParams.has(k)) q.set(k, u.searchParams.get(k));
-  location.replace(`${p.url}/${q.size ? `?${q}` : ""}${u.hash}`);
+  prGo(`${p.url}/${q.size ? `?${q}` : ""}${u.hash}`, true);
 }
+
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (typeof d.follow === "string") { prFollowHref = d.follow; prTryFollow(); } });
 
 // Frames this gateway forwards from the other computers' event streams (hub/peer-stream.ts), so the page hears them without leaving its own origin:
@@ -89,11 +90,48 @@ function prUrl(p, extra = "") {
   const v = parseHash().view;
   return `${p.url}/${extra}${v && v !== "chat" && views.includes(v) ? `#${v}` : ""}`;
 }
+// The installed app (iPhone / Android home-screen app) cannot leave its own address: the phone opens any other origin in a browser view
+// with its own bar, outside the app, and the layout breaks. So there the other computer opens inside this app, in a full-screen frame
+// (same tailnet login, no cookies involved); the back gesture or picking this computer again closes it. A browser tab keeps going to
+// the other address as before (its own tab, login and push).
+const PR_EMBED = () => typeof isStandalone === "function" && isStandalone() && window.top === window.self;
+const prEmbedded = window.top !== window.self;
+const PRF = { node: null, ov: null };
+function prGo(href, replace = false) {
+  if (!PR_EMBED()) { if (replace) location.replace(href); else location.href = href; return; }
+  if (!PRF.node) {
+    PRF.node = el("div", { class: "pr-frame" }, el("iframe", { title: "다른 컴퓨터", allow: "clipboard-write; fullscreen" }));
+    document.body.append(PRF.node);
+    PRF.ov = ovOpen(() => prFrameClose(false));
+  }
+  PRF.node.firstElementChild.src = href;
+}
+function prFrameClose(viaHistory = true) {
+  if (!PRF.node) return;
+  PRF.node.remove(); PRF.node = null;
+  if (viaHistory && PRF.ov) ovDone(PRF.ov);
+  PRF.ov = null;
+  prLoad();
+}
+// From the computer opened in the frame: its own switcher asks this app to change the frame or close it. Only computers in this
+// gateway's own list are followed (never a free URL).
+window.addEventListener("message", ev => {
+  const d = ev.data || {};
+  if (!PRF.node || d.dotz !== "peer-pick" || typeof d.url !== "string") return;
+  if (!PR.list.some(p => p.url === ev.origin)) return;
+  const p = PR.list.find(x => x.url === d.url);
+  if (!p) return;
+  if (p.self) prFrameClose(); else prGo(prUrl(p, `?did=${enc(DEVICE_ID)}`));
+});
+
 function prPick(p) {
+  // inside another computer's app frame: the app around it does the switch (back to itself, or to a third computer)
+  if (prEmbedded && !p.self) { prClose(false); window.parent.postMessage({ dotz: "peer-pick", url: p.url }, "*"); return; }
   if (p.self) { prClose(); return; }
   if (!p.online) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
   toast(`${p.name}(으)로 넘어가요`);
-  location.href = prUrl(p, `?did=${enc(DEVICE_ID)}`);   // the device id goes along: the push subscriptions on both computers become one device
+  prClose(false);
+  prGo(prUrl(p, `?did=${enc(DEVICE_ID)}`));   // the device id goes along: the push subscriptions on both computers become one device
 }
 
 function prSheet() {
