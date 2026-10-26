@@ -144,7 +144,8 @@ async function loadQuota() {
   clearTimeout(quotaTimer);
   const box = $("#usage");
   let q;
-  try { q = await api("/api/quota"); }
+  // the cards are titled by provider name (providerName reads P), so a direct open of 사용량 loads the providers too
+  try { [q] = await Promise.all([api("/api/quota"), P ? null : loadProviderData().catch(() => null)]); }
   catch (e) { clear(box).append(emptyNode("사용량을 불러오지 못했어요")); return; }
   noteQuota(q);
   if (current === "usage") quotaTimer = setTimeout(loadQuota, 60000);
