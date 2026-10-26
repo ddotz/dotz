@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
-import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, parseDraftApproval, quotedDraft } from "./draft-approval.ts";
+import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, parseDraftApproval, quotedDraft, refreshDraft } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
@@ -98,6 +98,28 @@ const launchTitles = new Map<string, string>();
 let replaying = false;
 
 const save = () => writeAtomic(paths.notices, `${JSON.stringify(items, null, 1)}\n`);
+
+// Every stored send-approval card is re-read with the current rules on start, so a fix to how drafts are shown reaches the cards made
+// before it (owner 2026-10-26). Silent: nothing is posted or asked; only the stored card changes. Returns how many changed.
+export function refreshNoticeDrafts(list: Notice[]): number {
+	let n = 0;
+	for (const it of list) {
+		const d = it.decision?.draft;
+		if (!d) continue;
+		const r = refreshDraft(d, it.text);
+		if (JSON.stringify(r) === JSON.stringify(d)) continue;
+		it.decision!.draft = r;
+		n++;
+	}
+	return n;
+}
+{
+	const n = refreshNoticeDrafts(items);
+	if (n) {
+		save();
+		log(`notices: ${n} draft card(s) re-read with the current rules`);
+	}
+}
 export const unreadCount = () => items.reduce((n, i) => n + (i.read || i.dismissed || appBlocked(i) ? 0 : 1), 0);
 
 // The 감시 소식 feed stays small: each watch keeps its newest WATCH_KEEP reports and none older than WATCH_DAYS, dropped when a report is written and
