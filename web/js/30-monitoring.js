@@ -340,7 +340,15 @@ function monRunNode(it) {
 const monRunNow = (btn, m) => busy(btn, async () => {
   await api(`/api/watches/${enc(m.watch)}/run`, "POST", {});
   toast("지금 확인해요");
-  setTimeout(() => { loadMonitors(); pqSoon(); }, 5000);
+  // the check runs behind the request: re-read until its result lands (a new last run), up to a minute
+  const was = m.last_run;
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    await loadMonitors(); pqSoon();
+    // a peer's monitor is re-read through pqSoon and has no local row to compare: a few rounds are enough there
+    const now = NM.items.find(x => x.watch === m.watch);
+    if (now ? now.last_run && now.last_run !== was : i >= 3) break;
+  }
 });
 // An item reads like a chat: its reports and mails oldest to newest, a monitor's latest run last. The 감시 소식 feed is a list, not a chat: newest on top.
 const monFeed = it => it.key === "notice";
