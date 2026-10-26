@@ -434,11 +434,16 @@ function shutdown(): Promise<never> {
 // Restart the gateway the way 오모냥's herdr-restart does: wait until the orchestrator and every lane are idle, task
 // workers included, then exit; launchd (KeepAlive) starts the new code. Called during an orchestrator turn, it waits for
 // that turn to end, so the answer goes out first. restart.ts: a busy lane is never killed, requests are coalesced.
+const DEFER_GRACE_MS = 5 * 60_000;
 function busyNow(): string[] {
 	// The orchestrator's background task workers die with its process. OmO sends no worker frames, so they are counted from its
 	// task store (hub/bgwork.ts), for the orchestrator and every lane; a request deferred to one ([later]) also holds the restart.
 	const running = bgWork.running();
-	const workers = running ? `orchestrator background workers (${running})` : queue.waitingOnWorkers() ? "orchestrator background workers" : "";
+	// With no worker running, a deferred request holds the restart only for the few minutes its worker needs to show up in the task store:
+	// an older one whose answer went elsewhere held every restart for an hour (2026-10-26, updates received but never applied), and a
+	// restart replays the open prompts anyway.
+	const justDeferred = queue.deferredOpen().some(d => Date.now() - d.at <= DEFER_GRACE_MS);
+	const workers = running ? `orchestrator background workers (${running})` : justDeferred ? "orchestrator background workers" : "";
 	const laneWorkers = (l: { sessionFile?: string }) => runningOmoWorkers(l.sessionFile);
 	return [
 		orchBusy() ?? "",
