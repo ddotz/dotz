@@ -314,12 +314,29 @@ export const isEmoticon = (type: number) => EMOTICON_TYPES.includes(type);
 export const REPLY_TYPE = 26;
 // A message that says something in words: a text message, a reply, or an emoticon that came with text.
 export const hasWords = (m: { type: number; text: string }) => m.type === TEXT_TYPE || (m.type === REPLY_TYPE && m.text.trim() !== "") || (isEmoticon(m.type) && m.text.trim() !== "");
-// What a reader (draft prompt, cli read) sees for a message: its text, "(이모티콘) <text>" for an emoticon with text, else a placeholder.
+// Some not-yet-known types keep an attachment record in the message column; it is not words for people and never reaches a reader.
+export const looksLikeRecord = (text: string): boolean => {
+	if (!/^\s*[{[]/.test(text)) return false;
+	try {
+		const v = JSON.parse(text);
+		return !!v && typeof v === "object";
+	} catch {
+		return false;
+	}
+};
+
+const PICTURE_TYPES = new Set([2, 27, 3, ...EMOTICON_TYPES, 4, 5, 18, 16]);
+// What a reader (draft prompt, cli read, a room list line) sees for a message: its text, "(이모티콘) <text>" for an emoticon with text,
+// else a placeholder; an unknown type whose body is a record says so instead of printing the record.
 export const readText = (m: { type: number; text: string }): string => {
 	if (m.type === TEXT_TYPE || (m.type === REPLY_TYPE && m.text.trim())) return m.text;
-	if (!isEmoticon(m.type)) return "(사진·파일)";
+	if (isEmoticon(m.type)) {
+		const t = m.text.trim();
+		return t ? `(이모티콘) ${t}` : "(이모티콘)";
+	}
+	if (PICTURE_TYPES.has(m.type)) return "(사진·파일)";
 	const t = m.text.trim();
-	return t ? `(이모티콘) ${t}` : "(이모티콘)";
+	return t && !looksLikeRecord(t) ? t : "(지원하지 않는 메시지)";
 };
 
 // Other tooling stores sentAt in seconds (kakaocli kakaoDate); a millisecond value is accepted too.

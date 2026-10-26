@@ -10,9 +10,9 @@ import { featureEnabled } from "../app-feature-flags.ts";
 import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
 import { owedMessage } from "./address.ts";
-import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, roomKinds, roomShown, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
+import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, readText, roomKinds, roomShown, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, draftParts, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
-import { fetchMedia, mediaOf, mediaTarget, replySource, serveLocalFile, showsText } from "./media.ts";
+import { bodyText, fetchMedia, mediaOf, mediaTarget, replySource, serveLocalFile } from "./media.ts";
 import type { AxStep, Focus } from "./room.ts";
 import { createDraft, draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
@@ -373,6 +373,23 @@ export function createKakaoWeb(deps: WebDeps) {
 				return json({ on: true, rooms: [], error: "카톡 데이터를 읽지 못했어요. 전체 디스크 접근 권한과 카카오톡 로그인을 확인해 주세요" });
 			}
 		}
+		// The newest message of one room: what a room row's preview, time and unread number become on a kakao event, without re-reading the whole list.
+		if (area === "rooms" && parts.length === 5 && parts[4] === "latest" && method === "GET") {
+			if (!on) return json(OFF, 409);
+			const chatId = decodeURIComponent(parts[3]!);
+			if (!digits(chatId)) return json({ error: "chatId must be a number" }, 400);
+			try {
+				const found = (await rooms(await getDb(config!), chatId))[0];
+				if (!found || !eligible([found], config!).length) return json({ error: "대화방을 찾지 못했어요" }, 404);
+				const db = await getDb(config!);
+				const m = (await messages(db, chatId, 1, config!.userId ?? ""))[0];
+				if (!m) return json({ logId: "", text: "", at: 0, unread: 0 });
+				const chars = [...readText(m).replace(/\s+/g, " ").trim()];
+				return json({ logId: m.logId, text: chars.length > HINT_MAX ? `${chars.slice(0, HINT_MAX - 1).join("").trimEnd()}…` : chars.join(""), at: sentAtMs(m.sentAt), unread: found.unread });
+			} catch {
+				return json({ error: "카톡 데이터를 읽지 못했어요" }, 502);
+			}
+		}
 		if (area === "rooms" && parts.length === 4 && method === "PUT") {
 			if (!on) return json(OFF, 409);
 			const chatId = decodeURIComponent(parts[3]!);
@@ -440,7 +457,7 @@ export function createKakaoWeb(deps: WebDeps) {
 						// The body of a photo or file message is an attachment record, not text: it goes out as a safe `media` object (no URL, no local path).
 						messages: list.map(m => {
 							const media = mediaOf(m, now(), names);
-							return { id: messageId(m), collector, logId: m.logId, authorId: m.authorId, sender: m.sender, text: showsText(m.type) ? m.text : "", type: m.type, sentAt: sentAtMs(m.sentAt), fromMe: m.fromMe, unread: unreadCount(marks, m.logId, m.authorId, config!.userId ?? ""), ...(media ? { media } : {}) };
+							return { id: messageId(m), collector, logId: m.logId, authorId: m.authorId, sender: m.sender, text: bodyText(m), type: m.type, sentAt: sentAtMs(m.sentAt), fromMe: m.fromMe, unread: unreadCount(marks, m.logId, m.authorId, config!.userId ?? ""), ...(media ? { media } : {}) };
 						}),
 						read: readJsonFile<Record<string, string>>(readsFile, {})[chatId] ?? null,
 						kakaoUnread: room.unread,
