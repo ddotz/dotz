@@ -201,26 +201,26 @@ function prjRow(r) {
   const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
   const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
   const line = st.lane ? `${st.word} · ${st.lane.title || st.lane.name}` : st.k === "done" ? `끝남 · 목표를 모두 마쳤어요` : st.word;
-  return el("button", { class: `pj-row${sel ? " on" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
-    el("span", { class: "pj-b" },
-      el("span", { class: "pj-1" }, el("span", { class: "pj-n", text: prjTitle(p) }), unread ? el("span", { class: "pj-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "pj-at", text: prjAgo(at) })),
-      el("span", { class: "pj-s" }, el("span", { class: `dot ${st.tone}` }), el("span", { class: "pj-sw", text: line })),
-      ms.length ? el("span", { class: "pj-p" }, el("span", { class: "pj-bar", role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "pj-pn", text: `${done}/${ms.length}` })) : null));
+  return el("button", { class: `pl-row${sel ? " on" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
+    el("span", { class: "pl-b" },
+      el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) }), unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "pl-at", text: prjAgo(at) })),
+      el("span", { class: "pl-s" }, el("span", { class: `dot ${st.tone}` }), el("span", { class: "pl-sw", text: line })),
+      ms.length ? el("span", { class: "pl-p" }, el("span", { class: `pl-bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "pl-pn", text: `${done}/${ms.length}` })) : null));
 }
 function pjSearch() {
-  return el("label", { class: "pj-search" }, icon("search"),
-    el("input", { id: "pj-q", type: "search", placeholder: "프로젝트 검색", "aria-label": "프로젝트 검색", autocomplete: "off", value: PJ.q, oninput: ev => { PJ.q = ev.target.value; pjPaintRows(); } }));
+  return el("label", { class: "pl-search" }, icon("search"),
+    el("input", { id: "pl-q", type: "search", placeholder: "프로젝트 검색", "aria-label": "프로젝트 검색", autocomplete: "off", value: PJ.q, oninput: ev => { PJ.q = ev.target.value; pjPaintRows(); } }));
 }
 function pjChips(counts) {
-  return el("div", { class: "pj-chips", role: "tablist", "aria-label": "프로젝트 보기" }, ...PJ_VIEWS.map(([k, label]) =>
+  return el("div", { class: "pl-chips", role: "tablist", "aria-label": "프로젝트 보기" }, ...PJ_VIEWS.map(([k, label]) =>
     el("button", { class: `cchip mr-f${PJ.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(PJ.view === k), "data-view": k, onclick: () => { PJ.view = k; PJ.more = PJ_PAGE; pjPaintChips(); pjPaintRows(); } },
       label, counts[k] ? el("span", { class: "mr-fn", text: String(counts[k]) }) : el("span", { class: "mr-fn", hidden: true }))));
 }
 function pjShell() {
-  return el("div", { class: "pj", id: "pj-shell" }, el("div", { class: "pj-top" }, pjSearch(), el("div", { id: "pj-chips" })), el("div", { class: "pj-list", id: "pj-list" }));
+  return el("div", { class: "pl", id: "pl-shell" }, el("div", { class: "pl-top" }, pjSearch(), el("div", { id: "pl-chips" })), el("div", { class: "pl-list", id: "pl-list" }));
 }
 function pjPaintChips() {
-  const box = $("#pj-chips");
+  const box = $("#pl-chips");
   if (!box) return;
   const counts = pjChipCounts(projRows((PRJ && PRJ.projects) || [])), had = $(".mr-f", box);
   if (!had) { clear(box).append(pjChips(counts)); return; }
@@ -232,12 +232,12 @@ function pjPaintChips() {
   }
 }
 function pjPaintRows() {
-  const box = $("#pj-list");
+  const box = $("#pl-list");
   if (!box) return;
   const rows = pjFiltered(), page = rows.slice(0, PJ.more), rest = rows.length - page.length;
   const builtin = ((PRJ && PRJ.projects) || []).find(p => p.builtin), searching = !!PJ.q.trim();
   const showBuiltin = !!builtin && PJ.view === "all" && (!searching || "커스텀".includes(PJ.q.trim().toLowerCase()));
-  const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjMiles(r.p).map(m => m.done), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" && ppCur, showBuiltin]);
+  const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjMiles(r.p).map(m => m.done), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", showBuiltin]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   const nodes = page.map(prjRow);
@@ -245,9 +245,9 @@ function pjPaintRows() {
   if (!rows.length) nodes.push(el("div", { class: "cv-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
   // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
   if (showBuiltin) {
-    nodes.push(el("div", { class: "pj-gh", role: "presentation", text: "내 설정" }));
-    nodes.push(el("button", { class: `pj-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
-      el("span", { class: "pj-b" }, el("span", { class: "pj-1" }, el("span", { class: "pj-n", text: builtin.name })), el("span", { class: "pj-s" }, el("span", { class: "pj-sw", text: "내가 바꾼 것을 봐요" })))));
+    nodes.push(el("div", { class: "pl-gh", role: "presentation", text: "내 설정" }));
+    nodes.push(el("button", { class: `pl-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
+      el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" })))));
   }
   clear(box).append(...nodes);
 }
