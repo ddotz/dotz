@@ -60,21 +60,105 @@ function paintAttn() {
   toastAttn();
 }
 // A target that starts needing the owner pops one toast (tap = switch to it): a lane question, a rate limit, or the main chat
-// finishing unseen (a lane's finished turn already has its report toast). On page load only open questions pop.
+// finishing unseen (a lane's finished turn already has its report toast). On page load only open questions pop, and several of them are
+// one toast with their count that opens 홈 (they are all rows of 답변 필요 there), not a stack of cards over the screen.
 const ATTN_LAST = {};
 let attnPainted = false;
 function toastAttn() {
   if (!S) return;
+  const first = [];
   for (const t of liveTargets()) {
     const k = attnRaw(t), was = ATTN_LAST[t] || "";
     ATTN_LAST[t] = k;
     if (!k || k === was || watching(t) || (k === "done" && isLaneT(t)) || (!attnPainted && k !== "ask")) continue;
+    if (!attnPainted) { first.push(t); continue; }
+    attnToast(t, k);
+  }
+  if (first.length === 1) attnToast(first[0], "ask");
+  else if (first.length) {
+    const box = document.querySelector(".ntf-box"), before = box && box.firstElementChild;
+    const names = first.map(targetName), newest = first.map(t => targetInfo(t).ask.at).sort().pop();
+    notify({ kind: "needs", target: "home", tone: "warn", title: `답변 필요 ${first.length}개`, ts: newest, text: `${names.slice(0, 2).join(", ")}${names.length > 2 ? ` 외 ${names.length - 2}개` : ""}가 답을 기다려요` });
+    const c = document.querySelector(".ntf-box .ntf");
+    if (c && c !== before) { c.dataset.ny = "home"; attnHomeClick(); }
+  }
+  attnPainted = true;
+}
+// The bundled toast opens 홈 instead of one conversation (capture phase: before the card's own open-by-notice handler). Installed with the first one.
+let attnHomeOn = false;
+function attnHomeClick() {
+  if (attnHomeOn) return;
+  attnHomeOn = true;
+  document.addEventListener("click", ev => {
+    const c = ev.target.closest && ev.target.closest('.ntf[data-ny="home"]');
+    if (!c || ev.target.closest(".x")) return;
+    ev.stopPropagation();
+    c.querySelector(".x").click();
+    go("home");
+  }, true);
+}
+function attnToast(t, k) {
     const ask = targetInfo(t).ask;
     notify({ kind: "needs", target: t, open: t, ask: k === "ask", tone: "warn", title: `${targetName(t)} · ${attnLabel(k)}`,
       ts: k === "ask" ? ask.at : k === "done" ? DONE[t] : new Date().toISOString(),
       text: k === "ask" ? ask.text : k === "limit" ? "사용량 한도로 대기 중이에요" : "답을 마쳤어요. 확인해 주세요" });
+}
+
+/* ---------- 홈 답변 필요: only what the owner must do, the most important first ---------- */
+// Owner 2026-10-26: what to do comes first, system notices mostly run on their own, ask as little as possible and only critical ones loudly.
+// Each item: { rank, crit, act, n (a notice) | t (a session with a question) }. rank 0 critical (a login only the owner can do, a gateway
+// failure that needs his choice), 1 send approval, 2 another decision, 3 a session question, 4 a loose question of the assistant.
+// A gateway [ask] that is not critical is a system notice it handles: not asked here, it is news in the 알림 card (08-home.js hcFyi).
+// A finished turn (결과 확인) and a rate limit (한도 걸림) are not decisions: the assistant card and 지금 진행 중 show them.
+const NY = { top: 5, more: false };
+const NY_LOGIN = /로그인|인증|2단계|OTP|비밀번호/i;
+function nyOf(n) {
+  const d = ntOpenDec(n) ? n.decision : null, gw = n.by === "gateway", text = `${n.title || ""}\n${n.text || ""}`;
+  if (d && d.to.startsWith("auth:")) return { n, rank: 0, crit: true, act: "로그인" };
+  if (d && d.draft) return { n, rank: 1, crit: false, act: "보내기 확인" };
+  if (gw && NY_LOGIN.test(text)) return { n, rank: 0, crit: true, act: "로그인" };
+  if (gw && (d || n.tone === "fail")) return { n, rank: 0, crit: true, act: "선택" };
+  if (gw) return null;
+  return d ? { n, rank: 2, crit: n.tone === "fail", act: "선택" } : { n, rank: 4, crit: false, act: "답변" };
+}
+// A question waiting on the owner that is a gateway notice it handles itself (not listed in 답변 필요).
+const nyHandled = n => ntNeeds(n) && !ntOpenDec(n) && !ntLinkedDec(n) && !nyOf(n);
+function nyList() {
+  const lanes = ((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`);
+  const asks = lanes.filter(t => (askOf(t) || attnKind(t) === "ask") && !ntHasDecision(t)).map(t => ({ t, rank: 3, crit: false, act: "답변", at: (targetInfo(t).ask || {}).at || "" }));
+  const loose = ntLooseAsks().filter(n => !asks.some(x => x.t === (n.src || n.open)));
+  const items = [...ntDecisions(), ...loose].map(nyOf).filter(Boolean).concat(asks);
+  const when = x => x.n ? ntAt(x.n) : Date.parse(x.at) || 0;
+  return items.sort((a, b) => a.rank - b.rank || when(b) - when(a));
+}
+// One row per item; the send approvals of one app stay one row (30-notices.js ntHomeRows). The label on the right is the action.
+function nyRows(items) {
+  const out = [];
+  const mark = (node, it) => {
+    for (const hs of node.querySelectorAll(".hrx-m:not(.ntg-h) .hs")) hs.textContent = it.act;
+    for (const b of node.querySelectorAll(".hrx-m:not(.ntg-h)")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(/답변 필요$/, it.crit ? `중요 · ${it.act}` : it.act));
+    if (it.crit) { node.classList.add("crit"); for (const e of node.querySelectorAll(".hs, .dot")) e.classList.add("err"); }
+    return node;
+  };
+  for (let i = 0; i < items.length;) {
+    const it = items[i];
+    if (it.rank === 1) {
+      const run = [];
+      while (i < items.length && items[i].rank === 1) run.push(items[i++]);
+      const nodes = ntHomeRows(run.map(x => x.n));
+      for (const node of nodes) out.push({ node: mark(node, it), count: node.matches(".ntg") ? run.filter(x => ntGroupKey(x.n) === node.dataset.group).length : 1 });
+      continue;
+    }
+    out.push({ node: it.n ? mark(ntHomeRow(it.n), it) : homeNowRow(it.t, it.act, "att"), count: 1 });
+    i++;
   }
-  attnPainted = true;
+  return out;
+}
+// The list of the 홈 card: the first NY.top rows, then 더 보기 with how many items are behind it.
+function nyListNode(items) {
+  const rows = nyRows(items), shown = NY.more ? rows : rows.slice(0, NY.top), rest = rows.slice(shown.length).reduce((c, r) => c + r.count, 0);
+  const toggle = rows.length > NY.top ? el("button", { class: "ny-more", type: "button", "data-k": "ny-more", "aria-expanded": String(NY.more), onclick: () => { NY.more = !NY.more; renderHomeNow(); } }, NY.more ? "접기" : `더 보기 · ${rest}개`) : null;
+  return el("div", { class: "hn", "data-k": "needs" }, ...shown.map(r => r.node), ...(rows.length ? [] : [el("div", { class: "empty", text: "답변할 항목이 없어요" })]), toggle);
 }
 function attnChanged() {
   renderBars();

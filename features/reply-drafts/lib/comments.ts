@@ -4,7 +4,7 @@
 // Nothing is posted here: the adapter only stages a pending reply, and the source's own approve command checks the user's pick.
 import { draftApprovalBlock } from "../../../hub/draft-approval.ts";
 import { precheck, reviseReply, type ReplyItem } from "../../../hub/reply-draft.ts";
-import { buildDraft, type FlowDeps, refineAfterCorrection, replyCall, toneKey } from "./flow.ts";
+import { askWith, buildDraft, type FlowDeps, refineAfterCorrection, replyCall, toneKey } from "./flow.ts";
 import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings, loadStyle, recordCorrection } from "./settings.ts";
 import { addDraft, getDraft, isDrafted, markDrafted, setStatus } from "./store.ts";
@@ -25,9 +25,9 @@ const keyOf = (a: CommentAdapter, id: string) => `comment:${a.app}:${id}`;
 const itemOf = (a: CommentAdapter, c: CommentInput): ReplyItem => ({ kind: "comment", app: a.app, from: c.author, text: c.text, context: c.context });
 const one = (s: string) => s.replace(/\s+/g, " ").trim();
 
-export function commentAsk(a: CommentAdapter, c: CommentInput, reply: string, ref: string, notes: string[], headline = `${a.label} 댓글 답글 초안을 만들었어요`): string {
+export function commentAsk(a: CommentAdapter, c: CommentInput, reply: string, ref: string, notes: string[], headline = `${a.label} 댓글 답글 초안을 만들었어요`, open: string[] = []): string {
 	const note = notes.map(one).join(" / ");
-	const block = draftApprovalBlock({ to: `${c.author} 댓글`, toLabel: "대상", body: reply, ref, question: "이 답글 올릴까요?", sendResult: "이 글을 답글로 올려요" });
+	const block = draftApprovalBlock({ to: `${c.author} 댓글`, toLabel: "대상", body: reply, ref, question: askWith("이 답글 올릴까요?", open), sendResult: "이 글을 답글로 올려요" });
 	const post = c.post ? [`> ${a.postLabel ?? "글"} ${one(c.post)}`] : [];
 	return [`[ask] ${headline}`, ...(note ? [`-# ${note}`] : []), ...post, `> 원댓글 ${one(c.author)}: ${one(c.text)}`, block].join("\n");
 }
@@ -69,7 +69,7 @@ export async function draftComments(a: CommentAdapter, lines: string[], deps: Co
 			const id = await a.stage(c, built.rec.body);
 			addDraft({ ...built.rec, id });
 			ensureSwitch();
-			out.push(commentAsk(a, c, built.rec.body, id, [...built.warnings.map(w => `확인: ${w}`), ...built.rec.questions.map(q => `정해 주세요: ${q}`)]));
+			out.push(commentAsk(a, c, built.rec.body, id, built.warnings.map(w => `확인: ${w}`), undefined, built.rec.questions));
 		} catch (e) {
 			console.error(`reply draft: ${a.app} comment ${c.id} not drafted: ${(e as Error).message}`);
 			out.push(line);
@@ -98,5 +98,5 @@ export async function reviseComment(a: CommentAdapter, id: string, change: strin
 	setStatus(id, "stale");
 	addDraft({ ...old, id: next, to: r.draft.to, body: r.draft.body, status: "pending", created: now.toISOString(), changes: [...old.changes, change], questions: r.questions });
 	await a.discard(id);
-	return { ok: true, text: commentAsk(a, c, r.draft.body, next, [...r.warnings.map(w => `확인: ${w}`), ...r.questions.map(q => `정해 주세요: ${q}`)], `${a.label} 댓글 답글 초안을 고쳤어요`) };
+	return { ok: true, text: commentAsk(a, c, r.draft.body, next, r.warnings.map(w => `확인: ${w}`), `${a.label} 댓글 답글 초안을 고쳤어요`, r.questions) };
 }

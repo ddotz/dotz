@@ -133,8 +133,9 @@ const hcLine = n => { const t = ntPlain(n.title); return !t || t === "작업 기
 const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); noticeOpen(n); } } }, hcDot(n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), el("span", { class: "m", text: ntWhen(n) }), ntNeeds(n) ? ntIgnoreBtn(n) : null)));
 // Gateway restarts are kept in the store (born read) but never shown on 홈 (owner 2026-10-19: restarts are not his news).
 const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
-// Only what is news: a question that waits is a row of 답변 필요 above, so it is not counted or listed here a second time.
-const hcFyi = n => !n.read && ntHomeAlert(n) && !ntNeeds(n);
+// Only what is news: a question that waits is a row of 답변 필요 above, so it is not counted or listed here a second time; a gateway question it
+// handles itself is not asked there (09-needs-you.js nyHandled), so it is news here.
+const hcFyi = n => !n.read && ntHomeAlert(n) && (!ntNeeds(n) || nyHandled(n));
 function homeAlertCard() {
   const unread = NT.items.filter(hcFyi).length, fresh = hcRecent(hcFyi), state = hcState();
   return hcCard(() => openTarget("alert", "chat"), el("div", { class: "ch" }, el("h3", { text: "알림" })),
@@ -211,7 +212,8 @@ function askOf(t) {
 function homeNowRow(t, label, tone) {
   const i = targetInfo(t), subs = SUBS[sourceOf(t)] || [], done = subs.filter(s => s.status !== "running").length;
   const lane = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null;
-  const line = nowLine(t) || modelChipText(t === MAIN ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model) || (i.alive ? statusKo(i.status) : "종료됨");
+  // A session waiting on the owner says its question, so the row tells what to answer.
+  const line = (tone === "att" && i.ask && friendlyLine(i.ask.text)) || nowLine(t) || modelChipText(t === MAIN ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model) || (i.alive ? statusKo(i.status) : "종료됨");
   if (lane) return sessionRow(lane, { line, ...(tone === "att" ? { word: label, tone: "warn" } : {}) });   // a session: title, project, status, one tap to its chat
   return el("button", { class: "hr", type: "button", onclick: () => openTarget(t, lastChatView()), "aria-label": `${targetName(t)} · ${label}` },
     el("span", { class: `dot ${tone === "att" ? "att" : statusTone(i.status)}` }),
@@ -229,19 +231,16 @@ function renderHomeNow() {
   const box = $("#home-now");
   if (!box) return;
   const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
-  const dec = ntDecisions();   // 30-notices.js: open decisions, each its own row; a session question already among them is not listed twice
-  const need = all.map(t => ({ t, k: askOf(t) ? "ask" : attnKind(t) })).filter(x => x.k && !(x.k === "ask" && ntHasDecision(x.t)));
-  const loose = ntLooseAsks().filter(n => !need.some(x => x.k === "ask" && x.t === (n.src || n.open)));   // [ask] notices without a decision wait here too, not only in the 알림 card
+  const needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
   const owed = monItems().filter(i => i.app && i.unreplied), owedN = owed.reduce((c, i) => c + i.unreplied, 0);
-  const waiting = dec.length + loose.length + need.length;
-  const NEED = { ask: "답변 필요", done: "결과 확인", limit: "한도 걸림" };
+  const waiting = needs.length;
   const rank = t => ({ working: 0, starting: 1, "rate-limited": 2 })[targetInfo(t).status] ?? 3;
   const run = [...all].sort((a, b) => rank(a) - rank(b));
   const bg = workRunning(), working = run.filter(t => rank(t) < 2).length + bg.length;
   clear(box).append(
     // Three kinds, three places: 답변 필요 (a decision only the owner can make), 답장 대기 (replies he owes, per app), 지금 진행 중; plain news is the 알림 card.
-    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
-    el("div", { class: "hn" }, ...ntHomeRows(dec), ...loose.map(ntHomeRow), ...need.map(x => homeNowRow(x.t, NEED[x.k], "att")), ...(waiting ? [] : [el("div", { class: "empty", text: "답변할 항목이 없어요" })])),
+    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), crit ? el("span", { class: "tag err", text: `중요 ${crit}` }) : null, waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
+    nyListNode(needs),
     ...(owed.length ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), unrepPill(`미답장 ${owedN}`)), el("div", { class: "hn" }, ...owed.map(homeOwedRow))] : []),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
     el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", "")), ...bg.map(workRow)),
