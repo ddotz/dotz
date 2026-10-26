@@ -90,6 +90,9 @@ function accountSection() {
         el("span", { class: "lead acc-no", text: String(a.order || i + 1) }), tx(label, sub), ...accTags(a, pin).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t }))),
       pinned ? el("button", { class: "acc-mv", type: "button", "aria-label": `${label} 이름 바꾸기`, onclick: () => accDialog(a) }, icon("chev", "lead")) : null);
   });
+  // another Claude subscription login: OmO adds it as one more account and keeps the others and the pin (21-providers.js startLogin)
+  rows.push(el("div", { class: "li" }, tx("계정 추가", "다른 Claude 구독 계정으로 로그인해 하나 더 넣어요. 지금 쓰는 계정은 바뀌지 않아요."),
+    el("button", { class: "btn tonal", type: "button", onclick: () => startLogin({ id: "anthropic", name: "Claude 구독", add_account: true }) }, icon("add"), "추가")));
   const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 풀릴 때까지 멈추고, 다른 계정으로 넘어가지 않아요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가요.";
   // on = 자동 전환, off = 고정 (the account to fix is the row tapped below)
   rows.unshift(el("div", { class: "li" }, tx("자동 전환", caption),
