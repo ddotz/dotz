@@ -279,9 +279,9 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 
 	test("the sheet lists only the apps that are off, never an app that was not set up, and 다시 켜기 turns one on", async () => {
 		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-		await waitFor(v, `document.querySelector('.fs-card [data-k="new"]:not([disabled])')`);
+		await waitFor(v, `document.querySelector('.fs-card [data-tpl="custom"]')`);
 		expect(await q<string[]>(v, `return [...document.querySelectorAll(".fs-card [data-app]")].map(e => e.dataset.app)`)).toEqual(["kakao"]);
-		expect(await q(v, `return document.querySelectorAll(".fs-card [data-tpl]").length`)).toBe(0);
+		expect(await q<string[]>(v, `return [...document.querySelectorAll(".fs-card [data-tpl]")].map(e => e.textContent)`)).toEqual(TPL);   // every kind of app, one tap each
 		const fit = await q<{ w: number; vw: number }>(v, `return { w: document.querySelector(".fs-card").scrollWidth, vw: innerWidth }`);
 		expect(fit.w).toBeLessThanOrEqual(fit.vw);
 		await shot(v, "08-phone-add-sheet.png");
@@ -292,14 +292,14 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 		expect(sent).toEqual([]);
 	});
 
-	test("with nothing off the sheet has just 새로 추가하기; the button fills the chat box and a chip swaps the text", async () => {
+	test("with nothing off the sheet has just the kinds of app; 직접 쓰기 fills the chat box and a chip swaps the text", async () => {
 		await run(v, `ta.value = ""; asTplEnd(); go("monitoring")`);
 		await waitFor(v, `INTG.available.length === 0 && document.querySelector('#mon-side [data-k="add-app"]')`);
 		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-		await waitFor(v, `document.querySelector('.fs-card [data-k="new"]:not([disabled])')`);
+		await waitFor(v, `document.querySelector('.fs-card [data-tpl="custom"]')`);
 		expect(await q(v, `return document.querySelectorAll(".fs-card [data-app]").length`)).toBe(0);
 		const all = readAppTemplates(data);
-		await run(v, `document.querySelector('.fs-card [data-k="new"]').click()`);
+		await run(v, `document.querySelector('.fs-card [data-tpl="custom"]').click()`);
 		await waitFor(v, `!AT.h && target === "main" && current === "chat" && ta.value`);
 		const text = () => q<string>(v, `return ta.value`);
 		expect(await text()).toBe(all.find(t => t.key === "custom")!.text);
@@ -322,8 +322,8 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 			await run(v, `asTplEnd(); go("monitoring")`);
 			await waitFor(v, `document.querySelector('#mon-side [data-k="add-app"]')`);
 			await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-			await waitFor(v, `AT.items.some(t => t.key === "mine") && document.querySelector('.fs-card [data-k="new"]:not([disabled])')`);
-			await run(v, `document.querySelector('.fs-card [data-k="new"]').click()`);
+			await waitFor(v, `AT.items.some(t => t.key === "mine") && document.querySelector('.fs-card [data-tpl="custom"]')`);
+			await run(v, `document.querySelector('.fs-card [data-tpl="custom"]').click()`);
 			await waitFor(v, `document.querySelector('#app-tpl [data-tpl="mine"]')`);
 			expect(await rows("#app-tpl [data-tpl]")).toEqual([...TPL, "내 앱"]);
 			await run(v, `document.querySelector('#app-tpl [data-tpl="mail"]').click()`);
