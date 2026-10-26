@@ -38,6 +38,9 @@ export const orch = {
 	status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
 	// Why a "rate-limited" pause is on: a usage limit, or a billing/auth problem only the owner can fix.
 	pauseKind: "rate" as "rate" | "owner",
+	// Who stopped it (the run state line says "주인님이 멈추게 했어요" for the owner's own stop, hub/runstate.ts).
+	stoppedBy: "" as "" | "owner",
+	stoppedAt: "",
 	sessionFile: "",
 	// The model the running process answers on now: the configured one, or the fallback it switched to (reset at every start).
 	activeModel: "",
@@ -658,6 +661,8 @@ export function start(): void {
 	chained = !chain && entries.length > 0;
 	proc = runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env });
 	orch.status = "starting";
+	orch.stoppedBy = "";
+	orch.stoppedAt = "";
 	orch.startedAt = now();
 	const pausedUntil = Date.parse(saved().pausedUntil ?? "");
 	const ownerPause = saved().pausedKind === "owner";
@@ -820,6 +825,10 @@ export function steer(text: string): boolean {
 
 export function stop(): void {
 	stopping = true;
+	if (orch.status !== "stopped") {
+		orch.stoppedBy = "owner";
+		orch.stoppedAt = now();
+	}
 	// A pause timer (usage limit, spent chain) must not start a stopped orchestrator again.
 	clearTimeout(resumeTimer);
 	resumeTimer = undefined;

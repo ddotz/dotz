@@ -116,7 +116,7 @@ async function loadOlderMsgs() {
   } catch { toast("이전 대화를 불러오지 못했어요", true); }
   finally { s.olderMsgs = false; }
 }
-function renderAll(keepScroll) { renderAll0(keepScroll); paintDecision(); paintTodo(); paintWorkers(); edgeFade(timeline); edgeFade(term); }
+function renderAll(keepScroll) { renderAll0(keepScroll); paintDecision(); paintTodo(); paintWorkers(); paintRunState(); edgeFade(timeline); edgeFade(term); }
 function edgeFade(t) { const b = t.parentElement; b.classList.toggle("fade-t", t.scrollTop > 4); b.classList.toggle("fade-b", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
 function renderAll0(keepScroll) {
   const s = ts(target);
