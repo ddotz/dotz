@@ -30,6 +30,9 @@ async function view(rec: DraftRec | undefined, ref: string) {
 		canAttach: !!rec && canAttach(rec.source),
 		library: editable && !!(await attachFolder(rec.ref)),
 		editable,
+		// false: dotz holds no record of this draft (a block written by hand, another tool sends it), so the files it names are not
+		// files dotz has staged and nothing here can say they go out.
+		tracked: !!rec,
 	};
 }
 
