@@ -107,11 +107,15 @@ export function budgetSettings() {
 }
 
 // null / "" clears the limit; anything else must be a positive number of dollars.
-export function saveMonthlyLimit(v: unknown): void {
-	if (v == null || (typeof v === "string" && v.trim() === "")) return setApiBudgetLimit(null);
+// The limit an input means (null = no limit); throws on a value that is not one, before anything is written.
+export function monthlyLimitOf(v: unknown): number | null {
+	if (v == null || (typeof v === "string" && v.trim() === "")) return null;
 	const n = typeof v === "number" ? v : Number(String(v).trim().replace(/^\$/, ""));
 	if (!Number.isFinite(n) || n <= 0 || n > LIMIT_MAX) throw new Error("월 한도는 0보다 큰 달러 금액으로 입력해 주세요");
-	setApiBudgetLimit(Math.round(n * 100) / 100);
+	return Math.round(n * 100) / 100;
+}
+export function saveMonthlyLimit(v: unknown): void {
+	setApiBudgetLimit(monthlyLimitOf(v));
 }
 
 // One cost-report request with the key: 200 = good; 401/403 = a wrong key or one without admin rights; else could not tell (nothing is stored).
