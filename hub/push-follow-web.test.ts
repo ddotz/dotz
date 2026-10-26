@@ -15,7 +15,8 @@ function page(href: string, list: Peer[], fresh: boolean) {
 		DEVICE_ID: "phone-device-0001",
 		prOthers: () => list.filter(p => !p.self),
 		toast: (m: string) => toasts.push(m),
-		location: { replace: (u: string) => nav.push(u), href: "https://mac:8443/", pathname: "/", hash: "" },
+		location: { href: "https://mac:8443/", pathname: "/", hash: "" },
+		prGo: (u: string) => nav.push(u),   // 33-peers.js prGo: this address, or the in-app frame in the installed app (peers-web.test.ts)
 		history: { state: null, replaceState: () => {} },
 	};
 	const run = new Function(...Object.keys(env), "href", `let prFollowHref = href;\n${follow}\nprTryFollow();\nreturn () => prFollowHref;`)(...Object.values(env), href) as () => string;

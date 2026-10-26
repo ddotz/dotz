@@ -31,3 +31,7 @@
 @media (max-width: 699px) {
   .pchip { max-width: 132px; margin-left: 6px; }
 }
+
+/* another computer opened inside the installed app (33-peers.js prGo): the whole screen, the safe areas kept by this frame because a page in an iframe reads them as 0 */
+.pr-frame { position: fixed; inset: 0; z-index: 2000; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--bg); }
+.pr-frame iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }

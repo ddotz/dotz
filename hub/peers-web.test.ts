@@ -57,3 +57,42 @@ describe("computer chip after coming back from the other computer", () => {
 		expect(page(JSON.stringify([1, { name: "x" }]), [new Error("x")]).PR.list).toEqual([]);
 	});
 });
+
+// Switching computers in the installed app (web/js/33-peers.js prGo): the phone would open another origin outside the app, so the other
+// computer opens in a full-screen frame inside it; a browser tab still goes to the other address.
+const embed = src.slice(src.indexOf("// The installed app (iPhone"), src.indexOf("function prPick(p) {"));
+function shell(standalone: boolean) {
+	const appended: any[] = [], listeners: Record<string, (ev: unknown) => void> = {}, loc = { href: "https://mac:8443/", replace(h: string) { loc.href = h; } };
+	let open = 0;
+	const win: any = { addEventListener: (k: string, fn: (ev: unknown) => void) => void (listeners[k] = fn) };
+	win.top = win; win.self = win;
+	const el = (tag: string, props: Record<string, unknown>, ...kids: any[]) => { const n: any = { tag, ...props, firstElementChild: kids[0], removed: false, remove() { n.removed = true; } }; return n; };
+	const env: Record<string, unknown> = {
+		isStandalone: () => standalone, window: win, location: loc, document: { body: { append: (n: unknown) => appended.push(n) } }, el,
+		ovOpen: () => ({ n: ++open }), ovDone: () => {}, prLoad: () => {}, PR: { list: [MAC, MINI] }, prUrl: (p: Peer, x = "") => `${p.url}/${x}`, enc: encodeURIComponent, DEVICE_ID: "d1",
+	};
+	const api = new Function(...Object.keys(env), `${embed}\nreturn { prGo, PRF };`)(...Object.values(env)) as { prGo: (h: string) => void; PRF: { node: any } };
+	return { ...api, appended, loc, message: (origin: string, data: unknown) => listeners.message!({ origin, data }) };
+}
+
+describe("switching computers in the installed app", () => {
+	test("the installed app opens the other computer in a frame and stays on its own address; picking this computer there closes it", () => {
+		const s = shell(true);
+		s.prGo("https://mini:8445/?did=d1");
+		expect(s.loc.href).toBe("https://mac:8443/");
+		expect(s.appended.length).toBe(1);
+		expect(s.appended[0].firstElementChild.src).toBe("https://mini:8445/?did=d1");
+		s.message("https://evil.example", { dotz: "peer-pick", url: MAC.url });   // not one of this owner's computers: ignored
+		expect(s.PRF.node).not.toBeNull();
+		s.message(MINI.url, { dotz: "peer-pick", url: MAC.url });
+		expect(s.PRF.node).toBeNull();
+		expect(s.appended[0].removed).toBe(true);
+	});
+
+	test("a browser tab goes to the other computer's address as before", () => {
+		const s = shell(false);
+		s.prGo("https://mini:8445/?did=d1");
+		expect(s.loc.href).toBe("https://mini:8445/?did=d1");
+		expect(s.appended.length).toBe(0);
+	});
+});
