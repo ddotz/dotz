@@ -68,6 +68,8 @@ const LOST = "게이트웨이가 다시 시작돼서 결과를 확인하지 못�
 const REVISE_MAX = 500;
 const INTENT_MAX = 300;
 const STUCK_MS = 60_000;
+// A model error that is the subscription limit (or its 429), shown to the owner as is.
+const LIMIT_ERROR = /구독 한도|구독 계정|limit|quota|429|rate/i;
 const STUCK = "60초가 지나도 끝나지 않아서 실패로 처리했어요";
 const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
 const DRAFT_FAILED = "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요";
@@ -193,9 +195,8 @@ export function createKakaoWeb(deps: WebDeps) {
 
 	const storedSends = () => readJsonFile<SendRecord[]>(sendsFile, []);
 	// A "sending" record nobody is working on (the gateway restarted meanwhile) is shown as failed.
-	// A "sending" record older than the watchdog time is shown as failed even when the timer is gone.
-	const sendList = (): SendRecord[] =>
-		storedSends().map(s => (s.state !== "sending" ? s : !inflight.has(s.id) ? { ...s, state: "failed", reason: LOST } : now() - s.at > STUCK_MS ? { ...s, state: "failed", reason: STUCK } : s));
+	// A send whose job still runs here stays "sending" however long it takes (its ladder may still press; see the watchdog in start).
+	const sendList = (): SendRecord[] => storedSends().map(s => (s.state !== "sending" || inflight.has(s.id) ? s : { ...s, state: "failed", reason: LOST }));
 	const saveSends = (list: SendRecord[]) => writePrivate(sendsFile, `${JSON.stringify(list.slice(-MAX_SENDS), null, 1)}\n`);
 
 	// 미답장 (hub/unreplied.ts): per watched room the logId of the message that waits for the owner (address.ts owedMessage: in a 1:1 room the other
@@ -256,12 +257,15 @@ export function createKakaoWeb(deps: WebDeps) {
 		saveSends(addOnce(storedSends(), rec));
 		deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state: "sending" });
 		inflight.add(rec.id);
-		// Watchdog: a send still "sending" after STUCK_MS is failed for the owner (a late result of the job still replaces it).
-		later(() => {
+		// Watchdog: a send still "sending" after STUCK_MS is failed for the owner, but never while its job still runs in this process: a send
+		// whose ladder can still press must not read "failed" (the owner would send again and the message would go twice). It looks again then.
+		const watch = () => {
 			if (storedSends().find(s => s.id === rec.id)?.state !== "sending") return;
+			if (inflight.has(rec.id)) return later(watch, STUCK_MS);
 			saveSends(storedSends().map(s => (s.id === rec.id ? { ...s, state: "failed", reason: STUCK } : s)));
 			deps.broadcast({ kind: "kakao_send", chatId: rec.chatId, id: rec.id, state: "failed", reason: STUCK });
-		}, STUCK_MS);
+		};
+		later(watch, STUCK_MS);
 		const run = (async () => {
 			let r: SendResult;
 			try {
@@ -625,7 +629,15 @@ export function createKakaoWeb(deps: WebDeps) {
 				const recent = await messages(db, room!, PERSON_READ, config!.userId ?? "");
 				const lines = recent.map(m => { const c = [...readText(m).replace(/\s+/g, " ").trim()]; return `${m.fromMe ? "나" : m.sender || "상대"}: ${c.length > 240 ? `${c.slice(0, 239).join("")}…` : c.join("")}`; });
 				const { system, user } = buildPersonPrompt({ name: stats.name ?? "상대", roomName: found!.name, lines, stats });
-				const reply = await deps.draftModel(system, user, room);
+				let reply: Awaited<ReturnType<DraftModel>>;
+				try {
+					reply = await deps.draftModel(system, user, room);
+				} catch (e) {
+					// A spent subscription says so with its reset time (model-runner.ts); it is not a database failure.
+					const why = e instanceof Error ? e.message : "";
+					if (LIMIT_ERROR.test(why)) return json({ error: why }, 429);
+					return json({ error: "요약을 만들지 못했어요" }, 502);
+				}
 				const text = String(reply.text ?? "").replace(/```[\s\S]*?```/g, " ").trim().slice(0, 2000);
 				if (!text) return json({ error: "요약을 만들지 못했어요" }, 502);
 				const analysis = { text, at: now() };
