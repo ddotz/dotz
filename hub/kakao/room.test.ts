@@ -326,3 +326,46 @@ test("a press without a confirmed send stops and is never sent again; an owner's
 		expect(r.ax!.at(-1)!.why).toContain(why);
 	}
 });
+
+test("same name and size told apart by preview: a twin that moved into the chosen row before the open is refused, never opened", async () => {
+	const a: RoomFact = { chatId: "20", name: "스터디", kind: "group", members: 4, preview: "내일 봐요" };
+	const b: RoomFact = { chatId: "21", name: "스터디", kind: "group", members: 4, preview: "어제 봐요" };
+	const rows: FakeRow[] = [
+		{ id: "chat_b", title: "스터디", count: 4, preview: "어제 봐요", window: { title: "스터디", members: 4 } },
+		{ id: "chat_a", title: "스터디", count: 4, preview: "내일 봐요", window: { title: "스터디", members: 4 } },
+	];
+	const screen = fakeScreen(rows);
+	let moved = false;
+	const runner: Runner = async (argv, o) => {
+		// A new message in the other room moves it to row 1 between the list read and the open.
+		if (!moved && argv[1] === "-l" && JSON.parse(o!.stdin!.trim()).action === "open") {
+			moved = true;
+			rows.reverse();
+		}
+		return screen.runner(argv, o);
+	};
+	const r = await sendText({ chatId: "20", roomName: "스터디", text: "안녕" }, { paths, runner, roomNames: async () => [a, b] });
+	expect(r.attempts![0]).toMatchObject({ state: "failed", reason: REFUSE.openFailed });
+	expect(r.attempts![0]!.ax.find(s => s.step === "recheck")).toMatchObject({ ok: false });
+	expect(screen.opened).not.toContain("ax:chat_b");
+	expect(screen.opened).toEqual(["ax:chat_a"]);
+	expect(r).toMatchObject({ ok: true });
+});
+
+test("a shared name is not chosen from a partial list read; the read stops as soon as every row of the name was seen", async () => {
+	const rows: FakeRow[] = [
+		{ id: "chat_g1", title: "민수", count: 5, window: { title: "민수", members: 5 } },
+		...Array.from({ length: 40 }, (_, i) => ({ id: `f${i}`, title: `방${i}` })),
+		{ id: "chat_dm", title: "민수", window: { title: "민수" } },
+		...Array.from({ length: 40 }, (_, i) => ({ id: `g${i}`, title: `끝${i}` })),
+	];
+	const partial = await send(rows, groupA, [groupA, direct], { scanLimit: 10 });
+	expect(partial.r.ok).toBe(false);
+	expect(partial.r.reason).toContain(REFUSE.partial);
+	expect(partial.screen.menus()).toBe(0);
+	const whole = await send(rows, groupA, [groupA, direct]);
+	expect(whole.r).toMatchObject({ ok: true });
+	expect(whole.screen.opened).toEqual(["ax:chat_g1"]);
+	expect(whole.screen.rowCalls[0]).toMatchObject({ first: false, need: 2 });
+	expect(whole.r.ax![0]!.why).toBe("42:found:row0:members");
+});

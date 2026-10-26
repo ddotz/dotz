@@ -12,7 +12,7 @@ import { draftApprovalBlock } from "../draft-approval.ts";
 import { type Confirmer, dbConfirmer, dbPreview } from "./confirm.ts";
 import { writePrivate } from "./creds.ts";
 import { draftParts } from "./draft.ts";
-import { type AxStep, axSend, closeWindow, type Focus, normalizeTitle, openRoom, REFUSE, type RoomFact, type SendOut } from "./room.ts";
+import { type AxStep, axSend, closeWindow, type Focus, normalizeTitle, openRoom, REFUSE, type RoomFact, sameText, type SendOut } from "./room.ts";
 import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
@@ -250,7 +250,9 @@ const INPUT_WHY: Record<string, string> = {
 };
 // The owner's own draft in the input is never cleared; it is reported with its first characters, so he knows what to do.
 const inputReason = (r: SendOut): string =>
-	r.why === "owner_text" || r.why === "busy"
+	r.why === "prior_left"
+		? `이전에 전송을 누른 글이 입력창에 남아 있어서 이 글은 넣지도 보내지도 않았어요${r.preview ? ` ('${r.preview}')` : ""}. 카카오톡에서 그 글을 보내거나 지운 뒤 다시 보내 주세요`
+		: r.why === "owner_text" || r.why === "busy"
 		? `카카오톡 입력창에 보내지 않은 글이 있어서 보내지 않았어요${r.preview ? ` ('${r.preview}')` : ""}. 그 글은 지우지 않았어요`
 		: (INPUT_WHY[r.why ?? ""] ?? "카카오톡 입력창에 글을 넣지 못했어요");
 
@@ -335,13 +337,16 @@ async function restoreFront(runner: Runner, front: Front) {
 }
 
 const simMs = (ms: SendMs): number => ms.pick + ms.send;
+// The time after which no further rung of the ladder starts. A rung usually costs up to ~8 s open + ~11 s input + 10 s confirm, so a send
+// normally ends inside the web watchdog (web.ts STUCK_MS 60 s); a rung that hangs longer is covered by the watchdog waiting for a send
+// that is still running instead of reporting it failed.
+export const LADDER_MS = 30_000;
 
 // After a press (or a press we know happened earlier): the database is the only proof. "sent" and "unconfirmed" both end the send; a send
 // that was not pressed keeps its failure.
 type Settled = { state: "sent" } | { state: "unconfirmed" } | { state: "failed"; reason: string };
 const confirmers = new Map<string, Confirmer>();
-async function settle(deps: SendDeps & { roomNames?: RoomNames }, r: SendOut, input: { chatId: string; text: string }, since: number): Promise<Settled> {
-	if (!r.ok && !r.pressed) return { state: "failed", reason: inputReason(r) };
+function confirmerOf(deps: SendDeps): Confirmer {
 	let confirmer = deps.confirm;
 	if (!confirmer) {
 		const key = deps.paths.config;
@@ -351,9 +356,15 @@ async function settle(deps: SendDeps & { roomNames?: RoomNames }, r: SendOut, in
 			confirmers.set(key, confirmer);
 		}
 	}
+	return confirmer;
+}
+// Any attempt that may have reached the press (pressed, a throwing press, a lost or unreadable answer) is asked about in the database; only
+// an attempt that provably did not press keeps its failure and may go on to the next rung.
+async function settle(deps: SendDeps & { roomNames?: RoomNames }, r: SendOut, input: { chatId: string; text: string }, since: number): Promise<Settled> {
+	if (!r.ok && !r.pressed) return { state: "failed", reason: inputReason(r) };
 	let confirmed: boolean | undefined;
 	try {
-		confirmed = await confirmer({ chatId: input.chatId, text: input.text, since });
+		confirmed = await confirmerOf(deps)({ chatId: input.chatId, text: input.text, since });
 	} catch {}
 	if (confirmed === true) return { state: "sent" };
 	if (confirmed === false) return { state: "unconfirmed" };
@@ -413,7 +424,10 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	let lastReason = "";
 	// The owner's own draft is never touched; the window holding it is left open (closing it could lose what he typed).
 	let keepForOwner = false;
-	for (const rung of RUNGS) {
+	let leftPressed = left?.pressed ? left : undefined;
+	for (const [i, rung] of RUNGS.entries()) {
+		// No new rung starts once the ladder has used its time: the web watchdog (web.ts STUCK_MS) must not outlive a send that can still press.
+		if (i > 0 && performance.now() - t0 > LADDER_MS) break;
 		const aAt = nowMs(deps);
 		const steps: AxStep[] = [];
 		const frontBefore = rung.front ? await frontP : undefined;
@@ -439,21 +453,39 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 			continue;
 		}
 		const s = performance.now();
-		const r = await axSend(input.roomName, input.text, deps.runner, { ours, priorPressed });
+		let r = await axSend(input.roomName, input.text, deps.runner, { ours, priorPressed });
+		// Another text whose press was not confirmed still fills the input. When the database shows it did go out (the input only lags), it is
+		// dotz's own leftover: cleared and replaced by this text. Otherwise nothing is typed or pressed and the send fails as it is.
+		if (r.why === "prior_left" && leftPressed) {
+			let sent: boolean | undefined;
+			try {
+				sent = await confirmerOf(deps)({ chatId: input.chatId, text: leftPressed.text, since: leftPressed.at, once: true });
+			} catch {}
+			if (sent === true) {
+				const done = leftPressed.text;
+				writeLeft(deps.paths, input.chatId, undefined);
+				leftPressed = undefined;
+				priorPressed.splice(0, priorPressed.length, ...priorPressed.filter(t => t !== done));
+				ours.push(done);
+				r = await axSend(input.roomName, input.text, deps.runner, { ours, priorPressed });
+			}
+		}
 		const sendMs = Math.round(performance.now() - s);
 		ms.send = sendMs;
 		steps.push({ step: "input", ms: sendMs, ok: r.ok, ...(r.ok ? {} : { why: [r.why ?? "failed", r.preview ? `preview:${r.preview}` : "", r.left ? `left:${r.left.slice(0, 40)}` : ""].filter(Boolean).join(":") }) });
 		if (r.ok || r.pressed) rememberTyped(input.chatId, input.text);
-		if (r.pressed) writeLeft(deps.paths, input.chatId, { text: input.text, at: aAt, pressed: true });
-		else if (r.left) writeLeft(deps.paths, input.chatId, { text: r.left, at: aAt });
-		const settled = await settle(deps, r, input, aAt);
+		// The same text pressed before keeps its first press time (the database is asked from then); a prior press of another text stays recorded.
+		const again = r.why === "prior_pressed" && leftPressed !== undefined && sameText(leftPressed.text, input.text);
+		if (r.pressed && !again) writeLeft(deps.paths, input.chatId, { text: input.text, at: aAt, pressed: true });
+		else if (r.left && r.why !== "prior_left" && !again) writeLeft(deps.paths, input.chatId, { text: r.left, at: aAt });
+		const settled = await settle(deps, r, input, again ? leftPressed!.at : aAt);
 		const attempt: SendAttempt = { n: attempts.length + 1, recovery: rung.recovery, ok: settled.state === "sent", state: settled.state, ...(settled.state === "failed" ? { reason: settled.reason } : settled.state === "unconfirmed" ? { reason: UNCONFIRMED } : {}), ms: simMs(ms), ax: steps, at: aAt, ...(r.left ? { left: r.left } : {}) };
 		attempts.push(attempt);
 		ax = steps;
 		await back();
 		if (settled.state === "failed") {
 			lastReason = settled.reason;
-			if (r.why === "owner_text" || r.why === "busy") {
+			if (r.why === "owner_text" || r.why === "busy" || r.why === "prior_left") {
 				keepForOwner = true;
 				break;
 			}
