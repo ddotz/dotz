@@ -184,7 +184,7 @@ function msgNode(e) {
       // A session's report or answer is a full message; only the gateway's progress line (update_key) stays one compact note.
       const laneMsg = e.kind === "lane_report" || (e.kind === "out" && fromLane);
       const isNote = e.kind === "out" && !!e.update_key && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:")));
-      const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text)) : { tone: "", text };
+      const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
       // The orchestrator keeps its leading status emoji; a session's tone is a short word in the meta line instead.
       const body = (tone && !laneMsg ? `${TONE_EMOJI[tone]} ` : "") + parsed;
       if (isNote) {
