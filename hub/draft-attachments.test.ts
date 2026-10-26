@@ -134,3 +134,11 @@ describe("draft files route", () => {
 		expect(PEER_GET.some(r => r.test("/api/drafts/RABC123/files/0/../../x"))).toBe(false);
 	});
 });
+
+test("a hand-written 첨부 line naming several files is one file per name; a name with a comma but no file ending stays whole", () => {
+	const d = parseDraftApproval("> 받는이: a@b.c\n> 제목: 신청\n> 첨부: 2026년_9월_신청.xlsx, 2026년_9월_증빙.pdf (1.2MB)\n> 본문\n결정: 보낼까요? (k1)\n**1) 보내기**\n**2) 고치기 …**\n**3) 보내지 않기**")!;
+	expect(d.attachments).toEqual([{ name: "2026년_9월_신청.xlsx" }, { name: "2026년_9월_증빙.pdf", size: "1.2MB" }]);
+	const one = parseDraftApproval("> 받는이: a@b.c\n> 첨부: 회의록, 최종본\n> 본문\n결정: 보낼까요? (k2)\n**1) 보내기**\n**2) 고치기 …**\n**3) 보내지 않기**")!;
+	expect(one.attachments).toEqual([{ name: "회의록, 최종본" }]);
+});
+

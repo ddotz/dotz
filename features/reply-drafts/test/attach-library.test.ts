@@ -225,7 +225,7 @@ describe("adding and removing files of a draft (the send sheet's routes)", () =>
 	}
 	test("the library lists its files; picking one stages it, bytes stage a file, x takes one off", async () => {
 		const ref = await draft();
-		expect((await call("GET", ref, "files")).body).toEqual({ files: [], canAttach: true, library: true, editable: true });
+		expect((await call("GET", ref, "files")).body).toEqual({ files: [], canAttach: true, library: true, editable: true, tracked: true });
 		const listed = (await call("GET", ref, "library")).body.items as { rel: string }[];
 		expect(listed.map(i => i.rel)).toContain("악보/기타/캐논.pdf");
 		expect((await call("GET", ref, "library", undefined, "?q=캐논")).body.items.map((i: { rel: string }) => i.rel)).toEqual(["악보/기타/캐논.pdf"]);
