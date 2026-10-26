@@ -231,7 +231,7 @@ function ntOfEvent(e) {
   const src = e.ask && e.target ? e.target : own || (lane ? `lane:${lane}` : e.open || MAIN);
   const real = ntMsgFor(src, e.ts);
   if (real) return real;
-  const p = parseTone(noHandoff(String(e.text || "")));
+  const p = parseTone(noHandoff(String(e.text || "")), true);
   return { id: "", kind: own === "alert" ? "alert" : own === "worklog" ? "worklog" : lane ? "result" : "message", tone: e.ask ? "ask" : own || lane ? p.tone : "",
     title: e.title || (own === "alert" ? "알림" : own === "worklog" ? "작업 기록" : lane ? `세션 ${lane}` : botName), text: p.text, src, open: src, at: e.ts, ts: e.ts };
 }

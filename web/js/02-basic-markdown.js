@@ -109,10 +109,10 @@ function stripMarkers(text, keepFiles = false) {
   }
   return out.join("\n");
 }
-function parseTone(text) {
+function parseTone(text, keepFiles = false) {
   text = String(text ?? "");
   const m = text.match(/^\[([^\]\n]+)\][ \t]*/), tag = m && TONE_TAGS.get(m[1].toLowerCase());
-  return tag ? { tone: tag, text: stripMarkers(text.slice(m[0].length), true) } : { tone: "", text: stripMarkers(text, true) };
+  return tag ? { tone: tag, text: stripMarkers(text.slice(m[0].length), keepFiles) } : { tone: "", text: stripMarkers(text, keepFiles) };
 }
 
 /* ---------- api ---------- */
