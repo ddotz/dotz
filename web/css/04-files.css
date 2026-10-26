@@ -184,7 +184,10 @@ details.work.live .wdot { display: block; }
   .runstate .rs-tx { white-space: normal; }
   .runstate .rs-go { height: 30px; padding: 0 10px; }
 }
-
+/* The top of the timeline: older messages load as it comes into view; the button is the fallback. */
+.tl-top { display: flex; justify-content: center; margin: 0 0 -6px; }
+.tl-top[hidden] { display: none; }
+.tl-top .tl-more { height: 26px; font-size: 12.5px; }
 .runline.warn { color: var(--warn); }
 @keyframes runpulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 #working > .dot, #working-tx, #working > .sp, #working-stop { display: none !important; }

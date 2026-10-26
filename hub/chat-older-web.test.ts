@@ -41,6 +41,8 @@ afterAll(() => { view.close(); server.stop(true); });
 
 const waitFor = (expr: string, ms = 10_000) =>
 	view.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+const waitIn = (v: InstanceType<typeof Bun.WebView>, expr: string, ms = 10_000) =>
+	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 
 test("scrolling the chat to its top brings the messages older than the first 150", async () => {
 	await view.navigate(`http://127.0.0.1:${server.port}/#chat`);
@@ -50,6 +52,23 @@ test("scrolling the chat to its top brings the messages older than the first 150
 	await waitFor(`ts("main").msgs.length === ${N}`);
 	expect(await view.evaluate(`ts("main").msgs[0].text`)).toBe("메시지 0번이에요.");
 	expect(await view.evaluate(`ts("main").hmore`)).toBe(false);
+});
+
+// Reaching the top loads the older messages by itself (the sentinel observer plus the scroll handler; no click), and the message that
+// was at the top keeps its place in the view while the older ones go in above it.
+test("reaching the top auto-loads the older messages and keeps the top message in place", async () => {
+	const v = new Bun.WebView({ width: 390, height: 844 });
+	try {
+		await v.navigate(`http://127.0.0.1:${server.port}/?load=2#chat`);
+		await waitIn(v, `typeof ts === "function" && ts("main").hLoaded && ts("main").msgs.length === 150`);
+		expect(await v.evaluate(`$("#tl-top").hidden === false && $("#tl-more").hidden === false`)).toBe(true);   // the fallback button is there
+		const before = await v.evaluate<{ ts: string; off: number }>(`(() => { timeline.scrollTop = 0; const m = document.querySelector("#tl [data-ts]"); const r = m.getBoundingClientRect(), t = timeline.getBoundingClientRect(); return { ts: m.dataset.ts, off: r.top - t.top }; })()`);
+		await waitIn(v, `ts("main").msgs.length === ${N}`);
+		const off = await v.evaluate<number | null>(`(() => { const m = [...document.querySelectorAll("#tl [data-ts]")].find(x => x.dataset.ts === ${JSON.stringify(before.ts)}); return m ? m.getBoundingClientRect().top - timeline.getBoundingClientRect().top : null; })()`);
+		expect(off).not.toBeNull();
+		expect(Math.abs((off as number) - before.off)).toBeLessThan(4);
+		expect(await v.evaluate(`[ts("main").hmore, $("#tl-top").hidden]`)).toEqual([false, true]);   // the beginning: no more loads
+	} finally { v.close(); }
 });
 
 test("a send that fails after the owner switched conversation goes back to its own conversation's draft", async () => {
