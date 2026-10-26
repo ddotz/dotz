@@ -183,6 +183,15 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
+		// Run one watch now (the web's 지금 확인 / 지금 다시 확인): the same runner the timer uses, awaited so the answer carries the new result.
+		const watchRun = req.method === "POST" ? /^\/api\/watches\/([a-z0-9-]{1,40})\/run$/.exec(url.pathname) : null;
+		if (watchRun) {
+			const name = watchRun[1]!;
+			if (!allWatches().some(w => w.name === name || w.id === name)) return json({ error: `no watch ${name}` }, 404);
+			await runWatch(name);
+			const item = listMonitors().find(m => m.kind === "watch" && m.watch === name);
+			return json({ ok: true, ...(item ? { item } : {}) });
+		}
 		const sentMailRefs = () => sentReplyRefs(listDrafts());
 		const unrepliedMailList = () => unrepliedMails(sentMailRefs());
 		const integrationView = () => {
