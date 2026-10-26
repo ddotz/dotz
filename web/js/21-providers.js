@@ -26,20 +26,20 @@ function renderProviders() {
   const row = p => {
     const name = p.name || p.id;
     const canLogout = p.can_logout ?? p.removable;
-    const sub = p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨");
-    // OmO-only install: logging in happens on that computer (hub/providers.ts buildProviders login_hint), so say how instead of a button that cannot work.
-    const hint = p.login_hint ? `${isConnected(p) ? "다시 로그인" : "로그인"}: 이 컴퓨터의 터미널에서 omo를 열고 ${p.login_hint}를 실행해요` : "";
+    const sub = [p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
     const btns = el("div", { class: "btns" });
-    if (p.can_login) btns.append(el("button", { class: `btn ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인"));
+    // a signed-in Claude subscription: another login adds an account (hub/providers.ts can_add_account), it never replaces one
+    if (p.can_add_account) btns.append(el("button", { class: "btn tonal", type: "button", onclick: () => startLogin(p) }, icon("add"), "계정 추가"));
+    else if (p.can_login) btns.append(el("button", { class: `btn ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인"));
     if (canLogout) btns.append(el("button", { class: "btn danger", type: "button", onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, p.auth === "api_key" ? "키 삭제" : "로그아웃"));
     return el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
       el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
-        sub ? el("div", { class: "sup", text: sub }) : null, hint ? el("div", { class: "sup", text: hint }) : null),
+        sub ? el("div", { class: "sup", text: sub }) : null),
       el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "err" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }),
       btns.children.length ? btns : null);
   };
   // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
-  const isLogin = p => p.auth === "oauth" || (p.auth === "none" && (p.can_login || p.login_hint));
+  const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
   for (const [title, items] of [["로그인", list.filter(isLogin)], ["API 키", list.filter(p => !isLogin(p))]]) {
     if (!items.length) continue;
     wrap.append(el("div", { class: "sec", text: title }), el("div", { class: "list" }, ...items.map(row)));
@@ -100,15 +100,25 @@ async function startLogin(p) {
   let finished = false, timer, dlg;
   const code = input({ type: "text" });
   const msg = el("p", { class: "err-t", hidden: true });
+  // what the sign-in asks for right now (its own words), and the choices when it asks to pick one
+  const ask = el("div", { class: "sup" });
+  const picks = el("div", { class: "row", style: "flex-wrap:wrap" });
+  const paintAsk = v => {
+    ask.textContent = v.prompt || ""; ask.hidden = !v.prompt;
+    clear(picks); picks.hidden = !(v.options && v.options.length);
+    for (const o of v.options || []) picks.append(el("button", { class: "chip", type: "button", text: o, onclick: ev => { code.value = o; submit(ev.currentTarget); } }));
+  };
   const open = el("a", { class: "btn tonal", href: /^https?:\/\//.test(r.url || "") ? r.url : null, target: "_blank", rel: "noopener noreferrer" }, icon("open"), "로그인 페이지 열기");
   const stop = () => { clearTimeout(timer); };
   const success = async () => {
     finished = true; stop(); dlg.close();
-    toast(`${name} 로그인했어요`);
+    toast(p.can_add_account || p.add_account ? "계정을 추가했어요" : `${name} 로그인했어요`);
     try { await loadProviderData(); } catch {}
     if (current === "providers") renderProviders();
     if (current === "home") renderHome();
     loadModels(true);
+    // 설정 → 계정 lists the Claude accounts; a new one shows there at once
+    if (p.id === "anthropic") loadAccounts();
   };
   const fail = text => { msg.textContent = text; msg.hidden = false; };
   const poll = async () => {
@@ -125,15 +135,21 @@ async function startLogin(p) {
     if (!v) { fail("코드나 주소를 붙여 넣어 주세요"); return; }
     msg.hidden = true;
     stop();
-    try { await api(`/api/providers/${enc(p.id)}/login/complete`, "POST", { login_id: r.login_id, code: v }); await success(); }
+    try {
+      const s = await api(`/api/providers/${enc(p.id)}/login/complete`, "POST", { login_id: r.login_id, code: v });
+      // a sign-in with more than one step answers with the next question instead of finishing
+      if (s.status === "waiting") { code.value = ""; paintAsk(s); code.focus(); timer = setTimeout(poll, 2000); return; }
+      await success();
+    }
     catch (e) { fail(e.message); if (!finished) timer = setTimeout(poll, 2000); }
   });
   dlg = dialog({
-    title: `${name} 로그인`,
-    body: [el("div", {}, open), textField("코드 또는 주소", code), msg],
+    title: p.can_add_account || p.add_account ? `${name} 계정 추가` : `${name} 로그인`,
+    body: [el("div", {}, open), textField("코드 또는 주소", code), ask, picks, msg],
     onclose: () => { stop(); if (!finished) api(`/api/providers/${enc(p.id)}/login`, "DELETE").catch(() => {}); },
     actions: [{ label: "취소", onclick: c => c() }, { label: "완료", kind: "pri", onclick: (c, btn) => submit(btn) }],
   });
+  paintAsk(r);
   code.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); const b = dlg.node.querySelector(".dact .btn:last-child"); if (b) b.click(); } });
   timer = setTimeout(poll, 2000);
 }
