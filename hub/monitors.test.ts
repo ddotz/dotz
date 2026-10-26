@@ -3,8 +3,8 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { paths } from "./config.ts";
 import { advance } from "./runtime/test-clock.ts";
 import { listMonitors } from "./monitors.ts";
-import { addSchedule, listSchedules, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
-import { addWatch, allWatches, removeWatch, runWatch, startWatches } from "./watch.ts";
+import { addSchedule, listSchedules, patchSchedule, removeSchedule, startSchedules, stopSchedules } from "./schedule.ts";
+import { addWatch, allWatches, patchWatch, removeWatch, runWatch, startWatches } from "./watch.ts";
 
 const clearAll = () => {
 	for (const w of allWatches()) removeWatch(w.id);
@@ -31,6 +31,41 @@ test("one watch and one schedule come back in the owner-facing shape", async () 
 
 	const sched = items.find(i => i.kind === "schedule")!;
 	expect(sched).toEqual({ name: "주간 보고 정리", kind: "schedule", channel: "ch:7", next_run: s.at, every: "2시간마다" });
+});
+
+test("a watch carries its own connection, a short last line and a paused flag", async () => {
+	const w = addWatch({ name: "line-watch", command: "echo 업데이트 3개", every_minutes: 10 }, "");
+	await runWatch(w.id);
+	let m = listMonitors().find(i => i.watch === "line-watch")!;
+	expect(m).toMatchObject({ connection: "connected", last_result: "ok", last_summary: "업데이트 3개" });
+	expect(m.since).toBeUndefined();
+
+	// Paused by the owner: nothing is scheduled, and it says so.
+	patchWatch(w.id, { paused: true });
+	m = listMonitors().find(i => i.watch === "line-watch")!;
+	expect(m).toMatchObject({ paused: true, connection: "connected" });
+	expect(m.next_run).toBeUndefined();
+});
+
+// A watch that failed twice is disconnected on its own (hub/watch-status.ts), whatever was alerted; the list says since when and why.
+test("two failures in a row read as disconnected with the outage start", async () => {
+	const w = addWatch({ name: "flaky-watch", command: "exit 3", every_minutes: 10 }, "");
+	await runWatch(w.id);
+	await runWatch(w.id);
+	const m = listMonitors().find(i => i.watch === "flaky-watch")!;
+	expect(m).toMatchObject({ connection: "disconnected", conn_reason: "check", last_result: "fail" });
+	expect(m.fails!).toBeGreaterThanOrEqual(2);
+	expect(Date.parse(m.since!)).toBeGreaterThan(0);
+	expect(m.next_run).toBeDefined();
+});
+
+// A paused schedule keeps its row and says it is off; its last run is a success by definition (it fired).
+test("a paused schedule says it is off", () => {
+	const s = addSchedule({ text: "ch:7 주간 보고 정리", in_minutes: 60, every_minutes: 120 });
+	patchSchedule(s.id, { paused: true });
+	const m = listMonitors().find(i => i.kind === "schedule")!;
+	expect(m).toMatchObject({ name: "주간 보고 정리", paused: true });
+	expect(m.next_run).toBeUndefined();
 });
 
 // A one-shot is removed from the hub (memory and file) once it has done its job; a recurring one stays.
