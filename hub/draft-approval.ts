@@ -169,8 +169,15 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 			const v = a[1]!.trim();
 			const m = FILE_SIZE.exec(v);
 			const nn = NONE_NOTE.exec(v);
+			// One line naming several files ("a.xlsx, b.pdf", a hand-written block) is one file per name.
+			const parts = v.split(/\s*,\s+/);
 			if (v === "없음") none = true;
 			else if (nn) note = nn[1]!.trim();
+			else if (parts.length > 1 && parts.every(x => /\.[A-Za-z0-9]{1,5}(?:\s+\([^()]+\))?$/.test(x)))
+				for (const x of parts) {
+					const pm = FILE_SIZE.exec(x);
+					attachments.push(pm ? { name: pm[1]!, size: pm[2]! } : { name: x });
+				}
 			else if (v) attachments.push(m ? { name: m[1]!, size: m[2]! } : { name: v });
 		} else break;
 	}

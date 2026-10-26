@@ -201,7 +201,7 @@ function draftCardNode(n) {
     kids.push(el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { leave(); redraw(); } }),
       man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" }))));
   } else if (open) {
-    const go = o => () => { if (!o || busy) return; if (o === oSend && dr.warning) drfSure(dr, d.to).then(ok => ok && answerInline(n, o)); else answerInline(n, o); };
+    const go = o => () => { if (!o || busy) return; if (o === oSend && (dr.warning || (dr.attachments || []).length)) drfSure(dr, d.to).then(ok => ok && answerInline(n, o)); else answerInline(n, o); };
     kids.push(el("div", { class: "dr-act dr-row" },
       el("button", { class: "btn dr-send", type: "button", disabled: busy || !oSend, text: "보내기", onclick: go(oSend) }),
       el("button", { class: "btn tonal", type: "button", disabled: busy || !oEdit, text: "고치기", onclick: () => { DR.edit.add(n.id); redraw(); } }),
