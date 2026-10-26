@@ -75,6 +75,15 @@ describe("the watch", () => {
 	const KIM = "Kim <kim@example.com>";
 	const convo = (...last: string[]) => threadText({ from: KIM, body: "Can you?" }, { from: ME, body: "Yes." }, ...last.map(body => ({ from: KIM, body })));
 
+	test("a new mail carries its 참조 (cc) list from the watch's list output", async () => {
+		const got: NewMail[] = [];
+		const list = (n: number) => async (args: string[]) => (args[0] === "cal" ? [] : args.includes("sent") ? [] : [{ id: "thr-cc-1", from: KIM, subject: "일정", messages: n, date: "10월 21일, 오전 10:00", flags: "unread", snippet: "x", to: ME, cc: "Lee <lee@example.com>" }]);
+		// first run only records what exists; the second one sees a newer message and posts it
+		await tick({ alert: () => {}, brief: () => {}, mail: async m => void got.push(m) }, new Date(), list(1), async () => "");
+		await tick({ alert: () => {}, brief: () => {}, mail: async m => void got.push(m) }, new Date(), list(2), async () => "");
+		expect(got.map(m => [m.id, m.to, m.cc])).toEqual([["thr-cc-1", ME, "Lee <lee@example.com>"]]);
+	});
+
 	test("a thank-you after the owner's reply is not posted, a later question is", async () => {
 		const { posted } = await run({ 3: convo("감사합니다"), 4: convo("감사합니다", "내일 몇 시에 볼까요?") }, [[KIM, 0], [KIM, 1], [ME, 2], [KIM, 3], [KIM, 4]]);
 		expect(posted).toEqual(["thr-ack-1#1", "thr-ack-1#4"]);

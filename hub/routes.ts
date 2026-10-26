@@ -1,6 +1,7 @@
 // HTTP routing of the hub: the install files, the identity check and the first part of the route chain; the rest is routes-settings.ts and routes-lanes.ts.
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
 import { join } from "node:path";
+import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
 import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
 import { changeTarget, ControlError, targetView, ForceRequired, looksLikeCommand, parseCommand } from "./control.ts";
@@ -8,7 +9,7 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
-import { appEntries, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection } from "./integrations.ts";
+import { appEntries, INTEGRATIONS, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection } from "./integrations.ts";
 import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, removeWatch, runWatch } from "./watch.ts";
@@ -17,7 +18,10 @@ import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings 
 import { refreshReplyModelChoices } from "./reply-model-choices.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
-import { broadcast, historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { activityItems, broadcast, historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { subagentLists } from "./activity.ts";
+import { runningOmoWorkers } from "./bgwork.ts";
+import { lastTurnEnd, openTodos, runIntent, runState, type RunState } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
@@ -38,6 +42,7 @@ import { readTodo } from "./todo.ts";
 import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
+import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, webBuild } from "./webapp.ts";
 import { listPeers, ownLogin } from "./peers.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
@@ -53,6 +58,8 @@ import { ptyRoute } from "./pty.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
 import { commentFlags, commentNeeds, commentsRoute } from "./comments/gateway.ts";
+import { appHealth, loadUserApps, PROXY_ROOT, removeUserApp, setUserAppOff, userApp } from "./user-apps.ts";
+import { proxyMatch, proxyRequest } from "./app-proxy.ts";
 import { igDmRoute } from "./ig-dm-gateway.ts";
 import { kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
 
@@ -85,12 +92,68 @@ function authorized(req: Request): boolean {
 	return false;
 }
 
+// The run state of every conversation (/api/state `runs`): what each session is doing, and when it is idle with plan tasks left, why.
+function stateRuns(): Record<string, RunState> {
+	const nowMs = Date.now();
+	const running = bgWork.list().filter(w => w.status === "running");
+	const deferred = queue.deferredOpen();
+	const asks = listNotices(NOTICE_CAP).items
+		.filter(n => n.kind === "decision" && n.decision?.state === "open")
+		.sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")));
+	const askFor = (target: string) => {
+		const n = asks.find(x => { const to = x.decision!.to; return to === target || (target === "main" && to.startsWith("auth:")); });
+		return n ? { text: n.text || n.title, at: n.at } : undefined;
+	};
+	const turnStart = (source: string, fallback: string) => lastTurnStart(activityItems(source)) ?? fallback;
+	const mainItems = activityItems("orchestrator");
+	const main = runState({
+		status: orch.status,
+		since: (orch.status === "stopped" ? orch.stoppedAt || orch.startedAt : turnStart("orchestrator", orch.startedAt)) || undefined,
+		intent: runIntent(mainItems),
+		rateLimitedUntil: orch.rateLimitedUntil,
+		pauseKind: orch.pauseKind,
+		stoppedBy: orch.stoppedBy || undefined,
+		error: orch.error ? { text: orch.error.text, since: orch.error.since } : undefined,
+		ask: askFor("main"),
+		work: running.filter(w => { const t = (w as { target?: string }).target; return t === "web" || t === "terminal" || !t; }),
+		children: runningChildren("orchestrator"),
+		later: deferred.filter(d => d.target === "web" || d.target === "terminal").length,
+		lastTurnEnd: lastTurnEnd(mainItems),
+		todos: openTodos(readTodo(orch.sessionFile)),
+		now: nowMs,
+	});
+	const lanesOut: Record<string, RunState> = {};
+	for (const lane of lanes.values()) {
+		const source = `lane:${lane.name}`, items = activityItems(source), workers = runningOmoWorkers(lane.sessionFile);
+		lanesOut[source] = runState({
+			status: lane.status,
+			since: turnStart(source, lane.startedAt),
+			intent: runIntent(items),
+			ask: lane.pendingAsk ? { text: lane.pendingAsk.text, at: lane.pendingAsk.at } : undefined,
+			work: workers ? [{ description: "백그라운드 작업" }] : undefined,
+			children: runningChildren(source),
+			later: deferred.filter(d => d.target === source).length,
+			capacity: lane.waiting,
+			lastTurnEnd: lastTurnEnd(items),
+			todos: openTodos(readTodo(lane.sessionFile)),
+			now: nowMs,
+		});
+	}
+	return { main, ...lanesOut };
+}
+const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefined => {
+	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_start") return items[i]!.ts;
+	return undefined;
+};
+const runningChildren = (source: string) =>
+	(subagentLists()[source] || []).filter(s => s.status === "running").map(s => ({ name: s.id, description: s.description || s.agent }));
+
 type RestartHooks = { busyNow: () => string[]; restartGateway: () => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps };
 const isMailTarget = (t: string) => /^mail:[a-z0-9._-]+$/.test(t);
 // Where a forwarded action came from (a machine name), as one short line; the event it makes carries it as `via`.
 const viaOf = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 40) || undefined : undefined);
-export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps }: RestartHooks): (req: Request) => Promise<Response> {
-	const route = async (req: Request): Promise<Response> => {
+export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
+	const route = async (req: Request, srv?: Server<unknown>): Promise<Response> => {
 		const url = new URL(req.url);
 		// The install files (manifest, service worker, icons) are public and secret-free, like any app store listing: a browser
 		// or OS fetch that carries no tailnet identity (icon or manifest fetch, SW update check) must still get them, or the
@@ -107,6 +170,14 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (peer === "none" && !authorized(req)) return new Response("forbidden", { status: 403 });
 		const peerResponse = await peers.route(req, url);
 		if (peerResponse) return peerResponse;
+		// A user app's own web UI (hub/user-apps.ts, hub/app-proxy.ts): /apps/<id>/… -> its loopback server, same gate as the API.
+		const proxied = proxyMatch(url.pathname);
+		if (proxied) {
+			const app = userApp(DATA_DIR, proxied.id, INTEGRATIONS.map(i => i.key));
+			if (!app) return new Response("not found", { status: 404 });
+			if (app.off) return new Response("이 앱은 꺼 두었어요", { status: 409 });
+			return (await proxyRequest(req, url, app, proxied, srv)) as Response;
+		}
 		const parts = url.pathname.split("/").filter(Boolean);
 		const authResponse = authRoute(req, url);
 		if (authResponse) return authResponse;
@@ -123,6 +194,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (pushResponse) return pushResponse;
 		const updateResponse = await updateRoute(req, url, { boot: BOOT_ID, busy: busyNow, restartIdle: restartGateway, restartNow: restartGatewayNow });
 		if (updateResponse) return updateResponse;
+		// Settings → 업데이트 → 실행 하네스 (hub/harness-update.ts): the harness binary itself, from the package registry.
+		const harnessUpdateResponse = await harnessUpdateRoute(req, url, { busy: busyNow, restartIdle: restartGateway });
+		if (harnessUpdateResponse) return harnessUpdateResponse;
 		const customResponse = await customRoute(req, url, { lanes: () => withHomes(laneSummary(), discord.channels), channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }) });
 		if (customResponse) return customResponse;
 		// Project records (hub/projects.ts) and the todo strip (hub/todo.ts), docs/layers.md §4.
@@ -180,9 +254,18 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
+		// Run one watch now (the web's 지금 확인 / 지금 다시 확인): the same runner the timer uses, awaited so the answer carries the new result.
+		const watchRun = req.method === "POST" ? /^\/api\/watches\/([a-z0-9-]{1,40})\/run$/.exec(url.pathname) : null;
+		if (watchRun) {
+			const name = watchRun[1]!;
+			if (!allWatches().some(w => w.name === name || w.id === name)) return json({ error: `no watch ${name}` }, 404);
+			await runWatch(name);
+			const item = listMonitors().find(m => m.kind === "watch" && m.watch === name);
+			return json({ ok: true, ...(item ? { item } : {}) });
+		}
 		const sentMailRefs = () => sentReplyRefs(listDrafts());
 		const unrepliedMailList = () => unrepliedMails(sentMailRefs());
 		const integrationView = () => {
@@ -193,6 +276,26 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
+		// The 앱 list (hub/user-apps.ts): the 모니터링 apps this install has on, then the owner's own manifests (with their health).
+		if (req.method === "GET" && url.pathname === "/api/apps") {
+			const view = integrationView();
+			const { apps, errors } = loadUserApps(DATA_DIR, INTEGRATIONS.map(i => i.key));
+			const items = [
+				...view.items.map(i => ({ id: i.key, label: i.label, kind: "monitor", source: "registry", icon: i.icon, ...(i.iconPath ? { iconPath: i.iconPath } : {}), status: i.state === "disconnected" ? "unreachable" : "running", ...(i.state === "disconnected" && i.hint ? { hint: i.hint } : {}) })),
+				...await Promise.all(apps.map(async a => {
+					const h = a.off ? { status: "unknown" as const } : await appHealth(a);
+					return { id: a.id, label: a.label, kind: a.kind, source: "manifest", icon: a.icon ?? "file", ...(a.iconPath ? { iconPath: a.iconPath } : {}), off: a.off, status: a.off ? "off" : h.status, ...(!a.off && h.reason ? { reason: h.reason } : {}), ...(!a.off && h.checkedAt ? { checkedAt: h.checkedAt } : {}), health: a.health, watches: a.watches, settings: a.settings, ...(a.web ? { web: { url: a.web.url, path: a.web.path, mode: a.web.mode, href: `${PROXY_ROOT}/${a.id}/` } } : {}), ...(a.start ? { start: a.start } : {}) };
+				})),
+			];
+			return json({ items, errors });
+		}
+		// A manifest app's switch and removal (끄기/켜기, 제거); an id that is not a manifest falls through to the app instances below.
+		const userAppRoute = /^\/api\/apps\/([a-z0-9-]+)$/.exec(url.pathname);
+		if (userAppRoute && req.method === "PATCH") {
+			if (!userApp(DATA_DIR, userAppRoute[1]!, INTEGRATIONS.map(i => i.key))) return json({ error: "알 수 없는 앱이에요" }, 404);
+			setUserAppOff(DATA_DIR, userAppRoute[1]!, (await body(req)).off !== false);
+			return json({ ok: true });
+		}
 		// The 새로 추가하기 prompts (hub/app-templates.ts): shipped ones, replaced or extended by custom/app-templates.json.
 		if (req.method === "GET" && url.pathname === "/api/app-templates") return json({ items: readAppTemplates(DATA_DIR) });
 		// 제거 / 앱 추가 on this install only (hub/app-off.ts): GET remove = what will be removed, POST remove = do it ({deleteData}), POST add = switch it back on.
@@ -217,7 +320,11 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const appDel = /^\/api\/apps\/([a-z0-9-]+)$/.exec(url.pathname);
 		if (url.pathname === "/api/apps" && req.method === "POST" || appDel && req.method === "DELETE") {
 			try {
-				if (appDel) return json({ ok: true, removed: deleteApp(DATA_DIR, appDel[1]!, { deleteStored: url.searchParams.get("data") === "1" }, { watchNames: () => allWatches().map(w => w.name), removeWatch }) });
+				if (appDel) {
+				const own = removeUserApp(DATA_DIR, appDel[1]!, INTEGRATIONS.map(i => i.key));
+				if (own) return json({ ok: true, removed: own.kept });
+				return json({ ok: true, removed: deleteApp(DATA_DIR, appDel[1]!, { deleteStored: url.searchParams.get("data") === "1" }, { watchNames: () => allWatches().map(w => w.name), removeWatch }) });
+			}
 				return json({ ok: true, ...createApp(DATA_DIR, await body(req)) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);

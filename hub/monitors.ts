@@ -1,5 +1,6 @@
 import { listSchedules } from "./schedule.ts";
 import { allWatches, type Watch } from "./watch.ts";
+import { watchConnection } from "./watch-status.ts";
 import { describeOutput, failKindKo } from "./watchtext.ts";
 import { watchLabel } from "./workchannels.ts";
 
@@ -20,6 +21,14 @@ export type Monitor = {
 	last_ok?: string;
 	last_output?: string;
 	keeper?: boolean;
+	// The watch's connection, apart from whether an alert went out (hub/watch-status.ts): a disconnected one carries the outage start and why.
+	connection?: "connected" | "disconnected";
+	since?: string;
+	conn_reason?: "login" | "check";
+	// Nothing is scheduled while the owner paused it or it stopped itself; the web shows it grey as 꺼짐.
+	paused?: boolean;
+	// One short line of the last run's own output, for a row's status line (last_output is the fuller text the detail card shows).
+	last_summary?: string;
 };
 
 const everyKo = (m: number): string => (m % 1440 === 0 ? `${m / 1440}일마다` : m % 60 === 0 ? `${m / 60}시간마다` : `${m}분마다`);
@@ -35,7 +44,9 @@ export function listMonitors(): Monitor[] {
 	const watches: Monitor[] = allWatches().map(w => {
 		const last = w.state.lastRun;
 		const result = !last ? undefined : w.state.fails > 0 ? "fail" : w.state.lastChanged ? "changed" : "ok";
-		const next = w.paused || w.state.paused ? undefined : w.state.nextAt ?? Date.parse(last ?? w.created) + w.every_minutes * 60_000;
+		const paused = !!(w.paused || w.state.paused);
+		const next = paused ? undefined : w.state.nextAt ?? Date.parse(last ?? w.created) + w.every_minutes * 60_000;
+		const facts = watchFacts(w), conn = watchConnection(w), line = (facts.last_output ?? "").split("\n")[0]!.trim();
 		return {
 			name: watchLabel(w.name),
 			watch: w.name,
@@ -46,7 +57,11 @@ export function listMonitors(): Monitor[] {
 			...(result ? { last_result: result } : {}),
 			...(next && Number.isFinite(next) ? { next_run: iso(next) } : {}),
 			every: everyKo(w.every_minutes),
-			...watchFacts(w),
+			connection: conn.state,
+			...(conn.state === "disconnected" ? { ...(conn.since ? { since: conn.since } : {}), conn_reason: conn.reason } : {}),
+			...(paused ? { paused: true } : {}),
+			...(line ? { last_summary: line.slice(0, 120) } : {}),
+			...facts,
 		};
 	});
 	const schedules: Monitor[] = listSchedules().map(s => {
@@ -58,7 +73,7 @@ export function listMonitors(): Monitor[] {
 			kind: "schedule",
 			...(channel ? { channel } : {}),
 			...(s.last ? { last_run: s.last, last_result: "ok" as const } : {}),
-			...(s.paused ? {} : { next_run: s.at }),
+			...(s.paused ? { paused: true } : { next_run: s.at }),
 			...(s.every_minutes ? { every: everyKo(s.every_minutes) } : {}),
 		};
 	});

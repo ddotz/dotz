@@ -10,11 +10,17 @@ import { appEntries, INTEGRATIONS, readAppsFile } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
 
 export type FieldType = "bool" | "enum" | "list" | "text" | "number";
+// Where a row belongs on the settings screen, in the order the owner reads it: 알림, 자동 초안과 승인, 감시, 기타 기능, then the rest.
+// The web groups rows by this key (web/js/32-app-settings.js AS_SECTIONS), so a row never sits under a heading its value does not belong to.
+export type SettingSection = "notify" | "draft" | "watch" | "more" | "advanced";
+export const SETTING_SECTIONS: readonly SettingSection[] = ["notify", "draft", "watch", "more", "advanced"];
 export type SettingField = {
 	key: string;
 	label: string;
 	type: FieldType;
 	help: string;
+	/** The section of the settings screen (default 고급). */
+	section?: SettingSection;
 	/** File under the data dir, and the dotted path of the value inside it. */
 	store: string;
 	path: string;
@@ -39,14 +45,14 @@ export type SettingValue = boolean | string | string[] | number;
 
 const DRAFTS = "custom/reply-drafts/config.json";
 const SNS = "custom/sns/config.json";
-const draftSwitch = (app: string, label: string): SettingField => ({ key: "auto_draft", label: "자동 초안", type: "bool", help: `${label}에 답할 거리가 오면 초안을 알아서 만들어요`, store: DRAFTS, path: `apps.${app}.auto`, def: false, switch: true, alsoOn: ["enabled"] });
-const approval: SettingField = { key: "approval", label: "게시 승인 방식", type: "enum", help: "올리기 전에 하나씩 확인할지, 모아서 한 번에 확인할지 정해요", store: SNS, path: "approval", options: ["each", "batch"], labels: { each: "하나씩 승인", batch: "모아서 승인" }, def: "each" };
+const draftSwitch = (app: string, label: string): SettingField => ({ key: "auto_draft", label: "자동 초안", type: "bool", help: `${label}에 답할 거리가 있으면 초안을 만들어요`, store: DRAFTS, path: `apps.${app}.auto`, def: false, switch: true, section: "draft", alsoOn: ["enabled"] });
+const approval: SettingField = { key: "approval", label: "승인 방식", type: "enum", help: "올리기 전에 하나씩 확인할지, 모아서 한 번에 확인할지 정해요. 인스타그램과 유튜브에 함께 적용돼요", store: SNS, path: "approval", options: ["each", "batch"], labels: { each: "하나씩 승인", batch: "모아서 승인" }, def: "each", section: "draft" };
 
-// Every app has this switch first: custom/apps.json {"<app>":{"off":true}} (hub/app-off.ts). Off wins over every rule that turned the app on here.
-const deviceSwitch = (app: string): SettingField => ({ key: "use_here", label: "이 기기에서 쓰기", type: "bool", help: "끄면 이 컴퓨터의 앱 목록에서 빠지고 감시와 알림이 멈춰요. 데이터는 그대로 남아요", store: "custom/apps.json", path: `${app}.off`, def: true, switch: true, invert: true });
+// Every app has this switch, under 고급: custom/apps.json {"<app>":{"off":true}} (hub/app-off.ts). Off wins over every rule that turned the app on here.
+const deviceSwitch = (app: string): SettingField => ({ key: "use_here", label: "이 기기에서 쓰기", type: "bool", help: "끄면 이 컴퓨터의 앱 목록에서 빠지고 감시와 알림이 멈춰요. 데이터는 그대로 남아요", store: "custom/apps.json", path: `${app}.off`, def: true, switch: true, section: "advanced", invert: true });
 
 // The instance's name (hub/integrations.ts appEntries): shown in the list, the title and the notices; empty = the app's own name.
-const nameField = (app: string): SettingField => ({ key: "label", label: "앱 이름", type: "text", help: "목록과 제목에 보이는 이름이에요. 비우면 기본 이름으로 돌아가요", store: "custom/apps.json", path: `${app}.label`, max: 30, def: INTEGRATIONS.find(e => e.key === app.split("-")[0])?.label ?? "", switch: true });
+const nameField = (app: string): SettingField => ({ key: "label", label: "앱 이름", type: "text", help: "목록과 제목에 보이는 이름이에요. 비우면 기본 이름으로 돌아가요", store: "custom/apps.json", path: `${app}.label`, max: 30, def: INTEGRATIONS.find(e => e.key === app.split("-")[0])?.label ?? "", switch: true, section: "advanced" });
 
 // 답장 모델: the model of the reply drafts of one app or instance (hub/reply-model.ts reads it, then the global model, then the subagent model).
 // The options are the runtime's model list, installed by hub/reply-model-choices.ts before a read or write; "" (기본값) is always valid.
@@ -62,27 +68,27 @@ export const setDiscordProbe = (probe: () => boolean): void => {
 };
 /** Whether the mail app instance that owns mail `<key>` (matched by its source like the other instance filters) has 디스코드에도 올리기 on. */
 export const mailDiscordOn = (dataDir: string, key: string): boolean => readAppsFile(dataDir)[instanceOf(appEntries(dataDir), "mail", `mail:${key}`)]?.discord === true;
-const discordField = (app: string): SettingField => ({ key: "discord", label: "디스코드에도 올리기", type: "bool", help: "새 메일마다 디스코드 메일 채널에 스레드를 만들어요", store: "custom/apps.json", path: `${app}.discord`, def: false, switch: true });
+const discordField = (app: string): SettingField => ({ key: "discord", label: "디스코드에도 올리기", type: "bool", help: "새 메일마다 디스코드 메일 채널에 스레드를 만들어요", store: "custom/apps.json", path: `${app}.discord`, def: false, switch: true, section: "notify" });
 // 첨부 파일 폴더: where a mail instance looks for the file a reply promises or a mail asks for (features/reply-drafts/lib/library.ts); empty = none.
-const attachFolderField = (app: string): SettingField => ({ key: "attach_folder", label: "첨부 파일 폴더", type: "text", help: "오너가 대화에서 알려 준, 자주 보내는 파일을 모아 둔 이 컴퓨터의 폴더예요. 답장에 파일이 필요하면 여기서 맞는 파일을 찾아 붙여 둬요", store: DRAFTS, path: `attachFolders.${app}`, max: 300, memory: true });
+const attachFolderField = (app: string): SettingField => ({ key: "attach_folder", label: "첨부 파일 폴더", type: "text", help: "오너가 대화에서 알려 준, 자주 보내는 파일을 모아 둔 이 컴퓨터의 폴더예요. 답장에 파일이 필요하면 여기서 맞는 파일을 찾아 붙여 둬요", store: DRAFTS, path: `attachFolders.${app}`, max: 300, section: "advanced", memory: true });
 // 이어서 할 일: free text; after an approved action of this app instance the bot checks it once (hub/followup.ts).
-const followupField = (app: string): SettingField => ({ key: "followup", label: "이어서 할 일", type: "text", help: "오너가 대화에서 알려 준, 답글·답장·카톡을 보낸 뒤 이어서 할 일이에요. 예: 파일을 달라는 댓글이면 답글 뒤에 적어 준 주소로 그 파일을 붙인 메일 초안을 만들어요. 조건에 맞을 때만 하고, 메일은 보내기를 누를 때만 나가요", store: DRAFTS, path: `followups.${app}`, max: 500 , memory: true });
+const followupField = (app: string): SettingField => ({ key: "followup", label: "이어서 할 일", type: "text", section: "advanced", help: "오너가 대화에서 알려 준, 답글·답장·카톡을 보낸 뒤 이어서 할 일이에요. 예: 파일을 달라는 댓글이면 답글 뒤에 적어 준 주소로 그 파일을 붙인 메일 초안을 만들어요. 조건에 맞을 때만 하고, 메일은 보내기를 누를 때만 나가요", store: DRAFTS, path: `followups.${app}`, max: 500 , memory: true });
 const REPLY_APPS = new Set(["mail", "kakao", "instagram", "youtube", "site"]);
-const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "" });
+const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "", section: "advanced" });
 
 export const APP_SETTINGS: Record<string, SettingField[]> = {
 	site: [],
 	mail: [
 		draftSwitch("mail", "메일"),
-		{ key: "skip_senders", label: "초안 제외 발신자", type: "list", help: "이 발신자(주소나 이름)의 메일에는 초안을 만들지 않아요", store: DRAFTS, path: "senders.skip", def: [] },
-		{ key: "only_senders", label: "이 발신자만 초안", type: "list", help: "비우면 모든 발신자에 초안을 만들어요", store: DRAFTS, path: "senders.only", def: [] },
+		{ key: "skip_senders", label: "초안에서 뺄 발신자", type: "list", help: "이 발신자(주소나 이름)의 메일에는 초안을 만들지 않아요", store: DRAFTS, path: "senders.skip", def: [], section: "draft" },
+		{ key: "only_senders", label: "초안을 만들 발신자", type: "list", help: "여기 적은 발신자에게만 초안을 만들어요. 비우면 모두에게 만들어요", store: DRAFTS, path: "senders.only", def: [], section: "draft" },
 	],
 	kakao: [
-		{ key: "enabled", label: "카카오톡 감시", type: "bool", help: "끄면 어떤 방도 지켜보지 않아요", store: "custom/kakao/config.json", path: "enabled", def: false, switch: true },
-		{ key: "watch_chats", label: "감시하는 방", type: "list", help: "채팅방 id 목록이에요 (방 이름은 대화방 목록에서 찾아요)", store: "custom/kakao/config.json", path: "watch_chats", def: [] },
-		{ key: "auto_draft_chats", label: "자동 초안 방", type: "list", help: "감시하는 방 가운데 새 메시지에 봇이 깨어나 초안을 만드는 방의 id예요", store: "custom/kakao/config.json", path: "auto_draft_chats", def: [] },
-		{ key: "exclude_chats", label: "초안 제외 방", type: "list", help: "초안을 만들지 않는 방의 id예요", store: "custom/kakao/config.json", path: "exclude_chats", def: [] },
-		{ key: "open_chats", label: "오픈채팅방 보기", type: "bool", help: "켜면 오픈채팅방도 대화방 목록에 뜨고 일반 방처럼 지켜보고 답장할 수 있어요", store: "custom/kakao/config.json", path: "open_chats", def: true },
+		{ key: "enabled", label: "카카오톡 감시", type: "bool", help: "끄면 어떤 방도 지켜보지 않아요", store: "custom/kakao/config.json", path: "enabled", def: false, switch: true, section: "watch" },
+		{ key: "watch_chats", label: "감시할 방", type: "list", help: "새 메시지를 지켜볼 채팅방이에요. 대화방 목록에서 골라요", store: "custom/kakao/config.json", path: "watch_chats", def: [], section: "watch" },
+		{ key: "auto_draft_chats", label: "초안을 만들 방", type: "list", help: "감시할 방 가운데 새 메시지에 초안을 만들 방이에요", store: "custom/kakao/config.json", path: "auto_draft_chats", def: [], section: "draft" },
+		{ key: "exclude_chats", label: "초안에서 뺄 방", type: "list", help: "초안을 만들지 않을 방이에요", store: "custom/kakao/config.json", path: "exclude_chats", def: [], section: "draft" },
+		{ key: "open_chats", label: "오픈채팅방 보기", type: "bool", help: "켜면 오픈채팅방도 대화방 목록에 뜨고 일반 방처럼 지켜보고 답장할 수 있어요", store: "custom/kakao/config.json", path: "open_chats", def: true, section: "watch" },
 	],
 	instagram: [draftSwitch("instagram", "인스타그램"), approval],
 	youtube: [draftSwitch("youtube", "유튜브"), approval],
@@ -154,9 +160,9 @@ export function validate(app: string, values: unknown): Record<string, SettingVa
 	return validateFields(fields, values);
 }
 
-export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "options" | "labels" | "min" | "max" | "switch" | "memory"> & { value: SettingValue };
+export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "section" | "options" | "labels" | "min" | "max" | "switch" | "memory"> & { value: SettingValue };
 /** A field with its current value, as GET returns it. */
-export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), ...(f.memory ? { memory: true as const } : {}), value });
+export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.section ? { section: f.section } : {}), ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), ...(f.memory ? { memory: true as const } : {}), value });
 export function readSettings(dataDir: string, app: string): SettingView[] {
 	const cache = new Map<string, Record<string, any>>();
 	return fieldsOf(app).map(f => {

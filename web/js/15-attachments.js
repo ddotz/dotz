@@ -83,9 +83,30 @@ function fileItem(f) {
   }, () => off("확인하지 못했어요"));
   return item;
 }
-// The full path under a file, as written by the agent: a tap copies it (Finder, terminal, another app), the chip above opens the file.
+// A path as one readable line (owner 2026-10-26: the full absolute path under a file wrapped over three lines): the home folder as ~,
+// the last folder and the file name (`~/…/2026-10-26/<id>…신청.xlsx`), and a long name cut in the middle so the extension stays.
+// The full path stays in the element's title and in the copy.
+const SHORT_PATH_NAME = 18, SHORT_PATH_MAX = 34;
+function shortPath(p) {
+  const s = String(p ?? "").trim();
+  if (!s) return "";
+  const home = /^(?:\/Users\/[^/]+|\/home\/[^/]+|\/root)(?=\/|$)/.exec(s), tilde = !home && /^~(?=\/|$)/.test(s);
+  const parts = (home ? s.slice(home[0].length) : tilde ? s.slice(1) : s).split("/").filter(Boolean);
+  if (!parts.length) return home || tilde ? "~" : s;
+  let name = parts.pop();
+  if (name.length > SHORT_PATH_NAME) {
+    const dot = name.lastIndexOf("."), ext = dot > 0 && name.length - dot <= 6 ? name.slice(dot) : "";
+    const stem = ext ? name.slice(0, dot) : name, keep = Math.max(6, SHORT_PATH_NAME - ext.length - 1), head = Math.ceil(keep / 2), tail = keep - head;
+    name = `${stem.slice(0, head)}…${tail ? stem.slice(-tail) : ""}${ext}`;
+  }
+  const dir = parts.length ? parts[parts.length - 1] : "", pre = `${home || tilde ? "~/" : "/"}${parts.length > 1 ? "…/" : ""}`;
+  const withDir = `${pre}${dir ? `${dir}/` : ""}${name}`;
+  if (withDir.length <= SHORT_PATH_MAX) return withDir;
+  return `${pre}${name}`.length <= SHORT_PATH_MAX ? `${pre}${name}` : `…/${name}`;
+}
+// The short path under a file, as written by the agent: the title holds the full path and a tap copies it (Finder, terminal, another app).
 function pathCopy(p, cls = "fpath") {
-  return el("button", { class: cls, type: "button", title: "경로 복사", "aria-label": `경로 복사: ${p}`, text: p,
+  return el("button", { class: cls, type: "button", title: p, "aria-label": `경로 복사: ${p}`, text: shortPath(p),
     onclick: async ev => { ev.stopPropagation(); const ok = await copyText(p); toast(ok ? "경로를 복사했어요" : "복사하지 못했어요", !ok); } });
 }
 function filesNode(files) {

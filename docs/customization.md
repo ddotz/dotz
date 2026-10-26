@@ -24,6 +24,7 @@ writing files in the data folder. The repo is never forked, and no gateway resta
   cards/<id>.json              a card, spec only
   cards/<id>/card.json         a card as a folder ...
   cards/<id>/render.js         ... with an optional render script
+  apps/<id>/app.json           a whole app of the owner's own (docs/custom-apps.md)
   pins.json                    sidebar: projects, routines, links
 ```
 
@@ -31,6 +32,9 @@ The gateway reads the folder on every `GET /api/custom`. A change shows up on th
 reload. Only new dotz code needs a gateway restart. A missing folder is an empty layer, not an error.
 
 Templates: `docs/custom-examples/cards/disk-free/card.json` and `docs/custom-examples/pins.json`.
+
+An app with its own web UI is a manifest at `apps/<id>/app.json`: it appears in the web's 앱 tab and its page is served
+at `/apps/<id>/`. Reference: `docs/custom-apps.md`.
 
 ## Cards
 
