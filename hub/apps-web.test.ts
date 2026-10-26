@@ -47,7 +47,7 @@ const waitFor = (expr: string, ms = 10_000) =>
 async function boot() {
 	await view.navigate(`http://127.0.0.1:${server.port}/`);
 	await waitFor(`typeof current !== "undefined" && typeof APPS !== "undefined" && APPS.loaded && S`);
-	await view.evaluate(`(go("apps"), 0)`);
+	await view.evaluate(`(APPS_ON = true, go("apps"), 0)`);
 	await waitFor(`current === "apps" && APPS.loaded && $("#apps-side").children.length`);
 }
 
@@ -100,7 +100,7 @@ describe("앱 at 1280px", () => {
 	test("keeps the list beside the open app, the same row style as 모니터링", async () => {
 		await view.resize?.(1280, 900);
 		errorsSeen.length = 0;
-		await view.evaluate(`(go("apps"), 0)`);
+		await view.evaluate(`(APPS_ON = true, go("apps"), 0)`);
 		await waitFor(`current === "apps" && !!document.querySelector("#apps-pane .apps-frame")`);
 		expect(await view.evaluate(`(() => { const s = $("#apps-side").getBoundingClientRect(), p = $("#apps-pane").getBoundingClientRect(); return s.right <= p.left + 1 && s.width > 120; })()`)).toBe(true);
 		expect(await view.evaluate(`(() => $("#apps-pane .apps-frame").getBoundingClientRect().height > 300)()`)).toBe(true);
@@ -127,10 +127,17 @@ describe("앱 is drawn only while shown", () => {
 		return v;
 	};
 
+	test("until user apps ship, the 앱 tab sits between 모니터링 and 설정 disabled, and no way leads into it", async () => {
+		const v = await open(1280, 900);
+		const got = JSON.parse(await v.evaluate(`JSON.stringify({ order: [...document.querySelectorAll("#nav .ni")].map(b => b.dataset.view), off: document.querySelector('#nav .ni[data-view="apps"]').disabled, landed: (go("apps"), current) })`) as string);
+		expect(got).toEqual({ order: ["home", "chat", "projects", "monitoring", "apps", "settings"], off: true, landed: "home" });
+		expect(await v.evaluate(`!!document.querySelector("#apps-pane .apps-frame")`)).toBe(false);
+	}, 25_000);
+
 	test("wide: nothing is built behind 홈, and 앱 draws its frame as soon as it is entered", async () => {
 		const v = await open(1280, 900);
 		expect(await v.evaluate(`!!document.querySelector("#apps-pane .apps-frame")`)).toBe(false);
-		expect(await v.evaluate(`(go("apps"), !!document.querySelector("#apps-pane .apps-frame"))`)).toBe(true);
+		expect(await v.evaluate(`(APPS_ON = true, go("apps"), !!document.querySelector("#apps-pane .apps-frame"))`)).toBe(true);
 		await v.evaluate(`(go("home"), 0)`);
 		// Leaving 앱 does not schedule another paint of it.
 		await waitOn(v, `!appsRaf`);
@@ -140,7 +147,7 @@ describe("앱 is drawn only while shown", () => {
 	test("phone: an open app, then 홈, then 앱 shows the list", async () => {
 		const v = await open(390, 844);
 		expect(await v.evaluate(`!!document.querySelector("#apps-pane .apps-frame")`)).toBe(false);
-		await v.evaluate(`(go("apps", "mydocs"), 0)`);
+		await v.evaluate(`(APPS_ON = true, go("apps", "mydocs"), 0)`);
 		await waitOn(v, `!!document.querySelector("#apps-pane .apps-frame") && !document.querySelector("#v-apps").classList.contains("cv-listing")`);
 		await v.evaluate(`(go("home"), 0)`);
 		const got = JSON.parse(await v.evaluate(`(go("apps"), JSON.stringify({ listing: document.querySelector("#v-apps").classList.contains("cv-listing"), list: APPS.list, hash: location.hash, side: document.querySelector("#apps-side").getBoundingClientRect().width > 0 }))`) as string);

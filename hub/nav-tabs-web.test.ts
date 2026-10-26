@@ -29,8 +29,8 @@ function chain(name: string, hash: string, narrow: boolean, mon: Mon) {
 
 describe("top-level tabs", () => {
 	test("the tabs are 홈, 채팅, 프로젝트, 모니터링, 설정, 앱 in that order, and the 세션 tab is gone", () => {
-		expect(NAV.map(n => n[0])).toEqual(["home", "chat", "projects", "monitoring", "settings", "apps"]);
-		expect(NAV.map(n => n[1])).toEqual(["홈", "채팅", "프로젝트", "모니터링", "설정", "앱"]);
+		expect(NAV.map(n => n[0])).toEqual(["home", "chat", "projects", "monitoring", "apps", "settings"]);
+		expect(NAV.map(n => n[1])).toEqual(["홈", "채팅", "프로젝트", "모니터링", "앱", "설정"]);
 		expect(NAV.map(n => n[0])).not.toContain("lanes");
 		expect(views).not.toContain("lanes");
 		for (const [id] of NAV) expect(views).toContain(id);

@@ -70,6 +70,7 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .rail { grid-column: 4; display: flex; gap: 2px; margin-left: 12px; }
 .ni { position: relative; display: flex; flex: none; align-items: center; gap: 4px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 .ni:hover { background: var(--hover); color: var(--fg); }
+.ni:disabled, .ni:disabled:hover { background: transparent; color: var(--fg-3); opacity: .5; cursor: default; }
 .ni.on { color: var(--fg); font-weight: 700; }
 .ni .ic { display: none; }
 .ni .nl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
