@@ -41,7 +41,7 @@ export type Watch = {
 	once?: boolean; // one-shot: removed after its first change/match report (a recurring watch has no flag and stays)
 	paused?: boolean;
 	state: {
-		hash?: string; last?: string; fails: number; failAlertAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
+		hash?: string; last?: string; fails: number; failAlertAt?: number; failSince?: number; recoveredAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
 		kind?: string; kindFails?: number; nextAt?: number; paused?: string; approvalAskedAt?: number;
 	};
 };
@@ -50,6 +50,11 @@ const RUN_TIMEOUT_MS = 120_000;
 const READ_GRACE_MS = 2_000;
 export const FAIL_ALERT_EVERY_MS = 12 * 3600_000;
 export const FAIL_ALERT_AFTER = 2; // failures in a row before the first alert
+// One episode of a check that fails and passes on and off is one failure alert and one recovery. A failure that starts within the flap window
+// after a recovery is the same episode: quiet, unless it lasts the window (then it is an outage again). The window is an hour, or three intervals.
+const flapWindow = (w: Watch) => Math.max(3600_000, 3 * w.every_minutes * 60_000);
+// The owner was told of a failure and not yet of its recovery (older state has no recoveredAt: a set failAlertAt alone means down).
+const toldDown = (s: Watch["state"]) => s.failAlertAt !== undefined && !(s.recoveredAt !== undefined && s.recoveredAt >= s.failAlertAt);
 // A notify reason that is an issue the owner decides on: repeated failures, a stopped watch, one waiting for approval. Output changes,
 // matches and "recovered" are not.
 export const isWatchIssue = (reason: string): boolean => /^(?:failed \d+ times|stopped after|needs the owner)/.test(reason);
@@ -192,6 +197,7 @@ async function runOnce(w: Watch): Promise<void> {
 			const kind = failKind(output);
 			w.state.kindFails = w.state.kind === kind ? (w.state.kindFails ?? 0) + 1 : 1;
 			w.state.kind = kind;
+			if (!w.state.fails) w.state.failSince = Date.now();
 			w.state.fails++;
 			log(`watch ${w.name} failed (${code}, ${kind}, ${w.state.fails} in a row)`);
 			if (kind === "approval" && w.approval_minutes) {
@@ -208,16 +214,19 @@ async function runOnce(w: Watch): Promise<void> {
 				return;
 			}
 			if (wait) w.state.nextAt = Date.now() + wait[Math.min(wait.length, w.state.kindFails) - 1] * 60_000;
-			const due = !w.state.failAlertAt || Date.now() - w.state.failAlertAt > FAIL_ALERT_EVERY_MS;
+			const since = w.state.failSince ?? Date.now();
+			const flapping = w.state.recoveredAt !== undefined && since - w.state.recoveredAt < flapWindow(w);
+			const due = toldDown(w.state) ? Date.now() - w.state.failAlertAt! > FAIL_ALERT_EVERY_MS : !flapping || Date.now() - since >= flapWindow(w);
 			if (w.state.fails >= FAIL_ALERT_AFTER && due) {
 				w.state.failAlertAt = Date.now();
 				notify(w, `failed ${w.state.fails} times in a row (exit ${code})`, output);
 			}
 			return;
 		}
-		if (w.state.failAlertAt) notify(w, "recovered", output);
+		if (toldDown(w.state)) notify(w, "recovered", output);
+		if (w.state.fails && w.state.failAlertAt !== undefined) w.state.recoveredAt = Date.now();
 		w.state.fails = 0;
-		w.state.failAlertAt = undefined;
+		w.state.failSince = undefined;
 		w.state.kind = w.state.kindFails = w.state.approvalAskedAt = undefined;
 		w.state.lastOk = now();
 		const hash = createHash("sha256").update(output).digest("hex").slice(0, 16);

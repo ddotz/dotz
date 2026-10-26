@@ -236,3 +236,35 @@ test("a watch that is not yet due at boot waits only what is left of its interva
 	await ran;
 	expect(notes).toEqual([{ name: "t-left", reason: "output changed" }]);
 });
+
+// A check that fails and passes on and off (a flaky network) told the owner of every failure and every recovery. Now one episode is one
+// failure alert and one recovery; a failure that comes back soon after stays quiet unless it lasts the flap window (an hour here), and a
+// failure after the watch has been healthy longer than that is news again.
+test("a flapping watch tells the owner once per episode; a refail that lasts, or one after a healthy stretch, is news again", async () => {
+	const code = join(DATA_DIR, "watch-flap.txt");
+	const set = (c: number) => writeFileSync(code, String(c));
+	addWatch({ name: "t-flap", command: `exit $(cat '${code}')`, every_minutes: 5, on: "fail", to: "alert" }, "");
+	const step = async (c: number, minutes = 5) => {
+		set(c);
+		clock.now += minutes * 60_000;
+		await runWatch("t-flap");
+	};
+	await step(1);
+	await step(1);
+	await step(0);
+	expect(notes.map(n => n.reason)).toEqual(["failed 2 times in a row (exit 1)", "recovered"]);
+	await step(1);
+	await step(1);
+	await step(0);
+	expect(notes).toHaveLength(2);
+	await step(1, 1);
+	await step(1, 30);
+	expect(notes).toHaveLength(2);
+	await step(1, 31);
+	expect(notes.at(-1)!.reason).toBe("failed 3 times in a row (exit 1)");
+	await step(0);
+	expect(notes.at(-1)!.reason).toBe("recovered");
+	await step(1, 120);
+	await step(1);
+	expect(notes.map(n => n.reason)).toEqual(["failed 2 times in a row (exit 1)", "recovered", "failed 3 times in a row (exit 1)", "recovered", "failed 2 times in a row (exit 1)"]);
+});
