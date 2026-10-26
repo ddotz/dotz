@@ -1,8 +1,9 @@
 // One owner alert per blocked episode (owner 2026-10-23: the same "모델 제공자 결제/인증 문제" alert every ~5 minutes on the
-// macmini, one per retry, replay or restart). An episode is (agent, account, kind): agent = "orchestrator" or "lane:<name>",
-// kind = auth | billing | limit. The last one told is kept on disk, so a restart or a replay inside the episode says nothing
-// new. The alert repeats only when the account or kind changes, or once after REPEAT_MS if it is still blocked; the first
-// successful turn ends the episode with one short recovery line. The raw provider error never reaches the owner (hub.log).
+// macmini, one per retry, replay or restart; 2026-10-26: still a new one every 12 hours and one per session for the same cause). An episode
+// is one kind (auth | billing | limit) shared by every agent ("orchestrator", "lane:<name>"): the first blocked agent tells the owner once,
+// the others and every retry, replay or restart (the record is on disk) stay quiet, also when the error names the account differently.
+// A new alert comes only with a different kind; the first successful turn ends the episode for every agent with one short recovery line.
+// The raw provider error never reaches the owner (hub.log).
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
@@ -10,7 +11,6 @@ import { authFile } from "./apikey-policy.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind } from "./providers.ts";
 
 export type LimitKind = "auth" | "billing" | "limit";
-export const REPEAT_MS = 12 * 3600_000;
 const OWNER_RETRY_MAX_MS = 6 * 3600_000;
 export const AUTH_WATCH_MS = 30_000;
 
@@ -35,28 +35,28 @@ export function limitAccount(err: string, model: string): string {
 }
 export const providerOf = (model: string): string => model.split("/")[0] || "anthropic";
 
-// Records one blocked turn. `alert` is true when the owner should be told now; `failures` counts the blocked turns of the episode.
+// Records one blocked turn. `alert` is true when the owner should be told now; `failures` counts the blocked turns of this agent.
 export function noteBlock(agent: string, account: string, kind: LimitKind, at = Date.now()): { alert: boolean; failures: number } {
 	const all = read();
 	const prev = all[agent];
-	if (!prev || prev.account !== account || prev.kind !== kind) {
-		all[agent] = { account, kind, since: at, sentAt: at, failures: 1 };
+	if (prev && prev.kind === kind) {
+		prev.failures++;
+		prev.account = account;
 		write(all);
-		return { alert: true, failures: 1 };
+		return { alert: false, failures: prev.failures };
 	}
-	prev.failures++;
-	const repeat = at - prev.sentAt >= REPEAT_MS;
-	if (repeat) prev.sentAt = at;
+	const told = Object.entries(all).some(([a, e]) => a !== agent && e.kind === kind);
+	all[agent] = { account, kind, since: at, sentAt: at, failures: 1 };
 	write(all);
-	return { alert: repeat, failures: prev.failures };
+	return { alert: !told, failures: 1 };
 }
 
-// A turn succeeded: the episode of `agent` (if any) is over; the caller tells the owner once.
+// A turn succeeded: the episode is over for every agent blocked the same way (they share the cause); the caller tells the owner once.
 export function noteRecovered(agent: string): Episode | undefined {
 	const all = read();
 	const prev = all[agent];
 	if (!prev) return undefined;
-	delete all[agent];
+	for (const [a, e] of Object.entries(all)) if (e.kind === prev.kind) delete all[a];
 	write(all);
 	return prev;
 }
