@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
 import { sqliteDb } from "./db.ts";
+import { replySourceLog } from "./media.ts";
 import { MAX_CHAT_CHARS, MAX_PAIRS, MAX_PROMPT_CHARS, type ModelReply } from "./draft.ts";
 import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
 import { createDraft, listDrafts } from "./send.ts";
@@ -91,6 +92,20 @@ describe("rooms", () => {
 		t.close();
 	});
 
+	test("a room's newest line for its live row: the preview, the time and the unread count; a record body is a neutral label, not JSON", async () => {
+		const t = setup({}, w => {
+			addMessage(w, { logId: BASE_LOG + BigInt(50), chatId: ROOM.group, authorId: 2002, message: "새로 온 말", type: 1, sentAt: BASE_TIME + 500 });
+			addMessage(w, { logId: BASE_LOG + BigInt(51), chatId: ROOM.direct, authorId: 2001, message: '{"attachment":{"k":1}}', type: 17, sentAt: BASE_TIME + 510 });
+		});
+		expect(await t.call("GET", `/api/kakao/rooms/${GROUP}/latest`)).toEqual({ status: 200, json: { logId: id(50), text: "새로 온 말", at: (BASE_TIME + 500) * 1000, unread: 2 } });
+		expect((await t.call("GET", `/api/kakao/rooms/${DIRECT}/latest`)).json.text).toBe("(지원하지 않는 메시지)");
+		const chat = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
+		expect(chat.json.messages.find((m: any) => m.logId === id(51))).toMatchObject({ type: 17, text: "" });
+		expect((await t.call("GET", `/api/kakao/rooms/not-a-number/latest`)).status).toBe(400);
+		expect((await t.call("GET", `/api/kakao/rooms/${ROOM.channel}/latest`)).status).toBe(404);
+		t.close();
+	});
+
 	test("a database that cannot be read gives a plain error line and no rooms", async () => {
 		const t = setup();
 		const url = new URL("http://local/api/kakao/rooms");
@@ -151,6 +166,11 @@ describe("chat", () => {
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?before=${id(3)}`)).json.messages.map((m: any) => m.logId)).toEqual([id(1), id(2)]);
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?after=${id(2)}`)).json.messages.map((m: any) => m.logId)).toEqual([id(3), id(4)]);
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?after=abc`)).status).toBe(400);
+		// a quote tap: the page that holds the replied-to logId (up to `limit` up to it, plus `limit` after it)
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?limit=2&around=${id(2)}`)).json.messages.map((m: any) => m.logId)).toEqual([id(1), id(2), id(3), id(4)]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?limit=2&around=${id(4)}`)).json.messages.map((m: any) => m.logId)).toEqual([id(3), id(4)]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?limit=2&around=${id(1)}`)).json.messages.map((m: any) => m.logId)).toEqual([id(1), id(2), id(3)]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}?around=abc`)).status).toBe(400);
 
 		expect((await t.call("POST", `/api/kakao/chat/${DIRECT}/read`, { logId: id(3) })).json).toEqual({ ok: true });
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.read).toBe(id(3));
@@ -669,6 +689,36 @@ describe("on-demand draft", () => {
 		t.close();
 	});
 
+	test("메시지 만들어 줘: { intent } writes a new message through the same draft pipeline, the intent in the prompt, the room head as its basis", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], summary: "일정 조율" }), inputTokens: 900, outputTokens: 40 });
+		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/draft`, { intent: "  내일 7시로 미루자고 정중하게  " });
+		expect(r).toEqual({ status: 202, json: { state: "drafting" } });
+		await t.web.idle();
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.model.calls[0]!.user).toContain('The message the owner wants to send (his own words, data): "내일 7시로 미루자고 정중하게"');
+		expect(t.model.calls[0]!.user).toContain("Recent messages in the room (context only");
+		expect(t.model.calls[0]!.system).toContain("message the owner wants to send");
+		const chat = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
+		expect(chat.json.drafts).toEqual([expect.objectContaining({ parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], intent: "내일 7시로 미루자고 정중하게" })]);
+		expect(t.events.filter(e => e.kind === "kakao_draft")).toEqual([{ kind: "kakao_draft", chatId: DIRECT }]);
+
+		expect((await t.call("POST", `/api/kakao/chat/${DIRECT}/draft`, { intent: "   " })).status).toBe(400);
+		expect((await t.call("POST", `/api/kakao/chat/${DIRECT}/draft`, { intent: 7 })).status).toBe(400);
+		expect(t.model.calls).toHaveLength(1);
+		t.close();
+	});
+
+	test("a message he asked for is never asked back as a room question: an ask answer fails the compose draft", async () => {
+		const t = setup();
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "ask", question: "언제로 미룰까요?", choices: ["내일", "모레"], body: "", summary: "" }) });
+		await t.call("POST", `/api/kakao/chat/${DIRECT}/draft`, { intent: "미루자고 말해 줘" });
+		await t.web.idle();
+		expect(t.events.filter(e => e.kind === "kakao_draft").at(-1)).toMatchObject({ chatId: DIRECT, error: expect.any(String) });
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([]);
+		t.close();
+	});
+
 	test("an unwatched room is refused (403) and the model is never called", async () => {
 		const t = setup();
 		const r = await t.call("POST", `/api/kakao/chat/${GROUP}/draft`);
@@ -769,7 +819,7 @@ describe("media", () => {
 		// the text written with a sticker rides in media.text (the text field stays empty, as for every media type); blank text is none
 		expect(by(32)).toMatchObject({ type: 12, text: "", media: { kind: "emoticon", alt: "카카오 이모티콘", text: "고마워 :)" } });
 		expect(by(33).media).toEqual({ kind: "emoticon", alt: "하트" });
-		expect(by(27)).toMatchObject({ text: "나는 국밥", media: { kind: "reply", quoteSender: "Alex" } });
+		expect(by(27)).toMatchObject({ text: "나는 국밥", media: { kind: "reply", quoteSender: "Alex", srcLogId: "1" } });
 		expect([...by(27).media.quote].length).toBeLessThanOrEqual(81);
 		expect(by(27).media.quote.startsWith("점심 뭐 먹을까 ")).toBe(true);
 		expect(by(28).media).toEqual({ kind: "location", label: "서울 강남구", lat: 37.5, lng: 127.03 });
@@ -780,6 +830,20 @@ describe("media", () => {
 		const body = JSON.stringify(r.json);
 		for (const leak of ["kakaocdn", "https://", "http://", dir, "localFilePath", "attachment", "thumbnailUrl"]) expect(body).not.toContain(leak);
 		t.close();
+	});
+
+	test("a reply's source logId is read from the attachment JSON, top level or a src/reply container, for the quote jump", () => {
+		const src = (attachment: unknown, type = 26) => replySourceLog({ type, attachment: JSON.stringify(attachment) });
+		expect(src({ src_logId: 4242 })).toBe("4242");
+		expect(src({ srcLogId: "9007199254740993" })).toBe("9007199254740993");
+		expect(src({ src: { src_logId: 7 } })).toBe("7");
+		expect(src({ reply: { srcLogId: "8" } }, 26)).toBe("8");
+		expect(src({})).toBeUndefined();
+		expect(src({ src_logId: 0 })).toBeUndefined();
+		expect(src({ src_logId: -3 })).toBeUndefined();
+		expect(src({ src_logId: "abc" })).toBeUndefined();
+		expect(src({ attachment: { src_logId: 5 } })).toBeUndefined();
+		expect(src({ src_logId: 5 }, 1)).toBeUndefined();
 	});
 
 	test("the media route fetches the stored URL server-side, without cookies or auth, and streams only image/video/audio back", async () => {
@@ -913,6 +977,60 @@ describe("media", () => {
 		expect(t.fetched.length).toBe(2);
 		writeFileSync(paths.config, JSON.stringify({ enabled: false }));
 		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(20)}`)).status).toBe(409);
+		t.close();
+	});
+});
+
+describe("person analysis", () => {
+	const recent = (w: Database) => {
+		addMessage(w, { logId: BASE_LOG + BigInt(100), chatId: ROOM.direct, authorId: 2001, message: "안녕하세요", type: 1, sentAt: Math.floor(NOW / 1000) - 600 });
+		addMessage(w, { logId: BASE_LOG + BigInt(101), chatId: ROOM.direct, authorId: OWNER, message: "네", type: 1, sentAt: Math.floor(NOW / 1000) - 300 });
+	};
+
+	test("GET /api/kakao/person/<id> counts the person; POST .../analyze asks the model once and keeps the summary with its time", async () => {
+		const t = setup({}, recent);
+		t.model.reply = async () => ({ text: "일정을 함께 맞추는 사이예요." });
+		const r = await t.call("GET", `/api/kakao/person/2001?room=${DIRECT}`);
+		expect(r.status).toBe(200);
+		expect(r.json.stats).toMatchObject({ userId: "2001", name: "Alex", room: DIRECT, roomMessages: 1, watchedMessages: 1, windowDays: 30 });
+		expect(r.json.analysis).toBeUndefined();
+
+		const a = await t.call("POST", "/api/kakao/person/2001/analyze", { room: DIRECT });
+		expect(a).toEqual({ status: 200, json: { analysis: { text: "일정을 함께 맞추는 사이예요.", at: NOW } } });
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.model.calls[0]!.system).toContain("one person in a KakaoTalk room");
+		expect(t.model.calls[0]!.user).toContain("안녕하세요");
+		expect((await t.call("GET", `/api/kakao/person/2001?room=${DIRECT}`)).json.analysis).toEqual(a.json.analysis);
+		expect(statSync(join(dir, "kakao", "person-summaries.json")).mode & 0o777).toBe(0o600);
+
+		expect((await t.call("POST", "/api/kakao/person/2001/analyze", {})).status).toBe(400);
+		expect((await t.call("GET", "/api/kakao/person/abc?room=1")).status).toBe(400);
+		expect((await t.call("GET", "/api/kakao/person/2001?room=999")).status).toBe(404);
+		writeFileSync(paths.config, JSON.stringify({ ...t.config$(), enabled: false }));
+		expect((await t.call("GET", `/api/kakao/person/2001?room=${DIRECT}`)).status).toBe(409);
+		t.close();
+	});
+});
+
+describe("link previews", () => {
+	const html = (body: string) => new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+
+	test("GET /api/link-preview answers the card fields; the image comes back through the gateway's image route", async () => {
+		const t = setup({}, undefined, { previewAllowHosts: ["127.0.0.1"] });
+		t.upstream.reply = () => html(`<html><head><meta property="og:title" content="맛집 지도"><meta property="og:image" content="http://127.0.0.1:9/i.png"></head></html>`);
+		const r = await t.call("GET", `/api/link-preview?url=${encodeURIComponent("http://127.0.0.1:9/maps")}`);
+		expect(r.status).toBe(200);
+		expect(r.json).toMatchObject({ ok: true, url: "http://127.0.0.1:9/maps", title: "맛집 지도" });
+		expect(r.json.image).toContain("/api/link-preview/image?url=");
+		expect(t.fetched.map(f => f.url)).toEqual(["http://127.0.0.1:9/maps"]);
+		t.close();
+	});
+
+	test("a private address is refused by default, without a fetch, and a missing url is a 400", async () => {
+		const t = setup();
+		expect((await t.call("GET", `/api/link-preview?url=${encodeURIComponent("http://127.0.0.1:9/maps")}`)).status).toBe(403);
+		expect((await t.call("GET", "/api/link-preview")).status).toBe(400);
+		expect(t.fetched).toEqual([]);
 		t.close();
 	});
 });

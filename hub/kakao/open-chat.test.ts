@@ -92,7 +92,7 @@ describe("open chat room view", () => {
 	test("a reply names the author of the original even when that message is not on the page", async () => {
 		const t = setup([m(1, R.open, MEMBER, "who has a ladder?"), m(2, R.open, PEER, "me, later", 26, { src_logId: Number(id(1)), src_userId: MEMBER, src_message: "who has a ladder?", src_type: 1 })]);
 		const r = await t.call("GET", `/api/kakao/chat/${R.open}?limit=1`);
-		expect(r.json.messages[0].media).toEqual({ kind: "reply", quote: "who has a ladder?", quoteSender: "Washer" });
+		expect(r.json.messages[0].media).toEqual({ kind: "reply", quote: "who has a ladder?", quoteSender: "Washer", srcLogId: id(1) });
 		t.close();
 	});
 });

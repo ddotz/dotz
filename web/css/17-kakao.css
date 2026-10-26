@@ -63,11 +63,13 @@
 .kk-in { display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; }
 .kk-in > .kk-note { margin: auto; color: var(--kk-time); }
 .kk-pill { position: absolute; left: 50%; bottom: 12px; z-index: 2; height: 32px; padding: 0 14px; transform: translateX(-50%); border-radius: 16px; box-shadow: var(--float); }
+.kk-top { display: flex; justify-content: center; padding: 2px 0 6px; }
 .kk-more { align-self: center; color: var(--kk-time); }
 .kk-date { align-self: center; margin: 14px 0 8px; padding: 4px 12px; border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 500 12px/16px var(--font); }
 .kk-new { display: flex; align-items: center; gap: 12px; margin: 12px 0 6px; color: var(--kk-time); font: 600 12px/16px var(--font); }
 .kk-new::before, .kk-new::after { content: ""; flex: 1; height: 1px; background: color-mix(in srgb, var(--kk-time) 45%, transparent); }
 .kk-m { display: flex; min-width: 0; }
+.kk-m:empty { display: none; }
 .kk-m.first { margin-top: 10px; }
 .kk-m.in { gap: 8px; align-items: flex-start; }
 .kk-m.me { flex-direction: column; align-items: flex-end; }
@@ -136,12 +138,30 @@
 .kk-nopc { flex: none; }
 .kk-bub.card.loc { flex-direction: column; align-items: flex-start; gap: 0; max-width: 260px; text-decoration: none; color: var(--kk-in-fg); }
 .kk-bub.card.loc .kk-fn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-.kk-bub.reply { display: flex; flex-direction: column; gap: 4px; }
-.kk-quote { display: flex; flex-direction: column; gap: 1px; margin: -2px -4px 0; padding: 4px 8px; border-radius: 8px; background: color-mix(in srgb, currentColor 8%, transparent); font: 400 12px/17px var(--font); }
+.kk-bub.reply { display: flex; flex-direction: column; gap: 4px; min-width: 150px; max-width: 100%; }
+.kk-quote { display: flex; flex-direction: column; gap: 1px; align-self: stretch; margin: -2px -4px 0; padding: 4px 8px; border: 0; border-radius: 8px; background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; text-align: left; font: 400 12px/17px var(--font); }
+.kk-quote.jump { cursor: pointer; }
+.kk-quote.jump:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+.kk-quote:disabled { cursor: default; }
+/* a quote tap flashes the original message (30-kakao.js kkFlash) */
+.kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker { animation: kk-hl 1.6s ease; border-radius: 10px; }
+@keyframes kk-hl { 0%, 55% { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker { animation-duration: .01s; } }
 .kk-qn { font-weight: 600; opacity: .85; }
 .kk-qt { opacity: .75; }
 .kk-qt { overflow-wrap: anywhere; }
 .kk-rt { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* an address in a bubble is a link; its preview card sits under the bubble (30-kakao.js kkLpCard) */
+.kk-link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.kk-lps { display: flex; flex-direction: column; gap: 6px; width: 260px; max-width: 100%; margin-top: 6px; }
+.kk-m.me .kk-lps { align-self: flex-end; }
+.kk-lp { display: flex; flex-direction: column; overflow: hidden; border-radius: 12px; background: var(--card); color: var(--fg); text-decoration: none; box-shadow: var(--shadow-panel); }
+.kk-lp img { display: block; width: 100%; max-height: 150px; object-fit: cover; background: var(--layer); }
+.kk-lp-b { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; }
+.kk-lp-s { color: var(--fg-3); font: 500 11px/15px var(--font); }
+.kk-lp-t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font: 600 13px/18px var(--font); }
+.kk-lp-d { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--fg-2); font: 400 12px/17px var(--font); }
+.kk-lp-ph { padding: 10px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .kk-sys { align-self: center; max-width: 86%; margin: 10px 0 4px; padding: 3px 12px; border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 400 12px/17px var(--font); text-align: center; overflow-wrap: anywhere; white-space: pre-wrap; }
 .kk-vw video, .kk-vw img { max-width: 100%; max-height: 100%; }
 /* a room that is not watched: read-only, this bar instead of the composer */
@@ -170,11 +190,38 @@
 .kk-st { color: var(--fg-3); font: 500 12.5px/18px var(--font); }
 .kk-manual { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--fg-2); }
 .kk-manual .ic { width: 14px; height: 14px; }
+/* 메시지 만들어 줘: the intent box above the composer (30-kakao.js kkIntentBox) */
+.kk-intent { margin: 0 0 8px; padding: 10px 12px; border-radius: var(--r-card); background: color-mix(in srgb, var(--accent) 6%, var(--card)); box-shadow: var(--shadow-panel); }
+.kk-intent .btns { gap: 6px; }
+.kk-intent .btn { height: 32px; padding: 0 12px; font-size: 13px; }
 .kk-edit { display: flex; align-items: center; gap: 8px; margin: 0 4px 6px; color: var(--fg-2); font: 500 12.5px/18px var(--font); }
 .kk-edit .btn { height: 28px; }
 .kk-dbtn { gap: 4px; background: var(--layer); color: var(--fg); }
 .kk-dbtn .ic { width: 14px; height: 14px; }
 .kk-dbtn:disabled { opacity: .6; }
+
+/* 사용자별 분석 (30-kakao.js kkPerson): desktop a side panel, phone a full-screen sheet */
+.kk-pd { border: 0; padding: 0; max-width: none; max-height: none; background: transparent; color: var(--fg); }
+.kk-pd::backdrop { background: rgb(0 0 0 / .3); }
+.kk-pd-in { display: flex; flex-direction: column; width: min(400px, 100vw); max-height: min(680px, 100dvh); margin: auto; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
+.kk-pd-h { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.kk-pd-h .x { margin-left: auto; }
+.kk-pd-b { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 16px 16px; }
+.kk-psec { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.kk-psec:last-child { border-bottom: 0; }
+.kk-prow { display: flex; gap: 12px; padding: 3px 0; font: 400 13px/19px var(--font); }
+.kk-pk { flex: none; width: 108px; color: var(--fg-3); }
+.kk-pv { min-width: 0; overflow-wrap: anywhere; }
+.kk-hist { display: flex; align-items: flex-end; gap: 2px; height: 64px; margin: 8px 0 4px; }
+.kk-hb { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); }
+.kk-hax { display: flex; justify-content: space-between; color: var(--fg-3); font: 400 10px/14px var(--font); }
+.kk-hax7 { justify-content: space-around; font-size: 11px; }
+.kk-pun { display: flex; flex-direction: column; gap: 1px; padding: 6px 0; }
+.kk-put { font: 400 13px/19px var(--font); overflow-wrap: anywhere; }
+.kk-sum { padding-top: 12px; }
+.kk-sum .btn { margin-top: 8px; height: 34px; }
+@media (min-width: 640px) { .kk-pd { margin: 0 0 0 auto; height: 100dvh; } .kk-pd-in { height: 100dvh; max-height: none; border-radius: 0; } }
+@media (max-width: 639px) { .kk-pd { margin: 0; width: 100vw; height: 100dvh; } .kk-pd-in { width: 100vw; height: 100dvh; max-height: none; border-radius: 0; } }
 
 /* 모니터링 > 앱 > 댓글 (web/js/30-monitoring-comments.js): the same pane; a reply's parent and a source's choices */
 .kk-reply { margin-bottom: 4px; color: var(--kk-time); font: 400 12px/16px var(--font); }
