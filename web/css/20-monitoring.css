@@ -37,7 +37,10 @@
 .mon-banner .ic { flex: none; color: var(--err); }
 .mon-banner-tx { flex: 1; min-width: 0; color: var(--fg-2); overflow-wrap: break-word; }
 .mon-banner-tx b { color: var(--err); font-weight: 600; }
-.mon-banner .as-tpl { flex: none; min-height: 34px; padding: 0 12px; }
+.mon-banner .btn { flex: none; }
+/* connected, but the last check failed: a warning, not the outage colour */
+.mon-banner.fail { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.mon-banner.fail .ic, .mon-banner.fail .mon-banner-tx b { color: var(--warn); }
 
 /* 감시 소식 opens with this: one compact row per plain monitor, what needs the owner first */
 .mon-ov { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); }

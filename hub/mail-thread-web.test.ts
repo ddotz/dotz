@@ -24,8 +24,11 @@ const MAILS = [
 	{ key: "fx-3", subject: "3주 차 점검", at: at(100), summary: "요약\n셋째 주 점검이 끝났어요." },
 	{ key: "fx-4", subject: "월간 점검 보고서", at: at(0), summary: "요약\n이번 달 점검이 끝났어요. 금요일까지 확인이 필요해요." },
 	{ key: "fx-9", subject: "다른 사람의 메일", at: at(50), summary: "요약\n다른 사람이 보냈어요.", from: "Other <other@example.com>", to: "나 <me@example.com>" },
+	// Sent mail: one to the same person (in the thread), one to someone else with the open mail's subject (not in it: same subject is not same person).
+	{ key: "fx-7", subject: "점검 결과 회신", at: at(400), summary: "요약\n내가 회신했어요.", from: "나 <me@example.com>", to: "Alex Sender <sender@example.com>", dir: "out" },
+	{ key: "fx-8", subject: "월간 점검 보고서", at: at(450), summary: "요약\n다른 사람에게 보냈어요.", from: "나 <me@example.com>", to: "Third <third@example.com>", dir: "out" },
 ];
-const card = (m: (typeof MAILS)[number]) => ({ subject: m.subject, from: m.from ?? FROM, to: m.to ?? TO, ...(m.from ? {} : { cc: CC }), source: "fx", at: m.at, summary: m.summary, html: m.key === "fx-4" });
+const card = (m: (typeof MAILS)[number]) => ({ subject: m.subject, from: m.from ?? FROM, to: m.to ?? TO, ...(m.from ? {} : { cc: CC }), ...(m.dir ? { dir: m.dir } : {}), source: "fx", at: m.at, summary: m.summary, html: m.key === "fx-4" });
 const server = Bun.serve({
 	port: 0,
 	hostname: "127.0.0.1",
@@ -73,7 +76,7 @@ async function openPage(width: number, hash: string) {
 const ev = async (v: InstanceType<typeof Bun.WebView>, code: string) => JSON.parse((await v.evaluate(`JSON.stringify(${code})`)) as string);
 const openMail = async (v: InstanceType<typeof Bun.WebView>, key: string) => {
 	await v.evaluate(`go("monitoring", "c:mail:${key}")`);
-	await v.evaluate(until(`current === "chat" && !!document.querySelector("#tl .mh") && (document.querySelector("#tl iframe.mb-frame") ? (document.querySelector("#tl iframe.mb-frame").style.height || "") !== "" : !!document.querySelector("#tl .mb-txt"))`, `${key} original not drawn`));
+	await v.evaluate(until(`current === "chat" && !!document.querySelector("#tl .mhd") && (document.querySelector("#tl iframe.mb-frame") ? (document.querySelector("#tl iframe.mb-frame").style.height || "") !== "" : !!document.querySelector("#tl .mb-txt"))`, `${key} original not drawn`));
 };
 
 test("at 1280px the original is the page's own scroll, the header names everyone, and the thread panel sits beside it", async () => {
@@ -88,8 +91,8 @@ test("at 1280px the original is the page's own scroll, the header names everyone
 			if (e.closest("#timeline, #mail-thread, #chat-convo")) return false;
 			return e.scrollHeight > e.clientHeight + 1;
 		}).map(e => e.className || e.tagName);
-		const rows = [...document.querySelectorAll("#tl .mh .mh-r")].map(r => r.textContent);
-		const more = [...document.querySelectorAll("#tl .mh .mh-more")].map(b => b.textContent);
+		const rows = [...document.querySelectorAll("#tl .mhd .mhd-r")].map(r => r.textContent);
+		const more = [...document.querySelectorAll("#tl .mhd .mhd-more")].map(b => b.textContent);
 		const thr = document.querySelector("#mail-thread");
 		const tlBox = document.querySelector("#timeline").getBoundingClientRect(), thBox = thr && thr.getBoundingClientRect();
 		const thrRows = [...document.querySelectorAll("#mail-thread .mth-row")];
@@ -123,15 +126,15 @@ test("at 1280px the original is the page's own scroll, the header names everyone
 	expect(page.thrDisplay).toBe("flex");
 	expect(page.beside).toBe(true);
 	expect(page.thrHead).toBe("이 사람과 주고받은 메일");
-	expect(page.thrN).toBe("4");
-	expect(page.thrSubj).toEqual(["월간 점검 보고서", "3주 차 점검", "2주 차 점검", "1주 차 점검"]);
-	expect(page.thrOn).toEqual([true, false, false, false]);
-	expect(page.thrSum).toEqual([true, true, true, true]);
+	expect(page.thrN).toBe("5");
+	expect(page.thrSubj).toEqual(["월간 점검 보고서", "3주 차 점검", "2주 차 점검", "1주 차 점검", "점검 결과 회신"]);
+	expect(page.thrOn).toEqual([true, false, false, false, false]);
+	expect(page.thrSum).toEqual([true, true, true, true, true]);
 	expect(page.mobileShown).toBe(false);
 
 	// the header's 외 1명 opens the rest
-	await v.evaluate(`document.querySelector("#tl .mh-more").click()`);
-	const expanded = await ev(v, `[...document.querySelectorAll("#tl .mh .mh-r")].map(r => r.textContent)`);
+	await v.evaluate(`document.querySelector("#tl .mhd-more").click()`);
+	const expanded = await ev(v, `[...document.querySelectorAll("#tl .mhd .mhd-r")].map(r => r.textContent)`);
 	expect(expanded[1]).toContain("team@example.com");
 	expect(expanded[1]).toContain("log@example.com");
 
@@ -149,7 +152,7 @@ test("at 1280px the original is the page's own scroll, the header names everyone
 	expect(after.on).toEqual(["mail:fx-3"]);
 	expect(after.title).toBe("3주 차 점검");
 	// a text mail shows the same header
-	expect(await ev(v, `[...document.querySelectorAll("#tl .mh .mh-r")].map(r => r.textContent)`)).toEqual(["보낸 사람Alex Sender <sender@example.com>", "받는 사람나 <me@example.com>, 팀 <team@example.com> 외 1명", "참조Lee <lee@example.com>, Park <park@example.com>"]);
+	expect(await ev(v, `[...document.querySelectorAll("#tl .mhd .mhd-r")].map(r => r.textContent)`)).toEqual(["보낸 사람Alex Sender <sender@example.com>", "받는 사람나 <me@example.com>, 팀 <team@example.com> 외 1명", "참조Lee <lee@example.com>, Park <park@example.com>"]);
 }, 30_000);
 
 test("at 390px the thread is one row under the header that opens the same list", async () => {
@@ -160,10 +163,10 @@ test("at 390px the thread is one row under the header that opens the same list",
 		return { row: m && m.textContent, panel: p ? getComputedStyle(p).display : "none", expanded: m && m.getAttribute("aria-expanded"), list: [...document.querySelectorAll("#tl .mth-m .mth-row")].length,
 			listHidden: document.querySelector("#tl .mth-m .mth-list").hidden, over: document.documentElement.scrollWidth > innerWidth };
 	})()`);
-	expect(box.row).toContain("이 사람과 주고받은 메일 4");
+	expect(box.row).toContain("이 사람과 주고받은 메일 5");
 	expect(box.panel).toBe("none");
 	expect(box.expanded).toBe("false");
-	expect(box.list).toBe(4);
+	expect(box.list).toBe(5);
 	expect(box.listHidden).toBe(true);
 	expect(box.over).toBe(false);
 
@@ -174,7 +177,7 @@ test("at 390px the thread is one row under the header that opens the same list",
 
 	await v.evaluate(`document.querySelector("#tl .mth-mb").click()`);
 	const shown = await ev(v, `({ expanded: document.querySelector("#tl .mth-mb").getAttribute("aria-expanded"), hidden: document.querySelector("#tl .mth-m .mth-list").hidden, subj: [...document.querySelectorAll("#tl .mth-m .mth-subj")].map(e => e.textContent) })`);
-	expect(shown).toEqual({ expanded: "true", hidden: false, subj: ["월간 점검 보고서", "3주 차 점검", "2주 차 점검", "1주 차 점검"] });
+	expect(shown).toEqual({ expanded: "true", hidden: false, subj: ["월간 점검 보고서", "3주 차 점검", "2주 차 점검", "1주 차 점검", "점검 결과 회신"] });
 	if (SHOTS) await Bun.write(`${SHOTS}/mail-thread-390-open.png`, await v.screenshot());
 
 	await v.evaluate(`document.querySelectorAll("#tl .mth-m .mth-row")[3].click()`);
@@ -185,7 +188,7 @@ test("at 390px the thread is one row under the header that opens the same list",
 test("a mail with no related mail shows no thread and still names who it is for", async () => {
 	const v = await openPage(1280, "monitoring/i:mail");
 	await openMail(v, "fx-9");
-	const got = await ev(v, `({ panel: !document.querySelector("#mail-thread").hidden, mobile: !!document.querySelector("#tl .mth-m"), rows: [...document.querySelectorAll("#tl .mh .mh-r")].map(r => r.textContent), over: document.documentElement.scrollWidth > innerWidth })`);
+	const got = await ev(v, `({ panel: !document.querySelector("#mail-thread").hidden, mobile: !!document.querySelector("#tl .mth-m"), rows: [...document.querySelectorAll("#tl .mhd .mhd-r")].map(r => r.textContent), over: document.documentElement.scrollWidth > innerWidth })`);
 	expect(got.panel).toBe(false);
 	expect(got.mobile).toBe(false);
 	expect(got.rows[0]).toContain("Other");
@@ -199,10 +202,12 @@ for (const width of [1280, 390]) {
 		const v = await openPage(width, "monitoring/i:mail");
 		await v.evaluate(until(`document.querySelectorAll("#mon-tl .mr").length >= 5`, "mail rows not drawn"));
 		const got = await ev(v, `(() => { const rows = [...document.querySelectorAll("#mon-tl .mr")]; return { to: rows.map(r => r.querySelector(".mr-to")?.textContent ?? null), h: rows.map(r => Math.round(r.getBoundingClientRect().height)), over: document.documentElement.scrollWidth > innerWidth }; })()`);
-		expect(got.to[0]).toContain("외 1명");
+		// the first received mail's row (the sent fixtures name a single recipient)
+		const recv = got.to.find((t: string | null) => !!t && t.includes("me@example.com")) ?? "";
+		expect(recv).toContain("외 1명");
 		for (const h of got.h) expect(h).toBeLessThan(width === 390 ? 190 : 150);
-		expect(got.to[0]).toContain("받는 사람 나 <me@example.com>");
-		expect(got.to[0]).toContain("참조 Lee <lee@example.com>");
+		expect(recv).toContain("받는 사람 나 <me@example.com>");
+		expect(recv).toContain("참조 Lee <lee@example.com>");
 		expect(got.over).toBe(false);
 	}, 30_000);
 }

@@ -256,11 +256,9 @@ function renderProjects() {
   if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
   const list = PRJ.projects || [];
   if (!list.length) { delete box.dataset.sig; clear(box).append(emptyNode("아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요")); return; }
-  const sig = JSON.stringify([list, ppCur, current === "project", list.map(p => { const c = prjChat(p); return c ? ts(c).unread : 0; })]);
-  if (box.dataset.sig !== sig) {
-    box.dataset.sig = sig;
-    clear(box).append(pjShell());
-  }
+  // The shell (search box, chip and list slots) is built once: rebuilding it on a data refresh would drop the search box's focus and caret.
+  // The chips and rows below follow the data on their own.
+  if (!box.querySelector("#pl-shell")) clear(box).append(pjShell());
   pjPaintChips();
   pjPaintRows();
 }
