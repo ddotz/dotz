@@ -45,6 +45,10 @@ const parse = (s?: string): Att => {
 		return {};
 	}
 };
+// KakaoTalk ids are 19 digits, past a JS number's exact range: the id fields of a reply are read as strings (quoted before the parse), so
+// 3456789012345678901 stays itself instead of becoming 3456789012345679000.
+const ID_FIELD = /("(?:src_logId|srcLogId|src_userId)"\s*:\s*)(-?\d+)(?=\s*[,}\]])/g;
+const parseIds = (s?: string): Att => parse(s?.replace(ID_FIELD, '$1"$2"'));
 const pos = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined);
 const text = (v: unknown): string => (typeof v === "string" ? v : "");
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -103,7 +107,7 @@ export function mediaOf(m: Msg, now: number, names: Map<string, string> = new Ma
 // The author of the message a reply answers (type 26 src_userId), for the name above the quote.
 export const replySource = (m: Pick<Msg, "type" | "attachment">): string | undefined => {
 	if (m.type !== REPLY) return undefined;
-	const id = parse(m.attachment).src_userId;
+	const id = parseIds(m.attachment).src_userId;
 	return id === undefined || id === null || id === "" ? undefined : String(id);
 };
 
@@ -117,7 +121,7 @@ const srcLogOf = (v: unknown): string | undefined => {
 // or inside a src/reply/origin/parent container (kakarot's reader.rs accepts the same shapes).
 export const replySourceLog = (m: Pick<Msg, "type" | "attachment">): string | undefined => {
 	if (m.type !== REPLY) return undefined;
-	const a = parse(m.attachment);
+	const a = parseIds(m.attachment);
 	for (const key of ["reply", "src", "origin", "parent"]) {
 		const inner = a[key];
 		if (inner && typeof inner === "object" && !Array.isArray(inner)) {
