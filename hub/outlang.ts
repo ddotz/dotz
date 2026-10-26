@@ -144,6 +144,8 @@ export async function callModel(system: string, text: string, opts: { model?: st
 				invalidateHealth();
 				throw e;
 			}
+			// A warm turn that timed out already used the whole bound: the one-shot path would make the caller wait it twice.
+			if (/timed out/.test(why)) throw e;
 			log(`model: warm process failed (${why}); one-shot call`);
 		}
 	}
