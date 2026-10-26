@@ -16,7 +16,7 @@ const table = [
 test("a machine whose only login is OmO's Claude subscription lists anthropic with its models", () => {
 	const auth = omoAuthInfos(mini);
 	const models = omoModels(table, mini, {});
-	expect(auth).toEqual([{ provider: "anthropic", type: "oauth", label: "imported-anthropic", masked: undefined }]);
+	expect(auth).toEqual([{ provider: "anthropic", type: "oauth", label: "imported-anthropic", masked: undefined, accounts: 2 }]);
 	expect(models.map(m => m.selector)).toEqual(["anthropic/claude-opus-5-5", "anthropic/claude-haiku-4-5"]);
 	expect(models.map(m => m.reasoning)).toEqual([true, false]);
 	const { providers } = buildProviders({ auth, env: {}, models, catalog: [], inUse: new Set(["anthropic"]) });
@@ -38,18 +38,18 @@ test("without a subscription OmO's anthropic key is the anthropic provider; no l
 	expect(omoAuthInfos(undefined)).toEqual([]);
 });
 
-test("an OmO-only install offers no web login: the row says how to log in on this computer, and login-only providers are not offered under 추가", () => {
+// OmO installs log in through OmO's RPC now (hub/providers-omo-login.test.ts), so the web offers the login there too: login-only
+// providers under 추가, and 계정 추가 on a signed-in Claude subscription (it adds an account; the count shows on the row).
+test("an OmO install offers web logins: login-only providers under 추가, and 계정 추가 on the Claude subscription row", () => {
 	const catalog = [{ id: "anthropic", name: "Anthropic (Claude Pro/Max)" }, { id: "openai", name: "OpenAI" }, { id: "github-copilot", name: "GitHub Copilot" }];
 	const auth = omoAuthInfos(mini);
-	const omo = buildProviders({ auth, env: {}, models: [], catalog, inUse: new Set(["anthropic"]), webLogin: false });
+	const omo = buildProviders({ auth, env: {}, models: [], catalog, inUse: new Set(["anthropic"]) });
 	const a = omo.providers.find(p => p.id === "anthropic")!;
-	expect(a.can_login).toBe(false);
-	expect(a.login_hint).toBe("/login anthropic");
-	expect(omo.addable.map(p => p.id)).not.toContain("github-copilot");
+	expect(a).toMatchObject({ can_login: true, can_add_account: true, accounts: 2, account: "imported-anthropic" });
+	expect(omo.addable.find(p => p.id === "github-copilot")?.kind).toBe("oauth");
 	expect(omo.addable.find(p => p.id === "openai")?.kind).toBe("api_key");
-	const omp = buildProviders({ auth, env: {}, models: [], catalog, inUse: new Set(["anthropic"]) });
-	expect(omp.providers.find(p => p.id === "anthropic")!.can_login).toBe(true);
-	expect(omp.providers.find(p => p.id === "anthropic")!.login_hint).toBeUndefined();
-	expect(omp.addable.map(p => p.id)).toContain("github-copilot");
+	const noLogin = buildProviders({ auth, env: {}, models: [], catalog: [], inUse: new Set() });
+	expect(noLogin.providers[0]).toMatchObject({ can_login: false });
+	expect(noLogin.providers[0].can_add_account).toBeUndefined();
 });
 
