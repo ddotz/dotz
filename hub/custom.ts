@@ -3,11 +3,11 @@
 // comes back as an error entry. Data commands run through watch.ts exec with an in-memory cache; routines are kept as
 // `[routine:<id>:<hash6>] ` entries of hub/schedule.ts. customRoute() takes its gateway state as deps so tests can call it.
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { BgWork } from "./bgwork.ts";
-import { cfg, DATA_DIR, expand, HOME, log, paths, TEMPLATES, TZ } from "./config.ts";
+import { cfg, DATA_DIR, expand, HOME, log, paths, TEMPLATES, TZ, writeAtomic } from "./config.ts";
 import { loadFeatureDirs } from "./featuredirs.ts";
 import { loadProjects, type ProjectRecord } from "./projects.ts";
 import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
@@ -157,6 +157,102 @@ export function readCards(errors: CustomError[] = []): CardEntry[] {
 	return out;
 }
 
+// ---- card files written from the web (POST / PUT / DELETE /api/custom/cards) -----------------------------------------
+// A card the owner adds from 홈 is the same plain file a hand-written one is: cards/<id>.json, or cards/<id>/card.json when
+// the folder form already exists (its render.js stays). Only the keys a card file may carry are written, validated by the
+// same parser that reads them, so a saved card never comes back as an error entry.
+const CARD_KEYS = ["title", "note", "view", "text", "command", "cwd", "every_minutes", "timeout_seconds", "link", "order", "actions"] as const;
+const ACTION_KEYS = ["label", "command", "prompt", "confirm"] as const;
+export type CardFile = { id: string; file: string; dir: boolean };
+
+// Where a card's file is now: the folder form wins over a loose file of the same id, as readCards() lists them.
+export function cardFile(id: string): CardFile | undefined {
+	if (!ID.test(id)) return undefined;
+	const dir = join(customDir(), "cards");
+	if (existsSync(join(dir, id, "card.json")) || (existsSync(join(dir, id)) && statSync(join(dir, id)).isDirectory())) return { id, file: join(dir, id, "card.json"), dir: true };
+	if (existsSync(join(dir, `${id}.json`))) return { id, file: join(dir, `${id}.json`), dir: false };
+	return undefined;
+}
+
+// The file's own JSON, for the editor; a file that does not parse comes back as `raw` text.
+export function readCardFile(id: string): { id: string; file: string; spec?: Record<string, unknown>; raw?: string; error?: string } | undefined {
+	const f = cardFile(id);
+	if (!f) return undefined;
+	const rel = f.dir ? `cards/${id}/card.json` : `cards/${id}.json`;
+	let raw: string;
+	try {
+		raw = readFileSync(f.file, "utf8");
+	} catch (e) {
+		return { id, file: rel, error: msg(e) };
+	}
+	try {
+		const j = JSON.parse(raw);
+		return isObj(j) ? { id, file: rel, spec: j } : { id, file: rel, raw, error: "카드는 JSON 객체여야 해요" };
+	} catch (e) {
+		return { id, file: rel, raw, error: `JSON을 읽을 수 없어요: ${msg(e)}` };
+	}
+}
+
+// The card file's content from a web form: only the known keys, empty strings dropped, numbers as numbers.
+function cardFileBody(body: Record<string, unknown>): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const k of CARD_KEYS) {
+		let v = body[k];
+		if (v === undefined || v === null) continue;
+		if (k === "actions") {
+			if (!Array.isArray(v)) continue;
+			const acts = v.map(a => {
+				const o: Record<string, unknown> = {};
+				if (isObj(a)) for (const ak of ACTION_KEYS) if (a[ak] !== undefined && a[ak] !== null && !(typeof a[ak] === "string" && !(a[ak] as string).trim() && ak !== "label")) o[ak] = a[ak];
+				return o;
+			});
+			if (acts.length) out.actions = acts;
+			continue;
+		}
+		if (typeof v === "string") {
+			if (k === "every_minutes" || k === "timeout_seconds" || k === "order") {
+				if (!v.trim()) continue;
+				v = Number(v);
+			} else if (!v.trim() && k !== "text") continue;
+		}
+		out[k] = v;
+	}
+	return out;
+}
+
+// An id from the title (its latin letters and digits), else card-<n>; never one that is taken.
+function freeCardId(title: string): string {
+	const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+	const base = slug && /^[a-z0-9]/.test(slug) ? slug : "card";
+	if (base !== "card" && !cardFile(base)) return base;
+	for (let n = 1; ; n++) if (!cardFile(`${base}-${n}`)) return `${base}-${n}`;
+}
+
+export function saveCardFile(id: string | undefined, body: Record<string, unknown>, create: boolean): { ok: true; id: string } | { ok: false; status: number; error: string } {
+	const content = cardFileBody(body);
+	const spec = parseCard(JSON.stringify(content));
+	if (typeof spec === "string") return { ok: false, status: 400, error: spec };
+	if (id !== undefined && !ID.test(id)) return { ok: false, status: 400, error: "id는 영문 소문자·숫자·하이픈 40자 이하여야 해요" };
+	const cur = id ? cardFile(id) : undefined;
+	if (create && cur) return { ok: false, status: 409, error: `id ${id}는 이미 있어요` };
+	if (!create && !cur) return { ok: false, status: 404, error: `card ${id} not found` };
+	if (create && !id && readCards().length >= MAX_CARDS) return { ok: false, status: 400, error: `카드는 ${MAX_CARDS}개까지만 둘 수 있어요` };
+	const finalId = id ?? freeCardId(spec.title);
+	const file = cur ? cur.file : join(customDir(), "cards", `${finalId}.json`);
+	mkdirSync(join(customDir(), "cards"), { recursive: true });
+	writeAtomic(file, `${JSON.stringify(content, null, 2)}\n`);
+	for (const k of [...cache.keys()]) if (k.startsWith(`${finalId}\0`)) cache.delete(k);
+	return { ok: true, id: finalId };
+}
+
+export function deleteCardFile(id: string): boolean {
+	const f = cardFile(id);
+	if (!f) return false;
+	rmSync(f.dir ? join(customDir(), "cards", id) : f.file, { recursive: true, force: true });
+	for (const k of [...cache.keys()]) if (k.startsWith(`${id}\0`)) cache.delete(k);
+	return true;
+}
+
 // ---- data commands (cache + one refresh per card at a time) ----------------------------------------------------------
 type Entry = { hasData: boolean; data?: unknown; updated?: number; error?: string; ranAt: number; running?: Promise<void> };
 const cache = new Map<string, Entry>();
@@ -207,7 +303,7 @@ export const settleRefreshes = () => Promise.all([...cache.values()].map(e => e.
 
 async function cardView(c: Exclude<CardEntry, { error: string }>, force: boolean): Promise<Record<string, unknown>> {
 	const { spec } = c;
-	const base: Record<string, unknown> = { id: c.id, title: spec.title, ...(spec.note ? { note: spec.note } : {}), view: spec.view, ...(spec.link ? { link: spec.link } : {}), order: spec.order, render: Boolean(c.renderFile), rev: c.rev, actions: spec.actions.map(a => ({ label: a.label, kind: a.command !== undefined ? "command" : "prompt", ...(a.confirm ? { confirm: true } : {}) })) };
+	const base: Record<string, unknown> = { id: c.id, file: c.file, title: spec.title, ...(spec.note ? { note: spec.note } : {}), view: spec.view, ...(spec.link ? { link: spec.link } : {}), order: spec.order, render: Boolean(c.renderFile), rev: c.rev, actions: spec.actions.map(a => ({ label: a.label, kind: a.command !== undefined ? "command" : "prompt", ...(a.confirm ? { confirm: true } : {}) })) };
 	if (!spec.command) return spec.text !== undefined ? { ...base, data: spec.text } : base;
 	const key = cacheKey(c.id, spec);
 	const e = cache.get(key);
@@ -750,6 +846,25 @@ export async function customRoute(req: Request, url: URL, deps: CustomDeps): Pro
 		const file = ID.test(id) ? join(customDir(), "cards", id, "render.js") : "";
 		if (!file || !existsSync(file)) return new Response("not found", { status: 404 });
 		return new Response(Bun.file(file), { headers: NO_CACHE });
+	}
+	const cardsPath = /^\/api\/custom\/cards(?:\/([^/]+))?$/.exec(p);
+	if (cardsPath) {
+		const cid = cardsPath[1] === undefined ? undefined : decodeURIComponent(cardsPath[1]);
+		if (req.method === "GET" && cid !== undefined) {
+			const r = readCardFile(cid);
+			return r ? jsonOf(r) : jsonOf({ error: `card ${cid} not found` }, 404);
+		}
+		if (req.method === "DELETE" && cid !== undefined) return deleteCardFile(cid) ? jsonOf({ ok: true, id: cid }) : jsonOf({ error: `card ${cid} not found` }, 404);
+		if ((req.method === "POST" && cid === undefined) || (req.method === "PUT" && cid !== undefined)) {
+			const b = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+			if (!isObj(b)) return jsonOf({ error: "카드는 JSON 객체여야 해요" }, 400);
+			const wantId = cid ?? (typeof b.id === "string" && b.id.trim() ? b.id.trim() : undefined);
+			const r = saveCardFile(wantId, b, req.method === "POST");
+			if (!r.ok) return jsonOf({ error: r.error }, r.status);
+			const c = readCards().find(x => x.id === r.id);
+			return jsonOf(!c ? { error: `card ${r.id} not found` } : "error" in c ? { id: c.id, file: c.file, error: c.error } : await cardView(c, true), c ? 200 : 500);
+		}
+		return undefined;
 	}
 	if (req.method !== "POST" || (p !== "/api/custom/refresh" && p !== "/api/custom/routine" && p !== "/api/custom/action")) return undefined;
 	const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
