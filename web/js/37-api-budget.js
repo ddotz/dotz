@@ -23,7 +23,8 @@ function budgetCard(B) {
 function budgetSub() {
   if (AB === undefined) {
     AB = null;
-    api("/api/api-budget").then(r => { AB = r; if (current === "settings") renderSettings(); }).catch(() => {});
+    // a failed read is tried again on the next render instead of leaving the row blank for the session
+    api("/api/api-budget").then(r => { AB = r; if (current === "settings") renderSettings(); }).catch(() => { AB = undefined; });
   }
   return AB && AB.monthly_usd ? `월 ${abUsd(AB.monthly_usd)}` : "";
 }

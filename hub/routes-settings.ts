@@ -12,7 +12,7 @@ import { featureCatalog } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
 import { json, body, terminals } from "./routes-util.ts";
-import { budgetSettings, deleteAdminKey, saveAdminKey, saveMonthlyLimit } from "./api-budget.ts";
+import { budgetSettings, deleteAdminKey, monthlyLimitOf, saveAdminKey, saveMonthlyLimit } from "./api-budget.ts";
 import { postSettings, savePostSettings } from "./discord-post.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
@@ -129,9 +129,11 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		try {
 			if (req.method === "PUT") {
 				const b = await body(req);
-				if ("monthly_usd" in b) saveMonthlyLimit(b.monthly_usd);
+				// All or nothing: the limit is checked first and written only after the key is accepted, so an error never leaves half a save.
+				if ("monthly_usd" in b) monthlyLimitOf(b.monthly_usd);
 				if (b.clear_admin_key === true) deleteAdminKey();
 				else if (typeof b.admin_key === "string" && b.admin_key.trim()) await saveAdminKey(b.admin_key);
+				if ("monthly_usd" in b) saveMonthlyLimit(b.monthly_usd);
 			}
 			return json(budgetSettings());
 		} catch (error) {
