@@ -57,7 +57,11 @@
   // dead and nothing booted again. pagehide closes the stream on purpose; pageshow(persisted) opens a new one (its first frame is a "reset", which refetches everything).
   addEventListener("pagehide", () => { if (es) es.close(); });
   addEventListener("pageshow", ev => { if (ev.persisted) { homeTop(); openStream(); resync(); prLoad(); loadStrip(); loadUpdate(); } });
-  setInterval(refreshState, 15000);
+  // A hidden page (a background tab, a phone in a pocket) skips the state and model polls; wake() catches up on return. Each /api/models
+  // poll could start a model-list process on the gateway, so a forgotten tab cost the computer one every minute for nothing.
+  const missed = { state: false, models: false };
+  const unlessHidden = (key, fn) => () => { if (document.hidden) missed[key] = true; else fn(); };
+  setInterval(unlessHidden("state", refreshState), 15000);
   // The 새 버전 badge comes from /api/update: read it on open and again every few minutes.
   loadUpdate(); setInterval(loadUpdate, 5 * 60000);
   // The plan normally refetches when a todo tool call ends; this is the fallback while the open target works.
@@ -66,8 +70,13 @@
   loadStrip(); setInterval(loadStrip, 60000);
   // The stream stalls while the phone sleeps (a push can land before the message does): coming back after a few seconds away, refetch.
   let hiddenAt = 0;
-  const wake = () => { const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) openStream(); if (away > 5000) resync(); };
+  const wake = () => {
+    const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) openStream();
+    if (away > 5000) resync(); else if (missed.state) refreshState();
+    if (missed.models) loadModels(true);
+    missed.state = missed.models = false;
+  };
   document.addEventListener("visibilitychange", () => { markSeen(); attnChanged(); loadStrip(); if (document.hidden) hiddenAt = Date.now(); else wake(); });
   addEventListener("focus", wake);
-  setInterval(() => loadModels(true), 60000);
+  setInterval(unlessHidden("models", () => loadModels(true)), 60000);
 })();
