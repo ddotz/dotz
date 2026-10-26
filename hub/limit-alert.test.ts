@@ -1,11 +1,11 @@
-// Blocked-provider alerts: one per episode (agent, account, kind), kept on disk, one recovery line, a slow silent retry.
+// Blocked-provider alerts: one per episode (one kind, shared by every agent), kept on disk, one recovery line, a slow silent retry.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type * as Orchestrator from "./orchestrator.ts";
 import { cfg } from "./config.ts";
 import { authFile } from "./apikey-policy.ts";
-import { AUTH_WATCH_MS, blockText, limitAccount, limitAlertsFile, limitKind, noteBlock, noteRecovered, ownerRetryMs, REPEAT_MS } from "./limit-alert.ts";
+import { AUTH_WATCH_MS, blockText, limitAccount, limitAlertsFile, limitKind, noteBlock, noteRecovered, ownerRetryMs } from "./limit-alert.ts";
 import { adapters } from "./runtime/index.ts";
 import { omo } from "./runtime/omo.ts";
 import { advance, clock, flush } from "./runtime/test-clock.ts";
@@ -15,29 +15,35 @@ const DATA = process.env.DOTZ_DIR!;
 const T0 = Date.parse("2026-10-23T14:55:00.000Z");
 const MIN = 60_000;
 
-// One agent id of its own: the later orchestrator tests of this file note blocks under "orchestrator" and would join the episode otherwise.
-test("an episode alerts once, survives a restart, repeats after 12 hours, ends with one recovery, and a new kind or account starts another", async () => {
+// Agent ids of their own: the later orchestrator tests of this file note blocks under "orchestrator"; the file is removed at the end.
+test("an episode alerts once for every agent and account name, survives a restart, never repeats while blocked, ends with one recovery, and only a new kind alerts again", async () => {
 	const A = "episode-agent";
 	expect(noteBlock(A, "imported-anthropic", "auth", T0)).toEqual({ alert: true, failures: 1 });
 	expect(noteBlock(A, "imported-anthropic", "auth", T0 + 5 * MIN)).toEqual({ alert: false, failures: 2 });
-	expect(noteBlock(A, "imported-anthropic", "auth", T0 + 10 * MIN)).toEqual({ alert: false, failures: 3 });
-	expect(noteBlock("lane:episode", "imported-anthropic", "auth", T0 + 10 * MIN).alert).toBe(true);
+	expect(noteBlock(A, "anthropic", "auth", T0 + 10 * MIN)).toEqual({ alert: false, failures: 3 });   // the same login, named differently by another error
+	expect(noteBlock("lane:episode", "imported-anthropic", "auth", T0 + 10 * MIN).alert).toBe(false);   // a session blocked by the same cause stays quiet
 
 	const fresh: typeof import("./limit-alert.ts") = await import("./limit-alert.ts?restart");
 	expect(fresh.noteBlock(A, "imported-anthropic", "auth", T0 + 20 * MIN).alert).toBe(false);
+	for (const h of [12, 24, 36]) expect(noteBlock(A, "imported-anthropic", "auth", T0 + h * 3600_000).alert).toBe(false);   // no reminder every 12 hours
 
-	expect(noteBlock(A, "imported-anthropic", "billing", T0 + 30 * MIN).alert).toBe(true);
-	expect(noteBlock(A, "other-account", "billing", T0 + 31 * MIN).alert).toBe(true);
-	expect(noteBlock(A, "other-account", "billing", T0 + 32 * MIN).alert).toBe(false);
-
-	const at = T0 + 31 * MIN;
-	expect(noteBlock(A, "other-account", "billing", at + REPEAT_MS - MIN).alert).toBe(false);
-	expect(noteBlock(A, "other-account", "billing", at + REPEAT_MS).alert).toBe(true);
-	expect(noteBlock(A, "other-account", "billing", at + REPEAT_MS + MIN).alert).toBe(false);
+	expect(noteBlock(A, "imported-anthropic", "billing", T0 + 37 * 3600_000).alert).toBe(true);   // a different problem is news
+	expect(noteBlock(A, "other-account", "billing", T0 + 37 * 3600_000 + MIN).alert).toBe(false);
 
 	expect(noteRecovered(A)?.kind).toBe("billing");
 	expect(noteRecovered(A)).toBeUndefined();
-	expect(noteBlock(A, "other-account", "billing", T0 + 14 * 3600_000).alert).toBe(true);
+	expect(noteRecovered("lane:episode")?.kind).toBe("auth");   // its own episode, told once when it clears
+	expect(noteBlock(A, "other-account", "billing", T0 + 40 * 3600_000).alert).toBe(true);   // after a recovery a new block is news again
+	expect(noteRecovered(A)?.kind).toBe("billing");
+	rmSync(limitAlertsFile(), { force: true });
+});
+
+test("a recovery ends the episode for every agent blocked the same way", () => {
+	expect(noteBlock("share-a", "acct", "limit", T0).alert).toBe(true);
+	expect(noteBlock("share-b", "acct", "limit", T0 + MIN).alert).toBe(false);
+	expect(noteRecovered("share-a")?.kind).toBe("limit");
+	expect(noteRecovered("share-b")).toBeUndefined();   // already over: no second recovery line
+	rmSync(limitAlertsFile(), { force: true });
 });
 
 test("kinds, accounts, owner text and the slow backoff", () => {
