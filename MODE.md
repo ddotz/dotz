@@ -40,6 +40,7 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 
 ## Monitoring (dotz_watch)
 - `dotz_watch` add: the gateway runs the check itself and wakes you (or posts to a channel) only when its output changes, matches, or keeps failing; a quiet check costs no tokens. Write the check as a script in the project's folder; the tool description says what a good check prints and how it fails. Examples: `docs/watch-examples`. For a web login, curl with the login cookie or a site API beats a browser run.
+- A good check script is the whole monitor: waiting and filtering happen inside the script, it prints only the lines a decision needs, baselines live in a state file (`DOTZ_WATCH_STATE_DIR`), transient failures are absorbed inside it.
 - A watch with a human step (2FA push) takes `approval_minutes`: ask the owner once in alert; on their yes, `dotz_watch approve`.
 - Plain facts go `to` alert or a channel; `to` orchestrator only when the next step needs you. A watch turn has no asking channel: send only what the owner should know (a reply someone waits for, a deadline, a failure) with a suggested answer; else stay silent.
 
@@ -49,6 +50,8 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 - Only a need the layer cannot express (a new view type, a new API, behavior in the gateway) goes to the dotz source, as a session on the dotz repo.
 - Wording the owner wants changed in your prompts and notices goes to `~/.dotz/custom/texts.json` (`bun hub/texts-cli.ts`), never `hub/`. For a text-override or update-backup (`dotz-local/<stamp>`) wake, follow `docs/customization.md`, Surviving updates.
 - Mixed requests are split in two. The personal part (the owner's taste, layout, rules, tone; anything sent from the built-in 커스텀 project, `[프로젝트 커스텀 ...]`) goes to the custom layer, `~/.dotz/features`, `RULES.md` or identity, never the repo. The part that should change every install goes to the dotz source, in the checkout where this install's owner develops dotz (non-developer install: report it). When unclear, keep it personal first and say in one line that it could be generalized.
+- When the owner wants an integration (mail, social, chat apps): use a CLI that already exists first, else learn the site and build a bun CLI for it (analyze, design, build, test, document; `--json` output, `--help`); browser automation only for what a CLI cannot do. One request to turn it on carries through install, permissions, login, a test run, the watch and the card; the steps that need the owner's hands are asked together, once.
+- An integration that goes to every install is generalized (no personal data, accounts, company or person names) and starts off; this install's values live in the custom layer.
 
 ## Chat is the hub; work channels; threads
 - chat, worklog and alert are the orchestrator level: route an owner message there (answer, send to the session or work channel it belongs to, or start new work). A session channel message goes to that session.
@@ -99,6 +102,7 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
   - Session channel = the project's own chat + alert + worklog: progress, results, blocks and decisions live there, including what you do on a session report. A session report turn has no asking channel: handle what is yours (clear a gate the owner OK'd, verify a finish), put what the owner must see in the session channel, edit the session's worklog entry on finish; nothing new: reply "-".
   - worklog: what happened while the owner was not watching: one entry per session, posted at start, edited in place at finish (`dotz_send` worklog with update_key `lane:<name>`), plus your own scheduled and monitor work. No decisions there.
   - alert: failures needing the owner outside any session (gateway, logins, system).
+- When a nightly job (cleanup, lessons, token audit, update) or a monitor runs into a problem, report it in alert with the fixes as a choice block for the owner to pick; no problem: worklog only.
 - Long work: the gateway shows one progress message and keeps it current; you may edit that same message at a milestone (dotz_send update_key "progress": what runs, what is done, when the answer comes). The answer replaces it. No FYIs, polling or periodic status.
 - Result files (image, pptx, pdf, md...) go with the message: one `[file] /absolute/path` line each; the gateway attaches them on Discord (too big: download link).
 - Session reports reach you token-lean: results, questions and failures arrive whole with the session's report.md path; routine `[run]` progress stays in the session channel and report.md. Read report.md only if the relayed text lacks it.
