@@ -112,7 +112,8 @@ function asRemoveNode(app) {
 }
 // 앱 추가: the last row of the 앱 group opens a sheet. It lists only the apps this computer (and each other computer, labeled with its name) had and
 // the owner switched off or removed, each with 다시 켜기, then 새로 추가하기: the chat box opens on the main orchestrator with a detailed activation
-// prompt (GET /api/app-templates, hub/app-templates.ts) the owner edits before sending. A chip row above the box swaps the template.
+// prompt (GET /api/app-templates, hub/app-templates.ts) the owner edits before sending. A chip row above the box swaps the template. The sheet lists
+// every kind of app (메일, 카카오톡, ..., 직접 쓰기) so one tap picks the right template.
 const AT = { items: [], key: "", h: null };
 const asOffApps = () => {
   const peers = PQ.list.filter(p => p && p.url), me = peers.length ? pqSelf() : "";
@@ -177,7 +178,10 @@ function asAddPaint() {
           el("button", { class: "btn tonal", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기"),
           el("button", { class: "btn tonal", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
         ...(asDelOpen(a) ? [asDelNode(a)] : [])])] : []),
-      el("button", { class: "btn", type: "button", "data-k": "new", disabled: !AT.items.length, onclick: () => asNewApp("custom") }, "새로 추가하기")));
+      // 새로 추가: one tap per kind of app opens its template; 직접 쓰기 is the free-form one.
+      el("div", { class: "as-sec", text: "새로 추가" }),
+      AT.items.length ? el("div", { class: "as-tpls", role: "group", "aria-label": "새로 추가할 앱" }, ...AT.items.map(t => el("button", { class: "as-tpl", type: "button", "data-tpl": t.key, onclick: () => asNewApp(t.key) }, t.label)))
+        : el("div", { class: "as-h", text: "불러오는 중…" })));
 }
 async function asNewApp(key) {
   if (!AT.items.length) await asTplLoad();
@@ -197,13 +201,17 @@ function asTplFill(t) {
 // The chip row above the chat box while a template is in it; it ends when the message is sent or another conversation opens.
 function asTplPaint() {
   let row = $("#app-tpl");
-  if (!AT.key) { if (row) row.hidden = true; return; }
+  if (!AT.key) { if (row) row.hidden = true; const n = $("#app-tpl-note"); if (n) n.hidden = true; return; }
   if (!row) { row = el("div", { class: "tplrow", id: "app-tpl", role: "group", "aria-label": "앱 템플릿" }); $("#composer").insertBefore(row, $("#hints")); }
   row.hidden = false;
   clear(row).append(...AT.items.map(t => el("button", { class: "as-tpl", type: "button", "data-tpl": t.key, "aria-pressed": String(t.key === AT.key), onclick: () => { AT.key = t.key; asTplFill(t); } }, t.label)),
     el("button", { class: "as-tpl as-tpl-x", type: "button", "aria-label": "템플릿 닫기", onclick: asTplEnd }, icon("close")));
   const on = row.querySelector('[aria-pressed="true"]');
   if (on) row.scrollLeft = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
+  // The {{ }} fields are the owner's own details: the bot asks for them in the secure form after the message is sent, so they can stay as they are.
+  let note = $("#app-tpl-note");
+  if (!note) { note = el("div", { class: "tplnote", id: "app-tpl-note", text: "{{ }} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요" }); row.after(note); }
+  note.hidden = false;
 }
 function asTplEnd() { AT.key = ""; asTplPaint(); }
 function asTplSync() { if (AT.key && (target !== "main" || current !== "chat")) asTplEnd(); }
