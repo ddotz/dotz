@@ -70,7 +70,11 @@ function resultCard(opts) {
   const when = rcWhen(opts.at);
   const kids = [el("div", { class: "rc-hd" }, opts.src ? el("span", { class: "rc-src", text: opts.src }) : null, opts.tag || null, when ? el("span", { class: "rc-time", text: when }) : null)];
   if (title) kids.push(el("div", { class: "rc-title", text: title }));
-  for (const s of rcSections(body)) kids.push(el("div", { class: "rc-sec" }, s.h ? el("div", { class: "rc-sh", text: s.h }) : null, mdNode(s.body)));
+  for (const s of rcSections(body)) {
+    // [file] lines become file chips (as in a chat bubble and on Discord), and a path in the text opens like one
+    const fl = fileLines(s.body), md = fl.text.trim() ? mdNode(fl.text) : null;
+    kids.push(el("div", { class: "rc-sec" }, s.h ? el("div", { class: "rc-sh", text: s.h }) : null, md, md ? pathFiles(md) : null, filesNode(fl.files)));
+  }
   if (raw || opts.rawNode) kids.push(rcRawFold(raw, opts));
   if (opts.actions && opts.actions.length) kids.push(el("div", { class: "btns cc-act" }, ...opts.actions));
   return el("div", { class: "bm alert rc" }, ...kids);
