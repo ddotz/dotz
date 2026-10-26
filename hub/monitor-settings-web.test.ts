@@ -54,7 +54,7 @@ const server = Bun.serve({
 		if (p === "/api/conversations") return json({ items: [] });
 		if (p === "/api/notices") return json({ unread: 0, items: [] });
 		if (p === "/api/monitors") return json({ items: [{ name: "웹 감시", watch: "t-web", kind: "watch", every: "60분마다", last_run: ts(0), next_run: ts(60), last_result: "ok" }] });
-		if (p === "/api/integrations") return json({ items: [{ key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } }] });
+		if (p === "/api/integrations") return json({ items: [{ key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 }, ...(mailDown ? { state: "disconnected", since: ts(-600), hint: DOWN } : { state: "connected" }) }] });
 		if (p === "/api/kakao/rooms") return json({ on: true, rooms: [] });
 		const m = /^\/api\/(?:integrations|watches)\/([a-z0-9-]+)\/settings$/.exec(p), isWatch = p.startsWith("/api/watches/");
 		if (m) {
@@ -92,6 +92,10 @@ const boot = async (v: View, route: string) => {
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	await run(v, `go("monitoring", ${JSON.stringify(route)})`);
 };
+// The company webmail's login died long ago (hub/watch-status.ts): the row says so, not "확인할 것 없어요".
+let mailDown = false;
+const DOWN = "연결 끊김 · 10월 23일 21:29부터 · 다시 로그인 필요";
+
 // The options live in the settings screen the conversation's ⋯ button pushes; `#app-sw` exists only while it is open.
 const openScreen = async (v: View, app = "") => {
 	const more = `[...document.querySelectorAll("[data-as-more]")].find(b => b.offsetParent && !b.hidden && (!${JSON.stringify(app)} || b.dataset.asMore === ${JSON.stringify(app)}))`;
@@ -206,3 +210,15 @@ describe("monitor settings at desktop width", () => {
 		expect(sent[0]).toMatchObject({ text: "밤에는 확인하지 마", settings: "w:t-web" });
 	});
 });
+
+for (const [w, h] of [[390, 844], [1280, 800]] as const) test(`a disconnected app's row says 연결 끊김 with since when, whatever its counts (${w}px)`, async () => {
+	mailDown = true;
+	const v = open(w, h);
+	try {
+		await boot(v, "m:웹 감시");
+		await waitFor(v, `[...document.querySelectorAll("body *")].some(n => !n.childElementCount && n.textContent === ${JSON.stringify(DOWN)})`);
+	} finally {
+		mailDown = false;
+	}
+});
+
