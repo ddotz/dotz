@@ -1,24 +1,30 @@
 /* every file in a message carries its own download button (thumbnails: top-right corner, chips: right end) */
-.fitem { position: relative; flex: none; display: flex; max-width: 100%; }
-.fitem > .fatt { padding-right: 48px; max-width: 260px; }
+.fitem { flex: none; display: flex; flex-direction: column; align-items: flex-start; max-width: 100%; }
+.fbox { position: relative; display: flex; max-width: 100%; }
+/* the full path under each file: small mono text, wraps anywhere, a tap copies it */
+.fpath, .lb-p, .tv-p { display: block; padding: 0; border: 0; background: none; font: 400 12px/18px var(--mono); text-align: left; word-break: break-all; cursor: copy; }
+.fpath { max-width: 260px; margin-top: 4px; color: var(--fg-3); }
+.fpath:hover { color: var(--fg-2); }
+.fbox > .fatt { padding-right: 48px; max-width: 260px; }
 .fdl { position: absolute; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 16px; color: var(--fg-2); text-decoration: none; }
 .fdl svg { width: 18px; height: 18px; }
-.fitem > .fatt + .fdl { top: 12px; right: 8px; }
-.fitem > .fatt + .fdl:hover { background: var(--card); color: var(--fg); }
-.fitem > .thumb + .fdl { top: 6px; right: 6px; background: rgb(0 0 0 / .55); color: #fff; }
-.fitem > .thumb + .fdl:hover { background: rgb(0 0 0 / .72); }
+.fbox > .fatt + .fdl { top: 12px; right: 8px; }
+.fbox > .fatt + .fdl:hover { background: var(--card); color: var(--fg); }
+.fbox > .thumb + .fdl { top: 6px; right: 6px; background: rgb(0 0 0 / .55); color: #fff; }
+.fbox > .thumb + .fdl:hover { background: rgb(0 0 0 / .72); }
 .mfiles .fatt.off { cursor: default; opacity: .55; padding-right: 12px; }
 .mfiles .fatt.off:hover { background: var(--layer); }
-@media (pointer: coarse) { .fdl { width: 36px; height: 36px; border-radius: 18px; } .fitem > .fatt + .fdl { top: 10px; } }
+@media (pointer: coarse) { .fdl { width: 36px; height: 36px; border-radius: 18px; } .fbox > .fatt + .fdl { top: 10px; } }
 .bm .md code.path.fp { cursor: pointer; }
 .bm .md code.path.fp:hover { text-decoration: underline; text-underline-offset: 3px; }
 dialog.lbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; color: #fff; }
 dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
-.lbox .lb-in { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; }
+.lbox .lb-in { display: grid; grid-template-rows: auto auto minmax(0, 1fr); width: 100%; height: 100%; }
 .lbox .lb-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-size: 14px; }
 .lbox .lb-n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .lbox .lb-bar a, .lbox .lb-bar button { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: rgb(255 255 255 / .12); color: #fff; font-size: 13px; text-decoration: none; }
 .lbox .lb-bar button.x { width: 32px; padding: 0; justify-content: center; }
+.lbox .lb-p { padding: 0 16px 12px; color: rgb(255 255 255 / .72); }
 .lbox .lb-img:focus { outline: 0; }
 .lbox .lb-img { display: grid; place-items: center; min-height: 0; padding: 0 16px 24px; }
 .lbox .lb-img img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
@@ -247,7 +253,8 @@ button.cchip:hover { background: var(--layer); color: var(--fg); }
 button.fatt { border: 0; font: inherit; text-align: left; cursor: pointer; }
 dialog.tbox { width: min(760px, 100vw); height: min(80dvh, 100dvh); max-width: none; max-height: none; margin: auto; padding: 0; border: 0; border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: 0 12px 40px rgb(0 0 0 / .22); overflow: hidden; }
 dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
-.tbox .tv-in { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+.tbox .tv-in { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 100%; }
+.tbox .tv-p { padding: 8px 20px; border-bottom: 1px solid var(--line); color: var(--fg-3); }
 .tbox .tv-bar { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--line); font-size: 14px; }
 .tbox .tv-n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .tbox .tv-bar a, .tbox .tv-bar button { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; text-decoration: none; }

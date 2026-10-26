@@ -72,7 +72,7 @@ function fileItem(f) {
   const main = img
     ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name) }, el("img", { src: fileUrl(f.path), alt: f.name, loading: "lazy" }))
     : fileChip(f.name, fileMeta(f.name, f.size), VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name) } : { href: fileUrl(f.path) });
-  const item = el("div", { class: "fitem" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download")));
+  const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), pathCopy(f.path));
   if (!f.check) return item;
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };
   if (img) main.querySelector("img").onerror = () => off("열 수 없는 파일이에요");
@@ -82,6 +82,11 @@ function fileItem(f) {
     if (m && n) m.textContent = fileMeta(f.name, n);
   }, () => off("확인하지 못했어요"));
   return item;
+}
+// The full path under a file, as written by the agent: a tap copies it (Finder, terminal, another app), the chip above opens the file.
+function pathCopy(p, cls = "fpath") {
+  return el("button", { class: cls, type: "button", title: "경로 복사", "aria-label": `경로 복사: ${p}`, text: p,
+    onclick: async ev => { ev.stopPropagation(); const ok = await copyText(p); toast(ok ? "경로를 복사했어요" : "복사하지 못했어요", !ok); } });
 }
 function filesNode(files) {
   if (!files || !files.length) return null;
@@ -112,6 +117,7 @@ async function viewer(path, name) {
       el("div", { class: "tv-bar" }, el("span", { class: "tv-n", text: name }),
         el("a", { href: fileUrl(path, true), download: name }, "다운로드"),
         el("button", { class: "x", type: "button", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      pathCopy(path, "tv-p"),
       body));
   d.addEventListener("close", () => d.remove());
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
@@ -133,6 +139,7 @@ function lightbox(path, name) {
         el("a", { href: fileUrl(path), target: "_blank", rel: "noopener" }, "새 탭"),
         el("a", { href: fileUrl(path, true), download: name }, "다운로드"),
         el("button", { class: "x", type: "button", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      pathCopy(path, "lb-p"),
       el("div", { class: "lb-img", tabindex: "-1", autofocus: true, onclick: ev => { if (ev.target === ev.currentTarget) d.close(); } }, el("img", { src: fileUrl(path), alt: name }))));
   d.addEventListener("close", () => d.remove());
   document.body.append(d); d.showModal(); dialogHist(d);
