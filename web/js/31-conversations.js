@@ -223,13 +223,28 @@ setInterval(viewReport, 2000);
 function convRows() {
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
-  const mk = t => { const last = CONV.get(t) || null; return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread }; };
+  const mk = t => { const last = CONV.get(t) || null, need = convNeeds(t); return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need, chips: need ? [["답변 필요", "warn"]] : undefined }; };
   const all = (S && S.lanes) || [];
   const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
   const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
   const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionStatus(l), hint: convPreview(l.lastText) || m.hint }; };
   const rows = [MAIN, "alert", "worklog"].map(mk);
   if (running.length) rows.push({ header: "진행 중" }, ...running.map(sess));
+  // A long list: 답 필요 / 안 읽음 narrow it to what waits; 전체 draws the projects a page at a time (the open one is always drawn).
+  if (rows.length + projects.length > CVF_MIN) {
+    const keep = r => CVF.view === "need" ? r.need : CVF.view === "unread" ? r.unread > 0 : true;
+    const lanes = running.map(sess).filter(keep), all = projects.map(mk).filter(keep);
+    const page = CVF.view === "all" ? all.filter((r, i) => i < CVF.more || r.t === target) : all;
+    const out = [{ bar: true }, ...rows.slice(0, 3).filter(keep)];
+    if (lanes.length) out.push({ header: "진행 중" }, ...lanes);
+    if (page.length) out.push({ header: "프로젝트" }, ...page);
+    if (all.length > page.length) out.push({ more: all.length - page.length });
+    const open = ((S && S.lanes) || []).find(l => !laneAlive(l) && `lane:${l.name}` === target);
+    if (open) out.push(sess(open));
+    if (out.length === 1) out.push({ empty: CVF.view === "need" ? "답을 기다리는 대화가 없어요" : "안 읽은 대화가 없어요" });
+    if (CVF.view === "all") { const ended = endedLanes(); if (ended.length) out.push({ ended: true, key: `${ended.map(l => l.name).join("|")}|${endedOpen}` }); }
+    return out;
+  }
   if (projects.length) rows.push({ header: "프로젝트" }, ...projects.map(mk));
   const open = all.find(l => !laneAlive(l) && `lane:${l.name}` === target);
   if (open) rows.push(sess(open));
@@ -239,6 +254,39 @@ function convRows() {
   return rows;
 }
 const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
+
+/* ---- a long list: views, a page of projects, 읽음 처리 ---- */
+// view: 전체 / 답 필요 / 안 읽음; more: projects drawn in 전체 (CVF_PAGE more per 더 보기). The bar shows once the list holds more than CVF_MIN rows.
+const CVF_MIN = 12, CVF_PAGE = 40;
+const CVF = { view: "all", more: CVF_PAGE };
+// A conversation waits on the owner: an open decision asked there, a loose [ask] notice of it, or a session's question (same rules as 30-notices.js ntNeeds).
+const convNeeds = t => ntHasDecision(t) || NT.items.some(n => ntNeeds(n) && (n.src || n.open) === t) || !!(isLaneT(t) && targetInfo(t).ask);
+const convListed = () => [MAIN, "alert", "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
+function convBar() {
+  const list = convListed(), need = list.filter(convNeeds).length, unread = list.filter(t => ts(t).unread > 0).length;
+  // 읽음 처리 takes only what needs no answer: a conversation waiting on the owner keeps its unread.
+  const fyi = list.filter(t => ts(t).unread > 0 && !convNeeds(t) && CONV.get(t));
+  const views = [["all", "전체", 0], ["need", "답 필요", need], ["unread", "안 읽음", unread]];
+  return el("div", { class: "cv-bar" },
+    el("div", { class: "cv-tabs", role: "tablist", "aria-label": "대화 보기" }, ...views.map(([k, label, n]) =>
+      el("button", { class: `cchip mr-f${CVF.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(CVF.view === k), "data-view": k, onclick: () => { CVF.view = k; CVF.more = CVF_PAGE; convSig = ""; convSchedule(); convSide.scrollTop = 0; } }, label, n ? el("span", { class: "mr-fn", text: n > 99 ? "99+" : String(n) }) : null))),
+    el("button", { class: "btn text cv-read", type: "button", "data-k": "read", disabled: !fyi.length, title: "답이 필요한 대화는 그대로 둬요", onclick: ev => convReadAll(ev.currentTarget, fyi), text: fyi.length ? `${fyi.length}개 읽음 처리` : "읽음 처리" }));
+}
+// The listed conversations are read up to their newest message here at once and on the hub (POST /api/read, one per conversation); a failure
+// re-reads the counts from the hub and says why (busy toasts it).
+const convReadAll = (btn, list) => busy(btn, async () => {
+  const was = list.map(t => [t, READ[t], ts(t).unread]);
+  for (const t of list) { READ[t] = CONV.get(t).ts; ts(t).unread = 0; }
+  renderBars(); convSig = ""; convSchedule();
+  const res = await Promise.allSettled(list.map(t => api("/api/read", "POST", { target: t, ts: READ[t] })));
+  const bad = res.filter(r => r.status === "rejected");
+  if (bad.length) {
+    for (const [t, r, u] of was) if (res[list.indexOf(t)].status === "rejected") { READ[t] = r; ts(t).unread = u; }
+    renderBars(); convSig = ""; convSchedule(); convLoad();
+    throw new Error(`${bad.length}개를 읽음으로 표시하지 못했어요: ${bad[0].reason.message}`);
+  }
+  toast(`대화 ${list.length}개를 읽음으로 표시했어요`);
+});
 // Every row has an icon, never a letter (so any name reads the same): the app's own mark for the main assistant, a bell / list for the fixed
 // feeds, the folder the 프로젝트 tab uses for a project, the session icon for a session.
 function convAvatar(t) {
@@ -250,6 +298,9 @@ function convAvatar(t) {
 // { name, badge: [word, tone], unread }, with an optional one-line preview (hint) under the name. A row never shows a time: the name and the content tell what it is.
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
+  if (r.bar) return convBar();
+  if (r.empty) return el("div", { class: "cv-empty", text: r.empty });
+  if (r.more) return el("div", { class: "cv-more" }, el("button", { class: "btn text", type: "button", "data-k": "more", onclick: () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); }, text: `프로젝트 ${r.more}개 더 보기` }));
   if (r.ended) return endedGroup() || "";
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
@@ -284,7 +335,7 @@ function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
   convTitle();
-  const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel]), target, current, !!monCtx]);
+  const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, rows.some(r => r.bar) ? [CVF.view, convListed().map(t => [ts(t).unread > 0, convNeeds(t)])] : 0]);
   if (sig !== convSig) {
     convSig = sig;
     convSide.setAttribute("aria-label", monCtx ? "모니터링 목록" : "채팅 목록");
