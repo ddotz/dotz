@@ -1,7 +1,7 @@
 // Model providers as the gateway sees them, all kept in the runtime's own credential store: OAuth logins (`omp login`,
 // started and finished through the gateway), API keys (`omp auth import`), sign-out (`omp auth-broker logout`), plus
 // the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { OMP, writeAtomic } from "./config.ts";
 import { label } from "./account-alias.ts";
@@ -92,18 +92,43 @@ async function ompJson<T>(args: string[], timeoutMs = 30_000): Promise<T | undef
 	}
 }
 
-type Cached<T> = { at: number; value: T };
+type Cached<T> = { at: number; value: T; stamp?: string };
 const TTL_MS = 20_000;
+// The model catalog is a child process (`omo --list-models`: ~0.5 s CPU, ~280 MB peak RSS, measured 2026-10-26) that every open page asked
+// for each minute (and 구성 every 15 s). It only changes with a login (auth.json, or invalidate() after a web login) or a runtime update
+// (the binary), so it is kept until one of those changes, re-read at most every MODELS_TTL_MS as a backstop.
+const MODELS_TTL_MS = 10 * 60_000;
+const mtimeOf = (path: string | null | undefined): number => {
+	try {
+		return path ? statSync(path).mtimeMs : 0;
+	} catch {
+		return 0;
+	}
+};
+const modelsStamp = (): string => [authFile(), Bun.which(OMO), Bun.which(OMP)].map(mtimeOf).join(":");
 let cache: { models?: Cached<ModelInfo[]>; auth?: Cached<AuthInfo[]>; usage?: Cached<OmpUsageReport[]> } = {};
+// A read in flight is shared: pages asking at the same moment wait for one process instead of starting one each.
+const loading = new Map<keyof typeof cache, Promise<unknown>>();
 function invalidate(): void {
 	cache = {};
+	loading.clear();
 }
 async function cached<K extends keyof typeof cache>(key: K, load: () => Promise<NonNullable<(typeof cache)[K]>["value"] | undefined>): Promise<NonNullable<(typeof cache)[K]>["value"] | undefined> {
+	type V = NonNullable<(typeof cache)[K]>["value"] | undefined;
+	const stamp = key === "models" ? modelsStamp() : undefined;
 	const hit = cache[key];
-	if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
-	const value = await load();
-	if (value !== undefined) cache = { ...cache, [key]: { at: Date.now(), value } };
-	return value;
+	if (hit && Date.now() - hit.at < (key === "models" ? MODELS_TTL_MS : TTL_MS) && hit.stamp === stamp) return hit.value;
+	const pending = loading.get(key);
+	if (pending) return pending as Promise<V>;
+	const run = (async (): Promise<V> => {
+		const value = await load();
+		if (value !== undefined && loading.get(key) === run) cache = { ...cache, [key]: { at: Date.now(), value, stamp } };
+		return value;
+	})().finally(() => {
+		if (loading.get(key) === run) loading.delete(key);
+	});
+	loading.set(key, run);
+	return run;
 }
 
 // Runtimes keep separate credential stores: omp has its own (`omp auth export`), OmO reads <agent dir>/auth.json. A role that
