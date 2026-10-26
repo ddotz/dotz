@@ -70,7 +70,9 @@ const quote = (s: string) => s.split("\n").map(l => (l ? `> ${l}` : ">"));
 function partLines(d: DraftPart): string[] {
 	const files = (d.attachments ?? []).map(f => `> 첨부: ${f.name.replace(/\s+/g, " ").trim()}${f.size !== undefined ? ` (${fileSizeText(f.size)})` : ""}`);
 	const note = files.length ? "" : (d.toLabel ?? "받는이") !== "받는이" ? "" : claimsAttachment(`${d.subject ?? ""}\n${d.body}`) ? NOTE_BODY : d.asksFile ? NOTE_ASKED : "";
-	const none = note ? `> 첨부: 없음 (${note}${d.libraryMiss ? ` · ${LIBRARY_MISS}` : ""})` : d.attachmentsNone ? "> 첨부: 없음" : "";
+	// A mail always says what goes with it, files or 없음, so a missing file is seen before 보내기 (owner 2026-10-26).
+	const mail = (d.toLabel ?? "받는이") === "받는이";
+	const none = note ? `> 첨부: 없음 (${note}${d.libraryMiss ? ` · ${LIBRARY_MISS}` : ""})` : d.attachmentsNone || mail ? "> 첨부: 없음" : "";
 	const head = [`> ${d.toLabel ?? "받는이"}: ${d.to.replace(/\s+/g, " ").trim()}`, ...(d.subject ? [`> 제목: ${d.subject.replace(/\s+/g, " ").trim()}`] : []), ...(files.length ? files : none ? [none] : []), ...(d.origin ? [`> 이어서: ${d.origin.text.replace(/\s+/g, " ").trim()}${d.origin.link ? ` (${d.origin.link.replace(/\s+/g, "")})` : ""}`] : []), ">"];
 	return [...head, ...quote(d.body.replace(/\r\n?/g, "\n").trim())];
 }
@@ -157,7 +159,7 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	if (!body) return undefined;
 	const clipped = body.slice(0, DRAFT_BODY_MAX);
 	const warn = toLabel === "받는이" && !attachments.length && (!!note || claimsAttachment(`${subject ?? ""}\n${clipped}`));
-	return { toLabel, to, ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none ? { noAttachments: true as const } : {}), ...(warn ? { warning: NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}), ...(origin ? { origin } : {}) };
+	return { toLabel, to, ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none || toLabel === "받는이" ? { noAttachments: true as const } : {}), ...(warn ? { warning: NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}), ...(origin ? { origin } : {}) };
 }
 
 // The quoted draft of a message (recipient line first, as draftApprovalBlock writes it), as standard "> " lines; undefined when the message
