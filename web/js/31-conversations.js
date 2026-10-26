@@ -260,7 +260,8 @@ const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리�
 const CVF_MIN = 12, CVF_PAGE = 40;
 const CVF = { view: "all", more: CVF_PAGE };
 // A conversation waits on the owner: an open decision asked there, a loose [ask] notice of it, or a session's question (same rules as 30-notices.js ntNeeds).
-const convNeeds = t => ntHasDecision(t) || NT.items.some(n => ntNeeds(n) && (n.src || n.open) === t) || !!(isLaneT(t) && targetInfo(t).ask);
+// the same rule as the home 답변 필요 list: a gateway question it handles itself (nyHandled) is news there, not a need here
+const convNeeds = t => ntHasDecision(t) || NT.items.some(n => ntNeeds(n) && !nyHandled(n) && (n.src || n.open) === t) || !!(isLaneT(t) && targetInfo(t).ask);
 const convListed = () => [MAIN, "alert", "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
 function convBar() {
   const list = convListed(), need = list.filter(convNeeds).length, unread = list.filter(t => ts(t).unread > 0).length;
