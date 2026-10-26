@@ -10,7 +10,7 @@ if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 type Msg = { logId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean; unread: number; media?: Record<string, unknown> };
 type Room = { chatId: string; name: string; kind: string; watched: boolean; autoDraft: boolean; unread: number; lastAt: number; hint?: string; unreplied?: boolean };
-type Draft = { code: string; text: string; basisLogId: string; created: number };
+type Draft = { code: string; text: string; basisLogId: string; created: number; parts?: string[] };
 type Send = { id: string; text: string; state: string; reason?: string; at: number };
 type Req = { method: string; path: string; body: Record<string, unknown> | null };
 
@@ -774,6 +774,19 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const)
 			expect((await expectReq(isReq("PUT", "/api/kakao/rooms/200"))).body).toEqual({ watched: true });
 			await waitFor(v, `document.querySelector("#kk-ro").hidden && !document.querySelector("#kk-foot").hidden`);
 			expect(await q(v, `return KK.open`)).toBe("200");
+		});
+
+		test("a draft of several messages shows one bubble per message in send order, and the header counts them", async () => {
+			useOpen();
+			drafts = [{ code: "dm", text: "내일 7시 괜찮아\n\n장소는 강남역 어때?\n\n늦으면 연락할게", parts: ["내일 7시 괜찮아", "장소는 강남역 어때?", "늦으면 연락할게"], basisLogId: "6006", created: at(24, 1, 5) }];
+			await boot(v);
+			await openRoom(v, "400");
+			await waitFor(v, `document.querySelector('.kk-draft[data-code="dm"] .kk-dp')`);
+			const s = await q<Record<string, any>>(v, `const c = document.querySelector('.kk-draft[data-code="dm"]'), r = c.getBoundingClientRect(); return { head: c.querySelector(".kk-dh").textContent, parts: [...c.querySelectorAll(".kk-dp")].map(p => p.textContent), right: r.right, vw: innerWidth }`);
+			expect(s.head).toBe("답장 초안 · 메시지 3개");
+			expect(s.parts).toEqual(["내일 7시 괜찮아", "장소는 강남역 어때?", "늦으면 연락할게"]);
+			expect(s.right).toBeLessThanOrEqual(s.vw);
+			await shot(v, `32-draft-parts-${w}.png`);
 		});
 
 		if (w === 1280)

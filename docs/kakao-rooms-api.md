@@ -14,9 +14,10 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
   Turning `watched` off also turns `autoDraft` off; `autoDraft: true` on a room that is not watched is refused (409). Broadcasts `{kind:"kakao_rooms"}`.
 - `GET /api/kakao/chat/<chatId>?limit=50&before=<logId>&after=<logId>` -> 404 `{error}` when the room is not in the list, else
   `{ room: { chatId, name, kind, group, watched }, messages: [{ id, collector, logId, authorId, sender, text, type, sentAt, fromMe }], read: <logId|null>,
-  kakaoUnread: number, drafts: [{ code, text, basisLogId, created }], sends: [{ id, text, state, reason?, at, draft? }] }`.
+  kakaoUnread: number, drafts: [{ code, text, parts, sentParts?, basisLogId, created }], sends: [{ id, text, state, reason?, at, draft? }] }`.
   Messages oldest first. `read` = the owner's read position in the web app for this room (null = never opened; the client then
-  uses `kakaoUnread`, KakaoTalk's own unread count, to place the marker). `drafts` = pending drafts of this room only. `sends` =
+  uses `kakaoUnread`, KakaoTalk's own unread count, to place the marker). `drafts` = pending drafts of this room only; a draft may be several KakaoTalk messages: `parts` (its `text` split at blank lines, at
+  most 5, each at most 1000 characters) go out in order on one 보내기, and `sentParts` of them are already in the room (a retry sends the rest only). `sends` =
   this room's sends of the last 24 h (`state`: `sending` | `sent` | `failed`). `group` = senders are named over their messages (group and
   open chat rooms; an open chat room names each sender by his open profile). `watched: false` = read-only: `drafts` is [], and send,
   draft, ask and no-reply answer 403. Opening a room reads that room's own row and its newest page only, never the whole room list.
