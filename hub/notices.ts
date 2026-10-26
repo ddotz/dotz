@@ -646,6 +646,8 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	const d = item?.decision;
 	if (!item || !d) return { status: 404, body: { error: "unknown decision" } };
 	if (d.state !== "open") return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
+	// a second tap while the first answer is still going out: that one carries it (a double tap never sends the answer twice)
+	if (sending.has(item.id)) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
 	const o = d.options.find(x => x.n === Number(body.n));
 	if (!o || o.action === "form") return { status: 400, body: { error: "unknown option" } };
 	const label = `${o.n}) ${o.label}`;
