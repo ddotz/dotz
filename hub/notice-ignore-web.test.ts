@@ -3,8 +3,8 @@ import { sseResponse, emit } from "./events.ts";
 import { ignoreNotice, listNotices, markNoticesRead, type Notice, resolveNotices, unignoreNotice, unreadCount } from "./notices.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// The x (무시) on the three surfaces, in a headless browser against the real notice store: the 답변 필요 row on 홈, a row of the 알림 card, and the
-// decision sheet's header. A second page on the same hub hears the change live (the event stream).
+// The x (무시) on its two surfaces, in a headless browser against the real notice store: the 답변 필요 row on 홈 and the decision sheet's
+// header. The 알림 card lists only news, so a question that waits is on 홈 once, in 답변 필요. A second page on the same hub hears the change live (the event stream).
 const SNAP = "/tmp/dotz-notice-ignore-test";
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const server = Bun.serve({
@@ -48,7 +48,7 @@ beforeAll(() => { Bun.spawnSync(["mkdir", "-p", SNAP]); });
 afterAll(() => { for (const v of views) v.close(); server.stop(true); });
 
 describe("the x (무시) in a headless browser", () => {
-	test("at 390px the x sits on the 답변 필요 row, the 알림 card row and the sheet header, thumb-sized and inside the screen; ignoring syncs live and undo brings the question back", async () => {
+	test("at 390px the x sits on the 답변 필요 row and the sheet header, thumb-sized and inside the screen, the 알림 card does not repeat the question; ignoring syncs live and undo brings the question back", async () => {
 		// leftovers of other test files: decisions with options are closed only by naming them
 		resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });
 		markNoticesRead({ all: true });
@@ -75,15 +75,10 @@ describe("the x (무시) in a headless browser", () => {
 		await settled(phone);
 		await Bun.write(`${SNAP}/home-390.png`, await phone.screenshot());
 
-		// surface 2: a row of the 알림 card
-		await waitFor(phone, `document.querySelector(".hc-row .nt-x")`);
-		await phone.evaluate(`document.querySelector(".hc-row .nt-x").scrollIntoView({ block: "center" })`);
-		const x2 = await rect(phone, ".hc-row .nt-x");
-		expect(x2!.w).toBeGreaterThanOrEqual(44);
-		expect(x2!.h).toBeGreaterThanOrEqual(44);
-		expect(x2!.right).toBeLessThanOrEqual(390);
-		expect(await phone.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
-		await Bun.write(`${SNAP}/alert-card-390.png`, await phone.screenshot());
+		// the 알림 card is drawn but does not list the waiting question a second time
+		await waitFor(phone, `document.querySelector(".hc .hc-none, .hc .hc-list")`);
+		expect(await phone.evaluate(`[...document.querySelectorAll(".hc-row")].some(r => r.textContent.includes("엑스 확인용 질문이에요"))`)).toBe(false);
+		expect(await phone.evaluate(`document.querySelectorAll(".hc-row .nt-x").length`)).toBe(0);
 
 		// surface 3: the decision sheet header
 		await phone.evaluate(`document.querySelector(".hn .hrx .hrx-m").click()`);
