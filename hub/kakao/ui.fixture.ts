@@ -1,5 +1,6 @@
 // A fake KakaoTalk screen for the send tests: the chat list rows (what room.jxa.js `rows` reads), the window each row opens (what `probe`
 // reads) and a record of every action, so a test can see what was opened and that nothing else ran. Nothing here touches the real app.
+import { loadJxa } from "./jxa.fixture.ts";
 import type { WindowFacts } from "./room.ts";
 import type { Runner } from "./types.ts";
 
@@ -7,11 +8,14 @@ import type { Runner } from "./types.ts";
 export type FakeRow = { id: string; title: string; count?: number; noise?: string[]; preview?: string; window?: WindowFacts | "unreadable" };
 
 const norm = (s: string) => s.normalize("NFC").replace(/[\u200b-\u200f\u2060\ufeff]/g, "").trim();
+// The open step's recheck is room.jxa.js's own rule.
+const { rowStillIs } = loadJxa();
 
 // What room.jxa.js (axScan) prints: the hint row first, then its neighbours, then the list; a paged list scrolls page by page; the budget
 // stops the read. `scanned` is how many rows were actually read, `hits` those whose title is the name (with all their texts).
-function scanRows(rows: FakeRow[], req: { name: string; first?: boolean; hint?: number }, pageSize: number | undefined, scanLimit: number | undefined) {
+function scanRows(rows: FakeRow[], req: { name: string; first?: boolean; hint?: number; need?: number }, pageSize: number | undefined, scanLimit: number | undefined) {
 	const want = norm(req.name);
+	const enough = req.first ? 1 : (req.need ?? 0);
 	const perPage = pageSize && pageSize > 0 ? pageSize : rows.length;
 	const limit = scanLimit === undefined ? Number.POSITIVE_INFINITY : scanLimit;
 	const seen = new Set<number>();
@@ -45,7 +49,7 @@ function scanRows(rows: FakeRow[], req: { name: string; first?: boolean; hint?: 
 			const texts = rowTexts(rows[index]!);
 			if (norm(texts[0] ?? "") === want) {
 				hits.push({ index, texts });
-				if (req.first) {
+				if (enough && hits.length >= enough) {
 					stopped = "found";
 					break;
 				}
@@ -132,7 +136,7 @@ export function fakeScreen(
 		}
 		if (req.action === "open") {
 			const row = rows[req.row];
-			if (!row || norm(row.title) !== norm(req.name)) return out({ ok: false, step: "recheck", why: "moved", ms: {} });
+			if (!row || !rowStillIs(rowTexts(row), req.name, req.expect)) return out({ ok: false, step: "recheck", why: "moved", ms: {} });
 			menus++;
 			opens++;
 			const fail = typeof opts.openFail === "function" ? opts.openFail(opens) : opts.openFail;
