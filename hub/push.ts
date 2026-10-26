@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { eventTarget, type HubEvent, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
+import { quietAlert } from "./alert-gate.ts";
 import { answerReply, confirmGroup, conversationTitle, decisionsOf, type Notice, onDecision } from "./notices.ts";
 import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
@@ -98,7 +99,8 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 	if (lane && tone === "ask" && orchestratorOnlyAsk(rest)) return undefined;
 	if (e.kind === "out" && e.target === "alert") {
 		if (tone === "ask") return { kind: "ask", title: "dotz · 확인 필요", body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
-		if (e.reply_to || tone === "done" || tone === "run" || ROUTINE_ALERT.test(rest)) return undefined;
+		// An all-clear, or the same alert again (hub/alert-gate.ts), was already as good as told.
+		if (e.reply_to || tone === "done" || tone === "run" || ROUTINE_ALERT.test(rest) || e.repeat === true || quietAlert(text)) return undefined;
 		if (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest)) return undefined;
 		return { kind: "usage", title: "dotz · 경고", body: plain(rest), url: "/#chat/main", tag: "alert" };
 	}

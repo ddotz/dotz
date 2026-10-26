@@ -485,11 +485,11 @@ test("a found dotz update creates one notice, a later check reuses it, and apply
 	expect(stored().filter(n => n.key === UPDATE_NOTICE_KEY)).toHaveLength(1);
 });
 
-test("live posts shaped like main.ts out() (gateway worklog, orchestrator alert, both with reply_to) each create a notice", () => {
+test("live posts shaped like main.ts out() (gateway worklog, orchestrator alert, both with reply_to) each create a notice; the gateway's status line is born read", () => {
 	const at = ts();
 	emit("outbox", { ts: at, kind: "out", source: "gateway", target: "worklog", text: "계정을 a에서 b로 바꿨어요.", reply_to: null });
 	emit("outbox", { ts: ts(), kind: "out", source: "orchestrator", target: "alert", text: "[fail] 라이브 경고 시험", reply_to: null });
-	expect(byText("계정을 a에서 b로 바꿨어요.")[0]).toMatchObject({ kind: "worklog", open: "worklog", at, read: false });
+	expect(byText("계정을 a에서 b로 바꿨어요.")[0]).toMatchObject({ kind: "worklog", open: "worklog", at, read: true });
 	expect(byText("라이브 경고 시험")[0]).toMatchObject({ kind: "alert", tone: "fail", read: false });
 });
 
@@ -1126,4 +1126,33 @@ test("an answer in a monitor's settings conversation is titled with the monitor'
 	expect(item().read).toBe(true);
 	setViewing("tab-settings", "", Date.now());
 	setWatchLabelResolver(name => name);
+});
+
+test("the gateway's own worklog status lines are born read; a gateway failure and the assistant's worklog post there still wait", () => {
+	post("worklog", "모델 폴백: anthropic/claude-opus-5-5 → anthropic/claude-sonnet-5", { source: "gateway" });
+	post("worklog", "계정을 default에서 miseol-shared로 바꿨어요. 직접 골랐기 때문이에요.", { source: "gateway" });
+	post("worklog", "게이트웨이 재시작을 기다리는 중이에요: orchestrator 작업이 끝나면 다시 시작해요", { source: "gateway" });
+	post("worklog", "[fail] 자동 업데이트를 하지 못했어요", { source: "gateway" });
+	post("worklog", "[run] 야간 정리 시작했어요");
+	expect(byText("모델 폴백: anthropic/claude-opus-5-5 → anthropic/claude-sonnet-5")[0]!.read).toBe(true);
+	expect(byText("계정을 default에서 miseol-shared로 바꿨어요. 직접 골랐기 때문이에요.")[0]!.read).toBe(true);
+	expect(byText("게이트웨이 재시작을 기다리는 중이에요: orchestrator 작업이 끝나면 다시 시작해요")[0]!.read).toBe(true);
+	expect(byText("자동 업데이트를 하지 못했어요")[0]!.read).toBe(false);
+	expect(byText("야간 정리 시작했어요")[0]!.read).toBe(false);
+	expect(unreadCount()).toBe(2);
+});
+
+test("an all-clear alert is born read; a repeat updates the first alert in place and does not raise it again", () => {
+	post("alert", "땃쥐: 모델 제공자가 다시 연결됐어요. 멈춰 있던 일을 이어서 처리해요.", { source: "gateway" });
+	post("alert", "땃쥐: API 키 사용 끝: 오케스트레이터가 anthropic/claude-opus-5-5(구독)으로 돌아왔어요.", { source: "gateway" });
+	expect(stored().filter(n => n.kind === "alert").map(n => n.read)).toEqual([true, true]);
+	post("alert", "땃쥐: 모델 제공자 오류(timeout after 30000ms)", { source: "gateway" });
+	const [first] = byText("땃쥐: 모델 제공자 오류(timeout after 30000ms)");
+	expect(first!.read).toBe(false);
+	markNoticesRead({ ids: [first!.id] });
+	post("alert", "땃쥐: 모델 제공자 오류(timeout after 45000ms)", { source: "gateway", repeat: true });
+	const same = stored().filter(n => n.kind === "alert" && n.text.startsWith("땃쥐: 모델 제공자 오류"));
+	expect(same).toHaveLength(1);
+	expect(same[0]).toMatchObject({ id: first!.id, read: true, text: "땃쥐: 모델 제공자 오류(timeout after 45000ms)" });
+	expect(unreadCount()).toBe(0);
 });

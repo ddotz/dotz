@@ -25,6 +25,7 @@ import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime,
 import { orchestratorAnswered } from "./notices.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
 import { discordPosts } from "./discord-post.ts";
+import { repeatAlert } from "./alert-gate.ts";
 
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
 const PENDING = join(DATA_DIR, "pending.json");
@@ -131,8 +132,8 @@ function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason
 		}
 		recheckAnswered(j.target);
 	}
-	// Web only: a web conversation, or a kind the owner switched off for Discord (hub/discord-post.ts).
-	if (isLocal(j.target) || !discordPosts(j.target, j.replyTo)) {
+	// Web only: a web conversation, a kind the owner switched off for Discord (hub/discord-post.ts), or a gateway alert that repeats one Discord already has.
+	if (isLocal(j.target) || j.extra.repeat === true || !discordPosts(j.target, j.replyTo)) {
 		queue.markAnswered(jobAnswers(j));
 		return Promise.resolve({ delivered: true });
 	}
@@ -153,6 +154,8 @@ export const replies = createInflight<OutJob>(j => {
 export async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answersOwner = extra.source === undefined || extra.source === "orchestrator";
+	// A gateway post to the alert conversation (a failing watch) is gated like alert() below.
+	if (target === "alert" && extra.source === "gateway" && !extra.update_key && repeatAlert(text)) extra = { ...extra, repeat: true };
 	const job: OutJob = { target, text: stripHandoff(text), replyTo: replyTo ?? (answersOwner && !extra.update_key ? lateRequest(target) : undefined), extra };
 	let landed = false;
 	replies.begin(job);
@@ -184,9 +187,11 @@ export function expectReply(target: string): void {
 	livestatus.begin(target, "orchestrator");
 }
 
+// The same alert again (hub/alert-gate.ts) is marked on its event (the bell rewrites the first one, no push) and not posted to Discord again.
 export function alert(text: string): void {
-	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text });
-	if (discordPosts("alert")) void send("alert", text).catch(e => log(`alert send failed: ${e}`));
+	const repeat = repeatAlert(text);
+	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text, ...(repeat ? { repeat: true } : {}) });
+	if (discordPosts("alert") && !repeat) void send("alert", text).catch(e => log(`alert send failed: ${e}`));
 }
 
 export function rateLimitNotice(target: string, replyTo?: string): void {
