@@ -113,10 +113,10 @@ function updateSection() {
   else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.keep && !(c && c.keep) ? job.keep.line : job.message }), job.keep && !(c && c.keep) ? updKeepBox(job.keep, pending ? { disabled: true } : off) : null));
   if (UPD.wait) rows.push(li("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`, el("span", { class: "dot pri", "aria-hidden": "true" })));
   else if (pending) rows.push(li(`새 버전 ${disk.commit.short} 받음`, "재시작하면 적용돼요", el("button", { class: "btn", type: "button", onclick: () => updRestart() }, "재시작")));
-  rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "매일 자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알림과 함께 아래 자동 적용이 처리해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
+  rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "매일 자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알리고, 아래 자동 적용으로 바로 적용해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
     s.auto_check ? el("input", { class: "upd-at", type: "time", value: s.at, "aria-label": "확인 시각", onchange: ev => updSet({ at: ev.currentTarget.value }) }) : null,
     el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "매일 자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) })));
-  rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "확인에서 새 버전이 있으면 받아서 테스트하고, 하던 일이 끝나면 다시 시작해요. 내 로컬 커밋은 새 버전 위에 얹어 보고, 안 되면 개발자 폴더가 아닌 설치본만 보관하고 새 버전으로 바꿔요. 실패하면 되돌리고 알려요." })),
+  rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요. 테스트가 실패하면 지금 버전을 그대로 두고 알려요. 이 컴퓨터에서 고친 코드는 새 버전 위에 다시 얹고, 안 되면 따로 보관해요." })),
     el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) })));
   return [head, el("div", { class: "list" }, ...rows)];
 }
@@ -138,6 +138,6 @@ function renderSettings() {
     mnRow(),
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     row("chat", "대화 탭", chatTabMode() === "main" ? "메인 대화" : "마지막으로 보던 대화", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, null),
-    d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : "warn"}`, text: d.connected ? "연결됨" : "연결 중" })) : null),
+    d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : d.error ? "err" : "warn"}`, text: d.connected ? "연결됨" : d.error ? "연결 안 됨" : "연결 중", title: d.error || "" })) : null),
     ...pushSection(), ...updateSection(), ...accountSection(), ...rtSection());
 }
