@@ -36,13 +36,15 @@ afterEach(() => {
 });
 
 describe("the model list of the setting", () => {
-	test("subscription models only, no Haiku, with a friendly name and a one-line hint per effort", () => {
-		const c = replyModelChoices(LIST, WORKER);
+	test("subscription models with the newest Haiku (owner 2026-10-26), each a bare name and effort with no hint", () => {
+		const c = replyModelChoices([...LIST, m("claude-haiku-5-5", "Claude Haiku 5.5"), m("claude-haiku-4-5-20251001", "Claude Haiku 4.5")], WORKER);
 		expect(c.options[0]).toBe("");
 		expect(c.options).toContain(WORKER);
 		expect(c.options).toContain(OPUS);
-		expect(c.options.some(o => /haiku|gpt/.test(o))).toBe(false);
-		expect(c.labels[WORKER]).toBe("Sonnet 5.5 · high — 꼼꼼하지만 한도를 더 써요");
+		expect(c.options.some(o => /gpt|haiku-4/.test(o))).toBe(false);
+		expect(c.options).toContain("anthropic/claude-haiku-5-5:low");
+		expect(c.labels["anthropic/claude-haiku-5-5:low"]).toBe("Haiku 5.5 · low");
+		expect(c.labels[WORKER]).toBe("Sonnet 5.5 · high");
 		expect(c.labels[`${SONNET}:low`]).toContain("Sonnet 5.5 · low");
 	});
 	test("the default option names the subagent model now, or the global reply model when one is set", () => {
@@ -53,11 +55,11 @@ describe("the model list of the setting", () => {
 });
 
 describe("the field per app and instance", () => {
-	test("every app that drafts replies has it, with the help line; an app that does not draft has none", () => {
+	test("every app that drafts replies has it, with no help line; an app that does not draft has none", () => {
 		for (const app of ["mail", "kakao", "youtube", "instagram", "site", "mail-2"]) {
 			const f = fieldsOf(app).find(x => x.key === "reply_model");
 			expect(f?.label).toBe("답장 모델");
-			expect(f?.help).toBe("답장 초안을 쓸 모델이에요");
+			expect(f?.help).toBe("");   // a pick only, no description (owner 2026-10-26)
 			expect(f?.options?.[0]).toBe("");
 		}
 		expect(fieldsOf("nope")).toEqual([]);
@@ -114,9 +116,10 @@ describe("which model a draft uses", () => {
 		writeSettings(dir, "mail-2", { reply_model: "" });
 		expect(await replyModel("mail", "mail:naver-1", { dataDir: dir, worker: WORKER })).toBe(WORKER);
 	});
-	test("never a role, mini or Haiku model, whatever the file says", () => {
+	test("never a role or mini model, whatever the file says; Haiku is the owner's pick to keep", () => {
 		const bad = (model: string) => pickReplyModel({ enabled: true, decided: true, auto: true, apps: {}, senders: { only: [], skip: [] }, models: { mail: model } }, "mail", WORKER);
-		expect(bad("anthropic/claude-haiku-4-5")).toBe(SONNET);
+		expect(bad("anthropic/claude-haiku-5-5:low")).toBe("anthropic/claude-haiku-5-5:low");
+		expect(bad("anthropic/claude-gpt-5-mini")).toBe(SONNET);
 		expect(bad("@tiny")).toBe(SONNET);
 	});
 });

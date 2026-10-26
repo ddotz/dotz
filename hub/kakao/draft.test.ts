@@ -91,8 +91,8 @@ describe("buildDraftPrompt", () => {
 });
 
 describe("pickDraftModel", () => {
-	test("a real configured model is kept; unset, a role, or a mini/haiku model becomes sonnet-class", () => {
+	test("a real configured model (Haiku included) is kept; unset, a role, or a mini model becomes sonnet-class", () => {
 		expect(pickDraftModel("anthropic/claude-opus-4-1")).toBe("anthropic/claude-opus-4-1");
-		for (const bad of [undefined, "", "@tiny", "anthropic/claude-haiku-4-5", "openai/gpt-5-mini"]) expect(pickDraftModel(bad)).toBe(DRAFT_MODEL);
+		for (const bad of [undefined, "", "@tiny", "openai/gpt-5-mini"]) expect(pickDraftModel(bad)).toBe(DRAFT_MODEL);
 	});
 });
