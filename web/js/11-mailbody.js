@@ -6,7 +6,9 @@
 // of the timeline does not fetch or measure again.
 const MB = { cache: new Map(), max: 12, img: 20, imgBytes: 4_000_000 };
 const MB_LINK = /^(?:https?:|mailto:|tel:)/i;
-const MB_CSS = "html{color-scheme:light}body{margin:0;padding:14px 16px;background:#fff;color:#1b1f24;font:15px/1.6 -apple-system,BlinkMacSystemFont,system-ui,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;overflow-wrap:anywhere;word-break:break-word}img{max-width:100%;height:auto}table{max-width:100%}a{color:#1a5fd0}blockquote{margin:8px 0;padding-left:12px;border-left:3px solid #d0d7de;color:#57606a}pre{white-space:pre-wrap}";
+// No vertical scroll of its own: the frame is always exactly as tall as this document (mbMeasure), so the page's one scroll moves it. A table wider
+// than the frame is the only thing that may scroll sideways, inside its own wrapper (mbPrepare), never the whole body.
+const MB_CSS = "html{color-scheme:light}body{margin:0;padding:14px 16px;background:#fff;color:#1b1f24;font:15px/1.6 -apple-system,BlinkMacSystemFont,system-ui,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;overflow-wrap:anywhere;word-break:break-word}img{max-width:100%;height:auto}table{max-width:100%}.mb-wide{max-width:100%;overflow-x:auto;overflow-y:hidden}a{color:#1a5fd0}blockquote{margin:8px 0;padding-left:12px;border-left:3px solid #d0d7de;color:#57606a}pre{white-space:pre-wrap}";
 const mbPut = (k, v) => { MB.cache.delete(k); MB.cache.set(k, v); while (MB.cache.size > MB.max) MB.cache.delete(MB.cache.keys().next().value); return v; };
 
 async function mbDataUrl(src) {
@@ -38,17 +40,52 @@ async function mbPrepare(html, remote) {
       n.removeAttribute("srcset");
     }
   }
+  // A wide table (a report with many columns) scrolls inside its own box: the body never scrolls sideways, so nothing widens the page.
+  for (const t of doc.body.querySelectorAll("table")) {
+    const w = doc.createElement("div");
+    w.className = "mb-wide";
+    t.replaceWith(w);
+    w.append(t);
+  }
   await Promise.all(jobs);
   return { body: doc.body.innerHTML, held };
 }
 const mbDoc = (body, remote) => `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:${remote ? " https: http:" : ""}; style-src 'unsafe-inline'"><base target="_blank"><style>${MB_CSS}</style></head><body>${body}</body></html>`;
-// The height of a document at a width, read from a hidden frame that is thrown away.
+// The height of a document at a width, read from a hidden frame that is thrown away. The frame's load event already waits for its images, but
+// a late font or a decoded image can still change the layout by a pixel: measure once more on the next frames. The visible frame itself is
+// sandboxed without allow-same-origin, so it cannot be observed from here; measuring the same document offscreen is the only way.
 function mbMeasure(srcdoc, width) {
   return new Promise(res => {
     const f = el("iframe", { sandbox: "allow-same-origin", tabindex: "-1", "aria-hidden": "true", style: `position:fixed;left:-99999px;top:0;width:${width}px;height:10px;border:0;visibility:hidden` });
-    const done = h => { clearTimeout(t); f.remove(); res(h); };
-    const t = setTimeout(() => done(0), 8000);
-    f.onload = () => { let h = 0; try { h = Math.ceil(f.contentDocument.documentElement.scrollHeight); } catch {} done(h); };
+    let settled = false;
+    const done = h => { settled = true; clearTimeout(t); f.remove(); res(h); };
+    const t = setTimeout(() => { if (!settled) done(0); }, 8000);
+    const read = () => {
+      try {
+        const d = f.contentDocument, b = d && d.body;
+        if (!d || !b) return 0;
+        // the tallest of what the document says: an image still loading adds no height until it has one, so scrollHeight is enough once loaded
+        return Math.ceil(Math.max(d.documentElement.scrollHeight, b.scrollHeight, b.getBoundingClientRect().height));
+      } catch { return 0; }
+    };
+    f.onload = () => {
+      let frames = 0, stable = 0, last = -1;
+      const settle = () => {
+        if (settled) return;
+        frames++;
+        const d = (() => { try { return f.contentDocument; } catch { return null; } })();
+        const busy = !d || [...d.images].some(i => !i.complete);
+        const h = read();
+        // the same height on three quiet frames (images done, fonts settled): that is the document's height
+        if (!busy && h > 0) {
+          if (h === last) stable++; else { stable = 0; last = h; }
+          if (stable >= 2) { settled = true; done(h); return; }
+        }
+        if (frames > 120) { settled = true; done(h || last || 0); return; }
+        requestAnimationFrame(settle);
+      };
+      settle();
+    };
     f.srcdoc = srcdoc;
     document.body.append(f);
   });
@@ -83,7 +120,8 @@ function mailHtmlNode(key) {
       if (st.w !== w || st.doc !== doc || !st.h) {
         const h = await mbMeasure(doc, w);
         if (my !== seq) return;
-        Object.assign(st, { h: h || st.h || 200, w, doc });
+        // a pixel of slack so a rounded-up line never turns into the frame's own scrollbar
+        Object.assign(st, { h: h ? h + 1 : st.h || 200, w, doc });
         frame.style.height = `${st.h}px`;
       }
       shownW = w;
