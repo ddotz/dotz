@@ -5,7 +5,7 @@ async function loadTodo(t = target) {
   let r;
   try { r = await api(`/api/todo?target=${enc(t)}`); } catch { TD.by[t] = TD.by[t] || []; r = null; }
   if (r) TD.by[t] = Array.isArray(r.phases) ? r.phases : [];
-  if (t === target) { paintTodo(); if (CV.key && !CV.placed) renderAll(); }   // the first paint of an opening waits for the plan (chatReady)
+  if (t === target) { paintTodo(); paintRunState(); if (CV.key && !CV.placed) renderAll(); }   // the first paint of an opening waits for the plan (chatReady)
 }
 const todoState = x => x.status === "in_progress" ? "act" : x.status === "completed" ? "done" : x.status === "abandoned" ? "drop" : "pend";
 function paintTodo() {
@@ -37,7 +37,17 @@ function todoActivity(a) {
   const own = targetOfSource(a.source);
   if (own === target || (own === MAIN && isProjT(target))) { clearTimeout(TD.timer); TD.timer = setTimeout(() => loadTodo(target), 250); }
 }
-function resetChat() { clear(tl); CV.divNode = null; CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; }
+// The top of the timeline is the older-messages loader: it sits above the messages (the observer in 09-needs-you.js loads when it comes
+// into view) and holds the button for a click. Kept across redraws, never counted as a message or trimmed with the oldest ones.
+const TL_TOP_NODE = $("#tl-top"), TL_MORE_BTN = TL_TOP_NODE && $("#tl-more", TL_TOP_NODE);
+function paintOlderTop() {
+  if (!TL_TOP_NODE) return;
+  const more = !!(ts(target).hmore && ts(target).hLoaded);
+  TL_TOP_NODE.hidden = !more;
+  TL_MORE_BTN.hidden = !more;
+}
+if (TL_MORE_BTN) TL_MORE_BTN.onclick = () => loadOlderMsgs();
+function resetChat() { clear(tl); if (TL_TOP_NODE) tl.append(TL_TOP_NODE); CV.divNode = null; CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; paintOlderTop(); }
 function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; CS.who = ""; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
 // Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
 function speakerOf(e) {
@@ -164,6 +174,8 @@ function msgNode(e) {
       if (e.subject) {
         const key = e.mail || (isMailT(e.conv || "") ? mailOf(e.conv) : ""), html = !!(e.html || (MAILS.get(`mail:${key}`) || {}).html);
         const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim(), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw) : undefined });
+        // 보낸 사람 / 받는 사람 / 참조 and the same-sender thread (30-mail-thread.js) sit under the summary, above the original
+        if (card && key) { const meta = mailMetaNode(`mail:${key}`, e), fold = card.querySelector(".rc-raw"); if (fold) card.insertBefore(meta, fold); else card.append(meta); if (MT_READY) mailThreadSync(); }
         if (card && key && Array.isArray(e.attachments) && e.attachments.length) card.append(mailFilesNode(key, e.attachments));
         return card;
       }
@@ -273,7 +285,8 @@ function chatPush(en, bulk) {
     if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
     CS.group.add(en.a);
   }
-  while (tl.children.length > ts(target).cap) tl.firstChild.remove();
+  const fixed = TL_TOP_NODE && TL_TOP_NODE.parentNode === tl ? 1 : 0;
+  while (tl.children.length > ts(target).cap + fixed) (fixed ? tl.children[1] : tl.firstElementChild)?.remove();
   markLive();
   if (!bulk) scrollChat(false, fresh);
 }

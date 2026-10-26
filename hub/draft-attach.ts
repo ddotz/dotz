@@ -57,7 +57,7 @@ function original(rec: DraftRec | undefined, ref: string): Response {
 	if (rec.kind !== "mail" || rec.compose) return GONE();
 	const mail = mailByKey(rec.ref);
 	if (!mail && !rec.item.text.trim()) return GONE();
-	return json({ kind: "mail", key: rec.ref, from: mail?.from ?? rec.item.from, ...(mail?.to ? { to: mail.to } : {}), date: mail?.at ?? rec.created, ...(mail?.subject || rec.item.subject ? { subject: mail?.subject ?? rec.item.subject } : {}), text: rec.item.text, html: !!mail?.html, attachments: mail ? attachmentList(mail) : [] });
+	return json({ kind: "mail", key: rec.ref, from: mail?.from ?? rec.item.from, ...(mail?.to ? { to: mail.to } : {}), ...(mail?.cc ? { cc: mail.cc } : {}), date: mail?.at ?? rec.created, ...(mail?.subject || rec.item.subject ? { subject: mail?.subject ?? rec.item.subject } : {}), text: rec.item.text, html: !!mail?.html, attachments: mail ? attachmentList(mail) : [] });
 }
 
 export async function draftAttachRoute(req: Request, url: URL, ref: string, tail: string): Promise<Response> {

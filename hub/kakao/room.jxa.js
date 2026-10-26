@@ -1,28 +1,211 @@
 // Reads and closes the open KakaoTalk chat window by Accessibility (System Events), run as `osascript -l JavaScript` with ONE JSON line on stdin:
-//   {action:"probe", deep?, name?} | {action:"close", name?} | {action:"rows", name, max, budgetMs, first} | {action:"open", name, row} | {action:"send", name, text}
+//   {action:"probe", deep?, name?} | {action:"close", name?} | {action:"rows", name, max, budgetMs, first} | {action:"open", name, row} | {action:"send", name, text, ours?, priorPressed?}
 // probe prints {ok:true, windows:[{title, members?, self?}]} for every window that is not the main window; room.ts accepts the room only when
 // exactly one chat window is open. `members` is read only from a static text that names itself a count (identifier or description with
 // count/member/참여/명); `self` is true only when the window shows the words 나와의 채팅. A missing field means "not shown", never "no".
 // openlist opens the chat list window when it is closed (see openList): needed when KakaoTalk has no window at all.
 // close presses the close button of every non-main window. Nothing is typed and no key is sent.
-// rows reads the static texts of the chat list rows, in order, until `max` rows, `budgetMs` or (first) the first row titled `name`: one
-// Accessibility read per row (~0.07 s, measured 2026-10-23; the whole 290-row list takes 20 s), nothing is clicked or opened. Prints
-// {ok:true, rows:[[title, count?, time, unread?]], stopped:"found"|"budget"|"end", ms:{table, read}}, or {ok:true, opened:true} when a
-// window of the name is open already, or {ok:false, step:"list", why:"no_list"}.
+// rows finds the rows titled `name` among ALL rows of the chat list (measured 290/290, no scrolling needed) with the AX API in this process
+// (one call per attribute; ~20 ms a row, against ~100 ms through System Events). The row the database order predicts (`hint`) is read first,
+// then its neighbours, then outward; the read stops at the first name hit, at the budget, or at the end. A paged list is scrolled page by
+// page (AXScrollDownByPage) until the name is found or the list stops moving. Nothing is clicked or opened. Prints
+// {ok:true, rows:<count>, scanned, hits:[{index, texts}], stopped:"found"|"budget"|"end", pages, ms:{scan}}, or {ok:true, opened:true}
+// when a window of the name is open already, or {ok:false, step:"list", why:"no_list"}.
 // open opens list row number `row` by Accessibility actions only: its title is read again (a list that moved is refused), then the row
 // cell's AXShowMenu once, then AXPress on its "채팅방 열기" item (list rows have no AXPress/AXOpen; kmsg selects the row and posts an Enter
 // key, which needs KakaoTalk in front). KakaoTalk is not activated and the owner's front app and focus stay (measured 2026-10-23). At most
 // one context menu per call. Prints {ok:true, ms} or {ok:false, step:"list"|"recheck"|"menu"|"press"|"window", why, err?, ms}.
 // send puts `text` into the input of the one window titled `name` (AXValue) and presses its 전송 button (AXPress): no key event, no
-// activation. Setting AXValue enables the button (measured 2026-10-23). A non-empty input is the owner's own unsent text and is left
-// alone ("busy"). Prints {ok:true} once the input is empty again, or {ok:false, why, pressed?}: pressed means the button was pressed
-// but the input did not empty, so the message may have gone out and must not be sent again.
+// activation. Setting AXValue enables the button (measured 2026-10-23). The input is compared normalized (NFC, line breaks, invisible
+// marks, ends): a value equal to one dotz typed into this room (`ours`, or this text) is dotz's leftover and is cleared for real (read back,
+// three tries); any other value is the owner's unsent text and is left alone ("owner_text" with its first characters). A value equal to a
+// text whose 전송 was already pressed without confirmation (`priorPressed`) is never typed over or pressed again: when it is this very text
+// the answer is pressed ("prior_pressed"), when it is another text the answer is "prior_left" with nothing pressed. A press that throws
+// counts as pressed ("press_error"). Prints {ok:true} once the input is empty again, or {ok:false, why, pressed?, preview?, left?}: pressed
+// means the button was (or may have been) pressed but the send is not confirmed, so it must not be sent again; left is what the input
+// still holds after a failed attempt.
 // close {name?} closes only the window of that name when given.
 ObjC.import("Foundation");
+ObjC.import("ApplicationServices");
+ObjC.import("AppKit");
 
 var BUNDLE = "com.kakao.KakaoTalkMac";
 var MAX_NODES = 300;
 var MAX_DEPTH = 7;
+var SCAN_RADIUS = 30;
+
+// One Accessibility call of the AX API in this process, instead of an AppleEvent to System Events (~100 ms for one attribute there).
+try {
+	ObjC.bindFunction("AXUIElementCreateApplication", ["id", ["int"]]);
+	ObjC.bindFunction("AXUIElementCopyAttributeValue", ["int", ["id", "id", "id*"]]);
+	ObjC.bindFunction("AXUIElementPerformAction", ["int", ["id", "id"]]);
+} catch (e) {}
+
+function axGet(el, name) {
+	try {
+		var ref = Ref();
+		if ($.AXUIElementCopyAttributeValue(el, name, ref) !== 0) return null;
+		var v = ref[0];
+		if (v === undefined || v === null) return null;
+		try {
+			return ObjC.deepUnwrap(v);
+		} catch (e) {
+			try {
+				return ObjC.unwrap(v);
+			} catch (e2) {
+				return String(v);
+			}
+		}
+	} catch (e) {
+		return null;
+	}
+}
+
+function axStr(el, name) {
+	var v = axGet(el, name);
+	return v === null || v === undefined ? "" : String(v);
+}
+
+function axAction(el, action) {
+	try {
+		return $.AXUIElementPerformAction(el, action) === 0;
+	} catch (e) {
+		return false;
+	}
+}
+
+// The whole list is exposed as AXRows at once (measured 290/290, no scrolling needed), so one native read sees every room.
+function axList() {
+	try {
+		var apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(BUNDLE).js;
+		if (!apps || !apps.length) return null;
+		var app = $.AXUIElementCreateApplication(apps[0].processIdentifier);
+		var wins = axGet(app, "AXWindows") || [];
+		var listWin = null;
+		for (var i = 0; i < wins.length; i++) if (axStr(wins[i], "AXTitle") === "카카오톡") listWin = wins[i];
+		if (!listWin) return null;
+		var best = null;
+		var bestRows = -1;
+		var scrolls = [];
+		var kids = axGet(listWin, "AXChildren") || [];
+		for (var i = 0; i < kids.length; i++) {
+			if (axStr(kids[i], "AXRole") !== "AXScrollArea") continue;
+			scrolls.push(kids[i]);
+			var sk = axGet(kids[i], "AXChildren") || [];
+			for (var j = 0; j < sk.length; j++) {
+				if (axStr(sk[j], "AXRole") !== "AXTable") continue;
+				var rs = axGet(sk[j], "AXRows") || [];
+				if (rs.length > bestRows) {
+					bestRows = rs.length;
+					best = { table: sk[j], rows: rs };
+				}
+			}
+		}
+		if (!best) return null;
+		return { table: best.table, rows: best.rows, scrolls: scrolls };
+	} catch (e) {
+		return null;
+	}
+}
+
+function axRowTexts(row) {
+	var out = [];
+	var cells = axGet(row, "AXChildren") || [];
+	for (var i = 0; i < cells.length; i++) {
+		var texts = axGet(cells[i], "AXChildren") || [];
+		for (var j = 0; j < texts.length; j++) {
+			var v = axStr(texts[j], "AXValue");
+			if (v !== "") out.push(v);
+		}
+	}
+	return out;
+}
+
+// Only the title while scanning (3 AX calls a row); the rest of the row is read once its title matches (count, time, preview).
+function axRowTitle(row) {
+	var cells = axGet(row, "AXChildren") || [];
+	for (var i = 0; i < cells.length; i++) {
+		var texts = axGet(cells[i], "AXChildren") || [];
+		for (var j = 0; j < texts.length; j++) {
+			var v = axStr(texts[j], "AXValue");
+			if (v !== "") return v;
+		}
+	}
+	return "";
+}
+
+// Title reads are the expensive part (~26 ms a row: row children, cell children, one value). The hint row (the database order in the list)
+// comes first, then its neighbours (a pinned room shifts the list by a few rows), then the whole list; the read stops at the first name hit,
+// at the end, or at the budget. Scrolling continues a list that exposes only its visible rows; with all rows exposed it finds the end at once.
+function axScan(name, first, budgetMs, hint, need) {
+	var t0 = Date.now();
+	var list = axList();
+	if (!list) return null;
+	var want = norm(name);
+	// `need`: how many rows of this name the database has; the scan stops once that many are seen (all of them are then known).
+	var enough = first ? 1 : need > 0 ? need : 0;
+	var hits = [];
+	var seen = {};
+	var scanned = 0;
+	var stopped = "end";
+	var pages = 0;
+	var total = list.rows.length;
+	var order = [];
+	if (typeof hint === "number" && hint >= 0 && hint < total) {
+		order.push(hint);
+		for (var d = 1; d <= SCAN_RADIUS; d++) {
+			if (hint + d < total) order.push(hint + d);
+			if (hint - d >= 0) order.push(hint - d);
+		}
+		// A hint off by more than the window keeps its neighbourhood: continue outward instead of starting from the top.
+		for (var i = hint + SCAN_RADIUS + 1; i < total; i++) order.push(i);
+		for (var i = hint - SCAN_RADIUS - 1; i >= 0; i--) order.push(i);
+	} else {
+		for (var i = 0; i < total; i++) order.push(i);
+	}
+	for (;;) {
+		for (var q = 0; q < order.length; q++) {
+			if (Date.now() - t0 > budgetMs) {
+				stopped = "budget";
+				break;
+			}
+			var idx = order[q];
+			if (seen[idx]) continue;
+			seen[idx] = true;
+			var title = axRowTitle(list.rows[idx]);
+			scanned++;
+			if (norm(title) === want) {
+				hits.push({ index: idx, texts: axRowTexts(list.rows[idx]) });
+				if (enough && hits.length >= enough) {
+					stopped = "found";
+					break;
+				}
+			}
+		}
+		if (stopped === "found" || stopped === "budget") break;
+		// Every exposed row was read: if the list shows one page at a time, scroll and continue; otherwise this is the end.
+		if (pages >= 20) break;
+		var before = total && list.rows.length ? String(axStr(list.rows[0], "AXTitle")) : "";
+		var scrollArea = null;
+		for (var s = 0; s < list.scrolls.length && !scrollArea; s++) {
+			var sk = axGet(list.scrolls[s], "AXChildren") || [];
+			for (var j = 0; j < sk.length; j++) if (sk[j] === list.table) scrollArea = list.scrolls[s];
+		}
+		if (!scrollArea || !axAction(scrollArea, "AXScrollDownByPage")) break;
+		pages++;
+		var next = axList();
+		if (!next) break;
+		list = next;
+		var after = list.rows.length ? String(axStr(list.rows[0], "AXTitle")) : "";
+		if (list.rows.length === total && before === after) break;
+		total = list.rows.length;
+		// A paged list shows different rows at the same indices: read them again.
+		seen = {};
+		order = [];
+		for (var i = 0; i < total; i++) order.push(i);
+	}
+	return { ok: true, rows: total, scanned: scanned, hits: hits, stopped: stopped, pages: pages, ms: { scan: Date.now() - t0 } };
+}
 
 function attr(el, name) {
 	try {
@@ -36,6 +219,56 @@ function attr(el, name) {
 // The same rule as normalizeTitle in room.ts: NFC, no zero-width marks, trimmed.
 function norm(s) {
 	return String(s === null || s === undefined ? "" : s).normalize("NFC").replace(/[\u200b-\u200f\u2060\ufeff]/g, "").trim();
+}
+
+// The same rule as normalizeInput in room.ts: what KakaoTalk's AX value may have changed about our text (NFD/NFC, \r vs \n, trimmed
+// ends, invisible marks, collapsed spaces) does not make it a different text.
+function normText(s) {
+	return String(s === null || s === undefined ? "" : s)
+		.normalize("NFC")
+		.replace(/[\u200b-\u200f\u2060\ufeff]/g, "")
+		.replace(/[\ufe00-\ufe0f\u{e0100}-\u{e01ef}]/gu, "")
+		.replace(/\r\n?/g, "\n")
+		.replace(/[\u2028\u2029]/g, "\n")
+		.replace(/[ \t]+/g, " ")
+		.replace(/ *\n */g, "\n")
+		.trim();
+}
+
+function freeValue(v, ph) {
+	return normText(v) === "" || (ph !== "" && normText(ph) === normText(v));
+}
+
+// What the input holds before a send, decided from its value alone (pure, unit tested through room-jxa.test.ts):
+//   free: empty or only its placeholder. same_pressed: this very text, whose 전송 was pressed before without confirmation (never typed or
+//   pressed again). prior_left: ANOTHER text whose 전송 was pressed before (not pressed by this call; the caller decides). ours: a text dotz
+//   typed (cleared and replaced). owner: anything else, the owner's own draft (never touched).
+function inputVerdict(value, ph, text, ours, priorPressed) {
+	if (freeValue(value, ph)) return "free";
+	var n = normText(value);
+	for (var k = 0; k < priorPressed.length; k++) if (n === normText(priorPressed[k])) return n === normText(text) ? "same_pressed" : "prior_left";
+	if (n === normText(text)) return "ours";
+	for (var j = 0; j < ours.length; j++) if (n === normText(ours[j])) return "ours";
+	return "owner";
+}
+
+// Whether a list row read at open time is still the row chosen from the scan: the same title and, where the choice rested on them, the same
+// member count and the same newest-message preview. Anything else is refused (another row moved into that index).
+function rowStillIs(texts, name, expect) {
+	if (!texts || !texts.length || norm(texts[0]) !== norm(name)) return false;
+	if (!expect) return true;
+	if (typeof expect.members === "number") {
+		var shown = /^\d+$/.test(String(texts[1] || "")) ? parseInt(texts[1], 10) : undefined;
+		if (shown !== expect.members) return false;
+	}
+	if (expect.noCount === true && /^\d+$/.test(String(texts[1] || ""))) return false;
+	if (typeof expect.preview === "string" && expect.preview) {
+		var want = normText(expect.preview);
+		var seen = false;
+		for (var i = 1; i < texts.length && !seen; i++) if (normText(texts[i]) === want) seen = true;
+		if (!seen) return false;
+	}
+	return true;
 }
 
 function chatWindows() {
@@ -210,9 +443,12 @@ function openList() {
 	return { ok: true, ms: ms, focus: { from: from, took: took, restored: restored } };
 }
 
-function readRows(name, max, budgetMs, first) {
+function readRows(name, max, budgetMs, first, hint, need) {
 	var t0 = Date.now();
 	if (windowNamed(name)) return { ok: true, opened: true };
+	var native = axScan(name, first, budgetMs, hint, need);
+	if (native) return native;
+	// No AX API in this process: the older System Events wording of the same scan (one AppleEvent per attribute, ~100 ms a read).
 	var list = listTable();
 	if (!list) return { ok: false, step: "list", why: "no_list", ms: { table: Date.now() - t0 } };
 	var tableMs = Date.now() - t0;
@@ -240,7 +476,15 @@ function readRows(name, max, budgetMs, first) {
 	return { ok: true, rows: out, stopped: stopped, ms: { table: tableMs, read: Date.now() - t0 - tableMs } };
 }
 
-function openRowAt(index, name) {
+// The texts of list row `index` read the same way the scan read them (native AX values), so a recheck compares like with like; null when
+// the AX API is not available in this process (the System Events names are used then).
+function nativeRowTexts(index) {
+	var list = axList();
+	if (!list || index >= list.rows.length) return null;
+	return axRowTexts(list.rows[index]);
+}
+
+function openRowAt(index, name, expect) {
 	var t0 = Date.now();
 	var ms = {};
 	var lap = function (key) {
@@ -259,7 +503,9 @@ function openRowAt(index, name) {
 	var cell;
 	try {
 		cell = list.table.rows[index].uiElements[0];
-		if (norm(cell.staticTexts.name()[0]) !== norm(name)) return fail("recheck", "moved");
+		var texts = nativeRowTexts(index);
+		if (!texts) texts = cell.staticTexts.name().map(function (t) { return t === null || t === undefined ? "" : String(t); });
+		if (!rowStillIs(texts, name, expect)) return fail("recheck", "moved");
 	} catch (e) {
 		return fail("recheck", "gone", e);
 	}
@@ -307,7 +553,9 @@ function openRowAt(index, name) {
 	return { ok: true, ms: ms };
 }
 
-function sendInto(name, text) {
+// The input after a failed attempt holds OUR text when it is one we typed (this text or an earlier attempt's), and dotz's text must never be
+// mistaken for the owner's draft. A different text is the owner's: it is left alone and reported with its first characters.
+function sendInto(name, text, ours, priorPressed) {
 	var w = windowNamed(name);
 	if (!w) return { ok: false, why: "no_window" };
 	var input = null;
@@ -326,22 +574,81 @@ function sendInto(name, text) {
 	} catch (e) {
 		return { ok: false, why: "no_button" };
 	}
-	if (attr(input, "value") !== "") return { ok: false, why: "busy" };
-	input.value = text;
-	var ready = until(function () {
-		return attr(input, "value") === text && attr(btn, "enabled") === "true";
-	}, 1.5);
-	if (!ready) {
-		try {
-			input.value = "";
-		} catch (e) {}
-		return { ok: false, why: "not_set" };
+	var ph = attr(input, "placeholderValue");
+	var value = attr(input, "value");
+	var freed = freeValue(value, ph);
+	// An AX value can lag a moment behind the screen (a just-sent message still read back). Give it a short look before calling it occupied.
+	if (!freed) freed = !!until(function () { return freeValue(attr(input, "value"), ph) ? "free" : null; }, 0.6);
+	value = attr(input, "value");
+	if (!freed) {
+		var verdict = inputVerdict(value, ph, text, ours, priorPressed);
+		// This very text was pressed before: it is never typed or pressed again (the caller confirms it from the database).
+		if (verdict === "same_pressed") return { ok: false, why: "prior_pressed", pressed: true, left: String(value).slice(0, 200) };
+		// Another text, pressed before and still in the input: nothing is pressed now and the new text is not consumed by it.
+		if (verdict === "prior_left") return { ok: false, why: "prior_left", left: String(value).slice(0, 200), preview: String(value).replace(/\s+/g, " ").slice(0, 40) };
+		if (verdict === "owner") return { ok: false, why: "owner_text", preview: String(value).replace(/\s+/g, " ").slice(0, 40) };
+		// Ours (a leftover of an earlier attempt): clear it for real before typing, and say so when it will not clear.
+		var cleared = false;
+		for (var c = 0; c < 3 && !cleared; c++) {
+			try {
+				input.value = "";
+			} catch (e) {}
+			cleared = !!until(function () { return freeValue(attr(input, "value"), ph) ? "free" : null; }, 0.3);
+			if (!cleared) delay(0.2);
+		}
+		if (!cleared) return { ok: false, why: "stuck", left: String(attr(input, "value")).slice(0, 200) };
 	}
-	btn.actions.byName("AXPress").perform();
-	var gone = until(function () {
-		return attr(input, "value") === "";
-	}, 3);
-	return gone ? { ok: true } : { ok: false, why: "unclear", pressed: true };
+	var sameAsOurs = normText(attr(input, "value")) === normText(text);
+	if (!sameAsOurs) {
+		try {
+			input.focused = true;
+		} catch (e) {}
+		input.value = text;
+		var set = until(function () {
+			return normText(attr(input, "value")) === normText(text) ? "set" : null;
+		}, 1.5);
+		// The window may have been in the background (the AX value change is what enables 전송): focus, set again, a longer bound.
+		if (!set) {
+			try {
+				input.focused = true;
+			} catch (e) {}
+			input.value = text;
+			set = until(function () {
+				return normText(attr(input, "value")) === normText(text) ? "set" : null;
+			}, 2.5);
+		}
+		if (!set) {
+			var left = "";
+			try {
+				input.value = "";
+				left = String(attr(input, "value")).slice(0, 200);
+			} catch (e) {}
+			return { ok: false, why: "not_set", ...(left ? { left: left } : {}) };
+		}
+	}
+	// The text is in: wait for 전송 to enable, but never sit here long (a value that matches is enough to try the press).
+	if (attr(btn, "enabled") !== "true") {
+		try {
+			input.focused = true;
+		} catch (e) {}
+		until(function () {
+			return attr(btn, "enabled") === "true" ? "on" : null;
+		}, 1.5);
+	}
+	// From here on the press may have reached KakaoTalk: an AppleEvent error or timeout of perform() is known to come back for a press that
+	// was delivered, so a throwing press counts as pressed (confirmed from the database, never pressed again).
+	try {
+		btn.actions.byName("AXPress").perform();
+	} catch (e) {
+		var after = String(attr(input, "value")).slice(0, 200);
+		return { ok: false, why: "press_error", pressed: true, ...(after ? { left: after } : {}) };
+	}
+	var gone = !!until(function () {
+		return freeValue(attr(input, "value"), ph) ? "gone" : null;
+	}, 3.5);
+	if (gone) return { ok: true };
+	var held = String(attr(input, "value")).slice(0, 200);
+	return { ok: false, why: "unclear", pressed: true, ...(held ? { left: held } : {}) };
 }
 
 function readInput() {
@@ -364,9 +671,11 @@ function run() {
 		}
 		if (req.action === "close") return JSON.stringify(closeAll(req.name));
 		if (req.action === "openlist") return JSON.stringify(openList());
-		if (req.action === "send" && typeof req.name === "string" && req.name && typeof req.text === "string" && req.text) return JSON.stringify(sendInto(req.name, req.text));
-		if (req.action === "rows" && typeof req.name === "string" && req.name) return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 4000), req.first === true));
-		if (req.action === "open" && typeof req.name === "string" && req.name && Number.isInteger(req.row) && req.row >= 0) return JSON.stringify(openRowAt(req.row, req.name));
+		if (req.action === "send" && typeof req.name === "string" && req.name && typeof req.text === "string" && req.text)
+			return JSON.stringify(sendInto(req.name, req.text, Array.isArray(req.ours) ? req.ours.filter(function (s) { return typeof s === "string"; }) : [], Array.isArray(req.priorPressed) ? req.priorPressed.filter(function (s) { return typeof s === "string"; }) : []));
+		if (req.action === "rows" && typeof req.name === "string" && req.name)
+			return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 6500), req.first === true, Number.isInteger(req.hint) ? req.hint : undefined, Number.isInteger(req.need) ? req.need : 0));
+		if (req.action === "open" && typeof req.name === "string" && req.name && Number.isInteger(req.row) && req.row >= 0) return JSON.stringify(openRowAt(req.row, req.name, req.expect && typeof req.expect === "object" ? req.expect : undefined));
 		return JSON.stringify({ ok: false });
 	} catch (e) {
 		return JSON.stringify({ ok: false, why: "error", error: String(e).slice(0, 120) });

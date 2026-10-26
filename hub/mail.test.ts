@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import "./conversations.ts"; // listens to the event bus: the first message of a mail conversation gives the mail its summary
 import { emit, eventTarget, type HubEvent } from "./events.ts";
-import { MailError, mailBriefOf, mailByKey, mailByThread, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
+import { MailError, mailBriefOf, mailByKey, mailByThread, mailCard, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
 import { outEvent } from "./projectchat.ts";
 
 function fakes(discordOn: boolean, channel: string | undefined = "1561565203714408448", threadOn: MailDeps["threadOn"] = () => true) {
@@ -60,6 +60,22 @@ describe("postMail", () => {
 		expect(mailByThread("1430000000000009999")?.key).toBe(r.key);
 		expect(mailTargets()).toContain(r.target);
 		expect(calls.wakes).toEqual([]);
+	});
+
+	// The mail view always names who sent it, who it is for and, when there is one, the 참조 list (web 30-mail-thread.js draws it);
+	// the poster's strings are kept as sent (a header list of "Name <addr>", comma separated) and come back in the card the web reads.
+	test("to and cc are stored as sent and come back in the mail card and its event", async () => {
+		const { deps, calls } = fakes(false);
+		const id = uid("cc");
+		const to = "나 <me@example.com>";
+		const cc = "Lee <lee@example.com>, Park <park@example.com>";
+		const r = await postMail({ source: "plug", id, subject: "참조 확인", from: "Kim <kim@example.com>", to, cc }, deps);
+		expect(mailByKey(r.key)).toMatchObject({ to, cc });
+		expect(mailCard(mailByKey(r.key)!)).toMatchObject({ to, cc, subject: "참조 확인", from: "Kim <kim@example.com>" });
+		expect(calls.events[0]).toMatchObject({ to, cc });
+		// an outgoing mail keeps them too
+		const out = await postMail({ source: "plug", id: uid("cc-out"), subject: "보낸 메일", from: "나 <me@example.com>", to: "Kim <kim@example.com>", cc, direction: "out" }, deps);
+		expect(mailCard(mailByKey(out.key)!)).toMatchObject({ to: "Kim <kim@example.com>", cc, dir: "out" });
 	});
 
 	test("no thread, Discord on: the hub opens one thread in the mail channel and puts the body in it", async () => {

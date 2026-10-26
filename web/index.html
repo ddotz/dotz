@@ -85,13 +85,14 @@
         <div class="subs" hidden></div>
         <div class="todo" id="todo" hidden></div>
         <div class="chatbox">
-          <div class="timeline" id="timeline"><div class="tl-in" id="tl"></div></div>
+          <div class="timeline" id="timeline"><div class="tl-in" id="tl"><div class="tl-top" id="tl-top" hidden><button class="btn text tl-more" id="tl-more" type="button" hidden>이전 메시지 더 보기</button></div></div></div>
           <button class="btn tonal jump" id="chat-jump" type="button" aria-label="맨 아래로" title="맨 아래로" hidden></button>
         </div>
         <div class="composer" id="composer">
           <section class="dcard" id="dcard" aria-label="답변 필요" hidden></section>
           <div class="qlist" id="queue" hidden></div>
           <div class="hintrow" id="hints" hidden></div>
+          <div class="runstate" id="runstate" role="status" hidden><span class="dot" id="runstate-dot"></span><span class="rs-tx" id="runstate-tx"></span><button class="btn text rs-go" id="runstate-act" type="button" hidden></button></div>
           <div class="pausenote" id="pausenote" role="status" hidden></div>
           <div class="runline" id="runline" hidden><span class="dot pri"></span><span id="runline-tx"></span></div>
           <form class="sendrow" id="send">
@@ -120,6 +121,10 @@
           <div class="term" id="term"></div>
           <button class="btn tonal jump" id="act-jump" type="button" aria-label="맨 아래로" title="맨 아래로" hidden></button>
         </div>
+      </section>
+      <section class="view fill" id="v-apps" hidden>
+        <aside class="cv-side" id="apps-side" aria-label="앱 목록"></aside>
+        <div class="apps-pane" id="apps-pane"></div>
       </section>
       <section class="view" id="v-harness" hidden><div id="harness"></div></section>
       <section class="view" id="v-settings" hidden><div id="settings"></div></section>

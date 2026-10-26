@@ -124,10 +124,11 @@ function go(name, tgt) {
   if (name === "activity" && (!LOG_VIEW || isFixedT(target))) name = "chat";   // 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all
   if (name !== current) prevView = current;
   current = name;
+  if (name === "apps") appsOpen(tgt);   // after current is set: appsRender draws only the shown 앱 tab
   if (convSync()) renderAll();
   const tv = name === "chat" || name === "activity";
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
-  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "monitoring" ? monHash() : name;
+  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "monitoring" ? monHash() : name === "apps" ? appsHash() : name;
   navSync(name, hash);
   const pp = name === "project" && ppWide();
   for (const v of views) $(`#v-${v}`).hidden = v !== name && !(pp && v === "projects");
@@ -138,6 +139,7 @@ function go(name, tgt) {
   const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
   th.hidden = !tv; $("#vtog").hidden = !tv || !LOG_VIEW;
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
+  if (MT_READY) mailThreadSync();   // the same-sender mail panel belongs to the mail conversation that is open (30-mail-thread.js)
   $("#title").textContent = name === "home" ? botName : titles[name];
   convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");

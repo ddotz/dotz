@@ -10,10 +10,10 @@ const kkItem = it => !!it && (it.key === KK_KEY || !!it.kk);   // a peer's Kakao
 const KK_PAGE = 50;
 const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, pick: null,   // pick: null = open while no room is chosen
-  open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
+  open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
-  typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
-  peerT: 0, peerBusy: false, peerHead: "",
+  typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "", compose: null,
+  peerT: 0, peerBusy: false, peerHead: "", lp: new Map(), olderBusy: false, olderAgain: false,
 };
 
 /* ---- small helpers ---- */
@@ -38,13 +38,74 @@ function kkAvatar(name, cls = "") {
 }
 // What a message that is not plain text says (KakaoTalk's type codes). A reply (26) carries its own text.
 const KK_TYPE = { 2: "(사진)", 27: "(사진)", 3: "(동영상)", 4: "(음성 메시지)", 5: "(음성 메시지)", 12: "(이모티콘)", 20: "(이모티콘)", 25: "(이모티콘)", 18: "(파일)", 16: "(위치)" };
+const KK_OTHER = "(지원하지 않는 메시지)";
+// A JSON record in the message column (an attachment of a type this build does not draw) is not words: never show it.
+const kkRecord = s => {
+  if (!/^\s*[\[{]/.test(String(s))) return false;
+  try { const v = JSON.parse(String(s)); return !!v && typeof v === "object"; } catch { return false; }
+};
 // The text of a message (the server sends it for text, replies, feed lines and unknown types); else the placeholder of its type.
 function kkBody(m) {
   const type = Number(m.type), text = String(m.text ?? "");
-  if (text) return { text, ph: false };
-  return { text: KK_TYPE[type] || "(기타 메시지)", ph: true };
+  const words = type === 1 || type === 26 || type === 0 || !kkRecord(text) ? text : "";
+  if (words) return { text: words, ph: false };
+  return { text: KK_TYPE[type] || KK_OTHER, ph: true };
 }
+// The one line a room row shows under its name (the same rule as the hub's room list).
+const kkHint = m => { const chars = [...kkBody(m).text.replace(/\s+/g, " ").trim()]; return chars.length > 32 ? `${chars.slice(0, 31).join("").trimEnd()}…` : chars.join(""); };
 const kkSys = m => Number(m.type) === 0;
+
+/* ---- links in a message: the address itself is a link, and a lazy preview card under the bubble (GET /api/link-preview) ---- */
+const KK_URL = /\bhttps?:\/\/[^\s<>"'`]+/gu;
+const kkTrimUrl = u => u.replace(/[.,!?;:)\]]+$/u, "");
+// Up to three addresses of a message text, without duplicates and trailing punctuation.
+const kkUrls = text => [...new Set((String(text).match(KK_URL) || []).map(kkTrimUrl).filter(Boolean))].slice(0, 3);
+// The text with each address as an anchor; everything else stays text (never innerHTML).
+function kkLinkText(text) {
+  const out = document.createDocumentFragment();
+  let at = 0;
+  for (const m of String(text).matchAll(KK_URL)) {
+    const raw = m[0], url = kkTrimUrl(raw);
+    if (m.index > at) out.append(document.createTextNode(text.slice(at, m.index)));
+    out.append(el("a", { class: "kk-link", href: url, target: "_blank", rel: "noopener noreferrer", text: url }));
+    if (raw.length > url.length) out.append(document.createTextNode(raw.slice(url.length)));
+    at = m.index + raw.length;
+  }
+  if (at < String(text).length) out.append(document.createTextNode(String(text).slice(at)));
+  return out;
+}
+const kkLpCard = url => el("a", { class: "kk-lp", href: url, target: "_blank", rel: "noopener noreferrer", "data-url": url }, el("span", { class: "kk-lp-ph", text: "링크 미리보기" }));
+// One request per address for the whole pane (the hub caches 24 h as well); a failed preview disappears, the plain link stays.
+// The map holds the pending request too, so cards of the same address share one answer.
+async function kkLpLoad(card) {
+  const url = card.dataset.url;
+  let p = KK.lp.get(url);
+  if (p === undefined) {
+    p = api(`/api/link-preview?url=${enc(url)}`).catch(() => ({ ok: false }));
+    KK.lp.set(url, p);
+  }
+  p = await p;
+  KK.lp.set(url, p);
+  if (!card.isConnected) return;
+  if (!p || !p.ok) { card.remove(); return; }
+  clear(card);
+  if (p.image) card.append(el("img", { src: p.image, alt: "", loading: "lazy", decoding: "async", draggable: "false" }));
+  card.append(el("span", { class: "kk-lp-b" },
+    p.site ? el("span", { class: "kk-lp-s", text: p.site }) : null,
+    p.title ? el("span", { class: "kk-lp-t", text: p.title }) : null,
+    p.description ? el("span", { class: "kk-lp-d", text: p.description }) : null));
+}
+let kkLpIO = null;
+let kkTopIO = null;
+// The top of the room loads the older page by itself (one at a time), the button stays as the fallback.
+function kkTopWatch() {
+  kkTopIO?.disconnect();
+  const top = $("#kk-top", kkIn);
+  if (top && kkTopIO) kkTopIO.observe(top);
+}
+function kkLpWatch() {
+  for (const c of kkIn.querySelectorAll(".kk-lp[data-url]")) if (kkLpIO) kkLpIO.observe(c); else kkLpLoad(c);
+}
 
 /* ---- photos, videos, voice, files, replies, locations: built from m.media (the server sends no URL; bytes come from /api/kakao/media/...) ---- */
 const KK_GONE = "기간이 지나 볼 수 없어요";
@@ -118,13 +179,85 @@ function kkFileNode(m, md) {
     el("span", { class: "kk-fb" }, el("span", { class: "kk-fn", title: md.name, text: md.name }), sub ? el("span", { class: "kk-sub", text: sub }) : null),
     md.local ? el("a", { class: "btn tonal kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: "열기" }) : el("span", { class: "kk-sub kk-nopc", text: "PC에 없음" }));
 }
-// Like KakaoTalk: "<author of the original>에게 답글" over the quoted original, then the reply's own text.
+// Like KakaoTalk: "<author of the original>에게 답장" over the quoted original, then the reply's own text. The quote is a button that jumps to
+// the original (kkJump), when the attachment names its logId.
 function kkReplyNode(m, md) {
   const { text } = kkBody(m);
   return el("div", { class: "kk-bub reply" },
-    el("div", { class: "kk-quote" }, el("span", { class: "kk-qn", text: md.quoteSender ? `${md.quoteSender}에게 답글` : "답글" }), el("span", { class: "kk-qt", text: md.quote })),
+    el("button", { class: `kk-quote${md.srcLogId ? " jump" : ""}`, type: "button", disabled: !md.srcLogId, "data-src": md.srcLogId || null, "aria-label": md.srcLogId ? "원래 메시지로 이동" : null, onclick: ev => { ev.stopPropagation(); kkJump(md.srcLogId); } },
+      el("span", { class: "kk-qn", text: md.quoteSender ? `${md.quoteSender}에게 답장` : "답장" }), el("span", { class: "kk-qt", text: md.quote })),
     el("div", { class: "kk-rt", text }));
 }
+// The original message of a quote: scroll it into view and flash it briefly. When the page does not hold it, the server sends the page
+// around that logId (?around=); a logId the room does not have says so with a toast.
+const kkFlash = node => {
+  node.classList.remove("kk-hl");
+  void node.offsetWidth;
+  node.classList.add("kk-hl");
+  clearTimeout(node._hlT);
+  node._hlT = setTimeout(() => node.classList.remove("kk-hl"), 1800);
+};
+function kkJump(src) {
+  src = String(src || "").trim();
+  if (!src || !KK.open) return;
+  const find = () => [...kkTl.querySelectorAll("[data-log]")].find(n => n.dataset.log === src);
+  let node = find();
+  if (!node) {
+    const id = KK.open;
+    api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}&around=${enc(src)}`).then(d => {
+      if (KK.open !== id) return;
+      // The page around the original is merged into what the room already shows (a jump never drops the current view). Messages between
+      // that page and the rest are not loaded: the place is marked as a gap (kkGapNode) instead of drawing the two pages as adjacent.
+      const got = Array.isArray(d.messages) ? d.messages : [];
+      kkMergeGap(got);
+      if (d.room) KK.room = d.room;
+      if (Array.isArray(d.drafts)) { KK.drafts = d.drafts; KK.ask = kkAskOf(d); }
+      if (Array.isArray(d.sends)) KK.sends = d.sends;
+      if (d.read !== undefined) KK.read = d.read;
+      kkPaintTl(false);
+      const hit = find();
+      if (!hit) { toast("원래 메시지를 찾지 못했어요", true); return; }
+      hit.scrollIntoView({ block: "center" });
+      kkFlash(hit);
+      kkSyncStick();
+    }, e => toast(e.message, true));
+    return;
+  }
+  node.scrollIntoView({ block: "center" });
+  kkFlash(node);
+  kkSyncStick();
+}
+const kkByLog = (a, b) => (kkGt(a.logId, b.logId) ? 1 : kkGt(b.logId, a.logId) ? -1 : 0);
+// Merges a page that may not touch what is shown (a quote jump, a gap fill). A page sharing no message with the view leaves a gap on each
+// side that has shown messages; a gap the page reaches into is closed. KK.gaps holds the logId each gap follows. `closes`: the gap this
+// page fills from below (its lower side is contiguous by construction).
+function kkMergeGap(got, closes) {
+  if (!got.length) return;
+  const have = new Set(KK.msgs.map(x => x.logId)), fresh = got.filter(x => !have.has(x.logId)), page = [...got].sort(kkByLog);
+  const lo = page[0].logId, hi = page[page.length - 1].logId, touches = fresh.length < got.length;
+  if (closes) KK.gaps.delete(closes);
+  if (!touches) {
+    const above = KK.msgs.find(x => kkGt(x.logId, hi)), below = KK.msgs.filter(x => kkGt(lo, x.logId)).pop();
+    if (above) KK.gaps.add(hi);
+    if (below && !closes) KK.gaps.add(below.logId);
+  }
+  KK.msgs = [...KK.msgs, ...fresh].sort(kkByLog);
+}
+// The messages after a gap, one page at a time; the gap closes once the page reaches what is shown after it.
+async function kkFillGap(after) {
+  const id = KK.open;
+  if (!id || KK.gapBusy) return;
+  KK.gapBusy = true;
+  try {
+    const d = await api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}&after=${enc(after)}`);
+    if (KK.open !== id) return;
+    kkMergeGap(Array.isArray(d.messages) ? d.messages : [], after);
+    kkPaintTl(false);
+  } catch (e) { toast(e.message, true); }
+  finally { KK.gapBusy = false; }
+}
+const kkGapNode = after => el("div", { class: "kk-gap", role: "separator", "aria-label": "불러오지 않은 메시지가 있어요" },
+  el("button", { class: "btn text", type: "button", "data-k": "gap", text: "사이 메시지 불러오기", onclick: () => kkFillGap(after) }));
 // A sticker: its image from the media route when the server has one (md.image), else (or when it cannot be fetched) one chip with its name.
 // The text written with it sits in a bubble under it.
 const kkEmoChip = md => el("div", { class: "kk-bub ph kk-emo-chip", text: md.alt || "이모티콘" });
@@ -175,6 +308,70 @@ function kkViewer(m, md, start) {
   return d;
 }
 const kkWho = m => (m.fromMe ? "me" : String(m.authorId ?? m.sender ?? ""));
+
+/* ---- 사용자별 분석: a sender's avatar or name opens the panel (GET/POST /api/kakao/person/...) ---- */
+const kkMin = ms => (ms === undefined || ms === null ? "" : ms < 60000 ? `${Math.max(1, Math.round(ms / 1000))}초` : ms < 3600000 ? `${Math.round(ms / 60000)}분` : `${(ms / 3600000).toFixed(1)}시간`);
+function kkBars(values, labels) {
+  const max = Math.max(1, ...values);
+  return el("div", { class: "kk-hist" }, ...values.map((v, i) => el("span", { class: "kk-hb", title: `${labels ? labels[i] : i}시 ${v}개`, style: `height:${Math.max(2, Math.round((v / max) * 100))}%` })));
+}
+function kkPerson(uid) {
+  uid = String(uid || "");
+  const id = KK.open;
+  if (!uid || !id) return;
+  const who = KK.msgs.find(m => !m.fromMe && String(m.authorId) === uid);
+  const name = who ? who.sender || "상대" : "상대";
+  const body = el("div", { class: "kk-pd-b" }, el("div", { class: "kk-note", role: "status", text: "불러오는 중…" }));
+  const d = el("dialog", { class: "kk-pd", "data-uid": uid, "aria-label": `${name} 사용자별 분석` },
+    el("div", { class: "kk-pd-in" },
+      el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: "사용자별 분석" })), el("button", { class: "x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      body));
+  document.body.append(d); d.showModal(); dialogHist(d);
+  d.addEventListener("close", () => d.remove());
+  api(`/api/kakao/person/${enc(uid)}?room=${enc(id)}`).then(r => { if (d.isConnected) kkPersonPaint(d, body, r); }, e => { if (d.isConnected) clear(body).append(el("div", { class: "kk-note", role: "status", text: e.message })); });
+}
+function kkPersonPaint(d, body, r) {
+  const s = (r && r.stats) || {}, row = (k, v) => el("div", { class: "kk-prow" }, el("span", { class: "kk-pk", text: k }), el("span", { class: "kk-pv", text: v }));
+  const span = [s.firstAt ? kstStamp(s.firstAt) : "", s.lastAt ? kstStamp(s.lastAt) : ""].filter(Boolean).join(" ~ ");
+  const reply = [s.replyToOwnerMs !== undefined ? `상대 → 나 ${kkMin(s.replyToOwnerMs)}` : "", s.ownerReplyMs !== undefined ? `나 → 상대 ${kkMin(s.ownerReplyMs)}` : ""].filter(Boolean).join(" · ") || "아직 잴 수 없어요";
+  const unanswered = Array.isArray(s.recentUnanswered) ? s.recentUnanswered : [];
+  const sum = el("div", { class: "kk-sum" });
+  const paintSum = a => clear(sum).append(...[
+    el("div", { class: "kk-dh", text: "요약 분석" }),
+    a && a.text ? el("div", { class: "kk-dt", text: a.text }) : null,
+    a && a.at ? el("div", { class: "kk-sub", text: `${kstStamp(a.at)}에 만든 요약` }) : null,
+    el("button", { class: "btn tonal", type: "button", "data-k": "analyze", text: a ? "다시 분석" : "요약 분석", onclick: ev => kkAnalyze(d, ev.currentTarget, paintSum) }),
+  ].filter(Boolean));
+  paintSum(r && r.analysis);
+  clear(body).append(
+    el("div", { class: "kk-psec" },
+      row("메시지", `이 방 ${s.roomMessages | 0}개 · 지켜보는 방 ${s.watchedMessages | 0}개 (${s.watchedRooms | 0}곳)`),
+      span ? row("기간", span) : null,
+      row(`답장 (${s.windowDays || 30}일)`, reply),
+      row("나를 부른 메시지", `${Math.round((s.mentionShare || 0) * 100)}% (${s.mentions | 0}개)`)),
+    el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "활동 시간" }), kkBars(s.hours || Array(24).fill(0), Array.from({ length: 24 }, (_, i) => String(i))),
+      el("div", { class: "kk-hax" }, el("span", { text: "0시" }), el("span", { text: "6시" }), el("span", { text: "12시" }), el("span", { text: "18시" }), el("span", { text: "24시" }))),
+    el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "요일" }), kkBars(s.weekdays || Array(7).fill(0), ["일", "월", "화", "수", "목", "금", "토"]),
+      el("div", { class: "kk-hax kk-hax7" }, ...["일", "월", "화", "수", "목", "금", "토"].map(t => el("span", { text: t })))),
+    el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "답장을 기다리는 메시지" }),
+      ...(unanswered.length ? unanswered.map(m => el("div", { class: "kk-pun" }, el("span", { class: "kk-sub", text: kstStamp(m.at) }), el("span", { class: "kk-put", text: m.text }))) : [el("div", { class: "kk-sub", text: "없어요" })])),
+    sum);
+}
+async function kkAnalyze(d, btn, paint) {
+  const id = KK.open, uid = d.getAttribute("data-uid");
+  if (!id || !uid) return;
+  btn.disabled = true; btn.textContent = "분석 중…";
+  try {
+    const r = await api(`/api/kakao/person/${enc(uid)}/analyze`, "POST", { room: id });
+    if (!d.isConnected) return;
+    if (r && r.error) throw new Error(r.error);
+    paint(r.analysis);
+  } catch (e) {
+    if (d.isConnected) { btn.disabled = false; btn.textContent = "요약 분석"; }
+    toast(e.message, true);
+  }
+}
+
 const kkSame = (a, b) => !kkSys(a) && !kkSys(b) && kkWho(a) === kkWho(b) && Math.floor(a.sentAt / 60000) === Math.floor(b.sentAt / 60000);
 const kkKindLine = r => (r.kind === "group" || r.kind === "multi" ? "단체 대화방" : r.kind === "direct" || r.kind === "dm" ? "1:1 대화" : r.kind === "open" ? "오픈채팅" : "");
 // Under a room's name: its kind and the hub's hint (the newest message, else the member count), so rooms of the same name can be told apart.
@@ -204,13 +401,26 @@ const kkEditBar = el("div", { class: "kk-edit", id: "kk-edit", hidden: true }, e
 const kkTa = el("textarea", { id: "kk-text", rows: "1", autocomplete: "off", placeholder: "메시지 보내기", "aria-label": "카카오톡 메시지" });
 const kkSendBtn = el("button", { class: "ib pri", id: "kk-send-btn", type: "submit", "aria-label": "보내기", title: "보내기" }, icon("send"));
 const kkDraftBtn = el("button", { class: "cchip kk-dbtn", id: "kk-draft-btn", type: "button", onclick: () => kkMakeDraft() }, icon("spark"), el("span", { text: "답장 초안" }));
-const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn), kkSendBtn);
-const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkDrafts, kkEditBar, kkForm);
+const kkNewBtn = el("button", { class: "cchip kk-dbtn", id: "kk-new-btn", type: "button", onclick: () => kkComposeOpen() }, icon("pencil"), el("span", { text: "메시지 만들어 줘" }));
+const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn, kkNewBtn), kkSendBtn);
+const kkIntent = el("div", { class: "kk-intent", id: "kk-intent", hidden: true });
+const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkDrafts, kkEditBar, kkIntent, kkForm);
 // A room that is not watched opens read-only: this bar (at every width) says so in place of the composer and starts watching it.
 const kkRo = el("div", { class: "kk-ro", id: "kk-ro", role: "status", hidden: true });
 const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, el("div", { class: "kk-box" }, kkTl, kkPill), kkRo, kkFoot);
 const kkPane = el("div", { class: "kk", id: "kk", hidden: true }, kkRooms, kkChat);
 $("#v-monitoring").append(kkPane);
+// Tapping a sender's avatar or name in a room opens his 사용자별 분석 panel.
+kkTl.addEventListener("click", ev => {
+  const t = ev.target.closest && ev.target.closest(".kk-name, .kk-av:not(.sp)");
+  const m = t && t.closest("[data-log][data-author]");
+  if (m && m.dataset.author) kkPerson(m.dataset.author);
+});
+// Preview cards load when they come near the visible timeline (one request per address, kkLpLoad).
+if (typeof IntersectionObserver === "function") {
+  kkLpIO = new IntersectionObserver(list => { for (const e of list) if (e.isIntersecting) { kkLpIO.unobserve(e.target); kkLpLoad(e.target); } }, { root: kkTl, rootMargin: "300px 0px" });
+  kkTopIO = new IntersectionObserver(list => { if (list.some(e => e.isIntersecting)) kkOlder(); }, { root: kkTl, rootMargin: "200px 0px 0px 0px" });
+}
 
 const kkAutosize = () => { kkTa.style.height = "auto"; kkTa.style.height = `${Math.min(kkTa.scrollHeight, 140)}px`; };
 kkTa.addEventListener("input", () => { kkAutosize(); if (KK.open) KK.typed.set(KK.open, kkTa.value); });
@@ -377,13 +587,16 @@ const kkMarkNode = () => el("div", { class: "kk-new", role: "separator", "aria-l
 function kkMsgNode(m, first, last) {
   if (kkSys(m)) return String(m.text ?? "").trim() ? el("div", { class: "kk-sys", role: "note", "data-log": m.logId, text: String(m.text).trim() }) : null;
   const group = !!(KK.room && KK.room.group), { text, ph } = kkBody(m);
-  const bub = (m.media && kkMediaNode(m, m.media)) || el("div", { class: `kk-bub${ph ? " ph" : ""}`, text });
+  // Plain words with an address: the address is a link and each one gets a preview card under the bubble.
+  const urls = !m.media && !ph ? kkUrls(text) : [];
+  const bub = (m.media && kkMediaNode(m, m.media)) || el("div", { class: `kk-bub${ph ? " ph" : ""}${urls.length ? " kk-lb" : ""}` }, urls.length ? kkLinkText(text) : text);
+  const previews = urls.length ? el("div", { class: "kk-lps" }, ...urls.map(kkLpCard)) : null;
   // On the time side of the bubble: KakaoTalk's yellow number (members who have not read it yet) above the time; nothing when 0.
   const n = m.unread | 0, meta = n > 0 || last ? el("span", { class: "kk-meta" }, n > 0 ? el("span", { class: "kk-rd", "aria-label": `아직 안 읽은 사람 ${n}명`, text: String(n) }) : null, last ? el("span", { class: "kk-time", text: kkTime(m.sentAt) }) : null) : null;
-  if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, meta, bub));
-  return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-log": m.logId },
+  if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, meta, bub), previews);
+  return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-log": m.logId, "data-author": m.authorId || null },
     group ? (first ? kkAvatar(m.sender) : el("span", { class: "kk-av sp", "aria-hidden": "true" })) : null,
-    el("div", { class: "kk-mb" }, group && first ? el("div", { class: "kk-name", text: m.sender || "알 수 없음" }) : null, el("div", { class: "kk-line" }, bub, meta)));
+    el("div", { class: "kk-mb" }, group && first ? el("div", { class: "kk-name", text: m.sender || "알 수 없음" }) : null, el("div", { class: "kk-line" }, bub, meta), previews));
 }
 // Sends of this room that are not (yet) a message of the room: sending, failed, or just sent and not read back from the database yet.
 function kkPending() {
@@ -406,17 +619,19 @@ function kkSendNode(s) {
 }
 function kkTimeline() {
   const out = [], msgs = KK.msgs;
-  if (KK.more) out.push(el("button", { class: "btn text kk-more", type: "button", text: "이전 메시지 더 보기", onclick: () => kkOlder() }));
+  if (KK.more) out.push(el("div", { class: "kk-top", id: "kk-top" }, el("button", { class: "btn text kk-more", type: "button", text: "이전 메시지 더 보기", onclick: () => kkOlder() })));
   let prev = null;
   msgs.forEach((m, i) => {
-    const newDay = !prev || kkDay(prev.sentAt) !== kkDay(m.sentAt), mark = !!KK.div && m.logId === KK.div, next = msgs[i + 1];
+    const newDay = !prev || kkDay(prev.sentAt) !== kkDay(m.sentAt), mark = !!KK.div && m.logId === KK.div, next = msgs[i + 1], gapBefore = !!prev && KK.gaps.has(prev.logId);
     if (newDay) out.push(kkDateNode(m.sentAt));
     if (mark) out.push(kkMarkNode());
     // Name and avatar once per run of one sender (like KakaoTalk); the time once per same-minute run.
-    const cont = !!prev && !newDay && !mark && !kkSys(prev) && kkWho(prev) === kkWho(m);
-    const nextCont = !!next && kkDay(next.sentAt) === kkDay(m.sentAt) && !(KK.div && next.logId === KK.div) && kkSame(m, next);
+    const cont = !!prev && !newDay && !mark && !gapBefore && !kkSys(prev) && kkWho(prev) === kkWho(m);
+    const nextCont = !!next && !KK.gaps.has(m.logId) && kkDay(next.sentAt) === kkDay(m.sentAt) && !(KK.div && next.logId === KK.div) && kkSame(m, next);
     const node = kkMsgNode(m, !cont, !nextCont);
-    if (node) out.push(node);
+    // A row with nothing visible in it (an empty body, a record this build does not draw) leaves no blank space.
+    if (node && (node.textContent.trim() || node.querySelector("img, audio, video, button, a"))) out.push(node);
+    if (next && KK.gaps.has(m.logId)) out.push(kkGapNode(m.logId));
     prev = m;
   });
   out.push(...kkPending().map(kkSendNode));
@@ -425,8 +640,12 @@ function kkTimeline() {
 }
 function kkPaintTl(stick) {
   const keep = kkTl.scrollTop;
+  kkLpIO?.disconnect();
+  kkTopIO?.disconnect();
   clear(kkIn).append(...kkTimeline());
   kkTl.scrollTop = stick ? kkTl.scrollHeight : keep;
+  kkTopWatch();
+  kkLpWatch();
   kkSyncStick();
 }
 // Where the unread line goes (it is drawn, the view still opens at the newest message): before the first message after the web's read position; never opened: KakaoTalk's own unread count says how many of the newest are unread.
@@ -454,7 +673,7 @@ async function kkOpen(id) {
   if (!r) return;
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
   const seq = ++KK.seq;
-  Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" || r.kind === "open", watched: !!r.watched }, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
+  Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" || r.kind === "open", watched: !!r.watched }, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(), compose: null,
     loading: true, roomErr: "", pill: false, stick: true, pin: "", placed: false, readSent: "", edit: null, drafting: "", revise: null, reviseCode: "" });
   kkTa.value = KK.typed.get(id) || ""; kkAutosize();
   kkPaintAll(); convTitle();
@@ -475,7 +694,7 @@ async function kkOpen(id) {
 }
 function kkClose() {
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
-  KK.open = ""; KK.seq++; KK.loading = false; KK.roomErr = ""; KK.edit = null;
+  KK.open = ""; KK.seq++; KK.loading = false; KK.roomErr = ""; KK.edit = null; KK.compose = null;
   kkPaintAll(); convTitle();
 }
 // Phone: the app bar's back arrow leaves the chat for the room list first (04-state.js #back).
@@ -484,19 +703,41 @@ function kkBack() {
   kkClose();
   return true;
 }
+// The older page, one load in flight at a time (an auto-load at the top and the fallback button share it). The message that was at the top
+// of the view keeps its offset: the content added above it never moves the reader.
 async function kkOlder() {
   const id = KK.open, first = KK.msgs[0];
   if (!id || !first) return;
+  if (KK.olderBusy) { KK.olderAgain = true; return; }
+  KK.olderBusy = true;
+  const edge = kkTl.getBoundingClientRect().top;
+  const shown = [...kkTl.querySelectorAll("[data-log]")];
+  const anchor = shown.find(n => n.getBoundingClientRect().bottom > edge + 1) || shown[0];
+  const anchorId = anchor ? anchor.dataset.log : first.logId;
+  const before = anchor ? anchor.getBoundingClientRect().top - edge : 0;
   try {
     const d = await api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}&before=${enc(first.logId)}`);
     if (KK.open !== id) return;
     const got = Array.isArray(d.messages) ? d.messages : [], have = new Set(KK.msgs.map(m => m.logId));
     KK.msgs = [...got.filter(m => !have.has(m.logId)), ...KK.msgs]; KK.more = got.length >= KK_PAGE; KK.pin = "";
     const h = kkTl.scrollHeight;
+    kkLpIO?.disconnect();
+    kkTopIO?.disconnect();
     clear(kkIn).append(...kkTimeline());
-    kkTl.scrollTop += kkTl.scrollHeight - h;
+    const now = kkTl.querySelector(`[data-log="${anchorId}"]`);
+    kkTl.scrollTop += now ? now.getBoundingClientRect().top - edge - before : kkTl.scrollHeight - h;
+    kkTopWatch();
+    kkLpWatch();
     kkSyncStick();
   } catch (e) { toast(e.message, true); }
+  finally {
+    KK.olderBusy = false;
+    if (KK.olderAgain) {
+      KK.olderAgain = false;
+      const top = $("#kk-top", kkIn);
+      if (top && KK.more && top.getBoundingClientRect().bottom > kkTl.getBoundingClientRect().top) kkOlder();
+    }
+  }
 }
 // New messages after the last one we hold; also refreshes the room's drafts and sends (the answer carries both).
 async function kkTail() {
@@ -534,6 +775,13 @@ function kkApply(d) {
   const stick = KK.stick || fresh.some(m => m.fromMe);
   if (fresh.some(m => !m.fromMe) && !stick) { KK.pill = true; kkPill.hidden = false; }
   if (stick) KK.pin = "bottom";
+  // The open room's own row follows the same rows just appended (one source of truth per room).
+  const row = kkRoom(KK.open), last = KK.msgs[KK.msgs.length - 1];
+  if (fresh.length && row && last) {
+    row.hint = kkHint(last); row.lastAt = last.sentAt;
+    row.unread = stick ? 0 : (row.unread | 0) + fresh.filter(m => !m.fromMe).length;
+    kkPaintRooms();
+  }
   kkPaintTl(stick);
   kkPaintFoot();
   return fresh.length;
@@ -662,7 +910,7 @@ function kkReviseBox(d, rv) {
 }
 // A draft of several KakaoTalk messages (d.parts) shows one bubble per message, in the order they go out; one 보내기 sends them all.
 const kkDraftParts = d => (Array.isArray(d.parts) && d.parts.length ? d.parts : [d.text]);
-const kkDraftHead = d => el("div", { class: "kk-dh", text: kkDraftParts(d).length > 1 ? `답장 초안 · 메시지 ${kkDraftParts(d).length}개` : "답장 초안" });
+const kkDraftHead = d => el("div", { class: "kk-dh", text: `${d.intent ? "새 메시지 초안" : "답장 초안"}${kkDraftParts(d).length > 1 ? ` · 메시지 ${kkDraftParts(d).length}개` : ""}` });
 function kkDraftText(d) {
   const parts = kkDraftParts(d);
   if (parts.length < 2) return el("div", { class: "kk-dt", text: d.text });
@@ -716,6 +964,43 @@ function kkPaintFoot() {
   const making = !!KK.open && KK.drafting === KK.open;
   kkDraftBtn.disabled = making;
   kkDraftBtn.lastChild.textContent = making ? "초안 만드는 중…" : "답장 초안";
+  kkNewBtn.disabled = making;
+  clear(kkIntent).append(...(KK.compose === null || !KK.open ? [] : kkIntentBox()));
+  kkIntent.hidden = !kkIntent.firstChild;
+}
+// 메시지 만들어 줘: the owner says what to send in his own words; the same draft call (POST .../draft { intent }) writes it in his voice.
+function kkComposeOpen() {
+  if (!KK.open) return;
+  KK.compose = "";
+  kkPaintFoot();
+  const i = $("#kk-intent-in");
+  if (i) i.focus();
+}
+function kkIntentBox() {
+  const inp = el("input", { class: "kk-rv", id: "kk-intent-in", type: "text", maxlength: "300", placeholder: "예: 내일 7시로 미루자고 정중하게", "aria-label": "보낼 메시지 내용", autocomplete: "off" });
+  inp.value = KK.compose || "";
+  const go = el("button", { class: "btn", type: "button", "data-k": "compose-go", text: "만들기", disabled: !inp.value.trim(), onclick: () => kkComposeMake(inp.value) });
+  inp.oninput = () => { KK.compose = inp.value; go.disabled = !inp.value.trim(); };
+  inp.onkeydown = ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); if (inp.value.trim()) kkComposeMake(inp.value); } };
+  return [el("div", { class: "kk-rq", text: "어떤 메시지를 보낼까요?" }), inp,
+    el("div", { class: "btns" }, go, el("button", { class: "btn text", type: "button", "data-k": "compose-cancel", text: "취소", onclick: () => { KK.compose = null; kkPaintFoot(); } }))];
+}
+async function kkComposeMake(intent) {
+  const id = KK.open, text = String(intent || "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (!id || !text || KK.drafting === id) return;
+  KK.compose = null; KK.drafting = id; KK.reviseCode = "";
+  kkPaintFoot();
+  clearTimeout(KK.draftT);
+  KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast("초안이 아직 오지 않았어요", true); } }, 120000);
+  try {
+    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", { intent: text });
+    if (r && typeof r.error === "string" && r.error) throw new Error(r.error);
+  } catch (e) {
+    clearTimeout(KK.draftT);
+    if (KK.drafting === id) KK.drafting = "";
+    kkPaintFoot();
+    toast(e.message, true);
+  }
 }
 // Drafts are made only on demand (or by a room's 자동 초안): the request starts it, and the kakao_draft event for this room says it is done.
 // `revise` = { code, change }: rewrite that draft with the owner's change instead of making a new one.
@@ -737,10 +1022,20 @@ async function kkMakeDraft(choice, revise) {
 }
 
 /* ---- live ---- */
-function kkBump(chatId) {
+// The newest line of one room, from the hub (logId, preview, time, unread): a room row follows the database without re-reading the whole list.
+async function kkRoomLatest(chatId) {
+  if (!kkRoom(chatId)) { kkLoadRooms(); return; }
+  try {
+    const d = await api(`/api/kakao/rooms/${enc(chatId)}/latest`);
+    if (KK.vis) kkSetRow(chatId, d);
+  } catch { kkLoadRooms(); }
+}
+function kkSetRow(chatId, d) {
   const r = kkRoom(chatId);
-  if (!r) { kkLoadRooms(); return; }
-  r.unread = (r.unread | 0) + 1; r.lastAt = Date.now();
+  if (!r || !d) return;
+  if (typeof d.text === "string" && d.text) r.hint = d.text;
+  if (d.at) r.lastAt = d.at;
+  if (typeof d.unread === "number") r.unread = d.unread;
   kkPaintRooms();
 }
 // The event stream (99-boot.js): ids only, so the bodies are fetched here.
@@ -751,7 +1046,7 @@ function kkLive(e) {
   kkIntgSoon();
   if (!KK.vis) return;
   const open = e.chatId === KK.open;
-  if (e.kind === "kakao") { if (open) kkTail(); else kkBump(e.chatId); }
+  if (e.kind === "kakao") { if (open) kkTail(); else kkRoomLatest(e.chatId); }
   else if (e.kind === "kakao_send") { if (open) kkSendEvent(e); }
   else if (e.kind === "kakao_draft" && open) {
     if (KK.drafting === e.chatId) {

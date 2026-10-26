@@ -16,6 +16,8 @@ test("the fields read the watch's own values; the common ones are controls above
 	make();
 	expect(val("t-set")).toEqual({ enabled: true, every_minutes: 60, to: "alert", label: "테스트 감시" });
 	expect(WATCH_FIELDS.filter(f => f.switch).map(f => f.key)).toEqual(["enabled", "every_minutes", "to", "label"]);
+	// The screen's sections: 알림, 감시, then the rest (the web draws them in this order).
+	expect(WATCH_FIELDS.map(f => [f.key, f.section])).toEqual([["enabled", "watch"], ["every_minutes", "watch"], ["to", "notify"], ["label", "advanced"]]);
 	expect(watchOfSubject("w:t-set")).toBe("t-set");
 	expect(watchOfSubject("w:nope")).toBeUndefined();
 	expect(watchOfSubject("mail")).toBeUndefined();
@@ -44,7 +46,7 @@ test("the orchestrator gets only this monitor's schema and values; a proposal is
 	const ctx = watchSettingsContext("t-set");
 	expect(ctx).toContain("[settings:w:t-set]");
 	for (const k of ["enabled", "every_minutes", "to", "label"]) expect(ctx).toContain(`${k} | `);
-	expect(ctx).toContain("every_minutes | number | 확인 간격(분) | 60");
+	expect(ctx).toContain("every_minutes | number | 감시 주기(분) | 60");
 	const answer = "30분마다로 바꿀게요.\n```dotz-settings\n" + JSON.stringify({ app: "w:t-set", changes: { every_minutes: 30 } }) + "\n```";
 	expect(parseProposal(answer, "w:t-set", WATCH_FIELDS)).toEqual({ app: "w:t-set", changes: { every_minutes: 30 } });
 	expect(parseProposal(answer.replace('"every_minutes":30', '"every_minutes":0'), "w:t-set", WATCH_FIELDS)).toBeNull();
