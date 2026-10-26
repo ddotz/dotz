@@ -701,6 +701,40 @@ describe("카카오톡 media at desktop width", () => {
 	});
 });
 
+describe("카카오톡 이전 메시지 자동 불러오기", () => {
+	const v = open(1280, 800);
+
+	test("reaching the top loads the older page once and keeps the anchor message at its offset; the button stays, and loading stops at the room's beginning", async () => {
+		reset();
+		msgs = Array.from({ length: 120 }, (_, i) => mk(String(9001 + i), i % 2 ? "다라" : "가나", `옛 대화 ${i}`, at(26, 1, 0, i)));
+		drafts = [];
+		await boot(v);
+		await openRoom(v);
+		const pages = () => reqs.filter(r => r.method === "GET" && r.path.startsWith("/api/kakao/chat/100?")).length;
+		expect(await q(v, `return !!document.querySelector("#kk-top") && document.querySelector("#kk-top button").textContent === "이전 메시지 더 보기"`)).toBe(true);
+		expect(pages()).toBe(1);
+
+		const before = await q<{ top: number; scroll: number }>(v, `const t = document.querySelector("#kk-tl").getBoundingClientRect().top; document.querySelector("#kk-tl").scrollTop = 0; return { top: document.querySelector('[data-log="9071"]').getBoundingClientRect().top - t, scroll: document.querySelector("#kk-tl").scrollTop }`);
+		expect(before.scroll).toBe(0);
+		await expectReq(r => r.method === "GET" && r.path.includes("before=9071"));
+		await waitFor(v, `document.querySelector('[data-log="9021"]')`);
+		const after = await q<{ top: number; first: string; scroll: number }>(v, `const t = document.querySelector("#kk-tl").getBoundingClientRect().top, tl = document.querySelector("#kk-tl"); return { top: document.querySelector('[data-log="9071"]').getBoundingClientRect().top - t, first: [...tl.querySelectorAll("[data-log]")][0].dataset.log, scroll: tl.scrollTop }`);
+		expect(after.first).toBe("9021");
+		expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(2);
+		expect(after.scroll).toBeGreaterThan(0);
+		expect(pages()).toBe(2);
+		await shot(v, "18-desktop-autoolder.png");
+
+		await run(v, `document.querySelector("#kk-tl").scrollTop = 0`);
+		await expectReq(r => r.method === "GET" && r.path.includes("before=9021"));
+		await waitFor(v, `!document.querySelector("#kk-top")`);
+		expect(pages()).toBe(3);
+		await run(v, `document.querySelector("#kk-tl").scrollTop = 0`);
+		await v.evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(0))))");
+		expect(pages()).toBe(3);
+	});
+});
+
 describe("카카오톡 메시지 만들어 줘", () => {
 	const v = open(1280, 800);
 
