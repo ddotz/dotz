@@ -14,6 +14,30 @@ button.cu-r:hover, a.cu-r:hover { background: var(--card-hover); }
 .cu-r > .ib { margin-left: auto; }
 .cu-m { color: var(--fg-3); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
 .cf .btn:disabled, .pv-acts .btn:disabled { opacity: .4; cursor: default; }
+@media (pointer: coarse) { .cf .btn { height: 36px; } }
+.cu-cause { margin-top: 8px; color: var(--err); font-size: 12px; line-height: 16px; }
+/* card editor (dialog): the app's fields, two to a row where they are short, one tonal block per action */
+.cu-form { display: flex; flex-direction: column; gap: 14px; padding-top: 8px; }
+.cu-form .fi { font-size: 14px; }
+.cu-form textarea.fi { height: auto; min-height: 76px; padding: 8px 12px; resize: vertical; font: inherit; font-size: 14px; line-height: 21px; }
+.cu-form .fi[aria-invalid="true"] { border-color: var(--err); }
+.cu-form .seg button { height: 32px; }
+.cu-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.cu-hint { margin-top: -8px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.cu-acts { display: flex; flex-direction: column; gap: 8px; }
+.cu-act { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: var(--r-ctl); background: var(--layer); }
+.cu-act .fi, .cu-act .seg button.on { background: var(--card); }
+.cu-act-h { display: flex; align-items: center; gap: 8px; }
+.cu-act-h .fi { flex: 1; }
+.cu-act-h .seg { flex: none; width: 112px; }
+.cu-act-f { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cu-chk { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; color: var(--fg-2); font-size: 13px; cursor: pointer; }
+.cu-chk input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.cu-ferr { display: flex; gap: 8px; align-items: flex-start; color: var(--err); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+.cu-ferr:empty { display: none; }
+.cu-add { align-self: flex-start; }
+@media (pointer: coarse) { .cu-form textarea.fi { font-size: 16px; } .cu-form .fi { font-size: 16px; } }
+@media (max-width: 639px) { .cu-2 { grid-template-columns: minmax(0, 1fr); } }
 .pv-cnt { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12px; line-height: 16px; font-weight: 600; }
 .pv-path { max-width: 100%; color: var(--fg-3); font: 13px/18px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.pv-path { padding: 0; border: 0; background: none; cursor: copy; }
@@ -148,13 +172,16 @@ button.pv-res:hover { background: var(--card-hover); }
   const KV_MAX = 6, LIST_MAX = 5, ACT_MAX = 4, ACT_SHOWN = 2;
   const splitActions = list => ({ shown: list.slice(0, ACT_SHOWN), rest: list.slice(ACT_SHOWN, ACT_MAX) });
   const moreRow = n => n > 0 ? el("div", { class: "more", text: `더 보기 · ${n}개` }) : null;
+  // One line of state inside a card (empty, loading, failed), the same element the built-in 알림 / 작업내역 / 모니터링 cards use.
+  const stateLine = (text, cls = "") => el("div", { class: `hc-none${cls ? ` ${cls}` : ""}`, text });
+  // A card whose file cannot be read: the same header as every card (title, state tag, ⋯ menu with 수정… / 삭제…), the cause as its body.
   const errorCard = c => el("div", { class: "card" },
-    el("div", { class: "ch" }, el("h3", { text: c.id || c.file || "카드" }), el("span", { class: "tag err", text: "오류" })),
-    el("div", { class: "sup", text: str(c.error) || "카드를 그리지 못했어요" }));
+    el("div", { class: "ch" }, el("h3", { text: c.title || c.id || c.file || "카드" }), el("span", { class: "tag err", text: "오류" }), c.id ? menuBtn(`custom:${c.id}`) : null),
+    stateLine(str(c.error) || "카드를 그리지 못했어요", "clamp c4"));
 
   function viewBody(c) {
     const d = c.data, v = c.view || "text";
-    if (d === undefined || d === null) return el("div", { class: "sup", text: "값 없음" });
+    if (d === undefined || d === null) return stateLine(c.error ? "값을 받지 못했어요" : "값 없음");
     if (v === "stat") {
       const o = typeof d === "object" && !Array.isArray(d) ? d : { value: d };
       return el("div", null, el("div", { class: "big", text: show(o.value) }),
@@ -163,7 +190,7 @@ button.pv-res:hover { background: var(--card-hover); }
     }
     if (v === "list") {
       const all = Array.isArray(d) ? d : [];
-      if (!all.length) return el("div", { class: "sup", text: "비어 있어요" });
+      if (!all.length) return stateLine("비어 있어요");
       return el("div", null, ...all.slice(0, LIST_MAX).map(it => {
         const o = it && typeof it === "object" ? it : { title: it };
         const kids = [el("span", { class: "nm", text: show(o.title) }), o.sub != null ? el("span", { class: "sup", text: show(o.sub) }) : null];
@@ -174,7 +201,7 @@ button.pv-res:hover { background: var(--card-hover); }
     }
     if (v === "kv") {
       const pairs = Array.isArray(d) ? d.filter(Array.isArray).map(p => [p[0], p[1]]) : d && typeof d === "object" ? Object.entries(d) : [];
-      if (!pairs.length) return el("div", { class: "sup", text: "비어 있어요" });
+      if (!pairs.length) return stateLine("비어 있어요");
       return el("div", null, ...pairs.slice(0, KV_MAX).map(([k, val]) => el("div", { class: "kv" }, el("span", { class: "k", text: str(k) }), el("span", { class: "v", text: show(val) }))), moreRow(pairs.length - KV_MAX));
     }
     return el("div", { class: "clamp c4", text: show(typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d) });
@@ -199,18 +226,22 @@ button.pv-res:hover { background: var(--card-hover); }
     try {
       if (c.error && c.data === undefined) return errorCard(c);
       const body = el("div", { class: c.note ? "mt8" : "" });
-      const kids = [el("div", { class: "ch" }, el("h3", { text: c.title || c.id }), c.stale ? el("span", { class: "tag warn", text: "오래된 값" }) : null, menuBtn(`custom:${c.id}`)),
-        c.note ? el("div", { class: "sup", text: show(c.note) }) : null, body];
+      // the cause of a failed data command sits under the body: next to the value it could not refresh (오래된 값) or replace
+      const cause = c.error ? el("div", { class: "cu-cause clamp", text: str(c.error), title: str(c.error) }) : null;
+      const kids = [el("div", { class: "ch" }, el("h3", { text: c.title || c.id }), c.stale ? el("span", { class: "tag warn", text: "오래된 값" }) : c.error ? el("span", { class: "tag err", text: "실패" }) : null, menuBtn(`custom:${c.id}`)),
+        c.note ? el("div", { class: "sup", text: show(c.note) }) : null, body, cause];
       const { shown } = splitActions(c.actions || []);
       if (shown.length) kids.push(el("div", { class: "cf" }, ...shown.map((a, i) => actionButton(c, i, a))));
       const card = c.link ? tapCard(() => openLink(c.link), ...kids) : el("div", { class: "card" }, ...kids);
       card.dataset.card = c.id;
       if (shown.length) card.classList.add("foot");
       if (c.render) {
+        const loading = stateLine("불러오는 중…");
+        body.append(loading);
         import(`/api/custom/render?id=${enc(c.id)}&v=${enc(c.rev || "")}`)
           .then(m => m.default(c.data, { el, card: c }))
-          .then(out => { if (out && out.nodeType) body.append(out); else if (out != null) body.append(el("div", { class: "clamp c4", text: str(out) })); })
-          .catch(e => card.replaceWith(errorCard({ id: c.id, error: e && e.message ? e.message : "render.js 오류" })));
+          .then(out => { loading.remove(); if (out && out.nodeType) body.append(out); else if (out != null) body.append(el("div", { class: "clamp c4", text: str(out) })); })
+          .catch(e => card.replaceWith(errorCard({ id: c.id, title: c.title, error: e && e.message ? e.message : "render.js 오류" })));
       } else body.append(viewBody(c));
       return card;
     } catch (e) {
@@ -237,8 +268,8 @@ button.pv-res:hover { background: var(--card-hover); }
     const d = c.data, v = c.view || "text", n = Array.isArray(d) ? d.length : d && typeof d === "object" ? Object.keys(d).length : 1;
     const text = str(d && typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d);
     const rows = Math.min(n, v === "kv" ? KV_MAX : LIST_MAX), more = (v === "kv" || v === "list") && n > rows ? 28 : 0;
-    const body = c.render ? 140 : v === "kv" || v === "list" ? rows * 30 + more : v === "stat" ? 60 : Math.min(4, Math.ceil(text.length / 40)) * 22;
-    const px = 24 + 30 + (c.note ? 24 : 0) + body + ((c.actions || []).length ? 40 : 0) + 4;
+    const body = c.error && d === undefined ? 44 : c.render ? 140 : v === "kv" || v === "list" ? rows * 30 + more : v === "stat" ? 60 : Math.min(4, Math.ceil(text.length / 40)) * 22;
+    const px = 24 + 30 + (c.note ? 24 : 0) + body + (c.error && d !== undefined ? 24 : 0) + ((c.actions || []).length ? 40 : 0) + 4;
     return { w: !c.render && v === "text" && text.length > 160 ? 6 : 4, h: Math.min(10, Math.max(3, Math.ceil((px + BGAP) / BSTEP))) };
   }
   function homeItems() {
@@ -254,15 +285,154 @@ button.pv-res:hover { background: var(--card-hover); }
   function menuActs(id) {
     const c = ((DATA && DATA.cards) || []).find(x => x.id === id);
     if (!c) return [];
-    const key = `custom:${id}`, def = homeSize(c);
-    const acts = [{ label: "새로고침", run: () => busy(null, async () => { applyCard(await api("/api/custom/refresh", "POST", { id })); }) }];
+    const key = `custom:${id}`, def = homeSize(c), broken = c.error && c.data === undefined;
+    const acts = broken ? [] : [{ label: "새로고침", run: () => busy(null, async () => { applyCard(await api("/api/custom/refresh", "POST", { id })); }) }];
     if (c.link) acts.push({ label: "열기", run: () => openLink(c.link) });
     splitActions(c.actions || []).rest.forEach((a, j) => acts.push({ label: a.label, run: () => busy(null, runAction(c, ACT_SHOWN + j, a)) }));
-    acts.push({ label: "작게", run: () => homeBoard.resize(key, 3, def.h) }, { label: "보통", run: () => homeBoard.resize(key, def.w, def.h) }, { label: "크게", run: () => homeBoard.resize(key, 6, def.h + 2) });
+    acts.push({ label: "수정…", run: () => edit(id) });
+    if (!broken) acts.push({ label: "작게", run: () => homeBoard.resize(key, 3, def.h) }, { label: "보통", run: () => homeBoard.resize(key, def.w, def.h) }, { label: "크게", run: () => homeBoard.resize(key, 6, def.h + 2) });
     acts.push({ label: "숨기기", run: () => { hidden.add(id); saveHidden(); renderHome(); } });
+    acts.push({ label: "삭제…", run: () => remove(id) });
     return acts;
   }
   function unhide() { hidden = new Set(); saveHidden(); }
+
+  /* ---------- add / edit / remove: the card file, written by the gateway (POST / PUT / DELETE /api/custom/cards) ---------- */
+  const VIEW_KO = { text: "글", stat: "숫자", list: "목록", kv: "항목별 값" };
+  const FIELD_KO = { title: "제목", note: "설명", view: "보기", text: "내용", command: "명령", cwd: "폴더", every_minutes: "갱신 주기", timeout_seconds: "제한 시간", link: "링크", actions: "동작", id: "아이디" };
+  const ACT_MAX_EDIT = 4;
+  const seg = (items, value, onPick) => {
+    const box = el("div", { class: "seg", role: "radiogroup" });
+    const paint = v => { for (const b of box.children) { const on = b.dataset.v === v; b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); } };
+    for (const [v, label] of items) box.append(el("button", { type: "button", role: "radio", "data-v": v, text: label, onclick: () => { paint(v); onPick(v); } }));
+    paint(value);
+    return box;
+  };
+  const field = (key, ctrl) => { const lb = el("label", { text: FIELD_KO[key], for: ctrl.id }); return el("div", { class: "tf", "data-f": key }, lb, ctrl); };
+  // The editor: one dialog for a new card and for an existing one. Saving sends the form as the card file's keys; the gateway's
+  // validation message comes back next to the field it names (the message starts with that key), else above the buttons.
+  function cardForm(spec, cur) {
+    const s = spec || {}, acts0 = Array.isArray(s.actions) ? s.actions.slice(0, ACT_MAX_EDIT) : [];
+    let view = VIEW_KO[s.view] ? s.view : "text", src = s.command !== undefined ? "command" : "text";
+    const title = input({ value: s.title || "", maxlength: "40", placeholder: "예: 디스크 남은 공간", required: true });
+    const note = input({ value: s.note || "", maxlength: "120", placeholder: "제목 아래 한 줄 (선택)" });
+    const id = cur ? null : input({ value: "", maxlength: "40", placeholder: "비우면 제목으로 만들어요", pattern: "[a-z0-9][a-z0-9-]{0,39}" });
+    const body = el("textarea", { id: `f${++fieldSeq}`, class: "fi", rows: "3", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+    body.value = src === "command" ? s.command || "" : typeof s.text === "string" ? s.text : "";
+    const cwd = input({ value: s.cwd || "", placeholder: "~/Code/… (선택)" });
+    const every = input({ value: s.every_minutes != null ? String(s.every_minutes) : "", type: "number", min: "1", step: "1", inputmode: "numeric", placeholder: "10" });
+    const timeout = input({ value: s.timeout_seconds != null ? String(s.timeout_seconds) : "", type: "number", min: "1", max: "60", step: "1", inputmode: "numeric", placeholder: "10" });
+    const link = input({ value: s.link || "", type: "url", inputmode: "url", placeholder: "https://… 또는 #화면 (선택)" });
+    const bodyField = field("text", body), cmdOnly = el("div", { class: "cu-2" }, field("cwd", cwd), field("every_minutes", every)), tmoField = field("timeout_seconds", timeout);
+    const hint = el("div", { class: "cu-hint" });
+    const paintSrc = () => {
+      bodyField.querySelector("label").textContent = src === "command" ? FIELD_KO.command : FIELD_KO.text;
+      bodyField.dataset.f = src;
+      body.placeholder = src === "command" ? "예: df -h ~ | tail -1   (출력이 JSON이면 그대로 읽어요)" : "카드에 보일 글";
+      cmdOnly.hidden = src !== "command"; tmoField.hidden = src !== "command";
+      hint.textContent = src === "command" ? `갱신 주기는 분, 제한 시간은 초(1~60). 출력은 ${VIEW_KO[view]} 보기로 그려요.` : `적은 글을 ${VIEW_KO[view]} 보기로 그려요.`;
+    };
+    const viewSeg = seg(Object.entries(VIEW_KO), view, v => { view = v; paintSrc(); });
+    const srcSeg = seg([["text", "직접 입력"], ["command", "명령 실행"]], src, v => { src = v; paintSrc(); });
+    paintSrc();
+    // actions: label, 명령 or 요청, its text, and whether to ask first
+    const actsBox = el("div", { class: "cu-acts" });
+    const addAct = el("button", { class: "btn text cu-add", type: "button", text: "동작 추가" });
+    const actRow = a => {
+      let kind = a.prompt !== undefined && a.command === undefined ? "prompt" : "command";
+      const label = input({ value: a.label || "", maxlength: "20", placeholder: "버튼 이름", "aria-label": "동작 이름" });
+      const text = el("textarea", { id: `f${++fieldSeq}`, class: "fi", rows: "2", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "동작 내용" });
+      text.value = kind === "prompt" ? a.prompt || "" : a.command || "";
+      const paintKind = () => { text.placeholder = kind === "prompt" ? `${botName}에게 보낼 요청` : "실행할 명령"; };
+      const confirm = el("input", { type: "checkbox", ...(a.confirm ? { checked: true } : {}) });
+      const row = el("div", { class: "cu-act" },
+        el("div", { class: "cu-act-h" }, label, seg([["command", "명령"], ["prompt", "요청"]], kind, v => { kind = v; paintKind(); })),
+        text,
+        el("div", { class: "cu-act-f" }, el("label", { class: "cu-chk" }, confirm, "실행 전에 묻기"), el("button", { class: "btn text", type: "button", text: "빼기", onclick: () => { row.remove(); addAct.disabled = false; } })));
+      paintKind();
+      row._value = () => ({ label: label.value.trim(), [kind]: text.value, ...(confirm.checked ? { confirm: true } : {}) });
+      return row;
+    };
+    for (const a of acts0) actsBox.append(actRow(a));
+    addAct.addEventListener("click", () => { if (actsBox.children.length >= ACT_MAX_EDIT) return; const r = actRow({}); actsBox.append(r); r.querySelector(".fi").focus(); addAct.disabled = actsBox.children.length >= ACT_MAX_EDIT; });
+    addAct.disabled = acts0.length >= ACT_MAX_EDIT;
+    const ferr = el("div", { class: "cu-ferr", role: "alert" });
+    const form = el("div", { class: "cu-form" },
+      cur ? el("div", { class: "cu-m", text: `파일 · ${cur.file}` }) : null,
+      cur && cur.error ? el("div", { class: "cu-ferr", text: `지금 파일에 문제가 있어요: ${cur.error}. 저장하면 이 내용으로 바꿔 써요.` }) : null,
+      field("title", title), field("note", note), id ? field("id", id) : null,
+      el("div", { class: "tf" }, el("span", { class: "lb", text: FIELD_KO.view }), viewSeg),
+      el("div", { class: "tf" }, el("span", { class: "lb", text: "내용 출처" }), srcSeg),
+      bodyField, hint, cmdOnly, tmoField, field("link", link),
+      el("div", { class: "tf" }, el("span", { class: "lb", text: `${FIELD_KO.actions} · 최대 ${ACT_MAX_EDIT}개, 앞의 2개는 버튼으로` }), actsBox, addAct),
+      ferr);
+    const value = () => ({
+      ...(id && id.value.trim() ? { id: id.value.trim() } : {}),
+      title: title.value.trim(), note: note.value.trim(), view,
+      ...(src === "command" ? { command: body.value, cwd: cwd.value.trim(), every_minutes: every.value, timeout_seconds: timeout.value } : { text: body.value }),
+      link: link.value.trim(),
+      actions: [...actsBox.children].map(r => r._value()),
+      ...(s.order !== undefined ? { order: s.order } : {}),
+    });
+    // the message names the field it is about ("title은 …", "actions[1]: …"): that field is marked and focused
+    const fail = message => {
+      for (const n of form.querySelectorAll("[aria-invalid]")) n.removeAttribute("aria-invalid");
+      ferr.textContent = message;
+      const key = (/^([a-z_]+)/.exec(message) || [])[1], box = key && form.querySelector(`[data-f="${key}"]`);
+      const ctrl = box ? box.querySelector(".fi") : key === "actions" ? actsBox.querySelector(".fi") : null;
+      if (ctrl) { ctrl.setAttribute("aria-invalid", "true"); ctrl.focus(); }
+    };
+    return new Promise(res => {
+      let saved = null;
+      const d = dialog({ title: cur ? "카드 수정" : "카드 추가", body: form, onclose: () => res(saved), actions: [
+        { label: "취소", onclick: c => c() },
+        { label: "저장", kind: "pri", onclick: (c, btn) => busy(btn, async () => {
+          if (!title.value.trim()) return fail("title은 1~40자여야 해요");
+          try {
+            saved = cur ? await api(`/api/custom/cards/${enc(cur.id)}`, "PUT", value()) : await api("/api/custom/cards", "POST", value());
+          } catch (e) { return fail(e.message || "저장하지 못했어요"); }
+          c();
+        }) }] });
+      d.node.classList.add("wide");
+      title.focus();
+    });
+  }
+  // A new card lands in the first free place of the board; the page scrolls to it and its header takes focus so the place is seen.
+  function reveal(id) {
+    const w = document.querySelector(`.bi[data-id="custom:${CSS.escape(id)}"]`), h = w && w.querySelector(".bhead");
+    if (!w) return;
+    w.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    if (h) h.focus({ preventScroll: true });
+  }
+  async function add() {
+    const card = await cardForm(null, null);
+    if (!card) return;
+    if (!DATA) DATA = { cards: [] };
+    DATA.cards = [...(DATA.cards || []).filter(x => x.id !== card.id), card];
+    hidden.delete(card.id); saveHidden();
+    onData();
+    toast(`${card.title || card.id} 카드를 추가했어요`);
+    setTimeout(() => reveal(card.id), 50);
+  }
+  async function edit(id) {
+    let r;
+    try { r = await api(`/api/custom/cards/${enc(id)}`); } catch (e) { toast(e.message, true); return; }
+    const card = await cardForm(r.spec || null, { id, file: r.file, error: r.error });
+    if (!card) return;
+    applyCard(card);
+    nodes.delete(id);
+    onData();
+    toast(`${card.title || id} 카드를 저장했어요`);
+  }
+  async function remove(id) {
+    const c = ((DATA && DATA.cards) || []).find(x => x.id === id), name = (c && c.title) || id;
+    if (!await ask("카드 삭제", `${name} 카드와 그 파일(${(c && c.file) || `cards/${id}.json`})을 지워요. 되돌릴 수 없어요.`, "삭제", true)) return;
+    try { await api(`/api/custom/cards/${enc(id)}`, "DELETE"); } catch (e) { toast(e.message, true); return; }
+    if (DATA) DATA.cards = (DATA.cards || []).filter(x => x.id !== id);
+    nodes.delete(id); hidden.delete(id); saveHidden();
+    onData();
+    toast(`${name} 카드를 지웠어요`);
+  }
 
   /* ---------- project page ---------- */
   // Data: the project from /api/custom (name, path, lanes) plus GET /api/custom/project?key= (reports, receipts, commits,
@@ -514,7 +684,7 @@ button.pv-res:hover { background: var(--card-hover); }
   function pins() {
     return load(55000);
   }
-  window.dotzCustom = { home, view, pins, items: homeItems, keep: keepPlace, menuActs, unhide, fmt: localTime, show, split: splitActions };
+  window.dotzCustom = { home, view, pins, items: homeItems, keep: keepPlace, menuActs, unhide, add, edit, remove, fmt: localTime, show, split: splitActions };
 
   // The main script may already have rendered the first view: catch up, then keep the sidebar and open pages fresh.
   pins();
