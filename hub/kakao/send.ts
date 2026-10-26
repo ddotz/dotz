@@ -1,14 +1,18 @@
 // Approval-gated KakaoTalk reply. A reply is a draft the owner approves in the gateway; only then is it sent, and only by UI automation
 // of the KakaoTalk app by macOS Accessibility (room.jxa.js).
+// One send is a bounded ladder (one try, an in-place retry, a reopened window, a deeper list read, KakaoTalk to the front) and each rung
+// re-verifies the room before anything is typed. A pressed 전송 is confirmed from KakaoTalk's own database and never pressed twice. Text
+// dotz itself left in a room's input is recognized (kakao/input.json) and cleared; the owner's own draft is never touched.
 // There is no Kakao message API, HTTP or private-protocol path in this module.
 import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { claimSend } from "../draft-claim.ts";
 import { draftApprovalBlock } from "../draft-approval.ts";
+import { type Confirmer, dbConfirmer, dbPreview } from "./confirm.ts";
 import { writePrivate } from "./creds.ts";
 import { draftParts } from "./draft.ts";
-import { type AxStep, axSend, closeWindow, type Focus, openRoom, type RoomFact } from "./room.ts";
+import { type AxStep, axSend, closeWindow, type Focus, normalizeTitle, openRoom, REFUSE, type RoomFact, type SendOut } from "./room.ts";
 import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
@@ -17,13 +21,20 @@ export type DraftTokens = { in: number; out: number; estimated?: true };
 // unconfirmed: the 전송 button was pressed but the send was not confirmed; the draft counts as sent so it is never sent again.
 // sentParts: how many parts of the text (draft.ts draftParts) are already in the room; a retry sends only the rest, so no part goes twice.
 export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens; unconfirmed?: true; sentParts?: number };
-// `later`: how the idle close of a kept window is scheduled (tests pass their own; the default is an unref'd timer).
-export type SendDeps = { paths: KakaoPaths; runner: Runner; now?: () => number; later?: (fn: () => void, ms: number) => void };
+// `later`: how the idle close of a kept window is scheduled (tests pass their own; the default is an unref'd timer). `sleep`: how a
+// confirmation poll waits (tests pass the fake clock). `confirm`: whether a pressed text reached the database; without it an install's own
+// database is asked through confirm.ts, and when there is none the press result stands.
+export type SendDeps = { paths: KakaoPaths; runner: Runner; now?: () => number; later?: (fn: () => void, ms: number) => void; sleep?: (ms: number) => Promise<void>; confirm?: Confirmer };
 // ms: wall time of each phase of one send; ax: every Accessibility step of it (room.ts AxStep) with its time and, where it failed, the exact
 // failing step. Both are kept on the send record (sends.json), so a slow or failed send can be read from data.
 export type SendMs = { front: number; pick: number; send: number; total: number; keep?: true };
-// focus: kept on the send record only when the send had to open the KakaoTalk list window (room.ts Focus).
-export type SendResult = { ok: boolean; reason?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus; unconfirmed?: true };
+// Recovery is which rung of the ladder an attempt was: the first try, an in-place retry, a reopened window, a deeper list read, or
+// KakaoTalk brought to the front (last resort). `left`: what the room's input still held after the attempt (our text, recorded per room).
+export type Recovery = "none" | "retry" | "reopen" | "deep" | "front";
+export type SendAttempt = { n: number; recovery: Recovery; ok: boolean; state: "sent" | "failed" | "unconfirmed"; reason?: string; ms: number; ax: AxStep[]; at: number; left?: string };
+// focus: kept on the send record only when the send had to open the KakaoTalk list window (room.ts Focus). `ax`: the steps of the attempt
+// that ended the send (a recovered send keeps its earlier attempts under `attempts`).
+export type SendResult = { ok: boolean; reason?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus; unconfirmed?: true; attempts?: SendAttempt[] };
 
 // One KakaoTalk message (a typed send, one part of a draft) and a whole draft of several parts.
 const MAX_TEXT = 1000;
@@ -228,11 +239,137 @@ type RoomNames = () => Promise<RoomFact[]>;
 
 const UNCONFIRMED = "카카오톡 전송 버튼은 눌렀지만 보내졌는지 확인하지 못했어요. 다시 보내지 않았으니 카카오톡에서 확인해 주세요";
 const INPUT_WHY: Record<string, string> = {
-	busy: "카카오톡 입력창에 보내지 않은 글이 있어서 보내지 않았어요",
 	no_window: "열린 대화창을 찾지 못해서 보내지 않았어요",
+	no_input: "카카오톡 대화창에서 입력창을 찾지 못했어요",
+	no_button: "카카오톡 대화창에서 전송 버튼을 찾지 못했어요",
+	not_set: "카카오톡 입력창에 글이 들어가지 않아서 보내지 못했어요",
+	not_ready: "카카오톡 전송 버튼이 켜지지 않아서 보내지 못했어요",
+	stuck: "카카오톡 입력창에 글이 남아 있어서 보내지 못했어요",
+	failed: "카카오톡 입력창에 글을 넣지 못했어요",
+};
+// The owner's own draft in the input is never cleared; it is reported with its first characters, so he knows what to do.
+const inputReason = (r: SendOut): string =>
+	r.why === "owner_text" || r.why === "busy"
+		? `카카오톡 입력창에 보내지 않은 글이 있어서 보내지 않았어요${r.preview ? ` ('${r.preview}')` : ""}. 그 글은 지우지 않았어요`
+		: (INPUT_WHY[r.why ?? ""] ?? "카카오톡 입력창에 글을 넣지 못했어요");
+
+const kakaoFile = (paths: KakaoPaths, name: string) => join(dirname(paths.drafts), name);
+const MAX_SENDS = 200;
+const MAX_ATTEMPTS = 8;
+// What an attempt left in a room's input: our own text, with the time and whether 전송 was pressed without confirmation. It is how the next
+// attempt tells dotz's leftover from the owner's draft.
+type Left = { text: string; at: number; pressed?: true };
+const readLeft = (paths: KakaoPaths): Record<string, Left> => {
+	try {
+		const raw = JSON.parse(readFileSync(kakaoFile(paths, "input.json"), "utf8"));
+		return raw && typeof raw === "object" ? (raw as Record<string, Left>) : {};
+	} catch {
+		return {};
+	}
+};
+const writeLeft = (paths: KakaoPaths, chatId: string, left: Left | undefined) => {
+	const all = readLeft(paths);
+	if (left) all[chatId] = left;
+	else delete all[chatId];
+	try {
+		writePrivate(kakaoFile(paths, "input.json"), `${JSON.stringify(all, null, 1)}\n`);
+	} catch {}
+};
+// Texts dotz typed into a room in this process (a kept window's input can still show the last one).
+const recentTyped = new Map<string, string[]>();
+const rememberTyped = (chatId: string, text: string) => {
+	const list = [...(recentTyped.get(chatId) ?? []).filter(t => t !== text), text].slice(-3);
+	recentTyped.set(chatId, list);
 };
 
-const sendTextNow = async (input: { chatId: string; roomName: string; text: string }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => {
+// Every attempt of a send is kept on that send's record in sends.json (the same store the web shows): attempt number, recovery rung, the
+// failing Accessibility step, ms and reason. Bounded: 8 attempts per send, 200 sends.
+const saveAttempts = (paths: KakaoPaths, key: { chatId: string; text: string }, attempts: SendAttempt[], final: SendResult, at: number) => {
+	const file = kakaoFile(paths, "sends.json");
+	let list: Record<string, unknown>[] = [];
+	try {
+		const raw = JSON.parse(readFileSync(file, "utf8"));
+		if (Array.isArray(raw)) list = raw;
+	} catch {}
+	const since = at - 15 * 60_000;
+	const i = list.findLastIndex(r => r && r.chatId === key.chatId && r.state === "sending" && typeof r.at === "number" && r.at >= since);
+	const trimmed = attempts.slice(-MAX_ATTEMPTS);
+	if (i >= 0) {
+		const prev = Array.isArray(list[i]!.attempts) ? (list[i]!.attempts as SendAttempt[]) : [];
+		list[i] = { ...list[i], attempts: [...prev, ...trimmed].slice(-MAX_ATTEMPTS) };
+	}
+	else
+		list.push({
+			id: `S${at.toString(36)}${randomBytes(3).toString("hex")}`,
+			chatId: key.chatId,
+			text: key.text,
+			state: final.ok ? "sent" : "failed",
+			at,
+			...(final.ok ? {} : { reason: final.reason ?? "보내지 못했어요" }),
+			...(final.ms ? { ms: final.ms } : {}),
+			...(final.ax ? { ax: final.ax } : {}),
+			attempts: trimmed,
+		});
+	try {
+		writePrivate(file, `${JSON.stringify(list.slice(-MAX_SENDS), null, 1)}\n`);
+	} catch {}
+};
+
+// Last resort of the ladder: KakaoTalk to the front for the menu and the press, and the app the owner had in front put back after that attempt.
+async function activateKakao(runner: Runner): Promise<AxStep> {
+	const t = performance.now();
+	let ok = false;
+	try {
+		const r = await runner(["osascript", "-e", `tell application id "${KAKAO_BUNDLE}" to activate`], { timeoutMs: 4_000 });
+		ok = r.code === 0;
+	} catch {}
+	return { step: "activate", ms: Math.round(performance.now() - t), ok };
+}
+
+async function restoreFront(runner: Runner, front: Front) {
+	if (!front.id || front.id === KAKAO_BUNDLE) return;
+	try {
+		await runner(["osascript", "-e", `tell application "System Events" to set frontmost of (first application process whose bundle identifier is "${front.id}") to true`], { timeoutMs: 4_000 });
+	} catch {}
+}
+
+const simMs = (ms: SendMs): number => ms.pick + ms.send;
+
+// After a press (or a press we know happened earlier): the database is the only proof. "sent" and "unconfirmed" both end the send; a send
+// that was not pressed keeps its failure.
+type Settled = { state: "sent" } | { state: "unconfirmed" } | { state: "failed"; reason: string };
+const confirmers = new Map<string, Confirmer>();
+async function settle(deps: SendDeps & { roomNames?: RoomNames }, r: SendOut, input: { chatId: string; text: string }, since: number): Promise<Settled> {
+	if (!r.ok && !r.pressed) return { state: "failed", reason: inputReason(r) };
+	let confirmer = deps.confirm;
+	if (!confirmer) {
+		const key = deps.paths.config;
+		confirmer = confirmers.get(key);
+		if (!confirmer) {
+			confirmer = dbConfirmer(deps.paths, deps.runner, { ...(deps.now ? { now: deps.now } : {}), ...(deps.sleep ? { sleep: deps.sleep } : {}) });
+			confirmers.set(key, confirmer);
+		}
+	}
+	let confirmed: boolean | undefined;
+	try {
+		confirmed = await confirmer({ chatId: input.chatId, text: input.text, since });
+	} catch {}
+	if (confirmed === true) return { state: "sent" };
+	if (confirmed === false) return { state: "unconfirmed" };
+	return r.ok ? { state: "sent" } : { state: "unconfirmed" };
+}
+
+// The ladder of one send, cheapest first: the first try, an in-place retry, a closed and reopened room window, a deeper list read (a room
+// far down the list), and last KakaoTalk brought to the front. Each rung re-verifies the room before anything is typed.
+const RUNGS: { recovery: Recovery; deep: boolean; reopen: boolean; front: boolean }[] = [
+	{ recovery: "none", deep: false, reopen: false, front: false },
+	{ recovery: "retry", deep: false, reopen: false, front: false },
+	{ recovery: "reopen", deep: false, reopen: true, front: false },
+	{ recovery: "deep", deep: true, reopen: false, front: false },
+	{ recovery: "front", deep: false, reopen: false, front: true },
+];
+
+const sendTextNow = async (input: { chatId: string; roomName: string; text: string; parts?: string[] }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => {
 	if (input.roomName.trim() === "(unknown)") return refuse("이름을 알 수 없는 대화방이라 화면 자동화로 찾을 수 없어요");
 	const t0 = performance.now();
 	// The frontmost lookup runs beside the room open and the send; it is waited for only where its answer is needed.
@@ -240,7 +377,12 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	const ms: SendMs = { front: 0, pick: 0, send: 0, total: 0 };
 	let ax: AxStep[] = [];
 	let focus: Focus | undefined;
-	const fin = (r: SendResult): SendResult => ({ ...r, ms: { ...ms, total: Math.round(performance.now() - t0) }, ax, ...(focus ? { focus } : {}) });
+	let attempts: SendAttempt[] = [];
+	const fin = (r: SendResult): SendResult => {
+		const out: SendResult = { ...r, attempts, ms: { ...ms, total: Math.round(performance.now() - t0) }, ax, ...(focus ? { focus } : {}) };
+		if (attempts.length) saveAttempts(deps.paths, { chatId: input.chatId, text: input.text }, attempts, out, nowMs(deps));
+		return out;
+	};
 	let all: RoomFact[] = [];
 	if (deps.roomNames) {
 		try {
@@ -251,45 +393,108 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	}
 	const known = all.find(r => r.chatId === input.chatId);
 	const axKey = `ax:${input.chatId}`;
-	// The room's one list row opened by Accessibility actions (room.ts openRoom: at most one context menu, 5 s cap), its window checked
-	// against the database room (title and member count), the text put into its input and the 전송 button pressed, all by Accessibility:
-	// KakaoTalk does not come to the front, no key event is sent and the owner's app keeps the focus. Only when KakaoTalk has no list window
-// is it opened through its menu, which raises KakaoTalk for a moment: the app in front before is put back then (Focus). There is no other path: a failure at any
-	// step is a failed send with its reason, never a scan of the list by another tool.
-	const p = performance.now();
-	const opened = await openRoom({ ...known, chatId: input.chatId, name: input.roomName }, all, deps.runner);
-	ms.pick = Math.round(performance.now() - p);
-	ax = opened.steps;
-	focus = opened.focus;
-	if (!opened.ok) {
-		if (warm?.id === axKey) forgetWarm();
-		ms.front = (await frontP).ms;
-		return fin(refuse(opened.reason));
+	// Same-name rooms can only be told apart by the newest message the list shows under the name: the caller's facts may omit it, then the
+	// install's database answers (one small read, only when a name is shared).
+	let room: RoomFact = { ...known, chatId: input.chatId, name: input.roomName };
+	if (all.some(r => r.chatId !== input.chatId && normalizeTitle(r.name) === normalizeTitle(input.roomName)) && !room.preview) {
+		try {
+			const preview = await dbPreview(deps.paths, deps.runner)(input.chatId);
+			if (preview) room = { ...room, preview };
+		} catch {}
 	}
-	const s = performance.now();
-	const r = await axSend(input.roomName, input.text, deps.runner);
-	ms.send = Math.round(performance.now() - s);
-	ax = [...ax, { step: "input", ms: ms.send, ok: r.ok, ...(r.ok ? {} : { why: r.why ?? "failed" }) }];
-	const front = await frontP;
-	ms.front = front.ms;
-	if (r.ok || r.pressed) {
-		const keep = warm?.id === axKey || front.kakaoShown;
-		if (keep) {
+	const left = readLeft(deps.paths)[input.chatId];
+	const priorPressed = left?.pressed ? [left.text] : [];
+	// Text dotz may have left in this room's input (a failed attempt, a kept window) is dotz's, not the owner's: unwrap it. An owner text is
+	// any other value, and JXA then refuses to touch it.
+	const ours = [...(left && !left.pressed ? [left.text] : []), ...(recentTyped.get(input.chatId) ?? []), ...(input.parts ?? []), input.text];
+	let lastReason = "";
+	// The owner's own draft is never touched; the window holding it is left open (closing it could lose what he typed).
+	let keepForOwner = false;
+	for (const rung of RUNGS) {
+		const aAt = nowMs(deps);
+		const steps: AxStep[] = [];
+		const frontBefore = rung.front ? await frontP : undefined;
+		if (rung.front) steps.push(await activateKakao(deps.runner));
+		const back = async () => {
+			if (frontBefore) await restoreFront(deps.runner, frontBefore);
+		};
+		if (rung.reopen) await closeWindow(deps.runner, input.roomName);
+		const p = performance.now();
+		const opened = await openRoom(room, all, deps.runner, { deep: rung.deep });
+		ms.pick = Math.round(performance.now() - p);
+		focus = opened.focus ?? focus;
+		steps.push(...opened.steps);
+		if (!opened.ok) {
+			lastReason = opened.reason;
+			attempts.push({ n: attempts.length + 1, recovery: rung.recovery, ok: false, state: "failed", reason: opened.reason, ms: simMs(ms) + (steps.find(s => s.step === "activate")?.ms ?? 0), ax: steps, at: aAt });
+			ax = steps;
+			await back();
+			if (warm?.id === axKey) forgetWarm();
+			if (opened.reason === REFUSE.mismatch) await closeWindow(deps.runner, input.roomName);
+			// KakaoTalk has no window and its own menu did not open one: no rung of the ladder can change that.
+			if (opened.reason === REFUSE.noList) break;
+			continue;
+		}
+		const s = performance.now();
+		const r = await axSend(input.roomName, input.text, deps.runner, { ours, priorPressed });
+		const sendMs = Math.round(performance.now() - s);
+		ms.send = sendMs;
+		steps.push({ step: "input", ms: sendMs, ok: r.ok, ...(r.ok ? {} : { why: [r.why ?? "failed", r.preview ? `preview:${r.preview}` : "", r.left ? `left:${r.left.slice(0, 40)}` : ""].filter(Boolean).join(":") }) });
+		if (r.ok || r.pressed) rememberTyped(input.chatId, input.text);
+		if (r.pressed) writeLeft(deps.paths, input.chatId, { text: input.text, at: aAt, pressed: true });
+		else if (r.left) writeLeft(deps.paths, input.chatId, { text: r.left, at: aAt });
+		const settled = await settle(deps, r, input, aAt);
+		const attempt: SendAttempt = { n: attempts.length + 1, recovery: rung.recovery, ok: settled.state === "sent", state: settled.state, ...(settled.state === "failed" ? { reason: settled.reason } : settled.state === "unconfirmed" ? { reason: UNCONFIRMED } : {}), ms: simMs(ms), ax: steps, at: aAt, ...(r.left ? { left: r.left } : {}) };
+		attempts.push(attempt);
+		ax = steps;
+		await back();
+		if (settled.state === "failed") {
+			lastReason = settled.reason;
+			if (r.why === "owner_text" || r.why === "busy") {
+				keepForOwner = true;
+				break;
+			}
+			continue;
+		}
+		const front = await frontP;
+		ms.front = front.ms;
+		if (settled.state === "sent") {
+			writeLeft(deps.paths, input.chatId, undefined);
+			const keep = warm?.id === axKey || front.kakaoShown;
+			if (keep) {
+				keepWarm(axKey, deps, input.roomName);
+				ms.keep = true;
+			} else {
+				if (warm?.id === axKey) forgetWarm();
+				await closeWindow(deps.runner, input.roomName);
+			}
+			return fin({ ok: true });
+		}
+		// Pressed but unconfirmed: the input keeps the text as ours and it is never pressed again.
+		if (r.ok) writeLeft(deps.paths, input.chatId, undefined);
+		if (warm?.id === axKey || front.kakaoShown) {
 			keepWarm(axKey, deps, input.roomName);
 			ms.keep = true;
 		} else {
 			if (warm?.id === axKey) forgetWarm();
 			await closeWindow(deps.runner, input.roomName);
 		}
-		return fin(r.ok ? { ok: true } : { ...refuse(UNCONFIRMED), unconfirmed: true });
+		return fin({ ...refuse(UNCONFIRMED), unconfirmed: true });
 	}
-	await closeWindow(deps.runner, input.roomName);
-	if (warm?.id === axKey) forgetWarm();
-	return fin(refuse(INPUT_WHY[r.why ?? ""] ?? `카카오톡 입력창에 글을 넣지 못했어요 (${r.why ?? "failed"})`));
+	if (keepForOwner) {
+		if (warm?.id !== axKey) keepWarm(axKey, deps, input.roomName);
+		ms.keep = true;
+	} else {
+		await closeWindow(deps.runner, input.roomName);
+		if (warm?.id === axKey) forgetWarm();
+	}
+	ms.front = (await frontP).ms;
+	const tried = attempts.length > 1;
+	return fin(refuse(tried ? `여러 번 다시 시도했지만 ${lastReason || "보내지 못했어요"}` : lastReason || "보내지 못했어요"));
 };
 
 // The one path of every send: the exact list row is opened and its window verified (room.ts), then the text goes in by Accessibility.
-export const sendText = (input: { chatId: string; roomName: string; text: string }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => oneAtATime(() => sendTextNow(input, deps));
+export const sendText = (input: { chatId: string; roomName: string; text: string; parts?: string[] }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => oneAtATime(() => sendTextNow(input, deps));
 
 // A pending draft whose room got a newer incoming message can no longer be sent.
 export const markStale = (paths: KakaoPaths, code: string) => setStatus(paths, code, "stale");
@@ -353,7 +558,7 @@ async function sendClaimed(code: string, deps: SendDeps & { latestIncoming: (cha
 	let done = d.sentParts ?? 0;
 	let r: SendResult = { ok: true };
 	while (done < parts.length) {
-		r = await sendTextNow({ chatId: d.chatId, roomName: d.roomName, text: parts[done]! }, deps);
+		r = await sendTextNow({ chatId: d.chatId, roomName: d.roomName, text: parts[done]!, parts }, deps);
 		if (!r.ok && !r.unconfirmed) break;
 		done++;
 		if (r.unconfirmed) break;

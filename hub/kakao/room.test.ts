@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chooseRow, normalizeTitle, REFUSE, type RoomFact } from "./room.ts";
+import { chooseRow, inputFree, normalizeInput, normalizeTitle, REFUSE, rowPreview, sameText, type RoomFact } from "./room.ts";
 import { sendText } from "./send.ts";
 import { kakaoPaths, type Runner } from "./types.ts";
 import { type FakeRow, fakeScreen } from "./ui.fixture.ts";
@@ -68,43 +68,103 @@ test("same name and same member count, or a count no row shows: refused before a
 		{ id: "chat_b", title: "스터디", count: 4 },
 	];
 	const same = await send(twins, a, [a, b]);
-	expect(same.r).toMatchObject({ ok: false, reason: REFUSE.mismatch });
+	expect(same.r.ok).toBe(false);
+	expect(same.r.reason).toContain(REFUSE.mismatch);
 	expect(same.screen.menus()).toBe(0);
 	expect(same.screen.sends).toHaveLength(0);
 	const odd = await send([{ id: "chat_a", title: "스터디", count: 9 }], a, [a, b]);
-	expect(odd.r).toMatchObject({ ok: false, reason: REFUSE.mismatch });
+	expect(odd.r.ok).toBe(false);
+	expect(odd.r.reason).toContain(REFUSE.mismatch);
 	expect(odd.screen.menus()).toBe(0);
 	const missing = await send([], a, [a, b]);
-	expect(missing.r).toMatchObject({ ok: false, reason: REFUSE.notListed });
+	expect(missing.r.ok).toBe(false);
+	expect(missing.r.reason).toContain(REFUSE.notListed);
 	expect(missing.screen.menus()).toBe(0);
 });
 
 test("chooseRow: shared names need exactly one row of the database member count; a 1:1 or the memo chat shows no count", () => {
 	const rows = [["민수", "5", "오후 1:00"], ["민수", "오후 1:00", "2"], ["민수", "7", "오후 1:00", "1"]];
-	expect(chooseRow(rows, groupA, true)).toEqual({ ok: true, index: 0 });
-	expect(chooseRow(rows, groupB, true)).toEqual({ ok: true, index: 2 });
-	expect(chooseRow(rows, direct, true)).toEqual({ ok: true, index: 1 });
+	expect(chooseRow(rows, groupA, true)).toMatchObject({ ok: true, index: 0 });
+	expect(chooseRow(rows, groupB, true)).toMatchObject({ ok: true, index: 2, via: "members" });
+	expect(chooseRow(rows, direct, true)).toMatchObject({ ok: true, index: 1 });
 	expect(chooseRow(rows, { ...groupA, members: 6 }, true)).toEqual({ ok: false, why: "mismatch" });
 	expect(chooseRow(rows, { chatId: "9", name: "없음" }, false)).toEqual({ ok: false, why: "none" });
 	expect(chooseRow(rows, { chatId: "9", name: "민수" }, true)).toEqual({ ok: false, why: "mismatch" });
 });
 
+test("KakaoTalk's normalization of the input is not a different text: NFC/NFD, line breaks, invisible marks, ends", () => {
+	expect(sameText("안녕 세상", "안녕 세상".normalize("NFD"))).toBe(true);
+	expect(sameText("가\n나", "가\r\n나")).toBe(true);
+	expect(sameText("가\u2028나", "가\n나")).toBe(true);
+	expect(sameText("  안녕 \u200b", "안녕")).toBe(true);
+	expect(sameText("안녕\ufe0f", "안녕")).toBe(true);
+	expect(normalizeInput("가\t나")).toBe("가 나");
+	expect(sameText("안녕", "안녕하세요")).toBe(false);
+	expect(inputFree("", "메시지를 입력하세요")).toBe(true);
+	expect(inputFree("메시지를 입력하세요", "메시지를 입력하세요")).toBe(true);
+	expect(inputFree(" \u200b ", undefined)).toBe(true);
+	expect(inputFree("내가 쓰던 글", "메시지를 입력하세요")).toBe(false);
+});
+
+test("a row's title with a trailing member count and the newest-message preview tell same-name rooms apart", () => {
+	const a: RoomFact = { chatId: "30", name: "스터디", kind: "direct", members: 2, preview: "내일 봐요" };
+	const rows = [
+		["스터디 (2)", "오후 3:00", "어제 봐요"],
+		["스터디", "오후 4:00", "내일 봐요"],
+	];
+	expect(rowPreview(rows[1]!)).toBe("내일 봐요");
+	expect(chooseRow(rows, a, true)).toMatchObject({ ok: true, index: 1, via: "preview" });
+	const noPreview = [
+		["스터디", "오후 3:00", "어제 봐요"],
+		["스터디", "오후 4:00", "오늘 봐요"],
+	];
+	expect(chooseRow(noPreview, a, true)).toEqual({ ok: false, why: "mismatch" });
+});
+
+test("a room beyond the first list read is found by the deeper read of the recovery ladder", async () => {
+	const rows: FakeRow[] = Array.from({ length: 70 }, (_, i) => ({ id: `chat_${i}`, title: `방${i}` }));
+	rows[65] = { id: "chat_far", title: "먼방", window: { title: "먼방" } };
+	const far: RoomFact = { chatId: "70", name: "먼방", kind: "direct", members: 2 };
+	const screen = fakeScreen(rows);
+	const r = await sendText({ chatId: "70", roomName: "먼방", text: "안녕" }, { paths, runner: screen.runner, roomNames: async () => [far] });
+	expect(r).toMatchObject({ ok: true });
+	expect(r.attempts!.map(a => a.recovery)).toEqual(["none", "retry", "reopen", "deep"]);
+	expect(r.attempts!.at(-1)!.ax[0]).toMatchObject({ step: "rows:deep", ok: true });
+	expect(screen.sends).toEqual([["ax-send", "먼방", "안녕"]]);
+});
+
+test("a kept window on the wrong room is caught by its check and the room is reopened instead of typed into", async () => {
+	const screen = fakeScreen([familyRow], { kakaoShown: true, currentAtStart: "chat_f", windowAt: n => (n === 0 ? { title: "다른 방", members: 4 } : { title: "가족방", members: 4 }) });
+	const first = fakeScreen([familyRow], { kakaoShown: true });
+	expect(await sendText({ chatId: "40", roomName: "가족방", text: "먼저" }, { paths, runner: first.runner, roomNames: async () => [family] })).toMatchObject({ ok: true });
+	// The warm window now shows another room: the cheap window check refuses to type into it, and the reopen rung fixes it.
+	const r = await sendText({ chatId: "40", roomName: "가족방", text: "안녕" }, { paths, runner: screen.runner, roomNames: async () => [family] });
+	expect(r).toMatchObject({ ok: true });
+	expect(screen.sends).toEqual([["ax-send", "가족방", "안녕"]]);
+	expect(screen.closes()).toBeGreaterThanOrEqual(1);
+	expect(r.attempts![0]).toMatchObject({ state: "failed", reason: REFUSE.mismatch });
+});
+
 test("a window that is not the chosen room refuses, closes that window and types nothing", async () => {
 	const wrongTitle = await send([{ ...familyRow, window: { title: "다른 방", members: 4 } }], family, [family]);
-	expect(wrongTitle.r).toMatchObject({ ok: false, reason: REFUSE.mismatch });
+	expect(wrongTitle.r.ok).toBe(false);
+	expect(wrongTitle.r.reason).toContain(REFUSE.mismatch);
 	expect(wrongTitle.screen.sends).toHaveLength(0);
-	expect(wrongTitle.screen.closes()).toBe(1);
+	expect(wrongTitle.screen.closes()).toBeGreaterThanOrEqual(1);
 	const wrongCount = await send([{ ...familyRow, window: { title: "가족방", members: 9 } }], family, [family]);
-	expect(wrongCount.r).toMatchObject({ ok: false, reason: REFUSE.mismatch });
+	expect(wrongCount.r.ok).toBe(false);
+	expect(wrongCount.r.reason).toContain(REFUSE.mismatch);
 	expect(wrongCount.screen.sends).toHaveLength(0);
-	expect(wrongCount.screen.closes()).toBe(1);
+	expect(wrongCount.screen.closes()).toBeGreaterThanOrEqual(1);
 	expect(wrongCount.r.ax!.at(-1)).toMatchObject({ step: "verify", ok: false, why: "mismatch" });
 	const unreadable = await send([{ ...familyRow, window: "unreadable" }], family, [family]);
-	expect(unreadable.r).toMatchObject({ ok: false, reason: REFUSE.openFailed });
+	expect(unreadable.r.ok).toBe(false);
+	expect(unreadable.r.reason).toContain(REFUSE.openFailed);
 	expect(unreadable.screen.sends).toHaveLength(0);
-	expect(unreadable.screen.closes()).toBe(1);
+	expect(unreadable.screen.closes()).toBeGreaterThanOrEqual(1);
 	const longer = await send([{ id: "chat_x", title: "가족방 2기", count: 4, window: { title: "가족방 2기", members: 4 } }], family, [family]);
-	expect(longer.r).toMatchObject({ ok: false, reason: REFUSE.notListed });
+	expect(longer.r.ok).toBe(false);
+	expect(longer.r.reason).toContain(REFUSE.notListed);
 });
 
 test("the memo chat and a 1:1 with the same nickname cannot be told apart by a row: refused, never guessed", async () => {
@@ -115,17 +175,19 @@ test("the memo chat and a 1:1 with the same nickname cannot be told apart by a r
 		{ id: "chat_self", title: "철수", window: { title: "철수", self: true } },
 	];
 	const r = await send(rows, self, [self, friend]);
-	expect(r.r).toMatchObject({ ok: false, reason: REFUSE.mismatch });
+	expect(r.r.ok).toBe(false);
+	expect(r.r.reason).toContain(REFUSE.mismatch);
 	expect(r.screen.menus()).toBe(0);
 	const alone = await send([rows[1]!], self, [self]);
 	expect(alone.r).toMatchObject({ ok: true });
 });
 
-test("at most one context menu per send, and a failing open is not retried: the failing step is named on the result", async () => {
+test("a failing open is retried through the ladder, one context menu per attempt, and the failing step stays on the result", async () => {
 	for (const fail of [{ step: "menu", why: "no_menu" }, { step: "press", why: "press_error" }, { step: "window", why: "no_window" }]) {
 		const { r, screen } = await send([familyRow], family, [family], { openFail: fail });
-		expect(r).toMatchObject({ ok: false, reason: REFUSE.openFailed });
-		expect(screen.menus()).toBe(1);
+		expect(r.ok).toBe(false);
+		expect(r.reason).toContain(REFUSE.openFailed);
+		expect(screen.menus()).toBe(r.attempts!.length); // one menu per attempt, never two at once
 		expect(screen.sends).toHaveLength(0);
 		expect(r.ax!.at(-1)).toMatchObject({ step: fail.step, ok: false });
 		expect(r.ax!.at(-1)!.why).toContain(fail.why);
@@ -188,21 +250,40 @@ test("every AX phase is on the result with its time: rows read, row open, verify
 	expect(r).toMatchObject({ ok: true });
 	expect(r.ax!.map(s => s.step)).toEqual(["rows", "open", "verify", "input"]);
 	expect(r.ax!.every(s => s.ok && s.ms >= 0)).toBe(true);
-	expect(r.ax![0]!.why).toBe("1:found:row0");
+	expect(r.ax![0]!.why).toBe("1:found:row0:name");
 	expect(timeouts.slice(0, 2).every(t => t <= 5_000)).toBe(true);
 	expect(screen.rowCalls[0]).toMatchObject({ action: "rows", name: "가족방", first: true });
 });
 
-test("a press without a confirmed send stops and is never sent again; nothing pressed fails with the reason and closes the window", async () => {
-	for (const why of ["busy", "not_set", "no_button", "no_input"]) {
-		const { r, screen } = await send([familyRow], family, [family], { axSend: () => ({ ok: false, why }) });
-		expect(r.ok).toBe(false);
-		expect(screen.sends).toHaveLength(1);
-		expect(screen.closes()).toBe(1);
-		expect(r.ax!.at(-1)).toMatchObject({ step: "input", ok: false, why });
-	}
+test("the last rung brings KakaoTalk to the front for one try and puts the owner's app back after it", async () => {
+	const screen = fakeScreen([familyRow], { front: "com.example.Editor", openFail: n => (n < 5 ? { step: "menu", why: "no_menu" } : undefined) });
+	const r = await sendText({ chatId: "40", roomName: "가족방", text: "안녕" }, { paths, runner: screen.runner, roomNames: async () => [family] });
+	expect(r).toMatchObject({ ok: true });
+	expect(r.attempts!.map(a => a.recovery)).toEqual(["none", "retry", "reopen", "deep", "front"]);
+	expect(screen.sends).toEqual([["ax-send", "가족방", "안녕"]]);
+	const cmds = screen.focus.map(a => a.join(" "));
+	expect(cmds.some(c => c.includes("to activate"))).toBe(true);
+	expect(cmds.some(c => c.includes("frontmost of"))).toBe(true);
+});
+
+test("a press without a confirmed send stops and is never sent again; an owner's own text is not retried; other input failures retry", async () => {
 	const unclear = await send([familyRow], family, [family], { axSend: () => ({ ok: false, why: "unclear", pressed: true }) });
 	expect(unclear.r.ok).toBe(false);
 	expect(unclear.r.reason).toContain("다시 보내지 않았으니");
 	expect(unclear.screen.sends).toHaveLength(1);
+	const owner = await send([familyRow], family, [family], { axSend: () => ({ ok: false, why: "owner_text", preview: "내가 쓰던 글" }) });
+	expect(owner.r.ok).toBe(false);
+	expect(owner.r.reason).toContain("내가 쓰던 글");
+	expect(owner.r.reason).not.toContain("owner_text");
+	expect(owner.screen.sends).toHaveLength(1);
+	expect(owner.screen.closes()).toBe(0); // the owner's own draft stays in its window, never closed away
+	for (const why of ["not_set", "no_button", "no_input"]) {
+		const { r, screen } = await send([familyRow], family, [family], { axSend: () => ({ ok: false, why }) });
+		expect(r.ok).toBe(false);
+		expect(screen.sends).toHaveLength(5);
+		expect(r.attempts).toHaveLength(5);
+		expect(screen.closes()).toBeGreaterThanOrEqual(1);
+		expect(r.ax!.at(-1)).toMatchObject({ step: "input", ok: false });
+		expect(r.ax!.at(-1)!.why).toContain(why);
+	}
 });
