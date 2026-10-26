@@ -1,4 +1,4 @@
 {
-	"cmd": ["bun", "test", "--parallel=4", "--timeout=20000"],
+	"cmd": ["bun", "test", "./hub/update-gate-run.ts"],
 	"timeoutMinutes": 20
 }
