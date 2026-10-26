@@ -40,6 +40,7 @@ function card(acc: object) {
 		toast: () => {},
 		renderSettings: () => {},
 		kstStamp: () => "05:00",
+		shortPath: (p: string) => String(p).split("/").pop(),
 		clear: () => {},
 		dialog: (o: { title: string }) => { dialogs.push(o.title); return {}; },
 		current: "settings",
@@ -69,6 +70,11 @@ test("자동 전환: one settings row leads with the title, its help and an on s
 	expect(all).toContain("전환 규칙");
 	expect(all).toContain("평일 09:00-18:00");
 	expect(all).toContain("스크립트");
+	// the script's path is short on screen (shortPath) and the row keeps the full path in its title
+	const scriptRow = find(nodes, n => String(n.attrs.class ?? "") === "li tap")[0]!;
+	expect(text(scriptRow)).toContain("pick.sh");
+	expect(text(scriptRow)).not.toContain("/tmp/");
+	expect(scriptRow.attrs.title).toBe("/tmp/pick.sh");
 	expect(all).not.toContain("고정 풀기");
 	expect(all).not.toContain("고른 계정");
 	expect(all).not.toContain("고정");

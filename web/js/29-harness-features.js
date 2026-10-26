@@ -50,7 +50,8 @@ function fcSwitch(f) {
   const pend = fcAsked.get(f.id), word = f.enabled ? "끄기" : "켜기", def = fcScopeOf(f);
   const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(f.enabled), "aria-label": `${f.name} ${word} 요청`, title: `${botName}에게 ${word} 요청` });
   const sent = el("span", { class: "tag pri", text: pend ? `요청 보냄 · ${pend.at}` : "", hidden: !pend });
-  const tag = hScopeTag(def.kind, def.where, true);
+  // the tag shows the short folder (shortPath), its title and the request keep the full path
+  const tag = hScopeTag(def.kind, def.override ? shortPath(def.where) : def.where, true, def.where);
   if (tag && def.override) tag.title = `${hScope(def.kind, def.where)} · 스위치를 누르면 배포 파일 변경 요청도 고를 수 있어요`;
   const post = async choice => {
     const repo = def.override ? `features/${def.override}/feature.md` : f.source.label;

@@ -152,21 +152,26 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
   .view.fill { padding-bottom: 0; }
 }
 @media (max-width: 1099px) and (pointer: coarse) { .app:has(.composer textarea:focus) .side { display: none; } }
-/* buttons */
+/* buttons: one system for every page and card. Kind: primary (accent fill, the default), secondary (.tonal), quiet (.text), danger;
+   size: md (default, 40px) and .sm (36px). A touch screen gets a 44px target. Card buttons keep their own class names (.dc-act,
+   .dc-go, .dc-back, .dc-manual) and are aliased here, so the look is defined once. */
+:root { --btn-h: 40px; --btn-h-sm: 36px; --btn-hit: 44px; }
 .ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); padding: 0; }
 .ib:hover { background: var(--hover); color: var(--fg); }
 .ib.pri { background: var(--accent); color: var(--on-accent); border-radius: 50%; }
 .ib.pri:hover { background: var(--accent); opacity: .88; }
 .menu .mi.more { color: var(--fg-2); }
 .menu .mi.more svg { margin-left: auto; width: 14px; height: 14px; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 14px; border: 1px solid var(--accent); border-radius: var(--r-ctl); background: var(--accent); color: var(--on-accent); font-size: 14px; line-height: 20px; font-weight: 600; text-decoration: none; white-space: nowrap; max-width: 100%; }
-.btn:hover { opacity: .85; }
-.btn.tonal, .btn.outlined { background: var(--layer); color: var(--fg); border-color: transparent; }
-.btn.tonal:hover, .btn.outlined:hover { background: var(--hover); opacity: 1; }
-.btn.text { background: transparent; border-color: transparent; color: var(--fg-2); padding: 0 8px; }
-.btn.text:hover { background: var(--hover); color: var(--fg); opacity: 1; }
-.btn.danger { background: transparent; border-color: transparent; color: var(--err); padding: 0 8px; }
+.btn, .dc-act, .dc-go, .dc-back, .dc-manual { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--btn-h); padding: 0 16px; border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
+.btn, .dc-go, .dc-act.main { background: var(--accent); color: var(--on-accent); }
+.btn.tonal, .btn.outlined, .dc-back, .dc-act.alt { background: var(--layer); color: var(--fg); }
+.btn.text, .dc-act, .dc-manual { background: transparent; padding: 0 10px; }
+.btn.sm { height: var(--btn-h-sm); padding: 0 12px; font-size: 13px; }
+.btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover, .dc-manual:hover { opacity: .85; }
+.btn.tonal:hover, .btn.outlined:hover, .dc-back:hover, .dc-act.alt:hover { background: var(--hover); opacity: 1; }
+.btn.text:hover, .dc-act:not(.main):not(.alt):hover, .dc-manual:hover { background: var(--hover); color: var(--fg); opacity: 1; }
+.btn.danger { background: transparent; color: var(--err); padding: 0 10px; }
 .btn.danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); opacity: 1; }
-.btn.danger.fill { background: var(--err); border-color: var(--err); color: #fff; padding: 0 12px; }
+.btn.danger.fill { background: var(--err); color: #fff; padding: 0 12px; }
 .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-@media (pointer: coarse) { .ib { width: 36px; height: 36px; } .btn { height: 36px; } .ni { min-height: 44px; } }
+@media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back, .dc-manual { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }

@@ -1,10 +1,10 @@
 /* every file in a message carries its own download button (thumbnails: top-right corner, chips: right end) */
 .fitem { flex: none; display: flex; flex-direction: column; align-items: flex-start; max-width: 100%; }
 .fbox { position: relative; display: flex; max-width: 100%; }
-/* the full path under each file: small mono text, wraps anywhere, a tap copies it */
-.fpath, .lb-p, .tv-p { display: block; padding: 0; border: 0; background: none; font: 400 12px/18px var(--mono); text-align: left; word-break: break-all; cursor: copy; }
-.fpath { max-width: 260px; margin-top: 4px; color: var(--fg-3); }
-.fpath:hover { color: var(--fg-2); }
+/* the path under each file: one short line (shortPath in 15-attachments.js), the full path in the title, a tap copies it */
+.fpath, .lb-p, .tv-p { display: block; max-width: 100%; padding: 0; border: 0; background: none; color: var(--fg-3); font: 400 12px/18px var(--font); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: copy; }
+.fpath { max-width: 100%; margin-top: 4px; }
+.fpath:hover, .lb-p:hover, .tv-p:hover { color: var(--fg-2); }
 .fbox > .fatt { padding-right: 48px; max-width: 260px; }
 .fdl { position: absolute; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 16px; color: var(--fg-2); text-decoration: none; }
 .fdl svg { width: 18px; height: 18px; }
