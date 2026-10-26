@@ -138,12 +138,12 @@ describe("custom cards on 홈", () => {
 		await view.evaluate(`localStorage.removeItem("dotz-board-home")`);
 		await boot();
 		const labels = (await view.evaluate(`dotzCustom.menuActs("kakao").map(a => a.label)`)) as string[];
-		expect(labels).toEqual(["새로고침", "작게", "보통", "크게", "숨기기"]);
+		expect(labels).toEqual(["새로고침", "수정…", "작게", "보통", "크게", "숨기기", "삭제…"]);
 		await view.evaluate(`(() => { dotzCustom.menuActs("kakao").find(a => a.label === "숨기기").run(); })()`);
 		await waitFor(`!document.querySelector('.bi[data-id="custom:kakao"]')`);
 		await boot("todo");
 		expect(await view.evaluate(`!!document.querySelector('.bi[data-id="custom:kakao"]')`)).toBe(false);
-		await view.evaluate(`document.querySelector(".bbar .btn").click()`);
+		await view.evaluate(`[...document.querySelectorAll(".bbar .btn")].find(b => b.textContent === "배치 초기화").click()`);
 		await waitFor(`document.querySelector('.bi[data-id="custom:kakao"]')`);
 	});
 });
