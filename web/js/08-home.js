@@ -27,6 +27,7 @@ function homeMenu(anchor, id, inChat) {
     const kind = id.slice(6);
     add("카드로 나누기", () => setHomeGroup(kind, false));
     add(`${HOME_KINDS[kind][0]} 열기`, () => go(HOME_KINDS[kind][1]));
+    homeMoveActs(id, inChat, add);
     return showMenu(anchor, acts, { onPick: i => acts[i].run() });
   }
   if (id === MAIN || isLaneT(id)) {
@@ -66,7 +67,16 @@ function homeMenu(anchor, id, inChat) {
   }
   const kind = homeKind(id);
   if (kind && !inChat && !homeGroups.has(kind)) add(`${HOME_KINDS[kind][0]} 한 카드로 묶기`, () => setHomeGroup(kind, true));
+  homeMoveActs(id, inChat, add);
   showMenu(anchor, acts, { onPick: i => acts[i].run() });
+}
+// 앞으로 / 뒤로 옮기기: the drag (a long press on a phone) said as a menu item, one place in the reading order per pick.
+function homeMoveActs(id, inChat, add) {
+  if (inChat || !homeBoard) return;
+  const ids = homeBoard.order(), i = ids.indexOf(id);
+  if (i < 0) return;
+  if (i > 0) add("앞으로 옮기기", () => homeBoard.moveBefore(id, ids[i - 1]));
+  if (i < ids.length - 1) add("뒤로 옮기기", () => homeBoard.moveBefore(id, ids[i + 2] || null));
 }
 
 // Last meaningful line of each running lane, kept from the live activity stream (fetched once per lane for the first sight).
@@ -245,7 +255,7 @@ function renderHome() {
   renderHomeNow();
   if (openMenu && box.contains(openMenu.anchor)) return;   // a ⋯ menu is open: repaint after it closes
   $("#title").textContent = botName;
-  if (!homeBoard) homeBoard = makeBoard(box, "home", { onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
+  if (!homeBoard) homeBoard = makeBoard(box, "home", { actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
   const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, items = [], seen = new Set();
   const add = (id, node, def, size) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def, ...size }); } };
 

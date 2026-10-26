@@ -43,7 +43,7 @@ test("a valid card keeps its fields and defaults", async () => {
 	card("disk", { title: "디스크", note: "맥 내장", view: "stat", text: "1T", link: "#lanes", order: 2, extra: "ignored" });
 	const res = await json(await call("GET", "/api/custom"));
 	expect(res.dir).toEndWith("/custom");
-	expect(res.cards).toEqual([{ id: "disk", title: "디스크", note: "맥 내장", view: "stat", link: "#lanes", order: 2, render: false, rev: "0", actions: [], data: "1T" }]);
+	expect(res.cards).toEqual([{ id: "disk", file: "cards/disk.json", title: "디스크", note: "맥 내장", view: "stat", link: "#lanes", order: 2, render: false, rev: "0", actions: [], data: "1T" }]);
 	expect(res.errors).toEqual([]);
 });
 
@@ -514,4 +514,44 @@ test("a work channel named like a session folder joins that folder's project, an
 	const d = projectDetailView({ project: all[0]!, others: all, lanes, reports: {}, receipts: [], tasks: [], home: "/h", channels, watches: [], routines: [], schedules: [],
 		work: [work("by-folder", { folder: "/h/Code/dotz" }), work("by-channel", { target: "ch:9" }), work("elsewhere", { folder: "/h/Code/other", target: "ch:8" }), work("main", { target: "web" })] });
 	expect(d.work.map(w => w.id)).toEqual(["by-folder", "by-channel"]);
+});
+
+// ---- card files from the web (POST / PUT / DELETE /api/custom/cards) ----
+test("POST /api/custom/cards writes a card file from the title and returns it as the list shows it", async () => {
+	const r = await json(await call("POST", "/api/custom/cards", { title: "Disk Free", view: "stat", text: "1T", note: "", every_minutes: "", actions: [{ label: "묻기", prompt: "정리해줘" }] }));
+	expect(r).toMatchObject({ id: "disk-free", file: "cards/disk-free.json", title: "Disk Free", view: "stat", data: "1T", actions: [{ label: "묻기", kind: "prompt" }] });
+	expect(JSON.parse(readFileSync(join(CUSTOM, "cards", "disk-free.json"), "utf8"))).toEqual({ title: "Disk Free", view: "stat", text: "1T", actions: [{ label: "묻기", prompt: "정리해줘" }] });
+	expect((await json(await call("POST", "/api/custom/cards", { title: "Disk Free", text: "2" }))).id).toBe("disk-free-1");
+	expect((await json(await call("POST", "/api/custom/cards", { title: "한글 제목", text: "x" }))).id).toBe("card-1");
+});
+
+test("a card the parser would reject is not written: 400 with the parser's message, 409 for a taken id", async () => {
+	const bad = await call("POST", "/api/custom/cards", { title: "", text: "x" });
+	expect(bad!.status).toBe(400);
+	expect((await json(bad)).error).toStartWith("title");
+	expect(existsSync(join(CUSTOM, "cards"))).toBe(false);
+	card("taken", { title: "있음", text: "1" });
+	const dup = await call("POST", "/api/custom/cards", { id: "taken", title: "또", text: "2" });
+	expect(dup!.status).toBe(409);
+	expect((await call("POST", "/api/custom/cards", { id: "Bad Id", title: "x", text: "1" }))!.status).toBe(400);
+});
+
+test("GET and PUT edit the card's own file; the folder form keeps its render.js; DELETE removes it", async () => {
+	card("memo", "{ not json");
+	const raw = await json(await call("GET", "/api/custom/cards/memo"));
+	expect(raw).toMatchObject({ id: "memo", file: "cards/memo.json", raw: "{ not json" });
+	expect(raw.error).toContain("JSON");
+	const put = await json(await call("PUT", "/api/custom/cards/memo", { title: "메모", text: "고침", order: "3" }));
+	expect(put).toMatchObject({ id: "memo", title: "메모", data: "고침", order: 3 });
+	expect((await json(await call("GET", "/api/custom/cards/memo"))).spec).toEqual({ title: "메모", text: "고침", order: 3 });
+	mkdirSync(join(CUSTOM, "cards", "chart"), { recursive: true });
+	writeFileSync(join(CUSTOM, "cards", "chart", "card.json"), JSON.stringify({ title: "그림", text: "1" }));
+	writeFileSync(join(CUSTOM, "cards", "chart", "render.js"), "export default () => 'x'");
+	expect(await json(await call("PUT", "/api/custom/cards/chart", { title: "그림 2", text: "2" }))).toMatchObject({ id: "chart", title: "그림 2", render: true });
+	expect(existsSync(join(CUSTOM, "cards", "chart", "render.js"))).toBe(true);
+	expect((await call("PUT", "/api/custom/cards/none", { title: "x", text: "1" }))!.status).toBe(404);
+	expect(await json(await call("DELETE", "/api/custom/cards/chart"))).toEqual({ ok: true, id: "chart" });
+	expect(existsSync(join(CUSTOM, "cards", "chart"))).toBe(false);
+	expect((await call("DELETE", "/api/custom/cards/chart"))!.status).toBe(404);
+	expect((await json(await call("GET", "/api/custom"))).cards.map((c: any) => c.id)).toEqual(["memo"]);
 });
