@@ -94,6 +94,14 @@ const server = Bun.serve({
 		if (p === "/api/monitors") return json({ items: [] });
 		if (p === "/api/integrations") return json({ items: [{ key: "kakao", label: "카카오톡", icon: "chat", kind: "app", conv: [], notices: [], needs: { drafts: drafts.length, unread: 30, sentToday: 0 } }] });
 		if (p === "/api/kakao/rooms") return json(roomsAnswer ?? { on: true, rooms });
+		const latest = /^\/api\/kakao\/rooms\/(\w+)\/latest$/.exec(p);
+		if (latest && req.method === "GET") {
+			record({ method: "GET", path: p, body: null });
+			const room = rooms.find(x => x.chatId === latest[1]);
+			if (!room) return json({ error: "대화방을 찾지 못했어요" }, 404);
+			const last = [...msgs].sort((a, b) => (BigInt(a.logId) > BigInt(b.logId) ? 1 : -1)).at(-1);
+			return json({ logId: last?.logId ?? "", text: last ? last.text || "(사진)" : "", at: last?.sentAt ?? 0, unread: (room.unread | 0) + 1 });
+		}
 		if (p === "/api/link-preview") {
 			record({ method: "GET", path: `${p}${url.search}`, body: null });
 			const target = url.searchParams.get("url") ?? "";
@@ -698,6 +706,57 @@ describe("카카오톡 media at desktop width", () => {
 		await shot(v, "10-desktop-media.png");
 		await run(v, `document.querySelector("#kk-tl").scrollTop = 0`);
 		await shot(v, "10-desktop-media-top.png");
+	});
+});
+
+describe("카카오톡 방 목록 실시간 갱신", () => {
+	const v = open(1280, 800);
+
+	test("a kakao event updates another room's preview, time and unread at once; the open room's row follows the message just appended", async () => {
+		reset();
+		msgs = [...msgs, mk("9100", "다라", "라마바 새 말", at(26, 2, 0))];
+		await boot(v);
+		await openRoom(v, "100");
+		const t0 = performance.now();
+		emit({ kind: "kakao", chatId: "300", logId: "9100" });
+		await waitFor(v, `document.querySelector('.kk-row[data-chat="300"] .cv-p').textContent === "1:1 대화 · 라마바 새 말"`);
+		const latency = performance.now() - t0;
+		expect(await q(v, `const r = document.querySelector('.kk-row[data-chat="300"]'); return { hint: r.querySelector(".cv-p").textContent, badge: r.querySelector(".nb")?.textContent ?? "", time: r.querySelector(".kk-t").textContent }`)).toMatchObject({ hint: "1:1 대화 · 라마바 새 말", badge: "1" });
+		expect(latency).toBeLessThan(1000);
+
+		msgs.push(mk("9101", "다라", "열린 방 새 말", at(26, 2, 1)));
+		emit({ kind: "kakao", chatId: "100", logId: "9101" });
+		await waitFor(v, `document.querySelector('.kk-row[data-chat="100"] .cv-p').textContent === "단체 대화방 · 열린 방 새 말"`);
+		await waitFor(v, `document.querySelector('[data-log="9101"]')`);
+		expect(await q(v, `return document.querySelector('.kk-row[data-chat="100"] .cv-p').textContent`)).toBe("단체 대화방 · 열린 방 새 말");
+		await shot(v, "19-desktop-live-list.png");
+	});
+});
+
+describe("카카오톡 지원하지 않는 메시지와 빈 줄", () => {
+	const v = open(1280, 800);
+
+	test("a JSON record is never a bubble (neutral label), an empty system line leaves no row, and no large blank gaps remain", async () => {
+		reset();
+		msgs = [
+			mk("9201", "가나", "첫 말", at(27, 1, 0)),
+			mk("9202", "가나", "", at(27, 1, 0, 20), 17),
+			mk("9203", "가나", "", at(27, 1, 0, 30), 0),
+			mk("9204", "다라", '{"attachment":{"type":17}}', at(27, 1, 1), 17),
+			mk("9205", "다라", "마지막 말", at(27, 1, 2)),
+		];
+		drafts = [];
+		await boot(v);
+		await openRoom(v);
+		const s = await q<Record<string, any>>(v, `const texts = id => document.querySelector('[data-log="' + id + '"] .kk-bub')?.textContent ?? null;
+			return { n9201: texts("9201"), n9202: texts("9202"), n9204: texts("9204"), n9203: !!document.querySelector('[data-log="9203"]'), raw: document.querySelector("#kk-tl").textContent.includes('{"attachment"') }`);
+		expect(s).toMatchObject({ n9201: "첫 말", n9202: "(지원하지 않는 메시지)", n9204: "(지원하지 않는 메시지)", n9203: false, raw: false });
+		const gaps = await q<{ max: number; tall: number; rows: number }>(v, `const rs = [...document.querySelectorAll("#kk-tl .kk-m")].map(n => n.getBoundingClientRect()); let max = 0; for (let i = 1; i < rs.length; i++) max = Math.max(max, rs[i].top - rs[i - 1].bottom); return { max, tall: Math.max(...rs.map(r => r.height)), rows: rs.length }`);
+		expect(gaps.rows).toBe(4);
+		expect(gaps.max).toBeLessThan(40);
+		expect(gaps.tall).toBeLessThan(160);
+		await run(v, `document.querySelector("#kk-tl").scrollTop = 0`);
+		await shot(v, "20-desktop-unsupported.png");
 	});
 });
 

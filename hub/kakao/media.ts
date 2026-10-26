@@ -4,7 +4,7 @@
 // stored in the database, https only, host *.kakaocdn.net only, no cookies or auth headers, no redirects off that host, 25 MB, 20 s.
 import { existsSync, statSync } from "node:fs";
 import { basename } from "node:path";
-import { EMOTICON_TYPES } from "./db.ts";
+import { EMOTICON_TYPES, looksLikeRecord, TEXT_TYPE } from "./db.ts";
 import type { Msg } from "./types.ts";
 
 export type Media =
@@ -28,6 +28,13 @@ const PHOTO = 2, VIDEO = 3, VOICE = [4, 5], FILE = 18, ALBUM = 27, EMOTICON = EM
 const NO_TEXT = new Set([PHOTO, VIDEO, ...VOICE, FILE, ALBUM, ...EMOTICON, LOCATION]);
 // The body of a message: type 1, a reply's own text, a feed line (0) and unknown types show their text; media types never do.
 export const showsText = (type: number) => !NO_TEXT.has(type);
+
+// What the web may show as a message body ("" = the web draws its type's label instead).
+export function bodyText(m: Pick<Msg, "type" | "text">): string {
+	if (!showsText(m.type)) return "";
+	if (m.type === TEXT_TYPE || m.type === REPLY || m.type === 0) return m.text;
+	return looksLikeRecord(m.text) ? "" : m.text;
+}
 
 type Att = Record<string, unknown>;
 const parse = (s?: string): Att => {

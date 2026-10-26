@@ -38,12 +38,21 @@ function kkAvatar(name, cls = "") {
 }
 // What a message that is not plain text says (KakaoTalk's type codes). A reply (26) carries its own text.
 const KK_TYPE = { 2: "(사진)", 27: "(사진)", 3: "(동영상)", 4: "(음성 메시지)", 5: "(음성 메시지)", 12: "(이모티콘)", 20: "(이모티콘)", 25: "(이모티콘)", 18: "(파일)", 16: "(위치)" };
+const KK_OTHER = "(지원하지 않는 메시지)";
+// A JSON record in the message column (an attachment of a type this build does not draw) is not words: never show it.
+const kkRecord = s => {
+  if (!/^\s*[\[{]/.test(String(s))) return false;
+  try { const v = JSON.parse(String(s)); return !!v && typeof v === "object"; } catch { return false; }
+};
 // The text of a message (the server sends it for text, replies, feed lines and unknown types); else the placeholder of its type.
 function kkBody(m) {
   const type = Number(m.type), text = String(m.text ?? "");
-  if (text) return { text, ph: false };
-  return { text: KK_TYPE[type] || "(기타 메시지)", ph: true };
+  const words = type === 1 || type === 26 || type === 0 || !kkRecord(text) ? text : "";
+  if (words) return { text: words, ph: false };
+  return { text: KK_TYPE[type] || KK_OTHER, ph: true };
 }
+// The one line a room row shows under its name (the same rule as the hub's room list).
+const kkHint = m => { const chars = [...kkBody(m).text.replace(/\s+/g, " ").trim()]; return chars.length > 32 ? `${chars.slice(0, 31).join("").trimEnd()}…` : chars.join(""); };
 const kkSys = m => Number(m.type) === 0;
 
 /* ---- links in a message: the address itself is a link, and a lazy preview card under the bubble (GET /api/link-preview) ---- */
@@ -518,7 +527,8 @@ function kkTimeline() {
     const cont = !!prev && !newDay && !mark && !kkSys(prev) && kkWho(prev) === kkWho(m);
     const nextCont = !!next && kkDay(next.sentAt) === kkDay(m.sentAt) && !(KK.div && next.logId === KK.div) && kkSame(m, next);
     const node = kkMsgNode(m, !cont, !nextCont);
-    if (node) out.push(node);
+    // A row with nothing visible in it (an empty body, a record this build does not draw) leaves no blank space.
+    if (node && (node.textContent.trim() || node.querySelector("img, audio, video, button, a"))) out.push(node);
     prev = m;
   });
   out.push(...kkPending().map(kkSendNode));
@@ -662,6 +672,13 @@ function kkApply(d) {
   const stick = KK.stick || fresh.some(m => m.fromMe);
   if (fresh.some(m => !m.fromMe) && !stick) { KK.pill = true; kkPill.hidden = false; }
   if (stick) KK.pin = "bottom";
+  // The open room's own row follows the same rows just appended (one source of truth per room).
+  const row = kkRoom(KK.open), last = KK.msgs[KK.msgs.length - 1];
+  if (fresh.length && row && last) {
+    row.hint = kkHint(last); row.lastAt = last.sentAt;
+    row.unread = stick ? 0 : (row.unread | 0) + fresh.filter(m => !m.fromMe).length;
+    kkPaintRooms();
+  }
   kkPaintTl(stick);
   kkPaintFoot();
   return fresh.length;
@@ -902,10 +919,20 @@ async function kkMakeDraft(choice, revise) {
 }
 
 /* ---- live ---- */
-function kkBump(chatId) {
+// The newest line of one room, from the hub (logId, preview, time, unread): a room row follows the database without re-reading the whole list.
+async function kkRoomLatest(chatId) {
+  if (!kkRoom(chatId)) { kkLoadRooms(); return; }
+  try {
+    const d = await api(`/api/kakao/rooms/${enc(chatId)}/latest`);
+    if (KK.vis) kkSetRow(chatId, d);
+  } catch { kkLoadRooms(); }
+}
+function kkSetRow(chatId, d) {
   const r = kkRoom(chatId);
-  if (!r) { kkLoadRooms(); return; }
-  r.unread = (r.unread | 0) + 1; r.lastAt = Date.now();
+  if (!r || !d) return;
+  if (typeof d.text === "string" && d.text) r.hint = d.text;
+  if (d.at) r.lastAt = d.at;
+  if (typeof d.unread === "number") r.unread = d.unread;
   kkPaintRooms();
 }
 // The event stream (99-boot.js): ids only, so the bodies are fetched here.
@@ -916,7 +943,7 @@ function kkLive(e) {
   kkIntgSoon();
   if (!KK.vis) return;
   const open = e.chatId === KK.open;
-  if (e.kind === "kakao") { if (open) kkTail(); else kkBump(e.chatId); }
+  if (e.kind === "kakao") { if (open) kkTail(); else kkRoomLatest(e.chatId); }
   else if (e.kind === "kakao_send") { if (open) kkSendEvent(e); }
   else if (e.kind === "kakao_draft" && open) {
     if (KK.drafting === e.chatId) {

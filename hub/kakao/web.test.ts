@@ -92,6 +92,20 @@ describe("rooms", () => {
 		t.close();
 	});
 
+	test("a room's newest line for its live row: the preview, the time and the unread count; a record body is a neutral label, not JSON", async () => {
+		const t = setup({}, w => {
+			addMessage(w, { logId: BASE_LOG + BigInt(50), chatId: ROOM.group, authorId: 2002, message: "새로 온 말", type: 1, sentAt: BASE_TIME + 500 });
+			addMessage(w, { logId: BASE_LOG + BigInt(51), chatId: ROOM.direct, authorId: 2001, message: '{"attachment":{"k":1}}', type: 17, sentAt: BASE_TIME + 510 });
+		});
+		expect(await t.call("GET", `/api/kakao/rooms/${GROUP}/latest`)).toEqual({ status: 200, json: { logId: id(50), text: "새로 온 말", at: (BASE_TIME + 500) * 1000, unread: 2 } });
+		expect((await t.call("GET", `/api/kakao/rooms/${DIRECT}/latest`)).json.text).toBe("(지원하지 않는 메시지)");
+		const chat = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
+		expect(chat.json.messages.find((m: any) => m.logId === id(51))).toMatchObject({ type: 17, text: "" });
+		expect((await t.call("GET", `/api/kakao/rooms/not-a-number/latest`)).status).toBe(400);
+		expect((await t.call("GET", `/api/kakao/rooms/${ROOM.channel}/latest`)).status).toBe(404);
+		t.close();
+	});
+
 	test("a database that cannot be read gives a plain error line and no rooms", async () => {
 		const t = setup();
 		const url = new URL("http://local/api/kakao/rooms");
