@@ -141,7 +141,7 @@ function eventTarget(e) {
 /* ---------- conversation view (대화) ---------- */
 const timeline = $("#timeline"), tl = $("#tl"), term = $("#term");
 let chatStick = true, termStick = true;
-timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; if (chatStick) convMaybeRead(); });
+timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; if (chatStick) convMaybeRead(); if (timeline.scrollTop < 80) loadOlderMsgs(); });
 timeline.addEventListener("scroll", () => edgeFade(timeline), { passive: true });
 term.addEventListener("scroll", () => edgeFade(term), { passive: true });
 term.addEventListener("scroll", () => { termStick = term.scrollTop + term.clientHeight >= term.scrollHeight - 40; $("#act-jump").hidden = termStick; if (term.scrollTop < 80) loadOlder(); });

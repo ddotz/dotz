@@ -182,7 +182,11 @@ async function sendChat(how) {
     // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.
   else if (mode === "interrupt") toast("중단하고 보냈어요");
   }
-  catch (e) { toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); rpRestore(reply); }
+  catch (e) {
+    // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
+    if (t !== target) { ts(t).draft = text; try { localStorage.setItem(DRAFT_KEY(t), text); } catch {} toast(`${e.message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요${sentAtt.length ? " (파일은 다시 붙여 주세요)" : ""}`, true); return; }
+    toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); rpRestore(reply);
+  }
 }
 // The composer follows the selected target and the view mode.
 function updateComposerMeta() {
