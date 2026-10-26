@@ -23,7 +23,10 @@ Reference implementation: `hub/user-apps.ts` (manifest), `hub/app-proxy.ts` (pro
 - **One origin: the gateway proxies, apps stay on loopback.** A user app's server binds `127.0.0.1`. The web app is reached
   through `tailscale serve` over HTTPS, so a frame pointing straight at `http://127.0.0.1:<port>` would be mixed content and
   a phone could not reach it at all. `/apps/<id>/` keeps one origin, one identity check, and no new port to expose. A
-  non-loopback `web.url` is refused at load and at proxy time.
+  non-loopback `web.url` is refused at load and at proxy time. The price of one origin: an app's pages run with the owner's
+  web session, so its scripts can call the gateway's `/api` like the web app does. Add only apps you trust as much as dotz.
+  The gateway keeps its own credentials to itself (the hub token, peer token and `tailscale-*` identity headers are not
+  forwarded to the app), adds no CORS headers, and refuses a websocket or a non-GET request whose `Origin` is another site.
 - **Two URL modes, because rewriting is a guess.** `mode: "prefix"` (default) expects the app to serve relative URLs (or its
   own base path) -- nothing is rewritten. `mode: "rewrite"` is for an app written for `/`: the gateway prefixes
   root-absolute `src/href/action/poster` and CSS `url(/...)`, rewrites `Set-Cookie` `Path` and `Location` back under

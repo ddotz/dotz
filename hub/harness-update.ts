@@ -2,7 +2,7 @@
 // newer harness by itself; this module is the owner's button: it knows how each harness on this Mac is installed, asks the
 // registry at most every 6 hours (or on demand), and installs only the version it can put back.
 //
-// How the harnesses are installed (checked on the MacBook, 2026-10-26):
+// How the harnesses are installed (checked 2026-10-26):
 // - OmO: a bun global package. `~/.bun/bin/omo` is a symlink into `~/.bun/install/global/node_modules/omo-ai`, so the update
 //   is `bun add -g omo-ai@<version>` run with the gateway's own bun (process.execPath, no PATH guesswork). The senpi engine
 //   is pinned by omo-ai and moves with it. An OmO desktop copy (/Applications/OmO.app) is never touched: that install has no
@@ -313,7 +313,7 @@ async function installWhenIdle(id: string, st: HarnessState, j: Job, t: Tools, s
 		const moved = !!now && (st.installMethod === "bun-global" ? newer(now, st.current ?? "0.0.0") : now === st.latest || newer(now, st.current ?? "0.0.0"));
 		if (!moved) {
 			// A half-done install must not leave a version we cannot verify: put the old one back when we know how.
-			const back = now && st.installMethod === "bun-global" && st.current ? await t.run([t.bun ?? process.execPath, "add", "-g", `omo-ai@${st.current}`], INSTALL_TIMEOUT_MS).catch(e => ({ code: -1, out: String(e) })) : undefined;
+			const back = st.installMethod === "bun-global" && st.current ? await t.run([t.bun ?? process.execPath, "add", "-g", `omo-ai@${st.current}`], INSTALL_TIMEOUT_MS).catch(e => ({ code: -1, out: String(e) })) : undefined;
 			record(t.dataDir, `${id} install did not verify (now ${now ?? "?"})${back ? `; rollback exit ${back.code}` : ""}`);
 			const kept = back ? (back.code === 0 ? `이전 버전(${st.current})으로 되돌렸어요` : `이전 버전으로 되돌리지 못했어요 (지금 ${now ?? "?"})`) : `지금 ${now ?? "?"}`;
 			return end("failed", `${st.name}를 설치했지만 새 버전이 확인되지 않아요. ${kept}.`);

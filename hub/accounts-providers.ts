@@ -1,5 +1,4 @@
-// 계정 groups for every provider OmO keeps an account pool for, not just the Claude subscription (owner 2026-10-26: "이거 왜
-// 클로드만 추가냐. 범용 추가로 구현해야지"). Read-only over OmO's own store: <agent dir>/auth.json holds one entry per provider,
+// 계정 groups for every provider OmO keeps an account pool for, not just the Claude subscription. Read-only over OmO's own store: <agent dir>/auth.json holds one entry per provider,
 // and a provider whose sign-in can hold several logins keeps them in `accounts` ([{name, access, ...}]) with `pinned` naming the
 // one OmO prefers. `credential-pool-state.json` records each account's block per provider
 // (`providers.<id>.lanes.stored.slots.<name>`), and `subscription-usage.json` the usage windows per
@@ -169,7 +168,9 @@ function lock(file: string): () => void {
 const authKeyOf = (auth: Json, provider: string): string | undefined => (provider === "anthropic" && SUBSCRIPTION in auth ? SUBSCRIPTION : provider in auth ? provider : undefined);
 
 // Writes auth.json the way OmO does (JSON.stringify(..., null, 2), the file's own mode, a copy kept first) for one change.
-function rewriteAuth(provider: string, change: (entry: Json, auth: Json) => void, now: number): "written" | "missing" {
+const dayStamp = (now: number): string => new Date(now).toISOString().slice(0, 10);
+
+function rewriteAuth(provider: string, change: (entry: Json, auth: Json) => void, now: number): "written" | "unchanged" | "missing" {
 	const file = authFile();
 	if (!existsSync(file)) return "missing";
 	const release = lock(file);
@@ -178,12 +179,15 @@ function rewriteAuth(provider: string, change: (entry: Json, auth: Json) => void
 		const auth = JSON.parse(text) as Json;
 		const key = authKeyOf(auth, provider);
 		if (!key || !auth[key] || typeof auth[key] !== "object") return "missing";
-		const backup = `${file}.dotz-account-backup-${now}`;
+		const before = JSON.stringify(auth);
+		change(auth[key], auth);
+		if (JSON.stringify(auth) === before) return "unchanged";
+		// one copy per change-day, of the bytes before the day's first change (as omo-pin.ts)
+		const backup = `${file}.dotz-account-backup-${dayStamp(now)}`;
 		if (!existsSync(backup)) {
 			copyFileSync(file, backup);
 			chmodSync(backup, 0o600);
 		}
-		change(auth[key], auth);
 		const tmp = `${file}.${process.pid}.tmp`;
 		try {
 			writeFileSync(tmp, `${JSON.stringify(auth, null, 2)}${text.endsWith("\n") ? "\n" : ""}`, { mode: 0o600 });
@@ -207,6 +211,7 @@ export function writeProviderPin(provider: string, account: string | undefined, 
 		const before = readJson(file)?.[authKeyOf(readJson(file) ?? {}, provider) ?? ""];
 		if (!before) return "missing";
 		if ((before.pinned ?? undefined) === account) return "unchanged";
+		if (account !== undefined && !(Array.isArray(before.accounts) && before.accounts.some((a: Json) => a?.name === account))) return "missing";
 		const r = rewriteAuth(provider, entry => {
 			if (account === undefined) delete entry.pinned;
 			else entry.pinned = account;
