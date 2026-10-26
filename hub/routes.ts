@@ -24,7 +24,7 @@ import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { composeMail, MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
-import { attachmentLines, fileRoute, FileError, messageFiles, uploadsFrom } from "./files.ts";
+import { attachmentLines, fileRoute, FileError, ownerFiles, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
@@ -390,7 +390,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (req.method === "POST" && url.pathname === "/api/message") {
 			const b = await body(req);
-			const files = messageFiles(b.files);
+			let files: ReturnType<typeof ownerFiles>;
+			try {
+				files = ownerFiles(b.files);
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
+			}
 			if (!b.text && !files.length) return json({ error: "text required" }, 400);
 			const text = String(b.text ?? "");
 			const login = req.headers.get("tailscale-user-login") ?? "local";

@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { allowedRoots, attachmentLines, FileError, messageFiles, resolveAllowed, safeName, saveUpload, serveFile, UPLOADS, uploadsFrom } from "./files.ts";
+import { allowedRoots, attachmentLines, FileError, messageFiles, resolveAllowed, safeName, saveUpload, ownerFiles, serveFile, UPLOADS, uploadsFrom } from "./files.ts";
 import { isTempLane } from "./lanes.ts";
 
 const DATA = process.env.DOTZ_DIR!;
@@ -80,3 +80,15 @@ test("temp-folder lanes never count as live projects", () => {
 	expect(isTempLane({ cwd: "/Users/x/.dotz/lanes/a/worktree", worktree: { path: "", repo: "/tmp/repo", branch: "", base: "" } })).toBe(true);
 	expect(isTempLane({ cwd: "/Users/x/Code/dotz" })).toBe(false);
 });
+
+test("a message whose staged upload is gone is refused with how many are missing, never sent without it", () => {
+	mkdirSync(join(UPLOADS, "t"), { recursive: true });
+	const kept = join(UPLOADS, "t", "kept.pdf");
+	writeFileSync(kept, "%PDF");
+	expect(ownerFiles([{ path: kept, name: "kept.pdf" }]).map(f => f.name)).toEqual(["kept.pdf"]);
+	expect(status(() => ownerFiles([{ path: kept, name: "kept.pdf" }, { path: join(UPLOADS, "t", "gone.xlsx"), name: "gone.xlsx" }]))).toBe(400);
+	expect(status(() => ownerFiles([{ path: join(DATA, "outside.txt") }]))).toBe(400);
+	expect(ownerFiles(undefined)).toEqual([]);
+	expect(messageFiles([{ path: kept }, { path: join(UPLOADS, "t", "gone.xlsx") }])).toHaveLength(1);   // the lenient reader stays for draft files
+});
+

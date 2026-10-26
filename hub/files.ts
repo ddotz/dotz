@@ -210,6 +210,14 @@ export function fileRoute(req: Request, url: URL, roots: string[], listed: Reado
 export const attachmentLines = (files: Upload[]): string => files.map(f => `[attachment] ${f.name}${f.type ? ` (${f.type})` : ""} ${f.path}`).join("\n");
 
 // Validates the files a /api/message body names: each must be an upload this gateway stored.
+// The files of an owner's message, all or nothing: a staged upload that is gone (or a path outside the uploads) is an error the
+// owner sees, not a message that silently goes out without it.
+export function ownerFiles(input: unknown): Upload[] {
+	const asked = Array.isArray(input) ? input.slice(0, 10).length : 0;
+	const files = messageFiles(input);
+	if (files.length < asked) throw new FileError(`첨부파일 ${asked - files.length}개를 찾지 못했어요. 파일을 다시 붙여 주세요`, 400);
+	return files;
+}
 export function messageFiles(input: unknown): Upload[] {
 	if (!Array.isArray(input)) return [];
 	const root = real(UPLOADS);
