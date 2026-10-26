@@ -87,6 +87,25 @@ export function draftApprovalBlock(d: DraftInput): string {
 	return [...partLines(d), ...mail, issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
 }
 
+// A card made before a change to how drafts are read (the always-shown 첨부 row, 2026-10-26) re-read from its own text with the current
+// rules: the head (recipient, subject, files, warning, origin) is replaced, the body and ref stay (the stored text may be cut shorter).
+const HEAD_KEYS = ["toLabel", "to", "subject", "attachments", "noAttachments", "warning", "note", "origin"] as const;
+export function refreshDraft(old: DraftApproval, text: string): DraftApproval {
+	const fresh = parseQuotedDraft(text);
+	if (!fresh) return old;
+	const head = (o: DraftApproval, f: DraftApproval): DraftApproval => {
+		const out: Record<string, unknown> = { ...o };
+		for (const k of HEAD_KEYS) {
+			if (f[k] === undefined) delete out[k];
+			else out[k] = f[k];
+		}
+		return out as DraftApproval;
+	};
+	const next = head(old, fresh);
+	if (old.mail && fresh.mail) next.mail = head(old.mail, fresh.mail);
+	return next;
+}
+
 const HEADER = /^(받는이|대상|대화방)\s*[:：]\s*(.*)$/;
 const SUBJECT = /^제목\s*[:：]\s*(.*)$/;
 const ATTACH = /^첨부\s*[:：]\s*(.*)$/;
