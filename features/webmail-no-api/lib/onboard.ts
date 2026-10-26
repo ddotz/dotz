@@ -1,17 +1,19 @@
 // One-request onboarding for a mail site zele cannot reach: preflight -> login (the browser's saved password, background)
 // -> record the client's calls -> generate the adapter -> live list + read test (with a read-endpoint probe) -> config,
-// card, sidebar, feature switch -> new-mail watch and session-keeping watch. Every step is idempotent and the state file
+// card, sidebar, feature switch -> new-mail watch and session-keeping watch -> the site's own 메일 app instance (its 모니터링 row, settings,
+// 연결 끊김 state; docs/custom-plugins.md "Registering a mail reader as a mail instance"). Every step is idempotent and the state file
 // records where it is, so an interrupted run resumes at that step. Every owner action (a missing saved password, a second
 // factor) is gathered into one ask; the next run with `approve` carries on to the end. Progress is one evolving message.
 // All side effects go through `Io`, so the whole flow runs against a fake mail server in the tests.
 import { existsSync, readFileSync } from "node:fs";
 import { capture, readCandidates, type CapturedRequest } from "./capture.ts";
 import { list, probeRead, read } from "./adapter.ts";
-import { loadConfig, loadSpec, paths, writeJson, type Ctx } from "./config.ts";
+import { loadConfig, loadSpec, paths, writeJson, type Ctx, type SiteConfig } from "./config.ts";
 import { type Gateway } from "./gateway.ts";
 import { apply, sessionWatchSpec, watchSpec } from "../bin/setup.ts";
+import type { SiteSpec } from "./spec.ts";
 
-export const STEPS = ["preflight", "login", "capture", "test", "apply", "watch"] as const;
+export const STEPS = ["preflight", "login", "capture", "test", "apply", "watch", "app"] as const;
 export type Step = (typeof STEPS)[number];
 export const STEP_LABEL: Record<Step, string> = {
 	preflight: "사전 확인",
@@ -20,6 +22,7 @@ export const STEP_LABEL: Record<Step, string> = {
 	test: "목록·읽기 시험",
 	apply: "설정·홈 카드",
 	watch: "새 메일 감시·로그인 유지",
+	app: "모니터링 메일 앱",
 };
 
 export type OnboardState = {
@@ -27,6 +30,7 @@ export type OnboardState = {
 	site: string;
 	url: string;
 	channel?: string;
+	label?: string;
 	done: Step[];
 	current?: Step;
 	status: "running" | "waiting" | "failed" | "done";
@@ -50,7 +54,7 @@ export type Io = {
 	progress(text: string): Promise<void>;
 };
 
-export type OnboardOpts = { site: string; url?: string; channel?: string; approve?: boolean; har?: CapturedRequest[]; restart?: boolean };
+export type OnboardOpts = { site: string; url?: string; channel?: string; label?: string; approve?: boolean; har?: CapturedRequest[]; restart?: boolean };
 export type OnboardResult = { status: OnboardState["status"]; step?: Step; message: string; ask?: string; state: OnboardState };
 
 type StepOutcome = { ok: true; note?: string } | { ok: false; status: "waiting" | "failed"; message: string; ask?: string } | { back: Step; note: string };
@@ -88,6 +92,16 @@ export function loginAsk(site: string, needPassword: boolean): string {
 		`${needPassword ? "2" : "1"}) 로그인할 때 2차 인증(문자·앱 승인·보안키)이 오면 승인해 주세요`,
 		"준비되면 \"됐어\"라고 답해 주세요.",
 	].join("\n");
+}
+
+export const appLabelOf = (s: Pick<OnboardState, "site" | "label">): string => s.label ?? `${s.site} 메일`;
+
+// The site as its own instance of the 메일 app (POST /api/apps): it owns the mails its watch posts (`source` = the site, watchkit.ts postToGateway),
+// the watches onboarding registers (so their failures are its 연결 끊김, never the default 메일 row's) and the site's data folder. The id is fixed
+// per site, so a rerun is answered 409 and adds nothing.
+export function appInstance(site: string, label: string, spec: SiteSpec, config: SiteConfig) {
+	const session = sessionWatchSpec(spec, config);
+	return { app: "mail", id: `mail-${site}`, label, filter: { source: site, watches: [watchSpec(site, config).name as string, ...(session ? [session.name as string] : [])], data: [`custom/webmail/${site}`] } };
 }
 
 async function runStep(io: Io, s: OnboardState, step: Step, opts: OnboardOpts): Promise<StepOutcome> {
@@ -164,7 +178,7 @@ async function runStep(io: Io, s: OnboardState, step: Step, opts: OnboardOpts): 
 			return { ok: true, note: `목록 ${mails.length}통, 읽기 확인` };
 		}
 		case "apply": {
-			apply({ site: s.site, channel: s.channel });
+			apply({ site: s.site, channel: s.channel, label: appLabelOf(s) });
 			return { ok: true };
 		}
 		case "watch": {
@@ -176,6 +190,20 @@ async function runStep(io: Io, s: OnboardState, step: Step, opts: OnboardOpts): 
 			if (session) await io.gateway("POST", "/api/watches", session);
 			return { ok: true, note: session ? "로그인 유지는 게이트웨이가 모델 없이 해요" : "https가 아닌 주소라 로그인 유지 감시는 건너뛰었어요" };
 		}
+		case "app": {
+			const spec = loadSpec(s.site);
+			const config = loadConfig(s.site);
+			if (!spec || !config) return { back: "capture", note: "설정 파일이 없어서 다시 만들어요" };
+			const label = appLabelOf(s);
+			try {
+				await io.gateway("POST", "/api/apps", appInstance(s.site, label, spec, config));
+			} catch (e) {
+				if ((e as { status?: number }).status !== 409) {
+					return { ok: false, status: "failed", message: `새 메일 감시는 등록됐지만 모니터링에 "${label}" 행을 아직 못 만들었어요 (${e instanceof Error ? e.message : String(e)}). 게이트웨이가 켜지면 같은 명령을 다시 실행해 주세요. 이 단계만 다시 해요` };
+				}
+			}
+			return { ok: true, note: `모니터링에 "${label}" 행이 생겨요. 로그인이 풀리면 이 행에 연결 끊김으로 보여요` };
+		}
 	}
 }
 
@@ -186,8 +214,8 @@ export async function runOnboard(io: Io, opts: OnboardOpts): Promise<OnboardResu
 		return { status: "failed", message: s.message!, state: s };
 	}
 	const s: OnboardState = prev
-		? { ...prev, ...(opts.url ? { url: opts.url } : {}), ...(opts.channel ? { channel: opts.channel } : {}), status: "running", ask: undefined, message: undefined }
-		: { version: 1, site: opts.site, url: opts.url!, ...(opts.channel ? { channel: opts.channel } : {}), done: [], status: "running", loginTries: 0, updated: "" };
+		? { ...prev, ...(opts.url ? { url: opts.url } : {}), ...(opts.channel ? { channel: opts.channel } : {}), ...(opts.label ? { label: opts.label } : {}), status: "running", ask: undefined, message: undefined }
+		: { version: 1, site: opts.site, url: opts.url!, ...(opts.channel ? { channel: opts.channel } : {}), ...(opts.label ? { label: opts.label } : {}), done: [], status: "running", loginTries: 0, updated: "" };
 	if (opts.approve && s.current === "login") s.loginTries = 0;
 	const save = async () => {
 		s.updated = new Date(io.ctx.now()).toISOString();
