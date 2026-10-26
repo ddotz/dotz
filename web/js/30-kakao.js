@@ -276,6 +276,69 @@ function kkViewer(m, md, start) {
   return d;
 }
 const kkWho = m => (m.fromMe ? "me" : String(m.authorId ?? m.sender ?? ""));
+
+/* ---- 사용자별 분석: a sender's avatar or name opens the panel (GET/POST /api/kakao/person/...) ---- */
+const kkMin = ms => (ms === undefined || ms === null ? "" : ms < 60000 ? `${Math.max(1, Math.round(ms / 1000))}초` : ms < 3600000 ? `${Math.round(ms / 60000)}분` : `${(ms / 3600000).toFixed(1)}시간`);
+function kkBars(values, labels) {
+  const max = Math.max(1, ...values);
+  return el("div", { class: "kk-hist" }, ...values.map((v, i) => el("span", { class: "kk-hb", title: `${labels ? labels[i] : i}시 ${v}개`, style: `height:${Math.max(2, Math.round((v / max) * 100))}%` })));
+}
+function kkPerson(uid) {
+  uid = String(uid || "");
+  const id = KK.open;
+  if (!uid || !id) return;
+  const who = KK.msgs.find(m => !m.fromMe && String(m.authorId) === uid);
+  const name = who ? who.sender || "상대" : "상대";
+  const body = el("div", { class: "kk-pd-b" }, el("div", { class: "kk-note", role: "status", text: "불러오는 중…" }));
+  const d = el("dialog", { class: "kk-pd", "data-uid": uid, "aria-label": `${name} 사용자별 분석` },
+    el("div", { class: "kk-pd-in" },
+      el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: "사용자별 분석" })), el("button", { class: "x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      body));
+  document.body.append(d); d.showModal(); dialogHist(d);
+  d.addEventListener("close", () => d.remove());
+  api(`/api/kakao/person/${enc(uid)}?room=${enc(id)}`).then(r => { if (d.isConnected) kkPersonPaint(d, body, r); }, e => { if (d.isConnected) clear(body).append(el("div", { class: "kk-note", role: "status", text: e.message })); });
+}
+function kkPersonPaint(d, body, r) {
+  const s = (r && r.stats) || {}, row = (k, v) => el("div", { class: "kk-prow" }, el("span", { class: "kk-pk", text: k }), el("span", { class: "kk-pv", text: v }));
+  const span = [s.firstAt ? kstStamp(s.firstAt) : "", s.lastAt ? kstStamp(s.lastAt) : ""].filter(Boolean).join(" ~ ");
+  const reply = [s.replyToOwnerMs !== undefined ? `상대 → 나 ${kkMin(s.replyToOwnerMs)}` : "", s.ownerReplyMs !== undefined ? `나 → 상대 ${kkMin(s.ownerReplyMs)}` : ""].filter(Boolean).join(" · ") || "아직 잴 수 없어요";
+  const unanswered = Array.isArray(s.recentUnanswered) ? s.recentUnanswered : [];
+  const sum = el("div", { class: "kk-sum" });
+  const paintSum = a => clear(sum).append(
+    el("div", { class: "kk-dh", text: "요약 분석" }),
+    a && a.text ? el("div", { class: "kk-dt", text: a.text }) : null,
+    a && a.at ? el("div", { class: "kk-sub", text: `${kstStamp(a.at)}에 만든 요약` }) : null,
+    el("button", { class: "btn tonal", type: "button", "data-k": "analyze", text: a ? "다시 분석" : "요약 분석", onclick: ev => kkAnalyze(d, ev.currentTarget, paintSum) }));
+  paintSum(r && r.analysis);
+  clear(body).append(
+    el("div", { class: "kk-psec" },
+      row("메시지", `이 방 ${s.roomMessages | 0}개 · 지켜보는 방 ${s.watchedMessages | 0}개 (${s.watchedRooms | 0}곳)`),
+      span ? row("기간", span) : null,
+      row(`답장 (${s.windowDays || 30}일)`, reply),
+      row("나를 부른 메시지", `${Math.round((s.mentionShare || 0) * 100)}% (${s.mentions | 0}개)`)),
+    el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "활동 시간" }), kkBars(s.hours || Array(24).fill(0), Array.from({ length: 24 }, (_, i) => String(i))),
+      el("div", { class: "kk-hax" }, el("span", { text: "0시" }), el("span", { text: "6시" }), el("span", { text: "12시" }), el("span", { text: "18시" }), el("span", { text: "24시" }))),
+    el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "요일" }), kkBars(s.weekdays || Array(7).fill(0), ["일", "월", "화", "수", "목", "금", "토"]),
+      el("div", { class: "kk-hax kk-hax7" }, ...["일", "월", "화", "수", "목", "금", "토"].map(t => el("span", { text: t })))),
+    el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "답장을 기다리는 메시지" }),
+      ...(unanswered.length ? unanswered.map(m => el("div", { class: "kk-pun" }, el("span", { class: "kk-sub", text: kstStamp(m.at) }), el("span", { class: "kk-put", text: m.text }))) : [el("div", { class: "kk-sub", text: "없어요" })])),
+    sum);
+}
+async function kkAnalyze(d, btn, paint) {
+  const id = KK.open, uid = d.getAttribute("data-uid");
+  if (!id || !uid) return;
+  btn.disabled = true; btn.textContent = "분석 중…";
+  try {
+    const r = await api(`/api/kakao/person/${enc(uid)}/analyze`, "POST", { room: id });
+    if (!d.isConnected) return;
+    if (r && r.error) throw new Error(r.error);
+    paint(r.analysis);
+  } catch (e) {
+    if (d.isConnected) { btn.disabled = false; btn.textContent = "요약 분석"; }
+    toast(e.message, true);
+  }
+}
+
 const kkSame = (a, b) => !kkSys(a) && !kkSys(b) && kkWho(a) === kkWho(b) && Math.floor(a.sentAt / 60000) === Math.floor(b.sentAt / 60000);
 const kkKindLine = r => (r.kind === "group" || r.kind === "multi" ? "단체 대화방" : r.kind === "direct" || r.kind === "dm" ? "1:1 대화" : r.kind === "open" ? "오픈채팅" : "");
 // Under a room's name: its kind and the hub's hint (the newest message, else the member count), so rooms of the same name can be told apart.
@@ -314,6 +377,12 @@ const kkRo = el("div", { class: "kk-ro", id: "kk-ro", role: "status", hidden: tr
 const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, el("div", { class: "kk-box" }, kkTl, kkPill), kkRo, kkFoot);
 const kkPane = el("div", { class: "kk", id: "kk", hidden: true }, kkRooms, kkChat);
 $("#v-monitoring").append(kkPane);
+// Tapping a sender's avatar or name in a room opens his 사용자별 분석 panel.
+kkTl.addEventListener("click", ev => {
+  const t = ev.target.closest && ev.target.closest(".kk-name, .kk-av:not(.sp)");
+  const m = t && t.closest("[data-log][data-author]");
+  if (m && m.dataset.author) kkPerson(m.dataset.author);
+});
 // Preview cards load when they come near the visible timeline (one request per address, kkLpLoad).
 if (typeof IntersectionObserver === "function") {
   kkLpIO = new IntersectionObserver(list => { for (const e of list) if (e.isIntersecting) { kkLpIO.unobserve(e.target); kkLpLoad(e.target); } }, { root: kkTl, rootMargin: "300px 0px" });

@@ -981,6 +981,37 @@ describe("media", () => {
 	});
 });
 
+describe("person analysis", () => {
+	const recent = (w: Database) => {
+		addMessage(w, { logId: BASE_LOG + BigInt(100), chatId: ROOM.direct, authorId: 2001, message: "안녕하세요", type: 1, sentAt: Math.floor(NOW / 1000) - 600 });
+		addMessage(w, { logId: BASE_LOG + BigInt(101), chatId: ROOM.direct, authorId: OWNER, message: "네", type: 1, sentAt: Math.floor(NOW / 1000) - 300 });
+	};
+
+	test("GET /api/kakao/person/<id> counts the person; POST .../analyze asks the model once and keeps the summary with its time", async () => {
+		const t = setup({}, recent);
+		t.model.reply = async () => ({ text: "일정을 함께 맞추는 사이예요." });
+		const r = await t.call("GET", `/api/kakao/person/2001?room=${DIRECT}`);
+		expect(r.status).toBe(200);
+		expect(r.json.stats).toMatchObject({ userId: "2001", name: "Alex", room: DIRECT, roomMessages: 1, watchedMessages: 1, windowDays: 30 });
+		expect(r.json.analysis).toBeUndefined();
+
+		const a = await t.call("POST", "/api/kakao/person/2001/analyze", { room: DIRECT });
+		expect(a).toEqual({ status: 200, json: { analysis: { text: "일정을 함께 맞추는 사이예요.", at: NOW } } });
+		expect(t.model.calls).toHaveLength(1);
+		expect(t.model.calls[0]!.system).toContain("one person in a KakaoTalk room");
+		expect(t.model.calls[0]!.user).toContain("안녕하세요");
+		expect((await t.call("GET", `/api/kakao/person/2001?room=${DIRECT}`)).json.analysis).toEqual(a.json.analysis);
+		expect(statSync(join(dir, "kakao", "person-summaries.json")).mode & 0o777).toBe(0o600);
+
+		expect((await t.call("POST", "/api/kakao/person/2001/analyze", {})).status).toBe(400);
+		expect((await t.call("GET", "/api/kakao/person/abc?room=1")).status).toBe(400);
+		expect((await t.call("GET", "/api/kakao/person/2001?room=999")).status).toBe(404);
+		writeFileSync(paths.config, JSON.stringify({ ...t.config$(), enabled: false }));
+		expect((await t.call("GET", `/api/kakao/person/2001?room=${DIRECT}`)).status).toBe(409);
+		t.close();
+	});
+});
+
 describe("link previews", () => {
 	const html = (body: string) => new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 

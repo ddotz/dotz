@@ -12,6 +12,7 @@ import { writePrivate } from "./creds.ts";
 import { owedMessage } from "./address.ts";
 import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, readText, roomKinds, roomShown, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, draftParts, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
+import { buildPersonPrompt, personStats, type PersonStats } from "./person.ts";
 import { bodyText, fetchMedia, mediaOf, mediaTarget, replySource, serveLocalFile } from "./media.ts";
 import type { AxStep, Focus } from "./room.ts";
 import { createDraft, draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
@@ -75,6 +76,8 @@ const VOICE_ROOMS = 8;
 const READS_MAX = 500;
 // A cached room head is trusted this long even when the database files look unchanged.
 const HEAD_TTL_MS = 10_000;
+const PERSON_TTL_MS = 60_000;
+const PERSON_READ = 200;
 
 const fileSig = (files: string[]) =>
 	files
@@ -131,6 +134,8 @@ export function createKakaoWeb(deps: WebDeps) {
 	const sendsFile = join(paths.dataDir, "kakao", "sends.json");
 	const asksFile = join(paths.dataDir, "kakao", "asks.json");
 	const readsFile = join(paths.dataDir, "kakao", "reads.json");
+	const personFile = join(paths.dataDir, "kakao", "person-summaries.json");
+	let personCache: { key: string; at: number; stats: PersonStats } | undefined;
 	const pending = new Set<Promise<unknown>>();
 	const inflight = new Set<string>();
 	const linkPreview = createLinkPreview({ dir: paths.dataDir, now, ...(deps.fetch ? { fetch: deps.fetch } : {}), ...(deps.previewResolve ? { resolve: deps.previewResolve } : {}), ...(deps.previewAllowHosts ? { allowHosts: deps.previewAllowHosts } : {}) });
@@ -588,6 +593,50 @@ export function createKakaoWeb(deps: WebDeps) {
 				return json({ state: "drafting" }, 202);
 			}
 			return undefined;
+		}
+
+		// 사용자별 분석 of one person: the counted numbers of a room and the watched rooms (GET), and the model's short summary (POST .../analyze).
+		if (area === "person" && (parts.length === 4 || (parts.length === 5 && parts[4] === "analyze"))) {
+			if (!on) return json(OFF, 409);
+			const userId = decodeURIComponent(parts[3]!);
+			if (!digits(userId)) return json({ error: "userId must be a number" }, 400);
+			const analyze = parts[4] === "analyze";
+			if (analyze !== (method === "POST") || (!analyze && method !== "GET")) return json({ error: analyze ? "POST only" : "GET only" }, 405);
+			const b = analyze ? await body() : {};
+			const roomRaw = (analyze ? b.room ?? url.searchParams.get("room") : url.searchParams.get("room")) ?? undefined;
+			if (roomRaw !== undefined && !digits(roomRaw)) return json({ error: "room must be a chatId" }, 400);
+			const room = roomRaw === undefined ? undefined : String(roomRaw);
+			if (analyze && !room) return json({ error: "room is required" }, 400);
+			try {
+				const found = room ? await findRoom(config!, room) : undefined;
+				if (room && !found) return json({ error: "대화방을 찾지 못했어요" }, 404);
+				const db = await getDb(config!);
+				const key = `${userId}|${room ?? ""}|${(config!.watch_chats ?? []).join(",")}|${(config!.exclude_chats ?? []).join(",")}`;
+				let stats: PersonStats;
+				if (!analyze && personCache?.key === key && now() - personCache.at < PERSON_TTL_MS) stats = personCache.stats;
+				else {
+					stats = await personStats(db, { userId, ...(room ? { room } : {}), watched: config!.watch_chats ?? [], ownerId: String(config!.userId ?? ""), now: now(), ownerNames: room ? await ownerNames(db, room, config!.userId ?? "").catch(() => []) : [] });
+					personCache = { key, at: now(), stats };
+				}
+				const summaries = readJsonFile<Record<string, { text: string; at: number }>>(personFile, {});
+				const summaryKey = `${room}:${userId}`;
+				if (!analyze) return json({ stats, ...(summaries[summaryKey] ? { analysis: summaries[summaryKey] } : {}) });
+				if (!deps.draftModel) return json({ error: "요약 분석을 쓸 수 없어요" }, 503);
+				const recent = await messages(db, room!, PERSON_READ, config!.userId ?? "");
+				const lines = recent.map(m => { const c = [...readText(m).replace(/\s+/g, " ").trim()]; return `${m.fromMe ? "나" : m.sender || "상대"}: ${c.length > 240 ? `${c.slice(0, 239).join("")}…` : c.join("")}`; });
+				const { system, user } = buildPersonPrompt({ name: stats.name ?? "상대", roomName: found!.name, lines, stats });
+				const reply = await deps.draftModel(system, user, room);
+				const text = String(reply.text ?? "").replace(/```[\s\S]*?```/g, " ").trim().slice(0, 2000);
+				if (!text) return json({ error: "요약을 만들지 못했어요" }, 502);
+				const analysis = { text, at: now() };
+				const all = { ...summaries, [summaryKey]: analysis };
+				const keys = Object.keys(all);
+				if (keys.length > 200) for (const k of keys.slice(0, keys.length - 200)) delete all[k];
+				writePrivate(personFile, `${JSON.stringify(all, null, 1)}\n`);
+				return json({ analysis });
+			} catch {
+				return json({ error: "카톡 데이터를 읽지 못했어요" }, 502);
+			}
 		}
 
 		// Media of a message of a watched room: /media/<chatId>/<logId>?i=<index>&v=thumb|full proxies the stored kakaocdn.net URL, /media/<chatId>/<logId>/file serves the downloaded file.
