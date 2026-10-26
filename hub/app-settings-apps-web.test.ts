@@ -119,7 +119,7 @@ const openScreen = async (v: View, app: string) => {
 const closeScreen = async (v: View) => { await run(v, `const b = document.querySelector('[data-k="as-back"]'); if (b) b.click()`); await waitFor(v, `!document.querySelector("#app-sw")`); };
 
 // What the screen shows, as machine values: the connection state, the section keys in drawing order, one row per setting key and per non-setting feature.
-type Inv = { conn: string; secs: string[]; settings: string[]; features: string[]; keys: string[]; labels: string[]; text: string; stat: number };
+type Inv = { conn: string; secs: string[]; settings: string[]; features: string[]; keys: string[]; labels: string[]; text: string; stats: string[]; internals: string[] };
 const inventory = (v: View) => q<Inv>(v, `
 	const box = document.querySelector("#app-sw");
 	return {
@@ -130,7 +130,8 @@ const inventory = (v: View) => q<Inv>(v, `
 		keys: [...box.querySelectorAll("[data-k]")].map(e => e.dataset.k),
 		labels: [...box.querySelectorAll("[data-setting] .as-n")].map(e => e.textContent),
 		text: box.textContent,
-		stat: box.querySelectorAll(".as-stat").length
+		stats: [...box.querySelectorAll(".as-stat[data-watch]")].map(e => e.dataset.watch),
+		internals: [...box.querySelectorAll("[data-internal]")].map(e => e.dataset.internal)
 	};`);
 const SECTION_ORDER = ["notify", "draft", "watch", "more", "advanced"];
 const EXPECTED_SECS: Record<string, string[]> = {
@@ -168,6 +169,8 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(inv.settings).toEqual(["auto_draft", "skip_senders", "only_senders", "use_here", "label", "reply_model", "memory"]);
 		expect(inv.features).toEqual(["new_mail"]);
 		expect(inv.labels[0]).toBe("자동 초안");
+		expect(inv.stats).toEqual(["webmail-inbox"]);
+		expect(inv.internals).toEqual(["webmail-inbox"]);
 	});
 
 	test("kakao: the 감시 switch, the rooms and the owned sync are the 감시 section; drafts and their rooms are 자동 초안과 승인", async () => {
@@ -185,6 +188,8 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(inv.secs).toEqual(EXPECTED_SECS.instagram!);
 		expect(inv.features).toEqual(["reels_approval", "dm_read"]);
 		expect(inv.settings.filter(k => k === "auto_draft").length).toBe(1);
+		expect(inv.stats).toEqual(["sns-ig-comments", "ig-site-login"]);
+		expect(inv.internals).toEqual(["sns-ig-comments", "ig-site-login"]);
 	});
 
 	test("youtube: one 자동 초안 row and the metadata/upload approvals with it", async () => {
@@ -211,6 +216,8 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(inv.settings).toEqual(["to", "enabled", "every_minutes", "label"]);
 		expect(inv.labels).toEqual(["알림 방식", "감시 켜기", "감시 주기(분)", "이름"]);
 		expect(inv.features).toEqual([]);
+		expect(inv.stats).toEqual(["disk-check"]);
+		expect(inv.internals).toEqual([]);
 	});
 
 	test("no control key is drawn twice for any app, no setting-bound feature is drawn again, and the sections keep one order", async () => {
@@ -220,7 +227,10 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 			expect(new Set(inv.settings).size).toBe(inv.settings.length);
 			expect(inv.secs).toEqual(EXPECTED_SECS[app]!);
 			expect(inv.secs.every((s, i) => i === 0 || SECTION_ORDER.indexOf(s) > SECTION_ORDER.indexOf(inv.secs[i - 1]!))).toBe(true);
-			expect(inv.stat).toBe(0);
+			// One row per watch: the same element is both the status row and the app's internal row, never two rows for one watch.
+			expect(new Set(inv.stats).size).toBe(inv.stats.length);
+			expect(inv.internals.every(id => inv.stats.includes(id))).toBe(true);
+			expect(inv.stats.length).toBeGreaterThanOrEqual(inv.internals.length);
 			expect(inv.text).not.toMatch(RAW);
 			if (!app.startsWith("w:")) {
 				const bound = featuresOf(data, app, WATCHES, []).features.filter(f => f.setting).map(f => f.id);

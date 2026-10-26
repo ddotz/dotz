@@ -155,7 +155,7 @@ describe("monitor settings at desktop width", () => {
 		await openScreen(v);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]')`);
 		const names = await q<string[]>(v, `return [...document.querySelectorAll("#app-sw .as-row:not(.as-stat) .as-n")].map(n => n.textContent)`);
-		expect(names).toEqual(["켜기", "확인 간격(분)", "알림 방식", "이름"]);
+		expect(names).toEqual(["알림 방식", "감시 켜기", "감시 주기(분)", "이름"]);
 	});
 
 	test("the switch and the boxes PATCH the one watch settings route with no message to the bot", async () => {
@@ -186,7 +186,7 @@ describe("monitor settings at desktop width", () => {
 		await waitFor(v, `document.querySelector('#tl .as-card [data-as="apply"]')`);
 		const card = await q<{ rows: string[]; buttons: string[] }>(v, `const c = document.querySelector("#tl .as-card"); return { rows: [...c.querySelectorAll(".as-cr")].map(r => r.textContent), buttons: [...c.querySelectorAll("button")].map(b => b.textContent) }`);
 		expect(card.buttons).toEqual(["적용", "취소"]);
-		expect(card.rows.some(r => r.includes("확인 간격") && r.includes("30 → 15"))).toBe(true);
+		expect(card.rows.some(r => r.includes("감시 주기") && r.includes("30 → 15"))).toBe(true);
 		const before = patches.length;
 		expect(stored().every_minutes).toBe(30);
 		await shot(v, "monitor-settings-desktop.png");

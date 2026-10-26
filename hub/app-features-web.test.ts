@@ -146,7 +146,8 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(await q(v, `return document.body.textContent.includes("DM 답장") || document.body.textContent.includes("게시물 정보 수정")`)).toBe(false);
 		// The internal watches (감시) and the settings rows are each drawn once, under their own heading.
 		expect(await q(v, `const sec = [...document.querySelectorAll("#app-sw [data-sec]")].pop(); return sec.dataset.sec === "advanced" && sec.nextElementSibling.querySelector('[data-k="use_here"]') !== null`)).toBe(true);
-		expect(await q(v, `return document.querySelectorAll("#app-sw .as-stat").length`)).toBe(0);
+		// One row per watch: the status row and the internal row are the same element.
+		expect(await q(v, `return [...document.querySelectorAll("#app-sw .as-stat")].map(e => [e.dataset.watch, e.dataset.internal ?? null])`)).toEqual([["sns-ig-comments", "sns-ig-comments"], ["ig-site-login", "ig-site-login"]]);
 		await shot(v, `${tag}-settings-top.png`);
 	});
 
@@ -156,6 +157,8 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(rows[1]!.text).toContain("로그인 유지");
 		expect(rows[1]!.text).toContain("마지막 확인");
 		expect(rows[1]!.text).toContain("이유:");
+		// The monitor's facts ride on the same row (마지막 확인 / 다음 확인), so the panel needs no second status row.
+		expect(rows[0]!.text).toContain("마지막 확인");
 		const before = retries.length, ran = new Promise<void>(r => (onRetry = r));
 		await run(v, `document.querySelector('#app-sw [data-k="retry:ig-site-login"]').click()`);
 		await ran;
@@ -165,7 +168,7 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 	});
 
 	test("감시 주기 on an owned watch edits its settings route (the same write path as the monitor's own screen)", async () => {
-		await waitFor(v, `document.querySelector('#app-sw [data-k="every:sns-ig-comments"]')`);
+		await waitFor(v, `document.querySelector('#app-sw [data-k="every:sns-ig-comments"]') && !AS.busy.instagram`);
 		const before = watchPatches.length;
 		await run(v, `const i = document.querySelector('#app-sw [data-k="every:sns-ig-comments"]'); i.value = "30"; i.dispatchEvent(new Event("change"))`);
 		await waitFor(v, `!AS.busy.instagram`);
