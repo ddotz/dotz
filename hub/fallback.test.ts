@@ -7,7 +7,7 @@ import { expect, test } from "bun:test";
 import { cfg, chainAfter, DATA_DIR, entryOf } from "./config.ts";
 import { atTime, Chain, failsOver, failureReason, hubChain, keyedWorker, keyHostOk, keyProviderOk, resetFallbackState, spendOnKey, workerKeyEnv } from "./fallback.ts";
 import { writeWorkerProfile } from "./runtime/omo.ts";
-import { classifyProviderError } from "./providers.ts";
+import { classifyProviderError, poolRetryAt } from "./providers.ts";
 
 mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
 
@@ -60,6 +60,8 @@ test("real provider errors get the kind that decides failover", () => {
 		["Codex error: The usage limit has been reached", "rate"],
 		["You've hit your session limit · resets 12:30am (Asia/Seoul)", "rate"],
 		["The provider rejected this turn because its input exceeds the provider size or context limit.", undefined],
+		// a pinned OmO account on its limit (MacBook 2026-10-26): a usage limit with its end time, not a model error
+		["Claude account 'default' for anthropic-subscription is blocked (rate limit) until 2026-10-26T11:20:00.000Z, and account fallback is off, so no other account is tried.", "rate"],
 	];
 	for (const [text, kind] of cases) expect([text, classifyProviderError(text)]).toEqual([text, kind]);
 });
@@ -222,3 +224,9 @@ test("a worker's spend on the key counts against the entry's cap, shared with th
 		rmSync(join(DATA_DIR, "secrets", "anthropic-api-key"), { force: true });
 	}
 });
+
+test("a pinned account's limit names when it ends, and the pause waits for exactly that", () => {
+	expect(poolRetryAt("Claude account 'default' for anthropic-subscription is blocked (rate limit) until 2026-10-26T11:20:00.000Z, and account fallback is off, so no other account is tried.")).toBe(Date.parse("2026-10-26T11:20:00.000Z"));
+	expect(poolRetryAt("All Claude accounts for anthropic-subscription are currently blocked (rate limit). Soonest automatic retry: 2026-10-26T11:20:00.000Z.")).toBe(Date.parse("2026-10-26T11:20:00.000Z"));
+});
+
