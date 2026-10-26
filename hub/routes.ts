@@ -1,6 +1,7 @@
 // HTTP routing of the hub: the install files, the identity check and the first part of the route chain; the rest is routes-settings.ts and routes-lanes.ts.
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
 import { join } from "node:path";
+import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
 import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
 import { changeTarget, ControlError, targetView, ForceRequired, looksLikeCommand, parseCommand } from "./control.ts";
@@ -8,7 +9,7 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
-import { appEntries, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection } from "./integrations.ts";
+import { appEntries, INTEGRATIONS, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection } from "./integrations.ts";
 import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, removeWatch, runWatch } from "./watch.ts";
@@ -53,6 +54,8 @@ import { ptyRoute } from "./pty.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
 import { commentFlags, commentNeeds, commentsRoute } from "./comments/gateway.ts";
+import { appHealth, loadUserApps, PROXY_ROOT, removeUserApp, setUserAppOff, userApp } from "./user-apps.ts";
+import { proxyMatch, proxyRequest } from "./app-proxy.ts";
 import { igDmRoute } from "./ig-dm-gateway.ts";
 import { kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
 
@@ -89,8 +92,8 @@ type RestartHooks = { busyNow: () => string[]; restartGateway: () => string; res
 const isMailTarget = (t: string) => /^mail:[a-z0-9._-]+$/.test(t);
 // Where a forwarded action came from (a machine name), as one short line; the event it makes carries it as `via`.
 const viaOf = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 40) || undefined : undefined);
-export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps }: RestartHooks): (req: Request) => Promise<Response> {
-	const route = async (req: Request): Promise<Response> => {
+export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
+	const route = async (req: Request, srv?: Server<unknown>): Promise<Response> => {
 		const url = new URL(req.url);
 		// The install files (manifest, service worker, icons) are public and secret-free, like any app store listing: a browser
 		// or OS fetch that carries no tailnet identity (icon or manifest fetch, SW update check) must still get them, or the
@@ -107,6 +110,14 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (peer === "none" && !authorized(req)) return new Response("forbidden", { status: 403 });
 		const peerResponse = await peers.route(req, url);
 		if (peerResponse) return peerResponse;
+		// A user app's own web UI (hub/user-apps.ts, hub/app-proxy.ts): /apps/<id>/… -> its loopback server, same gate as the API.
+		const proxied = proxyMatch(url.pathname);
+		if (proxied) {
+			const app = userApp(DATA_DIR, proxied.id, INTEGRATIONS.map(i => i.key));
+			if (!app) return new Response("not found", { status: 404 });
+			if (app.off) return new Response("이 앱은 꺼 두었어요", { status: 409 });
+			return (await proxyRequest(req, url, app, proxied, srv)) as Response;
+		}
 		const parts = url.pathname.split("/").filter(Boolean);
 		const authResponse = authRoute(req, url);
 		if (authResponse) return authResponse;
@@ -193,6 +204,26 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
+		// The 앱 list (hub/user-apps.ts): the 모니터링 apps this install has on, then the owner's own manifests (with their health).
+		if (req.method === "GET" && url.pathname === "/api/apps") {
+			const view = integrationView();
+			const { apps, errors } = loadUserApps(DATA_DIR, INTEGRATIONS.map(i => i.key));
+			const items = [
+				...view.items.map(i => ({ id: i.key, label: i.label, kind: "monitor", source: "registry", icon: i.icon, ...(i.iconPath ? { iconPath: i.iconPath } : {}), status: i.state === "disconnected" ? "unreachable" : "running", ...(i.state === "disconnected" && i.hint ? { hint: i.hint } : {}) })),
+				...await Promise.all(apps.map(async a => {
+					const h = a.off ? { status: "unknown" as const } : await appHealth(a);
+					return { id: a.id, label: a.label, kind: a.kind, source: "manifest", icon: a.icon ?? "file", ...(a.iconPath ? { iconPath: a.iconPath } : {}), off: a.off, status: a.off ? "off" : h.status, ...(!a.off && h.reason ? { reason: h.reason } : {}), ...(!a.off && h.checkedAt ? { checkedAt: h.checkedAt } : {}), health: a.health, watches: a.watches, settings: a.settings, ...(a.web ? { web: { url: a.web.url, path: a.web.path, mode: a.web.mode, href: `${PROXY_ROOT}/${a.id}/` } } : {}), ...(a.start ? { start: a.start } : {}) };
+				})),
+			];
+			return json({ items, errors });
+		}
+		// A manifest app's switch and removal (끄기/켜기, 제거); an id that is not a manifest falls through to the app instances below.
+		const userAppRoute = /^\/api\/apps\/([a-z0-9-]+)$/.exec(url.pathname);
+		if (userAppRoute && req.method === "PATCH") {
+			if (!userApp(DATA_DIR, userAppRoute[1]!, INTEGRATIONS.map(i => i.key))) return json({ error: "알 수 없는 앱이에요" }, 404);
+			setUserAppOff(DATA_DIR, userAppRoute[1]!, (await body(req)).off !== false);
+			return json({ ok: true });
+		}
 		// The 새로 추가하기 prompts (hub/app-templates.ts): shipped ones, replaced or extended by custom/app-templates.json.
 		if (req.method === "GET" && url.pathname === "/api/app-templates") return json({ items: readAppTemplates(DATA_DIR) });
 		// 제거 / 앱 추가 on this install only (hub/app-off.ts): GET remove = what will be removed, POST remove = do it ({deleteData}), POST add = switch it back on.
@@ -217,7 +248,11 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const appDel = /^\/api\/apps\/([a-z0-9-]+)$/.exec(url.pathname);
 		if (url.pathname === "/api/apps" && req.method === "POST" || appDel && req.method === "DELETE") {
 			try {
-				if (appDel) return json({ ok: true, removed: deleteApp(DATA_DIR, appDel[1]!, { deleteStored: url.searchParams.get("data") === "1" }, { watchNames: () => allWatches().map(w => w.name), removeWatch }) });
+				if (appDel) {
+				const own = removeUserApp(DATA_DIR, appDel[1]!);
+				if (own) return json({ ok: true, removed: own.kept });
+				return json({ ok: true, removed: deleteApp(DATA_DIR, appDel[1]!, { deleteStored: url.searchParams.get("data") === "1" }, { watchNames: () => allWatches().map(w => w.name), removeWatch }) });
+			}
 				return json({ ok: true, ...createApp(DATA_DIR, await body(req)) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);
