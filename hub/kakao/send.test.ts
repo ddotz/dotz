@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseDecisions } from "../choices.ts";
@@ -328,4 +328,156 @@ test("the phase times of a send are on its result", async () => {
 	expect(Object.keys(r.ms ?? {}).sort()).toEqual(["front", "pick", "send", "total"]);
 	expect(r.ms!.total).toBeGreaterThanOrEqual(r.ms!.send);
 	expect(r.ax!.map(a => a.step)).toEqual(["rows", "open", "verify", "input"]);
+});
+
+const leftFile = () => join(dir, "kakao", "input.json");
+const readsLeft = () => JSON.parse(readFileSync(leftFile(), "utf8"));
+
+// The owner's report: a failed attempt (not_set) left dotz's text in the input, so the next attempt failed as busy.
+test("our own text left in the input is recognized, cleared and sent on the next attempt (not the owner's busy)", async () => {
+	const screen = fakeScreen([row("가나")], { axSend: n => (n === 1 ? { ok: false, why: "not_set", left: "안녕" } : { ok: true }) });
+	const r = await sendText(one, { paths, runner: screen.runner, roomNames: names });
+	expect(r).toMatchObject({ ok: true });
+	expect(screen.sends).toHaveLength(2);
+	expect(r.attempts!.map(a => [a.n, a.recovery, a.state])).toEqual([[1, "none", "failed"], [2, "retry", "sent"]]);
+	expect(readsLeft()["100"]).toBeUndefined();
+});
+
+test("a text of dotz left by an earlier send is passed as ours, so the next send into that room clears it instead of refusing", async () => {
+	const failing = fakeScreen([row("가나")], { axSend: () => ({ ok: false, why: "not_set", left: "지난 글" }) });
+	expect((await sendText(one, { paths, runner: failing.runner, roomNames: names })).ok).toBe(false);
+	expect(readsLeft()["100"]).toMatchObject({ text: "지난 글" });
+	const next = fakeScreen([row("가나")]);
+	expect(await sendText({ ...one, text: "새 글" }, { paths, runner: next.runner, roomNames: names })).toMatchObject({ ok: true });
+	expect(next.sendReqs[0]!.ours).toContain("지난 글");
+	// The owner's own different text is never treated as dotz's.
+	const busy = fakeScreen([row("가나")], { axSend: () => ({ ok: false, why: "owner_text", preview: "내가 쓰던 글" }) });
+	const refused = await sendText({ ...one, text: "새 글" }, { paths, runner: busy.runner, roomNames: names });
+	expect(refused.ok).toBe(false);
+	expect(refused.reason).toContain("내가 쓰던 글");
+	expect(refused.reason).not.toContain("owner_text");
+	expect(busy.sendReqs[0]!.priorPressed).toBeUndefined();
+	expect(busy.sends).toHaveLength(1);
+});
+
+test("a pressed attempt whose send is not in the database is unconfirmed and never pressed again by the next send", async () => {
+	const first = fakeScreen([row("가나")], { axSend: () => ({ ok: false, why: "unclear", pressed: true }) });
+	const r = await sendText(one, { paths, runner: first.runner, roomNames: names, confirm: async () => false, sleep: async () => {} });
+	expect(r).toMatchObject({ ok: false, unconfirmed: true });
+	expect(first.sends).toHaveLength(1);
+	expect(readsLeft()["100"]).toMatchObject({ text: "안녕", pressed: true });
+	const next = fakeScreen([row("가나")]);
+	expect(await sendText({ ...one, text: "다른 글" }, { paths, runner: next.runner, roomNames: names })).toMatchObject({ ok: true });
+	expect(next.sendReqs[0]!.priorPressed).toContain("안녕");
+});
+
+test("the press is confirmed by the database: found is sent, not found is unconfirmed and nothing is sent twice", async () => {
+	const found = fakeScreen([row("가나")]);
+	const ok = await sendText(one, { paths, runner: found.runner, roomNames: names, confirm: async () => true });
+	expect(ok).toMatchObject({ ok: true });
+	expect(found.sends).toHaveLength(1);
+	const missing = fakeScreen([row("가나")]);
+	const lost = await sendText(one, { paths, runner: missing.runner, roomNames: names, confirm: async () => false });
+	expect(lost).toMatchObject({ ok: false, unconfirmed: true });
+	expect(lost.reason).toContain("다시 보내지 않았으니");
+	expect(missing.sends).toHaveLength(1);
+});
+
+test("a send that fails everywhere writes every attempt into the send record, and the room's failure reason has no raw code", async () => {
+	const file = join(dir, "kakao", "sends.json");
+	const screen = fakeScreen([row("가나")], { openFail: { step: "menu", why: "no_menu" } });
+	const r = await sendText(one, { paths, runner: screen.runner, roomNames: names });
+	expect(r.ok).toBe(false);
+	expect(r.reason).not.toContain("no_menu");
+	expect(r.attempts).toHaveLength(5);
+	expect(r.attempts!.map(a => a.recovery)).toEqual(["none", "retry", "reopen", "deep", "front"]);
+	const stored = JSON.parse(readFileSync(file, "utf8"));
+	expect(stored).toHaveLength(1);
+	expect(stored[0]).toMatchObject({ chatId: "100", state: "failed" });
+	expect(stored[0].attempts.map((a: { n: number }) => a.n)).toEqual([1, 2, 3, 4, 5]);
+	expect(stored[0].attempts[0].ax.at(-1)).toMatchObject({ step: "menu", ok: false });
+});
+
+test("attempts are kept on the send record the gateway already made (one bubble, not one per attempt)", async () => {
+	const file = join(dir, "kakao", "sends.json");
+	writeFileSync(file, JSON.stringify([{ id: "Ssent", chatId: "100", text: "안녕", state: "sending", at: Date.now(), collector: "mac-a" }]));
+	const screen = fakeScreen([row("가나")], { axSend: n => (n === 1 ? { ok: false, why: "not_set" } : { ok: true }) });
+	expect(await sendText(one, { paths, runner: screen.runner, roomNames: names })).toMatchObject({ ok: true });
+	const stored = JSON.parse(readFileSync(file, "utf8"));
+	expect(stored).toHaveLength(1);
+	expect(stored[0]).toMatchObject({ id: "Ssent", state: "sending" });
+	expect(stored[0].attempts).toHaveLength(2);
+});
+
+// Exactly once beats delivery: an attempt that may have pressed is asked about in the database and never typed or pressed again.
+test("a send answer that is lost or unreadable (osascript killed, no JSON) counts as maybe pressed: the database is asked, nothing is retried", async () => {
+	for (const lost of ["garbage", "throw"] as const) {
+		for (const found of [true, false]) {
+			const screen = fakeScreen([row("가나")]);
+			let sends = 0;
+			const runner: Runner = async (argv, o) => {
+				if (argv[1] === "-l" && JSON.parse(o!.stdin!.trim()).action === "send") {
+					sends++;
+					if (lost === "throw") throw new Error("timed out");
+					return { code: 1, stdout: "execution error: AppleEvent timed out\n", stderr: "" };
+				}
+				return screen.runner(argv, o);
+			};
+			const asked: { text: string }[] = [];
+			const r = await sendText(one, { paths, runner, roomNames: names, confirm: async q => (asked.push(q), found) });
+			expect(sends).toBe(1);
+			expect(asked.map(q => q.text)).toEqual(["안녕"]);
+			expect(r.attempts).toHaveLength(1);
+			expect(r).toMatchObject(found ? { ok: true } : { ok: false, unconfirmed: true });
+			if (!found) expect(readsLeft()["100"]).toMatchObject({ text: "안녕", pressed: true });
+		}
+	}
+});
+
+test("a press that threw is confirmed from the database and never retried by the ladder", async () => {
+	const screen = fakeScreen([row("가나")], { axSend: () => ({ ok: false, why: "press_error", pressed: true }) });
+	const r = await sendText(one, { paths, runner: screen.runner, roomNames: names, confirm: async () => false });
+	expect(r).toMatchObject({ ok: false, unconfirmed: true });
+	expect(screen.sends).toHaveLength(1);
+});
+
+// The JXA answer for an input that still holds another text pressed earlier (room.jxa.js inputVerdict prior_left).
+const priorLeftScreen = () =>
+	fakeScreen([row("가나")], { axSend: (_n, req) => ((req.priorPressed ?? []).includes("이전 글") ? { ok: false, why: "prior_left", left: "이전 글", preview: "이전 글" } : { ok: true }) });
+
+test("a leftover pressed text that the database does not show: the new draft is not typed, not counted as sent, stays pending", async () => {
+	writeFileSync(leftFile(), JSON.stringify({ "100": { text: "이전 글", at: T0, pressed: true } }));
+	const d = await make({ roomName: "가나", text: "새 글" });
+	const screen = priorLeftScreen();
+	const asked: { text: string; since: number; once?: boolean }[] = [];
+	const r = await sendDraft(d.code, { ...sender({ calls: screen.sends, focus: screen.focus, runner: screen.runner }), roomNames: names, ownerApproved: true, confirm: async q => (asked.push(q), false) });
+	expect(r.ok).toBe(false);
+	expect(r.unconfirmed).toBeUndefined();
+	expect(r.reason).toContain("이전 글");
+	expect(r.attempts).toHaveLength(1);
+	expect(screen.sends).toHaveLength(1);
+	expect(asked).toEqual([{ chatId: "100", text: "이전 글", since: T0, once: true }]);
+	expect((await listDrafts({ paths, runner: screen.runner }))[0]).toMatchObject({ status: "pending" });
+	expect(readsLeft()["100"]).toMatchObject({ text: "이전 글", pressed: true });
+});
+
+test("a leftover pressed text that the database shows as sent is cleared as ours and the new text is typed and sent", async () => {
+	writeFileSync(leftFile(), JSON.stringify({ "100": { text: "이전 글", at: T0, pressed: true } }));
+	const screen = priorLeftScreen();
+	const r = await sendText({ ...one, text: "새 글" }, { paths, runner: screen.runner, roomNames: names, confirm: async q => q.text === "이전 글" || q.text === "새 글" });
+	expect(r).toMatchObject({ ok: true });
+	expect(screen.sends).toEqual([["ax-send", "가나", "새 글"], ["ax-send", "가나", "새 글"]]);
+	expect(screen.sendReqs[1]!.ours).toContain("이전 글");
+	expect(screen.sendReqs[1]!.priorPressed).toBeUndefined();
+	expect(readsLeft()["100"]).toBeUndefined();
+});
+
+test("the same text pressed earlier is confirmed from its first press time and its record is kept", async () => {
+	writeFileSync(leftFile(), JSON.stringify({ "100": { text: "안녕", at: T0 - 90_000, pressed: true } }));
+	const screen = fakeScreen([row("가나")], { axSend: () => ({ ok: false, why: "prior_pressed", pressed: true, left: "안녕" }) });
+	const since: number[] = [];
+	const r = await sendText(one, { paths, runner: screen.runner, roomNames: names, now: () => T0, confirm: async q => (since.push(q.since), false) });
+	expect(r).toMatchObject({ ok: false, unconfirmed: true });
+	expect(since).toEqual([T0 - 90_000]);
+	expect(readsLeft()["100"]).toMatchObject({ text: "안녕", at: T0 - 90_000, pressed: true });
 });

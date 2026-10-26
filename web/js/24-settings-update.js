@@ -2,6 +2,8 @@
 // Version on disk vs the version this gateway runs, the last check, the running/finished update job, and the restart that
 // applies it. After a restart request the page polls until the gateway answers with a new boot id.
 const UPD = { info: null, wait: null, timer: 0 };
+// 실행 하네스 (hub/harness-update.ts, /api/harness/update): the harness binary itself, checked beside dotz's own version.
+const HV = { info: null, timer: 0 };
 const updWhen = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }); };
 const updVer = v => !v ? "알 수 없음" : v.kind === "git" ? `${v.commit.short} · ${updWhen(v.commit.date)}${v.branch !== "main" ? ` · ${v.branch}` : ""}` : v.kind === "tarball" ? `설치본 ${v.commit.short} · ${updWhen(v.installed)}${v.ref && v.ref !== "main" ? ` · ${v.ref}` : ""}` : v.kind === "install" ? `설치본 · ${updWhen(v.installed)}` : "알 수 없음";
 // `cmd` spans in server hints become <code>.
@@ -21,13 +23,40 @@ function updAvailable() {
   const { pending, c } = updState(i);
   return !!(c && c.ok && c.incomingTotal > 0 && !pending);
 }
-function paintUpdBadge() { const b = $("#nav-upd"); if (b) b.hidden = !updAvailable(); }
+const hvList = () => (HV.info && Array.isArray(HV.info.harnesses) ? HV.info.harnesses : []);
+const hvNew = () => hvList().filter(h => h.available).length;
+const hvJob = () => hvList().map(h => h.job).find(j => j && (j.status === "running" || j.status === "deferred")) || null;
+// One badge for both: dotz's own version and every running harness, counted together.
+function paintUpdBadge() {
+  const b = $("#nav-upd");
+  if (!b) return;
+  const n = (updAvailable() ? 1 : 0) + hvNew();
+  b.hidden = !n;
+  b.textContent = n > 1 ? `업데이트 ${n}` : "새 버전";
+}
 async function loadUpdate() {
   clearTimeout(UPD.timer);
-  try { UPD.info = await api("/api/update"); } catch (e) { UPD.info = { error: e.message }; }
+  clearTimeout(HV.timer);
+  const [dotz, hv] = await Promise.all([api("/api/update").catch(e => ({ error: e.message })), api("/api/harness/update").catch(() => null)]);
+  UPD.info = dotz;
+  HV.info = hv;
   paintUpdBadge();
   if (UPD.info.job && UPD.info.job.status === "running") UPD.timer = setTimeout(loadUpdate, 1500);
+  else if (HV.info && (HV.info.checking || hvJob())) HV.timer = setTimeout(loadUpdate, 2000);
   if (current === "settings") renderSettings();
+}
+async function hvCheck(btn) {
+  await busy(btn, async () => {
+    HV.info = await api("/api/harness/update/check", "POST");
+    const n = hvNew();
+    toast(n ? `실행 하네스 새 버전 ${n}개가 있어요` : "실행 하네스는 최신이에요");
+  });
+  paintUpdBadge();
+  renderSettings();
+}
+async function hvApply(btn, id) {
+  await busy(btn, async () => { await api("/api/harness/update/apply", "POST", { id }); });
+  loadUpdate();
 }
 async function updCheck(btn) {
   await busy(btn, async () => {
@@ -87,11 +116,66 @@ async function updWaitTick() {
   if (info) { UPD.info = info; paintUpdBadge(); if (current === "settings") renderSettings(); }
   setTimeout(updWaitTick, 2000);
 }
+const hvCanUpd = h => h.available && (h.installMethod === "bun-global" || h.installMethod === "omp-update");
+// The runtime picker's data (web/js/26-settings-runtime.js): the same two rows, folded into this one section so the screen
+// carries a single 실행 하네스 heading.
+const hvRt = () => (typeof RT !== "undefined" && RT && Array.isArray(RT.runtimes) ? RT.runtimes : []);
+const hvRoles = rt => (rt && rt.roles && rt.roles.length ? rt.roles.map(k => (typeof RT_ROLE !== "undefined" ? RT_ROLE[k] : "") || k).join("·") + " 사용 중" : "");
+const hvSub = h => {
+  if (!h.current) return h.error || "확인 중…";
+  const rt = hvRt().find(r => r.id === h.id);
+  const role = hvRoles(rt);
+  const ver = `지금 ${h.current}${h.latest && h.latest !== h.current ? ` → ${h.latest}` : ""}`;
+  const withRole = s => (role ? `${s} · ${role}` : s);
+  if (h.installMethod === "managed") return withRole(`${ver} · ${h.managedBy || "다른 프로그램"}이 관리해요`);
+  if (h.installMethod === "app") return withRole(`${ver} · 앱으로 설치됨`);
+  if (h.error) return withRole(`${ver} · ${h.error}`);
+  if (!h.latest && !h.checkedAt) return withRole(ver);
+  return withRole(h.available ? ver : `${ver} · 최신`);
+};
+function hvSwitcher(h) {
+  const rt = hvRt().find(r => r.id === h.id);
+  const others = hvRt().filter(r => r.installed && r.id !== h.id).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", hvRoles(r)].filter(Boolean).join(" · ") || undefined }));
+  if (!rt || !others.length) return null;
+  return el("button", { class: "btn tonal", type: "button", "aria-label": `${h.name} 바꾸기`, "aria-haspopup": "listbox", "aria-expanded": "false", title: "실행 하네스 바꾸기", onclick: ev => showMenu(ev.currentTarget, others, { onPick: id => rtFlow(hvRt().find(x => x.id === id)) }) }, icon("drop"));
+}
+const hvNote = text => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text })));
+function hvJobLine(j) {
+  if (j.status === "running" || j.status === "deferred") return el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: j.status === "deferred" ? "작업이 끝나면 업데이트해요" : `업데이트 중 · ${j.phase}` }), el("div", { class: "sup", text: j.message })), el("span", { class: "dot pri", "aria-hidden": "true" }));
+  return el("div", { class: `upd-box ${j.status === "updated" ? "ok" : j.status === "failed" ? "err" : ""}` }, el("div", { class: "upd-msg", text: j.message }),
+    j.steps.length ? el("ul", { class: "upd-log" }, ...j.steps.slice(-4).map(s => el("li", { class: "dim" }, el("span", { text: s.text })))) : null);
+}
+// 실행 하네스: the harness the agents run on, its version and update, and the picker that switches harnesses - one section.
+// A busy gateway defers the install to idle.
+function hvSection() {
+  const hs = hvList();
+  const running = hvRt().filter(r => (r.roles || []).length > 0);
+  const ids = [...new Set([...hs.map(h => h.id), ...running.map(r => r.id)])];
+  if (!ids.length) return [];
+  const pending = hvJob();
+  const list = ids.map(id => {
+    const rt = hvRt().find(r => r.id === id);
+    const h = hs.find(x => x.id === id) || { id, name: (rt && rt.label) || id, current: (rt && rt.version) || null, latest: null, available: false, installMethod: "unknown", checkedAt: null };
+    const job = h.job;
+    const mine = job && (job.status === "running" || job.status === "deferred");
+    const state = mine
+      ? el("span", { class: "tag pri", "aria-live": "polite" }, el("span", { class: "dot pri", "aria-hidden": "true" }), job.status === "deferred" ? "대기 중" : "진행 중")
+      : h.available && h.installMethod !== "managed" && h.installMethod !== "app" ? el("button", { class: "btn", type: "button", disabled: !hvCanUpd(h) || !!pending, onclick: ev => hvApply(ev.currentTarget, h.id) }, "업데이트") : null;
+    return el("div", { class: "li" }, el("span", { class: "lead" }, icon("harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: h.name }), el("div", { class: "sup", text: hvSub(h) })),
+      h.available && !mine ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null, state, hvSwitcher(h));
+  });
+  if (pending) list.push(hvJobLine(pending));
+  else for (const h of hs) if (h.job && h.job.status !== "current") list.push(hvJobLine(h.job));
+  list.push(hvNote("6시간마다 새 버전을 확인해요. 업데이트는 하던 일이 끝난 뒤에 설치하고, 새 버전으로 다시 시작해요. 설치가 실패하면 지금 버전을 그대로 써요."));
+  if (running.length) list.push(hvNote("바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요."));
+  return [el("div", { class: "sec" }, "실행 하네스", hvNew() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null,
+    el("button", { class: "btn tonal", type: "button", disabled: !!(HV.info && HV.info.checking), onclick: ev => hvCheck(ev.currentTarget) }, "확인")), el("div", { class: "list" }, ...list)];
+}
 function updateSection() {
   const i = UPD.info;
   const li = (title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), ...trail);
   const head = el("div", { class: "sec" }, "업데이트", updAvailable() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null);
-  if (!i || i.error) return [head, el("div", { class: "list" }, li("dotz 버전", i ? i.error : "불러오는 중…"))];
+  if (!i || i.error) return [head, el("div", { class: "list" }, li("dotz 버전", i ? i.error : "불러오는 중…")), ...hvSection()];
   const { running: run, disk, job, settings: s } = i;
   const jobRunning = job && job.status === "running";
   const { pending, c } = updState(i);
@@ -113,12 +197,12 @@ function updateSection() {
   else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.keep && !(c && c.keep) ? job.keep.line : job.message }), job.keep && !(c && c.keep) ? updKeepBox(job.keep, pending ? { disabled: true } : off) : null));
   if (UPD.wait) rows.push(li("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`, el("span", { class: "dot pri", "aria-hidden": "true" })));
   else if (pending) rows.push(li(`새 버전 ${disk.commit.short} 받음`, "재시작하면 적용돼요", el("button", { class: "btn", type: "button", onclick: () => updRestart() }, "재시작")));
-  rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "매일 자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알리고, 아래 자동 적용으로 바로 적용해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
+  const prefs = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "매일 자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알리고, 아래 자동 적용으로 바로 적용해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
     s.auto_check ? el("input", { class: "upd-at", type: "time", value: s.at, "aria-label": "확인 시각", onchange: ev => updSet({ at: ev.currentTarget.value }) }) : null,
-    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "매일 자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) })));
-  rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요. 테스트가 실패하면 지금 버전을 그대로 두고 알려요. 이 컴퓨터에서 고친 코드는 새 버전 위에 다시 얹고, 안 되면 따로 보관해요." })),
-    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) })));
-  return [head, el("div", { class: "list" }, ...rows)];
+    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "매일 자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) })),
+    el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요. 테스트가 실패하면 지금 버전을 그대로 두고 알려요. 이 컴퓨터에서 고친 코드는 새 버전 위에 다시 얹고, 안 되면 따로 보관해요." })),
+    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) }))];
+  return [head, el("div", { class: "list" }, ...rows), ...hvSection(), el("div", { class: "list" }, ...prefs)];
 }
 
 function renderSettings() {
@@ -139,5 +223,5 @@ function renderSettings() {
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     row("chat", "대화 탭", chatTabMode() === "main" ? "메인 대화" : "마지막으로 보던 대화", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, null),
     d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : d.error ? "err" : "warn"}`, text: d.connected ? "연결됨" : d.error ? "연결 안 됨" : "연결 중", title: d.error || "" })) : null),
-    ...pushSection(), ...updateSection(), ...accountSection(), ...rtSection());
+    ...pushSection(), ...updateSection(), ...accountSection());
 }

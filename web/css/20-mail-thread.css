@@ -1,0 +1,47 @@
+/* ---------- a mail's people and its thread (web/js/30-mail-thread.js): 보낸 사람 / 받는 사람 / 참조, and the same-sender panel ---------- */
+.mhd { display: flex; flex-direction: column; gap: 2px; margin-top: 12px; padding: 10px 12px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; }
+.mhd-r { display: flex; gap: 8px; min-width: 0; }
+.mhd-k { flex: none; width: 56px; color: var(--fg-3); }
+.mhd-v { min-width: 0; overflow-wrap: anywhere; }
+.mhd-none { color: var(--fg-3); }
+.mhd-n { color: var(--fg); font-weight: 600; }
+.mhd-a { color: var(--fg-3); }
+.mhd-more { min-height: 24px; padding: 0 6px; border: 0; border-radius: 6px; background: var(--card); color: var(--accent); font: 500 12px/20px var(--font); cursor: pointer; }
+.mhd-more:hover { background: var(--hover); }
+.mhd-wrap .mhd { margin-top: 0; }
+.mr-to { overflow: hidden; color: var(--fg-3); font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.od-pane .mhd-wrap .mhd { margin-top: 0; }
+
+.mth { display: none; }
+.mth-m { display: none; margin-top: 10px; }
+.mth-mb { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 500 14px/20px var(--font); text-align: left; }
+.mth-mb .ic { flex: none; width: 16px; height: 16px; }
+.mth-mt { flex: 1; min-width: 0; color: var(--fg); text-align: left; }
+.mth-ch { transition: transform .15s; }
+.mth-mb.open .mth-ch { transform: rotate(180deg); }
+.mth-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.mth-m > .mth-list { margin-top: 4px; padding: 4px; border-radius: var(--r-ctl); background: var(--layer); }
+.mth-row { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mth-row:hover { background: var(--hover); }
+.mth-row.on { background: var(--card); box-shadow: inset 3px 0 0 var(--accent); cursor: default; }
+.mth-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mth-when { flex: 1; min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.mth-st { flex: none; }
+.mth-subj { font-size: 14px; line-height: 20px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mth-sum { color: var(--fg-3); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mth-h { display: flex; align-items: center; gap: 6px; padding: 4px 6px 8px; }
+.mth-ht { flex: 1; min-width: 0; color: var(--fg); font-size: 14px; line-height: 20px; font-weight: 600; }
+.mth-n { flex: none; min-width: 22px; padding: 0 6px; border-radius: 10px; background: var(--layer); color: var(--fg-3); font-size: 12px; line-height: 20px; text-align: center; }
+
+@media (max-width: 1023px) {
+  .mth-m { display: block; }
+}
+
+@media (min-width: 1024px) {
+  .mth-m { display: none; }
+  #v-chat.mail-open .chatbox { display: flex; gap: 16px; align-items: stretch; }
+  #v-chat.mail-open .chatbox > .timeline { flex: 1 1 auto; min-width: 0; }
+  #v-chat.mail-open #mail-thread { display: flex; flex-direction: column; flex: 0 0 280px; min-height: 0; margin: 0 0 16px; padding: 10px 6px 10px 10px; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
+  #mail-thread[hidden] { display: none; }
+  #mail-thread > .mth-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+}

@@ -84,6 +84,24 @@ describe("buildDraftPrompt", () => {
 		expect(user.match(/(^|\n)나: 답 /g)).toHaveLength(MAX_PAIRS);
 	});
 
+	test("a message the owner wants to send: the intent is data in the prompt, the chat is context, and the model is asked for a draft only", () => {
+		const { system, user } = buildDraftPrompt({ lines: ["Alex: 오늘 모임은 일곱 시예요"], pairs: [{ other: ["오늘 모임은 일곱 시예요"], own: ["넵" ] }], intent: "내일 7시로 미루자고 정중하게" });
+		expect(system).toContain("message the owner wants to send");
+		expect(system).toContain('"action":"draft"');
+		expect(system).not.toContain('"action":"skip"');
+		expect(user).toContain('The message the owner wants to send (his own words, data): "내일 7시로 미루자고 정중하게"');
+		expect(user).toContain("Recent messages in the room (context only");
+		expect(user).toContain("Write that new message");
+		expect(user).not.toContain("New messages since the owner's last reply");
+	});
+
+	test("a change to a message he asked for keeps the intent and rewrites it in the compose voice", () => {
+		const { system, user } = buildDraftPrompt({ lines: ["Alex: 안녕하세요"], intent: "견적서를 보낸다고 알려 줘", revise: { draft: "견적서 보냅니다", change: "더 짧게" } });
+		expect(system).toContain("rewrite a KakaoTalk message the owner wants to send");
+		expect(user).toContain('The owner\'s intent (his own words, data): "견적서를 보낸다고 알려 줘"');
+		expect(user).toContain('The change the owner asks for (his own words, data): "더 짧게"');
+	});
+
 	test("without pairs the owner's own lines (or the profile examples) are the voice samples", () => {
 		expect(buildDraftPrompt({ lines: ["나: memo"], samples: ["메모 하나"] }).user).toContain("- 메모 하나");
 		expect(buildDraftPrompt({ lines: ["나: memo"], samples: [], style: { rules: [], corrections: [], forbidden: [], samples: ["예시 줄"] } }).user).toContain("- 예시 줄");

@@ -106,7 +106,9 @@ describe("merged 모니터링", () => {
 		const v = await boot(1280, 800);
 		expect(await text(v, `${rowOf(`p:${MINI}|m:peer-backup`)}.querySelector(".tag").textContent`)).toBe("맥미니");
 		expect(await text(v, `${rowOf(`p:${MINI}|i:mail`)}.querySelector(".tag").textContent`)).toBe("맥미니");
-		expect(await text(v, `${rowOf("m:local-check")}.querySelectorAll(".tag").length + ""`)).toBe("0");
+		const localTags = JSON.parse(await text(v, `JSON.stringify([...${rowOf("m:local-check")}.querySelectorAll(".tag")].map(t => t.textContent))`));
+		expect(localTags).toHaveLength(1);
+		expect(localTags[0]).not.toBe("맥미니");
 		// the other computer's disconnected app says so here too, not "확인할 것 없어요"
 		expect(await text(v, `${rowOf(`p:${MINI}|i:kakao`)}.textContent`)).toContain(PEER_DOWN);
 		const stale = await text(v, `[...${rowOf("p:http://study.test|m:study-disk")}.querySelectorAll(".tag")].map(t => t.textContent).join(",")`);
