@@ -3,20 +3,37 @@
 import type { WindowFacts } from "./room.ts";
 import type { Runner } from "./types.ts";
 
-// texts: what the row cell shows after the title: [title, member count (groups), time, ...noise (unread badge, ...)].
-export type FakeRow = { id: string; title: string; count?: number; noise?: string[]; window?: WindowFacts | "unreadable" };
+// texts: what the row cell shows after the title: [title, member count (groups), time, ...noise (unread badge, ...), preview].
+export type FakeRow = { id: string; title: string; count?: number; noise?: string[]; preview?: string; window?: WindowFacts | "unreadable" };
 
 const norm = (s: string) => s.normalize("NFC").replace(/[\u200b-\u200f\u2060\ufeff]/g, "").trim();
-export const rowTexts = (r: FakeRow) => [r.title, ...(r.count === undefined ? [] : [String(r.count)]), "오후 4:58", ...(r.noise ?? [])];
+export const rowTexts = (r: FakeRow) => [r.title, ...(r.count === undefined ? [] : [String(r.count)]), "오후 4:58", ...(r.noise ?? []), ...(r.preview === undefined ? [] : [r.preview])];
 
 // `listShown`: the list window of KakaoTalk exists (rows reads it); off, rows says no_list until `openlist` succeeds.
 // `openlist`: what the openlist action does while no list window exists: "ok" shows the list (KakaoTalk took the focus and the previous app
 // was put back), "fail" leaves it closed (menu step fails). Default "fail".
 // `openFail`: the row open fails at this step (room.jxa.js open: menu, press, window).
 // `axSend`: the JSON room.jxa.js send prints (default {ok:true}); its sends are recorded as ["ax-send", name, text].
-export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?: boolean; listShown?: boolean; openlist?: "ok" | "fail"; openFail?: { step: string; why: string }; axSend?: () => object } = {}) {
+export function fakeScreen(
+	rows: FakeRow[],
+	opts: {
+		front?: string;
+		kakaoShown?: boolean;
+		listShown?: boolean;
+		openlist?: "ok" | "fail";
+		// A failing row open: always, or from the n-th attempt on (1-based).
+		openFail?: { step: string; why: string } | ((n: number) => { step: string; why: string } | undefined);
+		// The window the probe reads after the n-th open (0: a window kept open from an earlier send).
+		windowAt?: (n: number) => WindowFacts | "unreadable" | undefined;
+		// A row whose chat window is already open at the start (a kept window); rows then answers opened:true for it.
+		currentAtStart?: string;
+		axSend?: (n: number, req: { name: string; text: string; ours?: string[]; priorPressed?: string[] }) => object;
+	} = {},
+) {
 	const opened: string[] = [];
 	const sends: string[][] = [];
+	const sendReqs: { name: string; text: string; ours?: string[]; priorPressed?: string[] }[] = [];
+	let opens = 0;
 	const focus: string[][] = [];
 	const rowCalls: Record<string, unknown>[] = [];
 	const other: string[][] = [];
@@ -25,7 +42,7 @@ export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?:
 	const listCalls: number[] = [];
 	let menus = 0;
 	let closes = 0;
-	let current: string | undefined;
+	let current: string | undefined = opts.currentAtStart;
 	const out = (o: object) => ({ code: 0, stdout: `${JSON.stringify(o)}\n`, stderr: "" });
 	const runner: Runner = async (argv, o) => {
 		if (argv[0] === "open") {
@@ -71,7 +88,9 @@ export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?:
 			const row = rows[req.row];
 			if (!row || norm(row.title) !== norm(req.name)) return out({ ok: false, step: "recheck", why: "moved", ms: {} });
 			menus++;
-			if (opts.openFail) return out({ ok: false, ...opts.openFail, ms: {} });
+			opens++;
+			const fail = typeof opts.openFail === "function" ? opts.openFail(opens) : opts.openFail;
+			if (fail) return out({ ok: false, ...fail, ms: {} });
 			current = row.id;
 			opened.push(`ax:${current}`);
 			order.push("ax-open");
@@ -79,17 +98,18 @@ export function fakeScreen(rows: FakeRow[], opts: { front?: string; kakaoShown?:
 		}
 		if (req.action === "send") {
 			sends.push(["ax-send", req.name, req.text]);
+			sendReqs.push(req);
 			order.push("send");
-			return out(opts.axSend?.() ?? { ok: true });
+			return out(opts.axSend?.(sends.length, req) ?? { ok: true });
 		}
 		if (req.action === "close") {
 			closes++;
 			current = undefined;
 			return out({ ok: true });
 		}
-		const w = rows.find(r => r.id === current)?.window;
+		const w = (opts.windowAt?.(opens) ?? rows.find(r => r.id === current)?.window) as WindowFacts | "unreadable" | undefined;
 		if (w === "unreadable" || w === undefined) return out({ ok: false });
 		return out({ ok: true, windows: [w] });
 	};
-	return { runner, opened, sends, focus, rowCalls, other, order, listCalls, menus: () => menus, closes: () => closes };
+	return { runner, opened, sends, sendReqs, focus, rowCalls, other, order, listCalls, menus: () => menus, closes: () => closes };
 }
