@@ -150,7 +150,8 @@ function markError(raw: string): void {
 	if (orch.error) return;
 	orch.error = { since: new Date().toISOString(), ...plainError(raw), raw: raw.replace(/\s+/g, " ").slice(0, 200) };
 	log(`orchestrator error episode begins: ${orch.error.kind} (${orch.error.raw.slice(0, 120)})`);
-	onError(orch.error);
+	// asked once per stoppage, also across a gateway restart or after a manual resume that fails again (hub/limit-alert.ts)
+	if (noteBlock("orchestrator", "", "error").alert) onError(orch.error);
 }
 function clearError(): void {
 	if (!orch.error) return;
@@ -163,6 +164,22 @@ export const PROBE_TEXT = "[dotz gateway] 연결 확인입니다. 아무 작업�
 export function resumeAfterError(): void {
 	probeAfterStart = true;
 	restart();
+}
+// The owner's 재개 (the stopped banner, the paused line, the error ask's 다시 시작): the pause ends now instead of at its timer, the
+// process starts again, and the held or open requests go in; with none, one tiny probe turn tests the model. A success clears the
+// error and sends the one recovery line; a failure pauses again quietly (the stoppage was already announced).
+export function resumeNow(): "resumed" {
+	clearTimeout(resumeTimer);
+	resumeTimer = undefined;
+	if (orch.status === "rate-limited") {
+		save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
+		orch.status = "idle";
+		orch.rateLimitedUntil = "";
+	}
+	if (orch.error) orch.error.waiting = false;
+	probeAfterStart = true;
+	restart();
+	return "resumed";
 }
 
 // Called when a turn ended and the orchestrator is idle again; main.ts sends the web messages queued for it.
@@ -707,7 +724,7 @@ export function start(): void {
 	}
 	if (probeAfterStart) {
 		probeAfterStart = false;
-		if (!replayed && orch.error) proc.send(PROBE_TEXT, "followUp");
+		if (!replayed && !held.length) proc.send(PROBE_TEXT, "followUp");
 	}
 	if (orch.status !== "rate-limited") for (const h of held.splice(0)) sendOwner(h.text, h.header);
 	setTimeout(() => proc?.refreshSession(), 4000);

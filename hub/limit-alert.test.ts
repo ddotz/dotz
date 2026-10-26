@@ -16,7 +16,7 @@ const T0 = Date.parse("2026-10-23T14:55:00.000Z");
 const MIN = 60_000;
 
 // Agent ids of their own: the later orchestrator tests of this file note blocks under "orchestrator"; the file is removed at the end.
-test("an episode alerts once for every agent and account name, survives a restart, never repeats while blocked, ends with one recovery, and only a new kind alerts again", async () => {
+test("an episode alerts once for every agent and account name, survives a restart, never repeats while blocked, ends with one recovery; a new cause inside the same stoppage stays quiet", async () => {
 	const A = "episode-agent";
 	expect(noteBlock(A, "imported-anthropic", "auth", T0)).toEqual({ alert: true, failures: 1 });
 	expect(noteBlock(A, "imported-anthropic", "auth", T0 + 5 * MIN)).toEqual({ alert: false, failures: 2 });
@@ -27,7 +27,7 @@ test("an episode alerts once for every agent and account name, survives a restar
 	expect(fresh.noteBlock(A, "imported-anthropic", "auth", T0 + 20 * MIN).alert).toBe(false);
 	for (const h of [12, 24, 36]) expect(noteBlock(A, "imported-anthropic", "auth", T0 + h * 3600_000).alert).toBe(false);   // no reminder every 12 hours
 
-	expect(noteBlock(A, "imported-anthropic", "billing", T0 + 37 * 3600_000).alert).toBe(true);   // a different problem is news
+	expect(noteBlock(A, "imported-anthropic", "billing", T0 + 37 * 3600_000).alert).toBe(false);   // still the same stoppage: told once until it recovers
 	expect(noteBlock(A, "other-account", "billing", T0 + 37 * 3600_000 + MIN).alert).toBe(false);
 
 	expect(noteRecovered(A)?.kind).toBe("billing");
@@ -221,3 +221,42 @@ test("orchestrator: switching to another account restarts the process on it and 
 	o.stop();
 	await advance(300);
 }, 30_000);
+
+test("orchestrator: the owner's 재개 ends the pause now, starts again with a probe turn; failing again stays quiet, a success says so once", async () => {
+	rmSync(limitAlertsFile(), { force: true });
+	writeFileSync(join(DATA, "orchestrator.json"), "{}");
+	const o: typeof Orchestrator = await import("./orchestrator.ts?limit-alert-resume");
+	o.setAlertHandler(t => alerts.push(t));
+	o.setAnswerHandlers(() => {}, () => {});
+	o.start();
+	await advance(4000);
+	await started.at(-1)!.push({ type: "session", ref: join(DATA, "limit-session.jsonl") });
+	o.deliver("blocked request");
+	await started.at(-1)!.push(...failedTurn(AUTH_ERR));
+	await advance(500);
+	expect(o.orch.status).toBe("rate-limited");
+	const told = alerts.length;
+	const resume = async () => {
+		const before = started.length;
+		expect(o.resumeNow()).toBe("resumed");
+		await advance(4000);
+		expect(started.length).toBe(before + 1);
+		await started.at(-1)!.push({ type: "session", ref: join(DATA, "limit-session.jsonl") });
+		await advance(500);
+		expect(o.orch.status).not.toBe("rate-limited");
+		expect(started.at(-1)!.calls.some(c => c.includes("연결 확인입니다"))).toBe(true);
+	};
+	await resume();
+	await started.at(-1)!.push(...failedTurn(AUTH_ERR));
+	await advance(500);
+	expect(o.orch.status).toBe("rate-limited");
+	expect(alerts.length).toBe(told);   // the stoppage was already announced
+	await resume();
+	await started.at(-1)!.push(...okTurn);
+	await advance(500);
+	expect(alerts.length).toBe(told + 1);
+	expect(alerts.at(-1)).toContain("다시 연결");
+	o.stop();
+	await advance(300);
+}, 30_000);
+

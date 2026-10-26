@@ -10,7 +10,7 @@ import { abortLane, approvesBudget, lanes, ownerNotes, sendToLane } from "./lane
 import { accountView, readPool } from "./account-sticky.ts";
 import { readAliases } from "./account-alias.ts";
 import { accountAnswer, accountAsk } from "./accounts-api.ts";
-import { abort as abortOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
+import { abort as abortOrchestrator, orch, resumeNow } from "./orchestrator.ts";
 import { legacyAnswer } from "./migrations.ts";
 import { errorAnswer } from "./orch-error.ts";
 import { drain, restore } from "./queue.ts";
@@ -155,7 +155,7 @@ export async function answerCommand(target: string, text: string, replyTo?: stri
 // The owner's answer to the orchestrator-error ask (orch-error.ts): handled here because the orchestrator cannot read it.
 // Restart is the same call as `/restart orchestrator`; waiting leaves the one automatic resume to the health probe.
 async function answerOrchError(target: string, answer: "restart" | "wait", replyTo?: string): Promise<void> {
-	if (answer === "restart") restartOrchestrator();
+	if (answer === "restart") resumeNow();
 	else if (orch.error) orch.error.waiting = true;
 	const text = answer === "restart" ? "오케스트레이터만 다시 시작하고 답하지 못한 요청을 다시 처리해요." : "연결이 돌아오면 한 번 자동으로 다시 시도해요.";
 	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`orchestrator error reply failed: ${e}`));

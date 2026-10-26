@@ -10,7 +10,7 @@ import { DATA_DIR, writeAtomic } from "./config.ts";
 import { authFile } from "./apikey-policy.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind } from "./providers.ts";
 
-export type LimitKind = "auth" | "billing" | "limit";
+export type LimitKind = "auth" | "billing" | "limit" | "error";
 const OWNER_RETRY_MAX_MS = 6 * 3600_000;
 export const AUTH_WATCH_MS = 30_000;
 
@@ -39,8 +39,12 @@ export const providerOf = (model: string): string => model.split("/")[0] || "ant
 export function noteBlock(agent: string, account: string, kind: LimitKind, at = Date.now()): { alert: boolean; failures: number } {
 	const all = read();
 	const prev = all[agent];
-	if (prev && prev.kind === kind) {
+	// One stoppage is one alert until a turn succeeds, even when its cause shows up differently on the way (a limit, then a login
+	// error, then a network error after a manual resume): the owner was told it stopped, and the recovery line says when it is back.
+	if (prev) {
+		if (prev.kind !== kind) prev.failures = 0;
 		prev.failures++;
+		prev.kind = kind;
 		prev.account = account;
 		write(all);
 		return { alert: false, failures: prev.failures };

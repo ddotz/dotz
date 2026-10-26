@@ -12,8 +12,20 @@ function paintPause() {
   }
   const paused = !!o && o.status === "rate-limited";
   box.hidden = !paused;
-  if (paused) box.textContent = `${name ? `${name} ` : ""}봇이 멈춰 있어요: ${o.pauseKind === "owner" ? "로그인 필요" : "사용량 한도"}`;
+  if (!paused) { box.dataset.sig = ""; return; }
+  const sig = `${name}|${o.pauseKind}|${!!pqPc(target)}`;
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  // 지금 다시 시도: this computer's bot only (a peer's is resumed on that computer); the pause ends and the held messages go in now.
+  clear(box).append(el("span", { text: `${name ? `${name} ` : ""}봇이 멈춰 있어요: ${o.pauseKind === "owner" ? "로그인 필요" : "사용량 한도"}` }),
+    pqPc(target) ? null : el("button", { class: "btn text pn-go", type: "button", onclick: ev => orchResume(ev.currentTarget) }, "지금 다시 시도"));
 }
+// 재개 (POST /api/orchestrator/resume, hub/orchestrator.ts resumeNow): the same for the paused line and the stopped banner.
+const orchResume = btn => busy(btn, async () => {
+  await api("/api/orchestrator/resume", "POST", {});
+  toast("다시 시도해요. 멈춘 동안 온 메시지도 이어서 처리해요");
+  refreshState();
+});
 
 /* ---------- orchestrator error banner ---------- */
 // The automatic retries gave up (hub/orch-error.ts): one banner above every view (chat and home) with the plain reason, since when,
@@ -24,9 +36,5 @@ function paintOrchError() {
   if (!e) return;
   $("#oerr-tx").innerHTML = `<b>오케스트레이터가 멈췄어요</b> · ${e.text} · ${kstHM(e.since)}부터`;
   box.title = e.raw || "";
-  $("#oerr-btn").onclick = ev => busy(ev.currentTarget, async () => {
-    await api("/api/orchestrator/restart", "POST", {});
-    toast("다시 시작을 요청했어요. 답하지 못한 요청도 이어서 처리해요");
-    refreshState();
-  });
+  $("#oerr-btn").onclick = ev => orchResume(ev.currentTarget);
 }
