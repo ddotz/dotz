@@ -10,7 +10,15 @@ const intgHidden = t => INTG.available.some(a => a.off && intgHas(a, t));
 
 // 미답장 (hub/unreplied.ts): the orange pill, and the small 답장 안 함 action that clears it (reading never does). `after` repaints the caller.
 const unrepPill = (text = "미답장") => el("span", { class: "tag unreplied", text });
-const unrepNo = (path, after) => el("button", { class: "cchip unrep-no", type: "button", text: "답장 안 함", onclick: ev => { ev.stopPropagation(); api(path, "POST", {}).then(() => { toast("답장 안 함으로 표시했어요"); if (after) after(); loadIntegrations(); }, e => toast(e.message, true)); } });
+// The pill and the button leave at the tap (owner 2026-10-26: it did not go away at once); a failed request puts them back.
+const unrepNo = (path, after) => el("button", { class: "cchip unrep-no", type: "button", text: "답장 안 함", onclick: ev => {
+  ev.stopPropagation();
+  const btn = ev.currentTarget, box = btn.parentElement, pill = box && box.querySelector(".tag.unreplied");
+  const hidden = [btn, pill].filter(Boolean);
+  hidden.forEach(n => { n.hidden = true; });
+  api(path, "POST", {}).then(() => { toast("답장 안 함으로 표시했어요"); if (after) after(); loadIntegrations(); },
+    e => { hidden.forEach(n => { n.hidden = false; }); toast(e.message, true); });
+} });
 
 async function loadIntegrations() {
   try {
