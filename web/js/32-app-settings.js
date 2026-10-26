@@ -152,7 +152,8 @@ function asDelNode(a) {
     !p || p.data.length ? el("label", { class: "as-del" }, cb, el("span", { text: p ? `저장된 데이터(${p.data.join(", ")})도 지우기. 체크하지 않으면 남겨요` : "저장된 데이터도 지우기. 체크하지 않으면 남겨요" })) : null,
     el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-k": "del-go", disabled: d.busy, onclick: () => asDelGo(a) }, "삭제 확인"), el("button", { class: "btn tonal", type: "button", "data-k": "del-cancel", onclick: () => { AD.del = null; asAddPaint(); } }, "취소")));
 }
-const asAddHint = () => asOffApps().map(a => a.label).join(" · ") || "새로 추가하기";
+// The 앱 관리 row's second line: what it holds (the apps switched off, then adding a new one), not a bare list of names that reads like apps in use.
+const asAddHint = () => { const off = asOffApps().map(a => a.label); return off.length ? `꺼 둔 앱 ${off.join(", ")} · 새로 추가` : "새로 추가하기"; };
 async function asTplLoad() {
   try { AT.items = (await api("/api/app-templates")).items || []; } catch { AT.items = []; }
 }
