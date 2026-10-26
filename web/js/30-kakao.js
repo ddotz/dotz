@@ -12,7 +12,7 @@ const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, pick: null,   // pick: null = open while no room is chosen
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
-  typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
+  typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "", compose: null,
   peerT: 0, peerBusy: false, peerHead: "", lp: new Map(),
 };
 
@@ -289,8 +289,10 @@ const kkEditBar = el("div", { class: "kk-edit", id: "kk-edit", hidden: true }, e
 const kkTa = el("textarea", { id: "kk-text", rows: "1", autocomplete: "off", placeholder: "메시지 보내기", "aria-label": "카카오톡 메시지" });
 const kkSendBtn = el("button", { class: "ib pri", id: "kk-send-btn", type: "submit", "aria-label": "보내기", title: "보내기" }, icon("send"));
 const kkDraftBtn = el("button", { class: "cchip kk-dbtn", id: "kk-draft-btn", type: "button", onclick: () => kkMakeDraft() }, icon("spark"), el("span", { text: "답장 초안" }));
-const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn), kkSendBtn);
-const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkDrafts, kkEditBar, kkForm);
+const kkNewBtn = el("button", { class: "cchip kk-dbtn", id: "kk-new-btn", type: "button", onclick: () => kkComposeOpen() }, icon("pencil"), el("span", { text: "메시지 만들어 줘" }));
+const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn, kkNewBtn), kkSendBtn);
+const kkIntent = el("div", { class: "kk-intent", id: "kk-intent", hidden: true });
+const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkDrafts, kkEditBar, kkIntent, kkForm);
 // A room that is not watched opens read-only: this bar (at every width) says so in place of the composer and starts watching it.
 const kkRo = el("div", { class: "kk-ro", id: "kk-ro", role: "status", hidden: true });
 const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, el("div", { class: "kk-box" }, kkTl, kkPill), kkRo, kkFoot);
@@ -546,7 +548,7 @@ async function kkOpen(id) {
   if (!r) return;
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
   const seq = ++KK.seq;
-  Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" || r.kind === "open", watched: !!r.watched }, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
+  Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" || r.kind === "open", watched: !!r.watched }, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(), compose: null,
     loading: true, roomErr: "", pill: false, stick: true, pin: "", placed: false, readSent: "", edit: null, drafting: "", revise: null, reviseCode: "" });
   kkTa.value = KK.typed.get(id) || ""; kkAutosize();
   kkPaintAll(); convTitle();
@@ -567,7 +569,7 @@ async function kkOpen(id) {
 }
 function kkClose() {
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
-  KK.open = ""; KK.seq++; KK.loading = false; KK.roomErr = ""; KK.edit = null;
+  KK.open = ""; KK.seq++; KK.loading = false; KK.roomErr = ""; KK.edit = null; KK.compose = null;
   kkPaintAll(); convTitle();
 }
 // Phone: the app bar's back arrow leaves the chat for the room list first (04-state.js #back).
@@ -754,7 +756,7 @@ function kkReviseBox(d, rv) {
 }
 // A draft of several KakaoTalk messages (d.parts) shows one bubble per message, in the order they go out; one 보내기 sends them all.
 const kkDraftParts = d => (Array.isArray(d.parts) && d.parts.length ? d.parts : [d.text]);
-const kkDraftHead = d => el("div", { class: "kk-dh", text: kkDraftParts(d).length > 1 ? `답장 초안 · 메시지 ${kkDraftParts(d).length}개` : "답장 초안" });
+const kkDraftHead = d => el("div", { class: "kk-dh", text: `${d.intent ? "새 메시지 초안" : "답장 초안"}${kkDraftParts(d).length > 1 ? ` · 메시지 ${kkDraftParts(d).length}개` : ""}` });
 function kkDraftText(d) {
   const parts = kkDraftParts(d);
   if (parts.length < 2) return el("div", { class: "kk-dt", text: d.text });
@@ -808,6 +810,43 @@ function kkPaintFoot() {
   const making = !!KK.open && KK.drafting === KK.open;
   kkDraftBtn.disabled = making;
   kkDraftBtn.lastChild.textContent = making ? "초안 만드는 중…" : "답장 초안";
+  kkNewBtn.disabled = making;
+  clear(kkIntent).append(...(KK.compose === null || !KK.open ? [] : kkIntentBox()));
+  kkIntent.hidden = !kkIntent.firstChild;
+}
+// 메시지 만들어 줘: the owner says what to send in his own words; the same draft call (POST .../draft { intent }) writes it in his voice.
+function kkComposeOpen() {
+  if (!KK.open) return;
+  KK.compose = "";
+  kkPaintFoot();
+  const i = $("#kk-intent-in");
+  if (i) i.focus();
+}
+function kkIntentBox() {
+  const inp = el("input", { class: "kk-rv", id: "kk-intent-in", type: "text", maxlength: "300", placeholder: "예: 내일 7시로 미루자고 정중하게", "aria-label": "보낼 메시지 내용", autocomplete: "off" });
+  inp.value = KK.compose || "";
+  const go = el("button", { class: "btn", type: "button", "data-k": "compose-go", text: "만들기", disabled: !inp.value.trim(), onclick: () => kkComposeMake(inp.value) });
+  inp.oninput = () => { KK.compose = inp.value; go.disabled = !inp.value.trim(); };
+  inp.onkeydown = ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); if (inp.value.trim()) kkComposeMake(inp.value); } };
+  return [el("div", { class: "kk-rq", text: "어떤 메시지를 보낼까요?" }), inp,
+    el("div", { class: "btns" }, go, el("button", { class: "btn text", type: "button", "data-k": "compose-cancel", text: "취소", onclick: () => { KK.compose = null; kkPaintFoot(); } }))];
+}
+async function kkComposeMake(intent) {
+  const id = KK.open, text = String(intent || "").replace(/\s+/g, " ").trim().slice(0, 300);
+  if (!id || !text || KK.drafting === id) return;
+  KK.compose = null; KK.drafting = id; KK.reviseCode = "";
+  kkPaintFoot();
+  clearTimeout(KK.draftT);
+  KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast("초안이 아직 오지 않았어요", true); } }, 120000);
+  try {
+    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", { intent: text });
+    if (r && typeof r.error === "string" && r.error) throw new Error(r.error);
+  } catch (e) {
+    clearTimeout(KK.draftT);
+    if (KK.drafting === id) KK.drafting = "";
+    kkPaintFoot();
+    toast(e.message, true);
+  }
 }
 // Drafts are made only on demand (or by a room's 자동 초안): the request starts it, and the kakao_draft event for this room says it is done.
 // `revise` = { code, change }: rewrite that draft with the owner's change instead of making a new one.

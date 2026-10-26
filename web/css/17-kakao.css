@@ -188,6 +188,10 @@
 .kk-st { color: var(--fg-3); font: 500 12.5px/18px var(--font); }
 .kk-manual { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--fg-2); }
 .kk-manual .ic { width: 14px; height: 14px; }
+/* 메시지 만들어 줘: the intent box above the composer (30-kakao.js kkIntentBox) */
+.kk-intent { margin: 0 0 8px; padding: 10px 12px; border-radius: var(--r-card); background: color-mix(in srgb, var(--accent) 6%, var(--card)); box-shadow: var(--shadow-panel); }
+.kk-intent .btns { gap: 6px; }
+.kk-intent .btn { height: 32px; padding: 0 12px; font-size: 13px; }
 .kk-edit { display: flex; align-items: center; gap: 8px; margin: 0 4px 6px; color: var(--fg-2); font: 500 12.5px/18px var(--font); }
 .kk-edit .btn { height: 28px; }
 .kk-dbtn { gap: 4px; background: var(--layer); color: var(--fg); }
