@@ -457,7 +457,12 @@ export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): {
 			})),
 		}));
 	const reported = new Set(providers.map(p => p.provider));
-	const unavailable = credentialed.filter(p => !reported.has(p)).map(provider => ({ provider, reason: "사용량 정보를 제공하지 않아요" }));
+	// A report with no numbers but a problem says why (an OmO login whose token no longer works read as "does not report usage", Mac mini 2026-10-26).
+	const why = (provider: string): string => {
+		const problem = (reports.find(r => r.provider === provider) as { problem?: string } | undefined)?.problem;
+		return problem === "expired" ? `로그인이 풀려서 사용량을 읽지 못해요. 이 컴퓨터에서 /login ${provider}를 실행해 주세요` : problem === "rate_limited" ? "사용량 조회가 잠시 막혔어요. 조금 뒤 다시 읽어요" : problem === "failed" ? "사용량을 읽지 못했어요. 조금 뒤 다시 읽어요" : "사용량 정보를 제공하지 않아요";
+	};
+	const unavailable = credentialed.filter(p => !reported.has(p)).map(provider => ({ provider, reason: why(provider) }));
 	return { providers, unavailable };
 }
 
