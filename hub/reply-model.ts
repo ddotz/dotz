@@ -22,8 +22,12 @@ export async function replyModel(app: string, conv?: string, o: { dataDir?: stri
 	return pickReplyModel(loadSettings(), instanceOf(appEntries(o.dataDir ?? installDir()), app, conv), o.worker ?? (await import("./config.ts")).workerModel());
 }
 
+// A draft on a warm process answers in a few seconds; 45 s leaves room for a long room prompt and a slow model, and an
+// unusable provider is refused before the call (hub/model-runner.ts), so nobody waits 120 s for a draft that cannot come.
+export const DRAFT_TIMEOUT_MS = 45_000;
+
 /** The one model call of a reply draft for `app` (subscription only, hub/outlang.ts); `call` is injected by tests. */
 export async function callReplyModel(app: string, conv: string | undefined, system: string, user: string, call?: ReplyCall, o: { dataDir?: string; worker?: string } = {}) {
 	const model = await replyModel(app, conv, o);
-	return (call ?? (await import("./outlang.ts")).callModel)(system, user, { model, timeoutMs: 120_000 });
+	return (call ?? (await import("./outlang.ts")).callModel)(system, user, { model, timeoutMs: DRAFT_TIMEOUT_MS });
 }
