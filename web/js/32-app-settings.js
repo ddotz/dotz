@@ -279,7 +279,7 @@ function asPaint() {
     ...stat.map(monStatNode),
     ...(feat ? asFeatNodes(app, feat) : []),
     ...[...sw, ...other].map(f => el("div", { class: "as-row", "data-setting": f.key },
-      el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), el("span", { class: "as-h", text: f.help })),
+      el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), f.help ? el("span", { class: "as-h", text: f.help }) : null),
       // A list is edited in the conversation (a change card); here it only says how many.
       f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : asControl(f, async v => {
         if (AS.busy[app]) return;

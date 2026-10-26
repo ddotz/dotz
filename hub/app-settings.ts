@@ -68,7 +68,7 @@ const attachFolderField = (app: string): SettingField => ({ key: "attach_folder"
 // 이어서 할 일: free text; after an approved action of this app instance the bot checks it once (hub/followup.ts).
 const followupField = (app: string): SettingField => ({ key: "followup", label: "이어서 할 일", type: "text", help: "오너가 대화에서 알려 준, 답글·답장·카톡을 보낸 뒤 이어서 할 일이에요. 예: 파일을 달라는 댓글이면 답글 뒤에 적어 준 주소로 그 파일을 붙인 메일 초안을 만들어요. 조건에 맞을 때만 하고, 메일은 보내기를 누를 때만 나가요", store: DRAFTS, path: `followups.${app}`, max: 500 , memory: true });
 const REPLY_APPS = new Set(["mail", "kakao", "instagram", "youtube", "site"]);
-const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "답장 초안을 쓸 모델이에요", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "" });
+const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "" });
 
 export const APP_SETTINGS: Record<string, SettingField[]> = {
 	site: [],
