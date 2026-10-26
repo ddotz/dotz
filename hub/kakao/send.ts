@@ -403,6 +403,8 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 			if (preview) room = { ...room, preview };
 		} catch {}
 	}
+	// The database lists rooms newest first, the same order as KakaoTalk's chat list: the row index is a hint that saves reading ~100 rows.
+	const hint = all.findIndex(r => r.chatId === input.chatId);
 	const left = readLeft(deps.paths)[input.chatId];
 	const priorPressed = left?.pressed ? [left.text] : [];
 	// Text dotz may have left in this room's input (a failed attempt, a kept window) is dotz's, not the owner's: unwrap it. An owner text is
@@ -421,7 +423,7 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 		};
 		if (rung.reopen) await closeWindow(deps.runner, input.roomName);
 		const p = performance.now();
-		const opened = await openRoom(room, all, deps.runner, { deep: rung.deep });
+		const opened = await openRoom(room, all, deps.runner, { deep: rung.deep, ...(hint >= 0 ? { hint } : {}) });
 		ms.pick = Math.round(performance.now() - p);
 		focus = opened.focus ?? focus;
 		steps.push(...opened.steps);

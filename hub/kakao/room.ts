@@ -2,7 +2,9 @@
 // send.ts's ladder), no key is sent and nothing is searched, so the owner sees no right-click scan.
 // 1. The chat list rows are read (no click): the row whose title equals the database room name, normalized (NFC, invisible marks, whitespace,
 //    a trailing member count), is the one. Same-name rooms are told apart by the member count the row shows (groups) against the database
-//    count, and when that is not enough by the newest message the list shows under the name against the database preview.
+//    count, and when that is not enough by the newest message the list shows under the name against the database preview. The whole list is
+//    read with the AX API inside room.jxa.js (~20 ms a row; 290 rows ≈ 4 s), starting at the row the database order predicts, and the read
+//    stops at the first name hit or the budget ({ok:false} reason says the list end was reached or the time ran out).
 // 2. Only that row is opened: its context menu once, then "채팅방 열기" (AXPress).
 // 3. The open window is checked against the database room (title, member count where the window shows it). A window that is not the room
 //    is closed and the send is refused.
@@ -22,13 +24,18 @@ export type Focus = { from?: string; took: boolean; restored: boolean };
 export type Opened = { ok: true; steps: AxStep[]; focus?: Focus } | { ok: false; reason: string; steps: AxStep[]; focus?: Focus };
 
 const READ_ROWS = 60;
-const OPEN_CAP_MS = 5_000;
-const ROWS_BUDGET_MS = 2_500;
+// The measured native scan is ~20 ms a row (290 rows ≈ 5.8 s), so only the last rung gets the whole list; every earlier rung relies on the
+// database-order hint and stops at the first name hit.
+const OPEN_CAP_MS = 8_000;
+const ROWS_BUDGET_MS = 3_500;
+const DEEP_BUDGET_MS = 6_000;
 
 const osascript = (runner: Runner, req: object, timeoutMs = 30_000) => runner(["osascript", "-l", "JavaScript", "-e", jxa], { stdin: `${JSON.stringify(req)}\n`, timeoutMs });
 
 export const REFUSE = {
 	notListed: "방을 찾지 못했어요",
+	notFoundEnd: "목록 끝까지 찾지 못했어요",
+	notFoundTime: "시간 안에 방을 찾지 못했어요",
 	mismatch: "방 이름이나 인원이 달라요",
 	noList: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요",
 	openFailed: "방을 열지 못했어요",
@@ -160,7 +167,7 @@ export async function axSend(name: string, text: string, runner: Runner, opts: {
 	}
 }
 
-type Out = { focus?: { from?: unknown; took?: unknown; restored?: unknown }; ok?: boolean; opened?: boolean; rows?: unknown; stopped?: string; step?: string; why?: string; err?: string; ms?: Record<string, number> };
+type Out = { focus?: { from?: unknown; took?: unknown; restored?: unknown }; ok?: boolean; opened?: boolean; rows?: unknown; hits?: unknown; scanned?: number; pages?: number; stopped?: string; step?: string; why?: string; err?: string; ms?: Record<string, number> };
 
 async function call(runner: Runner, req: object, timeoutMs: number): Promise<{ out: Out; ms: number; timedOut: boolean }> {
 	const t = performance.now();
@@ -175,14 +182,13 @@ async function call(runner: Runner, req: object, timeoutMs: number): Promise<{ o
 
 const failWhy = (o: Out) => [o.why ?? "failed", o.err].filter(Boolean).join(":");
 
-// `deep`: read more of the list (a deeper retry), slower but reaches a room that sits far down; `rows` then returns every row, not only
-// up to the first name match.
 const DEEP_ROWS = 120;
-const DEEP_BUDGET_MS = 3_600;
 
 // Opens the one list row that is this database room and checks its window. `all` lists every database room (same-name detection). Nothing
-// is typed. The open phase (rows read + row open) is capped at OPEN_CAP_MS; every outcome other than ok leaves no window of ours open.
-export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean } = {}): Promise<Opened> {
+// is typed. `hint`: the row the database order predicts (the list is newest first); the scan starts there, so a room far down costs one row
+// read instead of hundreds. `deep`: scan without the hint and with the whole budget (the order assumption was wrong). The open phase (rows
+// read + row open) is capped at OPEN_CAP_MS; every outcome other than ok leaves no window of ours open.
+export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean; hint?: number } = {}): Promise<Opened> {
 	const steps: AxStep[] = [];
 	const t0 = performance.now();
 	const left = () => OPEN_CAP_MS - (performance.now() - t0);
@@ -190,9 +196,11 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 	let focus: Focus | undefined;
 	const stop = (reason: string): Opened => ({ ok: false, reason, steps, ...(focus ? { focus } : {}) });
 	const deep = opts.deep === true;
-	const rowsReq = { action: "rows", name: room.name, max: deep ? DEEP_ROWS : READ_ROWS, budgetMs: deep ? DEEP_BUDGET_MS : ROWS_BUDGET_MS, first: !shared && !deep };
+	const budget = deep ? DEEP_BUDGET_MS : ROWS_BUDGET_MS;
+	const rowsReq = { action: "rows", name: room.name, max: deep ? DEEP_ROWS : READ_ROWS, budgetMs: budget, first: !shared, ...(deep || opts.hint === undefined ? {} : { hint: opts.hint }) };
+	const rowsCallMs = budget + 1_200;
 
-	let listed = await call(runner, rowsReq, Math.min(left(), 4_000));
+	let listed = await call(runner, rowsReq, Math.min(left(), rowsCallMs));
 	// No list window (KakaoTalk runs from the menu bar): open it once through its menu 창 > 채팅. KakaoTalk then comes to the front for
 	// a moment; the app in front before is put back inside that call, and the change is kept on the send record.
 	if (listed.out.ok !== true && listed.out.why === "no_list") {
@@ -204,7 +212,7 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 		steps.push({ step: "openlist", ms: opening.ms, ok: opening.out.ok === true, why: opening.out.ok === true ? phases : `${opening.timedOut ? "timeout" : failWhy(opening.out)}${phases ? `:${phases}` : ""}` });
 		if (opening.out.ok !== true) return stop(opening.timedOut ? REFUSE.timeout : REFUSE.noList);
 		if (left() < 1_000) return stop(REFUSE.timeout);
-		listed = await call(runner, rowsReq, Math.min(left(), 4_000));
+		listed = await call(runner, rowsReq, Math.min(left(), rowsCallMs));
 	}
 	if (listed.out.ok !== true) {
 		steps.push({ step: "rows", ms: listed.ms, ok: false, why: listed.timedOut ? "timeout" : failWhy(listed.out) });
@@ -212,10 +220,15 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 	}
 	if (listed.out.opened === true) steps.push({ step: "rows", ms: listed.ms, ok: true, why: "already_open" });
 	else {
-		const rows = Array.isArray(listed.out.rows) ? (listed.out.rows as unknown[]).map(r => (Array.isArray(r) ? r.map(String) : [])) : [];
+		const hits = Array.isArray(listed.out.hits) ? (listed.out.hits as unknown[]).flatMap(h => (h && typeof h === "object" && Number.isInteger((h as { index?: unknown }).index) && Array.isArray((h as { texts?: unknown }).texts) ? [{ index: (h as { index: number }).index, texts: ((h as { texts: unknown[] }).texts).map(String) }] : [])) : [];
+		// A sparse array keeps every hit at its list row index; chooseRow reads only the rows that were read.
+		const rows: string[][] = [];
+		for (const h of hits) rows[h.index] = h.texts;
 		const choice = chooseRow(rows, room, shared);
-		steps.push({ step: deep ? "rows:deep" : "rows", ms: listed.ms, ok: choice.ok, why: `${rows.length}:${listed.out.stopped ?? "?"}${choice.ok ? `:row${choice.index}:${choice.via}` : `:${choice.why}`}` });
-		if (!choice.ok) return stop(choice.why === "none" ? REFUSE.notListed : REFUSE.mismatch);
+		const scanned = typeof listed.out.scanned === "number" ? listed.out.scanned : rows.length;
+		const stopped = listed.out.stopped ?? "?";
+		steps.push({ step: deep ? "rows:deep" : "rows", ms: listed.ms, ok: choice.ok, why: `${scanned}:${stopped}${listed.out.pages ? `:p${listed.out.pages}` : ""}${choice.ok ? `:row${choice.index}:${choice.via}` : `:${choice.why}`}` });
+		if (!choice.ok) return stop(choice.why === "none" ? (stopped === "budget" ? REFUSE.notFoundTime : REFUSE.notFoundEnd) : REFUSE.mismatch);
 		if (left() < 1_000) return stop(REFUSE.timeout);
 		const row = await call(runner, { action: "open", name: room.name, row: choice.index }, Math.max(1_500, left()));
 		const phases = Object.entries(row.out.ms ?? {}).map(([k, v]) => `${k}=${v}`).join(",");
