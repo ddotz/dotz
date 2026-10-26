@@ -3,6 +3,8 @@
 // There is no Kakao message API, HTTP or private-protocol path in this module.
 import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { claimSend } from "../draft-claim.ts";
 import { draftApprovalBlock } from "../draft-approval.ts";
 import { writePrivate } from "./creds.ts";
 import { type AxStep, axSend, closeWindow, type Focus, openRoom, type RoomFact } from "./room.ts";
@@ -11,14 +13,15 @@ import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
 // tokens: what the one model call behind the draft used (estimated = counted from characters, not reported by the model).
 export type DraftTokens = { in: number; out: number; estimated?: true };
-export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens };
+// unconfirmed: the 전송 button was pressed but the send was not confirmed; the draft counts as sent so it is never sent again.
+export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens; unconfirmed?: true };
 // `later`: how the idle close of a kept window is scheduled (tests pass their own; the default is an unref'd timer).
 export type SendDeps = { paths: KakaoPaths; runner: Runner; now?: () => number; later?: (fn: () => void, ms: number) => void };
 // ms: wall time of each phase of one send; ax: every Accessibility step of it (room.ts AxStep) with its time and, where it failed, the exact
 // failing step. Both are kept on the send record (sends.json), so a slow or failed send can be read from data.
 export type SendMs = { front: number; pick: number; send: number; total: number; keep?: true };
 // focus: kept on the send record only when the send had to open the KakaoTalk list window (room.ts Focus).
-export type SendResult = { ok: boolean; reason?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus };
+export type SendResult = { ok: boolean; reason?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus; unconfirmed?: true };
 
 const MAX_TEXT = 1000;
 const MAX_DRAFTS = 200;
@@ -216,6 +219,7 @@ function keepWarm(id: string, deps: SendDeps, name?: string) {
 // `roomNames` lists every room of the database with its type and member count (kind, members); the send is checked against them.
 type RoomNames = () => Promise<RoomFact[]>;
 
+const UNCONFIRMED = "카카오톡 전송 버튼은 눌렀지만 보내졌는지 확인하지 못했어요. 다시 보내지 않았으니 카카오톡에서 확인해 주세요";
 const INPUT_WHY: Record<string, string> = {
 	busy: "카카오톡 입력창에 보내지 않은 글이 있어서 보내지 않았어요",
 	no_window: "열린 대화창을 찾지 못해서 보내지 않았어요",
@@ -270,7 +274,7 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 			if (warm?.id === axKey) forgetWarm();
 			await closeWindow(deps.runner, input.roomName);
 		}
-		return fin(r.ok ? { ok: true } : refuse("카카오톡 전송 버튼은 눌렀지만 보내졌는지 확인하지 못했어요. 다시 보내지 않았으니 카카오톡에서 확인해 주세요"));
+		return fin(r.ok ? { ok: true } : { ...refuse(UNCONFIRMED), unconfirmed: true });
 	}
 	await closeWindow(deps.runner, input.roomName);
 	if (warm?.id === axKey) forgetWarm();
@@ -298,10 +302,21 @@ export function sendDraft(code: string, deps: SendDeps & { latestIncoming: (chat
 	return oneAtATime(() => sendDraftNow(code, deps)).finally(() => sending.delete(code));
 }
 
+// The in-process guard above does not see another process (the CLI the bot runs beside the gateway's button): a claim file does (hub/draft-claim.ts).
 async function sendDraftNow(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string }): Promise<SendResult> {
+	const release = claimSend(join(dirname(deps.paths.drafts), "sending", code));
+	if (!release) return refuse("이미 보내는 중이에요");
+	try {
+		return await sendClaimed(code, deps);
+	} finally {
+		release();
+	}
+}
+
+async function sendClaimed(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string }): Promise<SendResult> {
 	const d = readDrafts(deps.paths).find(x => x.code === code);
 	if (!d) return refuse("그 초안을 찾지 못했어요");
-	if (d.status === "sent") return refuse("이미 보낸 초안이에요");
+	if (d.status === "sent") return refuse(d.unconfirmed ? `전송 버튼을 이미 눌렀던 초안이라 다시 보내지 않아요. 카카오톡에서 확인해 주세요` : "이미 보낸 초안이에요");
 	if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요");
 	const text = deps.text ?? d.text;
 	if (!text.trim() || [...text].length > MAX_TEXT) return refuse(`답장 글은 1자에서 ${MAX_TEXT}자 사이여야 해요`);
@@ -324,6 +339,6 @@ async function sendDraftNow(code: string, deps: SendDeps & { latestIncoming: (ch
 		return refuse("그사이 새 메시지가 와서 초안이 낡았어요");
 	}
 	const r = await sendTextNow({ chatId: d.chatId, roomName: d.roomName, text }, deps);
-	if (r.ok) setStatus(deps.paths, code, "sent", { text, sentAt: new Date(nowMs(deps)).toISOString() });
+	if (r.ok || r.unconfirmed) setStatus(deps.paths, code, "sent", { text, sentAt: new Date(nowMs(deps)).toISOString(), ...(r.unconfirmed ? { unconfirmed: true as const } : {}) });
 	return r;
 }
