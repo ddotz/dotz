@@ -24,17 +24,15 @@
 #mon-head .mon-hdwrap { display: flex; flex: 1; flex-direction: column; gap: 8px; min-width: 0; }
 #mon-head .mon-hdrow { display: flex; align-items: center; gap: 12px; min-width: 0; }
 #mon-head .mon-hdrow .cv-b { flex: 1; }
-#mon-head .mon-prog-wrap { max-width: 440px; }
-.mon-hdact, .mon-actions { display: flex; justify-content: flex-end; }
-.mon-actions { justify-content: center; }
-.mon-run { height: 32px; padding: 0 10px; font-size: 13px; }
+#mon-head .mon-prog-wrap { width: 100%; }
+.mon-actions { display: flex; justify-content: center; }
 
 /* a connection that is down: said at the top of the conversation, with 지금 다시 확인; the row says the same in its status line */
 .mon-banner { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--err) 10%, transparent); font-size: 13px; line-height: 18px; }
 .mon-banner .ic { flex: none; color: var(--err); }
 .mon-banner-tx { flex: 1; min-width: 0; color: var(--fg-2); overflow-wrap: break-word; }
 .mon-banner-tx b { color: var(--err); font-weight: 600; }
-.mon-banner .btn { flex: none; height: 32px; padding: 0 10px; font-size: 13px; }
+.mon-banner .as-tpl { flex: none; min-height: 34px; padding: 0 12px; }
 
 /* 감시 소식 opens with this: one compact row per plain monitor, what needs the owner first */
 .mon-ov { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); }

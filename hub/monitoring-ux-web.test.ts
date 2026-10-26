@@ -85,13 +85,19 @@ describe("a monitor row and its conversation", () => {
     const pct = await q<number>(v, `const f = document.querySelector('${row("절반 감시")} .mon-prog i'); return parseFloat(f.style.width || "")`);
     expect(pct).toBeGreaterThan(48);
     expect(pct).toBeLessThan(53);
-    expect(await q(v, `return document.querySelector('${row("절반 감시")} .mon-ptag').textContent`)).toBe("정상");
-    expect(await q(v, `return document.querySelector('${row("절반 감시")} .mon-prog-tx').textContent`)).toContain("지난 실행");
-    expect(await q(v, `return document.querySelector('${row("실패 감시")} .mon-ptag').textContent`)).toBe("실패");
-    expect(await q(v, `return document.querySelector('${row("끊긴 감시")} .mon-ptag').textContent`)).toBe("연결 끊김");
+    // One result tag per row: the right badge. The bar has none, and its meta line is the short form that fits the left column.
+    expect(await q(v, `return document.querySelector('${row("절반 감시")} .cv-m .tag').textContent`)).toBe("정상");
+    expect(await q(v, `return document.querySelectorAll('${row("절반 감시")} .mon-prog .mon-ptag').length`)).toBe(0);
+    expect(await q(v, `return document.querySelector('${row("절반 감시")} .mon-prog-tx').textContent`)).toMatch(/^\d+분 전 · \d+분 후$/);
+    const fit = await q<boolean>(v, `const t = document.querySelector('${row("절반 감시")} .mon-prog-tx'); return t.scrollWidth <= t.clientWidth + 1`);
+    expect(fit).toBe(true);
+    expect(await q(v, `return document.querySelector('${row("실패 감시")} .cv-m .tag').textContent`)).toBe("실패");
+    expect(await q(v, `return document.querySelector('${row("끊긴 감시")} .cv-m .tag').textContent`)).toBe("연결 끊김");
     expect(await q(v, `return document.querySelector('${row("끊긴 감시")}').textContent`)).toContain("연결 끊김");
+    const downFit = await q<boolean>(v, `const t = document.querySelector('${row("끊긴 감시")} .cv-p'); return t.scrollWidth <= t.clientWidth + 1 && /^연결 끊김 · .+부터$/.test(t.textContent)`);
+    expect(downFit).toBe(true);
     expect(await q(v, `const p = document.querySelector('${row("늦은 감시")} .mon-prog'); return [p.classList.contains("warn"), parseFloat(p.querySelector("i").style.width)]`)).toEqual([true, 100]);
-    expect(await q(v, `return document.querySelector('${row("늦은 감시")} .mon-ptag').textContent`)).toBe("늦어짐");
+    expect(await q(v, `return document.querySelector('${row("늦은 감시")} .cv-m .tag').textContent`)).toBe("늦어짐");
     await Bun.write(join(SHOTS, "monitoring-1280.png"), await v.screenshot());
   });
 
@@ -102,25 +108,35 @@ describe("a monitor row and its conversation", () => {
     await waitFor(v, `document.querySelector("#mon-head .mon-banner")`);
     expect(await q(v, `return document.querySelector("#mon-head .mon-banner").textContent`)).toMatch(/연결 끊김.*다시 로그인 필요/);
     expect(await q(v, `return document.querySelector("#mon-head .mon-banner [data-recheck]").textContent`)).toBe("지금 다시 확인");
-    expect(await q(v, `return !!document.querySelector("#mon-head [data-run]")`)).toBe(true);
+    expect(await q(v, `return [document.querySelectorAll("#mon-head [data-run]").length, document.querySelectorAll("#mon-tl [data-run]").length, document.querySelectorAll("[data-recheck]").length]`)).toEqual([0, 0, 1]);
+    expect(await q(v, `return document.querySelector("#mon-head .mon-banner .mon-banner-tx").textContent`)).toMatch(/^연결 끊김 · .+부터 · 다시 로그인 필요$/);
     await Bun.write(join(SHOTS, "monitoring-detail-1280.png"), await v.screenshot());
     await run(v, `document.querySelector("#mon-head .mon-banner [data-recheck]").click()`);
     await waitFor(v, `!MON.running.size && !document.querySelector("#mon-head .mon-banner") && document.querySelector("#mon-head .mon-ptag").textContent === "정상"`);
     expect(runs).toEqual(["down-watch"]);
     expect(await q(v, `return document.querySelector("#mon-head .mon-ptag").textContent`)).toBe("정상");
     expect(await q(v, `return document.querySelector("#mon-head .mon-prog-tx").textContent`)).toContain("지난 실행");
+    expect(await q(v, `return [document.querySelectorAll("#mon-head [data-run]").length, document.querySelectorAll("[data-recheck]").length]`)).toEqual([1, 0]);
   });
 
   test("a phone puts the same bar, banner and 지금 확인 at the top of the conversation", async () => {
     const v = await boot(390, 844);
+    await waitFor(v, `document.querySelector('${row("절반 감시")} .mon-prog-tx')`);
+    const fit = await q<boolean>(v, `const t = document.querySelector('${row("절반 감시")} .mon-prog-tx'); return t.scrollWidth <= t.clientWidth + 1`);
+    expect(fit).toBe(true);
+    const downFit = await q<boolean>(v, `const t = document.querySelector('${row("끊긴 감시")} .cv-p'); return t.scrollWidth <= t.clientWidth + 1 && /^연결 끊김 · .+부터$/.test(t.textContent)`);
+    expect(downFit).toBe(true);
+    await Bun.write(join(SHOTS, "monitoring-list-390.png"), await v.screenshot());
     await run(v, `go("monitoring", "m:끊긴 감시")`);
     await waitFor(v, `document.querySelector("#mon-tl .mon-banner") && document.querySelector("#mon-tl .mon-prog")`);
     expect(await q(v, `return document.querySelector("#mon-tl .mon-banner").textContent`)).toContain("연결 끊김");
+    expect(await q(v, `return [document.querySelectorAll("#mon-tl [data-run]").length, document.querySelectorAll("#mon-tl [data-recheck]").length]`)).toEqual([0, 1]);
     await Bun.write(join(SHOTS, "monitoring-390.png"), await v.screenshot());
     expect(await q<number>(v, `return document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
     await run(v, `go("monitoring", "m:절반 감시")`);
     await waitFor(v, `document.querySelector("#mon-tl [data-run]")`);
     expect(await q(v, `return document.querySelector("#mon-tl [data-run]").textContent`)).toBe("지금 확인");
+    expect(await q(v, `return document.querySelector("#mon-tl [data-run]").classList.contains("as-tpl")`)).toBe(true);
   });
 });
 

@@ -139,8 +139,8 @@ describe("a monitor of a project", () => {
 	test("지금 확인 runs the watch on this gateway", async () => {
 		runs.length = 0;
 		const v = await boot(LOCAL_KEY);
-		await waitFor(v, `document.querySelector("#mon-tl [data-run]")`);
-		await run(v, `document.querySelector("#mon-tl [data-run]").click()`);
+		await waitFor(v, `document.querySelector("#mon-head [data-recheck]")`);
+		await run(v, `document.querySelector("#mon-head [data-recheck]").click()`);
 		await until(() => runs.length > 0);
 		expect(runs).toEqual(["login-local"]);
 	});
@@ -161,8 +161,8 @@ describe("a peer's monitor of a project", () => {
 		expect(acts.find(a => a.action === "message")!.args).not.toHaveProperty("settings");
 		expect(sent).toEqual([]);
 		await run(v, `go("monitoring", ${JSON.stringify(PEER_KEY)})`);
-		await waitFor(v, `document.querySelector("#mon-tl [data-run]")`);
-		await run(v, `document.querySelector("#mon-tl [data-run]").click()`);
+		await waitFor(v, `document.querySelector("#mon-head [data-recheck]")`);
+		await run(v, `document.querySelector("#mon-head [data-recheck]").click()`);
 		await until(() => acts.some(a => a.action === "watch"));
 		expect(acts.find(a => a.action === "watch")).toEqual({ action: "watch", args: { op: "run", name: "login-cartier-com" } });
 		expect(runs).not.toContain("login-cartier-com");
