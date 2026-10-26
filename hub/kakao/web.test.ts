@@ -374,7 +374,7 @@ describe("drafts", () => {
 	test("the click is the approval: a pending draft is sent with no inbox answer, and listed in the room until then", async () => {
 		const t = setup();
 		const d = await t.draft();
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([{ code: d.code, text: "see you", basisLogId: id(3), created: d.created }]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([{ code: d.code, text: "see you", parts: ["see you"], basisLogId: id(3), created: d.created }]);
 		const r = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
 		expect(r.status).toBe(202);
 		await t.web.idle();

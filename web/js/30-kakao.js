@@ -390,7 +390,9 @@ function kkPending() {
   return KK.sends.filter(s => {
     if (KK.hidden.has(s.id)) return false;
     if (s.state === "failed") return true;
-    if (KK.msgs.some(m => m.fromMe && m.text === s.text && m.sentAt >= s.at - 60000)) return false;
+    // A draft of several messages is in the room once its last message is.
+    const last = String(s.text).split(/\n[ \t]*\n/).map(p => p.trim()).filter(Boolean).pop();
+    if (KK.msgs.some(m => m.fromMe && (m.text === s.text || m.text === last) && m.sentAt >= s.at - 60000)) return false;
     return s.state !== "sent" || Date.now() - s.at < 120000;
   });
 }
@@ -658,16 +660,24 @@ function kkReviseBox(d, rv) {
       el("button", { class: "btn text", type: "button", "data-k": "revise-cancel", text: "취소", onclick: () => { KK.revise = null; kkPaintFoot(); } }),
       el("button", { class: "btn text kk-manual", type: "button", "data-k": "manual", "aria-label": "직접 수정", onclick: () => { KK.revise = null; kkEdit(d); } }, icon("pencil"), el("span", { text: "직접 수정" })))];
 }
+// A draft of several KakaoTalk messages (d.parts) shows one bubble per message, in the order they go out; one 보내기 sends them all.
+const kkDraftParts = d => (Array.isArray(d.parts) && d.parts.length ? d.parts : [d.text]);
+const kkDraftHead = d => el("div", { class: "kk-dh", text: kkDraftParts(d).length > 1 ? `답장 초안 · 메시지 ${kkDraftParts(d).length}개` : "답장 초안" });
+function kkDraftText(d) {
+  const parts = kkDraftParts(d);
+  if (parts.length < 2) return el("div", { class: "kk-dt", text: d.text });
+  return el("div", { class: "kk-dt kk-dps" }, ...parts.map((p, i) => el("div", { class: `kk-dp${i < (d.sentParts | 0) ? " sent" : ""}`, text: p })));
+}
 function kkDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); kkTail(); } finally { btn.disabled = false; } };
   const making = !!KK.open && KK.drafting === KK.open && KK.reviseCode === d.code, rv = !making && KK.revise && KK.revise.code === d.code ? KK.revise : null;
   if (making || rv) return el("div", { class: "kk-draft", "data-code": d.code },
-    el("div", { class: "kk-dh", text: "답장 초안" }),
-    el("div", { class: "kk-dt", text: d.text }),
+    kkDraftHead(d),
+    kkDraftText(d),
     ...(making ? [el("div", { class: "kk-st", role: "status", text: "고치는 중…" })] : kkReviseBox(d, rv)));
   return el("div", { class: "kk-draft", "data-code": d.code },
-    el("div", { class: "kk-dh", text: "답장 초안" }),
-    el("div", { class: "kk-dt", text: d.text }),
+    kkDraftHead(d),
+    kkDraftText(d),
     el("div", { class: "btns" },
       el("button", { class: "btn", type: "button", "data-k": "send", text: "보내기", onclick: ev => run(ev.currentTarget, async () => {
         const id = KK.open, r = await api(`/api/kakao/drafts/${enc(d.code)}/send`, "POST", {});
