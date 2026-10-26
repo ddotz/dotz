@@ -26,6 +26,8 @@ type FeatureDir = {
 	setup?: string;
 	file: string; // absolute feature.md
 	origin: "shipped" | "personal";
+	/** A personal folder that owns its whole text (`custom: true`), instead of only switching the shipped feature of the same id. */
+	custom?: boolean;
 	watch?: Record<string, any>;
 	schedule?: Record<string, any>;
 };
@@ -112,7 +114,7 @@ function loadOne(dir: string, id: string, origin: FeatureDir["origin"]): Feature
 	}
 	const repo = (s: string) => s.replaceAll("{repo}", join(SHIPPED_ROOT, ".."));
 	const setup = meta.setup ? repo(meta.setup) : undefined;
-	return { id, name: meta.name, what: meta.what, trigger: meta.trigger, stage: meta.stage, enabled: meta.enabled !== "false", appliesTo: applies, deny, body: repo(p.body), ...(setup ? { setup } : {}), file, origin, ...(watch ? { watch } : {}), ...(schedule ? { schedule } : {}) };
+	return { id, name: meta.name, what: meta.what, trigger: meta.trigger, stage: meta.stage, enabled: meta.enabled !== "false", appliesTo: applies, deny, body: repo(p.body), ...(setup ? { setup } : {}), file, origin, ...(meta.custom === "true" ? { custom: true } : {}), ...(watch ? { watch } : {}), ...(schedule ? { schedule } : {}) };
 }
 
 type Entry = { sig: string; feature?: FeatureDir; reason?: string };
@@ -125,8 +127,13 @@ const mt = (p: string) => {
 	}
 };
 
-// Every folder under the shipped root and <dataDir>/features. A personal folder with the same id replaces the shipped one
-// (copy it and edit, e.g. `enabled: false`). Malformed ones are listed in `skipped` (reported once per change through `warn`).
+// Every folder under the shipped root and <dataDir>/features. A personal folder with the id of a shipped one is a switch on it: its
+// `enabled` and `applies_to` (and its own watch.json / schedule.json, if any) apply, while the name, text, deny lines and setup stay the
+// shipped ones, so an update that improves the feature reaches an install that turned it on (onboarding and app-off write such copies;
+// a whole copy used to freeze the text at the day it was made). `custom: true` in the personal frontmatter keeps the personal text as it is.
+// Malformed ones are listed in `skipped` (reported once per change through `warn`).
+const switched = (shipped: FeatureDir, mine: FeatureDir): FeatureDir =>
+	mine.custom ? mine : { ...shipped, enabled: mine.enabled, appliesTo: mine.appliesTo, origin: "personal", ...(mine.watch ? { watch: mine.watch } : {}), ...(mine.schedule ? { schedule: mine.schedule } : {}) };
 export function loadFeatureDirs(dataDir: string, warn?: (msg: string) => void): Loaded {
 	const byId = new Map<string, FeatureDir>(), skipped = new Map<string, { id: string; reason: string }>();
 	for (const [root, origin] of [[SHIPPED_ROOT, "shipped"], [featuresRoot(dataDir), "personal"]] as const) {
@@ -151,7 +158,7 @@ export function loadFeatureDirs(dataDir: string, warn?: (msg: string) => void): 
 				cache.set(key, e);
 				if (e.reason) warn?.(`${origin} feature folder ${id} skipped: ${e.reason}`);
 			}
-			if (e.feature) { byId.set(id, e.feature); skipped.delete(id); }
+			if (e.feature) { const base = byId.get(id); byId.set(id, base && base.origin === "shipped" && origin === "personal" ? switched(base, e.feature) : e.feature); skipped.delete(id); }
 			else skipped.set(id, { id, reason: `${origin === "shipped" ? "배포용" : "개인용"}: ${e.reason!}` });
 		}
 	}

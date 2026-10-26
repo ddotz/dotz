@@ -58,7 +58,7 @@ const writeJson = (file: string, doc: unknown) => {
 	renameSync(tmp, file);
 };
 
-/** The personal copy of a feature folder's feature.md with `enabled: false` (a personal folder replaces the shipped one of the same id). */
+/** The personal copy of a feature folder's feature.md with `enabled: false` (a personal folder switches the shipped one of the same id; its text stays the shipped one, hub/featuredirs.ts). */
 function disableFeature(dataDir: string, id: string): void {
 	const f = loadFeatureDirs(dataDir).features.find(x => x.id === id);
 	if (!f) return;
