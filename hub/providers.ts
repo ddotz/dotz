@@ -1,8 +1,8 @@
 // Model providers as the gateway sees them, all kept in the runtime's own credential store: OAuth logins (`omp login`,
 // started and finished through the gateway), API keys (`omp auth import`), sign-out (`omp auth-broker logout`), plus
 // the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
-import { readFileSync } from "node:fs";
-import { OMP } from "./config.ts";
+import { copyFileSync, existsSync, readFileSync } from "node:fs";
+import { OMP, writeAtomic } from "./config.ts";
 import { label } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
@@ -414,10 +414,31 @@ export async function logoutProvider(provider: string): Promise<void> {
 		const env = PROVIDER_ENV[provider];
 		throw new ControlError(env && process.env[env] ? "환경 설정으로 지정된 키라서 여기서 지울 수 없어요" : "로그인된 계정이 없어요", 404);
 	}
-	const proc = Bun.spawn([OMP, "auth-broker", "logout", provider], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-	if ((await proc.exited) !== 0) throw new ControlError("로그아웃하지 못했어요", 500);
+	// OmO keeps its logins in its own auth.json and has no sign-out command (its /logout edits that file), so for OmO the entry the row
+	// shows is removed there, after a copy next to it. `omp auth-broker logout` only touches omp's store: on an OmO install it changed
+	// nothing and the 공급자 screen stayed as it was (Mac mini, 2026-10-26).
+	const removed = usesOmo() && removeOmoLogin(provider);
+	if (usesOmp() && (await ompHasCredential(provider))) {
+		const proc = Bun.spawn([OMP, "auth-broker", "logout", provider], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+		if ((await proc.exited) !== 0 && !removed) throw new ControlError("로그아웃하지 못했어요", 500);
+	} else if (!removed) throw new ControlError("로그아웃하지 못했어요", 500);
 	invalidate();
 }
+
+// The OmO auth.json entry behind the dotz provider row: the subscription login for `anthropic` when there is one (it shadows OmO's
+// `anthropic` key entry, which stays), else the entry of that id. A copy of the file is kept as auth.json.bak-<time> (0600).
+export function removeOmoLogin(provider: string, now = Date.now()): boolean {
+	const auth = omoAuth();
+	if (!auth) return false;
+	const id = provider === "anthropic" && SUBSCRIPTION in auth ? SUBSCRIPTION : provider in auth ? provider : undefined;
+	if (!id) return false;
+	const file = authFile();
+	if (existsSync(file)) copyFileSync(file, `${file}.bak-${now}`);
+	const { [id]: _gone, ...rest } = auth;
+	writeAtomic(file, `${JSON.stringify(rest, null, 2)}\n`, 0o600);
+	return true;
+}
+const ompHasCredential = async (provider: string): Promise<boolean> => ((await ompJson<{ credentials?: OmpCredential[] }>(["auth", "export"]))?.credentials ?? []).some(c => c.provider === provider);
 
 type QuotaLimit = { id: string; label: string; window: string; used: number | null; limit: number | null; remaining: number | null; unit: string; resets_at: number | null; status: string };
 // Pure: maps the usage reports to the API shape; providers holding credentials but absent from the reports
