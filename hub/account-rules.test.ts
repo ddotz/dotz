@@ -241,3 +241,13 @@ test("the rules file: round trip, a manual pick set and cleared, and bad input r
 	writeFileSync(rulesFile(), "{ not json");
 	expect(readRules()).toEqual({});
 });
+
+test("a pinned account whose login died yields to a working one (a fresh /login); a pinned account on a limit still holds", () => {
+	const dead = evaluate({ now: WED_10, pool: pool(["imported-anthropic", "anthropic"], { "imported-anthropic": { reason: "auth_error" } }), current: "imported-anthropic", usage: {}, rules: { manual: { account: "imported-anthropic" } }, aliases: {} });
+	expect(dead.account).toBe("anthropic");
+	expect(dead.hard).toBeUndefined();
+	const limited = evaluate({ now: WED_10, pool: pool(["imported-anthropic", "anthropic"], { "imported-anthropic": { reason: "rate_limit" } }), current: "imported-anthropic", usage: {}, rules: { manual: { account: "imported-anthropic" } }, aliases: {} });
+	expect(limited).toMatchObject({ account: "imported-anthropic", source: "manual", hard: true });
+	const alone = evaluate({ now: WED_10, pool: pool(["imported-anthropic"], { "imported-anthropic": { reason: "auth_error" } }), current: "imported-anthropic", usage: {}, rules: { manual: { account: "imported-anthropic" } }, aliases: {} });
+	expect(alone.account).toBe("imported-anthropic");   // nothing else works: the pick stays
+});
