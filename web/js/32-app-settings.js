@@ -52,28 +52,42 @@ async function asApprove(app, a, o) {
   } catch (e) { toast(e.message || "답하지 못했어요", true); }
   AS.busy[app] = false; asPaint();
 }
+// The list item an app's answers open (자세히): this computer's app, or a peer app's own item key on that computer.
+const asAppItemKey = app => { const pe = typeof PQ !== "undefined" ? PQ.of.get(`settings:${app}`) : null; return pe && pe.key ? pe.key : `i:${app.split("~")[0]}`; };
 function asApprovalNode(app, a) {
   const opts = a.options || [], when = a.at ? `승인 대기 · ${monTime(a.at)}` : "승인 대기";
   return el("div", { class: "as-row as-appr", "data-approval": a.id },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.title || "승인 요청" }), el("span", { class: "as-h", text: a.kind ? `${a.kind} · ${when}` : when }), ...(a.note ? [el("span", { class: "as-h as-warn", "data-note": "blocked", text: a.note })] : [])),
     el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal", type: "button", "data-k": `appr:${o.label}`, onclick: () => asApprove(app, a, o) }, o.label)),
-      el("button", { class: "btn text", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", `i:${app.split("~")[0]}`); } }, "자세히")));
+      el("button", { class: "btn text", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", asAppItemKey(app)); } }, "자세히")));
+}
+// One watch the app owns (로그인 유지 / 동기화): its status, when it last ran, and its period. The period is editable when the watch lives on this
+// computer; a peer's period is read only (its settings are written through that computer's own act routes). 다시 시도 only on a row that is not ok.
+async function asEvery(app, i, v) {
+  const n = Math.round(Number(v));
+  if (!(n >= 1 && n <= 10080)) { toast("1분에서 7일 사이로 정해 주세요", true); asPaint(); return; }
+  if (AS.busy[app]) return;
+  AS.busy[app] = true;
+  try { await api(`/api/watches/${enc(i.id)}/settings`, "PATCH", { values: { every_minutes: n } }); await asFeatLoad(app); toast("감시 주기를 바꿨어요"); }
+  catch (e) { toast(e.message || "감시 주기를 바꾸지 못했어요", true); }
+  AS.busy[app] = false; asPaint();
 }
 function asInternalNode(app, i) {
   const lines = [i.status, i.last_run ? `마지막 확인 ${monTime(i.last_run)}` : ""].filter(Boolean).join(" · ");
   return el("div", { class: "as-row as-int", "data-internal": i.id, "data-kind": i.kind },
     el("span", { class: `as-dot ${i.dot}`, "aria-hidden": "true" }),
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: i.name }), el("span", { class: "as-h", text: lines }), ...(i.reason ? [el("span", { class: "as-h as-why", text: `이유: ${i.reason}` })] : [])),
-    el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id) }, "다시 시도"));
+    i.every_minutes ? (app.includes("~")
+      ? el("span", { class: "as-v", text: `${i.every_minutes}분마다` })
+      : el("span", { class: "as-every-wrap" },
+        el("input", { class: "as-in as-every", type: "number", min: 1, max: 10080, inputmode: "numeric", "aria-label": `${i.name} 감시 주기(분)`, title: "감시 주기(분)", "data-k": `every:${i.id}`, value: String(i.every_minutes), onchange: ev => asEvery(app, i, ev.target.value) }),
+        el("span", { class: "as-unit", text: "분" }))) : null,
+    i.dot === "ok" ? null : el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id) }, "다시 시도"));
 }
-function asFeatNodes(app, v) {
-  return [
-    ...(v.features.length ? [el("div", { class: "as-sec", text: "기능" }), ...v.features.map(f => el("div", { class: "as-row as-feat", "data-feature": f.id },
-      el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.name }), el("span", { class: "as-h", text: f.status })),
-      kkSwitch(f.on, f.name, `feat:${f.id}`, on => asFeatSet(app, f.id, on))))] : []),
-    ...(v.approvals.length ? [el("div", { class: "as-sec", text: "승인 대기" }), ...v.approvals.map(a => asApprovalNode(app, a))] : []),
-    ...(v.internal.length ? [el("div", { class: "as-sec", text: "내부 기능" }), ...v.internal.map(i => asInternalNode(app, i))] : []),
-    ...(v.features.length || v.approvals.length || v.internal.length ? [el("div", { class: "as-sec", text: "설정" })] : [])];
+function asFeatRow(app, f) {
+  return el("div", { class: "as-row as-feat", "data-feature": f.id },
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.name }), el("span", { class: "as-h", text: f.status })),
+    kkSwitch(f.on, f.name, `feat:${f.id}`, on => asFeatSet(app, f.id, on)));
 }
 async function asPatch(app, values) {
   const r = await api(asUrl(app), "PATCH", { values });
@@ -81,6 +95,8 @@ async function asPatch(app, values) {
   asPaint();
   MON.sig = ""; monSchedule();
   if (app.includes("~")) pqSoon(); else loadIntegrations();   // a peer app's name and switches are read back from that computer
+  // The Kakao room list draws the same watch and draft lists: read it again so its switches and the screen never disagree.
+  if (app === "kakao" && typeof KK !== "undefined" && KK.loaded) kkLoadRooms().catch(() => {});
   return r;
 }
 
@@ -265,6 +281,42 @@ function asControl(f, set) {
   c.value = String(f.value);
   return c;
 }
+// The sections of the settings screen in the order the owner reads them (hub/app-settings.ts SettingSection); a row is drawn once, under one heading.
+const AS_SECTIONS = [["notify", "알림"], ["draft", "자동 초안과 승인"], ["watch", "감시"], ["more", "기타 기능"], ["advanced", "고급"]];
+// 연결 상태 at the top: whether this app is connected to its site (and since when it is not), or when a monitor last checked.
+function asConnNode(app) {
+  if (app.startsWith("w:")) {
+    const m = asMon(app);
+    if (!m) return null;
+    const res = m.last_result ? NT_RESULT[m.last_result] : null, dot = m.paused ? "idle" : res && res[1] === "fail" ? "fail" : res ? "ok" : "idle";
+    const sub = [m.last_run ? `마지막 확인 ${monTime(m.last_run)}` : "", m.next_run ? `다음 확인 ${monTime(m.next_run)}` : ""].filter(Boolean).join(" · ");
+    return el("div", { class: "as-row as-conn", "data-conn": dot === "fail" ? "disconnected" : dot === "ok" ? "connected" : "unknown" },
+      el("span", { class: `as-dot ${dot}`, "aria-hidden": "true" }),
+      el("span", { class: "as-b" }, el("span", { class: "as-n", text: m.paused ? "멈춰 있어요" : res ? res[0] : "아직 확인 전이에요" }), sub ? el("span", { class: "as-h", text: sub }) : null));
+  }
+  const pc = typeof pqPc === "function" ? pqPc(`settings:${app}`) : null;
+  const peer = pc && typeof PQ !== "undefined" ? PQ.list.find(p => p && p.url === pc.url) : null;
+  const it = pc ? ((peer && peer.items && peer.items.integrations) || []).find(x => x.key === app.split("~")[0]) : INTG.items.find(x => x.key === app);
+  const off = !!(it && it.state === "disconnected");
+  const last = pc ? "" : monStatMons(app).map(m => m && (m.last_ok || m.last_run)).filter(Boolean).sort().pop();
+  const sub = off ? (it.since ? `${monTime(it.since)}부터 연결이 끊겼어요` : it.hint || "다시 로그인해 주세요") : !it ? "" : pc ? `${pc.name}에서 쓰는 앱이에요` : last ? `마지막 확인 ${monTime(last)}` : "";
+  return el("div", { class: "as-row as-conn", "data-conn": off ? "disconnected" : it ? "connected" : "unknown" },
+    el("span", { class: `as-dot ${off ? "fail" : it ? "ok" : "idle"}`, "aria-hidden": "true" }),
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: off ? "연결 끊김" : it ? "연결됨" : "연결 상태를 확인 중이에요" }), sub ? el("span", { class: "as-h", text: sub }) : null));
+}
+// One settings row. A feature whose switch IS this setting is not drawn again under 기능; only its waiting count rides along here.
+function asSettingRow(app, f, feat, box) {
+  const bound = feat && feat.features.find(x => x.setting === f.key), wait = bound && /승인 대기/.test(bound.status) ? bound.status : "";
+  return el("div", { class: "as-row", "data-setting": f.key },
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), f.help ? el("span", { class: "as-h", text: f.help }) : null, wait ? el("span", { class: "as-h", "data-wait": "1", text: wait }) : null),
+    // A list is edited in the conversation (a change card); here it only says how many.
+    f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : asControl(f, async v => {
+      if (AS.busy[app]) return;
+      AS.busy[app] = true;
+      try { await asPatch(app, { [f.key]: v }); } catch (e) { toast(e.message || "설정을 바꾸지 못했어요"); }
+      AS.busy[app] = false; delete box.dataset.sig; asPaint();
+    }));
+}
 // The options and the status of the settings screen (asScreen) - never of the conversation, which is chat only.
 function asPaint() {
   const box = $("#app-sw"), app = ASC.app;
@@ -275,29 +327,34 @@ function asPaint() {
     if (box.dataset.sig !== sig) { box.dataset.sig = sig; clear(box).append(el("div", { class: "as-row" }, el("span", { class: "as-h", text: AS.none[app] ? "설정을 불러오지 못했어요" : "불러오는 중…" }))); }
     return;
   }
-  const feat = app.startsWith("w:") ? null : AS.feat[app] || null, stat = feat ? [] : monStatMons(app);
-  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], stat, feat]);
+  const feat = app.startsWith("w:") ? null : AS.feat[app] || null;
+  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
+  // Within a section: the switch that turns the feature on, then the feature rows, then the other values, then the lists, then what waits or runs.
+  const secs = new Map(AS_SECTIONS.map(([k]) => [k, []]));
+  const put = (sec, rank, node) => (secs.get(sec) || secs.get("advanced")).push({ rank, node });
+  const keys = new Set(fields.map(f => f.key));
   // 기억 항목 (attach folder, follow-up rule) are learned in conversation, never typed here: shown read only, with how to change them.
-  const sw = fields.filter(f => f.switch), other = fields.filter(f => !f.switch && !f.memory), mem = fields.filter(f => f.memory);
+  for (const f of fields.filter(f => !f.memory)) put(f.section || "advanced", f.type === "list" ? 4 : f.switch ? 1 : 3, asSettingRow(app, f, feat, box));
+  if (feat) {
+    for (const f of feat.features) if (!(f.setting && keys.has(f.setting))) put(f.section || "more", 2, asFeatRow(app, f));
+    if (feat.approvals.length) { put("draft", 5, el("div", { class: "as-sub", "data-sub": "approvals", text: "승인 대기" })); for (const a of feat.approvals) put("draft", 5, asApprovalNode(app, a)); }
+    for (const i of feat.internal) put("watch", 5, asInternalNode(app, i));
+  }
+  const mem = fields.filter(f => f.memory);
+  if (mem.length) put("advanced", 6, el("div", { class: "as-row as-mem", "data-setting": "memory" },
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: "기억해 둔 것" }),
+      el("span", { class: "as-h", text: "대화에서 알려 주면 봇이 기억하고 참고해요. 바꾸려면 대화에서 말해 주세요" }),
+      ...mem.map(f => el("span", { class: "as-h", text: `${f.label}: ${f.value === "" || f.value == null ? "아직 없어요" : asFmt(f, f.value)}` })))));
+  if (!app.startsWith("w:")) put("advanced", 7, asRemoveNode(app));
+  const conn = asConnNode(app);
   clear(box).append(
-    ...stat.map(monStatNode),
-    ...(feat ? asFeatNodes(app, feat) : []),
-    ...[...sw, ...other].map(f => el("div", { class: "as-row", "data-setting": f.key },
-      el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), f.help ? el("span", { class: "as-h", text: f.help }) : null),
-      // A list is edited in the conversation (a change card); here it only says how many.
-      f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : asControl(f, async v => {
-        if (AS.busy[app]) return;
-        AS.busy[app] = true;
-        try { await asPatch(app, { [f.key]: v }); } catch (e) { toast(e.message || "설정을 바꾸지 못했어요"); }
-        AS.busy[app] = false; delete box.dataset.sig; asPaint();
-      }))),
-    ...(mem.length ? [el("div", { class: "as-row as-mem", "data-setting": "memory" },
-      el("span", { class: "as-b" }, el("span", { class: "as-n", text: "기억해 둔 것" }),
-        el("span", { class: "as-h", text: "대화에서 알려 주면 봇이 기억하고 참고해요. 바꾸려면 대화에서 말해 주세요" }),
-        ...mem.map(f => el("span", { class: "as-h", text: `${f.label}: ${f.value === "" || f.value == null ? "아직 없어요" : asFmt(f, f.value)}` }))))] : []),
-    ...(app.startsWith("w:") ? [] : [asRemoveNode(app)]));
+    ...(conn ? [conn] : []),
+    ...AS_SECTIONS.flatMap(([k, title]) => {
+      const rows = secs.get(k).map((r, i) => ({ ...r, i })).sort((a, b) => a.rank - b.rank || a.i - b.i).map(r => r.node);
+      return rows.length ? [el("div", { class: "as-sec", "data-sec": k, text: title }), ...rows] : [];
+    }));
 }
 // The settings screen: a view pushed over the conversation (back button on a phone and on a wide screen) with the status card and every option row.
 // The conversation keeps only the chat; its header's ⋯ button opens this.
