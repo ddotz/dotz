@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { replyCall } from "../features/reply-drafts/lib/flow.ts";
 import { loadSettings, setApp } from "../features/reply-drafts/lib/settings.ts";
 import { fieldsOf, readSettings, setReplyModelChoices, SettingsError, writeSettings } from "./app-settings.ts";
-import { callReplyModel, instanceOf, pickReplyModel, replyModel, type ReplyCall } from "./reply-model.ts";
+import { callReplyModel, DRAFT_TIMEOUT_MS, instanceOf, pickReplyModel, replyModel, type ReplyCall } from "./reply-model.ts";
 import { replyModelChoices } from "./reply-model-choices.ts";
 import { appEntries } from "./integrations.ts";
 import { modelArgv } from "./outlang.ts";
@@ -136,6 +136,11 @@ describe("the draft paths call the model they resolved", () => {
 		await callReplyModel("kakao", "kakao:1", "s", "u", call, { dataDir: dir, worker: WORKER });
 		await callReplyModel("youtube", undefined, "s", "u", call, { dataDir: dir, worker: WORKER });
 		expect(seen.map(s => s.model)).toEqual([OPUS, WORKER]);
+	});
+	test("a draft waits at most 45 s (a spent provider is refused before the call)", async () => {
+		const { seen, call } = recorder();
+		await callReplyModel("kakao", undefined, "s", "u", call, { dataDir: dir, worker: WORKER });
+		expect(seen.map(s => s.timeoutMs)).toEqual([DRAFT_TIMEOUT_MS]);
 	});
 	test("the mail/comment flow call (replyCall) uses the instance's model", async () => {
 		const { seen, call } = recorder();
