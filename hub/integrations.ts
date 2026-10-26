@@ -21,6 +21,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { loadFeatureDirs } from "./featuredirs.ts";
+import { appConnection, connectionText, type WatchStatusLike } from "./watch-status.ts";
 
 export type IntegrationEntry = {
 	key: string;
@@ -225,6 +226,14 @@ export function integrationItems(ctx: IntegrationContext, notices: readonly Noti
 		const needs = { drafts: mine.filter(waitsDraft).length + cm.drafts, unread: mine.filter(n => !n.read && !waitsDraft(n)).length + fromConvs + cm.unread, sentToday, unreplied };
 		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, unreplied, notices: mine.slice(0, cap).map(n => n.id), needs };
 	});
+}
+
+// The item's connection from the watches it owns (`own`, GET /api/integrations): `state` "connected" | "disconnected" whatever was alerted, and for a
+// disconnected one `since` (ISO) and `hint`, the row text ("연결 끊김 · 10월 23일 21:29부터 · 다시 로그인 필요") that replaces the needs line.
+export function withConnection<T extends { own?: string[] }>(item: T, watches: readonly WatchStatusLike[], timeZone?: string): T & { state: "connected" | "disconnected"; since?: string; hint?: string } {
+	const c = appConnection(watches.filter(w => item.own?.includes(w.name)));
+	if (c.state === "connected") return { ...item, state: "connected" };
+	return { ...item, state: "disconnected", ...(c.since ? { since: c.since } : {}), hint: connectionText(c, timeZone)! };
 }
 
 // The apps the 앱 추가 sheet lists: only those the owner switched off or removed here (`off`). An entry never set up on this install is not listed;
