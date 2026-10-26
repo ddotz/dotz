@@ -162,4 +162,4 @@ function pathFiles(md) {
   if (n) for (const img of n.querySelectorAll("img")) img.onerror = () => img.closest(".fitem").remove();
   return n;
 }
-setInterval(() => { if (current === "chat" || current === "activity") loadContext(true).then(renderCtxRing); }, 15000);
+setInterval(() => { if ((current === "chat" || current === "activity") && !document.hidden) loadContext(true).then(renderCtxRing); }, 15000);
