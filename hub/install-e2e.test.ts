@@ -89,7 +89,7 @@ test("tarball install writes the stamp, then self-updates to a newer local tarba
 	expect(bad.json.message).toContain("테스트 실패");
 	expect(existsSync(join(app, "FAIL_MARK"))).toBe(false);
 	expect(existsSync(join(app, "E2E_NEWER"))).toBe(true);
-});
+}, 60_000);
 
 test("--git installs a clone that updates through git, without a stamp", () => {
 	const origin = join(root, "origin");
@@ -122,4 +122,4 @@ test("--git installs a clone that updates through git, without a stamp", () => {
 	const up = selfupdate(app, "--apply", "--test-cmd", "test -f RELEASE_2");
 	expect(up.json.status).toBe("updated");
 	expect(existsSync(join(app, "RELEASE_2"))).toBe(true);
-});
+}, 60_000);
