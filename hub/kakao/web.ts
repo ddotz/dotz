@@ -65,6 +65,7 @@ const SEND_WINDOW_MS = 24 * 3600 * 1000;
 const OFF = { error: "카톡 연동이 꺼져 있어요" };
 const LOST = "게이트웨이가 다시 시작돼서 결과를 확인하지 못했어요";
 const REVISE_MAX = 500;
+const INTENT_MAX = 300;
 const STUCK_MS = 60_000;
 const STUCK = "60초가 지나도 끝나지 않아서 실패로 처리했어요";
 const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
@@ -293,15 +294,18 @@ export function createKakaoWeb(deps: WebDeps) {
 	// The one model call of a draft request (never per incoming message). Never rejects: every outcome is a kakao_draft event.
 	// With `choice` (the owner's pick of the room's open question) the call writes the reply for that pick instead of deciding again.
 	// With `revise` (a pending draft and the owner's change request) the call rewrites that draft; createDraft marks the old one stale only when the new one is stored.
-	async function makeDraft(config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }): Promise<void> {
+	async function makeDraft(config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }, intent?: string): Promise<void> {
 		const done = (error?: string) => deps.broadcast({ kind: "kakao_draft", chatId, ...(error ? { error } : {}) });
 		try {
 			const room = eligible((await allRooms(config, true)).all, config).find(r => r.chatId === chatId);
 			if (!room) return done("대화방을 찾지 못했어요");
-			const recent = await messages(await getDb(config), chatId, DRAFT_READ, config.userId ?? "");
+			const db = await getDb(config);
+			const recent = await messages(db, chatId, DRAFT_READ, config.userId ?? "");
 			const self = room.kind === "self";
-			const window = sinceOwnLast(recent, self);
-			const basis = basisOf(window, self);
+			const compose = !!intent;
+			const window = compose ? recent : sinceOwnLast(recent, self);
+			// A message of his own has no message to answer: its basis is the room's newest row (nothing older makes it stale).
+			const basis = compose ? (await roomHead(db, chatId)) || "0" : basisOf(window, self);
 			if (!basis) return done(NO_REPLY);
 			if (deps.learnVoice) {
 				try {
@@ -318,11 +322,13 @@ export function createKakaoWeb(deps: WebDeps) {
 				style = deps.draftStyle?.(chatId);
 			} catch {}
 			const ownLines = recent.filter(m => m.fromMe && m.type === TEXT_TYPE).map(m => m.text);
-			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context: contextLines(recent, window), summary: readJsonText(summaryFile(chatId)), pairs: ownPairs(recent), samples: ownSamples(recent), register: registerOf(ownLines.slice(-80)), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}) });
+			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context: compose ? [] : contextLines(recent, window), summary: readJsonText(summaryFile(chatId)), pairs: ownPairs(recent), samples: ownSamples(recent), register: registerOf(ownLines.slice(-80)), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}) });
 			const reply = await deps.draftModel!(system, user, chatId);
 			const parsed = parseDraftReply(reply.text);
 			if (!parsed) return done(DRAFT_FAILED);
-			if (parsed.action === "ask" && !choice && !revise) {
+			// A message he asked for has no room question and no skip: the call must write it.
+			if (intent && parsed.action !== "draft") return done(DRAFT_FAILED);
+			if (parsed.action === "ask" && !choice && !revise && !intent) {
 				if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
 				setAsk(chatId, { question: parsed.question!, choices: parsed.choices!, basisLogId: basis, created: now() });
 				return done();
@@ -331,7 +337,7 @@ export function createKakaoWeb(deps: WebDeps) {
 			const reported = (reply.inputTokens ?? 0) > 0 || (reply.outputTokens ?? 0) > 0;
 			const tokens = reported ? { in: reply.inputTokens ?? 0, out: reply.outputTokens ?? 0 } : { in: estimateTokens(system.length + user.length), out: estimateTokens(reply.text.length), estimated: true as const };
 			try {
-				await createDraft({ chatId, roomName: room.name, text: parsed.body, basisLogId: basis, tokens }, { paths, runner: deps.runner, now });
+				await createDraft({ chatId, roomName: room.name, text: parsed.body, basisLogId: basis, tokens, ...(intent ? { intent } : {}) }, { paths, runner: deps.runner, now });
 			} catch (e) {
 				return done(e instanceof Error ? e.message : DRAFT_FAILED);
 			}
@@ -441,7 +447,7 @@ export function createKakaoWeb(deps: WebDeps) {
 						drafts: (isWatched ? await listDrafts({ paths, runner: deps.runner }) : [])
 							.filter(d => d.chatId === chatId && d.status === "pending")
 							// `parts`: the messages the draft sends, in order (one bubble each in the card); `sentParts` of them are already in the room.
-							.map(d => ({ code: d.code, text: d.text, parts: draftParts(d.text), ...(d.sentParts ? { sentParts: d.sentParts } : {}), basisLogId: d.basisLogId, created: d.created })),
+							.map(d => ({ code: d.code, text: d.text, parts: draftParts(d.text), ...(d.sentParts ? { sentParts: d.sentParts } : {}), ...(d.intent ? { intent: d.intent } : {}), basisLogId: d.basisLogId, created: d.created })),
 						...(ask ? { ask } : {}),
 						sends: sendList()
 							.filter(s => s.chatId === chatId && s.at >= since)
@@ -549,8 +555,17 @@ export function createKakaoWeb(deps: WebDeps) {
 						deps.onRevise?.(chatId, change);
 					} catch {}
 				}
+				// A message the owner wants to send (메시지 만들어 줘): { intent } instead of a reply to the room's last message.
+				const intentRaw = draftBody.intent;
+				let intent: string | undefined;
+				if (intentRaw !== undefined) {
+					if (typeof intentRaw !== "string") return json({ error: "intent must be a string" }, 400);
+					intent = intentRaw.replace(/\s+/g, " ").trim().slice(0, INTENT_MAX);
+					if (!intent) return json({ error: "어떤 메시지를 만들지 적어 주세요" }, 400);
+					if (revise) return json({ error: "만들 메시지와 고칠 초안은 함께 보낼 수 없어요" }, 400);
+				}
 				drafting.add(chatId);
-				const run = makeDraft(config!, chatId, choice, revise).finally(() => drafting.delete(chatId));
+				const run = makeDraft(config!, chatId, choice, revise, intent).finally(() => drafting.delete(chatId));
 				pending.add(run);
 				void run.finally(() => pending.delete(run));
 				return json({ state: "drafting" }, 202);

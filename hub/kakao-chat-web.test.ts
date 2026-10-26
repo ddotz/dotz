@@ -144,6 +144,12 @@ const server = Bun.serve({
 				return json({ room: { chatId: room.chatId, name: room.name, kind: room.kind, group: room.kind === "group" || room.kind === "open", watched: room.watched }, messages: list, read: after ? undefined : "3007", kakaoUnread: 30, drafts: room.watched ? drafts : [], sends, ...(ask ? { ask } : {}) });
 			}
 			record({ method: "POST", path: p, body });
+			if (c[2] === "draft" && typeof body!.intent === "string") {
+				const parts = ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"];
+				drafts = [{ code: "di", text: parts.join("\n\n"), parts, intent: String(body!.intent), basisLogId: "4030", created: Date.now() }];
+				emit({ kind: "kakao_draft", chatId: c[1] });
+				return json({ state: "drafting" }, 202);
+			}
 			if (c[2] === "draft" && typeof body!.choice === "string") {
 				ask = null;
 				drafts = [{ code: "dp", text: `답장: ${body!.choice}`, basisLogId: "4033", created: Date.now() }];
@@ -692,6 +698,35 @@ describe("카카오톡 media at desktop width", () => {
 		await shot(v, "10-desktop-media.png");
 		await run(v, `document.querySelector("#kk-tl").scrollTop = 0`);
 		await shot(v, "10-desktop-media-top.png");
+	});
+});
+
+describe("카카오톡 메시지 만들어 줘", () => {
+	const v = open(1280, 800);
+
+	test("the composer asks what to send; one intent makes a 새 메시지 초안 card through the same draft route, and 취소 closes it", async () => {
+		reset();
+		await boot(v);
+		await openRoom(v);
+		await run(v, `document.querySelector("#kk-new-btn").click()`);
+		await waitFor(v, `!!document.querySelector("#kk-intent-in")`);
+		const box = await q<Record<string, any>>(v, `const i = document.querySelector("#kk-intent-in"); return { q: document.querySelector("#kk-intent .kk-rq").textContent, ph: i.placeholder, disabled: document.querySelector('[data-k="compose-go"]').disabled, focus: document.activeElement.id }`);
+		expect(box).toEqual({ q: "어떤 메시지를 보낼까요?", ph: "예: 내일 7시로 미루자고 정중하게", disabled: true, focus: "kk-intent-in" });
+		await run(v, `const i = document.querySelector("#kk-intent-in"); i.value = "내일 7시로 미루자고 정중하게"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
+		expect(await q(v, `return document.querySelector('[data-k="compose-go"]').disabled`)).toBe(false);
+		await run(v, `document.querySelector('[data-k="compose-go"]').click()`);
+		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft")).body).toEqual({ intent: "내일 7시로 미루자고 정중하게" });
+		expect(await q(v, `return document.querySelector("#kk-draft-btn").textContent`)).toBe("초안 만드는 중…");
+		await waitFor(v, `document.querySelector('.kk-draft[data-code="di"] .kk-dp') && !document.querySelector("#kk-draft-btn").disabled`);
+		const card = await q<Record<string, any>>(v, `const c = document.querySelector('.kk-draft[data-code="di"]'); return { head: c.querySelector(".kk-dh").textContent, parts: [...c.querySelectorAll(".kk-dp")].map(p => p.textContent), buttons: [...c.querySelectorAll(".btn")].map(b => b.textContent), intent: !!document.querySelector("#kk-intent-in") }`);
+		expect(card).toEqual({ head: "새 메시지 초안 · 메시지 2개", parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], buttons: ["보내기", "고치기", "버리기"], intent: false });
+		await shot(v, "17-desktop-compose.png");
+
+		await run(v, `document.querySelector("#kk-new-btn").click()`);
+		await waitFor(v, `!!document.querySelector("#kk-intent-in")`);
+		await run(v, `document.querySelector('[data-k="compose-cancel"]').click()`);
+		await waitFor(v, `!document.querySelector("#kk-intent-in")`);
+		expect(await q(v, `return document.querySelector("#kk-intent").hidden`)).toBe(true);
 	});
 });
 
