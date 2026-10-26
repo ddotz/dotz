@@ -147,14 +147,20 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 
 /* lanes board */
 /* board: free-form 12-column card grid shared by 홈 and 레인 (positions are calc() of the container width, so no JS layout pass is needed) */
-.bbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.bbar { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 8px; }
 .bbar .btn { height: 24px; font-size: 12px; }
-@media (max-width: 639px) { .bbar { display: none; } }
+@media (pointer: coarse) { .bbar { margin-bottom: 4px; } .bbar .btn { height: 36px; font-size: 13px; padding: 0 12px; } }
 .board { position: relative; }
 .bi { position: absolute; border-radius: 8px; transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease, box-shadow .15s; }
 .bi > .card { overflow: hidden auto; }
 .bi:hover, .bi.bdrag { box-shadow: var(--float); }
 .bi.bdrag { z-index: 6; transition: box-shadow .15s; }
+/* a finger resting on a card before the long press: no text selection or callout while it waits; the lifted card shows at once */
+.bi.bpress, .bi.bpress * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.board.narrow .bi { transition: transform .18s ease, box-shadow .15s; }
+.board.narrow .bi.bdrag { transition: box-shadow .15s; transform-origin: center; }
+.board.narrow .bi.bdrag > .card { background: var(--card-hover); }
+@media (prefers-reduced-motion: reduce) { .bi, .board.narrow .bi, .bph { transition: none; } }
 .bph { position: absolute; border: 1.5px dashed var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 9%, transparent); transition: left .12s ease, top .12s ease, width .12s ease, height .12s ease; pointer-events: none; }
 .boarding { user-select: none; -webkit-user-select: none; }
 .board:not(.narrow) .bhead { cursor: grab; touch-action: none; }
@@ -162,6 +168,8 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .board .card { padding: 12px 14px; }
 .board .ch { margin-bottom: 8px; }
 .board .ch .ib { width: 24px; height: 24px; }
+/* the same glyph, a finger-sized hit area: 40px on a touch screen, sitting in the header's own margin */
+@media (pointer: coarse) { .board .ch .ib { width: 40px; height: 40px; margin: -10px -10px -10px -4px; } }
 .brz { position: absolute; z-index: 3; touch-action: none; }
 .brz.se { right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; }
 .brz.se::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; border-right: 2px solid var(--fg-3); border-bottom: 2px solid var(--fg-3); border-bottom-right-radius: 3px; opacity: .35; transition: opacity .15s; }
@@ -175,7 +183,8 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .board.narrow { display: flex; flex-direction: column; gap: 12px; }
 .board.narrow .bi { position: relative; }
 .board.narrow .bi > .card { height: auto; overflow: visible; }
-.board.narrow .bhead { cursor: default; }
+.board.narrow .bhead { cursor: grab; }
+.board.narrow .bi.bdrag .bhead { cursor: grabbing; }
 .bi > .card { width: 100%; height: 100%; }
 .card.att { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 8%, var(--card)); }
 .card.att.err { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); background: color-mix(in srgb, var(--err) 8%, var(--card)); }
