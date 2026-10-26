@@ -165,6 +165,7 @@ details.work.live .wdot { display: block; }
 .runline[hidden] { display: none; }
 .pausenote { margin: 0 0 6px 6px; color: var(--warn); font-size: 12.5px; line-height: 18px; }
 .pausenote[hidden] { display: none; }
+.pausenote .pn-go { height: 24px; margin-left: 6px; padding: 0 8px; font-size: 12.5px; }
 .runline .dot { width: 7px; height: 7px; }
 .runline.warn { color: var(--warn); }
 @keyframes runpulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }

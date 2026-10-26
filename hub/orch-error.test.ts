@@ -196,7 +196,7 @@ test("the banner shows with the reason, since when and the restart button, and c
 	expect($("#oerr-tx").innerHTML).toContain("네트워크(DNS)가 안 돼요");
 	expect($("#oerr-tx").innerHTML).toContain("12:36부터");
 	await $("#oerr-btn").onclick!({ currentTarget: {} });
-	expect(calls).toEqual(["POST /api/orchestrator/restart"]);
+	expect(calls).toEqual(["POST /api/orchestrator/resume"]);
 	env.S.orchestrator.error = undefined;
 	paintOrchError();
 	expect($("#oerr").hidden).toBe(true);

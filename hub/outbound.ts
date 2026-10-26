@@ -194,8 +194,23 @@ export function alert(text: string): void {
 	if (discordPosts("alert") && !repeat) void send("alert", text).catch(e => log(`alert send failed: ${e}`));
 }
 
+// Said once per conversation per pause (a pause is known by when it began being announced): the owner's 2nd and 3rd message
+// in the same stoppage get no repeat of it (owner 2026-10-26: 멈춤 알림은 한 번만).
+const pauseToldIn = new Set<string>();
+let pauseToldFor = "";
 export function rateLimitNotice(target: string, replyTo?: string): void {
-	if (orch.status !== "rate-limited") return;
+	if (orch.status !== "rate-limited") {
+		pauseToldIn.clear();
+		pauseToldFor = "";
+		return;
+	}
+	const episode = orch.pauseKind ?? "";
+	if (episode !== pauseToldFor) {
+		pauseToldIn.clear();
+		pauseToldFor = episode;
+	}
+	if (pauseToldIn.has(target)) return;
+	pauseToldIn.add(target);
 	const until = new Date(orch.rateLimitedUntil);
 	const at = Number.isNaN(until.getTime()) ? "한도가 풀리면" : `${until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })}쯤`;
 	const text = orch.pauseKind === "owner" ? "지금 모델 제공자 결제/인증 문제로 멈춰 있어요. 해결되면 받은 메시지부터 이어서 처리할게요." : `지금 사용량 한도로 멈춰 있어요. ${at} 이어서 처리할게요.`;
