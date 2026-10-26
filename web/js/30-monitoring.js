@@ -164,7 +164,7 @@ function monItems() {
     items.push({ key: `m:${m.name}`, group: MON_GROUP.plain, name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
       hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : fresh ? monStrip(monLine(last), names) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
-      badge: conn ? ["연결 끊김", "err"] : m.paused ? ["꺼짐", ""] : (Date.parse(m.next_run) || Infinity) < Date.now() ? ["늦어짐", "warn"] : m.last_result === "fail" ? ["실패", "err"] : m.last_result === "changed" ? ["바뀜", "warn"] : m.last_run ? ["정상", "ok"] : ["확인 필요", "warn"] });
+      badge: conn ? ["연결 끊김", "err"] : m.paused ? ["꺼짐", ""] : m.last_result === "fail" ? ["실패", "err"] : (Date.parse(m.next_run) || Infinity) < Date.now() ? ["늦어짐", "warn"] : m.last_result === "changed" ? ["바뀜", "warn"] : m.last_run ? ["정상", "ok"] : ["확인 필요", "warn"] });
   }
   // A report the hub marked as an app's (n.app, hub/notices.ts) is never here, even before the app list below has loaded.
   const feed = NT.items.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), last = monNewest(feed), need = feed.filter(monNeed).length;
@@ -585,7 +585,7 @@ function monTimeline(it) {
   if (it.off) return [el("div", { class: "empty", text: "연결 안 됨" })];
   const names = it.mon ? monNames(it.mon) : [];
   const bar = monBarWanted(it) ? [monBar(it)] : [], nodes = !monFeed(it) ? monChronoNodes(it, names) : it.notices.length > MON_COMPACT ? monFeedNodes(it, names) : monFeedCards(it, names);
-  const ov = monOverview(it), head = [...monTopNodes(it), ...bar, ...(ov ? [ov, el("div", { class: "mon-sh", text: "최근 감시 소식" })] : [])];
+  const ov = monOverview(it), head = [...monTopNodes(it), ...bar, ...(ov ? [ov] : [])];
   if (nodes.length) return [...head, ...nodes];
   if (head.length) return [...head, el("div", { class: "empty", text: "이 보기에 해당하는 소식이 없어요" })];
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
@@ -619,10 +619,10 @@ const monRunBtn = (m, text) => el("button", { class: "as-tpl mon-run", type: "bu
 // One re-check control per conversation: a down or failing monitor, and a down app, get the banner and its button; a healthy one gets 지금 확인
 // in the head (a phone at the top of the timeline). The latest-run card never repeats it.
 function monBannerOf(it) {
-  if (it.mon && (it.mon.connection === "disconnected" || it.mon.last_result === "fail")) return monBannerNode(it.mon.connection === "disconnected" ? monConnLine(it.mon) : "마지막 확인이 실패했어요", it.mon.watch ? el("button", { class: "as-tpl mon-recheck", type: "button", "data-recheck": it.mon.watch, text: "지금 다시 확인", onclick: ev => monRunNow(ev.currentTarget, it.mon) }) : null);
+  if (it.mon && (it.mon.connection === "disconnected" || it.mon.last_result === "fail")) return monBannerNode(it.mon.connection === "disconnected" ? monConnLine(it.mon) : "마지막 확인이 실패했어요", it.mon.watch ? el("button", { class: "as-tpl mon-recheck", type: "button", "data-watch": it.mon.watch, text: "지금 다시 확인", onclick: ev => monRunNow(ev.currentTarget, it.mon) }) : null);
   if (!it.conn) return null;
   const names = (it.owned || []).map(m => m.watch).filter(Boolean);
-  return monBannerNode(it.hint || "연결이 끊겼어요", names.length ? el("button", { class: "as-tpl mon-recheck", type: "button", "data-recheck": it.key, text: "지금 다시 확인", onclick: ev => monRecheckApp(ev.currentTarget, it, names) }) : null);
+  return monBannerNode(it.hint || "연결이 끊겼어요", names.length ? el("button", { class: "as-tpl mon-recheck", type: "button", "data-watch": it.key, text: "지금 다시 확인", onclick: ev => monRecheckApp(ev.currentTarget, it, names) }) : null);
 }
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
 // A monitor adds its own progress block and 지금 확인 under the name, so the conversation always says how far the wait has come.
