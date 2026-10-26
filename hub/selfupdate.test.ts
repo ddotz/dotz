@@ -167,6 +167,29 @@ describe("against temp git repos", () => {
 		expect(seen.filter(s => s.cmd.startsWith("bun test"))).toEqual([{ cmd: "bun test --isolate", ms: 20 * 60_000 }]);
 	});
 
+	test("an applied update leaves update-pending.json and starts the rollback watchdog from a copy in the data dir", async () => {
+		const before = head(work);
+		const data = join(r.root, "data");
+		r.push("x.txt", "x", "new version");
+		const spawned: string[][] = [];
+		const j = await apply({ ...opts(), dataDir: data, watch: { pid: 4242, port: 47111, spawn: c => void spawned.push(c) } });
+		expect(j.status).toBe("updated");
+		const marker = JSON.parse(readFileSync(join(data, "update-pending.json"), "utf8"));
+		expect(marker).toMatchObject({ kind: "git", dir: work, from: before, to: head(work), deps: false, status: "pending", gatewayPid: 4242, port: 47111 });
+		expect(spawned).toEqual([[process.execPath, join(data, "update-watchdog.ts"), join(data, "update-pending.json")]]);
+		expect(readFileSync(join(data, "update-watchdog.ts"), "utf8")).toBe(readFileSync(join(import.meta.dir, "update-watchdog.ts"), "utf8"));
+	});
+
+	test("a failed update leaves no pending marker and starts no watchdog", async () => {
+		const data = join(r.root, "data");
+		r.push("FAIL", "boom\n", "breaks the tests");
+		const spawned: string[][] = [];
+		const j = await apply({ ...opts(), dataDir: data, watch: { pid: 4242, port: 47111, spawn: c => void spawned.push(c) } });
+		expect(j.status).toBe("failed");
+		expect(existsSync(join(data, "update-pending.json"))).toBe(false);
+		expect(spawned).toEqual([]);
+	});
+
 	test("failing tests put the checkout back on the old commit", async () => {
 		const before = head(work);
 		r.push("FAIL", "boom\n", "breaks the tests");
