@@ -376,6 +376,7 @@ function monConvNode(t, label) {
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
     el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null),
     el("div", { class: "rc-title", text: title }),
+    m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
     brief ? el("div", { class: "mr-sum", text: brief }) : null,
     chip || owed ? el("div", { class: "mr-slot" }, chip, owed ? unrepNo(`/api/mail/${t.slice(5)}/no-reply`, () => { m.unreplied = false; m.reply = "skipped"; monSchedule(); if (pqPc(t)) pqSoon(); }) : null, owed ? mailFyiButton(t, m) : null) : null);
 }

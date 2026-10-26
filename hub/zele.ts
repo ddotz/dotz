@@ -15,7 +15,7 @@ type ThreadSeen = { n: string; own: boolean; at: number };
 // `mail` holds the thread ids the older watch kept; `threads` replaces it and tells a new message in a thread that is already known.
 type State = { seeded: boolean; mail: string[]; threads: Record<string, ThreadSeen>; events: Record<string, Seen>; soon: string[]; briefDate: string };
 /** `message` names the newest message of the thread (stampOf): one value per message, so the hub can tell a repeat from an answer. */
-export type NewMail = { id: string; message: string; account: string; from: string; to: string; subject: string; snippet: string };
+export type NewMail = { id: string; message: string; account: string; from: string; to: string; /** 참조 (the list output carries it as `cc` when the account's Gmail/IMAP output has one). */ cc?: string; subject: string; snippet: string };
 type Hooks = {
 	alert: (text: string) => void;
 	mail: (m: NewMail) => Promise<void>;
@@ -155,7 +155,7 @@ const zeleRead = async (id: string, account: string): Promise<string> => {
 // zele lists a thread with the count and the date of its newest message; together they name that message (a new answer raises the count).
 const stampOf = (m: Item): string => `${m.messages ?? ""}|${m.date ?? ""}`;
 const THREADS_MAX = 2000;
-const newMail = (m: Item): NewMail => ({ id: String(m.id), message: stampOf(m), account: String(m.account ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), subject: String(m.subject ?? ""), snippet: String(m.snippet ?? "").slice(0, 400) });
+const newMail = (m: Item): NewMail => ({ id: String(m.id), message: stampOf(m), account: String(m.account ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), ...(m.cc ? { cc: String(m.cc) } : {}), subject: String(m.subject ?? ""), snippet: String(m.snippet ?? "").slice(0, 400) });
 
 // `zele mail list` lists threads and `from` is the sender of the newest message of the thread, so the state of a thread follows its LAST
 // message: the owner's own (a sign the thread was answered) or someone else's (a new mail, again, if it is newer than what the watch saw).
