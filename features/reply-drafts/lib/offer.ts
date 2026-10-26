@@ -25,16 +25,31 @@ export type OfferDeps = {
 // The text a model call sees is capped; a long thread's tail (quoted history) adds tokens and nothing for the reply.
 const BODY_MAX = 8000;
 
+// The cheap checks of offerOne, without side effects: a mail the feature is off for, already looked at, or that needs no reply is not read ahead.
+function mayDraft(m: OfferMail): boolean {
+	try {
+		const settings = loadSettings();
+		if (!appOn(settings, "mail") || isDrafted(m.messageId ? `${m.key}#${m.messageId}` : m.key)) return false;
+		return !precheck({ kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "" }, settings.senders);
+	} catch {
+		return false;
+	}
+}
+
 // Offers run one at a time: a burst of new mail never starts many model calls at once.
 let chain: Promise<unknown> = Promise.resolve();
 export function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
-	const next = chain.then(() => offerOne(m, deps));
+	// The body read (a mail CLI or webmail round trip) starts now, while an earlier offer may still be in its model call; only the model calls queue.
+	const body = m.body !== undefined || !deps.readBody || !mayDraft(m) ? Promise.resolve(m.body) : deps.readBody(m.source, m.id).catch(e => ((deps.log ?? console.error)(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), undefined));
+	const queued = Date.now();
+	const next = chain.then(() => offerOne(m, deps, body, queued));
 	chain = next.catch(() => undefined);
 	return next;
 }
 
-async function offerOne(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
+async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | undefined>, queued: number): Promise<"offered" | "skipped" | "off" | "failed"> {
 	const log = deps.log ?? ((line: string) => console.error(line));
+	const started = Date.now();
 	try {
 		const settings = loadSettings();
 		if (!appOn(settings, "mail")) return "off";
@@ -46,8 +61,10 @@ async function offerOne(m: OfferMail, deps: OfferDeps): Promise<"offered" | "ski
 			markDrafted(looked);
 			return "skipped";
 		}
-		item.text = (m.body ?? (await deps.readBody?.(m.source, m.id).catch(e => (log(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), undefined))) ?? m.summary ?? "").trim().slice(0, BODY_MAX) || m.subject;
+		item.text = ((await body) ?? m.summary ?? "").trim().slice(0, BODY_MAX) || m.subject;
+		const read = Date.now();
 		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
+		const learned = Date.now();
 		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key, ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, { call: deps.call });
 		if (built.action !== "draft") {
 			markDrafted(looked);
@@ -59,6 +76,8 @@ async function offerOne(m: OfferMail, deps: OfferDeps): Promise<"offered" | "ski
 		addDraft(built.rec);
 		markDrafted(looked);
 		deps.suggest?.(m.key, { kind: "reply-draft", label: "답장 초안", ref: built.rec.id });
+		// Where the time went, so a slow draft can be traced: queue wait, body read, identity sweep (first draft only), the draft model call and the rest.
+		log(`reply draft: mail ${m.key} offered in ${Date.now() - queued}ms (queue ${started - queued}, body ${read - started}, identity ${learned - read}, draft+files ${Date.now() - learned})`);
 		return "offered";
 	} catch (e) {
 		log(`reply draft: offer for mail ${m.key} failed: ${(e as Error).message}`);
