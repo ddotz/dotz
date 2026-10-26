@@ -110,3 +110,40 @@ describe("앱 at 1280px", () => {
 		expect(errorsSeen).toEqual([]);
 	}, 25_000);
 });
+
+// The 앱 tab is drawn only while it is shown: no app frame (its page, sockets, CPU) loads behind 홈, entering 앱 draws at once, and a phone
+// coming back to 앱 from another tab gets the list, not the app it had open.
+describe("앱 is drawn only while shown", () => {
+	const fresh: InstanceType<typeof Bun.WebView>[] = [];
+	afterAll(() => { for (const v of fresh) v.close(); });
+	const waitOn = (v: InstanceType<typeof Bun.WebView>, expr: string, ms = 10_000) =>
+		v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+	const open = async (width: number, height: number) => {
+		const v = new Bun.WebView({ width, height });
+		fresh.push(v);
+		await v.navigate(`http://127.0.0.1:${server.port}/`);
+		// APPS.loaded and the scheduled paint are set together, so !appsRaf means that paint has run.
+		await waitOn(v, `typeof APPS !== "undefined" && APPS.loaded && S && current === "home" && !appsRaf`);
+		return v;
+	};
+
+	test("wide: nothing is built behind 홈, and 앱 draws its frame as soon as it is entered", async () => {
+		const v = await open(1280, 900);
+		expect(await v.evaluate(`!!document.querySelector("#apps-pane .apps-frame")`)).toBe(false);
+		expect(await v.evaluate(`(go("apps"), !!document.querySelector("#apps-pane .apps-frame"))`)).toBe(true);
+		await v.evaluate(`(go("home"), 0)`);
+		// Leaving 앱 does not schedule another paint of it.
+		await waitOn(v, `!appsRaf`);
+		expect(await v.evaluate(`current`)).toBe("home");
+	}, 25_000);
+
+	test("phone: an open app, then 홈, then 앱 shows the list", async () => {
+		const v = await open(390, 844);
+		expect(await v.evaluate(`!!document.querySelector("#apps-pane .apps-frame")`)).toBe(false);
+		await v.evaluate(`(go("apps", "hdocs"), 0)`);
+		await waitOn(v, `!!document.querySelector("#apps-pane .apps-frame") && !document.querySelector("#v-apps").classList.contains("cv-listing")`);
+		await v.evaluate(`(go("home"), 0)`);
+		const got = JSON.parse(await v.evaluate(`(go("apps"), JSON.stringify({ listing: document.querySelector("#v-apps").classList.contains("cv-listing"), list: APPS.list, hash: location.hash, side: document.querySelector("#apps-side").getBoundingClientRect().width > 0 }))`) as string);
+		expect(got).toEqual({ listing: true, list: true, hash: "#apps", side: true });
+	}, 25_000);
+});

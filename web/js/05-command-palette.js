@@ -117,7 +117,6 @@ function go(name, tgt) {
   if (name === "project" && !tgt) name = "projects";
   if (name === "project") ppCur = tgt;
   if (name === "monitoring") monRoute(tgt);
-  if (name === "apps") appsOpen(tgt);
   // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
   chatList = name === "chat" && tgt === "list" && narrowChat();
   if (name === "chat" && tgt === "list") tgt = undefined;
@@ -125,6 +124,7 @@ function go(name, tgt) {
   if (name === "activity" && (!LOG_VIEW || isFixedT(target))) name = "chat";   // 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all
   if (name !== current) prevView = current;
   current = name;
+  if (name === "apps") appsOpen(tgt);   // after current is set: appsRender draws only the shown 앱 tab
   if (convSync()) renderAll();
   const tv = name === "chat" || name === "activity";
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
