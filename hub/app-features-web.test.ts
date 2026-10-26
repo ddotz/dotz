@@ -31,6 +31,7 @@ const answers: { id: string; body: unknown }[] = [];
 // A raw key, an id like j-1 or a snake_case word in what the owner reads.
 const RAW = /[a-z]+-[0-9]|_|\b(?:sns|ig|yt|each|batch|comments)\b/;
 const featPatches: Record<string, unknown>[] = [];
+const watchPatches: { watch: string; values: unknown }[] = [];
 const retries: string[] = [];
 let onRetry: (() => void) | undefined;
 const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
@@ -69,6 +70,9 @@ const server = Bun.serve({
 			answers.push({ id: an[1]!, body: await req.json() });
 			return json({ ok: true });
 		}
+		const ws = /^\/api\/watches\/([a-z0-9-]+)\/settings$/.exec(p);
+		if (ws && req.method === "PATCH") { watchPatches.push({ watch: ws[1]!, values: ((await req.json()) as { values: unknown }).values }); return json({ key: `w:${ws[1]}`, fields: [] }); }
+		if (ws) return json({ key: `w:${ws[1]}`, fields: [] });
 		const f = /^\/api\/integrations\/([a-z0-9-]+)\/(features|retry)$/.exec(p);
 		if (f) {
 			try {
@@ -131,13 +135,18 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(await q(v, `return monItems().find(i => i.key === "i:instagram").badge`)).toEqual(["실패", "err"]);
 	});
 
-	test("기능 with switches comes first, 내부 기능 follows, 설정 last; 숨긴 기능 are not drawn", async () => {
+	test("연결 상태 first, then one control per concept in sections: 자동 초안과 승인, 감시, 기타 기능, 고급; 숨긴 기능 are not drawn", async () => {
 		await openScreen(v);
-		expect(await q(v, `return [...document.querySelectorAll("#app-sw .as-sec")].map(e => e.textContent)`)).toEqual(["기능", "승인 대기", "내부 기능", "설정"]);
-		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => [e.dataset.feature, e.querySelector(".as-n").textContent])`)).toEqual([["comment_reply", "댓글 답글"], ["reels_approval", "릴스(쇼츠) 올리기 승인"], ["dm_read", "DM 읽기"]]);
+		expect(await q(v, `return { conn: document.querySelector("#app-sw").firstElementChild.dataset.conn, secs: [...document.querySelectorAll("#app-sw [data-sec]")].map(e => e.dataset.sec) }`)).toEqual({ conn: "connected", secs: ["draft", "watch", "more", "advanced"] });
+		// comment_reply's switch IS the auto_draft setting: the screen draws the setting row once and no second feature row.
+		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => [e.dataset.feature, e.querySelector(".as-n").textContent])`)).toEqual([["reels_approval", "릴스(쇼츠) 올리기 승인"], ["dm_read", "DM 읽기"]]);
+		expect(await q(v, `return [...document.querySelectorAll('#app-sw [data-setting="auto_draft"]')].length`)).toBe(1);
+		expect(await q(v, `return document.querySelector('#app-sw [data-setting="auto_draft"] .as-n').textContent`)).toBe("자동 초안");
 		expect(await q(v, `return document.querySelector('#app-sw [data-feature="reels_approval"] .as-h').textContent`)).toBe("승인 대기 1건");
 		expect(await q(v, `return document.body.textContent.includes("DM 답장") || document.body.textContent.includes("게시물 정보 수정")`)).toBe(false);
-		expect(await q(v, `const sec = [...document.querySelectorAll("#app-sw .as-sec")].pop(); return sec.nextElementSibling.querySelector('[data-k="use_here"]') !== null`)).toBe(true);
+		// The internal watches (감시) and the settings rows are each drawn once, under their own heading.
+		expect(await q(v, `const sec = [...document.querySelectorAll("#app-sw [data-sec]")].pop(); return sec.dataset.sec === "advanced" && sec.nextElementSibling.querySelector('[data-k="use_here"]') !== null`)).toBe(true);
+		expect(await q(v, `return document.querySelectorAll("#app-sw .as-stat").length`)).toBe(0);
 		await shot(v, `${tag}-settings-top.png`);
 	});
 
@@ -153,6 +162,14 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(retries.slice(before)).toEqual(["ig-site-login"]);
 		await run(v, `document.querySelector("#app-sw [data-internal='ig-site-login']").scrollIntoView({ block: "center" })`);
 		await shot(v, `${tag}-settings-internal.png`);
+	});
+
+	test("감시 주기 on an owned watch edits its settings route (the same write path as the monitor's own screen)", async () => {
+		await waitFor(v, `document.querySelector('#app-sw [data-k="every:sns-ig-comments"]')`);
+		const before = watchPatches.length;
+		await run(v, `const i = document.querySelector('#app-sw [data-k="every:sns-ig-comments"]'); i.value = "30"; i.dispatchEvent(new Event("change"))`);
+		await waitFor(v, `!AS.busy.instagram`);
+		expect(watchPatches.slice(before)).toEqual([{ watch: "sns-ig-comments", values: { every_minutes: 30 } }]);
 	});
 
 	test("a feature switch PATCHes the features route and persists in custom/apps.json", async () => {
@@ -175,7 +192,7 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(await q(v, `return document.querySelector("#app-sw [data-approval] .as-n").textContent`)).toBe("주말 여행 릴스예요 #여행");
 		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-approval] [data-k^='appr:']")].map(b => b.textContent)`)).toEqual(["올리기", "그만두기", "자세히"].slice(0, 2).concat(["자세히"]));
 		expect(await q(v, `return document.querySelector("#app-sw .as-chip, #app-sw .as-sum")`)).toBeNull();
-		expect(await q(v, `return document.querySelector('#app-sw [data-setting="approval"] .as-n').textContent`)).toBe("게시 승인 방식");
+		expect(await q(v, `return document.querySelector('#app-sw [data-setting="approval"] .as-n').textContent`)).toBe("승인 방식");
 		expect(await q(v, `return [...document.querySelectorAll('#app-sw [data-setting="approval"] option')].map(o => o.textContent)`)).toEqual(["하나씩 승인", "모아서 승인"]);
 		expect(await q(v, `return document.querySelector('#app-sw [data-setting="reply_model"] .as-n').textContent`)).toBe("답장 모델");
 		await run(v, `document.querySelector('#app-sw [data-setting="approval"]').scrollIntoView({ block: "center" })`);
@@ -194,13 +211,14 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(a).toMatchObject({ action: "answer", args: { id: "n-9", n: 1 }, pc: "맥미니" });
 	});
 
-	test("mail settings: 새 메일 and 답장 초안 are switches, nothing else is faked", async () => {
+	test("mail settings: 새 메일 under 알림 and one 자동 초안 control (the setting, not a second feature switch)", async () => {
 		await boot(v, "i:mail");
 		const more = `[...document.querySelectorAll('[data-as-more="mail"]')].find(b => b.offsetParent && !b.hidden)`;
 		await waitFor(v, more);
 		await run(v, `${more}.click()`);
-		await waitFor(v, `document.querySelector("#app-sw [data-feature='new_mail']")`);
-		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => e.querySelector(".as-n").textContent)`)).toEqual(["새 메일", "답장 초안"]);
+		await waitFor(v, `document.querySelector("#app-sw [data-setting='auto_draft']") && document.querySelector("#app-sw [data-feature]")`);
+		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => e.querySelector(".as-n").textContent)`)).toEqual(["새 메일"]);
+		expect(await q(v, `return document.querySelector('#app-sw [data-sec="notify"]').nextElementSibling.dataset.feature`)).toBe("new_mail");
 		expect(await q<string>(v, `return document.querySelector("#app-sw").textContent`)).not.toMatch(RAW);
 		await shot(v, `${tag}-mail-settings.png`);
 	});
