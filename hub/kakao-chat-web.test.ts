@@ -9,7 +9,7 @@ const SHOTS = process.env.KAKAO_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 type Msg = { logId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean; unread: number; media?: Record<string, unknown> };
-type Room = { chatId: string; name: string; kind: string; watched: boolean; autoDraft: boolean; unread: number; lastAt: number };
+type Room = { chatId: string; name: string; kind: string; watched: boolean; autoDraft: boolean; unread: number; lastAt: number; hint?: string };
 type Draft = { code: string; text: string; basisLogId: string; created: number };
 type Send = { id: string; text: string; state: string; reason?: string; at: number };
 type Req = { method: string; path: string; body: Record<string, unknown> | null };
@@ -706,3 +706,32 @@ describe("카카오톡 media at 390px", () => {
 		await shot(v, "12-mobile-media-mix2.png");
 	});
 });
+
+// 오픈채팅 rooms and the hint line: a room's kind and its newest message (or member count) under its name, in the choice and in the rows.
+for (const [w, h] of [[390, 844], [1280, 800]] as const)
+	describe(`오픈채팅 and room hints at ${w}px`, () => {
+		const v = open(w, h);
+		test("an open chat room is listed with 오픈채팅 and its hint; similar rooms are told apart by their hints; nothing overflows", async () => {
+			rooms = [
+				{ chatId: "100", name: "가나다 모임", kind: "group", watched: true, autoDraft: false, unread: 0, lastAt: at(22, 1, 29), hint: "오늘 모임은 일곱 시예요" },
+				{ chatId: "500", name: "보컬 스터디 오픈채팅", kind: "open", watched: true, autoDraft: true, unread: 3, lastAt: at(22, 1, 30), hint: "오늘 발성 연습 몇 시에 해요?" },
+				{ chatId: "600", name: "가나, 다라 외 3명", kind: "group", watched: false, autoDraft: false, unread: 0, lastAt: at(21, 1, 0), hint: "회의 자료 올렸어요" },
+				{ chatId: "601", name: "가나, 다라 외 3명", kind: "group", watched: false, autoDraft: false, unread: 0, lastAt: at(20, 1, 0), hint: "6명" },
+			];
+			await boot(v);
+			const row = await q<string>(v, `return document.querySelector('.kk-row[data-chat="500"] .cv-p').textContent`);
+			expect(row).toBe("오픈채팅 · 오늘 발성 연습 몇 시에 해요?");
+			await run(v, `document.querySelector("#kk-pick-btn").click()`);
+			await waitFor(v, `document.querySelector('.kk-pr[data-chat="601"]')`);
+			const pick = await q<Record<string, any>>(v, `const sub = id => document.querySelector('.kk-pr[data-chat="' + id + '"] .cv-p').textContent;
+				const p = document.querySelector(".kk-rooms"), r = document.querySelector('.kk-pr[data-chat="500"]').getBoundingClientRect();
+				return { open: sub("500"), a: sub("600"), b: sub("601"), hScroll: p.scrollWidth - p.clientWidth, right: r.right, w: innerWidth }`);
+			expect(pick).toMatchObject({ open: "오픈채팅 · 오늘 발성 연습 몇 시에 해요?", a: "단체 대화방 · 회의 자료 올렸어요", b: "단체 대화방 · 6명" });
+			expect(pick.hScroll).toBeLessThanOrEqual(0);
+			expect(pick.right).toBeLessThanOrEqual(pick.w);
+			await shot(v, `20-open-hints-${w}.png`);
+			await dark(v);
+			await shot(v, `20-open-hints-${w}-dark.png`);
+			await light(v);
+		});
+	});

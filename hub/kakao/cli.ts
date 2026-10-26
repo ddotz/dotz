@@ -269,7 +269,7 @@ export function realCtx(paths: KakaoPaths): Ctx {
 			const db = await openDb(config);
 			const m = await dbm();
 			const all = await m.rooms(db);
-			return { rooms: all.length, draftable: all.filter(r => r.kind === "direct" || r.kind === "group").length, maxLogId: await m.maxLogId(db) };
+			return { rooms: all.length, draftable: all.filter(r => m.roomShown(r.kind, config)).length, maxLogId: await m.maxLogId(db) };
 		},
 	};
 	const openDb = async (config: KakaoConfig) => {
