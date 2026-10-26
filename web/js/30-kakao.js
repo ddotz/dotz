@@ -13,7 +13,7 @@ const KK = {
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
   typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "", compose: null,
-  peerT: 0, peerBusy: false, peerHead: "", lp: new Map(),
+  peerT: 0, peerBusy: false, peerHead: "", lp: new Map(), olderBusy: false, olderAgain: false,
 };
 
 /* ---- small helpers ---- */
@@ -87,6 +87,13 @@ async function kkLpLoad(card) {
     p.description ? el("span", { class: "kk-lp-d", text: p.description }) : null));
 }
 let kkLpIO = null;
+let kkTopIO = null;
+// The top of the room loads the older page by itself (one at a time), the button stays as the fallback.
+function kkTopWatch() {
+  kkTopIO?.disconnect();
+  const top = $("#kk-top", kkIn);
+  if (top && kkTopIO) kkTopIO.observe(top);
+}
 function kkLpWatch() {
   for (const c of kkIn.querySelectorAll(".kk-lp[data-url]")) if (kkLpIO) kkLpIO.observe(c); else kkLpLoad(c);
 }
@@ -299,7 +306,10 @@ const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, el("div", 
 const kkPane = el("div", { class: "kk", id: "kk", hidden: true }, kkRooms, kkChat);
 $("#v-monitoring").append(kkPane);
 // Preview cards load when they come near the visible timeline (one request per address, kkLpLoad).
-if (typeof IntersectionObserver === "function") kkLpIO = new IntersectionObserver(list => { for (const e of list) if (e.isIntersecting) { kkLpIO.unobserve(e.target); kkLpLoad(e.target); } }, { root: kkTl, rootMargin: "300px 0px" });
+if (typeof IntersectionObserver === "function") {
+  kkLpIO = new IntersectionObserver(list => { for (const e of list) if (e.isIntersecting) { kkLpIO.unobserve(e.target); kkLpLoad(e.target); } }, { root: kkTl, rootMargin: "300px 0px" });
+  kkTopIO = new IntersectionObserver(list => { if (list.some(e => e.isIntersecting)) kkOlder(); }, { root: kkTl, rootMargin: "200px 0px 0px 0px" });
+}
 
 const kkAutosize = () => { kkTa.style.height = "auto"; kkTa.style.height = `${Math.min(kkTa.scrollHeight, 140)}px`; };
 kkTa.addEventListener("input", () => { kkAutosize(); if (KK.open) KK.typed.set(KK.open, kkTa.value); });
@@ -498,7 +508,7 @@ function kkSendNode(s) {
 }
 function kkTimeline() {
   const out = [], msgs = KK.msgs;
-  if (KK.more) out.push(el("button", { class: "btn text kk-more", type: "button", text: "이전 메시지 더 보기", onclick: () => kkOlder() }));
+  if (KK.more) out.push(el("div", { class: "kk-top", id: "kk-top" }, el("button", { class: "btn text kk-more", type: "button", text: "이전 메시지 더 보기", onclick: () => kkOlder() })));
   let prev = null;
   msgs.forEach((m, i) => {
     const newDay = !prev || kkDay(prev.sentAt) !== kkDay(m.sentAt), mark = !!KK.div && m.logId === KK.div, next = msgs[i + 1];
@@ -518,8 +528,10 @@ function kkTimeline() {
 function kkPaintTl(stick) {
   const keep = kkTl.scrollTop;
   kkLpIO?.disconnect();
+  kkTopIO?.disconnect();
   clear(kkIn).append(...kkTimeline());
   kkTl.scrollTop = stick ? kkTl.scrollHeight : keep;
+  kkTopWatch();
   kkLpWatch();
   kkSyncStick();
 }
@@ -578,19 +590,41 @@ function kkBack() {
   kkClose();
   return true;
 }
+// The older page, one load in flight at a time (an auto-load at the top and the fallback button share it). The message that was at the top
+// of the view keeps its offset: the content added above it never moves the reader.
 async function kkOlder() {
   const id = KK.open, first = KK.msgs[0];
   if (!id || !first) return;
+  if (KK.olderBusy) { KK.olderAgain = true; return; }
+  KK.olderBusy = true;
+  const edge = kkTl.getBoundingClientRect().top;
+  const shown = [...kkTl.querySelectorAll("[data-log]")];
+  const anchor = shown.find(n => n.getBoundingClientRect().bottom > edge + 1) || shown[0];
+  const anchorId = anchor ? anchor.dataset.log : first.logId;
+  const before = anchor ? anchor.getBoundingClientRect().top - edge : 0;
   try {
     const d = await api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}&before=${enc(first.logId)}`);
     if (KK.open !== id) return;
     const got = Array.isArray(d.messages) ? d.messages : [], have = new Set(KK.msgs.map(m => m.logId));
     KK.msgs = [...got.filter(m => !have.has(m.logId)), ...KK.msgs]; KK.more = got.length >= KK_PAGE; KK.pin = "";
     const h = kkTl.scrollHeight;
+    kkLpIO?.disconnect();
+    kkTopIO?.disconnect();
     clear(kkIn).append(...kkTimeline());
-    kkTl.scrollTop += kkTl.scrollHeight - h;
+    const now = kkTl.querySelector(`[data-log="${anchorId}"]`);
+    kkTl.scrollTop += now ? now.getBoundingClientRect().top - edge - before : kkTl.scrollHeight - h;
+    kkTopWatch();
+    kkLpWatch();
     kkSyncStick();
   } catch (e) { toast(e.message, true); }
+  finally {
+    KK.olderBusy = false;
+    if (KK.olderAgain) {
+      KK.olderAgain = false;
+      const top = $("#kk-top", kkIn);
+      if (top && KK.more && top.getBoundingClientRect().bottom > kkTl.getBoundingClientRect().top) kkOlder();
+    }
+  }
 }
 // New messages after the last one we hold; also refreshes the room's drafts and sends (the answer carries both).
 async function kkTail() {

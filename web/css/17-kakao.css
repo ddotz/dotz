@@ -63,6 +63,7 @@
 .kk-in { display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; }
 .kk-in > .kk-note { margin: auto; color: var(--kk-time); }
 .kk-pill { position: absolute; left: 50%; bottom: 12px; z-index: 2; height: 32px; padding: 0 14px; transform: translateX(-50%); border-radius: 16px; box-shadow: var(--float); }
+.kk-top { display: flex; justify-content: center; padding: 2px 0 6px; }
 .kk-more { align-self: center; color: var(--kk-time); }
 .kk-date { align-self: center; margin: 14px 0 8px; padding: 4px 12px; border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 500 12px/16px var(--font); }
 .kk-new { display: flex; align-items: center; gap: 12px; margin: 12px 0 6px; color: var(--kk-time); font: 600 12px/16px var(--font); }
