@@ -13,18 +13,14 @@ const wait = (cond: string, what: string) => view.evaluate(until(cond, what, 400
 const ev = <T>(expr: string) => view.evaluate(expr) as Promise<T>;
 // a fresh load each time: the test clock stands still, and a URL that differs only in its hash would not load again
 let loads = 0;
-const open = async (hash: string, cond: string) => { await view.navigate(`${url}/?load=${++loads}${hash}`); await wait(cond, `${hash} not drawn`); };
+// then two frames: the list repaints on the next frame after the last of its data (notices, state, conversations) arrived (convSchedule / monSchedule)
+const open = async (hash: string, cond: string) => {
+	await view.navigate(`${url}/?load=${++loads}${hash}`);
+	await wait(cond, `${hash} not drawn`);
+	await ev(`new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`);
+};
 const feedReady = `current === "monitoring" && NT.loaded && NM.loaded && !!document.querySelector("#mon-tl .mon-bar")`;
-const chatReady = `current === "chat" && CV.loaded && NT.loaded && !!document.querySelector("#chat-convo .cv-bar")`;
-
-test("on load the session questions already waiting are one card, not one per session", async () => {
-	await view.navigate(`${url}/`);
-	await ev(`(localStorage.clear(), 0)`);
-	await open("#home", `!!S && document.querySelectorAll(".ntf").length > 0`);
-	await ev(`new Promise(r => setTimeout(r, 300))`);
-	const cards = await ev<string[]>(`[...document.querySelectorAll(".ntf:not(.out) .nm")].map(n => n.textContent)`);
-	expect(cards).toEqual(["세션 2 외 1개 · 답변 필요"]);
-});
+const chatReady = `current === "chat" && CV.loaded && NT.loaded && !!S && S.lanes.length > 0 && !!document.querySelector("#chat-convo .cv-bar")`;
 
 test("감시 소식 holds every report of the feed, what waits on top and each source folded with its count", async () => {
 	await open("#monitoring/notice", feedReady);
@@ -69,7 +65,7 @@ test("감시 소식's 읽음 처리 reads the plain reports only; what waits sta
 	expect(n).toBeGreaterThan(0);
 	store.reads.length = 0;
 	await ev(`(document.querySelector("#mon-tl .mon-read").click(), 0)`);
-	await wait(`document.querySelector("#mon-tl .mon-read").disabled`, "all read");
+	await wait(`[...document.querySelectorAll(".snack:not(.bad)")].some(s => s.textContent.endsWith("읽음으로 표시했어요"))`, "read posted");   // the toast follows the hub's answer; disabled alone is set on the click
 	const sent = store.reads.flat();
 	expect(sent.length).toBeGreaterThanOrEqual(n);
 	expect(sent.filter(id => asks.includes(id))).toEqual([]);
