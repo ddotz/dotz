@@ -513,8 +513,16 @@ function armResume(retry: number, owner: boolean, authSince: number): void {
 	const mine = (resumeTimer = setTimeout(fire, retry));
 	if (owner) {
 		watchAuth(authSince, () => resumeTimer === mine, () => {
-			log("orchestrator login store changed; retrying the blocked turn now");
-			fire();
+			// The running process keeps the login and account pin it read at start (Mac mini 2026-10-26: after a new /login and a pin
+			// on the new account, the retry still went out on the dead one). A fresh process reads the store again; the held prompts
+			// are replayed into it, and a login that is still broken pauses again without a new alert.
+			log("orchestrator login store changed; restarting it on the new login and retrying the held prompts");
+			clearTimeout(resumeTimer);
+			resumeTimer = undefined;
+			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
+			orch.status = "idle";
+			if (proc) restart();
+			else fire();
 		});
 	}
 }
@@ -886,6 +894,25 @@ export function applyChainChange(): "updated" | "restarted" | "after-turn" | "ne
 
 export function applyAccountChange(): void {
 	keepalives = KEEPALIVE_MAX;
+}
+
+// The account requests run on changed (the owner's pick, a rule, a limit): OmO keeps the account pin it read at start, so the process
+// restarts on the new one, now when idle, after the running turn otherwise. A pause on the old account (its limit, a dead login) ends
+// with it: the held prompts are replayed on the new account at once.
+export function applyAccountPin(): "restarted" | "after-turn" | "not-running" {
+	if (!proc) return "not-running";
+	if (orch.status === "working" || compacting()) {
+		pendingRestart = true;
+		return "after-turn";
+	}
+	if (orch.status === "rate-limited") {
+		clearTimeout(resumeTimer);
+		resumeTimer = undefined;
+		save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
+		orch.status = "idle";
+	}
+	restart();
+	return "restarted";
 }
 
 export function abort(): void {
