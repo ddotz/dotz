@@ -1,7 +1,8 @@
-// Exact room open for a KakaoTalk send, by Accessibility only (room.jxa.js): KakaoTalk is never brought to the front, no key is sent and
-// nothing is searched, so the owner sees no right-click scan.
-// 1. The chat list rows are read (no click): the row whose title equals the database room name, normalized, is the one. Same-name rooms are
-//    told apart by the member count the row shows (groups) against the database count.
+// Exact room open for a KakaoTalk send, by Accessibility only (room.jxa.js): KakaoTalk is never brought to the front (except the last rung of
+// send.ts's ladder), no key is sent and nothing is searched, so the owner sees no right-click scan.
+// 1. The chat list rows are read (no click): the row whose title equals the database room name, normalized (NFC, invisible marks, whitespace,
+//    a trailing member count), is the one. Same-name rooms are told apart by the member count the row shows (groups) against the database
+//    count, and when that is not enough by the newest message the list shows under the name against the database preview.
 // 2. Only that row is opened: its context menu once, then "채팅방 열기" (AXPress).
 // 3. The open window is checked against the database room (title, member count where the window shows it). A window that is not the room
 //    is closed and the send is refused.
@@ -11,7 +12,8 @@
 import jxa from "./room.jxa.js" with { type: "text" };
 import type { Room, Runner } from "./types.ts";
 
-export type RoomFact = { chatId: string; name: string; kind?: Room["kind"]; members?: number };
+// preview/lastAt: the room's newest message from the database, used only to tell same-name rows apart (the list shows it under the name).
+export type RoomFact = { chatId: string; name: string; kind?: Room["kind"]; members?: number; preview?: string; lastAt?: number };
 export type WindowFacts = { title: string; members?: number; self?: boolean };
 export type AxStep = { step: string; ms: number; ok: boolean; why?: string };
 // Focus: set only when the list window had to be opened. `from`: bundle id of the app in front before; `took`: KakaoTalk came to the front
@@ -33,25 +35,65 @@ export const REFUSE = {
 	timeout: "방을 여는 데 5초가 넘게 걸려서 멈췄어요",
 } as const;
 
-export const normalizeTitle = (s: string) => s.normalize("NFC").replace(/[\u200b-\u200f\u2060\ufeff]/g, "").trim();
+// Zero-width marks, variation selectors and the line-break forms differ between KakaoTalk's AX value and the text we typed; both sides of
+// every comparison run through this. Whitespace inside a line is collapsed, line breaks are kept (a draft can be several lines).
+export const normalizeInput = (s: string) =>
+	s
+		.normalize("NFC")
+		.replace(/[\u200b-\u200f\u2060\ufeff]/g, "")
+		.replace(/[\ufe00-\ufe0f\u{e0100}-\u{e01ef}]/gu, "")
+		.replace(/\r\n?/g, "\n")
+		.replace(/[\u2028\u2029]/g, "\n")
+		.replace(/[ \t]+/g, " ")
+		.replace(/ *\n */g, "\n")
+		.trim();
+
+// The same text after KakaoTalk's own normalization (NFD/NFC, \\r vs \\n, trimmed ends, invisible marks).
+export const sameText = (a: string, b: string) => normalizeInput(a) === normalizeInput(b);
+
+// An empty input, also when it only shows its placeholder or invisible characters.
+export const inputFree = (value: string, placeholder?: string) => normalizeInput(value) === "" || (placeholder !== undefined && placeholder !== "" && sameText(value, placeholder));
+
+// A trailing member count some rows carry after the name ("스터디방 (5)") is not part of the name.
+export const normalizeTitle = (s: string) => normalizeInput(s).replace(/\s*\(\s*\d+\s*\)$/, "").trim();
 
 // The member count a group row shows right after its title (a 1:1 row shows the time there).
 export const rowMembers = (texts: string[]) => (/^\d+$/.test(texts[1] ?? "") ? Number(texts[1]) : undefined);
 
-export type RowChoice = { ok: true; index: number } | { ok: false; why: "none" | "mismatch" };
+// What the list shows under the name: the newest message. A time, a count or an unread badge is not a preview.
+const CLOCK = /^(?:오전|오후)?\s*\d{1,2}:\d{2}$|^(?:어제|오늘|방금|\d+\s*(?:분|시간|일) 전)$|^\d{1,2}월\s*\d{1,2}일$/;
+const BADGE = /^\d+\+?$/;
+export const rowPreview = (texts: string[]) => texts.slice(1).find(t => normalizeInput(t) !== "" && !BADGE.test(normalizeInput(t)) && !CLOCK.test(normalizeInput(t)));
+
+// KakaoTalk cuts a long preview with "…"; a short one must match exactly (a two-letter word is not evidence).
+const previewSame = (shown: string, want: string) => {
+	const a = normalizeInput(shown).replace(/[…\.]{1,3}$/, "").trim();
+	const b = normalizeInput(want).replace(/[…\.]{1,3}$/, "").trim();
+	if (!a || !b) return false;
+	if (a === b) return true;
+	return (b.length >= 8 && b.startsWith(a)) || (a.length >= 8 && a.startsWith(b));
+};
+
+export type RowChoice = { ok: true; index: number; via: "name" | "members" | "preview" } | { ok: false; why: "none" | "mismatch" };
 
 // Which list row is the room. A name no other database room has needs one row of that title (the window is checked after, and a window
-// is the only place the count is proven); a shared name must be told apart by the row's own member count, else it is refused.
+// is the only place the count is proven); a shared name is told apart by the row's own member count, and when that is not enough (two
+// rooms of one name and one size), by the newest message the list shows under the name (database preview).
 export function chooseRow(rows: string[][], room: RoomFact, shared: boolean): RowChoice {
 	const want = normalizeTitle(room.name);
-	let hits = rows.flatMap((t, index) => (normalizeTitle(t[0] ?? "") === want ? [{ index, members: rowMembers(t) }] : []));
+	const hits = rows.flatMap((t, index) => (normalizeTitle(t[0] ?? "") === want ? [{ index, members: rowMembers(t), preview: rowPreview(t) }] : []));
 	if (!hits.length) return { ok: false, why: "none" };
-	if (shared || hits.length > 1) {
-		if (room.kind === "group") hits = hits.filter(h => h.members !== undefined && h.members === room.members);
-		else if (room.kind === "direct" || room.kind === "self") hits = hits.filter(h => h.members === undefined);
-		return hits.length === 1 ? { ok: true, index: hits[0]!.index } : { ok: false, why: "mismatch" };
+	if (!shared && hits.length === 1) return { ok: true, index: hits[0]!.index, via: "name" };
+	let left = hits;
+	if (room.kind === "group") left = left.filter(h => h.members !== undefined && h.members === room.members);
+	else if (room.kind === "direct" || room.kind === "self") left = left.filter(h => h.members === undefined);
+	if (left.length === 1) return { ok: true, index: left[0]!.index, via: "members" };
+	// Same name and size: the newest message of the database room is the only fact left that the screen itself shows.
+	if (room.preview && left.length > 1) {
+		const byPreview = left.filter(h => h.preview !== undefined && previewSame(h.preview, room.preview!));
+		if (byPreview.length === 1) return { ok: true, index: byPreview[0]!.index, via: "preview" };
 	}
-	return { ok: true, index: hits[0]!.index };
+	return { ok: false, why: "mismatch" };
 }
 
 // Does the open window show this database room? A fact the window does not show is not held against it, except where the name alone
@@ -98,12 +140,21 @@ export const closeWindow = async (runner: Runner, name?: string) => {
 
 // Types the text into the open window of the room and presses 전송, by Accessibility only (room.jxa.js send). The text goes on stdin,
 // never on a command line. `pressed` without `ok`: the button was pressed but the send is not confirmed, so it must not be retried.
-export async function axSend(name: string, text: string, runner: Runner): Promise<{ ok: boolean; pressed?: boolean; why?: string }> {
+// `ours`: texts this room's input may still hold from an earlier dotz attempt (cleared and replaced). `priorPressed`: texts whose 전송 was
+// pressed before without confirmation (never typed over or pressed again). `left`: what the input still holds after a failed attempt.
+export type SendOut = { ok: boolean; pressed?: boolean; why?: string; preview?: string; left?: string };
+export async function axSend(name: string, text: string, runner: Runner, opts: { ours?: string[]; priorPressed?: string[] } = {}): Promise<SendOut> {
 	try {
-		const r = await osascript(runner, { action: "send", name, text });
+		const r = await osascript(runner, { action: "send", name, text, ...(opts.ours?.length ? { ours: opts.ours } : {}), ...(opts.priorPressed?.length ? { priorPressed: opts.priorPressed } : {}) });
 		const out = JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "");
 		if (out?.ok === true) return { ok: true };
-		return { ok: false, pressed: out?.pressed === true, why: typeof out?.why === "string" ? out.why : "failed" };
+		return {
+			ok: false,
+			pressed: out?.pressed === true,
+			why: typeof out?.why === "string" ? out.why : "failed",
+			...(typeof out?.preview === "string" ? { preview: out.preview } : {}),
+			...(typeof out?.left === "string" ? { left: out.left } : {}),
+		};
 	} catch {
 		return { ok: false, why: "failed" };
 	}
@@ -124,16 +175,22 @@ async function call(runner: Runner, req: object, timeoutMs: number): Promise<{ o
 
 const failWhy = (o: Out) => [o.why ?? "failed", o.err].filter(Boolean).join(":");
 
+// `deep`: read more of the list (a deeper retry), slower but reaches a room that sits far down; `rows` then returns every row, not only
+// up to the first name match.
+const DEEP_ROWS = 120;
+const DEEP_BUDGET_MS = 3_600;
+
 // Opens the one list row that is this database room and checks its window. `all` lists every database room (same-name detection). Nothing
 // is typed. The open phase (rows read + row open) is capped at OPEN_CAP_MS; every outcome other than ok leaves no window of ours open.
-export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner): Promise<Opened> {
+export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean } = {}): Promise<Opened> {
 	const steps: AxStep[] = [];
 	const t0 = performance.now();
 	const left = () => OPEN_CAP_MS - (performance.now() - t0);
 	const shared = all.some(r => r.chatId !== room.chatId && normalizeTitle(r.name) === normalizeTitle(room.name));
 	let focus: Focus | undefined;
 	const stop = (reason: string): Opened => ({ ok: false, reason, steps, ...(focus ? { focus } : {}) });
-	const rowsReq = { action: "rows", name: room.name, max: READ_ROWS, budgetMs: ROWS_BUDGET_MS, first: !shared };
+	const deep = opts.deep === true;
+	const rowsReq = { action: "rows", name: room.name, max: deep ? DEEP_ROWS : READ_ROWS, budgetMs: deep ? DEEP_BUDGET_MS : ROWS_BUDGET_MS, first: !shared && !deep };
 
 	let listed = await call(runner, rowsReq, Math.min(left(), 4_000));
 	// No list window (KakaoTalk runs from the menu bar): open it once through its menu 창 > 채팅. KakaoTalk then comes to the front for
@@ -157,7 +214,7 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner):
 	else {
 		const rows = Array.isArray(listed.out.rows) ? (listed.out.rows as unknown[]).map(r => (Array.isArray(r) ? r.map(String) : [])) : [];
 		const choice = chooseRow(rows, room, shared);
-		steps.push({ step: "rows", ms: listed.ms, ok: choice.ok, why: `${rows.length}:${listed.out.stopped ?? "?"}${choice.ok ? `:row${choice.index}` : `:${choice.why}`}` });
+		steps.push({ step: deep ? "rows:deep" : "rows", ms: listed.ms, ok: choice.ok, why: `${rows.length}:${listed.out.stopped ?? "?"}${choice.ok ? `:row${choice.index}:${choice.via}` : `:${choice.why}`}` });
 		if (!choice.ok) return stop(choice.why === "none" ? REFUSE.notListed : REFUSE.mismatch);
 		if (left() < 1_000) return stop(REFUSE.timeout);
 		const row = await call(runner, { action: "open", name: room.name, row: choice.index }, Math.max(1_500, left()));

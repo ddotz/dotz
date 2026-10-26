@@ -1,5 +1,5 @@
 // Reads and closes the open KakaoTalk chat window by Accessibility (System Events), run as `osascript -l JavaScript` with ONE JSON line on stdin:
-//   {action:"probe", deep?, name?} | {action:"close", name?} | {action:"rows", name, max, budgetMs, first} | {action:"open", name, row} | {action:"send", name, text}
+//   {action:"probe", deep?, name?} | {action:"close", name?} | {action:"rows", name, max, budgetMs, first} | {action:"open", name, row} | {action:"send", name, text, ours?, priorPressed?}
 // probe prints {ok:true, windows:[{title, members?, self?}]} for every window that is not the main window; room.ts accepts the room only when
 // exactly one chat window is open. `members` is read only from a static text that names itself a count (identifier or description with
 // count/member/참여/명); `self` is true only when the window shows the words 나와의 채팅. A missing field means "not shown", never "no".
@@ -14,9 +14,12 @@
 // key, which needs KakaoTalk in front). KakaoTalk is not activated and the owner's front app and focus stay (measured 2026-10-23). At most
 // one context menu per call. Prints {ok:true, ms} or {ok:false, step:"list"|"recheck"|"menu"|"press"|"window", why, err?, ms}.
 // send puts `text` into the input of the one window titled `name` (AXValue) and presses its 전송 button (AXPress): no key event, no
-// activation. Setting AXValue enables the button (measured 2026-10-23). A non-empty input is the owner's own unsent text and is left
-// alone ("busy"). Prints {ok:true} once the input is empty again, or {ok:false, why, pressed?}: pressed means the button was pressed
-// but the input did not empty, so the message may have gone out and must not be sent again.
+// activation. Setting AXValue enables the button (measured 2026-10-23). The input is compared normalized (NFC, line breaks, invisible
+// marks, ends): a value equal to one dotz typed into this room (`ours`, or this text) is dotz's leftover and is cleared for real (read back,
+// three tries); any other value is the owner's unsent text and is left alone ("owner_text" with its first characters). A value equal to a
+// text whose 전송 was already pressed without confirmation (`priorPressed`) is never typed over or pressed again. Prints {ok:true} once the
+// input is empty again, or {ok:false, why, pressed?, preview?, left?}: pressed means the button was pressed but the send is not confirmed,
+// so it must not be sent again; left is what the input still holds after a failed attempt.
 // close {name?} closes only the window of that name when given.
 ObjC.import("Foundation");
 
@@ -36,6 +39,24 @@ function attr(el, name) {
 // The same rule as normalizeTitle in room.ts: NFC, no zero-width marks, trimmed.
 function norm(s) {
 	return String(s === null || s === undefined ? "" : s).normalize("NFC").replace(/[\u200b-\u200f\u2060\ufeff]/g, "").trim();
+}
+
+// The same rule as normalizeInput in room.ts: what KakaoTalk's AX value may have changed about our text (NFD/NFC, \r vs \n, trimmed
+// ends, invisible marks, collapsed spaces) does not make it a different text.
+function normText(s) {
+	return String(s === null || s === undefined ? "" : s)
+		.normalize("NFC")
+		.replace(/[\u200b-\u200f\u2060\ufeff]/g, "")
+		.replace(/[\ufe00-\ufe0f\u{e0100}-\u{e01ef}]/gu, "")
+		.replace(/\r\n?/g, "\n")
+		.replace(/[\u2028\u2029]/g, "\n")
+		.replace(/[ \t]+/g, " ")
+		.replace(/ *\n */g, "\n")
+		.trim();
+}
+
+function freeValue(v, ph) {
+	return normText(v) === "" || (ph !== "" && normText(ph) === normText(v));
 }
 
 function chatWindows() {
@@ -307,7 +328,9 @@ function openRowAt(index, name) {
 	return { ok: true, ms: ms };
 }
 
-function sendInto(name, text) {
+// The input after a failed attempt holds OUR text when it is one we typed (this text or an earlier attempt's), and dotz's text must never be
+// mistaken for the owner's draft. A different text is the owner's: it is left alone and reported with its first characters.
+function sendInto(name, text, ours, priorPressed) {
 	var w = windowNamed(name);
 	if (!w) return { ok: false, why: "no_window" };
 	var input = null;
@@ -326,22 +349,86 @@ function sendInto(name, text) {
 	} catch (e) {
 		return { ok: false, why: "no_button" };
 	}
-	if (attr(input, "value") !== "") return { ok: false, why: "busy" };
-	input.value = text;
-	var ready = until(function () {
-		return attr(input, "value") === text && attr(btn, "enabled") === "true";
-	}, 1.5);
-	if (!ready) {
-		try {
-			input.value = "";
-		} catch (e) {}
-		return { ok: false, why: "not_set" };
+	var ph = attr(input, "placeholderValue");
+	var isMine = function (v) {
+		var n = normText(v);
+		if (n === normText(text)) return true;
+		for (var k = 0; k < ours.length; k++) if (n === normText(ours[k])) return true;
+		return false;
+	};
+	var wasPressed = function (v) {
+		var n = normText(v);
+		if (!n) return false;
+		for (var k = 0; k < priorPressed.length; k++) if (n === normText(priorPressed[k])) return true;
+		return false;
+	};
+	var value = attr(input, "value");
+	var freed = freeValue(value, ph);
+	// An AX value can lag a moment behind the screen (a just-sent message still read back). Give it a short look before calling it occupied.
+	if (!freed) freed = !!until(function () { return freeValue(attr(input, "value"), ph) ? "free" : null; }, 0.6);
+	value = attr(input, "value");
+	if (!freed) {
+		if (wasPressed(value)) return { ok: false, why: "prior_pressed", pressed: true, left: String(value).slice(0, 200) };
+		if (!isMine(value)) return { ok: false, why: "owner_text", preview: String(value).replace(/\s+/g, " ").slice(0, 40) };
+		// Ours (a leftover of an earlier attempt): clear it for real before typing, and say so when it will not clear.
+		var cleared = false;
+		for (var c = 0; c < 3 && !cleared; c++) {
+			try {
+				input.value = "";
+			} catch (e) {}
+			cleared = !!until(function () { return freeValue(attr(input, "value"), ph) ? "free" : null; }, 0.3);
+			if (!cleared) delay(0.2);
+		}
+		if (!cleared) return { ok: false, why: "stuck", left: String(attr(input, "value")).slice(0, 200) };
 	}
-	btn.actions.byName("AXPress").perform();
-	var gone = until(function () {
-		return attr(input, "value") === "";
-	}, 3);
-	return gone ? { ok: true } : { ok: false, why: "unclear", pressed: true };
+	var sameAsOurs = normText(attr(input, "value")) === normText(text);
+	if (!sameAsOurs) {
+		try {
+			input.focused = true;
+		} catch (e) {}
+		input.value = text;
+		var set = until(function () {
+			return normText(attr(input, "value")) === normText(text) ? "set" : null;
+		}, 1.5);
+		// The window may have been in the background (the AX value change is what enables 전송): focus, set again, a longer bound.
+		if (!set) {
+			try {
+				input.focused = true;
+			} catch (e) {}
+			input.value = text;
+			set = until(function () {
+				return normText(attr(input, "value")) === normText(text) ? "set" : null;
+			}, 2.5);
+		}
+		if (!set) {
+			var left = "";
+			try {
+				input.value = "";
+				left = String(attr(input, "value")).slice(0, 200);
+			} catch (e) {}
+			return { ok: false, why: "not_set", ...(left ? { left: left } : {}) };
+		}
+	}
+	// The text is in: wait for 전송 to enable, but never sit here long (a value that matches is enough to try the press).
+	if (attr(btn, "enabled") !== "true") {
+		try {
+			input.focused = true;
+		} catch (e) {}
+		until(function () {
+			return attr(btn, "enabled") === "true" ? "on" : null;
+		}, 1.5);
+	}
+	try {
+		btn.actions.byName("AXPress").perform();
+	} catch (e) {
+		return { ok: false, why: "not_ready", left: String(attr(input, "value")).slice(0, 200) };
+	}
+	var gone = !!until(function () {
+		return freeValue(attr(input, "value"), ph) ? "gone" : null;
+	}, 3.5);
+	if (gone) return { ok: true };
+	var held = String(attr(input, "value")).slice(0, 200);
+	return { ok: false, why: "unclear", pressed: true, ...(held ? { left: held } : {}) };
 }
 
 function readInput() {
@@ -364,7 +451,8 @@ function run() {
 		}
 		if (req.action === "close") return JSON.stringify(closeAll(req.name));
 		if (req.action === "openlist") return JSON.stringify(openList());
-		if (req.action === "send" && typeof req.name === "string" && req.name && typeof req.text === "string" && req.text) return JSON.stringify(sendInto(req.name, req.text));
+		if (req.action === "send" && typeof req.name === "string" && req.name && typeof req.text === "string" && req.text)
+			return JSON.stringify(sendInto(req.name, req.text, Array.isArray(req.ours) ? req.ours.filter(function (s) { return typeof s === "string"; }) : [], Array.isArray(req.priorPressed) ? req.priorPressed.filter(function (s) { return typeof s === "string"; }) : []));
 		if (req.action === "rows" && typeof req.name === "string" && req.name) return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 4000), req.first === true));
 		if (req.action === "open" && typeof req.name === "string" && req.name && Number.isInteger(req.row) && req.row >= 0) return JSON.stringify(openRowAt(req.row, req.name));
 		return JSON.stringify({ ok: false });
