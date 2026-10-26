@@ -165,7 +165,7 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .btn, .dc-act, .dc-go, .dc-back, .dc-manual { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--btn-h); padding: 0 16px; border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
 .btn, .dc-go, .dc-act.main { background: var(--accent); color: var(--on-accent); }
 .btn.tonal, .btn.outlined, .dc-back, .dc-act.alt { background: var(--layer); color: var(--fg); }
-.btn.text, .dc-act, .dc-manual { background: transparent; padding: 0 10px; }
+.btn.text, .dc-act, .dc-manual { background: transparent; color: var(--fg-2); padding: 0 10px; }
 .btn.sm { height: var(--btn-h-sm); padding: 0 12px; font-size: 13px; }
 .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover, .dc-manual:hover { opacity: .85; }
 .btn.tonal:hover, .btn.outlined:hover, .dc-back:hover, .dc-act.alt:hover { background: var(--hover); opacity: 1; }
