@@ -172,10 +172,16 @@ test("orchestrator: an auth block alerts once in plain Korean, retries slowly an
 	expect(sends()).toEqual([]);
 	expect(alerts).toHaveLength(1);
 
-	// a changed login retries at once, still silently
+	// a changed login retries at once, still silently, in a fresh process (the old one keeps the login and pin it read at start)
+	const before = started.length, old = started.at(-1)!;
 	writeFileSync(authFile(), "{}");
 	await advance(AUTH_WATCH_MS + 10);
-	expect(probes()).toHaveLength(1);
+	await advance(4000);
+	expect(old.calls).toContain("kill");
+	expect(started.length).toBe(before + 1);
+	await started.at(-1)!.push({ type: "session", ref: join(DATA, "limit-session.jsonl") });
+	await advance(500);
+	expect(sends().length).toBeGreaterThan(0);
 	await started.at(-1)!.push(...failedTurn(AUTH_ERR));
 	await advance(500);
 	expect(alerts).toHaveLength(1);
@@ -190,5 +196,28 @@ test("orchestrator: an auth block alerts once in plain Korean, retries slowly an
 	await advance(500);
 	expect(alerts).toHaveLength(2);
 	again.stop();
+	await advance(300);
+}, 30_000);
+
+test("orchestrator: switching to another account restarts the process on it and ends the pause of the old one, so held prompts go out at once", async () => {
+	rmSync(limitAlertsFile(), { force: true });
+	writeFileSync(join(DATA, "orchestrator.json"), "{}");
+	const o: typeof Orchestrator = await import("./orchestrator.ts?limit-alert-switch");
+	o.setAlertHandler(t => alerts.push(t));
+	o.setAnswerHandlers(() => {}, () => {});
+	o.start();
+	await advance(4000);
+	await started.at(-1)!.push({ type: "session", ref: join(DATA, "limit-session.jsonl") });
+	o.deliver("held on the dead account");
+	await started.at(-1)!.push(...failedTurn(AUTH_ERR));
+	await advance(500);
+	expect(o.orch.status).toBe("rate-limited");
+	const before = started.length, old = started.at(-1)!;
+	expect(o.applyAccountPin()).toBe("restarted");
+	await advance(4000);
+	expect(old.calls).toContain("kill");
+	expect(started.length).toBe(before + 1);
+	expect(o.orch.status).not.toBe("rate-limited");
+	o.stop();
 	await advance(300);
 }, 30_000);
