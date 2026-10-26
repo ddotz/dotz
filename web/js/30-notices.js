@@ -30,7 +30,9 @@ function ntPaint() {
 
 async function loadNotices() {
   try {
-    const r = await api("/api/notices?limit=100");
+    // The hub keeps 300 (hub/notices.ts NOTICE_CAP) and lists open decisions, then unread, then newest: reading only 100 left a busy day's
+    // reports out of 감시 소식 and the monitors' counts. The lists page what they draw, so the whole set is cheap to hold.
+    const r = await api("/api/notices?limit=300");
     NT.items = Array.isArray(r.items) ? r.items : [];
     NT.unread = r.unread | 0; NT.loaded = true; NT.failed = false;
   } catch { NT.failed = !NT.loaded; }
