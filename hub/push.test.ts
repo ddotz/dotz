@@ -132,3 +132,11 @@ test("an answer in a monitor's or app's settings conversation notifies like any 
 	expect(classify(ev({ source: "gateway", target: conv, text: "받았어요" }), LONG_TURN_MS)).toBeUndefined();
 	setWatchLabelResolver(name => name);
 });
+
+test("an all-clear or a repeated gateway alert does not notify; a new failure and a question still do", () => {
+	for (const text of ["땃쥐: 모델 제공자가 다시 연결됐어요. 멈춰 있던 일을 이어서 처리해요.", "땃쥐: API 키 사용 끝: 오케스트레이터가 x(구독)으로 돌아왔어요.", "땃쥐: 원래 모델(claude-opus-5-5)로 되돌렸어요", "[kakao-new] 다시 정상이에요"])
+		expect(classify(ev({ source: "gateway", target: "alert", text }))).toBeUndefined();
+	expect(classify(ev({ source: "gateway", target: "alert", text: "땃쥐: 모델 제공자 오류(timeout)", repeat: true }))).toBeUndefined();
+	expect(classify(ev({ source: "gateway", target: "alert", text: "땃쥐: 모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "usage" });
+	expect(classify(ev({ source: "gateway", target: "alert", text: "[ask] 땃쥐: 모델 오류가 계속돼요.", repeat: true }))).toMatchObject({ kind: "ask" });
+});

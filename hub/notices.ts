@@ -5,6 +5,7 @@ import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
 import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, parseDraftApproval, quotedDraft, refreshDraft } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
+import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
 import { readOf } from "./reads.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
@@ -333,9 +334,20 @@ function fromOutbox(e: HubEvent, asks = false): void {
 			const name = key.slice(5);
 			return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: key, key, ...(by ? { by } : {}), at: e.ts });
 		}
-		return void upsert({ kind: "worklog", tone, title: systemTitle(text, "작업 기록"), text, open: target === "worklog" ? "worklog" : "main", key, read: restart, at: e.ts });
+		// The gateway's own status lines there (a restart, a model fallback, an account switch, a harness upgrade) are a record, not news: born read.
+		// A gateway [ask] / [fail] there still waits, and so does a daily digest with its own title (야간 정리, 토큰 점검).
+		const title = systemTitle(text, "작업 기록");
+		const status = e.source === "gateway" && tone !== "ask" && tone !== "fail" && title === "작업 기록";
+		return void upsert({ kind: "worklog", tone, title, text, open: target === "worklog" ? "worklog" : "main", key, read: restart || status, at: e.ts });
 	}
-	if (target === "alert") return asks ? undefined : void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered), at: e.ts });
+	if (target === "alert") {
+		if (asks) return;
+		// An all-clear of the gateway is born read; a repeat (hub/alert-gate.ts) rewrites the alert it repeats, in place and in its read state.
+		const quiet = e.source === "gateway" && quietAlert(text);
+		const prior = e.repeat === true ? items.findLast(n => n.kind === "alert" && !n.dismissed && n.by === by && alertMatter(n.text) === alertMatter(text)) : undefined;
+		if (prior && !prior.key) prior.key = `alert:${prior.id}`;
+		return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key: prior?.key ?? key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered) || quiet, at: e.ts });
+	}
 	const watch = /^ch:\d+$/.test(target) && e.source === "gateway" ? /^\[([^\]\n]+)\]\s*/.exec(text) : null;
 	if (watch) {
 		const ref = recovered ? undefined : itemRefOf(text);
