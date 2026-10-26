@@ -11,7 +11,7 @@ const json = (v: unknown, status = 200) => Response.json(v, { status });
 const XLSX = "/Users/hyuns/.dotz/uploads/2026-10-26/mvoqivnd0r9j-2026년_9월_단신부임여비_신청.xlsx";
 const PDF = "/Users/hyuns/.dotz/uploads/2026-10-26/1분기_정산_보고서.pdf";
 const FILE_MSG = `첨부 두 개 보내 드려요.\n\n[file] ${XLSX}\n[file] ${PDF}`;
-const SHORT_XLSX = "~/…/2026-10-26/mvoqivnd0…단신부임여비_신청.xlsx";
+const SHORT_XLSX = "~/…/2026-10-26/mvoqiv…임여비_신청.xlsx";
 const SHORT_PDF = "~/…/2026-10-26/1분기_정산_보고서.pdf";
 const ASK = "[ask] 확인\n결정: 어떻게 할까요?\n**1) 그대로 보내기** ← 추천\n바로 보내요\n**2) 고치기**\n내용을 고쳐요\n";
 const history = [
@@ -62,13 +62,15 @@ async function open(width: number, lang: string) {
 	return v;
 }
 
-type Paths = { text: string[]; title: string[]; oneLine: boolean[] };
+type Paths = { text: string[]; title: string[]; oneLine: boolean[]; inside: boolean[] };
 const readPaths = async (v: InstanceType<typeof Bun.WebView>): Promise<Paths> =>
 	JSON.parse(
 		(await v.evaluate(`JSON.stringify((() => {
 			const nodes = [...document.querySelectorAll(".fitem .fpath")];
 			return { text: nodes.map(n => n.textContent), title: nodes.map(n => n.title),
-				oneLine: nodes.map(n => n.scrollHeight <= parseFloat(getComputedStyle(n).lineHeight) * 1.5) };
+				oneLine: nodes.map(n => n.scrollHeight <= parseFloat(getComputedStyle(n).lineHeight) * 1.5),
+				// the path must not stick out past its own chip, so two files never share one path line
+				inside: nodes.map(n => n.getBoundingClientRect().right <= n.closest(".fitem").querySelector(".fbox").getBoundingClientRect().right + 1) };
 		})())`)) as string,
 	) as Paths;
 
@@ -78,8 +80,9 @@ for (const [name, width] of [["390", 390], ["1280", 1280]] as const) {
 		const got = await readPaths(v);
 		expect(got.title).toEqual([XLSX, PDF]);
 		expect(got.text).toEqual([SHORT_XLSX, SHORT_PDF]);
-		for (const t of got.text) expect(t.length).toBeLessThanOrEqual(40);
+		for (const t of got.text) expect(t.length).toBeLessThanOrEqual(34);
 		expect(got.oneLine.every(Boolean)).toBe(true);
+		expect(got.inside).toEqual([true, true]);
 		expect(got.text.join(" ")).not.toContain("/Users/");
 		if (SHOTS) {
 			mkdirSync(SHOTS, { recursive: true });
@@ -109,3 +112,46 @@ test("the decision card's buttons are the one button system: .dc-act, .dc-go and
 	for (const k of ["act", "back", "secondary", "quiet"]) expect(got[k]).toEqual(got.btn);
 	expect(got.manual).toMatchObject({ h: got.btn.h, radius: got.btn.radius, weight: got.btn.weight });
 });
+
+const CARD_DRAW = `(() => {
+	const options = [{ n: 1, label: "보내기" }, { n: 2, label: "고치기" }, { n: 3, label: "보내지 않기" }];
+	const draft = draftCardNode({ id: "S1", kind: "decision", ts: new Date().toISOString(), title: "[ask] 견적서 회신 초안", decision: { state: "open", to: "mail:kim@example.com", options,
+		draft: { ref: "R1", to: "김민수 <kim@example.com>", toLabel: "받는이", subject: "견적서와 현장사진 회신", body: "안녕하세요.\\n\\n요청하신 견적서와 현장사진을 보내 드립니다.", attachments: [] } } });
+	const result = resultCard({ src: "모니터링 · 서버 점검", at: new Date().toISOString(), title: "결과가 바뀌었어요", text: "요약\\n새 소식 3건이 있어요.",
+		actions: [el("button", { class: "btn", type: "button", text: "열기" }), el("button", { class: "btn tonal", type: "button", text: "나중에" }), el("button", { class: "btn text", type: "button", text: "무시" })] });
+	const host = el("div", { class: "shot-cards" });
+	host.style.cssText = "position:fixed;inset:0;z-index:9999;overflow:auto;background:var(--bg);padding:16px;display:flex;flex-direction:column;gap:16px;align-items:center";
+	const col = el("div");
+	col.style.cssText = "display:flex;flex-direction:column;gap:16px;width:100%;max-width:560px";
+	col.append(draft, result); host.append(col); document.body.append(host);
+	return true;
+})()`;
+
+for (const [name, width] of [["390", 390], ["1280", 1280]] as const) {
+	test(`the draft approval card and a result card show the one button style at ${name}px`, async () => {
+		const v = await open(width, name);
+		await v.evaluate(CARD_DRAW);
+		await waitFor(v, `document.querySelectorAll(".shot-cards .dr-act .btn").length === 3 && document.querySelectorAll(".shot-cards .cc-act .btn").length === 3`);
+		const got = JSON.parse(
+			(await v.evaluate(`JSON.stringify((() => {
+				const box = b => { const r = b.getBoundingClientRect(), s = getComputedStyle(b); return { label: b.textContent, h: Math.round(r.height), radius: s.borderRadius, bg: s.backgroundColor, color: s.color, weight: s.fontWeight }; };
+				return { draft: [...document.querySelectorAll(".shot-cards .dr-act .btn")].map(box), result: [...document.querySelectorAll(".shot-cards .cc-act .btn")].map(box) };
+			})())`)) as string,
+		) as { draft: { label: string; h: number; radius: string; bg: string; color: string; weight: string }[]; result: { label: string; h: number; radius: string; bg: string; color: string; weight: string }[] };
+		expect(got.draft.map(b => b.label)).toEqual(["보내기", "고치기", "보내지 않기"]);
+		expect(got.result.map(b => b.label)).toEqual(["열기", "나중에", "무시"]);
+		for (const b of [...got.draft, ...got.result]) {
+			expect(b.radius).toBe("10px");
+			expect(b.h).toBe(width === 390 ? 44 : 40);
+		}
+		expect(got.draft[0]!.bg).not.toBe(got.draft[1]!.bg);
+		expect(got.draft[2]!.bg).toBe("rgba(0, 0, 0, 0)");
+		// primary writes white on the accent fill; secondary and quiet keep dark ink (a quiet button must not go white on white)
+		expect(got.draft[0]!.color).toBe("rgb(255, 255, 255)");
+		for (const b of [got.draft[1]!, got.draft[2]!, got.result[1]!, got.result[2]!]) expect(b.color).not.toBe("rgb(255, 255, 255)");
+		if (SHOTS) {
+			mkdirSync(SHOTS, { recursive: true });
+			await Bun.write(`${SHOTS}/cards-${name}.png`, await v.screenshot());
+		}
+	}, 30_000);
+}

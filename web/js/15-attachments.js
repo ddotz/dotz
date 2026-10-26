@@ -86,7 +86,7 @@ function fileItem(f) {
 // A path as one readable line (owner 2026-10-26: the full absolute path under a file wrapped over three lines): the home folder as ~,
 // the last folder and the file name (`~/…/2026-10-26/<id>…신청.xlsx`), and a long name cut in the middle so the extension stays.
 // The full path stays in the element's title and in the copy.
-const SHORT_PATH_NAME = 24, SHORT_PATH_MAX = 40;
+const SHORT_PATH_NAME = 18, SHORT_PATH_MAX = 34;
 function shortPath(p) {
   const s = String(p ?? "").trim();
   if (!s) return "";
