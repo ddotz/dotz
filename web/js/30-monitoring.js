@@ -570,15 +570,21 @@ function monTopNodes(it) {
 }
 // 감시 소식 opens with every plain monitor at a glance: how far its wait has come, how it last ended, and the last line it said. Down and failed
 // rows come first, so what needs the owner is at the top; a tap opens that monitor.
+// Every plain monitor of the list, this computer's and the others' (monItems already drops an app's own watches and merges the peers): a peer row
+// keeps its machine chip, and one whose hub sent no next run says '다른 컴퓨터' instead of drawing a bar from made-up times.
 function monOverview(it) {
   if (it.key !== "notice") return null;
-  const mons = ntMons(), ownedNames = new Set([...monOwnedBy(INTG.items, mons).values()].flat());
-  const now = Date.now(), list = mons.filter(m => !ownedNames.has(m));
-  const rank = m => m.connection === "disconnected" ? 0 : m.last_result === "fail" ? 1 : m.paused ? 4 : (Date.parse(m.next_run) || Infinity) < now ? 2 : m.last_result ? 3 : 2;
-  const sorted = list.slice().sort((a, b) => rank(a) - rank(b) || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
+  const now = Date.now(), list = monItems().filter(i => i.mon);
+  const rank = i => { const m = i.mon; return m.connection === "disconnected" ? 0 : m.last_result === "fail" ? 1 : m.paused ? 4 : (Date.parse(m.next_run) || Infinity) < now ? 2 : m.last_run ? 3 : 2; };
+  const sorted = list.slice().sort((a, b) => rank(a) - rank(b) || (Date.parse(a.mon.next_run) || Infinity) - (Date.parse(b.mon.next_run) || Infinity));
   return el("div", { class: "mon-ov" }, el("div", { class: "mon-ov-h", text: "모니터링 상태" }),
-    ...(sorted.length ? sorted.map(m => el("button", { class: "mon-ov-row", type: "button", "data-ov": `m:${m.name}`, onclick: () => go("monitoring", `m:${m.name}`) },
-      el("span", { class: "mon-ov-n", text: monTitle(m) }), monProgNode(m, { compact: true }), el("span", { class: "mon-ov-s", text: m.connection === "disconnected" ? monConnLine(m) : m.last_summary || monRunLine(m) }))) : [el("div", { class: "mon-ov-empty", text: "아직 일반 모니터링이 없어요" })]));
+    ...(sorted.length ? sorted.map(i => {
+      const m = i.mon, peerBar = i.pc && !(Date.parse(m.next_run) > 0);
+      return el("button", { class: "mon-ov-row", type: "button", "data-ov": i.key, onclick: () => go("monitoring", i.key) },
+        el("span", { class: "mon-ov-hd" }, el("span", { class: "mon-ov-n", text: monTitle(m) }), i.pc ? el("span", { class: "tag", text: i.pc.name }) : null),
+        peerBar ? el("span", { class: "mon-ov-peer", text: "다른 컴퓨터" }) : monProgNode(m, { compact: true }),
+        el("span", { class: "mon-ov-s", text: m.connection === "disconnected" ? monConnLine(m) : m.last_summary || monRunLine(m) }));
+    }) : [el("div", { class: "mon-ov-empty", text: "아직 일반 모니터링이 없어요" })]));
 }
 function monTimeline(it) {
   if (it.off) return [el("div", { class: "empty", text: "연결 안 됨" })];
@@ -709,14 +715,17 @@ function renderMonitoring() {
   monSeen();
 }
 // A monitor row in the list carries the same bar under its status line; the row itself is the shared convRow, so the block is appended here.
+// A monitor row carries its bar as the last child of the whole row (not of the text column), so the bar and its meta line take the full left-column
+// width even when a peer row's machine chip and result badge leave the text column narrow.
 function monDecorateRows(side, items) {
   for (const row of side.querySelectorAll(".cv-row[data-k]")) {
     const it = items.find(i => i.key === row.dataset.k);
-    const b = it && it.mon && row.querySelector(".cv-b");
-    if (!b) continue;
-    const old = b.querySelector(".mon-prog-wrap");
+    if (!it || !it.mon) continue;
+    row.classList.add("has-mon-prog");
+    const status = row.querySelector(".cv-b .cv-p"), old = row.querySelector(".mon-prog-wrap");
+    if (status) { status.classList.add("mon-row-status"); row.append(status); }
     if (old) old.remove();
-    b.append(monProgNode(it.mon, { compact: true, tag: false, short: true }));
+    row.append(monProgNode(it.mon, { compact: true, tag: false, short: true }));
   }
 }
 function monTick() {

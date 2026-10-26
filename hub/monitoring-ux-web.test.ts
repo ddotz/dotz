@@ -22,7 +22,8 @@ const initial = (): Record<string, unknown>[] => [
   base("많은 감시", "many-watch", { last_summary: "확인을 마쳤어요" }),
 ];
 let monitors = initial();
-beforeEach(() => { monitors = initial(); runs.length = 0; });
+const peers: Record<string, unknown>[] = [];
+beforeEach(() => { monitors = initial(); runs.length = 0; peers.length = 0; });
 const notices: Record<string, unknown>[] = [...many];
 const runs: string[] = [];
 const json = (v: unknown, status = 200) => Response.json(v, { status });
@@ -38,13 +39,13 @@ const server = Bun.serve({
     if (asset) return asset;
     if (p === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
     if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0, schedules: [], events: [] });
-    if (p === "/api/peers") return json([{ name: "맥북", url: `http://127.0.0.1:${server.port}`, self: true, online: true }]);
+    if (p === "/api/peers") return json([{ name: "맥북", url: `http://127.0.0.1:${server.port}`, self: true, online: true }, ...peers.map(x => ({ name: x.name, url: x.url, self: false, online: x.online }))]);
     if (p === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
     if (p === "/api/monitors") return json({ items: monitors });
     if (p === "/api/notices") return json({ unread: 0, items: notices });
     if (p === "/api/integrations") return json({ items: [], available: [] });
     if (p === "/api/conversations") return json({ items: [] });
-    if (p === "/api/monitoring/peers") return json([]);
+    if (p === "/api/monitoring/peers") return json(peers);
     if (p.startsWith("/api/history")) return json({ target: url.searchParams.get("target") ?? "", events: [] });
     const run = /^\/api\/watches\/([a-z0-9-]+)\/run$/.exec(p);
     if (run && req.method === "POST") {
@@ -155,6 +156,31 @@ describe("감시 소식", () => {
     await run(v, `document.querySelector(".mon-ov-row").click()`);
     await waitFor(v, `MON.sel === "m:끊긴 감시"`);
   });
+});
+
+describe("a peer monitor in the overview", () => {
+	test("is listed beside this computer's monitors with its machine chip, and one without a next run says 다른 컴퓨터 instead of a bar", async () => {
+		peers.push({ name: "맥미니", url: "http://mini.test", online: true, stale: false, items: { name: "맥미니", rev: "r1",
+			monitors: [
+				{ name: "맥미니 알림", watch: "mini-alert", kind: "watch", last_run: at(T0 - 5 * 60_000), next_run: at(T0 + 5 * 60_000), last_result: "ok", last_summary: "알림을 확인했어요" },
+				{ name: "맥미니 백업", watch: "mini-backup", kind: "watch", last_run: at(T0 - 60 * 60_000), last_result: "fail", fails: 2, last_summary: "백업이 실패했어요" },
+			],
+			notices: [], integrations: [], conversations: [] } });
+		const v = await boot(1280, 900);
+		await waitFor(v, `PQ.loaded && PQ.list.length === 1 && monItems().some(i => i.key === "p:http://mini.test|m:맥미니 알림")`);
+		const fit = await q<boolean>(v, `const t = [...document.querySelectorAll("#mon-side .cv-row")].find(r => r.textContent.includes("맥미니 알림")).querySelector(".mon-prog-tx"); return t.scrollWidth <= t.clientWidth + 1 && /^\\d+분 전 · \\d+분 후$/.test(t.textContent)`);
+		expect(fit).toBe(true);
+		await run(v, `go("monitoring", "notice")`);
+		await waitFor(v, `document.querySelectorAll(".mon-ov-row").length === 7`);
+		const rows = await q<{ name: string; text: string; prog: number; chip: string }[]>(v, `return [...document.querySelectorAll(".mon-ov-row")].map(r => ({ name: r.querySelector(".mon-ov-n").textContent, text: r.textContent, prog: r.querySelectorAll(".mon-prog").length, chip: r.querySelector(".tag") ? r.querySelector(".tag").textContent : "" }))`);
+		const mini = rows.find(r => r.name === "맥미니 알림")!;
+		expect(mini.chip).toBe("맥미니");
+		expect(mini.prog).toBe(1);
+		const backup = rows.find(r => r.name === "맥미니 백업")!;
+		expect(backup.text).toContain("다른 컴퓨터");
+		expect(backup.prog).toBe(0);
+		expect(rows.map(r => r.name)).toContain("절반 감시");
+	});
 });
 
 describe("older reports", () => {
