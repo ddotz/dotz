@@ -232,6 +232,10 @@ term.addEventListener("scroll", () => { termStick = term.scrollTop + term.client
 $("#chat-jump").prepend(icon("down")); $("#act-jump").prepend(icon("down"));
 $("#chat-jump").onclick = () => scrollChat(true);
 $("#act-jump").onclick = () => scrollTerm(true);
+// Older messages load by themselves when the owner reaches the top: the sentinel sits above them inside the scrolling
+// timeline (11-todo-strip.js keeps it across redraws), so the observer fires without a scroll event; its button stays the fallback.
+if ("IntersectionObserver" in window && $("#tl-top"))
+  new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) loadOlderMsgs(); }, { root: timeline, threshold: 0 }).observe($("#tl-top"));
 // Messages read top-down: `top` = a message that just arrived while the owner sits at the bottom. When it is taller than the visible area
 // its TOP goes to the top of the view (leaving the bottom, so the "new message" jump button shows); a short one keeps sticking to the bottom.
 function scrollChat(force, top) {

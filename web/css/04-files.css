@@ -169,6 +169,27 @@ details.work.live .wdot { display: block; }
 .pausenote[hidden] { display: none; }
 .pausenote .pn-go { height: 24px; margin-left: 6px; padding: 0 8px; font-size: 12.5px; }
 .runline .dot { width: 7px; height: 7px; }
+/* The run state line (41-runstate.js): always on above the composer, so the owner sees what the agent is doing and, when
+   nothing runs while the plan has tasks left, why. */
+.runstate { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 0 0 6px 6px; color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+.runstate[hidden] { display: none; }
+.runstate .dot { width: 7px; height: 7px; flex: none; }
+.runstate .rs-tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runstate.warn { color: var(--warn); }
+.runstate.err { color: var(--err); }
+.runstate .rs-go { flex: none; height: 24px; padding: 0 8px; font-size: 12.5px; }
+/* The run state line says the same thing as the older working line, so that one steps aside while this line is on. */
+.composer.rs-on .runline { display: none; }
+/* On a phone the reason must be readable whole: the line wraps instead of cutting it off. */
+@media (max-width: 639px) {
+  .runstate { align-items: flex-start; }
+  .runstate .rs-tx { white-space: normal; }
+  .runstate .rs-go { height: 30px; padding: 0 10px; }
+}
+/* The top of the timeline: older messages load as it comes into view; the button is the fallback. */
+.tl-top { display: flex; justify-content: center; margin: 0 0 -6px; }
+.tl-top[hidden] { display: none; }
+.tl-top .tl-more { height: 26px; font-size: 12.5px; }
 .runline.warn { color: var(--warn); }
 @keyframes runpulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 #working > .dot, #working-tx, #working > .sp, #working-stop { display: none !important; }

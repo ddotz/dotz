@@ -105,18 +105,29 @@ async function loadOlder() {
 // Older chat messages, 150 at a time, when the conversation is scrolled to its top (history keeps more than the first read).
 async function loadOlderMsgs() {
   const t = target, s = ts(t);
-  if (!s.hmore || s.olderMsgs || !s.hLoaded || !s.msgs.length) return;
+  if (!s.hmore || s.olderMsgs || !s.hLoaded || !s.msgs.length) return;   // one request in flight, and nothing past the beginning
   s.olderMsgs = true;
   try {
+    // The message at the top of the view stays where it is while the older ones go in above it (the view is redrawn whole):
+    // the opening's pin ("bottom") would push it back down on the redraw, so the owner's place takes over now.
+    if (t === target) chatUnpin();
+    const at = t === target ? chatAnchor() : null, ch = timeline.scrollHeight - timeline.scrollTop;
     const r = await api(`/api/history?target=${enc(t)}&limit=150&before=${enc(s.msgs[0].ts)}`);
     const add = (r.events || []).filter(e => !s.mk.has(msgKey(e)));
     for (const e of add) s.mk.add(msgKey(e));
     s.msgs = [...add, ...s.msgs]; s.hmore = (r.events || []).length >= 150 && add.length > 0;
-    if (t === target && add.length) { const ch = timeline.scrollHeight - timeline.scrollTop; renderAll(true); timeline.scrollTop = timeline.scrollHeight - ch; }
+    if (t === target && add.length) {
+      renderAll(true);
+      const now = at && [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === at.ts);
+      if (now) timeline.scrollTop += now.getBoundingClientRect().top - timeline.getBoundingClientRect().top - at.off;
+      else timeline.scrollTop = timeline.scrollHeight - ch;
+      chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+      $("#chat-jump").hidden = chatStick;
+    }
   } catch { toast("이전 대화를 불러오지 못했어요", true); }
-  finally { s.olderMsgs = false; }
+  finally { s.olderMsgs = false; if (t === target) paintOlderTop(); }
 }
-function renderAll(keepScroll) { renderAll0(keepScroll); paintDecision(); paintTodo(); paintWorkers(); edgeFade(timeline); edgeFade(term); }
+function renderAll(keepScroll) { renderAll0(keepScroll); paintDecision(); paintTodo(); paintWorkers(); paintRunState(); edgeFade(timeline); edgeFade(term); }
 function edgeFade(t) { const b = t.parentElement; b.classList.toggle("fade-t", t.scrollTop > 4); b.classList.toggle("fade-b", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
 function renderAll0(keepScroll) {
   const s = ts(target);
@@ -138,7 +149,7 @@ function renderAll0(keepScroll) {
       if (ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
     } else { const a = A[i++]; if (!isProjT(target) && !isFixedT(target)) chatPush({ a }, true); termPush(a, true); }
   }
-  if (!tl.children.length) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));
+  if (tl.children.length <= 1) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));   // only the top sentinel is there
   if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동이 없어요" }));
   if (!keepScroll) { chatOpen(); scrollTerm(true); } else { CV.snap = null; CV.full = true; }
   markLive();

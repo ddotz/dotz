@@ -18,7 +18,10 @@ import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings 
 import { refreshReplyModelChoices } from "./reply-model-choices.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
-import { broadcast, historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { activityItems, broadcast, historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { subagentLists } from "./activity.ts";
+import { runningOmoWorkers } from "./bgwork.ts";
+import { lastTurnEnd, openTodos, runIntent, runState, type RunState } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
@@ -87,6 +90,62 @@ function authorized(req: Request): boolean {
 	log(`denied ${new URL(req.url).pathname} ${seen || "(no tailscale identity headers)"}`);
 	return false;
 }
+
+// The run state of every conversation (/api/state `runs`): what each session is doing, and when it is idle with plan tasks left, why.
+function stateRuns(): Record<string, RunState> {
+	const nowMs = Date.now();
+	const running = bgWork.list().filter(w => w.status === "running");
+	const deferred = queue.deferredOpen();
+	const asks = listNotices(NOTICE_CAP).items
+		.filter(n => n.kind === "decision" && n.decision?.state === "open")
+		.sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")));
+	const askFor = (target: string) => {
+		const n = asks.find(x => { const to = x.decision!.to; return to === target || (target === "main" && to.startsWith("auth:")); });
+		return n ? { text: n.text || n.title, at: n.at } : undefined;
+	};
+	const turnStart = (source: string, fallback: string) => lastTurnStart(activityItems(source)) ?? fallback;
+	const mainItems = activityItems("orchestrator");
+	const main = runState({
+		status: orch.status,
+		since: (orch.status === "stopped" ? orch.stoppedAt || orch.startedAt : turnStart("orchestrator", orch.startedAt)) || undefined,
+		intent: runIntent(mainItems),
+		rateLimitedUntil: orch.rateLimitedUntil,
+		pauseKind: orch.pauseKind,
+		stoppedBy: orch.stoppedBy || undefined,
+		error: orch.error ? { text: orch.error.text, since: orch.error.since } : undefined,
+		ask: askFor("main"),
+		work: running.filter(w => { const t = (w as { target?: string }).target; return t === "web" || t === "terminal" || !t; }),
+		children: runningChildren("orchestrator"),
+		later: deferred.filter(d => d.target === "web" || d.target === "terminal").length,
+		lastTurnEnd: lastTurnEnd(mainItems),
+		todos: openTodos(readTodo(orch.sessionFile)),
+		now: nowMs,
+	});
+	const lanesOut: Record<string, RunState> = {};
+	for (const lane of lanes.values()) {
+		const source = `lane:${lane.name}`, items = activityItems(source), workers = runningOmoWorkers(lane.sessionFile);
+		lanesOut[source] = runState({
+			status: lane.status,
+			since: turnStart(source, lane.startedAt),
+			intent: runIntent(items),
+			ask: lane.pendingAsk ? { text: lane.pendingAsk.text, at: lane.pendingAsk.at } : undefined,
+			work: workers ? [{ description: "백그라운드 작업" }] : undefined,
+			children: runningChildren(source),
+			later: deferred.filter(d => d.target === source).length,
+			capacity: lane.waiting,
+			lastTurnEnd: lastTurnEnd(items),
+			todos: openTodos(readTodo(lane.sessionFile)),
+			now: nowMs,
+		});
+	}
+	return { main, ...lanesOut };
+}
+const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefined => {
+	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_start") return items[i]!.ts;
+	return undefined;
+};
+const runningChildren = (source: string) =>
+	(subagentLists()[source] || []).filter(s => s.status === "running").map(s => ({ name: s.id, description: s.description || s.agent }));
 
 type RestartHooks = { busyNow: () => string[]; restartGateway: () => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps };
 const isMailTarget = (t: string) => /^mail:[a-z0-9._-]+$/.test(t);
@@ -191,7 +250,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		// Run one watch now (the web's 지금 확인 / 지금 다시 확인): the same runner the timer uses, awaited so the answer carries the new result.
