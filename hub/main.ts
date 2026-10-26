@@ -11,7 +11,7 @@ import { setAskAnswer } from "./askbuttons.ts";
 import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, startPush } from "./push.ts";
 import { msg, textsToReport } from "./i18n.ts";
-import { broadcast, emit, emitDelivery, sentFiles } from "./events.ts";
+import { broadcast, emit, emitDelivery, onEmit, sentFiles } from "./events.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startLaneIdleStop } from "./laneidle.ts";
 import { startMemoryGuard } from "./memguard.ts";
@@ -65,12 +65,24 @@ import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { makeRoute } from "./routes.ts";
 import { appEntries, appKeyOf, integrationContext } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
-import { mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
+import { applyMemory, mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
 import { setFormLink } from "./auth.ts";
 import { kakaoDraftFacts, startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
 import { commentDraftFacts } from "./comments/gateway.ts";
 import { draftHandled } from "./draft-handled.ts";
 import { listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
+
+// 앱 기억 (hub/app-settings.ts applyMemory): a bot answer that keeps an app's attach folder or follow-up rule is stored at once, in whatever
+// conversation the owner said it; other setting changes stay a card the owner applies.
+onEmit(e => {
+	if (e.kind !== "out" || typeof e.text !== "string" || !e.text.includes("dotz-settings")) return;
+	try {
+		const r = applyMemory(DATA_DIR, e.text);
+		if (r) log(`app memory: ${r.app} kept ${r.keys.join(", ")}`);
+	} catch (err) {
+		log(`app memory not kept: ${(err as Error).message}`);
+	}
+});
 
 installDelivery();
 // The orchestrator's retries gave up: one [ask] per episode (sent again after a Discord reconnect by the send ledger, pushed

@@ -273,7 +273,8 @@ function asPaint() {
   const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], stat, feat]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
-  const sw = fields.filter(f => f.switch), other = fields.filter(f => !f.switch);
+  // 기억 항목 (attach folder, follow-up rule) are learned in conversation, never typed here: shown read only, with how to change them.
+  const sw = fields.filter(f => f.switch), other = fields.filter(f => !f.switch && !f.memory), mem = fields.filter(f => f.memory);
   clear(box).append(
     ...stat.map(monStatNode),
     ...(feat ? asFeatNodes(app, feat) : []),
@@ -286,6 +287,10 @@ function asPaint() {
         try { await asPatch(app, { [f.key]: v }); } catch (e) { toast(e.message || "설정을 바꾸지 못했어요"); }
         AS.busy[app] = false; delete box.dataset.sig; asPaint();
       }))),
+    ...(mem.length ? [el("div", { class: "as-row as-mem", "data-setting": "memory" },
+      el("span", { class: "as-b" }, el("span", { class: "as-n", text: "기억해 둔 것" }),
+        el("span", { class: "as-h", text: "대화에서 알려 주면 봇이 기억하고 참고해요. 바꾸려면 대화에서 말해 주세요" }),
+        ...mem.map(f => el("span", { class: "as-h", text: `${f.label}: ${f.value === "" || f.value == null ? "아직 없어요" : asFmt(f, f.value)}` }))))] : []),
     ...(app.startsWith("w:") ? [] : [asRemoveNode(app)]));
 }
 // The settings screen: a view pushed over the conversation (back button on a phone and on a wide screen) with the status card and every option row.
@@ -382,6 +387,9 @@ function settingsCardHtml(src) {
     const text = !f ? JSON.stringify(v) : state === "applied" ? asFmt(f, v) : asChange(f, f.value, v);
     return `<div class="as-cr"><span class="as-cn">${esc(f ? f.label : k)}</span><span class="as-cv">${esc(text)}</span></div>`;
   }).join("");
+  // only memory keys: the gateway kept them already (hub/app-settings.ts applyMemory), so there is nothing to apply
+  const memOnly = fields.length && Object.keys(ch).every(k => (fields.find(x => x.key === k) || {}).memory);
+  if (memOnly) return `<div class="as-card applied"><div class="as-ct">기억해 뒀어요</div>${Object.entries(ch).map(([k, v]) => { const f = fields.find(x => x.key === k); return `<div class="as-cr"><span class="as-cn">${esc(f.label)}</span><span class="as-cv">${esc(asFmt(f, v))}</span></div>`; }).join("")}</div>`;
   const foot = state ? `<div class="as-done ${state}">${state === "applied" ? "적용했어요" : "취소했어요"}</div>`
     : `<div class="as-act"><button class="btn" type="button" data-as="apply">적용</button><button class="btn tonal" type="button" data-as="cancel">취소</button></div>`;
   return `<div class="as-card${state ? ` ${state}` : ""}" data-as-id="${id}" data-as-app="${esc(app)}" data-as-src="${esc(String(src).trim())}"><div class="as-ct">설정 바꾸기 제안</div>${rows}${foot}</div>`;

@@ -31,6 +31,9 @@ export type SettingField = {
 	alsoOn?: string[];
 	/** The stored boolean is the opposite of the value shown (the file says `off`, the switch says 쓰기). */
 	invert?: boolean;
+	/** Learned in conversation, not set in the settings screen (owner 2026-10-26): the bot saves it with a dotz-settings block of memory keys
+	 *  only, which the gateway stores at once (applyMemory), and every turn of that app is told the current value. */
+	memory?: true;
 };
 export type SettingValue = boolean | string | string[] | number;
 
@@ -61,9 +64,9 @@ export const setDiscordProbe = (probe: () => boolean): void => {
 export const mailDiscordOn = (dataDir: string, key: string): boolean => readAppsFile(dataDir)[instanceOf(appEntries(dataDir), "mail", `mail:${key}`)]?.discord === true;
 const discordField = (app: string): SettingField => ({ key: "discord", label: "디스코드에도 올리기", type: "bool", help: "새 메일마다 디스코드 메일 채널에 스레드를 만들어요", store: "custom/apps.json", path: `${app}.discord`, def: false, switch: true });
 // 첨부 파일 폴더: where a mail instance looks for the file a reply promises or a mail asks for (features/reply-drafts/lib/library.ts); empty = none.
-const attachFolderField = (app: string): SettingField => ({ key: "attach_folder", label: "첨부 파일 폴더", type: "text", help: "자주 보내는 파일(문서, 양식, 사진 등)을 모아 둔 이 컴퓨터의 폴더 경로예요. 답장에 파일이 필요하면 여기서 맞는 파일을 찾아 붙여 둬요", store: DRAFTS, path: `attachFolders.${app}`, max: 300 });
+const attachFolderField = (app: string): SettingField => ({ key: "attach_folder", label: "첨부 파일 폴더", type: "text", help: "오너가 대화에서 알려 준, 자주 보내는 파일을 모아 둔 이 컴퓨터의 폴더예요. 답장에 파일이 필요하면 여기서 맞는 파일을 찾아 붙여 둬요", store: DRAFTS, path: `attachFolders.${app}`, max: 300, memory: true });
 // 이어서 할 일: free text; after an approved action of this app instance the bot checks it once (hub/followup.ts).
-const followupField = (app: string): SettingField => ({ key: "followup", label: "이어서 할 일", type: "text", help: "답글·답장·카톡을 보낸 뒤 이어서 할 일이에요. 예: 파일을 달라는 댓글이면 답글 뒤에 적어 준 주소로 그 파일을 붙인 메일 초안을 만들어요. 조건에 맞을 때만 하고, 메일은 보내기를 누를 때만 나가요", store: DRAFTS, path: `followups.${app}`, max: 500 });
+const followupField = (app: string): SettingField => ({ key: "followup", label: "이어서 할 일", type: "text", help: "오너가 대화에서 알려 준, 답글·답장·카톡을 보낸 뒤 이어서 할 일이에요. 예: 파일을 달라는 댓글이면 답글 뒤에 적어 준 주소로 그 파일을 붙인 메일 초안을 만들어요. 조건에 맞을 때만 하고, 메일은 보내기를 누를 때만 나가요", store: DRAFTS, path: `followups.${app}`, max: 500 , memory: true });
 const REPLY_APPS = new Set(["mail", "kakao", "instagram", "youtube", "site"]);
 const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "답장 초안을 쓸 모델이에요", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "" });
 
@@ -151,9 +154,9 @@ export function validate(app: string, values: unknown): Record<string, SettingVa
 	return validateFields(fields, values);
 }
 
-export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "options" | "labels" | "min" | "max" | "switch"> & { value: SettingValue };
+export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "options" | "labels" | "min" | "max" | "switch" | "memory"> & { value: SettingValue };
 /** A field with its current value, as GET returns it. */
-export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), value });
+export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), ...(f.memory ? { memory: true as const } : {}), value });
 export function readSettings(dataDir: string, app: string): SettingView[] {
 	const cache = new Map<string, Record<string, any>>();
 	return fieldsOf(app).map(f => {
@@ -229,8 +232,38 @@ export function settingsContextOf(app: string, label: string, views: readonly Se
 		FENCE,
 		"key | 종류 | 이름 | 현재값 | 설명",
 		...rows,
+		...(views.some(f => f.memory) ? [memoryRule(views.filter(f => f.memory).map(f => f.key))] : []),
 		...(turns.length ? ["최근 대화:", ...turns] : []),
 	].join("\n");
+}
+
+// The keys marked memory are not asked about in the settings screen: the bot keeps what the owner says in any conversation of the app.
+const memoryRule = (keys: string[]): string => `기억 항목(${keys.join(", ")})은 설정 화면에 없어요. 오너가 대화에서 알려 주면(파일 폴더, 보낸 뒤에 할 일) 그 키만 담은 같은 블록을 붙이세요. 카드 없이 바로 저장되니 한 줄로 '기억해 뒀어요'라고만 알리세요.`;
+
+/** The memory keys of an answer's dotz-settings block, stored at once (no 적용 card). A block with any other key stays a proposal. Returns what was stored. */
+export function applyMemory(dataDir: string, text: string): { app: string; keys: string[] } | undefined {
+	const m = BLOCK.exec(text);
+	if (!m) return undefined;
+	let b: { app?: unknown; changes?: unknown };
+	try {
+		b = JSON.parse(m[1]!);
+	} catch {
+		return undefined;
+	}
+	const app = typeof b.app === "string" ? b.app : "";
+	const fields = fieldsOf(app);
+	const keys = b.changes && typeof b.changes === "object" && !Array.isArray(b.changes) ? Object.keys(b.changes) : [];
+	if (!keys.length || !keys.every(k => fields.find(f => f.key === k)?.memory)) return undefined;
+	writeSettings(dataDir, app, b.changes);
+	return { app, keys };
+}
+
+/** One line for a turn of an app's own conversation (a mail of that app): what it remembers and how to keep something new. "" when the app has no memory keys. */
+export function memoryNote(dataDir: string, app: string): string {
+	const mem = readSettings(dataDir, app).filter(f => f.memory);
+	if (!mem.length) return "";
+	const now = mem.map(f => `${f.label}=${f.value === "" ? "없음" : JSON.stringify(f.value)}`).join(", ");
+	return `(이 앱(${app})이 기억해 둔 것: ${now}. 오너가 새로 알려 주면 ${FENCE}dotz-settings {"app":"${app}","changes":{"<${mem.map(f => f.key).join("|")}>":"..."}} ${FENCE} 블록으로 기억하세요. 바로 저장돼요.)`;
 }
 
 /** Rough token count (Hangul ~1 token per 1.2 chars, the rest ~1 per 3.5): enough to check the 2K budget, not a billing figure. */

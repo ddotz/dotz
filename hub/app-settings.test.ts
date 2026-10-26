@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { approxTokens, fieldsOf, mailDiscordOn, parseProposal, readSettings, setDiscordProbe, SettingsError, settingsContext, validate, writeSettings } from "./app-settings.ts";
+import { applyMemory, approxTokens, fieldsOf, memoryNote, mailDiscordOn, parseProposal, readSettings, setDiscordProbe, SettingsError, settingsContext, validate, writeSettings } from "./app-settings.ts";
 
 let dir = "";
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "as-")); });
@@ -124,3 +124,17 @@ describe("settings context size", () => {
 		expect(approxTokens(ctx)).toBeLessThan(700);
 	});
 });
+
+describe("앱 기억 (owner 2026-10-26: learned in conversation, not set in the settings screen)", () => {
+	test("a block of memory keys only is stored at once; a block with any other key stays a proposal and writes nothing", () => {
+		expect(fieldsOf("mail").filter(f => f.memory).map(f => f.key).sort()).toEqual(["attach_folder", "followup"]);
+		expect(applyMemory(dir, fence("mail", { attach_folder: "~/Documents/양식" }))).toEqual({ app: "mail", keys: ["attach_folder"] });
+		expect(json("custom/reply-drafts/config.json").attachFolders.mail).toBe("~/Documents/양식");
+		expect(applyMemory(dir, fence("mail", { followup: "x", auto_draft: true }))).toBeUndefined();
+		expect(json("custom/reply-drafts/config.json").followups).toBeUndefined();
+		expect(applyMemory(dir, "기억할 것 없음")).toBeUndefined();
+		expect(memoryNote(dir, "mail")).toContain("첨부 파일 폴더=\"~/Documents/양식\"");
+		expect(readSettings(dir, "mail").find(f => f.key === "followup")!.memory).toBe(true);
+	});
+});
+
