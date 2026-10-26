@@ -108,10 +108,10 @@ describe("a monitor row and its conversation", () => {
     const v = await boot(1280, 900);
     await run(v, `go("monitoring", "m:끊긴 감시")`);
     await waitFor(v, `document.querySelector("#mon-head .mon-banner")`);
-    expect(await q(v, `return document.querySelector("#mon-head .mon-banner").textContent`)).toMatch(/연결 끊김.*다시 로그인 필요/);
+    expect(await q(v, `return document.querySelector("#mon-head .mon-banner").textContent`)).toMatch(/연결이 끊겼어요.*다시 로그인 필요/);
     expect(await q(v, `return document.querySelector("#mon-head .mon-banner .mon-recheck").textContent`)).toBe("지금 다시 확인");
     expect(await q(v, `return [document.querySelectorAll("#mon-head [data-run]").length, document.querySelectorAll("#mon-tl [data-run]").length, document.querySelectorAll(".mon-recheck").length]`)).toEqual([0, 0, 1]);
-    expect(await q(v, `return document.querySelector("#mon-head .mon-banner .mon-banner-tx").textContent`)).toMatch(/^연결 끊김 · .+부터 · 다시 로그인 필요$/);
+    expect(await q(v, `return document.querySelector("#mon-head .mon-banner .mon-banner-tx").textContent`)).toMatch(/^연결이 끊겼어요 · .+부터 · 다시 로그인 필요$/);
     await Bun.write(join(SHOTS, "monitoring-detail-1280.png"), await v.screenshot());
     await run(v, `document.querySelector("#mon-head .mon-banner .mon-recheck").click()`);
     await waitFor(v, `!MON.running.size && !document.querySelector("#mon-head .mon-banner") && document.querySelector("#mon-head .mon-ptag").textContent === "정상"`);
@@ -131,14 +131,50 @@ describe("a monitor row and its conversation", () => {
     await Bun.write(join(SHOTS, "monitoring-list-390.png"), await v.screenshot());
     await run(v, `go("monitoring", "m:끊긴 감시")`);
     await waitFor(v, `document.querySelector("#mon-tl .mon-banner") && document.querySelector("#mon-tl .mon-prog")`);
-    expect(await q(v, `return document.querySelector("#mon-tl .mon-banner").textContent`)).toContain("연결 끊김");
+    expect(await q(v, `return document.querySelector("#mon-tl .mon-banner").dataset.kind`)).toBe("down");
     expect(await q(v, `return [document.querySelectorAll("#mon-tl [data-run]").length, document.querySelectorAll("#mon-tl .mon-recheck").length]`)).toEqual([0, 1]);
     await Bun.write(join(SHOTS, "monitoring-390.png"), await v.screenshot());
+    await run(v, `go("monitoring", "notice")`);
+    await waitFor(v, `document.querySelectorAll("#mon-tl .mon-ov-row").length === 5`);
+    await Bun.write(join(SHOTS, "monitoring-feed-390.png"), await v.screenshot());
     expect(await q<number>(v, `return document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
     await run(v, `go("monitoring", "m:절반 감시")`);
     await waitFor(v, `document.querySelector("#mon-tl [data-run]")`);
     expect(await q(v, `return document.querySelector("#mon-tl [data-run]").textContent`)).toBe("지금 확인");
-    expect(await q(v, `return document.querySelector("#mon-tl [data-run]").classList.contains("as-tpl")`)).toBe(true);
+    expect(await q(v, `return document.querySelector("#mon-tl [data-run]").classList.contains("btn")`)).toBe(true);
+  });
+
+  test("a connected monitor whose last check failed gets the failure banner, never the disconnected one", async () => {
+    const v = await boot(1280, 900);
+    await run(v, `go("monitoring", "m:끊긴 감시")`);
+    await waitFor(v, `document.querySelector("#mon-head .mon-banner")`);
+    const down = await q<{ kind: string; head: string }>(v, `const b = document.querySelector("#mon-head .mon-banner"); return { kind: b.dataset.kind, head: b.querySelector("b").textContent }`);
+    await run(v, `go("monitoring", "m:실패 감시")`);
+    await waitFor(v, `MON.sel === "m:실패 감시" && document.querySelector("#mon-head .mon-banner")`);
+    const fail = await q<{ kind: string; head: string; text: string; role: string; recheck: number }>(v, `const b = document.querySelector("#mon-head .mon-banner"); return { kind: b.dataset.kind, head: b.querySelector("b").textContent, text: b.textContent, role: b.getAttribute("role"), recheck: b.querySelectorAll(".mon-recheck").length }`);
+    expect(down.kind).toBe("down");
+    expect(fail.kind).toBe("fail");
+    expect(fail.head).not.toBe(down.head);
+    expect(fail.text).not.toContain("끊");
+    expect(fail.role).not.toBe("alert");
+    expect(fail.recheck).toBe(1);
+  });
+
+  test("the per-second update moves the bar but keeps the result tag the node was built with", async () => {
+    monitors = monitors.map(m => (m.watch === "many-watch" ? { ...m, last_result: "changed" } : m));
+    const v = await boot(1280, 900);
+    await run(v, `go("monitoring", "notice")`);
+    await waitFor(v, `document.querySelector('.mon-ov-row[data-ov="m:많은 감시"] .mon-ptag')`);
+    const tag = `document.querySelector('.mon-ov-row[data-ov="m:많은 감시"] .mon-ptag')`;
+    const before = await q<{ text: string; cls: string }>(v, `const t = ${tag}; return { text: t.textContent, cls: t.className }`);
+    expect(before.text).toBe(await q<string>(v, `return MON_PTAG.changed[0]`));
+    await run(v, `monTick(); monTick()`);
+    const after = await q<{ text: string; cls: string }>(v, `const t = ${tag}; return { text: t.textContent, cls: t.className }`);
+    expect(after).toEqual(before);
+    // The update runs on a once-a-second timer while 모니터링 is shown, not on every animation frame.
+    expect(await q<boolean>(v, `return !!monTickT`)).toBe(true);
+    await run(v, `go("home")`);
+    await waitFor(v, `!monTickT`, 5_000);
   });
 });
 
@@ -147,6 +183,7 @@ describe("감시 소식", () => {
     const v = await boot(1280, 900);
     await run(v, `go("monitoring", "notice")`);
     await waitFor(v, `document.querySelectorAll(".mon-ov-row").length === 5`);
+    await Bun.write(join(SHOTS, "monitoring-feed-1280.png"), await v.screenshot());
     const rows = await q<{ text: string; tag: string; name: string }[]>(v, `return [...document.querySelectorAll(".mon-ov-row")].map(r => ({ text: r.textContent, tag: r.querySelector(".mon-ptag").textContent, name: r.dataset.ov }))`);
     expect(rows[0]!.name).toBe("m:끊긴 감시");
     expect(rows[0]!.tag).toBe("연결 끊김");
