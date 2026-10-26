@@ -72,17 +72,30 @@ async function asEvery(app, i, v) {
   catch (e) { toast(e.message || "감시 주기를 바꾸지 못했어요", true); }
   AS.busy[app] = false; asPaint();
 }
-function asInternalNode(app, i) {
-  const lines = [i.status, i.last_run ? `마지막 확인 ${monTime(i.last_run)}` : ""].filter(Boolean).join(" · ");
-  return el("div", { class: "as-row as-int", "data-internal": i.id, "data-kind": i.kind },
-    el("span", { class: `as-dot ${i.dot}`, "aria-hidden": "true" }),
-    el("span", { class: "as-b" }, el("span", { class: "as-n", text: i.name }), el("span", { class: "as-h", text: lines }), ...(i.reason ? [el("span", { class: "as-h as-why", text: `이유: ${i.reason}` })] : [])),
-    i.every_minutes ? (app.includes("~")
+// One row for a watch: the monitor's own facts (the status card its detail shows) and, for a watch an app owns, the app's kind, reason, period and
+// 다시 시도. The machine hooks other panels read stay stable: .as-stat, data-watch, data-internal.
+function asStatRow(app, m, i) {
+  const res = m && m.last_result ? NT_RESULT[m.last_result] : null;
+  const dot = i ? i.dot : m ? (m.paused ? "idle" : res && res[1] === "fail" ? "fail" : res ? "ok" : "idle") : "idle";
+  const name = m ? monTitle(m) : i ? i.name : "";
+  const line = i
+    ? [i.status, i.last_run ? `마지막 확인 ${monTime(i.last_run)}` : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ")
+    : [res && res[0], m ? ntMonRun(m) : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ");
+  const facts = [m && m.fails ? `연속 실패 ${m.fails}번` : "", m && m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m && m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
+  return el("div", { class: `as-row as-stat${i ? " as-int" : " as-conn"}`, "data-watch": m ? m.watch || m.name : i.id, ...(i ? { "data-internal": i.id, "data-kind": i.kind } : { "data-conn": dot === "fail" ? "disconnected" : dot === "ok" ? "connected" : "unknown" }) },
+    el("span", { class: `as-dot ${dot}`, "aria-hidden": "true" }),
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: name }),
+      i && i.name !== name ? el("span", { class: "as-h", text: i.name }) : null,
+      line ? el("span", { class: "as-h", text: line }) : null,
+      ...facts.map(t => el("span", { class: "as-h", text: t })),
+      ...(i && i.reason ? [el("span", { class: "as-h as-why", text: `이유: ${i.reason}` })] : [])),
+    i && i.every_minutes ? (app.includes("~")
       ? el("span", { class: "as-v", text: `${i.every_minutes}분마다` })
       : el("span", { class: "as-every-wrap" },
         el("input", { class: "as-in as-every", type: "number", min: 1, max: 10080, inputmode: "numeric", "aria-label": `${i.name} 감시 주기(분)`, title: "감시 주기(분)", "data-k": `every:${i.id}`, value: String(i.every_minutes), onchange: ev => asEvery(app, i, ev.target.value) }),
         el("span", { class: "as-unit", text: "분" }))) : null,
-    i.dot === "ok" ? null : el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id) }, "다시 시도"));
+    i && i.dot !== "ok" ? el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id) }, "다시 시도") : null,
+    !i && res && res[1] === "fail" ? el("span", { class: "tag err", text: "실패" }) : null);
 }
 function asFeatRow(app, f) {
   return el("div", { class: "as-row as-feat", "data-feature": f.id },
@@ -283,17 +296,9 @@ function asControl(f, set) {
 }
 // The sections of the settings screen in the order the owner reads them (hub/app-settings.ts SettingSection); a row is drawn once, under one heading.
 const AS_SECTIONS = [["notify", "알림"], ["draft", "자동 초안과 승인"], ["watch", "감시"], ["more", "기타 기능"], ["advanced", "고급"]];
-// 연결 상태 at the top: whether this app is connected to its site (and since when it is not), or when a monitor last checked.
+// 연결 상태 at the top of an app: whether it is connected to its site (and since when it is not). A monitor's own top row is its status card (asStatRow).
 function asConnNode(app) {
-  if (app.startsWith("w:")) {
-    const m = asMon(app);
-    if (!m) return null;
-    const res = m.last_result ? NT_RESULT[m.last_result] : null, dot = m.paused ? "idle" : res && res[1] === "fail" ? "fail" : res ? "ok" : "idle";
-    const sub = [m.last_run ? `마지막 확인 ${monTime(m.last_run)}` : "", m.next_run ? `다음 확인 ${monTime(m.next_run)}` : ""].filter(Boolean).join(" · ");
-    return el("div", { class: "as-row as-conn", "data-conn": dot === "fail" ? "disconnected" : dot === "ok" ? "connected" : "unknown" },
-      el("span", { class: `as-dot ${dot}`, "aria-hidden": "true" }),
-      el("span", { class: "as-b" }, el("span", { class: "as-n", text: m.paused ? "멈춰 있어요" : res ? res[0] : "아직 확인 전이에요" }), sub ? el("span", { class: "as-h", text: sub }) : null));
-  }
+  if (app.startsWith("w:")) return null;
   const pc = typeof pqPc === "function" ? pqPc(`settings:${app}`) : null;
   const peer = pc && typeof PQ !== "undefined" ? PQ.list.find(p => p && p.url === pc.url) : null;
   const it = pc ? ((peer && peer.items && peer.items.integrations) || []).find(x => x.key === app.split("~")[0]) : INTG.items.find(x => x.key === app);
@@ -340,15 +345,21 @@ function asPaint() {
   if (feat) {
     for (const f of feat.features) if (!(f.setting && keys.has(f.setting))) put(f.section || "more", 2, asFeatRow(app, f));
     if (feat.approvals.length) { put("draft", 5, el("div", { class: "as-sub", "data-sub": "approvals", text: "승인 대기" })); for (const a of feat.approvals) put("draft", 5, asApprovalNode(app, a)); }
-    for (const i of feat.internal) put("watch", 5, asInternalNode(app, i));
   }
+  // Every watch the app owns gets one status row, whether or not the features route answers (an older hub has none); its kind, reason and period
+  // ride on that row when it does.
+  const internals = feat ? feat.internal : [], statMons = app.startsWith("w:") ? [] : monStatMons(app);
+  const byWatch = new Map(statMons.map(m => [m.watch || m.name, m])), drawn = new Set();
+  for (const i of internals) { const m = byWatch.get(i.id); if (m) drawn.add(m); put("watch", 5, asStatRow(app, m || null, i)); }
+  for (const m of statMons) if (!drawn.has(m)) put("watch", 5, asStatRow(app, m, null));
   const mem = fields.filter(f => f.memory);
   if (mem.length) put("advanced", 6, el("div", { class: "as-row as-mem", "data-setting": "memory" },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: "기억해 둔 것" }),
       el("span", { class: "as-h", text: "대화에서 알려 주면 봇이 기억하고 참고해요. 바꾸려면 대화에서 말해 주세요" }),
       ...mem.map(f => el("span", { class: "as-h", text: `${f.label}: ${f.value === "" || f.value == null ? "아직 없어요" : asFmt(f, f.value)}` })))));
   if (!app.startsWith("w:")) put("advanced", 7, asRemoveNode(app));
-  const conn = asConnNode(app);
+  const wmon = app.startsWith("w:") ? asMon(app) : null;
+  const conn = app.startsWith("w:") ? (wmon ? asStatRow(app, wmon, null) : null) : asConnNode(app);
   clear(box).append(
     ...(conn ? [conn] : []),
     ...AS_SECTIONS.flatMap(([k, title]) => {
