@@ -238,7 +238,7 @@ export async function loginProviders(): Promise<LoginProvider[]> {
 	return loginCatalog;
 }
 
-type ProviderRow = { id: string; name: string; auth: "oauth" | "api_key" | "none"; account?: string; masked?: string; models: number; in_use: boolean; can_login: boolean; can_logout: boolean };
+type ProviderRow = { id: string; name: string; auth: "oauth" | "api_key" | "none"; account?: string; masked?: string; models: number; in_use: boolean; can_login: boolean; can_logout: boolean; login_hint?: string };
 type AddableProvider = { id: string; name: string; kind: "oauth" | "api_key" };
 
 // Providers that have an API-key env var but whose primary sign-in is the subscription (OAuth) login.
@@ -246,13 +246,16 @@ const OAUTH_FIRST = new Set(["anthropic"]);
 
 // Pure: merges the runtime's stored credentials, env vars, the login catalog and the model catalog into the configured
 // rows and the not-yet-configured (addable) providers.
-export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string> }): { providers: ProviderRow[]; addable: AddableProvider[] } {
+// webLogin false (an OmO-only install: a web login would go to omp's store, which OmO never reads): no 로그인 button, the row says how to
+// log in on this computer instead, and a login-only provider is not offered under 추가.
+export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string>; webLogin?: boolean }): { providers: ProviderRow[]; addable: AddableProvider[] } {
 	const names = new Map(input.catalog.map(p => [p.id, p.name]));
 	const nameOf = (id: string) => names.get(id) ?? id;
 	const ids = new Set<string>([...input.auth.map(a => a.provider), ...input.models.map(m => m.provider)]);
 	for (const [id, v] of Object.entries(PROVIDER_ENV)) if (input.env[v]) ids.add(id);
 	const providers = [...ids].sort().map((id): ProviderRow => {
-		const base = { id, name: nameOf(id), models: input.models.filter(m => m.provider === id).length, in_use: input.inUse.has(id), can_login: names.has(id) };
+		const web = input.webLogin !== false;
+		const base = { id, name: nameOf(id), models: input.models.filter(m => m.provider === id).length, in_use: input.inUse.has(id), can_login: web && names.has(id), ...(!web && names.has(id) ? { login_hint: `/login ${id}` } : {}) };
 		const oauth = input.auth.find(a => a.provider === id && a.type === "oauth");
 		if (oauth) return { ...base, auth: "oauth", account: oauth.label, can_logout: true };
 		const key = input.auth.find(a => a.provider === id);
@@ -262,13 +265,16 @@ export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, st
 		return { ...base, auth: "none", can_logout: false };
 	});
 	const addable: AddableProvider[] = [];
-	for (const p of input.catalog) if (!ids.has(p.id)) addable.push({ id: p.id, name: p.name, kind: PROVIDER_ENV[p.id] && !OAUTH_FIRST.has(p.id) ? "api_key" : "oauth" });
+	for (const p of input.catalog) {
+		const kind = PROVIDER_ENV[p.id] && !OAUTH_FIRST.has(p.id) ? "api_key" : "oauth";
+		if (!ids.has(p.id) && (kind === "api_key" || input.webLogin !== false)) addable.push({ id: p.id, name: p.name, kind });
+	}
 	for (const id of Object.keys(PROVIDER_ENV)) if (!ids.has(id) && !names.has(id)) addable.push({ id, name: id, kind: "api_key" });
 	return { providers, addable: addable.sort((a, b) => a.name.localeCompare(b.name)) };
 }
 
 export async function listProviders(inUse: Set<string>): Promise<{ providers: ProviderRow[]; addable: AddableProvider[] }> {
-	return buildProviders({ auth: await authInfos(), env: process.env, models: await availableModels(), catalog: await loginProviders(), inUse });
+	return buildProviders({ auth: await authInfos(), env: process.env, models: await availableModels(), catalog: await loginProviders(), inUse, webLogin: usesOmp() });
 }
 
 // ---- Sign-in (OAuth and subscription logins) ------------------------------------------------------------------------

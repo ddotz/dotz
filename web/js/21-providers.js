@@ -11,6 +11,11 @@ async function loadProviders() {
   catch (e) { clear(box).append(emptyNode("공급자를 불러오지 못했어요")); return; }
   if (current === "providers") renderProviders();
 }
+// A usage window in plain Korean: the report's "Claude 5 Hour" / "Claude 7 Day Opus" read as 5시간 한도 / 7일 한도 Opus.
+function limitName(l) {
+  const m = /^Claude\s+(\d+)\s+(Hour|Day)s?\b\s*(.*)$/i.exec(l.label || "");
+  return m ? `${m[1]}${/hour/i.test(m[2]) ? "시간" : "일"} 한도${m[3] ? ` ${m[3]}` : ""}` : l.label || l.id;
+}
 function renderProviders() {
   const box = $("#providers");
   const list = P.providers;
@@ -22,17 +27,19 @@ function renderProviders() {
     const name = p.name || p.id;
     const canLogout = p.can_logout ?? p.removable;
     const sub = p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨");
+    // OmO-only install: logging in happens on that computer (hub/providers.ts buildProviders login_hint), so say how instead of a button that cannot work.
+    const hint = p.login_hint ? `${isConnected(p) ? "다시 로그인" : "로그인"}은 이 컴퓨터의 터미널에서 omo를 열고 ${p.login_hint}` : "";
     const btns = el("div", { class: "btns" });
     if (p.can_login) btns.append(el("button", { class: `btn ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인"));
     if (canLogout) btns.append(el("button", { class: "btn danger", type: "button", onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, p.auth === "api_key" ? "키 삭제" : "로그아웃"));
     return el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
       el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
-        sub ? el("div", { class: "sup", text: sub }) : null),
+        sub ? el("div", { class: "sup", text: sub }) : null, hint ? el("div", { class: "sup", text: hint }) : null),
       el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "err" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }),
       btns.children.length ? btns : null);
   };
   // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
-  const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
+  const isLogin = p => p.auth === "oauth" || (p.auth === "none" && (p.can_login || p.login_hint));
   for (const [title, items] of [["로그인", list.filter(isLogin)], ["API 키", list.filter(p => !isLogin(p))]]) {
     if (!items.length) continue;
     wrap.append(el("div", { class: "sec", text: title }), el("div", { class: "list" }, ...items.map(row)));
@@ -149,9 +156,9 @@ async function loadQuota() {
     const card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: providerName(p.provider) })));
     for (const l of p.limits || []) {
       card.append(el("div", { class: "lim" },
-        el("div", { class: "kv" }, el("span", { class: "k", text: l.label || l.id }), el("span", { style: "font-weight:500", text: pctText(l) })),
+        el("div", { class: "kv" }, el("span", { class: "k", text: limitName(l) }), el("span", { style: "font-weight:500", text: pctText(l) })),
         bar(l),
-        l.resets_at || l.window ? el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: l.window || "" }), el("span", { class: "v", text: l.resets_at ? rel(l.resets_at) : "" })) : null));
+        l.resets_at ? el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: "" }), el("span", { class: "v", text: rel(l.resets_at) })) : null));
     }
     if (!(p.limits || []).length) card.append(el("div", { class: "sup", text: "없어요" }));
     grid.append(card);
@@ -167,9 +174,10 @@ async function loadQuota() {
     const SHOWN = 5, all = A.switches || [];
     // Entries older than 3 days are pruned by the hub; the X deletes one entry, 모두 지우기 (confirmed) all of them (DELETE /api/accounts/switches).
     const drop = async (at, msg) => { try { await api(`/api/accounts/switches${at ? `?at=${enc(at)}` : ""}`, "DELETE"); toast(msg); loadQuota(); } catch (e) { toast("지우지 못했어요", true); } };
+    // the why is said once: the reason line, or the kind when there is no reason
     const row = s => el("div", { class: "li" }, el("span", { class: "tx" },
-      el("div", { class: "hd", text: `${s.from ? `${s.from_label || s.from} → ` : ""}${s.to_label || s.to} · ${s.kind_text || KIND[s.kind] || s.kind}` }),
-      el("div", { class: "sup", text: `${kstStamp(Date.parse(s.at))} · ${s.reason}` })),
+      el("div", { class: "hd", text: `${s.from ? `${s.from_label || s.from} → ` : ""}${s.to_label || s.to}` }),
+      el("div", { class: "sup", text: `${kstStamp(Date.parse(s.at))} · ${s.reason || s.kind_text || KIND[s.kind] || s.kind}` })),
       el("button", { class: "ib", type: "button", "aria-label": "이 기록 지우기", onclick: () => drop(s.at, "기록을 지웠어요") }, icon("close")));
     const older = all.slice(SHOWN).map(row);
     older.forEach(n => { n.hidden = true; });
@@ -179,7 +187,7 @@ async function loadQuota() {
       ev.currentTarget.textContent = open ? "이전 기록 접기" : `이전 기록 ${older.length}개 더 보기`;
     } }) : null;
     box.append(el("div", { class: "list" },
-      el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: A.account_label || A.account }), el("div", { class: "sup", text: `${A.since ? `${kstStamp(Date.parse(A.since))}부터 · ` : ""}규칙이나 한도로 바뀌기 전까지 이 계정을 계속 써요` })),
+      el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: A.account_label || A.account }), el("div", { class: "sup", text: `${A.since ? `${kstStamp(Date.parse(A.since))}부터 · ` : ""}${A.pinned ? "고정한 계정이에요. 한도에 걸리면 풀릴 때까지 기다려요" : "규칙이나 한도로 바뀌기 전까지 이 계정을 계속 써요"}` })),
       ...all.slice(0, SHOWN).map(row), ...older));
     if (more) box.append(more);
     if (all.length) box.append(el("button", { class: "btn text danger", type: "button", text: "기록 모두 지우기", onclick: () => dialog({ title: "기록을 모두 지울까요?", body: el("div", { class: "sup", text: `계정 전환 기록 ${all.length}개를 지워요. 되돌릴 수 없어요.` }), actions: [{ label: "취소" , onclick: c => c() }, { label: "모두 지우기", kind: "danger", onclick: c => { c(); drop("", "기록을 모두 지웠어요"); } }] }) }));
