@@ -67,6 +67,12 @@ const boot = async () => {
 	await waitFor(`current === "home" && S && document.querySelector('.bi[data-id="custom:memo"] .card')`);
 	await frames();
 };
+// a reload that keeps the saved layout (boot clears it, so a check after boot only passed when the old page wrote it back in time)
+const reload = async () => {
+	await view.navigate(`http://127.0.0.1:${server.port}/`);
+	await waitFor(`current === "home" && S && document.querySelector('.bi[data-id="custom:memo"] .card')`);
+	await frames();
+};
 const order = () => view.evaluate(`homeBoard.order().join(",")`) as Promise<string>;
 const layout = () => view.evaluate(`localStorage.getItem("dotz-board-home")`) as Promise<string | null>;
 const clickText = (sel: string, text: string) => view.evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find(n => n.textContent.trim() === ${JSON.stringify(text)}); if (!b) throw new Error("no " + ${JSON.stringify(text)}); b.click(); })()`);
@@ -179,13 +185,14 @@ describe("홈 cards at 390px", () => {
 		await view.evaluate(`(() => { const h = document.querySelector('.bi[data-id="${mover}"] .ch h3'); ${touch("pointerdown", x, y, "h")}; })()`);
 		await waitFor(`document.querySelector('.bi[data-id="${mover}"]').classList.contains("bdrag")`);
 		const dy = (await view.evaluate(`document.querySelector('.bi[data-id="${next}"]').getBoundingClientRect().height + 20`)) as number;
-		for (let k = 1; k <= 4; k++) { await view.evaluate(touch("pointermove", x, y + (dy * k) / 4)); await frames(1); }
+		for (let k = 1; k <= 4; k++) { await view.evaluate(touch("pointermove", x, y + (dy * k) / 4)); await frames(2); }
 		await view.evaluate(touch("pointerup", x, y + dy));
-		await frames();
+		// the drop is applied on the board's own frame: wait for the order it produces, not a fixed number of frames
+		await waitFor(`homeBoard.order().indexOf(${JSON.stringify(mover)}) === ${i + 1} && !document.querySelector(".bdrag")`);
 		const after = (await order()).split(",");
 		expect(after.indexOf(mover)).toBe(i + 1);
 		expect(after[i]).toBe(next);
-		await boot();
+		await reload();
 		expect((await order()).split(",").indexOf(mover)).toBe(i + 1);
 	});
 
