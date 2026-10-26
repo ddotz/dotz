@@ -63,6 +63,7 @@ import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { makeRoute } from "./routes.ts";
+import { appProxySocket } from "./app-proxy.ts";
 import { appEntries, appKeyOf, integrationContext } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
 import { applyMemory, mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
@@ -291,8 +292,11 @@ const server = Bun.serve({
 	hostname: HOST,
 	port: PORT,
 	idleTimeout: 0,
-	async fetch(req) {
-		const res = await route(req);
+	// A user app's websocket (/apps/<id>/…, hub/app-proxy.ts) is bridged to the app's own server; every other upgrade is refused.
+	websocket: appProxySocket,
+	async fetch(req, srv) {
+		const res = await route(req, srv);
+		if (!res) return undefined as unknown as Response;
 		return new URL(req.url).pathname === "/api/file" ? res : compressResponse(req, res);
 	},
 });
