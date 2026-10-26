@@ -115,16 +115,19 @@ describe("rooms", () => {
 });
 
 describe("chat", () => {
-	test("a room that is not watched is refused (403) for reading, read marks and sends", async () => {
+	test("a room that is not watched is read-only: readable with watched false and read marks, sends refused (403); a room off the list is not found", async () => {
 		const t = setup();
-		for (const [method, path, body] of [
-			["GET", `/api/kakao/chat/${GROUP}`, undefined],
-			["POST", `/api/kakao/chat/${GROUP}/read`, { logId: id(5) }],
-			["POST", `/api/kakao/chat/${GROUP}/send`, { text: "hi" }],
+		const r = await t.call("GET", `/api/kakao/chat/${GROUP}`);
+		expect(r.status).toBe(200);
+		expect(r.json.room).toMatchObject({ chatId: GROUP, watched: false });
+		expect((await t.call("POST", `/api/kakao/chat/${GROUP}/read`, { logId: id(5) })).status).toBe(200);
+		for (const [method, path, body, status] of [
+			["POST", `/api/kakao/chat/${GROUP}/send`, { text: "hi" }, 403],
+			["GET", `/api/kakao/chat/${ROOM.channel}`, undefined, 404],
 		] as const) {
-			const r = await t.call(method, path, body);
-			expect(r.status).toBe(403);
-			expect(typeof r.json.error).toBe("string");
+			const res = await t.call(method, path, body);
+			expect(res.status).toBe(status);
+			expect(typeof res.json.error).toBe("string");
 		}
 		expect(t.calls).toEqual([]);
 		expect(t.events).toEqual([]);
@@ -135,7 +138,7 @@ describe("chat", () => {
 		const t = setup();
 		const r = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
 		expect(r.status).toBe(200);
-		expect(r.json.room).toEqual({ chatId: DIRECT, name: "Alex", kind: "direct", group: false });
+		expect(r.json.room).toEqual({ chatId: DIRECT, name: "Alex", kind: "direct", group: false, watched: true });
 		expect(r.json.messages.map((m: any) => m.logId)).toEqual([id(1), id(2), id(3), id(4)]);
 		expect(r.json.messages[1]).toMatchObject({ authorId: String(OWNER), fromMe: true, text: "hi, how are you", type: 1 });
 		expect(r.json.messages[0]).toMatchObject({ sender: "Alex", fromMe: false, id: `k:${DIRECT}:${id(1)}`, collector: "mac-a" });
@@ -193,7 +196,7 @@ describe("read counters", () => {
 		utimesSync(join(dir, "k.sqlite"), new Date(NOW + 5000), new Date(NOW + 5000));
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}/head`)).json).toEqual({ logId: id(9) });
 		expect(queries).toBe(after + 1);
-		expect((await t.call("GET", `/api/kakao/chat/${GROUP}/head`)).status).toBe(403);
+		expect((await t.call("GET", `/api/kakao/chat/${ROOM.channel}/head`)).status).toBe(404);
 		t.close();
 		inner?.close();
 	});
@@ -212,9 +215,9 @@ describe("read counters", () => {
 		t.close();
 	});
 
-	test("/reads refuses an unwatched room (403), a missing or bad from (400), and an off integration (409)", async () => {
+	test("/reads refuses a room off the list (404), a missing or bad from (400), and an off integration (409)", async () => {
 		const t = setup();
-		expect((await t.call("GET", `/api/kakao/chat/${GROUP}/reads?from=1`)).status).toBe(403);
+		expect((await t.call("GET", `/api/kakao/chat/${ROOM.channel}/reads?from=1`)).status).toBe(404);
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}/reads`)).status).toBe(400);
 		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}/reads?from=abc`)).status).toBe(400);
 		t.close();
@@ -371,7 +374,7 @@ describe("drafts", () => {
 	test("the click is the approval: a pending draft is sent with no inbox answer, and listed in the room until then", async () => {
 		const t = setup();
 		const d = await t.draft();
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([{ code: d.code, text: "see you", basisLogId: id(3), created: d.created }]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.drafts).toEqual([{ code: d.code, text: "see you", parts: ["see you"], basisLogId: id(3), created: d.created }]);
 		const r = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
 		expect(r.status).toBe(202);
 		await t.web.idle();
@@ -762,10 +765,10 @@ describe("media", () => {
 		expect(by(23).media).toEqual({ kind: "voice", d: 8, expired: false });
 		expect(by(24).media).toEqual({ kind: "file", name: "내 파일 (1).pdf", size: 2048, local: true, expired: false });
 		expect(by(25).media).toEqual({ kind: "file", name: "gone.zip", size: 10, local: false, expired: true });
-		expect(by(26).media).toEqual({ kind: "emoticon", alt: "(이모티콘) 하트" });
+		expect(by(26).media).toEqual({ kind: "emoticon", alt: "하트" });
 		// the text written with a sticker rides in media.text (the text field stays empty, as for every media type); blank text is none
-		expect(by(32)).toMatchObject({ type: 12, text: "", media: { kind: "emoticon", alt: "(이모티콘) 카카오 이모티콘", text: "고마워 :)" } });
-		expect(by(33).media).toEqual({ kind: "emoticon", alt: "(이모티콘) 하트" });
+		expect(by(32)).toMatchObject({ type: 12, text: "", media: { kind: "emoticon", alt: "카카오 이모티콘", text: "고마워 :)" } });
+		expect(by(33).media).toEqual({ kind: "emoticon", alt: "하트" });
 		expect(by(27)).toMatchObject({ text: "나는 국밥", media: { kind: "reply", quoteSender: "Alex" } });
 		expect([...by(27).media.quote].length).toBeLessThanOrEqual(81);
 		expect(by(27).media.quote.startsWith("점심 뭐 먹을까 ")).toBe(true);
@@ -892,20 +895,22 @@ describe("media", () => {
 		t.close();
 	});
 
-	test("unwatched rooms (403), a message of another room or a missing one (404), bad parameters (400) and the integration off (409) are refused", async () => {
+	test("rooms off the list (403), a message of another room or a missing one (404), bad parameters (400) and the integration off (409) are refused; an unwatched listed room is readable", async () => {
 		const t = setup({ watch_chats: [DIRECT] }, w => {
 			addMessage(w, photo(20));
 			addMessage(w, row(21, 2, att({ url: cdn("g/1.jpg"), expire: FUTURE }), { chat: ROOM.group, author: 2002 }));
+			addMessage(w, row(22, 2, att({ url: cdn("c/1.jpg"), expire: FUTURE }), { chat: ROOM.channel, author: 2002 }));
 		});
 		t.upstream.reply = () => png();
-		expect((await t.call("GET", `/api/kakao/media/${GROUP}/${id(21)}`)).status).toBe(403);
-		expect((await t.call("GET", `/api/kakao/media/${GROUP}/${id(21)}/file`)).status).toBe(403);
+		expect((await t.raw("GET", `/api/kakao/media/${GROUP}/${id(21)}`)).status).toBe(200);
+		expect((await t.call("GET", `/api/kakao/media/${ROOM.channel}/${id(22)}`)).status).toBe(403);
+		expect((await t.call("GET", `/api/kakao/media/${ROOM.channel}/${id(22)}/file`)).status).toBe(403);
 		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(21)}`)).status).toBe(404);
 		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(99)}`)).status).toBe(404);
 		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/abc`)).status).toBe(400);
 		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(20)}?i=-1`)).status).toBe(400);
 		expect((await t.raw("GET", `/api/kakao/media/${DIRECT}/${id(20)}?i=5`)).status).toBe(200);
-		expect(t.fetched.length).toBe(1);
+		expect(t.fetched.length).toBe(2);
 		writeFileSync(paths.config, JSON.stringify({ enabled: false }));
 		expect((await t.call("GET", `/api/kakao/media/${DIRECT}/${id(20)}`)).status).toBe(409);
 		t.close();

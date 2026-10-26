@@ -5,7 +5,8 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { featureEnabled } from "../app-feature-flags.ts";
-import { isDraftCandidate, isEmoticon, maxLogId, newSince, ownUserId, roomKinds, sentAtMs, sqlcipherDb, TEXT_TYPE, type KakaoDb } from "./db.ts";
+import { callsOwner } from "./address.ts";
+import { bodiesOf, isDraftCandidate, isEmoticon, maxLogId, newSince, ownerNames, ownUserId, REPLY_TYPE, roomKinds, sentAtMs, sqlcipherDb, TEXT_TYPE, type KakaoDb } from "./db.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
 
 export type WatchDeps = {
@@ -87,17 +88,27 @@ export async function runWatch(deps: WatchDeps): Promise<WatchResult> {
 		return id > lastId || (heldFrom !== undefined && id >= BigInt(heldFrom));
 	});
 
-	let rows = candidates.filter((r) => (r.type === TEXT_TYPE || (isEmoticon(r.type) && r.hasText)) && auto.has(r.chatId) && now() - sentAtMs(r.sentAt) <= MAX_AGE_MS);
-	if (rows.length > 0) {
-		const me = config.userId !== undefined ? String(config.userId) : await ownUserId(db);
-		rows = rows.filter((r) => r.authorId !== me);
-	}
+	let rows = candidates.filter((r) => (r.type === TEXT_TYPE || ((isEmoticon(r.type) || r.type === REPLY_TYPE) && r.hasText)) && auto.has(r.chatId) && now() - sentAtMs(r.sentAt) <= MAX_AGE_MS);
+	const me = rows.length > 0 ? (config.userId !== undefined ? String(config.userId) : await ownUserId(db)) : undefined;
+	if (rows.length > 0) rows = rows.filter((r) => r.authorId !== me);
 	if (rows.length > 0) {
 		const kinds = await roomKinds(db);
 		rows = rows.filter((r) => {
 			const kind = kinds.get(r.chatId);
 			return kind !== undefined && isDraftCandidate({ chatId: r.chatId, kind }, config);
 		});
+		// In an open chat room only a message that calls the owner (a mention, @his open nickname, a reply to his message) wakes the bot.
+		const open = rows.filter((r) => kinds.get(r.chatId) === "open");
+		if (open.length > 0) {
+			const bodies = new Map((await bodiesOf(db, open.map((r) => r.logId))).map((b) => [b.logId, b]));
+			const names = new Map<string, string[]>();
+			for (const chatId of new Set(open.map((r) => r.chatId))) names.set(chatId, await ownerNames(db, chatId, me ?? ""));
+			const calling = new Set(open.filter((r) => {
+				const b = bodies.get(r.logId);
+				return !!b && callsOwner(b, { id: String(me ?? ""), names: names.get(r.chatId) ?? [] });
+			}).map((r) => r.logId));
+			rows = rows.filter((r) => kinds.get(r.chatId) !== "open" || calling.has(r.logId));
+		}
 	}
 
 	const batches = new Map<string, typeof rows>();
