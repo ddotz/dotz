@@ -307,7 +307,8 @@ const word = (status: string) => msg().harness.status[status] ?? status;
 const toneOf = (status: string): CardTone | undefined => (status === "working" || status === "starting" ? "busy" : status === "rate-limited" ? "warn" : status === "idle" ? "ok" : undefined);
 const laneLabel = (name: string) => lanes.get(name)?.title || name;
 // "Opus 5.5", not "anthropic/claude-opus-5-5": the family and version the pickers show, else the id's last part.
-const modelName = (selector: string) => { const m = parseSelector(selector).model, id = modelIdentity(m); return id ? `${id.family} ${id.version}` : (m.split("/").pop() ?? m); };
+// "anthropic/claude-opus-5-5" -> "Opus 5.5" (the names the 모델 screen shows); an unknown id stays as its last part.
+export const modelName = (selector: string) => { const m = parseSelector(selector).model, id = modelIdentity(m); return id ? `${id.family} ${id.version}` : (m.split("/").pop() ?? m); };
 const whoIs = (target: string) => (target === "orchestrator" ? NAME : target === "lanes" ? T().newSessions : target === "workers" ? T().subagents : laneLabel(target.replace(/^lane:/, "")));
 function ctxValue(p: Proc): string {
 	const t = T();
