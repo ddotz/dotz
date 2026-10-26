@@ -7,7 +7,7 @@ import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS
 import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, hardPinned, inOrder, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
 import { issueBlock } from "./choices.ts";
 import { TZ } from "./config.ts";
-import { writeOmoPin } from "./omo-pin.ts";
+import { deleteOmoAccount, writeOmoPin } from "./omo-pin.ts";
 import { accountUsedChanged } from "./notices.ts";
 import { type AccountReport, limitsText, usedAccount } from "./usage-account.ts";
 
@@ -253,6 +253,18 @@ export function pinnedLimitAlert(until: number, now = Date.now()): string | unde
 	return [`고정한 계정 ${l}${josa(l, "이", "가")} 한도에 걸려서 ${at}까지 멈춰요. 고정했으니 다른 계정으로 넘어가지 않아요.`, issueBlock("어떻게 할까요?", [{ name: "자동 전환으로 바꾸기", result: "한도에 걸리면 다른 계정으로 넘어가 바로 이어서 해요" }, { name: "그대로 기다리기", result: `${at}에 풀리면 이어서 해요` }])].join("\n");
 }
 
+// One account out: OmO's store first, then everything dotz keeps about it (the manual pick, the order, the alias).
+export function removeAccount(name: string): "deleted" | "missing" | "last" {
+	if (!name.trim()) return "missing";
+	const r = deleteOmoAccount(name);
+	if (r !== "deleted") return r;
+	const rules = readRules();
+	if (rules.manual?.account === name) setManual(undefined);
+	if (rules.order?.includes(name)) setOrder(rules.order.filter(n => n !== name));
+	if (readAliases()[name]) setAlias(name, "");
+	return "deleted";
+}
+
 // A manual pick by id or alias; "auto" (or "자동") clears it. Re-evaluates right away.
 async function useAccount(text: string, until?: string): Promise<{ auto: true } | { auto?: false; id: string; label: string; applied: boolean }> {
 	const t = text.trim();
@@ -305,6 +317,17 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 			return Response.json({ removed: at === null ? clearSwitches() : deleteSwitch(at) });
 		}
 		if (req.method === "GET" && p === "/api/accounts") return Response.json(accountsBody());
+		// DELETE /api/accounts?name=<id>: removes a subscription account from OmO's store and from dotz's pick, order and alias.
+		if (req.method === "DELETE" && p === "/api/accounts") {
+			const name = url.searchParams.get("name") ?? "";
+			await quietly(async () => {
+				const r = removeAccount(name);
+				if (r === "missing") throw new AccountsError(`그런 계정이 없어요: ${name}`, 404);
+				if (r === "last") throw new AccountsError("마지막 남은 계정은 지울 수 없어요. 공급자 화면에서 로그아웃해 주세요", 409);
+				await checkNow();
+			});
+			return Response.json(accountsBody());
+		}
 		if (req.method === "PUT" && p === "/api/accounts/alias") {
 			const b = await readBody(req);
 			if (typeof b.key !== "string" || !b.key.trim()) throw new AccountsError("key(계정 id 또는 이메일)가 필요해요", 400);
