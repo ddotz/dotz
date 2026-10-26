@@ -35,7 +35,7 @@ import { startSchedules, stopSchedules } from "./schedule.ts";
 import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
 import { runMigrations } from "./migrations.ts";
-import { defaultExec, onUpdateResolved, startSelfUpdate } from "./selfupdate.ts";
+import { defaultExec, onUpdateResolved, startSelfUpdate, updateBoot } from "./selfupdate.ts";
 import { pendingBackups } from "./carryover.ts";
 import { clearChannel, nameWatches, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
 import { watchLine } from "./watchtext.ts";
@@ -387,6 +387,8 @@ void startSelfUpdate(text => {
 	alert,
 	restartIdle: restartGateway,
 }).catch(e => log(`self-update start failed: ${e}`));
+// An update applied before this start: marked healthy after a quiet settle (ends the rollback watchdog), or the watchdog's rollback told once.
+updateBoot({ alert });
 // One-time setup steps the new code needs (hub/migrations.ts) run here, once per install: no command is left for the owner's bot after an update.
 void runMigrations({ dataDir: DATA_DIR, ask: alert, notify: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`migration notice failed: ${e}`)) }).catch(e => log(`migrations failed: ${e}`));
 setWatchSummarizer(createWatchSummarizer());

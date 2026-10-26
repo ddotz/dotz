@@ -785,6 +785,12 @@ setInterval(() => {
 
 // `owner` marks a prompt that carries an owner message (it gets the what-runs-now line); lane reports and gateway notes do not.
 export function deliver(text: string, owner = false): void {
+	// DOTZ_NO_ORCHESTRATOR=1 (the update smoke check, hub/update-smoke.ts): the gateway runs without an agent, so a prompt (the first-start
+	// greeting) is held instead of spawning one.
+	if (process.env.DOTZ_NO_ORCHESTRATOR === "1") {
+		held.push({ text, header: owner });
+		return;
+	}
 	checkAccountSoon();
 	// A prompt sent while a requested compaction runs is refused by OmO and was lost; it waits for the compaction's end.
 	if (rotating || restarting || orch.status === "rate-limited" || orch.ctx.compaction.state === "compacting") {
