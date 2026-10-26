@@ -33,6 +33,9 @@ export const DRAFT_BODY_MAX = 6000;
 
 export const NO_ATTACHMENT_WARNING = "본문에 파일을 보낸다고 썼지만 첨부파일이 없어요";
 export const LIBRARY_MISS = "첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
+// A mail sent through a source that cannot carry files (a webmail-no-api site): the 첨부 row says so and names the files that stay behind.
+export const CANNOT_ATTACH = "이 메일은 파일을 붙여 보낼 수 없어요";
+export const CANNOT_ATTACH_WARNING = `${CANNOT_ATTACH}. 파일은 직접 보내야 해요`;
 const NOTE_BODY = "본문에는 보낸다고 썼어요";
 const NOTE_ASKED = "받은 메일이 파일을 요청했어요";
 // An outgoing file: size in bytes when building a block, as the block shows it ("340KB") once parsed.
@@ -41,7 +44,7 @@ export type DraftFile = { name: string; size?: string };
 export type DraftOrigin = { text: string; link?: string };
 export type DraftApproval = { toLabel: string; to: string; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; mail?: DraftApproval };
 // One part of a card: the reply (or the mail) with its recipient line, files and body.
-export type DraftPart = { origin?: DraftOrigin; to: string; toLabel?: DraftToLabel; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean };
+export type DraftPart = { origin?: DraftOrigin; to: string; toLabel?: DraftToLabel; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[] };
 // `mail`: the mail that goes out right after this comment reply, shown below it in the same card (hub/comments).
 export type DraftInput = DraftPart & { ref: string; question?: string; sendResult?: string; mail?: DraftPart };
 export const MAIL_MARK = "함께 보낼 메일";
@@ -72,7 +75,9 @@ function partLines(d: DraftPart): string[] {
 	const note = files.length ? "" : (d.toLabel ?? "받는이") !== "받는이" ? "" : claimsAttachment(`${d.subject ?? ""}\n${d.body}`) ? NOTE_BODY : d.asksFile ? NOTE_ASKED : "";
 	// A mail always says what goes with it, files or 없음, so a missing file is seen before 보내기 (owner 2026-10-26).
 	const mail = (d.toLabel ?? "받는이") === "받는이";
-	const none = note ? `> 첨부: 없음 (${note}${d.libraryMiss ? ` · ${LIBRARY_MISS}` : ""})` : d.attachmentsNone || mail ? "> 첨부: 없음" : "";
+	const left = (d.cannotAttach ?? []).map(n => n.replace(/\s+/g, " ").trim());
+	const reasons = [...(d.cannotAttach && (left.length || note) ? [CANNOT_ATTACH] : []), ...(left.length ? [`빠진 파일: ${left.join(", ")}`] : []), ...(note ? [note] : []), ...(note && d.libraryMiss ? [LIBRARY_MISS] : [])];
+	const none = reasons.length ? `> 첨부: 없음 (${reasons.join(" · ")})` : d.attachmentsNone || mail ? "> 첨부: 없음" : "";
 	const head = [`> ${d.toLabel ?? "받는이"}: ${d.to.replace(/\s+/g, " ").trim()}`, ...(d.subject ? [`> 제목: ${d.subject.replace(/\s+/g, " ").trim()}`] : []), ...(files.length ? files : none ? [none] : []), ...(d.origin ? [`> 이어서: ${d.origin.text.replace(/\s+/g, " ").trim()}${d.origin.link ? ` (${d.origin.link.replace(/\s+/g, "")})` : ""}`] : []), ">"];
 	return [...head, ...quote(d.body.replace(/\r\n?/g, "\n").trim())];
 }
@@ -185,7 +190,7 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	if (!body) return undefined;
 	const clipped = body.slice(0, DRAFT_BODY_MAX);
 	const warn = toLabel === "받는이" && !attachments.length && (!!note || claimsAttachment(`${subject ?? ""}\n${clipped}`));
-	return { toLabel, to, ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none || toLabel === "받는이" ? { noAttachments: true as const } : {}), ...(warn ? { warning: NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}), ...(origin ? { origin } : {}) };
+	return { toLabel, to, ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none || toLabel === "받는이" ? { noAttachments: true as const } : {}), ...(warn ? { warning: note?.startsWith(CANNOT_ATTACH) ? CANNOT_ATTACH_WARNING : NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}), ...(origin ? { origin } : {}) };
 }
 
 // The quoted draft of a message (recipient line first, as draftApprovalBlock writes it), as standard "> " lines; undefined when the message

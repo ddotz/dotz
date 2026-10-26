@@ -16,6 +16,7 @@ import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
 import { askText, sendDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { webmailSite } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX } from "../features/reply-drafts/lib/library.ts";
 import { addStagedFile, STAGED_MAX } from "../features/reply-drafts/lib/staged.ts";
 import { dataDir, loadSettings, loadStyle, validApp } from "../features/reply-drafts/lib/settings.ts";
@@ -48,7 +49,7 @@ function sourceOf(app: string): { source: string } | { error: string } {
 	if (raw?.off) return { error: `${app} 앱이 꺼져 있어요` };
 	const src = (raw?.filter?.source ?? "").trim().toLowerCase();
 	if (!src || src === "zele") return { source: "zele" };
-	const site = WEBMAIL.exec(src)?.[1];
+	const site = WEBMAIL.exec(src)?.[1] ?? webmailSite(src);
 	return site ? { source: `webmail:${site}` } : { error: `이 메일 앱(${src})은 새 메일 초안을 지원하지 않아요. 직접 보내야 해요` };
 }
 
