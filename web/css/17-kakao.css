@@ -68,6 +68,9 @@
 .kk-date { align-self: center; margin: 14px 0 8px; padding: 4px 12px; border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 500 12px/16px var(--font); }
 .kk-new { display: flex; align-items: center; gap: 12px; margin: 12px 0 6px; color: var(--kk-time); font: 600 12px/16px var(--font); }
 .kk-new::before, .kk-new::after { content: ""; flex: 1; height: 1px; background: color-mix(in srgb, var(--kk-time) 45%, transparent); }
+.kk-gap { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: var(--kk-time); }
+.kk-gap::before, .kk-gap::after { content: ""; flex: 1; border-top: 1px dashed color-mix(in srgb, var(--kk-time) 55%, transparent); }
+.kk-gap .btn { color: var(--kk-time); }
 .kk-m { display: flex; min-width: 0; }
 .kk-m:empty { display: none; }
 .kk-m.first { margin-top: 10px; }

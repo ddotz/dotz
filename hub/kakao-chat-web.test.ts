@@ -985,6 +985,30 @@ describe("카카오톡 reply quotes", () => {
 		await waitFor(v, `document.querySelector(".snack")?.textContent.includes("원래 메시지를 찾지 못했어요")`);
 		expect(await q(v, `return !!document.querySelector('[data-log="7101"]') && KK.open === "100"`)).toBe(true);
 	});
+
+	test("a jump to a far older page marks the messages between as a gap (never drawn adjacent) and the gap fills page by page", async () => {
+		useMedia();
+		msgs = [
+			...Array.from({ length: 200 }, (_, i) => mk(String(9001 + i), "가나", `긴 대화 ${i}`, at(22, 1, 0, i))),
+			mk("9300", "다라", "아주 예전 얘기 답장", at(23, 5, 0), 26, { kind: "reply", quote: "긴 대화 9", quoteSender: "가나", srcLogId: "9010" }),
+		];
+		drafts = [];
+		await boot(v);
+		await openRoom(v);
+		await run(v, `document.querySelector('[data-log="9300"] .kk-quote').click()`);
+		await waitFor(v, `document.querySelector('[data-log="9010"]')?.classList.contains("kk-hl")`);
+		// The around page ends at 9060 and the view starts at 9152: one gap, right after 9060, before 9152.
+		const gap = () => q<string[]>(v, `return [...document.querySelectorAll(".kk-gap")].map(g => g.previousElementSibling?.dataset.log + ">" + (() => { let n = g.nextElementSibling; while (n && !n.dataset.log) n = n.nextElementSibling; return n?.dataset.log; })())`);
+		expect(await gap()).toEqual(["9060>9152"]);
+		await run(v, `document.querySelector('.kk-gap [data-k="gap"]').click()`);
+		await expectReq(r => r.method === "GET" && r.path.includes("after=9060"));
+		await waitFor(v, `!!document.querySelector('[data-log="9110"]')`);
+		expect(await gap()).toEqual(["9110>9152"]);
+		await run(v, `document.querySelector('.kk-gap [data-k="gap"]').click()`);
+		await expectReq(r => r.method === "GET" && r.path.includes("after=9110"));
+		await waitFor(v, `!document.querySelector(".kk-gap")`);
+		expect(await q(v, `return [...document.querySelectorAll("[data-log]")].map(n => n.dataset.log).filter(id => id >= "9001" && id <= "9200").length`)).toBe(200);
+	});
 });
 
 describe("카카오톡 media at 390px", () => {
