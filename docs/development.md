@@ -20,6 +20,21 @@ dotz keeps three things apart. Mixing them is what makes an update fail on someo
 - Personal values never go into shipped code. If a behavior must differ per owner, read it from `config.json` or the data folder
   with a default that is right for a new user (example: `guard.no_api_key_accounts`, empty by default).
 
+## Where a setting belongs
+
+| Looks like | Is | Lives in |
+|---|---|---|
+| A behavior rule every owner wants (list blocks, choice blocks, report shape) | shipped | `MODE.md` / `MODE.ko.md` |
+| A rule only this owner wants (how he is addressed, his commit style, his projects) | personal | `<data>/RULES.md` |
+| An integration (mail, KakaoTalk, comments) | shipped code, off by default | `features/<id>/` |
+| That integration switched on or off here | personal | `<data>/features/<id>/feature.md` with `enabled:` (a switch: the shipped text still applies; `custom: true` keeps your own text) |
+| Which account must never bill an API key | personal | `config.json` `guard.no_api_key_accounts` |
+| Which conversations also go to Discord | personal | `<data>/discord-post.json` (settings -> 디스코드에도 보내기) |
+| Wording of gateway texts | shipped defaults | `<data>/custom/texts.json` overrides |
+| Home cards, pins, routines, app templates | personal | `<data>/custom/` |
+
+A value in shipped code is a default that suits a new user; a value that only suits you goes in the data folder.
+
 ## Moving an existing developer-checkout gateway to an install
 
 When the launchd service (`~/Library/LaunchAgents/dev.dotz.gateway.plist`) points at your development folder:
