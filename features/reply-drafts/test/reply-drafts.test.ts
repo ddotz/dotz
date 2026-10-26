@@ -49,7 +49,7 @@ test("an enabled install offers the draft as an [ask] with exactly the three cho
 	expect(out.sent[0]!.target).toBe("th:t1");
 	const text = out.sent[0]!.text;
 	expect(text.startsWith("[ask]")).toBe(true);
-	expect(parseDraftApproval(text)).toEqual({ toLabel: "받는이", to: "kim@example.com", subject: "Re: 회의 일정 문의", body: goodReply.body, ref: rec!.id });
+	expect(parseDraftApproval(text)).toEqual({ toLabel: "받는이", to: "kim@example.com", subject: "Re: 회의 일정 문의", body: goodReply.body, noAttachments: true, ref: rec!.id });
 	expect(parseDecisions(text).blocks[0]!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기"]);
 	expect(rec).toMatchObject({ status: "pending", ref: "m-1", source: "zele", mailId: "msg-1" });
 });

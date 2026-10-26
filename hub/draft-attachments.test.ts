@@ -30,14 +30,19 @@ describe("attachment lines of the approval block", () => {
 		expect(quotedDraft(text)).toContain("> 첨부: 현장사진.jpg (2.4MB)");
 	});
 
-	test("a file without a size keeps its name; no attachments writes no 첨부 line at all", () => {
+	test("a file without a size keeps its name; a mail without files always says 첨부: 없음, other drafts carry no 첨부 line", () => {
 		const d = parseDraftApproval(draftApprovalBlock({ ...base, attachments: [{ name: "메모.txt" }] }))!;
 		expect(d.attachments).toEqual([{ name: "메모.txt" }]);
 		const plain = draftApprovalBlock(calm);
-		expect(plain).not.toContain("첨부");
+		expect(plain).toContain("> 첨부: 없음\n");
 		const p = parseDraftApproval(plain)!;
 		expect(p.attachments).toBeUndefined();
-		expect(p.noAttachments).toBeUndefined();
+		expect(p.noAttachments).toBe(true);
+		// a hand-written mail block with no 첨부 line still reads as 없음, so the card shows the row
+		expect(parseDraftApproval("> 받는이: a@b.c\n>\n> 본문\n결정: 보낼까요? (D9)\n**1) 보내기**\n**2) 고치기 …**\n**3) 보내지 않기**")!.noAttachments).toBe(true);
+		const comment = draftApprovalBlock({ to: "영상 댓글", toLabel: "대상", body: "고마워요!", ref: "j1" });
+		expect(comment).not.toContain("첨부");
+		expect(parseDraftApproval(comment)!.noAttachments).toBeUndefined();
 	});
 
 	test("none carried: the original had files and the reply has none, so the block says 첨부: 없음", () => {
@@ -83,9 +88,9 @@ describe("reply drafts say what the reply carries", () => {
 	const rec = (extra: Partial<DraftRec>): DraftRec =>
 		({ id: "RZZZ999", kind: "mail", app: "mail", source: "zele", mailId: "m1", ref: "k1", to: "kim@example.com", subject: "RE: 견적", body: "확인했어요.", status: "pending", created: new Date().toISOString(), changes: [], questions: [], item: { kind: "mail", from: "kim@example.com", text: "x" }, ...extra }) as DraftRec;
 
-	test("a mail that came with files gets 첨부: 없음 (the senders carry none along); a mail without files gets no line", () => {
+	test("a reply without files always says 첨부: 없음, whether or not the mail it answers had files", () => {
 		expect(askText(rec({ origAttachments: 2 }), [])).toContain("> 첨부: 없음");
-		expect(askText(rec({}), [])).not.toContain("첨부");
+		expect(askText(rec({}), [])).toContain("> 첨부: 없음");
 		expect(parseDraftApproval(askText(rec({ origAttachments: 1 }), []))!.noAttachments).toBe(true);
 	});
 });
