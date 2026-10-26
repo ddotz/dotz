@@ -1,0 +1,89 @@
+/* 프로젝트 (web/js/18-lanes.js, 19-project-main.js): three levels on one tab.
+   1 list  - search + chips (전체 / 진행 중 / 확인 필요 / 끝남), compact rows (name, one status line, milestone bar, last activity), 더 보기.
+   2 overview - 확인 필요 (one action) and four summary rows.
+   3 pages - one section each, opened over the overview as a .pdv overlay (its own history entry: 뒤로 returns to the overview). */
+
+/* ---- level 1: the list ---- */
+.pj { display: flex; flex-direction: column; gap: 12px; }
+.pj-top { display: flex; flex-direction: column; gap: 8px; }
+.pj-search { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 12px; background: var(--card); color: var(--fg-3); }
+.pj-search .ic { width: 18px; height: 18px; }
+.pj-search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; color: var(--fg); font: inherit; outline: 0; }
+.pj-search input::placeholder { color: var(--fg-3); }
+.pj-search:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
+.pj-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.pj-chips .mr-f { flex: none; height: 32px; padding: 0 12px; border-radius: 16px; background: var(--card); color: var(--fg-2); font-size: 13px; }
+.pj-chips .mr-f:hover { background: var(--card-hover); }
+.pj-chips .mr-f.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 600; }
+.pj-chips .mr-fn { margin-left: 3px; font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
+.pj-list { background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow-panel); overflow: hidden; }
+.pj-list .cv-more { border-top: 1px solid var(--line); }
+.pj-row { display: flex; width: 100%; min-width: 0; padding: 12px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
+.pj-row + .pj-row { border-top: 1px solid var(--line); }
+.pj-row:hover { background: var(--card-hover); }
+.pj-row.on { background: var(--layer); }
+.pj-row.sub + .pj-row, .pj-gh + .pj-row { border-top: 1px solid var(--line); }
+.pj-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.pj-1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.pj-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 15px/22px var(--font); }
+.pj-nb { flex: none; height: 18px; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--on-accent); font: 600 11px/18px var(--font); text-align: center; }
+.pj-at { flex: none; color: var(--fg-3); font-size: 12px; line-height: 18px; }
+.pj-s { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--fg-2); font-size: 13px; line-height: 18px; }
+.pj-s .dot { width: 7px; height: 7px; }
+.pj-sw { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-p { display: flex; align-items: center; gap: 8px; margin-top: 1px; }
+.pj-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.pj-bar i { display: block; height: 100%; border-radius: 2px; background: var(--fg-2); }
+.pj-pn { flex: none; color: var(--fg-3); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.pj-gh { padding: 12px 16px 4px; color: var(--fg-3); font: 500 12px/16px var(--font); }
+.pj-row.sub { min-height: 48px; padding: 10px 16px; }
+.pj-row.sub .pj-n { font-weight: 500; }
+
+/* ---- level 2: the overview ---- */
+.pm-o { display: flex; flex-direction: column; gap: 12px; max-width: 640px; margin-top: 16px; }
+.pm-need, .pm-calm { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.pm-need-k, .pm-calm-k { display: flex; align-items: center; gap: 8px; color: var(--fg-3); font: 600 13px/20px var(--font); }
+.pm-need-k { color: var(--warn); }
+.pm-need-t, .pm-calm-t { font: 600 17px/24px var(--font); overflow-wrap: anywhere; }
+.pm-need-s { color: var(--fg-2); font-size: 13px; line-height: 20px; }
+.pm-need-a, .pm-calm .btn { margin-top: 10px; }
+.pm-calm-t.sup { color: var(--fg-3); font-weight: 400; font-size: 14px; }
+.pm-rows { display: flex; flex-direction: column; background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow-panel); overflow: hidden; }
+.pm-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 14px 18px; border: 0; background: transparent; color: inherit; text-align: left; }
+.pm-row + .pm-row { border-top: 1px solid var(--line); }
+.pm-row:hover { background: var(--card-hover); }
+.pm-row-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pm-row-k { color: var(--fg-3); font: 600 12px/16px var(--font); }
+.pm-row-v { font: 500 15px/22px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-row-v.empty { color: var(--fg-3); }
+.pm-row-s { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 2px; }
+.pm-row-s .pj-bar { flex: 0 0 72px; }
+.pm-row-st { min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-row .lead { width: 16px; height: 16px; color: var(--fg-3); }
+.pm-o-foot { padding: 0 4px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+
+/* ---- level 3: a section page (an overlay, full screen on a phone) ---- */
+.pdv-hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 20px 6px 8px; }
+.pdv-back { width: 40px; height: 40px; border-radius: var(--r-ctl); color: var(--fg-2); }
+.pdv-tt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pdv-t { margin: 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.pdv-ey { color: var(--fg-3); font-size: 13px; line-height: 18px; }
+.pdv-body { display: flex; flex-direction: column; padding: 6px 20px 24px; }
+.pdv-stack { display: flex; flex-direction: column; min-width: 0; }
+.pdv-stack .sec:first-child { margin-top: 4px; }
+/* a page, not a dialog: wide screens get the same tall surface as .fs-card.tall */
+@media (min-width: 640px) { .fs-card.pdv { width: min(760px, calc(100% - 48px)); height: min(86dvh, 860px); max-height: none; } }
+@media (max-width: 639px) {
+  .pdv-hd { padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .pdv-body { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+}
+
+/* ---- wide: the list beside the overview, like 채팅's conversation list ---- */
+@media (min-width: 1100px) {
+  .views.pp { grid-template-columns: 300px minmax(0, 1fr); }
+  .pj-row { padding: 10px 12px; }
+  .pj-n { font-size: 14px; line-height: 20px; }
+  .pj-at { font-size: 11.5px; }
+  .pj-gh { padding: 10px 12px 2px; }
+  .pm-o { max-width: 680px; }
+}

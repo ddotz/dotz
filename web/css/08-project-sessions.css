@@ -27,11 +27,6 @@
   .pmv-col { display: flex; flex-direction: column; min-width: 0; }
 }
 .pmv-goal { display: flex; flex-direction: column; gap: 12px; }
-.pmv-glance { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.pmv-gl { display: grid; grid-template-columns: auto 88px minmax(0, 1fr); align-items: baseline; gap: 8px; font-size: 14px; line-height: 22px; }
-.pmv-gl .dot { align-self: start; margin-top: 7px; }
-.pmv-gl-k { color: var(--fg-3); font-size: 13px; }
-.pmv-gl-v { min-width: 0; overflow-wrap: break-word; word-break: keep-all; }
 .pmv-prog { display: flex; align-items: center; gap: 12px; }
 .pmv-prog .bar { flex: 1; margin-top: 0; height: 6px; border-radius: 3px; }
 .pmv-prog .bar i { border-radius: 3px; }
