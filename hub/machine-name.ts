@@ -5,7 +5,7 @@ export const MAX_NAME = 24;
 
 export const label = (dns: string) => dns.replace(/\.$/, "").split(".")[0] ?? "";
 
-// "hyuns-macbookpro" -> 맥북, "hyuns-mac-mini" -> 맥미니; any other host keeps its hostname.
+// "alex-macbookpro" -> 맥북, "alex-mac-mini" -> 맥미니; any other host keeps its hostname.
 export function friendlyName(host: string): string {
 	const h = label(host).toLowerCase();
 	if (/mac[\s-]?mini/.test(h)) return "맥미니";
