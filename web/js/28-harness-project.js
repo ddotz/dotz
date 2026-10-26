@@ -151,37 +151,50 @@ function hChip(n) {
   return b;
 }
 
-function hStageCard(s) {
+// Stage card frame shared by 전체 and 커스텀: the connector from the previous stage (a chevron in the gap, drawn by CSS for the
+// breakpoint) and a "<previous stage>에서 · <edge label>" line, then a header with the step number, title and a count chip.
+function hFrom(stages, i) {
+  if (!i) return [el("div", { class: "hm-from", text: "여기서 시작해요" })];
+  const p = stages[i - 1], lb = hStageLabel(p, stages[i]), from = p.main.length === 1 ? hShort(p.main[0]) : p.label;
+  return [el("span", { class: "hm-ar", "aria-hidden": "true" }, icon("chev")), el("div", { class: "hm-from", title: `${from}에서${lb ? ` · ${lb}` : ""}` }, `${from}에서`, lb ? el("b", { text: lb }) : null)];
+}
+const hNo = i => el("span", { class: "hm-no", "aria-hidden": "true", text: String(i + 1) });
+const hCount = (n, title) => (n ? el("span", { class: "tag hm-ct", title, text: String(n) }) : null);
+// A source path as people read it (like custom.js shortPath): the last two names, the full path in the title.
+const hPath = p => { const parts = String(p).split("/").filter(Boolean); return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : String(p); };
+
+function hStageCard(s, i, stages) {
   const one = s.main.length === 1 ? s.main[0] : null;
   const bad = (one ? s.chips : s.main).filter(hSick);
   const ids = [...s.main, ...s.chips].map(n => n.id);
   const kids = [
     el("span", { class: "t" },
+      hNo(i),
       one ? el("span", { class: `dot ${H_TONE[one.status] || ""}` }) : null,
       el("span", { class: "l", text: one ? one.label : s.label }),
+      hCount(one ? s.chips.length : s.main.length + s.chips.length, "이 단계의 항목 수"),
       one && one.status !== "ok" ? el("span", { class: `tag ${H_TONE[one.status] || ""}`, text: H_STATE[one.status] || "" }) : null,
       bad.length ? el("span", { class: `tag ${bad.some(n => n.status === "err") ? "err" : "warn"}`, title: bad.map(n => n.label).join(", "), text: `주의 ${bad.length}` }) : null),
     one ? el("span", { class: "s", text: one.summary }) : null,
     fcBadges(ids), hMark(ids, true)];
   const head = one ? el("button", { type: "button", class: "hm-sh", "aria-label": `${one.label}: ${one.summary}` }, ...kids) : el("div", { class: "hm-sh" }, ...kids);
-  const card = el("div", { class: `hm-st${one ? " one" : ""}${hOrigin() && hMine(ids).any ? " mine" : ""}`, "data-id": one ? one.id : null }, head);
+  const card = el("div", { class: `hm-st${one ? " one" : ""}${hOrigin() && hMine(ids).any ? " mine" : ""}`, "data-id": one ? one.id : null }, ...hFrom(stages, i), head);
+  const list = el("div", { class: "hm-list" });
   if (one) { hNodeEls.set(one.id, card); hGeo.set(one.id, head); }
-  else card.append(el("div", { class: "hm-rows" }, ...s.main.map(n => {
+  else list.append(el("div", { class: "hm-rows" }, ...s.main.map(n => {
     const r = el("button", { type: "button", class: "hm-row", "data-id": n.id, title: `${n.label}: ${n.summary}`, "aria-label": `${n.label}: ${n.summary}` },
       el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "l", text: n.label }), el("span", { class: "s", text: n.summary }), hMark(n.id));
     hNodeEls.set(n.id, r); hGeo.set(n.id, r);
     return r;
   })));
-  if (s.chips.length) card.append(el("div", { class: "hm-with" }, el("div", { class: "wl", text: `함께 실행되는 항목 · ${s.chips.length}` }), el("div", { class: "hm-chips" }, ...s.chips.map(hChip))));
+  if (s.chips.length) list.append(el("div", { class: "hm-with" }, el("div", { class: "wl", text: `함께 실행되는 항목 · ${s.chips.length}` }), el("div", { class: "hm-chips" }, ...s.chips.map(hChip))));
+  if (list.firstChild) card.append(list);
   return card;
 }
 
 function hSimple() {
   const stages = hStages(), wrap = el("div", { class: "hm-simple" });
-  stages.forEach((s, i) => {
-    if (i) wrap.append(el("div", { class: "hm-ar" }, el("span", { class: "lb", text: hStageLabel(stages[i - 1], s) }), el("span", { class: "ln" })));
-    wrap.append(hStageCard(s));
-  });
+  stages.forEach((s, i) => wrap.append(hStageCard(s, i, stages)));
   const svg = hSvg("svg", { class: "hm-ov", "aria-hidden": "true" });
   const m = hSvg("marker", { id: "hm-ov-ah", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "7", markerHeight: "7", orient: "auto" });
   m.append(hSvg("path", { d: "M0 0L8 4L0 8z", class: "hm-ah hot" }));
@@ -193,7 +206,7 @@ function hSimple() {
   wrap.addEventListener("mouseleave", () => hHot(hSel));
   wrap.addEventListener("focusin", ev => { const id = idOf(ev); if (id) hHot(id); });
   wrap.addEventListener("focusout", () => hHot(hSel));
-  return el("div", { class: "hm-scroll" }, wrap);
+  return wrap;
 }
 
 // 커스텀: the same stage cards, order and arrows as 전체, each card filtered to what this user changed (personal
@@ -211,17 +224,18 @@ function hCustomParts(stages) {
   }) };
 }
 const hCustomCount = () => { if (!HG || !hOrigin()) return 0; return hCustomParts(hStages()).at.reduce((a, x) => a + x.n, 0); };
-function hCustomCard(s, i, cv) {
+function hCustomCard(s, i, cv, stages) {
   const { mine, sets, fl, n } = cv.at[i], one = s.main.length === 1 ? s.main[0] : null;
-  const card = el("div", { class: `hm-st${n ? " mine" : " none"}` },
-    el("div", { class: "hm-sh" }, el("span", { class: "t" }, el("span", { class: "l", text: one ? one.label : s.label }), n ? el("span", { class: "bd m", title: "이 단계에서 바꾼 것", text: String(n) }) : null)));
+  const card = el("div", { class: `hm-st${n ? " mine" : " none"}` }, ...hFrom(stages, i),
+    el("div", { class: "hm-sh" }, el("span", { class: "t" }, hNo(i), el("span", { class: "l", text: one ? one.label : s.label }), n ? el("span", { class: "bd m hm-ct", title: "이 단계에서 바꾼 것", text: String(n) }) : null)));
   if (!n) { card.append(el("div", { class: "hm-none", text: "기본 그대로" })); return card; }
   const row = (onclick, top, sub, mono) => {
-    const b = el("button", { type: "button", class: "hm-cr" }, el("span", { class: "m1" }, ...top), sub ? el("span", { class: `m2${mono ? " mono" : ""}`, text: sub, title: sub }) : null);
+    const b = el("button", { type: "button", class: "hm-cr" }, el("span", { class: "m1" }, ...top), sub ? el("span", { class: `m2${mono ? " mono" : ""}`, text: mono ? hPath(sub) : sub, title: sub }) : null);
     b.addEventListener("click", onclick);
     return b;
   };
-  const sec = el("div", { class: "hm-cs" });
+  // A list long enough for 더 보기 keeps one fixed height, so opening or folding it scrolls inside the card instead of resizing it.
+  const sec = el("div", { class: `hm-cs hm-list${fl.length > H_CV_CAP ? " fix" : ""}` });
   if (mine.length) {
     sec.append(el("div", { class: "cl", text: `내 파일·확장 · ${mine.length}` }));
     for (const m of mine) {
@@ -240,7 +254,14 @@ function hCustomCard(s, i, cv) {
     for (const f of shown) sec.append(row(() => fcOpenFeature(f), [f.name, el("span", { class: "tag", text: f.form }), f.enabled ? null : el("span", { class: "tag", text: "꺼짐" })], f.source.label, true));
     if (fl.length > H_CV_CAP) {
       const more = el("button", { type: "button", class: "btn text hm-more", text: all ? "접기" : `${fl.length - H_CV_CAP}개 더 보기` });
-      more.addEventListener("click", () => { if (all) hCvOpen.delete(i); else hCvOpen.add(i); renderHarness(); });
+      more.addEventListener("click", () => {
+        if (all) hCvOpen.delete(i); else hCvOpen.add(i);
+        const top = sec.scrollTop;
+        renderHarness();
+        const again = $("#harness").querySelectorAll(".hm-simple.only > .hm-st")[i];
+        const box = again && again.querySelector(".hm-cs");
+        if (box) box.scrollTop = all ? 0 : top;
+      });
       sec.append(more);
     }
   }
@@ -249,11 +270,8 @@ function hCustomCard(s, i, cv) {
 }
 function hCustomView() {
   const stages = hStages(), cv = hCustomParts(stages), wrap = el("div", { class: "hm-simple only" });
-  stages.forEach((s, i) => {
-    if (i) wrap.append(el("div", { class: "hm-ar" }, el("span", { class: "lb", text: hStageLabel(stages[i - 1], s) }), el("span", { class: "ln" })));
-    wrap.append(hCustomCard(s, i, cv));
-  });
-  return el("div", { class: "hm-scroll" }, wrap);
+  stages.forEach((s, i) => wrap.append(hCustomCard(s, i, cv, stages)));
+  return wrap;
 }
 
 // Lights up what a node connects to: the other ends get an outline, and (pointer devices) its edges are drawn over the
