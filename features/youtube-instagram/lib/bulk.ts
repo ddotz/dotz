@@ -4,7 +4,7 @@
 // writes the one-time backup before the first edit of a video, so restoreOne / restoreAll can undo it. Progress lives in
 // bulk.json; the watch prints a progress line only when it moves by a 10% step, so the app row changes (and the model wakes)
 // rarely. Translation is an injected function (tests pass a fake, the watch passes the gateway model call).
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { type Config, type Ctx, type Lang, paths, readJson, writeJson } from "./config.ts";
 import { COSTS, isExhausted, used } from "./quota.ts";
 import { QuotaError } from "./watchkit.ts";
@@ -152,4 +152,3 @@ export async function restoreAll(ctx: Ctx, cfg: Config): Promise<{ restored: num
 	return { restored, left: pending.length - restored };
 }
 
-export const backupIds = (): string[] => (existsSync(paths.backup()) ? readdirSync(paths.backup()).filter(n => n.endsWith(".json")).map(n => n.slice(0, -5)) : []);

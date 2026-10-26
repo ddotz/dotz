@@ -182,7 +182,6 @@ function profile(key: ToneKey | "install"): string {
 }
 
 export const hasSamples = (key: ToneKey | "install"): boolean => bullets(profile(key), HEADINGS.samples).length > 0;
-export const hasIdentity = (key: ToneKey | "install"): boolean => bullets(profile(key), HEADINGS.identity).length > 0;
 export const identityOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.identity);
 export const correctionsOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.corrections);
 
