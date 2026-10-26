@@ -17,7 +17,8 @@ const hOnlyOn = () => hOrigin() && hOnly;
 const hData = () => (HG && HG.data_dir) || "~/.dotz";
 const hOwn = f => f.origin === "personal" && !FC_LINES[f.form];
 const hScope = (kind, where) => (kind === "project" ? `범위: 프로젝트 (${where})` : hOrigin() ? `범위: ${kind === "shipped" ? "배포" : "개인"} (${where})` : "");
-const hScopeTag = (kind, where, short) => (kind === "project" ? el("span", { class: "tag scope project", title: hScope(kind, where), text: short ? "프로젝트" : hScope(kind, where) }) : hOrigin() ? el("span", { class: `tag scope ${kind}`, title: hScope(kind, where), text: short ? (kind === "shipped" ? "배포" : "개인") : hScope(kind, where) }) : null);
+// `where` is the short form on screen; `full` (the absolute path) stays in the title.
+const hScopeTag = (kind, where, short, full = where) => (kind === "project" ? el("span", { class: "tag scope project", title: hScope(kind, full), text: short ? "프로젝트" : hScope(kind, where) }) : hOrigin() ? el("span", { class: `tag scope ${kind}`, title: hScope(kind, full), text: short ? (kind === "shipped" ? "배포" : "개인") : hScope(kind, where) }) : null);
 const hFmt = (v, unit) => (typeof v === "boolean" ? (v ? "켜짐" : "꺼짐") : v === "" ? "비움" : `${typeof v === "number" ? num(v) : v}${unit ? (unit.length === 1 ? unit : ` ${unit}`) : ""}`);
 const hChanged = key => !!(hOrigin() && HG.nodes.some(n => (n.custom || []).some(c => c.key === key)));
 function hMine(ids) {
@@ -178,7 +179,7 @@ function renderHarness() {
     FC && !pj ? el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
     el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hDetail), title: "모든 시스템과 연결선을 한 화면에 그려요", onclick: () => { hDetail = !hDetail; try { localStorage.setItem("dotz-hdetail", hDetail ? "1" : "0"); } catch {} renderHarness(); } }, "자세히"),
     el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); toast("새로 불러왔어요"); }) }, icon("refresh"), "새로고침"),
-    hOrigin() ? el("div", { class: "sup hm-legend" }, el("span", { class: "bd m", text: "내 설정" }), `내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 dotz 기본이에요 (${hData()}).`) : null);
+    hOrigin() ? el("div", { class: "sup hm-legend" }, el("span", { class: "bd m", text: "내 설정" }), `내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 dotz 기본이에요 (${shortPath(hData())}).`) : null);
   const parts = [bar];
   const keep = box.querySelector(".hm-scroll");
   const left = keep ? keep.scrollLeft : 0;

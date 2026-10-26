@@ -7,7 +7,9 @@
 .card.tap:focus-visible { outline-offset: 0; }
 .card.foot { display: flex; flex-direction: column; }
 .cf { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 12px; }
-.cf .btn { flex: 0 1 auto; min-width: 0; height: 28px; padding: 0 10px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.cf .btn { flex: 0 1 auto; min-width: 0; height: var(--btn-h-sm); padding: 0 12px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+/* a path shown inside a row's text (25-settings-accounts.js): one short line, the full path in the row's title */
+code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ch { display: flex; align-items: center; gap: 8px; min-height: 20px; margin-bottom: 12px; }
 .ch h3 { flex: 1; min-width: 0; margin: 0; font: 600 16px/22px var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ch .chev { width: 14px; height: 14px; color: var(--fg-3); }
