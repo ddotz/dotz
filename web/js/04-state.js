@@ -15,7 +15,11 @@ const convListing = () => current === "chat" && chatList && narrowChat();
 // its list is 모니터링's list and its address is #monitoring/c:<target> (go() in 05-command-palette.js sets it; 30-monitoring.js monOwned).
 let monCtx = "";
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
-const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["monitoring", "모니터링"], ["settings", "설정"], ["apps", "앱"]];
+const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["monitoring", "모니터링"], ["apps", "앱"], ["settings", "설정"]];
+// 앱 (user apps, 30-apps.js): the tab is shown but disabled until user apps ship; every way into it (tab, shortcut, palette, address) goes
+// home instead. true opens it (the 앱 tests switch it on).
+let APPS_ON = false;
+const navOff = id => id === "apps" && !APPS_ON;
 const CHAT_MODE_KEY = "dotz-chat-mode";
 // 로그 보기 (the "activity" view): kept in the code, off in the app. false hides the 대화/로그 toggle and sends every way into the log view
 // (an old #activity address, a saved choice, a subagent row) to 대화 instead; true brings the toggle back.
@@ -145,21 +149,22 @@ const chatTabModeSet = v => { try { localStorage.setItem(CHAT_TAB_KEY, v); } cat
 const chatTabEnter = () => { if (chatTabMode() === "main" || monOwned(target)) setTarget(MAIN); go(lastChatView()); };
 const chatTabTap = () => (monCtx ? chatTabEnter() : convListing() ? closeChatList() : narrowChat() && (current === "chat" || current === "activity") ? openChatList() : current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter());
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
-// ⌘/Ctrl+1..5 open the tabs in NAV order; the browser may keep ⌘1..9 for its own tabs in a normal tab (it reaches the page in an installed app window).
+// ⌘/Ctrl+1..6 open the tabs in NAV order (a disabled tab does nothing); the browser may keep ⌘1..9 for its own tabs in a normal tab (it reaches the page in an installed app window).
 const navKeyHint = id => { const i = NAV.findIndex(n => n[0] === id); return i < 0 ? "" : isMac ? `⌘${i + 1}` : `Ctrl+${i + 1}`; };
 function navShortcut(id) {
+  if (navOff(id)) return;
   if (id !== "home" && PR.node) prClose(false);
   if (id === "chat") !monCtx && (current === "chat" || current === "activity") ? go(lastChatView()) : chatTabEnter();
   else go(id);
 }
 document.addEventListener("keydown", ev => {
   if (ev.isComposing || ev.altKey || ev.shiftKey || !(isMac ? ev.metaKey : ev.ctrlKey) || document.querySelector("dialog[open]")) return;
-  const n = /^Digit([1-5])$/.exec(ev.code || "")?.[1] || (/^[1-5]$/.test(ev.key) ? ev.key : "");
+  const n = /^Digit([1-6])$/.exec(ev.code || "")?.[1] || (/^[1-6]$/.test(ev.key) ? ev.key : "");
   if (!n) return;
   ev.preventDefault();
   navShortcut(NAV[n - 1][0]);
 });
-for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
+for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: navOff(id) ? `${label} · 준비 중` : `${label} (${navKeyHint(id)})`, ...(navOff(id) ? { disabled: true, "aria-disabled": "true" } : {}), onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
