@@ -92,7 +92,7 @@ export function directionOf(f: DirectionFacts, own: ReadonlySet<string> = ownAdd
 
 // ---- migration ----
 
-export type StoredMail = LegacyReplyFacts & { key: string; subject: string; from: string; to?: string; at: string; dir?: "out"; sentAt?: string };
+export type StoredMail = LegacyReplyFacts & { key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string };
 const subjectKey = (s: string): string => s.replace(/^\s*(?:(?:re|fw|fwd|답장|회신|전달)\s*:\s*)+/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
 
 /**
