@@ -79,6 +79,7 @@ export const APP_SETTINGS: Record<string, SettingField[]> = {
 		{ key: "watch_chats", label: "감시하는 방", type: "list", help: "채팅방 id 목록이에요 (방 이름은 대화방 목록에서 찾아요)", store: "custom/kakao/config.json", path: "watch_chats", def: [] },
 		{ key: "auto_draft_chats", label: "자동 초안 방", type: "list", help: "감시하는 방 가운데 새 메시지에 봇이 깨어나 초안을 만드는 방의 id예요", store: "custom/kakao/config.json", path: "auto_draft_chats", def: [] },
 		{ key: "exclude_chats", label: "초안 제외 방", type: "list", help: "초안을 만들지 않는 방의 id예요", store: "custom/kakao/config.json", path: "exclude_chats", def: [] },
+		{ key: "open_chats", label: "오픈채팅방 보기", type: "bool", help: "켜면 오픈채팅방도 대화방 목록에 뜨고 일반 방처럼 지켜보고 답장할 수 있어요", store: "custom/kakao/config.json", path: "open_chats", def: true },
 	],
 	instagram: [draftSwitch("instagram", "인스타그램"), approval],
 	youtube: [draftSwitch("youtube", "유튜브"), approval],
