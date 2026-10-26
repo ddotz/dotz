@@ -117,7 +117,7 @@ describe("open chat rooms", () => {
 		t.close();
 	});
 
-	test("a new message in a watched open room wakes the bot when on, and not when off", async () => {
+	test("a new message that calls the owner in a watched open room wakes the bot when on, and not when off", async () => {
 		const w = makeFixtureDb(join(dir, "w.sqlite"), { rooms: roomsSpec, users, messages: msgs, openLinks: [{ linkId: 77, linkName: OPEN_NAME }] });
 		const db: KakaoDb = { query: async (sql, params = []) => w.query(sql).all(...(params as never[])) as Record<string, unknown>[] };
 		const sig = join(dir, "sig");
@@ -126,7 +126,7 @@ describe("open chat rooms", () => {
 			const stateDir = join(dir, `state-${n}`);
 			const clock = (BASE_TIME + 950 + n) * 1000;
 			await runWatch({ db, config, stateDir, now: () => clock, dbFiles: [sig] });
-			w.query("INSERT INTO NTChatMessage VALUES (?, ?, ?, ?, 1, ?, NULL, NULL)").run(log(100 + n), OPEN, 3001, "몇 시에 해요?", BASE_TIME + 940 + n);
+			w.query("INSERT INTO NTChatMessage VALUES (?, ?, ?, ?, 1, ?, ?, NULL)").run(log(100 + n), OPEN, 3001, "몇 시에 해요?", BASE_TIME + 940 + n, JSON.stringify({ mentions: [{ user_id: OWNER, at: [1], len: 2 }] }));
 			writeFileSync(sig, `a${n}`);
 			return (await runWatch({ db, config, stateDir, now: () => clock, dbFiles: [sig] })).lines;
 		};

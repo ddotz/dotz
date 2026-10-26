@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { claimSend } from "../draft-claim.ts";
 import { draftApprovalBlock } from "../draft-approval.ts";
 import { writePrivate } from "./creds.ts";
+import { draftParts } from "./draft.ts";
 import { type AxStep, axSend, closeWindow, type Focus, openRoom, type RoomFact } from "./room.ts";
 import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 
@@ -14,7 +15,8 @@ export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
 // tokens: what the one model call behind the draft used (estimated = counted from characters, not reported by the model).
 export type DraftTokens = { in: number; out: number; estimated?: true };
 // unconfirmed: the 전송 button was pressed but the send was not confirmed; the draft counts as sent so it is never sent again.
-export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens; unconfirmed?: true };
+// sentParts: how many parts of the text (draft.ts draftParts) are already in the room; a retry sends only the rest, so no part goes twice.
+export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens; unconfirmed?: true; sentParts?: number };
 // `later`: how the idle close of a kept window is scheduled (tests pass their own; the default is an unref'd timer).
 export type SendDeps = { paths: KakaoPaths; runner: Runner; now?: () => number; later?: (fn: () => void, ms: number) => void };
 // ms: wall time of each phase of one send; ax: every Accessibility step of it (room.ts AxStep) with its time and, where it failed, the exact
@@ -23,7 +25,12 @@ export type SendMs = { front: number; pick: number; send: number; total: number;
 // focus: kept on the send record only when the send had to open the KakaoTalk list window (room.ts Focus).
 export type SendResult = { ok: boolean; reason?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus; unconfirmed?: true };
 
+// One KakaoTalk message (a typed send, one part of a draft) and a whole draft of several parts.
 const MAX_TEXT = 1000;
+const MAX_DRAFT_TEXT = 3000;
+// Why a draft text cannot be sent (empty, a part over MAX_TEXT, the whole over MAX_DRAFT_TEXT), else undefined.
+export const draftTextError = (text: string): string | undefined =>
+	!text.trim() ? "답장 글이 비어 있어요" : [...text].length > MAX_DRAFT_TEXT ? `답장은 모두 합쳡 ${MAX_DRAFT_TEXT}자까지예요` : draftParts(text).some(p => [...p].length > MAX_TEXT) ? `메시지 하나는 ${MAX_TEXT}자까지예요` : undefined;
 const MAX_DRAFTS = 200;
 const TAIL_BYTES = 2 * 1024 * 1024;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -56,8 +63,8 @@ function newCode(taken: Set<string>): string {
 }
 
 export async function createDraft(input: { chatId: string; roomName: string; text: string; basisLogId: string; tokens?: DraftTokens }, deps: SendDeps): Promise<Draft> {
-	const length = [...input.text].length;
-	if (!input.text.trim() || length > MAX_TEXT) throw new Error(`답장 글은 1자에서 ${MAX_TEXT}자 사이여야 해요`);
+	const bad = draftTextError(input.text);
+	if (bad) throw new Error(bad);
 	if (!input.chatId || !input.roomName.trim()) throw new Error("대화방 정보가 비어 있어요");
 	if (input.roomName.trim() === "(unknown)") throw new Error("이름을 알 수 없는 대화방이라 화면 자동화로 찾을 수 없어요");
 	const list = readDrafts(deps.paths);
@@ -318,8 +325,10 @@ async function sendClaimed(code: string, deps: SendDeps & { latestIncoming: (cha
 	if (!d) return refuse("그 초안을 찾지 못했어요");
 	if (d.status === "sent") return refuse(d.unconfirmed ? `전송 버튼을 이미 눌렀던 초안이라 다시 보내지 않아요. 카카오톡에서 확인해 주세요` : "이미 보낸 초안이에요");
 	if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요");
-	const text = deps.text ?? d.text;
-	if (!text.trim() || [...text].length > MAX_TEXT) return refuse(`답장 글은 1자에서 ${MAX_TEXT}자 사이여야 해요`);
+	// After a part already went out the text is fixed: an edit then could not be told apart from what is in the room.
+	const text = d.sentParts ? d.text : (deps.text ?? d.text);
+	const bad = draftTextError(text);
+	if (bad) return refuse(bad);
 	if (!deps.ownerApproved) {
 		const v = verdict(d, deps.paths);
 		if (v === "cancelled") {
@@ -338,7 +347,20 @@ async function sendClaimed(code: string, deps: SendDeps & { latestIncoming: (cha
 		setStatus(deps.paths, code, "stale");
 		return refuse("그사이 새 메시지가 와서 초안이 낡았어요");
 	}
-	const r = await sendTextNow({ chatId: d.chatId, roomName: d.roomName, text }, deps);
-	if (r.ok || r.unconfirmed) setStatus(deps.paths, code, "sent", { text, sentAt: new Date(nowMs(deps)).toISOString(), ...(r.unconfirmed ? { unconfirmed: true as const } : {}) });
+	// Each part is its own message, in order. The count of parts in the room is stored after every part, so a failed part is retried alone
+	// and an unconfirmed press ends the draft as sent (never pressed again).
+	const parts = draftParts(text);
+	let done = d.sentParts ?? 0;
+	let r: SendResult = { ok: true };
+	while (done < parts.length) {
+		r = await sendTextNow({ chatId: d.chatId, roomName: d.roomName, text: parts[done]! }, deps);
+		if (!r.ok && !r.unconfirmed) break;
+		done++;
+		if (r.unconfirmed) break;
+		if (done < parts.length) setStatus(deps.paths, code, "pending", { text, sentParts: done });
+	}
+	if (r.ok && done >= parts.length) setStatus(deps.paths, code, "sent", { text, sentParts: done, sentAt: new Date(nowMs(deps)).toISOString() });
+	else if (r.unconfirmed) setStatus(deps.paths, code, "sent", { text, sentParts: done, sentAt: new Date(nowMs(deps)).toISOString(), unconfirmed: true as const });
+	else if (done > 0) return { ...r, reason: `${parts.length}개 중 ${done}개를 보냈어요. 다시 보내면 나머지만 보내요: ${r.reason ?? "보내지 못했어요"}` };
 	return r;
 }
