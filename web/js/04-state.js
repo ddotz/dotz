@@ -15,7 +15,7 @@ const convListing = () => current === "chat" && chatList && narrowChat();
 // its list is 모니터링's list and its address is #monitoring/c:<target> (go() in 05-command-palette.js sets it; 30-monitoring.js monOwned).
 let monCtx = "";
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
-const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["monitoring", "모니터링"], ["settings", "설정"]];
+const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["monitoring", "모니터링"], ["settings", "설정"], ["apps", "앱"]];
 const CHAT_MODE_KEY = "dotz-chat-mode";
 // 로그 보기 (the "activity" view): kept in the code, off in the app. false hides the 대화/로그 toggle and sends every way into the log view
 // (an old #activity address, a saved choice, a subagent row) to 대화 instead; true brings the toggle back.
@@ -25,8 +25,8 @@ const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : 
 const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
 const SUB = new Set(["models", "providers", "usage", "context", "harness"]);
-const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "project", "projects", "monitoring"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링" };
+const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "project", "projects", "monitoring", "apps"];
+const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱" };
 // The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
 const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
 const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
