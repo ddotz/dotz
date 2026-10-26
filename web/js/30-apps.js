@@ -5,7 +5,7 @@
 // the frame under the standard header: back, name, status, 새 탭, ⋯ (설정 / 끄기 / 제거). The rows are the 모니터링 list's rows.
 // window.appsMonItems() lets 30-monitoring.js (not ours) add the tool apps to its 앱 group; nothing here edits that file.
 const APPS = { items: [], errors: [], loaded: false, failed: false, sel: "", list: true, sig: "", timer: 0 };
-const APP_STATUS = { running: ["실행 중", "ok"], unreachable: ["응답 없음", "err"], unknown: ["상태 모름", ""], off: ["꺼 둠", ""] };
+const APP_STATUS = { running: ["실행 중", "ok"], unreachable: ["응답 없음", "err"], unknown: ["상태 모름", ""], off: ["꺼짐", ""] };
 const appsNarrow = () => narrowChat();
 const appsTool = a => a && a.source === "manifest" && a.kind === "tool" && a.web;
 
@@ -37,7 +37,7 @@ function appsRows() {
   rows.push({ header: "사용자 앱" });
   if (!tools.length) rows.push({ k: "empty-apps", name: "아직 내 앱이 없어요", av: appsAv("add", ""), hint: "채팅에서 앱을 추가해 달라고 하면 돼요", open: () => go("chat") });
   for (const a of tools) {
-    rows.push({ k: a.id, name: a.label, av: appsAv(a.icon, a.off ? "off" : a.status), hint: appsStatusLine(a), badge: a.off ? ["꺼 둠", ""] : a.status === "unreachable" ? ["응답 없음", "err"] : a.kind === "tool" ? ["열기", "pri"] : null, sel: APP_STATE_ON() && a.id === APPS.sel && !APPS.list, open: () => go("apps", a.id) });
+    rows.push({ k: a.id, name: a.label, av: appsAv(a.icon, a.off ? "off" : a.status), hint: appsStatusLine(a), badge: a.off ? ["꺼짐", ""] : a.status === "unreachable" ? ["응답 없음", "err"] : a.kind === "tool" ? ["열기", "pri"] : null, sel: APP_STATE_ON() && a.id === APPS.sel && !APPS.list, open: () => go("apps", a.id) });
   }
   const reg = APPS.items.filter(a => a.source === "registry");
   if (reg.length) {
@@ -132,10 +132,11 @@ function appsBody(a) {
 }
 
 let appsRaf = 0;
-const appsSchedule = () => { if (!appsRaf) appsRaf = requestAnimationFrame(appsRender); };
-function appsRender(force = false) {
+// Only the shown 앱 tab is drawn, so an app's iframe (its page, sockets, CPU) never loads behind another tab.
+const appsSchedule = () => { if (!appsRaf) appsRaf = requestAnimationFrame(() => appsRender()); };
+function appsRender() {
   appsRaf = 0;
-  if (current !== "apps" && !force) return;
+  if (current !== "apps") return;
   const side = $("#apps-side"), pane = $("#apps-pane");
   $("#v-apps").classList.toggle("cv-listing", appsNarrow() && APPS.list);
   const rows = appsRows(), sig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.badge, r.header, r.sel]), APPS.sel, APPS.list, appsNarrow()]);
