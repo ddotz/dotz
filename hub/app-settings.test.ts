@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { applyMemory, approxTokens, fieldsOf, memoryNote, mailDiscordOn, parseProposal, readSettings, setDiscordProbe, SettingsError, settingsContext, validate, writeSettings } from "./app-settings.ts";
+import { applyMemory, approxTokens, APP_SETTINGS, fieldsOf, memoryNote, mailDiscordOn, parseProposal, readSettings, setDiscordProbe, SETTING_SECTIONS, SettingsError, settingsContext, validate, writeSettings } from "./app-settings.ts";
 
 let dir = "";
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "as-")); });
@@ -64,6 +64,30 @@ describe("디스코드에도 올리기 (mail)", () => {
 		expect(mailDiscordOn(dir, "zele-1")).toBe(true);
 		writeSettings(dir, "mail-2", { discord: false });
 		expect(mailDiscordOn(dir, "naver-1")).toBe(false);
+	});
+});
+
+describe("한 개념에 조작 하나 (sections and shared terms)", () => {
+	test("every row of every app has a known section, and no two rows of one app share a label", () => {
+		for (const app of ["mail", "kakao", "instagram", "youtube", "site", "mail-2", "kakao-2"]) {
+			const rows = fieldsOf(app);
+			for (const f of rows) expect(SETTING_SECTIONS).toContain(f.section ?? "advanced");
+			const labels = rows.map(f => f.label);
+			expect(new Set(labels).size).toBe(labels.length);
+		}
+	});
+	test("the automatic draft and the approval mode read the same words in every app", () => {
+		const drafts = ["mail", "instagram", "youtube"].map(app => APP_SETTINGS[app]!.find(f => f.key === "auto_draft")!);
+		expect(drafts.map(f => f.label)).toEqual(["자동 초안", "자동 초안", "자동 초안"]);
+		expect(new Set(drafts.map(f => f.help.replace(/(메일|인스타그램|유튜브)에/, ""))).size).toBe(1);
+		const approval = APP_SETTINGS.instagram!.find(f => f.key === "approval")!;
+		expect([approval.label, approval.section, approval.options]).toEqual(["승인 방식", "draft", ["each", "batch"]]);
+		expect(APP_SETTINGS.instagram!.find(f => f.key === "approval")).toBe(APP_SETTINGS.youtube!.find(f => f.key === "approval"));
+	});
+	test("the draft and watch rows of one app never sit in the same section as a control that means the same thing", () => {
+		const sect = (app: string, key: string) => fieldsOf(app).find(f => f.key === key)?.section;
+		expect([sect("mail", "auto_draft"), sect("mail", "skip_senders"), sect("kakao", "auto_draft_chats"), sect("kakao", "exclude_chats")]).toEqual(["draft", "draft", "draft", "draft"]);
+		expect([sect("kakao", "enabled"), sect("kakao", "watch_chats"), sect("kakao", "open_chats")]).toEqual(["watch", "watch", "watch"]);
 	});
 });
 
