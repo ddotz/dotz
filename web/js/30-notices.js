@@ -404,7 +404,7 @@ function ntHomeRow(n) {
   return el("div", { class: "hr hrx" },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": `${title} · 답변 필요` },
       el("span", { class: "dot att" }),
-      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: n.decision ? ntDecWhere(n.decision) : ntLaneNote(n) || (src ? targetName(src) : "알림") })),
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: [n.decision ? ntDecWhere(n.decision) : ntLaneNote(n) || (src ? targetName(src) : "알림"), ntWhen(n)].filter(Boolean).join(" · ") })),
       el("span", { class: "hs warn", text: "답변 필요" })),
     ntIgnoreBtn(n));
 }
