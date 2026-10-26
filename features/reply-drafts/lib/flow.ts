@@ -52,16 +52,28 @@ function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: 
 	return { id: newId(), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...meta, to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item };
 }
 
+// The owner is asked once, with a complete draft (owner 2026-10-26): a draft that came back with open points is sent back to the model once to
+// settle them from what it can see; what it still cannot settle is what only the owner knows, asked inside the same approval card.
+const RESOLVE = (questions: string[]) => `Settle these open points yourself from the message, its context and the user's samples, rules and corrections, and make the reply complete without them (still promise nothing you cannot see). In "questions" keep only a fact the reply cannot go out without and that nothing above settles:\n${questions.map(q => `- ${q}`).join("\n")}`;
+
 export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): Promise<Built> {
-	const r = await generateChatReply(item, loadStyle(toneKey(item)), callOf(deps, item, meta.ref));
+	const style = loadStyle(toneKey(item)), call = callOf(deps, item, meta.ref);
+	let r = await generateChatReply(item, style, call);
+	if (r.action === "draft" && r.questions.length && item.kind !== "chat") {
+		const settled = await reviseReply(item, style, r.draft, RESOLVE(r.questions), call);
+		if (settled.action === "draft") r = settled;
+	}
 	return r.action !== "draft" ? r : { action: "draft", rec: toRec(item, meta, r, [], deps), warnings: r.warnings };
 }
 
-// The [ask] message of one draft; the notes line carries lint warnings and what only the user can decide.
+// The approval question with what only the owner can decide in it, so one card asks everything: "이 답장 보낼까요? 정할 것: 회의 날짜".
+export const askWith = (question: string, open: string[]): string => (open.length ? `${question} 정할 것: ${open.map(q => q.replace(/[()]/g, " ").replace(/\s+/g, " ").trim()).join(", ")}` : question);
+
+// The [ask] message of one draft; the notes line carries lint warnings, the card's question what only the user can decide.
 export function askText(rec: DraftRec, warnings: string[], headline = rec.compose ? "새 메일 초안을 만들었어요" : "답장 초안을 만들었어요"): string {
-	const notes = [...warnings.map(w => `확인: ${w}`), ...rec.questions.map(q => `정해 주세요: ${q}`)].map(n => n.replace(/\s+/g, " ")).join(" / ");
+	const notes = warnings.map(w => `확인: ${w}`.replace(/\s+/g, " ")).join(" / ");
 	const attachments = stagedFiles(rec.id).map(f => ({ name: f.name, size: f.size }));
-	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}) });
+	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: askWith(rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", rec.questions ?? []), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}) });
 	return [`[ask] ${headline}`, ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
