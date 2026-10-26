@@ -171,7 +171,9 @@ function kkViewer(m, md, start) {
 }
 const kkWho = m => (m.fromMe ? "me" : String(m.authorId ?? m.sender ?? ""));
 const kkSame = (a, b) => !kkSys(a) && !kkSys(b) && kkWho(a) === kkWho(b) && Math.floor(a.sentAt / 60000) === Math.floor(b.sentAt / 60000);
-const kkKindLine = r => (r.kind === "group" || r.kind === "multi" ? "단체 대화방" : r.kind === "direct" || r.kind === "dm" ? "1:1 대화" : "");
+const kkKindLine = r => (r.kind === "group" || r.kind === "multi" ? "단체 대화방" : r.kind === "direct" || r.kind === "dm" ? "1:1 대화" : r.kind === "open" ? "오픈채팅" : "");
+// Under a room's name: its kind and the hub's hint (the newest message, else the member count), so rooms of the same name can be told apart.
+const kkSubLine = r => [kkKindLine(r), r.hint].filter(Boolean).join(" · ");
 const kkRoom = id => KK.rooms.find(r => r.chatId === id) || null;
 // Room search: a case-insensitive substring of the name; a query made only of consonants (ㄱㄴㄷ…) also matches the name's initial consonants.
 const KK_CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
@@ -270,6 +272,7 @@ const kkPickRow = r => el("div", { class: "kk-pr", "data-chat": r.chatId },
   kkAvatar(r.name),
   el("span", { class: "cv-b" },
     el("span", { class: "cv-n", title: r.name, text: r.name }),
+    kkSubLine(r) ? el("span", { class: "cv-p", text: kkSubLine(r) }) : null,
     r.watched ? el("span", { class: "kk-auto" }, el("span", { text: "자동 초안" }), kkSwitch(!!r.autoDraft, `${r.name} 자동 초안`, "auto", v => kkSetRoom(r, { autoDraft: v }), true)) : null),
   kkSwitch(!!r.watched, `${r.name} 지켜보기`, "watch", v => kkSetRoom(r, { watched: v })));
 function kkPickRows() {
@@ -277,7 +280,7 @@ function kkPickRows() {
   return list.length ? list.map(kkPickRow) : [el("div", { class: "kk-note", id: "kk-nomatch", role: "status", text: "찾는 대화방이 없어요" })];
 }
 function kkRow(r) {
-  const on = KK.open === r.chatId, hint = kkKindLine(r);
+  const on = KK.open === r.chatId, hint = kkSubLine(r);
   return el("button", { class: `cv-row pv kk-row${r.unread ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-chat": r.chatId, "aria-current": on ? "true" : null, onclick: () => kkOpen(r.chatId) },
     kkAvatar(r.name),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), hint ? el("span", { class: "cv-p", text: hint }) : null),
@@ -323,7 +326,7 @@ function kkPaintChat() {
   if (sig !== KK.headSig) {
     KK.headSig = sig;
     clear(kkHead);
-    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: info.group ? "단체 대화방" : "1:1 대화" })), ...(owed ? [unrepPill(), unrepNo(`/api/kakao/chat/${enc(KK.open)}/no-reply`, kkLoadRooms)] : []), ...(KK.pc ? [] : asEntry("kakao")));
+    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: kkKindLine(info) || (info.group ? "단체 대화방" : "1:1 대화") })), ...(owed ? [unrepPill(), unrepNo(`/api/kakao/chat/${enc(KK.open)}/no-reply`, kkLoadRooms)] : []), ...(KK.pc ? [] : asEntry("kakao")));
     monSchedule();   // the item's head gives the gear to the room head while a room is open
   }
   if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: "대화방을 골라 주세요" })); return; }

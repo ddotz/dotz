@@ -300,6 +300,9 @@ export function roomKind(type: number): Room["kind"] {
 	return "other";
 }
 
+// An open chat room is told by its link, whatever its type: NTChatRoom.linkId is the NTOpenLink row it belongs to (0 for every other room).
+const kindOf = (type: number, linkId: number): Room["kind"] => (linkId > 0 ? "open" : roomKind(type));
+
 // Text messages are type 1 (kakaocli Models/Message.swift).
 export const TEXT_TYPE = 1;
 
@@ -323,55 +326,111 @@ export const sentAtMs = (sentAt: number) => (sentAt > 1e11 ? sentAt : sentAt * 1
 const str = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 const num = (v: unknown) => Number(v ?? 0);
 
+// The name of a person in a room: his friend name, else his own; in an open chat room only his open profile (NTUser row of that link) is there.
+const personName = (author: string, link: string) =>
+	`(SELECT COALESCE(NULLIF(pu.friendNickName, ''), NULLIF(pu.displayName, ''), NULLIF(pu.nickName, '')) FROM NTUser pu WHERE pu.userId = ${author} AND (pu.linkId = 0 OR pu.linkId = ${link}) ORDER BY pu.linkId = 0 DESC LIMIT 1)`;
+
+// Whether this database has open chat links (NTChatRoom.linkId, NTOpenLink); an older schema has neither and has no open rooms.
+async function hasLinks(db: KakaoDb): Promise<boolean> {
+	try {
+		await db.query("SELECT linkId FROM NTChatRoom LIMIT 0");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function openLinkNames(db: KakaoDb): Promise<Map<string, string>> {
+	try {
+		return new Map((await db.query("SELECT CAST(linkId AS TEXT) AS linkId, linkName FROM NTOpenLink")).filter(r => str(r.linkName).trim()).map(r => [str(r.linkId), str(r.linkName).trim()]));
+	} catch {
+		return new Map();
+	}
+}
+
 export async function rooms(db: KakaoDb): Promise<Room[]> {
+	const links = await hasLinks(db);
 	const rows = await db.query(
 		`SELECT CAST(r.chatId AS TEXT) AS chatId, r.type AS type, r.chatName AS chatName, r.countOfNewMessage AS unread, r.lastUpdatedAt AS lastAt, r.activeMembersCount AS members,
+			${links ? "CAST(r.linkId AS TEXT)" : "'0'"} AS linkId,
 			COALESCE(NULLIF(u.friendNickName, ''), NULLIF(u.displayName, ''), NULLIF(u.nickName, '')) AS peer,
 			(SELECT COALESCE(NULLIF(mt.groupNickname, ''), NULLIF(mt.content, '')) FROM NTChatMeta mt WHERE mt.chatId = r.chatId AND mt.type = 3 LIMIT 1) AS title
 		FROM NTChatRoom r LEFT JOIN NTUser u ON r.directChatMemberUserId = u.userId AND u.linkId = 0
 		ORDER BY r.lastUpdatedAt DESC`,
 	);
-	// The room title the owner (or a member) set is chat meta type 3; KakaoTalk shows it before chatName and the 1:1 peer's name.
+	const linkNames = links ? await openLinkNames(db) : new Map<string, string>();
+	// The room title the owner (or a member) set is chat meta type 3; KakaoTalk shows it before chatName and the 1:1 peer's name. An open
+	// chat room is listed under its link's name.
 	return rows.map((r) => ({
 		chatId: str(r.chatId),
-		name: str(r.title).trim() || str(r.chatName) || str(r.peer) || "(unknown)",
+		name: str(r.title).trim() || str(r.chatName) || linkNames.get(str(r.linkId)) || str(r.peer) || "(unknown)",
 		type: num(r.type),
-		kind: roomKind(num(r.type)),
+		kind: kindOf(num(r.type), num(r.linkId)),
 		unread: num(r.unread),
 		lastAt: num(r.lastAt),
 		...(r.members === null || r.members === undefined ? {} : { members: num(r.members) }),
 	}));
 }
 
-// A display label for a group room without a name, like KakaoTalk's: the newest other authors of its last 200 messages.
-// Display only: a send never uses it (kmsg finds rooms by their real name).
-export async function memberLabel(db: KakaoDb, chatId: string, userId: string | number): Promise<string | undefined> {
-	const rows = await db.query(
-		`SELECT COALESCE(NULLIF(u.friendNickName, ''), NULLIF(u.displayName, ''), NULLIF(u.nickName, '')) AS name
-		FROM (SELECT authorId, MAX(logId) AS last FROM (SELECT authorId, logId FROM NTChatMessage WHERE chatId = ? ORDER BY logId DESC LIMIT 200)
-			WHERE authorId != ? GROUP BY authorId) a
-		LEFT JOIN NTUser u ON a.authorId = u.userId AND u.linkId = 0 ORDER BY a.last DESC LIMIT 4`,
-		[chatId, String(userId)],
-	);
-	const names = rows.map(r => str(r.name)).filter(Boolean);
-	return names.length ? names.slice(0, 3).join(", ") + (names.length > 3 ? " 외" : "") : undefined;
+// A display label for a room without a name, like KakaoTalk's: the newest other authors (up to 3), then "외 N명" for the rest of its members.
+// Display only: a send never uses it (the screen finds rooms by their real name).
+export const membersText = (names: string[], members?: number): string => {
+	const shown = names.slice(0, 3);
+	const rest = Math.max((members ?? 0) - 1, names.length) - shown.length;
+	return `${shown.join(", ")}${rest > 0 ? ` 외 ${rest}명` : ""}`;
+};
+
+export async function memberLabel(db: KakaoDb, chatId: string, userId: string | number, members?: number): Promise<string | undefined> {
+	return (await memberLabels(db, [{ chatId, ...(members !== undefined ? { members } : {}) }], userId)).get(chatId);
 }
 
-// Chat id -> room type, without names (the watch needs kinds only).
-export async function roomTypes(db: KakaoDb): Promise<Map<string, number>> {
-	const rows = await db.query("SELECT CAST(chatId AS TEXT) AS chatId, type FROM NTChatRoom");
-	return new Map(rows.map((r) => [str(r.chatId), num(r.type)]));
+// The same for many rooms in one query: the other authors of each room's last messages, newest first.
+export async function memberLabels(db: KakaoDb, list: { chatId: string; members?: number }[], userId: string | number): Promise<Map<string, string>> {
+	const out = new Map<string, string>();
+	if (!list.length) return out;
+	const link = (await hasLinks(db)) ? "(SELECT r.linkId FROM NTChatRoom r WHERE r.chatId = a.chatId)" : "0";
+	const rows = await db.query(
+		`SELECT CAST(a.chatId AS TEXT) AS chatId, ${personName("a.authorId", link)} AS name
+		FROM (SELECT chatId, authorId, MAX(logId) AS last FROM NTChatMessage WHERE chatId IN (${list.map(() => "?").join(",")}) AND authorId != ? GROUP BY chatId, authorId) a
+		ORDER BY a.chatId, a.last DESC`,
+		[...list.map(r => r.chatId), String(userId)],
+	);
+	const names = new Map<string, string[]>();
+	for (const r of rows) if (str(r.name)) names.set(str(r.chatId), [...(names.get(str(r.chatId)) ?? []), str(r.name)]);
+	for (const r of list) {
+		const n = names.get(r.chatId);
+		if (n?.length) out.set(r.chatId, membersText(n, r.members));
+	}
+	return out;
+}
+
+// The newest message of each room as a short line (what the list shows under a room's name).
+export async function lastLines(db: KakaoDb, chatIds: string[]): Promise<Map<string, string>> {
+	if (!chatIds.length) return new Map();
+	const rows = await db.query(
+		`SELECT CAST(m.chatId AS TEXT) AS chatId, m.message AS text, m.type AS type FROM NTChatMessage m
+		WHERE m.logId IN (SELECT MAX(logId) FROM NTChatMessage WHERE chatId IN (${chatIds.map(() => "?").join(",")}) GROUP BY chatId)`,
+		chatIds,
+	);
+	return new Map(rows.map(r => [str(r.chatId), readText({ type: num(r.type), text: str(r.text) }).replace(/\s+/g, " ").trim()]));
+}
+
+// Chat id -> room kind, without names (the watch needs kinds only).
+export async function roomKinds(db: KakaoDb): Promise<Map<string, Room["kind"]>> {
+	const rows = await db.query(`SELECT CAST(chatId AS TEXT) AS chatId, type, ${(await hasLinks(db)) ? "linkId" : "0"} AS linkId FROM NTChatRoom`);
+	return new Map(rows.map((r) => [str(r.chatId), kindOf(num(r.type), num(r.linkId))]));
 }
 
 // Oldest first. Without `opts`: the newest `limit`. `before`: the newest `limit` older than that logId. `after`: the oldest `limit` newer than it.
 export async function messages(db: KakaoDb, chatId: string, limit: number, userId: string | number, opts: { before?: string; after?: string } = {}): Promise<Msg[]> {
 	const after = opts.after !== undefined;
 	const bound = opts.after ?? opts.before;
+	const link = (await hasLinks(db)) ? "(SELECT r.linkId FROM NTChatRoom r WHERE r.chatId = m.chatId)" : "0";
 	const rows = await db.query(
 		`SELECT CAST(m.logId AS TEXT) AS logId, CAST(m.chatId AS TEXT) AS chatId, CAST(m.authorId AS TEXT) AS authorId,
-			COALESCE(NULLIF(u.friendNickName, ''), NULLIF(u.displayName, ''), NULLIF(u.nickName, '')) AS sender,
+			${personName("m.authorId", link)} AS sender,
 			m.message AS text, m.type AS type, m.sentAt AS sentAt, m.attachment AS attachment, m.localFilePath AS localFilePath
-		FROM NTChatMessage m LEFT JOIN NTUser u ON m.authorId = u.userId AND u.linkId = 0
+		FROM NTChatMessage m
 		WHERE m.chatId = ?${bound === undefined ? "" : ` AND m.logId ${after ? ">" : "<"} ?`} ORDER BY m.logId ${after ? "ASC" : "DESC"} LIMIT ?`,
 		[chatId, ...(bound === undefined ? [] : [bound]), Math.max(1, Math.trunc(limit))],
 	);
@@ -545,6 +604,8 @@ export async function watermarkSignatures(db: KakaoDb, chatIds: string[]): Promi
 
 // A room counts only when the owner chose it (watch_chats). KakaoTalk has no per-room mute column in the reader sources,
 // so "muted" is the owner's exclude_chats list.
-export function isDraftCandidate(room: Pick<Room, "chatId" | "kind">, config: Pick<KakaoConfig, "exclude_chats" | "watch_chats">): boolean {
-	return (room.kind === "direct" || room.kind === "group") && (config.watch_chats ?? []).includes(room.chatId) && !(config.exclude_chats ?? []).includes(room.chatId);
+// An open chat room counts like the others unless the owner turned 오픈채팅방 보기 off (open_chats false).
+export const roomShown = (kind: Room["kind"], config: Pick<KakaoConfig, "open_chats">): boolean => kind === "direct" || kind === "group" || (kind === "open" && config.open_chats !== false);
+export function isDraftCandidate(room: Pick<Room, "chatId" | "kind">, config: Pick<KakaoConfig, "exclude_chats" | "watch_chats" | "open_chats">): boolean {
+	return roomShown(room.kind, config) && (config.watch_chats ?? []).includes(room.chatId) && !(config.exclude_chats ?? []).includes(room.chatId);
 }

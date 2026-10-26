@@ -67,6 +67,7 @@ export type KakaoConfig = {
 	watch_chats?: string[]; // chat ids the owner chose to watch (모니터링 > 앱 > 카카오톡). Absent or empty = no room is watched
 	auto_draft_chats?: string[]; // subset of watch_chats whose new messages wake the bot (자동 초안). Absent or empty = the bot is never woken; drafts come from the web button
 	exclude_chats?: string[]; // chat ids the owner never wants drafts for
+	open_chats?: boolean; // 오픈채팅방 보기: open chat rooms are listed, watched and drafted like the others. Absent = on; false = they are left out everywhere
 	settle_seconds?: number; // a room whose newest message is younger than this waits one more run (batching)
 	max_per_run?: number; // cap on rooms reported in one watch run
 };

@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { featureEnabled } from "../app-feature-flags.ts";
-import { isDraftCandidate, isEmoticon, maxLogId, newSince, ownUserId, roomKind, roomTypes, sentAtMs, sqlcipherDb, TEXT_TYPE, type KakaoDb } from "./db.ts";
+import { isDraftCandidate, isEmoticon, maxLogId, newSince, ownUserId, roomKinds, sentAtMs, sqlcipherDb, TEXT_TYPE, type KakaoDb } from "./db.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
 
 export type WatchDeps = {
@@ -93,10 +93,10 @@ export async function runWatch(deps: WatchDeps): Promise<WatchResult> {
 		rows = rows.filter((r) => r.authorId !== me);
 	}
 	if (rows.length > 0) {
-		const types = await roomTypes(db);
+		const kinds = await roomKinds(db);
 		rows = rows.filter((r) => {
-			const type = types.get(r.chatId);
-			return type !== undefined && isDraftCandidate({ chatId: r.chatId, kind: roomKind(type) }, config);
+			const kind = kinds.get(r.chatId);
+			return kind !== undefined && isDraftCandidate({ chatId: r.chatId, kind }, config);
 		});
 	}
 
