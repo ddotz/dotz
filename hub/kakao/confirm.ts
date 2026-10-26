@@ -11,7 +11,8 @@ export type ConfirmMsg = { text: string; fromMe: boolean; sentAt: number };
 // Reads the newest messages of one room. Injected: the gateway reuses its open database, a test its fixture.
 export type ConfirmRead = (chatId: string) => Promise<ConfirmMsg[]>;
 // true: the message is in the database; false: it is not (within the deadline); undefined: there is no database to ask.
-export type Confirmer = (input: { chatId: string; text: string; since: number }) => Promise<boolean | undefined>;
+// `once`: one read, no waiting (a past press is asked about, nothing new can still arrive).
+export type Confirmer = (input: { chatId: string; text: string; since: number; once?: boolean }) => Promise<boolean | undefined>;
 
 export const CONFIRM_MS = 10_000;
 const CONFIRM_EVERY_MS = 500;
@@ -65,7 +66,7 @@ export function dbConfirmer(paths: KakaoPaths, runner: Runner, opts: PollOpts = 
 		const info = await dbInfo(paths, runner);
 		if (!info) return undefined;
 		const read: ConfirmRead = chatId => dbMessages(info.db, chatId, 20, info.me).then(list => list.map(m => ({ text: m.text, fromMe: m.fromMe, sentAt: m.sentAt })));
-		return pollConfirm(read, input, opts);
+		return pollConfirm(read, input, input.once ? { ...opts, timeoutMs: 0 } : opts);
 	};
 }
 

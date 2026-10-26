@@ -1,11 +1,12 @@
 // The one-shot model calls of dotz (reply drafts, translations, summaries) and the provider readiness check in front of them.
 //
-// Every call used to spawn its own `omo -p --mode json ...` and pay the CLI's start and session setup each time (measured on
-// the owner's MacBook 2026-10-26: a trivial prompt on anthropic/claude-sonnet-5-5 took 6.5 s end to end, almost all of it
-// startup). This module keeps that cost once: a warm `omo --mode rpc` process per model + system prompt (a process's system
-// prompt is a launch argument), started lazily, answering one `prompt` frame per call and resetting its session afterwards
-// so two calls never see each other's context. The pool is capped, idle-killed, restarted after a crash, and a caller falls
-// back to the one-shot spawn path when a warm process cannot be started.
+// Every call used to spawn its own `omo -p --mode json ...` and pay the CLI's start and session setup each time (measured
+// 2026-10-26: a trivial prompt on anthropic/claude-sonnet-5-5 took 6.5 s end to end, almost all of it startup). This module
+// keeps that cost once: a warm `omo --mode rpc` process per model + system prompt + pinned account (a process's system
+// prompt and account are fixed at launch), started lazily, answering one `prompt` frame per call and resetting its session
+// afterwards so two calls never see each other's context. A process answers one call at a time: a second call of the same
+// shape at the same moment gets its own process while the pool has room. The pool is capped, idle-killed, restarted after a
+// crash, and a caller falls back to the one-shot spawn path when no warm process can be started or all are busy.
 //
 // A draft also used to sit up to 120 s on a Claude subscription whose 5-hour window was already spent (the provider is not
 // ready, so the request waits and then fails). Before starting anything the selected subscription account is checked
@@ -29,7 +30,7 @@ export const runnerDeps = {
 	now: () => Date.now(),
 	// A draft process that has been quiet this long is stopped; the next call starts a fresh one.
 	idleMs: 10 * 60_000,
-	// keyed by model + system prompt: mail and the three kakao prompt shapes stay warm side by side.
+	// keyed by model + system prompt + account: mail and the three kakao prompt shapes stay warm side by side.
 	maxRunners: 3,
 };
 
@@ -151,7 +152,11 @@ class WarmRunner {
 	private buf = "";
 	private seq = 0;
 	private pending?: { frame: (f: Frame) => boolean; fail: (e: Error) => void };
-	busy = false;
+	// Calls handed to this process and not settled yet (counted when handed out, so two callers never pick the same idle process).
+	private inUse = 0;
+	get busy(): boolean {
+		return this.inUse > 0;
+	}
 	private timer?: ReturnType<typeof setTimeout>;
 	private stopped = false;
 	// Any prompt written to a dead process must not be trusted, so liveness is the process' own exit code, not a flag the
@@ -163,7 +168,7 @@ class WarmRunner {
 	private readonly proc: any;
 	private readonly exited: Promise<number>;
 
-	constructor(readonly key: string, readonly model: string, readonly system: string, private readonly thinking: string, private readonly account?: string) {
+	constructor(readonly key: string, readonly shape: string, readonly model: string, readonly system: string, private readonly thinking: string, readonly account?: string) {
 		this.proc = runnerDeps.spawn(warmArgv(system, model, thinking), {
 			cwd: DATA_DIR,
 			env: withoutApiKeys({ ...process.env, PI_CACHE_RETENTION: "long", ...(account ? { [PIN_ENV]: account } : {}) }),
@@ -171,7 +176,7 @@ class WarmRunner {
 		recordStarted(this.proc.pid);
 		this.exited = this.proc.exited;
 		void this.exited.then(code => {
-			if (pool.get(this.key) === this) pool.delete(this.key);
+			pool.delete(this);
 			this.pending?.fail(new Error(`warm model process exited ${code}`));
 		});
 		this.read();
@@ -234,7 +239,7 @@ class WarmRunner {
 
 	stop(): void {
 		this.stopped = true;
-		if (pool.get(this.key) === this) pool.delete(this.key);
+		pool.delete(this);
 		if (this.timer !== undefined) clearTimeout(this.timer);
 		this.pending?.fail(new Error("warm model process stopped"));
 		this.pending = undefined;
@@ -248,18 +253,19 @@ class WarmRunner {
 	call(text: string, timeoutMs: number): Promise<Reply> {
 		this.lastUsed = runnerDeps.now();
 		this.armIdle();
+		this.inUse++;
 		const job = this.queue.then(() => this.turn(text, timeoutMs));
-		this.queue = job.then(
-			() => undefined,
-			() => undefined,
-		);
+		const done = () => {
+			this.inUse--;
+			this.lastUsed = runnerDeps.now();
+		};
+		this.queue = job.then(done, done);
 		return job;
 	}
 	private queue: Promise<unknown> = Promise.resolve();
 
 	private turn(text: string, timeoutMs: number): Promise<Reply> {
 		if (!this.alive) return Promise.reject(new Error("warm model process is not running"));
-		this.busy = true;
 		const started = runnerDeps.now();
 		// The clock of the caller (Date.now in the hub, the fake clock in tests) keeps one bound for both.
 		return new Promise<Reply>((resolve, reject) => {
@@ -271,7 +277,6 @@ class WarmRunner {
 			let firstTokenMs: number | undefined;
 			const settle = (fn: () => void) => {
 				clearTimeout(timer);
-				this.busy = false;
 				this.write({ type: "new_session" });
 				fn();
 				return true;
@@ -279,7 +284,6 @@ class WarmRunner {
 			this.pending = {
 				fail: e => {
 					clearTimeout(timer);
-					this.busy = false;
 					reject(e);
 				},
 				frame: f => {
@@ -298,57 +302,69 @@ class WarmRunner {
 	}
 }
 
-const pool = new Map<string, WarmRunner>();
+const pool = new Set<WarmRunner>();
 
 process.on("exit", () => {
-	for (const r of pool.values()) r.killNow();
+	for (const r of pool) r.killNow();
 });
 
 export function resetRunnersForTest(): void {
-	for (const r of pool.values()) r.stop();
+	for (const r of [...pool]) r.stop();
 	pool.clear();
 }
 
 export function runnerCountForTest(): number {
-	return [...pool.values()].filter(r => r.alive).length;
+	return [...pool].filter(r => r.alive).length;
 }
 
 export function lastRunnerForTest(): { whenExited: () => Promise<number> } | undefined {
-	return [...pool.values()].at(-1);
+	return [...pool].at(-1);
 }
 
-// The last idle runner is stopped first; a busy one is left alone (stopping it would fail its call).
-function evictOne(except: string): void {
-	const idle = [...pool.values()].filter(r => r.key !== except && !r.busy).sort((a, b) => a.lastUsed - b.lastUsed);
-	(idle[0] ?? pool.get([...pool.keys()].find(k => k !== except) ?? "") ?? undefined)?.stop();
+// The errors of a spent or refused subscription: the process stays pinned to that account, so it is stopped (the next call
+// starts on the account the readiness check moves to).
+const SPENT = /limit|quota|429|\brate|blocked|not_ready|구독/i;
+
+// The least recently used idle runner is stopped to make room; a busy one is never stopped (that would fail its call).
+// Returns false when every runner is busy.
+function evictOne(): boolean {
+	const idle = [...pool].filter(r => !r.busy).sort((a, b) => a.lastUsed - b.lastUsed);
+	idle[0]?.stop();
+	return idle.length > 0;
 }
 
 // One call on a warm process, started on first use and reused afterwards. Throws when no warm process can answer; the
 // caller then takes the one-shot spawn path.
 export async function callWarm(system: string, text: string, opts: { model: string; thinking?: string; timeoutMs: number; account?: string }): Promise<Reply> {
 	const thinking = opts.thinking ?? "off";
-	const key = `${opts.model}\u0000${thinking}\u0000${system}`;
-	let warm = pool.get(key);
-	if (warm && !warm.alive) {
-		pool.delete(key);
-		warm = undefined;
-	}
+	const shape = `${opts.model}\u0000${thinking}\u0000${system}`;
+	const key = `${shape}\u0000${opts.account ?? ""}`;
+	for (const r of [...pool]) if (!r.alive) pool.delete(r);
+	let warm = [...pool].find(r => r.key === key && !r.busy);
 	const reused = warm !== undefined;
-	if (!warm) warm = start(key, opts, system, thinking);
+	if (!warm) warm = start(key, shape, opts, system, thinking);
 	try {
 		return await warm.call(text, opts.timeoutMs);
 	} catch (e) {
+		const why = (e as Error).message;
+		if (SPENT.test(why)) {
+			warm.stop();
+			throw e;
+		}
 		// A warm process that died between the pool check and the prompt is replaced once; the prompt is idempotent. A
 		// runner that never started is left to the caller (the one-shot path), which is the faster way out.
-		if (!reused || !/not running|exited/.test((e as Error).message)) throw e;
-		if (pool.get(key) === warm) pool.delete(key);
-		return start(key, opts, system, thinking).call(text, opts.timeoutMs);
+		if (!reused || !/not running|exited/.test(why)) throw e;
+		pool.delete(warm);
+		return start(key, shape, opts, system, thinking).call(text, opts.timeoutMs);
 	}
 }
 
-function start(key: string, opts: { model: string; account?: string }, system: string, thinking: string): WarmRunner {
-	if (pool.size >= runnerDeps.maxRunners) evictOne(key);
-	const warm = new WarmRunner(key, opts.model, system, thinking, opts.account);
-	pool.set(key, warm);
+function start(key: string, shape: string, opts: { model: string; account?: string }, system: string, thinking: string): WarmRunner {
+	// A process of the same shape pinned to another account is left from before the readiness check moved accounts: stopped
+	// once idle, it would only hold a slot.
+	for (const r of [...pool]) if (r.shape === shape && r.key !== key && !r.busy) r.stop();
+	if (pool.size >= runnerDeps.maxRunners && !evictOne()) throw new Error("warm model processes are all busy");
+	const warm = new WarmRunner(key, shape, opts.model, system, thinking, opts.account);
+	pool.add(warm);
 	return warm;
 }
