@@ -28,6 +28,7 @@ Claim and thread hooks can run before `start`; keep what they need at module lev
 A plugin that fails to load, whose `start` throws (it is dropped for the run), or whose hook throws is logged (`plugin <name>: ...`) and skipped; the hub keeps running. With no plugin installed the hooks return at once, and nothing is added to prompts.
 
 A plugin may also serve as a watch check: `ensureWatch({ command: "bun '<plugin file>' check" })` with `if (import.meta.main)` in the file.
+A check that sends its own alerts and exits 0 while its source is logged out should print `DOTZ_DISCONNECTED since=<ISO time>`: the app's 모니터링 row then shows 연결 끊김 with that time (hub/watch-status.ts). Without it the row reads as connected.
 
 ## Posting a mail
 
