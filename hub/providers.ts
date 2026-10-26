@@ -3,10 +3,12 @@
 // the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import { OMP, writeAtomic } from "./config.ts";
+import { log, OMP, writeAtomic } from "./config.ts";
 import { label } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
+import { OmoRpc, omoLoginProviders, type RpcFrame } from "./runtime/omo-login.ts";
+import { writeOmoPin } from "./omo-pin.ts";
 import { hardPinned, stickyAccount } from "./account-sticky.ts";
 import { labeledAccountView } from "./accounts-api.ts";
 import { apiBudget } from "./api-budget.ts";
@@ -173,7 +175,7 @@ export function omoAuthInfos(auth: Record<string, unknown> | undefined): AuthInf
 		const accounts = Array.isArray(c.accounts) ? (c.accounts as { name?: unknown }[]) : [];
 		const name = typeof c.pinned === "string" ? c.pinned : accounts.find(a => typeof a?.name === "string")?.name;
 		const key = ["key", "apiKey", "api_key"].map(k => c[k]).find((x): x is string => typeof x === "string" && x.length > 0);
-		return [{ provider: dotzProvider(id), type: String(c.type ?? (key ? "api_key" : "oauth")), label: typeof name === "string" ? name : undefined, masked: key ? mask(key) : undefined }];
+		return [{ provider: dotzProvider(id), type: String(c.type ?? (key ? "api_key" : "oauth")), label: typeof name === "string" ? name : undefined, masked: key ? mask(key) : undefined, ...(accounts.length > 1 ? { accounts: accounts.length } : {}) }];
 	});
 }
 
@@ -205,7 +207,7 @@ export const availableModels = async (): Promise<ModelInfo[]> =>
 	})) ?? [];
 
 // What omp itself has stored (`omp auth export`): only provider ids, credential types and masked key tails are kept.
-type AuthInfo = { provider: string; type: string; label?: string; masked?: string };
+type AuthInfo = { provider: string; type: string; label?: string; masked?: string; accounts?: number };
 const authInfos = async (): Promise<AuthInfo[]> =>
 	(await cached("auth", async () => {
 		const own = usesOmo() ? omoAuthInfos(omoAuth()) : [];
@@ -252,37 +254,40 @@ export async function usageSnapshot(): Promise<Record<string, { five_hour_left?:
 	return out;
 }
 
-// Every provider the runtime can log into (`auth-broker list`) with its human label; fixed for the runtime's lifetime.
+// Which runtime a web login goes to: OmO when the assistant runs on OmO (its auth.json is what OmO reads), else omp.
+const loginVia = (): "omo" | "omp" => (runtimeIdOf("orchestrator") === "omo" ? "omo" : "omp");
+
+// Every provider that runtime can log into with its human label: OmO's OAuth providers (`get_auth_providers`, under dotz's names),
+// or omp's `auth-broker list`; fixed for the runtime's lifetime. Before, an OmO-only install asked omp, which is not installed
+// there, so 추가 offered no login at all.
 type LoginProvider = { id: string; name: string };
-let loginCatalog: LoginProvider[] | undefined;
+let loginCatalog: { via: "omo" | "omp"; list: LoginProvider[] } | undefined;
 export async function loginProviders(): Promise<LoginProvider[]> {
-	if (loginCatalog) return loginCatalog;
-	const j = await ompJson<LoginProvider[]>(["auth-broker", "list", "--json"]);
+	const via = loginVia();
+	if (loginCatalog?.via === via) return loginCatalog.list;
+	const j = via === "omo" ? (await omoLoginProviders())?.map(p => ({ ...p, id: dotzProvider(p.id) })) : await ompJson<LoginProvider[]>(["auth-broker", "list", "--json"]);
 	if (!Array.isArray(j)) return [];
-	loginCatalog = j.filter(p => typeof p?.id === "string").map(p => ({ id: p.id, name: String(p.name ?? p.id) }));
-	return loginCatalog;
+	loginCatalog = { via, list: j.filter(p => typeof p?.id === "string").map(p => ({ id: p.id, name: String(p.name ?? p.id) })) };
+	return loginCatalog.list;
 }
 
-type ProviderRow = { id: string; name: string; auth: "oauth" | "api_key" | "none"; account?: string; masked?: string; models: number; in_use: boolean; can_login: boolean; can_logout: boolean; login_hint?: string };
+type ProviderRow = { id: string; name: string; auth: "oauth" | "api_key" | "none"; account?: string; accounts?: number; masked?: string; models: number; in_use: boolean; can_login: boolean; can_add_account?: boolean; can_logout: boolean };
 type AddableProvider = { id: string; name: string; kind: "oauth" | "api_key" };
 
 // Providers that have an API-key env var but whose primary sign-in is the subscription (OAuth) login.
 const OAUTH_FIRST = new Set(["anthropic"]);
 
 // Pure: merges the runtime's stored credentials, env vars, the login catalog and the model catalog into the configured
-// rows and the not-yet-configured (addable) providers.
-// webLogin false (an OmO-only install: a web login would go to omp's store, which OmO never reads): no 로그인 button, the row says how to
-// log in on this computer instead, and a login-only provider is not offered under 추가.
-export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string>; webLogin?: boolean }): { providers: ProviderRow[]; addable: AddableProvider[] } {
+// rows and the not-yet-configured (addable) providers. A signed-in Claude subscription offers 계정 추가: a login there adds an account.
+export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string> }): { providers: ProviderRow[]; addable: AddableProvider[] } {
 	const names = new Map(input.catalog.map(p => [p.id, p.name]));
 	const nameOf = (id: string) => names.get(id) ?? id;
 	const ids = new Set<string>([...input.auth.map(a => a.provider), ...input.models.map(m => m.provider)]);
 	for (const [id, v] of Object.entries(PROVIDER_ENV)) if (input.env[v]) ids.add(id);
 	const providers = [...ids].sort().map((id): ProviderRow => {
-		const web = input.webLogin !== false;
-		const base = { id, name: nameOf(id), models: input.models.filter(m => m.provider === id).length, in_use: input.inUse.has(id), can_login: web && names.has(id), ...(!web && names.has(id) ? { login_hint: `/login ${id}` } : {}) };
+		const base = { id, name: nameOf(id), models: input.models.filter(m => m.provider === id).length, in_use: input.inUse.has(id), can_login: names.has(id) };
 		const oauth = input.auth.find(a => a.provider === id && a.type === "oauth");
-		if (oauth) return { ...base, auth: "oauth", account: oauth.label, can_logout: true };
+		if (oauth) return { ...base, auth: "oauth", account: oauth.label, ...(oauth.accounts ? { accounts: oauth.accounts } : {}), ...(id === "anthropic" && base.can_login ? { can_add_account: true } : {}), can_logout: true };
 		const key = input.auth.find(a => a.provider === id);
 		if (key) return { ...base, auth: "api_key", masked: key.masked, can_logout: true };
 		const v = PROVIDER_ENV[id];
@@ -292,14 +297,14 @@ export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, st
 	const addable: AddableProvider[] = [];
 	for (const p of input.catalog) {
 		const kind = PROVIDER_ENV[p.id] && !OAUTH_FIRST.has(p.id) ? "api_key" : "oauth";
-		if (!ids.has(p.id) && (kind === "api_key" || input.webLogin !== false)) addable.push({ id: p.id, name: p.name, kind });
+		if (!ids.has(p.id)) addable.push({ id: p.id, name: p.name, kind });
 	}
 	for (const id of Object.keys(PROVIDER_ENV)) if (!ids.has(id) && !names.has(id)) addable.push({ id, name: id, kind: "api_key" });
 	return { providers, addable: addable.sort((a, b) => a.name.localeCompare(b.name)) };
 }
 
 export async function listProviders(inUse: Set<string>): Promise<{ providers: ProviderRow[]; addable: AddableProvider[] }> {
-	return buildProviders({ auth: await authInfos(), env: process.env, models: await availableModels(), catalog: await loginProviders(), inUse, webLogin: usesOmp() });
+	return buildProviders({ auth: await authInfos(), env: process.env, models: await availableModels(), catalog: await loginProviders(), inUse });
 }
 
 // ---- Sign-in (OAuth and subscription logins) ------------------------------------------------------------------------
@@ -314,6 +319,7 @@ const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
 const PROVIDER_ID = /^[a-z0-9][a-z0-9._-]*$/;
 
 type Login = {
+	via: "omp";
 	id: string;
 	provider: string;
 	proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
@@ -325,9 +331,26 @@ type Login = {
 	cancelled: boolean;
 	timer: ReturnType<typeof setTimeout>;
 };
-let login: Login | undefined;
+// The same sign-in through OmO's RPC (hub/runtime/omo-login.ts): the URL and prompts arrive as frames instead of terminal output.
+type OmoLogin = {
+	via: "omo";
+	id: string;
+	provider: string;
+	rpcId: string;
+	rpc: OmoRpc;
+	url: string;
+	ask?: { id: string; title?: string; options?: string[] };
+	exited: boolean;
+	status: "waiting" | "done" | "failed";
+	error?: string;
+	cancelled: boolean;
+	timer: ReturnType<typeof setTimeout>;
+	before?: { pinned?: string; accounts: string[] };
+	waiters: Set<() => void>;
+};
+let login: Login | OmoLogin | undefined;
 
-type LoginView = { url: string; needs_code: boolean; prompt?: string; instructions?: string };
+type LoginView = { url: string; needs_code: boolean; prompt?: string; instructions?: string; options?: string[] };
 
 // Pure: what the owner has to do next, read off the login process output (an unterminated last line is a pending prompt).
 function parseLoginOutput(out: string): LoginView {
@@ -388,7 +411,7 @@ function settle(l: Login, after: number, maxMs: number, needUrl: boolean): Promi
 	return promise;
 }
 
-function loginOf(provider: string, loginId: string): Login {
+function loginOf(provider: string, loginId: string): Login | OmoLogin {
 	if (!login || login.provider !== provider || login.id !== loginId) throw new ControlError("진행 중인 로그인이 없어요", 404);
 	return login;
 }
@@ -396,11 +419,10 @@ function loginOf(provider: string, loginId: string): Login {
 export async function startLogin(provider: string): Promise<{ login_id: string } & LoginView> {
 	if (!PROVIDER_ID.test(provider) || !(await loginProviders()).some(p => p.id === provider)) throw new ControlError(`"${provider}"은(는) 로그인할 수 없는 공급자예요`, 404);
 	if (login && !login.exited) throw new ControlError(`이미 진행 중인 로그인이 있어요 (${login.provider}). 먼저 취소해 주세요`, 409);
-	// `omp login` writes omp's store; an OmO-only install never reads it, so the login looked done and changed nothing. OmO logs in from its
-	// own prompt until dotz drives OmO's RPC login (login_start).
-	if (!usesOmp()) throw new ControlError(`이 컴퓨터는 OmO로 돌아요. 이 컴퓨터의 터미널에서 omo를 열고 /login ${provider === "anthropic" ? "anthropic" : provider}를 실행해 주세요`, 409);
+	// `omp login` writes omp's store, which OmO never reads: on OmO the login goes through OmO's own RPC.
+	if (loginVia() === "omo") return startOmoLogin(provider);
 	const proc = Bun.spawn([OMP, "login", provider], { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, BROWSER: "true" } });
-	const l: Login = { id: crypto.randomUUID(), provider, proc, out: "", lastOutAt: Date.now(), exited: false, status: "waiting", cancelled: false, timer: setTimeout(() => killLogin(l, "시간이 지나 로그인이 취소됐어요"), LOGIN_TTL_MS) };
+	const l: Login = { via: "omp", id: crypto.randomUUID(), provider, proc, out: "", lastOutAt: Date.now(), exited: false, status: "waiting", cancelled: false, timer: setTimeout(() => killLogin(l, "시간이 지나 로그인이 취소됐어요"), LOGIN_TTL_MS) };
 	l.timer.unref();
 	login = l;
 	void pump(l, proc.stdout);
@@ -426,6 +448,7 @@ export async function completeLogin(provider: string, loginId: string, rawCode: 
 	const l = loginOf(provider, loginId);
 	if (l.status === "done") return { provider, status: "done" };
 	if (l.exited) throw new ControlError(l.error ?? "로그인에 실패했어요", 400);
+	if (l.via === "omo") return completeOmoLogin(l, rawCode);
 	const code = rawCode.trim();
 	const wantsCode = parseLoginOutput(l.out).needs_code;
 	if (wantsCode) {
@@ -449,8 +472,127 @@ export async function completeLogin(provider: string, loginId: string, rawCode: 
 export async function cancelLogin(provider: string): Promise<void> {
 	if (!login || login.provider !== provider || login.exited) return;
 	const l = login;
+	if (l.via === "omo") {
+		l.cancelled = true;
+		l.rpc.send({ type: "login_cancel", provider: l.rpcId });
+		await settleOmo(l, () => l.exited, 2000);
+		if (!l.exited) finishOmo(l, false, "로그인이 취소됐어요");
+		return;
+	}
 	killLogin(l, "");
 	for (let i = 0; i < 40 && !l.exited; i++) await Bun.sleep(100);
+}
+
+// ---- OmO sign-in over RPC ---------------------------------------------------------------------------------------------
+// OmO adds each login to the provider's account pool and keeps the pin; dotz still notes the Claude pin before and puts it back if it
+// moved, so adding an account never changes which account requests run on.
+const OMO_START_MS = 45_000;
+const ANSWERED = new Set(["input", "select", "editor"]);
+
+function subscriptionState(rpcId: string): OmoLogin["before"] {
+	if (rpcId !== SUBSCRIPTION) return undefined;
+	const c = omoAuth()?.[SUBSCRIPTION] as { pinned?: unknown; accounts?: { name?: unknown }[] } | undefined;
+	if (!c || typeof c !== "object") return undefined;
+	return { ...(typeof c.pinned === "string" ? { pinned: c.pinned } : {}), accounts: (Array.isArray(c.accounts) ? c.accounts : []).flatMap(a => (typeof a?.name === "string" ? [a.name] : [])) };
+}
+
+function keepPin(l: OmoLogin): void {
+	const before = l.before;
+	if (!before) return;
+	const after = subscriptionState(l.rpcId);
+	if (after && after.pinned !== before.pinned) {
+		writeOmoPin(before.pinned);
+		log(`login: OmO moved the Claude pin to ${after.pinned ?? "(none)"}; put back ${before.pinned ?? "(none)"}`);
+	}
+	const lost = before.accounts.filter(n => !after?.accounts.includes(n));
+	if (lost.length) log(`login: Claude account(s) missing after the login: ${lost.join(", ")}`);
+}
+
+function finishOmo(l: OmoLogin, ok: boolean, error?: string): void {
+	if (l.exited) return;
+	l.exited = true;
+	l.ask = undefined;
+	clearTimeout(l.timer);
+	if (ok && !l.cancelled) {
+		l.status = "done";
+		keepPin(l);
+		invalidate();
+	} else {
+		l.status = "failed";
+		l.error = l.cancelled ? "로그인이 취소됐어요" : error ?? "로그인에 실패했어요. 코드를 확인하고 다시 시도해 주세요";
+	}
+	l.rpc.close();
+	for (const w of l.waiters) w();
+}
+
+function onOmoFrame(l: OmoLogin, f: RpcFrame): void {
+	if (f.type === "auth_login_url" && f.provider === l.rpcId && typeof f.url === "string") l.url = f.url;
+	else if (f.type === "extension_ui_request" && typeof f.id === "string" && ANSWERED.has(String(f.method))) {
+		const options = Array.isArray(f.options) ? f.options.filter((o): o is string => typeof o === "string") : undefined;
+		l.ask = { id: f.id, ...(typeof f.title === "string" ? { title: f.title } : {}), ...(options?.length ? { options } : {}) };
+	} else if (f.type === "response" && f.command === "login_start" && f.success === false) finishOmo(l, false, `로그인을 시작하지 못했어요 (${String(f.error ?? "알 수 없는 오류")})`);
+	else if (f.type === "auth_login_end" && f.provider === l.rpcId) finishOmo(l, f.success === true, `로그인에 실패했어요 (${String(f.error ?? "알 수 없는 오류")})`);
+	for (const w of l.waiters) w();
+}
+
+// Resolves as soon as a frame makes `done` true or the login ends, or after maxMs.
+function settleOmo(l: OmoLogin, done: () => boolean, maxMs: number): Promise<void> {
+	if (l.exited || done()) return Promise.resolve();
+	const { promise, resolve } = Promise.withResolvers<void>();
+	const check = () => {
+		if (l.exited || done()) finish();
+	};
+	const finish = () => {
+		clearTimeout(timer);
+		l.waiters.delete(check);
+		resolve();
+	};
+	const timer = setTimeout(finish, maxMs);
+	l.waiters.add(check);
+	return promise;
+}
+
+const omoView = (l: OmoLogin): LoginView => ({ url: l.url, needs_code: Boolean(l.ask), ...(l.ask?.title ? { prompt: l.ask.title } : {}), ...(l.ask?.options ? { options: l.ask.options } : {}) });
+
+async function startOmoLogin(provider: string): Promise<{ login_id: string } & LoginView> {
+	const rpcId = provider === "anthropic" ? SUBSCRIPTION : provider;
+	let rpc: OmoRpc;
+	try {
+		rpc = new OmoRpc();
+	} catch {
+		throw new ControlError("OmO를 실행하지 못했어요. OmO가 설치돼 있는지 확인해 주세요", 502);
+	}
+	const l: OmoLogin = { via: "omo", id: crypto.randomUUID(), provider, rpcId, rpc, url: "", exited: false, status: "waiting", cancelled: false, before: subscriptionState(rpcId), waiters: new Set(), timer: setTimeout(() => cancelLogin(provider), LOGIN_TTL_MS) };
+	l.timer.unref();
+	login = l;
+	rpc.on(f => onOmoFrame(l, f));
+	void rpc.exited.then(() => finishOmo(l, false, "로그인 과정이 중간에 끝났어요. 다시 시도해 주세요"));
+	rpc.send({ id: "dotz-login", type: "login_start", provider: rpcId });
+	await settleOmo(l, () => Boolean(l.url || l.ask), OMO_START_MS);
+	if (l.exited || (!l.url && !l.ask)) {
+		const why = l.error;
+		finishOmo(l, false);
+		throw new ControlError(why ?? "로그인을 시작하지 못했어요. 잠시 후 다시 시도해 주세요", 502);
+	}
+	// The prompt for the pasted code follows the URL at once; wait a moment so the first answer already says a code is wanted.
+	if (!l.ask) await settleOmo(l, () => Boolean(l.ask), 1500);
+	return { login_id: l.id, ...omoView(l) };
+}
+
+async function completeOmoLogin(l: OmoLogin, rawCode: string): Promise<{ provider: string; status: "done" | "waiting" } & Partial<LoginView>> {
+	const ask = l.ask;
+	if (ask) {
+		const code = rawCode.trim();
+		if (!code || code.length > 4096 || /[\r\n\0]/.test(code)) throw new ControlError("코드 형식이 올바르지 않아요", 400);
+		if (ask.options && !ask.options.includes(code)) throw new ControlError(`다음 중 하나를 골라 주세요: ${ask.options.join(", ")}`, 400);
+		l.ask = undefined;
+		l.rpc.send({ type: "extension_ui_response", id: ask.id, value: code });
+		await settleOmo(l, () => Boolean(l.ask), LOGIN_COMPLETE_MS);
+	} else await settleOmo(l, () => false, LOGIN_COMPLETE_MS);
+	if (l.status === "done") return { provider: l.provider, status: "done" };
+	if (l.exited) throw new ControlError(l.error ?? "로그인에 실패했어요", 400);
+	if (l.ask) return { provider: l.provider, status: "waiting", ...omoView(l) };
+	throw new ControlError("아직 로그인이 끝나지 않았어요. 잠시 후 다시 확인해 주세요", 408);
 }
 
 export const pendingLogin = (): { provider: string; id: string } | undefined => (login && !login.exited ? { provider: login.provider, id: login.id } : undefined);
