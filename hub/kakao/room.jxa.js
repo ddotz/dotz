@@ -5,10 +5,12 @@
 // count/member/참여/명); `self` is true only when the window shows the words 나와의 채팅. A missing field means "not shown", never "no".
 // openlist opens the chat list window when it is closed (see openList): needed when KakaoTalk has no window at all.
 // close presses the close button of every non-main window. Nothing is typed and no key is sent.
-// rows reads the static texts of the chat list rows, in order, until `max` rows, `budgetMs` or (first) the first row titled `name`: one
-// Accessibility read per row (~0.07 s, measured 2026-10-23; the whole 290-row list takes 20 s), nothing is clicked or opened. Prints
-// {ok:true, rows:[[title, count?, time, unread?]], stopped:"found"|"budget"|"end", ms:{table, read}}, or {ok:true, opened:true} when a
-// window of the name is open already, or {ok:false, step:"list", why:"no_list"}.
+// rows finds the rows titled `name` among ALL rows of the chat list (measured 290/290, no scrolling needed) with the AX API in this process
+// (one call per attribute; ~20 ms a row, against ~100 ms through System Events). The row the database order predicts (`hint`) is read first,
+// then its neighbours, then outward; the read stops at the first name hit, at the budget, or at the end. A paged list is scrolled page by
+// page (AXScrollDownByPage) until the name is found or the list stops moving. Nothing is clicked or opened. Prints
+// {ok:true, rows:<count>, scanned, hits:[{index, texts}], stopped:"found"|"budget"|"end", pages, ms:{scan}}, or {ok:true, opened:true}
+// when a window of the name is open already, or {ok:false, step:"list", why:"no_list"}.
 // open opens list row number `row` by Accessibility actions only: its title is read again (a list that moved is refused), then the row
 // cell's AXShowMenu once, then AXPress on its "채팅방 열기" item (list rows have no AXPress/AXOpen; kmsg selects the row and posts an Enter
 // key, which needs KakaoTalk in front). KakaoTalk is not activated and the owner's front app and focus stay (measured 2026-10-23). At most
@@ -22,10 +24,184 @@
 // so it must not be sent again; left is what the input still holds after a failed attempt.
 // close {name?} closes only the window of that name when given.
 ObjC.import("Foundation");
+ObjC.import("ApplicationServices");
+ObjC.import("AppKit");
 
 var BUNDLE = "com.kakao.KakaoTalkMac";
 var MAX_NODES = 300;
 var MAX_DEPTH = 7;
+var SCAN_RADIUS = 30;
+
+// One Accessibility call of the AX API in this process, instead of an AppleEvent to System Events (~100 ms for one attribute there).
+try {
+	ObjC.bindFunction("AXUIElementCreateApplication", ["id", ["int"]]);
+	ObjC.bindFunction("AXUIElementCopyAttributeValue", ["int", ["id", "id", "id*"]]);
+	ObjC.bindFunction("AXUIElementPerformAction", ["int", ["id", "id"]]);
+} catch (e) {}
+
+function axGet(el, name) {
+	try {
+		var ref = Ref();
+		if ($.AXUIElementCopyAttributeValue(el, name, ref) !== 0) return null;
+		var v = ref[0];
+		if (v === undefined || v === null) return null;
+		try {
+			return ObjC.deepUnwrap(v);
+		} catch (e) {
+			try {
+				return ObjC.unwrap(v);
+			} catch (e2) {
+				return String(v);
+			}
+		}
+	} catch (e) {
+		return null;
+	}
+}
+
+function axStr(el, name) {
+	var v = axGet(el, name);
+	return v === null || v === undefined ? "" : String(v);
+}
+
+function axAction(el, action) {
+	try {
+		return $.AXUIElementPerformAction(el, action) === 0;
+	} catch (e) {
+		return false;
+	}
+}
+
+// The whole list is exposed as AXRows at once (measured 290/290, no scrolling needed), so one native read sees every room.
+function axList() {
+	try {
+		var apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(BUNDLE).js;
+		if (!apps || !apps.length) return null;
+		var app = $.AXUIElementCreateApplication(apps[0].processIdentifier);
+		var wins = axGet(app, "AXWindows") || [];
+		var listWin = null;
+		for (var i = 0; i < wins.length; i++) if (axStr(wins[i], "AXTitle") === "카카오톡") listWin = wins[i];
+		if (!listWin) return null;
+		var best = null;
+		var bestRows = -1;
+		var scrolls = [];
+		var kids = axGet(listWin, "AXChildren") || [];
+		for (var i = 0; i < kids.length; i++) {
+			if (axStr(kids[i], "AXRole") !== "AXScrollArea") continue;
+			scrolls.push(kids[i]);
+			var sk = axGet(kids[i], "AXChildren") || [];
+			for (var j = 0; j < sk.length; j++) {
+				if (axStr(sk[j], "AXRole") !== "AXTable") continue;
+				var rs = axGet(sk[j], "AXRows") || [];
+				if (rs.length > bestRows) {
+					bestRows = rs.length;
+					best = { table: sk[j], rows: rs };
+				}
+			}
+		}
+		if (!best) return null;
+		return { table: best.table, rows: best.rows, scrolls: scrolls };
+	} catch (e) {
+		return null;
+	}
+}
+
+function axRowTexts(row) {
+	var out = [];
+	var cells = axGet(row, "AXChildren") || [];
+	for (var i = 0; i < cells.length; i++) {
+		var texts = axGet(cells[i], "AXChildren") || [];
+		for (var j = 0; j < texts.length; j++) {
+			var v = axStr(texts[j], "AXValue");
+			if (v !== "") out.push(v);
+		}
+	}
+	return out;
+}
+
+// Only the title while scanning (3 AX calls a row); the rest of the row is read once its title matches (count, time, preview).
+function axRowTitle(row) {
+	var cells = axGet(row, "AXChildren") || [];
+	for (var i = 0; i < cells.length; i++) {
+		var texts = axGet(cells[i], "AXChildren") || [];
+		for (var j = 0; j < texts.length; j++) {
+			var v = axStr(texts[j], "AXValue");
+			if (v !== "") return v;
+		}
+	}
+	return "";
+}
+
+// Title reads are the expensive part (~26 ms a row: row children, cell children, one value). The hint row (the database order in the list)
+// comes first, then its neighbours (a pinned room shifts the list by a few rows), then the whole list; the read stops at the first name hit,
+// at the end, or at the budget. Scrolling continues a list that exposes only its visible rows; with all rows exposed it finds the end at once.
+function axScan(name, first, budgetMs, hint) {
+	var t0 = Date.now();
+	var list = axList();
+	if (!list) return null;
+	var want = norm(name);
+	var hits = [];
+	var seen = {};
+	var scanned = 0;
+	var stopped = "end";
+	var pages = 0;
+	var total = list.rows.length;
+	var order = [];
+	if (typeof hint === "number" && hint >= 0 && hint < total) {
+		order.push(hint);
+		for (var d = 1; d <= SCAN_RADIUS; d++) {
+			if (hint + d < total) order.push(hint + d);
+			if (hint - d >= 0) order.push(hint - d);
+		}
+		// A hint off by more than the window keeps its neighbourhood: continue outward instead of starting from the top.
+		for (var i = hint + SCAN_RADIUS + 1; i < total; i++) order.push(i);
+		for (var i = hint - SCAN_RADIUS - 1; i >= 0; i--) order.push(i);
+	} else {
+		for (var i = 0; i < total; i++) order.push(i);
+	}
+	for (;;) {
+		for (var q = 0; q < order.length; q++) {
+			if (Date.now() - t0 > budgetMs) {
+				stopped = "budget";
+				break;
+			}
+			var idx = order[q];
+			if (seen[idx]) continue;
+			seen[idx] = true;
+			var title = axRowTitle(list.rows[idx]);
+			scanned++;
+			if (norm(title) === want) {
+				hits.push({ index: idx, texts: axRowTexts(list.rows[idx]) });
+				if (first) {
+					stopped = "found";
+					break;
+				}
+			}
+		}
+		if (stopped === "found" || stopped === "budget") break;
+		// Every exposed row was read: if the list shows one page at a time, scroll and continue; otherwise this is the end.
+		if (pages >= 20) break;
+		var before = total && list.rows.length ? String(axStr(list.rows[0], "AXTitle")) : "";
+		var scrollArea = null;
+		for (var s = 0; s < list.scrolls.length && !scrollArea; s++) {
+			var sk = axGet(list.scrolls[s], "AXChildren") || [];
+			for (var j = 0; j < sk.length; j++) if (sk[j] === list.table) scrollArea = list.scrolls[s];
+		}
+		if (!scrollArea || !axAction(scrollArea, "AXScrollDownByPage")) break;
+		pages++;
+		var next = axList();
+		if (!next) break;
+		list = next;
+		var after = list.rows.length ? String(axStr(list.rows[0], "AXTitle")) : "";
+		if (list.rows.length === total && before === after) break;
+		total = list.rows.length;
+		// A paged list shows different rows at the same indices: read them again.
+		seen = {};
+		order = [];
+		for (var i = 0; i < total; i++) order.push(i);
+	}
+	return { ok: true, rows: total, scanned: scanned, hits: hits, stopped: stopped, pages: pages, ms: { scan: Date.now() - t0 } };
+}
 
 function attr(el, name) {
 	try {
@@ -231,9 +407,12 @@ function openList() {
 	return { ok: true, ms: ms, focus: { from: from, took: took, restored: restored } };
 }
 
-function readRows(name, max, budgetMs, first) {
+function readRows(name, max, budgetMs, first, hint) {
 	var t0 = Date.now();
 	if (windowNamed(name)) return { ok: true, opened: true };
+	var native = axScan(name, first, budgetMs, hint);
+	if (native) return native;
+	// No AX API in this process: the older System Events wording of the same scan (one AppleEvent per attribute, ~100 ms a read).
 	var list = listTable();
 	if (!list) return { ok: false, step: "list", why: "no_list", ms: { table: Date.now() - t0 } };
 	var tableMs = Date.now() - t0;
@@ -453,7 +632,8 @@ function run() {
 		if (req.action === "openlist") return JSON.stringify(openList());
 		if (req.action === "send" && typeof req.name === "string" && req.name && typeof req.text === "string" && req.text)
 			return JSON.stringify(sendInto(req.name, req.text, Array.isArray(req.ours) ? req.ours.filter(function (s) { return typeof s === "string"; }) : [], Array.isArray(req.priorPressed) ? req.priorPressed.filter(function (s) { return typeof s === "string"; }) : []));
-		if (req.action === "rows" && typeof req.name === "string" && req.name) return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 4000), req.first === true));
+		if (req.action === "rows" && typeof req.name === "string" && req.name)
+			return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 6500), req.first === true, Number.isInteger(req.hint) ? req.hint : undefined));
 		if (req.action === "open" && typeof req.name === "string" && req.name && Number.isInteger(req.row) && req.row >= 0) return JSON.stringify(openRowAt(req.row, req.name));
 		return JSON.stringify({ ok: false });
 	} catch (e) {

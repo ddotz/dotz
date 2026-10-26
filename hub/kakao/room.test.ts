@@ -78,7 +78,7 @@ test("same name and same member count, or a count no row shows: refused before a
 	expect(odd.screen.menus()).toBe(0);
 	const missing = await send([], a, [a, b]);
 	expect(missing.r.ok).toBe(false);
-	expect(missing.r.reason).toContain(REFUSE.notListed);
+	expect(missing.r.reason).toContain(REFUSE.notFoundEnd);
 	expect(missing.screen.menus()).toBe(0);
 });
 
@@ -121,16 +121,55 @@ test("a row's title with a trailing member count and the newest-message preview 
 	expect(chooseRow(noPreview, a, true)).toEqual({ ok: false, why: "mismatch" });
 });
 
-test("a room beyond the first list read is found by the deeper read of the recovery ladder", async () => {
-	const rows: FakeRow[] = Array.from({ length: 70 }, (_, i) => ({ id: `chat_${i}`, title: `방${i}` }));
-	rows[65] = { id: "chat_far", title: "먼방", window: { title: "먼방" } };
-	const far: RoomFact = { chatId: "70", name: "먼방", kind: "direct", members: 2 };
-	const screen = fakeScreen(rows);
-	const r = await sendText({ chatId: "70", roomName: "먼방", text: "안녕" }, { paths, runner: screen.runner, roomNames: async () => [far] });
+function farRows(n = 290, at = 200): FakeRow[] {
+	const rows: FakeRow[] = Array.from({ length: n }, (_, i) => ({ id: `chat_${i}`, title: `방${i}` }));
+	rows[at] = { id: "chat_far", title: "먼방", window: { title: "먼방" } };
+	return rows;
+}
+
+const farFacts: RoomFact[] = [{ chatId: "far", name: "먼방", kind: "direct", members: 2 }];
+
+// The real list has ~290 rooms; the measured read is ~26 ms a row, so the old 60/120-row cap never reached the bottom. The scan now reads to
+// the bottom in one call (all AX rows at once) and stops at the first name hit.
+test("a room 200 rows down the 290-room list is found on the first try, one row scan, and only its row is opened", async () => {
+	const screen = fakeScreen(farRows());
+	const r = await sendText({ chatId: "far", roomName: "먼방", text: "안녕" }, { paths, runner: screen.runner, roomNames: async () => farFacts });
 	expect(r).toMatchObject({ ok: true });
-	expect(r.attempts!.map(a => a.recovery)).toEqual(["none", "retry", "reopen", "deep"]);
-	expect(r.attempts!.at(-1)!.ax[0]).toMatchObject({ step: "rows:deep", ok: true });
+	expect(r.attempts).toHaveLength(1);
+	expect(r.ax![0]).toMatchObject({ step: "rows", ok: true });
+	expect(r.ax![0]!.why).toBe("201:found:row200:name");
 	expect(screen.sends).toEqual([["ax-send", "먼방", "안녕"]]);
+	expect(screen.menus()).toBe(1);
+});
+
+test("a paged list is scrolled page by page until the room is found (290 rows, 30 a page)", async () => {
+	const screen = fakeScreen(farRows(290, 275), { pageSize: 30 });
+	const r = await sendText({ chatId: "far", roomName: "먼방", text: "안녕" }, { paths, runner: screen.runner, roomNames: async () => farFacts });
+	expect(r).toMatchObject({ ok: true });
+	expect(screen.sends).toHaveLength(1);
+	expect(r.ax![0]!.why).toBe("276:found:p9:row275:name");
+});
+
+test("the database order is the hint: the room's own row is the first one read", async () => {
+	const rows = farRows(290, 120);
+	const all: RoomFact[] = [...Array.from({ length: 120 }, (_, i) => ({ chatId: `c${i}`, name: `방${i}` })), farFacts[0]!, ...Array.from({ length: 169 }, (_, i) => ({ chatId: `d${i}`, name: `다른${i}` }))];
+	const screen = fakeScreen(rows);
+	const r = await sendText({ chatId: "far", roomName: "먼방", text: "안녕" }, { paths, runner: screen.runner, roomNames: async () => all });
+	expect(r).toMatchObject({ ok: true });
+	expect((screen.rowCalls[0] as { hint?: number }).hint).toBe(120);
+	expect(r.ax![0]!.why).toBe("1:found:row120:name");
+});
+
+test("a scan whose time runs out says so; a scan that reached the list end says that instead", async () => {
+	const slowed = fakeScreen(farRows(), { scanLimit: 50 });
+	const r = await sendText({ chatId: "far", roomName: "먼방", text: "안녕" }, { paths, runner: slowed.runner, roomNames: async () => farFacts });
+	expect(r.ok).toBe(false);
+	expect(r.reason).toContain(REFUSE.notFoundTime);
+	expect(r.attempts!.every(a => a.reason === REFUSE.notFoundTime)).toBe(true);
+	expect(slowed.sends).toHaveLength(0);
+	const ended = fakeScreen(Array.from({ length: 20 }, (_, i) => ({ id: `e${i}`, title: `다른방${i}` })));
+	const e = await sendText({ chatId: "far", roomName: "먼방", text: "안녕" }, { paths, runner: ended.runner, roomNames: async () => farFacts });
+	expect(e.reason).toContain(REFUSE.notFoundEnd);
 });
 
 test("a kept window on the wrong room is caught by its check and the room is reopened instead of typed into", async () => {
@@ -164,7 +203,7 @@ test("a window that is not the chosen room refuses, closes that window and types
 	expect(unreadable.screen.closes()).toBeGreaterThanOrEqual(1);
 	const longer = await send([{ id: "chat_x", title: "가족방 2기", count: 4, window: { title: "가족방 2기", members: 4 } }], family, [family]);
 	expect(longer.r.ok).toBe(false);
-	expect(longer.r.reason).toContain(REFUSE.notListed);
+	expect(longer.r.reason).toContain(REFUSE.notFoundEnd);
 });
 
 test("the memo chat and a 1:1 with the same nickname cannot be told apart by a row: refused, never guessed", async () => {
@@ -239,7 +278,7 @@ test("no KakaoTalk window and the list does not show after the menu: the send is
 	expect(screen.menus()).toBe(0);
 });
 
-test("every AX phase is on the result with its time: rows read, row open, verify, input; the open phase is capped at 5 s", async () => {
+test("every AX phase is on the result with its time: rows read, row open, verify, input; the open phase is capped", async () => {
 	const timeouts: number[] = [];
 	const screen = fakeScreen([familyRow]);
 	const runner: Runner = async (argv, o) => {
@@ -251,7 +290,7 @@ test("every AX phase is on the result with its time: rows read, row open, verify
 	expect(r.ax!.map(s => s.step)).toEqual(["rows", "open", "verify", "input"]);
 	expect(r.ax!.every(s => s.ok && s.ms >= 0)).toBe(true);
 	expect(r.ax![0]!.why).toBe("1:found:row0:name");
-	expect(timeouts.slice(0, 2).every(t => t <= 5_000)).toBe(true);
+	expect(timeouts.slice(0, 2).every(t => t <= 8_000)).toBe(true);
 	expect(screen.rowCalls[0]).toMatchObject({ action: "rows", name: "가족방", first: true });
 });
 
