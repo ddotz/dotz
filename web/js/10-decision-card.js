@@ -188,8 +188,10 @@ function draftFilesNode(d, o = {}) {
       st.library ? el("button", { class: "btn tonal", type: "button", onclick: openLib }, "첨부 파일 폴더에서 고르기") : null) : null;
     const add = can && st.canAttach ? el("button", { class: "dr-add", type: "button", disabled: busy, "aria-expanded": String(!!DRF.menu[ref]), onclick: () => { if (!st.library) pickers.click(); else { DRF.menu[ref] = DRF.menu[ref] ? "" : "menu"; paint(); } } }, icon("clip"), el("span", { text: busy ? "붙이는 중…" : "파일 추가" })) : null;
     if (o.warn) { clear(o.warn).append(...warns.filter(Boolean)); o.warn.hidden = !warns.some(Boolean); }
+    // A mail draft always shows its 첨부 row, files or 없음, so the owner can tell a missing file from a hidden one (owner 2026-10-26).
+    const mailDraft = d.toLabel === "받는이";
     clear(box).append(...[fl.length ? el("div", { class: "dr-fh", text: `첨부 ${fl.length}개` }) : null, ...rows,
-      !fl.length && d.noAttachments ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부 없음 · 받은 메일의 첨부파일은 들어가지 않아요" })) : null,
+      !fl.length && (d.noAttachments || mailDraft) ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부 없음" })) : null,
       add, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
     box.hidden = !box.querySelector(".dr-fh, .dr-none, .dr-warn, .dr-add");
   }
