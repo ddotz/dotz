@@ -123,8 +123,10 @@ const hcLine = n => { const t = ntPlain(n.title); return !t || t === "작업 기
 const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); noticeOpen(n); } } }, hcDot(n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), el("span", { class: "m", text: ntWhen(n) }), ntNeeds(n) ? ntIgnoreBtn(n) : null)));
 // Gateway restarts are kept in the store (born read) but never shown on 홈 (owner 2026-10-19: restarts are not his news).
 const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
+// Only what is news: a question that waits is a row of 답변 필요 above, so it is not counted or listed here a second time.
+const hcFyi = n => !n.read && ntHomeAlert(n) && !ntNeeds(n);
 function homeAlertCard() {
-  const unread = NT.items.filter(n => !n.read && ntHomeAlert(n)).length, fresh = hcRecent(n => !n.read && ntHomeAlert(n)), state = hcState();
+  const unread = NT.items.filter(hcFyi).length, fresh = hcRecent(hcFyi), state = hcState();
   return hcCard(() => openTarget("alert", "chat"), el("div", { class: "ch" }, el("h3", { text: "알림" })),
     el("div", { class: "big", text: state ? "…" : `${unread}개` }), el("div", { class: "sup", text: "안 읽은 알림" }),
     state || !fresh.length ? el("div", { class: "hc-none", text: state || "새 알림이 없어요" }) : hcNotices(fresh));
@@ -143,21 +145,6 @@ function homeMonitorCard() {
       return el("div", { class: "hc-mon" }, hcDot(r && r[1]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "모니터링" }),
         el("span", { class: "s", text: [ntMonRun(m), r && r[0], ntMonNext(m)].filter(Boolean).join(" · ") })));
     })),
-    list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
-}
-
-// The running sessions as rows (same rows as the notice cards): one tap opens that session's chat, a tap beside the rows opens the chat list.
-function homeSessionsCard() {
-  const list = ((S && S.lanes) || []).filter(laneAlive), shown = list.slice(0, 4), need = list.filter(l => l.pendingAsk || attnKind(`lane:${l.name}`)).length;
-  const open = l => openLaneChat(l.name);
-  const row = l => {
-    const [word] = sessionStatus(l), t = `lane:${l.name}`, line = nowLine(t);
-    return el("div", { class: "hc-row", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); open(l); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); open(l); } } },
-      hcDot(l.pendingAsk ? "ask" : l.status === "working" || l.status === "starting" ? "run" : "done"),
-      el("span", { class: "tb" }, el("span", { class: "t", text: l.title || l.name }), line ? el("span", { class: "n", text: line }) : null), el("span", { class: "m", text: l.pendingAsk ? "답변 필요" : word }));
-  };
-  return hcCard(() => go("chat", "list"), el("div", { class: "ch" }, el("h3", { text: "진행 중인 세션" }), need ? el("span", { class: "tag warn", text: `확인 필요 ${need}` }) : null),
-    !S || !list.length ? el("div", { class: "hc-none", text: S ? "진행 중인 세션이 없어요" : "불러오는 중…" }) : el("div", { class: "hc-list" }, ...shown.map(row)),
     list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
 }
 
@@ -236,14 +223,16 @@ function renderHomeNow() {
   const need = all.map(t => ({ t, k: askOf(t) ? "ask" : attnKind(t) })).filter(x => x.k && !(x.k === "ask" && ntHasDecision(x.t)));
   const loose = ntLooseAsks().filter(n => !need.some(x => x.k === "ask" && x.t === (n.src || n.open)));   // [ask] notices without a decision wait here too, not only in the 알림 card
   const owed = monItems().filter(i => i.app && i.unreplied), owedN = owed.reduce((c, i) => c + i.unreplied, 0);
-  const waiting = dec.length + loose.length + need.length + owed.length;
+  const waiting = dec.length + loose.length + need.length;
   const NEED = { ask: "답변 필요", done: "결과 확인", limit: "한도 걸림" };
   const rank = t => ({ working: 0, starting: 1, "rate-limited": 2 })[targetInfo(t).status] ?? 3;
   const run = [...all].sort((a, b) => rank(a) - rank(b));
   const bg = workRunning(), working = run.filter(t => rank(t) < 2).length + bg.length;
   clear(box).append(
-    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, owedN ? unrepPill(`미답장 ${owedN}`) : null),
-    el("div", { class: "hn" }, ...ntHomeRows(dec), ...loose.map(ntHomeRow), ...need.map(x => homeNowRow(x.t, NEED[x.k], "att")), ...owed.map(homeOwedRow), ...(waiting ? [] : [el("div", { class: "empty", text: "답변할 항목이 없어요" })])),
+    // Three kinds, three places: 답변 필요 (a decision only the owner can make), 답장 대기 (replies he owes, per app), 지금 진행 중; plain news is the 알림 card.
+    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
+    el("div", { class: "hn" }, ...ntHomeRows(dec), ...loose.map(ntHomeRow), ...need.map(x => homeNowRow(x.t, NEED[x.k], "att")), ...(waiting ? [] : [el("div", { class: "empty", text: "답변할 항목이 없어요" })])),
+    ...(owed.length ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), unrepPill(`미답장 ${owedN}`)), el("div", { class: "hn" }, ...owed.map(homeOwedRow))] : []),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
     el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", "")), ...bg.map(workRow)),
     endedGroup() || "");
@@ -271,7 +260,6 @@ function renderHome() {
   add("notices:alert", homeAlertCard(), { w: 4, h: 4 }, HOME_NOTICE);
   add("notices:worklog", homeWorklogCard(), { w: 4, h: 4 }, HOME_NOTICE);
   add("notices:watch", homeMonitorCard(), { w: 4, h: 4 }, HOME_NOTICE);
-  add("sessions:running", homeSessionsCard(), { w: 4, h: 4 }, HOME_NOTICE);
 
   // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}
   const E = { lane: [], ctx: [], limit: [], prov: [] };
