@@ -121,7 +121,7 @@ function go(name, tgt) {
   chatList = name === "chat" && tgt === "list" && narrowChat();
   if (name === "chat" && tgt === "list") tgt = undefined;
   if (tgt && name !== "project" && tgt !== target && validTarget(tgt)) setTarget(tgt);
-  if (name === "activity" && isFixedT(target)) name = "chat";   // 알림 / 작업 기록 have no terminal view
+  if (name === "activity" && (!LOG_VIEW || isFixedT(target))) name = "chat";   // 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all
   if (name !== current) prevView = current;
   current = name;
   if (convSync()) renderAll();
@@ -136,7 +136,7 @@ function go(name, tgt) {
   document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : mc ? "monitoring" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#appbar").classList.toggle("tv", tv);
   const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
-  th.hidden = !tv; $("#vtog").hidden = !tv;
+  th.hidden = !tv; $("#vtog").hidden = !tv || !LOG_VIEW;
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
   $("#title").textContent = name === "home" ? botName : titles[name];
   convChrome();
