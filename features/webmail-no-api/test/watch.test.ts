@@ -101,21 +101,31 @@ test("recovers from a dropped login once, then continues", async () => {
 	}
 });
 
-test("asks the owner once when recovery fails, then stays silent", async () => {
+// The gateway alerts after two failures in a row and shows the app as disconnected while the watch fails (hub/watch.ts, hub/watch-status.ts):
+// a watch that went quiet (exit 0) after its first logged-out poll was never alerted and read as connected for the whole outage.
+test("keeps failing every poll while logged out, tries the recovery once", async () => {
 	const srv = startFakeServer([mkMail(1)]);
 	try {
 		const ctx = ctxFor(srv);
 		let s = (await pollOnce(ctx, srv.spec, config, initialState(), noRecover)).state;
 		srv.setLoggedOut(true);
+		let tries = 0;
+		const recover = async () => (tries++, false);
 
-		let r = await pollOnce(ctx, srv.spec, config, s, noRecover);
+		let r = await pollOnce(ctx, srv.spec, config, s, recover);
 		expect(r.fail).toBe("DOTZ_FAIL webmail-login");
-		expect(r.state.asked).toBe(true);
 		s = r.state;
 
-		r = await pollOnce(ctx, srv.spec, config, s, noRecover);
-		expect(r.fail).toBeUndefined();
+		r = await pollOnce(ctx, srv.spec, config, s, recover);
+		expect(r.fail).toBe("DOTZ_FAIL webmail-login");
+		expect(r.state.loggedOut).toBe(true);
 		expect(r.lines).toEqual([]);
+		expect(tries).toBe(1);
+
+		srv.setLoggedOut(false);
+		r = await pollOnce(ctx, srv.spec, config, r.state, recover);
+		expect(r.fail).toBeUndefined();
+		expect(r.state.loggedOut).toBe(false);
 	} finally {
 		srv.close();
 	}

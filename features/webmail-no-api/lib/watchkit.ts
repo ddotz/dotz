@@ -14,14 +14,13 @@ export type WatchState = {
 	maxNum?: number; // high-water mark when ids are numeric: an old mail sliding back into the window is not "new"
 	loggedOut: boolean;
 	recoverTried: boolean;
-	asked: boolean;
 	fails: number;
 	etag?: string;
 	lastModified?: string;
 	lastOk?: string;
 };
 
-export const initialState = (): WatchState => ({ seeded: false, seen: [], loggedOut: false, recoverTried: false, asked: false, fails: 0 });
+export const initialState = (): WatchState => ({ seeded: false, seen: [], loggedOut: false, recoverTried: false, fails: 0 });
 
 const SEEN_CAP = 2000;
 const FAIL_BEFORE_ALERT = 3;
@@ -48,10 +47,12 @@ function diffNew(state: WatchState, mails: Mail[]): { fresh: Mail[]; state: Watc
 }
 
 function onAlive(state: WatchState, now: number, etag?: string, lastModified?: string): WatchState {
-	return { ...state, loggedOut: false, recoverTried: false, asked: false, fails: 0, lastOk: new Date(now).toISOString(), etag: etag ?? state.etag, lastModified: lastModified ?? state.lastModified };
+	return { ...state, loggedOut: false, recoverTried: false, fails: 0, lastOk: new Date(now).toISOString(), etag: etag ?? state.etag, lastModified: lastModified ?? state.lastModified };
 }
 
-// One poll turn. `recover` is attempted at most once per logout outage; it returns whether the session came back (real:
+// One poll turn. A logged-out poll always fails (`DOTZ_FAIL webmail-login`): the gateway alerts after two in a row and then at most every 12 h,
+// and shows the app as disconnected until a poll passes; a watch that went quiet after the first one was never alerted and read as connected.
+// `recover` is attempted at most once per logout outage; it returns whether the session came back (real:
 // trigger the stored-credential relogin through Aside / the gateway session watch; test: a canned boolean).
 export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, state: WatchState, recover: () => Promise<boolean>): Promise<PollResult> {
 	const cookie = await ctx.cookieHeader(spec);
@@ -71,11 +72,9 @@ export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, sta
 		if (!state.recoverTried) {
 			const recovered = await recover().catch(() => false);
 			if (recovered) return pollOnce(ctx, spec, config, { ...state, loggedOut: false, recoverTried: true }, recover);
-			if (!state.asked) return { lines: [], mails: [], fail: "DOTZ_FAIL webmail-login", note: "logged out, recover failed", state: { ...state, loggedOut: true, recoverTried: true, asked: true } };
-			return { lines: [], mails: [], note: "logged out, waiting", state: { ...state, loggedOut: true, recoverTried: true } };
+			return { lines: [], mails: [], fail: "DOTZ_FAIL webmail-login", note: "logged out, recover failed", state: { ...state, loggedOut: true, recoverTried: true } };
 		}
-		if (!state.asked) return { lines: [], mails: [], fail: "DOTZ_FAIL webmail-login", note: "logged out", state: { ...state, loggedOut: true, asked: true } };
-		return { lines: [], mails: [], note: "logged out, waiting", state: { ...state, loggedOut: true } };
+		return { lines: [], mails: [], fail: "DOTZ_FAIL webmail-login", note: "logged out, waiting", state: { ...state, loggedOut: true } };
 	}
 
 	const alive = onAlive(state, ctx.now(), ka.etag, ka.lastModified);

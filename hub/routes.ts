@@ -8,7 +8,7 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
-import { appEntries, readAppOff, integrationAvailable, integrationContext, integrationItems } from "./integrations.ts";
+import { appEntries, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection } from "./integrations.ts";
 import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, removeWatch, runWatch } from "./watch.ts";
@@ -189,7 +189,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
 			const ctx = integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags());
 			const own = ownedWatches(DATA_DIR, allWatches());
-			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => ({ ...i, own: own.get(i.key) ?? [] }));
+			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()));
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
