@@ -17,9 +17,12 @@ let monCtx = "";
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
 const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["monitoring", "모니터링"], ["settings", "설정"]];
 const CHAT_MODE_KEY = "dotz-chat-mode";
+// 로그 보기 (the "activity" view): kept in the code, off in the app. false hides the 대화/로그 toggle and sends every way into the log view
+// (an old #activity address, a saved choice, a subagent row) to 대화 instead; true brings the toggle back.
+const LOG_VIEW = false;
 const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : v;
 // 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
-const viewFor = t => { if (t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
+const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
 const SUB = new Set(["models", "providers", "usage", "context", "harness"]);
 const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "project", "projects", "monitoring"];
