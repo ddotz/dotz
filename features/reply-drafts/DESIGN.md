@@ -24,6 +24,11 @@ The offer is a `[ask]` built by `draftApprovalBlock` (1) 보내기 / 2) 고치�
 when `draftVerdict` (hub/draft-approval.ts) finds the user's latest pick for exactly that id, made after the draft was created,
 to be 보내기. Without a pick, with a pick for another id, after 고치기 or 보내지 않기: refused.
 
+The owner is asked once, with a complete draft (owner 2026-10-26): a draft that comes back with `questions` goes back to the model
+once (`buildDraft`, mail and comments) to settle them from the message, context and tone; what is still open is a fact only the owner
+knows and is asked in the same card, in its question (`이 답장 보낼까요? 정할 것: 회의 날짜 (<id>)`, `askWith`). Lint warnings stay a `-# 확인:` line.
+A chat message that needs his own decision still asks first (exit 4), since the reply depends on it.
+
 ## Files (`<DATA_DIR>/custom/reply-drafts/`)
 
 - `config.json` `{enabled, auto, apps: {mail|youtube|instagram|...: {auto}}, senders: {only, skip}, model?}`; a missing file means off. `enabled` is the feature

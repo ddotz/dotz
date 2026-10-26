@@ -48,7 +48,8 @@ select.as-in { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .as-lead { margin-bottom: 8px; }
 .as-tpls, .tplrow { display: flex; flex-wrap: wrap; gap: 6px; }
 .as-tpls { margin-bottom: 16px; }
-.tplrow { position: relative; flex-wrap: nowrap; overflow-x: auto; padding: 6px 12px 2px; scrollbar-width: none; }
+.tplrow { position: relative; flex-wrap: nowrap; align-items: center; padding: 6px 12px 2px; }
+.tplrow .tplnote { flex: 1; min-width: 0; padding: 0 4px; font-size: 13px; color: var(--fg-2); }
 .tplrow[hidden] { display: none; }
 .tplnote { padding: 2px 16px 0; color: var(--fg-3); font-size: 12px; line-height: 18px; }
 .tplnote[hidden] { display: none; }
