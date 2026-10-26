@@ -9,7 +9,7 @@ const SHOTS = process.env.KAKAO_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 type Msg = { logId: string; authorId: string; sender: string; text: string; type: number; sentAt: number; fromMe: boolean; unread: number; media?: Record<string, unknown> };
-type Room = { chatId: string; name: string; kind: string; watched: boolean; autoDraft: boolean; unread: number; lastAt: number; hint?: string };
+type Room = { chatId: string; name: string; kind: string; watched: boolean; autoDraft: boolean; unread: number; lastAt: number; hint?: string; unreplied?: boolean };
 type Draft = { code: string; text: string; basisLogId: string; created: number };
 type Send = { id: string; text: string; state: string; reason?: string; at: number };
 type Req = { method: string; path: string; body: Record<string, unknown> | null };
@@ -108,12 +108,15 @@ const server = Bun.serve({
 			if (r) { if ("watched" in body!) r.watched = !!body!.watched; if ("autoDraft" in body!) r.autoDraft = !!body!.autoDraft; }
 			return json({ ok: true, watched: rooms.filter(x => x.watched).map(x => x.chatId) });
 		}
+		if (/^\/api\/kakao\/chat\/\w+\/no-reply$/.test(p) && req.method === "POST") { record({ method: "POST", path: p, body }); return json({ ok: true }); }
 		const ad = /^\/api\/kakao\/chat\/(\w+)\/ask\/drop$/.exec(p);
 		if (ad && req.method === "POST") { record({ method: "POST", path: p, body }); ask = null; return json({ ok: true }); }
 		const c = /^\/api\/kakao\/chat\/(\w+)(?:\/(reads?|send|draft))?$/.exec(p);
 		if (c) {
 			const room = rooms.find(x => x.chatId === c[1]);
-			if (!room || !room.watched) return json({ error: "지켜보는 대화방이 아니에요" }, 403);
+			// Like hub/kakao/web.ts: any listed room is readable; sending and drafts need a watched room.
+			if (!room) return json({ error: "대화방을 찾지 못했어요" }, 404);
+			if (!room.watched && (c[2] === "send" || c[2] === "draft")) return json({ error: "지켜보는 대화방이 아니에요" }, 403);
 			if (c[2] === "reads" && req.method === "GET") {
 				record({ method: "GET", path: `${p}${url.search}`, body: null });
 				const from = BigInt(url.searchParams.get("from") ?? "0");
@@ -124,7 +127,7 @@ const server = Bun.serve({
 				const after = url.searchParams.get("after");
 				const sorted = [...msgs].sort((a, b) => (BigInt(a.logId) > BigInt(b.logId) ? 1 : -1)), lim = Number(url.searchParams.get("limit") ?? 80);
 				const list = after ? sorted.filter(x => BigInt(x.logId) > BigInt(after)).slice(0, lim) : sorted.slice(-lim);
-				return json({ room: { chatId: room.chatId, name: room.name, kind: room.kind, group: room.kind === "group" }, messages: list, read: after ? undefined : "3007", kakaoUnread: 30, drafts, sends, ...(ask ? { ask } : {}) });
+				return json({ room: { chatId: room.chatId, name: room.name, kind: room.kind, group: room.kind === "group" || room.kind === "open", watched: room.watched }, messages: list, read: after ? undefined : "3007", kakaoUnread: 30, drafts: room.watched ? drafts : [], sends, ...(ask ? { ask } : {}) });
 			}
 			record({ method: "POST", path: p, body });
 			if (c[2] === "draft" && typeof body!.choice === "string") {
@@ -284,7 +287,7 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		for (let i = 0; i < 150; i++) msgs.push(mk(String(5001 + i), "다라", `몰려온 메시지 ${i}`, at(22, 3, 0, i)));
 		emit({ kind: "kakao", chatId: "100", logId: "5150" });
 		await waitFor(v, `document.querySelector('[data-log="5150"]')`);
-		expect(await q<number>(v, `return document.querySelectorAll('#kk-tl [data-log]').length`)).toBe(69 + 1 + 150);
+		expect(await q<number>(v, `return document.querySelectorAll('#kk-tl [data-log]').length`)).toBe(50 + 2 + 1 + 150);
 		expect(await newestInSight(v, "5150")).toBe(true);
 	});
 
@@ -318,7 +321,7 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		for (const m of msgs) if (m.logId === "3001" || m.logId === "3007") m.unread = 0; else if (m.logId === "3002") m.unread = 1;
 		emit({ kind: "kakao_read", chatId: "300" });
 		emit({ kind: "kakao_read", chatId: "100" });
-		await expectReq(isReq("GET", "/api/kakao/chat/100/reads?from=2001"));
+		await expectReq(isReq("GET", "/api/kakao/chat/100/reads?from=2018"));
 		await waitFor(v, `[...document.querySelectorAll(".kk-rd")].map(n => n.closest("[data-log]").dataset.log + ":" + n.textContent).join() === "3002:1,3003:1"`);
 		expect(reqs.filter(r => r.path.startsWith("/api/kakao/chat/300"))).toEqual([]);
 		expect(reqs.filter(r => r.method === "GET" && /^\/api\/kakao\/chat\/100\?/.test(r.path)).length).toBe(bodies);
@@ -666,7 +669,7 @@ describe("카카오톡 media at desktop width", () => {
 		const e = await q<Record<string, any>>(v, `const t = id => document.querySelector('[data-log="' + id + '"]'), b = [...t("5015").querySelectorAll(".kk-emo .kk-bub")], bare = t("5009").querySelectorAll(".kk-bub");
 			return { texts: b.map(x => x.textContent), cls: b.map(x => x.classList.contains("ph")), under: b.length === 2 && b[0].getBoundingClientRect().bottom <= b[1].getBoundingClientRect().top + 1, markup: !!t("5015").querySelector("b"), bare: bare.length, bareEmo: !!t("5009").querySelector(".kk-emo") }`);
 		expect(e).toEqual({ texts: ["(이모티콘) 카카오 이모티콘", "고마워 <b>x</b>"], cls: [true, false], under: true, markup: false, bare: 1, bareEmo: false });
-		expect([s.qn, s.qt, s.rt]).toEqual(["가나", "점심 뭐 먹을까", "나도 좋아"]);
+		expect([s.qn, s.qt, s.rt]).toEqual(["가나에게 답글", "점심 뭐 먹을까", "나도 좋아"]);
 		expect(s.loc[0]).toContain("위치: 서울 강남구");
 		expect(s.loc[1]).toBe("https://map.kakao.com/link/map/" + encodeURIComponent("서울 강남구") + ",37.5,127.03");
 		expect(s.loc.slice(2)).toEqual(["_blank", "noopener"]);
@@ -706,6 +709,85 @@ describe("카카오톡 media at 390px", () => {
 		await shot(v, "12-mobile-media-mix2.png");
 	});
 });
+
+// One open chat room as KakaoTalk shows it: each sender's open profile name and avatar over his run, an emoticon as its image (a chip when
+// there is none), a reply naming the original's author over the quote; an unwatched room opens read-only; 답장 안 함 clears the pill at the tap.
+const OPEN_ROOM = (): Msg[] => {
+	const o = (logId: string, authorId: string, sender: string, text: string, m: number, type = 1, media?: Record<string, unknown>): Msg => ({ logId, authorId, sender, text, type, sentAt: at(24, 1, m), fromMe: authorId === "me", unread: 0, ...(media ? { media } : {}) });
+	return [
+		o("6001", "u3", "전s", "오늘 세차 예약 되나요?", 0),
+		o("6002", "u4", "출장세차는 빠루빠루맨 (상도동)", "네 가능합니다", 1),
+		o("6003", "u4", "출장세차는 빠루빠루맨 (상도동)", "", 1, 20, { kind: "emoticon", alt: "카카오 이모티콘", image: true }),
+		o("6004", "u5", "라라", "", 2, 12, { kind: "emoticon", alt: "카카오 이모티콘" }),
+		o("6005", "me", "나", "저도 예약할게요", 3),
+		o("6006", "u3", "전s", "나중에 연락드릴게요", 4, 26, { kind: "reply", quote: "네 가능합니다", quoteSender: "출장세차는 빠루빠루맨 (상도동)" }),
+	];
+};
+const useOpen = () => {
+	reset();
+	msgs = OPEN_ROOM();
+	drafts = [];
+	rooms = [
+		{ chatId: "400", name: "보컬 스터디 오픈채팅", kind: "open", watched: true, autoDraft: false, unread: 0, lastAt: at(24, 1, 4), hint: "나중에 연락드릴게요" },
+		{ chatId: "300", name: "라마바", kind: "direct", watched: true, autoDraft: false, unread: 0, lastAt: at(21, 5, 0), unreplied: true },
+		{ chatId: "200", name: "사아자 방", kind: "group", watched: false, autoDraft: false, unread: 0, lastAt: at(19, 5, 0) },
+	];
+};
+for (const [w, h] of [[390, 844], [1280, 800]] as const)
+	describe(`오픈채팅 room at ${w}px`, () => {
+		const v = open(w, h);
+		test("senders are named over their runs, the emoticon is an image (or one chip), the reply names the original's author", async () => {
+			useOpen();
+			await boot(v);
+			await openRoom(v, "400");
+			await waitFor(v, `document.querySelector('[data-log="6003"] .kk-sticker img')?.complete`);
+			const s = await q<Record<string, any>>(v, `
+				const t = id => document.querySelector('[data-log="' + id + '"]'), img = t("6003").querySelector(".kk-sticker img"), r = img.getBoundingClientRect(), tl = document.querySelector("#kk-tl");
+				return { names: [...document.querySelectorAll("#kk-tl .kk-name")].map(n => n.textContent), avatars: document.querySelectorAll("#kk-tl .kk-av:not(.sp)").length, meName: !!t("6005").querySelector(".kk-name"),
+					img: [img.getAttribute("src"), img.alt, img.naturalWidth > 0, Math.round(r.width) <= 120], chip: [...t("6004").querySelectorAll(".kk-bub")].map(b => b.textContent),
+					qn: t("6006").querySelector(".kk-qn").textContent, qt: t("6006").querySelector(".kk-qt").textContent, rt: t("6006").querySelector(".kk-rt").textContent, hScroll: tl.scrollWidth - tl.clientWidth }`);
+			expect(s.names).toEqual(["전s", "출장세차는 빠루빠루맨 (상도동)", "라라", "전s"]);
+			expect(s.avatars).toBe(4);
+			expect(s.meName).toBe(false);
+			expect(s.img).toEqual(["/api/kakao/media/400/6003?i=0&v=full", "카카오 이모티콘", true, true]);
+			expect(s.chip).toEqual(["카카오 이모티콘"]);
+			expect([s.qn, s.qt, s.rt]).toEqual(["출장세차는 빠루빠루맨 (상도동)에게 답글", "네 가능합니다", "나중에 연락드릴게요"]);
+			expect(s.hScroll).toBeLessThanOrEqual(0);
+			await shot(v, `30-open-chat-${w}.png`);
+			await dark(v);
+			await shot(v, `30-open-chat-${w}-dark.png`);
+			await light(v);
+		});
+
+		test("a room that is not watched opens read-only from the room choice: no composer, a 감시 시작 bar that starts watching it", async () => {
+			useOpen();
+			await boot(v);
+			await run(v, `document.querySelector("#kk-pick-btn").click()`);
+			await waitFor(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="open"]')`);
+			await run(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="open"]').click()`);
+			await waitFor(v, `KK.open === "200" && !KK.loading && KK.placed`);
+			const s = await q<Record<string, any>>(v, `const ro = document.querySelector("#kk-ro"); return { foot: document.querySelector("#kk-foot").hidden, ro: ro.hidden, text: ro.querySelector(".kk-ro-t").textContent, btn: ro.querySelector('[data-k="watch"]').textContent, h: Math.round(ro.querySelector('[data-k="watch"]').getBoundingClientRect().height), msgs: document.querySelectorAll("#kk-tl [data-log]").length }`);
+			expect(s).toMatchObject({ foot: true, ro: false, text: "감시하지 않는 방이에요. 읽기만 할 수 있어요", btn: "감시 시작", msgs: 6 });
+			expect(s.h).toBeGreaterThanOrEqual(44);
+			await shot(v, `31-unwatched-${w}.png`);
+			await run(v, `document.querySelector('#kk-ro [data-k="watch"]').click()`);
+			expect((await expectReq(isReq("PUT", "/api/kakao/rooms/200"))).body).toEqual({ watched: true });
+			await waitFor(v, `document.querySelector("#kk-ro").hidden && !document.querySelector("#kk-foot").hidden`);
+			expect(await q(v, `return KK.open`)).toBe("200");
+		});
+
+		if (w === 1280)
+			test("답장 안 함 takes the 미답장 pill off the header and the room row at the tap, before any reload", async () => {
+				useOpen();
+				await boot(v);
+				await openRoom(v, "300");
+				await waitFor(v, `document.querySelector('#kk-head .unrep-no')`);
+				const s = await q<Record<string, boolean>>(v, `const before = !!document.querySelector('.kk-row[data-chat="300"] .tag.unreplied'); document.querySelector('#kk-head .unrep-no').click();
+					return { before, row: !!document.querySelector('.kk-row[data-chat="300"] .tag.unreplied'), head: !!document.querySelector("#kk-head .tag.unreplied"), button: !!document.querySelector('#kk-head .unrep-no') }`);
+				expect(s).toEqual({ before: true, row: false, head: false, button: false });
+				await expectReq(isReq("POST", "/api/kakao/chat/300/no-reply"));
+			});
+	});
 
 // 오픈채팅 rooms and the hint line: a room's kind and its newest message (or member count) under its name, in the choice and in the rows.
 for (const [w, h] of [[390, 844], [1280, 800]] as const)

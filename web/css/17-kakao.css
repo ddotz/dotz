@@ -31,6 +31,10 @@
 .kk-pl { max-height: min(46dvh, 360px); overflow-y: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .kk-pr { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 16px; }
 .kk-pr + .kk-pr { border-top: 1px solid var(--line); }
+.kk-pr.on { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.kk-pn { display: block; max-width: 100%; min-height: 24px; margin: -4px 0; padding: 4px 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.kk-pn:hover { text-decoration: underline; }
+.kk-pn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .kk-auto { display: flex; align-items: center; gap: 8px; margin-top: 2px; color: var(--fg-3); font: 400 12px/18px var(--font); }
 .kk-av { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: hsl(var(--h) 45% 82%); color: hsl(var(--h) 45% 26%); font: 600 15px/1 var(--font); }
 .kk-av.sp { background: transparent; }
@@ -79,6 +83,11 @@
 .kk-bub.ph { opacity: .75; }
 .kk-emo { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; max-width: 100%; }
 .kk-m.me .kk-emo { align-items: flex-end; }
+/* a sticker image: no bubble, at most 120px like KakaoTalk's in-chat size */
+.kk-sticker { width: 120px; height: 120px; }
+@media (max-width: 639px) { .kk-sticker { width: 100px; height: 100px; } }
+.kk-sticker img { display: block; width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; }
+.kk-emo-chip { font-size: 13px; }
 .kk-chat { --kk-rd: #d99700; }
 :root[data-theme="dark"] .kk-chat { --kk-rd: #ffd21f; }
 /* time side of a bubble: the read counter (yellow, bold) above the time; own bubbles right-align it, incoming ones left-align it */
@@ -128,12 +137,17 @@
 .kk-bub.card.loc { flex-direction: column; align-items: flex-start; gap: 0; max-width: 260px; text-decoration: none; color: var(--kk-in-fg); }
 .kk-bub.card.loc .kk-fn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .kk-bub.reply { display: flex; flex-direction: column; gap: 4px; }
-.kk-quote { display: flex; flex-direction: column; padding: 2px 0 2px 8px; border-left: 3px solid color-mix(in srgb, currentColor 30%, transparent); font: 400 12px/17px var(--font); opacity: .8; }
-.kk-qn { font-weight: 600; }
+.kk-quote { display: flex; flex-direction: column; gap: 1px; margin: -2px -4px 0; padding: 4px 8px; border-radius: 8px; background: color-mix(in srgb, currentColor 8%, transparent); font: 400 12px/17px var(--font); }
+.kk-qn { font-weight: 600; opacity: .85; }
+.kk-qt { opacity: .75; }
 .kk-qt { overflow-wrap: anywhere; }
 .kk-rt { white-space: pre-wrap; overflow-wrap: anywhere; }
 .kk-sys { align-self: center; max-width: 86%; margin: 10px 0 4px; padding: 3px 12px; border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 400 12px/17px var(--font); text-align: center; overflow-wrap: anywhere; white-space: pre-wrap; }
 .kk-vw video, .kk-vw img { max-width: 100%; max-height: 100%; }
+/* a room that is not watched: read-only, this bar instead of the composer */
+.kk-ro { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--card); border-top: 1px solid var(--line); color: var(--fg-2); font: 400 13px/18px var(--font); }
+.kk-ro[hidden] { display: none; }
+.kk-ro .btn { flex: none; min-height: 44px; }
 .kk-vw video { background: #000; }
 
 /* composer: the chat composer's look (.composer, .sendrow), a draft card above it */

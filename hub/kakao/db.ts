@@ -310,11 +310,13 @@ export const TEXT_TYPE = 1;
 // with it, if any, is in the message column (empty when the sticker went out alone).
 export const EMOTICON_TYPES = [12, 20, 25];
 export const isEmoticon = (type: number) => EMOTICON_TYPES.includes(type);
-// A message that says something in words: a text message, or an emoticon that came with text.
-export const hasWords = (m: { type: number; text: string }) => m.type === TEXT_TYPE || (isEmoticon(m.type) && m.text.trim() !== "");
+// A reply (type 26): its own text is in the message column, the replied-to message in the attachment (src_logId, src_userId, src_message).
+export const REPLY_TYPE = 26;
+// A message that says something in words: a text message, a reply, or an emoticon that came with text.
+export const hasWords = (m: { type: number; text: string }) => m.type === TEXT_TYPE || (m.type === REPLY_TYPE && m.text.trim() !== "") || (isEmoticon(m.type) && m.text.trim() !== "");
 // What a reader (draft prompt, cli read) sees for a message: its text, "(이모티콘) <text>" for an emoticon with text, else a placeholder.
 export const readText = (m: { type: number; text: string }): string => {
-	if (m.type === TEXT_TYPE) return m.text;
+	if (m.type === TEXT_TYPE || (m.type === REPLY_TYPE && m.text.trim())) return m.text;
 	if (!isEmoticon(m.type)) return "(사진·파일)";
 	const t = m.text.trim();
 	return t ? `(이모티콘) ${t}` : "(이모티콘)";
@@ -326,9 +328,10 @@ export const sentAtMs = (sentAt: number) => (sentAt > 1e11 ? sentAt : sentAt * 1
 const str = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 const num = (v: unknown) => Number(v ?? 0);
 
-// The name of a person in a room: his friend name, else his own; in an open chat room only his open profile (NTUser row of that link) is there.
+// The name of a person in a room: his friend name, else his own; in an open chat room his open profile (the NTUser row of that link) comes first,
+// as KakaoTalk shows it there, and the friend row only when the link has none.
 const personName = (author: string, link: string) =>
-	`(SELECT COALESCE(NULLIF(pu.friendNickName, ''), NULLIF(pu.displayName, ''), NULLIF(pu.nickName, '')) FROM NTUser pu WHERE pu.userId = ${author} AND (pu.linkId = 0 OR pu.linkId = ${link}) ORDER BY pu.linkId = 0 DESC LIMIT 1)`;
+	`(SELECT COALESCE(NULLIF(pu.friendNickName, ''), NULLIF(pu.displayName, ''), NULLIF(pu.nickName, '')) FROM NTUser pu WHERE pu.userId = ${author} AND (pu.linkId = 0 OR pu.linkId = ${link}) ORDER BY pu.linkId = ${link} DESC LIMIT 1)`;
 
 // Whether this database has open chat links (NTChatRoom.linkId, NTOpenLink); an older schema has neither and has no open rooms.
 async function hasLinks(db: KakaoDb): Promise<boolean> {
@@ -348,15 +351,17 @@ async function openLinkNames(db: KakaoDb): Promise<Map<string, string>> {
 	}
 }
 
-export async function rooms(db: KakaoDb): Promise<Room[]> {
+// Every room, newest first; with `chatId` only that one (opening a room reads its own row, not the whole list).
+export async function rooms(db: KakaoDb, chatId?: string): Promise<Room[]> {
 	const links = await hasLinks(db);
 	const rows = await db.query(
 		`SELECT CAST(r.chatId AS TEXT) AS chatId, r.type AS type, r.chatName AS chatName, r.countOfNewMessage AS unread, r.lastUpdatedAt AS lastAt, r.activeMembersCount AS members,
 			${links ? "CAST(r.linkId AS TEXT)" : "'0'"} AS linkId,
 			COALESCE(NULLIF(u.friendNickName, ''), NULLIF(u.displayName, ''), NULLIF(u.nickName, '')) AS peer,
 			(SELECT COALESCE(NULLIF(mt.groupNickname, ''), NULLIF(mt.content, '')) FROM NTChatMeta mt WHERE mt.chatId = r.chatId AND mt.type = 3 LIMIT 1) AS title
-		FROM NTChatRoom r LEFT JOIN NTUser u ON r.directChatMemberUserId = u.userId AND u.linkId = 0
+		FROM NTChatRoom r LEFT JOIN NTUser u ON r.directChatMemberUserId = u.userId AND u.linkId = 0${chatId === undefined ? "" : "\n\t\tWHERE r.chatId = ?"}
 		ORDER BY r.lastUpdatedAt DESC`,
+		chatId === undefined ? [] : [chatId],
 	);
 	const linkNames = links ? await openLinkNames(db) : new Map<string, string>();
 	// The room title the owner (or a member) set is chat meta type 3; KakaoTalk shows it before chatName and the 1:1 peer's name. An open
@@ -460,6 +465,29 @@ export async function ownTextCounts(db: KakaoDb, chatIds: string[], userId: stri
 	if (!chatIds.length) return new Map();
 	const rows = await db.query(`SELECT CAST(chatId AS TEXT) AS chatId, COUNT(*) AS n FROM NTChatMessage WHERE authorId = ? AND type = ? AND chatId IN (${chatIds.map(() => "?").join(",")}) GROUP BY chatId`, [String(userId), TEXT_TYPE, ...chatIds]);
 	return new Map(rows.map(r => [str(r.chatId), num(r.n)]));
+}
+
+// The names of the given people as this room shows them (open profile in an open chat room); people without a row are left out.
+export async function peopleNames(db: KakaoDb, chatId: string, ids: string[]): Promise<Map<string, string>> {
+	const list = [...new Set(ids.filter(id => /^-?\d+$/.test(id)))];
+	if (!list.length) return new Map();
+	const link = (await hasLinks(db)) ? `(SELECT r.linkId FROM NTChatRoom r WHERE r.chatId = ${inlineParams("?", [chatId])})` : "0";
+	const rows = await db.query(`SELECT CAST(p.userId AS TEXT) AS userId, ${personName("p.userId", link)} AS name FROM (SELECT DISTINCT userId FROM NTUser WHERE userId IN (${list.map(() => "?").join(",")})) p`, list);
+	return new Map(rows.filter(r => str(r.name)).map(r => [str(r.userId), str(r.name)]));
+}
+
+// What others call the owner in a room (an @mention is written with it): his open profile nickname in an open chat room, his own names elsewhere.
+export async function ownerNames(db: KakaoDb, chatId: string, userId: string | number): Promise<string[]> {
+	const link = (await hasLinks(db)) ? "COALESCE((SELECT r.linkId FROM NTChatRoom r WHERE r.chatId = ?), 0)" : "0";
+	const rows = await db.query(`SELECT nickName, displayName, friendNickName FROM NTUser WHERE userId = ? AND linkId = ${link}`, link === "0" ? [String(userId)] : [String(userId), chatId]);
+	return [...new Set(rows.flatMap(r => [str(r.nickName), str(r.displayName), str(r.friendNickName)]).map(s => s.trim()).filter(Boolean))];
+}
+
+// Bodies of the given rows (the watch reads them only to tell whether an open chat message calls the owner; they are never printed).
+export async function bodiesOf(db: KakaoDb, logIds: string[]): Promise<{ logId: string; text: string; type: number; attachment: string }[]> {
+	if (!logIds.length) return [];
+	const rows = await db.query(`SELECT CAST(logId AS TEXT) AS logId, message, type, attachment FROM NTChatMessage WHERE logId IN (${logIds.map(() => "?").join(",")})`, logIds);
+	return rows.map(r => ({ logId: str(r.logId), text: str(r.message), type: num(r.type), attachment: str(r.attachment) }));
 }
 
 // One message of a room by logId (the media routes), or undefined when the room has no such message.

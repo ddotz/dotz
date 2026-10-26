@@ -12,7 +12,7 @@ export type Media =
 	| { kind: "video"; w?: number; h?: number; d?: number; expired: boolean }
 	| { kind: "voice"; d?: number; expired: boolean }
 	| { kind: "file"; name: string; size?: number; local: boolean; expired: boolean }
-	| { kind: "emoticon"; alt: string; text?: string }
+	| { kind: "emoticon"; alt: string; text?: string; image?: true }
 	| { kind: "reply"; quote: string; quoteSender?: string }
 	| { kind: "location"; label: string; lat: number; lng: number };
 
@@ -75,13 +75,13 @@ export function mediaOf(m: Msg, now: number, names: Map<string, string> = new Ma
 		return { kind: "file", name: text(a.name) || (m.localFilePath ? basename(m.localFilePath) : "파일"), ...(pos(a.size) ? { size: pos(a.size) } : {}), local, expired: expired && !local };
 	}
 	if (EMOTICON.includes(type)) {
-		const alt = text(a.alt).trim(), words = m.text.trim();
-		return { kind: "emoticon", alt: !alt ? "(이모티콘)" : alt.startsWith("(이모티콘)") ? alt : `(이모티콘) ${alt}`, ...(words ? { text: words } : {}) };
+		const alt = text(a.alt).replace(/^\s*\(이모티콘\)\s*/, "").trim(), words = m.text.trim();
+		return { kind: "emoticon", alt, ...(words ? { text: words } : {}), ...(emoticonPath(a) ? { image: true as const } : {}) };
 	}
 	if (type === REPLY) {
 		const quote = clip(text(a.src_message));
 		if (!quote) return undefined;
-		const who = names.get(String(a.src_userId ?? ""));
+		const who = names.get(replySource(m) ?? "");
 		return { kind: "reply", quote, ...(who ? { quoteSender: who } : {}) };
 	}
 	if (type === LOCATION) {
@@ -91,6 +91,20 @@ export function mediaOf(m: Msg, now: number, names: Map<string, string> = new Ma
 	}
 	return undefined;
 }
+
+// The author of the message a reply answers (type 26 src_userId), for the name above the quote.
+export const replySource = (m: Pick<Msg, "type" | "attachment">): string | undefined => {
+	if (m.type !== REPLY) return undefined;
+	const id = parse(m.attachment).src_userId;
+	return id === undefined || id === null || id === "" ? undefined : String(id);
+};
+
+// An emoticon's image is the item file named in its attachment ("4412207.emot_001.webp"), served by KakaoTalk's item CDN; only a plain file name is used.
+const EMOTICON_CDN = "https://item.kakaocdn.net/dw/";
+const emoticonPath = (a: Att): string | undefined => {
+	const p = text(a.path).trim();
+	return /^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|webp|gif)$/i.test(p) ? p : undefined;
+};
 
 export type Target = { ok: true; url: string } | { ok: false; status: 404 | 410; error: string };
 // Which stored URL a media request means. `i` is the album index; `v` thumb | full.
@@ -103,6 +117,10 @@ export function mediaTarget(m: Msg, i: number, v: "thumb" | "full", now: number)
 		url = v === "thumb" ? pick(thumbs[i], full[i]) : pick(full[i], thumbs[i]);
 	} else if (m.type === VIDEO) url = v === "thumb" ? pick(a.thumbnailUrl, a.tUrl) : pick(a.url, a.urlh);
 	else if (VOICE.includes(m.type)) url = pick(a.url);
+	else if (EMOTICON.includes(m.type)) {
+		const p = emoticonPath(a);
+		url = p ? `${EMOTICON_CDN}${p}` : undefined;
+	}
 	if (!url) return { ok: false, status: 404, error: "볼 수 있는 내용이 없어요" };
 	if (expiredAt(a, now)) return { ok: false, status: 410, error: GONE };
 	return { ok: true, url };
