@@ -1,6 +1,7 @@
 # KakaoTalk per-room chat: web API contract
 
-Rooms the owner chose ("watched") are the only rooms the gateway watches, stores, shows and wakes the bot on. The list lives in
+Rooms the owner chose ("watched") are the only rooms the gateway watches, drafts and sends for, counts as 미답장 and wakes the bot on; any
+other room of the list can be opened read-only (messages, media, read counters, head, the web's read position). The list lives in
 the install's custom layer: `<dataDir>/custom/kakao/config.json` field `watch_chats: string[]` (chat ids). Absent or empty = no
 room is watched (default for a new install; onboarding asks the owner to pick rooms in 모니터링 > 앱 > 카카오톡).
 
@@ -11,12 +12,14 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
   out, the owner's own memo chat (`self`) is listed. `error` is a plain Korean line when the database could not be read (rooms is then []).
 - `PUT /api/kakao/rooms/<chatId>` body `{ watched?: boolean, autoDraft?: boolean }` (at least one) -> `{ ok: true, watched: string[], autoDraft: string[] }`.
   Turning `watched` off also turns `autoDraft` off; `autoDraft: true` on a room that is not watched is refused (409). Broadcasts `{kind:"kakao_rooms"}`.
-- `GET /api/kakao/chat/<chatId>?limit=80&before=<logId>&after=<logId>` -> 403 `{error}` when the room is not watched, else
-  `{ room: { chatId, name, kind, group }, messages: [{ id, collector, logId, authorId, sender, text, type, sentAt, fromMe }], read: <logId|null>,
+- `GET /api/kakao/chat/<chatId>?limit=50&before=<logId>&after=<logId>` -> 404 `{error}` when the room is not in the list, else
+  `{ room: { chatId, name, kind, group, watched }, messages: [{ id, collector, logId, authorId, sender, text, type, sentAt, fromMe }], read: <logId|null>,
   kakaoUnread: number, drafts: [{ code, text, basisLogId, created }], sends: [{ id, text, state, reason?, at, draft? }] }`.
   Messages oldest first. `read` = the owner's read position in the web app for this room (null = never opened; the client then
   uses `kakaoUnread`, KakaoTalk's own unread count, to place the marker). `drafts` = pending drafts of this room only. `sends` =
-  this room's sends of the last 24 h (`state`: `sending` | `sent` | `failed`).
+  this room's sends of the last 24 h (`state`: `sending` | `sent` | `failed`). `group` = senders are named over their messages (group and
+  open chat rooms; an open chat room names each sender by his open profile). `watched: false` = read-only: `drafts` is [], and send,
+  draft, ask and no-reply answer 403. Opening a room reads that room's own row and its newest page only, never the whole room list.
   Each message also has `unread: number`, KakaoTalk's read counter (the yellow number beside a bubble): how many members have
   not read it yet. It comes from `NTChatRoom.watermarkKeys` / `watermarkValues` (binary plists, each an array of int64: member user
   ids and, in the same order, each member's last-read logId). Rule: members whose id is neither the message's author nor the owner
@@ -27,9 +30,11 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
   - `{ kind: "photo", w?, h?, count, expired }` types 2 and 27 (album: `count` = number of images; `w`/`h` = the thumbnail size of the first)
   - `{ kind: "video", w?, h?, d?, expired }` type 3 (`d` = seconds)  - `{ kind: "voice", d?, expired }` types 4 and 5
   - `{ kind: "file", name, size?, local, expired }` type 18; `local` = the owner downloaded it and it still exists on this computer
-  - `{ kind: "emoticon", alt, text? }` types 12, 20, 25 (`alt` like `(이모티콘) 하트`, no image; `text` is the message written with the sticker, absent when it went out alone)
-  - `{ kind: "reply", quote, quoteSender? }` type 26 (`quote` = the replied-to text, clipped to 80 characters; `quoteSender` when that author is
-    among the senders of the same page, `나` for the owner); `text` is the reply itself
+  - `{ kind: "emoticon", alt, text?, image? }` types 12, 20, 25 (`alt` = the sticker's name like `하트`, without a `(이모티콘)` prefix; `image: true`
+    when the attachment names its item file (`path`, e.g. `4412207.emot_001.webp`): the media route then serves it from
+    `https://item.kakaocdn.net/dw/<path>`; `text` is the message written with the sticker, absent when it went out alone)
+  - `{ kind: "reply", quote, quoteSender? }` type 26 (`quote` = the replied-to text, clipped to 80 characters; `quoteSender` = the name of the
+    original's author (attachment `src_userId`) as this room shows it, read for it when it is not on the page, `나` for the owner); `text` is the reply itself
   - `{ kind: "location", label, lat, lng }` type 16 (`label` = address, else title)
   `expired` = the attachment's `expire` (epoch seconds) is in the past (a file the owner downloaded is never expired).
 - `GET /api/kakao/media/<chatId>/<logId>?i=<index>&v=thumb|full` (default `i=0`, `v=full`; `i` = the album image) -> the bytes of a
@@ -38,13 +43,13 @@ All routes are under the gateway's normal owner check. Times are epoch milliseco
   `.kakaocdn.net`, no cookies or auth headers, redirects followed by hand (at most 3) with the same host check, 25 MB cap (413 when
   declared larger; a stream that grows past it is cut off), 20 s timeout, nothing cached on disk. The answer keeps the upstream
   `Content-Type` only when it is `image/*`, `video/*` or `audio/*` (else 502), with `Cache-Control: private, max-age=86400`,
-  `nosniff` and a sandboxing CSP. Errors are `{ error }`: 403 room not watched, 409 integration off, 400 bad ids / index, 404 no such
+  `nosniff` and a sandboxing CSP. Errors are `{ error }`: 403 room not in the list, 409 integration off, 400 bad ids / index, 404 no such
   message in that room (or nothing to show), 410 `기간이 지나 볼 수 없어요` (expired, or upstream 403 / 404 / 410), 413 too big,
   502 the fetch failed or the URL is not an allowed one. This is the only HTTP the integration makes to Kakao hosts.
 - `GET /api/kakao/media/<chatId>/<logId>/file` -> the file of a type 18 message from its `localFilePath` (only when it exists on this
   computer) as `Content-Disposition: attachment` with an RFC 5987 `filename*`; else 404 `{ error: "이 컴퓨터에 내려받은 파일이 없어요" }`.
 - `GET /api/kakao/chat/<chatId>/reads?from=<logId>` -> `{ counts: { [logId]: number } }` for the room's messages with logId >= `from`
-  (oldest first, at most 500), zeros included, no bodies. 403 when the room is not watched, 400 when `from` is not a logId. The client
+  (oldest first, at most 500), zeros included, no bodies. 404 when the room is not in the list, 400 when `from` is not a logId. The client
   calls it with the oldest shown logId to refresh the counters after a `kakao_read` event.
 - `GET /api/kakao/chat/<chatId>/head` -> `{ logId }`, the newest logId of the room (`""` when it has no message), nothing else. While the database
   files (db and -wal) do not change it is answered from memory (no query). A page showing another computer's room asks it every ~2 s

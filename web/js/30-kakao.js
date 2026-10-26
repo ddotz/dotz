@@ -7,7 +7,7 @@
 // Message text only ever goes through el({text}) / textContent, never innerHTML.
 const KK_KEY = "i:kakao";
 const kkItem = it => !!it && (it.key === KK_KEY || !!it.kk);   // a peer's Kakao item (34-peer-monitoring.js) shows this same pane, its rooms read through the proxy (KK.pc)
-const KK_PAGE = 80;
+const KK_PAGE = 50;
 const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, pick: null,   // pick: null = open while no room is chosen
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
@@ -118,15 +118,20 @@ function kkFileNode(m, md) {
     el("span", { class: "kk-fb" }, el("span", { class: "kk-fn", title: md.name, text: md.name }), sub ? el("span", { class: "kk-sub", text: sub }) : null),
     md.local ? el("a", { class: "btn tonal kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: "열기" }) : el("span", { class: "kk-sub kk-nopc", text: "PC에 없음" }));
 }
+// Like KakaoTalk: "<author of the original>에게 답글" over the quoted original, then the reply's own text.
 function kkReplyNode(m, md) {
   const { text } = kkBody(m);
   return el("div", { class: "kk-bub reply" },
-    el("div", { class: "kk-quote" }, md.quoteSender ? el("span", { class: "kk-qn", text: md.quoteSender }) : null, el("span", { class: "kk-qt", text: md.quote })),
+    el("div", { class: "kk-quote" }, el("span", { class: "kk-qn", text: md.quoteSender ? `${md.quoteSender}에게 답글` : "답글" }), el("span", { class: "kk-qt", text: md.quote })),
     el("div", { class: "kk-rt", text }));
 }
-// A sticker with the text written with it: the sticker on top, its text in a bubble under it (a bare sticker is the one placeholder bubble).
-function kkEmoticonNode(md) {
-  const sticker = el("div", { class: "kk-bub ph", text: md.alt });
+// A sticker: its image from the media route when the server has one (md.image), else (or when it cannot be fetched) one chip with its name.
+// The text written with it sits in a bubble under it.
+const kkEmoChip = md => el("div", { class: "kk-bub ph kk-emo-chip", text: md.alt || "이모티콘" });
+function kkEmoticonNode(m, md) {
+  const sticker = md.image
+    ? el("div", { class: "kk-sticker" }, el("img", { src: kkMediaUrl(m, 0, "full"), alt: md.alt || "이모티콘", loading: "lazy", decoding: "async", draggable: "false", onerror: ev => ev.currentTarget.parentNode.replaceWith(kkEmoChip(md)) }))
+    : kkEmoChip(md);
   const words = String(md.text ?? "").trim();
   return words ? el("div", { class: "kk-emo" }, sticker, el("div", { class: "kk-bub kk-emo-t", text: words })) : sticker;
 }
@@ -140,7 +145,7 @@ function kkMediaNode(m, md) {
     case "video": return kkVideoNode(m, md);
     case "voice": return kkVoiceNode(m, md);
     case "file": return kkFileNode(m, md);
-    case "emoticon": return kkEmoticonNode(md);
+    case "emoticon": return kkEmoticonNode(m, md);
     case "reply": return kkReplyNode(m, md);
     case "location": return kkLocationNode(md);
     default: return null;
@@ -201,7 +206,9 @@ const kkSendBtn = el("button", { class: "ib pri", id: "kk-send-btn", type: "subm
 const kkDraftBtn = el("button", { class: "cchip kk-dbtn", id: "kk-draft-btn", type: "button", onclick: () => kkMakeDraft() }, icon("spark"), el("span", { text: "답장 초안" }));
 const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn), kkSendBtn);
 const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkDrafts, kkEditBar, kkForm);
-const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, el("div", { class: "kk-box" }, kkTl, kkPill), kkFoot);
+// A room that is not watched opens read-only: this bar (at every width) says so in place of the composer and starts watching it.
+const kkRo = el("div", { class: "kk-ro", id: "kk-ro", role: "status", hidden: true });
+const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, el("div", { class: "kk-box" }, kkTl, kkPill), kkRo, kkFoot);
 const kkPane = el("div", { class: "kk", id: "kk", hidden: true }, kkRooms, kkChat);
 $("#v-monitoring").append(kkPane);
 
@@ -243,8 +250,10 @@ async function kkLoadRooms() {
     if (seq !== KK.rseq) return;
     KK.failed = true; KK.loaded = true; KK.rooms = []; KK.error = "대화방 목록을 불러오지 못했어요";
   }
-  if (KK.open && !(kkRoom(KK.open) || {}).watched && !KK.failed) kkClose();
+  // A room that is not watched stays open (read-only); only a room gone from the list closes.
+  if (KK.open && !kkRoom(KK.open) && !KK.failed) kkClose();
   kkPaintRooms();
+  if (KK.open) kkPaintChat();
 }
 function kkSwitch(on, label, key, change, small) {
   return el("button", { class: `kk-sw${on ? " on" : ""}${small ? " sm" : ""}`, type: "button", role: "switch", "aria-checked": on ? "true" : "false", "aria-label": label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, el("span", { class: "kk-knob" }));
@@ -257,7 +266,12 @@ async function kkSetRoom(r, patch) {
   kkPaintRooms();
   try {
     await api(`/api/kakao/rooms/${enc(r.chatId)}`, "PUT", patch);
-    if (patch.watched === false && KK.open === r.chatId) kkClose();
+    if (patch.watched !== undefined && KK.open === r.chatId) {
+      if (KK.room) KK.room.watched = patch.watched;
+      if (!patch.watched) r.unreplied = false;
+      kkPaintChat();
+      kkTail();
+    }
     kkIntgSoon();
   } catch (e) {
     Object.assign(r, was);
@@ -268,10 +282,11 @@ async function kkSetRoom(r, patch) {
 const kkSearch = el("input", { class: "kk-q", id: "kk-q", type: "search", placeholder: "대화방 검색", "aria-label": "대화방 검색", autocomplete: "off", enterkeyhint: "search" });
 // Typing refilters only the list: the input itself stays in place (it keeps focus and the IME composition).
 kkSearch.addEventListener("input", () => { KK.q = kkSearch.value; const pl = $("#kk-pl"); if (pl) clear(pl).append(...kkPickRows()); });
-const kkPickRow = r => el("div", { class: "kk-pr", "data-chat": r.chatId },
+// The name opens the room (read-only while it is not watched); the switches choose watching and 자동 초안.
+const kkPickRow = r => el("div", { class: `kk-pr${KK.open === r.chatId ? " on" : ""}`, "data-chat": r.chatId },
   kkAvatar(r.name),
   el("span", { class: "cv-b" },
-    el("span", { class: "cv-n", title: r.name, text: r.name }),
+    el("button", { class: "cv-n kk-pn", type: "button", "data-k": "open", title: r.name, text: r.name, "aria-label": `${r.name} 열기`, onclick: () => kkOpen(r.chatId) }),
     kkSubLine(r) ? el("span", { class: "cv-p", text: kkSubLine(r) }) : null,
     r.watched ? el("span", { class: "kk-auto" }, el("span", { text: "자동 초안" }), kkSwitch(!!r.autoDraft, `${r.name} 자동 초안`, "auto", v => kkSetRoom(r, { autoDraft: v }), true)) : null),
   kkSwitch(!!r.watched, `${r.name} 지켜보기`, "watch", v => kkSetRoom(r, { watched: v })));
@@ -322,11 +337,15 @@ function kkPaintChat() {
   const open = !!KK.open, room = kkRoom(KK.open), info = KK.room || room || {};
   kkFoot.hidden = !open || KK.loading || !!KK.roomErr;
   kkPill.hidden = !(open && KK.pill);
-  const owed = !!(room && room.unreplied), sig = `${KK.open}|${info.name}|${info.group}|${!!AS.by.kakao}|${owed}`;
+  const watching = kkWatching(), owed = watching && !!(room && room.unreplied), sig = `${KK.open}|${info.name}|${info.group}|${!!AS.by.kakao}|${owed}|${watching}`;
+  const readOnly = open && !KK.loading && !KK.roomErr && !watching;
+  kkFoot.hidden = kkFoot.hidden || !watching;
+  kkRo.hidden = !readOnly;
+  if (readOnly) clear(kkRo).append(el("span", { class: "kk-ro-t", text: "감시하지 않는 방이에요. 읽기만 할 수 있어요" }), room ? el("button", { class: "btn tonal", type: "button", "data-k": "watch", text: "감시 시작", onclick: () => kkSetRoom(room, { watched: true }) }) : null);
   if (sig !== KK.headSig) {
     KK.headSig = sig;
     clear(kkHead);
-    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: kkKindLine(info) || (info.group ? "단체 대화방" : "1:1 대화") })), ...(owed ? [unrepPill(), unrepNo(`/api/kakao/chat/${enc(KK.open)}/no-reply`, kkLoadRooms)] : []), ...(KK.pc ? [] : asEntry("kakao")));
+    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: kkKindLine(info) || (info.group ? "단체 대화방" : "1:1 대화") })), ...(owed ? [unrepPill(), kkNoReply(room)] : []), ...(KK.pc ? [] : asEntry("kakao")));
     monSchedule();   // the item's head gives the gear to the room head while a room is open
   }
   if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: "대화방을 골라 주세요" })); return; }
@@ -334,6 +353,24 @@ function kkPaintChat() {
   if (KK.roomErr) { clear(kkIn).append(el("div", { class: "kk-note", role: "status", text: KK.roomErr })); return; }
   kkPaintTl(KK.stick);
   kkPaintFoot();
+}
+// Whether the open room is watched (drafts, sending, 미답장): the room list's flag, else what the chat answer said.
+function kkWatching() {
+  const r = kkRoom(KK.open);
+  return r ? !!r.watched : !!(KK.room && KK.room.watched !== false);
+}
+// 답장 안 함 of the open room: the pill leaves the header and the room row at the tap; a failed request puts it back.
+function kkNoReply(r) {
+  return el("button", { class: "cchip unrep-no", type: "button", "data-k": "no-reply", text: "답장 안 함", onclick: ev => {
+    ev.stopPropagation();
+    r.unreplied = false;
+    kkPaintRooms(); kkPaintChat();
+    api(`/api/kakao/chat/${enc(r.chatId)}/no-reply`, "POST", {}).then(() => { toast("답장 안 함으로 표시했어요"); loadIntegrations(); }, e => {
+      r.unreplied = true;
+      kkPaintRooms(); kkPaintChat();
+      toast(e.message, true);
+    });
+  } });
 }
 const kkDateNode = t => el("div", { class: "kk-date", text: kkDate(t) });
 const kkMarkNode = () => el("div", { class: "kk-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "여기까지 읽었어요" }));
@@ -415,7 +452,7 @@ async function kkOpen(id) {
   if (!r) return;
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
   const seq = ++KK.seq;
-  Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" }, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
+  Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" || r.kind === "open", watched: !!r.watched }, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
     loading: true, roomErr: "", pill: false, stick: true, pin: "", placed: false, readSent: "", edit: null, drafting: "", revise: null, reviseCode: "" });
   kkTa.value = KK.typed.get(id) || ""; kkAutosize();
   kkPaintAll(); convTitle();
