@@ -29,7 +29,7 @@ secrets, and the owner's own launchd jobs. Each install captures its own `spec.j
 
 ## Onboarding (lib/onboard.ts, bin/onboard.ts)
 
-`onboard.ts <site> --url <inbox> --channel ch:<id>` runs six idempotent steps and records each in
+`onboard.ts <site> --url <inbox> --channel ch:<id> [--label <name>]` runs seven idempotent steps and records each in
 `custom/webmail/<site>/onboard.json`, so a rerun resumes at the step that stopped (`--status` shows it):
 
 | step | does | owner touch |
@@ -40,9 +40,28 @@ secrets, and the owner's own launchd jobs. Each install captures its own `spec.j
 | test | live list + read; if no mail was opened, probes likely read endpoints with a real id; a lost login goes back to login once | none |
 | apply | config, home card, sidebar project, this install's feature switch | none |
 | watch | POST /api/watches: the new-mail watch (to orchestrator, in the mail channel) and a session watch (https only) | none |
+| app | POST /api/apps: the site as its own 메일 instance (below); a 409 = already there; the gateway down stops here and the next run retries only this step | none |
 
 Progress is one message edited in place (POST /api/send with an update_key). Exit codes: 0 done, 3 waiting for the
 owner (the printed ask), 1 failed (the printed reason).
+
+## The site as a 메일 app instance
+
+Like the owner's company mail on the Mac mini, a site is a mail reader of one install, so onboarding registers it as another instance of the
+메일 app (docs/custom-plugins.md "Registering a mail reader as a mail instance"; `lib/onboard.ts appInstance`):
+`{app: "mail", id: "mail-<site>", label: <--label or "<site> 메일">, filter: {source: <site>, watches: ["webmail-<site>", "webmail-<site>-login"], data: ["custom/webmail/<site>"]}}`.
+
+- `source` is what the watch posts (POST /api/mail `source`), so the instance owns `mail:<site>-…`; reply-drafts reads a source that names an
+  onboarded site (`custom/webmail/<site>/spec.json`) as that site (`senders.ts webmailSite`) and sends through `bin/mail.ts`.
+- The instance has its own 모니터링 row, settings (답장 모델, 자동 초안, 발신자 필터) and memory: 이어서 할 일 and 첨부 파일 폴더 are learned
+  from conversation (hub/app-settings.ts applyMemory), never asked as settings.
+- 연결 끊김: the watches are the instance's own, and a logged-out poll always fails (`DOTZ_FAIL webmail-login`, the session watch fails its
+  `expect`), so after two failing runs that row (never the default 메일 row) shows "연결 끊김 · <since> · 다시 로그인 필요"
+  (hub/watch-status.ts) until a poll passes. A check that alerts by itself and exits 0 prints `DOTZ_DISCONNECTED since=<ISO>` instead.
+- Files: the adapter saves a text draft only, so a site cannot attach. A reply that promises a file, or a draft with staged files, gets
+  `> 첨부: 없음 (이 메일은 파일을 붙여 보낼 수 없어요 · 빠진 파일: …)` and a draft that holds files is not sent. A site whose replies must carry
+  files (the Mac mini's company mail: reply or forward with files taken from other mails, a pre-send attachment check) needs a site plugin with
+  `reply` + `repliesWithFiles` instead of this feature.
 
 ## The SiteSpec (lib/spec.ts)
 
@@ -71,7 +90,7 @@ features/webmail-no-api/
   bin/mail.ts       action CLI: list | read | search | draft | send (send guarded by owner approval)
   bin/watch.ts      one-shot watch the gateway runs every poll_minutes
   bin/card.ts       home card data command (offline/pre-setup safe)
-  test/*.test.ts    adapter, generator, keepalive, watch, onboarding dry run with resume, unusual sites, off-by-default
+  test/*.test.ts    adapter, generator, keepalive, watch, onboarding dry run with resume, the mail instance and its 연결 끊김, unusual sites, off-by-default
 ```
 
 All TypeScript, run with `bun <abs path>`. No npm dependencies (Bun builtins only, like the rest of dotz). Pure logic
