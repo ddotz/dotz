@@ -10,10 +10,10 @@ import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
 import { owedMessage } from "./address.ts";
 import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, roomKinds, roomShown, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
-import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
+import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, draftParts, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
 import { fetchMedia, mediaOf, mediaTarget, replySource, serveLocalFile, showsText } from "./media.ts";
 import type { AxStep, Focus } from "./room.ts";
-import { createDraft, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
+import { createDraft, draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 import { kakaoUnreplied } from "../unreplied.ts";
 
@@ -427,7 +427,8 @@ export function createKakaoWeb(deps: WebDeps) {
 						kakaoUnread: room.unread,
 						drafts: (isWatched ? await listDrafts({ paths, runner: deps.runner }) : [])
 							.filter(d => d.chatId === chatId && d.status === "pending")
-							.map(d => ({ code: d.code, text: d.text, basisLogId: d.basisLogId, created: d.created })),
+							// `parts`: the messages the draft sends, in order (one bubble each in the card); `sentParts` of them are already in the room.
+							.map(d => ({ code: d.code, text: d.text, parts: draftParts(d.text), ...(d.sentParts ? { sentParts: d.sentParts } : {}), basisLogId: d.basisLogId, created: d.created })),
 						...(ask ? { ask } : {}),
 						sends: sendList()
 							.filter(s => s.chatId === chatId && s.at >= since)
@@ -579,7 +580,7 @@ export function createKakaoWeb(deps: WebDeps) {
 			}
 			if (draft.status !== "pending") return json({ error: "이 초안은 더 이상 보낼 수 없어요" }, 409);
 			const edited = (await body()).text;
-			if (edited !== undefined && (typeof edited !== "string" || !edited.trim() || [...edited].length > MAX_TEXT)) return json({ error: `글은 1자에서 ${MAX_TEXT}자 사이여야 해요` }, 400);
+			if (edited !== undefined && (typeof edited !== "string" || draftTextError(edited))) return json({ error: typeof edited === "string" ? draftTextError(edited) : "답장 글이 비어 있어요" }, 400);
 			let latest: string | undefined;
 			try {
 				latest = await latestIncoming(config!, draft.chatId);
