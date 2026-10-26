@@ -80,18 +80,23 @@ function toastAttn() {
     const names = first.map(targetName), newest = first.map(t => targetInfo(t).ask.at).sort().pop();
     notify({ kind: "needs", target: "home", tone: "warn", title: `답변 필요 ${first.length}개`, ts: newest, text: `${names.slice(0, 2).join(", ")}${names.length > 2 ? ` 외 ${names.length - 2}개` : ""}가 답을 기다려요` });
     const c = document.querySelector(".ntf-box .ntf");
-    if (c && c !== before) c.dataset.ny = "home";
+    if (c && c !== before) { c.dataset.ny = "home"; attnHomeClick(); }
   }
   attnPainted = true;
 }
-// The bundled toast opens 홈 instead of one conversation (capture phase: before the card's own open-by-notice handler).
-document.addEventListener("click", ev => {
-  const c = ev.target.closest && ev.target.closest('.ntf[data-ny="home"]');
-  if (!c || ev.target.closest(".x")) return;
-  ev.stopPropagation();
-  c.querySelector(".x").click();
-  go("home");
-}, true);
+// The bundled toast opens 홈 instead of one conversation (capture phase: before the card's own open-by-notice handler). Installed with the first one.
+let attnHomeOn = false;
+function attnHomeClick() {
+  if (attnHomeOn) return;
+  attnHomeOn = true;
+  document.addEventListener("click", ev => {
+    const c = ev.target.closest && ev.target.closest('.ntf[data-ny="home"]');
+    if (!c || ev.target.closest(".x")) return;
+    ev.stopPropagation();
+    c.querySelector(".x").click();
+    go("home");
+  }, true);
+}
 function attnToast(t, k) {
     const ask = targetInfo(t).ask;
     notify({ kind: "needs", target: t, open: t, ask: k === "ask", tone: "warn", title: `${targetName(t)} · ${attnLabel(k)}`,
