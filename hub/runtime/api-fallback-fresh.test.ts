@@ -5,12 +5,12 @@
 // at its start and once at its end, and while miseol-shared is pinned no API key is used at all.
 // API_FALLBACK_SIM_LOG=<file> also writes each step as one line (the evidence log).
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { endSubagents } from "../activity.ts";
 import type * as Lanes from "../lanes.ts";
 import type * as Orchestrator from "../orchestrator.ts";
-import { cfg } from "../config.ts";
+import { cfg, DATA_DIR } from "../config.ts";
 import { resetFallbackState } from "../fallback.ts";
 import { adapters } from "./index.ts";
 import { omp } from "./omp.ts";
@@ -239,6 +239,10 @@ test("failed probe before the reset time: no restart before it, one fall-back no
 }, 60_000);
 
 test("simulated 429 while miseol-shared is pinned: no API key, the orchestrator pauses on the subscription", async () => {
+	// the install names the account in config guard.no_api_key_accounts (hub/apikey-policy.ts); the code bans none by itself
+	const conf = join(DATA_DIR, "config.json"), had = existsSync(conf) ? readFileSync(conf, "utf8") : undefined;
+	const c = had ? JSON.parse(had) : {};
+	writeFileSync(conf, JSON.stringify({ ...c, guard: { ...(c.guard ?? {}), no_api_key_accounts: ["miseol-shared"] } }));
 	writeFileSync(authFile, JSON.stringify({ "anthropic-subscription": { pinned: "miseol-shared" } }));
 	alerts.length = 0;
 	const sub = await startOnSubscription();
@@ -253,4 +257,6 @@ test("simulated 429 while miseol-shared is pinned: no API key, the orchestrator 
 	o.stop();
 	await advance(300);
 	rmSync(authFile, { force: true });
+	if (had === undefined) rmSync(conf, { force: true });
+	else writeFileSync(conf, had);
 }, 60_000);

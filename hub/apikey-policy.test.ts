@@ -1,5 +1,5 @@
-// The owner's rule: while 미설's subscription account (miseol-shared) is pinned in OmO, no API key may be used.
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+// An install's rule (config guard.no_api_key_accounts): while one of those subscription accounts is pinned in OmO, no API key may be used.
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { allowFile, apiKeyBan, withoutApiKeys } from "./apikey-policy.ts";
@@ -9,8 +9,31 @@ import { Chain, entryView, resetFallbackState } from "./fallback.ts";
 const pin = (account: string) =>
 	writeFileSync(join(process.env.OMO_CODING_AGENT_DIR!, "auth.json"), JSON.stringify({ "anthropic-subscription": { type: "oauth", pinned: account, accounts: {} }, anthropic: { type: "api_key", key: "sk-test" } }));
 
+const CONFIG = join(DATA_DIR, "config.json");
+const setBan = (names: string[] | undefined) => {
+	const c = existsSync(CONFIG) ? JSON.parse(readFileSync(CONFIG, "utf8")) : {};
+	c.guard = { ...(c.guard ?? {}), no_api_key_accounts: names };
+	if (!names) delete c.guard.no_api_key_accounts;
+	writeFileSync(CONFIG, JSON.stringify(c));
+};
+
+test("no account is banned unless the install's config names it: the shipped code carries no owner's account", () => {
+	setBan(undefined);
+	pin("miseol-shared");
+	expect(apiKeyBan()).toBeUndefined();
+	expect(withoutApiKeys({ ANTHROPIC_API_KEY: "sk" })).toEqual({ ANTHROPIC_API_KEY: "sk" });
+	pin("default");
+});
+
 mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
 writeFileSync(join(DATA_DIR, "secrets", "anthropic-api-key"), "sk-ant-test\n");
+
+test("the config list is the ban: naming an account bans it", () => {
+	setBan(["miseol-shared"]);
+	pin("miseol-shared");
+	expect(apiKeyBan()).toBe("miseol-shared");
+	pin("default");
+});
 
 test("miseol-shared pinned: an API-key entry is never chosen and never gets its key; another pin allows it", () => {
 	resetFallbackState();

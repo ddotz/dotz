@@ -259,10 +259,13 @@ there is no gate. `budget_gate: false` turns it off.
   of a model selector; `:level` for a thinking level) blocks `task` subagents on those models and flags a main agent on one
   until `/fable-ok` or `DOTZ_OWNER_ASKED_FABLE=1` (set by the gateway for `owner_asked_for_fable` sessions); `/doctor` and the
   audit report them too.
+- *Owner rule, off by default*: `no_api_key_accounts: ["<account>"]` names OmO subscription accounts whose tokens are not
+  the owner's own; while OmO is pinned to one of them, no API-key fallback runs and API-key variables are stripped from what
+  dotz spawns (`hub/apikey-policy.ts`).
 - Config: the `guard` object in `config.json`, every key optional (`enabled`, `max_brief_chars`, `max_fence_lines`,
   `max_output_chars`, `worker_answer_chars` 800, `worker_context_tokens` 400000, `budget_gate`, `budget_margin_percent`,
   `budget_default_estimate_percent`, `override_minutes`, `repeat_block_threshold`, `switch_compact_min_tokens`,
-  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `defer_to_installed`, `harness_tools`).
+  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `no_api_key_accounts`, `defer_to_installed`, `harness_tools`).
 - *Already installed copies*: the runtime lists no loaded extensions to an extension, so the guard looks for
   `<agent dir>/extensions/orchestrator-guard.ts` (and `harness-tools.ts` for the commands), unless discovery is
   switched off or the config disables it. When it exists, this copy leaves those hooks to it (the same hooks
