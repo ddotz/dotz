@@ -108,6 +108,9 @@ const mtimeOf = (path: string | null | undefined): number => {
 	}
 };
 const modelsStamp = (): string => [authFile(), Bun.which(OMO), Bun.which(OMP)].map(mtimeOf).join(":");
+// The credential store moves between reads (a login, a key import, a pin) and a test or a second agent dir swaps the file: the
+// cache holds only the store it read, so a path or mtime change reads again instead of serving another store's accounts.
+const authStamp = (): string => `${authFile()}:${mtimeOf(authFile())}`;
 let cache: { models?: Cached<ModelInfo[]>; auth?: Cached<AuthInfo[]>; usage?: Cached<OmpUsageReport[]> } = {};
 // A read in flight is shared: pages asking at the same moment wait for one process instead of starting one each.
 const loading = new Map<keyof typeof cache, Promise<unknown>>();
@@ -117,7 +120,7 @@ function invalidate(): void {
 }
 async function cached<K extends keyof typeof cache>(key: K, load: () => Promise<NonNullable<(typeof cache)[K]>["value"] | undefined>): Promise<NonNullable<(typeof cache)[K]>["value"] | undefined> {
 	type V = NonNullable<(typeof cache)[K]>["value"] | undefined;
-	const stamp = key === "models" ? modelsStamp() : undefined;
+	const stamp = key === "models" ? modelsStamp() : key === "auth" ? authStamp() : undefined;
 	const hit = cache[key];
 	if (hit && Date.now() - hit.at < (key === "models" ? MODELS_TTL_MS : TTL_MS) && hit.stamp === stamp) return hit.value;
 	const pending = loading.get(key);
