@@ -150,12 +150,21 @@ describe("against temp git repos", () => {
 
 	test("the gate the incoming commit defines in hub/update-gate.json is the one that runs, on the same update", async () => {
 		mkdirSync(join(pusher, "hub"), { recursive: true });
-		r.push("hub/update-gate.json", JSON.stringify({ cmd: ["sh", "-c", "test ! -f FAIL && echo new-gate"], timeoutMinutes: 30 }), "new gate");
+		r.push("hub/update-gate.json", JSON.stringify({ cmd: ["bun", "test", "--new-gate"], timeoutMinutes: 30 }), "new gate");
 		const seen: { cmd: string; ms: number }[] = [];
 		const exec: Exec = async (cmd, cwd, ms) => (seen.push({ cmd: cmd.join(" "), ms }), cmd[0] === "bun" ? { code: 0, out: "" } : defaultExec(cmd, cwd, ms));
 		const j = await apply({ ...opts(exec), testCmd: undefined });
 		expect(j.status).toBe("updated");
-		expect(seen.filter(s => s.cmd.startsWith("sh -c") || s.cmd.startsWith("bun test"))).toEqual([{ cmd: "sh -c test ! -f FAIL && echo new-gate", ms: 30 * 60_000 }]);
+		expect(seen.filter(s => s.cmd.startsWith("bun test"))).toEqual([{ cmd: "bun test --new-gate", ms: 30 * 60_000 }]);
+	});
+
+	test("an incoming commit without a gate file runs the running version's gate, not nothing", async () => {
+		r.push("x.txt", "x", "no gate file");
+		const seen: { cmd: string; ms: number }[] = [];
+		const exec: Exec = async (cmd, cwd, ms) => (seen.push({ cmd: cmd.join(" "), ms }), cmd[0] === "bun" ? { code: 0, out: "" } : defaultExec(cmd, cwd, ms));
+		const j = await apply({ ...opts(exec), testCmd: undefined });
+		expect(j.status).toBe("updated");
+		expect(seen.filter(s => s.cmd.startsWith("bun test"))).toEqual([{ cmd: "bun test --isolate", ms: 20 * 60_000 }]);
 	});
 
 	test("failing tests put the checkout back on the old commit", async () => {
