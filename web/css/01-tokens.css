@@ -38,7 +38,8 @@
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
 [hidden] { display: none !important; }
-html, body { height: 100%; margin: 0; }
+/* manipulation: a double tap does not zoom the page (iPhone web app, owner 2026-10-26); pinch zoom still works */
+html, body { height: 100%; margin: 0; touch-action: manipulation; }
 body { font: 400 14px/22px var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; }
 button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
 button { cursor: pointer; }
