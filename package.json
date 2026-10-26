@@ -9,6 +9,7 @@
   },
   "scripts": {
     "gateway": "bun hub/main.ts",
-    "setup": "bun setup.ts"
+    "setup": "bun setup.ts",
+    "test": "bun test --parallel"
   }
 }
