@@ -38,6 +38,7 @@ import { readTodo } from "./todo.ts";
 import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
+import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, webBuild } from "./webapp.ts";
 import { listPeers, ownLogin } from "./peers.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
@@ -123,6 +124,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (pushResponse) return pushResponse;
 		const updateResponse = await updateRoute(req, url, { boot: BOOT_ID, busy: busyNow, restartIdle: restartGateway, restartNow: restartGatewayNow });
 		if (updateResponse) return updateResponse;
+		// Settings → 업데이트 → 실행 하네스 (hub/harness-update.ts): the harness binary itself, from the package registry.
+		const harnessUpdateResponse = await harnessUpdateRoute(req, url, { busy: busyNow, restartIdle: restartGateway });
+		if (harnessUpdateResponse) return harnessUpdateResponse;
 		const customResponse = await customRoute(req, url, { lanes: () => withHomes(laneSummary(), discord.channels), channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }) });
 		if (customResponse) return customResponse;
 		// Project records (hub/projects.ts) and the todo strip (hub/todo.ts), docs/layers.md §4.
