@@ -25,18 +25,17 @@ Reference implementation: `hub/user-apps.ts` (manifest), `hub/app-proxy.ts` (pro
   a phone could not reach it at all. `/apps/<id>/` keeps one origin, one identity check, and no new port to expose. A
   non-loopback `web.url` is refused at load and at proxy time.
 - **Two URL modes, because rewriting is a guess.** `mode: "prefix"` (default) expects the app to serve relative URLs (or its
-  own base path) -- nothing is rewritten. `mode: "rewrite"` is for an app written for `/` (hdocs): the gateway prefixes
+  own base path) -- nothing is rewritten. `mode: "rewrite"` is for an app written for `/`: the gateway prefixes
   root-absolute `src/href/action/poster` and CSS `url(/...)`, rewrites `Set-Cookie` `Path` and `Location` back under
   `/apps/<id>/`, and injects a small first script that prefixes `fetch`, `XMLHttpRequest` and `WebSocket` paths at run time.
   It does **not** rewrite JavaScript string literals, absolute `ws://host/...` URLs or `location = "/..."` assignments: an app
   that needs those must serve under the prefix.
 - **WebSocket upgrades are bridged.** `server.upgrade` plus a client `WebSocket` per connection (`hub/app-proxy.ts`), so an
-  app that keeps a live channel (hdocs's editor) works through the same prefix. The upgrade goes through the same auth as
-  every request; a browser cannot set the hub token header, so identity comes from `tailscale serve` headers, exactly like
-  the rest of the web app.
+  app that keeps a live channel works through the same prefix. The upgrade goes through the same auth as every request; a
+  browser cannot set the hub token header, so identity comes from `tailscale serve` headers, exactly like the rest of the web app.
 - **`start` is a hint, never run.** The gateway does not spawn processes from a user's manifest: that would be remote code
-  execution behind a data file. The 앱 설정 sheet shows the command so the owner (or the bot) can run it, and the doc
-  recommends launchd for anything that must stay up.
+  execution behind a data file. The 앱 설정 sheet shows the command so the owner (or the bot) can run it; keeping a service
+  up is the host's job (launchd, systemd, the app's own menu item).
 - **Bad data never takes the list down.** A broken manifest is `{id, dir, reason}` in `errors`; the 앱 tab lists it as a
   row with 오류, the other apps keep working, and the gateway never throws.
 
@@ -77,77 +76,35 @@ DELETE /api/apps/<id>                 (제거: folder to custom/apps-removed)
 GET    /apps/<id>/...                 (the app's own pages, proxied)
 ```
 
-## Bringing hdocs from the Mac mini
+## Example: a tool app written for `/`
 
-hdocs is a local web app (Hancom Docs in a Bun.WebView) at `github.com/ddotz/hdocs` (private). On the Mac mini it runs from
-`~/Code/hdocs/hdocs-web-live` as launchd `dev.ddotz.hdocs-web`:
-
-- `bun src/server.ts` with WorkingDirectory that folder
-- port `PORT`, default **4417**
-- log `~/.ddotz/hdocs-web.log`
-- pages use root-absolute paths (`/hd/...`), so it is `mode: "rewrite"`; its editor keeps a WebSocket, which the gateway
-  bridges
-
-On the machine that will run it:
-
-```sh
-cd ~/Code && git clone git@github.com:ddotz/hdocs.git hdocs
-cd hdocs/hdocs-web-live && bun install
-# try it once in the foreground
-PORT=4417 bun src/server.ts        # hdocs on http://127.0.0.1:4417
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:4417/
-```
-
-Keep it up with launchd (owner's user agent, `~/Library/LaunchAgents/dev.ddotz.hdocs-web.plist`):
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>dev.ddotz.hdocs-web</string>
-  <key>ProgramArguments</key><array><string>/Users/<you>/.bun/bin/bun</string><string>src/server.ts</string></array>
-  <key>WorkingDirectory</key><string>/Users/<you>/Code/hdocs/hdocs-web-live</string>
-  <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>/Users/<you>/.bun/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    <key>HOME</key><string>/Users/<you></string>
-  </dict>
-  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/Users/<you>/.ddotz/hdocs-web.log</string>
-  <key>StandardErrorPath</key><string>/Users/<you>/.ddotz/hdocs-web.log</string>
-</dict></plist>
-```
-
-```sh
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.ddotz.hdocs-web.plist
-```
-
-Then the manifest, `~/.dotz/custom/apps/hdocs/app.json`:
+`my-tool` is a local web app on port 4417 (the port is only an example) whose pages use root-absolute paths. It runs from
+whatever folder the owner cloned it into, under whatever keeps it alive on that machine.
 
 ```json
 {
-  "label": "한컴 문서",
+  "label": "내 도구",
   "kind": "tool",
   "icon": "file",
   "web": { "url": "http://127.0.0.1:4417", "path": "/", "mode": "rewrite" },
   "health": "/",
-  "start": { "command": "bun src/server.ts", "cwd": "~/Code/hdocs/hdocs-web-live", "env": { "PORT": "4417" } },
+  "start": { "command": "bun src/server.ts", "cwd": "~/Code/my-tool", "env": { "PORT": "4417" } },
   "settings": { "포트": 4417 },
   "order": 10
 }
 ```
 
-Check it: `GET /api/apps` shows `hdocs` with `status: "running"` and no entry in `errors`; the 웹 앱 tab lists 한컴 문서 and
-opening it frames `/apps/hdocs/`. If it says 응답 없음, the launchd job is not up (`tail ~/.ddotz/hdocs-web.log`) or the port
-differs from the manifest.
+Saved as `~/.dotz/custom/apps/my-tool/app.json`, it appears in the 웹 앱 tab and its page is framed from `/apps/my-tool/`.
+Check `GET /api/apps`: no entry in `errors`, and `my-tool` has `status: "running"`. If it says 응답 없음, the app's server is
+not up (read its log) or its port differs from `web.url`.
 
-The same manifest works on the Mac mini itself (its hdocs already listens on 4417 there): only `web.url` must stay loopback,
-so run dotz on the machine that runs the app. A second computer's hdocs is not proxied through this hub; each dotz install
-serves its own apps.
+An app that already serves relative URLs needs only `"mode": "prefix"` (the default) with its `web.url`; an app whose server
+answers under a sub-path also sets `web.path`.
 
 ## What the bot does when the owner asks for an app
 
 `MODE.md` / `MODE.ko.md` (the file each user's bot reads) says it in short: write the manifest, check `GET /api/apps` for
-`errors: []` and `status: "running"`, never put secrets in it. `docs/app-templates/hdocs.md` is the request wording for this
-one. Deployment rules stay in MODE, not here: this file is the reference for whoever builds or debugs an app.
+`errors: []` and `status: "running"`, never put secrets in it. App-specific request wording and bring-in steps are the
+owner's own material and live in their data folder (`custom/app-templates.json`, `custom/apps/<id>/`), never in this tree.
 
 Files under `docs/` are gitignored in this repo; add new ones with `git add -f`.
