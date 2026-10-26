@@ -1,8 +1,8 @@
 // The update gate (hub/update-gate.json runs `bun test ./hub/update-gate-run.ts`): the whole suite, run the fastest way this bun can.
 // bun 1.4.2+ runs test files in parallel workers. bun 1.4.0 cannot start WebView hosts from parallel workers ("Failed to spawn WebView host
 // process", 25-31 web test files on a Mac mini, 2026-10-26), so an older bun runs the files one by one in a fresh global. Even then bun 1.4.0
-// fails a WebView start now and then (ERR_DLOPEN_FAILED, 4 of 51 web files in one run, each passing alone), so the files that failed run once
-// more on their own: a broken change fails again, a host that did not start does not stop the update.
+// fails a WebView start now and then (ERR_DLOPEN_FAILED, 4 of 51 web files in one run, each passing alone), so each file that failed runs again
+// in a process of its own (twice at most): a broken change fails again, a host that did not start does not stop the update.
 // Not named *.test.ts, so a plain `bun test` never runs it (it would run the suite inside itself).
 import { expect, test } from "bun:test";
 import { join } from "node:path";
@@ -40,6 +40,12 @@ test(`the whole suite passes (bun ${Bun.version})`, async () => {
 	expect(files.length).toBeGreaterThan(0);   // a failure the output does not tie to a file is not retried
 	expect(files.length).toBeLessThanOrEqual(RERUN_MAX);
 	console.log(`\nupdate gate: ${files.length} file(s) failed, running them once more on their own: ${files.join(" ")}`);
-	const again = await run(["--isolate", "--timeout=20000", ...files.map(f => `./${f}`)]);
-	expect(again.code).toBe(0);
+	// Each file in a process of its own, as it passes alone; a second try only for a file that fails again.
+	const still: string[] = [];
+	for (const f of files) {
+		let ok = false;
+		for (let i = 0; i < 2 && !ok; i++) ok = (await run(["--timeout=20000", `./${f}`])).code === 0;
+		if (!ok) still.push(f);
+	}
+	expect(still).toEqual([]);
 }, 19 * 60_000);
