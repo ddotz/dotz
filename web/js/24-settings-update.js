@@ -117,30 +117,57 @@ async function updWaitTick() {
   setTimeout(updWaitTick, 2000);
 }
 const hvCanUpd = h => h.available && (h.installMethod === "bun-global" || h.installMethod === "omp-update");
+// The runtime picker's data (web/js/26-settings-runtime.js): the same two rows, folded into this one section so the screen
+// carries a single 실행 하네스 heading.
+const hvRt = () => (typeof RT !== "undefined" && RT && Array.isArray(RT.runtimes) ? RT.runtimes : []);
+const hvRoles = rt => (rt && rt.roles && rt.roles.length ? rt.roles.map(k => (typeof RT_ROLE !== "undefined" ? RT_ROLE[k] : "") || k).join("·") + " 사용 중" : "");
 const hvSub = h => {
   if (!h.current) return h.error || "확인 중…";
+  const rt = hvRt().find(r => r.id === h.id);
+  const role = hvRoles(rt);
   const ver = `지금 ${h.current}${h.latest && h.latest !== h.current ? ` → ${h.latest}` : ""}`;
-  if (h.installMethod === "managed") return `${ver} · ${h.managedBy || "다른 프로그램"}이 관리해요`;
-  if (h.installMethod === "app") return `${ver} · 앱으로 설치됨`;
-  if (h.error) return `${ver} · ${h.error}`;
-  return h.available ? ver : `${ver} · 최신`;
+  const withRole = s => (role ? `${s} · ${role}` : s);
+  if (h.installMethod === "managed") return withRole(`${ver} · ${h.managedBy || "다른 프로그램"}이 관리해요`);
+  if (h.installMethod === "app") return withRole(`${ver} · 앱으로 설치됨`);
+  if (h.error) return withRole(`${ver} · ${h.error}`);
+  if (!h.latest && !h.checkedAt) return withRole(ver);
+  return withRole(h.available ? ver : `${ver} · 최신`);
 };
+function hvSwitcher(h) {
+  const rt = hvRt().find(r => r.id === h.id);
+  const others = hvRt().filter(r => r.installed && r.id !== h.id).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", hvRoles(r)].filter(Boolean).join(" · ") || undefined }));
+  if (!rt || !others.length) return null;
+  return el("button", { class: "btn tonal", type: "button", "aria-label": `${h.name} 바꾸기`, "aria-haspopup": "listbox", "aria-expanded": "false", title: "실행 하네스 바꾸기", onclick: ev => showMenu(ev.currentTarget, others, { onPick: id => rtFlow(hvRt().find(x => x.id === id)) }) }, icon("drop"));
+}
+const hvNote = text => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text })));
 function hvJobLine(j) {
   if (j.status === "running" || j.status === "deferred") return el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: j.status === "deferred" ? "작업이 끝나면 업데이트해요" : `업데이트 중 · ${j.phase}` }), el("div", { class: "sup", text: j.message })), el("span", { class: "dot pri", "aria-hidden": "true" }));
   return el("div", { class: `upd-box ${j.status === "updated" ? "ok" : j.status === "failed" ? "err" : ""}` }, el("div", { class: "upd-msg", text: j.message }),
     j.steps.length ? el("ul", { class: "upd-log" }, ...j.steps.slice(-4).map(s => el("li", { class: "dim" }, el("span", { text: s.text })))) : null);
 }
-// 실행 하네스: the harness the agents run on, beside dotz's own version below. A busy gateway defers the install to idle.
+// 실행 하네스: the harness the agents run on, its version and update, and the picker that switches harnesses - one section.
+// A busy gateway defers the install to idle.
 function hvSection() {
   const hs = hvList();
-  if (!hs.length) return [];
+  const running = hvRt().filter(r => (r.roles || []).length > 0);
+  const ids = [...new Set([...hs.map(h => h.id), ...running.map(r => r.id)])];
+  if (!ids.length) return [];
   const pending = hvJob();
-  const list = hs.map(h => el("div", { class: "li" }, el("span", { class: "lead" }, icon("harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: h.name }), el("div", { class: "sup", text: hvSub(h) })),
-    h.available ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null,
-    h.available && h.installMethod !== "managed" && h.installMethod !== "app" ? el("button", { class: "btn", type: "button", disabled: !hvCanUpd(h) || !!pending, onclick: ev => hvApply(ev.currentTarget, h.id) }, "업데이트") : null));
+  const list = ids.map(id => {
+    const rt = hvRt().find(r => r.id === id);
+    const h = hs.find(x => x.id === id) || { id, name: (rt && rt.label) || id, current: (rt && rt.version) || null, latest: null, available: false, installMethod: "unknown", checkedAt: null };
+    const job = h.job;
+    const mine = job && (job.status === "running" || job.status === "deferred");
+    const state = mine
+      ? el("span", { class: "tag pri", "aria-live": "polite" }, el("span", { class: "dot pri", "aria-hidden": "true" }), job.status === "deferred" ? "대기 중" : "진행 중")
+      : h.available && h.installMethod !== "managed" && h.installMethod !== "app" ? el("button", { class: "btn", type: "button", disabled: !hvCanUpd(h) || !!pending, onclick: ev => hvApply(ev.currentTarget, h.id) }, "업데이트") : null;
+    return el("div", { class: "li" }, el("span", { class: "lead" }, icon("harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: h.name }), el("div", { class: "sup", text: hvSub(h) })),
+      h.available && !mine ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null, state, hvSwitcher(h));
+  });
   if (pending) list.push(hvJobLine(pending));
   else for (const h of hs) if (h.job && h.job.status !== "current") list.push(hvJobLine(h.job));
-  list.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "6시간마다 새 버전을 확인해요. 업데이트는 하던 일이 끝난 뒤에 설치하고, 새 버전으로 다시 시작해요. 설치가 실패하면 지금 버전을 그대로 써요." }))));
+  list.push(hvNote("6시간마다 새 버전을 확인해요. 업데이트는 하던 일이 끝난 뒤에 설치하고, 새 버전으로 다시 시작해요. 설치가 실패하면 지금 버전을 그대로 써요."));
+  if (running.length) list.push(hvNote("바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요."));
   return [el("div", { class: "sec" }, "실행 하네스", hvNew() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null,
     el("button", { class: "btn tonal", type: "button", disabled: !!(HV.info && HV.info.checking), onclick: ev => hvCheck(ev.currentTarget) }, "확인")), el("div", { class: "list" }, ...list)];
 }
@@ -196,5 +223,5 @@ function renderSettings() {
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     row("chat", "대화 탭", chatTabMode() === "main" ? "메인 대화" : "마지막으로 보던 대화", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, null),
     d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : d.error ? "err" : "warn"}`, text: d.connected ? "연결됨" : d.error ? "연결 안 됨" : "연결 중", title: d.error || "" })) : null),
-    ...pushSection(), ...updateSection(), ...accountSection(), ...rtSection());
+    ...pushSection(), ...updateSection(), ...accountSection());
 }
