@@ -101,6 +101,44 @@ export function writeOmoPin(account: string | undefined, now = Date.now()): PinR
 	}
 }
 
+// Removes one subscription account (a dead or unwanted login) from OmO's store: its entry in `accounts`, and the pin when it was the
+// pinned one. Same lock and write as the pin; a copy of the file before the change is kept as auth.json.dotz-delete-<time> (0600).
+// The last account is refused: that is a sign-out (공급자 → 로그아웃), not an account removal.
+export function deleteOmoAccount(name: string, now = Date.now()): "deleted" | "missing" | "last" {
+	const file = authFile();
+	if (!existsSync(file)) return "missing";
+	const release = lock(file);
+	try {
+		const text = readFileSync(file, "utf8");
+		const data = JSON.parse(text);
+		const sub = data?.[SUB];
+		const accounts: { name?: unknown }[] = Array.isArray(sub?.accounts) ? sub.accounts : [];
+		if (!accounts.some(a => a?.name === name)) return "missing";
+		if (accounts.length <= 1) return "last";
+		const backup = `${file}.dotz-delete-${now}`;
+		copyFileSync(file, backup);
+		chmodSync(backup, 0o600);
+		sub.accounts = accounts.filter(a => a?.name !== name);
+		if (sub.pinned === name) {
+			delete sub.pinned;
+			if (ownPin() === name) writeOwn(undefined);
+		}
+		const tmp = `${file}.${process.pid}.tmp`;
+		try {
+			writeFileSync(tmp, `${JSON.stringify(data, null, 2)}${text.endsWith("\n") ? "\n" : ""}`, { mode: 0o600 });
+			chmodSync(tmp, statSync(file).mode & 0o777);
+			renameSync(tmp, file);
+		} catch (e) {
+			rmSync(tmp, { force: true });
+			throw e;
+		}
+		log(`OmO account deleted: ${name}`);
+		return "deleted";
+	} finally {
+		release();
+	}
+}
+
 function writeOwn(account: string | undefined): void {
 	if (account === undefined) rmSync(ownPinFile(), { force: true });
 	else writeFileSync(ownPinFile(), `${JSON.stringify({ account })}\n`);
