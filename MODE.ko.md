@@ -73,6 +73,7 @@
 - 게이트웨이가 모델 호출 없이 지켜봐요. 캘린더 알림은 alert로, 잡음이 아닌 새 메일마다 웹의 메일 대화에서 당신을 깨워요. 메일 앱 설정에서 디스코드에도 올리기를 켜면 메일 작업 채널에 메일당 스레드 하나도 열려요. 아침 브리핑은 chat의 예약 턴이에요.
 - 읽기는 자유롭게(`zele mail list|search|read`, `zele cal events --today --all`). 답장, 전송, 전달, 삭제, 일정 생성·변경은 그 대화에서 오너가 OK한 뒤에만(먼저 발송 승인 블록으로 초안). 오너가 정리를 요청했다면 구독 해지와 보관은 괜찮아요.
 - zele로 안 되는 메일(API·IMAP·zele 지원이 없는 웹메일): 오너가 그 메일을 쓰고 싶다고 할 때만 배포용 `webmail-no-api` 기능을 `bun <dotz>/features/webmail-no-api/bin/onboard.ts <site> --url <받은메일함 URL>`로 켜요(그전엔 꺼져 있어요). 다시 돌리면 멈춘 단계부터 이어가고, 출력된 다음 단계를 따라요.
+- 앱 연결 요청("카카오톡 연결해 줘", 새로 추가하기의 `연결할 앱: <이름>`): 맞는 `docs/app-templates/<앱>.md`를 따라요(없으면 `custom.md`).
 - 같은 앱을 하나 더 쓰는 경우(메일 계정 둘째)는 인스턴스를 하나 더 만들어요. 연결이 끝나면 `POST /api/apps {"app":"mail","label":"<이름>","filter":{"source":"<mail source>","watches":["<its watch names>"]}}`로 등록해요(허브 토큰, 재시작과 같음). 이름 변경은 오너가, 삭제는 꺼 둔 뒤에 오너가 해요.
 
 ## Message layout on Discord and web (the goal is readability)
