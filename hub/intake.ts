@@ -19,7 +19,9 @@ import { withTurnLanguage } from "./outlang.ts";
 import { channelContext, listSetups } from "./workchannels.ts";
 import { deliver, awaiting, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice } from "./outbound.ts";
 import { mailTarget, type MailRecord } from "./mail.ts";
-import { settingsTarget } from "./app-settings.ts";
+import { memoryNote, settingsTarget } from "./app-settings.ts";
+import { appEntries } from "./integrations.ts";
+import { instanceOf } from "./reply-model.ts";
 import { settingsNote } from "./settings-turn.ts";
 import { watchAsked } from "./watch-recheck.ts";
 import { pluginThread } from "./plugins.ts";
@@ -219,7 +221,8 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	const event = { ts: now(), kind: "message", source: s.channel, channel: to, ...where, author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
 	emit("inbox", event);
 	if (s.settings) watchAsked(to, s.settings);
-	const note = s.settings ? settingsNote(s.settings, to) : s.mail ? (hook?.note ?? msg().mailNote(s.mail.source, s.mail.id, s.mail.subject)) : undefined;
+	const mem = s.mail && !hook?.note ? memoryNote(DATA_DIR, instanceOf(appEntries(DATA_DIR), "mail", `mail:${s.mail.key}`)) : "";
+	const note = s.settings ? settingsNote(s.settings, to) : s.mail ? (hook?.note ?? `${msg().mailNote(s.mail.source, s.mail.id, s.mail.subject)}${mem ? `\n${mem}` : ""}`) : undefined;
 	const turn = note ? { ...event, plugin_note: note } : event;
 	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(to, event.text);
 	else if (s.mode === "steer" && orch.status === "working") {
