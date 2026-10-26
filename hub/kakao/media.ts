@@ -13,7 +13,7 @@ export type Media =
 	| { kind: "voice"; d?: number; expired: boolean }
 	| { kind: "file"; name: string; size?: number; local: boolean; expired: boolean }
 	| { kind: "emoticon"; alt: string; text?: string; image?: true }
-	| { kind: "reply"; quote: string; quoteSender?: string }
+	| { kind: "reply"; quote: string; quoteSender?: string; srcLogId?: string }
 	| { kind: "location"; label: string; lat: number; lng: number };
 
 export const MEDIA_MAX_BYTES = 25 * 1024 * 1024;
@@ -82,7 +82,8 @@ export function mediaOf(m: Msg, now: number, names: Map<string, string> = new Ma
 		const quote = clip(text(a.src_message));
 		if (!quote) return undefined;
 		const who = names.get(replySource(m) ?? "");
-		return { kind: "reply", quote, ...(who ? { quoteSender: who } : {}) };
+		const src = replySourceLog(m);
+		return { kind: "reply", quote, ...(who ? { quoteSender: who } : {}), ...(src ? { srcLogId: src } : {}) };
 	}
 	if (type === LOCATION) {
 		const lat = Number(a.lat), lng = Number(a.lng), label = text(a.a).trim() || text(a.t).trim();
@@ -97,6 +98,27 @@ export const replySource = (m: Pick<Msg, "type" | "attachment">): string | undef
 	if (m.type !== REPLY) return undefined;
 	const id = parse(m.attachment).src_userId;
 	return id === undefined || id === null || id === "" ? undefined : String(id);
+};
+
+const srcLogOf = (v: unknown): string | undefined => {
+	if (v === undefined || v === null || v === "") return undefined;
+	const s = String(v).trim();
+	return /^\d+$/.test(s) && s !== "0" ? s : undefined;
+};
+
+// The logId of the message a reply answers (type 26 src_logId), so the web can scroll to it. The attachment JSON puts it at the top level
+// or inside a src/reply/origin/parent container (kakarot's reader.rs accepts the same shapes).
+export const replySourceLog = (m: Pick<Msg, "type" | "attachment">): string | undefined => {
+	if (m.type !== REPLY) return undefined;
+	const a = parse(m.attachment);
+	for (const key of ["reply", "src", "origin", "parent"]) {
+		const inner = a[key];
+		if (inner && typeof inner === "object" && !Array.isArray(inner)) {
+			const hit = srcLogOf((inner as Att).src_logId ?? (inner as Att).srcLogId);
+			if (hit) return hit;
+		}
+	}
+	return srcLogOf(a.src_logId ?? a.srcLogId);
 };
 
 // An emoticon's image is the item file named in its attachment ("4412207.emot_001.webp"), served by KakaoTalk's item CDN; only a plain file name is used.
