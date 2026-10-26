@@ -937,6 +937,29 @@ describe("media", () => {
 	});
 });
 
+describe("link previews", () => {
+	const html = (body: string) => new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+
+	test("GET /api/link-preview answers the card fields; the image comes back through the gateway's image route", async () => {
+		const t = setup({}, undefined, { previewAllowHosts: ["127.0.0.1"] });
+		t.upstream.reply = () => html(`<html><head><meta property="og:title" content="맛집 지도"><meta property="og:image" content="http://127.0.0.1:9/i.png"></head></html>`);
+		const r = await t.call("GET", `/api/link-preview?url=${encodeURIComponent("http://127.0.0.1:9/maps")}`);
+		expect(r.status).toBe(200);
+		expect(r.json).toMatchObject({ ok: true, url: "http://127.0.0.1:9/maps", title: "맛집 지도" });
+		expect(r.json.image).toContain("/api/link-preview/image?url=");
+		expect(t.fetched.map(f => f.url)).toEqual(["http://127.0.0.1:9/maps"]);
+		t.close();
+	});
+
+	test("a private address is refused by default, without a fetch, and a missing url is a 400", async () => {
+		const t = setup();
+		expect((await t.call("GET", `/api/link-preview?url=${encodeURIComponent("http://127.0.0.1:9/maps")}`)).status).toBe(403);
+		expect((await t.call("GET", "/api/link-preview")).status).toBe(400);
+		expect(t.fetched).toEqual([]);
+		t.close();
+	});
+});
+
 describe("owner voice in the draft prompt", () => {
 	const PAIRS = 22;
 	const at = (n: number) => ({ logId: BASE_LOG + BigInt(n), chatId: ROOM.direct, sentAt: BASE_TIME + n * 10 });

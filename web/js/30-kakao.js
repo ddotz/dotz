@@ -13,7 +13,7 @@ const KK = {
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
   typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
-  peerT: 0, peerBusy: false, peerHead: "",
+  peerT: 0, peerBusy: false, peerHead: "", lp: new Map(),
 };
 
 /* ---- small helpers ---- */
@@ -45,6 +45,51 @@ function kkBody(m) {
   return { text: KK_TYPE[type] || "(기타 메시지)", ph: true };
 }
 const kkSys = m => Number(m.type) === 0;
+
+/* ---- links in a message: the address itself is a link, and a lazy preview card under the bubble (GET /api/link-preview) ---- */
+const KK_URL = /\bhttps?:\/\/[^\s<>"'`]+/gu;
+const kkTrimUrl = u => u.replace(/[.,!?;:)\]]+$/u, "");
+// Up to three addresses of a message text, without duplicates and trailing punctuation.
+const kkUrls = text => [...new Set((String(text).match(KK_URL) || []).map(kkTrimUrl).filter(Boolean))].slice(0, 3);
+// The text with each address as an anchor; everything else stays text (never innerHTML).
+function kkLinkText(text) {
+  const out = document.createDocumentFragment();
+  let at = 0;
+  for (const m of String(text).matchAll(KK_URL)) {
+    const raw = m[0], url = kkTrimUrl(raw);
+    if (m.index > at) out.append(document.createTextNode(text.slice(at, m.index)));
+    out.append(el("a", { class: "kk-link", href: url, target: "_blank", rel: "noopener noreferrer", text: url }));
+    if (raw.length > url.length) out.append(document.createTextNode(raw.slice(url.length)));
+    at = m.index + raw.length;
+  }
+  if (at < String(text).length) out.append(document.createTextNode(String(text).slice(at)));
+  return out;
+}
+const kkLpCard = url => el("a", { class: "kk-lp", href: url, target: "_blank", rel: "noopener noreferrer", "data-url": url }, el("span", { class: "kk-lp-ph", text: "링크 미리보기" }));
+// One request per address for the whole pane (the hub caches 24 h as well); a failed preview disappears, the plain link stays.
+// The map holds the pending request too, so cards of the same address share one answer.
+async function kkLpLoad(card) {
+  const url = card.dataset.url;
+  let p = KK.lp.get(url);
+  if (p === undefined) {
+    p = api(`/api/link-preview?url=${enc(url)}`).catch(() => ({ ok: false }));
+    KK.lp.set(url, p);
+  }
+  p = await p;
+  KK.lp.set(url, p);
+  if (!card.isConnected) return;
+  if (!p || !p.ok) { card.remove(); return; }
+  clear(card);
+  if (p.image) card.append(el("img", { src: p.image, alt: "", loading: "lazy", decoding: "async", draggable: "false" }));
+  card.append(el("span", { class: "kk-lp-b" },
+    p.site ? el("span", { class: "kk-lp-s", text: p.site }) : null,
+    p.title ? el("span", { class: "kk-lp-t", text: p.title }) : null,
+    p.description ? el("span", { class: "kk-lp-d", text: p.description }) : null));
+}
+let kkLpIO = null;
+function kkLpWatch() {
+  for (const c of kkIn.querySelectorAll(".kk-lp[data-url]")) if (kkLpIO) kkLpIO.observe(c); else kkLpLoad(c);
+}
 
 /* ---- photos, videos, voice, files, replies, locations: built from m.media (the server sends no URL; bytes come from /api/kakao/media/...) ---- */
 const KK_GONE = "기간이 지나 볼 수 없어요";
@@ -251,6 +296,8 @@ const kkRo = el("div", { class: "kk-ro", id: "kk-ro", role: "status", hidden: tr
 const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, el("div", { class: "kk-box" }, kkTl, kkPill), kkRo, kkFoot);
 const kkPane = el("div", { class: "kk", id: "kk", hidden: true }, kkRooms, kkChat);
 $("#v-monitoring").append(kkPane);
+// Preview cards load when they come near the visible timeline (one request per address, kkLpLoad).
+if (typeof IntersectionObserver === "function") kkLpIO = new IntersectionObserver(list => { for (const e of list) if (e.isIntersecting) { kkLpIO.unobserve(e.target); kkLpLoad(e.target); } }, { root: kkTl, rootMargin: "300px 0px" });
 
 const kkAutosize = () => { kkTa.style.height = "auto"; kkTa.style.height = `${Math.min(kkTa.scrollHeight, 140)}px`; };
 kkTa.addEventListener("input", () => { kkAutosize(); if (KK.open) KK.typed.set(KK.open, kkTa.value); });
@@ -417,13 +464,16 @@ const kkMarkNode = () => el("div", { class: "kk-new", role: "separator", "aria-l
 function kkMsgNode(m, first, last) {
   if (kkSys(m)) return String(m.text ?? "").trim() ? el("div", { class: "kk-sys", role: "note", "data-log": m.logId, text: String(m.text).trim() }) : null;
   const group = !!(KK.room && KK.room.group), { text, ph } = kkBody(m);
-  const bub = (m.media && kkMediaNode(m, m.media)) || el("div", { class: `kk-bub${ph ? " ph" : ""}`, text });
+  // Plain words with an address: the address is a link and each one gets a preview card under the bubble.
+  const urls = !m.media && !ph ? kkUrls(text) : [];
+  const bub = (m.media && kkMediaNode(m, m.media)) || el("div", { class: `kk-bub${ph ? " ph" : ""}${urls.length ? " kk-lb" : ""}` }, urls.length ? kkLinkText(text) : text);
+  const previews = urls.length ? el("div", { class: "kk-lps" }, ...urls.map(kkLpCard)) : null;
   // On the time side of the bubble: KakaoTalk's yellow number (members who have not read it yet) above the time; nothing when 0.
   const n = m.unread | 0, meta = n > 0 || last ? el("span", { class: "kk-meta" }, n > 0 ? el("span", { class: "kk-rd", "aria-label": `아직 안 읽은 사람 ${n}명`, text: String(n) }) : null, last ? el("span", { class: "kk-time", text: kkTime(m.sentAt) }) : null) : null;
-  if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, meta, bub));
+  if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, meta, bub), previews);
   return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-log": m.logId, "data-author": m.authorId || null },
     group ? (first ? kkAvatar(m.sender) : el("span", { class: "kk-av sp", "aria-hidden": "true" })) : null,
-    el("div", { class: "kk-mb" }, group && first ? el("div", { class: "kk-name", text: m.sender || "알 수 없음" }) : null, el("div", { class: "kk-line" }, bub, meta)));
+    el("div", { class: "kk-mb" }, group && first ? el("div", { class: "kk-name", text: m.sender || "알 수 없음" }) : null, el("div", { class: "kk-line" }, bub, meta), previews));
 }
 // Sends of this room that are not (yet) a message of the room: sending, failed, or just sent and not read back from the database yet.
 function kkPending() {
@@ -465,8 +515,10 @@ function kkTimeline() {
 }
 function kkPaintTl(stick) {
   const keep = kkTl.scrollTop;
+  kkLpIO?.disconnect();
   clear(kkIn).append(...kkTimeline());
   kkTl.scrollTop = stick ? kkTl.scrollHeight : keep;
+  kkLpWatch();
   kkSyncStick();
 }
 // Where the unread line goes (it is drawn, the view still opens at the newest message): before the first message after the web's read position; never opened: KakaoTalk's own unread count says how many of the newest are unread.

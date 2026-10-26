@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { createLinkPreview, type Resolver } from "../linkpreview.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
@@ -42,8 +43,11 @@ export type WebDeps = {
 	onCorrection?: (chatId: string, draft: string, sent: string) => void;
 	// The owner asked for a change of a draft ("더 짧게"): recorded in the room's tone profile (draft.ts correct), the draft is rewritten right away.
 	onRevise?: (chatId: string, change: string) => void;
-	// The fetch behind GET /api/kakao/media/... (read-only GET of kakaocdn.net media URLs from the database). Default: the global fetch.
+	// The fetch behind GET /api/kakao/media/... and GET /api/link-preview (default: the global fetch).
 	fetch?: typeof fetch;
+	// How link previews resolve host names (default: dns.lookup); tests pass their own.
+	previewResolve?: Resolver;
+	previewAllowHosts?: string[];
 };
 
 export type SendRecord = { id: string; chatId: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft?: string; collector?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus };
@@ -128,6 +132,7 @@ export function createKakaoWeb(deps: WebDeps) {
 	const readsFile = join(paths.dataDir, "kakao", "reads.json");
 	const pending = new Set<Promise<unknown>>();
 	const inflight = new Set<string>();
+	const linkPreview = createLinkPreview({ dir: paths.dataDir, now, ...(deps.fetch ? { fetch: deps.fetch } : {}), ...(deps.previewResolve ? { resolve: deps.previewResolve } : {}), ...(deps.previewAllowHosts ? { allowHosts: deps.previewAllowHosts } : {}) });
 	let dbCache: { path: string; db: KakaoDb } | undefined;
 	let roomsCache: { at: number; all: Room[]; names: Map<string, string>; hints: Map<string, string> } | undefined;
 	// Newest logId per room for GET .../head (a peer's viewer asks every ~2 s). While the database files do not change, the answer comes from here and no query runs.
@@ -339,6 +344,7 @@ export function createKakaoWeb(deps: WebDeps) {
 	}
 
 	async function route(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
+		if (parts[0] === "api" && parts[1] === "link-preview") return linkPreview.route(req, url, parts);
 		if (parts[0] !== "api" || parts[1] !== "kakao") return undefined;
 		const config = readConfig(paths);
 		const on = config?.enabled === true;
