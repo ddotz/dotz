@@ -194,6 +194,18 @@ describe("설정 대화 at desktop width (1280x800)", () => {
 		expect(existsSync(cfgFile("custom/kakao/config.json"))).toBe(false);
 		await closeScreen(v);
 	});
+	test("새로 추가하기 at desktop width: one button in the sheet, one plain question over the chat box", async () => {
+		await run(v, `go("monitoring"); asAddSheet()`);
+		await waitFor(v, `document.querySelector('.fs-card [data-k="new-app"]')`);
+		expect(await q(v, `return document.querySelectorAll(".fs-card [data-tpl]").length`)).toBe(0);
+		await shot(v, "12-desktop-add-sheet.png");
+		await run(v, `document.querySelector('.fs-card [data-k="new-app"]').click()`);
+		await waitFor(v, `!AT.h && target === "main" && current === "chat" && ta.value === "연결할 앱: "`);
+		expect(await q(v, `return document.querySelector("#app-tpl-note").textContent`)).toBe("어떤 앱을 연결할까요?");
+		await shot(v, "13-desktop-new-app-composer.png");
+		await run(v, `document.querySelector("#app-tpl .as-tpl-x").click(); ta.value = ""`);
+		await waitFor(v, `!AT.key`);
+	});
 });
 
 describe("설정 대화 at phone width (390x844)", () => {
