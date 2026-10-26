@@ -128,7 +128,8 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 			expect(await q<number>(v, `return document.querySelectorAll("#cm .kk-m.me .tag.unreplied").length`)).toBe(0);
 			await shot(v, `comments-thread-${width}-light.png`);
 
-			await run(v, `document.querySelector("#cm .unrep-no").click()`);
+			// the pill and the button leave at the tap, before the request answers
+			expect(await q<boolean>(v, `const b = document.querySelector("#cm .unrep-no"); b.click(); return b.hidden`)).toBe(true);
 			await expectReq(r => r.method === "POST" && decodeURIComponent(r.path) === "/api/comments/comment/cm:youtube:c1/no-reply");
 		});
 	});
