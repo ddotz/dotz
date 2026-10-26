@@ -53,7 +53,7 @@ test("a peer's mail conversation gets the mini's later notice and held state, an
 	await waitFor(v, `PQ.loaded && PQ.of.has(${JSON.stringify(T)})`);
 	await run(v, `setTarget(${JSON.stringify(T)})`);
 	await waitFor(v, `$("#tl").textContent.includes("답장 초안 작성해.")`);
-	await waitFor(v, `!$("#pausenote").hidden && $("#pausenote").textContent === "맥미니 봇이 멈춰 있어요: 로그인 필요"`);
+	await waitFor(v, `!$("#pausenote").hidden && $("#pausenote span").textContent === "맥미니 봇이 멈춰 있어요: 로그인 필요" && !$("#pausenote .pn-go")`);   // a peer's bot is resumed on that computer: no button here
 	expect(await v.evaluate(`$("#tl").textContent.includes("멈춰 있어요")`)).toBe(false);
 
 	history.push(
@@ -68,7 +68,7 @@ test("a conversation of this computer reads its own bot's pause from the orchest
 	views.push(v);
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
 	await waitFor(v, "S && PR.fresh");
-	await waitFor(v, `!$("#pausenote").hidden && $("#pausenote").textContent === "맥북 봇이 멈춰 있어요: 사용량 한도"`);
+	await waitFor(v, `!$("#pausenote").hidden && $("#pausenote span").textContent === "맥북 봇이 멈춰 있어요: 사용량 한도" && $("#pausenote .pn-go").textContent === "지금 다시 시도"`);
 	await run(v, "go('monitoring')");
 	await waitFor(v, `PQ.loaded && PQ.of.has(${JSON.stringify(T)})`);
 	await run(v, "setTarget('lane:x')");
