@@ -19,9 +19,11 @@
 // activation. Setting AXValue enables the button (measured 2026-10-23). The input is compared normalized (NFC, line breaks, invisible
 // marks, ends): a value equal to one dotz typed into this room (`ours`, or this text) is dotz's leftover and is cleared for real (read back,
 // three tries); any other value is the owner's unsent text and is left alone ("owner_text" with its first characters). A value equal to a
-// text whose 전송 was already pressed without confirmation (`priorPressed`) is never typed over or pressed again. Prints {ok:true} once the
-// input is empty again, or {ok:false, why, pressed?, preview?, left?}: pressed means the button was pressed but the send is not confirmed,
-// so it must not be sent again; left is what the input still holds after a failed attempt.
+// text whose 전송 was already pressed without confirmation (`priorPressed`) is never typed over or pressed again: when it is this very text
+// the answer is pressed ("prior_pressed"), when it is another text the answer is "prior_left" with nothing pressed. A press that throws
+// counts as pressed ("press_error"). Prints {ok:true} once the input is empty again, or {ok:false, why, pressed?, preview?, left?}: pressed
+// means the button was (or may have been) pressed but the send is not confirmed, so it must not be sent again; left is what the input
+// still holds after a failed attempt.
 // close {name?} closes only the window of that name when given.
 ObjC.import("Foundation");
 ObjC.import("ApplicationServices");
@@ -135,11 +137,13 @@ function axRowTitle(row) {
 // Title reads are the expensive part (~26 ms a row: row children, cell children, one value). The hint row (the database order in the list)
 // comes first, then its neighbours (a pinned room shifts the list by a few rows), then the whole list; the read stops at the first name hit,
 // at the end, or at the budget. Scrolling continues a list that exposes only its visible rows; with all rows exposed it finds the end at once.
-function axScan(name, first, budgetMs, hint) {
+function axScan(name, first, budgetMs, hint, need) {
 	var t0 = Date.now();
 	var list = axList();
 	if (!list) return null;
 	var want = norm(name);
+	// `need`: how many rows of this name the database has; the scan stops once that many are seen (all of them are then known).
+	var enough = first ? 1 : need > 0 ? need : 0;
 	var hits = [];
 	var seen = {};
 	var scanned = 0;
@@ -172,7 +176,7 @@ function axScan(name, first, budgetMs, hint) {
 			scanned++;
 			if (norm(title) === want) {
 				hits.push({ index: idx, texts: axRowTexts(list.rows[idx]) });
-				if (first) {
+				if (enough && hits.length >= enough) {
 					stopped = "found";
 					break;
 				}
@@ -233,6 +237,38 @@ function normText(s) {
 
 function freeValue(v, ph) {
 	return normText(v) === "" || (ph !== "" && normText(ph) === normText(v));
+}
+
+// What the input holds before a send, decided from its value alone (pure, unit tested through room-jxa.test.ts):
+//   free: empty or only its placeholder. same_pressed: this very text, whose 전송 was pressed before without confirmation (never typed or
+//   pressed again). prior_left: ANOTHER text whose 전송 was pressed before (not pressed by this call; the caller decides). ours: a text dotz
+//   typed (cleared and replaced). owner: anything else, the owner's own draft (never touched).
+function inputVerdict(value, ph, text, ours, priorPressed) {
+	if (freeValue(value, ph)) return "free";
+	var n = normText(value);
+	for (var k = 0; k < priorPressed.length; k++) if (n === normText(priorPressed[k])) return n === normText(text) ? "same_pressed" : "prior_left";
+	if (n === normText(text)) return "ours";
+	for (var j = 0; j < ours.length; j++) if (n === normText(ours[j])) return "ours";
+	return "owner";
+}
+
+// Whether a list row read at open time is still the row chosen from the scan: the same title and, where the choice rested on them, the same
+// member count and the same newest-message preview. Anything else is refused (another row moved into that index).
+function rowStillIs(texts, name, expect) {
+	if (!texts || !texts.length || norm(texts[0]) !== norm(name)) return false;
+	if (!expect) return true;
+	if (typeof expect.members === "number") {
+		var shown = /^\d+$/.test(String(texts[1] || "")) ? parseInt(texts[1], 10) : undefined;
+		if (shown !== expect.members) return false;
+	}
+	if (expect.noCount === true && /^\d+$/.test(String(texts[1] || ""))) return false;
+	if (typeof expect.preview === "string" && expect.preview) {
+		var want = normText(expect.preview);
+		var seen = false;
+		for (var i = 1; i < texts.length && !seen; i++) if (normText(texts[i]) === want) seen = true;
+		if (!seen) return false;
+	}
+	return true;
 }
 
 function chatWindows() {
@@ -407,10 +443,10 @@ function openList() {
 	return { ok: true, ms: ms, focus: { from: from, took: took, restored: restored } };
 }
 
-function readRows(name, max, budgetMs, first, hint) {
+function readRows(name, max, budgetMs, first, hint, need) {
 	var t0 = Date.now();
 	if (windowNamed(name)) return { ok: true, opened: true };
-	var native = axScan(name, first, budgetMs, hint);
+	var native = axScan(name, first, budgetMs, hint, need);
 	if (native) return native;
 	// No AX API in this process: the older System Events wording of the same scan (one AppleEvent per attribute, ~100 ms a read).
 	var list = listTable();
@@ -440,7 +476,15 @@ function readRows(name, max, budgetMs, first, hint) {
 	return { ok: true, rows: out, stopped: stopped, ms: { table: tableMs, read: Date.now() - t0 - tableMs } };
 }
 
-function openRowAt(index, name) {
+// The texts of list row `index` read the same way the scan read them (native AX values), so a recheck compares like with like; null when
+// the AX API is not available in this process (the System Events names are used then).
+function nativeRowTexts(index) {
+	var list = axList();
+	if (!list || index >= list.rows.length) return null;
+	return axRowTexts(list.rows[index]);
+}
+
+function openRowAt(index, name, expect) {
 	var t0 = Date.now();
 	var ms = {};
 	var lap = function (key) {
@@ -459,7 +503,9 @@ function openRowAt(index, name) {
 	var cell;
 	try {
 		cell = list.table.rows[index].uiElements[0];
-		if (norm(cell.staticTexts.name()[0]) !== norm(name)) return fail("recheck", "moved");
+		var texts = nativeRowTexts(index);
+		if (!texts) texts = cell.staticTexts.name().map(function (t) { return t === null || t === undefined ? "" : String(t); });
+		if (!rowStillIs(texts, name, expect)) return fail("recheck", "moved");
 	} catch (e) {
 		return fail("recheck", "gone", e);
 	}
@@ -529,26 +575,18 @@ function sendInto(name, text, ours, priorPressed) {
 		return { ok: false, why: "no_button" };
 	}
 	var ph = attr(input, "placeholderValue");
-	var isMine = function (v) {
-		var n = normText(v);
-		if (n === normText(text)) return true;
-		for (var k = 0; k < ours.length; k++) if (n === normText(ours[k])) return true;
-		return false;
-	};
-	var wasPressed = function (v) {
-		var n = normText(v);
-		if (!n) return false;
-		for (var k = 0; k < priorPressed.length; k++) if (n === normText(priorPressed[k])) return true;
-		return false;
-	};
 	var value = attr(input, "value");
 	var freed = freeValue(value, ph);
 	// An AX value can lag a moment behind the screen (a just-sent message still read back). Give it a short look before calling it occupied.
 	if (!freed) freed = !!until(function () { return freeValue(attr(input, "value"), ph) ? "free" : null; }, 0.6);
 	value = attr(input, "value");
 	if (!freed) {
-		if (wasPressed(value)) return { ok: false, why: "prior_pressed", pressed: true, left: String(value).slice(0, 200) };
-		if (!isMine(value)) return { ok: false, why: "owner_text", preview: String(value).replace(/\s+/g, " ").slice(0, 40) };
+		var verdict = inputVerdict(value, ph, text, ours, priorPressed);
+		// This very text was pressed before: it is never typed or pressed again (the caller confirms it from the database).
+		if (verdict === "same_pressed") return { ok: false, why: "prior_pressed", pressed: true, left: String(value).slice(0, 200) };
+		// Another text, pressed before and still in the input: nothing is pressed now and the new text is not consumed by it.
+		if (verdict === "prior_left") return { ok: false, why: "prior_left", left: String(value).slice(0, 200), preview: String(value).replace(/\s+/g, " ").slice(0, 40) };
+		if (verdict === "owner") return { ok: false, why: "owner_text", preview: String(value).replace(/\s+/g, " ").slice(0, 40) };
 		// Ours (a leftover of an earlier attempt): clear it for real before typing, and say so when it will not clear.
 		var cleared = false;
 		for (var c = 0; c < 3 && !cleared; c++) {
@@ -597,10 +635,13 @@ function sendInto(name, text, ours, priorPressed) {
 			return attr(btn, "enabled") === "true" ? "on" : null;
 		}, 1.5);
 	}
+	// From here on the press may have reached KakaoTalk: an AppleEvent error or timeout of perform() is known to come back for a press that
+	// was delivered, so a throwing press counts as pressed (confirmed from the database, never pressed again).
 	try {
 		btn.actions.byName("AXPress").perform();
 	} catch (e) {
-		return { ok: false, why: "not_ready", left: String(attr(input, "value")).slice(0, 200) };
+		var after = String(attr(input, "value")).slice(0, 200);
+		return { ok: false, why: "press_error", pressed: true, ...(after ? { left: after } : {}) };
 	}
 	var gone = !!until(function () {
 		return freeValue(attr(input, "value"), ph) ? "gone" : null;
@@ -633,8 +674,8 @@ function run() {
 		if (req.action === "send" && typeof req.name === "string" && req.name && typeof req.text === "string" && req.text)
 			return JSON.stringify(sendInto(req.name, req.text, Array.isArray(req.ours) ? req.ours.filter(function (s) { return typeof s === "string"; }) : [], Array.isArray(req.priorPressed) ? req.priorPressed.filter(function (s) { return typeof s === "string"; }) : []));
 		if (req.action === "rows" && typeof req.name === "string" && req.name)
-			return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 6500), req.first === true, Number.isInteger(req.hint) ? req.hint : undefined));
-		if (req.action === "open" && typeof req.name === "string" && req.name && Number.isInteger(req.row) && req.row >= 0) return JSON.stringify(openRowAt(req.row, req.name));
+			return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 6500), req.first === true, Number.isInteger(req.hint) ? req.hint : undefined, Number.isInteger(req.need) ? req.need : 0));
+		if (req.action === "open" && typeof req.name === "string" && req.name && Number.isInteger(req.row) && req.row >= 0) return JSON.stringify(openRowAt(req.row, req.name, req.expect && typeof req.expect === "object" ? req.expect : undefined));
 		return JSON.stringify({ ok: false });
 	} catch (e) {
 		return JSON.stringify({ ok: false, why: "error", error: String(e).slice(0, 120) });
