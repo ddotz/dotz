@@ -25,7 +25,7 @@ function fire(handlers: Handler[], k: Key) {
 function tabs(platform: string, o: { current?: string; dialog?: boolean; sheet?: boolean } = {}) {
 	const handlers: Handler[] = [], log: string[] = [];
 	const env: Record<string, unknown> = {
-		navigator: { platform }, NAV, monCtx: "", current: o.current ?? "home", PR: { node: o.sheet ? {} : null },
+		navigator: { platform }, NAV, navOff: (id: string) => id === "apps", monCtx: "", current: o.current ?? "home", PR: { node: o.sheet ? {} : null },
 		document: { addEventListener: (_: string, h: Handler) => handlers.push(h), querySelector: () => (o.dialog ? {} : null) },
 		go: (v: string) => log.push(`go:${v}`), prClose: () => log.push("prClose"), lastChatView: () => "chat", chatTabEnter: () => log.push("chatEnter"),
 	};
@@ -44,10 +44,10 @@ function gateways(platform: string, list: Peer[], o: { dialog?: boolean } = {}) 
 	return { handlers, log };
 }
 
-describe("Cmd/Ctrl+1..5 tab shortcuts", () => {
-	test("on a Mac Cmd+1..5 open 홈, 채팅, 프로젝트, 모니터링, 설정 in tab order", () => {
+describe("Cmd/Ctrl+1..6 tab shortcuts", () => {
+	test("on a Mac Cmd+1..6 open 홈, 채팅, 프로젝트, 모니터링, 설정 in tab order; the disabled 앱 (Cmd+5) opens nothing", () => {
 		const t = tabs("MacIntel", { current: "settings" });
-		for (const n of [1, 2, 3, 4, 5]) expect(fire(t.handlers, { key: String(n), code: `Digit${n}`, metaKey: true })).toBe(true);
+		for (const n of [1, 2, 3, 4, 5, 6]) expect(fire(t.handlers, { key: String(n), code: `Digit${n}`, metaKey: true })).toBe(true);
 		expect(t.log).toEqual(["go:home", "chatEnter", "go:projects", "go:monitoring", "go:settings"]);
 	});
 
@@ -59,9 +59,9 @@ describe("Cmd/Ctrl+1..5 tab shortcuts", () => {
 		expect(win.log).toEqual(["go:projects"]);
 	});
 
-	test("the key alone, 6, shift/alt, IME composition and an open dialog are left alone", () => {
+	test("the key alone, 7, shift/alt, IME composition and an open dialog are left alone", () => {
 		const t = tabs("MacIntel");
-		for (const k of [{ key: "2", code: "Digit2" }, { key: "6", code: "Digit6", metaKey: true }, { key: "2", code: "Digit2", metaKey: true, shiftKey: true }, { key: "2", code: "Digit2", metaKey: true, altKey: true }, { key: "2", code: "Digit2", metaKey: true, isComposing: true }])
+		for (const k of [{ key: "2", code: "Digit2" }, { key: "7", code: "Digit7", metaKey: true }, { key: "2", code: "Digit2", metaKey: true, shiftKey: true }, { key: "2", code: "Digit2", metaKey: true, altKey: true }, { key: "2", code: "Digit2", metaKey: true, isComposing: true }])
 			expect(fire(t.handlers, k)).toBe(false);
 		const d = tabs("MacIntel", { dialog: true });
 		expect(fire(d.handlers, { key: "2", code: "Digit2", metaKey: true })).toBe(false);
@@ -77,7 +77,7 @@ describe("Cmd/Ctrl+1..5 tab shortcuts", () => {
 
 	test("tooltips name the shortcut", () => {
 		expect(tabs("MacIntel").navKeyHint("monitoring")).toBe("⌘4");
-		expect(tabs("Win32").navKeyHint("settings")).toBe("Ctrl+5");
+		expect(tabs("Win32").navKeyHint("settings")).toBe("Ctrl+6");
 		expect(tabs("Win32").navKeyHint("models")).toBe("");
 	});
 });

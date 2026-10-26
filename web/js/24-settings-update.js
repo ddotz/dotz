@@ -168,8 +168,8 @@ function hvSection() {
   else for (const h of hs) if (h.job && h.job.status !== "current") list.push(hvJobLine(h.job));
   list.push(hvNote("6시간마다 새 버전을 확인해요. 업데이트는 하던 일이 끝난 뒤에 설치하고, 새 버전으로 다시 시작해요. 설치가 실패하면 지금 버전을 그대로 써요."));
   if (running.length) list.push(hvNote("바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요."));
-  return [el("div", { class: "sec" }, "실행 하네스", hvNew() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null,
-    el("button", { class: "btn tonal", type: "button", disabled: !!(HV.info && HV.info.checking), onclick: ev => hvCheck(ev.currentTarget) }, "확인")), el("div", { class: "list" }, ...list)];
+  return [el("div", { class: "sec sec-act" }, el("span", { text: "실행 하네스" }), hvNew() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null,
+    el("button", { class: "btn tonal sm", type: "button", disabled: !!(HV.info && HV.info.checking), onclick: ev => hvCheck(ev.currentTarget) }, "확인")), el("div", { class: "list" }, ...list)];
 }
 function updateSection() {
   const i = UPD.info;
@@ -202,7 +202,7 @@ function updateSection() {
     el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "매일 자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) })),
     el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요. 테스트가 실패하면 지금 버전을 그대로 두고 알려요. 이 컴퓨터에서 고친 코드는 새 버전 위에 다시 얹고, 안 되면 따로 보관해요." })),
     el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) }))];
-  return [head, el("div", { class: "list" }, ...rows), ...hvSection(), el("div", { class: "list" }, ...prefs)];
+  return [head, el("div", { class: "list" }, ...rows, ...prefs), ...hvSection()];
 }
 
 function renderSettings() {
