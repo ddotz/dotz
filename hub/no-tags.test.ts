@@ -70,9 +70,11 @@ describe("owner-facing text has no [tag]", () => {
 			expect([w.tone || undefined, w.text]).toEqual([tone, text]);
 		}
 	});
-	// A bubble takes its file chips from the parsed text (fileLines in 15-attachments.js), so the web keeps [file] lines there.
-	test("web parseTone keeps [file] lines for the attachment chips", () => {
-		expect(web.parseTone("[ask] 시안\n[file] /a/b.png").text).toBe("시안\n[file] /a/b.png");
+	// A bubble takes its file chips from the parsed text (fileLines in 15-attachments.js), so the chat asks parseTone to keep [file] lines;
+	// every other caller (previews, lists) still gets them dropped.
+	test("web parseTone keeps [file] lines only when asked, for the attachment chips", () => {
+		expect(web.parseTone("[ask] 시안\n[file] /a/b.png", true).text).toBe("시안\n[file] /a/b.png");
+		expect(web.parseTone("[ask] 시안\n[file] /a/b.png").text).toBe("시안");
 	});
 });
 
