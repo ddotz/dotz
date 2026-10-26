@@ -54,11 +54,12 @@ test("an enabled install offers the draft as an [ask] with exactly the three cho
 	expect(rec).toMatchObject({ status: "pending", ref: "m-1", source: "zele", mailId: "msg-1" });
 });
 
-test("warnings and questions ride along on a -# line without breaking the approval block", async () => {
+test("a question the draft still cannot settle is asked inside the approval card without breaking it", async () => {
 	enable(env);
 	const out = sink();
 	await offerMailDraft(mailFixture, { send: out.send, call: fakeModel([j({ ...goodReply, questions: ["회의 날짜"] })]).call });
-	expect(out.sent[0]!.text).toContain("-# 정해 주세요: 회의 날짜");
+	expect(out.sent[0]!.text).not.toContain("정해 주세요");
+	expect(out.sent[0]!.text).toMatch(/^결정: 이 답장 보낼까요\? 정할 것: 회의 날짜 \(R[A-Z2-7]{6}\)$/m);
 	expect(parseDraftApproval(out.sent[0]!.text)?.body).toBe(goodReply.body);
 });
 
