@@ -1,6 +1,8 @@
 // The draft life cycle shared by the gateway offer (offer.ts) and the CLI (bin/draft.ts): build -> ask -> revise | send | drop.
 // Nothing here sends without the user's 1) 보내기 pick for exactly that draft id, read from the inbox log.
+import { dirname, join } from "node:path";
 import { linkedComment } from "../../../hub/comments/linked.ts";
+import { claimSend } from "../../../hub/draft-claim.ts";
 import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { generateChatReply, lintReply, reviseReply, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
@@ -143,10 +145,19 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (v.verdict !== "send") return { ok: false, text: "아직 보내도 된다는 답을 받지 못했어요" };
 	const failures = lintReply({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)));
 	if (failures.length) return { ok: false, text: `보내기 직전 검사에서 걸려서 보내지 않았어요: ${failures.join("; ")}` };
-	const out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(d);
-	if (!out.ok) return { ok: false, text: out.message };
-	setStatus(id, "sent");
-	return { ok: true, text: out.message };
+	// A second send of the same draft (a double tap, a replayed answer, the CLI beside the gateway) waits for no one: it is refused.
+	const release = claimSend(join(dirname(paths.drafts()), "sending", id));
+	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 보내는 중이라 한 번 더 보내지 않았어요` };
+	try {
+		const now = getDraft(id);
+		if (now?.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${now?.status ?? "없는"} 상태라 보내지 않았어요` };
+		const out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(now);
+		if (!out.ok) return { ok: false, text: out.message };
+		setStatus(id, "sent");
+		return { ok: true, text: out.message };
+	} finally {
+		release();
+	}
 }
 
 export const kindOf = (v: string | undefined): ReplyKind => (v === "comment" || v === "chat" ? v : "mail");
