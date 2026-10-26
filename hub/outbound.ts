@@ -24,6 +24,7 @@ import { splitTone, stripHandoff } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { orchestratorAnswered } from "./notices.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
+import { discordPosts } from "./discord-post.ts";
 
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
 const PENDING = join(DATA_DIR, "pending.json");
@@ -130,7 +131,8 @@ function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason
 		}
 		recheckAnswered(j.target);
 	}
-	if (isLocal(j.target)) {
+	// Web only: a web conversation, or a kind the owner switched off for Discord (hub/discord-post.ts).
+	if (isLocal(j.target) || !discordPosts(j.target, j.replyTo)) {
 		queue.markAnswered(jobAnswers(j));
 		return Promise.resolve({ delivered: true });
 	}
@@ -184,7 +186,7 @@ export function expectReply(target: string): void {
 
 export function alert(text: string): void {
 	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text });
-	void send("alert", text).catch(e => log(`alert send failed: ${e}`));
+	if (discordPosts("alert")) void send("alert", text).catch(e => log(`alert send failed: ${e}`));
 }
 
 export function rateLimitNotice(target: string, replyTo?: string): void {
@@ -207,7 +209,7 @@ export async function progress(target: string, key: string, text: string, replyT
 		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key }, threadHome, threadMail));
 		return t;
 	});
-	if (isLocal(target)) return { delivered: true };
+	if (isLocal(target) || !discordPosts(target, replyTo)) return { delivered: true };
 	// One evolving status per asking channel: every progress key there edits the same message the gateway's live report
 	// uses (worklog and alert keep their per-key entries, e.g. one per lane).
 	return discord.progress(target, target === "worklog" || target === "alert" ? key : "progress", sent, replyTo);

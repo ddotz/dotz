@@ -194,6 +194,25 @@ async function installApp() {
       : ["주소창 오른쪽의 설치 아이콘을 눌러요", "없으면 브라우저 메뉴에서 '앱 설치'를 골라요"];
   dialog({ classic: true, title: "앱 설치", body: el("div", {}, el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))), el("p", { class: "note", text: "전에 추가한 dotz 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요." })), actions: [{ label: "확인", kind: "pri", onclick: c => c() }] });
 }
+// Which conversations also go to Discord (GET/PUT /api/discord/post, hub/discord-post.ts). The web always gets everything; a switch that is
+// off keeps that kind on the web only. Shown only while Discord is connected.
+const DP_KINDS = [["chat", "대화 답장"], ["lanes", "세션 보고"], ["alert", "알림"], ["worklog", "작업내역"]];
+const DP = { v: null, asked: false };
+async function dpLoad() { DP.asked = true; try { DP.v = await api("/api/discord/post"); } catch { DP.v = null; } if (current === "settings") renderSettings(); }
+async function dpSet(k, on) {
+  const was = DP.v[k];
+  DP.v = { ...DP.v, [k]: on }; renderSettings();
+  try { DP.v = await api("/api/discord/post", "PUT", { [k]: on }); } catch (e) { DP.v = { ...DP.v, [k]: was }; toast(e.message, true); }
+  renderSettings();
+}
+function discordPostSection() {
+  if (!(S && S.discord && S.discord.enabled)) return [];
+  if (!DP.v) { if (!DP.asked) dpLoad(); return []; }
+  const rows = DP_KINDS.map(([k, label]) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("chat")), el("span", { class: "tx" }, el("div", { class: "hd", text: label })),
+    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(DP.v[k] !== false), "aria-label": `디스코드에도 ${label} 보내기`, onclick: () => dpSet(k, DP.v[k] === false) })));
+  rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 웹에만 와요. 디스코드에서 직접 물은 것의 답은 디스코드에도 가요." }))));
+  return [el("div", { class: "sec", text: "디스코드에도 보내기" }), el("div", { class: "list" }, ...rows)];
+}
 function pushSection() {
   const li = (ic, title, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), ...trail);
   const ios = isIOS(), standalone = isStandalone();
@@ -216,5 +235,5 @@ function pushSection() {
     }
     rows.push(li("bell", "알림 확인", el("button", { class: "btn tonal", type: "button", onclick: ev => pushTest(ev.currentTarget) }, "테스트 알림 보내기"), el("button", { class: "btn text", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, "끄기")));
   }
-  return [el("div", { class: "sec", text: "앱 · 알림" }), el("div", { class: "list" }, ...rows)];
+  return [el("div", { class: "sec", text: "앱 · 알림" }), el("div", { class: "list" }, ...rows), ...discordPostSection()];
 }
