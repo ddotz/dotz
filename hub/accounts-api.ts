@@ -351,7 +351,7 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 		}
 		if (req.method === "GET" && p === "/api/accounts") return Response.json(accountsBody(Date.now(), await catalog()));
 		// DELETE /api/accounts?provider=<id>&name=<slot>: one account of any provider's pool (Claude keeps its own route below).
-		if (req.method === "DELETE" && p === "/api/accounts" && url.searchParams.get("provider")) {
+		if (req.method === "DELETE" && p === "/api/accounts" && !(url.searchParams.get("provider") ?? "anthropic").startsWith("anthropic")) {
 			const provider = url.searchParams.get("provider")!;
 			const name = url.searchParams.get("name") ?? "";
 			const r = deletePoolAccount(provider, name);

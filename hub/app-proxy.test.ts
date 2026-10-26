@@ -31,6 +31,7 @@ const upstream = Bun.serve({
 		if (u.pathname === "/base/page") return new Response(`base page ${u.search}`, { headers: { "content-type": "text/plain" } });
 		if (u.pathname === "/teapot") return new Response("short and stout", { status: 418, headers: { "x-upstream": "yes" } });
 		if (u.pathname === "/set-cookie") return new Response("ok", { headers: { "set-cookie": "a=1; Path=/; HttpOnly; Domain=127.0.0.1" } });
+		if (u.pathname === "/headers") return Response.json(Object.fromEntries(req.headers), { headers: { "access-control-allow-origin": "*" } });
 		if (u.pathname === "/to") return new Response(null, { status: 302, headers: { location: "/elsewhere" } });
 		return new Response("not found", { status: 404 });
 	},
@@ -113,6 +114,24 @@ describe("the proxied page", () => {
 		const hd = r.items.find(i => i.id === "rw")!;
 		expect(hd).toMatchObject({ label: "리라이트 앱", kind: "tool", source: "manifest", icon: "file", status: "running", web: { url: `http://127.0.0.1:${port}`, path: "/", mode: "rewrite", href: "/apps/rw/" } });
 		expect(r.errors).toEqual([]);
+	});
+
+	test("the gateway token and the owner's identity never reach the app, and no answer is readable cross-origin", async () => {
+		const r = await call("/apps/rw/headers", { headers: { "tailscale-user-login": "owner@example.com", "tailscale-user-name": "Owner", "x-app": "kept" } });
+		const got = (await r.json()) as Record<string, string>;
+		expect(got["x-app"]).toBe("kept");
+		expect([got["x-dotz-token"], got["tailscale-user-login"], got["tailscale-user-name"]]).toEqual([undefined, undefined, undefined]);
+		expect(r.headers.get("access-control-allow-origin")).toBeNull();
+	});
+
+	test("a page of another origin cannot post to an app or open its websocket", async () => {
+		const host = `127.0.0.1:${gateway.port}`;
+		const post = await call("/apps/rw/api/ping", { method: "POST", body: "x", headers: { origin: "https://evil.example", host } });
+		expect(post.status).toBe(403);
+		const same = await call("/apps/rw/api/ping", { method: "POST", body: "x", headers: { origin: `http://${host}`, host } });
+		expect(same.status).toBe(200);
+		const up = await call("/apps/ws/ws", { headers: { upgrade: "websocket", connection: "Upgrade", origin: "https://evil.example", host } });
+		expect(up.status).toBe(403);
 	});
 
 	test("a websocket on /apps/<id>/ is bridged to the app", async () => {
