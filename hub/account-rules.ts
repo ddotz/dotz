@@ -250,7 +250,10 @@ export function evaluate(i: EvaluateInput): Evaluated {
 	if (m && (!m.until || Date.parse(m.until) > i.now)) {
 		const a = resolve(m.account);
 		// 고정: the pick holds even while blocked (work pauses until the block ends); only a pick that left OmO's pool falls through.
-		if (a && pool.names.includes(a)) return pick(a, "manual", m.reason ? `직접 고름: ${m.reason}` : "직접 고름");
+		// A dead login (auth_error) is no limit to wait out: when another account works (a fresh /login, Mac mini 2026-10-26), the pick
+		// yields to the layers below until the picked one works again. A limit (rate_limit) still holds the pick.
+		const dead = !!a && pool.blocked[a]?.reason === "auth_error" && pool.names.some(n => n !== a && usable(n));
+		if (a && pool.names.includes(a) && !dead) return pick(a, "manual", m.reason ? `직접 고름: ${m.reason}` : "직접 고름");
 	}
 	const s = i.script;
 	if (s && !s.error && s.account && usable(s.account)) return pick(s.account, "script", s.reason ? `스크립트: ${s.reason}` : "스크립트가 골랐어요");
