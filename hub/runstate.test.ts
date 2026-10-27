@@ -76,8 +76,9 @@ test("a mail conversation's run state is the worker its request was deferred to,
 	expect(conv("web")).toBeUndefined();
 	const work = { id: "st_01a17c04", description: "큐피드 연결 스크립트 흐름도 HTML", status: "running" as const, started_at: now - 240_000, target: "th:1564523279849357364" };
 	// The thread target and the mail key name the one conversation the owner sees, so either yields its line.
-	expect(workConversationRuns([work], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML" } });
-	expect(workConversationRuns([{ ...work, target: "mail:kdb-67010497" }], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML" } });
+	// It names the worker, so the line's 중단 stops that one.
+	expect(workConversationRuns([work], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML", work: "st_01a17c04" } });
+	expect(workConversationRuns([{ ...work, target: "mail:kdb-67010497" }], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML", work: "st_01a17c04" } });
 	expect(workConversationRuns([{ ...work, target: "web" }], conv)).toEqual({});
 	// The model the worker runs on follows its description: the owner sees which model does the work he asked for there.
 	expect(workConversationRuns([{ ...work, model: "Opus 5.5 medium" }], conv)["mail:kdb-67010497"]!.detail).toBe("큐피드 연결 스크립트 흐름도 HTML · Opus 5.5 medium");
@@ -87,11 +88,12 @@ test("a mail conversation's run state is the worker its request was deferred to,
 test("a worker that failed at spawn says why, and whether it was handed over again", () => {
 	const conv = (t: string) => mailConversation(t, () => "kdb-67010497");
 	const failed = { id: "st_01a17c03", description: "큐피드 연결 스크립트 흐름도 HTML", status: "failed" as const, started_at: now - 300_000, ended_at: now - 300_000, target: "th:1564523279849357364", error: "child turn produced no assistant output" };
-	expect(workConversationRuns([failed], conv)["mail:kdb-67010497"]).toEqual({ kind: "error", since: iso(300_000), detail: "child turn produced no assistant output · 다시 맡기지 않았어요" });
+	// 실패 · <작업> · <이유>, with the worker's id for 다시 맡기기.
+	expect(workConversationRuns([failed], conv)["mail:kdb-67010497"]).toEqual({ kind: "error", reason: "work", since: iso(300_000), detail: "큐피드 연결 스크립트 흐름도 HTML · child turn produced no assistant output", work: "st_01a17c03" });
 	const retry = { id: "st_01a17c04", description: "다시", status: "running" as const, started_at: now - 240_000, target: "th:1564523279849357364" };
 	expect(workConversationRuns([failed, retry], conv)["mail:kdb-67010497"]).toMatchObject({ kind: "working", detail: "다시" });
 	const failedAgain = { ...retry, status: "failed" as const, ended_at: now - 60_000 };
-	expect(workConversationRuns([failed, failedAgain], conv)["mail:kdb-67010497"]).toMatchObject({ kind: "error", detail: "이유가 기록되지 않았어요 · 다시 맡긴 작업도 실패했어요" });
+	expect(workConversationRuns([failed, failedAgain], conv)["mail:kdb-67010497"]).toMatchObject({ kind: "error", detail: "다시 · 이유가 기록되지 않았어요 · 다시 맡긴 작업도 실패했어요", work: "st_01a17c04" });
 });
 
 test("an isolation refusal is said in Korean instead of raw git output", () => {
@@ -104,7 +106,19 @@ test("an isolation refusal is said in Korean instead of raw git output", () => {
 	expect(failureText(undefined)).toBe("이유가 기록되지 않았어요");
 	const conv = (t: string) => mailConversation(t, () => "k1");
 	const failed = { id: "st_01a17c1a", status: "failed" as const, started_at: now - 60_000, ended_at: now - 60_000, target: "mail:k1", error: raw };
-	expect(workConversationRuns([failed], conv)["mail:k1"]).toMatchObject({ kind: "error", detail: "작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요 · 다시 맡기지 않았어요" });
+	expect(workConversationRuns([failed], conv)["mail:k1"]).toMatchObject({ kind: "error", detail: "백그라운드 작업 · 작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요" });
+});
+
+test("a main-chat worker that failed after the last turn leaves 실패 with its reason and id until a turn answers after it", () => {
+	const failed = { id: "st_f", description: "빌드 고치기", status: "failed" as const, started_at: now - 600_000, ended_at: now - 120_000, reason: "작업 폴더의 격리 사본을 만들지 못해 시작하지 못했어요" };
+	expect(runState({ ...base, failed, lastTurnEnd: iso(300_000), todos: todos(1) }))
+		.toEqual({ kind: "error", reason: "work", since: iso(120_000), detail: "빌드 고치기 · 작업 폴더의 격리 사본을 만들지 못해 시작하지 못했어요", work: "st_f", todos: 1 });
+	// A turn that ended after the failure answered it; a finished (done) worker is no failure; running work still comes first.
+	expect(runState({ ...base, failed, lastTurnEnd: iso(60_000) })).toEqual({ kind: "done", since: iso(60_000) });
+	expect(runState({ ...base, failed: { ...failed, status: "done" } }).kind).toBe("idle");
+	expect(runState({ ...base, failed, work: [{ id: "st_r", description: "다시", started_at: now - 10_000 }] })).toMatchObject({ kind: "waiting", reason: "work", work: "st_r" });
+	// One the owner stopped is said as stopped, not as a failure.
+	expect(runState({ ...base, failed: { ...failed, cancelled: true, reason: "직접 중단했어요" } })).toMatchObject({ kind: "error", reason: "work", cancelled: true, detail: "빌드 고치기 · 직접 중단했어요" });
 });
 
 test("a finished worker leaves the conversation done with what it was", () => {

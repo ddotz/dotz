@@ -5,6 +5,7 @@ import { label, readAliases } from "./account-alias.ts";
 import { AccountsError, accountCommand } from "./accounts-api.ts";
 import { entryView, hubChain, keyFileOk, keyProviderOk } from "./fallback.ts";
 import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
+import { liveModelsInUse } from "./models-in-use.ts";
 import { homedir } from "node:os";
 import { type Compaction, ctxView, describeCompaction, describeCtx, kTokens } from "./context.ts";
 import { msg } from "./i18n.ts";
@@ -36,6 +37,11 @@ const FALLBACK_NOTE = "어시스턴트와 세션의 폴백 순서는 저장하�
 // Harness-aware: `harness` names the runtime that walks the chain; `conditions` says whether entries may carry conditions,
 // caps, revert or a key (the hub drives OmO and omp chains; Claude Code takes a plain --fallback-model list and the task
 // workers' chain is bare models plus API-key entries); `providers` limits the models that runtime can run (Claude Code: anthropic only).
+// Why a target's own model is unusable now and until when (a usage limit, a spend cap): the web says it beside 폴백 중.
+const primaryDown = (model: string) => {
+	const v = entryView({ model: parseSelector(model).model });
+	return v.down ? { down: v.down, until: v.until } : undefined;
+};
 function fallbacksView() {
 	const running = laneModels().filter(l => l.running);
 	const ids = (list: Array<string | undefined>) => [...new Set(list.filter((s): s is string => Boolean(s)).map(s => parseSelector(s).model))];
@@ -45,8 +51,8 @@ function fallbacksView() {
 	};
 	return {
 		max: FALLBACK_MAX,
-		orchestrator: { chain: fallbackChain("orchestrator").map(entryView), hub_driven: Boolean(hubChain(runtimeFor("orchestrator").id, fallbackChain("orchestrator"))), active: orch.status === "stopped" ? [] : ids([orch.activeModel]), ...harness("orchestrator", "orchestrator") },
-		lanes: { chain: fallbackChain("lanes").map(entryView), hub_driven: Boolean(hubChain(runtimeFor("lane").id, fallbackChain("lanes"))), active: ids(running.map(l => l.active_model)), ...harness("lane", "lanes") },
+		orchestrator: { chain: fallbackChain("orchestrator").map(entryView), hub_driven: Boolean(hubChain(runtimeFor("orchestrator").id, fallbackChain("orchestrator"))), active: orch.status === "stopped" ? [] : ids([orch.activeModel]), primary_down: primaryDown(orchestratorModel().model), ...harness("orchestrator", "orchestrator") },
+		lanes: { chain: fallbackChain("lanes").map(entryView), hub_driven: Boolean(hubChain(runtimeFor("lane").id, fallbackChain("lanes"))), active: ids(running.map(l => l.active_model)), primary_down: primaryDown(lanesModel().model), ...harness("lane", "lanes") },
 		workers: { chain: fallbackChain("workers").map(entryView), hub_driven: false, active: ids(running.map(l => l.active_worker_model)), ...harness("lane", "workers") },
 	};
 }
@@ -62,6 +68,8 @@ export async function modelsView() {
 		pickable: modelChoices(await availableModels()),
 		notes: { orchestrator: ORCHESTRATOR_NOTE, workers: WORKERS_NOTE, fallback: FALLBACK_NOTE },
 		fallbacks: fallbacksView(),
+		in_use: liveModelsInUse(),
+		replies: await (await import("./reply-model-choices.ts")).replyDefaultView(),
 	};
 }
 

@@ -33,16 +33,27 @@ function runText(r) {
       return [label, left, why].filter(Boolean).join(" · ");
     }
     case "limited": return [label, r.detail ? `${kstTime(r.detail)}까지` : "잠시 쉬어요"].join(" · ");
-    case "error": return [label, r.detail].filter(Boolean).join(" · ");
+    case "error": return [r.reason === "work" ? (r.cancelled ? "중단됨" : "실패") : label, r.detail].filter(Boolean).join(" · ");
     case "stopped": return [label, r.reason === "owner" ? "직접 멈췄어요" : "", left].filter(Boolean).join(" · ");
     case "done": return [label, r.detail, r.since ? kstHM(r.since) : ""].filter(Boolean).join(" · ");
     default: return label;
   }
 }
-// The one thing the owner can do about that state, when there is one.
-function runAction(r) {
+// The one thing the owner can do about that state, when there is one, for the conversation it is shown in: a background worker is
+// stopped (중단) or handed over again (다시 맡기기) on its own; a session restarts itself, never the assistant; a mail conversation has no
+// session to resume or restart; a feed (알림, 작업내역) gets nothing that stops or restarts anything. The other computer's worker is
+// that computer's to act on, so its line offers no button here.
+function runAction(r, t = target) {
   if (r.kind === "waiting" && r.reason === "ask") return { label: "질문으로 가기", run: () => runAskGo() };
+  if (isFixedT(t)) return null;
+  const peer = isMailT(t) && typeof pqPc === "function" && !!pqPc(t);
+  if (r.work && !peer) {
+    if (r.kind === "working" || (r.kind === "waiting" && r.reason === "work")) return { label: "중단", run: ev => workCancel(r.work, ev.currentTarget) };
+    if (r.kind === "error" && r.reason === "work") return { label: "다시 맡기기", run: ev => workRetry(r.work, ev.currentTarget) };
+  }
+  if (isMailT(t)) return null;
   if (r.kind === "idle") return { label: "계속하기", run: () => runContinue() };
+  if (isLaneT(t)) return r.kind === "error" || r.kind === "stopped" ? { label: "다시 시작", run: ev => runLaneRestart(laneOf(t), ev.currentTarget) } : null;
   if (r.kind === "limited" || r.kind === "error") return { label: r.kind === "limited" ? "지금 다시 시도" : "다시 시도", run: ev => orchResume(ev.currentTarget) };
   if (r.kind === "stopped") return { label: "다시 시작", run: ev => runRestart(ev.currentTarget) };
   return null;
@@ -89,6 +100,12 @@ function runContinue() {
 // 다시 시작 (a stopped session): the gateway's restart, the same as the stopped banner (08-home.js).
 const runRestart = btn => busy(btn, async () => {
   await api("/api/orchestrator/restart", "POST", {});
+  toast("다시 시작할게요");
+  scheduleState();
+});
+// 다시 시작 (a session that stopped or failed): that session's own restart, the same as its ⋯ menu on 홈 (08-home.js).
+const runLaneRestart = (name, btn) => busy(btn, async () => {
+  await api(`/api/lanes/${enc(name)}/restart`, "POST", {});
   toast("다시 시작할게요");
   scheduleState();
 });

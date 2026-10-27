@@ -140,7 +140,8 @@ ta.addEventListener("keydown", ev => {
 // so a repeat is a no-op, and the box is refocused so the keyboard stays up like a messenger.
 $("#send-btn").addEventListener("pointerdown", ev => ev.preventDefault());
 $("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length) stopTarget(); else sendChat(); if (!ta.disabled) ta.focus({ preventScroll: true }); };
-$("#working-stop").onclick = () => stopTarget();
+// With no turn running, the line is a background worker's (renderWorking): 중단 ends that worker (06-subagents.js workCancel).
+$("#working-stop").onclick = ev => (workingBg.length ? workCancel(workingBg[0].id, ev.currentTarget) : stopTarget());
 ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
 async function stopTarget() {
   try {
@@ -239,7 +240,7 @@ function renderWorking() {
     $("#working-stop").hidden = st === "rate-limited";
   } else if (bg.length) {
     $(".dot", box).className = "dot pri";
-    $("#working-stop").hidden = true;
+    $("#working-stop").hidden = false;
     tickWorking();
   }
   renderQueue(); renderCtxRing();
@@ -281,7 +282,8 @@ function modelChipText(sel) {
 function renderCtxRing() {
   const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;
   const orchT = target === MAIN || isProjT(target);
-  const sel = orchT ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model;
+  // The model it answers on now, a fallback included (20-models.js liveModel), with 폴백 중 beside it when that is not the configured one.
+  const live = orchT ? liveModel(MAIN) : lane ? liveModel(`lane:${lane.name}`) : null, sel = live && live.sel;
   // The chips say whose they are: the orchestrator and a lane often run the same model with a similar context, and
   // unlabeled they read as one (owner 2026-10-20: "오케스트레이터와 레인별로 구분 안되는거 같은데").
   const owner = orchT ? botName : lane ? `세션 ${lane.title || lane.name}` : "";
@@ -297,6 +299,9 @@ function renderCtxRing() {
   if (level) { eb.textContent = thinkKo(level); eb.title = `${owner} 추론 강도 · ${thinkKo(level)}`; }
   const keyed = !!(orchT ? S && S.orchestrator && S.orchestrator.key_fallback : lane && lane.key_fallback);
   $("#c-api").hidden = !keyed;
+  const fbc = $("#c-fb"), fb = live && live.fallback;
+  fbc.hidden = !fb;
+  if (fb) { fbc.textContent = fbTagText(fb); fbc.title = `${owner} 기본 모델 ${selText(live.conf)} 대신 쓰는 중`; }
   $("#cbar").classList.toggle("api", keyed);
   const b = $("#ctx-ring"), p = ((C && C.processes) || []).find(x => x.name === (orchT ? "orchestrator" : laneOf(target)));
   b.hidden = !(p && p.running && p.tokens != null);
@@ -357,7 +362,7 @@ $("#c-effort").onclick = ev => busy(null, () => {
     const name = targetName(target);
     const levels = ["low", "medium", "high"].filter(v => T.thinking_levels.includes(v));
     if (T.thinking && !levels.includes(T.thinking)) levels.push(T.thinking);
-    showMenu(anchor, [{ header: "추론 강도" }, ...levels.map(v => ({ value: v, label: v })), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${v}`)) });
+    showMenu(anchor, [{ header: "추론 강도" }, ...levels.map(v => ({ value: v, label: thinkKo(v) })), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${thinkKo(v)}`)) });
   });
 });
 $("#ctx-ring").setAttribute("aria-haspopup", "listbox");

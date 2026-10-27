@@ -38,7 +38,12 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .ended .er { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 18px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg); font-size: 14px; text-align: left; }
 .ended .er:hover { background: var(--card-hover); }
 .ended .er .sup { flex: none; margin-left: auto; color: var(--fg-3); font-size: 12px; white-space: nowrap; }
-.ended > summary > span:first-of-type { flex: 1; min-width: 0; }
+.ended > summary > .elabel { flex: none; white-space: nowrap; }
+.ended > summary > .ecounts { flex: 1; min-width: 0; color: var(--fg-3); font-size: 13px; font-weight: 500; }
+.ended .ecount { display: inline-block; white-space: nowrap; }
+.ended > summary > .elabel:has(+ .etools) { flex: 1; }
+.ended .ecount::before { content: " · "; }
+.ended .ecount.need { color: var(--warn); }
 .ended .etools { display: flex; align-items: center; gap: 4px; margin: -6px -8px -6px 0; }
 .ended:not([open]) .etools { display: none; }
 .ended .etools .btn { height: 28px; font-size: 13px; }
@@ -46,6 +51,9 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .ended .erow .er { flex: 1; min-width: 0; border-top: 0; padding-right: 8px; }
 .ended .erow .edel { margin-right: 12px; color: var(--fg-3); }
 .ended .erow .edel:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+.ended .er .tag { flex: none; }
+.ended .erow .er .en { flex: 0 1 auto; min-width: 3em; }
+.ended .erow .er .sup { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ended .en { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ended label.er { cursor: pointer; min-height: 48px; }
 .ended label.ck-all { color: var(--fg-2); font-weight: 600; }

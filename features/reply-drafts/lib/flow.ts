@@ -6,7 +6,7 @@ import { claimSend } from "../../../hub/draft-claim.ts";
 import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, generateChatReply, lintReply, NO_RECIPIENT, reviseReply, withSenderAddress, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
-import { matchLibrary } from "./library.ts";
+import { matchLibrary, type LibraryFile } from "./library.ts";
 import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts";
 import { addStagedFile, carryStagedFiles, stagedFiles } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
@@ -15,7 +15,7 @@ import { addDraft, getDraft, listDrafts, newId, patchDraft, setStatus, type Draf
 import { realRunner, type Runner } from "./tone.ts";
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
-export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome> };
+export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome> };
 
 // After a recorded correction: every few corrections fold into the profile's identity. A failed refinement keeps the old identity.
 export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promise<void> {
@@ -45,25 +45,62 @@ export function replyCall(app: string, conv?: string, call?: ReplyCall): ModelCa
 	};
 }
 
-const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string): ModelCall => deps.call ?? replyCall(item.app ?? "mail", conv);
+// One draft's model calls share one overall budget: each call gets the per-call limit or what is left of the budget, whichever is shorter, and
+// a call with too little left is not started. Every call is recorded (what, ms, tokens when the real model reports them) for the draft's log line.
+export const DRAFT_BUDGET_MS = 60_000;
+const MIN_CALL_MS = 5_000;
+export type CallStat = { what: string; ms: number; tokens?: { in: number; out: number }; error?: string };
+export type DraftTrace = { deadline: number; calls: CallStat[] };
+export const draftTrace = (budgetMs = DRAFT_BUDGET_MS): DraftTrace => ({ deadline: Date.now() + budgetMs, calls: [] });
+/** "model calls 2: draft 9490ms 4866/863 tok, pick 820ms" - the one line that says what a draft spent on the model. */
+export const traceLine = (t: DraftTrace): string => `model calls ${t.calls.length}${t.calls.length ? `: ${t.calls.map(c => `${c.what} ${c.ms}ms${c.tokens ? ` ${c.tokens.in}/${c.tokens.out} tok` : ""}${c.error ? ` (${c.error})` : ""}`).join(", ")}` : ""}`;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(`model call timed out after ${Math.round(ms / 1000)}s`)), ms)));
+	return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
+
+function tracedCall(deps: FlowDeps, item: ReplyItem, conv: string | undefined, trace: DraftTrace, what: string): ModelCall {
+	return async (system, user) => {
+		const left = trace.deadline - Date.now();
+		if (left < MIN_CALL_MS) throw new Error(`the draft's ${DRAFT_BUDGET_MS / 1000}s budget is spent`);
+		const stat: CallStat = { what, ms: 0 };
+		trace.calls.push(stat);
+		const t0 = Date.now();
+		try {
+			const { callReplyModel, DRAFT_TIMEOUT_MS } = await import("../../../hub/reply-model.ts");
+			if (deps.call) return await withTimeout(deps.call(system, user), Math.min(left, DRAFT_TIMEOUT_MS));
+			const r = await callReplyModel(item.app ?? "mail", conv, system, user, undefined, { timeoutMs: left });
+			stat.tokens = { in: r.inputTokens, out: r.outputTokens };
+			return r.text;
+		} catch (e) {
+			stat.error = (e as Error).message;
+			throw e;
+		} finally {
+			stat.ms = Date.now() - t0;
+		}
+	};
+}
+
+const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "draft"): ModelCall => (deps.trace ? tracedCall(deps, item, conv, deps.trace, what) : deps.call ?? replyCall(item.app ?? "mail", conv));
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
 
 function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[] }, changes: string[], deps: FlowDeps): DraftRec {
 	return { id: newId(), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...meta, to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item };
 }
 
-// The owner is asked once, with a complete draft (owner 2026-10-26): a draft that came back with open points is sent back to the model once to
-// settle them from what it can see; what it still cannot settle is what only the owner knows, asked inside the same approval card.
-const RESOLVE = (questions: string[]) => `Settle these open points yourself from the message, its context and the user's samples, rules and corrections, and make the reply complete without them (still promise nothing you cannot see). In "questions" keep only a fact the reply cannot go out without and that nothing above settles:\n${questions.map(q => `- ${q}`).join("\n")}`;
-
+// The owner is asked once, with a complete draft (owner 2026-10-26): the one draft call already settles every open point it can from what it
+// sees (hub/reply-draft.ts SYSTEM); what it still lists is what only the owner knows, asked inside the same approval card. A question a rule
+// settles (the recipient's address: the sender's own, recovered from the text, or filled by the source's reply screen) is dropped, never sent
+// back to the model.
 export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): Promise<Built> {
-	const style = loadStyle(toneKey(item)), call = callOf(deps, item, meta.ref);
-	let r = await generateChatReply(item, style, call);
-	if (r.action === "draft" && r.questions.length && item.kind !== "chat") {
-		const settled = await reviseReply(item, style, r.draft, RESOLVE(r.questions), call);
-		if (settled.action === "draft") r = settled;
-	}
-	return r.action !== "draft" ? r : { action: "draft", rec: toRec(item, meta, r, [], deps), warnings: r.warnings };
+	const trace = deps.trace ?? draftTrace();
+	const style = loadStyle(toneKey(item)), call = callOf({ ...deps, trace }, item, meta.ref);
+	const r = await generateChatReply(item, style, call);
+	if (r.action !== "draft") return r;
+	const questions = item.kind === "mail" ? r.questions.filter(q => !ADDRESS_ASK.test(q)) : r.questions;
+	return { action: "draft", rec: toRec(item, meta, { ...r, questions }, [], deps), warnings: r.warnings };
 }
 
 // The approval question with what only the owner can decide in it, so one card asks everything: "이 답장 보낼까요? 정할 것: 회의 날짜".
@@ -121,23 +158,33 @@ export async function attachFolder(ref: string): Promise<string | undefined> {
 	}
 }
 
-function pickByModel(rec: DraftRec, deps: FlowDeps): (names: string[]) => Promise<string[]> {
+function pickByModel(item: ReplyItem, ref: string, deps: FlowDeps): (names: string[]) => Promise<string[]> {
 	return async names => {
-		const text = await callOf(deps, rec.item, rec.ref)("파일 이름만 보고 메일에 보낼 파일을 고릅니다. 고른 파일 이름을 한 줄에 하나씩, 최대 3개만 적습니다. 다른 말은 쓰지 않습니다.", `메일 제목: ${rec.item.subject ?? ""}\n\n파일 이름:\n${names.map(n => `- ${n}`).join("\n")}`);
+		const text = await callOf(deps, item, ref, "pick")("파일 이름만 보고 메일에 보낼 파일을 고릅니다. 고른 파일 이름을 한 줄에 하나씩, 최대 3개만 적습니다. 다른 말은 쓰지 않습니다.", `메일 제목: ${item.subject ?? ""}\n\n파일 이름:\n${names.map(n => `- ${n}`).join("\n")}`);
 		return text.split("\n").map(l => l.replace(/^[-*\d.)\s]+/, "").trim()).filter(Boolean);
 	};
 }
 
+// The 첨부 파일 폴더 files for a mail, matched by name in plain code; undefined when the source cannot send files or has no folder. It needs only the
+// mail (subject, text, names), so offer.ts starts it beside the draft call: a tie is broken by the model only for a mail that asks for a file, and
+// then concurrently with the draft, never after it. Any other tie takes the best-ranked files without a model call.
+export async function libraryFor(item: ReplyItem, meta: { source: string; ref: string }, deps: FlowDeps): Promise<LibraryFile[] | undefined> {
+	if (item.kind !== "mail" || !canAttach(meta.source)) return undefined;
+	const folder = await attachFolder(meta.ref);
+	if (!folder) return undefined;
+	const pick = asksForFile(item.text) ? deps.pick ?? pickByModel(item, meta.ref, deps) : undefined;
+	return matchLibrary(folder, { subject: item.subject ?? "", text: item.text }, pick);
+}
+
 // A reply that promises a file or answers a mail that asks for one: the best matches of the 첨부 파일 폴더 are staged for the owner to confirm
 // (they go out only with the owner's 보내기). Nothing fits -> the approval carries the warning and says so. A source that cannot send files gets neither.
-export async function stageForReply(rec: DraftRec, deps: FlowDeps): Promise<void> {
+// `files`: the match libraryFor started beside the draft call.
+export async function stageForReply(rec: DraftRec, deps: FlowDeps, files?: Promise<LibraryFile[] | undefined>): Promise<void> {
 	if (rec.kind !== "mail") return;
 	rec.asksFile = asksForFile(rec.item.text) || undefined;
 	if (!rec.asksFile && !claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`)) return;
-	if (!canAttach(rec.source)) return;
-	const folder = await attachFolder(rec.ref);
-	if (!folder) return;
-	const found = await matchLibrary(folder, { subject: rec.item.subject ?? "", text: rec.item.text }, deps.pick ?? pickByModel(rec, deps));
+	const found = await (files ?? libraryFor(rec.item, rec, deps));
+	if (!found) return;
 	for (const f of found) addStagedFile(rec.id, f.path);
 	if (!found.length) rec.libraryMiss = true;
 }
@@ -168,7 +215,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 export function dropDraft(id: string): Step {
 	const d = getDraft(id);
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
-	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태예요` };
+	if (d.status !== "pending" && d.status !== "held") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태예요` };
 	setStatus(id, "dropped");
 	return { ok: true, text: `초안 ${id}을(를) 버렸어요` };
 }

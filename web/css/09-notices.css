@@ -130,3 +130,8 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 /* 홈 답변 필요: a monitoring app's send approvals folded into one row; the items unfold below it, indented. */
 .ntg-h[aria-expanded="true"] .hs { color: var(--muted, inherit); }
 .ntg-l { margin: 0 0 6px 20px; padding-left: 8px; border-left: 2px solid var(--line, rgba(128, 128, 128, .35)); }
+
+/* 알림 conversation: 지우기 (x) on each alert that needs no answer (30-notices.js ntAlertMarks) */
+#tl > [data-ts]:has(> .al-x) { position: relative; padding-right: 44px; }
+#tl > [data-ts] > .al-x { position: absolute; top: 8px; right: 8px; color: var(--fg-3); }
+#tl > [data-ts] > .al-x:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
