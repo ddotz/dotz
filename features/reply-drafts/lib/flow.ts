@@ -168,7 +168,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 export function dropDraft(id: string): Step {
 	const d = getDraft(id);
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
-	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태예요` };
+	if (d.status !== "pending" && d.status !== "held") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태예요` };
 	setStatus(id, "dropped");
 	return { ok: true, text: `초안 ${id}을(를) 버렸어요` };
 }

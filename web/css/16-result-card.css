@@ -182,6 +182,8 @@ a.dr-att:active { background: var(--active); }
 .ms-card.open .ms-ch { transform: rotate(180deg); }
 .ms-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 0 16px 12px; }
 .ms-ft { display: flex; justify-content: flex-end; }
+.ms-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 0 4px; }
+.ms-hd .ms-n { color: var(--fg-3); font-size: 12px; }
 .ms-rm .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mr-filter { position: sticky; top: 0; z-index: 2; display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 0 8px; background: var(--bg); }
 .mr-filter .mr-f { height: 28px; padding: 0 10px; font-size: 12.5px; color: var(--fg-2); background: var(--layer); }

@@ -1,10 +1,13 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { addDraft, getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { addDraft, getDraft, listDrafts, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { setupEnv } from "../features/reply-drafts/test/helpers.ts";
 import { DATA_DIR, HUB_TOKEN } from "./config.ts";
+import { draftApprovalBlock } from "./draft-approval.ts";
 import { mailDraftHandled } from "./draft-handled.ts";
+import { emit } from "./events.ts";
+import { listNotices, setDraftHandled } from "./notices.ts";
 import { deleteMail, mailByKey, mailCard, mailTargets, postMail, recordMail, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { createPeerMonitor } from "./peer-monitor.ts";
 import { makeRoute } from "./routes.ts";
@@ -23,7 +26,7 @@ const incoming = async (id: string, messageId?: string) => (await postMail({ sou
 const draft = (id: string, ref: string): DraftRec => ({ id, kind: "mail", app: "mail", source: "fx", mailId: "1", ref, to: "kim@example.com", body: "본문", status: "pending", created: new Date().toISOString(), changes: [], questions: [], item: { kind: "mail", from: "kim@example.com", text: "x" } });
 
 describe("답장 안 해도 돼요", () => {
-	test("leaves 답장 필요 and 미답장, drops the waiting reply draft, and the undo makes it 답장 필요 again", async () => {
+	test("leaves 답장 필요 and 미답장, holds the waiting reply draft, and the undo makes it 답장 필요 again", async () => {
 		const key = await incoming(uid("fyi"), "m1");
 		setMailReply(key, "need");
 		const owed = () => unrepliedMails(new Set(), Date.parse(mailByKey(key)!.at)).some(m => m.key === key);   // setupEnv pins Date.now
@@ -32,11 +35,39 @@ describe("답장 안 해도 돼요", () => {
 		expect((await call("POST", `/api/mail/${key}/fyi`)).status).toBe(200);
 		expect(mailCard(mailByKey(key)!).reply).toBe("fyi");
 		expect(owed()).toBe(false);
-		expect(getDraft("RFYAAA2")!.status).toBe("dropped");
+		expect(getDraft("RFYAAA2")!.status).toBe("held");
 		expect((await call("DELETE", `/api/mail/${key}/fyi`)).status).toBe(200);
 		expect(mailByKey(key)!.reply).toBe("needs");
+		expect(getDraft("RFYAAA2")!.status).toBe("pending");
 		expect(owed()).toBe(true);
 		expect((await call("POST", "/api/mail/fx-nope/fyi")).status).toBe(404);
+	});
+
+	test("its send approval leaves 확인 대기 and 되돌리기 brings the same card back, waiting again; a newer draft replaces a held one", async () => {
+		setDraftHandled(d => mailDraftHandled(d.draft!.ref!, { drafts: listDrafts, record: mailByKey }) ?? false);
+		const key = await incoming(uid("hold"), "m1");
+		setMailReply(key, "need");
+		addDraft(draft("RHLAAA2", key));
+		emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: `mail:${key}`, text: `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", subject: "Re: 견적 문의", body: "본문", ref: "RHLAAA2", question: "이 답장 보낼까요?" })}` });
+		const card = () => listNotices(200).items.find(i => i.decision?.draft?.ref === "RHLAAA2");
+		expect(card()?.decision?.state).toBe("open");
+		await call("POST", `/api/mail/${key}/fyi`);
+		expect(card()?.decision).toMatchObject({ state: "answered", resolved: true });
+		await call("DELETE", `/api/mail/${key}/fyi`);
+		expect(card()?.decision?.state).toBe("open");
+		expect(card()?.read).toBe(false);
+		// held, then a newer draft comes: the held one is stale, the undo has nothing to bring back
+		await call("POST", `/api/mail/${key}/fyi`);
+		addDraft(draft("RHLBBB2", key));
+		expect(getDraft("RHLAAA2")!.status).toBe("stale");
+	});
+
+	test("삭제 drops a held draft too", async () => {
+		const key = await incoming(uid("hd"), "m1");
+		addDraft(draft("RHDAAA2", key));
+		await call("POST", `/api/mail/${key}/fyi`);
+		await call("DELETE", `/api/mail/${key}`);
+		expect(getDraft("RHDAAA2")!.status).toBe("dropped");
 	});
 
 	test("a send approval of a mail marked 답장 불필요 or 답장 안 함 is handled (it leaves 확인 대기) even when the draft is still pending", () => {

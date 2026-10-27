@@ -26,13 +26,27 @@ function updAvailable() {
 const hvList = () => (HV.info && Array.isArray(HV.info.harnesses) ? HV.info.harnesses : []);
 const hvNew = () => hvList().filter(h => h.available).length;
 const hvJob = () => hvList().map(h => h.job).find(j => j && (j.status === "running" || j.status === "deferred")) || null;
-// One badge for both: dotz's own version and every running harness, counted together.
+// A new version was pulled and waits for the restart that applies it (running != disk).
+function updRestartPending() {
+  const i = UPD.info;
+  return !!(i && !i.error && updState(i).pending);
+}
+// One badge for both: dotz's own version and every running harness, counted together. A pulled update that still waits for its restart keeps
+// the badge as 재시작 필요 (it is the next step, ahead of a newer version), so the update does not vanish half done.
 function paintUpdBadge() {
   const b = $("#nav-upd");
   if (!b) return;
-  const n = (updAvailable() ? 1 : 0) + hvNew();
-  b.hidden = !n;
-  b.textContent = n > 1 ? `업데이트 ${n}` : "새 버전";
+  const n = (updAvailable() ? 1 : 0) + hvNew(), restart = updRestartPending();
+  b.hidden = !n && !restart;
+  b.textContent = restart ? "재시작 필요" : n > 1 ? `업데이트 ${n}` : "새 버전";
+  b.title = restart ? "재시작하면 새 버전이 적용돼요" : "새 버전이 있어요";
+}
+// The update toast's 보기 (99-boot.js): 설정, scrolled to the 업데이트 section once it is drawn.
+function updOpen() {
+  go("settings");
+  let tries = 0;
+  const seek = () => { const s = $("#upd-sec"); if (s) s.scrollIntoView({ block: "start" }); else if (++tries < 120) requestAnimationFrame(seek); };
+  requestAnimationFrame(seek);
 }
 async function loadUpdate() {
   clearTimeout(UPD.timer);
@@ -174,7 +188,7 @@ function hvSection() {
 function updateSection() {
   const i = UPD.info;
   const li = (title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), ...trail);
-  const head = el("div", { class: "sec" }, "업데이트", updAvailable() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null);
+  const head = el("div", { class: "sec", id: "upd-sec" }, "업데이트", updRestartPending() ? el("span", { class: "tag warn upd-new", text: "재시작 필요" }) : updAvailable() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null);
   if (!i || i.error) return [head, el("div", { class: "list" }, li("dotz 버전", i ? i.error : "불러오는 중…")), ...hvSection()];
   const { running: run, disk, job, settings: s } = i;
   const jobRunning = job && job.status === "running";
