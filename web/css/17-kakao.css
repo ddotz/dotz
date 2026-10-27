@@ -142,13 +142,25 @@
 .kk-bub.card.loc { flex-direction: column; align-items: flex-start; gap: 0; max-width: 260px; text-decoration: none; color: var(--kk-in-fg); }
 .kk-bub.card.loc .kk-fn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .kk-bub.reply { display: flex; flex-direction: column; gap: 4px; min-width: 150px; max-width: 100%; }
-.kk-quote { display: flex; flex-direction: column; gap: 1px; align-self: stretch; margin: -2px -4px 0; padding: 4px 8px; border: 0; border-radius: 8px; background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; text-align: left; font: 400 12px/17px var(--font); }
-.kk-quote.jump { cursor: pointer; }
-.kk-quote.jump:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+/* The quote reads as a link to the original: a bar on its left and "원문 보기" on the right of its name line. */
+.kk-quote { display: flex; flex-direction: column; gap: 1px; align-self: stretch; margin: -2px -4px 0; padding: 4px 8px 4px 10px; border: 0; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); border-radius: 8px; background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; text-align: left; font: 400 12px/17px var(--font); }
+/* not ".jump": that global class (05-log.css) is the absolutely placed scroll-to-latest button, and it pulled every quote out of its bubble */
+.kk-quote.kk-qjump { cursor: pointer; border-left-color: var(--accent); }
+.kk-quote.kk-qjump:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+.kk-quote .kk-qn { display: flex; align-items: baseline; gap: 8px; }
+.kk-qgo { margin-left: auto; flex: none; color: var(--accent); font-size: 11px; font-weight: 600; }
+.kk-quote.busy .kk-qgo { visibility: hidden; }
+.kk-quote.busy::after { content: attr(data-wait); color: var(--fg-3); font-size: 11px; }
+/* after a jump: back to the reply the owner came from */
+.kk-backpill { position: absolute; left: 50%; bottom: 84px; z-index: 5; display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border: 0; border-radius: 17px; background: var(--accent); color: #fff; font: 600 13px/1 var(--font); box-shadow: 0 4px 14px rgb(0 0 0 / .25); transform: translateX(-50%); cursor: pointer; }
+.kk-backpill .ic { width: 14px; height: 14px; transform: rotate(-90deg); fill: none; stroke: currentColor; stroke-width: 2; }
+.kk-m.kk-hl { position: relative; }
+.kk-m.kk-hl::before { content: attr(data-hl); position: absolute; top: -18px; left: 0; padding: 1px 8px; border-radius: 9px; background: var(--accent); color: #fff; font: 600 11px/16px var(--font); pointer-events: none; }
+.kk-m.me.kk-hl::before { left: auto; right: 0; }
 .kk-quote:disabled { cursor: default; }
 /* a quote tap flashes the original message (30-kakao.js kkFlash) */
-.kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker { animation: kk-hl 1.6s ease; border-radius: 10px; }
-@keyframes kk-hl { 0%, 55% { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; box-shadow: none; } }
+.kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker { animation: kk-hl 3.2s ease; border-radius: 10px; }
+@keyframes kk-hl { 0%, 75% { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; box-shadow: none; } }
 @media (prefers-reduced-motion: reduce) { .kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker { animation-duration: .01s; } }
 .kk-qn { font-weight: 600; opacity: .85; }
 .kk-qt { opacity: .75; }

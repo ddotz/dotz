@@ -706,7 +706,7 @@ describe("카카오톡 media at desktop width", () => {
 		const e = await q<Record<string, any>>(v, `const t = id => document.querySelector('[data-log="' + id + '"]'), b = [...t("5015").querySelectorAll(".kk-emo .kk-bub")], bare = t("5009").querySelectorAll(".kk-bub");
 			return { texts: b.map(x => x.textContent), cls: b.map(x => x.classList.contains("ph")), under: b.length === 2 && b[0].getBoundingClientRect().bottom <= b[1].getBoundingClientRect().top + 1, markup: !!t("5015").querySelector("b"), bare: bare.length, bareEmo: !!t("5009").querySelector(".kk-emo") }`);
 		expect(e).toEqual({ texts: ["(이모티콘) 카카오 이모티콘", "고마워 <b>x</b>"], cls: [true, false], under: true, markup: false, bare: 1, bareEmo: false });
-		expect([s.qn, s.qt, s.rt]).toEqual(["가나에게 답장", "점심 뭐 먹을까", "나도 좋아"]);
+		expect([s.qn, s.qt, s.rt]).toEqual(["가나에게 답장원문 보기", "점심 뭐 먹을까", "나도 좋아"]);
 		expect(s.loc[0]).toContain("위치: 서울 강남구");
 		expect(s.loc[1]).toBe("https://map.kakao.com/link/map/" + encodeURIComponent("서울 강남구") + ",37.5,127.03");
 		expect(s.loc.slice(2)).toEqual(["_blank", "noopener"]);
@@ -970,8 +970,9 @@ describe("카카오톡 reply quotes", () => {
 		await boot(v);
 		await openRoom(v);
 		expect(await q(v, `return !!document.querySelector('[data-log="2003"]')`)).toBe(false);
-		const quote = await q<Record<string, any>>(v, `const b = document.querySelector('[data-log="7100"] .kk-bub.reply'), c = b.querySelector(".kk-quote"); return { head: c.querySelector(".kk-qn").textContent, qt: c.querySelector(".kk-qt").textContent, src: c.getAttribute("data-src"), tag: c.tagName, disabled: c.disabled, label: c.getAttribute("aria-label"), w: Math.round(b.getBoundingClientRect().width) }`);
-		expect(quote).toMatchObject({ head: "가나에게 답장", qt: "예전 대화 2", src: "2003", tag: "BUTTON", disabled: false, label: "원래 메시지로 이동" });
+		const quote = await q<Record<string, any>>(v, `const b = document.querySelector('[data-log="7100"] .kk-bub.reply'), c = b.querySelector(".kk-quote"); return { head: c.querySelector(".kk-qn").textContent, qt: c.querySelector(".kk-qt").textContent, src: c.getAttribute("data-src"), tag: c.tagName, disabled: c.disabled, label: c.getAttribute("aria-label"), w: Math.round(b.getBoundingClientRect().width), pos: getComputedStyle(c).position, inside: (() => { const r = c.getBoundingClientRect(), o = b.getBoundingClientRect(); return r.top >= o.top - 4 && r.bottom <= o.bottom + 4; })() }`);
+		// the quote is part of its bubble (a global ".jump" rule once pulled it out to the bottom of the timeline) and says it leads to the original
+		expect(quote).toMatchObject({ head: "가나에게 답장원문 보기", qt: "예전 대화 2", src: "2003", tag: "BUTTON", disabled: false, label: "원래 메시지로 이동", pos: "static", inside: true });
 		expect(quote.w).toBeGreaterThanOrEqual(150);
 		await run(v, `document.querySelector('[data-log="7100"] .kk-quote').click()`);
 		await expectReq(r => r.method === "GET" && r.path.includes("around=2003"));
