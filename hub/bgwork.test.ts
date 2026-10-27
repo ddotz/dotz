@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createBgWork, FINISHED_KEEP_MS, type OpenDeferred } from "./bgwork.ts";
+import { createBgWork, FINISHED_KEEP_MS, type OpenDeferred, workModel } from "./bgwork.ts";
 
 const ROOT = "01a159d6-b330-71dd-b28a-301dd01d6031";
 const T0 = Date.parse("2026-10-21T06:00:00.000Z");
@@ -119,4 +119,12 @@ test("a worker spawned by a turn serves that turn's message even when an older d
 	// A turn with no message id (a schedule) leaves reply_to empty instead of borrowing the old deferred one.
 	const bare = createBgWork({ sessionFile: () => session, deferred: () => open, turn: () => ({ target: "web" }), now: () => T0 + 300_000 });
 	expect(bare.list().map(w => [w.target, w.reply_to])).toEqual([["web", undefined], ["web", undefined]]);
+});
+
+test("a worker names the model it runs on, as OmO's record says (Mac mini st_01a17c04, 2026-10-27)", () => {
+	const opus = { provider: "anthropic-subscription", model_id: "claude-opus-5-5", display: "Claude Opus 5.5", variant: "medium", reasoning_effort: "medium", source: "category" };
+	record("st_m", { model: "anthropic-subscription/claude-opus-5-5", requested_model: { ...opus, display: "anthropic-subscription/claude-opus-5-5" }, resolved_model: opus, effective_model: { provider: "anthropic-subscription", model_id: "claude-opus-5-5", display: "anthropic-subscription/claude-opus-5-5" } });
+	expect(make(() => T0 + 60_000).list()[0]!.model).toBe("Opus 5.5 medium");
+	expect(workModel({ model: "openai-codex/gpt-5.5" })).toBe("Gpt 5.5");
+	expect(workModel({})).toBeUndefined();
 });
