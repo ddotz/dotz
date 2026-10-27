@@ -79,6 +79,9 @@ test("a mail conversation's run state is the worker its request was deferred to,
 	expect(workConversationRuns([work], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML" } });
 	expect(workConversationRuns([{ ...work, target: "mail:kdb-67010497" }], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML" } });
 	expect(workConversationRuns([{ ...work, target: "web" }], conv)).toEqual({});
+	// The model the worker runs on follows its description: the owner sees which model does the work he asked for there.
+	expect(workConversationRuns([{ ...work, model: "Opus 5.5 medium" }], conv)["mail:kdb-67010497"]!.detail).toBe("큐피드 연결 스크립트 흐름도 HTML · Opus 5.5 medium");
+	expect(runState({ status: "idle", work: [{ description: "흐름도", started_at: now, model: "Opus 5.5 medium" }], now }).detail).toBe("흐름도 · Opus 5.5 medium");
 });
 
 test("a worker that failed at spawn says why, and whether it was handed over again", () => {

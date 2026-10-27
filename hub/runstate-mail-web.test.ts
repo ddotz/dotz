@@ -9,7 +9,7 @@ const MINI = "http://mini.test";
 const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
 const at = (min: number) => new Date(Date.UTC(2026, 9, 27, 6, min)).toISOString();
 type Run = { kind: string; reason?: string; since?: string; detail?: string; todos?: number };
-const WORKING: Run = { kind: "working", since: ago(4), detail: "큐피드 연결 스크립트 흐름도 HTML" };
+const WORKING: Run = { kind: "working", since: ago(4), detail: "큐피드 연결 스크립트 흐름도 HTML · Opus 5.5 medium" };
 const FAILED: Run = { kind: "error", since: ago(7), detail: "child turn produced no assistant output · 다시 맡기지 않았어요" };
 const MAIL = { subject: "KDB 메일", from: "민수 <m@example.com>", source: "mail", at: at(20), summary: "흐름도 부탁드려요" };
 const LAST = { ts: at(20), text: "KDB 메일", from: "bot" };
@@ -79,7 +79,7 @@ test("a mail conversation on this computer shows the background worker its reque
 	RUNS = { ...RUNS, "mail:loc": WORKING };
 	await v.evaluate(`refreshState().then(() => true)`);
 	await waitFor(v, `!$("#runstate").hidden && $("#runstate-tx").textContent.startsWith("작업 중")`);
-	expect(await line(v)).toBe("작업 중 · 큐피드 연결 스크립트 흐름도 HTML · 4분");
+	expect(await line(v)).toBe("작업 중 · 큐피드 연결 스크립트 흐름도 HTML · Opus 5.5 medium · 4분");
 }, 20_000);
 
 test("the same mail opened from the other computer shows that computer's run state", async () => {
@@ -90,5 +90,5 @@ test("the same mail opened from the other computer shows that computer's run sta
 	await v.evaluate(`($("#mon-tl .mr").click(), 0)`);
 	await waitFor(v, `target === "mail:abc" && !$("#runstate").hidden`);
 	expect(await v.evaluate(`pqPc(target) && pqPc(target).url`)).toBe(MINI);
-	expect(await line(v)).toBe("작업 중 · 큐피드 연결 스크립트 흐름도 HTML · 4분");
+	expect(await line(v)).toBe("작업 중 · 큐피드 연결 스크립트 흐름도 HTML · Opus 5.5 medium · 4분");
 }, 20_000);

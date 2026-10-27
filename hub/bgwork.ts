@@ -25,7 +25,25 @@ type BgWork = {
 	folder?: string;
 	/** Why a failed worker failed, as its task record wrote it (a worker that dies at spawn still names the cause there). */
 	error?: string;
+	/** The model and effort the worker runs on, as the owner reads it ("Opus 5.5 medium"), when its record names one. */
+	model?: string;
 };
+
+type RecModel = { provider?: string; model_id?: string; display?: string; variant?: string; reasoning_effort?: string; reasoning?: string };
+// "claude-opus-5-5" -> "Opus 5.5", "gpt-5.5" -> "Gpt 5.5"; a record's display name ("Claude Opus 5.5") wins over the id.
+const modelName = (m: RecModel): string => {
+	const shown = m.display && !m.display.includes("/") ? m.display : (m.model_id ?? m.display ?? "").split("/").at(-1)!;
+	const words = shown.replace(/^claude[- ]/i, "").replace(/(\d+)-(\d+)/g, "$1.$2").split(/[-\s]+/).filter(Boolean);
+	return words.map(w => w[0]!.toUpperCase() + w.slice(1)).join(" ");
+};
+/** The model a worker record ran on, as one short label: what OmO really used, else what it resolved or was asked. */
+export function workModel(r: { effective_model?: RecModel; resolved_model?: RecModel; requested_model?: RecModel; model?: string }): string | undefined {
+	const m = r.effective_model ?? r.resolved_model ?? r.requested_model ?? (r.model ? { model_id: r.model } : undefined);
+	const name = m ? modelName(m) : "";
+	if (!name) return undefined;
+	const effort = m?.reasoning_effort ?? m?.reasoning ?? m?.variant ?? r.resolved_model?.reasoning_effort ?? r.resolved_model?.variant;
+	return effort ? `${name} ${effort}` : name;
+}
 
 /** An owner message whose turn ended with `[later]` and is still waiting for its answer. */
 export type OpenDeferred = { target: string; replyTo?: string; at: number };
@@ -47,6 +65,10 @@ type Rec = {
 	error_message?: string;
 	terminal_reason?: string;
 	error?: string;
+	model?: string;
+	requested_model?: RecModel;
+	resolved_model?: RecModel;
+	effective_model?: RecModel;
 };
 
 // Finished work stays listed this long.
@@ -147,7 +169,8 @@ export function createBgWork(deps: BgWorkDeps) {
 		const folder = folderOf(r);
 		const why = status === "failed" ? [r.error_message, r.terminal_reason, r.error].find(v => typeof v === "string" && v.trim()) : undefined;
 		const error = why ? scrub(why).replace(/\s+/g, " ").trim().slice(0, 200) : "";
-		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}) };
+		const model = workModel(r);
+		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}), ...(model ? { model } : {}) };
 	}
 
 	/** Running work (oldest first), then what finished within the last hour (newest first). */

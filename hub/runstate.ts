@@ -16,7 +16,7 @@ export type RunInput = {
 	stoppedBy?: "owner";
 	error?: { text?: string; since?: string };
 	ask?: { text?: string; at?: string };
-	work?: { description?: string; started_at?: number }[];
+	work?: { description?: string; started_at?: number; model?: string }[];
 	children?: { name?: string; description?: string }[];
 	later?: number;
 	capacity?: string;
@@ -41,7 +41,7 @@ export function runState(i: RunInput): RunState {
 	if (i.status === "exited") return { kind: "done", since: i.since, ...todos };
 	if (short(i.ask?.text)) return { kind: "waiting", reason: "ask", since: i.ask?.at, detail: short(i.ask?.text), ...todos };
 	const w = (i.work || [])[0];
-	if (w) return { kind: "waiting", reason: "work", since: iso(w.started_at), detail: short(w.description || "백그라운드 작업"), ...todos };
+	if (w) return { kind: "waiting", reason: "work", since: iso(w.started_at), detail: workDetail(w), ...todos };
 	const c = (i.children || [])[0];
 	if (c) return { kind: "waiting", reason: "child", detail: short(c.description || c.name || "서브에이전트"), ...todos };
 	if (i.later) return { kind: "waiting", reason: "later", since: i.lastTurnEnd, ...todos };
@@ -61,7 +61,9 @@ export function openTodos(t: TodoLike): { open: number; current?: string } {
 	return { open: live.length, ...(cur?.content ? { current: cur.content } : {}) };
 }
 
-export type WorkLike = { id?: string; description?: string; status: "running" | "done" | "failed"; started_at?: number; ended_at?: number; target?: string; error?: string };
+export type WorkLike = { id?: string; description?: string; status: "running" | "done" | "failed"; started_at?: number; ended_at?: number; target?: string; error?: string; model?: string };
+/** A running worker's line: what it does, then the model it runs on, so the owner sees which model works for him ("<설명> · Opus 5.5 medium"). */
+export const workDetail = (w: { description?: string; model?: string }): string => [short(w.description || "백그라운드 작업"), short(w.model, 40)].filter(Boolean).join(" · ");
 
 /** A mail's conversation: the web target `mail:<key>` itself, or the Discord thread (`th:<id>`) an owner message in it was delivered to. */
 export function mailConversation(target: string, keyOfThread: (thread: string) => string | undefined): string | undefined {
@@ -103,7 +105,7 @@ export function workConversationRuns(works: readonly WorkLike[], conversationOf:
 	for (const [conv, list] of byConv) {
 		const running = list.filter(w => w.status === "running").sort((a, b) => (a.started_at ?? 0) - (b.started_at ?? 0)).at(-1);
 		if (running) {
-			out[conv] = { kind: "working", since: iso(running.started_at), detail: short(running.description || "백그라운드 작업") };
+			out[conv] = { kind: "working", since: iso(running.started_at), detail: workDetail(running) };
 			continue;
 		}
 		const last = list.filter(w => w.status !== "running").sort((a, b) => (a.ended_at ?? 0) - (b.ended_at ?? 0)).at(-1);
