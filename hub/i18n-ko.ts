@@ -195,6 +195,7 @@ export const ko: Catalog = {
 4. 여기서 RULES.md는 절대 수정하지 마세요. 규칙 변경은 선택지로 올리고 답을 기다리세요.
 5. 마지막으로 dotz_send worklog에 한 줄만 올리세요(identity의 Notices 문체, "야간 정리: ..."로 시작). 문제가 없었다면 이 한 줄이 전부예요. alert에는 아무것도 보내지 마세요.`,
 
+	lessonRepeats: lines => `\n\n아래 교훈은 오늘 또 어겼고, 지키게 하는 장치가 없어요. 되는 가장 높은 단계에서 고치세요: 코드나 이 계약에서 원인을 없애고, 안 되면 바른 방법을 알려 주는 가드나 검사, 그다음 테스트예요. 판단이 필요한 것만 문장을 고치고 실패 예를 붙이세요. 고친 뒤 그 줄 끝에 "(enforced: <가드·검사·테스트>)"를 붙이고, 실수가 더는 일어날 수 없으면 교훈을 지우세요:\n${lines.join("\n")}`,
 	staleObservations: stale => `\n\n${paths.observations}에 90일 넘은 줄이 있어요. 지우세요(아직 맞는 패턴은 먼저 owner.md나 LESSONS.md로 옮기기):\n${stale.join("\n")}`,
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,
 
