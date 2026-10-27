@@ -33,10 +33,11 @@ async function asFeatSet(app, id, on) {
   try { asFeatSave(app, await api(asFeatUrl(app, "features"), "PATCH", { id, on })); asLoad(app, true); } catch (e) { toast(e.message || "기능을 바꾸지 못했어요", true); }
   AS.busy[app] = false; asPaint();
 }
-async function asRetry(app, watch) {
+// A row that is logged out (i.down) asks to reconnect: the hub approves a gated login, which may send a push to the owner's phone.
+async function asRetry(app, watch, down) {
   if (AS.busy[app]) return;
   AS.busy[app] = true;
-  try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast("다시 확인했어요"); } catch (e) { toast(e.message || "다시 시도하지 못했어요", true); }
+  try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast(down ? "다시 연결을 요청했어요. 폰에 승인 요청이 오면 눌러 주세요" : "다시 확인했어요"); } catch (e) { toast(e.message || "다시 시도하지 못했어요", true); }
   AS.busy[app] = false; MON.sig = ""; monSchedule(); asPaint();
 }
 // An answer from the row: the notice's own answer route on this computer, or - for a peer's app - the same answer sent to that computer (/api/peer/act, 34-peer-monitoring.js).
@@ -94,7 +95,7 @@ function asStatRow(app, m, i) {
       : el("span", { class: "as-every-wrap" },
         el("input", { class: "as-in as-every", type: "number", min: 1, max: 10080, inputmode: "numeric", "aria-label": `${i.name} 감시 주기(분)`, title: "감시 주기(분)", "data-k": `every:${i.id}`, value: String(i.every_minutes), onchange: ev => asEvery(app, i, ev.target.value) }),
         el("span", { class: "as-unit", text: "분" }))) : null,
-    i && i.dot !== "ok" ? el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id) }, "다시 시도") : null,
+    i && i.dot !== "ok" ? el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id, i.down) }, i.down ? "다시 연결" : "다시 시도") : null,
     !i && res && res[1] === "fail" ? el("span", { class: "tag err", text: "실패" }) : null);
 }
 function asFeatRow(app, f) {
@@ -107,10 +108,38 @@ async function asPatch(app, values) {
   AS.by[app] = r.fields || [];
   asPaint();
   MON.sig = ""; monSchedule();
-  if (app.includes("~")) pqSoon(); else loadIntegrations();   // a peer app's name and switches are read back from that computer
+  if (app.includes("~") || pqPc(`settings:${app}`)) pqSoon(); else if (app.startsWith("w:")) loadMonitors(); else loadIntegrations();   // a peer's app or monitor is read back from that computer
   // The Kakao room list draws the same watch and draft lists: read it again so its switches and the screen never disagree.
   if (app === "kakao" && typeof KK !== "undefined" && KK.loaded) kkLoadRooms().catch(() => {});
   return r;
+}
+
+/* ---- 감시 삭제: a monitor's settings screen deletes the watch for good (DELETE /api/watches/<name>, on the computer that owns it) ---- */
+async function asWatchRmGo(app) {
+  if (AS.busy[app]) return;
+  AS.busy[app] = true;
+  const name = monSettingsName(`settings:${app}`), peer = !!pqPc(`settings:${app}`);
+  try {
+    await api(`/api/watches/${enc(app.slice(2))}`, "DELETE");
+    toast(`${name}을(를) 삭제했어요`);
+    AS.rm[app] = null; AS.load[app] = null;
+    if (peer) await pqLoad(); else await loadMonitors();
+    if (ASC.h) ASC.h.close(false);
+    go("monitoring");
+  } catch (e) {
+    // A watch a project's work channel set up comes back from that setup (hub/workchannels.ts), so the hub refuses it (409).
+    toast(/work channel/.test(e.message || "") ? "이 감시는 프로젝트의 작업 채널 설정에 묶여 있어요. 그 프로젝트에서 빼 주세요" : e.message || "삭제하지 못했어요", true);
+  }
+  AS.busy[app] = false; asPaint();
+}
+function asWatchRmNode(app) {
+  if (!AS.rm[app]) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "감시 삭제" }), el("span", { class: "as-h", text: "이 감시를 완전히 지워요" })), el("button", { class: "btn tonal", type: "button", "data-as-rm": "ask", onclick: () => { AS.rm[app] = { watch: true }; asPaint(); } }, "삭제"));
+  const pc = pqPc(`settings:${app}`), name = monSettingsName(`settings:${app}`);
+  const lines = [`${pc ? `${pc.name}에서 ` : ""}확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요`, "지금까지 온 감시 소식은 그대로 남아요", "잠깐 멈추려면 삭제 대신 감시 켜기를 끄세요"];
+  return el("div", { class: "as-rm" },
+    el("div", { class: "as-n", text: `${name}을(를) 삭제할까요?` }),
+    el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
+    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-as-rm": "go", disabled: !!AS.busy[app], onclick: () => asWatchRmGo(app) }, "삭제 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
 
 /* ---- 제거 (this install only) and 앱 추가 ---- */
@@ -363,7 +392,7 @@ function asPaint() {
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: "기억해 둔 것" }),
       el("span", { class: "as-h", text: "대화에서 알려 주면 봇이 기억하고 참고해요. 바꾸려면 대화에서 말해 주세요" }),
       ...mem.map(f => el("span", { class: "as-h", text: `${f.label}: ${f.value === "" || f.value == null ? "아직 없어요" : asFmt(f, f.value)}` })))));
-  if (!app.startsWith("w:")) put("advanced", 7, asRemoveNode(app));
+  put("advanced", 7, app.startsWith("w:") ? asWatchRmNode(app) : asRemoveNode(app));
   const wmon = app.startsWith("w:") ? asMon(app) : null;
   const conn = app.startsWith("w:") ? (wmon ? asStatRow(app, wmon, null) : null) : asConnNode(app);
   clear(box).append(
