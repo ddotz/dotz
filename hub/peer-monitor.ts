@@ -282,8 +282,9 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			// A notice of this computer seen in the other one's 모니터링: 읽음 처리, the x (무시) and its undo, the same routes the owner's own web uses.
 			case "notice":
 				if (a.op === "read" && Array.isArray(a.ids)) return ask("POST", "/api/notices/read", { ids: a.ids.map(String) }, login);
-				if ((a.op === "ignore" || a.op === "unignore") && typeof a.id === "string" && a.id) return ask("POST", `/api/notices/${encodeURIComponent(a.id)}/${a.op}`, {}, login);
-				return bad("op must be read, ignore or unignore");
+				// dismiss: the 지우기 of a handled reply draft folded in a mail's conversation (web/js/30-mail-sent.js); an open question is refused there.
+				if ((a.op === "ignore" || a.op === "unignore" || a.op === "dismiss") && typeof a.id === "string" && a.id) return ask("POST", `/api/notices/${encodeURIComponent(a.id)}/${a.op}`, {}, login);
+				return bad("op must be read, ignore, unignore or dismiss");
 			case "read":
 				return ask("POST", "/api/read", { target: a.target, ts: a.ts }, login);
 			case "watch": {
