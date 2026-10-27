@@ -469,10 +469,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const owed = new Set(unrepliedMailList().map(m => m.key));
 			const sent = sentMailRefs();
 			// Ended sessions are listed too: their unread count and 답변 필요 stay on their row in the folded 끝난 세션 group (web/js/04-state.js endedGroup).
+			// A mail conversation is listed only while its mail is: a deleted mail (mail-deleted.json) keeps its messages in the log, but it leaves
+			// this list, so it leaves every list and count here and on the other computer (its snapshot is this list, hub/peer-monitor.ts).
 			const lv = liveLanes();
-			const items = conversationList([...[...lv.live, ...lv.ended].map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).map(c => {
-				const m = c.target.startsWith("mail:") ? mailByKey(c.target.slice(5)) : undefined;
-				return m ? { ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key)) } : c;
+			const items = conversationList([...[...lv.live, ...lv.ended].map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).flatMap(c => {
+				if (!c.target.startsWith("mail:")) return [c];
+				const m = mailByKey(c.target.slice(5));
+				return m ? [{ ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key)) }] : [];
 			});
 			return json({ items });
 		}
@@ -485,7 +488,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
 		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library|original)$/.exec(url.pathname);
 		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
-		// 답장 안 함 / 답장 안 해도 돼요 (fyi) on a mail (POST) or taking it back (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
+		// 답장 안 함 (no-reply = skipped, fyi; one label to the owner) on a mail (POST) or 답장 필요로 표시 (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
 		// Its reply draft waiting for approval is held in the drafts store (not dropped) and its card leaves 확인 대기 before the answer; taking the
 		// mark back restores the newest held draft and reopens its card. A peer's 되돌리기 arrives here too (hub/peer-monitor.ts act fyi / no-reply).
 		const mailNoReply = (req.method === "POST" || req.method === "DELETE") && /^\/api\/mail\/([a-z0-9._-]+)\/(no-reply|fyi)$/.exec(url.pathname);
