@@ -15,7 +15,7 @@ const iso = (d: number) => new Date(Date.UTC(2026, 9, d, 1, 0)).toISOString();
 const YOUTUBE = { key: "youtube", label: "유튜브", icon: "youtube", kind: "app", conv: [], notices: [], unread: 2, unreplied: 2, needs: { drafts: 0, unread: 2, sentToday: 0, unreplied: 2 } };
 const MAIL = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: [], unread: 3, unreplied: 1, needs: { drafts: 0, unread: 3, sentToday: 0, unreplied: 1 } };
 const KAKAO = { key: "kakao", label: "카카오톡", icon: "kakao", kind: "app", conv: [], notices: [], unread: 0, unreplied: 1, needs: { drafts: 0, unread: 0, sentToday: 0, unreplied: 1 } };
-const mailCard = (unreplied: boolean) => ({ subject: "견적 문의드립니다", from: "민수 <m@example.com>", source: "mail", at: iso(22), summary: "다음 주 견적을 받을 수 있을까요?", suggest: { kind: "reply-draft", label: "답장 초안", ref: "d1", state: "draft" }, ...(unreplied ? { unreplied: true } : {}) });
+const mailCard = (unreplied: boolean) => ({ subject: "견적 문의드립니다", from: "민수 <m@example.com>", source: "mail", at: iso(22), summary: "다음 주 견적을 받을 수 있을까요?", suggest: { kind: "reply-draft", label: "답장 초안", ref: "d1", state: "draft" }, ...(unreplied ? { reply: "draft", unreplied: true } : {}) });
 const COMMENTS = [
 	{ id: "cm:youtube:c1", parent: null, author: "가나", text: "영상 잘 봤어요! 자막은 언제 나와요?", at: at(22, 1, 0), mine: false, needsReply: true, unreplied: true },
 	{ id: "cm:youtube:c2", parent: null, author: "다라", text: "다음 영상도 기대할게요", at: at(22, 1, 30), mine: false, needsReply: true, unreplied: true },
@@ -145,16 +145,16 @@ describe("home and the peer's mail", () => {
 		expect(t.rows).toEqual(["미답장 2", "미답장 1", "미답장 1", "미답장 2"]);
 		await shot(v, "home-390-light.png");
 	});
-	test("a peer's mail card carries the pill, and 답장 안 해도 돼요 goes to that computer", async () => {
+	test("a peer's mail card carries the pill, and 답장 안 함 goes to that computer", async () => {
 		await boot(v, "light", `go("monitoring")`);
 		await waitFor(v, `document.querySelector('#mon-side .cv-row[data-k^="p:"][data-k$="i:mail"]')`);
 		await run(v, `document.querySelector('#mon-side .cv-row[data-k^="p:"][data-k$="i:mail"]').click()`);
 		await waitFor(v, `document.querySelector("#mon-tl .mr .tag.unreplied")`);
-		// 초안 작성 sits beside 답장 안 해도 돼요 and asks the computer that holds the mail for the draft
+		// 초안 작성 sits beside 답장 안 함 and asks the computer that holds the mail for the draft
 		await run(v, `document.querySelector("#mon-tl .mr .mr-draft").click()`);
 		const asked = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "mail-draft");
 		expect(asked.body).toMatchObject({ action: "mail-draft", args: { key: "peer-1" } });
-		await run(v, `document.querySelector("#mon-tl .mr .mr-fyi").click()`);
+		await run(v, `document.querySelector('#mon-tl .mr [data-k="mail-no"]').click()`);
 		const sent = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "fyi");
 		expect(sent.body).toMatchObject({ action: "fyi", args: { key: "peer-1", on: true } });
 	});
