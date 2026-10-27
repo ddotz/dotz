@@ -6,9 +6,9 @@
 // of the timeline does not fetch or measure again.
 const MB = { cache: new Map(), max: 12, img: 20, imgBytes: 4_000_000 };
 const MB_LINK = /^(?:https?:|mailto:|tel:)/i;
-// No vertical scroll of its own: the frame is always exactly as tall as this document (mbMeasure), so the page's one scroll moves it. A table wider
-// than the frame is the only thing that may scroll sideways, inside its own wrapper (mbPrepare), never the whole body.
-const MB_CSS = "html{color-scheme:light}body{margin:0;padding:14px 16px;background:#fff;color:#1b1f24;font:15px/1.6 -apple-system,BlinkMacSystemFont,system-ui,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;overflow-wrap:anywhere;word-break:break-word}img{max-width:100%;height:auto}table{max-width:100%}.mb-wide{max-width:100%;overflow-x:auto;overflow-y:hidden}a{color:#1a5fd0}blockquote{margin:8px 0;padding-left:12px;border-left:3px solid #d0d7de;color:#57606a}pre{white-space:pre-wrap}";
+// No scrollbar of its own at all (owner 2026-10-27: the original shows whole): the frame is always exactly as tall as this document (mbMeasure),
+// so the page's one scroll moves it, and a table wider than the frame is scaled down to the frame's width (mbFitCss) instead of scrolling sideways.
+const MB_CSS = "html{color-scheme:light;overflow:hidden}body{margin:0;padding:14px 16px;background:#fff;color:#1b1f24;font:15px/1.6 -apple-system,BlinkMacSystemFont,system-ui,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;overflow-wrap:anywhere;word-break:break-word}img{max-width:100%;height:auto}table{max-width:100%}.mb-wide{max-width:100%;overflow:hidden}a{color:#1a5fd0}blockquote{margin:8px 0;padding-left:12px;border-left:3px solid #d0d7de;color:#57606a}pre{white-space:pre-wrap}";
 const mbPut = (k, v) => { MB.cache.delete(k); MB.cache.set(k, v); while (MB.cache.size > MB.max) MB.cache.delete(MB.cache.keys().next().value); return v; };
 
 async function mbDataUrl(src) {
@@ -40,17 +40,23 @@ async function mbPrepare(html, remote) {
       n.removeAttribute("srcset");
     }
   }
-  // A wide table (a report with many columns) scrolls inside its own box: the body never scrolls sideways, so nothing widens the page.
+  // Every top-level table sits in its own box, numbered: one wider than the frame is scaled to fit it once measured (mbMeasure, mbFitCss).
+  let wi = 0;
   for (const t of doc.body.querySelectorAll("table")) {
+    if (t.parentElement && t.parentElement.closest("table")) continue;
     const w = doc.createElement("div");
     w.className = "mb-wide";
+    w.dataset.wi = String(wi++);
     t.replaceWith(w);
     w.append(t);
   }
   await Promise.all(jobs);
   return { body: doc.body.innerHTML, held };
 }
-const mbDoc = (body, remote) => `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:${remote ? " https: http:" : ""}; style-src 'unsafe-inline'"><base target="_blank"><style>${MB_CSS}</style></head><body>${body}</body></html>`;
+const mbDoc = (body, remote, fit = "") => `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:${remote ? " https: http:" : ""}; style-src 'unsafe-inline'"><base target="_blank"><style>${MB_CSS}${fit}</style></head><body>${body}</body></html>`;
+// The scale of each table box that is wider than the frame, as CSS: the table keeps its full width and is scaled down to exactly the box's
+// width, and the box takes the scaled height (a transform does not change layout), so it shows whole with nothing to scroll.
+const mbFitCss = fits => fits.map(f => `.mb-wide[data-wi="${f.i}"]{height:${Math.ceil(f.h * f.z)}px}.mb-wide[data-wi="${f.i}"]>table{width:${f.w}px;max-width:none;transform:scale(${f.z.toFixed(4)});transform-origin:0 0}`).join("");
 // The height of a document at a width, read from a hidden frame that is thrown away. The frame's load event already waits for its images, but
 // a late font or a decoded image can still change the layout by a pixel: measure once more on the next frames. The visible frame itself is
 // sandboxed without allow-same-origin, so it cannot be observed from here; measuring the same document offscreen is the only way.
@@ -58,7 +64,8 @@ function mbMeasure(srcdoc, width) {
   return new Promise(res => {
     const f = el("iframe", { sandbox: "allow-same-origin", tabindex: "-1", "aria-hidden": "true", style: `position:fixed;left:-99999px;top:0;width:${width}px;height:10px;border:0;visibility:hidden` });
     let settled = false;
-    const done = h => { settled = true; clearTimeout(t); f.remove(); res(h); };
+    let fits = () => [];
+    const done = h => { const fit = fits(); settled = true; clearTimeout(t); f.remove(); res({ h, fits: fit }); };
     const t = setTimeout(() => { if (!settled) done(0); }, 8000);
     const read = () => {
       try {
@@ -67,6 +74,18 @@ function mbMeasure(srcdoc, width) {
         // the tallest of what the document says: an image still loading adds no height until it has one, so scrollHeight is enough once loaded
         return Math.ceil(Math.max(d.documentElement.scrollHeight, b.scrollHeight, b.getBoundingClientRect().height));
       } catch { return 0; }
+    };
+    // Table boxes whose table is wider than the box: the zoom that makes it fit.
+    fits = () => {
+      try {
+        return [...f.contentDocument.querySelectorAll(".mb-wide")].flatMap(w => {
+          const t = w.firstElementChild, have = w.clientWidth, need = t ? Math.ceil(Math.max(w.scrollWidth, t.scrollWidth, t.getBoundingClientRect().width)) : 0;
+          if (!(need > have + 1 && have > 0)) return [];
+          // its height when laid out at its full width, which is what gets scaled
+          t.style.maxWidth = "none"; t.style.width = `${need}px`;
+          return [{ i: w.dataset.wi, z: have / need, w: need, h: t.offsetHeight }];
+        });
+      } catch { return []; }
     };
     f.onload = () => {
       let frames = 0, stable = 0, last = -1;
@@ -111,17 +130,26 @@ function mailHtmlNode(key) {
       let p = st.prep.get(pk);
       if (!p) { p = await mbPrepare(st.html, remote); st.prep.set(pk, p); }
       if (my !== seq) return;
-      const doc = mbDoc(p.body, remote);
+      const base = mbDoc(p.body, remote);
       bar.hidden = !(p.held || remote);
       note.textContent = remote ? "바깥 이미지를 보고 있어요" : `바깥 이미지 ${p.held}개를 막았어요`;
       tog.textContent = remote ? "이미지 숨기기" : "이미지 보기";
-      if (st.h && st.w === w && st.doc === doc) frame.style.height = `${st.h}px`;
-      if (frame.srcdoc !== doc) frame.srcdoc = doc;
-      if (st.w !== w || st.doc !== doc || !st.h) {
-        const h = await mbMeasure(doc, w);
+      const known = st.h && st.w === w && st.base === base;
+      if (known) frame.style.height = `${st.h}px`;
+      const first = known ? st.doc : base;
+      if (frame.srcdoc !== first) frame.srcdoc = first;
+      if (!known) {
+        // Measured at this width; a table wider than the frame is then scaled to fit and the scaled document measured again.
+        let m = await mbMeasure(base, w), doc = base;
         if (my !== seq) return;
+        if (m.fits.length) {
+          doc = mbDoc(p.body, remote, mbFitCss(m.fits));
+          m = await mbMeasure(doc, w);
+          if (my !== seq) return;
+        }
         // a pixel of slack so a rounded-up line never turns into the frame's own scrollbar
-        Object.assign(st, { h: h ? h + 1 : st.h || 200, w, doc });
+        Object.assign(st, { h: m.h ? m.h + 1 : st.h || 200, w, base, doc });
+        if (frame.srcdoc !== doc) frame.srcdoc = doc;
         frame.style.height = `${st.h}px`;
       }
       shownW = w;
