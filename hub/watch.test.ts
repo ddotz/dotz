@@ -75,6 +75,21 @@ test("the approval gate asks the owner once, the check sees the approval, and th
 	expect(state("t-approve")).toMatchObject({ kind: "fido", nextAt: Date.now() + 30 * 60_000 });
 });
 
+test("a second yes while the approved check still runs cancels it and starts over with the new approval", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "dotz-reapprove-")), started = join(dir, "started"), finished = join(dir, "finished"), seen = join(dir, "seen"), first = join(dir, "first");
+	for (const f of [started, finished]) expect(await Bun.spawn(["mkfifo", f]).exited).toBe(0);
+	// The first approved run waits (a login waiting on the phone); the second one finishes at once.
+	const cmd = `echo "$DOTZ_APPROVED" >> '${seen}'; if [ ! -e '${first}' ]; then touch '${first}'; echo up > '${started}'; sleep 600; fi; echo DOTZ_APPROVAL_USED; echo done > '${finished}'`;
+	addWatch({ name: "t-reapprove", command: cmd, on: "fail", to: "alert", approval_minutes: 30 }, "");
+	approveWatch("t-reapprove");
+	expect((await readFile(started, "utf8")).trim()).toBe("up");
+	approveWatch("t-reapprove");
+	expect((await readFile(finished, "utf8")).trim()).toBe("done");
+	// two approved runs and no third one; the cancelled run counted no failure (no runWatch here: it would start a third run)
+	expect(readFileSync(seen, "utf8").trim().split("\n")).toEqual(["1", "1"]);
+	expect(state("t-reapprove").fails).toBe(0);
+});
+
 const stored = (name: string) => JSON.parse(readFileSync(paths.watches, "utf8")).find((w: { name: string }) => w.name === name);
 
 test("a watch edit is persisted, validated, and the timer follows the new interval", async () => {
