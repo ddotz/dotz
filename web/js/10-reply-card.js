@@ -3,7 +3,7 @@
 // (30-kakao.js kkDraftCard) and a comment thread (30-monitoring-comments.js cmDraftCard): the same head (앱 · 계정 · 컴퓨터 · 모델 when known),
 // the body clamped to about six lines with 펼치기, and the same three actions with the same words, 보내기 · 고치기 · 보내지 않기.
 // Each caller passes what its actions do; the card never decides where a draft is sent.
-const RQ_APPS = { mail: ["메일", "mail"], kakao: ["카카오톡", "kakao"], instagram: ["인스타그램", "instagram"], youtube: ["유튜브", "youtube"], site: ["웹사이트 댓글", "comment"] };
+const RQ_APPS = { mail: ["메일", "mail"], kakao: ["카카오톡", "chat"], instagram: ["인스타그램", "chat"], youtube: ["유튜브", "chat"], site: ["웹사이트 댓글", "chat"] };
 const RQ_LINES = 6;
 const RQ_OPEN = new Set();   // card keys whose long body was unfolded (펼치기); kept across repaints
 // The app key of an instance id ("mail-2" -> "mail", a peer's "kakao~h1" -> "kakao").
@@ -50,18 +50,30 @@ function rqReviseNode(o) {
       el("button", { class: "btn text", type: "button", "data-k": "revise-cancel", text: "취소", disabled: !!o.busy, onclick: o.cancel }),
       o.manual ? el("button", { class: "btn text kk-manual", type: "button", "data-k": "manual", "aria-label": "직접 수정", onclick: o.manual }, icon("pencil"), el("span", { text: "직접 수정" })) : null));
 }
+// The attachment line: every card says what goes with the draft before 보내기 - the files that go (name + size), or 첨부: 없음, or, for a source that cannot
+// attach, that it cannot and the names of the files that stay behind (hub/draft-approval.ts attachments / attachmentsNone / cannotAttach). Never hidden.
+function rqAttachNode(d = {}) {
+  const fl = Array.isArray(d.attachments) ? d.attachments : [], left = Array.isArray(d.cannotAttach) ? d.cannotAttach.filter(n => n && String(n).trim()) : null;
+  if (fl.length) return el("div", { class: "rq-att", "data-k": "files" }, el("div", { class: "dr-fh", text: `첨부 ${fl.length}개` }),
+    ...fl.map(f => el("div", { class: "rq-af" }, icon("file"), el("span", { class: "rq-afn", text: f.name }), f.size ? el("span", { class: "dr-fm", text: f.size }) : null)));
+  return el("div", { class: "rq-att", "data-k": "none" }, el("div", { class: "dr-none", role: "status" }, icon("clip"),
+    el("span", { text: left ? "첨부: 없음 · 파일을 붙일 수 없는 곳이에요" : "첨부: 없음" }),
+    left && left.length ? el("span", { class: "dr-wn", text: `남는 파일: ${left.join(", ")}` }) : null));
+}
 // The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"), to: [label, value], subject,
-// original: {who, text} (what the draft answers), body (rqBodyNode), extra (nodes under the body: files, a mail that goes along),
-// then one of: status (a line such as 고치는 중…), revise (rqReviseNode or the caller's own), acts (rqActsNode) }.
+// original: {who, text} (what the draft answers), body, attach (a draft's attachments / attachmentsNone / cannotAttach, or the caller's own files node),
+// extra (nodes under the body: the mail that goes along), then one of: status (a line such as 고치는 중…), revise (rqReviseNode or the caller's own),
+// acts (rqActsNode) }.
 function rqCard(c) {
   const foot = c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
+  const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
   return el("div", { class: `rq${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     rqHeadNode(c.head),
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
     c.to ? el("div", { class: "rq-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" })) : null,
     c.subject ? el("div", { class: "dr-sub rq-sub", text: c.subject }) : null,
     c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
-    rqBodyNode(c.key, c.body), ...(c.extra || []).filter(Boolean), foot);
+    rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean), foot);
 }
 // What an answer did, in the same words everywhere: 보냈어요, and 보내지 않았어요 with 되돌리기 where the store can bring the draft back.
 const rqSentToast = action => toast("보냈어요", false, action || null);
