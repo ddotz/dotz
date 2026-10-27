@@ -164,7 +164,7 @@ describe.each(MACHINES)("mail drafts of %s", (_label, px, item, side) => {
 		await waitFor(v, `document.querySelector('#tl .ms-card[data-nid="${px}sent"] .ms-body')`);
 		const open1 = await q<{ exp: string | null; sub: string; to: string; body: string; files: string }>(v, `const c = document.querySelector('#tl .ms-card[data-nid="${px}sent"]');
 			return { exp: c.querySelector(".ms-line").getAttribute("aria-expanded"), sub: c.querySelector(".dr-sub").textContent, to: c.querySelector(".dr-chip").textContent, body: c.querySelector(".dr-body").textContent, files: c.querySelector(".dr-files").textContent }`);
-		expect(open1).toEqual({ exp: "true", sub: "Re: 견적 요청", to: "Kim <kim@example.com>", body: "안녕하세요.견적서를 첨부해 보내 드립니다.", files: "첨부 없음" });
+		expect(open1).toEqual({ exp: "true", sub: "Re: 견적 요청", to: "Kim <kim@example.com>", body: "안녕하세요.견적서를 첨부해 보내 드립니다.", files: "첨부: 없음" });
 		expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 		await run(v, `document.querySelector('#tl .ms-card[data-nid="${px}sent"]').scrollIntoView({ block: "center" })`);
 		await Bun.write(join(SHOTS, `conv-open-${tag}.png`), await v.screenshot());

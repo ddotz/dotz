@@ -3,13 +3,27 @@
 // app (CM.apps). It reuses the KakaoTalk pane's layout and classes (30-kakao.js, 17-kakao.css). Live updates: comment / comment_draft /
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
-const CM = { apps: new Set(), sources: [], vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
+const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
   drafting: new Set(), revising: "", pick: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
 // default instance of its app, or an added one such as site-mapia); an older gateway sends none, then the app of its kind.
 const cmAppOfKind = k => (k === "website" ? "site" : k);
 const cmOwner = s => s.app || cmAppOfKind(s.kind);
-const cmAppOf = key => (key.startsWith("i:") && CM.apps.has(key.slice(2)) ? key.slice(2) : "");
+// The same app on another computer ("p:<url>|i:<instance>~<hash>", 34-peer-monitoring.js) is the comment pane too: its sources, threads and actions are
+// that computer's (cmApi), so the pane works the same whichever computer holds the comments.
+const cmBases = new Set(["youtube", "instagram", "site"]);
+const cmAppOf = key => {
+  const m = /^(?:p:[^|]+\|)?i:([^~|]+)(?:~[a-z0-9]+)?$/.exec(String(key || ""));
+  if (!m) return "";
+  const inst = m[1];
+  return CM.local.apps.has(inst) || cmBases.has(inst.split("-")[0]) ? inst : "";
+};
+// Every call of the pane: this computer's own comments routes, or the comments of the computer the pane shows (a GET through /api/peer/proxy, a change
+// through /api/peer/act - pqRoute/pqAct pick it up from CM.pc, 34-peer-monitoring.js).
+function cmApi(path, method = "GET", body) {
+  if (!CM.pc) return api(path, method, body);
+  return api(method === "GET" ? pqProxy(CM.pc, pqBare(path)) : path, method, body);
+}
 
 const cmRooms = el("div", { class: "kk-rooms", id: "cm-rooms", "aria-label": "댓글을 지켜보는 글" });
 const cmHead = el("div", { class: "kk-head", id: "cm-head" });
@@ -26,14 +40,16 @@ const cmSources = () => CM.sources.filter(s => cmOwner(s) === CM.app);
 
 async function cmLoadSources() {
   try {
-    const r = await api("/api/comments/sources");
+    const r = await cmApi("/api/comments/sources");
     CM.sources = r.on === false ? [] : Array.isArray(r.sources) ? r.sources : [];
   } catch { return; }
+  if (!CM.pc) CM.local.sources = CM.sources;   // this computer's own, for the app rows that are not a peer's
   await dmLoadList();
   const apps = new Set(CM.sources.filter(s => (s.watch || []).length).map(cmOwner));
-  if (DM.on && DM.connected) apps.add(DM_APP);
+  if (!CM.pc && DM.on && DM.connected) apps.add(DM_APP);
   const changed = apps.size !== CM.apps.size || [...apps].some(a => !CM.apps.has(a));
   CM.apps = apps;
+  if (!CM.pc) CM.local.apps = new Set(apps);
   if (changed && typeof monSchedule === "function") monSchedule();
   if (CM.vis) cmPaintRooms();
 }
@@ -42,7 +58,7 @@ async function cmLoad() {
   await cmLoadSources();
   if (CM.tab === "dm") { cmPaintRooms(); return; }
   try {
-    const r = await api(`/api/comments/threads?app=${enc(CM.app)}`);
+    const r = await cmApi(`/api/comments/threads?app=${enc(CM.app)}`);
     if (seq !== CM.rseq) return;
     CM.threads = Array.isArray(r.threads) ? r.threads : []; CM.error = ""; CM.loaded = true;
   } catch (e) {
@@ -55,7 +71,7 @@ async function cmLoad() {
 /* ---- choose what to follow ---- */
 async function cmUpdate(s, patch) {
   try {
-    await api(`/api/comments/sources/${enc(s.key)}`, "PUT", patch);
+    await cmApi(`/api/comments/sources/${enc(s.key)}`, "PUT", patch);
     await cmLoadSources();
     if (patch.watch) CM.posts.delete(s.key);
     cmLoad(); cmIntgSoon();
@@ -66,7 +82,7 @@ async function cmPosts(s) {
   CM.posts.set(s.key, { loading: true, list: [] });
   cmPaintRooms();
   try {
-    const r = await api(`/api/comments/sources/${enc(s.key)}/posts`);
+    const r = await cmApi(`/api/comments/sources/${enc(s.key)}/posts`);
     CM.posts.set(s.key, { list: Array.isArray(r.posts) ? r.posts : [], error: r.error || "" });
   } catch (e) { CM.posts.set(s.key, { list: [], error: e.message }); }
   cmPaintRooms();
@@ -155,7 +171,7 @@ async function cmReload(seq = CM.seq, scroll = false) {
   const t = CM.open;
   if (!t) return;
   try {
-    const v = await api(cmUrl(t));
+    const v = await cmApi(cmUrl(t));
     if (seq !== CM.seq) return;
     CM.view = v; CM.loading = false; CM.viewErr = "";
   } catch (e) {
@@ -178,7 +194,7 @@ function cmMarkRead() {
   const last = Math.max(0, ...v.comments.map(c => c.at));
   if (!last || CM.readSent === `${t.source}/${t.thread}/${last}` || (v.read != null && v.read >= last)) return;
   CM.readSent = `${t.source}/${t.thread}/${last}`;
-  api(`${cmUrl(t)}/read`, "POST", {}).then(() => { v.read = last; cmIntgSoon(); cmLoad(); }).catch(() => {});
+  cmApi(`${cmUrl(t)}/read`, "POST", {}).then(() => { v.read = last; cmIntgSoon(); cmLoad(); }).catch(() => {});
 }
 function cmCommentNode(c, by, first) {
   const parent = c.parent ? by.get(c.parent) : null;
@@ -190,7 +206,7 @@ function cmCommentNode(c, by, first) {
     el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: c.author }) : null, el("div", { class: "kk-line" }, bub, el("span", { class: "kk-time", text: kkTime(c.at) })), mark, c.unreplied ? el("div", { class: "kk-line" }, unrepPill(), unrepNo(`/api/comments/comment/${encodeURIComponent(c.id)}/no-reply`)) : null));
 }
 // A reply that did not go out offers 다시 보내기 (the same text through the same gate) and 지우기 (the record goes, the draft stays), like KakaoTalk.
-const cmSendCall = (s, op) => api(`/api/comments/sends/${enc(s.id)}/${op}`, "POST", {});
+const cmSendCall = (s, op) => cmApi(`/api/comments/sends/${enc(s.id)}/${op}`, "POST", {});
 async function cmSendFix(btn, s, op) {
   btn.disabled = true;
   try { await cmSendCall(s, op); if (op === "dismiss" && CM.view) CM.view.sends = CM.view.sends.filter(x => x.id !== s.id); await cmReload(CM.seq, op === "retry"); }
@@ -240,13 +256,13 @@ async function cmMakeDraft(c) {
   if (CM.drafting.has(c.id)) return;
   CM.drafting.add(c.id); cmPaintChat(false);
   setTimeout(() => { if (CM.drafting.delete(c.id)) { cmPaintChat(false); toast("초안이 아직 오지 않았어요", true); } }, 120000);
-  try { await api(`/api/comments/comment/${enc(c.id)}/draft`, "POST", {}); }
+  try { await cmApi(`/api/comments/comment/${enc(c.id)}/draft`, "POST", {}); }
   catch (e) { CM.drafting.delete(c.id); cmPaintChat(false); toast(e.message, true); }
 }
 // The thread's draft as the one reply card (10-reply-card.js): the same head, body and 보내기 · 고치기 · 보내지 않기 as the 답장 확인 queue;
 // 원문 보기 (web/js/10-draft-original.js) opens the comment it answers as its own panel on the left of the card (a 초안 | 원문 toggle on a phone).
 async function cmRestore(code) {
-  try { await api(`/api/comments/drafts/${enc(code)}/restore`, "POST", {}); toast("초안을 되돌렸어요"); cmReload(); cmIntgSoon(); } catch (e) { toast(e.message, true); }
+  try { await cmApi(`/api/comments/drafts/${enc(code)}/restore`, "POST", {}); toast("초안을 되돌렸어요"); cmReload(); cmIntgSoon(); } catch (e) { toast(e.message, true); }
 }
 function cmDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); cmReload(); } finally { btn.disabled = false; } };
@@ -255,15 +271,18 @@ function cmDraftCard(d) {
   // A reply that carries a mail (hub/comments/engine.ts Draft.mail): 고치기 says which part it changes.
   const part = d.mail ? el("select", { class: "kk-ta", "aria-label": "고칠 곳" }, el("option", { value: "reply", text: "답글" }), el("option", { value: "mail", text: "메일" })) : null;
   const wrap = el("div", { class: "od-cwrap" });
-  const card = rqCard({ key: `cm:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: CM.app, label: src.label, pc: pqSelf(), at: d.created }, label: "답글 초안", labelCls: "kk-dh",
-    body: { text: d.text, cls: "kk-dt" },
+  const who = ((CM.view.comments || []).find(c => c.id === d.commentId) || {}).author;
+  const card = rqCard({ key: `cm:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: CM.app, label: src.label, pc: CM.pc ? CM.pc.name : pqSelf(), at: d.created }, label: "답글 초안", labelCls: "kk-dh",
+    to: ["댓글", who || ""], body: { text: d.text, cls: "kk-dt" },
+    // A comment reply is text only (a file goes with the mail that rides along, shown below): say so before 보내기.
+    attach: { attachmentsNone: true, cannotAttach: [] },
     extra: [draftMailNode(d.mail), d.mail ? el("div", { class: "kk-note", role: "status", text: "보내기를 누르면 답글을 올린 뒤 메일을 보내요" }) : null, d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
     ...(edit ? { revise: rqReviseNode({ pick: part, cancel: () => { CM.revising = ""; cmPaintChat(false); },
-      go: change => run($(".rq-edit [data-k=revise-go]", wrap) || el("button"), async () => { await api(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change, ...(part ? { part: part.value } : {}) }); CM.revising = ""; await cmReload(); }) }) }
+      go: change => run($(".rq-edit [data-k=revise-go]", wrap) || el("button"), async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change, ...(part ? { part: part.value } : {}) }); CM.revising = ""; await cmReload(); }) }) }
       : { acts: {
-        send: sending ? null : ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/send`, "POST", {}); await cmReload(CM.seq, true); }),
+        send: sending ? null : ev => run(ev.currentTarget, async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/send`, "POST", {}); await cmReload(CM.seq, true); }),
         edit: () => { CM.revising = d.code; cmPaintChat(false); },
-        drop: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/drop`, "POST", {}); rqDroppedToast(d.mail ? null : () => cmRestore(d.code)); await cmReload(); }),
+        drop: ev => run(ev.currentTarget, async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/drop`, "POST", {}); rqDroppedToast(d.mail ? null : () => cmRestore(d.code)); await cmReload(); }),
       } }) });
   const org = orgNodes({ ref: d.code, toLabel: "대상" }, null, wrap, card);
   wrap.append(org.bar, el("div", { class: "od-stage" }, org.orig, card));
@@ -274,6 +293,7 @@ function cmDraftCard(d) {
 function cmLive(e) {
   cmIntgSoon();
   if (e.kind === "comment_draft" || e.kind === "comment_send") rqSoon();
+  if (CM.pc) return;   // the stream is this computer's; the peer's comments are read again by the timer
   if (e.kind === "comment_sources") { cmLoadSources(); return; }
   if (e.kind === "comment_draft" && e.error) toast(e.error, true);
   if (e.kind === "comment_send" && e.mail === "failed") toast(`답글은 올렸지만 메일은 보내지 못했어요: ${e.mailReason || "알 수 없는 이유"}`, true);
@@ -284,16 +304,24 @@ function cmLive(e) {
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && CM.vis) { cmLoad(); cmReload(); } });
 // renderMonitoring (30-monitoring.js): `app` = the selected app entry has comment replies on; `shown` = its pane is on screen (not behind the phone's list).
-function cmMode(app, shown) {
+function cmMode(app, shown, pc) {
+  const swap = (CM.pc ? CM.pc.url : "") !== (pc ? pc.url : "");
   if (app) $("#v-monitoring").classList.add("kk-on");
   cmPane.hidden = !app;
+  if (swap || !app) {   // another computer's comments, or none: start from an empty pane
+    Object.assign(CM, { vis: false, sources: [], apps: new Set(), threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", error: "" }); CM.seq++; clearInterval(CM.timer);
+    CM.pc = app ? pc || null : null;
+  }
   if (shown && (!CM.vis || CM.app !== app)) {
-    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", tab: CM.sources.some(s => cmOwner(s) === app && (s.watch || []).length) || !(DM.on && DM.connected && app === DM_APP) ? "comments" : "dm" }); CM.seq++;
+    // The DM tab is this computer's Instagram app only; another computer's comment app starts on its comments.
+    const dm = !CM.pc && DM.on && DM.connected && app === DM_APP && !CM.sources.some(s => cmOwner(s) === app && (s.watch || []).length);
+    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", tab: dm ? "dm" : "comments" }); CM.seq++;
     Object.assign(DM, { open: null, view: null }); DM.seq++;
     cmPaintAll(); cmLoad();
     if (CM.tab === "dm") dmRefresh();
     clearInterval(CM.timer);
-    CM.timer = setInterval(() => { if (document.visibilityState === "visible") cmLoad(); }, 60000);
+    // A peer's comments do not stream here (its events are its own), so its pane is read again on a short timer.
+    CM.timer = setInterval(() => { if (document.visibilityState === "visible") { cmLoad(); if (CM.open) cmReload(); } }, CM.pc ? 15000 : 60000);
   } else if (!shown && CM.vis) {
     CM.vis = false; CM.open = null; DM.open = null; CM.seq++; DM.seq++; clearInterval(CM.timer);
   }
