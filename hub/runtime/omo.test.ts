@@ -7,7 +7,7 @@ import { cfg } from "../config.ts";
 import { jsonZod, params } from "../../extension/schema.ts";
 import { eventsFromFrame } from "./omp.ts";
 import { hostsOf, listHosts } from "./omo-hosts.ts";
-import { ORCHESTRATOR_WORKERS, omoArgs, omoConfigFile, omoSelector, orchestratorWorkerModel, parseJsonc, translateFrame, WORKER_CATEGORIES, WORKER_RULE, WORKER_TASK, writeOrchestratorProfile, writeWorkerProfile } from "./omo.ts";
+import { LOOKUP_MODEL, ORCHESTRATOR_WORKERS, omoArgs, omoConfigFile, omoSelector, orchestratorWorkerModel, parseJsonc, translateFrame, WORKER_CATEGORIES, WORKER_RULE, WORKER_TASK, writeOrchestratorProfile, writeWorkerProfile } from "./omo.ts";
 
 test("a lane's worker model becomes a dotz profile of omo.json: every category on it, then its fallbacks; other keys stay", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
@@ -130,6 +130,18 @@ test("on a host without zod (OmO) every orchestrator and lane tool registers: a 
 	expect(await load("DOTZ_LANE")).toContain("dotz_verify");
 });
 
+test("lookup work (the quick category) runs Sonnet 5.5 medium first, then the orchestrator's models; on an API-key entry it follows the worker", () => {
+	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
+	writeOrchestratorProfile(file, "anthropic/claude-opus-5-5:high", [{ model: "anthropic/claude-sonnet-5-5:medium", when: "quota" as const }]);
+	const cats = JSON.parse(readFileSync(file, "utf8")).profiles[ORCHESTRATOR_WORKERS].categories;
+	expect(LOOKUP_MODEL).toBe("anthropic/claude-sonnet-5-5:medium");
+	expect(cats.quick.models).toEqual([{ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "medium" }, { model: "anthropic-subscription/claude-opus-5-5", reasoning: "high" }]);
+	expect(cats["unspecified-high"].models[0]).toEqual({ model: "anthropic-subscription/claude-opus-5-5", reasoning: "high" });
+	expect(cats.quick.prompt_append).toBe(WORKER_RULE);
+	writeOrchestratorProfile(file, "anthropic-apikey/claude-opus-5-5:high", [], null);
+	expect(JSON.parse(readFileSync(file, "utf8")).profiles[ORCHESTRATOR_WORKERS].categories.quick.models).toEqual([{ model: "anthropic-apikey/claude-opus-5-5", reasoning: "high" }]);
+});
+
 test("the orchestrator's task workers get a dotz profile too: child processes, memory off, every category on the subscription (never the API key), the owner's own config untouched", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
 	writeFileSync(file, JSON.stringify({ categories: { quick: { model: "x/y" } }, profiles: { mine: { categories: {} } } }));
@@ -142,7 +154,7 @@ test("the orchestrator's task workers get a dotz profile too: child processes, m
 	expect(p.task).toEqual({ ...WORKER_TASK, resident_idle_timeout_ms: 300_000 });
 	expect(p.memory).toEqual({ enabled: false });
 	expect(Object.keys(p.categories).sort()).toEqual([...WORKER_CATEGORIES].sort());
-	for (const c of WORKER_CATEGORIES) {
+	for (const c of WORKER_CATEGORIES.filter(c => c !== "quick")) {
 		expect(p.categories[c].models).toEqual([{ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "high" }, { model: "anthropic-subscription/claude-opus-5-5", reasoning: "medium" }]);
 		expect(p.categories[c].models.some((m: { model: string }) => m.model.startsWith("anthropic/"))).toBe(false);
 	}
@@ -224,7 +236,7 @@ test("an owner's commented omo.jsonc gets the orchestrator profile in place: com
 	writeOrchestratorProfile(file, "anthropic/claude-sonnet-5-5:high", []);
 	const again = readFileSync(file, "utf8");
 	expect(again.match(/dotz-orchestrator-workers/g)).toHaveLength(1);
-	expect((parseJsonc(again) as any).profiles[ORCHESTRATOR_WORKERS].categories.quick.models).toEqual([{ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "high" }]);
+	expect((parseJsonc(again) as any).profiles[ORCHESTRATOR_WORKERS].categories["deep-low"].models).toEqual([{ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "high" }]);
 	expect(again).toContain("// 2026-09-30: route GPT-default categories to Opus high.");
 	// A lane's profile lands beside it in the same profiles object.
 	const lane = writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high" }, file)!;
@@ -241,7 +253,7 @@ test("the orchestrator's workers run on the model the orchestrator starts on, no
 		cfg.models = { orchestrator: { model: "anthropic/claude-opus-5-5", thinking: "medium", fallback: [{ model: "anthropic/claude-sonnet-5-5:high", when: "quota" }] }, workers: { model: "anthropic/claude-haiku-4-5", thinking: "low" } };
 		const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
 		writeOrchestratorProfile(file);
-		expect(JSON.parse(readFileSync(file, "utf8")).profiles[ORCHESTRATOR_WORKERS].categories.quick.models).toEqual([
+		expect(JSON.parse(readFileSync(file, "utf8")).profiles[ORCHESTRATOR_WORKERS].categories["deep-low"].models).toEqual([
 			{ model: "anthropic-subscription/claude-opus-5-5", reasoning: "medium" },
 			{ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "high" },
 		]);
