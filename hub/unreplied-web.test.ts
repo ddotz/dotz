@@ -145,17 +145,17 @@ describe("home and the peer's mail", () => {
 		expect(t.rows).toEqual(["미답장 2", "미답장 1", "미답장 1", "미답장 2"]);
 		await shot(v, "home-390-light.png");
 	});
-	test("a peer's mail card carries the pill, and 답장 안 함 goes to that computer", async () => {
+	test("a peer's mail card carries the pill, and 답장 안 해도 돼요 goes to that computer", async () => {
 		await boot(v, "light", `go("monitoring")`);
 		await waitFor(v, `document.querySelector('#mon-side .cv-row[data-k^="p:"][data-k$="i:mail"]')`);
 		await run(v, `document.querySelector('#mon-side .cv-row[data-k^="p:"][data-k$="i:mail"]').click()`);
 		await waitFor(v, `document.querySelector("#mon-tl .mr .tag.unreplied")`);
-		// 초안 작성 sits beside 답장 안 함 and asks the computer that holds the mail for the draft
+		// 초안 작성 sits beside 답장 안 해도 돼요 and asks the computer that holds the mail for the draft
 		await run(v, `document.querySelector("#mon-tl .mr .mr-draft").click()`);
 		const asked = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "mail-draft");
 		expect(asked.body).toMatchObject({ action: "mail-draft", args: { key: "peer-1" } });
-		await run(v, `document.querySelector("#mon-tl .mr .unrep-no").click()`);
-		const sent = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "no-reply");
-		expect(sent.body).toMatchObject({ action: "no-reply", args: { kind: "mail", key: "peer-1" } });
+		await run(v, `document.querySelector("#mon-tl .mr .mr-fyi").click()`);
+		const sent = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "fyi");
+		expect(sent.body).toMatchObject({ action: "fyi", args: { key: "peer-1", on: true } });
 	});
 });
