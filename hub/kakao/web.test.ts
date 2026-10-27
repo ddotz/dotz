@@ -1205,3 +1205,27 @@ describe("draft of several messages: 다시 보내기", () => {
 		t.close();
 	});
 });
+
+describe("pending drafts for the 답장 확인 queue", () => {
+	test("lists the pending drafts of watched rooms with the message each answers, counts them, and a dropped one comes back once", async () => {
+		const t = setup({ watch_chats: [DIRECT, GROUP] });
+		const a = await t.draft({ text: "좋아요\n\n내일 봐요" });
+		const g = await createDraft({ chatId: GROUP, roomName: "Study Group", text: "그룹 답", basisLogId: "999999" }, { paths, runner: fakeScreen([]).runner, now: () => NOW });
+		await createDraft({ chatId: String(ROOM.excluded), roomName: "Quiet Group", text: "안 보는 방", basisLogId: id(1) }, { paths, runner: fakeScreen([]).runner, now: () => NOW });
+		const list = (await t.call("GET", "/api/kakao/drafts")).json.items;
+		expect(list.map((d: any) => [d.code, d.chatId, d.room, d.parts])).toEqual([[a.code, DIRECT, "Alex", ["좋아요", "내일 봐요"]], [g.code, GROUP, "Study Group", ["그룹 답"]]]);
+		expect(list[0].original).toEqual({ who: "Alex", text: "fine, lunch tomorrow?", at: (BASE_TIME + 30) * 1000 });
+		expect(list[1].original).toBeUndefined();
+		expect(t.web.pendingCount()).toBe(2);
+		expect(t.web.pendingCount(new Set([a.code]))).toBe(1);
+
+		expect((await t.call("POST", `/api/kakao/drafts/${g.code}/restore`)).status).toBe(409);
+		expect((await t.call("POST", `/api/kakao/drafts/${g.code}/drop`)).status).toBe(200);
+		expect(t.web.pendingCount()).toBe(1);
+		expect(await t.call("POST", `/api/kakao/drafts/${g.code}/restore`)).toEqual({ status: 200, json: { ok: true } });
+		expect(t.events.filter(e => e.kind === "kakao_draft").map(e => e.chatId)).toEqual([GROUP, GROUP]);
+		expect(t.web.pendingCount()).toBe(2);
+		expect((await t.call("POST", `/api/kakao/drafts/${g.code}/restore`)).status).toBe(409);
+		t.close();
+	});
+});

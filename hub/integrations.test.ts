@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commentAsk, type CommentAdapter } from "../features/reply-drafts/lib/comments.ts";
-import { appKeyOf, belongsTo, INTEGRATIONS, integrationContext, integrationItems, integrationOn } from "./integrations.ts";
+import { appKeyOf, belongsTo, INTEGRATIONS, integrationContext, integrationItems, integrationOn, withStoreDrafts } from "./integrations.ts";
 
 const dirs: string[] = [];
 afterAll(() => dirs.forEach(d => rmSync(d, { recursive: true, force: true })));
@@ -205,5 +205,16 @@ describe("appKeyOf: which notices are an app's, from data", () => {
 	test("a plain monitor, or text of an app this install does not have, is not", () => {
 		expect(appKeyOf(notice("p", { title: "샘플 점검", text: "샘플 점검: 결과가 바뀌었어요" }), ctx)).toBeUndefined();
 		expect(appKeyOf(notice("y", { title: "유튜브 확인" }), ctx)).toBeUndefined();
+	});
+});
+
+describe("needs: drafts an app keeps in its own store", () => {
+	test("KakaoTalk room drafts count as the kakao app's drafts beside a comment app's, and leave the others alone", () => {
+		const ctx = integrationContext(install(["kakao"]), []);
+		const needs = withStoreDrafts({ youtube: { drafts: 1, unread: 0 } }, "kakao", 2);
+		expect(needs).toEqual({ youtube: { drafts: 1, unread: 0 }, kakao: { drafts: 2, unread: 0, unreplied: 0 } });
+		const kk = integrationItems(ctx, [], {}, 100, undefined, [], Date.now(), needs).find(i => i.key === "kakao")!;
+		expect(kk.needs.drafts).toBe(2);
+		expect(withStoreDrafts({ kakao: { drafts: 1, unread: 3 } }, "kakao", 2).kakao).toEqual({ drafts: 3, unread: 3 });
 	});
 });

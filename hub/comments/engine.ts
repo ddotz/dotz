@@ -248,6 +248,48 @@ export function createEngine(deps: EngineDeps) {
 		return { ok: true };
 	}
 
+	// 되돌리기 after 보내지 않기: the dropped draft waits again, unless a newer draft of the same comment came meanwhile. A draft whose mail was dropped
+	// with it cannot come back (the mail draft is gone).
+	function restore(draftCode: string): { ok: boolean; reason?: string } {
+		const d = store.drafts().find(x => x.code === draftCode);
+		if (!d) return { ok: false, reason: "그 초안을 찾지 못했어요" };
+		if (d.status !== "dropped") return { ok: false, reason: "보내지 않기로 한 초안만 되돌릴 수 있어요" };
+		if (d.mail) return { ok: false, reason: "함께 보낼 메일이 있는 초안은 되돌릴 수 없어요" };
+		if (store.drafts().some(x => x.commentId === d.commentId && x.code !== d.code && x.status === "pending")) return { ok: false, reason: "그사이 새 초안이 와서 되돌리지 않았어요" };
+		store.setDraftStatus(draftCode, "pending");
+		emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+		return { ok: true };
+	}
+
+	// A failed send: 다시 보내기 sends the same text through the gate again (its draft is still pending after a failure, contract.ts), 지우기 forgets the
+	// record (the draft stays, so the reply can still be sent or dropped from its card).
+	function retrySend(id: string): GateResult {
+		const r = store.replies().find(x => x.id === id);
+		if (!r) return { ok: false, reason: "그 보낸 기록을 찾지 못했어요" };
+		if (r.state !== "failed") return { ok: false, reason: "실패한 답글만 다시 보낼 수 있어요" };
+		return send(r.draft, { by: "owner", text: r.text });
+	}
+	function dismissSend(id: string): { ok: boolean; reason?: string } {
+		const r = store.replies().find(x => x.id === id);
+		if (!r) return { ok: false, reason: "그 보낸 기록을 찾지 못했어요" };
+		if (r.state !== "failed") return { ok: false, reason: "실패한 답글만 지울 수 있어요" };
+		store.removeReply(id);
+		emit({ kind: "comment_send", source: r.source, thread: r.thread, id: r.id, state: "removed" });
+		return { ok: true };
+	}
+
+	// Every pending reply draft of the sources he chose, for the one 답장 확인 queue (GET /api/comments/drafts): the draft, where it goes and the comment it answers.
+	function pendingDrafts() {
+		const cfg = store.config();
+		if (!cfg.enabled) return [];
+		const comments = store.comments();
+		return store.drafts().filter(d => d.status === "pending" && cfg.sources[d.source]).map(d => {
+			const src = cfg.sources[d.source]!, c = comments.find(x => x.id === d.commentId);
+			return { code: d.code, app: ownerOf(src), kind: src.kind, source: src.key, sourceLabel: src.label, thread: d.thread, commentId: d.commentId, title: c?.postTitle ?? "", link: c?.postLink ?? null, to: c?.author ?? "", text: d.text, notes: d.notes, created: d.created,
+				...(c ? { original: { who: c.author, text: clip(c.text, 200), at: c.at } } : {}), ...mailJson(d) };
+		});
+	}
+
 	// `part` "mail" changes only the mail of the card (the reply stays, same code); "reply" (default) rewrites the reply and the mail stays attached.
 	async function revise(draftCode: string, change: string, part: "reply" | "mail" = "reply"): Promise<Step> {
 		const d = store.drafts().find(x => x.code === draftCode);
@@ -379,6 +421,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, collect, makeDraft, revise, drop, send, update, threads, threadView, markRead, addDraft, mailView, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, collect, makeDraft, revise, drop, restore, retrySend, dismissSend, pendingDrafts, send, update, threads, threadView, markRead, addDraft, mailView, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

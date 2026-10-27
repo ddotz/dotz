@@ -120,13 +120,25 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 			);
 			return json({ state: "drafting" }, 202);
 		}
+		// The pending drafts of every source (the 답장 확인 queue across apps).
+		if (area === "drafts" && parts.length === 3 && method === "GET") return json({ items: cfg.enabled ? engine.pendingDrafts() : [] });
+		// A failed reply: 다시 보내기 (the same text through the same gate) or 지우기 (the record goes, the draft stays).
+		if (area === "sends" && parts.length === 5 && method === "POST" && (parts[4] === "retry" || parts[4] === "dismiss")) {
+			if (!cfg.enabled) return json(OFF, 409);
+			if (parts[4] === "dismiss") {
+				const r = engine.dismissSend(arg(3));
+				return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
+			}
+			const r = engine.retrySend(arg(3));
+			return r.ok ? json({ id: r.reply.id, state: "sending" }, 202) : json({ error: r.reason }, 409);
+		}
 		if (area === "drafts" && parts.length === 5 && method === "POST") {
 			if (!cfg.enabled) return json(OFF, 409);
 			const code = arg(3);
 			const d = engine.store.drafts().find(x => x.code === code);
 			if (!d) return json({ error: "그 초안을 찾지 못했어요" }, 404);
-			if (parts[4] === "drop") {
-				const r = engine.drop(code);
+			if (parts[4] === "drop" || parts[4] === "restore") {
+				const r = parts[4] === "drop" ? engine.drop(code) : engine.restore(code);
 				return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
 			}
 			if (parts[4] === "revise") {

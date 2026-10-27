@@ -189,10 +189,19 @@ function cmCommentNode(c, by, first) {
   return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-id": c.id }, first ? kkAvatar(c.author) : el("span", { class: "kk-av sp", "aria-hidden": "true" }),
     el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: c.author }) : null, el("div", { class: "kk-line" }, bub, el("span", { class: "kk-time", text: kkTime(c.at) })), mark, c.unreplied ? el("div", { class: "kk-line" }, unrepPill(), unrepNo(`/api/comments/comment/${encodeURIComponent(c.id)}/no-reply`)) : null));
 }
+// A reply that did not go out offers 다시 보내기 (the same text through the same gate) and 지우기 (the record goes, the draft stays), like KakaoTalk.
+const cmSendCall = (s, op) => api(`/api/comments/sends/${enc(s.id)}/${op}`, "POST", {});
+async function cmSendFix(btn, s, op) {
+  btn.disabled = true;
+  try { await cmSendCall(s, op); if (op === "dismiss" && CM.view) CM.view.sends = CM.view.sends.filter(x => x.id !== s.id); await cmReload(CM.seq, op === "retry"); }
+  catch (e) { toast(e.message, true); btn.disabled = false; }
+}
 function cmSendNode(s) {
   const failed = s.state === "failed", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";
   return el("div", { class: `kk-m me pend ${s.state} first`, "data-send": s.id }, el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
-    el("div", { class: "kk-st", role: failed ? "alert" : "status" }, el("span", { class: "kk-state", text: st })));
+    el("div", { class: "kk-st", role: failed ? "alert" : "status" }, el("span", { class: "kk-state", text: st }),
+      failed ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
+      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null));
 }
 function cmPaintChat(stick) {
   if (CM.tab === "dm") { dmPaintChat(); return; }
@@ -226,7 +235,7 @@ function cmPaintAll() {
   cmPaintRooms(); cmPaintChat(true);
 }
 
-/* ---- drafts: made on request, then 보내기 / 고치기 / 버리기 ---- */
+/* ---- drafts: made on request, then 보내기 / 고치기 / 보내지 않기 ---- */
 async function cmMakeDraft(c) {
   if (CM.drafting.has(c.id)) return;
   CM.drafting.add(c.id); cmPaintChat(false);
@@ -234,35 +243,37 @@ async function cmMakeDraft(c) {
   try { await api(`/api/comments/comment/${enc(c.id)}/draft`, "POST", {}); }
   catch (e) { CM.drafting.delete(c.id); cmPaintChat(false); toast(e.message, true); }
 }
+// The thread's draft as the one reply card (10-reply-card.js): the same head, body and 보내기 · 고치기 · 보내지 않기 as the 답장 확인 queue;
+// 원문 보기 (web/js/10-draft-original.js) opens the comment it answers as its own panel on the left of the card (a 초안 | 원문 toggle on a phone).
+async function cmRestore(code) {
+  try { await api(`/api/comments/drafts/${enc(code)}/restore`, "POST", {}); toast("초안을 되돌렸어요"); cmReload(); cmIntgSoon(); } catch (e) { toast(e.message, true); }
+}
 function cmDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); cmReload(); } finally { btn.disabled = false; } };
   const sending = CM.view.sends.some(s => s.commentId === d.commentId && s.state === "sending");
-  const edit = CM.revising === d.code;
-  const input = el("input", { class: "kk-ta", type: "text", placeholder: "어떻게 고칠까요? (예: 더 짧게)", "aria-label": "고칠 내용" });
+  const edit = CM.revising === d.code, src = CM.view.source || {};
   // A reply that carries a mail (hub/comments/engine.ts Draft.mail): 고치기 says which part it changes.
   const part = d.mail ? el("select", { class: "kk-ta", "aria-label": "고칠 곳" }, el("option", { value: "reply", text: "답글" }), el("option", { value: "mail", text: "메일" })) : null;
-  // 원문 보기 (web/js/10-draft-original.js): the comment this draft answers opens as its own panel on the left of the card (a 초안 | 원문 toggle on a phone).
-  const card = el("div", { class: "kk-draft", "data-code": d.code }), cm = CM.view.comments.find(c => c.id === d.commentId), wrap = el("div", { class: "od-cwrap" });
-  const body = el("div", { class: "kk-dbody" }, el("div", { class: "kk-dt", text: d.text }),
-    draftMailNode(d.mail),
-    d.mail ? el("div", { class: "kk-note", role: "status", text: "보내기를 누르면 답글을 올린 뒤 메일을 보내요" }) : null,
-    d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null);
+  const wrap = el("div", { class: "od-cwrap" });
+  const card = rqCard({ key: `cm:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: CM.app, label: src.label, pc: pqSelf(), at: d.created }, label: "답글 초안", labelCls: "kk-dh",
+    body: { text: d.text, cls: "kk-dt" },
+    extra: [draftMailNode(d.mail), d.mail ? el("div", { class: "kk-note", role: "status", text: "보내기를 누르면 답글을 올린 뒤 메일을 보내요" }) : null, d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
+    ...(edit ? { revise: rqReviseNode({ pick: part, cancel: () => { CM.revising = ""; cmPaintChat(false); },
+      go: change => run($(".rq-edit [data-k=revise-go]", wrap) || el("button"), async () => { await api(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change, ...(part ? { part: part.value } : {}) }); CM.revising = ""; await cmReload(); }) }) }
+      : { acts: {
+        send: sending ? null : ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/send`, "POST", {}); await cmReload(CM.seq, true); }),
+        edit: () => { CM.revising = d.code; cmPaintChat(false); },
+        drop: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/drop`, "POST", {}); rqDroppedToast(d.mail ? null : () => cmRestore(d.code)); await cmReload(); }),
+      } }) });
   const org = orgNodes({ ref: d.code, toLabel: "대상" }, null, wrap, card);
   wrap.append(org.bar, el("div", { class: "od-stage" }, org.orig, card));
-  card.append(el("div", { class: "kk-dh", text: "답글 초안" }), body,
-    edit ? el("div", { class: "btns" }, part, input,
-      el("button", { class: "btn", type: "button", "data-k": "rewrite", text: "다시 쓰기", onclick: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change: input.value, ...(part ? { part: part.value } : {}) }); CM.revising = ""; await cmReload(); }) }),
-      el("button", { class: "btn text", type: "button", text: "취소", onclick: () => { CM.revising = ""; cmPaintChat(false); } }))
-    : el("div", { class: "btns" },
-      el("button", { class: "btn", type: "button", "data-k": "send", disabled: sending, text: "보내기", onclick: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/send`, "POST", {}); await cmReload(CM.seq, true); }) }),
-      el("button", { class: "btn tonal", type: "button", "data-k": "edit", text: "고치기", onclick: () => { CM.revising = d.code; cmPaintChat(false); } }),
-      el("button", { class: "btn text", type: "button", "data-k": "drop", text: "버리기", onclick: ev => run(ev.currentTarget, async () => { await api(`/api/comments/drafts/${enc(d.code)}/drop`, "POST", {}); await cmReload(); }) })));
   return wrap;
 }
 
 /* ---- live and mode ---- */
 function cmLive(e) {
   cmIntgSoon();
+  if (e.kind === "comment_draft" || e.kind === "comment_send") rqSoon();
   if (e.kind === "comment_sources") { cmLoadSources(); return; }
   if (e.kind === "comment_draft" && e.error) toast(e.error, true);
   if (e.kind === "comment_send" && e.mail === "failed") toast(`답글은 올렸지만 메일은 보내지 못했어요: ${e.mailReason || "알 수 없는 이유"}`, true);

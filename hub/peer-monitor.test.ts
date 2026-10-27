@@ -57,6 +57,11 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: path.endsWith("/draft") ? `draft ${JSON.stringify(b)}` : b.text });
 			return Response.json({ ok: true });
 		}
+		if (req.method === "POST" && (path.startsWith("/api/comments/") || path.startsWith("/api/kakao/drafts/"))) {
+			events.push({ target: "comments", text: `${path} ${JSON.stringify(await req.json())}` });
+			return Response.json({ ok: true });
+		}
+		if (req.method === "GET" && path === "/api/replies") return Response.json({ items: [{ kind: "kakao", app: "kakao", code: `K-${name}`, at: 1 }] });
 		if (req.method === "PUT" && path.startsWith("/api/kakao/rooms/")) {
 			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: `room ${JSON.stringify(await req.json())}` });
 			return Response.json({ ok: true });
@@ -451,4 +456,29 @@ test("a peer's mail draft gets and loses files through the owner's own draft fil
 	expect(read.status).toBe(404);   // allowed through to B (this fake has no such GET); a path outside the peer read list would be 400
 	const lib = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/drafts/RPEER0001/library?q=ost")}`));
 	expect(lib.status).toBe(404);
+});
+
+test("a peer snapshot carries that gateway's store reply drafts; a handler without them leaves the field out", async () => {
+	const { A } = pair();
+	const [m] = await A.mon.peerMonitoring();
+	expect(m!.items!.replies).toEqual([{ kind: "kakao", app: "kakao", code: "K-맥미니", at: 1 }]);
+	const plain = createPeerMonitor({ name: () => "맥미니", local: async () => new Response("not found", { status: 404 }), computers: async () => [] });
+	expect((await plain.snapshot().catch(() => null))?.replies).toBeUndefined();
+});
+
+test("a peer's comment draft, failed reply and dropped draft are acted on its owner's comment routes, once each", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const act = (args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "comments", args }) }));
+	for (const a of [{ op: "draft-send", code: "D1" }, { op: "draft-drop", code: "D1" }, { op: "draft-restore", code: "D1" }, { op: "draft-revise", code: "D1", change: "더 짧게" }, { op: "send-retry", id: "send:cm:1" }, { op: "send-dismiss", id: "send:cm:1" }, { op: "read", source: "youtube", thread: "v1" }])
+		expect((await act(a)).status).toBe(200);
+	expect(B.events.map(e => e.text)).toEqual([
+		"/api/comments/drafts/D1/send {}", "/api/comments/drafts/D1/drop {}", "/api/comments/drafts/D1/restore {}", `/api/comments/drafts/D1/revise ${JSON.stringify({ change: "더 짧게" })}`,
+		"/api/comments/sends/send%3Acm%3A1/retry {}", "/api/comments/sends/send%3Acm%3A1/dismiss {}", "/api/comments/thread/youtube/v1/read {}",
+	]);
+	expect(A.events).toEqual([]);
+	expect((await act({ op: "rm", code: "D1" })).status).toBe(400);
+	const k = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "draft-restore", code: "K1" } }) }));
+	expect(k.status).toBe(200);
+	expect(B.events.at(-1)!.text).toBe("/api/kakao/drafts/K1/restore {}");
 });
