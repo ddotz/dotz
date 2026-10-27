@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { addressesOf, buildPrompt, generateReply, lintReply, parseResult, precheck, reviseReply, type ModelCall, type ReplyItem, type ReplyStyle } from "./reply-draft.ts";
+import { addressesOf, buildPrompt, generateReply, lintReply, NO_RECIPIENT, parseResult, precheck, reviseReply, type ModelCall, type ReplyItem, type ReplyStyle } from "./reply-draft.ts";
 
 const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", self: ["me@example.net"], subject: "회의 일정 문의", text: "다음 주 회의 일정을 알려 주실 수 있을까요?" };
 const style: ReplyStyle = { samples: ["확인해 보고 말씀드릴게요."], rules: [], corrections: [], forbidden: [] };
@@ -29,21 +29,50 @@ test("a missing recipient and subject are filled in by the script, not trusted f
 	expect(r).toMatchObject({ action: "draft", draft: { to: "kim@example.com", subject: "Re: 회의 일정 문의" }, tries: 1 });
 });
 
-test("an invented recipient costs exactly one retry that lists the failure; a fixed retry is clean", async () => {
-	const m = fake([j({ ...good, to: "boss@example.org" }), j(good)]);
+test("an invented recipient or a subject without Re: is corrected by the script, without a retry", async () => {
+	const m = fake([j({ ...good, to: "boss@example.org", subject: "회의 일정" })]);
+	const r = await generateReply(item, style, m.call);
+	expect(m.calls).toHaveLength(1);
+	expect(r).toMatchObject({ action: "draft", draft: { to: "kim@example.com", subject: "Re: 회의 일정 문의" }, tries: 1, warnings: [] });
+});
+
+test("a sender shown by name only: no address to find is a warning, never a model retry", async () => {
+	const m = fake([j({ ...good, to: "Lee Minsu" })]);
+	const r = await generateReply({ ...item, from: "Lee Minsu (Sales" }, style, m.call);
+	expect(m.calls).toHaveLength(1);
+	expect(r).toMatchObject({ action: "draft", tries: 1, warnings: [NO_RECIPIENT] });
+});
+
+test("a finding a rewrite can fix costs exactly one retry that lists it; a fixed retry is clean", async () => {
+	const m = fake([j({ ...good, body: "[이름]님, 확인해 볼게요." }), j(good)]);
 	const r = await generateReply(item, style, m.call);
 	expect(m.calls).toHaveLength(2);
-	expect(m.calls[1]!.user).toContain("boss@example.org");
+	expect(m.calls[1]!.user).toContain("the text contains a placeholder");
 	expect(m.calls[0]!.user).not.toContain("failed these checks");
 	expect(r).toMatchObject({ action: "draft", tries: 2, warnings: [] });
 });
 
 test("failures that survive the one retry come back as warnings with the draft, never a third call", async () => {
-	const m = fake([j({ ...good, to: "boss@example.org" })]);
+	const m = fake([j({ ...good, body: "[이름]님, 확인해 볼게요." })]);
 	const r = await generateReply(item, style, m.call);
 	expect(m.calls).toHaveLength(2);
-	expect(r).toMatchObject({ action: "draft", tries: 2 });
-	expect(r.action === "draft" && r.warnings.join()).toContain("boss@example.org");
+	expect(r).toMatchObject({ action: "draft", tries: 2, warnings: ["the text contains a placeholder"] });
+});
+
+test("a retry that fails (a timeout, a spent budget) keeps the first draft with its findings", async () => {
+	let n = 0;
+	const call: ModelCall = async () => {
+		if (n++) throw new Error("model call timed out after 45s");
+		return j({ ...good, body: "[이름]님, 확인해 볼게요." });
+	};
+	expect(await generateReply(item, style, call)).toMatchObject({ action: "draft", draft: { body: "[이름]님, 확인해 볼게요." }, warnings: ["the text contains a placeholder"] });
+	expect(n).toBe(2);
+});
+
+test("the first prompt already tells the model to settle open points itself and never to ask for an address", () => {
+	const { system } = buildPrompt(item, style);
+	expect(system).toContain("settle it yourself");
+	expect(system).toContain("Never ask for the recipient's address");
 });
 
 test("unparsable output is retried once; a model that never answers JSON throws", async () => {
