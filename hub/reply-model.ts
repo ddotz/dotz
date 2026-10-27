@@ -35,8 +35,9 @@ export async function replyModel(app: string, conv?: string, o: { dataDir?: stri
 // unusable provider is refused before the call (hub/model-runner.ts), so nobody waits 120 s for a draft that cannot come.
 export const DRAFT_TIMEOUT_MS = 45_000;
 
-/** The one model call of a reply draft for `app` (subscription only, hub/outlang.ts); `call` is injected by tests. */
-export async function callReplyModel(app: string, conv: string | undefined, system: string, user: string, call?: ReplyCall, o: { dataDir?: string } = {}) {
+/** The one model call of a reply draft for `app` (subscription only, hub/outlang.ts); `call` is injected by tests. `timeoutMs` (what is left of a
+ *  draft's overall budget) only shortens the per-call limit. */
+export async function callReplyModel(app: string, conv: string | undefined, system: string, user: string, call?: ReplyCall, o: { dataDir?: string; timeoutMs?: number } = {}) {
 	const model = await replyModel(app, conv, o);
-	return (call ?? (await import("./outlang.ts")).callModel)(system, user, { model, timeoutMs: DRAFT_TIMEOUT_MS });
+	return (call ?? (await import("./outlang.ts")).callModel)(system, user, { model, timeoutMs: Math.min(o.timeoutMs ?? DRAFT_TIMEOUT_MS, DRAFT_TIMEOUT_MS) });
 }
