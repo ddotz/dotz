@@ -76,12 +76,12 @@ async function asEvery(app, i, v) {
 // One row for a watch: the monitor's own facts (the status card its detail shows) and, for a watch an app owns, the app's kind, reason, period and
 // 다시 시도. The machine hooks other panels read stay stable: .as-stat, data-watch, data-internal.
 function asStatRow(app, m, i) {
-  const res = m && m.last_result ? NT_RESULT[m.last_result] : null;
-  const dot = i ? i.dot : m ? (m.paused ? "idle" : res && res[1] === "fail" ? "fail" : res ? "ok" : "idle") : "idle";
+  const st = m ? monStatus(m) : null;   // the monitor's one status (30-monitoring.js)
+  const dot = i ? i.dot : st ? (st.tone === "err" ? "fail" : st.key === "off" || st.key === "need" ? "idle" : "ok") : "idle";
   const name = m ? monTitle(m) : i ? i.name : "";
   const line = i
     ? [i.status, i.last_run ? `마지막 확인 ${monTime(i.last_run)}` : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ")
-    : [res && res[0], m ? ntMonRun(m) : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ");
+    : [st && st.text, m ? ntMonRun(m) : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ");
   const facts = [m && m.fails ? `연속 실패 ${m.fails}번` : "", m && m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m && m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
   return el("div", { class: `as-row as-stat${i ? " as-int" : " as-conn"}`, "data-watch": m ? m.watch || m.name : i.id, ...(i ? { "data-internal": i.id, "data-kind": i.kind } : { "data-conn": dot === "fail" ? "disconnected" : dot === "ok" ? "connected" : "unknown" }) },
     el("span", { class: `as-dot ${dot}`, "aria-hidden": "true" }),
@@ -96,7 +96,7 @@ function asStatRow(app, m, i) {
         el("input", { class: "as-in as-every", type: "number", min: 1, max: 10080, inputmode: "numeric", "aria-label": `${i.name} 감시 주기(분)`, title: "감시 주기(분)", "data-k": `every:${i.id}`, value: String(i.every_minutes), onchange: ev => asEvery(app, i, ev.target.value) }),
         el("span", { class: "as-unit", text: "분" }))) : null,
     i && i.dot !== "ok" ? el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id, i.down) }, i.down ? "다시 연결" : "다시 시도") : null,
-    !i && res && res[1] === "fail" ? el("span", { class: "tag err", text: "실패" }) : null);
+    !i && st && st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
 }
 function asFeatRow(app, f) {
   return el("div", { class: "as-row as-feat", "data-feature": f.id },

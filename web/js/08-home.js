@@ -148,13 +148,14 @@ function homeWorklogCard() {
     state || !recent.length ? el("div", { class: "hc-none", text: state || "아직 작업내역이 없어요" }) : hcNotices(recent));
 }
 function homeMonitorCard() {
-  const list = ntMons(), shown = list.slice(0, 4), bad = list.filter(m => m.last_result === "fail").length;
+  const list = ntMons(), shown = list.slice(0, 4), bad = list.filter(m => monStatus(m).key === "fail").length;
   const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…";
   return hcCard(() => go("monitoring"), el("div", { class: "ch" }, el("h3", { text: "모니터링" }), bad ? el("span", { class: "tag err", text: `실패 ${bad}` }) : null),
     state || !list.length ? el("div", { class: "hc-none", text: state || "모니터링 중인 항목이 없어요" }) : el("div", { class: "hc-list" }, ...shown.map(m => {
-      const r = m.last_result ? NT_RESULT[m.last_result] : null;
-      return el("div", { class: "hc-mon" }, hcDot(r && r[1]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "모니터링" }),
-        el("span", { class: "s", text: [ntMonRun(m), r && r[0], ntMonNext(m)].filter(Boolean).join(" · ") })));
+      // The same status the 모니터링 row shows (30-monitoring.js monStatus); the dot's colour classes are the notice tones.
+      const st = monStatus(m);
+      return el("div", { class: "hc-mon", "data-status": st.key }, hcDot({ ok: "done", warn: "ask", err: "fail" }[st.tone]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "모니터링" }),
+        el("span", { class: "s", text: [ntMonRun(m), st.text, ntMonNext(m)].filter(Boolean).join(" · ") })));
     })),
     list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
 }
