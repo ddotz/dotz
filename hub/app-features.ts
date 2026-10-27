@@ -15,9 +15,10 @@ import { APP_FEATURES, declOf, type FeatureDecl, featureOn, readApps } from "./a
 import { APPS_FILE, appBase, appEntries, belongsTo, type IntegrationEntry } from "./integrations.ts";
 import { watchFacts } from "./monitors.ts";
 import type { Watch } from "./watch.ts";
+import { watchConnection } from "./watch-status.ts";
 
 const named = (list: readonly string[], watch: string): boolean => list.some(w => (w.endsWith("-") ? watch.startsWith(w) : watch === w));
-type WatchLike = { name: string; session?: { url: string } };
+type WatchLike = { name: string; session?: { url: string }; approval_minutes?: number };
 const hostOf = (url: string): string => {
 	try {
 		return new URL(url).hostname.replace(/^www\./, "");
@@ -53,7 +54,7 @@ export { APP_FEATURES, type AppDecl, type FeatureDecl, featureEnabled } from "./
 // under 기능 (자동 초안, 감시). The screen groups every row by its section key.
 export type FeatureView = { id: string; name: string; status: string; on: boolean; setting?: string; section?: SettingSection };
 export type ApprovalOption = { n: number; label: string };
-export type InternalView = { id: string; kind: "login" | "sync"; name: string; dot: "ok" | "fail" | "idle"; status: string; last_run?: string; reason?: string; every_minutes?: number };
+export type InternalView = { id: string; kind: "login" | "sync"; name: string; dot: "ok" | "fail" | "idle"; status: string; last_run?: string; reason?: string; every_minutes?: number; down?: boolean };
 /** An approval row: `title` is the item (post title or the start of the caption), `kind` what is approved, `options` the answers the owner can give from the row (고치기 needs a text, so it stays in the sheet). */
 export type ApprovalView = { id: string; title: string; kind?: string; feature?: string; state: string; at?: string; note?: string; options: ApprovalOption[] };
 export type FeaturesView = { app: string; features: FeatureView[]; internal: InternalView[]; approvals: ApprovalView[] };
@@ -91,9 +92,11 @@ const PROGRESS_WATCH = /bulk/;
 /** One internal row of a watch the app owns. The reason is the words the watch's own failure carries (hub/watchtext.ts), never the raw output. */
 export function internalOf(w: Watch, appLabel = "앱"): InternalView {
 	const f = watchFacts(w), kind = w.session ? "login" : "sync", last = w.state.lastRun;
-	const dot = f.fails ? "fail" : !last || w.paused || w.state.paused ? "idle" : "ok";
-	const status = dot === "fail" ? `${f.fails}번 연달아 실패했어요` : dot === "idle" ? (w.paused || w.state.paused ? "멈춰 있어요" : "아직 확인 전이에요") : PROGRESS_WATCH.test(w.name) && f.last_output ? f.last_output : "정상이에요";
-	return { id: w.name, kind, name: `${KIND_KO[kind]} · ${internalName(w, appLabel)}`, dot, status, every_minutes: w.every_minutes, ...(last ? { last_run: last } : {}), ...(dot === "fail" ? { reason: f.last_output || "확인에 실패했어요" } : {}) };
+	// A watch whose check exits 0 but says it is logged out (DOTZ_DISCONNECTED, hub/watch-status.ts) is down too, so its row offers 다시 연결.
+	const conn = watchConnection(w), down = conn.state === "disconnected" && !f.fails;
+	const dot = f.fails || down ? "fail" : !last || w.paused || w.state.paused ? "idle" : "ok";
+	const status = down ? `연결이 끊겼어요 · ${conn.reason === "login" ? "다시 로그인이 필요해요" : "확인이 계속 실패해요"}` : dot === "fail" ? `${f.fails}번 연달아 실패했어요` : dot === "idle" ? (w.paused || w.state.paused ? "멈춰 있어요" : "아직 확인 전이에요") : PROGRESS_WATCH.test(w.name) && f.last_output ? f.last_output : "정상이에요";
+	return { id: w.name, kind, name: `${KIND_KO[kind]} · ${internalName(w, appLabel)}`, dot, status, every_minutes: w.every_minutes, ...(last ? { last_run: last } : {}), ...(dot === "fail" && !down ? { reason: f.last_output || "확인에 실패했어요" } : {}), ...(down ? { down: true } : {}) };
 }
 
 /** Why a Reels upload cannot go out yet: the Instagram token lacks instagram_business_content_publish (features/youtube-instagram/lib/ig-publish.ts writes the flag). */
@@ -142,8 +145,10 @@ export function setFeature(dataDir: string, app: string, id: unknown, on: unknow
 	renameSync(tmp, file);
 }
 
-/** Runs one watch the app owns (다시 시도). Not the app's = 404. */
-export async function retryInternal(dataDir: string, app: string, watch: unknown, watches: readonly WatchLike[], run: (name: string) => Promise<void>): Promise<void> {
+/** Runs one watch the app owns (다시 시도 / 다시 연결). Not the app's = 404. The owner's tap is his yes: a watch behind an approval gate
+ * (approval_minutes, e.g. a login that sends a push to his phone) is approved, which runs it with the approval; a plain run would only report that it waits. */
+export async function retryInternal(dataDir: string, app: string, watch: unknown, watches: readonly WatchLike[], run: (name: string) => Promise<void>, approve?: (name: string) => void): Promise<void> {
 	if (typeof watch !== "string" || !(ownedWatches(dataDir, watches).get(app) ?? []).includes(watch)) throw new SettingsError(`${String(watch)}: 이 앱의 내부 기능이 아니에요`, 404);
-	await run(watch);
+	if (approve && watches.find(w => w.name === watch)?.approval_minutes) approve(watch);
+	else await run(watch);
 }
