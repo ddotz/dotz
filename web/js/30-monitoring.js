@@ -64,6 +64,13 @@ const monRel = (ms, past) => {
   return past ? `${t} 전` : `${t} 후`;
 };
 const MON_PTAG = { ok: ["정상", "ok"], changed: ["바뀜", "warn"], fail: ["실패", "err"], disconnected: ["연결 끊김", "err"], need: ["확인 필요", "warn"], off: ["꺼짐", ""], late: ["늦어짐", "warn"], run: ["확인 중", "warn"] };
+// A monitor's one status, read the same on every screen (the list row's badge, the detail's state line and tag, the home card, the app settings):
+// connection > paused > fail > late > changed > ok > not run yet. key is a MON_PTAG key; text and tone are its words and colour.
+function monStatus(m, now = Date.now()) {
+  const key = m.connection === "disconnected" ? "disconnected" : m.paused ? "off" : m.last_result === "fail" ? "fail" : (Date.parse(m.next_run) || Infinity) <= now ? "late" : m.last_result === "changed" ? "changed" : m.last_run ? "ok" : "need";
+  const [text, tone] = MON_PTAG[key];
+  return { key, text, tone };
+}
 // Wording (one pair): a row, a tag or a badge says "연결 끊김"; the banner at the top of the conversation says "연결이 끊겼어요" plus why.
 const monConnWhy = m => [m.since ? `${monTime(m.since)}부터` : "", m.conn_reason === "login" ? "다시 로그인 필요" : m.conn_reason ? "확인이 계속 실패해요" : ""].filter(Boolean).join(" · ");
 const monConnLine = m => ["연결 끊김", monConnWhy(m)].filter(Boolean).join(" · ");
@@ -79,13 +86,14 @@ const monProgLine = (from, to, now, m, short) => {
 // kind drives the fill: "" (accent, moving), warn (overdue, full), err (disconnected), off (paused, grey), run (indeterminate shimmer).
 function monProgState(m, now) {
   if (m.watch && MON.running.has(m.watch)) return { kind: "run", pct: 0, tag: "run" };
-  if (m.paused) return { kind: "off", pct: 100, tag: "off" };
-  if (m.connection === "disconnected") return { kind: "err", pct: 100, tag: "disconnected" };
+  const tag = monStatus(m, now).key;
+  if (tag === "disconnected") return { kind: "err", pct: 100, tag };
+  if (tag === "off") return { kind: "off", pct: 100, tag };
   const from = Date.parse(m.last_run), to = Date.parse(m.next_run);
-  if (!(to > 0)) return { kind: "none", pct: 0, tag: m.last_result === "fail" ? "fail" : m.last_run ? "" : "need" };
-  if (now >= to) return { kind: "warn", pct: 100, tag: m.last_result === "fail" ? "fail" : "late" };
+  if (!(to > 0)) return { kind: "none", pct: 0, tag };
+  if (now >= to) return { kind: "warn", pct: 100, tag };
   const pct = from > 0 ? Math.max(0, Math.min(100, ((now - from) / (to - from)) * 100)) : 0;
-  return { kind: "", pct, tag: m.last_result === "changed" ? "changed" : m.last_result === "fail" ? "fail" : from > 0 ? "ok" : "need" };
+  return { kind: "", pct, tag };
 }
 const monPTagOf = k => MON_PTAG[k] || ["", ""];
 // The bar's colour is the result (owner 2026-10-27): green normal, yellow needs a look (changed, late, not run yet), red error or disconnected.
@@ -132,14 +140,16 @@ const monUnread = list => list.reduce((c, n) => c + (n.read ? 0 : 1), 0);
 // What is watched, in list order: 감시 소식 (reports no row below owns), then the 앱 group (the integrations), then the 일반 모니터링 group (the monitors). Each item carries what
 // its row and its conversation show.
 const MON_FEED = "감시 소식";
-// An app's row says what waits on the owner, never the latest item's title. `needs` = {drafts, unread, sentToday} from GET /api/integrations (hub/integrations.ts):
-// at most two parts, the most important first; the badge is the count that waits on him (drafts first, else unread).
-function monNeedLine(n) {
+// An app's row says what waits on the owner, never the latest item's title. `needs` = {drafts, unread, sentToday, unreplied} from GET /api/integrations (hub/integrations.ts):
+// at most two parts, the most important first (drafts, 미답장, 안 읽음, sent today); the badge is the count that waits on him (drafts first, else unread).
+// "확인할 것 없어요" only for a connected app with every count 0; `down` (the app is disconnected) says 연결 끊김 instead.
+function monNeedLine(n, down) {
   const parts = [];
   if (n.drafts) parts.push(`답장 확인 ${n.drafts}건`);
+  if (n.unreplied) parts.push(`미답장 ${n.unreplied}건`);
   if (n.unread) parts.push(`안 읽음 ${n.unread}`);
   if (n.sentToday) parts.push(`오늘 자동 답장 ${n.sentToday}건 보냄`);
-  return parts.slice(0, 2).join(" · ") || "확인할 것 없어요";
+  return parts.slice(0, 2).join(" · ") || (down ? "연결 끊김" : "확인할 것 없어요");
 }
 // A watch an app owns (it.watches / it.watchesNot of GET /api/integrations, hub/integrations.ts) belongs to that app: no row of its own in 일반 모니터링,
 // its status is in the app's panel and a failing one marks the app's row.
@@ -156,7 +166,7 @@ function monItems() {
     for (const n of notices) shown.add(n.id);
     const cands = [...notices.map(n => ({ at: monNoticeAt(n), text: monLine(n) })), ...mails.filter(t => CONV.get(t)).map(t => ({ at: CONV.get(t).ts, text: (MAILS.get(t) || {}).subject || CONV.get(t).text }))].sort((a, b) => b.at.localeCompare(a.at));
     const needs = it.needs || { drafts: 0, unread: monUnread(notices) + mails.reduce((c, t) => c + (ts(t).unread | 0), 0), sentToday: 0 }, conn = it.state === "disconnected", own = owned.get(it.key) || [], bad = own.some(m => m.last_result === "fail");
-    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, conn, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: conn && it.hint ? it.hint : bad ? "확인이 실패했어요" : monNeedLine(needs), at: cands[0] ? cands[0].at : "", owned: own, msig: conn ? "conn" : bad ? "fail" : "",
+    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, conn, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: conn && it.hint ? it.hint : bad ? "확인이 실패했어요" : monNeedLine(needs, conn), at: cands[0] ? cands[0].at : "", owned: own, msig: conn ? "conn" : bad ? "fail" : "",
       badge: conn ? ["연결 끊김", "err"] : monFail(owned.get(it.key) || []) });
   }
   const ownedNames = new Set([...owned.values()].flat());
@@ -170,13 +180,26 @@ function monItems() {
     items.push({ key: `m:${m.name}`, group: MON_GROUP.plain, name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
       hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : fresh ? monStrip(monLine(last), names) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
-      badge: conn ? ["연결 끊김", "err"] : m.paused ? ["꺼짐", ""] : m.last_result === "fail" ? ["실패", "err"] : (Date.parse(m.next_run) || Infinity) < Date.now() ? ["늦어짐", "warn"] : m.last_result === "changed" ? ["바뀜", "warn"] : m.last_run ? ["정상", "ok"] : ["확인 필요", "warn"] });
+      badge: (st => [st.text, st.tone])(monStatus(m)) });
   }
   // A report the hub marked as an app's (n.app, hub/notices.ts) is never here, even before the app list below has loaded.
-  const feed = NT.items.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), last = monNewest(feed), need = feed.filter(monNeed).length;
-  // The feed's row: what waits on the owner as its chip (counted apart from the plain reports, like an app row), the newest line under the name.
-  items.unshift({ key: "notice", group: "", name: MON_FEED, ic: "list", notices: feed, mails: [], unread: monUnread(feed), need, chips: monNeedChips(need), hint: last ? monLine(last) : "새 감시 소식이 없어요", at: last ? monNoticeAt(last) : "" });
+  const feed = NT.items.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), need = feed.filter(monNeed).length;
+  // The feed's row: what waits on the owner as its chip (counted apart from the plain reports, like an app row), the head line under the name (monFeedHead).
+  items.unshift({ key: "notice", group: "", name: MON_FEED, ic: "list", notices: feed, mails: [], unread: monUnread(feed), need, chips: monNeedChips(need), ...monFeedHead(feed) });
   return pqMerge(items);
+}
+// The 감시 소식 row's line never passes an old report off as the current state: the newest UNREAD report (another computer's with its name),
+// else only when the last one came ("마지막 소식 10월 26일"). A report of a watch that no longer exists (on the computer that wrote it) is skipped.
+const monGone = n => {
+  if (!n.watch) return false;
+  const mons = n.pc ? ((((PQ.list.find(p => p && p.url === n.pc.url) || {}).items) || {}).monitors || null) : NM.loaded ? NM.items : null;
+  return !!mons && !mons.some(m => m.watch === n.watch);
+};
+const monFeedDay = t => kstDay(t) === kstDay(Date.now()) ? `오늘 ${kstHM(t)}` : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric" });
+function monFeedHead(list) {
+  const live = list.filter(n => !monGone(n)), fresh = monNewest(live.filter(n => !n.read)), last = monNewest(live);
+  if (fresh) return { hint: `${fresh.pc ? `${fresh.pc.name} · ` : ""}${monLine(fresh)}`, at: monNoticeAt(fresh) };
+  return last ? { hint: `마지막 소식 ${monFeedDay(ntAt(last))}`, at: monNoticeAt(last) } : { hint: "새 감시 소식이 없어요", at: "" };
 }
 // 답 필요: waits on the owner and is answered from here (an open decision, an [ask] report), never read by looking; 실패: a report that could not check.
 // A peer's open decision is answered here too (ntPost through the peer); a peer's loose [ask] waits in that computer's conversation.
@@ -189,7 +212,7 @@ const monName = () => { const it = monItems().find(i => i.key === MON.sel); retu
 function monState(it) {
   if (it.off) return "연결 안 됨";
   // The progress block under the name already carries the two runs in words, so the state line says only where it stands.
-  if (it.mon) { if (it.mon.connection === "disconnected") return ""; if (it.mon.paused) return "꺼짐"; const res = it.mon.last_result ? NT_RESULT[it.mon.last_result] : null; return res ? res[0] : "확인 전"; }
+  if (it.mon) { const st = monStatus(it.mon); return st.key === "disconnected" ? "" : st.text; }
   if (it.key === "notice") return [it.need ? `답 필요 ${it.need}건` : "", it.unread ? `안 읽음 ${it.unread}개` : ""].filter(Boolean).join(" · ") || "감시와 예약 결과";
   return it.app ? it.hint : it.unread ? `안 읽음 ${it.unread}개` : "연결돼 있어요";
 }
@@ -722,11 +745,11 @@ function monSettingsName(t) {
 // The status block of a settings panel: the monitor itself, or each watch the app owns. Same facts as the status card of the monitor's detail (monRunNode).
 const monStatMons = app => (app.startsWith("w:") ? [asMon(app)] : (monItems().find(i => i.app && monSettingsApp(i) === app) || {}).owned || []).filter(Boolean);
 function monStatNode(m) {
-  const res = m.last_result ? NT_RESULT[m.last_result] : null;
+  const st = monStatus(m);
   const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
   return el("div", { class: "as-row as-stat", "data-watch": m.watch || m.name },
-    el("span", { class: "as-b" }, el("span", { class: "as-n", text: monTitle(m) }), el("span", { class: "as-h", text: [res && res[0], ntMonRun(m), ntMonNext(m)].filter(Boolean).join(" · ") }), ...facts.map(t => el("span", { class: "as-h", text: t }))),
-    m.last_result === "fail" ? el("span", { class: "tag err", text: "실패" }) : null);
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: monTitle(m) }), el("span", { class: "as-h", text: [st.text, ntMonRun(m), ntMonNext(m)].filter(Boolean).join(" · ") }), ...facts.map(t => el("span", { class: "as-h", text: t }))),
+    st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
 }
 // A peer's app is `<its key>~<computer hash>`: the same key may exist on this computer too (34-peer-monitoring.js pqApp).
 const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.app && it.pc ? pqApp(it.inst, it.pc) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : "";
@@ -799,7 +822,7 @@ function monSeen() {
 }
 
 let monRaf = 0;
-const monSchedule = () => { if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };
+const monSchedule = () => { monAttnSoon(); if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };   // the nav badge reads the same data (09-needs-you.js)
 function renderMonitoring() {
   monRaf = 0;
   if (current !== "monitoring") { if (monCtx && current === "chat") convSchedule(); return; }
