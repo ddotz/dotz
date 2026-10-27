@@ -81,7 +81,7 @@ describe("labels", () => {
 		expect(mailLabel("in", true, "draft")).toBe("초안 있음");
 		expect(mailLabel("in", true, "replied")).toBe("답장함");
 		expect(mailLabel("in", true, "skipped")).toBe("답장 안 함");
-		expect(mailLabel("in", true, "fyi")).toBe("참고만");
+		expect(mailLabel("in", true, "fyi")).toBe("답장 불필요");
 	});
 });
 

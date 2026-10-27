@@ -28,7 +28,7 @@ import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
-import { composeMail, MailError, mailBodyRoute, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { composeMail, deleteMail, MailError, mailBodyRoute, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
@@ -36,7 +36,7 @@ import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { type Notice, NOTICE_CAP, answerDecision, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
+import { type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
@@ -282,6 +282,15 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json({ ok: true, ...(item ? { item } : {}) });
 		}
 		const sentMailRefs = () => sentReplyRefs(listDrafts());
+		// The pending reply drafts of one mail are dropped (the same store step as 보내지 않기) and their approval cards settled at once.
+		const dropMailDrafts = async (key: string) => {
+			const pending = listDrafts().filter(d => d.ref === key && d.status === "pending");
+			if (pending.length) {
+				const { dropDraft } = await import("../features/reply-drafts/lib/flow.ts");
+				for (const d of pending) { const r = dropDraft(d.id); if (!r.ok) log(`draft ${d.id}: not dropped with its mail: ${r.text}`); }
+			}
+			await settleHandledDrafts().catch(e => log(`mail ${key}: handled-draft settle failed: ${(e as Error).message}`));
+		};
 		const unrepliedMailList = () => unrepliedMails(sentMailRefs());
 		const integrationView = () => {
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
@@ -443,11 +452,24 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
 		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library|original)$/.exec(url.pathname);
 		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
-		// 답장 안 함 / 참고만 on a mail (POST) or taking it back (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
+		// 답장 안 함 / 답장 안 해도 돼요 (fyi) on a mail (POST) or taking it back (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
+		// Its reply draft waiting for approval is dropped through the drafts store and its card leaves 확인 대기 before the answer.
 		const mailNoReply = (req.method === "POST" || req.method === "DELETE") && /^\/api\/mail\/([a-z0-9._-]+)\/(no-reply|fyi)$/.exec(url.pathname);
 		if (mailNoReply) {
-			if (!(mailNoReply[2] === "fyi" ? setMailFyi : setMailNoReply)(mailNoReply[1]!, req.method === "POST")) return json({ error: "이 메일을 찾지 못했어요" }, 404);
-			broadcast({ kind: "mail_unreplied", target: mailTarget(mailNoReply[1]!) });
+			const key = mailNoReply[1]!;
+			if (!(mailNoReply[2] === "fyi" ? setMailFyi : setMailNoReply)(key, req.method === "POST")) return json({ error: "이 메일을 찾지 못했어요" }, 404);
+			if (req.method === "POST") await dropMailDrafts(key);
+			broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
+			return json({ ok: true });
+		}
+		// 삭제 on a mail card: the mail leaves dotz (record, list entry, counts, its notices and pending drafts); the real mailbox is not touched.
+		const mailDelete = req.method === "DELETE" && /^\/api\/mail\/([a-z0-9._-]+)$/.exec(url.pathname);
+		if (mailDelete) {
+			const key = mailDelete[1]!;
+			if (!deleteMail(key)) return json({ error: "이 메일을 찾지 못했어요" }, 404);
+			await dropMailDrafts(key);
+			readConversationNotices(mailTarget(key), new Date().toISOString());
+			broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
 			return json({ ok: true });
 		}
 		// 초안 작성 on a mail: the owner asks for a reply draft himself. It is made behind the request (a model call takes a while, and a peer's

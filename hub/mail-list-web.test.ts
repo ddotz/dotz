@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// The mail rows of the 모니터링 tab (web/js/30-monitoring.js monConvNode) in a headless browser: compact, the summary visible, no right-side buttons,
+// The mail rows of the 모니터링 tab (web/js/30-monitoring.js monConvNode) in a headless browser: compact, the summary visible, no right-side buttons but the ⋯ at the top right,
 // the whole card opens the mail, the reply chip only with data; and the attachments of the original view. Set MAIL_SHOTS=<dir> to keep screenshots.
 const SHOTS = process.env.MAIL_SHOTS ?? "";
 const json = (v: unknown, status = 200) => Response.json(v, { status });
@@ -66,7 +66,7 @@ for (const width of [1440, 390]) {
 			return { n: rows.length, h: rows.map(r => r.getBoundingClientRect().height), src: rows.map(r => r.querySelector(".rc-src").textContent), title: rows.map(r => r.querySelector(".rc-title").textContent),
 				time: rows.map(r => !!r.querySelector(".rc-hd .rc-time")?.textContent),
 				sum: rows.map(r => r.querySelector(".mr-sum")?.textContent ?? null), sumH: rows.map(r => r.querySelector(".mr-sum")?.getBoundingClientRect().height ?? 0),
-				buttons: document.querySelectorAll("#mon-tl button, #mon-tl .mr-btn").length, role: rows.map(r => [r.getAttribute("role"), r.tabIndex]),
+				buttons: document.querySelectorAll("#mon-tl button:not(.mr-more), #mon-tl .mr-btn").length, more: rows.map(r => r.querySelectorAll(".rc-hd > .mr-more:last-child").length), role: rows.map(r => [r.getAttribute("role"), r.tabIndex]),
 				clip: rows.map(r => r.querySelector(".mr-clip")?.textContent ?? null), clipTag: rows.map(r => r.querySelector(".mr-clip")?.tagName ?? null),
 				chip: rows.map(r => r.querySelector("[data-slot=suggest]")?.textContent ?? null), chipBottom: rows.map(r => { const c = r.querySelector("[data-slot=suggest]"); return c ? box(c).y >= box(r.querySelector(".rc-title")).y + box(r.querySelector(".rc-title")).h : null; }),
 				rowBox: rows.map(box), over: document.documentElement.scrollWidth > innerWidth };
@@ -82,8 +82,9 @@ for (const width of [1440, 390]) {
 		for (const [i, s] of got.sum.entries()) if (s !== null) expect(s).not.toContain(got.title[i]);
 		for (const h of got.sumH) expect(h).toBeLessThanOrEqual(60);
 		for (const r of got.h) expect(r).toBeLessThan(width === 390 ? 190 : 150);
-		// no right-side buttons at all; the card is a keyboard-reachable button; the attachment count is information only
+		// no right-side buttons but the one ⋯ ending each header (owner 2026-10-27); the card is a keyboard-reachable button; the attachment count is information only
 		expect(got.buttons).toBe(0);
+		expect(got.more.every(n => n === 1)).toBe(true);
 		expect(got.role).toEqual([["button", 0], ["button", 0], ["button", 0], ["button", 0]]);
 		expect(got.clip).toEqual(["2", null, null, null]);
 		expect(got.clipTag[0]).toBe("SPAN");

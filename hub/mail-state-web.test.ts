@@ -86,7 +86,7 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 				"자료 요청": "초안 있음|안 읽음 1",
 				"일정 조율": "답장함",
 				"업데이트 안내": "답장 안 함",
-				"배송 완료": "참고만",
+				"배송 완료": "답장 불필요",
 				"Re: 일정 조율": "내가 보냄",
 			});
 			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr .tag.unreplied")].map(t => t.textContent)`)).toEqual(["답장 필요", "초안 있음"]);

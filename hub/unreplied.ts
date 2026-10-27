@@ -9,7 +9,7 @@ export const UNREPLIED_WINDOW_MS = 30 * 24 * 3600 * 1000;
 export const unrepliedFresh = (at: number, now: number): boolean => Number.isFinite(at) && now - at <= UNREPLIED_WINDOW_MS;
 
 /** Mail: an incoming mail whose reply state is 답장 필요 or 초안 있음 (hub/mail-state.ts); an outgoing mail, a sent draft for it, 답장함,
- *  답장 안 함 and 참고만 leave it. */
+ *  답장 안 함 and 답장 불필요 (fyi) leave it. */
 export type MailFacts = LegacyReplyFacts & { key: string; at: string; dir?: "out" };
 export function mailUnreplied(m: MailFacts, sentRefs: ReadonlySet<string>, now: number): boolean {
 	if (m.dir === "out" || sentRefs.has(m.key)) return false;

@@ -84,6 +84,10 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .mr-todo b { flex: none; color: var(--warn); font-weight: 600; }
 .mr-todo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-slot { margin-top: 6px; display: flex; gap: 6px; }
+/* the ⋯ of a mail card (30-monitoring.js mailMenuBtn): the last item of the header, at the top right; the negative margin keeps the 16px header line */
+.rc-hd .mr-more { margin: -6px -8px -6px 0; color: var(--fg-3); }
+.rc-hd .rc-src + .mr-more, .rc-hd .tag + .mr-more { margin-left: auto; }
+@media (pointer: coarse), (max-width: 639px) { .rc-hd .mr-more { margin: -10px -10px -10px 0; } }
 .mr-clip { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .mr-clip .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mr-files { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); }

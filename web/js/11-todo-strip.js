@@ -181,6 +181,8 @@ function msgNode(e) {
         // 보낸 사람 / 받는 사람 / 참조 and the same-sender thread (30-mail-thread.js) sit under the summary, above the original
         if (card && key) { const meta = mailMetaNode(`mail:${key}`, e), fold = card.querySelector(".rc-raw"); if (fold) card.insertBefore(meta, fold); else card.append(meta); if (MT_READY) mailThreadSync(); }
         if (card && key && Array.isArray(e.attachments) && e.attachments.length) card.append(mailFilesNode(key, e.attachments));
+        // the same ⋯ as the mail's row in the list, at the top right (30-monitoring.js mailMenuBtn)
+        if (card && key) { const hd = card.querySelector(".rc-hd"); if (hd) hd.append(mailMenuBtn(`mail:${key}`)); }
         return card;
       }
       const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
