@@ -225,4 +225,14 @@ describe("a peer approval is answered with the peer's own decision", () => {
 		await pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action: "answer", from: "B", args: { id: "a1", n: 3 } }) }), new URL("http://local/api/peer/act"));
 		expect(seen).toEqual([{ method: "POST", path: "/api/notices/a1/answer", body: { n: 3, via: "B" } }]);
 	});
+	test("/api/peer/act notice reads, ignores and un-ignores on that computer's notice routes", async () => {
+		const seen: { path: string; body: unknown }[] = [];
+		const pm = createPeerMonitor({ name: () => "A", computers: async () => [], local: async req => (seen.push({ path: new URL(req.url).pathname, body: await req.json() }), Response.json({ ok: true })) });
+		const act = (args: object) => pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action: "notice", from: "B", args }) }), new URL("http://local/api/peer/act"));
+		await act({ op: "read", ids: ["n1", 2] });
+		await act({ op: "ignore", id: "n3" });
+		await act({ op: "unignore", id: "n3" });
+		expect((await act({ op: "drop", id: "n3" }))!.status).toBe(400);
+		expect(seen).toEqual([{ path: "/api/notices/read", body: { ids: ["n1", "2"] } }, { path: "/api/notices/n3/ignore", body: {} }, { path: "/api/notices/n3/unignore", body: {} }]);
+	});
 });
