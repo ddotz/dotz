@@ -311,6 +311,7 @@ export function approveWatch(idOrName: string): Watch {
 
 export function startWatches(handler: typeof notify): void {
 	notify = handler;
+	stopped = false;   // a start after stopWatches (tests share this module) re-arms edits and resumes too
 	for (const w of items) arm(w, true);
 }
 

@@ -3,7 +3,7 @@
 // (routed here by 99-boot.js, never into the chat timeline or the corner toasts). There is no notice list screen: 알림 and 작업내역 are their own
 // conversations (chat list), 모니터링 is its own screen (30-monitoring.js); what waits on the owner shows on 홈 and in the decision sheet below.
 const ntTabOf = n => n.kind === "worklog" ? "worklog" : n.kind === "watch" ? "watch" : "alert";
-const NT = { items: [], unread: 0, loaded: false, failed: false, gone: new Set() };   // gone: event times of 알림 messages whose notice was dismissed (GET /api/notices gone)
+const NT = { items: [], unread: 0, loaded: false, failed: false, gone: new Set(), mut: 0 };   // gone: event times of 알림 messages whose notice was dismissed (GET /api/notices gone)
 // The 홈 알림 card lists alerts only: a reply in a conversation or a session's report (kind message / result) is not a notice there; it is
 // unread in its own conversation, which the 채팅 tab and the session list lead to (owner 2026-10-23).
 const ntHomeAlert = n => ntTabOf(n) === "alert" && n.kind !== "message" && n.kind !== "result";
@@ -32,7 +32,10 @@ async function loadNotices() {
   try {
     // The hub keeps 300 (hub/notices.ts NOTICE_CAP) and lists open decisions, then unread, then newest: reading only 100 left a busy day's
     // reports out of 감시 소식 and the monitors' counts. The lists page what they draw, so the whole set is cheap to hold.
+    const m = NT.mut;
     const r = await api("/api/notices?limit=300");
+    // A dismiss that landed while this list was on its way makes it stale (it would bring the alert back): read it again.
+    if (NT.mut !== m) return loadNotices();
     NT.items = Array.isArray(r.items) ? r.items : [];
     NT.unread = r.unread | 0; NT.loaded = true; NT.failed = false;
     if (Array.isArray(r.gone)) NT.gone = new Set(r.gone);
@@ -61,6 +64,7 @@ function noticeLive(e) {
     const g = NT.items.find(x => x.id === e.id);
     if (g && g.at && (g.src || g.open) === "alert") NT.gone.add(g.at);
     NT.items = NT.items.filter(x => x.id !== e.id);
+    NT.mut++;
     ntAlertMarks();
   } else if (e.kind === "notice_read") {
     const ids = new Set(e.ids || []);
@@ -286,6 +290,7 @@ async function ntAlertDismiss(n, row) {
     if (!r || !r.ok) throw new Error(r && r.held ? "답이 필요한 알림은 지울 수 없어요" : "지우지 못했어요");
     if (n.at) NT.gone.add(n.at);
     NT.items = NT.items.filter(x => x.id !== n.id);
+    NT.mut++;
     if (typeof r.unread === "number") NT.unread = r.unread;
     ntPaint(); homeSoon();
     toast("알림을 지웠어요");
