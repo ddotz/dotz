@@ -8,7 +8,7 @@
 // Reply state of an incoming thread, kept apart from read / unread (reading never changes it):
 //   (none)  nothing is expected          needs   답장 필요        draft  초안 있음 (a draft waits for approval)
 //   replied 답장함 (sent by dotz, or an outgoing mail of his found later in the thread)
-//   skipped 답장 안 함 (his mark)         fyi     참고만 (no reply needed, his mark)
+//   skipped 답장 안 함 (his mark)         fyi     답장 불필요 (no reply needed, his mark)
 // `nextReply` is the only place that moves between them.
 export type MailDirection = "in" | "out";
 export type MailReply = "needs" | "draft" | "replied" | "skipped" | "fyi";
@@ -16,7 +16,7 @@ export type MailReply = "needs" | "draft" | "replied" | "skipped" | "fyi";
  *  skip / fyi = his marks; reopen = he took a mark back. */
 export type MailReplyEvent = "need" | "draft" | "sent" | "skip" | "fyi" | "reopen";
 
-export const REPLY_LABEL: Readonly<Record<MailReply, string>> = { needs: "답장 필요", draft: "초안 있음", replied: "답장함", skipped: "답장 안 함", fyi: "참고만" };
+export const REPLY_LABEL: Readonly<Record<MailReply, string>> = { needs: "답장 필요", draft: "초안 있음", replied: "답장함", skipped: "답장 안 함", fyi: "답장 불필요" };
 /** The label of a mail row: outgoing = 내가 보냄; incoming = its reply state, else 읽음 / 새 메일. */
 export function mailLabel(dir: MailDirection, read: boolean, reply?: MailReply): string {
 	return dir === "out" ? "내가 보냄" : reply ? REPLY_LABEL[reply] : read ? "읽음" : "새 메일";

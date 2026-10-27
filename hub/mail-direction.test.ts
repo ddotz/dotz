@@ -227,7 +227,7 @@ describe("a newer message in a thread decides its state again", () => {
 		expect(mailByKey(key)!.reply).toBeUndefined();
 	});
 
-	test("답장 안 함 and 참고만 are reopened by a newer incoming message", async () => {
+	test("답장 안 함 and 답장 불필요 (fyi) are reopened by a newer incoming message", async () => {
 		const { deps, calls } = fakes();
 		await pass([], [], deps);
 		const a = uid("skip");
@@ -334,7 +334,7 @@ describe("reply state", () => {
 		expect(mailCard(mailByKey(key)!, false, true).reply).toBe("replied");
 	});
 
-	test("답장 안 함 and 참고만 close it, and taking the mark back reopens it", async () => {
+	test("답장 안 함 and 답장 불필요 (fyi) close it, and taking the mark back reopens it", async () => {
 		const key = await incoming({ needsReply: true });
 		setMailNoReply(key, true);
 		expect(mailByKey(key)!.reply).toBe("skipped");

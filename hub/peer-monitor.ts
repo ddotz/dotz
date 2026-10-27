@@ -336,6 +336,13 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.kind === "kakao" && typeof a.chatId === "string" && a.chatId) return ask(verb, `/api/kakao/chat/${encodeURIComponent(a.chatId)}/no-reply`, verb === "POST" ? {} : undefined, login);
 				return bad("kind must be mail or kakao");
 			}
+			// 답장 안 해도 돼요 on a mail the other computer holds, or taking it back (on false), and 삭제 of that mail from dotz there.
+			case "fyi":
+				if (typeof a.key !== "string" || !a.key) return bad("key required");
+				return a.on === false ? ask("DELETE", `/api/mail/${encodeURIComponent(a.key)}/fyi`, undefined, login) : ask("POST", `/api/mail/${encodeURIComponent(a.key)}/fyi`, {}, login);
+			case "mail-delete":
+				if (typeof a.key !== "string" || !a.key) return bad("key required");
+				return ask("DELETE", `/api/mail/${encodeURIComponent(a.key)}`, undefined, login);
 			// A mail reply draft's files (hub/draft-attach.ts): added from the library folder or as bytes, or taken off, on the computer that owns the draft.
 			case "draft-files": {
 				const ref = encodeURIComponent(String(a.ref ?? ""));

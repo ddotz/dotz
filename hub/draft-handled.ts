@@ -9,8 +9,8 @@ export type DraftFacts = { handled: boolean };
 export type MailDraftLike = { id: string; ref: string; status: string; created: string };
 export type MailFacts = {
 	drafts: () => MailDraftLike[];
-	/** The stored mail: noReply = 답장 안 함, suggest.state = the reply state ("sent" = a reply went out, also when sent from his own client). Missing = deleted at the source. */
-	record: (key: string) => { noReply?: boolean; suggest?: { state?: string } } | undefined;
+	/** The stored mail: reply skipped / fyi (or the older noReply flag) = no reply wanted, suggest.state = the reply state ("sent" = a reply went out, also when sent from his own client). Missing = deleted at the source. */
+	record: (key: string) => { reply?: string; noReply?: boolean; suggest?: { state?: string } } | undefined;
 };
 export function mailDraftHandled(code: string, f: MailFacts): boolean | undefined {
 	const all = f.drafts();
@@ -20,7 +20,7 @@ export function mailDraftHandled(code: string, f: MailFacts): boolean | undefine
 	// 고치기 makes a new draft for the same mail: the older pending one is replaced.
 	if (all.some(x => x.id !== d.id && x.ref === d.ref && x.status === "pending" && x.created > d.created)) return true;
 	const m = f.record(d.ref);
-	return !m || m.noReply === true || m.suggest?.state === "sent";
+	return !m || m.reply === "skipped" || m.reply === "fyi" || m.noReply === true || m.suggest?.state === "sent";
 }
 
 /** A reply draft of a comment source (hub/comments): handled when the comment no longer waits (reply sent, answered on the platform, 답장 안 함, deleted). */

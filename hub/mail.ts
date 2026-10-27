@@ -2,7 +2,7 @@
 // owner turned on 디스코드에도 올리기 for the mail's app instance (MailDeps.threadOn), one thread in the mail channel. A web message in that conversation reaches the orchestrator the way a message in
 // the mail's Discord thread does (hub/intake.ts sendWeb `mail`). Posters come in through POST /api/mail (docs/custom-plugins.md).
 // Discord and the event bus are injected (MailDeps), so this module has no hub imports beyond config.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
@@ -128,6 +128,35 @@ export const mailByThread = (thread: string): MailRecord | undefined => records.
 export const unrepliedMails = (sentRefs: ReadonlySet<string>, now = Date.now()): MailRecord[] => records.filter(r => mailUnreplied(r, sentRefs, now));
 export const setMailNoReply = (key: string, on: boolean): boolean => setMailReply(key, on ? "skip" : "reopen");
 export const setMailFyi = (key: string, on: boolean): boolean => setMailReply(key, on ? "fyi" : "reopen");
+
+// 삭제 on a mail card: the mail leaves dotz (its record and files), never the real mailbox. The key is remembered with the message id it stood for,
+// so the watcher posting the same message again does not bring it back; a newer message of the thread (another messageId) is a new mail (postMail).
+const DELETED_FILE = join(DATA_DIR, "mail-deleted.json");
+const DELETED_KEEP = 2000;
+let deleted: Record<string, string> = {};
+try {
+	if (existsSync(DELETED_FILE)) deleted = JSON.parse(readFileSync(DELETED_FILE, "utf8"));
+} catch (error) {
+	log(`mail: ${DELETED_FILE} unreadable, starting empty: ${error}`);
+}
+const saveDeleted = () => {
+	const keys = Object.keys(deleted);
+	if (keys.length > DELETED_KEEP) for (const k of keys.slice(0, keys.length - DELETED_KEEP)) delete deleted[k];
+	writeAtomic(DELETED_FILE, `${JSON.stringify(deleted, null, 2)}\n`);
+};
+/** Removes the mail from dotz; false when it is not recorded. */
+export function deleteMail(key: string): boolean {
+	const r = byKey.get(key);
+	if (!r) return false;
+	byKey.delete(key);
+	records = records.filter(x => x.key !== key);
+	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	delete deleted[key];
+	deleted[key] = r.msg ?? "";
+	saveDeleted();
+	rmSync(join(MAIL_FILES, key), { recursive: true, force: true });
+	return true;
+}
 
 /** The stored mails brought up to the current rules (hub/mail-state.ts migrateMails), saved when anything changed. Safe to run any number of times. */
 export function migrateStoredMails(sentRefs?: ReadonlySet<string>): number {
@@ -402,9 +431,22 @@ export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult
 	if (directionOf({ from: m.from, direction: m.direction, folder: m.folder, labels: m.labels }) === "out") return recordOutgoing(m, key, target, deps);
 	// An outgoing mail of the thread was recorded first; the answer that comes in now is a new incoming mail and replaces it.
 	// A known incoming thread is a repeat, unless the post names another message than the one recorded: then the thread got a newer
-	// message and it is a new mail again, whatever state it was in (answered, 답장 안 함, 참고만).
+	// message and it is a new mail again, whatever state it was in (answered, 답장 안 함, 답장 불필요).
 	const again = known && known.dir !== "out" && !!m.messageId && m.messageId !== known.msg ? known : undefined;
 	if (known && known.dir !== "out" && !again) return { ok: true, key, target, ...(known.thread ? { thread: known.thread } : {}), duplicate: true };
+	// A mail the owner deleted stays gone for the message it stood for. A record kept before message ids has none on file: the first id seen
+	// after the delete is taken as that message, and only a later, different one brings the mail back.
+	if (!known && key in deleted) {
+		const was = deleted[key]!;
+		if (!m.messageId || m.messageId === was) return { ok: true, key, target, duplicate: true, skipped: true };
+		if (!was) {
+			deleted[key] = m.messageId;
+			saveDeleted();
+			return { ok: true, key, target, duplicate: true, skipped: true };
+		}
+		delete deleted[key];
+		saveDeleted();
+	}
 	const running = inflight.get(key);
 	if (running) return { ...(await running), duplicate: true };
 	const job = post(m, key, target, deps, again);
