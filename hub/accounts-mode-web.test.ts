@@ -55,7 +55,7 @@ const switchOf = (nodes: any) => find(nodes, n => n.attrs.role === "switch")[0]!
 const mainOf = (row: any) => find(row, n => n.attrs.class === "acc-main")[0]!;
 const gripOf = (row: any) => find(row, n => n.attrs.class === "acc-grip")[0]!;
 const rowsOf = (nodes: any) => find(nodes, n => String(n.attrs.class ?? "").startsWith("li acc"));
-const AUTO_HELP = "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가요.";
+const AUTO_HELP = "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가고, 모두 막히면 폴백 순서(API 키 포함)를 따라요. 답장 초안은 API 키로 넘어가지 않아요.";
 
 test("자동 전환: one settings row leads with the title, its help and an on switch; the rules and script rows show, no select or segmented control", () => {
 	const { nodes } = card(body("auto"));
@@ -84,7 +84,7 @@ test("고정: the switch is off, the help becomes the 고정 text, no 전환 규
 	const { nodes } = card(body("pinned"));
 	const all = text(nodes);
 	expect(switchOf(nodes).attrs["aria-checked"]).toBe("false");
-	expect(all).toContain("default만 써요. 한도에 걸리면 풀릴 때까지 멈추고, 다른 계정으로 넘어가지 않아요.");
+	expect(all).toContain("default만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 폴백 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.");
 	expect(all).not.toContain(AUTO_HELP);
 	expect(all).not.toContain("전환 규칙");
 	expect(all).not.toContain("스크립트");

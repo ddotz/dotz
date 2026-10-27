@@ -464,7 +464,7 @@ export function accountText(now = Date.now()): string {
 const pickedText = (r: Awaited<ReturnType<typeof useAccount>>): string => {
 	if (r.auto) return "자동 전환으로 바꾸었어요. 이제 규칙과 한도에 따라 계정을 골라요.";
 	const josaTo = josa(r.label, "으로", "로");
-	if (r.applied) return `${r.label}${josaTo} 고정했어요. 한도에 걸리면 풀릴 때까지 멈추고 다른 계정으로 넘어가지 않아요. 자동 전환으로 돌리려면 "계정 자동으로"라고 해 주세요.`;
+	if (r.applied) return `${r.label}${josaTo} 고정했어요. 한도에 걸리면 다른 계정으로 넘어가지 않고 폴백 순서를 따라요(답장 초안은 풀릴 때까지 멈춰요). 자동 전환으로 돌리려면 "계정 자동으로"라고 해 주세요.`;
 	const cur = accountsBody().accounts.find(a => a.current);
 	return `${r.label}${josaTo} 고정해 뒀지만 지금은 쓸 수 없어서(한도 등) ${cur ? cur.label : "다른 계정"}을 쓰고 있어요.`;
 };
