@@ -88,13 +88,16 @@ function monProgState(m, now) {
   return { kind: "", pct, tag: m.last_result === "changed" ? "changed" : m.last_result === "fail" ? "fail" : from > 0 ? "ok" : "need" };
 }
 const monPTagOf = k => MON_PTAG[k] || ["", ""];
+// The bar's colour is the result (owner 2026-10-27): green normal, yellow needs a look (changed, late, not run yet), red error or disconnected.
+const MON_BAR_TONE = { ok: "ok", changed: "warn", late: "warn", need: "warn", fail: "err", disconnected: "err" };
 // One progress block: a thin bar with its result tag on the same line and the two times in words under it. The bar carries data-from/data-to
 // so the ticker can move it, and the tag is re-read on the way past next_run (늦어짐) without a repaint.
 function monProgNode(m, opts = {}) {
   const now = Date.now(), st = monProgState(m, now), from = Date.parse(m.last_run), to = Date.parse(m.next_run), live = st.kind === "" || st.kind === "warn", line = monProgLine(from, to, now, m, opts.short);
   const [text, tone] = monPTagOf(st.tag);
   const width = st.kind === "run" ? 35 : st.pct;
-  const bar = el("span", { class: `mon-prog${st.kind ? ` ${st.kind}` : ""}`, role: "progressbar", "aria-label": `${monTitle(m)} 진행`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(st.pct)), "aria-valuetext": line }, el("i", { style: `width:${width}%` }));
+  const barTone = st.kind === "" || st.kind === "none" ? MON_BAR_TONE[st.tag] || "" : st.kind === "warn" && st.tag === "fail" ? "err" : "";
+  const bar = el("span", { class: `mon-prog${st.kind ? ` ${st.kind}` : ""}${barTone ? ` ${barTone}` : ""}`, "data-tone": barTone || null, role: "progressbar", "aria-label": `${monTitle(m)} 진행`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(st.pct)), "aria-valuetext": line }, el("i", { style: `width:${width}%` }));
   if (live && from > 0 && to > 0) { bar.dataset.from = String(from); bar.dataset.to = String(to); bar.dataset.short = opts.short ? "1" : ""; }
   // data-tag keeps the result the node was built with: the ticker only flips a live tag between it and 늦어짐, never to another result.
   const tag = text && opts.tag !== false ? el("span", { class: `mon-ptag${tone ? ` ${tone}` : ""}`, "data-tag": st.tag, "data-fixed": st.tag === "fail" || st.tag === "disconnected" || st.tag === "off" || st.tag === "run" ? "1" : null, text }) : null;
@@ -790,7 +793,9 @@ function monDecorateRows(side, items) {
     if (!it || !it.mon) continue;
     row.classList.add("has-mon-prog");
     const status = row.querySelector(".cv-b .cv-p"), old = row.querySelector(".mon-prog-wrap");
-    if (status) { status.classList.add("mon-row-status"); row.append(status); }
+    // The bar's colour says the result; only a disconnected monitor keeps its words (연결 끊김 and since when).
+    if (status && it.mon.connection === "disconnected") { status.classList.add("mon-row-status"); row.append(status); }
+    else if (status) status.remove();
     if (old) old.remove();
     row.append(monProgNode(it.mon, { compact: true, tag: false, short: true }));
   }
@@ -804,7 +809,7 @@ function monTick() {
     fill.style.width = `${pct}%`;
     bar.setAttribute("aria-valuenow", String(Math.round(pct)));
     bar.setAttribute("aria-valuetext", monProgLine(from, to, now));
-    bar.classList.toggle("warn", late);
+    bar.classList.toggle("warn", late || bar.dataset.tone === "warn");
     const wrap = bar.parentElement && bar.parentElement.parentElement;
     if (!wrap) continue;
     const tx = wrap.querySelector(".mon-prog-tx");
