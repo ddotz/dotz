@@ -69,6 +69,11 @@ export function addDraft(rec: DraftRec): void {
 	write({ drafts: [...f.drafts, rec], keys: f.keys.includes(rec.ref) ? f.keys : [...f.keys, rec.ref] });
 }
 
+export function patchDraft(id: string, patch: Partial<Pick<DraftRec, "to" | "item">>): void {
+	const f = read();
+	write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, ...patch } : d)) });
+}
+
 export function setStatus(id: string, status: DraftStatus): void {
 	const f = read();
 	write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, status } : d)) });

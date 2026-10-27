@@ -5,13 +5,13 @@ import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimSend } from "../../../hub/draft-claim.ts";
 import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { generateChatReply, lintReply, reviseReply, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
+import { addressesOf, generateChatReply, lintReply, NO_RECIPIENT, reviseReply, withSenderAddress, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
 import { matchLibrary } from "./library.ts";
 import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts";
 import { addStagedFile, carryStagedFiles, stagedFiles } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
-import { addDraft, getDraft, newId, setStatus, type DraftRec } from "./store.ts";
+import { addDraft, getDraft, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
@@ -69,9 +69,34 @@ export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): P
 // The approval question with what only the owner can decide in it, so one card asks everything: "이 답장 보낼까요? 정할 것: 회의 날짜".
 export const askWith = (question: string, open: string[]): string => (open.length ? `${question} 정할 것: ${open.map(q => q.replace(/[()]/g, " ").replace(/\s+/g, " ").trim()).join(", ")}` : question);
 
+// A mail draft whose recipient is a name only (made before the sender's address was recovered, or from a source that shows names): the
+// address the original's own text names, else the draft as it is.
+export function withRecipient(rec: DraftRec): DraftRec {
+	if (rec.kind !== "mail" || addressesOf(rec.to).length) return rec;
+	const from = withSenderAddress(rec.item.from, rec.item.text, rec.item.self);
+	return addressesOf(from).length ? { ...rec, to: from, item: { ...rec.item, from } } : rec;
+}
+
+// The lint's findings as the owner reads them on the card (the model gets them in English, hub/reply-draft.ts lintReply).
+export function ownerWarning(w: string): string {
+	if (w === NO_RECIPIENT) return "받는 사람의 메일 주소를 찾지 못했어요. 보내기 전에 주소를 알려 주세요";
+	const m = (re: RegExp) => re.exec(w);
+	let x: RegExpExecArray | null;
+	if ((x = m(/^'(.+)' is the user's own address$/))) return `${x[1]}은(는) 내 주소예요`;
+	if ((x = m(/^'(.+)' is not the sender, reply-to or a cc of the original$/))) return `${x[1]}은(는) 원래 메일의 보낸 사람·회신 주소·참조가 아니에요`;
+	if (w === "the subject must start with 'Re:'") return "제목이 Re:로 시작하지 않아요";
+	if (w === "the body is empty") return "본문이 비어 있어요";
+	if ((x = m(/^the body is (\d+) characters; the limit is (\d+)$/))) return `본문이 ${x[1]}자예요 (최대 ${x[2]}자)`;
+	if (w === "the text contains a placeholder") return "채워 넣지 않은 자리표시가 있어요";
+	if ((x = m(/^it uses the forbidden expression '(.+)'$/))) return `쓰지 않기로 한 표현 '${x[1]}'이(가) 있어요`;
+	return w;
+}
+
 // The [ask] message of one draft; the notes line carries lint warnings, the card's question what only the user can decide.
-export function askText(rec: DraftRec, warnings: string[], headline = rec.compose ? "새 메일 초안을 만들었어요" : "답장 초안을 만들었어요"): string {
-	const notes = warnings.map(w => `확인: ${w}`.replace(/\s+/g, " ")).join(" / ");
+export function askText(draft: DraftRec, warnings: string[], headline = draft.compose ? "새 메일 초안을 만들었어요" : "답장 초안을 만들었어요"): string {
+	const rec = withRecipient(draft);
+	if (rec !== draft) warnings = warnings.filter(w => w !== NO_RECIPIENT);
+	const notes = warnings.map(w => `확인: ${ownerWarning(w)}`.replace(/\s+/g, " ")).join(" / ");
 	const staged = stagedFiles(rec.id).map(f => ({ name: f.name, size: f.size }));
 	// A webmail site sends text only (senders.ts canAttach): its files are listed as the ones that stay behind, and a send that holds them is refused.
 	const noFiles = rec.kind === "mail" && !!webmailSite(rec.source);
@@ -117,7 +142,8 @@ export type Step = { ok: boolean; text: string; /** The id of the draft a revisi
 
 // The user picked 2) 고치기 (or the CLI is asked to): the change is recorded verbatim in the tone profile of that draft (its room, else its app), then the draft is regenerated.
 export async function reviseDraft(id: string, change: string, deps: FlowDeps): Promise<Step> {
-	const old = getDraft(id);
+	const found = getDraft(id);
+	const old = found && withRecipient(found);
 	if (!old) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
 	if (old.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${old.status} 상태라 고칠 수 없어요` };
 	if (!change.trim()) return { ok: false, text: "무엇을 고칠지 적어 주세요 (--change)" };
@@ -147,7 +173,9 @@ export function dropDraft(id: string): Step {
 // `withReply`: the mail rides on a comment reply (hub/comments/linked.ts) and the caller is that reply's send, which has already passed the
 // reply's gate (the owner's pick on the one card, or the owner's own click); a linked mail is refused without it.
 export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true } = {}): Promise<Step> {
-	const d = getDraft(id);
+	const stored = getDraft(id);
+	const d = stored && withRecipient(stored);
+	if (stored && d && d !== stored && stored.status === "pending") patchDraft(id, { to: d.to, item: d.item });
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요` };
 	const card = opts.withReply ? undefined : linkedComment(id);
@@ -160,7 +188,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (v.verdict === "edit") return { ok: false, text: `고치기를 골랐어요${v.detail ? ` (${v.detail})` : ""}. revise로 고친 뒤 다시 물어봐 주세요` };
 	if (v.verdict !== "send") return { ok: false, text: "아직 보내도 된다는 답을 받지 못했어요" };
 	const failures = lintReply({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)));
-	if (failures.length) return { ok: false, text: `보내기 직전 검사에서 걸려서 보내지 않았어요: ${failures.join("; ")}` };
+	if (failures.length) return { ok: false, text: `보내기 직전 검사에서 걸려서 보내지 않았어요: ${failures.map(ownerWarning).join(" · ")}` };
 	// A second send of the same draft (a double tap, a replayed answer, the CLI beside the gateway) waits for no one: it is refused.
 	const release = claimSend(join(dirname(paths.drafts()), "sending", id));
 	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 보내는 중이라 한 번 더 보내지 않았어요` };
