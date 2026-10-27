@@ -58,6 +58,8 @@
 .kk-head { display: none; align-items: center; gap: 12px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
 .kk-head:not(:empty) { display: flex; }
 @media (max-width: 1099px) { .kk-head, .kk-head:not(:empty) { display: none; } }
+.kk-owed { display: none; }
+@media (max-width: 1099px) { .kk-owed:not([hidden]) { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--card); border-bottom: 1px solid var(--line); } }
 .kk-box { position: relative; flex: 1; min-height: 0; display: flex; }
 .kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 12px 12px 8px; }
 .kk-in { display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; }

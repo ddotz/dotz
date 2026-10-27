@@ -429,7 +429,9 @@ const kkIntent = el("div", { class: "kk-intent", id: "kk-intent", hidden: true }
 const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkDrafts, kkEditBar, kkIntent, kkForm);
 // A room that is not watched opens read-only: this bar (at every width) says so in place of the composer and starts watching it.
 const kkRo = el("div", { class: "kk-ro", id: "kk-ro", role: "status", hidden: true });
-const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, el("div", { class: "kk-box" }, kkTl, kkPill), kkRo, kkFoot);
+// A phone hides the room head (17-kakao.css), so 미답장 and 답장 안 함 of the open room sit in this bar above the messages there.
+const kkOwed = el("div", { class: "kk-owed", id: "kk-owed", hidden: true });
+const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, kkOwed, el("div", { class: "kk-box" }, kkTl, kkPill), kkRo, kkFoot);
 const kkPane = el("div", { class: "kk", id: "kk", hidden: true }, kkRooms, kkChat);
 $("#v-monitoring").append(kkPane);
 // Tapping a sender's avatar or name in a room opens his 사용자별 분석 panel.
@@ -578,6 +580,8 @@ function kkPaintChat() {
     KK.headSig = sig;
     clear(kkHead);
     if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: kkKindLine(info) || (info.group ? "단체 대화방" : "1:1 대화") })), ...(owed ? [unrepPill(), kkNoReply(room)] : []), ...asEntry(app));
+    clear(kkOwed).append(...(open && owed ? [unrepPill(), kkNoReply(room)] : []));
+    kkOwed.hidden = !(open && owed);
     monSchedule();   // the item's head gives the gear to the room head while a room is open
   }
   if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: "대화방을 골라 주세요" })); return; }
