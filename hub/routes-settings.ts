@@ -41,6 +41,8 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		// One body for the whole target: model and/or thinking, and/or its ordered fallback chain (`fallback`).
 		try {
 			const target = String(b.target ?? "");
+			// 답장 기본값 (hub/reply-model-choices.ts): the global reply-drafts model, not a process.
+			if (target === "replies") return json(await (await import("./reply-model-choices.ts")).setReplyDefault(String(b.model ?? "")));
 			const changed = b.model || b.thinking ? await setModel(target, b.model ? String(b.model) : undefined, b.thinking ? String(b.thinking) : undefined, b.force === true) : undefined;
 			const fb = Array.isArray(b.fallback) ? await setFallback(target, b.fallback) : undefined;
 			if (!changed && !fb) return fail(new ControlError("model, thinking or fallback required"));

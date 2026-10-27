@@ -206,10 +206,15 @@ export function checkOmoTaskInput(input: any, isolate = true, roots: string[] = 
 // `model` only beside `subagent_type` and refuses it beside `category` (category_with_model), so a subagent_type worker is
 // pinned here and a category worker's model is dropped: its category runs on the same model through the
 // dotz-orchestrator-workers profile (hub/runtime/omo.ts). Edited in place, as checkOmoTaskInput.
+// Lookups run lighter (owner 2026-10-27): explore and librarian take Sonnet 5.5 medium on the subscription login (hub/runtime/omo.ts
+// LOOKUP_MODEL in OmO's provider names; the quick category gets it through the profile). On an API-key session they follow the pin.
+export const LOOKUP_PIN = "anthropic-subscription/claude-sonnet-5-5:medium";
+const LOOKUP_AGENTS = /^(explore|librarian)$/;
 export function pinOmoTaskModel(input: any, pin: string): void {
 	for (const item of Array.isArray(input?.tasks) ? input.tasks : [input]) {
 		if (!item || typeof item !== "object") continue;
-		if (typeof item.subagent_type === "string" && item.subagent_type.trim()) item.model = pin;
+		const agent = typeof item.subagent_type === "string" ? item.subagent_type.trim() : "";
+		if (agent) item.model = LOOKUP_AGENTS.test(agent) && pin.startsWith("anthropic-subscription/") ? LOOKUP_PIN : pin;
 		else delete item.model;
 	}
 	if (Array.isArray(input?.tasks)) delete input.model;
