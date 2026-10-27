@@ -97,7 +97,7 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 
 		test("the filter shows 답장 필요, 답장함 or 보낸 메일 only, with counts, and 전체 brings everything back", async () => {
 			const v = await boot(width, height);
-			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "안 읽음2", "답장 필요2", "답장함1", "보낸 메일1"]);
+			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "안 읽음2", "답장 필요2", "확인 대기", "답장함1", "보낸 메일1"]);
 			await pick(v, "unread");
 			expect((await titles(v)).length).toBe(2);
 			await pick(v, "owed");
