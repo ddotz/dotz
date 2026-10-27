@@ -478,6 +478,15 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		await shot(v, "05-desktop-dark.png");
 		await light(v);
 	});
+	test("a system line holding KakaoTalk's own feed record reads as words, never as JSON; an unknown record is not drawn", async () => {
+		msgs.push(mk("4040", "가나", JSON.stringify({ feedType: 25, logId: "1", hidden: true, targetRevision: 1 }), at(22, 3, 0), 0));
+		msgs.push(mk("4041", "가나", JSON.stringify({ feedType: 4, members: [{ userId: 9, nickName: "마바" }] }), at(22, 3, 1), 0));
+		msgs.push(mk("4042", "가나", JSON.stringify({ feedType: 77 }), at(22, 3, 2), 0));
+		emit({ kind: "kakao", chatId: "100", logId: "4042" });
+		await waitFor(v, `document.querySelector('[data-log="4041"]')`);
+		const s = await q<{ hidden: string; join: string; unknown: boolean; json: boolean }>(v, `return { hidden: document.querySelector('[data-log="4040"]')?.textContent ?? "", join: document.querySelector('[data-log="4041"]')?.textContent ?? "", unknown: !!document.querySelector('[data-log="4042"]'), json: document.querySelector("#kk-tl").textContent.includes('{"feedType') }`);
+		expect(s).toEqual({ hidden: "가려진 메시지예요", join: "마바님이 들어왔어요", unknown: false, json: false });
+	});
 });
 
 describe("카카오톡 on a phone (390x844)", () => {

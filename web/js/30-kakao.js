@@ -49,13 +49,27 @@ const kkRecord = s => {
 // The text of a message (the server sends it for text, replies, feed lines and unknown types); else the placeholder of its type.
 function kkBody(m) {
   const type = Number(m.type), text = String(m.text ?? "");
-  const words = type === 1 || type === 26 || type === 0 || !kkRecord(text) ? text : "";
+  const words = type === 0 ? kkSysText(text) : type === 1 || type === 26 || !kkRecord(text) ? text : "";
   if (words) return { text: words, ph: false };
   return { text: KK_TYPE[type] || KK_OTHER, ph: true };
 }
 // The one line a room row shows under its name (the same rule as the hub's room list).
 const kkHint = m => { const chars = [...kkBody(m).text.replace(/\s+/g, " ").trim()]; return chars.length > 32 ? `${chars.slice(0, 31).join("").trimEnd()}…` : chars.join(""); };
 const kkSys = m => Number(m.type) === 0;
+// A system line (type 0) whose text is KakaoTalk's own feed record ({"feedType":..}) reads as words, never as JSON: a hidden message, people who came
+// in or left; a record of any other kind is not drawn (better nothing than a guess).
+function kkSysText(text) {
+  const s = String(text ?? "").trim();
+  if (!kkRecord(s)) return s;
+  let v;
+  try { v = JSON.parse(s); } catch { return ""; }
+  if (!v || typeof v !== "object" || v.feedType === undefined) return "";
+  if (v.hidden) return "가려진 메시지예요";
+  const names = (Array.isArray(v.members) ? v.members : []).map(x => x && (x.nickName || x.nickname)).filter(Boolean).join(", ");
+  if (!names) return "";
+  const ft = Number(v.feedType);
+  return ft === 1 || ft === 4 ? `${names}님이 들어왔어요` : ft === 2 ? `${names}님이 나갔어요` : ft === 6 ? `${names}님을 내보냈어요` : "";
+}
 
 /* ---- links in a message: the address itself is a link, and a lazy preview card under the bubble (GET /api/link-preview) ---- */
 const KK_URL = /\bhttps?:\/\/[^\s<>"'`]+/gu;
@@ -611,7 +625,7 @@ function kkNoReply(r) {
 const kkDateNode = t => el("div", { class: "kk-date", text: kkDate(t) });
 const kkMarkNode = () => el("div", { class: "kk-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "여기까지 읽었어요" }));
 function kkMsgNode(m, first, last) {
-  if (kkSys(m)) return String(m.text ?? "").trim() ? el("div", { class: "kk-sys", role: "note", "data-log": m.logId, text: String(m.text).trim() }) : null;
+  if (kkSys(m)) { const line = kkSysText(m.text); return line ? el("div", { class: "kk-sys", role: "note", "data-log": m.logId, text: line }) : null; }
   const group = !!(KK.room && KK.room.group), { text, ph } = kkBody(m);
   // Plain words with an address: the address is a link and each one gets a preview card under the bubble.
   const urls = !m.media && !ph ? kkUrls(text) : [];
