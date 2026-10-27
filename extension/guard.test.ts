@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
-import { budgetLine, budgetProblem, checkOmoTaskInput, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, settleFromText, shellText, trimWaitOutput } from "./guard.ts";
+import { budgetLine, budgetProblem, checkOmoTaskInput, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, settleFromText, shouldIsolate, shellText, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
 beforeAll(() => {
@@ -242,9 +242,29 @@ test("OmO task input: brief rules, writers isolated with apply:false in place, r
 	checkOmoTaskInput(batch);
 	expect(batch.tasks[0]).not.toHaveProperty("isolated");
 	expect(batch.tasks[1]).toMatchObject({ isolated: true, apply: false });
-	const inPlace = { category: "quick", prompt: "x\nAcceptance: y" };
+	// In place is said explicitly, overriding the orchestrator's own isolation request and any omo.json default.
+	const inPlace = { category: "quick", prompt: "x\nAcceptance: y", isolated: true, apply: false, merge: "patch" };
 	checkOmoTaskInput(inPlace, false);
-	expect(inPlace).not.toHaveProperty("isolated");
+	expect(inPlace.isolated).toBe(false);
+	expect(inPlace).not.toHaveProperty("apply");
+	expect(inPlace).not.toHaveProperty("merge");
+	const reader = { subagent_type: "explore", prompt: "x\nDone when: y" };
+	checkOmoTaskInput(reader, false);
+	expect(reader).not.toHaveProperty("isolated");
+});
+
+test("isolation: real repos and lane worktrees yes; no repo, the dotz data folder and an OmO refusal no", () => {
+	const home = mkdtempSync(join(tmpdir(), "dotz-home-"));
+	try {
+		expect(shouldIsolate("/Users/x/Code/proj", false, home)).toBe(true);
+		expect(shouldIsolate(join(home, "lanes", "a", "worktree"), false, home)).toBe(true);
+		expect(shouldIsolate("", false, home)).toBe(false);
+		expect(shouldIsolate(home, false, home)).toBe(false);
+		expect(shouldIsolate(`${home}/`, false, home)).toBe(false);
+		expect(shouldIsolate("/Users/x/Code/proj", true, home)).toBe(false);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
 });
 
 test("OmO task completion settles the worker and keeps its retained patch; eval code counts as shell text", () => {
