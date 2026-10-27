@@ -47,6 +47,11 @@ function usage(sessionFile: string, since: number): string {
 	return `${requests} requests, cache read ${Math.round(read / 1000)}K, cache write ${Math.round(write / 1000)}K, full rewrites >30K: ${busts}`;
 }
 
+// The owner's messages of the last 24h that read like a correction or a repeat (the digest lists them; repeatedLessons matches lessons against them).
+export function ownerCorrections(now = Date.now()): string[] {
+	return jsonl(paths.inbox, now - DAY).filter(e => (e.kind === "message" || e.kind === "lane_message") && CORRECTION.test(String(e.text))).map(e => String(e.text));
+}
+
 export function digest(sessionFile: string, now = Date.now()): string | undefined {
 	const since = now - DAY;
 	const inbox = jsonl(paths.inbox, since);
@@ -105,7 +110,17 @@ export async function snapshot(): Promise<string | undefined> {
 // Code picks removal/merge candidates in LESSONS.md, the model decides (stale >90 days, near-duplicates by token overlap).
 const STALE_DAYS = 90;
 const DUPLICATE_SIMILARITY = 0.6;
-const LESSON_LINE = /^- \[(\d{4})-(\d{2})-(\d{2})\]\s*(.*)$/;
+// A lesson line is dated [YYYY-MM-DD] or, as the nightly turn writes it, [MM-DD]: a year-less date is this year's, or last year's when that
+// would lie in the future.
+const LESSON_LINE = /^- \[(?:(\d{4})-)?(\d{2})-(\d{2})\]\s*(.*)$/;
+const lessonYear = (y: string | undefined, mo: number, d: number, now: number): number => {
+	if (y) return Number(y);
+	const year = new Date(now).getUTCFullYear();
+	return Date.UTC(year, mo - 1, d) > now + DAY ? year - 1 : year;
+};
+// A lesson carried by structure names its enforcer: "(enforced: <guard, test, lint or check>)". pstack's correct / encode-lessons-in-structure:
+// a rule that keeps recurring is fixed where it cannot happen again, and the line says where.
+const ENFORCED = /\(enforced:\s*[^)]+\)/i;
 // Same tokens as OMH's duplicate check (lowercase alphanumeric/hangul runs of 2+); the date prefix is dropped so shared dates never count as overlap.
 const tokens = (text: string): Set<string> => new Set(text.toLowerCase().match(/[0-9a-z가-힣]{2,}/g) ?? []);
 
@@ -116,7 +131,7 @@ export function lessonCandidates(text: string, now: number): { stale: string[]; 
 		const line = raw.trim();
 		const m = LESSON_LINE.exec(line);
 		if (!m) continue;
-		const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+		const [mo, d] = [Number(m[2]), Number(m[3])], y = lessonYear(m[1], mo, d, now);
 		const at = Date.UTC(y, mo - 1, d);
 		const back = new Date(at);
 		if (back.getUTCFullYear() !== y || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d) continue;
@@ -137,9 +152,26 @@ export function lessonCandidates(text: string, now: number): { stale: string[]; 
 	return { stale, duplicates };
 }
 
-function candidateBlock(now: number): string {
+// Lessons that today's corrections hit again while nothing enforces them: at least half of the lesson's words (3 or more) appear in one
+// correction. Each is a repeat the nightly turn must fix at the highest level that works (structure, type, guard, test, check), not reword.
+export function repeatedLessons(text: string, corrections: readonly string[]): string[] {
+	const said = corrections.map(tokens);
+	const out: string[] = [];
+	for (const raw of text.split("\n")) {
+		const line = raw.trim();
+		const m = LESSON_LINE.exec(line);
+		if (!m || ENFORCED.test(line)) continue;
+		const own = tokens(m[4]);
+		if (own.size < 3) continue;
+		if (said.some(s => { let hit = 0; for (const w of own) if (s.has(w)) hit++; return hit / own.size >= 0.5; })) out.push(line);
+	}
+	return out;
+}
+
+function candidateBlock(now: number, corrections: readonly string[] = []): string {
 	const stale = existsSync(paths.observations) ? lessonCandidates(readFileSync(paths.observations, "utf8"), now).stale : [];
-	return lessonBlock(now) + (stale.length ? msg().staleObservations(stale) : "");
+	const repeats = existsSync(paths.lessons) && corrections.length ? repeatedLessons(readFileSync(paths.lessons, "utf8"), corrections) : [];
+	return lessonBlock(now) + (repeats.length ? msg().lessonRepeats(repeats) : "") + (stale.length ? msg().staleObservations(stale) : "");
 }
 
 function lessonBlock(now: number): string {
@@ -152,7 +184,7 @@ function lessonBlock(now: number): string {
 	return msg().lessonCandidates(stale, duplicates.map(d => `${d.a}\n  ~ ${d.b} (${d.score})`), over);
 }
 
-export const reflectPrompt = (d: string, now = Date.now()): string => withReplyLine(msg().reflect(d, paths.lessons) + candidateBlock(now));
+export const reflectPrompt = (d: string, now = Date.now(), corrections: readonly string[] = []): string => withReplyLine(msg().reflect(d, paths.lessons) + candidateBlock(now, corrections));
 
 if (import.meta.main && process.argv[2] === "--candidates" && process.argv[3]) {
 	console.log(JSON.stringify(lessonCandidates(readFileSync(process.argv[3], "utf8"), Date.now()), null, 2));
@@ -174,7 +206,7 @@ export function startReflection(deliver: (text: string) => void, sessionFile: ()
 		const d = digest(sessionFile());
 		if (d) {
 			log("reflection: delivering nightly self-review");
-			deliver(reflectPrompt(d));
+			deliver(reflectPrompt(d, Date.now(), ownerCorrections()));
 		} else log("reflection: quiet day, skipped");
 		trackTimer("reflection", setTimeout(run, next()));
 	};
