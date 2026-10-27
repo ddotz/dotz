@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { paths } from "./config.ts";
-import { digest, lessonCandidates, reflectPrompt, repeatedLessons } from "./reflect.ts";
+import { digest, lessonCandidates, lessonChecks, lessonScore, reflectPrompt, repeatedLessons } from "./reflect.ts";
 
 const DAY = 24 * 3600_000;
 const now = Date.UTC(2026, 9, 19);
@@ -71,4 +71,44 @@ test("a lesson broken again by a correction today is listed unless its line name
 	const said = ["왜 또 git checkout 했어? 그 file uncommitted work 날아갔잖아", "notices read before saying waits, again"];
 	expect(repeatedLessons(lessons, said)).toEqual(["- [10-21] Never git checkout a file that holds uncommitted work"]);
 	expect(repeatedLessons(lessons, ["오늘은 다른 얘기"])).toEqual([]);
+});
+
+test("a correction said with other particles and endings still matches the lesson; one that shares only common words does not", () => {
+	const lesson = "다른 사람 작업이 있는 파일은 체크아웃하지 마세요";
+	expect(lessonScore(lesson, "또 체크아웃했어? 작업 파일 날아갔잖아")).toBeGreaterThanOrEqual(0.4);
+	expect(lessonScore(lesson, "왜 또 이거 다시 했어요 지금 좀 해요")).toBe(0);
+	expect(lessonScore("Read the notices before saying something waits", "the before and saying")).toBe(0);
+});
+
+test("every unenforced lesson is checked: broken nights first, then the likely ones by score; an enforced line is left out", () => {
+	const text = [
+		"- [10-20] 알림을 읽고 나서 기다린다고 말하세요",
+		"- [10-21] 다른 사람 작업이 있는 파일은 체크아웃하지 마세요",
+		"- [10-22] 재시작 전에 커밋 시각을 비교하세요 (broken: 10-23, 10-25)",
+		"- [10-23] 워커 브리프에 전체 테스트를 넣으세요 (enforced: hub/laneprompt.ts check)",
+	].join("\n");
+	const c = lessonChecks(text, ["또 체크아웃했어? 작업 파일 날아갔잖아"]);
+	expect(c.map(x => [x.line.slice(0, 8), x.broken, x.score >= 0.4])).toEqual([["- [10-22", 2, false], ["- [10-21", 0, true], ["- [10-20", 0, false]]);
+	expect(repeatedLessons(text, ["또 체크아웃했어? 작업 파일 날아갔잖아"])).toEqual(["- [10-21] 다른 사람 작업이 있는 파일은 체크아웃하지 마세요"]);
+});
+
+test("the nightly prompt hands over every unenforced lesson on a day with corrections, and on a day without only those broken on 2+ nights", () => {
+	const had = existsSync(paths.lessons) ? readFileSync(paths.lessons, "utf8") : undefined;
+	const twice = "- [10-22] 재시작 전에 커밋 시각을 비교하세요 (broken: 10-23, 10-25)", once = "- [10-21] 다른 사람 작업이 있는 파일은 체크아웃하지 마세요";
+	writeFileSync(paths.lessons, `# Lessons\n${once}\n${twice}\n`);
+	try {
+		const at = Date.UTC(2026, 9, 28);   // after the lessons' dates, so none of them reads as last year's (stale)
+		const withCorr = reflectPrompt("digest", at, ["또 체크아웃했어? 작업 파일 날아갔잖아"]);
+		expect(withCorr).toContain(`${twice} [broken 2]`);
+		expect(withCorr).toMatch(/체크아웃하지 마세요 \[likely \d/);
+		const quiet = reflectPrompt("digest", at, []);
+		expect(quiet).toContain(`${twice} [broken 2]`);
+		expect(quiet).not.toContain(once);
+	} finally {
+		if (had === undefined) rmSync(paths.lessons, { force: true }); else writeFileSync(paths.lessons, had);
+	}
+});
+
+test("trailer dates are not lesson words: two lessons sharing only (broken: ...) dates are no duplicates", () => {
+	expect(lessonCandidates("- [10-01] alpha beta (broken: 10-02, 10-03)\n- [10-04] gamma delta (broken: 10-02, 10-03)", now).duplicates).toEqual([]);
 });
