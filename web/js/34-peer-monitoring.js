@@ -64,6 +64,9 @@ function pqAct(path, body) {
   if (k && k[1] === "chat" && k[3] === "read") return { pc: KK.pc, action: "kakao", args: { op: "read", chatId: id, logId: b.logId } };
   if (k && k[1] === "chat" && k[3] === "draft") return { pc: KK.pc, action: "kakao", args: { op: "draft", chatId: id, ...(typeof b.choice === "string" ? { choice: b.choice } : {}), ...(b.revise ? { revise: b.revise } : {}) } };
   if (k && k[1] === "chat" && k[3] === "ask/drop") return { pc: KK.pc, action: "kakao", args: { op: "ask-drop", chatId: id } };
+  // 지켜보기 / 자동 초안 of a room (PUT /api/kakao/rooms/<id>): the same change on the computer that has the room.
+  const rm = /^\/api\/kakao\/rooms\/([^/?]+)$/.exec(path);
+  if (rm) return { pc: KK.pc, action: "kakao", args: { op: "room", chatId: decodeURIComponent(rm[1]), ...(typeof b.watched === "boolean" ? { watched: b.watched } : {}), ...(typeof b.autoDraft === "boolean" ? { autoDraft: b.autoDraft } : {}) } };
   if (k && k[1] === "drafts") return { pc: KK.pc, action: "kakao", args: { op: k[3] === "send" ? "draft-send" : "draft-drop", code: id, ...(b.text === undefined ? {} : { text: b.text }) } };
   throw new Error(`${KK.pc.name}에서 바꿔 주세요`);
 }
