@@ -42,8 +42,12 @@ const UNDO_MS = 8000;
 function refreshEnded() {
   document.querySelectorAll("details.ended").forEach(d => d.replaceWith(endedGroup() || ""));
 }
+// An ended session keeps its marks: its unread count (the hub lists ended lanes in /api/conversations too) and 답변 필요 while a question waits there.
+const endedMark = l => { const t = `lane:${l.name}`; return { unread: ts(t).unread | 0, need: convNeeds(t) }; };
 function endedGroup() {
   const list = endedLanes();
+  const marks = new Map(list.map(l => [l.name, endedMark(l)]));
+  const nUnread = list.filter(l => marks.get(l.name).unread > 0).length, nNeed = list.filter(l => marks.get(l.name).need).length;
   if (endedSel) for (const n of endedSel) if (!list.some(l => l.name === n)) endedSel.delete(n);
   if (!list.length) { endedSel = null; return null; }
   const sel = endedSel;
@@ -62,9 +66,13 @@ function endedGroup() {
         el("span", { class: "en", text: l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" }))
     : el("div", { class: "erow" },
         el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
-          el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), el("span", { class: "sup", text: [laneProject(l), l.startedAt ? kstDay(l.startedAt) : ""].filter(Boolean).join(" · ") })),
+          el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), el("span", { class: "sup", text: [laneProject(l), l.startedAt ? kstDay(l.startedAt) : ""].filter(Boolean).join(" · ") }),
+          marks.get(l.name).need ? el("span", { class: "tag warn", text: "답변 필요" }) : null,
+          marks.get(l.name).unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${marks.get(l.name).unread}개`, text: marks.get(l.name).unread > 99 ? "99+" : String(marks.get(l.name).unread) }) : null),
         el("button", { class: "ib edel", type: "button", "aria-label": `${l.name} 삭제`, title: "삭제", onclick: () => deleteEnded([l.name]) }, icon("trash")));
-  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { text: `끝난 세션 ${list.length}` }), tools),
+  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { class: "elabel", text: `끝난 세션 ${list.length}` }),
+    nNeed || nUnread ? el("span", { class: "ecounts" }, nNeed ? el("span", { class: "ecount need", "data-k": "need", text: `답변 필요 ${nNeed}` }) : null,
+      nUnread ? el("span", { class: "ecount", "data-k": "unread", text: `안 읽음 ${nUnread}` }) : null) : null, tools),
     ...(all ? [all] : []), ...list.map(row));
   d.open = endedOpen;
   d.addEventListener("toggle", () => { endedOpen = d.open; if (!d.open && endedSel) { endedSel = null; refreshEnded(); } });
