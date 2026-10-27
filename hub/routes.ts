@@ -22,12 +22,12 @@ import { markRead } from "./reads.ts";
 import { activityItems, broadcast, historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
-import { lastTurnEnd, openTodos, runIntent, runState, type RunState } from "./runstate.ts";
+import { lastTurnEnd, mailConversation, openTodos, runIntent, runState, workConversationRuns, type RunState } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
-import { composeMail, MailError, mailBodyRoute, mailCard, mailByKey, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { composeMail, MailError, mailBodyRoute, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, fileRoute, FileError, ownerFiles, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
@@ -96,7 +96,8 @@ function authorized(req: Request): boolean {
 // The run state of every conversation (/api/state `runs`): what each session is doing, and when it is idle with plan tasks left, why.
 function stateRuns(): Record<string, RunState> {
 	const nowMs = Date.now();
-	const running = bgWork.list().filter(w => w.status === "running");
+	const works = bgWork.list();
+	const running = works.filter(w => w.status === "running");
 	const deferred = queue.deferredOpen();
 	const asks = listNotices(NOTICE_CAP).items
 		.filter(n => n.kind === "decision" && n.decision?.state === "open")
@@ -140,7 +141,10 @@ function stateRuns(): Record<string, RunState> {
 			now: nowMs,
 		});
 	}
-	return { main, ...lanesOut };
+	// A mail conversation has no session of its own: the worker its owner message was deferred to is its run state (a thread target
+	// and the mail key name the same conversation). Peer snapshots show the same lines, so the other computer's mail is not silent.
+	const mailRuns = workConversationRuns(works, t => mailConversation(t, thread => mailByThread(thread)?.key));
+	return { main, ...lanesOut, ...mailRuns };
 }
 const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefined => {
 	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_start") return items[i]!.ts;
@@ -624,7 +628,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (laneResponse) return laneResponse;
 		return new Response("not found", { status: 404 });
 	};
-	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, hostname()), local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }) });
+	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, hostname()), local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }), runs: () => Object.fromEntries(Object.entries(stateRuns()).filter(([k]) => k.startsWith("mail:"))) });
 	activatePeerMonitor(peers);
 	return route;
 }
