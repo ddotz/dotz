@@ -1,6 +1,6 @@
-import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { afterAll, expect, test } from "bun:test";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { readAliases, setAlias } from "./account-alias.ts";
 import { removeAccount } from "./accounts-api.ts";
 import { readRules, setManual, setOrder } from "./account-rules.ts";
@@ -12,6 +12,14 @@ const put = (accounts: string[], pinned?: string) => {
 	writeFileSync(authFile(), JSON.stringify({ "anthropic-subscription": { type: "oauth", ...(pinned ? { pinned } : {}), accounts: accounts.map(name => ({ name, access: "t" })) }, anthropic: { type: "api_key", key: "k" } }, null, 2));
 };
 const store = () => JSON.parse(readFileSync(authFile(), "utf8"));
+
+// The OmO store is shared by every test file of the run: a left-behind API key moves later runtime tests onto it.
+const original = existsSync(authFile()) ? readFileSync(authFile(), "utf8") : null;
+afterAll(() => {
+	for (const f of readdirSync(dirname(authFile()))) if (f.startsWith("auth.json.dotz-delete-")) rmSync(join(dirname(authFile()), f));
+	if (original === null) rmSync(authFile(), { force: true });
+	else writeFileSync(authFile(), original);
+});
 
 test("deleting the pinned dead account removes it from OmO, clears the pin, the pick, the order and the alias, and keeps a copy", () => {
 	put(["imported-anthropic", "anthropic"], "imported-anthropic");

@@ -28,6 +28,8 @@ function page(opts: { current?: string; phone?: boolean; notices?: number; badge
 		eventTarget: () => MAIN, targetOfSource: () => MAIN, isRestart: () => false, paintRestartBanner: () => {}, convNote: () => {},
 		CV: { full: false }, chatPush: () => {}, termPush: () => {}, ownerish: () => false, ownerAct: () => ({}), paintDecision: () => {},
 		isLaneReport: () => false, LP: {}, laneRefresh: () => {}, scheduleState: () => {}, todoActivity: () => {},
+		// The page's 60s refresh loop must not outlive the test: a later test's fake clock would fire it.
+		setInterval: () => 0,
 		matchMedia: () => ({ matches: !!opts.phone }), NT: { unread: opts.notices ?? 0 }, botName: "dotz", OWNER: new Set(["message", "lane_message", "_cmd"]),
 	};
 	const S = env.S as { orchestrator: { status: string } };
