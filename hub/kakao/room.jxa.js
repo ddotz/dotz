@@ -157,9 +157,11 @@ function axScan(name, first, budgetMs, hint, need) {
 			if (hint + d < total) order.push(hint + d);
 			if (hint - d >= 0) order.push(hint - d);
 		}
-		// A hint off by more than the window keeps its neighbourhood: continue outward instead of starting from the top.
+		// A hint off by more than the window: the top of the list next, then the rest below. The database has rooms the list does not show,
+		// so the row is usually above its hint, and the room being answered is usually near the top (it got the newest message). Reading
+		// outward from the hint put the top rows last, after ~250 rows of a 290-row list, where the budget often ran out first.
+		for (var i = 0; i < hint - SCAN_RADIUS; i++) order.push(i);
 		for (var i = hint + SCAN_RADIUS + 1; i < total; i++) order.push(i);
-		for (var i = hint - SCAN_RADIUS - 1; i >= 0; i--) order.push(i);
 	} else {
 		for (var i = 0; i < total; i++) order.push(i);
 	}
@@ -216,9 +218,15 @@ function attr(el, name) {
 	}
 }
 
-// The same rule as normalizeTitle in room.ts: NFC, no zero-width marks, trimmed.
+// The same rule as normalizeTitle in room.ts (room-jxa.test.ts holds them equal): normText, then a trailing member count dropped. The
+// database name and KakaoTalk's AX title of one room can differ in a variation selector ("도미솔❣️" is U+2763 U+FE0F, a title may carry
+// U+2763 alone), in zero-width marks and in spacing; a stricter rule here made such a room unfindable while room.ts called it equal.
 function norm(s) {
-	return String(s === null || s === undefined ? "" : s).normalize("NFC").replace(/[\u200b-\u200f\u2060\ufeff]/g, "").trim();
+	return normText(s).replace(/\s*\(\s*\d+\s*\)$/, "").trim();
+}
+
+function sameTitle(a, b) {
+	return norm(a) === norm(b);
 }
 
 // The same rule as normalizeInput in room.ts: what KakaoTalk's AX value may have changed about our text (NFD/NFC, \r vs \n, trimmed
@@ -337,7 +345,7 @@ function facts(w, deep) {
 
 function closeAll(name) {
 	var wins = chatWindows();
-	if (typeof name === "string") wins = wins.filter(function (w) { return attr(w, "name") === name; });
+	if (typeof name === "string") wins = wins.filter(function (w) { return sameTitle(attr(w, "name"), name); });
 	for (var i = 0; i < wins.length; i++) {
 		try {
 			wins[i].buttons.whose({ subrole: "AXCloseButton" })[0].click();
@@ -363,7 +371,7 @@ function listTable() {
 
 function windowNamed(name) {
 	var ws = chatWindows();
-	for (var q = 0; q < ws.length; q++) if (attr(ws[q], "name") === name) return ws[q];
+	for (var q = 0; q < ws.length; q++) if (sameTitle(attr(ws[q], "name"), name)) return ws[q];
 	return null;
 }
 
@@ -666,7 +674,7 @@ function run() {
 	try {
 		if (req.action === "probe") {
 			var wins = chatWindows();
-			if (typeof req.name === "string") wins = wins.filter(function (w) { return attr(w, "name") === req.name; });
+			if (typeof req.name === "string") wins = wins.filter(function (w) { return sameTitle(attr(w, "name"), req.name); });
 			return JSON.stringify({ ok: true, windows: wins.map(function (w) { return facts(w, req.deep === true); }) });
 		}
 		if (req.action === "close") return JSON.stringify(closeAll(req.name));
