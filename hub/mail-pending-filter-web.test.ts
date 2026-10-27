@@ -12,7 +12,7 @@ const SHOTS = process.env.MAIL_PENDING_SHOTS ?? join(tmpdir(), "dotz-mail-pendin
 mkdirSync(SHOTS, { recursive: true });
 const json = (v: unknown) => Response.json(v);
 const iso = (h: number) => new Date(Date.UTC(2026, 9, 27, h, 0)).toISOString();
-const MAIL = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: ["open-1", "open-2", "sent-1"], unread: 0, unreplied: 1, needs: { drafts: 2, unread: 0, sentToday: 1, unreplied: 1 } };
+const MAIL = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: ["open-1", "open-2", "sent-1", "note-a"], unread: 0, unreplied: 1, needs: { drafts: 2, unread: 0, sentToday: 1, unreplied: 1 } };
 const card = (subject: string, from: string, h: number, extra: Record<string, unknown> = {}) => ({ subject, from, source: "mail", at: iso(h), summary: `${subject} 요약이에요.`, ...extra });
 const ROWS = [
 	{ id: "a", h: 2, card: card("자료 요청", "Park <park@example.com>", 2, { reply: "draft", unreplied: true, suggest: { kind: "reply-draft", label: "답장 초안", ref: "d1" } }) },
@@ -28,6 +28,8 @@ const NOTES = [
 	draft("open-1", "mail:fx-a", 3, "Re: 자료 요청"),
 	draft("open-2", "mail:fx-b", 4, "Re: 회의 일정 문의"),
 	draft("sent-1", "mail:fx-c", 1, "Re: 일정 조율", "answered", { answer: "1) 보내기", answered_at: iso(1) }),
+	// the bot's note about one mail: read inside that mail's conversation, never a card of its own between the mail rows
+	{ id: "note-a", ts: iso(6), updated: iso(6), kind: "message", tone: "", title: "자료 요청", text: "이 메일에는 첨부 파일이 없었어요.", open: "mail:fx-a", src: "mail:fx-a", at: iso(6), read: true },
 ];
 // another computer's mail app with one pending draft of its own
 const PEER_T = "mail:px-1";
