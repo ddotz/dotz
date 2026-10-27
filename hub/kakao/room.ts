@@ -32,16 +32,28 @@ const DEEP_BUDGET_MS = 6_000;
 
 const osascript = (runner: Runner, req: object, timeoutMs = 30_000) => runner(["osascript", "-l", "JavaScript", "-e", jxa], { stdin: `${JSON.stringify(req)}\n`, timeoutMs });
 
+// The core of each refusal; openRoom adds the room name and what was read (refusal()), so the owner sees which room and how far it got.
 export const REFUSE = {
 	notListed: "방을 찾지 못했어요",
 	notFoundEnd: "목록 끝까지 찾지 못했어요",
-	notFoundTime: "시간 안에 방을 찾지 못했어요",
+	notFoundTime: "시간 안에 찾지 못했어요",
 	mismatch: "방 이름이나 인원이 달라요",
 	noList: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요",
 	openFailed: "방을 열지 못했어요",
 	partial: "같은 이름의 방을 목록 끝까지 확인하지 못해서 고르지 않았어요",
-	timeout: "방을 여는 데 5초가 넘게 걸려서 멈췄어요",
+	timeout: "방을 여는 데 너무 오래 걸려서 멈췄어요",
 } as const;
+
+// Which step of a row open failed, in words (room.jxa.js open steps, and the window check after it).
+const OPEN_STEP: Record<string, string> = {
+	list: "목록을 다시 읽지 못함",
+	recheck: "그사이 목록 순서가 바뀜",
+	menu: "방 메뉴가 열리지 않음",
+	press: "채팅방 열기를 누르지 못함",
+	window: "채팅창이 뜨지 않음",
+	verify: "열린 채팅창을 읽지 못함",
+};
+const seen = (scanned: number, rows?: number) => (rows ? `목록 ${rows}개 중 ${scanned}개 확인` : `${scanned}개 확인`);
 
 // Zero-width marks, variation selectors and the line-break forms differ between KakaoTalk's AX value and the text we typed; both sides of
 // every comparison run through this. Whitespace inside a line is collapsed, line breaks are kept (a draft can be several lines).
@@ -204,6 +216,9 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 	const shared = namesakes > 0;
 	let focus: Focus | undefined;
 	const stop = (reason: string): Opened => ({ ok: false, reason, steps, ...(focus ? { focus } : {}) });
+	const named = `'${room.name}'`;
+	const timedOut = () => `${named} ${REFUSE.timeout}(${Math.round((performance.now() - t0) / 100) / 10}초)`;
+	const openFailed = (step: string) => `카카오톡 목록에서 ${named} 방을 찾았지만 ${REFUSE.openFailed}(${OPEN_STEP[step] ?? step})`;
 	const deep = opts.deep === true;
 	// A shared name is only chosen once every row of that name was seen (the list end, or as many rows as the database has rooms of that
 	// name), so it gets the whole budget at once instead of failing rung after rung on a partial read.
@@ -223,13 +238,13 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 		if (f) focus = { ...(typeof f.from === "string" && f.from ? { from: f.from } : {}), took: f.took === true, restored: f.restored === true };
 		const phases = Object.entries(opening.out.ms ?? {}).map(([k, v]) => `${k}=${v}`).join(",");
 		steps.push({ step: "openlist", ms: opening.ms, ok: opening.out.ok === true, why: opening.out.ok === true ? phases : `${opening.timedOut ? "timeout" : failWhy(opening.out)}${phases ? `:${phases}` : ""}` });
-		if (opening.out.ok !== true) return stop(opening.timedOut ? REFUSE.timeout : REFUSE.noList);
-		if (left() < 1_000) return stop(REFUSE.timeout);
+		if (opening.out.ok !== true) return stop(opening.timedOut ? timedOut() : REFUSE.noList);
+		if (left() < 1_000) return stop(timedOut());
 		listed = await call(runner, rowsReq, Math.min(left(), rowsCallMs));
 	}
 	if (listed.out.ok !== true) {
 		steps.push({ step: "rows", ms: listed.ms, ok: false, why: listed.timedOut ? "timeout" : failWhy(listed.out) });
-		return stop(listed.out.why === "no_list" ? REFUSE.noList : listed.timedOut ? REFUSE.timeout : REFUSE.openFailed);
+		return stop(listed.out.why === "no_list" ? REFUSE.noList : listed.timedOut ? timedOut() : `카카오톡 대화 목록을 읽지 못해서 ${named} ${REFUSE.openFailed}`);
 	}
 	if (listed.out.opened === true) steps.push({ step: "rows", ms: listed.ms, ok: true, why: "already_open" });
 	else {
@@ -239,11 +254,15 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 		for (const h of hits) rows[h.index] = h.texts;
 		const choice = chooseRow(rows, room, shared);
 		const scanned = typeof listed.out.scanned === "number" ? listed.out.scanned : rows.length;
+		const total = typeof listed.out.rows === "number" ? listed.out.rows : undefined;
 		const stopped = listed.out.stopped ?? "?";
 		steps.push({ step: deep ? "rows:deep" : "rows", ms: listed.ms, ok: choice.ok, why: `${scanned}:${stopped}${listed.out.pages ? `:p${listed.out.pages}` : ""}${choice.ok ? `:row${choice.index}:${choice.via}` : `:${choice.why}`}` });
-		if (!choice.ok) return stop(choice.why === "none" ? (stopped === "budget" ? REFUSE.notFoundTime : REFUSE.notFoundEnd) : REFUSE.mismatch);
-		if (shared && stopped !== "end" && !(stopped === "found" && hits.length >= need)) return stop(REFUSE.partial);
-		if (left() < 1_000) return stop(REFUSE.timeout);
+		if (!choice.ok) {
+			if (choice.why !== "none") return stop(REFUSE.mismatch);
+			return stop(stopped === "budget" ? `카카오톡 대화 목록에서 ${named} 방을 ${REFUSE.notFoundTime}(${seen(scanned, total)})` : `카카오톡 대화 목록에서 ${named} 방을 ${REFUSE.notFoundEnd}(${seen(scanned, total)}). 카카오톡에서 방 이름이 바뀌었거나 나간 방인지 확인해 주세요`);
+		}
+		if (shared && stopped !== "end" && !(stopped === "found" && hits.length >= need)) return stop(`${named} 이름의 방이 ${need}개라 ${REFUSE.partial}(${seen(scanned, total)})`);
+		if (left() < 1_000) return stop(timedOut());
 		// What told the row apart is checked again on the row at open time (a twin that moved into this index is refused, never opened).
 		const expect = shared ? { ...(choice.members !== undefined ? { members: choice.members } : { noCount: true }), ...(choice.preview !== undefined ? { preview: choice.preview } : {}) } : undefined;
 		const row = await call(runner, { action: "open", name: room.name, row: choice.index, ...(expect ? { expect } : {}) }, Math.max(1_500, left()));
@@ -251,7 +270,7 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 		steps.push({ step: row.out.step ?? "open", ms: row.ms, ok: row.out.ok === true, why: row.out.ok === true ? phases : `${row.timedOut ? "timeout" : failWhy(row.out)}${phases ? `:${phases}` : ""}` });
 		if (row.out.ok !== true) {
 			if (row.out.step === "window") await closeWindow(runner, room.name);
-			return stop(row.timedOut ? REFUSE.timeout : REFUSE.openFailed);
+			return stop(row.timedOut ? timedOut() : openFailed(row.out.step ?? "open"));
 		}
 	}
 	const tv = performance.now();
@@ -260,7 +279,7 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 	steps.push({ step: "verify", ms: Math.round(performance.now() - tv), ok: good, ...(good ? {} : { why: w ? "mismatch" : "unreadable" }) });
 	if (!good) {
 		await closeWindow(runner, room.name);
-		return stop(w ? REFUSE.mismatch : REFUSE.openFailed);
+		return stop(w ? REFUSE.mismatch : openFailed("verify"));
 	}
 	return { ok: true, steps, ...(focus ? { focus } : {}) };
 }
