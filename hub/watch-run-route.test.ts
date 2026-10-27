@@ -1,5 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
-import { HUB_TOKEN } from "./config.ts";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { DATA_DIR, HUB_TOKEN } from "./config.ts";
 import { makeRoute } from "./routes.ts";
 import { addWatch, allWatches, removeWatch, stopWatches } from "./watch.ts";
 
@@ -27,4 +29,13 @@ test("running a watch now answers with its fresh result", async () => {
 test("an unknown watch is 404 and no owner identity is 403", async () => {
 	expect((await post("/api/watches/no-such-watch/run")).status).toBe(404);
 	expect((await post("/api/watches/run-now/run", false)).status).toBe(403);
+});
+
+test("다시 연결 of a disconnected watch behind an approval gate approves it instead of a plain run that only waits", async () => {
+	addWatch({ name: "gated-login", command: "printf 'waiting\\nDOTZ_DISCONNECTED since=2026-10-23T12:29:18.300Z\\n'", every_minutes: 10, approval_minutes: 30 }, "");
+	const first = (await (await post("/api/watches/gated-login/run")).json()) as { approved?: boolean; item: { connection: string } };
+	expect([first.approved, first.item.connection]).toEqual([undefined, "disconnected"]);
+	const again = (await (await post("/api/watches/gated-login/run")).json()) as { approved?: boolean };
+	expect(again.approved).toBe(true);
+	expect(existsSync(join(DATA_DIR, "approvals", "gated-login"))).toBe(true);
 });

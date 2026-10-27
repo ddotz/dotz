@@ -37,7 +37,7 @@ async function asFeatSet(app, id, on) {
 async function asRetry(app, watch, down) {
   if (AS.busy[app]) return;
   AS.busy[app] = true;
-  try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast(down ? "다시 연결을 요청했어요. 폰에 승인 요청이 오면 눌러 주세요" : "다시 확인했어요"); } catch (e) { toast(e.message || "다시 시도하지 못했어요", true); }
+  try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast(down ? MON_RECONNECT : "다시 확인했어요"); } catch (e) { toast(e.message || "다시 시도하지 못했어요", true); }
   AS.busy[app] = false; MON.sig = ""; monSchedule(); asPaint();
 }
 // An answer from the row: the notice's own answer route on this computer, or - for a peer's app - the same answer sent to that computer (/api/peer/act, 34-peer-monitoring.js).
