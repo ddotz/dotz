@@ -73,6 +73,8 @@ const draw = `(() => {
 	window.go = (...a) => { window.__opened.push(a.join(":")); };
 	window.api = async (p, m, b) => { window.__posts.push([p, b]); return { item: ${JSON.stringify(note("a", "answered", { answer: "1) 보내기", answered_at: now }))}, unread: 0 }; };
 	MAILS.set("mail:fx-9", { subject: "월간 점검 보고서 확인 요청", from: "Alex Sender <sender@example.com>", source: "fx", at: ${JSON.stringify(now)}, summary: "이번 달 점검이 끝났어요." });
+	// A mail row stands for a recorded mail (a conversation without one is not drawn as a mail row, 30-monitoring.js monConvNode).
+	MAILS.set("mail:fx-8", { subject: "지난달 점검 보고서", from: "Alex Sender <sender@example.com>", source: "fx", at: ${JSON.stringify(now)}, summary: "지난달 점검 결과예요." });
 	CONV.set("mail:fx-8", { ts: ${JSON.stringify(now)}, text: "[ask] ${Q}", from: "bot" }); ts("mail:fx-8").unread = 0;
 	const items = ${JSON.stringify(NOTES)};
 	NT.items = items; NT.loaded = true; DR.edit.clear(); DR.manual.clear();
@@ -93,7 +95,7 @@ for (const width of [1440, 390]) {
 				subjectWeight: Number(getComputedStyle(c.querySelector(".dr-sub")).fontWeight), paras: [...c.querySelectorAll(".dr-body p")].map(txt),
 				orig: !!c.querySelector(".dr-orig"), buttons: cards.map(x => [...x.querySelectorAll("button:not(.dr-rm)")].map(txt)), rm: cards.map(x => x.querySelectorAll(".dr-rm").length), rowCount: document.querySelectorAll("#mon-tl > .bm.dr .dcm-row").length,
 				over: document.documentElement.scrollWidth > innerWidth, w: c.getBoundingClientRect().width,
-				rowRole: [row.getAttribute("role"), row.tabIndex], rowButtons: row.querySelectorAll("button").length };
+				rowRole: [row.getAttribute("role"), row.tabIndex], rowButtons: [...row.querySelectorAll("button")].map(b => b.dataset.k) };
 		})()))`)) as string) as any;
 		expect(got.n).toBe(5);
 		expect(got.states).toEqual(["open", "send", "revising", "drop", "expired"]);
@@ -110,7 +112,7 @@ for (const width of [1440, 390]) {
 		expect(got.rowCount).toBe(0);
 		expect(got.over).toBe(false);
 		expect(got.rowRole).toEqual(["button", 0]);
-		expect(got.rowButtons).toBe(0);
+		expect(got.rowButtons).toEqual(["mail-menu"]);   // the row itself is the link; its one button is the ⋯ every mail row has
 
 		const edit = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), JSON.stringify((() => {
 			const c = document.querySelector("#mon-tl > .bm.dr"), ta = c.querySelector("textarea.dr-edit");
