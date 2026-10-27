@@ -25,10 +25,10 @@
 
 import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, loadGuardConfig, logOnce, stateDir, statePath as stateFile, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./guard-config.ts";
+import { dataDir, type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, loadGuardConfig, logOnce, stateDir, statePath as stateFile, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./guard-config.ts";
 
 // Active configuration: the defaults until installGuard() loads <DOTZ_DIR>/config.json. The exported checks take their
 // limits as a parameter that defaults to it, so tests pass their own.
@@ -87,13 +87,30 @@ function longestFence(text: string): number {
 	return longest;
 }
 
-function inGitRepo(cwd: string): boolean {
+// The git toplevel of `cwd`, "" outside a repo.
+function gitTop(cwd: string): string {
 	try {
-		execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd, stdio: "ignore", timeout: 5_000 });
-		return true;
+		return execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5_000 }).trim();
 	} catch {
-		return false;
+		return "";
 	}
+}
+const real = (p: string) => {
+	try {
+		return realpathSync(p);
+	} catch {
+		return resolve(p);
+	}
+};
+
+// Whether writing workers started from a folder whose git toplevel is `top` get an isolated copy. Not outside a repo, not
+// where OmO already answered isolation_unavailable, and not in the dotz data folder: ~/.dotz is a git repo only for the
+// nightly settings snapshot (.gitignore `*` with a few files let back in), so a copy of it holds none of the files a worker
+// touches, and OmO's baseline capture of it failed every first worker of a mail conversation on the Mac mini
+// (st_01a17c03, st_01a17c1a, 2026-10-27: "isolation_unavailable: baseline capture failed: ... rev-parse --verify --quiet HEAD
+// failed (128)"). A lane worktree under ~/.dotz/lanes is its own toplevel and stays isolated.
+export function shouldIsolate(top: string, unavailable: boolean, home = dataDir()): boolean {
+	return Boolean(top) && !unavailable && real(top) !== real(home);
 }
 
 // Checkout roots an isolated worker must not reach by absolute path: the cwd's own toplevel and the repo's main checkout
@@ -167,7 +184,15 @@ export function checkOmoTaskInput(input: any, isolate = true, roots: string[] = 
 	if (problems.length) return { reason: `Worker brief rejected by the guard (worker-brief rules):\n- ${problems.join("\n- ")}\nRewrite the task call and retry.` };
 	for (const item of items) {
 		if (typeof item?.prompt === "string" && !item.prompt.includes(BUDGET_MARKER)) item.prompt = `${item.prompt}\n\n${budgetLine(g)}`;
-		if (!isolate || OMO_READ_ONLY.test(String(item?.subagent_type ?? ""))) continue;
+		if (OMO_READ_ONLY.test(String(item?.subagent_type ?? ""))) continue;
+		// Said explicitly, so neither the orchestrator's own `isolated: true` nor an omo.json `task.isolation.enabled` isolates
+		// a worker where isolation cannot start (OmO refuses apply/merge without isolation).
+		if (!isolate) {
+			item.isolated = false;
+			delete item.apply;
+			delete item.merge;
+			continue;
+		}
 		item.isolated = true;
 		item.apply = false;
 		item.merge = "patch";
@@ -1040,7 +1065,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		if (tool === "task") {
 			const taskCwd = String(ctx?.cwd ?? process.cwd());
 			// A repo OmO cannot snapshot for isolation (isolation_unavailable, e.g. over its size budget) gets in-place workers.
-			const isolate = inGitRepo(taskCwd) && !isolationUnavailable.has(taskCwd);
+			const isolate = shouldIsolate(gitTop(taskCwd), isolationUnavailable.has(taskCwd));
 			const roots = isolate ? checkoutRoots(taskCwd) : [];
 			const verdict = isOmoTaskInput(event.input) ? checkOmoTaskInput(event.input, isolate, roots) : checkTaskInput(event.input, isolate, roots);
 			debug({ phase: "task", verdict });

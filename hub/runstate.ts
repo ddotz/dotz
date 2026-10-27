@@ -72,7 +72,18 @@ export function mailConversation(target: string, keyOfThread: (thread: string) =
 }
 
 // Why a failed worker failed: the record's own message when OmO wrote one, else said plainly so the line never claims a cause it does not know.
-const failureReason = (w: WorkLike) => short(w.error) || "이유가 기록되지 않았어요";
+// OmO's isolation refusals are raw git output ("isolation_unavailable: baseline capture failed: git ... failed (128): fatal: ..."),
+// which says nothing to the owner, so they are said in Korean; the raw text stays in the hub log.
+export function failureText(error: string | undefined): string {
+	const e = String(error ?? "");
+	if (/isolation_unavailable/.test(e)) {
+		if (/not a git|저장소가 아닙니다|git checkout/i.test(e)) return "작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요";
+		if (/snapshot budget|too ?large/i.test(e)) return "작업 폴더가 너무 커서 격리 사본을 만들지 못해 시작하지 못했어요";
+		return "작업 폴더의 격리 사본을 만들지 못해 시작하지 못했어요";
+	}
+	return short(e) || "이유가 기록되지 않았어요";
+}
+const failureReason = (w: WorkLike) => failureText(w.error);
 
 /**
  * The run state of every mail conversation a background worker serves, keyed by the conversation (`mail:<key>`). A worker's own
