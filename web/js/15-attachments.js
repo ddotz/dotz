@@ -1,4 +1,5 @@
 /* ---------- attachments: + button, drag-drop, paste -> POST /api/upload; sent as `files` with the message ---------- */
+// The composer's files of the conversation open now; another conversation's wait in its ts(t).att (13-data.js setTarget swaps them).
 let ATT = [];   // [{id, name, type, size, url (local preview), file (server record once uploaded)}]
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
 // pc: the file is an upload of that other computer (a file sent to its conversation), read there through the peer proxy (hub/routes.ts /api/peer/file).
@@ -18,6 +19,7 @@ async function addFiles(list) {
   if (ATT.length + list.length > 10) { toast("한 번에 10개까지 보낼 수 있어요", true); list = list.slice(0, Math.max(0, 10 - ATT.length)); }
   const items = list.map(f => ({ id: Math.random().toString(36).slice(2), name: f.name || "붙여넣은 이미지.png", type: f.type, size: f.size, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : "", raw: f }));
   ATT = ATT.concat(items); renderAtt(); ta.focus();
+  const own = target;
   await Promise.all(items.map(async a => {
     const form = new FormData();
     form.append("file", a.raw, a.name);
@@ -26,7 +28,10 @@ async function addFiles(list) {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || `올리지 못했어요 (HTTP ${r.status})`);
       a.file = d.files[0];
-    } catch (e) { toast(`${a.name}: ${e instanceof TypeError ? "연결이 끊겨 올리지 못했어요" : e.message}`, true); dropAtt(a.id); }
+    } catch (e) {
+      toast(`${a.name}: ${e instanceof TypeError ? "연결이 끊겨 올리지 못했어요" : e.message}`, true);
+      if (target === own) dropAtt(a.id); else { const s = ts(own); s.att = (s.att || []).filter(x => x.id !== a.id); }   // switched away: off its own conversation's files
+    }
     renderAtt();
   }));
 }
