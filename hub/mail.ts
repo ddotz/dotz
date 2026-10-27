@@ -7,7 +7,7 @@ import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
 import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
-import { directionOf, migrateMails, nextReply, ownAddresses, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
+import { directionOf, migrateMails, nextReply, ownAddresses, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 import { withSenderAddress } from "./reply-draft.ts";
 
@@ -20,10 +20,11 @@ export type AttachmentInput = { name: string; type?: string; data?: string; path
 // (web 30-monitoring.js mailReplyChip): "draft" (default) a draft waits for approval, "sent" the reply went out, "waiting" a reply is expected.
 export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; state?: "draft" | "sent" | "waiting"; at?: string };
 // `dir: "out"` = written by the owner (hub/mail-state.ts); `reply` = the reply state of an incoming mail, `sentAt` = when his reply was sent or found.
-// `needsReply` / `noReply` are the flags of older records; migrateMails turns them into `reply`.
+// `needsReply` / `noReply` are the flags of older records; migrateMails turns them into `reply`. `reply_by: "owner"` / `reply_at` = the current reply
+// state is his own mark and when he set it; any other change of the state drops them.
 // `msg` = the id of the newest incoming message the record stands for (MailInput.messageId); a post with another id is a newer message of the
 // same thread and reopens it (postMail). `reopenedAt` = when that happened: a reply draft sent before it answered an older message.
-export type MailRecord = { msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; dir?: "out"; reply?: MailReply; sentAt?: string; needsReply?: true; noReply?: true };
+export type MailRecord = { msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; dir?: "out"; reply?: MailReply; reply_by?: ReplyBy; reply_at?: string; sentAt?: string; needsReply?: true; noReply?: true };
 export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[] };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true; direction?: "out"; replied?: true };
 export type MailDeps = {
@@ -98,24 +99,29 @@ export const mailByKey = (key: string): MailRecord | undefined => byKey.get(key)
 export function setMailSuggest(key: string, suggest: MailSuggest | undefined): boolean {
 	const r = byKey.get(key);
 	if (!r) return false;
-	const { suggest: _old, needsReply: _n, noReply: _o, ...rest } = r;
+	const { suggest: _old, needsReply: _n, noReply: _o, reply_by, reply_at, ...rest } = r;
 	const event: MailReplyEvent | undefined = !suggest ? undefined : suggest.state === "sent" ? "sent" : suggest.state === "waiting" ? "need" : "draft";
 	const reply = event && r.dir !== "out" ? nextReply(replyOf(rest), event) : replyOf(rest);
-	recordMail({ ...rest, ...(reply ? { reply } : {}), ...(suggest ? { suggest: suggest.state === "sent" ? { ...suggest, at: suggest.at ?? new Date().toISOString() } : suggest } : {}) });
+	const mark = reply_by && reply === r.reply ? { reply_by, ...(reply_at ? { reply_at } : {}) } : {};
+	recordMail({ ...rest, ...(reply ? { reply } : {}), ...mark, ...(suggest ? { suggest: suggest.state === "sent" ? { ...suggest, at: suggest.at ?? new Date().toISOString() } : suggest } : {}) });
 	return true;
 }
 
 // The one write path of an incoming mail's reply state (transitions: hub/mail-state.ts nextReply). A reply that went out also takes the waiting
 // draft chip off the row. False when the mail is not recorded.
-export function setMailReply(key: string, event: MailReplyEvent, at = new Date().toISOString()): boolean {
+// `by: "owner"` = his own mark, kept with the time (reply_by / reply_at). 답장 안 함 (skip / fyi) is his alone: without `by` it changes nothing,
+// so no automatic judgment can ever close a mail as his mark. Any other change of the state drops the mark.
+export function setMailReply(key: string, event: MailReplyEvent, at = new Date().toISOString(), by?: ReplyBy): boolean {
 	const r = byKey.get(key);
 	if (!r) return false;
 	if (r.dir === "out") return true;
-	const { needsReply: _n, noReply: _o, suggest, ...rest } = r;
+	if ((event === "skip" || event === "fyi") && by !== "owner") return true;
+	const { needsReply: _n, noReply: _o, suggest, reply_by, reply_at, ...rest } = r;
 	const reply = nextReply(replyOf(r), event);
 	const sentNow = event === "sent" && r.reply !== "replied";
 	const keep = suggest && !(event === "sent" && suggest.state !== "sent") ? { suggest } : {};
-	const next: MailRecord = { ...rest, ...(reply ? { reply } : {}), ...(sentNow ? { sentAt: at } : {}), ...keep };
+	const mark = by ? { reply_by: by, reply_at: at } : reply_by && reply === replyOf(r) ? { reply_by, ...(reply_at ? { reply_at } : {}) } : {};
+	const next: MailRecord = { ...rest, ...(reply ? { reply } : {}), ...mark, ...(sentNow ? { sentAt: at } : {}), ...keep };
 	if (JSON.stringify(next) !== JSON.stringify(r)) recordMail(next);
 	return true;
 }
@@ -126,8 +132,9 @@ export function sentReplyRefs(drafts: ReadonlyArray<{ ref: string; status: strin
 export const mailByThread = (thread: string): MailRecord | undefined => records.find(r => r.thread === thread);
 // 미답장 (hub/unreplied.ts): the mails still waiting for a reply, given the keys whose reply draft was sent. 답장 안 함 (`noReply`) is the owner's own mark.
 export const unrepliedMails = (sentRefs: ReadonlySet<string>, now = Date.now()): MailRecord[] => records.filter(r => mailUnreplied(r, sentRefs, now));
-export const setMailNoReply = (key: string, on: boolean): boolean => setMailReply(key, on ? "skip" : "reopen");
-export const setMailFyi = (key: string, on: boolean): boolean => setMailReply(key, on ? "fyi" : "reopen");
+// The owner's marks (the routes POST / DELETE /api/mail/<key>/no-reply|fyi, also when another computer forwards his tap): 답장 안 함 and 답장 필요로 표시.
+export const setMailNoReply = (key: string, on: boolean): boolean => setMailReply(key, on ? "skip" : "reopen", undefined, "owner");
+export const setMailFyi = (key: string, on: boolean): boolean => setMailReply(key, on ? "fyi" : "reopen", undefined, "owner");
 
 // 삭제 on a mail card: the mail leaves dotz (its record and files), never the real mailbox. The key is remembered with the message id it stood for,
 // so the watcher posting the same message again does not bring it back; a newer message of the thread (another messageId) is a new mail (postMail).

@@ -5,6 +5,7 @@ import { addDraft, getDraft, listDrafts, type DraftRec } from "../features/reply
 import { setupEnv } from "../features/reply-drafts/test/helpers.ts";
 import { DATA_DIR, HUB_TOKEN } from "./config.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
+import { emit } from "./events.ts";
 import { mailDraftHandled } from "./draft-handled.ts";
 import { emit } from "./events.ts";
 import { listNotices, setDraftHandled } from "./notices.ts";
@@ -109,6 +110,58 @@ describe("삭제", () => {
 		expect(mailByKey(key)).toBeUndefined();
 		await incoming(id, "a2");
 		expect(mailByKey(key)?.msg).toBe("a2");
+	});
+});
+
+describe("a deleted mail leaves every list", () => {
+	test("its conversation keeps its messages but leaves /api/conversations and the snapshot the other computer reads, even after a later message", async () => {
+		const key = await incoming(uid("gone"), "m1"), t = `mail:${key}`;
+		emit("inbox", { ts: new Date().toISOString(), kind: "mail", source: "fx", channel: t, conv: t, mail: key, subject: "견적 문의", from: "Kim <kim@example.com>", text: "Kim · 견적 문의" });
+		const pm = createPeerMonitor({ name: () => "A", computers: async () => [], local: route, localHeaders: { "x-dotz-token": HUB_TOKEN } });
+		const lists = async () => {
+			const own = ((await (await call("GET", "/api/conversations")).json()) as { items: { target: string; mail?: unknown }[] }).items;
+			const snap = (await (await pm.route(new Request("http://local/api/peer/monitoring"), new URL("http://local/api/peer/monitoring")))!.json()) as { conversations: { target: string }[] };
+			return { own: own.filter(c => c.target === t), peer: snap.conversations.filter(c => c.target === t) };
+		};
+		const before = await lists();
+		expect([before.own.length, before.peer.length, !!before.own[0]?.mail]).toEqual([1, 1, true]);
+		expect((await call("DELETE", `/api/mail/${key}`)).status).toBe(200);
+		emit("outbox", { ts: new Date(Date.now() + 1000).toISOString(), kind: "out", source: "orchestrator", target: t, text: "늦게 온 답" });
+		expect(await lists()).toEqual({ own: [], peer: [] });
+	});
+});
+
+describe("the owner's mark", () => {
+	test("답장 안 함 and 답장 필요로 표시 record that he set them and when; an automatic change drops the mark", async () => {
+		const key = await incoming(uid("by"), "m1");
+		expect((await call("POST", `/api/mail/${key}/no-reply`)).status).toBe(200);
+		expect(mailByKey(key)).toMatchObject({ reply: "skipped", reply_by: "owner" });
+		expect(Number.isFinite(Date.parse(mailByKey(key)!.reply_at!))).toBe(true);
+		expect((await call("DELETE", `/api/mail/${key}/fyi`)).status).toBe(200);
+		expect(mailByKey(key)).toMatchObject({ reply: "needs", reply_by: "owner" });
+		setMailReply(key, "sent");
+		expect(mailByKey(key)!.reply).toBe("replied");
+		expect(mailByKey(key)!.reply_by).toBeUndefined();
+	});
+
+	test("no automatic event can close a mail as his mark: skip / fyi without the owner change nothing", async () => {
+		const key = await incoming(uid("auto"), "m1");
+		setMailReply(key, "need");
+		setMailReply(key, "skip");
+		setMailReply(key, "fyi");
+		expect(mailByKey(key)!.reply).toBe("needs");
+		setMailReply(key, "skip", undefined, "owner");
+		expect(mailByKey(key)!.reply).toBe("skipped");
+	});
+
+	test("답장 필요로 표시 opens a mail with no reply state and an answered one", async () => {
+		const key = (await postMail({ source: "fx", id: uid("open"), subject: "회의록 공유", from: "Lee <lee@example.com>", messageId: "m1" }, deps)).key;
+		expect(mailByKey(key)!.reply).toBeUndefined();
+		await call("DELETE", `/api/mail/${key}/fyi`);
+		expect(mailByKey(key)!.reply).toBe("needs");
+		setMailReply(key, "sent");
+		await call("DELETE", `/api/mail/${key}/fyi`);
+		expect(mailByKey(key)!.reply).toBe("needs");
 	});
 });
 
