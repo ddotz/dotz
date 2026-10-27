@@ -1,6 +1,6 @@
 // The run state derivation (hub/runstate.ts): every kind and every reason an idle conversation can give for leaving todos open.
 import { expect, test } from "bun:test";
-import { lastTurnEnd, mailConversation, openTodos, runIntent, runState, workConversationRuns } from "./runstate.ts";
+import { failureText, lastTurnEnd, mailConversation, openTodos, runIntent, runState, workConversationRuns } from "./runstate.ts";
 
 const now = Date.UTC(2026, 9, 26, 3, 0);
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
@@ -89,6 +89,19 @@ test("a worker that failed at spawn says why, and whether it was handed over aga
 	expect(workConversationRuns([failed, retry], conv)["mail:kdb-67010497"]).toMatchObject({ kind: "working", detail: "다시" });
 	const failedAgain = { ...retry, status: "failed" as const, ended_at: now - 60_000 };
 	expect(workConversationRuns([failed, failedAgain], conv)["mail:kdb-67010497"]).toMatchObject({ kind: "error", detail: "이유가 기록되지 않았어요 · 다시 맡긴 작업도 실패했어요" });
+});
+
+test("an isolation refusal is said in Korean instead of raw git output", () => {
+	const raw = "isolation_unavailable: baseline capture failed: git -c core.fsmonitor=false -c core.untrackedCache=false rev-parse --verify --quiet HEAD failed (128): fatal: 깃 저장소가 아닙니다: (null)";
+	expect(failureText(raw)).toBe("작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요");
+	expect(failureText("isolation_unavailable: not a git checkout")).toBe("작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요");
+	expect(failureText("isolation_unavailable: Working tree at /r exceeds the 1073741824-byte isolation snapshot budget.")).toBe("작업 폴더가 너무 커서 격리 사본을 만들지 못해 시작하지 못했어요");
+	expect(failureText("isolation_unavailable: no isolation runtime is wired into this session")).toBe("작업 폴더의 격리 사본을 만들지 못해 시작하지 못했어요");
+	expect(failureText("child turn produced no assistant output")).toBe("child turn produced no assistant output");
+	expect(failureText(undefined)).toBe("이유가 기록되지 않았어요");
+	const conv = (t: string) => mailConversation(t, () => "k1");
+	const failed = { id: "st_01a17c1a", status: "failed" as const, started_at: now - 60_000, ended_at: now - 60_000, target: "mail:k1", error: raw };
+	expect(workConversationRuns([failed], conv)["mail:k1"]).toMatchObject({ kind: "error", detail: "작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요 · 다시 맡기지 않았어요" });
 });
 
 test("a finished worker leaves the conversation done with what it was", () => {
