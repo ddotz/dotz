@@ -348,6 +348,7 @@ function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
   convTitle();
+  mailSentPaint();
   const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, rows.some(r => r.bar) ? [CVF.view, convListed().map(t => [ts(t).unread > 0, convNeeds(t)])] : 0]);
   if (sig !== convSig) {
     convSig = sig;
