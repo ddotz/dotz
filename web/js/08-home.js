@@ -228,12 +228,18 @@ function homeOwedRow(it) {
     el("span", { class: "dot unreplied" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: it.name })), el("span", { class: "ha", text: "답장을 기다리는 것이 있어요" })),
     el("span", { class: "hs unreplied", text: `미답장 ${it.unreplied}` }));
 }
+// 답장 확인: the reply drafts of every app and computer that wait for 보내기, one row that opens the queue (30-replies.js).
+function homeRepliesRow(n) {
+  return el("button", { class: "hr", type: "button", "data-k": "replies", onclick: () => rqOpen(), "aria-label": `답장 확인 ${n}건` },
+    el("span", { class: "dot att" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: "답장 확인" })), el("span", { class: "ha", text: "보내기 전에 확인할 답장 초안이 있어요" })),
+    el("span", { class: "hs warn", text: `${n}건` }));
+}
 function renderHomeNow() {
   const box = $("#home-now");
   if (!box) return;
   const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
   const needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
-  const owed = monItems().filter(i => i.app && i.unreplied), owedN = owed.reduce((c, i) => c + i.unreplied, 0);
+  const owed = monItems().filter(i => i.app && i.unreplied), owedN = owed.reduce((c, i) => c + i.unreplied, 0), drafts = rqCount();
   const waiting = needs.length;
   const rank = t => ({ working: 0, starting: 1, "rate-limited": 2 })[targetInfo(t).status] ?? 3;
   const run = [...all].sort((a, b) => rank(a) - rank(b));
@@ -242,7 +248,7 @@ function renderHomeNow() {
     // Three kinds, three places: 답변 필요 (a decision only the owner can make), 답장 대기 (replies he owes, per app), 지금 진행 중; plain news is the 알림 card.
     el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), crit ? el("span", { class: "tag err", text: `중요 ${crit}` }) : null, waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
     nyListNode(needs),
-    ...(owed.length ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), unrepPill(`미답장 ${owedN}`)), el("div", { class: "hn" }, ...owed.map(homeOwedRow))] : []),
+    ...(owed.length || drafts ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null), el("div", { class: "hn" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : []),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), el("span", { class: "sup", text: working ? `${working}개 작업 중` : "모두 대기" })),
     el("div", { class: "hn" }, ...run.map(t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", "")), ...bg.map(workRow)),
     endedGroup() || "");
