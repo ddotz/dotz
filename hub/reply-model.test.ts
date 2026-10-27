@@ -5,8 +5,8 @@ import { dirname, join } from "node:path";
 import { replyCall } from "../features/reply-drafts/lib/flow.ts";
 import { loadSettings, setApp } from "../features/reply-drafts/lib/settings.ts";
 import { fieldsOf, readSettings, setReplyModelChoices, SettingsError, writeSettings } from "./app-settings.ts";
-import { callReplyModel, DRAFT_TIMEOUT_MS, instanceOf, pickReplyModel, replyModel, type ReplyCall } from "./reply-model.ts";
-import { replyModelChoices } from "./reply-model-choices.ts";
+import { callReplyModel, DRAFT_TIMEOUT_MS, instanceOf, pickReplyModel, REPLY_DEFAULT, replyModel, type ReplyCall } from "./reply-model.ts";
+import { replyDefaultView, replyModelChoices, replyModelLabel, setReplyDefault } from "./reply-model-choices.ts";
 import { appEntries } from "./integrations.ts";
 import { modelArgv } from "./outlang.ts";
 
@@ -27,7 +27,7 @@ beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "rm-"));
 	saved = process.env.DOTZ_DIR;
 	process.env.DOTZ_DIR = dir;
-	setReplyModelChoices(replyModelChoices(LIST, WORKER));
+	setReplyModelChoices(replyModelChoices(LIST));
 });
 afterEach(() => {
 	if (saved === undefined) delete process.env.DOTZ_DIR;
@@ -37,32 +37,37 @@ afterEach(() => {
 
 describe("the model list of the setting", () => {
 	test("every subscription model is offered, older and every Haiku included, each a bare name and effort with no hint", () => {
-		const c = replyModelChoices([...LIST, m("claude-haiku-5-5", "Claude Haiku 5.5"), m("claude-haiku-4-5-20251001", "Claude Haiku 4.5")], WORKER);
+		const c = replyModelChoices([...LIST, m("claude-haiku-5-5", "Claude Haiku 5.5"), m("claude-haiku-4-5-20251001", "Claude Haiku 4.5")]);
 		expect(c.options[0]).toBe("");
 		expect(c.options).toContain(WORKER);
 		expect(c.options).toContain(OPUS);
 		expect(c.options).toContain("anthropic/claude-haiku-4-5-20251001:low");
-		expect(c.labels["anthropic/claude-haiku-4-5-20251001:low"]).toBe("Haiku 4.5 · low");
+		expect(c.labels["anthropic/claude-haiku-4-5-20251001:low"]).toBe("Haiku 4.5 · 낮음");
 		expect(c.options).toContain("anthropic/claude-haiku-5-5:low");
-		expect(c.labels["anthropic/claude-haiku-5-5:low"]).toBe("Haiku 5.5 · low");
-		expect(c.labels[WORKER]).toBe("Sonnet 5.5 · high");
-		expect(c.labels[`${SONNET}:low`]).toContain("Sonnet 5.5 · low");
+		expect(c.labels["anthropic/claude-haiku-5-5:low"]).toBe("Haiku 5.5 · 낮음");
+		expect(c.labels[WORKER]).toBe("Sonnet 5.5 · 높음");
+		expect(c.labels[`${SONNET}:low`]).toContain("Sonnet 5.5 · 낮음");
 	});
 	test("every other connected provider's models follow with the provider's name and every effort, mini and flash included (owner 2026-10-27)", () => {
-		const c = replyModelChoices([...LIST, m("openai/gpt-5.5", "openai/gpt-5.5", true, "opengateway"), m("openai/gpt-5-mini", "openai/gpt-5-mini", true, "opengateway"), m("openai/gpt-4o", "openai/gpt-4o", false, "opengateway")], WORKER);
+		const c = replyModelChoices([...LIST, m("openai/gpt-5.5", "openai/gpt-5.5", true, "opengateway"), m("openai/gpt-5-mini", "openai/gpt-5-mini", true, "opengateway"), m("openai/gpt-4o", "openai/gpt-4o", false, "opengateway")]);
 		expect(c.options).toContain("openai/gpt-5:medium");
-		expect(c.labels["openai/gpt-5:medium"]).toBe("OpenAI · GPT 5 · medium");
-		expect(c.labels["opengateway/openai/gpt-5.5:medium"]).toBe("OpenGateway · openai/gpt-5.5 · medium");
+		expect(c.labels["openai/gpt-5:medium"]).toBe("OpenAI · GPT 5 · 보통");
+		expect(c.labels["opengateway/openai/gpt-5.5:medium"]).toBe("OpenGateway · openai/gpt-5.5 · 보통");
 		expect(c.labels["opengateway/openai/gpt-4o"]).toBe("OpenGateway · openai/gpt-4o");
 		expect(c.options).toContain("opengateway/openai/gpt-5-mini:low");
 		expect(c.options).toContain("openai/gpt-5:high");
 		expect(new Set(c.options).size).toBe(c.options.length);
 		expect(c.options.indexOf("openai/gpt-5:medium")).toBeGreaterThan(c.options.indexOf(OPUS));
 	});
-	test("the default option names the subagent model now, or the global reply model when one is set", () => {
-		expect(replyModelChoices(LIST, WORKER).labels[""]).toBe("서브에이전트와 같음 · Sonnet 5.5 high");
-		expect(replyModelChoices(LIST, "anthropic/claude-opus-5-5:medium").labels[""]).toBe("서브에이전트와 같음 · Opus 5.5 medium");
-		expect(replyModelChoices(LIST, WORKER, OPUS).labels[""]).toBe("답장 기본값 · Opus 5.5 high");
+	test("the default option is the reply default, Sonnet 5.5 medium, or the global reply model when one is set, never the subagent model", () => {
+		expect(REPLY_DEFAULT).toBe("anthropic/claude-sonnet-5-5:medium");
+		expect(replyModelChoices(LIST).labels[""]).toBe("답장 기본값 · Sonnet 5.5 · 보통");
+		expect(replyModelChoices(LIST, OPUS).labels[""]).toBe("답장 기본값 · Opus 5.5 · 높음");
+	});
+	test("the default option's label names exactly the model a draft with no app setting calls", async () => {
+		expect(replyModelChoices(LIST).labels[""]).toBe(`답장 기본값 · ${replyModelLabel(await replyModel("mail", undefined, { dataDir: dir }))}`);
+		seed("custom/reply-drafts/config.json", { enabled: true, model: OPUS });
+		expect(replyModelChoices(LIST, loadSettings().model).labels[""]).toBe(`답장 기본값 · ${replyModelLabel(await replyModel("mail", undefined, { dataDir: dir }))}`);
 	});
 });
 
@@ -100,20 +105,31 @@ describe("the field per app and instance", () => {
 });
 
 describe("which model a draft uses", () => {
-	test("the app setting first, then the global reply model, then the subagent model", async () => {
-		expect(await replyModel("mail", undefined, { dataDir: dir, worker: WORKER })).toBe(WORKER);
-		seed("custom/reply-drafts/config.json", { enabled: true, model: "anthropic/claude-sonnet-5-5:medium" });
-		expect(await replyModel("mail", undefined, { dataDir: dir, worker: WORKER })).toBe("anthropic/claude-sonnet-5-5:medium");
+	test("the app setting first, then the global reply model, then the reply default", async () => {
+		expect(await replyModel("mail", undefined, { dataDir: dir })).toBe(REPLY_DEFAULT);
+		seed("custom/reply-drafts/config.json", { enabled: true, model: `${SONNET}:low` });
+		expect(await replyModel("mail", undefined, { dataDir: dir })).toBe(`${SONNET}:low`);
 		writeSettings(dir, "mail", { reply_model: OPUS });
-		expect(await replyModel("mail", undefined, { dataDir: dir, worker: WORKER })).toBe(OPUS);
-		expect(await replyModel("kakao", undefined, { dataDir: dir, worker: WORKER })).toBe("anthropic/claude-sonnet-5-5:medium");
+		expect(await replyModel("mail", undefined, { dataDir: dir })).toBe(OPUS);
+		expect(await replyModel("kakao", undefined, { dataDir: dir })).toBe(`${SONNET}:low`);
 	});
-	test("'기본값' (empty) falls back and follows the subagent model live", async () => {
+	test("'기본값' (empty) falls back to the reply default", async () => {
 		writeSettings(dir, "mail", { reply_model: OPUS });
 		writeSettings(dir, "mail", { reply_model: "" });
 		expect(loadSettings().models).toBeUndefined();
-		expect(await replyModel("mail", undefined, { dataDir: dir, worker: WORKER })).toBe(WORKER);
-		expect(await replyModel("mail", undefined, { dataDir: dir, worker: "anthropic/claude-opus-5-5:max" })).toBe("anthropic/claude-opus-5-5:max");
+		expect(await replyModel("mail", undefined, { dataDir: dir })).toBe(REPLY_DEFAULT);
+	});
+	test("답장 기본값 is its own setting: saved as the global reply model, an unknown model refused, empty back to Sonnet 5.5 medium", async () => {
+		const r = await setReplyDefault(OPUS, LIST);
+		expect(r.value).toBe(OPUS);
+		expect(config().model).toBe(OPUS);
+		expect(await replyModel("youtube", undefined, { dataDir: dir })).toBe(OPUS);
+		expect(fieldsOf("mail").find(x => x.key === "reply_model")?.labels?.[""]).toBe("답장 기본값 · Opus 5.5 · 높음");
+		await expect(setReplyDefault("x/nope", LIST)).rejects.toThrow();
+		expect(config().model).toBe(OPUS);
+		await setReplyDefault("", LIST);
+		expect(config().model).toBeUndefined();
+		expect((await replyDefaultView(LIST)).model).toBe(REPLY_DEFAULT);
 	});
 	test("an instance is chosen by the conversation its filter claims, and falls back to the default, not to its app", async () => {
 		seed("custom/apps.json", { "mail-2": { app: "mail", label: "개인", filter: { conv: ["mail:naver-"] } } });
@@ -123,18 +139,18 @@ describe("which model a draft uses", () => {
 		expect(instanceOf(entries, "mail")).toBe("mail");
 		writeSettings(dir, "mail", { reply_model: OPUS });
 		writeSettings(dir, "mail-2", { reply_model: `${SONNET}:low` });
-		expect(await replyModel("mail", "mail:naver-1", { dataDir: dir, worker: WORKER })).toBe(`${SONNET}:low`);
-		expect(await replyModel("mail", "mail:gmail-1", { dataDir: dir, worker: WORKER })).toBe(OPUS);
+		expect(await replyModel("mail", "mail:naver-1", { dataDir: dir })).toBe(`${SONNET}:low`);
+		expect(await replyModel("mail", "mail:gmail-1", { dataDir: dir })).toBe(OPUS);
 		writeSettings(dir, "mail-2", { reply_model: "" });
-		expect(await replyModel("mail", "mail:naver-1", { dataDir: dir, worker: WORKER })).toBe(WORKER);
+		expect(await replyModel("mail", "mail:naver-1", { dataDir: dir })).toBe(REPLY_DEFAULT);
 	});
-	test("the owner's pick is used as picked, a small model too; a role never is, and only the fallback is kept off small models", () => {
+	test("the owner's pick is used as picked, a small model too; a role never is", () => {
 		const base = { enabled: true, decided: true, auto: true, apps: {}, senders: { only: [], skip: [] } };
-		const pick = (model: string) => pickReplyModel({ ...base, models: { mail: model } }, "mail", WORKER);
+		const pick = (model: string) => pickReplyModel({ ...base, models: { mail: model } }, "mail");
 		expect(pick("anthropic/claude-haiku-5-5:low")).toBe("anthropic/claude-haiku-5-5:low");
 		expect(pick("opengateway/openai/gpt-5-mini:low")).toBe("opengateway/openai/gpt-5-mini:low");
-		expect(pick("@tiny")).toBe(WORKER);
-		expect(pickReplyModel(base, "mail", "openai/gpt-5-mini")).toBe(SONNET);
+		expect(pick("@tiny")).toBe(REPLY_DEFAULT);
+		expect(pickReplyModel({ ...base, model: "@tiny" }, "mail")).toBe(REPLY_DEFAULT);
 	});
 });
 
@@ -147,13 +163,13 @@ describe("the draft paths call the model they resolved", () => {
 	test("callReplyModel (kakao and comments) passes the app's model to callModel", async () => {
 		const { seen, call } = recorder();
 		writeSettings(dir, "kakao", { reply_model: OPUS });
-		await callReplyModel("kakao", "kakao:1", "s", "u", call, { dataDir: dir, worker: WORKER });
-		await callReplyModel("youtube", undefined, "s", "u", call, { dataDir: dir, worker: WORKER });
-		expect(seen.map(s => s.model)).toEqual([OPUS, WORKER]);
+		await callReplyModel("kakao", "kakao:1", "s", "u", call, { dataDir: dir });
+		await callReplyModel("youtube", undefined, "s", "u", call, { dataDir: dir });
+		expect(seen.map(s => s.model)).toEqual([OPUS, REPLY_DEFAULT]);
 	});
 	test("a draft waits at most 45 s (a spent provider is refused before the call)", async () => {
 		const { seen, call } = recorder();
-		await callReplyModel("kakao", undefined, "s", "u", call, { dataDir: dir, worker: WORKER });
+		await callReplyModel("kakao", undefined, "s", "u", call, { dataDir: dir });
 		expect(seen.map(s => s.timeoutMs)).toEqual([DRAFT_TIMEOUT_MS]);
 	});
 	test("the mail/comment flow call (replyCall) uses the instance's model", async () => {
@@ -168,7 +184,7 @@ describe("the draft paths call the model they resolved", () => {
 	test("a mail conversation's reply draft keeps the mail app's reply model, whatever the orchestrator runs on", async () => {
 		const { seen, call } = recorder();
 		writeSettings(dir, "mail", { reply_model: `${SONNET}:medium` });
-		await callReplyModel("mail", "mail:kdb-67010497", "s", "u", call, { dataDir: dir, worker: OPUS });
+		await callReplyModel("mail", "mail:kdb-67010497", "s", "u", call, { dataDir: dir });
 		expect(seen.map(s => s.model)).toEqual([`${SONNET}:medium`]);
 	});
 });
