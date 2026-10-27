@@ -298,3 +298,5 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .mfiles .thumb img { display: block; max-width: min(240px, 60vw); max-height: 200px; object-fit: cover; }
 .mfiles .fatt { cursor: pointer; padding-right: 12px; text-decoration: none; }
 .mfiles .fatt:hover { background: var(--hover); }
+/* a session row on a fallback model: the model it runs and the 폴백 중 tag (08-home.js homeNowRow) */
+.srow .smodel { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
