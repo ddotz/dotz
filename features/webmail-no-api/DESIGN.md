@@ -22,6 +22,12 @@ drops everything specific to that company. Generalized, in order:
 - a baseline of seen ids so only genuinely new mail is reported, with a numeric high-water mark so an old mail sliding back
   into the window after a delete is not re-reported;
 - recover from a dropped login once (a silent background tab load, no second factor), then ask the owner;
+- reconnect from the app (2026-10-27, the Mac mini's company mail): the second factor goes out only on the owner's yes, and the yes is
+  the 다시 연결 tap itself. The new-mail watch carries `approval_minutes`; the tap approves it (hub/routes.ts: a disconnected gated
+  watch is approved instead of re-run), and that run signs in again with the saved password and waits for the push
+  (`bin/watch.ts signInApproved`, `lib/watchkit.ts pollOnce` `relogin`). A plain re-run after the silent recover was spent did
+  nothing, which is how the company mail sat disconnected for days. A second tap while the sign-in waits cancels it and starts over
+  (hub/watch.ts approveWatch kills the running check), and a sign-in that succeeds turns the row 연결됨 in that same run;
 - draft-only sending: compose locally, send only after the owner's explicit OK in the mail thread.
 
 Left out (never in the repo): the company name, its hosts, endpoints, mailbox ids, account ids, any mail content or hint,
