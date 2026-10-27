@@ -18,7 +18,8 @@ import { allWatches, approveWatch, removeWatch, runWatch } from "./watch.ts";
 import { watchConnection } from "./watch-status.ts";
 import { featuresOf, ownedWatches, retryInternal, setFeature } from "./app-features.ts";
 import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
-import { refreshReplyModelChoices } from "./reply-model-choices.ts";
+import { refreshReplyModelChoices, replyModelLabel } from "./reply-model-choices.ts";
+import { replyModel } from "./reply-model.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
 import { activityItems, broadcast, historyEvents, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
@@ -333,9 +334,17 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// draft is a send-approval notice and is read from the notices; a store draft such a notice already shows is left out.
 		if (req.method === "GET" && url.pathname === "/api/replies") {
 			const skip = noticeDraftRefs();
-			const kakao = (await kakaoPendingDrafts(skip).catch(() => [])).map(d => ({ kind: "kakao", app: "kakao", at: Date.parse(d.created) || 0, ...d }));
+			const kakao = (await kakaoPendingDrafts(skip).catch(() => [])).map(d => ({ kind: "kakao", app: "kakao", conv: `kakao:${d.chatId}`, at: Date.parse(d.created) || 0, ...d }));
 			const comments = commentPending().filter(d => !skip.has(d.code)).map(d => ({ ...d, kind: "comment", via: d.kind, at: d.created }));
-			return json({ items: [...kakao, ...comments].sort((a, b) => b.at - a.at) });
+			// The model a draft of that app uses (the app instance's 답장 모델, else the reply default) goes on the card's head when known.
+			const models = new Map<string, string>();
+			const withModel = async <T extends { app: string; conv?: string }>(item: T) => {
+				const key = `${item.app}|${item.conv ?? ""}`;
+				if (!models.has(key)) models.set(key, await replyModel(item.app, item.conv).then(replyModelLabel).catch(() => ""));
+				return models.get(key) ? { ...item, model: models.get(key) } : item;
+			};
+			const items = await Promise.all([...kakao, ...comments].map(withModel));
+			return json({ items: items.sort((a, b) => b.at - a.at) });
 		}
 		// The 앱 list (hub/user-apps.ts): the 모니터링 apps this install has on, then the owner's own manifests (with their health).
 		if (req.method === "GET" && url.pathname === "/api/apps") {
