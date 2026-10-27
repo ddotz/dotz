@@ -27,6 +27,7 @@ const history = (target: string) => target === "settings:w:t-web" ? [
 
 const sent: Record<string, unknown>[] = [];
 const patches: Record<string, unknown>[] = [];
+const deletes: string[] = [];
 const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
 let streamWaiters: (() => void)[] = [];
 const te = new TextEncoder();
@@ -69,6 +70,7 @@ const server = Bun.serve({
 				return json({ error: (e as Error).message }, 400);
 			}
 		}
+		if (req.method === "DELETE" && /^\/api\/watches\/[a-z0-9-]+$/.test(p)) { deletes.push(p); return json({ ok: true }); }
 		if (p === "/api/message") { sent.push((await req.json()) as Record<string, unknown>); return json({ ok: true }); }
 		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
@@ -155,7 +157,7 @@ describe("monitor settings at desktop width", () => {
 		await openScreen(v);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]')`);
 		const names = await q<string[]>(v, `return [...document.querySelectorAll("#app-sw .as-row:not(.as-stat) .as-n")].map(n => n.textContent)`);
-		expect(names).toEqual(["알림 방식", "감시 켜기", "감시 주기(분)", "이름"]);
+		expect(names).toEqual(["알림 방식", "감시 켜기", "감시 주기(분)", "이름", "감시 삭제"]);
 	});
 
 	test("the switch and the boxes PATCH the one watch settings route with no message to the bot", async () => {
@@ -222,3 +224,17 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const) test(`a disconnected ap
 	}
 });
 
+
+test("감시 삭제 in a monitor's settings asks first, then deletes the watch and leaves the screen", async () => {
+	const v = open(1280, 800);
+	await boot(v, "m:웹 감시");
+	await openScreen(v);
+	await waitFor(v, `document.querySelector('#app-sw [data-as-rm="ask"]')`);
+	await run(v, `document.querySelector('#app-sw [data-as-rm="ask"]').click()`);
+	await waitFor(v, `document.querySelector("#app-sw .as-rm")`);
+	expect(await q(v, `return document.querySelector("#app-sw .as-rm .as-n").textContent`)).toBe("웹 감시을(를) 삭제할까요?");
+	expect(deletes).toEqual([]);
+	await run(v, `document.querySelector('#app-sw [data-as-rm="go"]').click()`);
+	await waitFor(v, `!document.querySelector("#app-sw")`);
+	expect(deletes).toEqual(["/api/watches/t-web"]);
+});

@@ -143,6 +143,19 @@ describe("features view", () => {
 		await expect(retryInternal(data, "instagram", "kakao-new", W, async n => void ran.push(n))).rejects.toThrow("내부 기능이 아니에요");
 		expect(ran).toEqual(["ig-site-login"]);
 	});
+	test("다시 연결 of a watch behind an approval gate approves it (the tap is the owner's yes) instead of a plain run that only waits", async () => {
+		const ran: string[] = [], approved: string[] = [];
+		const gated = W.map(w => (w.name === "ig-site-login" ? { ...w, approval_minutes: 30 } : w));
+		await retryInternal(data, "instagram", "ig-site-login", gated, async n => void ran.push(n), n => void approved.push(n));
+		expect([ran, approved]).toEqual([[], ["ig-site-login"]]);
+	});
+	test("a watch that exits 0 but says it is logged out (DOTZ_DISCONNECTED) is a down row with 다시 연결, not 정상", () => {
+		const w = watch("kdb-login");
+		const down = internalOf({ ...w, state: { ...w.state, fails: 0, lastRun: "2026-10-27T00:18:50.593Z", last: "waiting for the owner's approval\nDOTZ_DISCONNECTED since=2026-10-23T12:29:18.300Z" } }, "메일");
+		expect([down.dot, down.down, down.status]).toEqual(["fail", true, "연결이 끊겼어요 · 다시 로그인이 필요해요"]);
+		const ok = internalOf({ ...w, state: { ...w.state, fails: 0, lastRun: "2026-10-27T00:18:50.593Z", last: "not waiting" } }, "메일");
+		expect([ok.dot, ok.down]).toEqual(["ok", undefined]);
+	});
 });
 
 describe("a peer gets the same through /api/peer/proxy and /api/peer/act", () => {
@@ -151,7 +164,7 @@ describe("a peer gets the same through /api/peer/proxy and /api/peer/act", () =>
 		name: () => "A",
 		computers: async () => [],
 		local: async req => {
-			seen.push({ method: req.method, path: new URL(req.url).pathname, body: req.method === "GET" ? undefined : await req.json() });
+			seen.push({ method: req.method, path: new URL(req.url).pathname, body: req.method === "GET" || req.method === "DELETE" ? undefined : await req.json() });
 			return Response.json({ ok: true });
 		},
 	});
@@ -164,6 +177,11 @@ describe("a peer gets the same through /api/peer/proxy and /api/peer/act", () =>
 			{ method: "PATCH", path: "/api/integrations/instagram/features", body: { id: "reels_approval", on: false } },
 			{ method: "POST", path: "/api/integrations/instagram/retry", body: { watch: "ig-site-login" } },
 		]);
+	});
+	test("감시 삭제 of a peer's monitor is a DELETE of the watch on the owning machine", async () => {
+		seen.length = 0;
+		await pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action: "watch", from: "B", args: { op: "delete", name: "login-cartier-com" } }) }), new URL("http://local/api/peer/act"));
+		expect(seen.map(s => [s.method, s.path])).toEqual([["DELETE", "/api/watches/login-cartier-com"]]);
 	});
 });
 
