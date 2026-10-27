@@ -306,6 +306,23 @@ test("a turn that defers to a background worker sends nothing; the run the worke
 	expect(state.posts.length).toBe(1);
 });
 
+test("a deferred turn posts one short note naming the worker, so its conversation is not silent", () => {
+	const announced: { target: string; text: string }[] = [];
+	const { q, state, startTurn } = setup([], [], { announce: (target, text) => announced.push({ target, text }), workFor: () => "큐피드 연결 스크립트 흐름도 HTML" });
+	startTurn("이거 파일 전부 흐름도로 재구성해", { target: "th:1564523279849357364" });
+	q.onAnswer("[later]");
+	expect(announced).toEqual([{ target: "th:1564523279849357364", text: "백그라운드 작업으로 맡겼어요: 큐피드 연결 스크립트 흐름도 HTML" }]);
+	// The note is not the answer: nothing was posted to the request and it still waits for the worker.
+	expect(state.posts).toEqual([]);
+	expect(q.deferredOpen().map(d => d.target)).toEqual(["th:1564523279849357364"]);
+	// A worker the store does not list yet still gets a readable note, never an empty message.
+	const bare = setup([], [], { announce: (target, text) => announced.push({ target, text }) });
+	bare.startTurn("메일 답장 써 줘", { target: "mail:k1" });
+	bare.q.onAnswer("[later]");
+	expect(announced.at(-1)).toEqual({ target: "mail:k1", text: "백그라운드 작업으로 맡겼어요" });
+	expect(announced.at(-1)?.text.trim()).not.toBe("");
+});
+
 test("a deferred request answered with dotz_send reply_to from another turn is settled", async () => {
 	const { q, state, startTurn } = setup();
 	startTurn("fix it", chat("m1"));

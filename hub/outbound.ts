@@ -54,6 +54,10 @@ export const queue = createPrompts({
 	note: (target, replyTo, text) => msg().newMessage(target, replyTo, text),
 	isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead") || isNote(text, "laneReportLead"),
 	post: (target, text, replyTo) => out(target, text, replyTo, { auto: true }),
+	// The deferral acknowledgement is the gateway speaking, not the answer: it must leave the deferred prompt open.
+	announce: (target, text) => void out(target, text, undefined, { source: "gateway" }).catch(e => log(`deferral note to ${target} failed: ${e}`)),
+	// The worker the [later] turn just spawned, as OmO's task store lists it (bgWork is created below and read at call time).
+	workFor: target => bgWork.list().find(w => w.status === "running" && w.target === target)?.description,
 	clearProgress: target => void discord.clearProgress(target),
 	persist: open => writeAtomic(PENDING, `${JSON.stringify(open, null, 2)}\n`),
 	log,
@@ -64,7 +68,7 @@ export const queue = createPrompts({
 	covers: target => isLocal(target),
 });
 // The orchestrator's background task workers (what a `[later]` turn waits for), read from OmO's task store: /api/workers, /api/state `work`.
-export const bgWork = createBgWork({ sessionFile: () => orch.sessionFile, deferred: queue.deferredOpen, turn: queue.turnAt });
+export const bgWork = createBgWork({ sessionFile: () => orch.sessionFile, deferred: queue.deferredOpen, turn: queue.turnAt, log });
 // `owner` marks the owner's own message (it leads with the what-runs-now line); schedules, watches and mail carry a target but are not.
 export function deliver(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): void {
 	if (reply) discord.typing(reply.target);

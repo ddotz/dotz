@@ -7,8 +7,11 @@ const RUN_LABEL = { working: "작업 중", waiting: "답을 기다려요", idle:
 const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", error: "err", stopped: "", done: "ok" };
 const RUN_MEMO = { sig: "" };
 const runStateOf = () => {
-  if (isFixedT(target) || isMailT(target) || isSettingsT(target)) return null;
+  if (isFixedT(target) || isSettingsT(target)) return null;
   const runs = (S && S.runs) || {};
+  // A mail conversation's run state is the background worker its request was deferred to (hub/routes.ts stateRuns): this
+  // computer's under /api/state `runs`, the other computer's in its monitoring snapshot (34-peer-monitoring.js pqRuns).
+  if (isMailT(target)) return (typeof pqRuns === "function" && pqRuns(target)) || runs[target] || null;
   return (isLaneT(target) ? runs[target] : runs.main) || null;
 };
 // The gateway's clock, not this device's, so the elapsed time ticks every second between state refreshes (workNow, 06-subagents.js).
@@ -32,7 +35,7 @@ function runText(r) {
     case "limited": return [label, r.detail ? `${kstTime(r.detail)}까지` : "잠시 쉬어요"].join(" · ");
     case "error": return [label, r.detail].filter(Boolean).join(" · ");
     case "stopped": return [label, r.reason === "owner" ? "직접 멈췄어요" : "", left].filter(Boolean).join(" · ");
-    case "done": return [label, r.since ? kstHM(r.since) : ""].filter(Boolean).join(" · ");
+    case "done": return [label, r.detail, r.since ? kstHM(r.since) : ""].filter(Boolean).join(" · ");
     default: return label;
   }
 }

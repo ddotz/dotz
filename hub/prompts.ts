@@ -44,6 +44,10 @@ export type PromptDeps = {
 	isNote: (text: string) => boolean;
 	/** Posts a turn's final answer to the channel that asked. */
 	post: (target: string, text: string, replyTo?: string) => Promise<{ delivered: boolean }>;
+	/** A gateway note in a conversation that answers nothing (the deferral acknowledgement must not settle the open prompt). */
+	announce?: (target: string, text: string) => void;
+	/** The description of the background worker now serving a message that was just deferred, when it is already listed. */
+	workFor?: (target: string) => string | undefined;
 	clearProgress: (target: string) => void;
 	/** Writes the open prompts to disk. */
 	persist: (open: Pending[]) => void;
@@ -327,10 +331,14 @@ export function createPrompts(deps: PromptDeps) {
 		if (p.done) return;
 		const t = text.trim();
 		if (t === LATER && p.target && !p.deferred) {
-			// Nothing goes out; the progress indicator stays until the worker's answer arrives.
+			// The answer itself waits for the worker, but the conversation must not look silent (owner 2026-10-27: "메일 내 대화에서
+			// 다른 일 시키니까 일 안하네"): one short note names who took it. It is a gateway note, so it settles no prompt.
 			p.deferred = true;
 			deferred.push(p);
+			const took = deps.workFor?.(p.target)?.trim();
+			const note = took ? `백그라운드 작업으로 맡겼어요: ${took}` : "백그라운드 작업으로 맡겼어요";
 			deps.log(`the answer to ${p.target} is deferred to a background worker`);
+			deps.announce?.(p.target, note);
 			save();
 			return;
 		}

@@ -93,6 +93,14 @@ const pair = () => {
 };
 const req = (path: string, init: RequestInit = {}) => new Request(`${URL_A}${path}`, init);
 
+test("a peer snapshot carries the run state of that gateway's mail conversations", async () => {
+	const runs = { "mail:k1": { kind: "working", detail: "흐름도 그리기" } };
+	const mon = createPeerMonitor({ name: () => "맥미니", local: async () => Response.json({}), computers: async () => [], runs: () => runs });
+	expect((await mon.snapshot()).runs).toEqual(runs);
+	const plain = createPeerMonitor({ name: () => "맥미니", local: async () => Response.json({}), computers: async () => [] });
+	expect((await plain.snapshot()).runs).toBeUndefined();
+});
+
 test("merge: the peer's items come with its name, mail and kakao rows only, and this gateway's own list stays local", async () => {
 	const { A, B } = pair();
 	const merged = await A.mon.peerMonitoring();
