@@ -57,6 +57,14 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: path.endsWith("/draft") ? `draft ${JSON.stringify(b)}` : b.text });
 			return Response.json({ ok: true });
 		}
+		if (req.method === "PUT" && path.startsWith("/api/kakao/rooms/")) {
+			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: `room ${JSON.stringify(await req.json())}` });
+			return Response.json({ ok: true });
+		}
+		if (req.method === "POST" && path === "/api/notices/reopen") {
+			events.push({ target: "notices", text: `reopen ${JSON.stringify(await req.json())}` });
+			return Response.json({ reopened: [], unread: 0 });
+		}
 		if (req.method === "POST" && /^\/api\/drafts\/[A-Za-z0-9._-]+\/files$/.test(path)) {
 			events.push({ target: `draft:${path.split("/")[3]}`, text: JSON.stringify(await req.json()) });
 			return Response.json({ ok: true });
@@ -359,6 +367,25 @@ test("a KakaoTalk reply from a peer runs on the owner's own kakao send route, on
 	expect(B.events).toEqual([{ target: "kakao:123", text: "네" }]);
 	expect(A.events).toEqual([]);
 	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "rm", chatId: "123" } }) }))).status).toBe(400);
+});
+
+test("지켜보기 / 자동 초안 of a peer's KakaoTalk room is the owner's own room PUT, once each", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const act = (args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args }) }));
+	expect((await act({ op: "room", chatId: "123", watched: true })).status).toBe(200);
+	expect((await act({ op: "room", chatId: "123", autoDraft: false })).status).toBe(200);
+	expect(B.events).toEqual([{ target: "kakao:123", text: `room ${JSON.stringify({ watched: true })}` }, { target: "kakao:123", text: `room ${JSON.stringify({ autoDraft: false })}` }]);
+	expect(A.events).toEqual([]);
+	expect((await act({ op: "room" })).status).toBe(400);
+});
+
+test("되돌리기 of a peer's draft answered 보내지 않기 reopens that notice on its owner, once", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "notice", args: { op: "reopen", id: "d1" } }) }))).status).toBe(200);
+	expect(B.events).toEqual([{ target: "notices", text: `reopen ${JSON.stringify({ ids: ["d1"] })}` }]);
+	expect(A.events).toEqual([]);
 });
 
 test("a 고치기 request for a peer's KakaoTalk draft reaches the owner's draft route with the instruction", async () => {

@@ -1,6 +1,7 @@
 // HTTP routing of the hub: the install files, the identity check and the first part of the route chain; the rest is routes-settings.ts and routes-lanes.ts.
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
 import { dropAnsweredMailDraft } from "./draft-drop.ts";
+import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
@@ -385,7 +386,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
 		// The bot closes the questions whose matter is over (ids, match text, conv or all): they are answered, read and off 답변 필요.
 		if (req.method === "POST" && url.pathname === "/api/notices/resolve") return json(resolveNotices(await body(req)));
-		if (req.method === "POST" && url.pathname === "/api/notices/reopen") return json(reopenNotices((await body(req)).ids));
+		// 되돌리기 after 보내지 않기 also puts the mail reply draft back in its store (the peer act notice reopen lands here too).
+		if (req.method === "POST" && url.pathname === "/api/notices/reopen") {
+			const ids = (await body(req)).ids, refs = droppedDraftRefs(listNotices(NOTICE_CAP).items, ids);
+			const r = reopenNotices(ids);
+			await restoreReopenedDrafts(refs, r.reopened, log);
+			return json(r);
+		}
 		// The page reports the conversation it shows ("" = hidden): answers there make no unread message item (hub/notices.ts).
 		if (req.method === "POST" && url.pathname === "/api/viewing") {
 			const b = await body(req);
