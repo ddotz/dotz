@@ -36,24 +36,27 @@ afterEach(() => {
 });
 
 describe("the model list of the setting", () => {
-	test("subscription models with the newest Haiku (owner 2026-10-26), each a bare name and effort with no hint", () => {
+	test("every subscription model is offered, older and every Haiku included, each a bare name and effort with no hint", () => {
 		const c = replyModelChoices([...LIST, m("claude-haiku-5-5", "Claude Haiku 5.5"), m("claude-haiku-4-5-20251001", "Claude Haiku 4.5")], WORKER);
 		expect(c.options[0]).toBe("");
 		expect(c.options).toContain(WORKER);
 		expect(c.options).toContain(OPUS);
-		expect(c.options.some(o => /haiku-4/.test(o))).toBe(false);
+		expect(c.options).toContain("anthropic/claude-haiku-4-5-20251001:low");
+		expect(c.labels["anthropic/claude-haiku-4-5-20251001:low"]).toBe("Haiku 4.5 · low");
 		expect(c.options).toContain("anthropic/claude-haiku-5-5:low");
 		expect(c.labels["anthropic/claude-haiku-5-5:low"]).toBe("Haiku 5.5 · low");
 		expect(c.labels[WORKER]).toBe("Sonnet 5.5 · high");
 		expect(c.labels[`${SONNET}:low`]).toContain("Sonnet 5.5 · low");
 	});
-	test("every other connected provider's models follow, one entry each with the provider's name; never one a draft would swap away", () => {
+	test("every other connected provider's models follow with the provider's name and every effort, mini and flash included (owner 2026-10-27)", () => {
 		const c = replyModelChoices([...LIST, m("openai/gpt-5.5", "openai/gpt-5.5", true, "opengateway"), m("openai/gpt-5-mini", "openai/gpt-5-mini", true, "opengateway"), m("openai/gpt-4o", "openai/gpt-4o", false, "opengateway")], WORKER);
 		expect(c.options).toContain("openai/gpt-5:medium");
 		expect(c.labels["openai/gpt-5:medium"]).toBe("OpenAI · GPT 5 · medium");
 		expect(c.labels["opengateway/openai/gpt-5.5:medium"]).toBe("OpenGateway · openai/gpt-5.5 · medium");
 		expect(c.labels["opengateway/openai/gpt-4o"]).toBe("OpenGateway · openai/gpt-4o");
-		expect(c.options.some(o => /mini/.test(o))).toBe(false);
+		expect(c.options).toContain("opengateway/openai/gpt-5-mini:low");
+		expect(c.options).toContain("openai/gpt-5:high");
+		expect(new Set(c.options).size).toBe(c.options.length);
 		expect(c.options.indexOf("openai/gpt-5:medium")).toBeGreaterThan(c.options.indexOf(OPUS));
 	});
 	test("the default option names the subagent model now, or the global reply model when one is set", () => {
@@ -125,11 +128,13 @@ describe("which model a draft uses", () => {
 		writeSettings(dir, "mail-2", { reply_model: "" });
 		expect(await replyModel("mail", "mail:naver-1", { dataDir: dir, worker: WORKER })).toBe(WORKER);
 	});
-	test("never a role or mini model, whatever the file says; Haiku is the owner's pick to keep", () => {
-		const bad = (model: string) => pickReplyModel({ enabled: true, decided: true, auto: true, apps: {}, senders: { only: [], skip: [] }, models: { mail: model } }, "mail", WORKER);
-		expect(bad("anthropic/claude-haiku-5-5:low")).toBe("anthropic/claude-haiku-5-5:low");
-		expect(bad("anthropic/claude-gpt-5-mini")).toBe(SONNET);
-		expect(bad("@tiny")).toBe(SONNET);
+	test("the owner's pick is used as picked, a small model too; a role never is, and only the fallback is kept off small models", () => {
+		const base = { enabled: true, decided: true, auto: true, apps: {}, senders: { only: [], skip: [] } };
+		const pick = (model: string) => pickReplyModel({ ...base, models: { mail: model } }, "mail", WORKER);
+		expect(pick("anthropic/claude-haiku-5-5:low")).toBe("anthropic/claude-haiku-5-5:low");
+		expect(pick("opengateway/openai/gpt-5-mini:low")).toBe("opengateway/openai/gpt-5-mini:low");
+		expect(pick("@tiny")).toBe(WORKER);
+		expect(pickReplyModel(base, "mail", "openai/gpt-5-mini")).toBe(SONNET);
 	});
 });
 
