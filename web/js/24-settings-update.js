@@ -227,7 +227,7 @@ function renderSettings() {
   const row = (ic, title, sub, onclick, trail) => el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), sub ? el("span", { class: "sup", text: sub }) : null, trail === undefined ? icon("chev", "lead") : trail);
   const d = S && S.discord;
   clear(box).append(el("div", { class: "list" },
-    row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${om.thinking}` : "", () => openModels("orchestrator")),
+    row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${thinkKo(om.thinking)}` : "", () => openModels("orchestrator")),
     row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
     row("usage", "사용량", "", () => go("usage")),
     row("key", "API 월 한도", budgetSub(), () => budgetDialog()),
