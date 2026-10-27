@@ -6,24 +6,16 @@ import { providerLabel } from "./accounts-providers.ts";
 import { setReplyModelChoices, type ReplyModelChoices } from "./app-settings.ts";
 import { splitThinking, workerModel } from "./config.ts";
 import { modelChoices } from "./control.ts";
-import { pickDraftModel } from "./kakao/draft.ts";
 import { availableModels, type ModelInfo } from "./providers.ts";
 import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 
 const EFFORTS = ["low", "medium", "high"] as const;
-// The pickers elsewhere hide Haiku (control.ts HIDDEN_MODEL); a reply draft may use the newest one (owner 2026-10-26).
 const vnum = (sel: string): number[] => (sel.match(/haiku-([\d-]+)$/)?.[1] ?? "0").split("-").map(Number);
-const newestHaiku = (models: readonly ModelInfo[]): ModelInfo | undefined =>
-	models.filter(m => m.provider === "anthropic" && /claude-haiku-\d+(?:-\d)?$/.test(m.selector)).sort((a, b) => {
-		const [x, y] = [vnum(a.selector), vnum(b.selector)];
-		return (y[0]! - x[0]!) || ((y[1] ?? 0) - (x[1] ?? 0));
-	})[0];
-
 const friendly = (selector: string): string => {
 	const [one] = modelChoices([{ selector, name: selector, provider: selector.split("/")[0]!, reasoning: false }]);
 	return one?.name ?? selector.split("/").pop()!;
 };
-const friendlyHaiku = (sel: string): string => `Haiku ${vnum(sel).join(".")}`;
+const friendlyHaiku = (sel: string): string => `Haiku ${vnum(sel).filter(n => n < 1000).join(".")}`;
 const effortWord = (thinking?: string): string => (thinking && thinking !== "off" ? ` ${thinking}` : "");
 
 /** Pure: the options and their labels (name and effort only, owner 2026-10-26: no description) from the model list, the global reply model (if any) and the subagent model. */
@@ -32,23 +24,23 @@ export function replyModelChoices(models: readonly ModelInfo[], worker: string, 
 	const own = global ? splitThinking(global) : undefined;
 	const base = own ?? splitThinking(worker);
 	const labels: Record<string, string> = { "": `${own ? "답장 기본값" : "서브에이전트와 같음"} · ${friendly(base.model)}${effortWord(base.thinking)}` };
-	const haiku = newestHaiku(models);
-	const listed = [...modelChoices(models.filter(x => x.provider === "anthropic")).filter(m => !m.older), ...(haiku ? [{ ...haiku, name: friendlyHaiku(haiku.selector) }] : [])];
-	for (const m of listed) {
-		const levels = m.reasoning ? EFFORTS : [undefined];
-		for (const level of levels) {
+	// Every connected model is offered (owner 2026-10-27: "리스트를 다 보여줘야지"): older generations, every Haiku, mini/flash/lite, and every
+	// effort of a reasoning model, the subscription's first. What the owner picks is used as picked (reply-model.ts pickReplyModel).
+	const all = (list: readonly ModelInfo[]) => {
+		const named = modelChoices(list);
+		const seen = new Set(named.map(x => x.selector));
+		return [...named, ...list.filter(x => !seen.has(x.selector)).map(x => ({ ...x, name: /claude-haiku-/.test(x.selector) ? friendlyHaiku(x.selector) : friendly(x.selector) }))];
+	};
+	const add = (m: { selector: string; name: string; reasoning: boolean }, prefix: string) => {
+		for (const level of m.reasoning ? EFFORTS : [undefined]) {
 			const value = level ? `${m.selector}:${level}` : m.selector;
+			if (labels[value] !== undefined) continue;
 			options.push(value);
-			labels[value] = `${m.name}${level ? ` · ${level}` : ""}`;
+			labels[value] = `${prefix}${m.name}${level ? ` · ${level}` : ""}`;
 		}
-	}
-	// Another provider's models: one entry per model (a reasoning one at medium), never one a draft would swap away (pickDraftModel: mini, flash, lite...).
-	for (const m of modelChoices(models.filter(x => x.provider !== "anthropic"))) {
-		if (m.older || pickDraftModel(m.selector) !== m.selector) continue;
-		const value = m.reasoning ? `${m.selector}:medium` : m.selector;
-		options.push(value);
-		labels[value] = `${providerLabel(m.provider)} · ${m.name}${m.reasoning ? " · medium" : ""}`;
-	}
+	};
+	for (const m of all(models.filter(x => x.provider === "anthropic"))) add(m, "");
+	for (const m of all(models.filter(x => x.provider !== "anthropic"))) add(m, `${providerLabel(m.provider)} · `);
 	return { options, labels };
 }
 

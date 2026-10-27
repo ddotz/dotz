@@ -15,8 +15,12 @@ export function instanceOf(entries: readonly IntegrationEntry[], app: string, co
 	return (mine.find(e => e.created) ?? mine[0])?.key ?? app;
 }
 
-/** Pure choice: instance setting, else the global model, else the fallback; never a role, mini or Haiku model (pickDraftModel). */
-export const pickReplyModel = (s: Settings, instance: string, fallback: string): string => pickDraftModel(s.models?.[instance] ?? s.model ?? fallback);
+/** Pure choice: the instance setting, else the global model, as the owner picked it (any listed model, owner 2026-10-27); with neither, the
+ *  fallback, kept off a role or a small model (pickDraftModel). A role (@tiny) is never a reply model. */
+export const pickReplyModel = (s: Settings, instance: string, fallback: string): string => {
+	const chosen = s.models?.[instance] ?? s.model;
+	return chosen && !chosen.startsWith("@") ? chosen : pickDraftModel(fallback);
+};
 
 export async function replyModel(app: string, conv?: string, o: { dataDir?: string; worker?: string } = {}): Promise<string> {
 	return pickReplyModel(loadSettings(), instanceOf(appEntries(o.dataDir ?? installDir()), app, conv), o.worker ?? (await import("./config.ts")).workerModel());
