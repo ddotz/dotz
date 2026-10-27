@@ -95,7 +95,7 @@ function accountSection() {
   // adds an account to that provider's pool and keeps the others and the pin (21-providers.js startLogin)
   rows.push(el("div", { class: "li" }, tx("계정 추가", "구독 계정이나 API 키를 하나 더 넣어요. 지금 쓰는 계정은 바뀌지 않아요."),
     el("button", { class: "btn tonal", type: "button", onclick: () => accAddProviderDialog() }, icon("add"), "추가")));
-  const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 풀릴 때까지 멈추고, 다른 계정으로 넘어가지 않아요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가요.";
+  const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 폴백 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가고, 모두 막히면 폴백 순서(API 키 포함)를 따라요. 답장 초안은 API 키로 넘어가지 않아요.";
   // on = 자동 전환, off = 고정 (the account to fix is the row tapped below)
   rows.unshift(el("div", { class: "li" }, tx("자동 전환", caption),
     el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!pinned), "aria-label": "자동 전환", onclick: ev => setMode(ev.currentTarget, { mode: pinned ? "auto" : "pinned" }, pinned ? "자동 전환으로 바꿨어요" : "고정했어요") })));
