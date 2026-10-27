@@ -282,9 +282,11 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			// A notice of this computer seen in the other one's 모니터링: 읽음 처리, the x (무시) and its undo, the same routes the owner's own web uses.
 			case "notice":
 				if (a.op === "read" && Array.isArray(a.ids)) return ask("POST", "/api/notices/read", { ids: a.ids.map(String) }, login);
+				// reopen: 되돌리기 on the toast after a reply draft was answered 보내지 않기 from the other computer.
+				if (a.op === "reopen" && typeof a.id === "string" && a.id) return ask("POST", "/api/notices/reopen", { ids: [a.id] }, login);
 				// dismiss: the 지우기 of a handled reply draft folded in a mail's conversation (web/js/30-mail-sent.js); an open question is refused there.
 				if ((a.op === "ignore" || a.op === "unignore" || a.op === "dismiss") && typeof a.id === "string" && a.id) return ask("POST", `/api/notices/${encodeURIComponent(a.id)}/${a.op}`, {}, login);
-				return bad("op must be read, ignore, unignore or dismiss");
+				return bad("op must be read, reopen, ignore, unignore or dismiss");
 			case "read":
 				return ask("POST", "/api/read", { target: a.target, ts: a.ts }, login);
 			case "watch": {
@@ -322,8 +324,10 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.op === "read" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/read`, { logId: a.logId }, login);
 				if (a.op === "draft" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/draft`, typeof a.choice === "string" ? { choice: a.choice } : a.revise && typeof a.revise === "object" ? { revise: a.revise } : {}, login);
 				if (a.op === "ask-drop" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/ask/drop`, {}, login);
+				// 지켜보기 / 자동 초안 of a room, switched from the other computer: the owner's own room PUT, which checks the values.
+				if (a.op === "room" && a.chatId) return ask("PUT", `/api/kakao/rooms/${id}`, { watched: a.watched, autoDraft: a.autoDraft }, login);
 				if ((a.op === "draft-send" || a.op === "draft-drop") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
-				return bad("op must be send, send-delete, read, draft, ask-drop, draft-send or draft-drop");
+				return bad("op must be send, send-delete, read, draft, ask-drop, room, draft-send or draft-drop");
 			}
 			// 초안 작성 on a mail the other computer holds: its draft is made and offered there.
 			case "mail-draft":

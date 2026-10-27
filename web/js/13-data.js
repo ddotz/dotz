@@ -166,6 +166,7 @@ function saveDraft() { ts(target).draft = ta.value; try { if (ta.value) localSto
 function setTarget(t) {
   if (!validTarget(t) || t === target) return;
   saveDraft();
+  ts(target).att = ATT;   // the files waiting in the composer stay with their conversation, like the typed text
   closeSheet();
   target = t;
   try { localStorage.setItem(TARGET_KEY, t); } catch {}
@@ -174,7 +175,7 @@ function setTarget(t) {
   convSync();
   markSeen();
   if (!s.draft) { try { s.draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {} }
-  ta.value = s.draft; autosize(); updateHints();
+  ta.value = s.draft; ATT = s.att || []; renderAtt(); autosize(); updateHints();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
   renderAll();
   if (!(s.hLoaded && s.aLoaded)) loadTarget(t);
