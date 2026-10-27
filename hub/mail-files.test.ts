@@ -95,3 +95,18 @@ test("a bad attachments field is a 400 for the poster", async () => {
 	await expect(postMail({ source: "fixture", id: "att-bad", subject: "x", attachments: "no" }, deps)).rejects.toThrow("attachments must be an array");
 	await expect(postMail({ source: "fixture", id: "att-bad", subject: "x", attachments: [{ name: "a" }] }, deps)).rejects.toThrow("exactly one of data");
 });
+
+test("a mail with many files keeps every one of them (base64 and files put under mail-files alike)", async () => {
+	mkdirSync(join(MAIL_FILES, "incoming", "many"), { recursive: true });
+	const onDisk = Array.from({ length: 8 }, (_, i) => {
+		const p = join(MAIL_FILES, "incoming", "many", `큰파일-${i}.xlsx`);
+		writeFileSync(p, `xlsx ${i}`);
+		return { name: `큰파일-${i}.xlsx`, path: p };
+	});
+	const inline = Array.from({ length: 9 }, (_, i) => ({ name: `첨부-${i}.txt`, data: b64(`본문 ${i}`) }));
+	const r = await postMail({ source: "fixture", id: "att-many", subject: "자료 17건", from: "Sender <sender@example.com>", attachments: [...inline, ...onDisk] }, deps);
+	const files = mailByKey(r.key)!.attachments!;
+	expect(files).toHaveLength(17);
+	expect(files.at(-1)!.name).toBe("큰파일-7.xlsx");
+	expect(await (await get(`/api/mail/${r.key}/files/16`)).text()).toBe("xlsx 7");
+});
