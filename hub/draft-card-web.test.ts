@@ -91,7 +91,7 @@ for (const width of [1440, 390]) {
 			return { n: cards.length, states: cards.map(x => x.querySelector(".dr-st").dataset.state), badge: cards.map(x => txt(x.querySelector(".dr-st"))),
 				questions: cards.map(x => x.textContent.split(${JSON.stringify(Q)}).length - 1), chip: txt(c.querySelector(".dr-chip")), subject: txt(c.querySelector(".dr-sub")),
 				subjectWeight: Number(getComputedStyle(c.querySelector(".dr-sub")).fontWeight), paras: [...c.querySelectorAll(".dr-body p")].map(txt),
-				orig: !!c.querySelector(".dr-orig"), buttons: cards.map(x => [...x.querySelectorAll("button")].map(txt)), rowCount: document.querySelectorAll("#mon-tl > .bm.dr .dcm-row").length,
+				orig: !!c.querySelector(".dr-orig"), buttons: cards.map(x => [...x.querySelectorAll("button:not(.dr-rm)")].map(txt)), rm: cards.map(x => x.querySelectorAll(".dr-rm").length), rowCount: document.querySelectorAll("#mon-tl > .bm.dr .dcm-row").length,
 				over: document.documentElement.scrollWidth > innerWidth, w: c.getBoundingClientRect().width,
 				rowRole: [row.getAttribute("role"), row.tabIndex], rowButtons: row.querySelectorAll("button").length };
 		})()))`)) as string) as any;
@@ -106,6 +106,7 @@ for (const width of [1440, 390]) {
 		expect(got.orig).toBe(true);
 		expect(got.buttons[0]).toEqual(["보내기", "고치기", "보내지 않기"]);
 		for (const b of got.buttons.slice(1)) expect(b).toEqual([]);
+		expect(got.rm).toEqual([1, 0, 0, 0, 0]);   // 지우기 (x) only on the draft that waits
 		expect(got.rowCount).toBe(0);
 		expect(got.over).toBe(false);
 		expect(got.rowRole).toEqual(["button", 0]);

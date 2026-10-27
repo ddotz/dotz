@@ -117,7 +117,7 @@ describe.each([[390, 844], [1280, 900]])("the same app on this computer and on t
 	test("the mail reply-draft card is the same structured card with the same buttons", async () => {
 		const parts = async (v: View) => q<{ card: string; buttons: string[]; orig: boolean; chip: string }>(v, `${NORMALIZE}
 			const c = document.querySelector("#mon-tl .bm.dr");
-			return { card: clean(c), buttons: [...c.querySelectorAll("button")].map(b => b.textContent.trim()), orig: !!c.querySelector(".dr-orig"), chip: c.querySelector(".dr-chip").textContent };`);
+			return { card: clean(c), buttons: [...c.querySelectorAll("button:not(.dr-rm)")].map(b => b.textContent.trim()), orig: !!c.querySelector(".dr-orig"), chip: c.querySelector(".dr-chip").textContent };`);
 		const lv = await boot(width, height, KEYS.mail.local, DRAFT_READY, "pending");
 		const local = await parts(lv);
 		await Bun.write(join(SHOTS, `local-mail-draft-${width}.png`), await lv.screenshot());
@@ -160,6 +160,6 @@ test("a peer's draft card answers on the Mac mini once and turns to 보냄; noth
 	expect(acts).toEqual([{ action: "answer", args: { id: "dp", n: 1 } }]);
 	expect(localPosts.filter(x => x.path.startsWith("/api/notices"))).toEqual([]);
 	await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"]').click()`);
-	await waitFor(v, `document.querySelector('#mon-tl .bm.dr .dr-st[data-state="send"]')`);   // 전체 keeps it as the sent card
-	expect(await q(v, `return document.querySelectorAll("#mon-tl .bm.dr .dr-send").length`)).toBe(0);
+	await waitFor(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"].on')`);
+	expect(await q(v, `return document.querySelectorAll("#mon-tl .bm.dr").length`)).toBe(0);   // sent: folded inside its mail's conversation, not in the list
 });

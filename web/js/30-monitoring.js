@@ -234,7 +234,8 @@ function drOriginal(t) {
   const brief = mailBrief(m, t);
   return el("div", { class: "dr-orig" }, el("div", { class: "dr-ok", text: "답장할 메일" }), el("div", { class: "dr-os" }, el("b", { text: mailSender(m.from) }), m.subject ? ` · ${m.subject}` : ""), brief ? el("div", { class: "dr-ob", text: brief }) : null);
 }
-function draftCardNode(n) {
+// o.bare: only the mail it sends (a handled draft unfolded inside its mail's conversation, 30-mail-sent.js).
+function draftCardNode(n, o = {}) {
   const d = n.decision, dr = d.draft, st = drState(d), open = st === "open", [stText, stTone] = DR_STATE[st], busy = dcSending.has(n.id);
   const opt = k => d.options.find(o => o.label === k) || null, oSend = opt("보내기"), oEdit = opt("고치기"), oDrop = opt("보내지 않기");
   const redraw = () => { const nn = draftCardNode(n); card.replaceWith(nn); };
@@ -251,9 +252,12 @@ function draftCardNode(n) {
     draftOriginNode(dr),
     man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
     draftFilesNode(dr, { t: d.to, edit: open }), draftMailNode(dr.mail));
+  if (o.bare) return mailBox;
   if (editing && !man) mailBox.append(el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), ta);
   const kids = [
-    el("div", { class: "rc-hd" }, el("span", { class: "dr-ic" }, icon(mail ? "mail" : "send")), el("span", { class: "rc-src", text: mail ? "메일" : (targetName(d.to) || "초안") }), el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` })),
+    el("div", { class: "rc-hd" }, el("span", { class: "dr-ic" }, icon(mail ? "mail" : "send")), el("span", { class: "rc-src", text: mail ? "메일" : (targetName(d.to) || "초안") }), el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
+      // 지우기 on a waiting draft is 보내지 않기: the same answer path, so the owning computer drops it once and nothing is sent
+      open && !editing && oDrop ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => { if (!busy) answerInline(n, oDrop); } }, icon("close")) : null),
     q ? el("div", { class: "rc-title dr-q", text: q }) : null, mail ? drOriginal(d.to) : null, mailBox];
   if (editing) {
     go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: man ? "이 내용으로 고치기" : "고쳐 달라고 하기", onclick: async () => {
@@ -388,7 +392,9 @@ function mailDraftLive(notices) {
   }
   return newest;
 }
-// 보내지 않기 was answered: the card leaves every view, like a stale one. A sent draft stays as its little history card under 전체.
+// 보내지 않기 was answered: the card leaves every view, like a stale one. A sent or otherwise handled mail draft leaves the list too and is
+// folded inside its mail's conversation (30-mail-sent.js).
+const mailDraftDone = n => !!(n.decision && n.decision.draft) && String(n.decision.to || "").startsWith("mail:") && !mailDraftHeld(n);
 const mailDraftGone = (n, newest) => !!(n.decision && n.decision.draft) && String(n.decision.to || "").startsWith("mail:") && (drState(n.decision) === "drop" || newest.get(mailDraftKey(n)) !== n);
 function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0];
@@ -601,7 +607,7 @@ function monChronoNodes(it, names) {
   // a mail list keeps the reply drafts awaiting the owner under 확인 대기 alone; every other view drops them. A draft answered 보내지 않기, and one a
   // newer draft of the same mail replaced, is gone from every view.
   const newestDraft = mailDraftLive(it.notices);
-  const notices = it.notices.filter(n => ok(n) && (!mf || mailDraftHeld(n) === held) && !mailDraftGone(n, newestDraft));
+  const notices = it.notices.filter(n => ok(n) && (!mf || (mailDraftHeld(n) === held && !mailDraftDone(n))) && !mailDraftGone(n, newestDraft));
   const runs = [];
   for (const n of notices.sort((a, b) => ntAt(a) - ntAt(b))) {
     const last = runs[runs.length - 1], k = monNeed(n) || ntIsDec(n) ? "" : monFoldKey(n, names);
