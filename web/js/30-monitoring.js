@@ -319,6 +319,16 @@ function mailFromMsg(text, skip) {
   const sp = rcSplit(text), sec = rcSections(sp.text).find(s => s.h === "요약"), own = sec ? mailLines(sec.body, skip).slice(0, 3) : [];
   return own.length ? own : mailLines(sp.raw, skip).slice(0, 3);
 }
+// The row's summary as parts: up to two points of 요약 when the summary is a bulleted list (else the first lines as one text), and the
+// first thing to do from 할 일 unless it says 없음. 첨부 is the paperclip count, never repeated here.
+const MAIL_BULLET = /^\s*(?:[-*•·]|\d+[.)])\s+/;
+function mailParts(text, skip) {
+  const secs = rcSections(String(text ?? "")), sum = secs.find(s => s.h === "요약") || secs.find(s => !s.h), todo = secs.find(s => s.h === "할 일" || s.h === "할일" || s.h === "다음 할 일");
+  const bullets = sum ? sum.body.split("\n").filter(l => MAIL_BULLET.test(l)) : [];
+  const points = bullets.length ? mailLines(bullets.join("\n"), skip).slice(0, 2) : [];
+  const first = todo ? mailLines(todo.body, skip)[0] || "" : "";
+  return { points, todo: /^없음/.test(first) ? "" : first, more: todo ? Math.max(0, mailLines(todo.body, skip).length - 1) : 0 };
+}
 const mailBrief = (m, t) => {
   const skip = mailSkip(m), own = mailLines(m.summary || m.preview, skip);
   if (own.length || !t) return own.join(" ");
@@ -353,13 +363,15 @@ const mailReplyChip = sg => {
 // else 읽음 / 새 메일. Reading never changes the reply state; the unread count stays beside it as its own tag.
 const MAIL_STATE = { needs: ["답장 필요", "warn"], draft: ["초안 있음", "pri"], replied: ["답장함", "ok"], skipped: ["답장 안 함", ""], fyi: ["참고만", ""] };
 const mailStateOf = (m, unread) => m.dir === "out" ? ["내가 보냄", ""] : MAIL_STATE[m.reply] || (unread ? ["새 메일", "warn"] : ["읽음", ""]);
-// The filter of the mail list: 전체 / 답장 필요 / 답장함 / 보낸 메일.
-const MAIL_FILTERS = [["all", "전체", () => true], ["owed", "답장 필요", m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft")], ["replied", "답장함", m => m.dir !== "out" && m.reply === "replied"], ["sent", "보낸 메일", m => m.dir === "out"]];
+// An app whose conversation is a list of mails (메일 and its instances): newest on top, opened at the top.
+const monMailList = it => !!(it && it.app && !it.mon && it.mails.some(t => MAILS.has(t)));
+// The filter of the mail list: 전체 / 안 읽음 / 답장 필요 / 답장함 / 보낸 메일. A filter gets the mail and its conversation target.
+const MAIL_FILTERS = [["all", "전체", () => true], ["unread", "안 읽음", (m, t) => m.dir !== "out" && (ts(t).unread | 0) > 0], ["owed", "답장 필요", m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft")], ["replied", "답장함", m => m.dir !== "out" && m.reply === "replied"], ["sent", "보낸 메일", m => m.dir === "out"]];
 const mailFilterOf = () => MAIL_FILTERS.find(f => f[0] === MON.mailFilter) || MAIL_FILTERS[0];
 function mailFilterBar(mails) {
   const cur = mailFilterOf()[0];
   return el("div", { class: "mr-filter", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
-    const n = k === "all" ? 0 : mails.filter(t => MAILS.has(t) && ok(MAILS.get(t))).length;
+    const n = k === "all" ? 0 : mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length;
     return el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); } }, label, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
   }));
 }
@@ -380,8 +392,16 @@ function monConvNode(t, label) {
     el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null),
     el("div", { class: "rc-title", text: title }),
     m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
-    brief ? el("div", { class: "mr-sum", text: brief }) : null,
+    ...mailSumNodes(m, t, brief),
     chip || owed ? el("div", { class: "mr-slot" }, chip, owed ? unrepNo(`/api/mail/${t.slice(5)}/no-reply`, () => { m.unreplied = false; m.reply = "skipped"; monSchedule(); if (pqPc(t)) pqSoon(); }) : null, owed ? mailFyiButton(t, m) : null) : null);
+}
+// The summary lines of a mail row: a bulleted 요약 as a two-point list, else the brief as one clamped text; then the first 할 일.
+function mailSumNodes(m, t, brief) {
+  if (!m) return brief ? [el("div", { class: "mr-sum", text: brief })] : [];
+  const p = mailParts(m.summary || "", mailSkip(m));
+  const sum = p.points.length ? el("ul", { class: "mr-sum mr-pts" }, ...p.points.map(x => el("li", { text: x }))) : brief ? el("div", { class: "mr-sum", text: brief }) : null;
+  const todo = p.todo ? el("div", { class: "mr-todo" }, el("b", { text: "할 일" }), el("span", { text: p.more ? `${p.todo} 외 ${p.more}건` : p.todo })) : null;
+  return [sum, todo].filter(Boolean);
 }
 // 참고만: this mail needs no reply (POST /api/mail/<key>/fyi); the label changes at once, the lists re-read.
 const mailFyiButton = (t, m) => el("button", { class: "cchip unrep-no mr-fyi", type: "button", text: "참고만", onclick: ev => { ev.stopPropagation(); busy(ev.currentTarget, async () => { await api(`/api/mail/${t.slice(5)}/fyi`, "POST", {}); toast("참고만으로 표시했어요"); m.unreplied = false; m.reply = "fyi"; monSchedule(); if (pqPc(t)) pqSoon(); loadIntegrations(); }); } });   // busy: a second tap while it posts does nothing
@@ -554,10 +574,14 @@ function monChronoNodes(it, names) {
     if (r.all.length < MON_FOLD_MIN) return r.all.map(n => ({ at: ntAt(n), node: () => monNoticeNode(n, names) }));
     return [{ at: ntAt(r.n), node: () => { const x = monNoticeNode(r.n, names); if (!x) return null; x.dataset.nids = r.all.map(n => n.id).join(","); x.querySelector(".rc-hd").after(el("div", { class: "mon-rep", text: `같은 결과 ${r.all.length}번 · 처음 ${monWhen(r.all[0])}` })); return x; } }];
   };
-  const msgs = [...runs.slice(cut).flatMap(rep), ...(mf ? it.mails.filter(t => !MAILS.has(t) || mf[2](MAILS.get(t))) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) })),
-    ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])].sort((a, b) => a.at - b.at);
+  const msgs = [...runs.slice(cut).flatMap(rep), ...(mf ? it.mails.filter(t => !MAILS.has(t) || mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) })),
+    ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])];
+  // A mail app reads like a mailbox, newest on top (owner 2026-10-27); a monitor stays a chat, oldest to newest. Equal times keep their order.
+  const newestTop = monMailList(it);
+  msgs.sort((a, b) => newestTop ? b.at - a.at : a.at - b.at);
   const nodes = msgs.map(x => x.node()).filter(Boolean);
-  if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
+  if (cut && newestTop) nodes.push(monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
+  else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   if (withMails) return [mailFilterBar(it.mails), ...(nodes.length ? nodes : [el("div", { class: "empty", text: "이 보기에 해당하는 메일이 없어요" })])];
   return nodes;
 }
@@ -726,7 +750,7 @@ function renderMonitoring() {
     clear(tl).append(...monTimeline(sel));
     // Older reports added above (이전 소식 보기) keep what was on screen where it is.
     if (MON.grew) { MON.grew = false; box.scrollTop = keep + (box.scrollHeight - was); }
-    else box.scrollTop = monFeed(sel) ? (again ? keep : 0) : stick ? box.scrollHeight : keep;
+    else box.scrollTop = monFeed(sel) || monMailList(sel) ? (again ? keep : 0) : stick ? box.scrollHeight : keep;
     edgeFade(box);
   }
   MON.olderBusy = false;

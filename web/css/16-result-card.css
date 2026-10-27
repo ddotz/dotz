@@ -71,11 +71,18 @@
 .rc-rawbody .md th { background: var(--layer); }
 @media (max-width: 1099px) { .appbar.cvconv h1 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; font-size: 17px; line-height: 22px; overflow-wrap: anywhere; } }
 /* mail row (30-monitoring.js monConvNode): a compact result card that is one tap target (role=button); in the original view (11-todo-strip.js) its files */
-#mon-tl > .bm.rc.mr { gap: 2px; padding: 10px 16px; cursor: pointer; }
+#mon-tl > .bm.rc.mr { gap: 2px; padding: 8px 14px; cursor: pointer; }
 #mon-tl > .bm.rc.mr:hover { background: var(--hover); }
 #mon-tl > .bm.rc.mr:focus-visible { outline-offset: -2px; }
-.mr .rc-title { font-size: 15px; line-height: 22px; }
-.mr-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--fg-2); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+/* A mail row is one compact line each: who and when, the subject, two summary points, the first thing to do (owner 2026-10-27). */
+.mr .rc-title { overflow: hidden; font-size: 14.5px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.mr-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--fg-2); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
+.mr-pts li { position: relative; overflow: hidden; padding-left: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.mr-pts li::before { content: ""; position: absolute; left: 3px; top: 8px; width: 3px; height: 3px; border-radius: 50%; background: var(--fg-3); }
+.mr-todo { display: flex; gap: 6px; min-width: 0; color: var(--fg-2); font-size: 12.5px; line-height: 18px; }
+.mr-todo b { flex: none; color: var(--warn); font-weight: 600; }
+.mr-todo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-slot { margin-top: 6px; display: flex; gap: 6px; }
 .mr-clip { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .mr-clip .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
