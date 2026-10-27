@@ -157,7 +157,9 @@ function msgNode(e) {
       const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? "더 보기" : "접기"; } }, "더 보기") : null;
       const base = [hm, via].filter(Boolean).join(" · "), mt = el("div", { class: "mt", text: base }), mid = e.mid || e.message_id || "";
       if (mid) { DELIV.nodes.set(mid, { mt, base }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
-      return el("div", { class: "um" }, filesNode(e.files), rpQuote(e), text ? ub : null, more, mt);
+      // The owner's files are uploads of the computer that holds the conversation: a peer's open there (15-attachments.js fileUrl).
+      const pc = Array.isArray(e.files) && e.files.length ? pqPc(eventTarget(e) || "") : null;
+      return el("div", { class: "um" }, filesNode(pc ? e.files.map(f => ({ ...f, pc })) : e.files), rpQuote(e), text ? ub : null, more, mt);
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, e.card ? cardNode(e.card) : el("pre", { text }), el("div", { class: "mt", text: hm }));
     case "notice": case "notice_read": return null;
