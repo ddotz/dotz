@@ -202,7 +202,7 @@ async function noticeOpen(n) {
   const a = noticeKindAction(n);
   if (a === "detail" || a === "session" || a === "monitor" || a === "settings" || a === "app") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
   switch (a) {
-    case "sheet": return noticeSheetOpen((ntLinkedDec(n) || n).id);
+    case "sheet": return noticeSheetOpen(n.pc ? n : (ntLinkedDec(n) || n).id);   // a peer's question is not in NT: the notice itself
     case "ask": if (await ntAskSheet(n)) return; return ntJump(n);   // answered or gone: the conversation
     case "detail": return ntDetailOpen(n);
     case "session": return ntSession(n);
@@ -334,7 +334,7 @@ const ntRevising = n => {
   const m = /^\s*(\d+)\)/.exec(String(n.decision.answer || "")), o = m && n.decision.options.find(x => x.n === Number(m[1]));
   return o && o.label === DRAFT_EDIT ? o : null;
 };
-const ntSuccessor = n => NT.items.find(x => x.id !== n.id && ntIsDec(x) && x.decision.draft && x.decision.to === n.decision.to && String(x.ts) > String(n.ts)) || null;
+const ntSuccessor = n => (n.pc ? (((PQ.list.find(p => p && p.url === n.pc.url) || {}).items || {}).notices || []) : NT.items).find(x => x.id !== n.id && ntIsDec(x) && x.decision.draft && x.decision.to === n.decision.to && String(x.ts) > String(n.ts)) || null;
 // Waits on the owner's action: an open decision or an [ask] item (the alert / message twin of one), unread and not ignored. Same rule as
 // hub/notices.ts needsAnswer, which keeps these unread however they are viewed: only an answer, a resolving signal or the x (무시) clears them.
 const ntNeeds = n => !n.read && !n.ignored && !n.dismissed && (ntOpenDec(n) || n.tone === "ask");
@@ -365,6 +365,7 @@ function ntApply(item, unread) {
 }
 // Throws with the hub's reason when the answer could not be delivered.
 async function ntPost(n, num, note) {
+  if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(note ? { note } : {}) }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
   const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(note ? { note } : {}) });
   ntApply(r.item, r.unread);
 }
@@ -378,19 +379,25 @@ async function ntIgnore(n) {
   if (!n || !n.id || !ntNeeds(n)) return;
   const id = String(n.id);
   try {
-    const r = await api(`/api/notices/${enc(id)}/ignore`, "POST", {});
-    ntApply(r.item, r.unread);
-    if (r.ids && r.ids.length > 1) loadNotices();   // its alert / message twins changed too; their live frames follow, the refetch makes sure
+    if (n.pc) await pqNotice(n, "notice", { op: "ignore", id });
+    else {
+      const r = await api(`/api/notices/${enc(id)}/ignore`, "POST", {});
+      ntApply(r.item, r.unread);
+      if (r.ids && r.ids.length > 1) loadNotices();   // its alert / message twins changed too; their live frames follow, the refetch makes sure
+    }
   } catch (err) { toast(err.message, true); return; }
   if (NS.node && NS.id === id) ntSheetClose(false);
   if (DK.node && DK.ign === id) dkClose(false);
-  toast("무시했어요", false, { label: "되돌리기", onclick: () => ntUnignore(id) }, 6000);
+  toast("무시했어요", false, { label: "되돌리기", onclick: () => ntUnignore(id, n) }, 6000);
 }
-async function ntUnignore(id) {
+async function ntUnignore(id, n) {
   try {
-    const r = await api(`/api/notices/${enc(id)}/unignore`, "POST", {});
-    ntApply(r.item, r.unread);
-    if (r.ids && r.ids.length > 1) loadNotices();
+    if (n && n.pc) await pqNotice(n, "notice", { op: "unignore", id: String(id) });
+    else {
+      const r = await api(`/api/notices/${enc(id)}/unignore`, "POST", {});
+      ntApply(r.item, r.unread);
+      if (r.ids && r.ids.length > 1) loadNotices();
+    }
     toast("다시 답변 필요로 돌렸어요");
   } catch (err) { toast(err.message, true); }
 }
@@ -442,11 +449,12 @@ function ntHomeRows(list) {
 }
 
 /* ---- detail sheet ---- */
-const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null };   // edit: { id, opt, text, fresh } while the owner writes the detail an option asks for   // det: a notice shown read-only (a failure alert), not looked up by id
+const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null, pn: null };   // pn: a peer's notice (it is not in NT; drawn from the snapshot, 34-peer-monitoring.js)   // edit: { id, opt, text, fresh } while the owner writes the detail an option asks for   // det: a notice shown read-only (a failure alert), not looked up by id
 function ntSheetClose(restore = true) { if (NS.h) NS.h.close(restore); }
 // "직접 답하기": to the asking message in its chat (a login request: its own form).
 function ntDirect(n) {
   ntSheetClose(false);
+  if (n.pc) { const t = n.decision.to; if (pqPc(t)) go("monitoring", `c:${t}`); else toast(`${n.pc.name}에서 답해 주세요`); return; }   // a peer's question: its conversation as this page shows it
   if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast("입력 창이 이미 닫혔어요"); return; }
   ntJump(n);
 }
@@ -513,7 +521,7 @@ function ntDetailPaint(n) {
 function ntSheetPaint() {
   if (!NS.node) return;
   if (NS.det) { ntDetailPaint(NS.det); return; }
-  const n = ntById(NS.id);
+  const n = NS.pn ? pqNoticeNow(NS.pn) : ntById(NS.id);
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
   const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
   const kids = [
@@ -539,7 +547,7 @@ function ntSheetPaint() {
     if (NS.busy) foot.append(el("div", { class: "ds-st", role: "status", text: "보내는 중…" }));
   } else if (ignd) {
     foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl ign", text: "무시했어요" }), el("span", { class: "ds-ra", text: "답하지 않고 넘겼어요" })));
-    foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "undo", onclick: () => ntUnignore(n.id), text: "되돌리기" }));
+    foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "undo", onclick: () => ntUnignore(n.id, n), text: "되돌리기" }));
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" }));
   } else {
@@ -556,18 +564,20 @@ function ntSheetPaint() {
   const ta = ed ? box.querySelector(".dc-note") : null;
   if (ta && (ed.fresh || hadNote)) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); ed.fresh = false; }
 }
+// `id` is a notice id, or a peer's notice itself (n.pc): that one is not in NT and is answered on its computer.
 async function noticeSheetOpen(id) {
-  let n = ntById(id);
-  if (!n) { await loadNotices(); n = ntById(id); }
+  const pn = id && typeof id === "object" && id.pc ? id : null;
+  let n = pn ? pqNoticeNow(pn) : ntById(id);
+  if (!n && !pn) { await loadNotices(); n = ntById(id); }
   if (!n || !ntIsDec(n)) { toast("이 알림은 이미 처리됐어요"); return; }
-  if (NS.node && NS.id === String(n.id)) return;
+  if (NS.node && NS.id === String(n.id) && !NS.pn === !pn) return;
   ntSheetClose(false);
-  if (n.decision.draft && n.decision.state === "open") { ntDraftSheet(n); return; }
-  ntSheetShow(String(n.id), null);
+  if (!pn && n.decision.draft && n.decision.state === "open") { ntDraftSheet(n); return; }
+  ntSheetShow(String(n.id), null, pn);
 }
-function ntSheetShow(id, det) {
-  NS.id = id; NS.det = det; NS.busy = false;
-  const h = fsOpen({ labelledby: "ds-t", onClose: () => { if (NS.h === h) { NS.h = NS.node = null; NS.id = ""; NS.det = null; NS.edit = null; } } });
+function ntSheetShow(id, det, pn = null) {
+  NS.id = id; NS.det = det; NS.pn = pn; NS.busy = false;
+  const h = fsOpen({ labelledby: "ds-t", onClose: () => { if (NS.h === h) { NS.h = NS.node = null; NS.id = ""; NS.det = null; NS.edit = null; NS.pn = null; } } });
   NS.h = h; NS.node = h.node;
   ntSheetPaint();
   const first = NS.edit ? null : NS.node.querySelector(".ds-opt, .ds-direct");
