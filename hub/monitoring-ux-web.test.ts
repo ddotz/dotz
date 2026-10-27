@@ -109,7 +109,7 @@ describe("a monitor row and its conversation", () => {
     await run(v, `go("monitoring", "m:끊긴 감시")`);
     await waitFor(v, `document.querySelector("#mon-head .mon-banner")`);
     expect(await q(v, `return document.querySelector("#mon-head .mon-banner").textContent`)).toMatch(/연결이 끊겼어요.*다시 로그인 필요/);
-    expect(await q(v, `return document.querySelector("#mon-head .mon-banner .mon-recheck").textContent`)).toBe("지금 다시 확인");
+    expect(await q(v, `return document.querySelector("#mon-head .mon-banner .mon-recheck").textContent`)).toBe("다시 연결");
     expect(await q(v, `return [document.querySelectorAll("#mon-head [data-run]").length, document.querySelectorAll("#mon-tl [data-run]").length, document.querySelectorAll(".mon-recheck").length]`)).toEqual([0, 0, 1]);
     expect(await q(v, `return document.querySelector("#mon-head .mon-banner .mon-banner-tx").textContent`)).toMatch(/^연결이 끊겼어요 · .+부터 · 다시 로그인 필요$/);
     await Bun.write(join(SHOTS, "monitoring-detail-1280.png"), await v.screenshot());

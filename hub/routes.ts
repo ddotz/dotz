@@ -13,6 +13,7 @@ import { appEntries, INTEGRATIONS, readAppOff, integrationAvailable, integration
 import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, approveWatch, removeWatch, runWatch } from "./watch.ts";
+import { watchConnection } from "./watch-status.ts";
 import { featuresOf, ownedWatches, retryInternal, setFeature } from "./app-features.ts";
 import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
 import { refreshReplyModelChoices } from "./reply-model-choices.ts";
@@ -261,7 +262,15 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const watchRun = req.method === "POST" ? /^\/api\/watches\/([a-z0-9-]{1,40})\/run$/.exec(url.pathname) : null;
 		if (watchRun) {
 			const name = watchRun[1]!;
-			if (!allWatches().some(w => w.name === name || w.id === name)) return json({ error: `no watch ${name}` }, 404);
+			const w = allWatches().find(x => x.name === name || x.id === name);
+			if (!w) return json({ error: `no watch ${name}` }, 404);
+			// A disconnected watch behind an approval gate (a login that sends a push to the owner's phone) reconnects only with his yes; the tap
+			// on 다시 연결 is that yes, so it is approved (approveWatch runs it) instead of a plain run that would only report it still waits.
+			if (w.approval_minutes && watchConnection(w).state === "disconnected") {
+				approveWatch(w.id);
+				const item = listMonitors().find(m => m.kind === "watch" && m.watch === name);
+				return json({ ok: true, approved: true, ...(item ? { item } : {}) });
+			}
 			await runWatch(name);
 			const item = listMonitors().find(m => m.kind === "watch" && m.watch === name);
 			return json({ ok: true, ...(item ? { item } : {}) });
