@@ -79,6 +79,31 @@ function pqRoute(path, method, body) {
   return a && a.pc ? [pqProxy(a.pc, "/api/peer/act"), "POST", { action: a.action, args: a.args }] : [path, method, body];
 }
 
+// A peer's notice (a question, a send approval, a report) is answered, ignored and read on the computer that holds it, once, through /api/peer/act.
+// That computer's answer replaces the copy in the snapshot, so the card turns at once; the next snapshot read confirms it.
+function pqNoticeOf(n) {
+  const p = n && n.pc && PQ.list.find(x => x && x.url === n.pc.url);
+  return p && p.items ? (p.items.notices || []).find(x => String(x.id) === String(n.id)) || null : null;
+}
+const pqNoticeNow = n => { const raw = pqNoticeOf(n); return raw ? { ...raw, pc: n.pc } : n; };
+async function pqNotice(n, action, args) {
+  const r = await api(pqProxy(n.pc, "/api/peer/act"), "POST", { action, args });
+  const raw = pqNoticeOf(n);
+  if (r && r.item) { if (raw) Object.assign(raw, r.item); Object.assign(n, r.item, { pc: n.pc }); }
+  MON.sig = ""; monSchedule(); syncInlineChoices(); ntSheetPaint(); pqSoon();
+  return r;
+}
+// Peer reports read here (seen on screen, 읽음 처리): marked read on each computer that holds them, one request per computer.
+async function pqNoticesRead(list) {
+  const by = new Map();
+  for (const n of list) if (n.pc) by.set(n.pc.url, [...(by.get(n.pc.url) || []), n]);
+  for (const ns of by.values()) {
+    for (const n of ns) { n.read = true; const raw = pqNoticeOf(n); if (raw) raw.read = true; }
+    await api(pqProxy(ns[0].pc, "/api/peer/act"), "POST", { action: "notice", args: { op: "read", ids: ns.map(n => String(n.id)) } });
+  }
+  if (by.size) { MON.sig = ""; monSchedule(); pqSoon(); }
+}
+
 async function pqLoad() {
   clearTimeout(PQ.t);
   if (PQ.busy) { PQ.again = true; return; }

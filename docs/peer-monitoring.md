@@ -36,6 +36,8 @@ gateway that owns the item. That gateway executes it and records it.
 
 - A peer item has the same data shape as a local one, so it goes through the same renderers: the mail row (`monConvNode`), the notice card,
   the chat view with the mail original and files, and the Kakao pane (rooms, bubbles, composer). Only the machine label is peer-only.
+  A peer's open decision (a mail reply-draft approval included) is the same card as a local one and is answered from here: `ntPost` sends it
+  to the owner as `answer` (`pqNotice`), and the owner's notice replaces the snapshot copy. A peer's loose `[ask]` report still has no 답하러 가기.
 - `pqMail` (`web/js/34-peer-monitoring.js`) puts a peer's mail into `MAILS`, `CONV` and the unread count. `api()` runs each request through
   `pqRoute`: a read of a peer's mail, history or Kakao room becomes `/api/peer/proxy?pc=..&p=<path>`; `pqLink(path)` does the same for `fetch`
   and download links. A POST that belongs to a peer (`/api/message` for its mail, `/api/read`, `/api/kakao/...` send, read, draft, draft send and drop)
@@ -56,7 +58,7 @@ gateway that owns the item. That gateway executes it and records it.
 ## Actions (forwarded, executed by the owner)
 
 - `POST /api/peer/act {action, args, from}` on the owning gateway. The actions are `message` (a reply or a confirmed draft
-  in a conversation), `answer` (a decision), `read` (mark read), `watch` (pause, resume or run a watch) and `kakao`
+  in a conversation), `answer` (a decision, with `note` for 고치기), `notice` (`op` read with `ids`, ignore or unignore with `id`), `read` (mark read), `watch` (pause, resume or run a watch) and `kakao`
   (`op` send, read, draft, draft-send or draft-drop on the owner's `/api/kakao/...` routes). The owner runs
   the same handler as its own web app. It records the event with `via: <from machine name>`. Its own web and history show
   the action the same as a local action, with a small 'from <machine>' note. The other gateway keeps no copy beyond its cache.
