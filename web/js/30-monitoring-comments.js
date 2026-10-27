@@ -308,10 +308,10 @@ function cmMode(app, shown, pc) {
   const swap = (CM.pc ? CM.pc.url : "") !== (pc ? pc.url : "");
   if (app) $("#v-monitoring").classList.add("kk-on");
   cmPane.hidden = !app;
-  if (swap || !app) {   // another computer's comments, or none: start from an empty pane
+  if (swap) {   // another computer's comments: start from an empty pane (this computer's sources stay for its app rows)
     Object.assign(CM, { vis: false, sources: [], apps: new Set(), threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", error: "" }); CM.seq++; clearInterval(CM.timer);
-    CM.pc = app ? pc || null : null;
   }
+  CM.pc = app ? pc || null : null;
   if (shown && (!CM.vis || CM.app !== app)) {
     // The DM tab is this computer's Instagram app only; another computer's comment app starts on its comments.
     const dm = !CM.pc && DM.on && DM.connected && app === DM_APP && !CM.sources.some(s => cmOwner(s) === app && (s.watch || []).length);
