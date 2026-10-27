@@ -12,7 +12,7 @@ import { conversationList, unreadOf } from "./conversations.ts";
 import { appEntries, INTEGRATIONS, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection } from "./integrations.ts";
 import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
-import { allWatches, removeWatch, runWatch } from "./watch.ts";
+import { allWatches, approveWatch, removeWatch, runWatch } from "./watch.ts";
 import { featuresOf, ownedWatches, retryInternal, setFeature } from "./app-features.ts";
 import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
 import { refreshReplyModelChoices } from "./reply-model-choices.ts";
@@ -339,7 +339,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 					const b = await body(req);
 					setFeature(DATA_DIR, app!, b.id, b.on);
 				}
-				if (op === "retry" && req.method === "POST") await retryInternal(DATA_DIR, app!, (await body(req)).watch, allWatches(), runWatch);
+				if (op === "retry" && req.method === "POST") await retryInternal(DATA_DIR, app!, (await body(req)).watch, allWatches(), runWatch, approveWatch);
 				else if (op === "retry" || (req.method !== "GET" && req.method !== "PATCH")) return json({ error: "not found" }, 404);
 				return json(featuresOf(DATA_DIR, app!, allWatches(), listNotices(NOTICE_CAP).items));
 			} catch (error) {
