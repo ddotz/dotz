@@ -176,7 +176,8 @@ function monItems() {
   return pqMerge(items);
 }
 // 답 필요: waits on the owner and is answered from here (an open decision, an [ask] report), never read by looking; 실패: a report that could not check.
-const monNeed = n => ntNeeds(n) && !n.pc;
+// A peer's open decision is answered here too (ntPost through the peer); a peer's loose [ask] waits in that computer's conversation.
+const monNeed = n => ntNeeds(n) && (!n.pc || ntIsDec(n));
 const monFailed = n => n.tone === "fail";
 const monNeedChips = need => (need ? [[`답 필요 ${need}`, "warn"]] : undefined);
 // The open item: the one picked, else on a wide screen the first (a phone shows its list until one is picked).
@@ -278,7 +279,7 @@ function monDecisionNode(n) {
   // The buttons show the options: the body keeps the lead text and the 결정: line, not the option lines (10-decision-card.js stripChoices).
   const fl = fileLines(d.options.length ? stripChoices(n.text) : n.text);
   const rows = ntOptsOrdered(d.options).map(o => el("button", { class: `dcm-row${o.rec ? " rec" : ""}${said.startsWith(`${o.n})`) ? " on" : ""}`, type: "button", disabled: !open || dcSending.has(n.id), "data-n": o.n,
-    onclick: () => (d.draft || o.action === "form" ? noticeSheetOpen(n.id) : answerInline(n, o)) },
+    onclick: () => (d.draft || o.action === "form" ? noticeSheetOpen(n.pc ? n : n.id) : answerInline(n, o)) },
     el("span", { class: "dc-key", text: String(o.n) }),
     el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
   const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? "무시했어요" : d.resolved ? "답 없이 끝났어요" : `답했어요${said ? ` · ${ntPlain(said)}` : ""}` });
@@ -300,7 +301,7 @@ function monItemNode(n) {
   if (raw) { const d = rcRawFold(raw); d.addEventListener("click", e => e.stopPropagation()); node.append(d); }
   return node;
 }
-  if (ntIsDec(n) && !n.pc) return monDecisionNode(n);   // a peer's question is answered on that computer: here it is a plain report
+  if (ntIsDec(n)) return monDecisionNode(n);   // a peer's question too: the same card, its answer sent to that computer (ntPost)
   const node = monCard(ntPlain(names[0] || n.title) || "알림", n.updated || n.ts, monStrip(String(n.text || ""), [...names, ntPlain(n.title)]), n.tone);
   const card = n.item ? monItemNode(n) : null;
   if (card) { card.dataset.nid = n.id; return card; }
@@ -492,7 +493,7 @@ const monOlderSentinel = (key, left) => el("div", { class: "mon-sentinel", "data
 const monKey = (ev, fn) => { if (ev.target === ev.currentTarget && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); fn(); } };
 // The bar above a long list: the three views with their counts, and 읽음 처리 for the plain reports in the view (what waits on the owner stays unread).
 // It is drawn once the item holds more than a handful of reports, or any that waits or failed unread; a mail list has its own bar instead.
-const monBarWanted = it => !it.pc && !it.mails.some(t => MAILS.has(t)) && (it.notices.length > 6 || it.notices.some(n => monNeed(n) || (monFailed(n) && !n.read)));
+const monBarWanted = it => !it.mails.some(t => MAILS.has(t)) && (it.notices.length > 6 || it.notices.some(n => monNeed(n) || (monFailed(n) && !n.read)));
 function monBar(it) {
   const cur = monFilterOf(), fyi = it.notices.filter(n => cur[2](n) && !n.read && !monNeed(n) && n.id);
   return el("div", { class: "mr-filter mon-bar" },
@@ -503,21 +504,25 @@ function monBar(it) {
     el("button", { class: "btn text mon-read", type: "button", "data-k": "read", disabled: !fyi.length, title: "답이 필요한 것은 그대로 둬요", onclick: ev => monReadAll(ev.currentTarget, fyi), text: fyi.length ? `${fyi.length}개 읽음 처리` : "읽음 처리" }));
 }
 // 읽음 처리: the listed plain reports are read here at once and on the hub; a failure puts them back and says why (busy toasts it).
+// A peer's reports are read on the computer that holds them (pqNoticesRead).
 const monReadAll = (btn, list) => busy(btn, async () => {
-  const ids = list.map(n => String(n.id));
-  for (const n of list) n.read = true;
-  NT.unread = Math.max(0, NT.unread - ids.length); ntPaint(); homeSoon();
-  let r;
-  try { r = await api("/api/notices/read", "POST", { ids }); }
-  catch (err) { for (const n of list) n.read = false; NT.unread += ids.length; ntPaint(); homeSoon(); loadNotices(); throw err; }
-  if (r && typeof r.unread === "number") NT.unread = r.unread;
-  ntPaint();
-  toast(`${ids.length}개를 읽음으로 표시했어요`);
+  const mine = list.filter(n => !n.pc), ids = mine.map(n => String(n.id));
+  try { await pqNoticesRead(list); } catch (err) { for (const n of list) if (n.pc) n.read = false; pqSoon(); throw err; }
+  if (ids.length) {
+    for (const n of mine) n.read = true;
+    NT.unread = Math.max(0, NT.unread - ids.length); ntPaint(); homeSoon();
+    let r;
+    try { r = await api("/api/notices/read", "POST", { ids }); }
+    catch (err) { for (const n of mine) n.read = false; NT.unread += ids.length; ntPaint(); homeSoon(); loadNotices(); throw err; }
+    if (r && typeof r.unread === "number") NT.unread = r.unread;
+    ntPaint();
+  }
+  toast(`${list.length}개를 읽음으로 표시했어요`);
 });
 // One report as a row: source, state, time and a two-line summary; a tap unfolds the whole card in place (sections, the original, 답하러 가기).
 // A report that waits on the owner carries 답하러 가기 on the row itself. A decision is always the whole card: it is answered in place.
 function monRowNode(n, names) {
-  if ((ntIsDec(n) && !n.pc) || n.item) return monNoticeNode(n, names);   // a report about an app item shows the item (a mail row) as the app draws it
+  if (ntIsDec(n) || n.item) return monNoticeNode(n, names);   // a report about an app item shows the item (a mail row) as the app draws it
   const key = `n:${n.id}`, src = ntPlain(names[0] || n.title) || "알림";
   if (MON.open.has(key)) {
     const full = monNoticeNode(n, names);
@@ -712,18 +717,22 @@ function monSeen() {
   MON.seenT = setTimeout(() => {
     if (current !== "monitoring" || MON.list && narrowChat() || document.visibilityState !== "visible") return;
     const it = monSel(monItems()), box = $("#mon-timeline");
-    if (!it || it.pc || !box.clientHeight) return;
+    if (!it || !box.clientHeight) return;
     const a = box.getBoundingClientRect(), seen = new Set();
     for (const m of box.querySelectorAll("[data-nid], [data-nids]")) {
       const r = m.getBoundingClientRect();
       if (r.bottom > a.top && r.top < a.bottom) for (const id of String(m.dataset.nids || m.dataset.nid || "").split(",")) if (id) seen.add(id);
     }
-    const fresh = it.notices.filter(n => n.id && !n.read && !ntNeeds(n) && seen.has(String(n.id)) && ntById(n.id));
+    // a peer's report is read on its computer (a failed read is re-read from the next snapshot)
+    const fresh = it.notices.filter(n => n.id && !n.read && !ntNeeds(n) && seen.has(String(n.id)) && (n.pc ? pqNoticeOf(n) : ntById(n.id)));
     if (!fresh.length) return;
-    for (const n of fresh) n.read = true;
-    NT.unread = Math.max(0, NT.unread - fresh.length);
+    const mine = fresh.filter(n => !n.pc);
+    pqNoticesRead(fresh).catch(() => pqSoon());
+    if (!mine.length) return;
+    for (const n of mine) n.read = true;
+    NT.unread = Math.max(0, NT.unread - mine.length);
     ntPaint(); homeSoon();
-    ntMarkRead({ ids: fresh.map(n => n.id) });
+    ntMarkRead({ ids: mine.map(n => n.id) });
   }, 700);
 }
 
