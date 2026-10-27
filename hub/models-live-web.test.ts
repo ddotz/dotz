@@ -93,9 +93,9 @@ describe("REQ1: home cards and the composer chip show the model in use", () => {
 		expect(r.tag).toEndWith("에 복귀");
 		await shot(v, "home.png");
 	});
-	test("a session card shows its running model and its fallback", async () => {
+	test("a session row on home shows its running model and its fallback", async () => {
 		const v = await boot();
-		const r = await q<{ model: string; tag: string }>(v, `const n = [...document.querySelectorAll("#home-cards .sup:not(.sub)")].find(x => x.querySelector(".tag.warn")); return { model: n ? n.firstChild.textContent : "", tag: n ? n.querySelector(".tag.warn").textContent : "" }`);
+		const r = await q<{ model: string; tag: string }>(v, `const n = document.querySelector("#home-now .smodel"); return { model: n ? n.firstChild.textContent : "", tag: n ? n.querySelector(".tag.warn").textContent : "" }`);
 		expect(r.model).toEndWith("Sonnet 5.5 · 높음");
 		expect(r.tag).toStartWith("폴백 중 · 한도 소진");
 	});
