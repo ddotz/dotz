@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { paths } from "./config.ts";
-import { digest, lessonCandidates, reflectPrompt } from "./reflect.ts";
+import { digest, lessonCandidates, reflectPrompt, repeatedLessons } from "./reflect.ts";
 
 const DAY = 24 * 3600_000;
 const now = Date.UTC(2026, 9, 19);
@@ -57,4 +57,18 @@ test("undated, malformed and impossible-date lines are ignored", () => {
 	const r = lessonCandidates(text, now);
 	expect(r.stale).toEqual(["- [2020-01-01]"]);
 	expect(r.duplicates).toEqual([]);
+});
+
+test("the [MM-DD] lines the nightly turn writes are lessons too: a year-less date is this year's, or last year's when it would be ahead", () => {
+	const at = Date.UTC(2026, 9, 28);
+	expect(lessonCandidates("- [07-01] keep the gateway log short and plain\n- [07-02] keep the gateway log short and plain", at).duplicates).toHaveLength(1);
+	expect(lessonCandidates("- [12-30] a lesson from last december", at).stale).toEqual(["- [12-30] a lesson from last december"]);
+	expect(lessonCandidates("- [10-20] a lesson from last week", at).stale).toEqual([]);
+});
+
+test("a lesson broken again by a correction today is listed unless its line names an enforcer", () => {
+	const lessons = ["- [10-21] Never git checkout a file that holds uncommitted work", "- [10-22] Read the notices before saying something waits (enforced: hub/notices.ts check)", "- [10-23] short one"].join("\n");
+	const said = ["왜 또 git checkout 했어? 그 file uncommitted work 날아갔잖아", "notices read before saying waits, again"];
+	expect(repeatedLessons(lessons, said)).toEqual(["- [10-21] Never git checkout a file that holds uncommitted work"]);
+	expect(repeatedLessons(lessons, ["오늘은 다른 얘기"])).toEqual([]);
 });
