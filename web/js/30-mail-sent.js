@@ -23,7 +23,8 @@ function mailSentList(t) {
     return st === "send" || (st !== "drop" && newest.get(mailDraftKey(n)) === n);
   }).sort((a, b) => ntAt(a) - ntAt(b));
 }
-async function mailSentRemove(n, btn) {
+// quiet: one of 모두 지우기's items (mailSentClear says the outcome once). Resolves whether it was removed.
+async function mailSentRemove(n, btn, quiet = false) {
   const k = msKey(n), id = String(n.id);
   if (btn) btn.disabled = true;
   MS.gone.add(k); mailSentPaint();
@@ -39,8 +40,17 @@ async function mailSentRemove(n, btn) {
       if (typeof r.unread === "number") NT.unread = r.unread;
       ntPaint();
     }
-    toast("초안을 지웠어요");
-  } catch (e) { MS.gone.delete(k); mailSentPaint(); toast(e.message || "지우지 못했어요", true); }
+    if (!quiet) toast("초안을 지웠어요");
+    return true;
+  } catch (e) { MS.gone.delete(k); mailSentPaint(); if (!quiet) toast(e.message || "지우지 못했어요", true); return false; }
+}
+// 모두 지우기 at the head of a mail's folded drafts: every one of them is hidden the same way (one dismiss each on the computer that holds it).
+async function mailSentClear(list, btn) {
+  if (btn) btn.disabled = true;
+  const ok = await Promise.all(list.map(n => mailSentRemove(n, null, true)));
+  const bad = ok.filter(x => !x).length;
+  toast(bad ? `${list.length}개 중 ${bad}개를 지우지 못했어요` : `초안 ${list.length}개를 지웠어요`, !!bad);
+  if (btn && btn.isConnected) btn.disabled = false;
 }
 function mailSentNode(n) {
   const d = n.decision, dr = d.draft, k = msKey(n), open = MS.open.has(k), st = drState(d);
@@ -67,5 +77,7 @@ function mailSentPaint() {
     if (card) card.after(slot); else tl.append(slot);
   }
   slot.dataset.sig = sig;
-  clear(slot).append(...list.map(mailSentNode));
+  const head = list.length > 1 ? el("div", { class: "ms-hd" }, el("span", { class: "ms-n", text: `처리된 초안 ${list.length}개` }),
+    el("button", { class: "btn text sm ms-clear", type: "button", "data-k": "ms-clear", onclick: ev => mailSentClear(list, ev.currentTarget) }, icon("trash"), el("span", { text: "모두 지우기" }))) : null;
+  clear(slot).append(...(head ? [head] : []), ...list.map(mailSentNode));
 }
