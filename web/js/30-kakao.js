@@ -184,26 +184,43 @@ function kkFileNode(m, md) {
 function kkReplyNode(m, md) {
   const { text } = kkBody(m);
   return el("div", { class: "kk-bub reply" },
-    el("button", { class: `kk-quote${md.srcLogId ? " jump" : ""}`, type: "button", disabled: !md.srcLogId, "data-src": md.srcLogId || null, "aria-label": md.srcLogId ? "원래 메시지로 이동" : null, onclick: ev => { ev.stopPropagation(); kkJump(md.srcLogId); } },
-      el("span", { class: "kk-qn", text: md.quoteSender ? `${md.quoteSender}에게 답장` : "답장" }), el("span", { class: "kk-qt", text: md.quote })),
+    el("button", { class: `kk-quote${md.srcLogId ? " kk-qjump" : ""}`, type: "button", disabled: !md.srcLogId, "data-src": md.srcLogId || null, "aria-label": md.srcLogId ? "원래 메시지로 이동" : null, onclick: ev => { ev.stopPropagation(); kkJump(md.srcLogId, ev.currentTarget); } },
+      el("span", { class: "kk-qn" }, el("span", { text: md.quoteSender ? `${md.quoteSender}에게 답장` : "답장" }), md.srcLogId ? el("span", { class: "kk-qgo", text: "원문 보기" }) : null), el("span", { class: "kk-qt", text: md.quote })),
     el("div", { class: "kk-rt", text }));
 }
 // The original message of a quote: scroll it into view and flash it briefly. When the page does not hold it, the server sends the page
 // around that logId (?around=); a logId the room does not have says so with a toast.
-const kkFlash = node => {
+// The original stays marked a few seconds with an "원래 메시지" label over it, and a pill takes the owner back to the reply he came from.
+const kkFlash = (node, label = "원래 메시지") => {
   node.classList.remove("kk-hl");
   void node.offsetWidth;
   node.classList.add("kk-hl");
+  node.dataset.hl = label;
   clearTimeout(node._hlT);
-  node._hlT = setTimeout(() => node.classList.remove("kk-hl"), 1800);
+  node._hlT = setTimeout(() => node.classList.remove("kk-hl"), 3200);
 };
-function kkJump(src) {
+let kkBackPill = null;
+function kkReturnPill(from) {
+  if (kkBackPill) kkBackPill.remove();
+  const log = from && from.closest("[data-log]") ? from.closest("[data-log]").dataset.log : "";
+  if (!log) return;
+  const pill = kkBackPill = el("button", { class: "kk-backpill", type: "button", "data-k": "kk-back-reply", onclick: () => {
+    pill.remove(); kkBackPill = null;
+    const n = [...kkTl.querySelectorAll("[data-log]")].find(x => x.dataset.log === log);
+    if (n) { n.scrollIntoView({ block: "center" }); kkFlash(n, "답장"); }
+  } }, icon("back"), "답장으로 돌아가기");
+  kkTl.parentElement.append(pill);
+  setTimeout(() => { if (kkBackPill === pill) { pill.remove(); kkBackPill = null; } }, 12000);
+}
+function kkJump(src, from) {
   src = String(src || "").trim();
   if (!src || !KK.open) return;
   const find = () => [...kkTl.querySelectorAll("[data-log]")].find(n => n.dataset.log === src);
   let node = find();
   if (!node) {
     const id = KK.open;
+    // The original is on an older page: the quote says it is looking until the page around it arrives.
+    if (from) { from.classList.add("busy"); from.dataset.wait = "찾는 중…"; }
     api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}&around=${enc(src)}`).then(d => {
       if (KK.open !== id) return;
       // The page around the original is merged into what the room already shows (a jump never drops the current view). Messages between
@@ -216,15 +233,18 @@ function kkJump(src) {
       if (d.read !== undefined) KK.read = d.read;
       kkPaintTl(false);
       const hit = find();
-      if (!hit) { toast("원래 메시지를 찾지 못했어요", true); return; }
+      if (from) from.classList.remove("busy");
+      if (!hit) { toast("원래 메시지를 찾지 못했어요 · 대화에서 지워졌거나 아주 오래된 메시지예요", true); return; }
       hit.scrollIntoView({ block: "center" });
       kkFlash(hit);
+      kkReturnPill(from);
       kkSyncStick();
-    }, e => toast(e.message, true));
+    }, e => { if (from) from.classList.remove("busy"); toast(e.message, true); });
     return;
   }
   node.scrollIntoView({ block: "center" });
   kkFlash(node);
+  kkReturnPill(from);
   kkSyncStick();
 }
 const kkByLog = (a, b) => (kkGt(a.logId, b.logId) ? 1 : kkGt(b.logId, a.logId) ? -1 : 0);
