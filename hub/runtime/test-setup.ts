@@ -1,5 +1,6 @@
 // bun test preload (bunfig.toml): an isolated DOTZ_DIR with a throwaway config, a binary path that cannot exist (so no
 // test can ever start a real omo or omp), and the fake clock. Runs before any hub module reads config.ts.
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,9 @@ import { installClock } from "./test-clock.ts";
 
 // Tuning knobs and lane/hub markers of whatever shell runs the tests must not leak into the code under test.
 for (const k of Object.keys(process.env)) if (k.startsWith("DOTZ_") && k !== "DOTZ_TEST_DIR") delete process.env[k];
+// A stripped environment (env -i) has no TMPDIR, so tmpdir() falls back to /tmp, which the code treats as a scratch
+// folder; on macOS use the per-user temp dir a login shell would have.
+if (!process.env.TMPDIR && process.platform === "darwin") process.env.TMPDIR = execFileSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf8" }).trim();
 process.env.DOTZ_WEB_LIVE = "1";   // tests read the working-tree web files; hub/web-committed.test.ts turns this off
 if (!process.env.DOTZ_TEST_DIR) {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-test-"));
