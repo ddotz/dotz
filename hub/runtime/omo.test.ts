@@ -7,7 +7,7 @@ import { cfg } from "../config.ts";
 import { jsonZod, params } from "../../extension/schema.ts";
 import { eventsFromFrame } from "./omp.ts";
 import { hostsOf, listHosts } from "./omo-hosts.ts";
-import { ORCHESTRATOR_WORKERS, omoArgs, omoSelector, translateFrame, WORKER_CATEGORIES, WORKER_RULE, WORKER_TASK, writeOrchestratorProfile, writeWorkerProfile } from "./omo.ts";
+import { ORCHESTRATOR_WORKERS, omoArgs, omoConfigFile, omoSelector, orchestratorWorkerModel, parseJsonc, translateFrame, WORKER_CATEGORIES, WORKER_RULE, WORKER_TASK, writeOrchestratorProfile, writeWorkerProfile } from "./omo.ts";
 
 test("a lane's worker model becomes a dotz profile of omo.json: every category on it, then its fallbacks; other keys stay", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
@@ -22,14 +22,12 @@ test("a lane's worker model becomes a dotz profile of omo.json: every category o
 		{ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "high" },
 		{ model: "anthropic-subscription/claude-opus-5-5", reasoning: "medium" },
 	]);
-	writeFileSync(`${file}c`, "// commented\n{}");
 	// Workers run as child processes of the lane: they inherit its environment and extensions (dotz output caps and rules).
 	expect(doc.profiles[name!].task).toEqual({ max_depth: 2, process_runner: "child-process", default_execution_mode: "process", resident_idle_timeout_ms: 300_000, default_concurrency: 2, global_concurrency: 2 });
 	for (const c of WORKER_CATEGORIES) expect(doc.profiles[name!].categories[c].prompt_append).toBe(WORKER_RULE);
 	expect(WORKER_RULE).toContain("[fail]");
 	// OmO memory is off for the workers too (the lane runs with --omo-senpi-memory-disabled, which workers do not inherit).
 	expect(doc.profiles[name!].memory).toEqual({ enabled: false });
-	expect(writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high" }, file)).toBeUndefined();
 });
 
 test("lanes.max_workers and lanes.worker_idle_min set the lane profile's worker cap and release time; the orchestrator's workers are not capped", () => {
@@ -187,3 +185,71 @@ test("light profile: tools dotz never uses are left out (goal loop, html viewer;
 	expect(excluded("lane")).not.toContain("workpool");
 });
 
+
+test("the profile goes to the user config OmO reads: omo.jsonc when it exists, else omo.json; OMO_USER_CONFIG wins", () => {
+	const home = mkdtempSync(join(tmpdir(), "omo-home-"));
+	expect(omoConfigFile({ HOME: home })).toBe(join(home, ".omo", "omo.json"));
+	mkdirSync(join(home, ".omo"));
+	writeFileSync(join(home, ".omo", "omo.json"), "{}");
+	expect(omoConfigFile({ HOME: home })).toBe(join(home, ".omo", "omo.json"));
+	writeFileSync(join(home, ".omo", "omo.jsonc"), "{}");
+	expect(omoConfigFile({ HOME: home })).toBe(join(home, ".omo", "omo.jsonc"));
+	expect(omoConfigFile({ HOME: home, OMO_USER_CONFIG: "/x/omo.json" })).toBe("/x/omo.json");
+});
+
+// The Mac mini's ~/.omo/omo.jsonc (2026-10-27), shortened: comments, the owner's categories, no profiles.
+const OWNER_JSONC = `{
+  "$schema": "https://example.test/omo.schema.json",
+  // User rule 2026-09-29: never Haiku; use Sonnet where omo defaults to Haiku.
+  "agents": { "explore": { "model": "anthropic-subscription/claude-sonnet-5-5", "reasoning": "medium" } },
+  "categories": {
+    // 2026-09-30: route GPT-default categories to Opus high.
+    "quick": { "model": "anthropic-subscription/claude-sonnet-5-5", "reasoning": "medium" },
+    "deep-low": { "model": "anthropic-subscription/claude-opus-5-5", "reasoning": "medium" }, /* trailing comma below */
+  },
+}
+`;
+
+test("an owner's commented omo.jsonc gets the orchestrator profile in place: comments and categories kept, a rewrite replaces it", () => {
+	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.jsonc");
+	writeFileSync(file, OWNER_JSONC);
+	expect(writeOrchestratorProfile(file, "anthropic/claude-opus-5-5:medium", [])).toBe(ORCHESTRATOR_WORKERS);
+	const text = readFileSync(file, "utf8");
+	expect(text).toContain("// User rule 2026-09-29: never Haiku");
+	expect(text).toContain("/* trailing comma below */");
+	const doc = parseJsonc(text) as any;
+	expect(doc.categories.quick).toEqual({ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "medium" });
+	expect(doc.profiles[ORCHESTRATOR_WORKERS].categories["unspecified-high"].models).toEqual([{ model: "anthropic-subscription/claude-opus-5-5", reasoning: "medium" }]);
+	// The model switched in place (or a restart on a fallback entry): the same profile is replaced, nothing is appended.
+	writeOrchestratorProfile(file, "anthropic/claude-sonnet-5-5:high", []);
+	const again = readFileSync(file, "utf8");
+	expect(again.match(/dotz-orchestrator-workers/g)).toHaveLength(1);
+	expect((parseJsonc(again) as any).profiles[ORCHESTRATOR_WORKERS].categories.quick.models).toEqual([{ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "high" }]);
+	expect(again).toContain("// 2026-09-30: route GPT-default categories to Opus high.");
+	// A lane's profile lands beside it in the same profiles object.
+	const lane = writeWorkerProfile({ workerModel: "anthropic/claude-sonnet-5-5:high" }, file)!;
+	expect(Object.keys((parseJsonc(readFileSync(file, "utf8")) as any).profiles).sort()).toEqual([ORCHESTRATOR_WORKERS, lane].sort());
+	// A config dotz cannot read is left alone.
+	writeFileSync(file, "{ broken");
+	expect(writeOrchestratorProfile(file, "anthropic/claude-opus-5-5:medium", [])).toBeUndefined();
+	expect(readFileSync(file, "utf8")).toBe("{ broken");
+});
+
+test("the orchestrator's workers run on the model the orchestrator starts on, not the subagent model; its fallbacks follow", () => {
+	const saved = cfg.models;
+	try {
+		cfg.models = { orchestrator: { model: "anthropic/claude-opus-5-5", thinking: "medium", fallback: [{ model: "anthropic/claude-sonnet-5-5:high", when: "quota" }] }, workers: { model: "anthropic/claude-haiku-4-5", thinking: "low" } };
+		const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
+		writeOrchestratorProfile(file);
+		expect(JSON.parse(readFileSync(file, "utf8")).profiles[ORCHESTRATOR_WORKERS].categories.quick.models).toEqual([
+			{ model: "anthropic-subscription/claude-opus-5-5", reasoning: "medium" },
+			{ model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "high" },
+		]);
+	} finally {
+		cfg.models = saved;
+	}
+	expect(orchestratorWorkerModel({ role: "orchestrator", cwd: "/tmp", model: "anthropic/claude-opus-5-5:medium", env: {} })).toBe("anthropic/claude-opus-5-5:medium");
+	// On an API-key entry whose workers stay on the subscription: the entry's own model on the subscription, never the key provider.
+	const key = { DOTZ_KEY_PROVIDER: JSON.stringify({ id: "anthropic-apikey", baseModel: "anthropic/claude-opus-5-5", models: [{ id: "claude-opus-5-5" }] }), DOTZ_KEY_VALUE: "sk-test" };
+	expect(orchestratorWorkerModel({ role: "orchestrator", cwd: "/tmp", model: "anthropic-apikey/claude-opus-5-5:medium", env: key })).toBe("anthropic/claude-opus-5-5:medium");
+});

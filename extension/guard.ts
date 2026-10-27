@@ -201,6 +201,26 @@ export function checkOmoTaskInput(input: any, isolate = true, roots: string[] = 
 	return { input };
 }
 
+// The orchestrator's task workers run on its own live model and effort (owner 2026-10-27: work asked for in a mail, kakao or
+// monitor conversation runs on the main orchestrator's model, never the reply model or a smaller worker model). OmO takes a
+// `model` only beside `subagent_type` and refuses it beside `category` (category_with_model), so a subagent_type worker is
+// pinned here and a category worker's model is dropped: its category runs on the same model through the
+// dotz-orchestrator-workers profile (hub/runtime/omo.ts). Edited in place, as checkOmoTaskInput.
+export function pinOmoTaskModel(input: any, pin: string): void {
+	for (const item of Array.isArray(input?.tasks) ? input.tasks : [input]) {
+		if (!item || typeof item !== "object") continue;
+		if (typeof item.subagent_type === "string" && item.subagent_type.trim()) item.model = pin;
+		else delete item.model;
+	}
+	if (Array.isArray(input?.tasks)) delete input.model;
+}
+// The live session's model as a task pin (`provider/model[:effort]`, OmO's own provider names), or undefined before one is known.
+export function livePin(model: { provider?: string; id?: string } | undefined, effort: unknown): string | undefined {
+	if (!model?.provider || !model.id) return undefined;
+	const level = typeof effort === "string" && effort && effort !== "off" ? `:${effort}` : "";
+	return `${model.provider}/${model.id}${level}`;
+}
+
 type TaskInput = { context?: unknown; model?: unknown; tasks?: { task?: unknown; model?: unknown }[] };
 
 export function estimateFrom(input: TaskInput | undefined, g: GuardConfig = G): number {
@@ -1072,6 +1092,11 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			if ("reason" in verdict) return { block: true, reason: verdict.reason };
 			const dear = fableOk() ? undefined : expensiveTaskModel(event.input);
 			if (dear) return { block: true, reason: fableReason("this task call", dear) };
+			const pin = process.env.DOTZ_ORCHESTRATOR === "1" && !process.env.DOTZ_LANE && isOmoTaskInput(event.input) ? livePin(ctx?.model, pi.getThinkingLevel?.()) : undefined;
+			if (pin) {
+				pinOmoTaskModel(event.input, pin);
+				debug({ phase: "task-model-pin", pin });
+			}
 			// The quota comes from `omp usage`, i.e. omp's own login; an OmO process may run on another account, so the gate
 			// would block on a quota that is not the one it spends. No gate on OmO until OmO's own usage can be read.
 			if (config.budget_gate && process.env.DOTZ_RUNTIME !== "omo" && Date.now() >= budgetOkUntil) {

@@ -163,6 +163,14 @@ describe("the draft paths call the model they resolved", () => {
 		expect(await replyCall("mail", "mail:naver-9", call)("s", "u")).toBe("답");
 		expect(seen[0]?.model).toBe(`${SONNET}:low`);
 	});
+	// Owner 2026-10-27: only the draft text runs on the reply model; what he asks in the mail conversation runs on the
+	// orchestrator (hub/runtime/omo.ts writeOrchestratorProfile, extension/guard.ts pinOmoTaskModel).
+	test("a mail conversation's reply draft keeps the mail app's reply model, whatever the orchestrator runs on", async () => {
+		const { seen, call } = recorder();
+		writeSettings(dir, "mail", { reply_model: `${SONNET}:medium` });
+		await callReplyModel("mail", "mail:kdb-67010497", "s", "u", call, { dataDir: dir, worker: OPUS });
+		expect(seen.map(s => s.model)).toEqual([`${SONNET}:medium`]);
+	});
 });
 
 describe("the effort reaches the model process", () => {

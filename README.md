@@ -443,7 +443,12 @@ when omp is selected.
 - *Session subagent model*: OmO task subagents take their model from OmO's categories (`omo.json`), so each session spawn writes
   `profiles.dotz-workers-<model>` into `~/.omo/omo.json` (every category on the session's subagent model, then
   `models.workers.fallback`) and starts the session with `OMO_PROFILE` naming it; the owner's own OmO runs, which set no
-  profile, keep their categories. With an `omo.jsonc` dotz writes nothing and the subagents keep OmO's categories.
+  profile, keep their categories. The file is the one OmO reads: `~/.omo/omo.jsonc` when it exists (edited in place, the
+  owner's comments kept), else `omo.json`.
+- *Orchestrator subagent model*: the orchestrator's own task subagents (work it defers from a mail, kakao, monitor or main
+  conversation) run on the orchestrator's live model and effort, not the subagent model: `profiles.dotz-orchestrator-workers`
+  puts every category on it (rewritten when the model switches), and the guard pins `model` on a subagent_type call (OmO
+  refuses a model beside a category). Reply drafts alone use the reply model. The conversation's work line names the model.
 - *Memory*: OmO's memory is turned off for dotz agents; durable facts go to RULES.md / LESSONS.md / state.json (MODE.md).
 - *Needs the `omp` binary on any runtime*: the budget gate on spawns and the Anthropic quota numbers (`omp usage`), the
   provider list, API keys, login and logout (`omp auth`, `omp login`, `omp auth-broker`; below), the nightly

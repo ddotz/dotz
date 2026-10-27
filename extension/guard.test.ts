@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
-import { budgetLine, budgetProblem, checkOmoTaskInput, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, settleFromText, shouldIsolate, shellText, trimWaitOutput } from "./guard.ts";
+import { budgetLine, budgetProblem, checkOmoTaskInput, livePin, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, settleFromText, shouldIsolate, shellText, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
 beforeAll(() => {
@@ -276,4 +276,37 @@ test("OmO task completion settles the worker and keeps its retained patch; eval 
 	expect(state.workers.st_01aa.status).toBe("completed");
 	expect(state.workers.st_01aa.patch).toEndWith("st_01aa.patch");
 	expect(shellText({ code: "await tool.bash({ command: 'git apply x.patch' })" })).toContain("git apply x.patch");
+});
+
+test("the orchestrator's task workers are pinned to its live model and effort; a category worker's model is left to the profile (OmO refuses both)", async () => {
+	expect(livePin({ provider: "anthropic-subscription", id: "claude-opus-5-5" }, "medium")).toBe("anthropic-subscription/claude-opus-5-5:medium");
+	expect(livePin({ provider: "anthropic-subscription", id: "claude-opus-5-5" }, "off")).toBe("anthropic-subscription/claude-opus-5-5");
+	expect(livePin(undefined, "medium")).toBeUndefined();
+	const batch: any = { tasks: [{ subagent_type: "explore", model: "anthropic-subscription/claude-sonnet-5-5", prompt: "x" }, { category: "quick", model: "anthropic-subscription/claude-sonnet-5-5", prompt: "y" }] };
+	pinOmoTaskModel(batch, "anthropic-subscription/claude-opus-5-5:medium");
+	expect(batch.tasks[0].model).toBe("anthropic-subscription/claude-opus-5-5:medium");
+	expect("model" in batch.tasks[1]).toBe(false);
+
+	// A mail conversation's request the orchestrator defers (the owner's turn in mail:<key> ends with [later] after this call):
+	// the spawn goes through the orchestrator's guard with its live session model, whatever the reply model is.
+	const { pi, handlers } = fakePi(join(dir, "agent-empty"));
+	(pi as any).getThinkingLevel = () => "medium";
+	installGuard(pi, noGate);
+	const ctx = { agent: { kind: "main" }, cwd: dir, model: { provider: "anthropic-subscription", id: "claude-opus-5-5" }, sessionManager: { getSessionId: () => "mail" } };
+	const saved = { ...process.env };
+	process.env.DOTZ_ORCHESTRATOR = "1";
+	delete process.env.DOTZ_LANE;
+	try {
+		const one = { subagent_type: "librarian", prompt: "mail:kdb-1 요청: 큐피드 흐름도 자료 찾기\nDone when: 링크 3개" };
+		const r = await handlers.tool_call[0]({ toolName: "task", input: one }, ctx);
+		expect(r.input.model).toBe("anthropic-subscription/claude-opus-5-5:medium");
+		const cat = { category: "deep-low", model: "anthropic-subscription/claude-sonnet-5-5", prompt: "흐름도 만들기\nAcceptance: html" };
+		expect("model" in (await handlers.tool_call[0]({ toolName: "task", input: cat }, ctx)).input).toBe(false);
+		// A lane's own spawns are not the orchestrator's: left as they are.
+		process.env.DOTZ_LANE = "probe";
+		const laneCall = { subagent_type: "explore", prompt: "x\nDone when: y" };
+		expect((await handlers.tool_call[0]({ toolName: "task", input: laneCall }, ctx)).input.model).toBeUndefined();
+	} finally {
+		process.env = saved;
+	}
 });

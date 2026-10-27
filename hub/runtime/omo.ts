@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { stickyEnv } from "../account-sticky.ts";
 import { apiKeyBan, withoutApiKeys } from "../apikey-policy.ts";
-import { chainAfter, fallbackChain, lanesMaxWorkers, log, parseSelector, workerIdleMin, workerModel, writeAtomic } from "../config.ts";
+import { chainAfter, fallbackChain, lanesMaxWorkers, log, orchestratorModel, parseSelector, selectorOf, workerIdleMin, writeAtomic } from "../config.ts";
 import { keyedWorker } from "../fallback.ts";
 import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
@@ -52,30 +52,116 @@ export const workerTask = (limit?: number) => ({ ...WORKER_TASK, resident_idle_t
 // reported success (2026-10-19 lat-probe2).
 export const WORKER_RULE =
 	"dotz worker rule: if a step you need is refused or fails (a tool error, a denied or refused task spawn, a missing permission) and you cannot do it another real way, stop and report [fail] with what was blocked and the exact reason. Never write the expected output, a guessed result or a placeholder in its place. Keep tool output small: read big files in ranges (offset/limit) and bound searches and diffs (grep -m, head, git diff --stat or one path), since every result stays in your context and is re-read on each later turn.";
-export const omoConfigFile = () => process.env.OMO_USER_CONFIG ?? join(process.env.HOME ?? homedir(), ".omo", "omo.json");
+// The user config OmO itself reads: ~/.omo/omo.jsonc when it exists, else omo.json (OmO's own lookup, omo-task.js). dotz once
+// wrote omo.json only and skipped a machine with omo.jsonc, so there the orchestrator's workers ran on the owner's own
+// categories (Mac mini, 2026-10-27: "omo.jsonc exists; dotz-orchestrator-workers is not written" at every start).
+export function omoConfigFile(env: Record<string, string | undefined> = process.env): string {
+	if (env.OMO_USER_CONFIG) return env.OMO_USER_CONFIG;
+	const dir = join(env.HOME ?? homedir(), ".omo");
+	return existsSync(join(dir, "omo.jsonc")) ? join(dir, "omo.jsonc") : join(dir, "omo.json");
+}
 export const workerProfileName = (workerModel: string) => `dotz-workers-${workerModel.replace(/[^A-Za-z0-9.-]+/g, "-")}`;
 const categoryModel = (selector: string) => {
 	const { model, thinking } = parseSelector(omoSelector(selector));
 	return { model, reasoning: thinking };
 };
 
-// Returns the profile name, or undefined when the file cannot be written (OmO reads omo.jsonc first, and dotz does not
-// rewrite a commented file; an unreadable omo.json is left alone): the process then runs its workers on OmO's defaults.
+// JSONC (OmO's config format: comments, trailing commas) edited as text, so the owner's comments and layout stay: only
+// `profiles.<name>` is replaced or inserted.
+type Tok = { k: string; s: number; e: number };
+function jsoncTokens(t: string): Tok[] {
+	const out: Tok[] = [];
+	let i = 0;
+	while (i < t.length) {
+		const c = t[i]!;
+		if (/\s/.test(c) || c === "\uFEFF") i++;
+		else if (c === "/" && t[i + 1] === "/") i = t.includes("\n", i) ? t.indexOf("\n", i) : t.length;
+		else if (c === "/" && t[i + 1] === "*") {
+			const end = t.indexOf("*/", i + 2);
+			if (end < 0) throw new Error("unterminated comment");
+			i = end + 2;
+		} else if (c === '"') {
+			let j = i + 1;
+			while (j < t.length && t[j] !== '"') j += t[j] === "\\" ? 2 : 1;
+			if (j >= t.length) throw new Error("unterminated string");
+			out.push({ k: "s", s: i, e: j + 1 });
+			i = j + 1;
+		} else if ("{}[]:,".includes(c)) out.push({ k: c, s: i, e: ++i });
+		else {
+			let j = i;
+			while (j < t.length && !/[\s{}[\]:,"/]/.test(t[j]!)) j++;
+			out.push({ k: "v", s: i, e: j });
+			i = j;
+		}
+	}
+	return out;
+}
+/** The JSON value of a JSONC text (comments and trailing commas dropped); throws on anything JSON.parse refuses. */
+export function parseJsonc(t: string): unknown {
+	const toks = jsoncTokens(t);
+	return JSON.parse(toks.filter((x, i) => !(x.k === "," && (toks[i + 1]?.k === "}" || toks[i + 1]?.k === "]"))).map(x => t.slice(x.s, x.e)).join(""));
+}
+const afterValue = (toks: Tok[], p: number): number => {
+	if (toks[p]?.k !== "{" && toks[p]?.k !== "[") return p + 1;
+	let depth = 0;
+	for (let q = p; q < toks.length; q++) {
+		if (toks[q]!.k === "{" || toks[q]!.k === "[") depth++;
+		else if ((toks[q]!.k === "}" || toks[q]!.k === "]") && --depth === 0) return q + 1;
+	}
+	throw new Error("unbalanced brackets");
+};
+// The member `key` of the object opening at token `open`: its value token, or where a new member goes.
+function member(t: string, toks: Tok[], open: number, key: string): { value?: number; empty: boolean } {
+	let p = open + 1;
+	const empty = toks[p]?.k === "}";
+	while (p < toks.length && toks[p]!.k !== "}") {
+		if (toks[p]!.k === ",") {
+			p++;
+			continue;
+		}
+		if (toks[p]!.k === "s" && toks[p + 1]?.k === ":" && JSON.parse(t.slice(toks[p]!.s, toks[p]!.e)) === key) return { value: p + 2, empty };
+		p = afterValue(toks, p + 2);
+	}
+	return { empty };
+}
+const indentAt = (t: string, at: number) => /^[ \t]*/.exec(t.slice(t.lastIndexOf("\n", at - 1) + 1))![0];
+/** `text` with `profiles.<name>` set to `value`, everything else (comments included) as it was. */
+export function setJsoncProfile(text: string, name: string, value: unknown): string {
+	const src = text.trim() ? text : "{}\n";
+	const toks = jsoncTokens(src);
+	if (toks[0]?.k !== "{") throw new Error("the config is not an object");
+	parseJsonc(src);
+	// The file's own indent unit (the owner's omo.jsonc uses two spaces), tab for an empty file.
+	const unit = /\n([ \t]+)\S/.exec(src)?.[1] ?? "\t";
+	const put = (open: number, key: string, v: unknown): string => {
+		const m = member(src, toks, open, key);
+		const pad = indentAt(src, toks[open]!.s) + unit;
+		const json = JSON.stringify(v, null, unit).replace(/\n/g, `\n${pad}`);
+		if (m.value !== undefined) {
+			const end = afterValue(toks, m.value) - 1;
+			return src.slice(0, toks[m.value]!.s) + json + src.slice(toks[end]!.e);
+		}
+		const at = toks[open]!.e;
+		return `${src.slice(0, at)}\n${pad}${JSON.stringify(key)}: ${json}${m.empty ? `\n${indentAt(src, toks[open]!.s)}` : ","}${src.slice(at)}`;
+	};
+	const profiles = member(src, toks, 0, "profiles");
+	if (profiles.value === undefined) return put(0, "profiles", { [name]: value });
+	if (toks[profiles.value]!.k !== "{") throw new Error("profiles is not an object");
+	return put(profiles.value, name, value);
+}
+
+// Returns the profile name, or undefined when the file cannot be edited (not readable JSONC, or `profiles` is not an object):
+// the process then runs its workers on OmO's defaults. The file is the one OmO reads (omoConfigFile), omo.jsonc included.
 function writeProfile(name: string, profile: Record<string, unknown>, file: string): string | undefined {
-	if (existsSync(file.replace(/\.json$/, ".jsonc"))) {
-		log(`omo: ${file}c exists; ${name} is not written, task workers keep OmO's defaults`);
-		return undefined;
-	}
-	let doc: Record<string, unknown> = {};
+	let next: string;
 	try {
-		if (existsSync(file)) doc = JSON.parse(readFileSync(file, "utf8"));
+		next = setJsoncProfile(existsSync(file) ? readFileSync(file, "utf8") : "", name, profile);
 	} catch (e) {
-		log(`omo: ${file} is not readable JSON (${(e as Error).message}); ${name} is not written, task workers keep OmO's defaults`);
+		log(`omo: ${file} cannot be edited (${(e as Error).message}); ${name} is not written, task workers keep OmO's defaults`);
 		return undefined;
 	}
-	const profiles = { ...(doc.profiles as Record<string, unknown> | undefined), [name]: profile };
 	mkdirSync(dirname(file), { recursive: true });
-	writeAtomic(file, `${JSON.stringify({ ...doc, profiles }, null, 2)}\n`);
+	writeAtomic(file, next);
 	return name;
 }
 
@@ -86,7 +172,11 @@ export function writeWorkerProfile(lane: { workerModel: string; workerFallback?:
 
 // The orchestrator's own task workers had the same gap: OmO's shared rpc host, no dotz, no output caps. Its profile
 // moves them into child processes (WORKER_TASK) and turns OmO memory off as for lane workers, and every category runs on
-// the task-worker model and its fallbacks on the subscription login. Without categories they took OmO's defaults, whose
+// the orchestrator's own model and effort, then the orchestrator's fallbacks, on the subscription login: work the
+// orchestrator defers from a conversation (mail, kakao, a monitor, main) runs on the model the owner talks to (owner
+// 2026-10-27: "그 안에서 대화를 할때는 메인 오케스트레이터와 동일한 모델로 진행되어야해"). OmO refuses a `model` beside a
+// `category` on a task call, so for category workers this profile is the pin; subagent_type workers are pinned on the call
+// (extension/guard.ts pinOmoTaskModel). Without categories they took OmO's defaults, whose
 // provider list goes on to `anthropic` (the API key): with the subscription account rate-limited, the orchestrator's
 // unspecified-high workers started on a dead API key and failed with 401 "invalid x-api-key" (2026-10-21 00:55 KST).
 // API-key fallback entries are left out: a worker never falls back to a key, except when the process itself runs on a keyed
@@ -94,7 +184,7 @@ export function writeWorkerProfile(lane: { workerModel: string; workerFallback?:
 // child gets the parent's extensions, not its --exclude-tools, so the workers keep every tool.
 // (`worker` is the key provider's copy of the worker model, `<provider>-apikey/<id>`, which the child registers itself.)
 export const ORCHESTRATOR_WORKERS = "dotz-orchestrator-workers";
-export function writeOrchestratorProfile(file = omoConfigFile(), worker = workerModel(), chain = fallbackChain("workers")): string | undefined {
+export function writeOrchestratorProfile(file = omoConfigFile(), worker = selectorOf(orchestratorModel()), chain = fallbackChain("orchestrator")): string | undefined {
 	const models = [worker, ...chainAfter(worker, chain).filter(e => !e.key_file).map(e => e.model)].map(categoryModel);
 	return writeProfile(ORCHESTRATOR_WORKERS, { task: workerTask(), memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) }, file);
 }
@@ -150,6 +240,15 @@ const excludedTools = (role: SpawnOpts["role"]) => [...EXCLUDED_TOOLS, ...(role 
 
 // --no-model-fallback: OmO's own chain would follow the owner's global settings; the hub drives every chain of an OmO
 // process itself (hub/fallback.ts hubChain), restarting it on the same session with the next model.
+// The model the orchestrator's task workers run on: the one this process starts on (a fallback entry included), not the
+// config's primary; on an API-key entry whose workers stay on the subscription, that entry's subscription model.
+export function orchestratorWorkerModel(o: SpawnOpts): string {
+	const key = keyProviderOf(o);
+	if (!key) return o.model;
+	const thinking = parseSelector(o.model).thinking;
+	return thinking ? `${key.baseModel}:${thinking}` : key.baseModel;
+}
+
 export function omoArgs(o: SpawnOpts): string[] {
 	const key = keyProviderOf(o);
 	const model = key ? `${key.baseModel}:${parseSelector(o.model).thinking}` : o.model;
@@ -165,14 +264,14 @@ export const omo: RuntimeAdapter = {
 	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact" },
 	start(o) {
 		const onKey = keyedWorker(o.env);
-		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? (onKey ? writeOrchestratorProfile(undefined, onKey, []) : writeOrchestratorProfile()) : undefined;
+		const key = keyProviderOf(o);
+		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? (onKey ? writeOrchestratorProfile(undefined, onKey, []) : writeOrchestratorProfile(undefined, orchestratorWorkerModel(o))) : undefined;
 		const launcher = senpiLauncher();
 		// stickyEnv() is the account at spawn; a running process follows later switches by itself (the dotz extension re-pins it at each turn).
 		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...PROMPT_SURFACE_ENV, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
 		const agent = new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);
-		const key = keyProviderOf(o);
 		if (key) agent.setModel(`${key.id}/${key.models[0].id}`);
 		return agent;
 	},
